@@ -46,7 +46,7 @@
   </ol>
 </details>
 
-## About
+## About The Project
 
 ![ScreenShot](media/xor.png)
 This project started as a learning experience and a way to understand the inner workings of PyTorch and other deep learning frameworks.<br>
