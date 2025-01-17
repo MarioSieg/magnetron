@@ -18,6 +18,7 @@ extern "C" {
 #define MAG_MAX_TENSOR_NAME_LEN 64         /* Maximum length for tensor name */
 #define MAG_MAX_INPUT_TENSORS 2            /* Maximum number of input tensors for an operation */
 #define MAG_MAX_OP_PARAMS 6                /* Maximum number of parameters for an operation */
+#define MAG_MAX_INIT_OP_PARAMS 2            /* Maximum number of parameters for an init operation */
 
 #ifndef MAG_EXPORT
 #ifdef MAG_SHARED
@@ -62,13 +63,6 @@ typedef enum mag_prng_algorithm_t {
 
     MAG_PRNG__NUM
 } mag_prng_algorithm_t;
-
-typedef enum mag_thread_sched_prio_t {  /* Thread scheduling priority for CPU compute */
-    MAG_THREAD_SCHED_PRIO_NORMAL = 0,   /* Normal thread priority */
-    MAG_THREAD_SCHED_PRIO_MEDIUM = 1,   /* Medium thread priority */
-    MAG_THREAD_SCHED_PRIO_HIGH = 2,     /* High thread priority */
-    MAG_THREAD_SCHED_PRIO_REALTIME = 3, /* Real-time thread priority */
-} mag_thread_sched_prio_t;
 
 typedef enum mag_color_channels_t {
     MAG_COLOR_CHANNELS_AUTO,    /* Automatically detect number of color channels */

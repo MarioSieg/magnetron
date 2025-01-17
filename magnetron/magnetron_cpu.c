@@ -111,6 +111,7 @@ typedef struct mag_threadpool_t {
 struct mag_worker_t {
     uint64_t phase;                         /* Current compute phase */
     mag_compute_payload_t payload;          /* Compute op payload */
+    mag_prng_state_t local_prng;            /* Local PRNG state */
     mag_threadpool_t* pool;                 /* Host thread pool */
     bool is_async;                          /* True if worker is async (executed on a different thread)  */
     mag_thread_t thread;                    /* Thread handle */
@@ -119,6 +120,7 @@ struct mag_worker_t {
 typedef struct mag_cpu_device_t {
     mag_ctx_t* ctx;
     mag_threadpool_t* pool;             /* Thread pool. NULL if num_allocated_workers <= 1 */
+    mag_compute_payload_t st_payload;   /* Single threaded payload */
     uint32_t num_allocated_workers;     /* Amount of worker thread used. if == 1 then single threaded mode and thread pool is not created */
     mag_kernel_registry_t kernels;      /* Compute kernels. Specialized by arch optimized version at boot (e.g. AVX, AVX512 etc..) */
     double growth_scale;                /* Growth scale for dynamic work scaling. TODO: Find better value and benchmark. */
@@ -166,10 +168,14 @@ static MAG_HOTPROC void* mag_worker_thread_exec_op(void* arg) {
     char name[32];
     snprintf(name, sizeof(name), "mag_worker_%" PRIx64, payload->thread_idx);
     mag_thread_set_name(name);
+    uint64_t seed = payload->thread_idx ^ mag_thread_id() ^ (uintptr_t)arg ^ (uintptr_t)&arg;
+    mag_prng_init(&payload->local_prng, MAG_PRNG_MERSENNE_TWISTER, seed);
     /*mag_thread_set_prio(pool->sched_prio);*/
     mag_atomic_fetch_add(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
+
     while (mag_likely(mag_worker_await_work(worker, pool)))  /* Main work loop: wait, work, signal status */
         mag_worker_exec_and_broadcast(pool, kernels, payload);
+
     mag_atomic_fetch_sub(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
     return MAG_THREAD_RET_NONE;
 }
@@ -196,7 +202,7 @@ static mag_threadpool_t* mag_threadpool_create(uint32_t num_workers, const mag_k
     for (uint32_t ti=0; ti < num_workers; ++ti) { /* Initialize workers */
         workers[ti] = (mag_worker_t){
             .phase = 0,
-            .payload = (mag_compute_payload_t){.thread_num = num_workers, .thread_idx = ti, .node = NULL, },
+            .payload = (mag_compute_payload_t){.thread_num = num_workers, .thread_idx = ti, .local_prng = {0}, .node = NULL, },
             .pool = pool,
             .is_async = ti != 0 /* Main thread is worker but without thread */
         };
@@ -266,16 +272,10 @@ static MAG_HOTPROC void mag_cpu_exec_fwd(mag_compute_device_t* dvc, mag_tensor_t
     mag_cpu_device_t* cpu_dvc = dvc->impl;
     mag_threadpool_t* pool = cpu_dvc->pool;
     uint32_t num_active_workers = mag_cpu_dynamic_work_scaling(cpu_dvc, node->numel);
-    if (!pool || num_active_workers <= 1) { /* Main thread does the work (single threaded mode). */
-        mag_compute_payload_t payload = {
-            .node = node,
-            .thread_idx = 0,
-            .thread_num = 1
-        };
-        mag_worker_exec_thread_local(&cpu_dvc->kernels, &payload);
-        return; /* Done */
-    }
-    mag_threadpool_parallel_compute(pool, node, num_active_workers);
+    if (!pool || num_active_workers <= 1) /* Main thread does the work (single threaded mode). */
+        mag_worker_exec_thread_local(&cpu_dvc->kernels, &cpu_dvc->st_payload);
+    else
+        mag_threadpool_parallel_compute(pool, node, num_active_workers);
 }
 
 static MAG_HOTPROC void mag_cpu_exec_bwd(mag_compute_device_t* dvc, mag_tensor_t* root) {
@@ -325,11 +325,18 @@ static mag_cpu_device_t* mag_cpu_init_device(mag_ctx_t* ctx, uint32_t num_thread
     *dvc = (mag_cpu_device_t) {
         .ctx = ctx,
         .pool = NULL,
+        .st_payload = {
+            .thread_idx = 0,
+            .thread_num = 1,
+            .local_prng = {0},
+            .node = NULL
+        },
         .num_allocated_workers = 0,
         .kernels = {},
         .growth_scale = 0.3, /* TODO: better value and heuristic */
         .numel_threshold = 250000 /* TODO: better value and heuristic */
     };
+    mag_prng_init(&dvc->st_payload.local_prng, MAG_PRNG_MERSENNE_TWISTER, 0);
     mag_blas_detect_optimal_specialization(ctx, &dvc->kernels);
     if (num_threads > 1) {
         dvc->pool = mag_threadpool_create(num_threads, &dvc->kernels, sched_prio);

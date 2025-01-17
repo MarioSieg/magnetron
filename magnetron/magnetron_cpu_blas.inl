@@ -18,6 +18,71 @@ typedef double mag_f64_t;
 
 #define mag_f32p(t) ((const mag_f32_t*)(t)->storage.base)
 #define mag_f32p_mut(t) ((mag_f32_t*)(t)->storage.base)
+#define mag_u8p(t) ((const uint8_t*)(t)->storage.base)
+#define mag_u8p_mut(t) ((uint8_t*)(t)->storage.base)
+
+/* Generate n uniform random floats within [min, max]. */
+static void mag_prng_gen_uniform(mag_prng_state_t* rng, mag_f32_t* out_gen, int64_t numel, mag_f32_t min, mag_f32_t max) {
+    float rescale_uniform = max - min;
+    switch (rng->algo) {
+        case MAG_PRNG_MERSENNE_TWISTER: {
+            uint32_t* rem = &rng->state.mersenne.remaining;
+            uint32_t* next = &rng->state.mersenne.next;
+            uint32_t* state = rng->state.mersenne.state;
+            for (int64_t ii=0; ii < numel; ++ii) {
+                if (--*rem <= 0) {
+                    *rem = 624;
+                    *next = 0;
+                    uint32_t y, i;
+                    for (i = 0; i < 624-397; ++i) {
+                        y = (state[i] & 0x80000000u) | (state[i+1] & 0x7fffffffu);
+                        state[i] = state[i+397] ^ (y>>1) ^ ((y&1) ? 0 : 0x9908b0dfu);
+                    }
+                    for (; i < 624-1; ++i) {
+                        y = (state[i] & 0x80000000u) | (state[i+1] & 0x7fffffffu);
+                        state[i] = state[i + (397-624)] ^ (y>>1) ^ ((y&1) ? 0 : 0x9908b0dfu);
+                    }
+                    y = (state[624-1] & 0x80000000u) | (*state & 0x7fffffffu);
+                    state[624-1] = state[397-1] ^ (y>>1) ^ ((y&1) ? 0 : 0x9908b0dfu);
+                }
+                uint32_t y = state[(*next)++];
+                y ^= y >> 11;
+                y ^= (y << 7) & 0x9d2c5680;
+                y ^= (y << 15) & 0xefc60000;
+                y ^= y >> 18;
+                out_gen[ii] = min + rescale_uniform * (1.f/(mag_f32_t)(1<<23)*((mag_f32_t)(y>>9) + 0.5f));
+            }
+        } break;
+        case MAG_PRNG_PCG: {
+            uint64_t* state = &rng->state.pcg.state;
+            uint64_t inc = rng->state.pcg.inc;
+            for (int64_t ii=0; ii < numel; ++ii) {
+                uint64_t prev = *state;
+                *state = prev*6364136223846793005ull + inc;
+                uint32_t mixed = ((prev>>18u) ^ prev) >> 27u;
+                uint32_t rot = prev >> 59u;
+                uint32_t y = (mixed>>rot) | (mixed << ((-rot)&31));
+                out_gen[ii] = min + rescale_uniform * (1.f/(mag_f32_t)(1<<23)*((mag_f32_t)(y>>9) + 0.5f));
+            }
+        } break;
+        default:
+            mag_panic("Unknown PRNG algorithm: %d", rng->algo);
+    }
+}
+
+/* Map uniform to normal distribution using Box-Muller transform. */
+static void mag_prng_box_mueller_transform(mag_f32_t* o, int64_t numel, mag_f32_t mean, mag_f32_t stddev) {
+    mag_assert2((numel & 1) == 0);
+    for (int64_t i=0; i < numel; i += 2) {
+        mag_f32_t u1 = o[i];
+        mag_f32_t u2 = o[i+1];
+        mag_f32_t mag = stddev*sqrtf(-2.0f*logf(u1));
+        mag_f32_t y0 = mag*cosf((mag_f32_t)(2.0*M_PI)*u2) + mean;
+        mag_f32_t y1 = mag*sinf((mag_f32_t)(2.0*M_PI)*u2) + mean;
+        o[i] = y0;
+        o[i+1] = y1;
+    }
+}
 
 #if MAG_APPROXMATH && (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
 
@@ -245,6 +310,16 @@ static void mag_simd_sincos(__m128 x, __m128 *osin, __m128 *ocos) {
 }
 
 #endif
+
+static void MAG_HOTPROC mag_vfill_f32(
+    const int64_t n,
+    mag_f32_t* const o,
+    const mag_f32_t x
+) {
+    for (int64_t i=0; i < n; ++i) {
+        o[i] = x;
+    }
+}
 
 static void MAG_HOTPROC mag_vadd_f32(
     const int64_t n,
@@ -1010,6 +1085,79 @@ static void MAG_HOTPROC mag_vgelu_dv_f32( /* gelu' : ℝ -> ℝ, x |-> TODO */
     }
 }
 
+static void MAG_HOTPROC mag_blas_init_zero(const mag_compute_payload_t* payload) {
+    mag_tensor_t* r = payload->node;
+    uint8_t* br = mag_u8p_mut(r);
+    mag_load_local_storage_group(r, r_s, strides);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t nbe = mag_dtype_meta_of(r->dtype)->size;
+    int64_t numby = nbe*r->numel;
+    int64_t chunk = (numby + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t vby = mag_xmin(ra + chunk, numby) - ra;
+    if (mag_unlikely(vby <= 0)) return;
+    uint8_t* pr = br + ra;
+    mag_bnd_chk(pr, br, mag_tensor_data_size(r));
+    memset(pr, 0, vby);
+}
+
+static void MAG_HOTPROC mag_blas_init_fill_f32(const mag_compute_payload_t* payload) {
+    mag_tensor_t* r = payload->node;
+    mag_f32_t* br = mag_f32p_mut(r);
+    mag_f32_t xi = r->init_op_params->x.f32;
+    mag_load_local_storage_group(r, r_s, strides);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t numel = r->numel;
+    int64_t chunk = (numel + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t vnel = mag_xmin(ra + chunk, numel) - ra;
+    if (mag_unlikely(vnel <= 0)) return;
+    mag_f32_t* pr = br + ra;
+    mag_bnd_chk(pr, br, mag_tensor_data_size(r));
+    mag_vfill_f32(vnel, pr, xi);
+}
+
+static void MAG_HOTPROC mag_blas_init_rand_uniform(const mag_compute_payload_t* payload) {
+    mag_tensor_t* r = payload->node;
+    mag_f32_t* br = mag_f32p_mut(r);
+    mag_f32_t min = r->init_op_params[0].x.f32;
+    mag_f32_t max = r->init_op_params[1].x.f32;
+    mag_prng_state_t* prng = (mag_prng_state_t*)&payload->local_prng; /* const_cast is safe */
+    mag_load_local_storage_group(r, r_s, strides);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t numel = r->numel;
+    int64_t chunk = (numel + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t vnel = mag_xmin(ra + chunk, numel) - ra;
+    if (mag_unlikely(vnel <= 0)) return;
+    mag_f32_t* pr = br + ra;
+    mag_bnd_chk(pr, br, mag_tensor_data_size(r));
+    mag_prng_gen_uniform(prng, pr, vnel, min, max);
+}
+
+static void MAG_HOTPROC mag_blas_init_rand_normal(const mag_compute_payload_t* payload) {
+    mag_tensor_t* r = payload->node;
+    mag_f32_t* br = mag_f32p_mut(r);
+    mag_f32_t mean = r->init_op_params[0].x.f32;
+    mag_f32_t stddev = r->init_op_params[1].x.f32;
+    mag_prng_state_t* prng = (mag_prng_state_t*)&payload->local_prng; /* const_cast is safe */
+    mag_load_local_storage_group(r, r_s, strides);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t numel = r->numel;
+    int64_t chunk = (numel + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t vnel = mag_xmin(ra + chunk, numel) - ra;
+    if (mag_unlikely(vnel <= 0)) return;
+    mag_f32_t* pr = br + ra;
+    mag_bnd_chk(pr, br, mag_tensor_data_size(r));
+    mag_prng_gen_uniform(prng, pr, vnel, 0.0f, 1.0f);
+    mag_prng_box_mueller_transform(pr, vnel, mean, stddev);
+}
+
 static void mag_blas_nop(const mag_compute_payload_t* payload) { (void)payload; }
 
 static void mag_blas_clone(const mag_compute_payload_t* payload) {
@@ -1138,13 +1286,13 @@ static void MAG_HOTPROC mag_blas_sum_f32(const mag_compute_payload_t* payload) {
         int64_t numel = r->numel; \
         int64_t chunk = (numel + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
-        int64_t vmel = (ra < numel) ? mag_xmin(ra + chunk, numel) - ra : 0; \
-        if (mag_unlikely(vmel <= 0)) return; \
+        int64_t vnel = mag_xmin(ra + chunk, numel) - ra; \
+        if (mag_unlikely(vnel <= 0)) return; \
         mag_##T##_t* pr = br + ra; \
         const mag_##T##_t* px = bx + ra; \
         mag_bnd_chk(pr, br, mag_tensor_data_size(r)); \
         mag_bnd_chk(px, bx, mag_tensor_data_size(x)); \
-        mag_v##name##_##T(vmel, pr, px); \
+        mag_v##name##_##T(vnel, pr, px); \
     }
 
 mag_cpu_blas_impl_unary(f32, abs)
@@ -1456,6 +1604,14 @@ const mag_x86_64_feature_t* MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(size_t* out_num
 }
 #endif
 
+static void (*const init_kernels[MAG_OP__NUM])(const mag_compute_payload_t*) = {
+    [MAG_INIT_OP_NOP] = &mag_blas_nop,
+    [MAG_INIT_OP_ZERO] = &mag_blas_init_zero,
+    [MAG_INIT_OP_FILL] = &mag_blas_init_fill_f32,
+    [MAG_INIT_OP_RAND_UNIFORM] = &mag_blas_init_rand_uniform,
+    [MAG_INIT_OP_RAND_NORMAL] = &mag_blas_init_rand_normal,
+};
+
 static void (*const forward_kernels[MAG_OP__NUM])(const mag_compute_payload_t*) = {
     [MAG_OP_NOP] = &mag_blas_nop,
     [MAG_OP_CLONE] = &mag_blas_clone,
@@ -1541,6 +1697,7 @@ static void (*const backward_kernels[MAG_OP__NUM])(const mag_compute_payload_t*)
 };
 
 void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t* kernels) {
+    memcpy(kernels->init, init_kernels, sizeof(init_kernels));
     memcpy(kernels->fwd, forward_kernels, sizeof(forward_kernels));
     memcpy(kernels->bwd, backward_kernels, sizeof(backward_kernels));
 }
