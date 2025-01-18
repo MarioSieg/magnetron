@@ -1604,7 +1604,7 @@ const mag_x86_64_feature_t* MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(size_t* out_num
 }
 #endif
 
-static void (*const init_kernels[MAG_OP__NUM])(const mag_compute_payload_t*) = {
+static void (*const init_kernels[MAG_INIT_OP__NUM])(const mag_compute_payload_t*) = {
     [MAG_INIT_OP_NOP] = &mag_blas_nop,
     [MAG_INIT_OP_ZERO] = &mag_blas_init_zero,
     [MAG_INIT_OP_FILL] = &mag_blas_init_fill_f32,

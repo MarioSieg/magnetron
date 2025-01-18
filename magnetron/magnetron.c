@@ -849,7 +849,7 @@ printf("SHORT ERROR DESCRIPTION"
 
 static bool mag_validate_inputs(mag_op_t op, mag_tensor_t** inputs, uint32_t numin) {
     const mag_op_meta_t* meta = mag_op_meta_of(op);
-    if (mag_unlikely(meta->argcount != numin || numin > MAG_MAX_INPUT_TENSORS)) {
+    if (mag_unlikely(meta->argcount != numin || (meta->argcount > 0 && !inputs) || numin > MAG_MAX_INPUT_TENSORS)) {
         mag_print_separator(stderr);
         fprintf(stderr,
             "Failed to execute operation: %s.\n"
@@ -1629,7 +1629,7 @@ static mag_tensor_t* MAG_HOTPROC mag_tensor_operator(
 ) {
     /* Validate inputs and params first */
     mag_assert2(op != MAG_OP_NOP);
-    mag_assert(inputs && mag_validate_inputs(op, inputs, numin), "Invalid input tensors for operation %s.", mag_op_meta_of(op)->mnemonic);
+    mag_assert(mag_validate_inputs(op, inputs, numin), "Invalid input tensors for operation %s.", mag_op_meta_of(op)->mnemonic);
     mag_assert(mag_validate_op_params(op, params, numparams), "Invalid parameters for operation %s.", mag_op_meta_of(op)->mnemonic);
 
     const mag_op_meta_t* meta = mag_op_meta_of(op);
