@@ -3,7 +3,7 @@
 set(MAGNETRON_SOURCES
     magnetron/magnetron.h
     magnetron/magnetron.c
-    magnetron/magnetron_cpu.c
+    magnetron/magnetron_cpu.cpp
     magnetron/magnetron_cpu_blas.inl
     magnetron/magnetron_cpu_blas_fallback.c
     magnetron/magnetron_internal.h

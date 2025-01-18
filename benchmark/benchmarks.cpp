@@ -29,7 +29,7 @@ static auto bench_cpu_compute(std::int64_t numel_per_dim) -> void {
         mag_tensor_t* B = mag_tensor_create_2d(ctx, MAG_DTYPE_F32, numel_per_dim, numel_per_dim);
         mag_tensor_fill_random_normal(B, 0.0f, 1.0f);
         bench.run("Parallel MM on " + std::to_string(threads) + " threads, Elems = " + std::to_string(A->numel), [&] {
-            mag_tensor_t* R = mag_matmul(A, B);
+            mag_tensor_t* R = mag_add(A, B);
             ankerl::nanobench::doNotOptimizeAway(R);
             mag_tensor_decref(R);
         });

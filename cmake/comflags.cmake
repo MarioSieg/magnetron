@@ -15,8 +15,6 @@ set(MAG_MSVC_LINK_OPTIONS "")
 set(MAG_MSVC_RELEASE_LINK_OPTIONS "")
 
 set(MAG_CLANG_COMPILE_FLAGS
-    -std=c99
-    -std=gnu99
     -fvisibility=hidden
     -Wall
     -Werror
@@ -32,8 +30,6 @@ set(MAG_CLANG_LINK_OPTIONS "")
 set(MAG_CLANG_RELEASE_LINK_OPTIONS -flto)
 
 set(MAG_GCC_COMPILE_FLAGS
-    -std=c99
-    -std=gnu99
     -fvisibility=hidden
     -Wall
     -Werror
