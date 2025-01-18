@@ -17,7 +17,7 @@ option(MAGNETRON_BUILD_BENCHMARKS "Build benchmarks" ON)                    # Bu
 option(MAGNETRON_BUILD_FUZZERS "Build fuzzers" OFF)                         # (Experimental) Build fuzzers
 option(MAGNETRON_DEBUG "Enable debug mode" OFF)                             # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
 option(MAGNETRON_CPU_APPROX_MATH "Trade precision for performance" ON)      # (CPU only) Enable SIMD math function approximations. Greatly increases performance. Try disabling if you encounter numerical instability. Does NOT enable -ffast-math or similar compiler flags.
-option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" ON)                      # Enable CUDA support
+option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" OFF)                      # Enable CUDA support
 option(MAGNETRON_ENABLE_ACCELERATE "Use Apple's Accelerate framework" OFF)   # Use Apple's Accelerate framework for optimized math functions (only on Apple platforms)
 
 set(MAGNETRON_CUDA_COMPILER "/usr/local/cuda-12.6/bin/nvcc" CACHE STRING "Path to the CUDA compiler") # Set to your CUDA compiler path
