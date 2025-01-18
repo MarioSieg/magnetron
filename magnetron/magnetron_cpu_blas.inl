@@ -1105,7 +1105,7 @@ static void MAG_HOTPROC mag_blas_init_zero(const mag_compute_payload_t* payload)
 static void MAG_HOTPROC mag_blas_init_fill_f32(const mag_compute_payload_t* payload) {
     mag_tensor_t* r = payload->node;
     mag_f32_t* br = mag_f32p_mut(r);
-    mag_f32_t xi = r->init_op_params->x.f32;
+    mag_f32_t xi = r->op_params->x.f32;
     mag_load_local_storage_group(r, r_s, strides);
     int64_t tc = payload->thread_num;
     int64_t ti = payload->thread_idx;
@@ -1122,8 +1122,8 @@ static void MAG_HOTPROC mag_blas_init_fill_f32(const mag_compute_payload_t* payl
 static void MAG_HOTPROC mag_blas_init_rand_uniform(const mag_compute_payload_t* payload) {
     mag_tensor_t* r = payload->node;
     mag_f32_t* br = mag_f32p_mut(r);
-    mag_f32_t min = r->init_op_params[0].x.f32;
-    mag_f32_t max = r->init_op_params[1].x.f32;
+    mag_f32_t min = r->op_params[0].x.f32;
+    mag_f32_t max = r->op_params[1].x.f32;
     mag_prng_state_t* prng = (mag_prng_state_t*)&payload->local_prng; /* const_cast is safe */
     mag_load_local_storage_group(r, r_s, strides);
     int64_t tc = payload->thread_num;
@@ -1141,8 +1141,8 @@ static void MAG_HOTPROC mag_blas_init_rand_uniform(const mag_compute_payload_t* 
 static void MAG_HOTPROC mag_blas_init_rand_normal(const mag_compute_payload_t* payload) {
     mag_tensor_t* r = payload->node;
     mag_f32_t* br = mag_f32p_mut(r);
-    mag_f32_t mean = r->init_op_params[0].x.f32;
-    mag_f32_t stddev = r->init_op_params[1].x.f32;
+    mag_f32_t mean = r->op_params[0].x.f32;
+    mag_f32_t stddev = r->op_params[1].x.f32;
     mag_prng_state_t* prng = (mag_prng_state_t*)&payload->local_prng; /* const_cast is safe */
     mag_load_local_storage_group(r, r_s, strides);
     int64_t tc = payload->thread_num;
@@ -1604,14 +1604,6 @@ const mag_x86_64_feature_t* MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(size_t* out_num
 }
 #endif
 
-static void (*const init_kernels[MAG_INIT_OP__NUM])(const mag_compute_payload_t*) = {
-    [MAG_INIT_OP_NOP] = &mag_blas_nop,
-    [MAG_INIT_OP_ZERO] = &mag_blas_init_zero,
-    [MAG_INIT_OP_FILL] = &mag_blas_init_fill_f32,
-    [MAG_INIT_OP_RAND_UNIFORM] = &mag_blas_init_rand_uniform,
-    [MAG_INIT_OP_RAND_NORMAL] = &mag_blas_init_rand_normal,
-};
-
 static void (*const forward_kernels[MAG_OP__NUM])(const mag_compute_payload_t*) = {
     [MAG_OP_NOP] = &mag_blas_nop,
     [MAG_OP_CLONE] = &mag_blas_clone,
@@ -1697,7 +1689,6 @@ static void (*const backward_kernels[MAG_OP__NUM])(const mag_compute_payload_t*)
 };
 
 void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t* kernels) {
-    memcpy(kernels->init, init_kernels, sizeof(init_kernels));
     memcpy(kernels->fwd, forward_kernels, sizeof(forward_kernels));
     memcpy(kernels->bwd, backward_kernels, sizeof(backward_kernels));
 }

@@ -461,16 +461,6 @@ mag_static_assert(MAG_OP_NOP == 0);
 mag_static_assert(MAG_OP_MATMUL+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff);
 
-typedef enum mag_init_op {
-    MAG_INIT_OP_NOP,
-    MAG_INIT_OP_ZERO,
-    MAG_INIT_OP_FILL,
-    MAG_INIT_OP_RAND_UNIFORM,
-    MAG_INIT_OP_RAND_NORMAL,
-
-    MAG_INIT_OP__NUM
-} mag_init_op;
-
 typedef enum mag_op_param_type_t {
     MAG_OP_TPARAM_NONE  = 0,
     MAG_OP_TPARAM_F32   = 1,
@@ -658,8 +648,6 @@ struct mag_tensor_t {
     mag_op_t op;                                            /* Opcode for operators. */
     mag_tensor_t* op_inputs[MAG_MAX_INPUT_TENSORS];         /* Input tensors for operators. */
     mag_op_param_t op_params[MAG_MAX_OP_PARAMS];            /* Operator parameters. */
-    mag_init_op init_op;                                    /* Initialization operation. */
-    mag_op_param_t init_op_params[MAG_MAX_INIT_OP_PARAMS];  /* Operator parameters. */
     mag_tensor_t* view_uplink;                              /* View base tensor. */
     size_t view_offs;                                       /* Offset in view tensor. */
     mag_tensor_t* grad;                                     /* ∇f - Gradient tensor. */
@@ -706,7 +694,6 @@ typedef struct mag_compute_payload_t {
 } mag_compute_payload_t;
 
 typedef struct mag_kernel_registry_t {
-    void (*init[MAG_INIT_OP__NUM])(const mag_compute_payload_t*);
     void (*fwd[MAG_OP__NUM])(const mag_compute_payload_t*);
     void (*bwd[MAG_OP__NUM])(const mag_compute_payload_t*);
 } mag_kernel_registry_t;

@@ -18,7 +18,6 @@ extern "C" {
 #define MAG_MAX_TENSOR_NAME_LEN 64         /* Maximum length for tensor name */
 #define MAG_MAX_INPUT_TENSORS 2            /* Maximum number of input tensors for an operation */
 #define MAG_MAX_OP_PARAMS 6                /* Maximum number of parameters for an operation */
-#define MAG_MAX_INIT_OP_PARAMS 2            /* Maximum number of parameters for an init operation */
 
 #ifndef MAG_EXPORT
 #ifdef MAG_SHARED
