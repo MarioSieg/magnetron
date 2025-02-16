@@ -18,7 +18,7 @@
     <a href="https://github.com/MarioSieg/magnetron/tree/master/python/examples/simple"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/MarioSieg/magnetron/blob/master/python/examples/simple/xor.py">View Demo</a>
+    <a href="https://github.com/MarioSieg/magnetron/blob/master/python/examples/xor.py">View Demo</a>
     |
     <a href="https://github.com/MarioSieg/magnetron/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     |
@@ -79,7 +79,7 @@ Some examples use matplotlib and numpy for plotting and data generation, but the
 2. `cd magnetron/python` (VENV recommended).
 3. `pip install -r requirements.txt` Install dependencies for examples.
 4. `cd magnetron_framework && bash install_wheel_local.sh && cd ../` Install the Magnetron wheel locally, a pip installable package will be provided in the future.
-5. `python examples/simple/xor.py` Run the XOR example.
+5. `python examples/xor.py` Run the XOR example.
 
 ## Usage
 See the [Examples](python/examples) directory for examples on how to use the framework.
