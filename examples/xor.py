@@ -52,4 +52,4 @@ try:
     plt.show()
 
 except ImportError:
-    print("matplotlib not installed; skipping loss plot.")
+    print('matplotlib not installed; skipping loss plot.')

@@ -42,3 +42,26 @@ MAGNETRON_BUILD_BENCHMARKS = false
 
 [tool.scikit-build.wheel]
 packages = ["python/magnetron"]
+
+[tool.ruff]
+line-length = 150
+exclude = [
+    ".venv",
+    "docs",
+    "extern",
+    "test",
+    "tools",
+    "fuzzer",
+    "cmake",
+    "bin",
+]
+
+[tool.ruff.lint]
+ignore = ["F403"]
+select = ["ANN"]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint.per-file-ignores]
+"setup.py" = ["ANN"]

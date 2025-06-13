@@ -265,7 +265,7 @@ class Tensor:
             self.requires_grad = requires_grad
             if name is not None:
                 self.name = name
-        self._finalizer = weakref.finalize(self, _C.mag_tensor_decref,self._ptr)
+        self._finalizer = weakref.finalize(self, _C.mag_tensor_decref, self._ptr)
 
     @property
     def native_ptr(self) -> _ffi.CData:
@@ -665,11 +665,7 @@ class Tensor:
     def fill_random_uniform_(self, from_: float | int | None = None, to: float | int | None = None) -> None:
         _validate_dtype_compat(_NUMERIC_DTYPES, self)
         self._validate_inplace_op()
-        from_def, to_def = (
-            (-0x80000000, 0x7FFFFFFF)
-            if self.is_integral
-            else (0.0, 1.0)
-        )
+        from_def, to_def = (-0x80000000, 0x7FFFFFFF) if self.is_integral else (0.0, 1.0)
         from_ = from_def if from_ is None else from_
         to = to_def if to is None else to
         assert to > from_, f'Invalid uniform range {to} must be > {from_}'
