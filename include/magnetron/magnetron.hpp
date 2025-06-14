@@ -394,6 +394,24 @@ namespace magnetron {
         [[nodiscard]] auto operator >> (tensor other) const noexcept -> tensor { return bshr(other); }
         auto operator >>= (tensor other) const noexcept -> tensor { return bshr_(other); }
 
+        auto operator == (tensor other) const noexcept -> tensor {
+            return tensor{mag_eq(m_tensor, &*other)};
+        }
+        auto operator != (tensor other) const noexcept -> tensor {
+            return tensor{mag_ne(m_tensor, &*other)};
+        }
+        auto operator <= (tensor other) const noexcept -> tensor {
+            return tensor{mag_le(m_tensor, &*other)};
+        }
+        auto operator >= (tensor other) const noexcept -> tensor {
+            return tensor{mag_ge(m_tensor, &*other)};
+        }
+        auto operator < (tensor other) const noexcept -> tensor {
+            return tensor{mag_lt(m_tensor, &*other)};
+        }
+        auto operator > (tensor other) const noexcept -> tensor {
+            return tensor{mag_gt(m_tensor, &*other)};
+        }
 
         auto fill_from(const void* buf, std::size_t nb) -> void {
             mag_tensor_fill_from_raw_bytes(m_tensor, buf, nb);

@@ -281,6 +281,12 @@ extern MAG_EXPORT mag_Tensor* _Nonnull mag_shl(mag_Tensor* _Nonnull x, mag_Tenso
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_shl_(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_shr(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_shr_(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_eq(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_ne(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_le(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_ge(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_lt(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_gt(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
 
 /* ============ Tensor Init Operators ============ */
 
@@ -340,61 +346,17 @@ extern MAG_EXPORT void mag_tensor_zero_grad(mag_Tensor* _Nonnull t);            
 
 /* ============ Tensor Data Access API ============ */
 
-/**
- * Retrieves the value of an element in a tensor at the specified multidimensional index.
- * The element is converted to a float, regardless of the tensor's original data type.
- *
- * @param t   A non-null pointer to the tensor.
- * @param i0  Index along the first dimension.
- * @param i1  Index along the second dimension.
- * @param i2  Index along the third dimension.
- * @param i3  Index along the fourth dimension.
- * @param i4  Index along the fifth dimension.
- * @param i5  Index along the sixth dimension.
- * @return    The float value of the tensor element at the given indices.
- */
 extern MAG_EXPORT float mag_tensor_subscript_get_multi(mag_Tensor* _Nonnull t, int64_t i0, int64_t i1, int64_t i2, int64_t i3, int64_t i4, int64_t i5);
-
-/**
- * Sets the value of a tensor element at the specified multidimensional index.
- * The value is converted from float to the tensor's data type.
- *
- * @param t     A non-null pointer to the tensor.
- * @param i0    Index along the first dimension.
- * @param i1    Index along the second dimension.
- * @param i2    Index along the third dimension.
- * @param i3    Index along the fourth dimension.
- * @param i4    Index along the fifth dimension.
- * @param i5    Index along the sixth dimension.
- * @param val   The float value to set at the specified index.
- */
 extern MAG_EXPORT void mag_tensor_subscript_set_multi(mag_Tensor* _Nonnull t, int64_t i0, int64_t i1, int64_t i2, int64_t i3, int64_t i4, int64_t i5, float val);
-
-/**
- * Retrieves the value of a tensor element at the specified linear (flattened) index.
- * The element is converted to a float, regardless of the tensor's original data type.
- *
- * @param t      A non-null pointer to the tensor.
- * @param idx  The linear index of the element.
- * @return       The float value of the tensor element at the given index.
- */
 extern MAG_EXPORT float mag_tensor_subscript_get_flattened(mag_Tensor* _Nonnull t, int64_t idx);
-
-/**
- * Sets the value of a tensor element at the specified linear (flattened) index.
- * The value is converted from float to the tensor's data type.
- *
- * @param t      A non-null pointer to the tensor.
- * @param idx  The linear index of the element.
- * @param val      The float value to set at the specified index.
- */
 extern MAG_EXPORT void mag_tensor_subscript_set_flattened(mag_Tensor* _Nonnull t, int64_t idx, float val);
-
 extern MAG_EXPORT void* _Nonnull mag_tensor_get_raw_data_as_bytes(mag_Tensor* _Nonnull t);
 extern MAG_EXPORT void mag_tensor_get_raw_data_as_bytes_free(void* _Nonnull ret_val);
-
 extern MAG_EXPORT float* _Nonnull mag_tensor_get_data_as_floats(mag_Tensor* _Nonnull t);
 extern MAG_EXPORT void mag_tensor_get_data_as_floats_free(float* _Nonnull ret_val);
+extern MAG_EXPORT float mag_tensor_get_item_float(const mag_Tensor* _Nonnull t);
+extern MAG_EXPORT int32_t mag_tensor_get_item_int(const mag_Tensor* _Nonnull t);
+extern MAG_EXPORT bool mag_tensor_get_item_bool(const mag_Tensor* _Nonnull t);
 
 /* ============ Tensor Misc API ============ */
 

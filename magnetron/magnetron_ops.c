@@ -229,6 +229,11 @@ static mag_Tensor* mag_result_constructor_routine_isomorph(mag_Tensor** inputs, 
     return mag_tensor_empty_like(*inputs);
 }
 
+static mag_Tensor* mag_result_constructor_routine_bool_isomorph(mag_Tensor** inputs, const mag_OPParam* params) {
+    mag_Tensor* base = *inputs;
+    return mag_tensor_empty(base->ctx, MAG_DTYPE_BOOL, base->rank, base->shape);
+}
+
 static mag_Tensor* mag_result_constructor_routine_view(mag_Tensor** inputs,  const mag_OPParam* params) {
     mag_Tensor* base = *inputs;
     mag_Tensor* result = mag_tensor_inplace_view(base);
@@ -1054,6 +1059,30 @@ mag_Tensor* mag_shr(mag_Tensor* x, mag_Tensor* y) {
 
 mag_Tensor* mag_shr_(mag_Tensor* x, mag_Tensor* y) {
     return mag_tensor_operator(x->ctx, MAG_OP_SHR, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+}
+
+mag_Tensor* mag_eq(mag_Tensor* x, mag_Tensor* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_EQ, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+}
+
+mag_Tensor* mag_ne(mag_Tensor* x, mag_Tensor* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_NE, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+}
+
+mag_Tensor* mag_le(mag_Tensor* x, mag_Tensor* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_LE, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+}
+
+mag_Tensor* mag_ge(mag_Tensor* x, mag_Tensor* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_GE, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+}
+
+mag_Tensor* mag_lt(mag_Tensor* x, mag_Tensor* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_LT, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+}
+
+mag_Tensor* mag_gt(mag_Tensor* x, mag_Tensor* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_GT, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
 void mag_tensor_fill_from_floats(mag_Tensor* t, const mag_E8M23* data, size_t len) {
@@ -2127,6 +2156,166 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
             .r_alloc = &mag_result_constructor_routine_isomorph,
+            .validator = &mag_validate_op_binary,
+            .cpu = {
+                .thread_growth = 0.1,
+                .thread_treshold = 250000
+            }
+        },
+        [MAG_OP_EQ] = {
+            .mnemonic = "eq",
+            .desc = "𝑥 == 𝑦",
+            .input_count = 2,
+            .input_dtypes = {
+                [0] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_BOOL, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                },
+                [1] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_BOOL, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                }
+            },
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
+            .backward = NULL,
+            .r_alloc = &mag_result_constructor_routine_bool_isomorph,
+            .validator = &mag_validate_op_binary,
+            .cpu = {
+                .thread_growth = 0.1,
+                .thread_treshold = 250000
+            }
+        },
+        [MAG_OP_NE] = {
+            .mnemonic = "ne",
+            .desc = "𝑥 != 𝑦",
+            .input_count = 2,
+            .input_dtypes = {
+                [0] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_BOOL, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                },
+                [1] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_BOOL, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                }
+            },
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
+            .backward = NULL,
+            .r_alloc = &mag_result_constructor_routine_bool_isomorph,
+            .validator = &mag_validate_op_binary,
+            .cpu = {
+                .thread_growth = 0.1,
+                .thread_treshold = 250000
+            }
+        },
+        [MAG_OP_LE] = {
+            .mnemonic = "le",
+            .desc = "𝑥 <= 𝑦",
+            .input_count = 2,
+            .input_dtypes = {
+                [0] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                },
+                [1] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                }
+            },
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
+            .backward = NULL,
+            .r_alloc = &mag_result_constructor_routine_bool_isomorph,
+            .validator = &mag_validate_op_binary,
+            .cpu = {
+                .thread_growth = 0.1,
+                .thread_treshold = 250000
+            }
+        },
+        [MAG_OP_GE] = {
+            .mnemonic = "ge",
+            .desc = "𝑥 >= 𝑦",
+            .input_count = 2,
+            .input_dtypes = {
+                [0] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                },
+                [1] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                }
+            },
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
+            .backward = NULL,
+            .r_alloc = &mag_result_constructor_routine_bool_isomorph,
+            .validator = &mag_validate_op_binary,
+            .cpu = {
+                .thread_growth = 0.1,
+                .thread_treshold = 250000
+            }
+        },
+        [MAG_OP_GT] = {
+            .mnemonic = "gt",
+            .desc = "𝑥 < 𝑦",
+            .input_count = 2,
+            .input_dtypes = {
+                [0] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                },
+                [1] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                }
+            },
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
+            .backward = NULL,
+            .r_alloc = &mag_result_constructor_routine_bool_isomorph,
+            .validator = &mag_validate_op_binary,
+            .cpu = {
+                .thread_growth = 0.1,
+                .thread_treshold = 250000
+            }
+        },
+        [MAG_OP_LT] = {
+            .mnemonic = "lt",
+            .desc = "𝑥 > 𝑦",
+            .input_count = 2,
+            .input_dtypes = {
+                [0] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                },
+                [1] = {
+                    {.type=MAG_DTYPE_E8M23, .is_used=true},
+                    {.type=MAG_DTYPE_E5M10, .is_used=true},
+                    {.type=MAG_DTYPE_I32, .is_used=true},
+                }
+            },
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
+            .backward = NULL,
+            .r_alloc = &mag_result_constructor_routine_bool_isomorph,
             .validator = &mag_validate_op_binary,
             .cpu = {
                 .thread_growth = 0.1,

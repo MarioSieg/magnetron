@@ -167,7 +167,7 @@ namespace magnetron::test {
     }
 
     template <bool BROADCAST, bool INPLACE, typename A, typename B>
-     requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, bool, bool>
+        requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, bool, bool>
     auto test_binary_boolean_operator(std::int64_t lim, A&& a, B&& b) -> decltype(auto) {
         auto ctx = context{compute_device::cpu};
         ctx.stop_grad_recorder();
@@ -192,6 +192,72 @@ namespace magnetron::test {
             for (std::int64_t i = 0; i < d_r.size(); ++i) {
                 ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " op " << d_b[i] << " = " << d_r[i];
             }
+        });
+    }
+
+    template <bool BROADCAST, typename A, typename B>
+        requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, e8m23_t, e8m23_t>
+    auto test_binary_float_compare(std::int64_t lim, dtype ty, A&& a, B&& b, e8m23_t min = -10.0, e8m23_t max = 10.0) -> decltype(auto) {
+        auto ctx = context{compute_device::cpu};
+        ctx.stop_grad_recorder();
+        for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape){
+            tensor t_a{ctx, ty, shape};
+            t_a.fill_rand_uniform_float(min, max);
+            tensor t_b{t_a.clone()};
+            std::vector<e8m23_t> d_a {t_a.to_float_vector()};
+            std::vector<e8m23_t> d_b {t_b.to_float_vector()};
+            tensor t_r {std::invoke(a, t_a, t_b)};
+            ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
+            ASSERT_EQ(t_r.dtype(), dtype::boolean);
+            ASSERT_EQ(d_a.size(), d_b.size());
+            ASSERT_EQ(d_a.size(), t_r.numel());
+            std::vector<bool> d_r {t_r.to_bool_vector()};
+            for (std::int64_t i = 0; i < d_r.size(); ++i)
+                ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
+        });
+    }
+
+    template <bool BROADCAST, typename A, typename B>
+        requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, std::int32_t, std::int32_t>
+    auto test_binary_int_compare(std::int64_t lim, dtype ty, A&& a, B&& b, std::int32_t min = -10, std::int32_t max =  10) -> decltype(auto) {
+        auto ctx = context{compute_device::cpu};
+        ctx.stop_grad_recorder();
+        std::uniform_int_distribution<std::int32_t> dist{min, max};
+        for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape){
+            tensor t_a{ctx, ty, shape};  t_a.fill_int(dist(gen));
+            tensor t_b{t_a.clone()};
+            std::vector<std::int32_t> d_a{t_a.to_int_vector()};
+            std::vector<std::int32_t> d_b{t_b.to_int_vector()};
+            tensor t_r{std::invoke(a, t_a, t_b)};
+            ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
+            ASSERT_EQ(t_r.dtype(), dtype::boolean);
+            ASSERT_EQ(d_a.size(), d_b.size());
+            ASSERT_EQ(d_a.size(), t_r.numel());
+            std::vector<bool> d_r{t_r.to_bool_vector()};
+            for (std::int64_t i = 0; i < d_r.size(); ++i)
+                ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
+        });
+    }
+
+    template <bool BROADCAST, typename A, typename B>
+        requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, bool, bool>
+    auto test_binary_bool_compare(std::int64_t lim, A&& a, B&& b) -> decltype(auto) {
+        auto ctx = context{compute_device::cpu};
+        ctx.stop_grad_recorder();
+        for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape){
+            tensor t_a{ctx, dtype::boolean, shape};  t_a.fill_int(true);
+            tensor t_b{t_a.clone()};
+            t_b.fill_int(false);
+            std::vector<bool> d_a{t_a.to_bool_vector()};
+            std::vector<bool> d_b{t_b.to_bool_vector()};
+            tensor t_r{std::invoke(a, t_a, t_b)};
+            ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
+            ASSERT_EQ(t_r.dtype(), dtype::boolean);
+            ASSERT_EQ(d_a.size(), d_b.size());
+            ASSERT_EQ(d_a.size(), t_r.numel());
+            std::vector<bool> d_r{t_r.to_bool_vector()};
+            for (std::int64_t i = 0; i < d_r.size(); ++i)
+                ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
         });
     }
 

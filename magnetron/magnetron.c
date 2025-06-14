@@ -1219,6 +1219,27 @@ void mag_tensor_get_data_as_floats_free(mag_E8M23* ret_val) {
     (*mag_alloc)(ret_val, 0);
 }
 
+mag_E8M23 mag_tensor_get_item_float(const mag_Tensor* t) {
+    mag_IStorageBuffer* sto = t->storage;
+    mag_E8M23 val;
+    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_CONVERT_E8M23, t->view_offs, &val, sizeof(val));
+    return val;
+}
+
+int32_t mag_tensor_get_item_int(const mag_Tensor* t) {
+    mag_IStorageBuffer* sto = t->storage;
+    int32_t val;
+    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_COPY, t->view_offs, &val, sizeof(val));
+    return val;
+}
+
+bool mag_tensor_get_item_bool(const mag_Tensor* t) {
+    mag_IStorageBuffer* sto = t->storage;
+    uint8_t val;
+    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_COPY, t->view_offs, &val, sizeof(val));
+    return !!val;
+}
+
 bool mag_tensor_is_shape_eq(const mag_Tensor* x, const mag_Tensor* y) {
     return memcmp(x->shape, y->shape, sizeof(x->shape)) == 0;
 }

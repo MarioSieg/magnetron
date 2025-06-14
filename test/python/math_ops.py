@@ -47,6 +47,25 @@ def binary_op_square(dtype: mag.DataType, f: callable, lim: int = 4, from_: floa
 
     square_shape_permutations(compute, lim)
 
+def binary_cmp_op(dtype: mag.DataType, f: callable, lim: int = 4, from_: float | int | None = None, to: float | int | None = None) -> None:
+    torch_dt = DTYPE_TORCH_MAP[dtype]
+
+    def compute(shape: tuple[int, ...]) -> None:
+        if dtype == mag.boolean:
+            x = mag.Tensor.bernoulli(shape)
+            y = mag.Tensor.bernoulli(shape)
+        else:
+            x = mag.Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
+            y = mag.Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
+        r = f(x, y)
+        assert r.dtype == mag.boolean
+        torch.testing.assert_close(
+            totorch(r, torch.bool),
+            f(totorch(x, torch_dt), totorch(y, torch_dt))
+        )
+
+    square_shape_permutations(compute, lim)
+
 def unary_op(
     dtype: mag.DataType,
     magf: callable,
@@ -252,3 +271,26 @@ def test_binary_op_shl() -> None:
 def test_binary_op_shr() -> None:
     binary_op_square(mag.int32, lambda x, y: x >> y, from_=0, to=31)
 
+@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
+def test_binary_op_eq(dtype: mag.DataType) -> None:
+    binary_cmp_op(dtype, lambda x, y: x == y)
+
+@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
+def test_binary_op_ne(dtype: mag.DataType) -> None:
+    binary_cmp_op(dtype, lambda x, y: x != y)
+
+@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.int32])
+def test_binary_op_le(dtype: mag.DataType) -> None:
+    binary_cmp_op(dtype, lambda x, y: x <= y)
+
+@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.int32])
+def test_binary_op_ge(dtype: mag.DataType) -> None:
+    binary_cmp_op(dtype, lambda x, y: x >= y)
+
+@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.int32])
+def test_binary_op_lt(dtype: mag.DataType) -> None:
+    binary_cmp_op(dtype, lambda x, y: x < y)
+
+@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.int32])
+def test_binary_op_gt(dtype: mag.DataType) -> None:
+    binary_cmp_op(dtype, lambda x, y: x > y)

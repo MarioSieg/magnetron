@@ -1,4 +1,4 @@
-# (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
+# (c) 2025 Mario 'Neo' Sieg. <mario.sieg.64@gmail.com>
 
 import contextlib
 import faulthandler
@@ -507,7 +507,24 @@ class Tensor:
         return int(_ffi.cast('uintptr_t', _C.mag_tensor_get_storage_base_ptr(self._ptr)))
 
     def item(self) -> float | int | bool:
-        return self.tolist()[0]
+        if self.numel != 1:
+            raise ValueError('Tensor must have exactly one element to retrieve an item')
+        if self.is_floating_point:
+            return float(_C.mag_tensor_get_item_float(self._ptr))
+        elif self.dtype == int32:
+            return int(_C.mag_tensor_get_item_int(self._ptr))
+        elif self.dtype == boolean:
+            return bool(_C.mag_tensor_get_item_bool(self._ptr))
+        else:
+            raise TypeError(f'Unsupported tensor dtype for item retrieval: {self.dtype}')
+
+    def __bool__(self) -> bool:
+        if self.numel != 1:
+            raise ValueError(
+                'The truth value of a Tensor with more than one element is '
+                'ambiguous. Use .any() or .all() instead.'
+            )
+        return bool(self.item())
 
     def tolist(self) -> list[float] | list[int] | list[bool]:
         unpack_fn = _C.mag_tensor_get_data_as_floats if self.is_floating_point else _C.mag_tensor_get_raw_data_as_bytes
@@ -1143,9 +1160,27 @@ class Tensor:
         _validate_dtype_compat(_INTEGER_DTYPES, self, other)
         return Tensor(_C.mag_shr_(self._ptr, other._ptr))
 
-    def __eq__(self, other: 'Tensor') -> bool:
-        _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
-        return _C.mag_tensor_eq(self._ptr, other._ptr)
+    def __eq__(self, other: 'Tensor') -> 'Tensor':
+        return Tensor(_C.mag_eq(self._ptr, other._ptr))
+
+    def __ne__(self, other: 'Tensor') -> 'Tensor':
+        return Tensor(_C.mag_ne(self._ptr, other._ptr))
+
+    def __le__(self, other: 'Tensor') -> 'Tensor':
+        _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
+        return Tensor(_C.mag_le(self._ptr, other._ptr))
+
+    def __ge__(self, other: 'Tensor') -> 'Tensor':
+        _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
+        return Tensor(_C.mag_ge(self._ptr, other._ptr))
+
+    def __lt__(self, other: 'Tensor') -> 'Tensor':
+        _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
+        return Tensor(_C.mag_lt(self._ptr, other._ptr))
+
+    def __gt__(self, other: 'Tensor') -> 'Tensor':
+        _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
+        return Tensor(_C.mag_gt(self._ptr, other._ptr))
 
     def __len__(self) -> int:
         return self.shape[0]

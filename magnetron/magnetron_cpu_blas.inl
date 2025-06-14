@@ -1406,6 +1406,107 @@ static void mag_vnot_i32(int64_t numel, int32_t* _Nonnull o, const int32_t* _Non
         o[i] = ~x[i];
 }
 
+static void MAG_HOTPROC mag_veq_e8m23(int64_t numel, uint8_t* _Nonnull o, const mag_E8M23* _Nonnull x, const mag_E8M23* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i) {
+        o[i] = x[i] == y[i];
+    }
+}
+
+static void MAG_HOTPROC mag_veq_e5m10(int64_t numel, uint8_t* _Nonnull o, const mag_E5M10* _Nonnull x, const mag_E5M10* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i].bits == y[i].bits;
+}
+
+static void MAG_HOTPROC mag_veq_bool(int64_t numel, uint8_t* _Nonnull o, const uint8_t* _Nonnull x, const uint8_t* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] == y[i];
+}
+
+static void MAG_HOTPROC mag_veq_i32(int64_t numel, uint8_t* _Nonnull o, const int32_t* _Nonnull x, const int32_t* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] == y[i];
+}
+
+static void MAG_HOTPROC mag_vne_e8m23(int64_t numel, uint8_t* _Nonnull o, const mag_E8M23* _Nonnull x, const mag_E8M23* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] != y[i];
+}
+
+static void MAG_HOTPROC mag_vne_e5m10(int64_t numel, uint8_t* _Nonnull o, const mag_E5M10* _Nonnull x, const mag_E5M10* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i].bits != y[i].bits;
+}
+
+static void MAG_HOTPROC mag_vne_bool(int64_t numel, uint8_t* _Nonnull o, const uint8_t* _Nonnull x, const uint8_t* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] != y[i];
+}
+
+static void MAG_HOTPROC mag_vne_i32(int64_t numel, uint8_t* _Nonnull o, const int32_t* _Nonnull x, const int32_t* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] != y[i];
+}
+
+static void MAG_HOTPROC mag_vle_e8m23(int64_t numel, uint8_t* _Nonnull o, const mag_E8M23* _Nonnull x, const mag_E8M23* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] <= y[i];
+}
+
+static void MAG_HOTPROC mag_vle_e5m10(int64_t numel, uint8_t* _Nonnull o, const mag_E5M10* _Nonnull x, const mag_E5M10* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e5m10_cvt_e8m23(x[i]) <= mag_e5m10_cvt_e8m23(y[i]);
+}
+
+static void MAG_HOTPROC mag_vle_i32(int64_t numel, uint8_t* _Nonnull o, const int32_t* _Nonnull x, const int32_t* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] <= y[i];
+}
+
+static void MAG_HOTPROC mag_vge_e8m23(int64_t numel, uint8_t* _Nonnull o, const mag_E8M23* _Nonnull x, const mag_E8M23* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] >= y[i];
+}
+
+static void MAG_HOTPROC mag_vge_e5m10(int64_t numel, uint8_t* _Nonnull o, const mag_E5M10* _Nonnull x, const mag_E5M10* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e5m10_cvt_e8m23(x[i]) >= mag_e5m10_cvt_e8m23(y[i]);
+}
+
+static void MAG_HOTPROC mag_vge_i32(int64_t numel, uint8_t* _Nonnull o, const int32_t* _Nonnull x, const int32_t* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] >= y[i];
+}
+
+static void MAG_HOTPROC mag_vlt_e8m23(int64_t numel, uint8_t* _Nonnull o, const mag_E8M23* _Nonnull x, const mag_E8M23* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] < y[i];
+}
+
+static void MAG_HOTPROC mag_vlt_e5m10(int64_t numel, uint8_t* _Nonnull o, const mag_E5M10* _Nonnull x, const mag_E5M10* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e5m10_cvt_e8m23(x[i]) < mag_e5m10_cvt_e8m23(y[i]);
+}
+
+static void MAG_HOTPROC mag_vlt_i32(int64_t numel, uint8_t* _Nonnull o, const int32_t* _Nonnull x, const int32_t* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] < y[i];
+}
+
+static void MAG_HOTPROC mag_vgt_e8m23(int64_t numel, uint8_t* _Nonnull o, const mag_E8M23* _Nonnull x, const mag_E8M23* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] > y[i];
+}
+
+static void MAG_HOTPROC mag_vgt_e5m10(int64_t numel, uint8_t* _Nonnull o, const mag_E5M10* _Nonnull x, const mag_E5M10* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e5m10_cvt_e8m23(x[i]) > mag_e5m10_cvt_e8m23(y[i]);
+}
+
+static void MAG_HOTPROC mag_vgt_i32(int64_t numel, uint8_t* _Nonnull o, const int32_t* _Nonnull x, const int32_t* _Nonnull y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] > y[i];
+}
+
 static void mag_blas_nop(const mag_CPUKernelPayload* _Nonnull payload) { (void)payload; }
 
 static MAG_AINLINE int64_t mag_offset_from_flat(const mag_Tensor* _Nonnull t, int64_t i) {
@@ -5769,6 +5870,1886 @@ static void MAG_HOTPROC mag_blas_not_i32(const mag_CPUKernelPayload* _Nonnull pa
     }
 }
 
+static void MAG_HOTPROC mag_blas_eq_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E8M23* bx = mag_e8m23p(x);
+    const mag_E8M23* by = mag_e8m23p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E8M23* px = bx + ra;
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_veq_e8m23(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E8M23* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] == by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] == py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] == by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_eq_e5m10(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E5M10* bx = mag_e5m10p(x);
+    const mag_E5M10* by = mag_e5m10p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E5M10* px = bx + ra;
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_veq_e5m10(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E5M10* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra].bits == by[yi].bits;
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi].bits == py[i-ra].bits;
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi].bits == by[yi].bits;
+    }
+}
+
+static void MAG_HOTPROC mag_blas_eq_bool(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const uint8_t* bx = mag_boolp(x);
+    const uint8_t* by = mag_boolp(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const uint8_t* px = bx + ra;
+        const uint8_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_veq_bool(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const uint8_t* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] == by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const uint8_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] == py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] == by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_eq_i32(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const int32_t* bx = mag_i32p(x);
+    const int32_t* by = mag_i32p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const int32_t* px = bx + ra;
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_veq_i32(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const int32_t* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] == by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] == py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] == by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_ne_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E8M23* bx = mag_e8m23p(x);
+    const mag_E8M23* by = mag_e8m23p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E8M23* px = bx + ra;
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vne_e8m23(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E8M23* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] != by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] != py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] != by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_ne_e5m10(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E5M10* bx = mag_e5m10p(x);
+    const mag_E5M10* by = mag_e5m10p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E5M10* px = bx + ra;
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vne_e5m10(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E5M10* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra].bits != by[yi].bits;
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi].bits != py[i-ra].bits;
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi].bits != by[yi].bits;
+    }
+}
+
+static void MAG_HOTPROC mag_blas_ne_bool(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const uint8_t* bx = mag_boolp(x);
+    const uint8_t* by = mag_boolp(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const uint8_t* px = bx + ra;
+        const uint8_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vne_bool(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const uint8_t* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] != by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const uint8_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] != py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] != by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_ne_i32(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const int32_t* bx = mag_i32p(x);
+    const int32_t* by = mag_i32p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const int32_t* px = bx + ra;
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vne_i32(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const int32_t* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] != by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] != py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] != by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_le_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E8M23* bx = mag_e8m23p(x);
+    const mag_E8M23* by = mag_e8m23p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E8M23* px = bx + ra;
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vle_e8m23(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E8M23* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] <= by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] <= py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] <= by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_le_e5m10(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E5M10* bx = mag_e5m10p(x);
+    const mag_E5M10* by = mag_e5m10p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E5M10* px = bx + ra;
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vle_e5m10(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E5M10* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = mag_e5m10_cvt_e8m23(px[i-ra]) <= mag_e5m10_cvt_e8m23(by[yi]);
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = mag_e5m10_cvt_e8m23(bx[xi]) <= mag_e5m10_cvt_e8m23(py[i-ra]);
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = mag_e5m10_cvt_e8m23(bx[xi]) <= mag_e5m10_cvt_e8m23(by[yi]);
+    }
+}
+
+static void MAG_HOTPROC mag_blas_le_i32(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const int32_t* bx = mag_i32p(x);
+    const int32_t* by = mag_i32p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const int32_t* px = bx + ra;
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vle_i32(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const int32_t* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] <= by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] <= py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] <= by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_ge_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E8M23* bx = mag_e8m23p(x);
+    const mag_E8M23* by = mag_e8m23p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E8M23* px = bx + ra;
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vge_e8m23(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E8M23* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] >= by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] >= py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] >= by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_ge_e5m10(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E5M10* bx = mag_e5m10p(x);
+    const mag_E5M10* by = mag_e5m10p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E5M10* px = bx + ra;
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vge_e5m10(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E5M10* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = mag_e5m10_cvt_e8m23(px[i-ra]) >= mag_e5m10_cvt_e8m23(by[yi]);
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = mag_e5m10_cvt_e8m23(bx[xi]) >= mag_e5m10_cvt_e8m23(py[i-ra]);
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = mag_e5m10_cvt_e8m23(bx[xi]) >= mag_e5m10_cvt_e8m23(by[yi]);
+    }
+}
+
+static void MAG_HOTPROC mag_blas_ge_i32(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const int32_t* bx = mag_i32p(x);
+    const int32_t* by = mag_i32p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const int32_t* px = bx + ra;
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vge_i32(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const int32_t* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] >= by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] >= py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] >= by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_gt_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E8M23* bx = mag_e8m23p(x);
+    const mag_E8M23* by = mag_e8m23p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E8M23* px = bx + ra;
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vgt_e8m23(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E8M23* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] > by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] > py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] > by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_gt_e5m10(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E5M10* bx = mag_e5m10p(x);
+    const mag_E5M10* by = mag_e5m10p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E5M10* px = bx + ra;
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vgt_e5m10(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E5M10* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = mag_e5m10_cvt_e8m23(px[i-ra]) > mag_e5m10_cvt_e8m23(by[yi]);
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = mag_e5m10_cvt_e8m23(bx[xi]) > mag_e5m10_cvt_e8m23(py[i-ra]);
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = mag_e5m10_cvt_e8m23(bx[xi]) > mag_e5m10_cvt_e8m23(by[yi]);
+    }
+}
+
+static void MAG_HOTPROC mag_blas_gt_i32(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const int32_t* bx = mag_i32p(x);
+    const int32_t* by = mag_i32p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const int32_t* px = bx + ra;
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vgt_i32(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const int32_t* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] > by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] > py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] > by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_lt_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E8M23* bx = mag_e8m23p(x);
+    const mag_E8M23* by = mag_e8m23p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E8M23* px = bx + ra;
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vlt_e8m23(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E8M23* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] < by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E8M23* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] < py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] < by[yi];
+    }
+}
+
+static void MAG_HOTPROC mag_blas_lt_e5m10(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const mag_E5M10* bx = mag_e5m10p(x);
+    const mag_E5M10* by = mag_e5m10p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const mag_E5M10* px = bx + ra;
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vlt_e5m10(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const mag_E5M10* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = mag_e5m10_cvt_e8m23(px[i-ra]) < mag_e5m10_cvt_e8m23(by[yi]);
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const mag_E5M10* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = mag_e5m10_cvt_e8m23(bx[xi]) < mag_e5m10_cvt_e8m23(py[i-ra]);
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = mag_e5m10_cvt_e8m23(bx[xi]) < mag_e5m10_cvt_e8m23(by[yi]);
+    }
+}
+
+static void MAG_HOTPROC mag_blas_lt_i32(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    const mag_Tensor* x = r->op_inputs[0];
+    const mag_Tensor* y = r->op_inputs[1];
+    uint8_t* br = mag_boolp_mut(r);
+    const int32_t* bx = mag_i32p(x);
+    const int32_t* by = mag_i32p(y);
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t total = r->numel;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    bool xc = mag_tensor_is_contiguous(x) && x->numel == total;
+    bool yc = mag_tensor_is_contiguous(y) && y->numel == total;
+    if (mag_likely(xc && yc)) { /* Fast path if both tensors are contiguous */
+        const int32_t* px = bx + ra;
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        int64_t numel = rb - ra;
+        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(py, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_vlt_i32(numel, pr, px, py);
+        return;
+    }
+    int64_t rx = r->rank - x->rank;
+    int64_t ry = r->rank - y->rank;
+    if (mag_likely(xc)) { /* Fast path if X is contiguous */
+        const int32_t* px = bx + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t yi = 0;
+            for (int64_t d=r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dy = d - ry;
+                if (dy >= 0 && y->shape[dy] > 1)
+                    yi += coord*y->strides[dy];
+            }
+            mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = px[i-ra] < by[yi];
+        }
+        return;
+    }
+    if (mag_likely(yc)) {  /* Fast path if Y is contiguous */
+        const int32_t* py = by + ra;
+        uint8_t* pr = br + ra;
+        for (int64_t i=ra; i < rb; ++i) {
+            int64_t tmp = i;
+            int64_t xi = 0;
+            for (int64_t d = r->rank-1; d >= 0; --d) {
+                int64_t dim = r->shape[d];
+                int64_t coord = tmp % dim;
+                tmp /= dim;
+                int64_t dx = d - rx;
+                if (dx >= 0 && x->shape[dx] > 1)
+                    xi += coord * x->strides[dx];
+            }
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+            mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
+            mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
+            pr[i-ra] = bx[xi] < py[i-ra];
+        }
+        return;
+    }
+    for (int64_t i=ra; i < rb; ++i) { /* General case */
+        int64_t tmp  = i;
+        int64_t ri = 0;
+        int64_t xi = 0;
+        int64_t yi = 0;
+        for (int64_t d = r->rank-1; d >= 0; --d) {
+            int64_t dim = r->shape[d];
+            int64_t coord = tmp % dim;
+            tmp /= dim;
+            ri += coord*r->strides[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && x->shape[dx] > 1)
+                xi += coord*x->strides[dx];
+            int64_t dy = d - ry;
+            if (dy >= 0 && y->shape[dy] > 1)
+                yi += coord*y->strides[dy];
+        }
+        mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
+        mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
+        mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
+        br[ri] = bx[xi] < by[yi];
+    }
+}
+
 #ifndef MAG_BLAS_SPECIALIZATION
 #error "BLAS specialization undefined"
 #endif
@@ -6179,6 +8160,38 @@ static void (*_Nonnull const mag_blas_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__N
     },
     [MAG_OP_SHR] = {
         [MAG_DTYPE_I32] = &mag_blas_shr_i32,
+    },
+    [MAG_OP_EQ] = {
+        [MAG_DTYPE_E8M23] = &mag_blas_eq_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_blas_eq_e5m10,
+        [MAG_DTYPE_BOOL] = &mag_blas_eq_bool,
+        [MAG_DTYPE_I32] = &mag_blas_eq_i32,
+    },
+    [MAG_OP_NE] = {
+        [MAG_DTYPE_E8M23] = &mag_blas_ne_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_blas_ne_e5m10,
+        [MAG_DTYPE_BOOL] = &mag_blas_ne_bool,
+        [MAG_DTYPE_I32] = &mag_blas_ne_i32,
+    },
+    [MAG_OP_LE] = {
+        [MAG_DTYPE_E8M23] = &mag_blas_le_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_blas_le_e5m10,
+        [MAG_DTYPE_I32] = &mag_blas_le_i32,
+    },
+    [MAG_OP_GE] = {
+        [MAG_DTYPE_E8M23] = &mag_blas_ge_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_blas_ge_e5m10,
+        [MAG_DTYPE_I32] = &mag_blas_ge_i32,
+    },
+    [MAG_OP_LT] = {
+        [MAG_DTYPE_E8M23] = &mag_blas_lt_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_blas_lt_e5m10,
+        [MAG_DTYPE_I32] = &mag_blas_lt_i32,
+    },
+    [MAG_OP_GT] = {
+        [MAG_DTYPE_E8M23] = &mag_blas_gt_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_blas_gt_e5m10,
+        [MAG_DTYPE_I32] = &mag_blas_gt_i32,
     },
 };
 

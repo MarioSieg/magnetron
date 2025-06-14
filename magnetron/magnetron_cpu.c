@@ -178,7 +178,7 @@ static void mag_worker_exec_thread_local(const mag_CPUKernelRegistry* kernels, m
     if (mag_unlikely(!payload->node)) return;
     mag_Operator op = payload->node->op;
     mag_InitOperator iop = payload->node->init_op;
-    mag_DType dtype = payload->node->dtype;
+    mag_DType dtype = *payload->node->op_inputs ? (*payload->node->op_inputs)->dtype : payload->node->dtype;
     mag_assert2(op >= 0 && op < MAG_OP__NUM);
     mag_assert2(iop >= 0 && iop < MAG_IOP__NUM);
     mag_assert2(dtype >= 0 && dtype < MAG_DTYPE__NUM);

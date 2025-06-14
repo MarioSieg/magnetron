@@ -757,10 +757,17 @@ typedef enum mag_Operator {
     MAG_OP_SHL,
     MAG_OP_SHR,
 
+    MAG_OP_EQ,
+    MAG_OP_NE,
+    MAG_OP_LE,
+    MAG_OP_GE,
+    MAG_OP_LT,
+    MAG_OP_GT,
+
     MAG_OP__NUM
 } mag_Operator;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_SHR+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_GT+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff);
 
 /* Initialization opcodes. */
@@ -1139,9 +1146,9 @@ void mag_prng_seed(mag_PRNGState* _Nonnull prng, mag_PRNGAlgo algo, uint64_t see
 typedef struct mag_CPUKernelPayload {
     int64_t thread_num;                     /* Total number of threads involved. */
     int64_t thread_idx;                     /* Current thread index used to compute thread-local partition. */
-    mag_Tensor* _Nonnull node;            /* Result tensor. Stores input tensors and all other op-specific data. */
-    mag_ExecStage stage;                /* Graph evaluation type. */
-    mag_PRNGState* _Nonnull local_prng;  /* Thread-local CPU PRNG state. */
+    mag_Tensor* _Nullable node;             /* Result tensor. Stores input tensors and all other op-specific data. */
+    mag_ExecStage stage;                    /* Graph evaluation type. */
+    mag_PRNGState* _Nonnull local_prng;     /* Thread-local CPU PRNG state. */
 } mag_CPUKernelPayload;
 
 /*
