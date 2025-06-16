@@ -23,4 +23,5 @@ CMakeSettings.json
 magnetron_chat/.idea
 /build/
 /.venv/
+/.cmake/
 test/python/__pycache__

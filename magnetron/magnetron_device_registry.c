@@ -10,7 +10,7 @@ extern mag_IComputeDevice* mag_init_device_cpu(mag_Context* ctx, const mag_Compu
 extern void mag_destroy_device_cpu(mag_IComputeDevice* dvc);      /* Destroy CPU compute device. Implemented in magnetron_cpu.c */
 
 #ifdef MAG_ENABLE_CUDA
-extern mag_compute_device_t* mag_init_device_cuda(mag_ctx_t* ctx, const mag_ComputeDeviceDesc* desc);  /* Initialize GPU compute device. Implemented in magnetron_cuda.cu */
+extern mag_IComputeDevice* mag_init_device_cuda(mag_Context* ctx, const mag_ComputeDeviceDesc* desc);  /* Initialize GPU compute device. Implemented in magnetron_cuda.cu */
 extern void mag_destroy_device_cuda(mag_IComputeDevice* dvc);     /* Destroy GPU compute device. Implemented in magnetron_cuda.cu */
 #endif
 
@@ -21,7 +21,6 @@ static const mag_IDeviceFactory* const mag_device_factories[MAG_COMPUTE_DEVICE_T
         .init = &mag_init_device_cpu,
         .destroy = &mag_destroy_device_cpu,
     },
-
 #ifdef MAG_ENABLE_CUDA
     [MAG_COMPUTE_DEVICE_TYPE_GPU_CUDA] = &(mag_IDeviceFactory){
         .init = &mag_init_device_cuda,

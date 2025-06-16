@@ -19,10 +19,10 @@ option(MAGNETRON_DEBUG "Enable debug mode" OFF)                                 
 option(MAGNETRON_CPU_APPROX_MATH "Trade precision for performance" ON)          # (CPU only) Enable SIMD math function approximations. Greatly increases performance. Try disabling if you encounter numerical instability. Does NOT enable -ffast-math or similar compiler flags.
 
 
-option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" OFF)                          # Enable CUDA support
+option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" ON)                          # Enable CUDA support
 option(MAGNETRON_ENABLE_MIMALLOC "Use mimalloc as memory allocator" ON)         # Use mimalloc as memory allocator for faster memory allocation
 
-set(MAGNETRON_CUDA_COMPILER "/usr/local/cuda-12.6/bin/nvcc" CACHE STRING "Path to the CUDA compiler") # Set to your CUDA compiler path
+set(MAGNETRON_CUDA_COMPILER "/usr/local/cuda-12.9/bin/nvcc" CACHE STRING "Path to the CUDA compiler") # Set to your CUDA compiler path, only used if CMAKE can't find the CUDA compiler on its own
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 if (${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS} OR ${MAGNETRON_BUILD_FUZZERS})
