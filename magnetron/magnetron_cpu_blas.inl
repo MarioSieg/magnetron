@@ -88,15 +88,15 @@ static MAG_AINLINE mag_E5M10 mag_e8m23_cvt_e5m10(mag_E8M23 x) {
         union {
             uint32_t u;
             mag_E8M23 f;
-        } reinterpret;
+        } castor;
         mag_E8M23 base = fabs(x)*0x1.0p+112f*0x1.0p-110f;
-        reinterpret.f = x;
-        uint32_t shl1_w = reinterpret.u+reinterpret.u;
-        uint32_t sign = reinterpret.u & 0x80000000u;
-        reinterpret.u = 0x07800000u+(mag_xmax(0x71000000u, shl1_w&0xff000000u)>>1);
-        reinterpret.f = base + reinterpret.f;
-        uint32_t exp_bits = (reinterpret.u>>13) & 0x00007c00u;
-        uint32_t mant_bits = reinterpret.u & 0x00000fffu;
+        castor.f = x;
+        uint32_t shl1_w = castor.u+castor.u;
+        uint32_t sign = castor.u & 0x80000000u;
+        castor.u = 0x07800000u+(mag_xmax(0x71000000u, shl1_w&0xff000000u)>>1);
+        castor.f = base + castor.f;
+        uint32_t exp_bits = (castor.u>>13) & 0x00007c00u;
+        uint32_t mant_bits = castor.u & 0x00000fffu;
         uint32_t nonsign = exp_bits + mant_bits;
         r = (sign>>16)|(shl1_w > 0xff000000 ? 0x7e00 : nonsign);
     #endif
@@ -120,50 +120,83 @@ static MAG_AINLINE mag_E8M23 mag_e5m10_cvt_e8m23(mag_E5M10 x) {
         union {
             uint32_t u;
             mag_E8M23 f;
-        } reinterpret;
+        } castor;
         uint32_t w = (uint32_t)x.bits<<16;
         uint32_t sign = w & 0x80000000u;
         uint32_t two_w = w+w;
         uint32_t offs = 0xe0u<<23;
         uint32_t t1 = (two_w>>4) + offs;
         uint32_t t2 = (two_w>>17) | (126u<<23);
-        reinterpret.u = t1;
-        mag_E8M23 norm_x = reinterpret.f*0x1.0p-112f;
-        reinterpret.u = t2;
-        mag_E8M23 denorm_x = reinterpret.f-0.5f;
+        castor.u = t1;
+        mag_E8M23 norm_x = castor.f*0x1.0p-112f;
+        castor.u = t2;
+        mag_E8M23 denorm_x = castor.f-0.5f;
         uint32_t denorm_cutoff = 1u<<27;
         uint32_t r = sign | (two_w < denorm_cutoff
-            ? (reinterpret.f = denorm_x, reinterpret.u)
-            : (reinterpret.f = norm_x, reinterpret.u));
-        reinterpret.u = r;
-        return reinterpret.f;
+            ? (castor.f = denorm_x, castor.u)
+            : (castor.f = norm_x, castor.u));
+        castor.u = r;
+        return castor.f;
     #endif
 }
 
-static void MAG_HOTPROC mag_vector_cast_mag_e8m23_cvt_e5m10(int64_t n, const mag_E8M23* _Nonnull __restrict src, mag_E5M10* _Nonnull __restrict dst) {
+static void MAG_HOTPROC mag_vcast_e8m23_e5m10(int64_t numel, mag_E5M10* _Nonnull restrict o, const mag_E8M23* _Nonnull restrict x) {
     int64_t i=0;
     #ifdef __ARM_NEON
-        for (; i+3 < n; i += 4) {
-            float32x4_t v = vld1q_f32(src+i);
-            vst1_f16((__fp16*)dst+i, vcvt_f16_f32(v));
+        for (; i+3 < numel; i += 4) {
+            float32x4_t v = vld1q_f32(x+i);
+            vst1_f16((__fp16*)o+i, vcvt_f16_f32(v));
+        }
+    #elif defined(__F16C__)
+        #ifdef __AVX512F__
+            for (; i+15 < numel; i += 16) {
+                __m512 xv = _mm512_loadu_ps(x+i);
+                __m256i yv = _mm512_cvtps_ph(xv, _MM_FROUND_TO_NEAREST_INT);
+                _mm256_storeu_si256((__m256i*)(o+i), yv);
+            }
+        #endif
+        for (; i+7 < numel; i += 8) {
+            __m256 xv = _mm256_loadu_ps(x+i);
+            __m128i yv = _mm256_cvtps_ph(xv, _MM_FROUND_TO_NEAREST_INT);
+            _mm_storeu_si128((__m128i*)(o+i), yv);
+        }
+        for (; i+3 < numel; i += 4) {
+            __m128 xv = _mm_loadu_ps(x+i);
+            __m128i yv = _mm_cvtps_ph(xv, _MM_FROUND_TO_NEAREST_INT);
+            _mm_storel_epi64((__m128i*)(o+i), yv);
         }
     #endif
-    for (; i < n; ++i) {
-        dst[i] = mag_e8m23_cvt_e5m10(src[i]);
-    }
+    for (; i < numel; ++i) /* Scalar drain loop */
+        o[i] = mag_e8m23_cvt_e5m10(x[i]);
 }
-
-static void MAG_HOTPROC mag_vector_cast_mag_e5m10_cvt_e8m23(int64_t n, const mag_E5M10* _Nonnull __restrict src, mag_E8M23* _Nonnull __restrict dst) {
+static void MAG_HOTPROC mag_vcast_e5m10_e8m23(int64_t numel, mag_E8M23* _Nonnull restrict o, const mag_E5M10* _Nonnull restrict x) {
     int64_t i=0;
     #ifdef __ARM_NEON
-        for (; i+3 < n; i += 4) {
-            float16x4_t v = vld1_f16((const __fp16*)src+i);
-            vst1q_f32(dst+i, vcvt_f32_f16(v));
+        for (; i+3 < numel; i += 4) {
+            float16x4_t v = vld1_f16((const __fp16*)x+i);
+            vst1q_f32(o+i, vcvt_f32_f16(v));
+        }
+    #elif defined(__F16C__)
+        #ifdef __AVX512F__
+            for (; i+15 < numel; i += 16) {
+                __m256i xv = _mm256_loadu_si256((const __m256i*)(x+i));
+                __m512 yv = _mm512_cvtph_ps(xv);
+                _mm512_storeu_ps(o+i, yv);
+            }
+        #endif
+        for (; i+7 < numel; i += 8) {
+            __m128i xv = _mm_loadu_si128((const __m128i*)(x+i));
+            __m256 yv = _mm256_cvtph_ps(xv);
+            _mm256_storeu_ps(o+i, yv);
+        }
+        for (; i+3 < numel; i += 4) {
+            __m128i xv = _mm_loadl_epi64((const __m128i*)(x+i));
+            __m128 yv = _mm_cvtph_ps(xv);
+            _mm_storeu_ps(o+i, yv);
         }
     #endif
-    for (; i < n; ++i) {
-        dst[i] = mag_e5m10_cvt_e8m23(src[i]);
-    }
+    for (; i < numel; ++i) /* Scalar drain loop */
+        o[i] = mag_e5m10_cvt_e8m23(x[i]);
 }
 
 static uint32_t MAG_AINLINE mag_mt19937_step(uint32_t* _Nonnull rem, uint32_t* _Nonnull next, uint32_t* _Nonnull state) {
@@ -1520,7 +1553,7 @@ static MAG_AINLINE int64_t mag_offset_from_flat(const mag_Tensor* _Nonnull t, in
 }
 
 static MAG_HOTPROC void mag_blas_clone_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
-    mag_Tensor*  r  = payload->node;
+    mag_Tensor* r = payload->node;
     const mag_Tensor* x = r->op_inputs[0];
     mag_E8M23* br = mag_e8m23p_mut(r);
     const mag_E8M23* bx = mag_e8m23p(x);
@@ -8206,8 +8239,8 @@ static void MAG_HOTPROC mag_blas_vector_cast_stub(size_t nb, const void* _Nonnul
     mag_assert2((nb&(nbs-1)) == 0);                 /* size must be aligned */
     int64_t n = (int64_t)nb/nbs;                    /* Byte to elem granularity. */
     switch (mag_dt_perm(src_t, dst_t)) {
-        case mag_dt_perm(MAG_DTYPE_E8M23, MAG_DTYPE_E5M10): mag_vector_cast_mag_e8m23_cvt_e5m10(n, src, dst); return;
-        case mag_dt_perm(MAG_DTYPE_E5M10, MAG_DTYPE_E8M23): mag_vector_cast_mag_e5m10_cvt_e8m23(n, src, dst); return;
+        case mag_dt_perm(MAG_DTYPE_E8M23, MAG_DTYPE_E5M10): mag_vcast_e8m23_e5m10(n, dst, src); return;
+        case mag_dt_perm(MAG_DTYPE_E5M10, MAG_DTYPE_E8M23): mag_vcast_e5m10_e8m23(n, dst, src); return;
         default: mag_panic("invalid vector cast dtypes %s -> %s", mag_dtype_meta_of(src_t)->name, mag_dtype_meta_of(dst_t)->name);
     }
 }

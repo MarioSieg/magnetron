@@ -387,8 +387,6 @@ extern MAG_EXPORT mag_Tensor* _Nullable mag_storage_stream_get_tensor(mag_Storag
 extern MAG_EXPORT const char* _Nonnull* _Nonnull mag_storage_stream_get_all_tensor_keys(mag_StorageStream* _Nonnull st, size_t* _Nonnull count);
 extern MAG_EXPORT void mag_storage_stream_get_all_tensor_keys_free_data(const char* _Nonnull* _Nonnull ret_val);
 
-#undef MAG_EXPORT
-
 #ifdef __cplusplus
 }
 #endif

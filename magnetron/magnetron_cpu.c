@@ -341,32 +341,36 @@ static void mag_cpu_exec_fwd(mag_IComputeDevice* dvc, mag_Tensor* node) {
 }
 
 static void mag_cpu_buf_broadcast(mag_IStorageBuffer* sto, size_t offs, const void* src, size_t stride) {
-    mag_assert2(sto->base+offs <= sto->base+sto->size);
+    mag_assert2(offs <= sto->size);
+    size_t len = sto->size - offs;
+    if (mag_unlikely(!len)) return;
+    uint8_t* dst8 = (uint8_t*)sto->base+offs;
     switch (stride) {
-        case 1: {
-            uint8_t* p = (uint8_t*)(sto->base+offs);
-            memset(p, *(uint8_t*)src, sto->size);
-        } return;
+        case 1: memset(dst8, *(const uint8_t*)src, len); return;
         case 2: {
-            uint16_t* p = (uint16_t*)(sto->base+offs);
-            const uint16_t* end = p+(sto->size/sizeof(*p));
-            uint16_t x = *(uint16_t*)src;
-            for (; p < end; ++p) *p = x;
-        } return;
+            mag_assert2(!(offs&1) && !(len&1));     /* Offsets and len must be aligned to granularity */
+            uint16_t v = *(const uint16_t*)src;
+            uint16_t* p = (uint16_t*)dst8;
+            uint16_t* end = p + (len/sizeof(v));
+            for (; p < end; ++p) *p = v;
+            return;
+        }
         case 4: {
-            uint32_t* p = (uint32_t*)(sto->base+offs);
-            const uint32_t* end = p+(sto->size/sizeof(*p));
-            uint32_t x = *(uint32_t*)src;
-            for (; p < end; ++p) *p = x;
-        } return;
+            mag_assert2(!(offs&3) && !(len&3));     /* Offsets and len must be aligned to granularity */
+            uint32_t v = *(const uint32_t*)src;
+            uint32_t* p = (uint32_t*)dst8;
+            uint32_t* end = p + (len/sizeof(v));
+            for (; p < end; ++p) *p = v;
+            return;
+        }
         default: {
-            uint8_t* p = (uint8_t*)(sto->base+offs);
-            const uint8_t* end = p+sto->size;
-            while (p < end) {
-                memcpy(p, src, stride);
-                p += stride;
+            while (len >= stride) {
+                memcpy(dst8, src, stride);
+                dst8 += stride;
+                len -= stride;
             }
-        }  return;
+            if (len) memcpy(dst8, src, len);  /* handle tail */
+        }
     }
 }
 
@@ -388,10 +392,10 @@ static void mag_cpu_transfer(mag_IStorageBuffer* sto, mag_TransferDir dir, mag_T
             }
         } return;
         case MAG_TRANSFER_OP_CONVERT_E8M23: {                       /* Convert to/from float. */
-            mag_assert2((inout_size&3) == 0);                   /* Must be float array byte size (rem 4). */
-            mag_assert2(((uintptr_t)inout&3) == 0);             /* Must be aligned to 4. */
-            size_t host_nb = inout_size;                        /* Total host bytes (4 bytes per element) */
-            size_t device_nb = (host_nb>>2)*sto->granularity;   /* Total device bytes (e.g. 2 bytes per element for fp16) */
+            mag_assert2((inout_size&3) == 0);                       /* Must be float array byte size (rem 4). */
+            mag_assert2(((uintptr_t)inout&3) == 0);                 /* Must be aligned to 4. */
+            size_t host_nb = inout_size;                            /* Total host bytes (4 bytes per element) */
+            size_t device_nb = (host_nb>>2)*sto->granularity;       /* Total device bytes (e.g. 2 bytes per element for fp16) */
             mag_assert2(device_nb && offs+device_nb <= sto->size);
             uintptr_t pa = base + offs;
             void* inout2 = (void*)pa;
@@ -423,12 +427,11 @@ static void mag_cpu_storage_dtor(void* self) {
 }
 
 static void mag_cpu_alloc_storage(mag_IComputeDevice* host, mag_IStorageBuffer** out, size_t size, mag_DType dtype) {
-    mag_assert(size, "storage size must be > 0");
     mag_Context* ctx = host->ctx;
     void* block = mag_alloc_aligned(size, MAG_CPU_BUF_ALIGN);
     *out = mag_fixed_intrusive_pool_malloc(&ctx->storage_pool);
     **out = (mag_IStorageBuffer){ /* Set up storage buffer. */
-        .ctx = host->ctx,
+        .ctx = ctx,
         .rc_control = mag_rc_control_init(*out, &mag_cpu_storage_dtor),
         .base = (uintptr_t)block,
         .size = size,

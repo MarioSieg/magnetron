@@ -15,18 +15,8 @@
 
 #include  "magnetron_internal.h"
 
-/* Driver result check. */
-#define mag_cu_chk_rdv(expr) \
-    do { \
-    if (auto rrr {(expr)}; rrr != CUDA_SUCCESS) { \
-        const char* err_str = "?"; \
-        cuGetErrorString(rrr, &err_str); \
-        mag_panic(#expr, __func__, __FILE__, __LINE__, err_str); \
-    } \
-} while (0)
-
 /* Runtime result check. */
-#define mag_cu_chk_rt(expr) \
+#define mag_cuda_check(expr) \
     do { \
         if (auto rrr {(expr)}; rrr != cudaSuccess) { \
             mag_panic(#expr, __func__, __FILE__, __LINE__, cudaGetErrorString(rrr)); \
@@ -38,6 +28,54 @@
     if (nb < 1<<20) return {static_cast<mag_E11M52>(nb)/static_cast<mag_E11M52>(1<<10), "KiB"};
     if (nb < 1<<30) return {static_cast<mag_E11M52>(nb)/static_cast<mag_E11M52>(1<<20), "MiB"};
     return {static_cast<mag_E11M52>(nb)/static_cast<mag_E11M52>(1<<30), "GiB"};
+}
+
+namespace kernels {
+    template <typename T>
+    static __global__ void broadcast(T* dst, T value, size_t n) {
+        size_t i = blockIdx.x*blockDim.x + threadIdx.x;
+        if (i < n) dst[i] = value;
+    }
+
+    static __global__ void broadcast_generic(uint8_t* dst, const uint8_t* pattern, size_t stride, size_t n) {
+        size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+        if (i >= n) return;
+        const uint8_t* src = pattern;
+        uint8_t* out = dst + i*stride;
+        #pragma unroll
+        for (size_t j=0; j < stride; ++j)
+            out[j] = src[j];
+    }
+}
+
+namespace storage {
+    static void dealloc(void* self) {
+        auto* buffer = static_cast<mag_IStorageBuffer*>(self);
+        mag_Context* ctx = buffer->ctx;
+        mag_assert(ctx->num_storages > 0, "double freed storage");
+        --ctx->num_storages;
+        mag_cuda_check(cudaFree(reinterpret_cast<void*>(buffer->base)));
+        mag_fixed_intrusive_pool_free(&ctx->storage_pool, buffer);
+    }
+
+    static void alloc(mag_IComputeDevice* host, mag_IStorageBuffer** out, size_t size, mag_DType dtype) {
+        mag_Context* ctx = host->ctx;
+        void* block = nullptr;
+        mag_cuda_check(cudaMalloc(&block, size));
+        auto* buffer = static_cast<mag_IStorageBuffer*>(mag_fixed_intrusive_pool_malloc(&ctx->storage_pool));
+        new (buffer) mag_IStorageBuffer {
+            .ctx = ctx,
+            .rc_control = mag_rc_control_init(buffer, &dealloc),
+            .base = reinterpret_cast<uintptr_t>(buffer),
+            .size = size,
+            .alignment = 256, // cudaMalloc guarantees this
+            .granularity = mag_dtype_meta_of(dtype)->size,
+            .dtype = dtype,
+            .host = host,
+            .broadcast = nullptr, // TODO
+            .transfer = nullptr // TODO
+        };
+    }
 }
 
 constexpr size_t MAX_DEVICES = 32;
@@ -120,7 +158,7 @@ extern "C" mag_IComputeDevice* mag_init_device_cuda(mag_Context* ctx, const mag_
         .type = MAG_COMPUTE_DEVICE_TYPE_GPU_CUDA,
         .eager_exec_init = nullptr,
         .eager_exec_fwd = nullptr,
-        .alloc_storage = nullptr,
+        .alloc_storage = &storage::alloc,
     };
     auto [vram, unit] = humanize_vram_size_size(active_device->vram);
     std::snprintf(compute_device->name, sizeof(compute_device->name), "%s - %s - %.03f %s VRAM", mag_device_type_get_name(compute_device->type), active_device->name.data(), vram, unit);

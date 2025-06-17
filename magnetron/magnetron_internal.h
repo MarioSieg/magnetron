@@ -364,8 +364,8 @@ static uint64_t MAG_AINLINE mag_bswap64(uint64_t x) {
 
 #define MAG_FMT_DIM_BUF_SIZE ((21+4)*MAG_MAX_DIMS)
 
-extern MAG_NORET MAG_COLDPROC void mag_panic(const char* _Nonnull msg, ...); /* Print error message and abort. */
-extern bool mag_log_enabled; /* Enable/disable logging to stdout/stderr. */
+extern MAG_EXPORT MAG_NORET MAG_COLDPROC void mag_panic(const char* _Nonnull msg, ...); /* Print error message and abort. */
+extern MAG_EXPORT bool mag_log_enabled; /* Enable/disable logging to stdout/stderr. */
 
 extern void MAG_COLDPROC mag_print_separator(FILE* _Nonnull f); /* Print a separator line. */
 extern void mag_fmt_shape(char (*_Nonnull buf)[MAG_FMT_DIM_BUF_SIZE], const int64_t (*_Nonnull dims)[MAG_MAX_DIMS], int64_t rank);
@@ -380,7 +380,7 @@ extern void mag_fmt_shape(char (*_Nonnull buf)[MAG_FMT_DIM_BUF_SIZE], const int6
 ** (*mag_alloc)(ptr, size) <=> realloc(ptr, size)       <- Passing non-NULL pointer as reallocation base and size != 0 => reallocation.
 ** (*mag_alloc)(ptr, 0) <=> free(ptr)                   <- Passing NULL as reallocation base and size == 0 => free.
 */
-extern void* _Nonnull (*_Nonnull mag_alloc)(void* _Nullable blk, size_t size);
+extern MAG_EXPORT void* _Nonnull (*_Nonnull mag_alloc)(void* _Nullable blk, size_t size);
 
 extern void* _Nonnull mag_alloc_aligned(size_t size, size_t align); /* Aligned allocator function. */
 extern void mag_free_aligned(void* _Nonnull blk); /* Free aligned memory. */
@@ -885,11 +885,11 @@ typedef struct mag_Pool {
     uint64_t num_allocs;                 /* Number of total allocations */
 } mag_Pool;
 
-extern void mag_fixed_intrusive_pool_init(mag_Pool* _Nonnull pool, size_t block_size, size_t block_align, size_t blocks_per_chunk);
-extern void* _Nonnull mag_fixed_intrusive_pool_malloc(mag_Pool* _Nonnull pool);
-extern void mag_fixed_intrusive_pool_free(mag_Pool* _Nonnull pool, void* _Nonnull blk);
-extern void mag_fixed_intrusive_pool_destroy(mag_Pool* _Nonnull pool);
-extern void mag_fixed_intrusive_pool_print_info(mag_Pool* _Nonnull pool, const char* _Nonnull name);
+extern MAG_EXPORT void mag_fixed_intrusive_pool_init(mag_Pool* _Nonnull pool, size_t block_size, size_t block_align, size_t blocks_per_chunk);
+extern MAG_EXPORT void* _Nonnull mag_fixed_intrusive_pool_malloc(mag_Pool* _Nonnull pool);
+extern MAG_EXPORT void mag_fixed_intrusive_pool_free(mag_Pool* _Nonnull pool, void* _Nonnull blk);
+extern MAG_EXPORT void mag_fixed_intrusive_pool_destroy(mag_Pool* _Nonnull pool);
+extern MAG_EXPORT void mag_fixed_intrusive_pool_print_info(mag_Pool* _Nonnull pool, const char* _Nonnull name);
 
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 typedef struct mag_IComputeDevice mag_IComputeDevice;
