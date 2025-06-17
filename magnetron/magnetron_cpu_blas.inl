@@ -199,6 +199,51 @@ static void MAG_HOTPROC mag_vcast_e5m10_e8m23(int64_t numel, mag_E8M23* _Nonnull
         o[i] = mag_e5m10_cvt_e8m23(x[i]);
 }
 
+static void MAG_HOTPROC mag_vcast_e8m23_i32(int64_t numel, int32_t* _Nonnull restrict o, const mag_E8M23* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = (int32_t)x[i];
+}
+static void MAG_HOTPROC mag_vcast_i32_e8m23(int64_t numel, mag_E8M23* _Nonnull restrict o, const int32_t* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = (mag_E8M23)x[i];
+}
+
+static void MAG_HOTPROC mag_vcast_e8m23_bool(int64_t numel, uint8_t* _Nonnull restrict o, const mag_E8M23* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = (uint8_t)(x[i] != .0f);
+}
+static void MAG_HOTPROC mag_vcast_bool_e8m23(int64_t numel, mag_E8M23* _Nonnull restrict o, const uint8_t* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] ? 1.f : 0.f;
+}
+
+static void MAG_HOTPROC mag_vcast_i32_bool(int64_t numel, uint8_t* _Nonnull restrict o, const int32_t* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = (uint8_t)(x[i] != 0);
+}
+static void MAG_HOTPROC mag_vcast_bool_i32(int64_t numel, int32_t* _Nonnull restrict o, const uint8_t* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] ? 1 : 0;
+}
+
+static void MAG_HOTPROC mag_vcast_e5m10_i32(int64_t numel, int32_t* _Nonnull restrict o, const mag_E5M10* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = (int32_t)mag_e5m10_cvt_e8m23(x[i]);
+}
+static void MAG_HOTPROC mag_vcast_i32_e5m10(int64_t numel, mag_E5M10* _Nonnull restrict o, const int32_t* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10((mag_E8M23)x[i]);
+}
+
+static void MAG_HOTPROC mag_vcast_e5m10_bool(int64_t numel, uint8_t* _Nonnull restrict o, const mag_E5M10* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = (uint8_t)(x[i].bits != 0);
+}
+static void MAG_HOTPROC mag_vcast_bool_e5m10(int64_t numel, mag_E5M10* _Nonnull restrict o, const uint8_t* _Nonnull restrict x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] ? MAG_E5M10_ONE : MAG_E5M10_ZERO;
+}
+
 static uint32_t MAG_AINLINE mag_mt19937_step(uint32_t* _Nonnull rem, uint32_t* _Nonnull next, uint32_t* _Nonnull state) {
     if (--*rem <= 0) {
         *rem = 624;
@@ -223,9 +268,9 @@ static uint32_t MAG_AINLINE mag_mt19937_step(uint32_t* _Nonnull rem, uint32_t* _
     return y;
 }
 
-static uint32_t MAG_AINLINE mag_pcg_step(uint64_t* _Nonnull state, uint64_t* _Nonnull inc) {
+static uint32_t MAG_AINLINE mag_pcg_step(uint64_t* _Nonnull state, uint64_t inc) {
     uint64_t prev = *state;
-    *state = prev*6364136223846793005ull + *inc;
+    *state = prev*6364136223846793005ull + inc;
     uint32_t mixed = ((prev>>18u) ^ prev) >> 27u;
     uint32_t rot = prev >> 59u;
     return (mixed>>rot) | (mixed << ((-rot)&31));
@@ -253,7 +298,7 @@ static void MAG_AINLINE mag_vrand_uniform_e8m23(mag_PRNGState* _Nonnull prng, in
         } break;
         case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
             uint64_t* state = &prng->pcg.state;
-            uint64_t* inc = &prng->pcg.inc;
+            uint64_t inc = prng->pcg.inc;
             for (int64_t i=0; i < numel; ++i) {
                 o[i] = min + rescale_uniform*mag_e8m23_canonical(mag_pcg_step(state, inc)); /* Generate canonical and rescale. */
             }
@@ -277,7 +322,7 @@ static void MAG_AINLINE mag_vrand_uniform_e5m10(mag_PRNGState* _Nonnull prng, in
         } break;
         case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
             uint64_t* state = &prng->pcg.state;
-            uint64_t* inc = &prng->pcg.inc;
+            uint64_t inc = prng->pcg.inc;
             for (int64_t i=0; i < numel; ++i) {
                 o[i] = mag_e8m23_cvt_e5m10(min + rescale_uniform*mag_e8m23_canonical(mag_pcg_step(state, inc))); /* Generate canonical and rescale. */
             }
@@ -331,7 +376,7 @@ static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_PRNGState* _Nonnull prng, i
         } break;
         case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
             uint64_t* state = &prng->pcg.state;
-            uint64_t* inc = &prng->pcg.inc;
+            uint64_t inc = prng->pcg.inc;
             for (int64_t ii=0; ii < numel; ++ii) {
                 o[ii] = !!(mag_pcg_step(state, inc) < thresh);
             }
@@ -359,7 +404,7 @@ static void MAG_AINLINE mag_vrand_uniform_i(mag_PRNGState* _Nonnull prng, int64_
         } break;
         case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
             uint64_t* state = &prng->pcg.state;
-            uint64_t* inc = &prng->pcg.inc;
+            uint64_t inc = prng->pcg.inc;
             for (int64_t i=0; i < numel; ++i) {
                 uint64_t r;
                 do r = mag_pcg_step(state, inc);
