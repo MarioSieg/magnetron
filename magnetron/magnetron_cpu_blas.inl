@@ -8339,7 +8339,7 @@ void MAG_BLAS_SPECIALIZATION(mag_CPUKernelRegistry* _Nonnull kernels) {
             kernels->init[i][j] = mag_blas_lut_init_kernels[i][j];
     for (int i=0; i < MAG_OP__NUM; ++i) {
         for (int j=0; j < MAG_DTYPE__NUM; ++j) {
-            kernels->fwd[i][j] = mag_blas_lut_eval_kernels[i][j];
+            kernels->eval[i][j] = mag_blas_lut_eval_kernels[i][j];
         }
     }
     kernels->vector_cast = &mag_blas_vector_cast_stub;

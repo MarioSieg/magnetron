@@ -182,7 +182,7 @@ static void mag_worker_exec_thread_local(const mag_CPUKernelRegistry* kernels, m
     mag_assert2(op >= 0 && op < MAG_OP__NUM);
     mag_assert2(iop >= 0 && iop < MAG_IOP__NUM);
     mag_assert2(dtype >= 0 && dtype < MAG_DTYPE__NUM);
-    void (*kernel)(const mag_CPUKernelPayload*) = payload->stage == MAG_STAGE_INIT ? kernels->init[iop][dtype] : kernels->fwd[op][dtype];
+    void (*kernel)(const mag_CPUKernelPayload*) = payload->stage == MAG_STAGE_INIT ? kernels->init[iop][dtype] : kernels->eval[op][dtype];
     mag_assert(kernel, "no kernel found for op '%s' (iop #%d) with dtype %s", mag_op_meta_of(op)->mnemonic, iop, mag_dtype_meta_of(dtype)->name);
     (*kernel)(payload);
     payload->node = NULL;

@@ -938,9 +938,9 @@ struct mag_IStorageBuffer {
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 struct mag_IComputeDevice {
     mag_Context* _Nonnull ctx;
-    char name[128];                                                                                                 /* Device name. */
-    void* _Nonnull impl;                                                                                            /* Device specific implementation, if applicable. */
-    bool is_async;                                                                                                  /* If device is async. */
+    char name[128];                                                                                             /* Device name. */
+    void* _Nonnull impl;                                                                                        /* Device specific implementation, if applicable. */
+    bool is_async;                                                                                              /* If device is async. */
     mag_ComputeDeviceType type;                                                                                 /* Device type enum. */
     void (*_Nonnull eager_exec_init)(mag_IComputeDevice* _Nonnull dvc, mag_Tensor* _Nonnull root);                                         /* Execute a single init op. */
     void (*_Nonnull eager_exec_fwd)(mag_IComputeDevice* _Nonnull dvc, mag_Tensor* _Nonnull root);                                          /* Execute a single op forward. */
@@ -1158,8 +1158,8 @@ typedef struct mag_CPUKernelPayload {
 ** See magnetron_cpu.c for details.
 */
 typedef struct mag_CPUKernelRegistry {
-    void (*_Nonnull init[MAG_IOP__NUM][MAG_DTYPE__NUM])(const mag_CPUKernelPayload* _Nonnull);   /* Initialization operator kernels. */
-    void (*_Nonnull fwd[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_CPUKernelPayload* _Nonnull);     /* Forward operator kernels. */
+    void (*_Nonnull init[MAG_IOP__NUM][MAG_DTYPE__NUM])(const mag_CPUKernelPayload* _Nonnull);      /* Initialization operator kernels. */
+    void (*_Nonnull eval[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_CPUKernelPayload* _Nonnull);       /* Eval operator kernels. */
     void (*_Nonnull vector_cast)(size_t nb, const void* _Nonnull src, mag_DType src_t, void* _Nonnull dst, mag_DType dst_t); /* Vector cast (dtype conversion) kernel. */
 } mag_CPUKernelRegistry;
 
