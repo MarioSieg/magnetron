@@ -1187,15 +1187,12 @@ class Tensor:
 
     def __str__(self) -> str:
         cstr: _ffi.CData = _C.mag_tensor_to_string(self._ptr, False, 0, 0)
-        result: str = _ffi.string(cstr).decode('utf-8')
+        data_str: str = _ffi.string(cstr).decode('utf-8')
         _C.mag_tensor_to_string_free_data(cstr)
-        return result
+        return f'Tensor({data_str})'
 
     def __repr__(self) -> str:
-        if self.name is not None and self.name != '':
-            return f'Tensor(name={self.name}, shape={self.shape}, dtype={self.dtype})'
-        else:
-            return f'Tensor(shape={self.shape}, dtype={self.dtype})'
+        return str(self)
 
     def __getitem__(self, indices: int | tuple[int, ...]) -> float:
         if isinstance(indices, int):
