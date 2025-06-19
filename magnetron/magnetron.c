@@ -2765,35 +2765,50 @@ bool mag_hashmap_iter(mag_HashMap* map, size_t* i, void** item) {
     return true;
 }
 
-static const uint8_t* mag_utf8_validate(const uint8_t* restrict s, const uint8_t* restrict end) {
-    const uint8_t* p = s;
-    while (p < end) {
-        uint8_t c = *p;
-        if (c < 0x80) { ++p; continue; }
-        if ((c & 0xe0) == 0xc0) {
-            if (p+1 >= end) return p;
-            uint8_t b1 = p[1];
-            if ((b1 & 0xc0) != 0x80 || (c & 0xfe) == 0xc0) return p;
-            p += 2;
-        } else if ((c & 0xf0) == 0xe0) {
-            if (p+2 >= end) return p;
-            uint8_t b1 = p[1], b2 = p[2];
-            if ((b1 & 0xc0) != 0x80 || (b2 & 0xc0) != 0x80) return p;
-            if (c == 0xe0 && (b1 & 0xe0) == 0x80) return p;
-            if (c == 0xeD && (b1 & 0xe0) == 0xa0) return p;
-            p += 3;
-        } else if ((c & 0xf8) == 0xf0) {
-            if (p+3 >= end) return p;
-            uint8_t b1 = p[1], b2 = p[2], b3 = p[3];
-            if ((b1 & 0xc0) != 0x80 || (b2 & 0xc0) != 0x80 || (b3 & 0xc0) != 0x80) return p;
-            if (c == 0xf0 && (b1 & 0xf0) == 0x80) return p;
-            if ((c == 0xf4 && b1 > 0x8f) || c > 0xf4) return p;
-            p += 4;
-            continue;
+static bool mag_utf8_validate(const uint8_t* data, size_t len) {
+    size_t pos = 0;
+    uint32_t cp = 0;
+    while (pos < len) {
+        uint64_t next_pos = pos+16;
+        if (next_pos <= len) {
+            uint64_t v1, v2;
+            memcpy(&v1, data+pos, sizeof(v1));
+            memcpy(&v2, data+pos+sizeof(v1), sizeof(v2));
+            if (!((v1 | v2) & 0x8080808080808080)) {
+                pos = next_pos;
+                continue;
+            }
         }
-        return p;
+        uint8_t byte = data[pos];
+        while (byte < 0x80) {
+            if (++pos == len) return true;
+            byte = data[pos];
+        }
+        if ((byte & 0xe0) == 0xc0) {
+            next_pos = pos+2;
+            if (next_pos > len) return false;
+            if ((data[pos+1] & 0xc0) != 0x80) return false;
+            cp = (byte & 0x1f)<<6 | (data[pos+1] & 0x3f);
+            if ((cp < 0x80) || (0x7ff < cp)) return false;
+        } else if ((byte & 0xf0) == 0xe0) {
+            next_pos = pos+3;
+            if (next_pos > len) return false;
+            if ((data[pos+1] & 0xc0) != 0x80) return false;
+            if ((data[pos+2] & 0xc0) != 0x80) return false;
+            cp = (byte & 0xf)<<12 | (data[pos+1] & 0x3f)<<6 | (data[pos+2] & 0x3f);
+            if ((cp < 0x800) || (0xffff < cp) || (0xd7ff < cp && cp < 0xe000)) return false;
+        } else if ((byte & 0xf8) == 0xf0) {
+          next_pos = pos + 4;
+          if (next_pos > len) return false;
+          if ((data[pos+1] & 0xc0) != 0x80) return false;
+          if ((data[pos+2] & 0xc0) != 0x80) return false;
+          if ((data[pos+3] & 0xc0) != 0x80) return false;
+          cp = (byte & 0x7)<<18 | (data[pos+1] & 0x3f)<<12 | (data[pos+2] & 0x3f)<<6 | (data[pos+3] & 0x3f);
+          if (cp <= 0xffff || 0x10ffff < cp) return false;
+        } else return false;
+        pos = next_pos;
     }
-    return NULL;
+    return true;
 }
 
 static size_t mag_utf8_strlen(const uint8_t* str) {
@@ -2926,7 +2941,7 @@ static bool mag_sto_write_tensor_hdr(
     mag_DType dtype
 ) {
     long start = ftell(f);
-    mag_sto_sanitize(!mag_utf8_validate(key, key+key_len), "invalid utf8-8 in tensor key", return false);
+    mag_sto_sanitize(mag_utf8_validate(key, key_len), "invalid utf8-8 in tensor key", return false);
     mag_sto_sanitize(key_len > 0 && key_len <= MAG_STO_MAX_KEY_LEN, "invalid key length", return false);
     mag_sto_sanitize(mag_sto_write_u32_le(f, key_len), "failed to write key length", return false); /* Write key length */
     for (int i=0; i < MAG_MAX_DIMS; ++i) /* Write shape */
@@ -2934,7 +2949,7 @@ static bool mag_sto_write_tensor_hdr(
     uint32_t aux;
     mag_sto_sanitize(mag_pack_aux32(&aux, 0, 0, rank, dtype), "failed to pack aux", return false);
     mag_sto_sanitize(mag_sto_write_u32_le(f, aux), "failed to write aux", return false); /* Write aux */
-    mag_sto_sanitize(!mag_utf8_validate(*name, *name+sizeof(name)), "invalid utf8-8 in tensor name", return false);
+    mag_sto_sanitize(mag_utf8_validate(*name, sizeof(*name)), "invalid utf8-8 in tensor name", return false);
     mag_sto_sanitize(fwrite(name, MAG_MAX_TENSOR_NAME_LEN, 1, f) == 1, "failed to write name", return false); /* Write name */
     mag_sto_sanitize(fwrite(key, key_len, 1, f) == 1, "failed to write key", return false); /* Write key */
     long end = ftell(f);
@@ -2978,12 +2993,12 @@ static bool mag_sto_read_tensor_hdr(
         memcpy(*name+(i<<3), &packed, sizeof(packed));
     }
     (*name)[MAG_MAX_TENSOR_NAME_LEN-1] = 0; /* Ensure null termination */
-    mag_sto_sanitize(!mag_utf8_validate(*name, *name+sizeof(name)), "invalid utf8-8 in tensor name", return false);
+    mag_sto_sanitize(mag_utf8_validate(*name, sizeof(*name)), "invalid utf8-8 in tensor name", return false);
     *key = (*mag_alloc)(NULL, key_len+1); /* Allocate key */
     mag_sto_sanitize(fread(*key, key_len, 1, f) == 1, "failed to read key", return false); /* Read key */
     (*key)[key_len] = '\0'; /* Ensure null termination */
     mag_sto_sanitize(*key, "empty key", false);
-    mag_sto_sanitize(!mag_utf8_validate(*key, *key+key_len), "invalid utf8-8 in tensor key", return false);
+    mag_sto_sanitize(mag_utf8_validate(*key, key_len), "invalid utf8-8 in tensor key", return false);
     long end = ftell(f);
     mag_sto_sanitize(end - start == MAG_STO_TENSOR_HDR_SIZE+key_len, "invalid tensor header size", return false);
     return true;
