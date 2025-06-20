@@ -791,6 +791,8 @@ void mag_strstream_reserve_more(mag_StrStream* ss, size_t extra) {
     ss->buf = (*mag_alloc)(ss->buf, ss->cap);
 }
 
+// Richtige Scheißfunktion. Wollte nur Leonie Forks erklären :)
+
 void mag_strstream_vappend(mag_StrStream* ss, const char* fmt, va_list ap0) {
     va_list ap;
     va_copy(ap, ap0);
