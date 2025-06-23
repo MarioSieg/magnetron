@@ -49,27 +49,22 @@ class RMSNorm(Module):
         output = self._norm(x)
         return output * self.weight
 
-
-class LayerNorm(Module):
-    """Layer Normalization over the last dimension with optional affine transform."""
-
-    def __init__(self, normalized_shape: int, eps: float = 1e-5, elementwise_affine: bool = True) -> None:
+class Dropout(Module):
+    def __init__(self, p: float = 0.5, inplace: bool = False) -> None:
         super().__init__()
-        self.normalized_shape = normalized_shape
-        self.eps = eps
-        self.elementwise_affine = elementwise_affine
-
-        if self.elementwise_affine:
-            self.weight = Parameter(Tensor.full((normalized_shape,), fill_value=1.0), name='weight')
-            self.bias = Parameter(Tensor.zeros((normalized_shape,)), name='bias')
-        else:
-            self.weight = None
-            self.bias = None
+        assert 0 <= p <= 1, 'Bernoulli probability must be between 0 and 1'
+        self.p = p
+        self.inplace = inplace
 
     def forward(self, x: Tensor) -> Tensor:
-        mean = x.mean(axis=-1, keepdim=True)
-        var = ((x - mean) ** 2).mean(axis=-1, keepdim=True)
-        x_norm = (x - mean) / (var + self.eps) ** 0.5
-        if self.elementwise_affine:
-            x_norm = x_norm * self.weight.x + self.bias.x
-        return x_norm
+        return x.dropout_(self.p) if self.inplace else x.dropout(self.p)
+
+
+class LayerNorm(Module):
+    def __init__(self, ndim: int, bias: bool) -> None:
+        super().__init__()
+        self.weight = Parameter(Tensor.ones((ndim,)))
+        self.bias = Parameter(Tensor.zeros((ndim,))) if bias else None
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.layer_norm(self.weight.x.shape, self.weight.x, self.bias.x if self.bias else None, 1e-5)

@@ -287,6 +287,10 @@ extern MAG_EXPORT mag_Tensor* _Nonnull mag_le(mag_Tensor* _Nonnull x, mag_Tensor
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_ge(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_lt(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_gt(mag_Tensor* _Nonnull x, mag_Tensor* _Nonnull y);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_tril(mag_Tensor* _Nonnull x, int32_t diag);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_tril_(mag_Tensor* _Nonnull x, int32_t diag);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_triu(mag_Tensor* _Nonnull x, int32_t diag);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_triu_(mag_Tensor* _Nonnull x, int32_t diag);
 
 /* ============ Tensor Init Operators ============ */
 

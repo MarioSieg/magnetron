@@ -912,6 +912,24 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(_C.mag_gelu_(self._ptr))
 
+    def tril(self, diagonal: int = 0) -> 'Tensor':
+        assert self.rank >= 2, f'Tril requires a rank >= 2 but is {self.rank}'
+        return Tensor(_C.mag_tril(self._ptr, diagonal))
+
+    def tril_(self, diagonal: int = 0) -> 'Tensor':
+        assert self.rank >= 2, f'Tril requires a rank >= 2 but is {self.rank}'
+        self._validate_inplace_op()
+        return Tensor(_C.mag_tril_(self._ptr, diagonal))
+
+    def triu(self, diagonal: int = 0) -> 'Tensor':
+        assert self.rank >= 2, f'Triu requires a rank >= 2 but is {self.rank}'
+        return Tensor(_C.mag_triu(self._ptr, diagonal))
+
+    def triu_(self, diagonal: int = 0) -> 'Tensor':
+        assert self.rank >= 2, f'Triu requires a rank >= 2 but is {self.rank}'
+        self._validate_inplace_op()
+        return Tensor(_C.mag_triu_(self._ptr, diagonal))
+
     def logical_and(self, other: 'Tensor') -> 'Tensor':
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_and(self._ptr, other._ptr))
