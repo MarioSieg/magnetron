@@ -1207,7 +1207,7 @@ class Tensor:
         cstr: _ffi.CData = _C.mag_tensor_to_string(self._ptr, False, 0, 0)
         data_str: str = _ffi.string(cstr).decode('utf-8')
         _C.mag_tensor_to_string_free_data(cstr)
-        return f'Tensor({data_str})'
+        return data_str
 
     def __repr__(self) -> str:
         return str(self)

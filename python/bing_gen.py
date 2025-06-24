@@ -1,10 +1,14 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
 import datetime
+import os.path
 import re
 
-C_HDR_FILE: str = '../include/magnetron/magnetron.h'
-OUTPUT_FILE: str = 'magnetron/_ffi_cdecl_generated.py'
+C_HDR_FILE: str = 'include/magnetron/magnetron.h'
+OUTPUT_FILE: str = 'python/magnetron/_ffi_cdecl_generated.py'
+
+if not os.path.exists(C_HDR_FILE) or not os.path.exists(OUTPUT_FILE):
+    raise FileNotFoundError(f'Input file {C_HDR_FILE} or output file {OUTPUT_FILE} does not exist.')
 
 print(f'Generating {OUTPUT_FILE} from {C_HDR_FILE}...')
 
