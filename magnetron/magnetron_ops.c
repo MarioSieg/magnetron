@@ -202,6 +202,14 @@ static bool mag_validate_op_unary(mag_StrStream** ss, bool is_inplace, mag_Tenso
     ok = ok && mag_verify_is_contiguous(ss, result);                                /* Check if result is contiguous */
     return ok;
 }
+static bool mag_validate_op_view(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
+    bool ok = true;
+    ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
+    ok = ok && mag_verify_dtype_compat(ss, result->op, inputs);                     /* Check if the operator is defined between the given dtypes */
+    ok = ok && mag_verify_is_contiguous(ss, result);                                /* Check if result is contiguous */
+    ok = ok && mag_verify_is_contiguous(ss, inputs[0]);                             /* Check if x is contiguous */
+    return ok;
+}
 static bool mag_validate_op_unary_matrix(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
     bool ok = mag_validate_op_unary(ss, is_inplace, result, inputs, params);
     ok = ok && mag_verify_is_min_rank(ss, result, 2); /* Verify that we have a matrix or higher-dimensional (rank >= 2). */
@@ -250,9 +258,34 @@ static mag_Tensor* mag_result_constructor_routine_bool_isomorph(mag_Tensor** inp
     return mag_tensor_empty(base->ctx, MAG_DTYPE_BOOL, base->rank, base->shape);
 }
 
-static mag_Tensor* mag_result_constructor_routine_view(mag_Tensor** inputs,  const mag_OPParam* params) {
+static mag_Tensor* mag_result_constructor_routine_view(mag_Tensor** inputs, const mag_OPParam* params) {
     mag_Tensor* base = *inputs;
-    mag_Tensor* result = mag_tensor_inplace_view(base);
+    uint32_t nd_new = params ? (uint32_t)mag_op_param_unpack_u64_or_panic(params[0]) : 0;
+    if (!nd_new)
+        return mag_tensor_inplace_view(base); /* If no new dimensions are specified, return the inplace view of the base tensor. */
+    int64_t old_numel = base->numel;
+    int64_t canon[MAG_MAX_DIMS];
+    int64_t infer_dim = -1;
+    int64_t known_prod = 1;
+    for (uint32_t i=0; i < nd_new; ++i) {
+        int64_t s = mag_op_param_unpack_i64_or_panic(params[i+1]);
+        if (s == -1) {
+            mag_assert2(infer_dim == -1);
+            infer_dim = i;
+            canon[i] = 1;
+        } else {
+            mag_assert2(s > 0);
+            canon[i] = s;
+            known_prod *= s;
+        }
+    }
+    if (infer_dim >= 0) {
+        mag_assert2(old_numel % known_prod == 0);
+        canon[infer_dim] = old_numel / known_prod;
+    } else {
+        mag_assert2(known_prod == old_numel);
+    }
+    mag_Tensor* result = mag_tensor_init_internal(base->ctx, base->dtype, nd_new, canon, base, 0);
     if (*base->name)
         mag_tensor_fmt_name(result, "%s (view)", base->name);
     return result;
@@ -629,8 +662,15 @@ mag_Tensor* mag_clone(mag_Tensor* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_CLONE, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_view(mag_Tensor* x) {
-    return mag_tensor_operator(x->ctx, MAG_OP_VIEW, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
+mag_Tensor* mag_view(mag_Tensor* x, const int64_t* _Nullable dims, uint32_t num_dims) {
+    mag_assert(num_dims <= MAG_MAX_DIMS, "invalid view dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
+    mag_OPParamLayout layout;
+    mag_op_param_layout_init(&layout);
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(num_dims));
+    if (dims)
+        for (uint32_t i=0; i < num_dims; ++i)
+            mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
+    return mag_tensor_operator(x->ctx, MAG_OP_VIEW, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
 mag_Tensor* mag_view_slice(mag_Tensor* x, int64_t dim, int64_t start, int64_t len, int64_t step) {
@@ -1196,11 +1236,20 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
                     {.type=MAG_DTYPE_I32, .is_used=true},
                 }
             },
-            .op_param_layout = {},
+            .op_param_layout = {
+                {.type=MAG_OPP_U64, .is_required=true}, /* view shape count : u32 */
+                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_NONE, .is_required=false},
+            },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_view,
             .r_alloc = &mag_result_constructor_routine_view,
-            .validator = &mag_validate_op_unary
+            .validator = &mag_validate_op_view
         },
         [MAG_OP_TRANSPOSE] = {
             .mnemonic = "transpose",

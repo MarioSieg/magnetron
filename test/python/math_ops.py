@@ -109,7 +109,6 @@ def scalar_op(dtype: mag.DataType, f: callable, rhs: bool = True, lim: int = 4) 
 
     square_shape_permutations(compute, lim)
 
-
 @pytest.mark.parametrize('dtype', [mag.float16, mag.float32])
 def test_unary_op_abs(dtype: mag.DataType) -> None:
     unary_op(dtype, lambda x: x.abs(), lambda x: torch.abs(x))
@@ -241,7 +240,6 @@ def test_unary_op_triu(dtype: mag.DataType) -> None:
     unary_op(dtype, lambda x: x.triu(), lambda x: torch.triu(x))
     with mag.no_grad():
         unary_op(dtype, lambda x: x.triu_(), lambda x: x.triu_())
-
 @pytest.mark.parametrize('dtype', [mag.boolean, mag.int32])
 def test_unary_op_not(dtype: mag.DataType) -> None:
     unary_op(dtype, lambda x: ~x, lambda x: ~x)

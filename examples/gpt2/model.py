@@ -29,7 +29,7 @@ class CausalSelfAttention(nn.Module):
         self.n_head = config.n_head
         self.n_embd = config.n_embd
         self.dropout = config.dropout
-        self.register_buffer('bias', mag.Tensor.ones((config.block_size, config.block_size)).tril().view(1, 1, config.block_size, config.block_size))
+        self.register_buffer('bias', mag.Tensor.ones((config.block_size, config.block_size)).tril().view((1, 1, config.block_size, config.block_size)))
 
     def forward(self, x: mag.Tensor) -> mag.Tensor:
         B, T, C = x.shape
@@ -54,4 +54,5 @@ class CausalSelfAttention(nn.Module):
 
 cfg = GPTConfig()
 csa = CausalSelfAttention(cfg)
-print(csa())
+x = mag.Tensor.uniform(shape=(1024, cfg.n_embd, 1), from_=-1.0, to=1.0)
+print(csa(x))

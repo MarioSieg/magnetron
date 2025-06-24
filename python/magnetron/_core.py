@@ -2,13 +2,14 @@
 
 import contextlib
 import faulthandler
+import operator
 import threading
 import typing
 import weakref
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum, unique
-from functools import lru_cache
+from functools import lru_cache, reduce
 from os import getenv
 from typing import Optional
 
@@ -641,8 +642,12 @@ class Tensor:
     def clone(self) -> 'Tensor':
         return Tensor(_C.mag_clone(self._ptr))
 
-    def view(self) -> 'Tensor':
-        return Tensor(_C.mag_view(self._ptr))
+    def view(self, dims: tuple[int, ...]) -> 'Tensor':
+        assert self.numel == reduce(operator.mul, dims, 1), 'Number of elements must match the new shape'
+        assert self.is_contiguous, 'Tensor must be contiguous to be viewed'
+        num_dims: int = len(dims)
+        view_dims: _ffi.CData = _ffi.new(f'int64_t[{num_dims}]', dims)
+        return Tensor(_C.mag_view(self._ptr, view_dims, num_dims))
 
     def transpose(self) -> 'Tensor':
         return Tensor(_C.mag_transpose(self._ptr))

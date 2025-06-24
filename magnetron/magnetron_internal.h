@@ -668,7 +668,7 @@ static MAG_AINLINE uint64_t mag_op_param_unpack_u64_or(mag_OPParam pa, uint64_t 
 /* Helper for filling the operation parameters array and validating the amount. */
 typedef struct mag_OPParamLayout {
     mag_OPParam slots[MAG_MAX_OP_PARAMS];
-    size_t count;
+    uint32_t count;
 } mag_OPParamLayout;
 
 static inline void mag_op_param_layout_init(mag_OPParamLayout* _Nonnull set) {
