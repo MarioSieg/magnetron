@@ -4,7 +4,7 @@ from magnetron import *
 
 
 def test_tensor_creation() -> None:
-    tensor = Tensor.empty((1, 2, 3, 4, 5, 6))
+    tensor = Tensor.empty(1, 2, 3, 4, 5, 6)
     assert tensor.shape == (1, 2, 3, 4, 5, 6)
     assert tensor.numel == (1 * 2 * 3 * 4 * 5 * 6)
     assert tensor.data_size == 4 * (1 * 2 * 3 * 4 * 5 * 6)
@@ -14,7 +14,7 @@ def test_tensor_creation() -> None:
 
 
 def test_tensor_scalar_get_set_physical() -> None:
-    tensor = Tensor.empty((4, 4))
+    tensor = Tensor.empty(4, 4)
     tensor[0, 0] = 128
     assert tensor[0, 0] == 128
     tensor[3, 3] = 3.14
@@ -22,7 +22,7 @@ def test_tensor_scalar_get_set_physical() -> None:
 
 
 def test_tensor_scalar_get_set_virtual() -> None:
-    tensor = Tensor.empty((4, 4))
+    tensor = Tensor.empty(4, 4)
     tensor[0] = 128
     assert tensor[0] == 128
     tensor[15] = 3.14
@@ -30,7 +30,7 @@ def test_tensor_scalar_get_set_virtual() -> None:
 
 
 def test_tensor_to_list() -> None:
-    tensor = Tensor.zeros((2, 2))
+    tensor = Tensor.zeros(2, 2)
     tensor[0] = 128
     tensor[1] = 255
     tensor[2] = -22333

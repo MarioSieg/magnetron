@@ -44,6 +44,7 @@ class DataType:
     size: int
     name: str
     native_type: str | None
+    fill_fn: _ffi.CData
 
     def __str__(self) -> str:
         return self.name
@@ -52,10 +53,10 @@ class DataType:
         return self.name
 
 
-float32: DataType = DataType(_C.MAG_DTYPE_E8M23, 4, 'float32', 'float')
-float16: DataType = DataType(_C.MAG_DTYPE_E5M10, 2, 'float16', None)
-boolean: DataType = DataType(_C.MAG_DTYPE_BOOL, 1, 'bool', 'bool')
-int32: DataType = DataType(_C.MAG_DTYPE_I32, 4, 'int32', 'int32_t')
+float32: DataType = DataType(_C.MAG_DTYPE_E8M23, 4, 'float32', 'float', _C.mag_tensor_fill_from_floats)
+float16: DataType = DataType(_C.MAG_DTYPE_E5M10, 2, 'float16', None, _C.mag_tensor_fill_from_floats)
+boolean: DataType = DataType(_C.MAG_DTYPE_BOOL, 1, 'bool', 'bool', _C.mag_tensor_fill_from_raw_bytes)
+int32: DataType = DataType(_C.MAG_DTYPE_I32, 4, 'int32', 'int32_t', _C.mag_tensor_fill_from_raw_bytes)
 
 _DTYPE_ENUM_MAP: dict[int, DataType] = {
     float32.enum_value: float32,
@@ -93,7 +94,7 @@ class Context:
 
     @staticmethod
     @lru_cache(maxsize=1)
-    def primary() -> 'Context':
+    def get() -> 'Context':
         """Get global context singleton."""
         _C.mag_set_log_mode(Config.verbose)
         return Context()
@@ -184,39 +185,51 @@ class no_grad(contextlib.ContextDecorator):
 
     def __enter__(self) -> None:
         """Disable gradient tracking by stopping the active context's recorder."""
-        Context.primary().stop_grad_recorder()
+        Context.get().stop_grad_recorder()
 
     def __exit__(self, exc_type: any, exc_value: any, traceback: any) -> None:
         """Re-enable gradient tracking when exiting the context."""
-        Context.primary().start_grad_recorder()
+        Context.get().start_grad_recorder()
 
 
-def _flatten_nested_lists(nested: object) -> tuple[tuple[int, ...], list[float]]:
-    """Flatten a nested list and return its shape and flattened data."""
-    if not isinstance(nested, list):
-        return (), [nested]
-    elif len(nested) == 0:
-        return (0,), []
-    else:
-        shapes = []
-        flattened = []
-        for item in nested:
-            shape_lst, flat = _flatten_nested_lists(item)
-            shapes.append(shape_lst)
-            flattened += flat
-        first_shape = shapes[0]
-        for s in shapes:
-            assert s == first_shape, 'All sub-lists must have the same shape'
-        return (len(nested),) + first_shape, flattened
+NestedData = float | bool | int | list['NestedData']
 
 
-def _deduce_tensor_dtype(obj: any) -> tuple[DataType, str, _ffi.CData]:
+def _flatten_nested_lists(nested):
+    flat, dims = [], []
+    def walk(node, depth=0):
+        if isinstance(node, list):
+            if len(dims) <= depth:
+                dims.append(len(node))
+            elif dims[depth] is None or dims[depth] != len(node):
+                raise ValueError('All sub-lists must have the same shape')
+            for child in node:
+                walk(child, depth + 1)
+        else:
+            if len(dims) <= depth:
+                dims.append(None)
+            elif dims[depth] is not None:
+                raise ValueError('All sub-lists must have the same shape')
+            flat.append(node)
+    walk(nested)
+    return tuple(d for d in dims if d is not None), flat
+
+
+def _deduce_tensor_dtype(obj: bool | float | int) -> DataType:
     if isinstance(obj, bool):
-        return boolean, 'uint8_t', _C.mag_tensor_fill_from_raw_bytes
-    elif isinstance(obj, float) or isinstance(obj, int):
-        return float32, 'float', _C.mag_tensor_fill_from_floats
+        return boolean
+    elif isinstance(obj, int):
+        return int32
+    elif isinstance(obj, float):
+        return float32
     else:
         raise TypeError(f'Invalid data type: {type(obj)}')
+
+
+def _unpack_shape(*shape: int | tuple[int, ...]) -> tuple[int, ...]:
+    if len(shape) == 1 and isinstance(shape[0], tuple):
+        return shape[0]
+    return shape
 
 
 def _validate_dtype_compat(dtypes: set[DataType], *kwargs: any) -> None:
@@ -249,7 +262,7 @@ class Tensor:
         *,
         ctx: Context | None = None,
         shape: tuple[int, ...] | None = None,
-        dtype: DataType = Context.primary().default_dtype,
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> None:
@@ -274,15 +287,15 @@ class Tensor:
     @classmethod
     def empty(
         cls,
-        shape: tuple[int, ...],
-        *,
-        dtype: DataType = Context.primary().default_dtype,
+        *shape: int | tuple[int, ...],
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
+        shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
-            ctx=Context.primary(),
+            ctx=Context.get(),
             shape=shape,
             dtype=dtype,
             requires_grad=requires_grad,
@@ -295,7 +308,7 @@ class Tensor:
         cls,
         template: 'Tensor',
         *,
-        dtype: DataType = Context.primary().default_dtype,
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
@@ -304,16 +317,16 @@ class Tensor:
     @classmethod
     def full(
         cls,
-        shape: tuple[int, ...],
-        *,
+        *shape: int | tuple[int, ...],
         fill_value: int | float,
-        dtype: DataType = Context.primary().default_dtype,
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
+        shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
-            ctx=Context.primary(),
+            ctx=Context.get(),
             shape=shape,
             dtype=dtype,
             requires_grad=requires_grad,
@@ -328,7 +341,7 @@ class Tensor:
         template: 'Tensor',
         *,
         fill_value: int | float,
-        dtype: DataType = Context.primary().default_dtype,
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
@@ -341,36 +354,40 @@ class Tensor:
         )
 
     @classmethod
-    def from_data(
+    def of(
         cls,
-        data: list[float, ...] | list[bool, ...],
+        data: NestedData,
         *,
+        dtype: DataType | None = None,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
         if not data:
-            return cls.empty(shape=(0,), dtype=float32)
-
+            return cls.empty(0, dtype=dtype if dtype is not None else Context.get().default_dtype)
         shape, flattened_data = _flatten_nested_lists(data)
-        dtype, native_name, alloc_fn = _deduce_tensor_dtype(flattened_data[0])
+        dtype: DataType = dtype if dtype is not None else _deduce_tensor_dtype(flattened_data[0])
+        native_name: str = dtype.native_type
+        alloc_fn: _ffi.CData = dtype.fill_fn
         tensor = cls(
             native_object=None,
-            ctx=Context.primary(),
+            ctx=Context.get(),
             shape=shape,
             dtype=dtype,
             requires_grad=requires_grad,
             name=name,
         )
         staging_buffer: _ffi.CData = _ffi.new(f'{native_name}[{len(flattened_data)}]', flattened_data)
-        alloc_fn(tensor._ptr, staging_buffer, len(flattened_data))
+        copy_bytes_numel: int = len(flattened_data)
+        if alloc_fn == _C.mag_tensor_fill_from_raw_bytes: # If the dtype is not a floating point type, we need to multiply by the size of the dtype for the raw bytes initializer.
+            copy_bytes_numel *= dtype.size
+        alloc_fn(tensor._ptr, staging_buffer, copy_bytes_numel)
         return tensor
 
     @classmethod
     def zeros(
         cls,
-        shape: tuple[int, ...],
-        *,
-        dtype: DataType = Context.primary().default_dtype,
+        *shape: int | tuple[int, ...],
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
@@ -381,7 +398,7 @@ class Tensor:
         cls,
         template: 'Tensor',
         *,
-        dtype: DataType = Context.primary().default_dtype,
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
@@ -390,9 +407,8 @@ class Tensor:
     @classmethod
     def ones(
         cls,
-        shape: tuple[int, ...],
-        *,
-        dtype: DataType = Context.primary().default_dtype,
+        *shape: int | tuple[int, ...],
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
@@ -403,7 +419,7 @@ class Tensor:
         cls,
         template: 'Tensor',
         *,
-        dtype: DataType = Context.primary().default_dtype,
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
@@ -412,17 +428,17 @@ class Tensor:
     @classmethod
     def uniform(
         cls,
-        shape: tuple[int, ...],
-        *,
+        *shape: int | tuple[int, ...],
         from_: float | int | None = None,
         to: float | int | None = None,
-        dtype: DataType = Context.primary().default_dtype,
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
+        shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
-            ctx=Context.primary(),
+            ctx=Context.get(),
             shape=shape,
             dtype=dtype,
             requires_grad=requires_grad,
@@ -434,17 +450,17 @@ class Tensor:
     @classmethod
     def normal(
         cls,
-        shape: tuple[int, ...],
-        *,
+        *shape: int | tuple[int, ...],
         mean: float = 0.0,
         std: float = 1.0,
-        dtype: DataType = Context.primary().default_dtype,
+        dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
+        shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
-            ctx=Context.primary(),
+            ctx=Context.get(),
             shape=shape,
             dtype=dtype,
             requires_grad=requires_grad,
@@ -456,14 +472,14 @@ class Tensor:
     @classmethod
     def bernoulli(
         cls,
-        shape: tuple[int, ...],
-        *,
+        *shape: int | tuple[int, ...],
         p: float = 0.5,
         name: str | None = None,
     ) -> 'Tensor':
+        shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
-            ctx=Context.primary(),
+            ctx=Context.get(),
             shape=shape,
             dtype=boolean,
             requires_grad=False,
@@ -520,13 +536,10 @@ class Tensor:
 
     def __bool__(self) -> bool:
         if self.numel != 1:
-            raise ValueError(
-                'The truth value of a Tensor with more than one element is '
-                'ambiguous. Use .any() or .all() instead.'
-            )
+            raise ValueError('The truth value of a Tensor with more than one element is ambiguous. Use .any() or .all() instead.')
         return bool(self.item())
 
-    def tolist(self) -> list[float] | list[int] | list[bool]:
+    def tolist(self) -> NestedData:
         unpack_fn = _C.mag_tensor_get_data_as_floats if self.is_floating_point else _C.mag_tensor_get_raw_data_as_bytes
         free_fn = _C.mag_tensor_get_data_as_floats_free if self.is_floating_point else _C.mag_tensor_get_raw_data_as_bytes_free
         castor = None if self.is_floating_point else self.dtype.native_type
@@ -1213,7 +1226,7 @@ class Tensor:
             raise TypeError('Indices must be an int or a tuple of ints.')
 
     def _validate_inplace_op(self) -> None:
-        if Context.primary().is_grad_recording and self.requires_grad:
+        if Context.get().is_grad_recording and self.requires_grad:
             raise RuntimeError(
                 'In-place operations are not allowed when gradient recording is enabled. '
                 'Either disable gradient recording or use the `detach()` method to create a new tensor without gradient tracking.'

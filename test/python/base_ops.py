@@ -3,7 +3,7 @@
 from magnetron import *
 
 def test_tensor_clone() -> None:
-    a = Tensor.from_data([[1, 2], [3, 4]])
+    a = Tensor.of([[1, 2], [3, 4]])
     b = a.clone()
     assert a.shape == b.shape
     assert a.numel == b.numel
@@ -12,7 +12,7 @@ def test_tensor_clone() -> None:
     assert a.is_contiguous == b.is_contiguous
 
 def test_tensor_transpose() -> None:
-    a = Tensor.full((2, 3), fill_value=1)
+    a = Tensor.full(2, 3, fill_value=1)
     b = a.transpose()
     assert a.shape == (2, 3)
     assert b.shape == (3, 2)
@@ -26,7 +26,7 @@ def test_tensor_transpose() -> None:
     assert not b.is_contiguous
 
 def test_tensor_permute() -> None:
-    a = Tensor.full((2, 3), fill_value=1)
+    a = Tensor.full(2, 3, fill_value=1)
     b = a.permute((1, 0))
     assert a.shape == (2, 3)
     assert b.shape == (3, 2)
@@ -40,7 +40,7 @@ def test_tensor_permute() -> None:
     assert not b.is_contiguous
 
 def test_tensor_permute_6d() -> None:
-    a = Tensor.full((1, 2, 3, 4, 5, 6), fill_value=1)
+    a = Tensor.full(1, 2, 3, 4, 5, 6, fill_value=1)
     b = a.permute((5, 4, 3, 2, 1, 0))
     assert a.shape == (1, 2, 3, 4, 5, 6)
     assert b.shape == (6, 5, 4, 3, 2, 1)

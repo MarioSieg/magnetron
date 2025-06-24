@@ -20,7 +20,7 @@ class StorageStream:
     """
 
     def __init__(self, handle: _ffi.CData | None = None) -> None:
-        self._ctx = Context.primary()
+        self._ctx = Context.get()
         if handle is not None:
             if handle == _ffi.NULL:
                 raise ValueError('Received an invalid native handle (NULL).')
@@ -61,7 +61,7 @@ class StorageStream:
         """Opens a Magnetron storage file for reading."""
         if isinstance(file_path, str):
             file_path = Path(file_path)
-        handle = _C.mag_storage_stream_deserialize(Context.primary().native_ptr, str(file_path).encode('utf-8'))
+        handle = _C.mag_storage_stream_deserialize(Context.get().native_ptr, str(file_path).encode('utf-8'))
         if handle == _ffi.NULL:
             raise RuntimeError(f'Failed to open storage stream from file: {file_path}')
         return cls(handle)
