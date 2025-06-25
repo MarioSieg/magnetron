@@ -11,11 +11,11 @@ class Linear(Module):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        weight = Tensor.normal(shape=(out_features, in_features), mean=0.0, std=1.0)
+        weight = Tensor.normal(out_features, in_features, mean=0.0, std=1.0)
         weight = weight / math.sqrt(in_features + out_features)
         self.weight = Parameter(weight)
         if bias:
-            self.bias = Parameter(Tensor.zeros((out_features,), name='bias'))
+            self.bias = Parameter(Tensor.zeros(out_features, name='bias'))
 
     def forward(self, x: Tensor) -> Tensor:
         x = x @ self.weight.x.T
@@ -29,7 +29,7 @@ class Embedding(Module):
         super().__init__()
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        self.weight = Parameter(Tensor.normal((num_embeddings, embedding_dim)) / embedding_dim)
+        self.weight = Parameter(Tensor.normal(num_embeddings, embedding_dim) / embedding_dim)
 
     def forward(self, x: Tensor) -> Tensor:
         return self.weight[x]
@@ -39,7 +39,7 @@ class RMSNorm(Module):
     def __init__(self, dim: int, eps: float = 1e-5) -> None:
         super().__init__()
         self.eps = eps
-        self.weight = Parameter(Tensor.zeros(shape=(dim,)))
+        self.weight = Parameter(Tensor.zeros(dim))
 
     def _norm(self, x: Tensor) -> Tensor:
         rms = ((x**2).mean(axis=-1, keepdim=True) + self.eps) ** 0.5

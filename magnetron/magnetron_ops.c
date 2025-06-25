@@ -260,7 +260,7 @@ static mag_Tensor* mag_result_constructor_routine_bool_isomorph(mag_Tensor** inp
 
 static mag_Tensor* mag_result_constructor_routine_view(mag_Tensor** inputs, const mag_OPParam* params) {
     mag_Tensor* base = *inputs;
-    uint32_t nd_new = params ? (uint32_t)mag_op_param_unpack_u64_or_panic(params[0]) : 0;
+    uint32_t nd_new = (uint32_t)mag_op_param_unpack_u64_or_panic(params[0]);
     if (!nd_new)
         return mag_tensor_inplace_view(base); /* If no new dimensions are specified, return the inplace view of the base tensor. */
     int64_t old_numel = base->numel;
@@ -297,7 +297,7 @@ static mag_Tensor* mag_result_constructor_routine_scalar(mag_Tensor** inputs,  c
 }
 
 static mag_Tensor* mag_result_constructor_routine_transposed(mag_Tensor** inputs,  const mag_OPParam* params) {
-    mag_Tensor* transposed = mag_result_constructor_routine_view(inputs, params);
+    mag_Tensor* transposed = mag_tensor_inplace_view(*inputs);
     mag_swap(int64_t, transposed->shape[0], transposed->shape[1]);
     mag_swap(int64_t, transposed->strides[0], transposed->strides[1]);
     if (*inputs[0]->name)
@@ -308,7 +308,7 @@ static mag_Tensor* mag_result_constructor_routine_transposed(mag_Tensor** inputs
 static mag_Tensor* mag_result_constructor_routine_permuted(mag_Tensor** inputs,  const mag_OPParam* params) {
     mag_assert2(params != NULL);
     const mag_Tensor* base = inputs[0];
-    mag_Tensor* permuted = mag_result_constructor_routine_view(inputs, params);
+    mag_Tensor* permuted = mag_tensor_inplace_view(*inputs);
     int64_t axes[MAG_MAX_DIMS];
     for (int64_t i=0; i < base->rank; ++i)
         axes[i] = mag_op_param_unpack_u64_or_panic(params[i]);

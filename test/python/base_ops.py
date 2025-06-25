@@ -41,7 +41,7 @@ def test_tensor_permute() -> None:
 
 def test_tensor_permute_6d() -> None:
     a = Tensor.full(1, 2, 3, 4, 5, 6, fill_value=1)
-    b = a.permute((5, 4, 3, 2, 1, 0))
+    b = a.permute(5, 4, 3, 2, 1, 0)
     assert a.shape == (1, 2, 3, 4, 5, 6)
     assert b.shape == (6, 5, 4, 3, 2, 1)
     assert a.numel == 720

@@ -6,7 +6,6 @@ import operator
 import threading
 import typing
 import weakref
-from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum, unique
 from functools import lru_cache, reduce
@@ -392,7 +391,7 @@ class Tensor:
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
-        return cls.full(shape, fill_value=0, dtype=dtype, requires_grad=requires_grad, name=name)
+        return cls.full(*shape, fill_value=0, dtype=dtype, requires_grad=requires_grad, name=name)
 
     @classmethod
     def zeros_like(
@@ -413,7 +412,7 @@ class Tensor:
         requires_grad: bool = False,
         name: str | None = None,
     ) -> 'Tensor':
-        return cls.full(shape, fill_value=1, dtype=dtype, requires_grad=requires_grad, name=name)
+        return cls.full(*shape, fill_value=1, dtype=dtype, requires_grad=requires_grad, name=name)
 
     @classmethod
     def ones_like(
@@ -655,7 +654,8 @@ class Tensor:
     def clone(self) -> 'Tensor':
         return Tensor(_C.mag_clone(self._ptr))
 
-    def view(self, dims: tuple[int, ...]) -> 'Tensor':
+    def view(self, *dims: int | tuple[int, ...]) -> 'Tensor':
+        dims = _unpack_shape(dims)
         assert self.numel == reduce(operator.mul, dims, 1), 'Number of elements must match the new shape'
         assert self.is_contiguous, 'Tensor must be contiguous to be viewed'
         num_dims: int = len(dims)
@@ -678,17 +678,18 @@ class Tensor:
             return self
         return self.clone()
 
-    def permute(self, axes: tuple[int, ...]) -> 'Tensor':
-        assert len(axes) == self.rank, f'Invalid number of axes, require {self.rank}, got {len(axes)}'
-        if len(axes) != MAX_DIMS:
-            axes = axes + tuple(range(self.rank, MAX_DIMS))
-        assert len(axes) == MAX_DIMS
-        axes = _ffi.new('int64_t[]', axes)
+    def permute(self, *dims: int | tuple[int, ...]) -> 'Tensor':
+        dims = _unpack_shape(*dims)
+        assert len(dims) == self.rank, f'Invalid number of axes, require {self.rank}, got {len(dims)}'
+        if len(dims) != MAX_DIMS:
+            dims = dims + tuple(range(self.rank, MAX_DIMS))
+        assert len(dims) == MAX_DIMS
+        dims = _ffi.new('int64_t[]', dims)
         for i in range(MAX_DIMS):
-            assert 0 <= axes[i] < MAX_DIMS
+            assert 0 <= dims[i] < MAX_DIMS
             for j in range(i + 1, MAX_DIMS):
-                assert axes[i] != axes[j], f'Duplicate axis: {axes[i]}'
-        return Tensor(_C.mag_permute(self._ptr, axes, MAX_DIMS))
+                assert dims[i] != dims[j], f'Duplicate axis: {dims[i]}'
+        return Tensor(_C.mag_permute(self._ptr, dims, MAX_DIMS))
 
     def fill_(self, value: float | int | bool) -> None:
         self._validate_inplace_op()
