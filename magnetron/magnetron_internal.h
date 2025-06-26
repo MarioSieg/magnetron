@@ -831,9 +831,13 @@ typedef struct mag_OPMetadata {
 
 extern const mag_OPMetadata* _Nonnull mag_op_meta_of(mag_Operator opc); /* Get operation metadata for a specific opcode. */
 
+typedef uint64_t mag_RCIntegral;
+#define MAG_RCINTEGRAL_MAX UINT64_MAX
+#define MAG_RCINTEGRAL_PRI PRIu64
+
 /* Header for all objects that are reference counted. */
 typedef struct mag_RCControlBlock {
-    uint64_t rc;                            /* Strong reference count. Object is deallocated if this reaches zero. */
+    mag_RCIntegral rc;                      /* Strong reference count. Object is deallocated if this reaches zero. */
     void* _Nonnull self;                    /* Pointer to the self. */
     void (*_Nonnull dtor)(void* _Nonnull);  /* Destructor function (required). */
 } mag_RCControlBlock;
@@ -849,11 +853,11 @@ static MAG_AINLINE mag_RCControlBlock mag_rc_control_init(void* _Nonnull self, v
 }
 
 static MAG_AINLINE void mag_rc_control_incref(mag_RCControlBlock* _Nonnull rcb) { /* Increment reference count (retain). */
-    mag_assert(++rcb->rc < 0xffffffffu, "Reference count overflow");
+    mag_assert(++rcb->rc < MAG_RCINTEGRAL_MAX, "reference count overflow, max RC: %" MAG_RCINTEGRAL_PRI, MAG_RCINTEGRAL_MAX);
 }
 static MAG_AINLINE bool mag_rc_control_decref(mag_RCControlBlock* _Nonnull rcb) { /* Decrement reference count (release). */
-    mag_assert(rcb->rc, "Reference count underflow (double free)");
-    if (--rcb->rc == 0) { /* Call destructor. */
+    mag_assert(rcb->rc, "reference count underflow (double free)");
+    if (!--rcb->rc) { /* Decref and invoke destructor. */
         (*rcb->dtor)(rcb->self);
         return true; /* Object was destroyed. */
     }

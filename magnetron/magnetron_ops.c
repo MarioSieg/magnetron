@@ -662,7 +662,7 @@ mag_Tensor* mag_clone(mag_Tensor* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_CLONE, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_view(mag_Tensor* x, const int64_t* _Nullable dims, uint32_t num_dims) {
+mag_Tensor* mag_view(mag_Tensor* x, const int64_t* dims, uint32_t num_dims) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid view dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
@@ -671,6 +671,19 @@ mag_Tensor* mag_view(mag_Tensor* x, const int64_t* _Nullable dims, uint32_t num_
         for (uint32_t i=0; i < num_dims; ++i)
             mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_VIEW, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
+}
+
+mag_Tensor* mag_reshape(mag_Tensor* x, const int64_t* dims, uint32_t num_dims) {
+  if (x->rank == num_dims && !memcmp(x->shape, dims, sizeof(*dims)*num_dims)) {
+    mag_tensor_incref(x); /* Incref by one because return value of function must be a "new" tensor */
+    return x;
+  }
+  if (mag_tensor_is_contiguous(x)) /* If cont, just view directly */
+    return mag_view(x, dims, num_dims);
+  mag_Tensor* base = mag_clone(x);
+  mag_Tensor* view = mag_view(base, dims, num_dims);
+  mag_tensor_decref(base); /* Decref so base goes out of scope, if RC > 1 base would be leaked due to lost instance */
+  return view;
 }
 
 mag_Tensor* mag_view_slice(mag_Tensor* x, int64_t dim, int64_t start, int64_t len, int64_t step) {

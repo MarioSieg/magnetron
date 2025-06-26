@@ -33,7 +33,7 @@ TEST(cpu_tensor_indexing, subscript_flattened_e5m10) {
     });
 }
 
-TEST(cpu_tensor_indexing, view_positive_step) {
+TEST(cpu_tensor_indexing, view_slice_positive_step) {
     constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{compute_device::cpu};
     tensor base {ctx, dtype::e8m23, shape};
@@ -50,7 +50,7 @@ TEST(cpu_tensor_indexing, view_positive_step) {
     ASSERT_EQ(view_addr, expected);
 }
 
-TEST(cpu_tensor_indexing, view_chain_accumulates_offset) {
+TEST(cpu_tensor_indexing, view_slice_chain_accumulates_offset) {
     context ctx{compute_device::cpu};
     tensor base{ctx, dtype::e8m23, 10, 2};
     tensor v1 = base.view_slice(0, 2, 6, 1); // rows 2..7

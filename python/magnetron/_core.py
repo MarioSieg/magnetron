@@ -75,7 +75,7 @@ _INTEGRAL_DTYPES: set[DataType] = {boolean, int32}
 _INTEGER_DTYPES: set[DataType] = _INTEGRAL_DTYPES - {boolean}
 
 # Include all numeric dtypes (floating point + integers - boolean)
-_NUMERIC_DTYPES = _FLOATING_POINT_DTYPES | _INTEGER_DTYPES
+_NUMERIC_DTYPES: set[DataType] = _FLOATING_POINT_DTYPES | _INTEGER_DTYPES
 
 
 @dataclass
@@ -656,11 +656,16 @@ class Tensor:
 
     def view(self, *dims: int | tuple[int, ...]) -> 'Tensor':
         dims = _unpack_shape(dims)
-        assert self.numel == reduce(operator.mul, dims, 1), 'Number of elements must match the new shape'
         assert self.is_contiguous, 'Tensor must be contiguous to be viewed'
         num_dims: int = len(dims)
         view_dims: _ffi.CData = _ffi.new(f'int64_t[{num_dims}]', dims)
         return Tensor(_C.mag_view(self._ptr, view_dims, num_dims))
+
+    def reshape(self, *dims: int | tuple[int, ...]) -> 'Tensor':
+        dims = _unpack_shape(dims)
+        num_dims: int = len(dims)
+        view_dims: _ffi.CData = _ffi.new(f'int64_t[{num_dims}]', dims)
+        return Tensor(_C.mag_reshape(self._ptr, view_dims, num_dims))
 
     def transpose(self) -> 'Tensor':
         return Tensor(_C.mag_transpose(self._ptr))

@@ -197,6 +197,7 @@ extern MAG_EXPORT mag_Tensor* _Nonnull mag_tensor_full_like(mag_Tensor* _Nonnull
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_clone(mag_Tensor* _Nonnull x);
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_view(mag_Tensor* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims);
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_view_slice(mag_Tensor* _Nonnull x, int64_t dim, int64_t start, int64_t len, int64_t step);
+extern MAG_EXPORT mag_Tensor* _Nonnull mag_reshape(mag_Tensor* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims);
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_transpose(mag_Tensor* _Nonnull x);
 extern MAG_EXPORT mag_Tensor* _Nonnull mag_permute(mag_Tensor* _Nonnull x, const int64_t* _Nonnull dims, uint32_t num_dims);
 

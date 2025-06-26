@@ -833,13 +833,6 @@ void mag_strstream_flush(mag_StrStream* ss, FILE* f) {
    fputs(ss->buf, f);
 }
 
-const char* const mag_op_param_type_names[MAG_OPP__NUM] = {
-    "none",
-    "e8m23",
-    "i64",
-    "u64"
-};
-
 /* Allocate a new linear chunk for a fixed pool. */
 static mag_PoolChunk* mag_fixed_pool_chunk_new(size_t block_size, size_t block_align, size_t blocks_per_chunk) {
     size_t cap = blocks_per_chunk*block_size;

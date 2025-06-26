@@ -1,19 +1,10 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
+
 import random
-
-from magnetron import *
 import torch
+from magnetron import *
 
-DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
-    float16: torch.float16,
-    float32: torch.float32,
-    int32: torch.int32,
-    boolean: torch.bool
-}
-
-def totorch(t: Tensor) -> torch.Tensor:
-    return torch.tensor(t.tolist(), dtype=DTYPE_TORCH_MAP[t.dtype]).reshape(t.shape)
-
+from .common import *
 
 def sigmoid(x: torch.Tensor) -> None:
     return 1 / (1 + torch.exp(-x))
