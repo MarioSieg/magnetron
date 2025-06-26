@@ -3,6 +3,8 @@
 import torch
 import magnetron as mag
 
+from collections import deque
+
 DTYPE_TORCH_MAP: dict[mag.DataType, torch.dtype] = {
     mag.float16: torch.float16,
     mag.float32: torch.float32,
@@ -104,3 +106,35 @@ def scalar_op(dtype: mag.DataType, f: callable, rhs: bool = True, lim: int = 4) 
         torch.testing.assert_close(totorch(r, torch_dt), f(xi, totorch(x, torch_dt)))
 
     square_shape_permutations(func, lim)
+
+def nested_len(obj: list[any]) -> int:
+    total = 0
+    stack = deque([obj])
+    seen = set()
+    while stack:
+        current = stack.pop()
+        obj_id = id(current)
+        if obj_id in seen:
+            continue
+        seen.add(obj_id)
+        for item in current:
+            if isinstance(item, list):
+                stack.append(item)
+            else:
+                total += 1
+    return total
+
+def flatten(nested: any) -> list[any]:
+    out: list[any] = []
+    stack = deque([iter(nested)])
+    while stack:
+        try:
+            item = next(stack[-1])
+        except StopIteration:
+            stack.pop()
+            continue
+        if isinstance(item, list) or isinstance(item, tuple):
+            stack.append(iter(item))
+        else:
+            out.append(item)
+    return out

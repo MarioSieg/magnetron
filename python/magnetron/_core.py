@@ -195,9 +195,10 @@ class no_grad(contextlib.ContextDecorator):
 NestedData = float | bool | int | list['NestedData']
 
 
-def _flatten_nested_lists(nested):
+def _flatten_nested_lists(nested: list[any, ...]) -> tuple[tuple[int], list[any]]:
     flat, dims = [], []
-    def walk(node, depth=0):
+
+    def walk(node: any, depth: int = 0) -> None:
         if isinstance(node, list):
             if len(dims) <= depth:
                 dims.append(len(node))
@@ -211,6 +212,7 @@ def _flatten_nested_lists(nested):
             elif dims[depth] is not None:
                 raise ValueError('All sub-lists must have the same shape')
             flat.append(node)
+
     walk(nested)
     return tuple(d for d in dims if d is not None), flat
 
@@ -249,6 +251,14 @@ def _get_reduction_axes(dim: int | tuple[int] | None) -> tuple[_ffi.CData, int]:
         return axes, num
     else:
         raise TypeError('Dimension must be an int or a tuple of ints.')
+
+
+def _build_nested(flat: list[any], shape: tuple[int], strides: tuple[int], offset: int, dim: int) -> list[any, ...]:
+    if dim == len(shape):
+        return flat[offset]
+    size = shape[dim]
+    stride = strides[dim]
+    return [_build_nested(flat, shape, strides, offset + i * stride, dim + 1) for i in range(size)]
 
 
 class Tensor:
@@ -378,7 +388,9 @@ class Tensor:
         )
         staging_buffer: _ffi.CData = _ffi.new(f'{native_name}[{len(flattened_data)}]', flattened_data)
         copy_bytes_numel: int = len(flattened_data)
-        if alloc_fn == _C.mag_tensor_fill_from_raw_bytes: # If the dtype is not a floating point type, we need to multiply by the size of the dtype for the raw bytes initializer.
+        if (
+            alloc_fn == _C.mag_tensor_fill_from_raw_bytes
+        ):  # If the dtype is not a floating point type, we need to multiply by the size of the dtype for the raw bytes initializer.
             copy_bytes_numel *= dtype.size
         alloc_fn(tensor._ptr, staging_buffer, copy_bytes_numel)
         return tensor
@@ -540,15 +552,17 @@ class Tensor:
         return bool(self.item())
 
     def tolist(self) -> NestedData:
-        unpack_fn = _C.mag_tensor_get_data_as_floats if self.is_floating_point else _C.mag_tensor_get_raw_data_as_bytes
-        free_fn = _C.mag_tensor_get_data_as_floats_free if self.is_floating_point else _C.mag_tensor_get_raw_data_as_bytes_free
-        castor = None if self.is_floating_point else self.dtype.native_type
-        ptr: _ffi.CData = unpack_fn(self._ptr)
-        if castor is not None:
-            ptr = _ffi.cast(f'const {castor}*', ptr)
-        unpacked = _ffi.unpack(ptr, self.numel)
+        if self.numel == 0:
+            return []
+        is_fp: bool = self.is_floating_point
+        unpack_fn = _C.mag_tensor_get_data_as_floats if is_fp else _C.mag_tensor_get_raw_data_as_bytes
+        free_fn = _C.mag_tensor_get_data_as_floats_free if is_fp else _C.mag_tensor_get_raw_data_as_bytes_free
+        ptr = unpack_fn(self._ptr)
+        if not is_fp:
+            ptr = _ffi.cast(f'const {self.dtype.native_type}*', ptr)
+        flat = list(_ffi.unpack(ptr, self.numel))
         free_fn(ptr)
-        return unpacked
+        return _build_nested(flat, self.shape, self.strides, offset=0, dim=0)
 
     @property
     def data_size(self) -> int:
@@ -667,16 +681,17 @@ class Tensor:
         view_dims: _ffi.CData = _ffi.new(f'int64_t[{num_dims}]', dims)
         return Tensor(_C.mag_reshape(self._ptr, view_dims, num_dims))
 
-    def transpose(self) -> 'Tensor':
-        return Tensor(_C.mag_transpose(self._ptr))
+    def transpose(self, dim1: int = 0, dim2: int = 1) -> 'Tensor':
+        assert dim1 != dim2, f'Transposition axes must be not equal, but {dim1} == {dim2}'
+        return Tensor(_C.mag_transpose(self._ptr, dim1, dim2))
+
+    @property
+    def T(self) -> 'Tensor':
+        return Tensor(_C.mag_transpose(self._ptr, 0, 1))
 
     def detach(self) -> 'Tensor':
         _C.mag_tensor_detach(self._ptr)
         return self
-
-    @property
-    def T(self) -> 'Tensor':
-        return Tensor(_C.mag_transpose(self._ptr))
 
     def contiguous(self) -> 'Tensor':
         if self.is_contiguous:

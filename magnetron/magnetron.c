@@ -709,7 +709,7 @@ mag_PRNGAlgo mag_ctx_get_prng_algorithm(const mag_Context* ctx) {
 }
 
 void mag_ctx_set_prng_algorithm(mag_Context* ctx, mag_PRNGAlgo algorithm, uint64_t seed) {
-    mag_log_warn("NYI");
+    mag_log_warn("Setting the PRNG algorithm is not implemented at the moment");
 }
 
 mag_ComputeDeviceType mag_ctx_get_compute_device_type(const mag_Context* ctx) { return ctx->device_type; }

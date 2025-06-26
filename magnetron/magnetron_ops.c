@@ -298,8 +298,10 @@ static mag_Tensor* mag_result_constructor_routine_scalar(mag_Tensor** inputs,  c
 
 static mag_Tensor* mag_result_constructor_routine_transposed(mag_Tensor** inputs,  const mag_OPParam* params) {
     mag_Tensor* transposed = mag_tensor_inplace_view(*inputs);
-    mag_swap(int64_t, transposed->shape[0], transposed->shape[1]);
-    mag_swap(int64_t, transposed->strides[0], transposed->strides[1]);
+    uint64_t ax0 = mag_op_param_unpack_u64_or_panic(params[0]);
+    uint64_t ax1 = mag_op_param_unpack_u64_or_panic(params[1]);
+    mag_swap(int64_t, transposed->shape[ax0], transposed->shape[ax1]);
+    mag_swap(int64_t, transposed->strides[ax0], transposed->strides[ax1]);
     if (*inputs[0]->name)
         mag_tensor_fmt_name(transposed, "%s (T)", inputs[0]->name);
     return transposed;
@@ -372,7 +374,9 @@ static void mag_op_backward_view(mag_Tensor* node, mag_Tensor** grads) {
 }
 
 static void mag_op_backward_transpose(mag_Tensor* node, mag_Tensor** grads) {
-    *grads = mag_transpose(node->grad);
+    uint64_t ax0 = mag_op_param_unpack_u64_or_panic(node->op_params[0]);
+    uint64_t ax1 = mag_op_param_unpack_u64_or_panic(node->op_params[1]);
+    *grads = mag_transpose(node->grad, ax0, ax1);
 }
 
 static void mag_op_backward_mean(mag_Tensor* node, mag_Tensor** grads) {
@@ -584,12 +588,12 @@ static void mag_op_backward_matmul(mag_Tensor* node, mag_Tensor** grads) {
     mag_Tensor* x = node->op_inputs[0];
     mag_Tensor* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
-        mag_Tensor* yt = mag_transpose(y);
+        mag_Tensor* yt = mag_transpose(y, 0, 1);
         grads[0] = mag_matmul(node->grad, yt);
         mag_tensor_decref(yt);
     }
     if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-        mag_Tensor* xt = mag_transpose(x);
+        mag_Tensor* xt = mag_transpose(x, 0, 1);
         grads[1] = mag_matmul(xt, node->grad);
         mag_tensor_decref(xt);
     }
@@ -705,8 +709,20 @@ mag_Tensor* mag_view_slice(mag_Tensor* x, int64_t dim, int64_t start, int64_t le
     return mag_tensor_init_internal(x->ctx, x->dtype, x->rank, shape, x, byte_offs);
 }
 
-mag_Tensor* mag_transpose(mag_Tensor* x) {
-    return mag_tensor_operator(x->ctx, MAG_OP_TRANSPOSE, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
+mag_Tensor* mag_transpose(mag_Tensor* x, int64_t dim1, int64_t dim2) {
+    mag_assert(dim1 != dim2, "transposition axes must be unequal, but: %" PRIi64 " = %" PRIi64, dim1, dim2);
+    int64_t ra = x->rank;
+    int64_t ax0 = dim1;
+    int64_t ax1 = dim2;
+    if (ax0 < 0) ax0 += ra;
+    if (ax1 < 0) ax1 += ra;
+    mag_assert(ax0 >= 0 && ax0 < ra, "invalid transposition axis: %" PRIi64, dim1);
+    mag_assert(ax1 >= 0 && ax1 < ra, "invalid transposition axis: %" PRIi64, dim2);
+    mag_OPParamLayout layout;
+    mag_op_param_layout_init(&layout);
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(ax0));
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(ax1));
+    return mag_tensor_operator(x->ctx, MAG_OP_TRANSPOSE, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
 mag_Tensor* mag_permute(mag_Tensor* x, const int64_t* dims, uint32_t num_dims) {
@@ -1276,7 +1292,16 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
                     {.type=MAG_DTYPE_I32, .is_used=true},
                 }
             },
-            .op_param_layout = {},
+            .op_param_layout = {
+                {.type=MAG_OPP_U64, .is_required=true},   /* axis index 0 : u32 */
+                {.type=MAG_OPP_U64, .is_required=true},  /* axis index 1 : u32 */
+                {.type=MAG_OPP_NONE, .is_required=false},
+                {.type=MAG_OPP_NONE, .is_required=false},
+                {.type=MAG_OPP_NONE, .is_required=false},
+                {.type=MAG_OPP_NONE, .is_required=false},
+                {.type=MAG_OPP_NONE, .is_required=false},
+                {.type=MAG_OPP_NONE, .is_required=false},
+            },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_transpose,
             .r_alloc = &mag_result_constructor_routine_transposed,

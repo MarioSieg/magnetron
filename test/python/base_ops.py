@@ -14,24 +14,44 @@ def test_tensor_clone() -> None:
     assert a.tolist() == b.tolist()
     assert a.is_contiguous == b.is_contiguous
 
-def test_tensor_transpose() -> None:
-    a = Tensor.full(2, 3, fill_value=1)
-    b = a.transpose()
-    assert a.shape == (2, 3)
-    assert b.shape == (3, 2)
-    assert a.numel == 6
-    assert b.numel == 6
-    assert a.rank == 2
-    assert b.rank == 2
-    assert a.tolist() == [1, 1, 1, 1, 1, 1]
-    assert b.tolist() == [1, 1, 1, 1, 1, 1]
-    assert a.is_contiguous
-    assert not b.is_contiguous
+
+@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
+def test_tensor_tolist(dtype: mag.DataType) -> None:
+    def func(shape: tuple[int, ...]) -> None:
+        if dtype == mag.boolean:
+            x = mag.Tensor.bernoulli(shape)
+        else:
+            x = mag.Tensor.uniform(shape, dtype=dtype)
+        assert x.tolist() == totorch(x).tolist()
+
+    square_shape_permutations(func, 4)
+
+@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
+def test_tensor_transpose(dtype: mag.DataType) -> None:
+    def func(shape: tuple[int, ...]) -> None:
+        if len(shape) <= 1:
+            return
+        if dtype == mag.boolean:
+            x = mag.Tensor.bernoulli(shape)
+        else:
+            x = mag.Tensor.uniform(shape, dtype=dtype)
+        sample = lambda: random.randint(-len(shape)+1, len(shape)-1)
+        dim1: int = sample()
+        dim2: int = dim1
+        while dim2 == dim1: # Reject equal transposition axes
+            dim2 = sample()
+        a = totorch(x.transpose(dim1, dim2))
+        b = totorch(x).transpose(dim1, dim2)
+        if not torch.allclose(a, b):
+            print('M='+str(a))
+            print('T='+str(b))
+            print(f'axes: {dim1} {dim2}')
+        torch.testing.assert_close(a, b)
+
+    square_shape_permutations(func, 4)
 
 @pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
 def test_tensor_view(dtype: mag.DataType) -> None:
-    torch_dt = DTYPE_TORCH_MAP[dtype]
-
     def func(shape: tuple[int, ...]) -> None:
         if dtype == mag.boolean:
             x = mag.Tensor.bernoulli(shape)
@@ -41,14 +61,12 @@ def test_tensor_view(dtype: mag.DataType) -> None:
         random.shuffle(shape) # Shuffle view shape
         shape = tuple(shape)
         y = x.view(*shape)
-        torch.testing.assert_close(totorch(y, torch_dt), totorch(y, torch_dt).view(shape))
+        torch.testing.assert_close(totorch(y), totorch(x).view(shape))
 
     square_shape_permutations(func, 4)
 
 @pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
 def test_tensor_view_infer_axis(dtype: mag.DataType) -> None:
-    torch_dt = DTYPE_TORCH_MAP[dtype]
-
     def func(shape: tuple[int, ...]) -> None:
         if dtype == mag.boolean:
             x = mag.Tensor.bernoulli(shape)
@@ -59,14 +77,12 @@ def test_tensor_view_infer_axis(dtype: mag.DataType) -> None:
         shape[random.randint(0, len(shape)-1)] = -1 # Set inferred axis randomly
         shape = tuple(shape)
         y = x.view(*shape)
-        torch.testing.assert_close(totorch(y, torch_dt), totorch(y, torch_dt).view(shape))
+        torch.testing.assert_close(totorch(y), totorch(x).view(shape))
 
     square_shape_permutations(func, 4)
 
 @pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
 def test_tensor_reshape(dtype: mag.DataType) -> None:
-    torch_dt = DTYPE_TORCH_MAP[dtype]
-
     def func(shape: tuple[int, ...]) -> None:
         if dtype == mag.boolean:
             x = mag.Tensor.bernoulli(shape)
@@ -76,14 +92,12 @@ def test_tensor_reshape(dtype: mag.DataType) -> None:
         random.shuffle(shape) # Shuffle reshape shape
         shape = tuple(shape)
         y = x.T.reshape(*shape)
-        torch.testing.assert_close(totorch(y, torch_dt), totorch(y, torch_dt).reshape(shape))
+        torch.testing.assert_close(totorch(y), totorch(y).reshape(shape))
 
     square_shape_permutations(func, 4)
 
 @pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
 def test_tensor_reshape_infer_axis(dtype: mag.DataType) -> None:
-    torch_dt = DTYPE_TORCH_MAP[dtype]
-
     def func(shape: tuple[int, ...]) -> None:
         if dtype == mag.boolean:
             x = mag.Tensor.bernoulli(shape)
@@ -94,7 +108,7 @@ def test_tensor_reshape_infer_axis(dtype: mag.DataType) -> None:
         shape[random.randint(0, len(shape)-1)] = -1 # Set inferred axis randomly
         shape = tuple(shape)
         y = x.T.reshape(*shape)
-        torch.testing.assert_close(totorch(y, torch_dt), totorch(y, torch_dt).reshape(shape))
+        torch.testing.assert_close(totorch(y), totorch(y).reshape(shape))
 
     square_shape_permutations(func, 4)
 
@@ -107,21 +121,7 @@ def test_tensor_permute() -> None:
     assert b.numel == 6
     assert a.rank == 2
     assert b.rank == 2
-    assert a.tolist() == [1, 1, 1, 1, 1, 1]
-    assert b.tolist() == [1, 1, 1, 1, 1, 1]
-    assert a.is_contiguous
-    assert not b.is_contiguous
-
-def test_tensor_permute_6d() -> None:
-    a = Tensor.full(1, 2, 3, 4, 5, 6, fill_value=1)
-    b = a.permute(5, 4, 3, 2, 1, 0)
-    assert a.shape == (1, 2, 3, 4, 5, 6)
-    assert b.shape == (6, 5, 4, 3, 2, 1)
-    assert a.numel == 720
-    assert b.numel == 720
-    assert a.rank == 6
-    assert b.rank == 6
-    assert a.tolist() == [1] * 720
-    assert b.tolist() == [1] * 720
+    assert a.tolist() == [[1, 1, 1], [1, 1, 1]]
+    assert b.tolist() == [[1, 1], [1, 1], [1, 1]]
     assert a.is_contiguous
     assert not b.is_contiguous

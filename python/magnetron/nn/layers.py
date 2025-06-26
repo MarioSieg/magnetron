@@ -49,6 +49,7 @@ class RMSNorm(Module):
         output = self._norm(x)
         return output * self.weight
 
+
 class Dropout(Module):
     def __init__(self, p: float = 0.5, inplace: bool = False) -> None:
         super().__init__()
