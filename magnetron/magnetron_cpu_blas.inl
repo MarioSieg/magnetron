@@ -388,7 +388,7 @@ static void MAG_HOTPROC mag_vrand_normal_e5m10(mag_PRNGState* _Nonnull prng, int
 
 /* Generate N bernoulli distributed e5m10 floats. */
 static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_PRNGState* _Nonnull prng, int64_t numel, uint8_t* restrict _Nonnull o, mag_E8M23 p) {
-    uint32_t thresh = (uint32_t)(p * 4294967296.f); /* 2^32 */
+    uint32_t thresh = (uint32_t)(p*4294967296.f); /* 2^32 */
     switch (prng->algo) {
         case MAG_PRNG_MERSENNE_TWISTER: { /* Use Mersenne Twister. */
             uint32_t* rem = &prng->mersenne.remaining;
@@ -411,9 +411,13 @@ static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_PRNGState* _Nonnull prng, i
 }
 
 /* Generate N uniform distributed int32s ∈ [min, max]. */
-static void MAG_AINLINE mag_vrand_uniform_i(mag_PRNGState* _Nonnull prng, int64_t numel, int32_t* restrict _Nonnull o, int32_t min, int32_t max) {
+static void MAG_AINLINE mag_vrand_uniform_i32(mag_PRNGState* _Nonnull prng, int64_t numel, int32_t* restrict _Nonnull o, int32_t min, int32_t max) {
+    /* Rejection-sampling constants:
+    ** we want r ∈ [0, 2³²) s.t. r < lim, where  lim = span*floor(2³²/span)
+    ** for a bias-free mapping r % span.
+    */
     uint64_t span = (uint64_t)max-(uint64_t)min+1ull; /* Interval width */
-    uint64_t lim = 0x100000000ull - 0x100000000ull%span; /* Rejection-sampling constants: we want r ∈ [0, 2³²) s.t. r < lim, where  lim = floor(2³² / span) * span  ==>  bias-free mapping r % span.        */
+    uint64_t lim = 0x100000000ull - 0x100000000ull%span;
     switch (prng->algo) {
         case MAG_PRNG_MERSENNE_TWISTER: { /* Use Mersenne Twister. */
             uint32_t* rem = &prng->mersenne.remaining;
@@ -421,7 +425,7 @@ static void MAG_AINLINE mag_vrand_uniform_i(mag_PRNGState* _Nonnull prng, int64_
             uint32_t* state = prng->mersenne.state;
             for (int64_t i=0; i < numel; ++i) {
                 uint64_t r;
-                do r = mag_mt19937_step(rem, next, state);
+                do r = mag_mt19937_step(rem, next, state); /* Rejection sampling */
                 while (mag_unlikely(r >= lim));
                 o[i] = (int32_t)((int64_t)min + (int32_t)(r%span));
             }
@@ -431,7 +435,7 @@ static void MAG_AINLINE mag_vrand_uniform_i(mag_PRNGState* _Nonnull prng, int64_
             uint64_t inc = prng->pcg.inc;
             for (int64_t i=0; i < numel; ++i) {
                 uint64_t r;
-                do r = mag_pcg_step(state, inc);
+                do r = mag_pcg_step(state, inc); /* Rejection sampling */
                 while (mag_unlikely(r >= lim));
                 o[i] = (int32_t)((int64_t)min + (int32_t)(r%span));
             }
@@ -557,7 +561,7 @@ static mag_E8M23 MAG_HOTPROC mag_vdot_e8m23(int64_t numel, const mag_E8M23* _Non
         return sum;
     #else
         mag_E11M52 r = 0.0;
-        for (int64_t i=0; i < numel; ++i) r += (mag_E11M52)x[i] * (mag_E11M52)y[i];
+        for (int64_t i=0; i < numel; ++i) r += (mag_E11M52)x[i]*(mag_E11M52)y[i];
         return (mag_E8M23)r;
     #endif
 }
@@ -933,7 +937,7 @@ static void MAG_HOTPROC mag_vmul_e8m23(int64_t numel, mag_E8M23* _Nonnull o, con
         vDSP_vmul(y, 1, x, 1, o, 1, numel);
     #else
         for (int64_t i=0; i < numel; ++i)
-            o[i] = x[i] * y[i];
+            o[i] = x[i]*y[i];
     #endif
 }
 
@@ -988,7 +992,7 @@ static void MAG_HOTPROC mag_vmul_e5m10(int64_t numel, mag_E5M10* _Nonnull o, con
         }
     #endif
     for (; i < numel; ++i) { /* Scalar drain loop */
-        o[i] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(x[i]) * mag_e5m10_cvt_e8m23(y[i]));
+        o[i] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(x[i])*mag_e5m10_cvt_e8m23(y[i]));
     }
 }
 
@@ -1088,12 +1092,12 @@ static void MAG_HOTPROC mag_vsubs_e5m10(int64_t numel, mag_E5M10* _Nonnull o, co
 
 static void MAG_HOTPROC mag_vmuls_e8m23(int64_t numel, mag_E8M23* _Nonnull o, const mag_E8M23* _Nonnull x, mag_E8M23 y) {
     for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] * y;
+        o[i] = x[i]*y;
 }
 
 static void MAG_HOTPROC mag_vmuls_e5m10(int64_t numel, mag_E5M10* _Nonnull o, const mag_E5M10* _Nonnull x, mag_E8M23 y) {
     for (int64_t i=0; i < numel; ++i)
-        o[i] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(x[i]) * y);
+        o[i] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(x[i])*y);
 }
 
 static void MAG_HOTPROC mag_vdivs_e8m23(int64_t numel, mag_E8M23* _Nonnull o, const mag_E8M23* _Nonnull x, mag_E8M23 y) {
@@ -1470,7 +1474,7 @@ static void mag_vsub_i32(int64_t numel, int32_t* _Nonnull o, const int32_t* _Non
 
 static void mag_vmul_i32(int64_t numel, int32_t* _Nonnull o, const int32_t* _Nonnull x, const int32_t* _Nonnull y) {
     for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] * y[i];
+        o[i] = x[i]*y[i];
 }
 
 static void mag_vdiv_i32(int64_t numel, int32_t* _Nonnull o, const int32_t* _Nonnull x, const int32_t* _Nonnull y) {
@@ -1616,7 +1620,7 @@ static MAG_AINLINE int64_t mag_offset_from_flat(const mag_Tensor* _Nonnull t, in
     for (int64_t d=t->rank-1; d >= 0; --d) {
         int64_t coord = i % t->shape[d];
         i /= t->shape[d];
-        off += coord * t->strides[d];
+        off += coord*t->strides[d];
     }
     return off;
 }
@@ -1745,7 +1749,7 @@ static MAG_HOTPROC void mag_blas_init_rand_uniform_i32(const mag_CPUKernelPayloa
     int32_t max = (int32_t)mag_op_param_unpack_i64_or_panic(r->init_op_params[1]);
     int32_t* b_r = mag_i32p_mut(r);
     int64_t numel = r->numel;
-    mag_vrand_uniform_i(payload->local_prng, numel, b_r, min, max);
+    mag_vrand_uniform_i32(payload->local_prng, numel, b_r, min, max);
 }
 
 static MAG_HOTPROC void mag_blas_init_rand_normal_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
@@ -2203,12 +2207,12 @@ static void MAG_HOTPROC mag_blas_softmax_e8m23(const mag_CPUKernelPayload* _Nonn
     int64_t tc = payload->thread_num;
     int64_t ti = payload->thread_idx;
     int64_t rows_per_thread = (num_rows + tc - 1)/tc;
-    int64_t start_row = ti * rows_per_thread;
+    int64_t start_row = ti*rows_per_thread;
     int64_t end_row = (start_row + rows_per_thread) < num_rows ? (start_row + rows_per_thread) : num_rows;
     for (int64_t row = start_row; row < end_row; ++row) {
-        const mag_E8M23* row_in = bx + row * last_dim;
+        const mag_E8M23* row_in = bx + row*last_dim;
         mag_bnd_chk(row_in, bx, mag_tensor_get_data_size(x));
-        mag_E8M23* row_out = br + row * last_dim;
+        mag_E8M23* row_out = br + row*last_dim;
         mag_E8M23 max_val = row_in[0]; /* Max val is computed for numerical stability */
         for (int64_t i=1; i < last_dim; ++i) {
             if (row_in[i] > max_val) {
@@ -2639,7 +2643,7 @@ static void MAG_HOTPROC mag_blas_tril_e8m23(const mag_CPUKernelPayload* _Nonnull
             else if (d == r->rank-2) row = coord;
             int64_t dx = d-rx;
             if (dx >= 0 && x->shape[dx] > 1)
-                xi += coord * x->strides[dx];
+                xi += coord*x->strides[dx];
         }
         br[i] = col-row <= diag ? bx[xi] : 0.f; /* Zero-fill masked entries */
     }
@@ -2683,7 +2687,7 @@ static void MAG_HOTPROC mag_blas_triu_e8m23(const mag_CPUKernelPayload* _Nonnull
             else if (d == r->rank-2) row = coord;
             int64_t dx = d-rx;
             if (dx >= 0 && x->shape[dx] > 1)
-                xi += coord * x->strides[dx];
+                xi += coord*x->strides[dx];
         }
         br[i] = col-row >= diag ? bx[xi] : 0.f; /* Zero-fill masked entries */
     }
@@ -2750,7 +2754,7 @@ static void MAG_HOTPROC mag_blas_add_e8m23(const mag_CPUKernelPayload* _Nonnull 
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -2844,7 +2848,7 @@ static void MAG_HOTPROC mag_blas_sub_e8m23(const mag_CPUKernelPayload* _Nonnull 
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -2922,7 +2926,7 @@ static void MAG_HOTPROC mag_blas_mul_e8m23(const mag_CPUKernelPayload* _Nonnull 
             mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
             mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
-            pr[i-ra] = px[i-ra] * by[yi];
+            pr[i-ra] = px[i-ra]*by[yi];
         }
         return;
     }
@@ -2938,12 +2942,12 @@ static void MAG_HOTPROC mag_blas_mul_e8m23(const mag_CPUKernelPayload* _Nonnull 
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
             mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
-            pr[i-ra] = bx[xi] * py[i-ra];
+            pr[i-ra] = bx[xi]*py[i-ra];
         }
         return;
     }
@@ -2967,7 +2971,7 @@ static void MAG_HOTPROC mag_blas_mul_e8m23(const mag_CPUKernelPayload* _Nonnull 
         mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
         mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
         mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
-        br[ri] = bx[xi] * by[yi];
+        br[ri] = bx[xi]*by[yi];
     }
 }
 
@@ -3032,7 +3036,7 @@ static void MAG_HOTPROC mag_blas_div_e8m23(const mag_CPUKernelPayload* _Nonnull 
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -3498,12 +3502,12 @@ static void MAG_HOTPROC mag_blas_softmax_e5m10(const mag_CPUKernelPayload* _Nonn
     int64_t tc = payload->thread_num;
     int64_t ti = payload->thread_idx;
     int64_t rows_per_thread = (num_rows + tc - 1)/tc;
-    int64_t start_row = ti * rows_per_thread;
+    int64_t start_row = ti*rows_per_thread;
     int64_t end_row = (start_row + rows_per_thread) < num_rows ? (start_row + rows_per_thread) : num_rows;
     for (int64_t row = start_row; row < end_row; ++row) {
-        const mag_E5M10* row_in = bx + row * last_dim;
+        const mag_E5M10* row_in = bx + row*last_dim;
         mag_bnd_chk(row_in, bx, mag_tensor_get_data_size(x));
-        mag_E5M10* row_out = br + row * last_dim;
+        mag_E5M10* row_out = br + row*last_dim;
         mag_E8M23 max_val = mag_e5m10_cvt_e8m23(row_in[0]);  /* Max val is computed for numerical stability */
         for (int64_t i=1; i < last_dim; ++i) {
             mag_E8M23 fp32_row = mag_e5m10_cvt_e8m23(row_in[i]);
@@ -3937,7 +3941,7 @@ static void MAG_HOTPROC mag_blas_tril_e5m10(const mag_CPUKernelPayload* _Nonnull
             else if (d == r->rank-2) row = coord;
             int64_t dx = d-rx;
             if (dx >= 0 && x->shape[dx] > 1)
-                xi += coord * x->strides[dx];
+                xi += coord*x->strides[dx];
         }
         br[i] = col-row <= diag ? bx[xi] : MAG_E5M10_ZERO; /* Zero-fill masked entries */
     }
@@ -3981,7 +3985,7 @@ static void MAG_HOTPROC mag_blas_triu_e5m10(const mag_CPUKernelPayload* _Nonnull
             else if (d == r->rank-2) row = coord;
             int64_t dx = d-rx;
             if (dx >= 0 && x->shape[dx] > 1)
-                xi += coord * x->strides[dx];
+                xi += coord*x->strides[dx];
         }
         br[i] = col-row >= diag ? bx[xi] : MAG_E5M10_ZERO; /* Zero-fill masked entries */
     }
@@ -4048,7 +4052,7 @@ static void MAG_HOTPROC mag_blas_add_e5m10(const mag_CPUKernelPayload* _Nonnull 
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -4142,7 +4146,7 @@ static void MAG_HOTPROC mag_blas_sub_e5m10(const mag_CPUKernelPayload* _Nonnull 
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -4220,7 +4224,7 @@ static void MAG_HOTPROC mag_blas_mul_e5m10(const mag_CPUKernelPayload* _Nonnull 
             mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
             mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
-            pr[i-ra] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(px[i-ra]) * mag_e5m10_cvt_e8m23(by[yi]));
+            pr[i-ra] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(px[i-ra])*mag_e5m10_cvt_e8m23(by[yi]));
         }
         return;
     }
@@ -4236,12 +4240,12 @@ static void MAG_HOTPROC mag_blas_mul_e5m10(const mag_CPUKernelPayload* _Nonnull 
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
             mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
-            pr[i-ra] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(bx[xi]) * mag_e5m10_cvt_e8m23(py[i-ra]));
+            pr[i-ra] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(bx[xi])*mag_e5m10_cvt_e8m23(py[i-ra]));
         }
         return;
     }
@@ -4265,7 +4269,7 @@ static void MAG_HOTPROC mag_blas_mul_e5m10(const mag_CPUKernelPayload* _Nonnull 
         mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
         mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
         mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
-        br[ri] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(bx[xi]) * mag_e5m10_cvt_e8m23(by[yi]));
+        br[ri] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(bx[xi])*mag_e5m10_cvt_e8m23(by[yi]));
     }
 }
 
@@ -4330,7 +4334,7 @@ static void MAG_HOTPROC mag_blas_div_e5m10(const mag_CPUKernelPayload* _Nonnull 
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -4384,7 +4388,7 @@ mag_cpu_blas_impl_reduce( \
     *br = mag_e8m23_cvt_e5m10(acc); )
 
 #define VLA(type, name, size) \
-type* name = (type*)(*mag_alloc)(NULL, (size) * sizeof(type))
+type* name = (type*)(*mag_alloc)(NULL, (size)*sizeof(type))
 
 static int64_t mag_offset_rmn(const mag_Tensor* _Nonnull t, int64_t batch, int64_t i, int64_t j) {
     int64_t ts0 = t->strides[0];
@@ -4529,9 +4533,9 @@ static void MAG_HOTPROC mag_blas_matmul_e5m10(const mag_CPUKernelPayload* _Nonnu
     bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
     bool y_row = mag_tensor_is_contiguous(y) && (y->rank == 1 || y->strides[y->rank-1] == 1);
     bool r_row = mag_tensor_is_contiguous(r) && (r->rank == 1 || r->strides[r->rank-1] == 1);
-    VLA(mag_E5M10, xbuf, M * K);
-    VLA(mag_E5M10, ybuf, K * N);
-    VLA(mag_E5M10, rbuf, M * N);
+    VLA(mag_E5M10, xbuf, M*K);
+    VLA(mag_E5M10, ybuf, K*N);
+    VLA(mag_E5M10, rbuf, M*N);
     for (int64_t b=0; b < batch; ++b) {
         int64_t xb = bx_batch == 1 ? 0 : b;
         int64_t yb = by_batch == 1 ? 0 : b;
@@ -4598,11 +4602,11 @@ static void MAG_HOTPROC  mag_blas_repeat_back_e8m23(const mag_CPUKernelPayload* 
         for (int64_t d = xx-1; d >= 0; --d) {
             int64_t coord = ax % x->shape[d];
             ax /= x->shape[d];
-            xoff += coord * x->strides[d];
+            xoff += coord*x->strides[d];
             int64_t rd = d - shift;
             if (rd >= 0) {
                 int64_t rcoord = coord % r->shape[rd];
-                roff += rcoord * r->strides[rd];
+                roff += rcoord*r->strides[rd];
             }
         }
         br[roff] += bx[xoff];
@@ -4627,11 +4631,11 @@ static void MAG_HOTPROC mag_blas_repeat_back_e5m10(const mag_CPUKernelPayload* _
         for (int64_t d = xx-1; d >= 0; --d) {
             int64_t coord = ax % x->shape[d];
             ax /= x->shape[d];
-            xoff += coord * x->strides[d];
+            xoff += coord*x->strides[d];
             int64_t rd = d - shift;
             if (rd >= 0) {
                 int64_t rcoord = coord % r->shape[rd];
-                roff += rcoord * r->strides[rd];
+                roff += rcoord*r->strides[rd];
             }
         }
         br[roff] = mag_e8m23_cvt_e5m10(mag_e5m10_cvt_e8m23(br[roff]) + mag_e5m10_cvt_e8m23(bx[xoff]));
@@ -4699,7 +4703,7 @@ static void MAG_HOTPROC mag_blas_and_bool(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -4793,7 +4797,7 @@ static void MAG_HOTPROC mag_blas_or_bool(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -4887,7 +4891,7 @@ static void MAG_HOTPROC mag_blas_xor_bool(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -4989,7 +4993,7 @@ static void MAG_HOTPROC mag_blas_tril_bool(const mag_CPUKernelPayload* _Nonnull 
             else if (d == r->rank-2) row = coord;
             int64_t dx = d-rx;
             if (dx >= 0 && x->shape[dx] > 1)
-                xi += coord * x->strides[dx];
+                xi += coord*x->strides[dx];
         }
         br[i] = col-row <= diag ? bx[xi] : 0; /* Zero-fill masked entries */
     }
@@ -5033,7 +5037,7 @@ static void MAG_HOTPROC mag_blas_triu_bool(const mag_CPUKernelPayload* _Nonnull 
             else if (d == r->rank-2) row = coord;
             int64_t dx = d-rx;
             if (dx >= 0 && x->shape[dx] > 1)
-                xi += coord * x->strides[dx];
+                xi += coord*x->strides[dx];
         }
         br[i] = col-row >= diag ? bx[xi] : 0; /* Zero-fill masked entries */
     }
@@ -5100,7 +5104,7 @@ static void MAG_HOTPROC mag_blas_add_i32(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -5194,7 +5198,7 @@ static void MAG_HOTPROC mag_blas_sub_i32(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -5272,7 +5276,7 @@ static void MAG_HOTPROC mag_blas_mul_i32(const mag_CPUKernelPayload* _Nonnull pa
             mag_bnd_chk(px+i-ra, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
             mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
-            pr[i-ra] = px[i-ra] * by[yi];
+            pr[i-ra] = px[i-ra]*by[yi];
         }
         return;
     }
@@ -5288,12 +5292,12 @@ static void MAG_HOTPROC mag_blas_mul_i32(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
             mag_bnd_chk(pr+i-ra, br, mag_tensor_get_data_size(r));
-            pr[i-ra] = bx[xi] * py[i-ra];
+            pr[i-ra] = bx[xi]*py[i-ra];
         }
         return;
     }
@@ -5317,7 +5321,7 @@ static void MAG_HOTPROC mag_blas_mul_i32(const mag_CPUKernelPayload* _Nonnull pa
         mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
         mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y));
         mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r));
-        br[ri] = bx[xi] * by[yi];
+        br[ri] = bx[xi]*by[yi];
     }
 }
 
@@ -5382,7 +5386,7 @@ static void MAG_HOTPROC mag_blas_div_i32(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -5476,7 +5480,7 @@ static void MAG_HOTPROC mag_blas_and_i32(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -5570,7 +5574,7 @@ static void MAG_HOTPROC mag_blas_or_i32(const mag_CPUKernelPayload* _Nonnull pay
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -5664,7 +5668,7 @@ static void MAG_HOTPROC mag_blas_xor_i32(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -5758,7 +5762,7 @@ static void MAG_HOTPROC mag_blas_shl_i32(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -5852,7 +5856,7 @@ static void MAG_HOTPROC mag_blas_shr_i32(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -5954,7 +5958,7 @@ static void MAG_HOTPROC mag_blas_tril_i32(const mag_CPUKernelPayload* _Nonnull p
             else if (d == r->rank-2) row = coord;
             int64_t dx = d-rx;
             if (dx >= 0 && x->shape[dx] > 1)
-                xi += coord * x->strides[dx];
+                xi += coord*x->strides[dx];
         }
         br[i] = col-row <= diag ? bx[xi] : 0; /* Zero-fill masked entries */
     }
@@ -5998,7 +6002,7 @@ static void MAG_HOTPROC mag_blas_triu_i32(const mag_CPUKernelPayload* _Nonnull p
             else if (d == r->rank-2) row = coord;
             int64_t dx = d-rx;
             if (dx >= 0 && x->shape[dx] > 1)
-                xi += coord * x->strides[dx];
+                xi += coord*x->strides[dx];
         }
         br[i] = col-row >= diag ? bx[xi] : 0; /* Zero-fill masked entries */
     }
@@ -6065,7 +6069,7 @@ static void MAG_HOTPROC mag_blas_eq_e8m23(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -6159,7 +6163,7 @@ static void MAG_HOTPROC mag_blas_eq_e5m10(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -6253,7 +6257,7 @@ static void MAG_HOTPROC mag_blas_eq_bool(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -6347,7 +6351,7 @@ static void MAG_HOTPROC mag_blas_eq_i32(const mag_CPUKernelPayload* _Nonnull pay
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -6441,7 +6445,7 @@ static void MAG_HOTPROC mag_blas_ne_e8m23(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -6535,7 +6539,7 @@ static void MAG_HOTPROC mag_blas_ne_e5m10(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -6629,7 +6633,7 @@ static void MAG_HOTPROC mag_blas_ne_bool(const mag_CPUKernelPayload* _Nonnull pa
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -6723,7 +6727,7 @@ static void MAG_HOTPROC mag_blas_ne_i32(const mag_CPUKernelPayload* _Nonnull pay
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -6817,7 +6821,7 @@ static void MAG_HOTPROC mag_blas_le_e8m23(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -6911,7 +6915,7 @@ static void MAG_HOTPROC mag_blas_le_e5m10(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7005,7 +7009,7 @@ static void MAG_HOTPROC mag_blas_le_i32(const mag_CPUKernelPayload* _Nonnull pay
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7099,7 +7103,7 @@ static void MAG_HOTPROC mag_blas_ge_e8m23(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7193,7 +7197,7 @@ static void MAG_HOTPROC mag_blas_ge_e5m10(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7287,7 +7291,7 @@ static void MAG_HOTPROC mag_blas_ge_i32(const mag_CPUKernelPayload* _Nonnull pay
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7381,7 +7385,7 @@ static void MAG_HOTPROC mag_blas_gt_e8m23(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7475,7 +7479,7 @@ static void MAG_HOTPROC mag_blas_gt_e5m10(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7569,7 +7573,7 @@ static void MAG_HOTPROC mag_blas_gt_i32(const mag_CPUKernelPayload* _Nonnull pay
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7663,7 +7667,7 @@ static void MAG_HOTPROC mag_blas_lt_e8m23(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7757,7 +7761,7 @@ static void MAG_HOTPROC mag_blas_lt_e5m10(const mag_CPUKernelPayload* _Nonnull p
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
@@ -7851,7 +7855,7 @@ static void MAG_HOTPROC mag_blas_lt_i32(const mag_CPUKernelPayload* _Nonnull pay
                 ax /= dim;
                 int64_t dx = d - rx;
                 if (dx >= 0 && x->shape[dx] > 1)
-                    xi += coord * x->strides[dx];
+                    xi += coord*x->strides[dx];
             }
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x));
             mag_bnd_chk(py+i-ra, by, mag_tensor_get_data_size(y));
