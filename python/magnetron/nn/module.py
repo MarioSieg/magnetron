@@ -1,8 +1,7 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
 from __future__ import annotations
-from collections.abc import Iterator, Callable, MutableMapping, dict_values, dict_keys, dict_items
-from typing import Any
+from collections.abc import Iterator, Callable, MutableMapping
 
 from magnetron import Tensor
 
@@ -151,13 +150,13 @@ class ModuleDict(Module, MutableMapping[str, Module]):
     def __len__(self) -> int:
         return len(self._modules)
 
-    def keys(self) -> dict_keys[str, Module]:
+    def keys(self) -> 'dict_keys[str, Module]':
         return self._modules.keys()
 
-    def items(self) -> dict_items[str, Module]:
+    def items(self) -> 'dict_items[str, Module]':
         return self._modules.items()
 
-    def values(self) -> dict_values[str, Module]:
+    def values(self) -> 'dict_values[str, Module]':
         return self._modules.values()
 
     def parameters(self) -> list[Parameter]:
