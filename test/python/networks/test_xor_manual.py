@@ -1,10 +1,10 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
 import numpy as np
-from magnetron import Tensor, Context
+from magnetron import Tensor, Context, active_context
 
 np.random.seed(932002)
-Context.get().seed(932002)
+active_context().seed(932002)
 
 LR: float = 0.1
 EPOCHS: int = 10000

@@ -12,7 +12,7 @@ from magnetron._ffi_cdecl_generated import __MAG_CDECLS
 
 
 @lru_cache(maxsize=1)
-def load_native_module() -> tuple[FFI, Any]:
+def _load_native_module() -> tuple[FFI, Any]:
     platform = sys.platform
     pkg_dir = Path(__file__).parent  # .../src/magnetron
     root_dir = pkg_dir.parent  # .../src
@@ -46,3 +46,6 @@ def load_native_module() -> tuple[FFI, Any]:
     ffi.cdef(__MAG_CDECLS)
     lib = ffi.dlopen(str(lib_path))
     return ffi, lib
+
+
+FFI, C = _load_native_module()

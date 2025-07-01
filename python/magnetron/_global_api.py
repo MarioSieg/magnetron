@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from ._context import default_dtype
 from ._core import *
-from ._tensor import Tensor
+from ._tensor import Tensor, NestedList
 
 
 def tensor(

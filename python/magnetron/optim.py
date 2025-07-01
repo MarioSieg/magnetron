@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from magnetron import Tensor, no_grad, Context
-from magnetron.nn import Parameter
+from ._tensor import Tensor
+from ._context import no_grad
+from .nn import Parameter
 
 
 class PolynomialDecayLRScheduler:
