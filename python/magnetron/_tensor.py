@@ -246,7 +246,12 @@ class Tensor:
     def _expand_rhs(self, rhs: Tensor | int | float | bool) -> Tensor:
         if isinstance(rhs, Tensor):
             return rhs
-        return Tensor.full(self.shape, dtype=self.dtype, fill_value=rhs)
+        return Tensor.full_like(self, rhs)
+
+    def _expand_rhs_list(self, rhs: Tensor | int | float | bool | list[int | float | bool]) -> Tensor:
+        if isinstance(rhs, list):
+            return Tensor.of(rhs, dtype=self.dtype)
+        return self._expand_rhs(rhs)
 
     @staticmethod
     def _validate_dtypes(*args: Tensor, allowed_types: set[DataType]) -> None:
@@ -819,87 +824,82 @@ class Tensor:
 
     def __add__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_add(self._ptr, rhs._ptr))
 
     def __radd__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return rhs + self
 
     def __iadd__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_add_(self._ptr, float(rhs)))
 
     def __sub__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_sub(self._ptr, rhs._ptr))
 
     def __rsub__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return rhs - self
 
     def __isub__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_sub_(self._ptr, rhs._ptr))
 
     def __mul__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_mul(self._ptr, rhs._ptr))
 
     def __rmul__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return rhs * self
 
     def __imul__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_mul_(self._ptr, rhs._ptr))
 
     def __truediv__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_div(self._ptr, rhs._ptr))
 
     def __rtruediv__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return rhs / self
 
     def __itruediv__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_div_(self._ptr, rhs._ptr))
 
     def __floordiv__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_div(self._ptr, rhs._ptr))
 
     def __rfloordiv__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return rhs / self
 
     def __ifloordiv__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_div_(self._ptr, rhs._ptr))
 
     def __matmul__(self, rhs: Tensor) -> Tensor:
@@ -922,9 +922,8 @@ class Tensor:
         return rhs & self
 
     def __iand__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
         return Tensor(_C.mag_and_(self._ptr, rhs._ptr))
 
@@ -939,9 +938,8 @@ class Tensor:
         return rhs | self
 
     def __ior__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
         return Tensor(_C.mag_or_(self._ptr, rhs._ptr))
 
@@ -956,9 +954,8 @@ class Tensor:
         return rhs ^ self
 
     def __ixor__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
         return Tensor(_C.mag_xor_(self._ptr, rhs._ptr))
 
@@ -977,9 +974,8 @@ class Tensor:
         return rhs << self
 
     def __ilshift__(self, rhs: Tensor | int) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
         return Tensor(_C.mag_shl_(self._ptr, rhs._ptr))
 
@@ -994,46 +990,35 @@ class Tensor:
         return rhs >> self
 
     def __irshift__(self, rhs: Tensor | int) -> Tensor:
+        rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full_like(self, rhs)
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
         return Tensor(_C.mag_shr_(self._ptr, rhs._ptr))
 
     def __eq__(self, rhs: Tensor | list[int | float | bool] | int | float | bool) -> Tensor:
-        if isinstance(rhs, list):
-            rhs = Tensor.of(rhs, dtype=self.dtype)
-        elif not isinstance(rhs, Tensor):
-            rhs = Tensor.full(self.shape, dtype=self.dtype, fill_value=rhs)
+        rhs = self._expand_rhs_list(rhs)
         return Tensor(_C.mag_eq(self._ptr, rhs._ptr))
 
     def __ne__(self, rhs: Tensor | list[int | float | bool] | int | float | bool) -> Tensor:
-        if isinstance(rhs, list):
-            rhs = Tensor.of(rhs, dtype=self.dtype)
-        elif not isinstance(rhs, Tensor):
-            rhs = Tensor.full(self.shape, dtype=self.dtype, fill_value=rhs)
+        rhs = self._expand_rhs_list(rhs)
         return Tensor(_C.mag_ne(self._ptr, rhs._ptr))
 
     def __le__(self, rhs: Tensor | int | float) -> Tensor:
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full(self.shape, dtype=self.dtype, fill_value=rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        rhs = self._expand_rhs(rhs)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_le(self._ptr, rhs._ptr))
 
     def __ge__(self, rhs: Tensor | int | float) -> Tensor:
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full(self.shape, dtype=self.dtype, fill_value=rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        rhs = self._expand_rhs(rhs)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_ge(self._ptr, rhs._ptr))
 
     def __lt__(self, rhs: Tensor | int | float) -> Tensor:
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full(self.shape, dtype=self.dtype, fill_value=rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        rhs = self._expand_rhs(rhs)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_lt(self._ptr, rhs._ptr))
 
     def __gt__(self, rhs: Tensor | int | float) -> Tensor:
-        if not isinstance(rhs, Tensor):
-            rhs = Tensor.full(self.shape, dtype=self.dtype, fill_value=rhs)
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        rhs = self._expand_rhs(rhs)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_C.mag_gt(self._ptr, rhs._ptr))
