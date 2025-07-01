@@ -91,7 +91,7 @@ def rand(
     dtype: DataType = default_dtype(),
     requires_grad: bool = False,
 ) -> Tensor:
-    return Tensor.uniform(*shape, low, high, dtype=dtype, requires_grad=requires_grad)
+    return Tensor.uniform(*shape, low=low, high=high, dtype=dtype, requires_grad=requires_grad)
 
 
 def randn(

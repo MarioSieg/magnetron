@@ -292,6 +292,15 @@ class Tensor:
             if not tensor.dtype in allowed_types:
                 raise RuntimeError(f'Operation requires dtype {allowed_types} for arg {i + 1} but got {tensor.dtype}')
 
+    def _get_uniform_sample_range(self, low: float | int | None = None, high: float | int | None = None) -> tuple[int | float, int | float]:
+        is_int: bool = self.dtype.is_integer
+        if low is None:
+            low = -0x80000000 if is_int else 0.0
+        if high is None:
+            high = 0x7FFFFFFF if is_int else 1.0
+        assert high > low, f'Invalid uniform sample range {high} must be > {low}'
+        return low, high
+
     def __init__(self, native_object: FFI.CData | None) -> None:
         assert _MAIN_TID == threading.get_native_id(), 'Context must be created in the main thread'
         self._ctx = active_context()
@@ -447,9 +456,8 @@ class Tensor:
         requires_grad: bool = False,
         name: str | None = None,
     ) -> Tensor:
-        shape: tuple[int, ...] = _unpack_shape(*shape)
         tensor: Tensor = cls.empty(
-            *shape,
+            *_unpack_shape(*shape),
             dtype=dtype,
             requires_grad=requires_grad,
             name=name,
@@ -467,9 +475,8 @@ class Tensor:
         requires_grad: bool = False,
         name: str | None = None,
     ) -> Tensor:
-        shape: tuple[int, ...] = _unpack_shape(*shape)
         tensor: Tensor = cls.empty(
-            *shape,
+            *_unpack_shape(*shape),
             dtype=dtype,
             requires_grad=requires_grad,
             name=name,
@@ -484,9 +491,8 @@ class Tensor:
         p: float = 0.5,
         name: str | None = None,
     ) -> Tensor:
-        shape: tuple[int, ...] = _unpack_shape(*shape)
         tensor: Tensor = cls.empty(
-            *shape,
+            *_unpack_shape(*shape),
             dtype=boolean,
             requires_grad=False,
             name=name,
@@ -547,17 +553,14 @@ class Tensor:
         else:
             C.mag_tensor_fill_int(self._ptr, int(value))
 
-    def fill_random_uniform_(self, from_: float | int | None = None, to: float | int | None = None) -> None:
+    def fill_random_uniform_(self, low: float | int | None = None, high: float | int | None = None) -> None:
         self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         self._validate_inplace_op()
-        from_def, to_def = (-0x80000000, 0x7FFFFFFF) if self.dtype.is_integer else (0.0, 1.0)
-        from_ = from_def if from_ is None else from_
-        to = to_def if to is None else to
-        assert to > from_, f'Invalid uniform range {to} must be > {from_}'
+        low, high = self._get_uniform_sample_range(low, high)
         if self.dtype.is_floating_point:
-            C.mag_tensor_fill_random_uniform_float(self._ptr, float(from_), float(to))
+            C.mag_tensor_fill_random_uniform_float(self._ptr, low, high)
         else:
-            C.mag_tensor_fill_random_uniform_int(self._ptr, int(from_), int(to))
+            C.mag_tensor_fill_random_uniform_int(self._ptr, low, high)
 
     def fill_random_normal_(self, mean: float, std: float) -> None:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
