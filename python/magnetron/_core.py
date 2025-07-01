@@ -25,12 +25,6 @@ class ComputeDevice:
             self.device_id = device_id
 
 
-@unique
-class PRNGAlgorithm(Enum):
-    MERSENNE_TWISTER = _C.MAG_PRNG_MERSENNE_TWISTER
-    PCG = _C.MAG_PRNG_PCG
-
-
 # Includes all floating-point types.
 FLOATING_POINT_DTYPES: set[DataType] = set()
 

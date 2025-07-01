@@ -5,7 +5,9 @@ from __future__ import annotations
 import threading
 import weakref
 from contextlib import ContextDecorator
+from enum import unique, Enum
 from functools import lru_cache
+from types import TracebackType
 from typing import final
 
 from ._bootstrap import load_native_module
@@ -13,6 +15,12 @@ from ._core import Config, ComputeDevice, DataType
 
 _ffi, _C = load_native_module()
 _MAIN_TID: int = threading.get_native_id()
+
+
+@unique
+class PRNGAlgorithm(Enum):
+    MERSENNE_TWISTER = _C.MAG_PRNG_MERSENNE_TWISTER
+    PCG = _C.MAG_PRNG_PCG
 
 
 @final
