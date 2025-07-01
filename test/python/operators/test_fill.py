@@ -17,21 +17,21 @@ def test_tensor_fill_x() -> None:
 
 
 def test_tensor_fill_uniform() -> None:
-    tensor = Tensor.uniform(1, 2, 3, 4, 5, 6, from_=-1, to=1)
+    tensor = Tensor.uniform(1, 2, 3, 4, 5, 6, low=-1, high=1)
     data = tensor.tolist()
     assert nested_len(data) == 1 * 2 * 3 * 4 * 5 * 6
     assert all([-1 <= x <= 1 for x in flatten(data)])
 
 
 def test_tensor_fill_uniform2() -> None:
-    tensor = Tensor.uniform(1, 2, 3, 4, 5, 6, from_=0, to=100)
+    tensor = Tensor.uniform(1, 2, 3, 4, 5, 6, low=0, high=100)
     data = tensor.tolist()
     assert nested_len(data) == 1 * 2 * 3 * 4 * 5 * 6
     assert all([0 <= x <= 100 for x in flatten(data)])
 
 
 def test_tensor_fill_uniform3() -> None:
-    tensor = Tensor.uniform(1, 2, 3, 4, 5, 6, from_=-1000, to=-20)
+    tensor = Tensor.uniform(1, 2, 3, 4, 5, 6, low=-1000, high=-20)
     data = tensor.tolist()
     assert nested_len(data) == 1 * 2 * 3 * 4 * 5 * 6
     assert all([-1000 <= x <= -20 for x in flatten(data)])

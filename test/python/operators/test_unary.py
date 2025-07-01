@@ -16,9 +16,9 @@ def test_unary_op_neg(dtype: DataType) -> None:
 
 @pytest.mark.parametrize('dtype', [float16, float32])
 def test_unary_op_log(dtype: DataType) -> None:
-    unary_op(dtype, lambda x: x.log(), lambda x: torch.log(x), from_=0, to=1000)
+    unary_op(dtype, lambda x: x.log(), lambda x: torch.log(x), low=0, high=1000)
     with no_grad():
-        unary_op(dtype, lambda x: x.log_(), lambda x: torch.log(x), from_=0, to=1000)
+        unary_op(dtype, lambda x: x.log_(), lambda x: torch.log(x), low=0, high=1000)
 
 
 @pytest.mark.parametrize('dtype', [float16, float32])
@@ -30,9 +30,9 @@ def test_unary_op_sqr(dtype: DataType) -> None:
 
 @pytest.mark.parametrize('dtype', [float16, float32])
 def test_unary_op_sqrt(dtype: DataType) -> None:
-    unary_op(dtype, lambda x: x.sqrt(), lambda x: torch.sqrt(x), from_=0, to=1000)
+    unary_op(dtype, lambda x: x.sqrt(), lambda x: torch.sqrt(x), low=0, high=1000)
     with no_grad():
-        unary_op(dtype, lambda x: x.sqrt_(), lambda x: torch.sqrt(x), from_=0, to=1000)
+        unary_op(dtype, lambda x: x.sqrt_(), lambda x: torch.sqrt(x), low=0, high=1000)
 
 
 @pytest.mark.parametrize('dtype', [float16, float32])
@@ -76,9 +76,9 @@ def test_unary_op_ceil(dtype: DataType) -> None:
 
 @pytest.mark.parametrize('dtype', [float16, float32])
 def test_unary_op_round(dtype: DataType) -> None:
-    unary_op(dtype, lambda x: x.round(), lambda x: torch.round(x), from_=0, to=100)
+    unary_op(dtype, lambda x: x.round(), lambda x: torch.round(x), low=0, high=100)
     with no_grad():
-        unary_op(dtype, lambda x: x.round_(), lambda x: torch.round(x), from_=0, to=100)
+        unary_op(dtype, lambda x: x.round_(), lambda x: torch.round(x), low=0, high=100)
 
 @pytest.mark.parametrize('dtype', [float16, float32])
 def test_unary_op_softmax(dtype: DataType) -> None:

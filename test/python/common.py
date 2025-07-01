@@ -42,7 +42,7 @@ class BinaryOpParamKind(Enum):
     SCALAR = 'scalar'
     LIST = 'list'
 
-def _allocate_binary_op_args(dtype: DataType, shape: tuple[int, ...], kind: BinaryOpParamKind, from_: float | int = 0, to: float | int = 1) -> tuple[Tensor, Tensor | list[Any] | float | int]:
+def _allocate_binary_op_args(dtype: DataType, shape: tuple[int, ...], kind: BinaryOpParamKind, low: float | int = 0, high: float | int = 1) -> tuple[Tensor, Tensor | list[Any] | float | int]:
     if dtype == boolean:
         x = Tensor.bernoulli(shape)
         match kind:
@@ -55,26 +55,26 @@ def _allocate_binary_op_args(dtype: DataType, shape: tuple[int, ...], kind: Bina
             case _:
                 raise ValueError(f'Unknown BinaryOpParamKind: {kind}')
     else:
-        x = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
+        x = Tensor.uniform(shape, dtype=dtype, low=low, high=high)
         match kind:
             case BinaryOpParamKind.TENSOR:
-                return x, Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
+                return x, Tensor.uniform(shape, dtype=dtype, low=low, high=high)
             case BinaryOpParamKind.LIST:
                 if dtype.is_integer:
-                    return x, [random.randint(from_, to) for _ in range(nested_len(list(shape)))]
+                    return x, [random.randint(low, high) for _ in range(nested_len(list(shape)))]
                 else:
-                    return x, [random.uniform(from_, to) for _ in range(nested_len(list(shape)))]
+                    return x, [random.uniform(low, high) for _ in range(nested_len(list(shape)))]
             case BinaryOpParamKind.SCALAR:
                 if dtype.is_integer:
-                    return x, random.randint(from_, to)
+                    return x, random.randint(low, high)
                 else:
-                    return x, random.uniform(from_, to)
+                    return x, random.uniform(low, high)
             case _:
                 raise ValueError(f'Unknown BinaryOpParamKind: {kind}')
 
-def binary_op_square(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], lim: int = 4, kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, from_: float | int = 0, to: float | int = 1) -> None:
+def binary_op_square(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], lim: int = 4, kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, low: float | int = 0, high: float | int = 1) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        x, y = _allocate_binary_op_args(dtype, shape, kind, from_, to)
+        x, y = _allocate_binary_op_args(dtype, shape, kind, low, high)
         r = callback(x, y)
         torch.testing.assert_close(
             totorch(r),
@@ -83,9 +83,9 @@ def binary_op_square(dtype: DataType, callback: Callable[[Tensor | torch.Tensor,
 
     square_shape_permutations(func, lim)
 
-def binary_cmp_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], lim: int = 4, kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, from_: float | int = 0, to: float | int = 1) -> None:
+def binary_cmp_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], lim: int = 4, kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, low: float | int = 0, high: float | int = 1) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        x, y = _allocate_binary_op_args(dtype, shape, kind, from_, to)
+        x, y = _allocate_binary_op_args(dtype, shape, kind, low, high)
         r = callback(x, y)
         assert r.dtype == boolean
         torch.testing.assert_close(
@@ -100,14 +100,14 @@ def unary_op(
     mag_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
     torch_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
     lim: int = 4,
-    from_: float | int | None = None,
-    to: float | int | None = None
+    low: float | int | None = None,
+    high: float | int | None = None
 ) -> None:
     def func(shape: tuple[int, ...]) -> None:
         if dtype == boolean:
             x = Tensor.bernoulli(shape)
         else:
-            x = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
+            x = Tensor.uniform(shape, dtype=dtype, low=low, high=high)
         r = mag_callback(x.clone())
         torch.testing.assert_close(totorch(r), torch_callback(totorch(x)))
 
