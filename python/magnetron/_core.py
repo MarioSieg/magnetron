@@ -370,7 +370,7 @@ class Tensor:
         cls,
         template: Tensor,
         *,
-        fill_value: int | float,
+        fill_value: int | float | bool,
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
@@ -461,8 +461,8 @@ class Tensor:
     def uniform(
         cls,
         *shape: int | tuple[int, ...],
-        from_: float | int | None = None,
-        to: float | int | None = None,
+        low: float | int | None = None,
+        high: float | int | None = None,
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
@@ -476,7 +476,7 @@ class Tensor:
             requires_grad=requires_grad,
             name=name,
         )
-        tensor.fill_random_uniform_(from_, to)
+        tensor.fill_random_uniform_(low, high)
         return tensor
 
     @classmethod
@@ -1007,14 +1007,38 @@ class Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_xor_(self._ptr, other._ptr))
 
-    def logical_not(self) -> None:
+    def logical_not(self) -> Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self)
         return Tensor(_C.mag_not(self._ptr))
 
-    def logical_not_(self) -> None:
+    def logical_not_(self) -> Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_not_(self._ptr))
+
+    def bitwise_and(self, other: Tensor) -> Tensor:
+        return self.logical_and(other)
+
+    def bitwise_and_(self, other: Tensor) -> Tensor:
+        return self.logical_and_(other)
+
+    def bitwise_or(self, other: Tensor) -> Tensor:
+        return self.logical_and(other)
+
+    def bitwise_or_(self, other: Tensor) -> Tensor:
+        return self.logical_and_(other)
+
+    def bitwise_xor(self, other: Tensor) -> Tensor:
+        return self.logical_and(other)
+
+    def bitwise_xor_(self, other: Tensor) -> Tensor:
+        return self.logical_and_(other)
+
+    def bitwise_not(self) -> Tensor:
+        return self.logical_not()
+
+    def bitwise_not_(self) -> Tensor:
+        return self.logical_not_()
 
     def __add__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):

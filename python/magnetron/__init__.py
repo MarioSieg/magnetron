@@ -8,3 +8,4 @@ __license__ = 'Apache 2.0'
 __url__ = 'https://github.com/MarioSieg/magnetron'
 
 from ._core import *
+from ._global_api import *
