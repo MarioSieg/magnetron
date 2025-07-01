@@ -31,8 +31,6 @@ def square_shape_permutations(f: callable, lim: int) -> None:
                             f((i0, i1, i2, i3, i4, i5))
 
 def binary_op_square(dtype: DataType, f: callable, lim: int = 4, from_: float | int | None = None, to: float | int | None = None) -> None:
-    torch_dt = DTYPE_TORCH_MAP[dtype]
-
     def func(shape: tuple[int, ...]) -> None:
         if dtype == boolean:
             x = Tensor.bernoulli(shape)
@@ -42,15 +40,13 @@ def binary_op_square(dtype: DataType, f: callable, lim: int = 4, from_: float | 
             y = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
         r = f(x, y)
         torch.testing.assert_close(
-            totorch(r, torch_dt),
-            f(totorch(x, torch_dt), totorch(y, torch_dt))
+            totorch(r),
+            f(totorch(x), totorch(y))
         )
 
     square_shape_permutations(func, lim)
 
-def binary_cmp_op(dtype: DataType, f: callable, lim: int = 4, from_: float | int | None = None, to: float | int | None = None) -> None:
-    torch_dt = DTYPE_TORCH_MAP[dtype]
-
+def binary_cmp_op(dtype: DataType, f: callable, lim: int = 4, from_: float | int | None = None, to: float | int | None = None, use_scalar: bool = False, use_list: bool = False) -> None:
     def func(shape: tuple[int, ...]) -> None:
         if dtype == boolean:
             x = Tensor.bernoulli(shape)
@@ -62,7 +58,7 @@ def binary_cmp_op(dtype: DataType, f: callable, lim: int = 4, from_: float | int
         assert r.dtype == boolean
         torch.testing.assert_close(
             totorch(r, torch.bool),
-            f(totorch(x, torch_dt), totorch(y, torch_dt))
+            f(totorch(x), totorch(y))
         )
 
     square_shape_permutations(func, lim)
@@ -75,27 +71,23 @@ def unary_op(
     from_: float | int | None = None,
     to: float | int | None = None
 ) -> None:
-    torch_dt = DTYPE_TORCH_MAP[dtype]
-
     def func(shape: tuple[int, ...]) -> None:
         if dtype == boolean:
             x = Tensor.bernoulli(shape)
         else:
             x = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
         r = magf(x.clone())
-        torch.testing.assert_close(totorch(r, torch_dt), torchf(totorch(x, torch_dt)))
+        torch.testing.assert_close(totorch(r), torchf(totorch(x)))
 
     square_shape_permutations(func, lim)
 
 
 def scalar_op(dtype: DataType, f: callable, rhs: bool = True, lim: int = 4) -> None:
-    torch_dt = DTYPE_TORCH_MAP[dtype]
-
     def func(shape: tuple[int, ...]) -> None:  # x op scalar
         xi: float = random.uniform(-1.0, 1.0)
         x = Tensor.uniform(shape, dtype=dtype)
         r = f(x, xi)
-        torch.testing.assert_close(totorch(r, torch_dt), f(totorch(x, torch_dt), xi))
+        torch.testing.assert_close(totorch(r), f(totorch(x), xi))
 
     square_shape_permutations(func, lim)
 
@@ -106,7 +98,7 @@ def scalar_op(dtype: DataType, f: callable, rhs: bool = True, lim: int = 4) -> N
         xi: float = random.uniform(-1.0, 1.0)
         x = Tensor.uniform(shape)
         r = f(xi, x)
-        torch.testing.assert_close(totorch(r, torch_dt), f(xi, totorch(x, torch_dt)))
+        torch.testing.assert_close(totorch(r), f(xi, totorch(x)))
 
     square_shape_permutations(func, lim)
 
