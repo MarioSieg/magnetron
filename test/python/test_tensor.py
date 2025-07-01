@@ -1,20 +1,20 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
-from magnetron import *
+import magnetron as mag
 
 
 def test_tensor_creation() -> None:
-    tensor = Tensor.empty(1, 2, 3, 4, 5, 6)
+    tensor = mag.empty(1, 2, 3, 4, 5, 6)
     assert tensor.shape == (1, 2, 3, 4, 5, 6)
     assert tensor.numel == (1 * 2 * 3 * 4 * 5 * 6)
     assert tensor.data_size == 4 * (1 * 2 * 3 * 4 * 5 * 6)
     assert tensor.data_ptr != 0
     assert tensor.is_contiguous is True
-    assert tensor.dtype == float32
+    assert tensor.dtype == magfloat32
 
 
 def test_tensor_scalar_get_set_physical() -> None:
-    tensor = Tensor.empty(4, 4)
+    tensor = mag.empty(4, 4)
     tensor[0, 0] = 128
     assert tensor[0, 0] == 128
     tensor[3, 3] = 3.14
@@ -22,7 +22,7 @@ def test_tensor_scalar_get_set_physical() -> None:
 
 
 def test_tensor_scalar_get_set_virtual() -> None:
-    tensor = Tensor.empty(4, 4)
+    tensor = mag.empty(4, 4)
     tensor[0] = 128
     assert tensor[0] == 128
     tensor[15] = 3.14
