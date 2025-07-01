@@ -1,7 +1,10 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
-from pathlib import Path
-from magnetron import Tensor, Context
+from __future__ import annotations
+
+from types import TracebackType
+from typing import Any
+
 from magnetron._bootstrap import load_native_module
 
 _ffi, _C = load_native_module()
@@ -45,7 +48,7 @@ class StorageStream:
             raise RuntimeError('Cannot enter context with a closed StorageStream.')
         return self
 
-    def __exit__(self, exc_type: any, exc_value: any, traceback: any) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None) -> None:
         """Exits the runtime context and closes the storage stream."""
         self.close()
 

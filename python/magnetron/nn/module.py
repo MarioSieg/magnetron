@@ -1,6 +1,8 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
-from collections.abc import Iterator, Callable, MutableMapping
+from __future__ import annotations
+from collections.abc import Iterator, Callable, MutableMapping, dict_values, dict_keys, dict_items
+from typing import Any
 
 from magnetron import Tensor
 
@@ -38,7 +40,7 @@ class Module:
                 unique.append(p)
         return unique
 
-    def children(self) -> Iterator['Module']:
+    def children(self) -> Iterator[Module]:
         """Yield immediate child modules."""
         for v in self.__dict__.values():
             if isinstance(v, Module):
@@ -47,13 +49,13 @@ class Module:
                 for m in v:
                     yield m
 
-    def modules(self) -> Iterator['Module']:
+    def modules(self) -> Iterator[Module]:
         """Yield self and all submodules in pre-order."""
         yield self
         for child in self.children():
             yield from child.modules()
 
-    def apply(self, fn: Callable[['Module'], None]) -> 'Module':
+    def apply(self, fn: Callable[[Module], None]) -> Module:
         """
         Apply `fn` to self and all submodules.
         Example:
@@ -149,13 +151,13 @@ class ModuleDict(Module, MutableMapping[str, Module]):
     def __len__(self) -> int:
         return len(self._modules)
 
-    def keys(self) -> 'dict_keys':
+    def keys(self) -> dict_keys[str, Module]:
         return self._modules.keys()
 
-    def items(self) -> 'dict_items':
+    def items(self) -> dict_items[str, Module]:
         return self._modules.items()
 
-    def values(self) -> 'dict_values':
+    def values(self) -> dict_values[str, Module]:
         return self._modules.values()
 
     def parameters(self) -> list[Parameter]:
@@ -183,7 +185,7 @@ class Sequential(ModuleList):
             modules = tuple(modules[0])
         super().__init__(list(modules))
 
-    def forward(self, *args: Tensor, **kwargs: any) -> Tensor:
+    def forward(self, *args: Tensor, **kwargs: dict) -> Tensor:
         x: Tensor | tuple[Tensor, ...] = args[0] if len(args) == 1 else args
         for mod in self:
             if isinstance(x, tuple):

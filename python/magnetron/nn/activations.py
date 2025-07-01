@@ -1,5 +1,7 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
+from __future__ import annotations
+
 from magnetron import Tensor
 from magnetron.nn.module import Module
 

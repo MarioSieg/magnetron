@@ -1,5 +1,10 @@
+# (c) 2025 Mario 'Neo' Sieg. <mario.sieg.64@gmail.com>
+
+from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 from cffi import FFI
 import sys
 
@@ -7,7 +12,7 @@ from magnetron._ffi_cdecl_generated import __MAG_CDECLS
 
 
 @lru_cache(maxsize=1)
-def load_native_module() -> tuple[FFI, object]:
+def load_native_module() -> tuple[FFI, Any]:
     platform = sys.platform
     pkg_dir = Path(__file__).parent  # .../src/magnetron
     root_dir = pkg_dir.parent  # .../src

@@ -1,16 +1,17 @@
 # (c) 2025 Mario 'Neo' Sieg. <mario.sieg.64@gmail.com>
 
+from __future__ import annotations
+
 import contextlib
 import faulthandler
-import operator
 import threading
-import typing
 import weakref
+from types import TracebackType
+from typing import final, Any
 from dataclasses import dataclass
 from enum import Enum, unique
-from functools import lru_cache, reduce
+from functools import lru_cache
 from os import getenv
-from typing import Optional
 
 from magnetron._bootstrap import load_native_module
 
@@ -88,7 +89,7 @@ class Config:
 _MAIN_TID: int = threading.get_native_id()
 
 
-@typing.final
+@final
 class Context:
     """Manages the execution context and owns all tensors and active compute devices."""
 
@@ -187,18 +188,18 @@ class no_grad(contextlib.ContextDecorator):
         """Disable gradient tracking by stopping the active context's recorder."""
         Context.get().stop_grad_recorder()
 
-    def __exit__(self, exc_type: any, exc_value: any, traceback: any) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None) -> None:
         """Re-enable gradient tracking when exiting the context."""
         Context.get().start_grad_recorder()
 
 
-NestedData = float | bool | int | list['NestedData']
+NestedList = float | bool | int | list['NestedData']
 
 
-def _flatten_nested_lists(nested: list[any, ...]) -> tuple[tuple[int], list[any]]:
+def _flatten_nested_lists(nested: list[Any]) -> tuple[tuple[int], list[Any]]:
     flat, dims = [], []
 
-    def walk(node: any, depth: int = 0) -> None:
+    def walk(node: list[Any], depth: int = 0) -> None:
         if isinstance(node, list):
             if len(dims) <= depth:
                 dims.append(len(node))
@@ -234,8 +235,8 @@ def _unpack_shape(*shape: int | tuple[int, ...]) -> tuple[int, ...]:
     return shape
 
 
-def _validate_dtype_compat(dtypes: set[DataType], *kwargs: any) -> None:
-    for i, tensor in enumerate(kwargs):
+def _validate_dtype_compat(dtypes: set[DataType], *args: Tensor) -> None:
+    for i, tensor in enumerate(args):
         if tensor.dtype not in dtypes:
             raise TypeError(f'Unsupported data type of argument {i + 1} for operator: {tensor.dtype}')
 
@@ -253,7 +254,7 @@ def _get_reduction_axes(dim: int | tuple[int] | None) -> tuple[_ffi.CData, int]:
         raise TypeError('Dimension must be an int or a tuple of ints.')
 
 
-def _build_nested(flat: list[any], shape: tuple[int], strides: tuple[int], offset: int, dim: int) -> list[any, ...]:
+def _build_nested(flat: list[Any], shape: tuple[int], strides: tuple[int], offset: int, dim: int) -> list[Any, ...]:
     if dim == len(shape):
         return flat[offset]
     size = shape[dim]
@@ -301,7 +302,7 @@ class Tensor:
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
@@ -316,23 +317,23 @@ class Tensor:
     @classmethod
     def empty_like(
         cls,
-        template: 'Tensor',
+        template: Tensor,
         *,
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         return cls.empty(template.shape, dtype=dtype, requires_grad=requires_grad, name=name)
 
     @classmethod
     def full(
         cls,
         *shape: int | tuple[int, ...],
-        fill_value: int | float,
+        fill_value: int | float | bool,
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
@@ -348,13 +349,13 @@ class Tensor:
     @classmethod
     def full_like(
         cls,
-        template: 'Tensor',
+        template: Tensor,
         *,
         fill_value: int | float,
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         return cls.full(
             template.shape,
             fill_value=fill_value,
@@ -366,12 +367,12 @@ class Tensor:
     @classmethod
     def of(
         cls,
-        data: NestedData,
+        data: NestedList,
         *,
         dtype: DataType | None = None,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         if not data:
             return cls.empty(0, dtype=dtype if dtype is not None else Context.get().default_dtype)
         shape, flattened_data = _flatten_nested_lists(data)
@@ -402,18 +403,18 @@ class Tensor:
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         return cls.full(*shape, fill_value=0, dtype=dtype, requires_grad=requires_grad, name=name)
 
     @classmethod
     def zeros_like(
         cls,
-        template: 'Tensor',
+        template: Tensor,
         *,
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         return cls.zeros(template.shape, dtype=dtype, requires_grad=requires_grad, name=name)
 
     @classmethod
@@ -423,18 +424,18 @@ class Tensor:
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         return cls.full(*shape, fill_value=1, dtype=dtype, requires_grad=requires_grad, name=name)
 
     @classmethod
     def ones_like(
         cls,
-        template: 'Tensor',
+        template: Tensor,
         *,
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         return cls.ones(template.shape, dtype=dtype, requires_grad=requires_grad, name=name)
 
     @classmethod
@@ -446,7 +447,7 @@ class Tensor:
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
@@ -468,7 +469,7 @@ class Tensor:
         dtype: DataType = Context.get().default_dtype,
         requires_grad: bool = False,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
@@ -487,7 +488,7 @@ class Tensor:
         *shape: int | tuple[int, ...],
         p: float = 0.5,
         name: str | None = None,
-    ) -> 'Tensor':
+    ) -> Tensor:
         shape = _unpack_shape(*shape)
         tensor = cls(
             native_object=None,
@@ -548,10 +549,10 @@ class Tensor:
 
     def __bool__(self) -> bool:
         if self.numel != 1:
-            raise ValueError('The truth value of a Tensor with more than one element is ambiguous. Use .any() or .all() instead.')
+            raise ValueError('The truth value of a Tensor with more than one element is ambiguous. Use .Any() or .all() instead.')
         return bool(self.item())
 
-    def tolist(self) -> NestedData:
+    def tolist(self) -> NestedList:
         if self.numel == 0:
             return []
         is_fp: bool = self.is_floating_point
@@ -580,13 +581,13 @@ class Tensor:
     def is_permuted(self) -> bool:
         return _C.mag_tensor_is_permuted(self._ptr)
 
-    def is_shape_eq(self, other: 'Tensor') -> bool:
+    def is_shape_eq(self, other: Tensor) -> bool:
         return _C.mag_tensor_is_shape_eq(self._ptr, other._ptr)
 
-    def are_strides_eq(self, other: 'Tensor') -> bool:
+    def are_strides_eq(self, other: Tensor) -> bool:
         return _C.mag_tensor_are_strides_eq(self._ptr, other._ptr)
 
-    def can_broadcast(self, other: 'Tensor') -> bool:
+    def can_broadcast(self, other: Tensor) -> bool:
         return _C.mag_tensor_can_broadcast(self._ptr, other._ptr)
 
     @property
@@ -602,7 +603,7 @@ class Tensor:
         return _C.mag_tensor_is_view(self._ptr)
 
     @property
-    def view_base(self) -> Optional['Tensor']:
+    def view_base(self) -> Tensor | None:
         if not self.is_view:
             return None
         ptr: _ffi.CData = _C.mag_tensor_get_view_base(self._ptr)
@@ -641,7 +642,7 @@ class Tensor:
         _C.mag_tensor_set_requires_grad(self._ptr, require)
 
     @property
-    def grad(self) -> Optional['Tensor']:
+    def grad(self) -> Tensor | None:
         if not self.requires_grad:
             return None
         ptr: _ffi.CData = _C.mag_tensor_get_grad(self._ptr)
@@ -665,40 +666,40 @@ class Tensor:
         else:
             _C.mag_tensor_export_backward_graph_graphviz(self._ptr, file_path)
 
-    def clone(self) -> 'Tensor':
+    def clone(self) -> Tensor:
         return Tensor(_C.mag_clone(self._ptr))
 
-    def view(self, *dims: int | tuple[int, ...]) -> 'Tensor':
+    def view(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(dims)
         assert self.is_contiguous, 'Tensor must be contiguous to be viewed'
         num_dims: int = len(dims)
         view_dims: _ffi.CData = _ffi.new(f'int64_t[{num_dims}]', dims)
         return Tensor(_C.mag_view(self._ptr, view_dims, num_dims))
 
-    def reshape(self, *dims: int | tuple[int, ...]) -> 'Tensor':
+    def reshape(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(dims)
         num_dims: int = len(dims)
         view_dims: _ffi.CData = _ffi.new(f'int64_t[{num_dims}]', dims)
         return Tensor(_C.mag_reshape(self._ptr, view_dims, num_dims))
 
-    def transpose(self, dim1: int = 0, dim2: int = 1) -> 'Tensor':
+    def transpose(self, dim1: int = 0, dim2: int = 1) -> Tensor:
         assert dim1 != dim2, f'Transposition axes must be not equal, but {dim1} == {dim2}'
         return Tensor(_C.mag_transpose(self._ptr, dim1, dim2))
 
     @property
-    def T(self) -> 'Tensor':
+    def T(self) -> Tensor:
         return Tensor(_C.mag_transpose(self._ptr, 0, 1))
 
-    def detach(self) -> 'Tensor':
+    def detach(self) -> Tensor:
         _C.mag_tensor_detach(self._ptr)
         return self
 
-    def contiguous(self) -> 'Tensor':
+    def contiguous(self) -> Tensor:
         if self.is_contiguous:
             return self
         return self.clone()
 
-    def permute(self, *dims: int | tuple[int, ...]) -> 'Tensor':
+    def permute(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(*dims)
         assert len(dims) == self.rank, f'Invalid number of axes, require {self.rank}, got {len(dims)}'
         if len(dims) != MAX_DIMS:
@@ -746,250 +747,250 @@ class Tensor:
     def ones_(self) -> None:
         self.fill_(1)
 
-    def mean(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> 'Tensor':
+    def mean(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_C.mag_mean(self._ptr, dims, num_dims, keepdim))
 
-    def min(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> 'Tensor':
+    def min(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_C.mag_min(self._ptr, dims, num_dims, keepdim))
 
-    def max(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> 'Tensor':
+    def max(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_C.mag_max(self._ptr, dims, num_dims, keepdim))
 
-    def sum(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> 'Tensor':
+    def sum(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_C.mag_sum(self._ptr, dims, num_dims, keepdim))
 
-    def argmin(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> 'Tensor':
+    def argmin(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_C.mag_argmin(self._ptr, dims, num_dims, keepdim))
 
-    def argmax(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> 'Tensor':
+    def argmax(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_C.mag_argmax(self._ptr, dims, num_dims, keepdim))
 
-    def abs(self) -> 'Tensor':
+    def abs(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_abs(self._ptr))
 
-    def abs_(self) -> 'Tensor':
+    def abs_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_abs_(self._ptr))
 
-    def neg(self) -> 'Tensor':
+    def neg(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_neg(self._ptr))
 
-    def neg_(self) -> 'Tensor':
+    def neg_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_neg_(self._ptr))
 
-    def __neg__(self) -> 'Tensor':
+    def __neg__(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return self.neg()
 
-    def log(self) -> 'Tensor':
+    def log(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_log(self._ptr))
 
-    def log_(self) -> 'Tensor':
+    def log_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_log_(self._ptr))
 
-    def sqr(self) -> 'Tensor':
+    def sqr(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_sqr(self._ptr))
 
-    def sqr_(self) -> 'Tensor':
+    def sqr_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_sqr_(self._ptr))
 
-    def sqrt(self) -> 'Tensor':
+    def sqrt(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_sqrt(self._ptr))
 
-    def sqrt_(self) -> 'Tensor':
+    def sqrt_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_sqrt_(self._ptr))
 
-    def sin(self) -> 'Tensor':
+    def sin(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_sin(self._ptr))
 
-    def sin_(self) -> 'Tensor':
+    def sin_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_sin_(self._ptr))
 
-    def cos(self) -> 'Tensor':
+    def cos(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_cos(self._ptr))
 
-    def cos_(self) -> 'Tensor':
+    def cos_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_cos_(self._ptr))
 
-    def step(self) -> 'Tensor':
+    def step(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_step(self._ptr))
 
-    def step_(self) -> 'Tensor':
+    def step_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_step_(self._ptr))
 
-    def exp(self) -> 'Tensor':
+    def exp(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_exp(self._ptr))
 
-    def exp_(self) -> 'Tensor':
+    def exp_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_exp_(self._ptr))
 
-    def floor(self) -> 'Tensor':
+    def floor(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_floor(self._ptr))
 
-    def floor_(self) -> 'Tensor':
+    def floor_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_floor_(self._ptr))
 
-    def ceil(self) -> 'Tensor':
+    def ceil(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_ceil(self._ptr))
 
-    def ceil_(self) -> 'Tensor':
+    def ceil_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_ceil_(self._ptr))
 
-    def round(self) -> 'Tensor':
+    def round(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_round(self._ptr))
 
-    def round_(self) -> 'Tensor':
+    def round_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_round_(self._ptr))
 
-    def softmax(self) -> 'Tensor':
+    def softmax(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_softmax(self._ptr))
 
-    def softmax_(self) -> 'Tensor':
+    def softmax_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_softmax_(self._ptr))
 
-    def sigmoid(self) -> 'Tensor':
+    def sigmoid(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_sigmoid(self._ptr))
 
-    def sigmoid_(self) -> 'Tensor':
+    def sigmoid_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_sigmoid_(self._ptr))
 
-    def hardsigmoid(self) -> 'Tensor':
+    def hardsigmoid(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_hard_sigmoid(self._ptr))
 
-    def hardsigmoid_(self) -> 'Tensor':
+    def hardsigmoid_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_hard_sigmoid_(self._ptr))
 
-    def silu(self) -> 'Tensor':
+    def silu(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_silu(self._ptr))
 
-    def silu_(self) -> 'Tensor':
+    def silu_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_silu_(self._ptr))
 
-    def tanh(self) -> 'Tensor':
+    def tanh(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_tanh(self._ptr))
 
-    def tanh_(self) -> 'Tensor':
+    def tanh_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_tanh_(self._ptr))
 
-    def relu(self) -> 'Tensor':
+    def relu(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_relu(self._ptr))
 
-    def relu_(self) -> 'Tensor':
+    def relu_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_relu_(self._ptr))
 
-    def gelu(self) -> 'Tensor':
+    def gelu(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         return Tensor(_C.mag_gelu(self._ptr))
 
-    def gelu_(self) -> 'Tensor':
+    def gelu_(self) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self)
         self._validate_inplace_op()
         return Tensor(_C.mag_gelu_(self._ptr))
 
-    def tril(self, diagonal: int = 0) -> 'Tensor':
+    def tril(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Tril requires a rank >= 2 but is {self.rank}'
         return Tensor(_C.mag_tril(self._ptr, diagonal))
 
-    def tril_(self, diagonal: int = 0) -> 'Tensor':
+    def tril_(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Tril requires a rank >= 2 but is {self.rank}'
         self._validate_inplace_op()
         return Tensor(_C.mag_tril_(self._ptr, diagonal))
 
-    def triu(self, diagonal: int = 0) -> 'Tensor':
+    def triu(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Triu requires a rank >= 2 but is {self.rank}'
         return Tensor(_C.mag_triu(self._ptr, diagonal))
 
-    def triu_(self, diagonal: int = 0) -> 'Tensor':
+    def triu_(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Triu requires a rank >= 2 but is {self.rank}'
         self._validate_inplace_op()
         return Tensor(_C.mag_triu_(self._ptr, diagonal))
 
-    def logical_and(self, other: 'Tensor') -> 'Tensor':
+    def logical_and(self, other: Tensor) -> Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_and(self._ptr, other._ptr))
 
-    def logical_and_(self, other: 'Tensor') -> 'Tensor':
+    def logical_and_(self, other: Tensor) -> Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_and_(self._ptr, other._ptr))
 
-    def logical_or(self, other: 'Tensor') -> 'Tensor':
+    def logical_or(self, other: Tensor) -> Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_and(self._ptr, other._ptr))
 
-    def logical_or_(self, other: 'Tensor') -> 'Tensor':
+    def logical_or_(self, other: Tensor) -> Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_or_(self._ptr, other._ptr))
 
-    def logical_xor(self, other: 'Tensor') -> 'Tensor':
+    def logical_xor(self, other: Tensor) -> Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_and(self._ptr, other._ptr))
 
-    def logical_xor_(self, other: 'Tensor') -> 'Tensor':
+    def logical_xor_(self, other: Tensor) -> Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_xor_(self._ptr, other._ptr))
 
@@ -1002,18 +1003,18 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(_C.mag_not_(self._ptr))
 
-    def __add__(self, other: object | int | float) -> 'Tensor':
+    def __add__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
             other = Tensor.full(self.shape, fill_value=float(other))
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_add(self._ptr, other._ptr))
 
-    def __radd__(self, other: int | float) -> 'Tensor':
+    def __radd__(self, other: int | float) -> Tensor:
         other = Tensor.full(self.shape, fill_value=float(other))
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other + self
 
-    def __iadd__(self, other: object | int | float) -> 'Tensor':
+    def __iadd__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             val: float | int = float(other) if self.is_floating_point else int(other)
@@ -1021,20 +1022,20 @@ class Tensor:
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_add_(self._ptr, float(other)))
 
-    def __sub__(self, other: object | int | float) -> 'Tensor':
+    def __sub__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
             val: float | int = float(other) if self.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_sub(self._ptr, other._ptr))
 
-    def __rsub__(self, other: int | float) -> 'Tensor':
+    def __rsub__(self, other: int | float) -> Tensor:
         val: float | int = float(other) if self.is_floating_point else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other - self
 
-    def __isub__(self, other: object | int | float) -> 'Tensor':
+    def __isub__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             val: float | int = float(other) if self.is_floating_point else int(other)
@@ -1042,20 +1043,20 @@ class Tensor:
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_sub_(self._ptr, other._ptr))
 
-    def __mul__(self, other: object | int | float) -> 'Tensor':
+    def __mul__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
             val: float | int = float(other) if self.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_mul(self._ptr, other._ptr))
 
-    def __rmul__(self, other: int | float) -> 'Tensor':
+    def __rmul__(self, other: int | float) -> Tensor:
         val: float | int = float(other) if self.is_floating_point else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other * self
 
-    def __imul__(self, other: object | int | float) -> 'Tensor':
+    def __imul__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             val: float | int = float(other) if self.is_floating_point else int(other)
@@ -1063,20 +1064,20 @@ class Tensor:
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_mul_(self._ptr, other._ptr))
 
-    def __truediv__(self, other: object | int | float) -> 'Tensor':
+    def __truediv__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
             val: float | int = float(other) if self.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_div(self._ptr, other._ptr))
 
-    def __rtruediv__(self, other: int | float) -> 'Tensor':
+    def __rtruediv__(self, other: int | float) -> Tensor:
         val: float | int = float(other) if self.is_floating_point else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other / self
 
-    def __itruediv__(self, other: object | int | float) -> 'Tensor':
+    def __itruediv__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             val: float | int = float(other) if self.is_floating_point else int(other)
@@ -1084,20 +1085,20 @@ class Tensor:
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_div_(self._ptr, other._ptr))
 
-    def __floordiv__(self, other: object | int | float) -> 'Tensor':
+    def __floordiv__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
             val: float | int = float(other) if self.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_div(self._ptr, other._ptr))
 
-    def __rfloordiv__(self, other: int | float) -> 'Tensor':
+    def __rfloordiv__(self, other: int | float) -> Tensor:
         val: float | int = float(other) if self.is_floating_point else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other / self
 
-    def __ifloordiv__(self, other: object | int | float) -> 'Tensor':
+    def __ifloordiv__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             val: float | int = float(other) if self.is_floating_point else int(other)
@@ -1105,29 +1106,29 @@ class Tensor:
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_div_(self._ptr, other._ptr))
 
-    def __matmul__(self, other: 'Tensor') -> 'Tensor':
+    def __matmul__(self, other: Tensor) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self, other)
         return Tensor(_C.mag_matmul(self._ptr, other._ptr))
 
-    def __imatmul__(self, other: 'Tensor') -> 'Tensor':
+    def __imatmul__(self, other: Tensor) -> Tensor:
         _validate_dtype_compat(_FLOATING_POINT_DTYPES, self, other)
         self._validate_inplace_op()
         return Tensor(_C.mag_matmul_(self._ptr, other._ptr))
 
-    def __and__(self, other: object | bool | int) -> 'Tensor':
+    def __and__(self, other: Tensor | bool | int) -> Tensor:
         if not isinstance(other, Tensor):
             val: bool | int = bool(other) if self.dtype == boolean else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_and(self._ptr, other._ptr))
 
-    def __rand__(self, other: int | bool) -> 'Tensor':
+    def __rand__(self, other: int | bool) -> Tensor:
         val: bool | int = bool(other) if self.dtype == boolean else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return other & self
 
-    def __iand__(self, other: object | int | float) -> 'Tensor':
+    def __iand__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             val: bool | int = bool(other) if self.dtype == boolean else int(other)
@@ -1135,20 +1136,20 @@ class Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_and_(self._ptr, other._ptr))
 
-    def __or__(self, other: object | bool | int) -> 'Tensor':
+    def __or__(self, other: Tensor | bool | int) -> Tensor:
         if not isinstance(other, Tensor):
             val: bool | int = bool(other) if self.dtype == boolean else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_or(self._ptr, other._ptr))
 
-    def __ror__(self, other: int | bool) -> 'Tensor':
+    def __ror__(self, other: int | bool) -> Tensor:
         val: bool | int = bool(other) if self.dtype == boolean else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return other | self
 
-    def __ior__(self, other: object | int | float) -> 'Tensor':
+    def __ior__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             val: bool | int = bool(other) if self.dtype == boolean else int(other)
@@ -1156,20 +1157,20 @@ class Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_or_(self._ptr, other._ptr))
 
-    def __xor__(self, other: object | bool | int) -> 'Tensor':
+    def __xor__(self, other: Tensor | bool | int) -> Tensor:
         if not isinstance(other, Tensor):
             val: bool | int = bool(other) if self.dtype == boolean else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_xor(self._ptr, other._ptr))
 
-    def __rxor__(self, other: int | bool) -> 'Tensor':
+    def __rxor__(self, other: int | bool) -> Tensor:
         val: bool | int = bool(other) if self.dtype == boolean else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return other ^ self
 
-    def __ixor__(self, other: object | int | float) -> 'Tensor':
+    def __ixor__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             val: bool | int = bool(other) if self.dtype == boolean else int(other)
@@ -1177,65 +1178,89 @@ class Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self, other)
         return Tensor(_C.mag_xor_(self._ptr, other._ptr))
 
-    def __invert__(self) -> 'Tensor':
+    def __invert__(self) -> Tensor:
         _validate_dtype_compat(_INTEGRAL_DTYPES, self)
         return Tensor(_C.mag_not(self._ptr))
 
-    def __lshift__(self, other: object | int) -> 'Tensor':
+    def __lshift__(self, other: Tensor | int) -> Tensor:
         if not isinstance(other, Tensor):
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=int(other))
         _validate_dtype_compat(_INTEGER_DTYPES, self, other)
         return Tensor(_C.mag_shl(self._ptr, other._ptr))
 
-    def __rlshift__(self, other: int) -> 'Tensor':
+    def __rlshift__(self, other: int) -> Tensor:
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=int(other))
         _validate_dtype_compat(_INTEGER_DTYPES, self, other)
         return other << self
 
-    def __ilshift__(self, other: object | int) -> 'Tensor':
+    def __ilshift__(self, other: Tensor | int) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=int(other))
         _validate_dtype_compat(_INTEGER_DTYPES, self, other)
         return Tensor(_C.mag_shl_(self._ptr, other._ptr))
 
-    def __rshift__(self, other: object | int) -> 'Tensor':
+    def __rshift__(self, other: Tensor | int) -> Tensor:
         if not isinstance(other, Tensor):
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=int(other))
         _validate_dtype_compat(_INTEGER_DTYPES, self, other)
         return Tensor(_C.mag_shr(self._ptr, other._ptr))
 
-    def __rrshift__(self, other: int) -> 'Tensor':
+    def __rrshift__(self, other: int) -> Tensor:
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=int(other))
         _validate_dtype_compat(_INTEGER_DTYPES, self, other)
         return other >> self
 
-    def __irshift__(self, other: object | int) -> 'Tensor':
+    def __irshift__(self, other: Tensor | int) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=int(other))
         _validate_dtype_compat(_INTEGER_DTYPES, self, other)
         return Tensor(_C.mag_shr_(self._ptr, other._ptr))
 
-    def __eq__(self, other: 'Tensor') -> 'Tensor':
+    def __eq__(self, other: Tensor | list[int | float | bool] | int | float | bool) -> Tensor:
+        if isinstance(other, list):
+            other = Tensor.of(other, dtype=self.dtype)
+        elif not isinstance(other, Tensor):
+            other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         return Tensor(_C.mag_eq(self._ptr, other._ptr))
 
-    def __ne__(self, other: 'Tensor') -> 'Tensor':
+    def __ne__(self, other: Tensor | list[int | float | bool] | int | float | bool) -> Tensor:
+        if isinstance(other, list):
+            other = Tensor.of(other, dtype=self.dtype)
+        elif not isinstance(other, Tensor):
+            other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         return Tensor(_C.mag_ne(self._ptr, other._ptr))
 
-    def __le__(self, other: 'Tensor') -> 'Tensor':
+    def __le__(self, other: Tensor | list[int | float] | int | float) -> Tensor:
+        if isinstance(other, list):
+            other = Tensor.of(other, dtype=self.dtype)
+        elif not isinstance(other, Tensor):
+            other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_le(self._ptr, other._ptr))
 
-    def __ge__(self, other: 'Tensor') -> 'Tensor':
+    def __ge__(self, other: Tensor | list[int | float] | int | float) -> Tensor:
+        if isinstance(other, list):
+            other = Tensor.of(other, dtype=self.dtype)
+        elif not isinstance(other, Tensor):
+            other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_ge(self._ptr, other._ptr))
 
-    def __lt__(self, other: 'Tensor') -> 'Tensor':
+    def __lt__(self, other: Tensor | list[int | float] | int | float) -> Tensor:
+        if isinstance(other, list):
+            other = Tensor.of(other, dtype=self.dtype)
+        elif not isinstance(other, Tensor):
+            other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_lt(self._ptr, other._ptr))
 
-    def __gt__(self, other: 'Tensor') -> 'Tensor':
+    def __gt__(self, other: Tensor | list[int | float] | int | float) -> Tensor:
+        if isinstance(other, list):
+            other = Tensor.of(other, dtype=self.dtype)
+        elif not isinstance(other, Tensor):
+            other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_gt(self._ptr, other._ptr))
 

@@ -1,5 +1,7 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 from magnetron import Tensor, no_grad, Context
