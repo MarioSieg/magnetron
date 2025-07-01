@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-import pytest
 import random
+from collections.abc import Callable
+from typing import Any
+
 import torch
+import pytest
 from magnetron import *
 from collections import deque
+from enum import Enum, unique
 
 DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
     float16: torch.float16,
@@ -15,10 +19,12 @@ DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
     boolean: torch.bool
 }
 
-def totorch(t: Tensor, dtype: torch.dtype | None = None) -> torch.Tensor:
+def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) -> torch.Tensor:
+    if not isinstance(obj, Tensor) and not isinstance(obj, torch.Tensor):
+        return obj
     if dtype is None:
-        dtype = DTYPE_TORCH_MAP[t.dtype]
-    return torch.tensor(t.tolist(), dtype=dtype).reshape(t.shape)
+        dtype = DTYPE_TORCH_MAP[obj.dtype]
+    return torch.tensor(obj.tolist(), dtype=dtype).reshape(obj.shape)
 
 def square_shape_permutations(f: callable, lim: int) -> None:
     lim += 1
@@ -30,43 +36,69 @@ def square_shape_permutations(f: callable, lim: int) -> None:
                         for i5 in range(1, lim):
                             f((i0, i1, i2, i3, i4, i5))
 
-def binary_op_square(dtype: DataType, f: callable, lim: int = 4, from_: float | int | None = None, to: float | int | None = None) -> None:
+@unique
+class BinaryOpParamKind(Enum):
+    TENSOR = 'tensor'
+    SCALAR = 'scalar'
+    LIST = 'list'
+
+def _allocate_binary_op_args(dtype: DataType, shape: tuple[int, ...], kind: BinaryOpParamKind, from_: float | int = 0, to: float | int = 1) -> tuple[Tensor, Tensor | list[Any] | float | int]:
+    if dtype == boolean:
+        x = Tensor.bernoulli(shape)
+        match kind:
+            case BinaryOpParamKind.TENSOR:
+                return x, Tensor.bernoulli(shape)
+            case BinaryOpParamKind.LIST:
+                return x, [random.choice([True, False]) for _ in range(nested_len(list(shape)))]
+            case BinaryOpParamKind.SCALAR:
+                return x, random.choice([True, False])
+            case _:
+                raise ValueError(f'Unknown BinaryOpParamKind: {kind}')
+    else:
+        x = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
+        match kind:
+            case BinaryOpParamKind.TENSOR:
+                return x, Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
+            case BinaryOpParamKind.LIST:
+                if dtype.is_integer:
+                    return x, [random.randint(from_, to) for _ in range(nested_len(list(shape)))]
+                else:
+                    return x, [random.uniform(from_, to) for _ in range(nested_len(list(shape)))]
+            case BinaryOpParamKind.SCALAR:
+                if dtype.is_integer:
+                    return x, random.randint(from_, to)
+                else:
+                    return x, random.uniform(from_, to)
+            case _:
+                raise ValueError(f'Unknown BinaryOpParamKind: {kind}')
+
+def binary_op_square(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], lim: int = 4, kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, from_: float | int = 0, to: float | int = 1) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-            y = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
-            y = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
-        r = f(x, y)
+        x, y = _allocate_binary_op_args(dtype, shape, kind, from_, to)
+        r = callback(x, y)
         torch.testing.assert_close(
             totorch(r),
-            f(totorch(x), totorch(y))
+            callback(totorch(x), totorch(y))
         )
 
     square_shape_permutations(func, lim)
 
-def binary_cmp_op(dtype: DataType, f: callable, lim: int = 4, from_: float | int | None = None, to: float | int | None = None, use_scalar: bool = False, use_list: bool = False) -> None:
+def binary_cmp_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], lim: int = 4, kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, from_: float | int = 0, to: float | int = 1) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-            y = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
-            y = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
-        r = f(x, y)
+        x, y = _allocate_binary_op_args(dtype, shape, kind, from_, to)
+        r = callback(x, y)
         assert r.dtype == boolean
         torch.testing.assert_close(
             totorch(r, torch.bool),
-            f(totorch(x), totorch(y))
+            callback(totorch(x), totorch(y))
         )
 
     square_shape_permutations(func, lim)
 
 def unary_op(
     dtype: DataType,
-    magf: callable,
-    torchf: callable,
+    mag_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
+    torch_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
     lim: int = 4,
     from_: float | int | None = None,
     to: float | int | None = None
@@ -76,18 +108,18 @@ def unary_op(
             x = Tensor.bernoulli(shape)
         else:
             x = Tensor.uniform(shape, dtype=dtype, from_=from_, to=to)
-        r = magf(x.clone())
-        torch.testing.assert_close(totorch(r), torchf(totorch(x)))
+        r = mag_callback(x.clone())
+        torch.testing.assert_close(totorch(r), torch_callback(totorch(x)))
 
     square_shape_permutations(func, lim)
 
 
-def scalar_op(dtype: DataType, f: callable, rhs: bool = True, lim: int = 4) -> None:
+def scalar_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, int | float | bool], Tensor | torch.Tensor], rhs: bool = True, lim: int = 4) -> None:
     def func(shape: tuple[int, ...]) -> None:  # x op scalar
         xi: float = random.uniform(-1.0, 1.0)
         x = Tensor.uniform(shape, dtype=dtype)
-        r = f(x, xi)
-        torch.testing.assert_close(totorch(r), f(totorch(x), xi))
+        r = callback(x, xi)
+        torch.testing.assert_close(totorch(r), callback(totorch(x), xi))
 
     square_shape_permutations(func, lim)
 
@@ -97,12 +129,12 @@ def scalar_op(dtype: DataType, f: callable, rhs: bool = True, lim: int = 4) -> N
     def func(shape: tuple[int, ...]) -> None:  # scalar op x
         xi: float = random.uniform(-1.0, 1.0)
         x = Tensor.uniform(shape)
-        r = f(xi, x)
-        torch.testing.assert_close(totorch(r), f(xi, totorch(x)))
+        r = callback(xi, x)
+        torch.testing.assert_close(totorch(r), callback(xi, totorch(x)))
 
     square_shape_permutations(func, lim)
 
-def nested_len(obj: list[any]) -> int:
+def nested_len(obj: list[Any]) -> int:
     total = 0
     stack = deque([obj])
     seen = set()
@@ -119,8 +151,8 @@ def nested_len(obj: list[any]) -> int:
                 total += 1
     return total
 
-def flatten(nested: any) -> list[any]:
-    out: list[any] = []
+def flatten(nested: Any) -> list[Any]:
+    out: list[Any] = []
     stack = deque([iter(nested)])
     while stack:
         try:

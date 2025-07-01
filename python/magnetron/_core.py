@@ -38,6 +38,17 @@ class PRNGAlgorithm(Enum):
     MERSENNE_TWISTER = _C.MAG_PRNG_MERSENNE_TWISTER
     PCG = _C.MAG_PRNG_PCG
 
+# Includes all floating-point types.
+_FLOATING_POINT_DTYPES: set[DataType] = set()
+
+# Includes all integral types (integers + boolean).
+_INTEGRAL_DTYPES: set[DataType] = set()
+
+# Include all integer types (integers - boolean).
+_INTEGER_DTYPES: set[DataType] = set()
+
+# Include all numeric dtypes (floating point + integers - boolean)
+_NUMERIC_DTYPES: set[DataType] = set()
 
 @dataclass(frozen=True)
 class DataType:
@@ -46,6 +57,22 @@ class DataType:
     name: str
     native_type: str | None
     fill_fn: _ffi.CData
+
+    @property
+    def is_floating_point(self) -> bool:
+        return self in _FLOATING_POINT_DTYPES
+
+    @property
+    def is_integral(self) -> bool:
+        return self in _INTEGRAL_DTYPES
+
+    @property
+    def is_integer(self) -> bool:
+        return self in _INTEGER_DTYPES
+
+    @property
+    def is_numeric(self) -> bool:
+        return self in _NUMERIC_DTYPES
 
     def __str__(self) -> str:
         return self.name
@@ -65,18 +92,10 @@ _DTYPE_ENUM_MAP: dict[int, DataType] = {
     boolean.enum_value: boolean,
     int32.enum_value: int32,
 }
-
-# Includes all floating-point types.
-_FLOATING_POINT_DTYPES: set[DataType] = {float32, float16}
-
-# Includes all integral types (integers + boolean).
-_INTEGRAL_DTYPES: set[DataType] = {boolean, int32}
-
-# Include all integer types (integers - boolean).
-_INTEGER_DTYPES: set[DataType] = _INTEGRAL_DTYPES - {boolean}
-
-# Include all numeric dtypes (floating point + integers - boolean)
-_NUMERIC_DTYPES: set[DataType] = _FLOATING_POINT_DTYPES | _INTEGER_DTYPES
+_FLOATING_POINT_DTYPES = {float32, float16}
+_INTEGRAL_DTYPES = {boolean, int32}
+_INTEGER_DTYPES = _INTEGRAL_DTYPES - {boolean}
+_NUMERIC_DTYPES = _FLOATING_POINT_DTYPES | _INTEGER_DTYPES
 
 
 @dataclass
@@ -538,7 +557,7 @@ class Tensor:
     def item(self) -> float | int | bool:
         if self.numel != 1:
             raise ValueError('Tensor must have exactly one element to retrieve an item')
-        if self.is_floating_point:
+        if self.dtype.is_floating_point:
             return float(_C.mag_tensor_get_item_float(self._ptr))
         elif self.dtype == int32:
             return int(_C.mag_tensor_get_item_int(self._ptr))
@@ -555,12 +574,14 @@ class Tensor:
     def tolist(self) -> NestedList:
         if self.numel == 0:
             return []
-        is_fp: bool = self.is_floating_point
+        is_fp: bool = self.dtype.is_floating_point
         unpack_fn = _C.mag_tensor_get_data_as_floats if is_fp else _C.mag_tensor_get_raw_data_as_bytes
         free_fn = _C.mag_tensor_get_data_as_floats_free if is_fp else _C.mag_tensor_get_raw_data_as_bytes_free
         ptr = unpack_fn(self._ptr)
         if not is_fp:
-            ptr = _ffi.cast(f'const {self.dtype.native_type}*', ptr)
+            native: str | None = self.dtype.native_type
+            assert native is not None, f'Tensor dtype {self.dtype} does not have a native type'
+            ptr = _ffi.cast(f'const {native}*', ptr)
         flat = list(_ffi.unpack(ptr, self.numel))
         free_fn(ptr)
         return _build_nested(flat, self.shape, self.strides, offset=0, dim=0)
@@ -589,14 +610,6 @@ class Tensor:
 
     def can_broadcast(self, other: Tensor) -> bool:
         return _C.mag_tensor_can_broadcast(self._ptr, other._ptr)
-
-    @property
-    def is_floating_point(self) -> bool:
-        return self.dtype in _FLOATING_POINT_DTYPES
-
-    @property
-    def is_integral(self) -> bool:
-        return not self.is_floating_point
 
     @property
     def is_view(self) -> bool:
@@ -637,7 +650,7 @@ class Tensor:
 
     @requires_grad.setter
     def requires_grad(self, require: bool) -> None:
-        if require and not self.is_floating_point:
+        if require and not self.dtype.is_floating_point:
             raise RuntimeError(f'Tensors requiring gradients must be of a floating point type, but is: {self.dtype}')
         _C.mag_tensor_set_requires_grad(self._ptr, require)
 
@@ -714,7 +727,7 @@ class Tensor:
 
     def fill_(self, value: float | int | bool) -> None:
         self._validate_inplace_op()
-        if self.is_floating_point:
+        if self.dtype.is_floating_point:
             _C.mag_tensor_fill_float(self._ptr, float(value))
         else:
             _C.mag_tensor_fill_int(self._ptr, int(value))
@@ -722,11 +735,11 @@ class Tensor:
     def fill_random_uniform_(self, from_: float | int | None = None, to: float | int | None = None) -> None:
         _validate_dtype_compat(_NUMERIC_DTYPES, self)
         self._validate_inplace_op()
-        from_def, to_def = (-0x80000000, 0x7FFFFFFF) if self.is_integral else (0.0, 1.0)
+        from_def, to_def = (-0x80000000, 0x7FFFFFFF) if self.dtype.is_integer else (0.0, 1.0)
         from_ = from_def if from_ is None else from_
         to = to_def if to is None else to
         assert to > from_, f'Invalid uniform range {to} must be > {from_}'
-        if self.is_floating_point:
+        if self.dtype.is_floating_point:
             _C.mag_tensor_fill_random_uniform_float(self._ptr, float(from_), float(to))
         else:
             _C.mag_tensor_fill_random_uniform_int(self._ptr, int(from_), int(to))
@@ -1005,32 +1018,32 @@ class Tensor:
 
     def __add__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
-            other = Tensor.full(self.shape, fill_value=float(other))
+            other = Tensor.full(self.shape, dtype=self.dtype, fill_value=float(other))
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_add(self._ptr, other._ptr))
 
     def __radd__(self, other: int | float) -> Tensor:
-        other = Tensor.full(self.shape, fill_value=float(other))
+        other = Tensor.full(self.shape, dtype=self.dtype, fill_value=float(other))
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other + self
 
     def __iadd__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
-            val: float | int = float(other) if self.is_floating_point else int(other)
+            val: float | int = float(other) if self.dtype.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_add_(self._ptr, float(other)))
 
     def __sub__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
-            val: float | int = float(other) if self.is_floating_point else int(other)
+            val: float | int = float(other) if self.dtype.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_sub(self._ptr, other._ptr))
 
     def __rsub__(self, other: int | float) -> Tensor:
-        val: float | int = float(other) if self.is_floating_point else int(other)
+        val: float | int = float(other) if self.dtype.is_floating_point else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other - self
@@ -1038,20 +1051,20 @@ class Tensor:
     def __isub__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
-            val: float | int = float(other) if self.is_floating_point else int(other)
+            val: float | int = float(other) if self.dtype.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_sub_(self._ptr, other._ptr))
 
     def __mul__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
-            val: float | int = float(other) if self.is_floating_point else int(other)
+            val: float | int = float(other) if self.dtype.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_mul(self._ptr, other._ptr))
 
     def __rmul__(self, other: int | float) -> Tensor:
-        val: float | int = float(other) if self.is_floating_point else int(other)
+        val: float | int = float(other) if self.dtype.is_floating_point else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other * self
@@ -1059,20 +1072,20 @@ class Tensor:
     def __imul__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
-            val: float | int = float(other) if self.is_floating_point else int(other)
+            val: float | int = float(other) if self.dtype.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_mul_(self._ptr, other._ptr))
 
     def __truediv__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
-            val: float | int = float(other) if self.is_floating_point else int(other)
+            val: float | int = float(other) if self.dtype.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_div(self._ptr, other._ptr))
 
     def __rtruediv__(self, other: int | float) -> Tensor:
-        val: float | int = float(other) if self.is_floating_point else int(other)
+        val: float | int = float(other) if self.dtype.is_floating_point else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other / self
@@ -1080,20 +1093,20 @@ class Tensor:
     def __itruediv__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
-            val: float | int = float(other) if self.is_floating_point else int(other)
+            val: float | int = float(other) if self.dtype.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_div_(self._ptr, other._ptr))
 
     def __floordiv__(self, other: Tensor | int | float) -> Tensor:
         if not isinstance(other, Tensor):
-            val: float | int = float(other) if self.is_floating_point else int(other)
+            val: float | int = float(other) if self.dtype.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_div(self._ptr, other._ptr))
 
     def __rfloordiv__(self, other: int | float) -> Tensor:
-        val: float | int = float(other) if self.is_floating_point else int(other)
+        val: float | int = float(other) if self.dtype.is_floating_point else int(other)
         other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return other / self
@@ -1101,7 +1114,7 @@ class Tensor:
     def __ifloordiv__(self, other: Tensor | int | float) -> Tensor:
         self._validate_inplace_op()
         if not isinstance(other, Tensor):
-            val: float | int = float(other) if self.is_floating_point else int(other)
+            val: float | int = float(other) if self.dtype.is_floating_point else int(other)
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=val)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_div_(self._ptr, other._ptr))
@@ -1232,34 +1245,26 @@ class Tensor:
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         return Tensor(_C.mag_ne(self._ptr, other._ptr))
 
-    def __le__(self, other: Tensor | list[int | float] | int | float) -> Tensor:
-        if isinstance(other, list):
-            other = Tensor.of(other, dtype=self.dtype)
-        elif not isinstance(other, Tensor):
+    def __le__(self, other: Tensor | int | float) -> Tensor:
+        if not isinstance(other, Tensor):
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_le(self._ptr, other._ptr))
 
-    def __ge__(self, other: Tensor | list[int | float] | int | float) -> Tensor:
-        if isinstance(other, list):
-            other = Tensor.of(other, dtype=self.dtype)
-        elif not isinstance(other, Tensor):
+    def __ge__(self, other: Tensor | int | float) -> Tensor:
+        if not isinstance(other, Tensor):
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_ge(self._ptr, other._ptr))
 
-    def __lt__(self, other: Tensor | list[int | float] | int | float) -> Tensor:
-        if isinstance(other, list):
-            other = Tensor.of(other, dtype=self.dtype)
-        elif not isinstance(other, Tensor):
+    def __lt__(self, other: Tensor | int | float) -> Tensor:
+        if not isinstance(other, Tensor):
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_lt(self._ptr, other._ptr))
 
-    def __gt__(self, other: Tensor | list[int | float] | int | float) -> Tensor:
-        if isinstance(other, list):
-            other = Tensor.of(other, dtype=self.dtype)
-        elif not isinstance(other, Tensor):
+    def __gt__(self, other: Tensor | int | float) -> Tensor:
+        if not isinstance(other, Tensor):
             other = Tensor.full(self.shape, dtype=self.dtype, fill_value=other)
         _validate_dtype_compat(_NUMERIC_DTYPES, self, other)
         return Tensor(_C.mag_gt(self._ptr, other._ptr))
