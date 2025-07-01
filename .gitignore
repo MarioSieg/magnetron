@@ -24,4 +24,4 @@ magnetron_chat/.idea
 /build/
 /.venv/
 /.cmake/
-test/python/__pycache__
+**/__pycache__

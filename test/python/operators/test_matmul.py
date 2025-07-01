@@ -1,15 +1,8 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
-import random
-import torch
-from magnetron import *
-
-from .common import *
-
+from ..common import *
 def sigmoid(x: torch.Tensor) -> None:
     return 1 / (1 + torch.exp(-x))
-
-
 def test_simple_ff() -> None:
     truth_table = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
 

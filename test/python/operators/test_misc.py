@@ -1,9 +1,6 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
-import random
-import pytest
-from magnetron import *
-from .common import *
+from ..common import *
 
 def test_tensor_clone() -> None:
     a = Tensor.of([[1, 2], [3, 4]])
@@ -15,26 +12,26 @@ def test_tensor_clone() -> None:
     assert a.is_contiguous == b.is_contiguous
 
 
-@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
-def test_tensor_tolist(dtype: mag.DataType) -> None:
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_tolist(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == mag.boolean:
-            x = mag.Tensor.bernoulli(shape)
+        if dtype == boolean:
+            x = Tensor.bernoulli(shape)
         else:
-            x = mag.Tensor.uniform(shape, dtype=dtype)
+            x = Tensor.uniform(shape, dtype=dtype)
         assert x.tolist() == totorch(x).tolist()
 
     square_shape_permutations(func, 4)
 
-@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
-def test_tensor_transpose(dtype: mag.DataType) -> None:
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_transpose(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
         if len(shape) <= 1:
             return
-        if dtype == mag.boolean:
-            x = mag.Tensor.bernoulli(shape)
+        if dtype == boolean:
+            x = Tensor.bernoulli(shape)
         else:
-            x = mag.Tensor.uniform(shape, dtype=dtype)
+            x = Tensor.uniform(shape, dtype=dtype)
         sample = lambda: random.randint(-len(shape)+1, len(shape)-1)
         dim1: int = sample()
         dim2: int = dim1
@@ -50,13 +47,13 @@ def test_tensor_transpose(dtype: mag.DataType) -> None:
 
     square_shape_permutations(func, 4)
 
-@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
-def test_tensor_view(dtype: mag.DataType) -> None:
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_view(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == mag.boolean:
-            x = mag.Tensor.bernoulli(shape)
+        if dtype == boolean:
+            x = Tensor.bernoulli(shape)
         else:
-            x = mag.Tensor.uniform(shape, dtype=dtype)
+            x = Tensor.uniform(shape, dtype=dtype)
         shape = list(shape)
         random.shuffle(shape) # Shuffle view shape
         shape = tuple(shape)
@@ -65,13 +62,13 @@ def test_tensor_view(dtype: mag.DataType) -> None:
 
     square_shape_permutations(func, 4)
 
-@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
-def test_tensor_view_infer_axis(dtype: mag.DataType) -> None:
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_view_infer_axis(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == mag.boolean:
-            x = mag.Tensor.bernoulli(shape)
+        if dtype == boolean:
+            x = Tensor.bernoulli(shape)
         else:
-            x = mag.Tensor.uniform(shape, dtype=dtype)
+            x = Tensor.uniform(shape, dtype=dtype)
         shape = list(shape)
         random.shuffle(shape) # Shuffle view shape
         shape[random.randint(0, len(shape)-1)] = -1 # Set inferred axis randomly
@@ -81,13 +78,13 @@ def test_tensor_view_infer_axis(dtype: mag.DataType) -> None:
 
     square_shape_permutations(func, 4)
 
-@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
-def test_tensor_reshape(dtype: mag.DataType) -> None:
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_reshape(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == mag.boolean:
-            x = mag.Tensor.bernoulli(shape)
+        if dtype == boolean:
+            x = Tensor.bernoulli(shape)
         else:
-            x = mag.Tensor.uniform(shape, dtype=dtype)
+            x = Tensor.uniform(shape, dtype=dtype)
         shape = list(shape)
         random.shuffle(shape) # Shuffle reshape shape
         shape = tuple(shape)
@@ -96,13 +93,13 @@ def test_tensor_reshape(dtype: mag.DataType) -> None:
 
     square_shape_permutations(func, 4)
 
-@pytest.mark.parametrize('dtype', [mag.float16, mag.float32, mag.boolean, mag.int32])
-def test_tensor_reshape_infer_axis(dtype: mag.DataType) -> None:
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_reshape_infer_axis(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == mag.boolean:
-            x = mag.Tensor.bernoulli(shape)
+        if dtype == boolean:
+            x = Tensor.bernoulli(shape)
         else:
-            x = mag.Tensor.uniform(shape, dtype=dtype)
+            x = Tensor.uniform(shape, dtype=dtype)
         shape = list(shape)
         random.shuffle(shape) # Shuffle reshape shape
         shape[random.randint(0, len(shape)-1)] = -1 # Set inferred axis randomly

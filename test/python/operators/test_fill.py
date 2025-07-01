@@ -1,7 +1,6 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
-from magnetron import *
-from .common import *
+from ..common import *
 
 def test_tensor_fill_zero() -> None:
     tensor = Tensor.zeros(1, 2, 3, 4, 5, 6)
