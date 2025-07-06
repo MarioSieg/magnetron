@@ -106,7 +106,7 @@ class StorageStream:
         """Adds a tensor with a unique key to the storage stream."""
         self.put(key, tensor)
 
-    def serialize(self, file_path: Path) -> None:
+    def serialize(self, file_path: Path | str) -> None:
         """Serializes the storage stream to a file."""
         if self._closed:
             raise RuntimeError('Cannot serialize a closed StorageStream.')

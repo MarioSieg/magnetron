@@ -2307,13 +2307,6 @@ MAG_COLDPROC void mag_tensor_export_backward_graph_graphviz(mag_Tensor* t, const
     mag_tensor_array_free(&post_order);
 }
 
-static inline uint32_t mag_murmur_32_scramble(uint32_t k) {
-    k *= 0xcc9e2d51;
-    k = (k<<15) | (k>>17);
-    k *= 0x1b873593;
-    return k;
-}
-
 uint64_t mag_hash(const void* key, size_t len, uint32_t seed) {
     #define	mag_rol32(x, r) (((x)<<(r))|((x)>>(32-(r))))
     #define mag_mix32(h) h^=h>>16; h*=0x85ebca6b; h^=h>>13; h*=0xc2b2ae35; h^=h>>16;
