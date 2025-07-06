@@ -24,7 +24,7 @@ def test_binary_op_div_fp(dtype: DataType, kind: BinaryOpParamKind) -> None:
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
 def test_binary_op_div_int32(kind: BinaryOpParamKind) -> None:
-    binary_op_square(int32, lambda x, y: x // y, kind=kind, from_=1, to=10000)
+    binary_op_square(int32, lambda x, y: x // y, kind=kind, low=1, high=10000)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
 @pytest.mark.parametrize('dtype', [boolean, int32])
@@ -43,11 +43,11 @@ def test_binary_op_xor(dtype: DataType, kind: BinaryOpParamKind) -> None:
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
 def test_binary_op_shl(kind: BinaryOpParamKind) -> None:
-    binary_op_square(int32, lambda x, y: x << y, kind=kind, from_=0, to=31)
+    binary_op_square(int32, lambda x, y: x << y, kind=kind, low=0, high=31)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
 def test_binary_op_shr(kind: BinaryOpParamKind) -> None:
-    binary_op_square(int32, lambda x, y: x >> y, kind=kind, from_=0, to=31)
+    binary_op_square(int32, lambda x, y: x >> y, kind=kind, low=0, high=31)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR, BinaryOpParamKind.LIST])
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])

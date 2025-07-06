@@ -10,7 +10,7 @@ def test_tensor_creation() -> None:
     assert tensor.data_size == 4 * (1 * 2 * 3 * 4 * 5 * 6)
     assert tensor.data_ptr != 0
     assert tensor.is_contiguous is True
-    assert tensor.dtype == magfloat32
+    assert tensor.dtype == mag.float32
 
 
 def test_tensor_scalar_get_set_physical() -> None:

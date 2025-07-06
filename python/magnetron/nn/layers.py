@@ -64,10 +64,11 @@ class Dropout(Module):
 
 
 class LayerNorm(Module):
-    def __init__(self, ndim: int, bias: bool) -> None:
+    def __init__(self, ndim: int, eps: float = 1e-5, bias: bool = True) -> None:
         super().__init__()
         self.weight = Parameter(Tensor.ones((ndim,)))
         self.bias = Parameter(Tensor.zeros((ndim,))) if bias else None
+        self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
-        return x.layer_norm(self.weight.x.shape, self.weight.x, self.bias.x if self.bias else None, 1e-5)
+        return x.layer_norm(self.weight.x.shape, self.weight.x, self.bias.x if self.bias else None, self.eps)

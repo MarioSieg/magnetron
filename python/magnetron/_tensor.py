@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import weakref
+from typing import Any
 
 from ._context import active_context, default_dtype
 from ._core import *

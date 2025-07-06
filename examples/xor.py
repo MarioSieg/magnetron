@@ -10,6 +10,7 @@ EPOCHS: int = 2000
 
 # Create the model, optimizer, and loss function
 model = nn.Sequential(nn.Linear(2, 2), nn.Tanh(), nn.Linear(2, 1), nn.Tanh())
+print(model.state_dict())
 optimizer = optim.SGD(model.parameters(), lr=1e-1)
 criterion = nn.MSELoss()
 loss_values: list[float] = []

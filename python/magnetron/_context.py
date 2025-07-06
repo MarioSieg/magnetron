@@ -11,7 +11,7 @@ from types import TracebackType
 from typing import final
 
 from ._bootstrap import FFI, C
-from ._core import Config, ComputeDevice
+from ._core import Config, ComputeDeviceInfo
 from ._dtype import DataType
 
 _MAIN_TID: int = threading.get_native_id()
@@ -27,12 +27,12 @@ class PRNGAlgorithm(Enum):
 class Context:
     """Manages the execution context and owns all tensors and active compute devices."""
 
-    def __init__(self, device: ComputeDevice.CPU | ComputeDevice.CUDA = Config.compute_device) -> None:
+    def __init__(self, device: ComputeDeviceInfo.CPU | ComputeDeviceInfo.CUDA = Config.compute_device) -> None:
         assert _MAIN_TID == threading.get_native_id(), 'Context must be created in the main thread'
         desc: FFI.CData = FFI.new('mag_ComputeDeviceDesc*')
-        if isinstance(device, ComputeDevice.CPU):
+        if isinstance(device, ComputeDeviceInfo.CPU):
             desc[0] = C.mag_compute_device_desc_cpu(device.num_threads)
-        elif isinstance(device, ComputeDevice.CUDA):
+        elif isinstance(device, ComputeDeviceInfo.CUDA):
             desc[0] = C.mag_compute_device_desc_cuda(device.device_id)
         self._ptr = C.mag_ctx_create2(desc)
         self.default_dtype = Config.default_dtype

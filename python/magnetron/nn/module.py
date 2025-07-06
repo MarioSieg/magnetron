@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from collections.abc import Iterator, Callable, MutableMapping
+from typing import Mapping, OrderedDict
 
 from magnetron import Tensor
 
@@ -14,6 +15,20 @@ class Parameter:
         if name is not None:
             x.name = name
         self.x = x
+
+    @property
+    def data(self) -> Tensor:
+        return self.x
+
+    @data.setter
+    def data(self, v: Tensor) -> None:
+        self.x = v
+
+    def __str__(self) -> str:
+        return self.x.__str__()
+
+    def __repr__(self) -> str:
+        return self.x.__repr__()
 
 
 class Module:
@@ -54,6 +69,93 @@ class Module:
         for child in self.children():
             yield from child.modules()
 
+    def state_dict(self) -> OrderedDict[str, Tensor]:
+        dest = OrderedDict()
+
+        def _recurse(m: Module | ModuleList, prefix: str = '') -> None:
+            if isinstance(m, ModuleList):
+                for i, sub in enumerate(m):
+                    _recurse(sub, f'{prefix}{i}.')
+                return
+
+            for name, attr in m.__dict__.items():
+                if isinstance(attr, Parameter):
+                    dest[f'{prefix}{name}'] = attr.x.clone()
+                elif isinstance(attr, Tensor):
+                    dest[f'{prefix}{name}'] = attr.clone()
+                elif isinstance(attr, Module):
+                    _recurse(attr, f'{prefix}{name}.')
+                elif isinstance(attr, ModuleList):
+                    _recurse(attr, f'{prefix}{name}.')
+
+        _recurse(self)
+        return dest
+
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, Tensor],
+        strict: bool = True,
+    ) -> dict[str, list[str]]:
+        missing, unexpected = [], []
+
+        for full_key, tensor in state_dict.items():
+            parts = full_key.split('.')
+            target: 'Module | ModuleList' = self
+            ok = True
+
+            for p in parts[:-1]:
+                if p.isdigit():
+                    idx = int(p)
+                    if not isinstance(target, (list, ModuleList)) or idx >= len(target):
+                        ok = False
+                        break
+                    target = target[idx]
+                else:
+                    target = getattr(target, p, None)
+                    if target is None:
+                        ok = False
+                        break
+
+            if not ok:
+                unexpected.append(full_key)
+                continue
+
+            leaf_name = parts[-1]
+            leaf = target[int(leaf_name)] if leaf_name.isdigit() and isinstance(target, (list, ModuleList)) else getattr(target, leaf_name, None)
+
+            if leaf is None:
+                unexpected.append(full_key)
+                continue
+
+            if isinstance(leaf, Parameter):
+                leaf.data = tensor.clone()
+            elif isinstance(leaf, Tensor):
+                setattr(target, leaf_name, tensor.clone())
+            else:
+                unexpected.append(full_key)
+
+        def _find_missing(m: 'Module | ModuleList', prefix: str = '') -> None:
+            if isinstance(m, ModuleList):
+                for i, sub in enumerate(m):
+                    _find_missing(sub, f'{prefix}{i}.')
+                return
+            for name, attr in m.__dict__.items():
+                key = f'{prefix}{name}'
+                if isinstance(attr, (Parameter, Tensor)):
+                    if key not in state_dict:
+                        missing.append(key)
+                elif isinstance(attr, Module):
+                    _find_missing(attr, f'{key}.')
+                elif isinstance(attr, ModuleList):
+                    _find_missing(attr, f'{key}.')
+
+        _find_missing(self)
+
+        if strict and (missing or unexpected):
+            raise RuntimeError(f'Error(s) in loading state_dict:\n  Missing keys: {missing}\n  Unexpected keys: {unexpected}')
+
+        return {'missing_keys': missing, 'unexpected_keys': unexpected}
+
     def apply(self, fn: Callable[[Module], None]) -> Module:
         """
         Apply `fn` to self and all submodules.
@@ -93,13 +195,7 @@ class ModuleList(Module, list):
     def __init__(self, mods: list[Module] | None) -> None:
         super().__init__()
         if mods is not None:
-            self += mods
-
-    def append(self, mod: Module) -> None:
-        super().append(mod)
-
-    def extend(self, __iterable: list[Module]) -> None:
-        super().extend(__iterable)
+            self.extend(mods)
 
     def __iadd__(self, other: list[Module]) -> 'ModuleList':
         self.extend(other)
@@ -117,6 +213,23 @@ class ModuleList(Module, list):
         for mod in self:
             params += mod.parameters()
         return list(set(params))
+
+    def _register(self, idx: int, mod: Module) -> None:
+        if not isinstance(mod, Module):
+            raise TypeError('ModuleList can only contain Module instances')
+        super().append(mod)
+        setattr(self, str(idx), mod)
+
+    def append(self, mod: Module) -> None:
+        self._register(len(self), mod)
+
+    def extend(self, iterable: Iterator[Module]) -> None:
+        for m in iterable:
+            self.append(m)
+
+    def __setitem__(self, idx: int, mod: Module) -> None:
+        super().__setitem__(idx, mod)
+        setattr(self, str(idx), mod)
 
 
 class ModuleDict(Module, MutableMapping[str, Module]):

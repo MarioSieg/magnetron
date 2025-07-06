@@ -1,8 +1,7 @@
 [build-system]
 requires = [
-  "scikit-build-core",
-  "cffi",
-  "ruff"
+    "scikit-build-core",
+    "cffi",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -16,11 +15,11 @@ license = { file = "LICENSE" }
 authors = [{ name = "Mario Sieg", email = "mario.sieg.64@gmail.com" }]
 dependencies = ["cffi"]
 keywords = [
-  "machine-learning",
-  "deep-learning",
-  "neural-networks",
-  "gpu",
-  "simd",
+    "machine-learning",
+    "deep-learning",
+    "neural-networks",
+    "gpu",
+    "simd",
 ]
 [urls]
 Homepage = "https://github.com/MarioSieg/magnetron"
@@ -29,10 +28,12 @@ Issues = "https://github.com/MarioSieg/magnetron/issues"
 
 [project.optional-dependencies]
 dev = [
-  "torch",
-  "numpy",
-  "matplotlib",
-  "pytest"
+    "ruff",
+    "torch",
+    "numpy",
+    "transformers",
+    "matplotlib",
+    "pytest"
 ]
 
 [tool.scikit-build.cmake.define]
