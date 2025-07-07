@@ -378,42 +378,55 @@ static void mag_cpu_broadcast(mag_IStorageBuffer* sto, size_t offs, const void* 
     }
 }
 
+#define mag_ranges_overlap(a, asz, b, bsz) ((uintptr_t)((a)+(asz)) > (uintptr_t)(b) && (uintptr_t)((b)+(bsz)) > (uintptr_t)(a))
+
 static void mag_cpu_transfer(mag_IStorageBuffer* sto, mag_TransferDir dir, size_t offs, void* inout, size_t size) {
     mag_assert2(inout && size);
+    mag_assert2(!(size & (sto->granularity-1)));
     uintptr_t base = sto->base;
-    mag_assert2(offs <= sto->size && size <= sto->size-offs);               /* Validate range */
-    void* restrict host = inout;                                            /* Host target */
-    void* restrict device = (void*)(base+offs);                             /* Device target */
-    mag_assert2(device >= (void*)base && device < (void*)(base+sto->size)); /* Final device bounds check */
-    mag_assert2(host < (void*)((uintptr_t)inout+size));                     /* Final host bounds check */
-    if (dir == MAG_TRANSFER_DIR_H2D) memcpy(device, host, size);            /* H -> D */
-    else memcpy(host, device, size);                                        /* D -> H */
+    uintptr_t dp = base+offs;
+    uintptr_t dpe = dp+size;
+    mag_assert2(dpe > dp);
+    mag_assert2(dpe <= base+sto->size);
+    mag_assert2(!(offs & (sto->granularity-1)));
+    uintptr_t hp = (uintptr_t)inout;
+    uintptr_t hpe = hp+size;
+    mag_assert2(hpe > hp);
+    mag_assert2(!mag_ranges_overlap((void*)hp, size, (void*)dp, size));
+    void* restrict device = (void*)dp;
+    void* restrict host = inout;
+    if (dir == MAG_TRANSFER_DIR_H2D) memcpy(device, host, size);
+    else memcpy(host, device, size);
 }
 
 static void mag_cpu_convert(mag_IStorageBuffer* sto, mag_TransferDir dir, size_t offs, void* restrict host, size_t size, mag_DType hdt) {
     mag_assert2(host && size);
     mag_DType ddt = sto->dtype;
-    if (ddt == hdt) { /* If dtypes match, just copy without any conversions */
+    if (ddt == hdt) { /* identical dtype – delegate to raw copy */
         (*sto->transfer)(sto, dir, offs, host, size);
         return;
     }
+    uintptr_t base = sto->base;
+    size_t hsz = mag_dtype_meta_of(hdt)->size;
+    size_t dsz = mag_dtype_meta_of(ddt)->size;
+    mag_assert2(!(hsz & (hsz-1)));              /* pow2 */
+    mag_assert2(!(size & (hsz-1)));             /* multiple of dtype size */
+    mag_assert2(!((uintptr_t)host & (hsz-1)));  /* aligned */
+    mag_assert2(!(dsz & (dsz-1)));              /* pow2 */
+    mag_assert2(!(offs & (dsz-1)));             /* multiple of dtype size */
+    size_t helem = size / hsz;                  /* host numel */
+    mag_assert2(helem > 0);
+    mag_assert2(!(sto->granularity & (dsz-1))); /* sane granularity */
+    size_t tnb = helem * sto->granularity;      /* device bytes */
+    mag_assert2(tnb <= sto->size-offs);
+    void* dvb = (void*)(base+offs);
     void (*kern)(size_t, const void*, mag_DType, void*, mag_DType)
         = ((mag_CPUComputeDeviceImpl*)sto->host->impl)->kernels.vector_cast;
-    mag_assert(kern, "no vector cast kernel, for %s -> %s conversion", mag_dtype_meta_of(sto->dtype)->name, mag_dtype_meta_of(hdt)->name);
-    uintptr_t base = sto->base;
-    size_t dnb = sto->size;
-    size_t nbt = mag_dtype_meta_of(hdt)->size;                  /* Inout dtype Size. Is a power of two. */
-    size_t m = nbt-1;                                           /* Dytpe alignment mask */
-    mag_assert2(offs <= dnb);                                   /* Validate memory range */
-    mag_assert2(!(size & m));                                   /* Size must be multiple of elem size  */
-    mag_assert2(!((uintptr_t)host & m));                        /* Inout must be aligned to elem size */
-    size_t hnb = size;                                          /* Total host bytes */
-    size_t tnb = hnb/nbt * sto->granularity;                    /* Total device bytes to transfer. Might differ to hnb. */
-    mag_assert2(tnb && tnb+offs <= dnb);                        /* Verify ranges */
-    void* restrict device = (void*)(base+offs);                 /* Device ptr */
-    mag_assert2(device >= (void*)base && device < (void*)(base+dnb));       /* Final device bounds check */
-    if (dir == MAG_TRANSFER_DIR_H2D) (*kern)(hnb, host, hdt, device, ddt);  /* H -> D */
-    else (*kern)(tnb, device, ddt, host, hdt);                              /* D -> H */
+    mag_assert2(kern);
+    mag_assert2(!mag_ranges_overlap(host, size, dvb, tnb));
+    void* restrict device = dvb;
+    if (dir == MAG_TRANSFER_DIR_H2D) (*kern)(size, host, hdt, device, ddt);
+    else (*kern)(tnb, device, ddt, host, hdt);
 }
 
 /* Align CPU buffer to cache line size, which should also be satisfy alignment requirements for SSE, AVX and AVX512 on x86-64. */
