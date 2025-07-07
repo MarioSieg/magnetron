@@ -1144,13 +1144,13 @@ mag_Tensor* _Nonnull mag_triu_(mag_Tensor* _Nonnull x, int32_t diag) {
 void mag_tensor_fill_from_floats(mag_Tensor* t, const mag_E8M23* data, size_t len) {
     mag_assert(data && len, "invalid data pointer or length");
     mag_IStorageBuffer* sto = t->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, MAG_TRANSFER_OP_CONVERT_E8M23, 0, (void*)data, len*sizeof(*data));
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, 0, (void*)data, len*sizeof(*data), MAG_DTYPE_E8M23);
 }
 
 void mag_tensor_fill_from_raw_bytes(mag_Tensor* t, const void* data, size_t len) {
     mag_assert(data && len, "invalid data pointer or length");
     mag_IStorageBuffer* sto = t->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, MAG_TRANSFER_OP_COPY, 0, (void*)data, len);
+    (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, 0, (void*)data, len);
 }
 
 void mag_tensor_fill_float(mag_Tensor* t, mag_E8M23 x) {

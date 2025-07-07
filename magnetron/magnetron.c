@@ -1190,7 +1190,7 @@ void* mag_tensor_get_raw_data_as_bytes(mag_Tensor* t) {
     mag_assert2(size);
     void* dst = (*mag_alloc)(NULL, size); /* TODO: Use dynamic scratch buffer */
     mag_IStorageBuffer* sto = t->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_COPY, t->view_offs, dst, size);
+    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, dst, size);
     return dst;
 }
 
@@ -1204,7 +1204,7 @@ mag_E8M23* mag_tensor_get_data_as_floats(mag_Tensor* t) {
     mag_assert2(size);
     mag_E8M23* dst = (*mag_alloc)(NULL, size); /* TODO: Use dynamic scratch buffer */
     mag_IStorageBuffer* sto = t->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_CONVERT_E8M23, t->view_offs, dst, size);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, dst, size, MAG_DTYPE_E8M23);
     return dst;
 }
 
@@ -1215,21 +1215,21 @@ void mag_tensor_get_data_as_floats_free(mag_E8M23* ret_val) {
 mag_E8M23 mag_tensor_get_item_float(const mag_Tensor* t) {
     mag_IStorageBuffer* sto = t->storage;
     mag_E8M23 val;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_CONVERT_E8M23, t->view_offs, &val, sizeof(val));
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, &val, sizeof(val), MAG_DTYPE_E8M23);
     return val;
 }
 
 int32_t mag_tensor_get_item_int(const mag_Tensor* t) {
     mag_IStorageBuffer* sto = t->storage;
     int32_t val;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_COPY, t->view_offs, &val, sizeof(val));
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, &val, sizeof(val), MAG_DTYPE_I32);
     return val;
 }
 
 bool mag_tensor_get_item_bool(const mag_Tensor* t) {
     mag_IStorageBuffer* sto = t->storage;
     uint8_t val;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_COPY, t->view_offs, &val, sizeof(val));
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, &val, sizeof(val), MAG_DTYPE_BOOL);
     return !!val;
 }
 
@@ -1452,7 +1452,7 @@ mag_E8M23 mag_tensor_subscript_get_multi(mag_Tensor* t, int64_t i0, int64_t i1, 
     mag_load_local_storage_group(t, s, strides);
     mag_IStorageBuffer* sto = t->storage;
     mag_E8M23 val;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_CONVERT_E8M23,t->view_offs + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val));
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H,t->view_offs + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val), MAG_DTYPE_E8M23);
     return val;
 }
 
@@ -1460,7 +1460,7 @@ void mag_tensor_subscript_set_multi(mag_Tensor* t, int64_t i0, int64_t i1, int64
     mag_static_assert(MAG_MAX_DIMS == 6);
     mag_load_local_storage_group(t, s, strides);
     mag_IStorageBuffer* sto = t->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, MAG_TRANSFER_OP_CONVERT_E8M23, t->view_offs + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val));
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, t->view_offs + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val), MAG_DTYPE_E8M23);
 }
 
 static MAG_AINLINE void mag_tensor_unravel_index(const mag_Tensor* t, int64_t v_idx, int64_t(*p_idx)[MAG_MAX_DIMS]) {
@@ -1482,7 +1482,7 @@ mag_E8M23 mag_tensor_subscript_get_flattened(mag_Tensor* t, int64_t idx) {
     }
     mag_IStorageBuffer* sto = t->storage;
     mag_E8M23 val;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, MAG_TRANSFER_OP_CONVERT_E8M23, t->view_offs + sto->granularity*idx, &val, sizeof(val));
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs + sto->granularity*idx, &val, sizeof(val), MAG_DTYPE_E8M23);
     return val;
 }
 
@@ -1494,7 +1494,7 @@ void mag_tensor_subscript_set_flattened(mag_Tensor* t, int64_t idx, mag_E8M23 va
         return;
     }
     mag_IStorageBuffer* sto = t->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, MAG_TRANSFER_OP_CONVERT_E8M23, t->view_offs + sto->granularity*idx, &val, sizeof(val));
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, t->view_offs + sto->granularity*idx, &val, sizeof(val), MAG_DTYPE_E8M23);
 }
 
 void mag_tensor_img_draw_box(mag_Tensor* t, int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t wi, uint32_t rgb) {
@@ -3016,7 +3016,7 @@ static bool mag_sto_read_tensor_data(FILE* f, mag_Tensor* t) {
             mag_bswap_block_le(data, t->numel, mag_dtype_meta_of(t->dtype)->size);
         #endif
         mag_IStorageBuffer* sto = t->storage;
-        (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, MAG_TRANSFER_OP_COPY, 0, data, size);
+        (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, 0, data, size);
         (*mag_alloc)(data, 0);
     }
     long end = ftell(f);

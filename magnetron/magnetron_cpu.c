@@ -340,75 +340,80 @@ static void mag_cpu_exec_fwd(mag_IComputeDevice* dvc, mag_Tensor* node) {
     mag_cpu_exec(dvc, MAG_STAGE_EVAL, node);
 }
 
-static void mag_cpu_buf_broadcast(mag_IStorageBuffer* sto, size_t offs, const void* src, size_t stride) {
+static void mag_cpu_broadcast(mag_IStorageBuffer* sto, size_t offs, const void* x, size_t stride) {
     mag_assert2(offs <= sto->size);
-    size_t len = sto->size - offs;
-    if (mag_unlikely(!len)) return;
+    size_t len = sto->size-offs;
     uint8_t* dst8 = (uint8_t*)sto->base+offs;
     switch (stride) {
-        case 1: memset(dst8, *(const uint8_t*)src, len); return;
+        case 1: memset(dst8, *(const uint8_t*)x, len); return;
         case 2: {
-            mag_assert2(!(offs&1) && !(len&1));     /* Offsets and len must be aligned to granularity */
-            uint16_t v = *(const uint16_t*)src;
-            uint16_t* p = (uint16_t*)dst8;
-            uint16_t* end = p + (len/sizeof(v));
+            mag_assert2(!(offs & 1) && !(len & 1));     /* Offsets and len must be aligned to granularity */
+            uint16_t v = *(const uint16_t*)x;
+            uint16_t* restrict p = (uint16_t*)dst8;
+            uint16_t* restrict end = p + (len/sizeof(v));
             for (; p < end; ++p) *p = v;
-            return;
-        }
+        } return;
         case 4: {
-            mag_assert2(!(offs&3) && !(len&3));     /* Offsets and len must be aligned to granularity */
-            uint32_t v = *(const uint32_t*)src;
-            uint32_t* p = (uint32_t*)dst8;
-            uint32_t* end = p + (len/sizeof(v));
+            mag_assert2(!(offs & 3) && !(len & 3));     /* Offsets and len must be aligned to granularity */
+            uint32_t v = *(const uint32_t*)x;
+            uint32_t* restrict p = (uint32_t*)dst8;
+            uint32_t* restrict end = p + (len/sizeof(v));
             for (; p < end; ++p) *p = v;
-            return;
-        }
+        } return;
+        case 8: {
+            mag_assert2(!(offs & 7) && !(len & 7));     /* Offsets and len must be aligned to granularity */
+            uint64_t v = *(const uint64_t*)x;
+            uint64_t* restrict p = (uint64_t*)dst8;
+            uint64_t* restrict end = p + (len/sizeof(v));
+            for (; p < end; ++p) *p = v;
+        } return;
         default: {
             while (len >= stride) {
-                memcpy(dst8, src, stride);
+                memcpy(dst8, x, stride);
                 dst8 += stride;
                 len -= stride;
             }
-            if (len) memcpy(dst8, src, len);  /* handle tail */
+            if (len) memcpy(dst8, x, len);  /* handle tail */
         }
     }
 }
 
-mag_static_assert(sizeof(mag_E8M23) == 4);
-
-static void mag_cpu_transfer(mag_IStorageBuffer* sto, mag_TransferDir dir, mag_TransferOP op, size_t offs, void* inout, size_t inout_size) {
-    mag_assert2(inout && inout_size);
+static void mag_cpu_transfer(mag_IStorageBuffer* sto, mag_TransferDir dir, size_t offs, void* inout, size_t size) {
+    mag_assert2(inout && size);
     uintptr_t base = sto->base;
-    mag_assert2(offs <= sto->size);     /* Validate that range is within device memory. */
-    if (sto->dtype == MAG_DTYPE_E8M23 && op == MAG_TRANSFER_OP_CONVERT_E8M23)   /* If both are same dtype already, no conversion is needed. */
-        goto direct_memcpy;
-    switch (op) {
-        case MAG_TRANSFER_OP_COPY: direct_memcpy: {      /* Copy raw bytes. */
-            mag_assert2(inout_size <= sto->size-offs);  /* Check that byte range is valid. */
-            switch (dir) {
-                case MAG_TRANSFER_DIR_H2D: memcpy((void*)(base+offs), inout, inout_size); return; /* Host -> Device */
-                case MAG_TRANSFER_DIR_D2H: memcpy(inout, (void*)(base+offs), inout_size); return; /* Device -> Host */
-                default: mag_panic("invalid transfer dir"); return;
-            }
-        } return;
-        case MAG_TRANSFER_OP_CONVERT_E8M23: {                       /* Convert to/from float. */
-            mag_assert2((inout_size&3) == 0);                       /* Must be float array byte size (rem 4). */
-            mag_assert2(((uintptr_t)inout&3) == 0);                 /* Must be aligned to 4. */
-            size_t host_nb = inout_size;                            /* Total host bytes (4 bytes per element) */
-            size_t device_nb = (host_nb>>2)*sto->granularity;       /* Total device bytes (e.g. 2 bytes per element for fp16) */
-            mag_assert2(device_nb && offs+device_nb <= sto->size);
-            uintptr_t pa = base + offs;
-            void* inout2 = (void*)pa;
-            mag_CPUComputeDeviceImpl* cpu_dvc = sto->host->impl;
-            void (*vcast)(size_t, const void*, mag_DType, void*, mag_DType) = cpu_dvc->kernels.vector_cast;
-            switch (dir) { /* Vector cast ranges */
-                case MAG_TRANSFER_DIR_H2D: (*vcast)(host_nb, inout, MAG_DTYPE_E8M23, inout2, sto->dtype); return;
-                case MAG_TRANSFER_DIR_D2H: (*vcast)(device_nb, inout2, sto->dtype, inout, MAG_DTYPE_E8M23); return;
-                default: mag_panic("invalid transfer dir"); return;
-            }
-        } return;
-        default: mag_panic("invalid transfer op"); return;
+    mag_assert2(offs <= sto->size && size <= sto->size-offs);               /* Validate range */
+    void* restrict host = inout;                                            /* Host target */
+    void* restrict device = (void*)(base+offs);                             /* Device target */
+    mag_assert2(device >= (void*)base && device < (void*)(base+sto->size)); /* Final device bounds check */
+    mag_assert2(host < (void*)((uintptr_t)inout+size));                     /* Final host bounds check */
+    if (dir == MAG_TRANSFER_DIR_H2D) memcpy(device, host, size);            /* H -> D */
+    else memcpy(host, device, size);                                        /* D -> H */
+}
+
+static void mag_cpu_convert(mag_IStorageBuffer* sto, mag_TransferDir dir, size_t offs, void* restrict host, size_t size, mag_DType hdt) {
+    mag_assert2(host && size);
+    mag_DType ddt = sto->dtype;
+    if (ddt == hdt) { /* If dtypes match, just copy without any conversions */
+        (*sto->transfer)(sto, dir, offs, host, size);
+        return;
     }
+    void (*kern)(size_t, const void*, mag_DType, void*, mag_DType)
+        = ((mag_CPUComputeDeviceImpl*)sto->host->impl)->kernels.vector_cast;
+    mag_assert(kern, "no vector cast kernel, for %s -> %s conversion", mag_dtype_meta_of(sto->dtype)->name, mag_dtype_meta_of(hdt)->name);
+    uintptr_t base = sto->base;
+    size_t dnb = sto->size;
+    size_t nbt = mag_dtype_meta_of(hdt)->size;                  /* Inout dtype Size. Is a power of two. */
+    size_t m = nbt-1;                                           /* Dytpe alignment mask */
+    mag_assert2(offs <= dnb);                                   /* Validate memory range */
+    mag_assert2(!(size & m));                                   /* Size must be multiple of elem size  */
+    mag_assert2(!((uintptr_t)host & m));                        /* Inout must be aligned to elem size */
+    size_t hnb = size;                                          /* Total host bytes */
+    size_t tnb = hnb/nbt * sto->granularity;                    /* Total device bytes to transfer. Might differ to hnb. */
+    mag_assert2(tnb && tnb+offs <= dnb);                        /* Verify ranges */
+    void* restrict device = (void*)(base+offs);                 /* Device ptr */
+    mag_assert2(device >= (void*)base && device < (void*)(base+dnb));       /* Final device bounds check */
+    if (dir == MAG_TRANSFER_DIR_H2D) (*kern)(hnb, host, hdt, device, ddt);  /* H -> D */
+    else (*kern)(tnb, device, ddt, host, hdt);                              /* D -> H */
 }
 
 /* Align CPU buffer to cache line size, which should also be satisfy alignment requirements for SSE, AVX and AVX512 on x86-64. */
@@ -439,8 +444,9 @@ static void mag_cpu_alloc_storage(mag_IComputeDevice* host, mag_IStorageBuffer**
         .dtype = dtype,
         .granularity = mag_dtype_meta_of(dtype)->size,
         .host = host,
-        .broadcast = &mag_cpu_buf_broadcast,
-        .transfer = &mag_cpu_transfer
+        .broadcast = &mag_cpu_broadcast,
+        .transfer = &mag_cpu_transfer,
+        .convert = &mag_cpu_convert
     };
     ++host->ctx->num_storages;
 }

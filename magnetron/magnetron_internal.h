@@ -896,14 +896,9 @@ extern MAG_EXPORT void mag_fixed_intrusive_pool_print_info(mag_Pool* _Nonnull po
 typedef struct mag_IComputeDevice mag_IComputeDevice;
 
 typedef enum mag_TransferDir {
-    MAG_TRANSFER_DIR_H2D,   /* Host to device (Host -> Device). */
-    MAG_TRANSFER_DIR_D2H    /* Device to host (Device -> Host). */
+    MAG_TRANSFER_DIR_H2D,   /* Host -> Device. */
+    MAG_TRANSFER_DIR_D2H,   /* Device -> Host. */
 } mag_TransferDir;
-
-typedef enum mag_TransferOP {
-    MAG_TRANSFER_OP_COPY,           /* Copy data bytewise to output. (memcpy) */
-    MAG_TRANSFER_OP_CONVERT_E8M23   /* Convert data to f32 when writing to output. (cast) */
-} mag_TransferOP;
 
 /* Buffer interface on a compute device */
 typedef struct mag_IStorageBuffer mag_IStorageBuffer;
@@ -916,24 +911,9 @@ struct mag_IStorageBuffer {
     size_t granularity;                 /* Element size granularity. */
     mag_DType dtype;                    /* Data type of buffer. */
     mag_IComputeDevice* _Nonnull host;  /* Host device. */
-
-    /* Broadcast (fill) buffer with x. */
-    void (*_Nonnull broadcast)(
-        mag_IStorageBuffer* _Nonnull sto,
-        size_t offs,
-        const void* _Nonnull src,
-        size_t stride
-    );
-
-    /* Transfer data between host and device. */
-    void (*_Nonnull transfer)(
-        mag_IStorageBuffer* _Nonnull sto,
-        mag_TransferDir dir,
-        mag_TransferOP op,
-        size_t offs,
-        void* _Nonnull inout,        /* Source or destination buffer. Must point to nb bytes. */
-        size_t inout_size   /* Size of input/output buffer. */
-    );
+    void (*_Nonnull broadcast)(mag_IStorageBuffer* _Nonnull sto, size_t offs, const void* _Nonnull src, size_t stride);
+    void (*_Nonnull transfer)(mag_IStorageBuffer* _Nonnull sto, mag_TransferDir dir, size_t offs, void* _Nonnull inout, size_t size);
+    void (*_Nonnull convert)(mag_IStorageBuffer* _Nonnull sto, mag_TransferDir dir, size_t offs, void* _Nonnull inout, size_t size, mag_DType inout_type);
 };
 
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
