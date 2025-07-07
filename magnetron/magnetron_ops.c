@@ -260,7 +260,7 @@ static mag_Tensor* mag_result_constructor_routine_bool_isomorph(mag_Tensor** inp
 
 static mag_Tensor* mag_result_constructor_routine_view(mag_Tensor** inputs, const mag_OPParam* params) {
     mag_Tensor* base = *inputs;
-    uint32_t nd_new = (uint32_t)mag_op_param_unpack_u64_or_panic(params[0]);
+    uint32_t nd_new = (uint32_t)mag_op_param_unpack_i64_or_panic(params[0]);
     if (!nd_new)
         return mag_tensor_inplace_view(base); /* If no new dimensions are specified, return the inplace view of the base tensor. */
     int64_t old_numel = base->numel;
@@ -298,8 +298,8 @@ static mag_Tensor* mag_result_constructor_routine_scalar(mag_Tensor** inputs,  c
 
 static mag_Tensor* mag_result_constructor_routine_transposed(mag_Tensor** inputs,  const mag_OPParam* params) {
     mag_Tensor* transposed = mag_tensor_inplace_view(*inputs);
-    uint64_t ax0 = mag_op_param_unpack_u64_or_panic(params[0]);
-    uint64_t ax1 = mag_op_param_unpack_u64_or_panic(params[1]);
+    uint64_t ax0 = mag_op_param_unpack_i64_or_panic(params[0]);
+    uint64_t ax1 = mag_op_param_unpack_i64_or_panic(params[1]);
     mag_swap(int64_t, transposed->shape[ax0], transposed->shape[ax1]);
     mag_swap(int64_t, transposed->strides[ax0], transposed->strides[ax1]);
     if (*inputs[0]->name)
@@ -313,7 +313,7 @@ static mag_Tensor* mag_result_constructor_routine_permuted(mag_Tensor** inputs, 
     mag_Tensor* permuted = mag_tensor_inplace_view(*inputs);
     int64_t axes[MAG_MAX_DIMS];
     for (int64_t i=0; i < base->rank; ++i)
-        axes[i] = mag_op_param_unpack_u64_or_panic(params[i]);
+        axes[i] = mag_op_param_unpack_i64_or_panic(params[i]);
     for (int64_t i=0; i < base->rank; ++i) {
         mag_assert2(axes[i] < base->rank);
         for (int64_t j=i+1; j < base->rank; ++j)
@@ -374,8 +374,8 @@ static void mag_op_backward_view(mag_Tensor* node, mag_Tensor** grads) {
 }
 
 static void mag_op_backward_transpose(mag_Tensor* node, mag_Tensor** grads) {
-    uint64_t ax0 = mag_op_param_unpack_u64_or_panic(node->op_params[0]);
-    uint64_t ax1 = mag_op_param_unpack_u64_or_panic(node->op_params[1]);
+    uint64_t ax0 = mag_op_param_unpack_i64_or_panic(node->op_params[0]);
+    uint64_t ax1 = mag_op_param_unpack_i64_or_panic(node->op_params[1]);
     *grads = mag_transpose(node->grad, ax0, ax1);
 }
 
@@ -670,7 +670,7 @@ mag_Tensor* mag_view(mag_Tensor* x, const int64_t* dims, uint32_t num_dims) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid view dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(num_dims));
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims));
     if (dims)
         for (uint32_t i=0; i < num_dims; ++i)
             mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
@@ -720,8 +720,8 @@ mag_Tensor* mag_transpose(mag_Tensor* x, int64_t dim1, int64_t dim2) {
     mag_assert(ax1 >= 0 && ax1 < ra, "invalid transposition axis: %" PRIi64, dim2);
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(ax0));
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(ax1));
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(ax0));
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(ax1));
     return mag_tensor_operator(x->ctx, MAG_OP_TRANSPOSE, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
@@ -730,7 +730,7 @@ mag_Tensor* mag_permute(mag_Tensor* x, const int64_t* dims, uint32_t num_dims) {
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
     for (uint32_t i=0; i < num_dims; ++i)
-        mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(dims[i]));
+        mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_PERMUTE, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
@@ -738,10 +738,10 @@ mag_Tensor* mag_mean(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(num_dims)); /* Store number of reduction axes in op_params[0] */
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(!!keepdim)); /* Store keepdim in op_params[1] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
     for (uint32_t i=2; i < num_dims; ++i) /* Store reduction axes in op_params[2:] */
-        mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(dims[i]));
+        mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_MEAN, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
@@ -749,10 +749,10 @@ mag_Tensor* mag_min(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool 
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(num_dims)); /* Store number of reduction axes in op_params[0] */
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(!!keepdim)); /* Store keepdim in op_params[1] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
     for (uint32_t i=2; i < num_dims; ++i) /* Store reduction axes in op_params[2:] */
-        mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(dims[i]));
+        mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_MIN, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
@@ -760,10 +760,10 @@ mag_Tensor* mag_max(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool 
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(num_dims)); /* Store number of reduction axes in op_params[0] */
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(!!keepdim)); /* Store keepdim in op_params[1] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
     for (uint32_t i=2; i < num_dims; ++i) /* Store reduction axes in op_params[2:] */
-        mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(dims[i]));
+        mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_MAX, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
@@ -771,10 +771,10 @@ mag_Tensor* mag_sum(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool 
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(num_dims)); /* Store number of reduction axes in op_params[0] */
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(!!keepdim)); /* Store keepdim in op_params[1] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
     for (uint32_t i=2; i < num_dims; ++i) /* Store reduction axes in op_params[2:] */
-        mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(dims[i]));
+        mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_SUM, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
@@ -782,10 +782,10 @@ mag_Tensor* mag_argmin(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bo
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(num_dims)); /* Store number of reduction axes in op_params[0] */
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(!!keepdim)); /* Store keepdim in op_params[1] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
     for (uint32_t i=2; i < num_dims; ++i) /* Store reduction axes in op_params[2:] */
-        mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(dims[i]));
+        mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_MIN, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
@@ -793,10 +793,10 @@ mag_Tensor* mag_argmax(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bo
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
     mag_OPParamLayout layout;
     mag_op_param_layout_init(&layout);
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(num_dims)); /* Store number of reduction axes in op_params[0] */
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(!!keepdim)); /* Store keepdim in op_params[1] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
     for (uint32_t i=2; i < num_dims; ++i) /* Store reduction axes in op_params[2:] */
-        mag_op_param_layout_insert(&layout, mag_op_param_wrap_u64(dims[i]));
+        mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_MAX, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
@@ -1266,13 +1266,13 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
                 }
             },
             .op_param_layout = {
-                {.type=MAG_OPP_U64, .is_required=true}, /* view shape count : u32 */
-                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_U64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_I64, .is_required=true}, /* view shape count : u32 */
+                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
+                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
                 {.type=MAG_OPP_NONE, .is_required=false},
             },
             .flags = MAG_OP_FLAG_NONE,
@@ -1293,8 +1293,8 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
                 }
             },
             .op_param_layout = {
-                {.type=MAG_OPP_U64, .is_required=true},   /* axis index 0 : u32 */
-                {.type=MAG_OPP_U64, .is_required=true},  /* axis index 1 : u32 */
+                {.type=MAG_OPP_I64, .is_required=true},   /* axis index 0 : u32 */
+                {.type=MAG_OPP_I64, .is_required=true},  /* axis index 1 : u32 */
                 {.type=MAG_OPP_NONE, .is_required=false},
                 {.type=MAG_OPP_NONE, .is_required=false},
                 {.type=MAG_OPP_NONE, .is_required=false},
@@ -1320,12 +1320,12 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
                 }
             },
             .op_param_layout = {
-                {.type=MAG_OPP_U64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_U64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_U64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_U64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_U64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_U64, .is_required=true}, /* perm axis : u32 */
+                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
+                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
+                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
+                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
+                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
+                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
                 {.type=MAG_OPP_NONE, .is_required=false},
                 {.type=MAG_OPP_NONE, .is_required=false},
             },
@@ -1345,14 +1345,14 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
                 }
             },
             .op_param_layout = {
-                {.type=MAG_OPP_U64, .is_required=true},  /* reduction dim count : u32 */
-                {.type=MAG_OPP_U64, .is_required=true},  /* keepdim : bool */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
+                {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_mean,
@@ -1370,14 +1370,14 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
                 }
             },
             .op_param_layout = {
-                {.type=MAG_OPP_U64, .is_required=true},  /* reduction dim count : u32 */
-                {.type=MAG_OPP_U64, .is_required=true},  /* keepdim : bool */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
+                {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
@@ -1395,14 +1395,14 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
                 }
             },
             .op_param_layout = {
-                {.type=MAG_OPP_U64, .is_required=true},  /* reduction dim count : u32 */
-                {.type=MAG_OPP_U64, .is_required=true},  /* keepdim : bool */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
+                {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
@@ -1420,14 +1420,14 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
                 }
             },
             .op_param_layout = {
-                {.type=MAG_OPP_U64, .is_required=true},  /* reduction dim count : u32 */
-                {.type=MAG_OPP_U64, .is_required=true},  /* keepdim : bool */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_U64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
+                {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_sum,

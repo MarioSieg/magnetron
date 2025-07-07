@@ -60,9 +60,6 @@ extern "C" {
 #define MAG_DEBUG
 #endif
 
-#define mag_assert_name2(name, line) name ## line
-#define mag_assert_name(line) mag_assert_name2(_assert_, line)
-#define mag_static_assert(expr) extern void mag_assert_name(__LINE__)(bool STATIC_ASSERTION_FAILED[_Nonnull((expr)?1:-1)])
 #define MAG_SEP ,
 
 #define MAG_GELU_COEFF 0.044715f /* Coefficient for GELU approximation. */
@@ -581,11 +578,11 @@ extern void mag_strstream_flush(mag_StrStream* _Nonnull ss, FILE* _Nonnull f);
 typedef enum mag_OPParamType {
     MAG_OPP_NONE  = 0,
     MAG_OPP_E8M23 = 1,    /* fp32 */
-    MAG_OPP_I64   = 2,    /* 64-bit signed integer. */
-    MAG_OPP_U64   = 3,    /* 64-bit unsigned integer. */
+    MAG_OPP_I64 = 2,    /* 64-bit signed integer. */
 
     MAG_OPP__NUM
 } mag_OPParamType;
+mag_static_assert(((MAG_OPP__NUM-1) & ~3) == 0); /* Must fit in 2 bits */
 
 extern const char* _Nonnull const mag_op_param_type_names[MAG_OPP__NUM]; /* Operation parameter type names. */
 
@@ -596,18 +593,15 @@ extern const char* _Nonnull const mag_op_param_type_names[MAG_OPP__NUM]; /* Oper
 ** The opp is a tagged union (variant).
 */
 typedef struct mag_OPParam {
-    mag_OPParamType type;
-    union { /* Overlapping values, one is active. */
-        mag_E8M23 e8m23;
-        int64_t i64;
-        uint64_t u64;
-    };
+    mag_OPParamType type : 2;
+    int64_t i62 : 62;
 } mag_OPParam;
+mag_static_assert(sizeof(mag_OPParam) == 8);
 
 static MAG_AINLINE mag_OPParam mag_op_param_none() {
     mag_OPParam p;
     p.type = MAG_OPP_NONE;
-    p.u64 = 0;
+    p.i62 = 0;
     return p;
 }
 
@@ -616,21 +610,15 @@ static MAG_AINLINE mag_OPParam mag_op_param_wrap_e8m23(mag_E8M23 x) {
     memcpy(&u32, &x, sizeof(u32));
     mag_OPParam p;
     p.type = MAG_OPP_E8M23;
-    p.u64 = u32;
+    p.i62 = u32;
     return p;
 }
 
 static MAG_AINLINE mag_OPParam mag_op_param_wrap_i64(int64_t x) {
+    mag_assert(!((x < 0 ? ~x+1 : x) & ~((1ULL<<62)-1)), "op param int64 value must fit in 62 bit, but is: %" PRIi64, x);
     mag_OPParam p;
     p.type = MAG_OPP_I64;
-    p.i64 = x;
-    return p;
-}
-
-static MAG_AINLINE mag_OPParam mag_op_param_wrap_u64(uint64_t x) {
-    mag_OPParam p;
-    p.type = MAG_OPP_U64;
-    p.u64 = x;
+    p.i62 = x;
     return p;
 }
 
@@ -638,19 +626,14 @@ static MAG_AINLINE mag_OPParam mag_op_param_wrap_u64(uint64_t x) {
 static MAG_AINLINE mag_E8M23 mag_op_param_unpack_e8m23_or_panic(mag_OPParam pa) {
     mag_assert(pa.type == MAG_OPP_E8M23, "invalid op param type: %d", pa.type);
     mag_E8M23 e8m23 = 0.f;
-    uint32_t u32 = (uint32_t)pa.u64;
+    uint32_t u32 = (uint32_t)pa.i62;
     memcpy(&e8m23, &u32, sizeof(e8m23));
     return e8m23;
 }
 
 static MAG_AINLINE int64_t mag_op_param_unpack_i64_or_panic(mag_OPParam pa) {
     mag_assert(pa.type == MAG_OPP_I64, "invalid op param type: %d", pa.type);
-    return pa.i64;
-}
-
-static MAG_AINLINE uint64_t mag_op_param_unpack_u64_or_panic(mag_OPParam pa) {
-    mag_assert(pa.type == MAG_OPP_U64, "invalid op param type: %d", pa.type);
-    return pa.u64;
+    return pa.i62;
 }
 
 static MAG_AINLINE mag_E8M23 mag_op_param_unpack_e8m23_or(mag_OPParam pa, mag_E8M23 fallback) {
@@ -659,10 +642,6 @@ static MAG_AINLINE mag_E8M23 mag_op_param_unpack_e8m23_or(mag_OPParam pa, mag_E8
 
 static MAG_AINLINE int64_t mag_op_param_unpack_i64_or(mag_OPParam pa, int64_t fallback) {
     return pa.type == MAG_OPP_I64 ? mag_op_param_unpack_i64_or_panic(pa) : fallback;
-}
-
-static MAG_AINLINE uint64_t mag_op_param_unpack_u64_or(mag_OPParam pa, uint64_t fallback) {
-    return pa.type == MAG_OPP_U64 ? mag_op_param_unpack_u64_or_panic(pa) : fallback;
 }
 
 /* Helper for filling the operation parameters array and validating the amount. */
@@ -765,7 +744,7 @@ typedef enum mag_Operator {
 } mag_Operator;
 mag_static_assert(MAG_OP_NOP == 0);
 mag_static_assert(MAG_OP_GT+1 == MAG_OP__NUM);
-mag_static_assert(MAG_OP__NUM <= 0xff);
+mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 /* Initialization opcodes. */
 typedef enum mag_InitOperator {
@@ -1072,7 +1051,7 @@ typedef enum mag_TensorFlags {
 
     MAG_TFLAG_LEN = 4                   /* Number of flags. */
 } mag_TensorFlags;
-mag_static_assert(MAG_TFLAG_LEN <= 0xff);
+mag_static_assert(MAG_TFLAG_LEN <= 8); /* Must fit in one byte */
 
 /*
 ** Reference counted tensor header. Stores shape, strides, gradient and other metadata.
@@ -1085,11 +1064,11 @@ struct mag_Tensor {
     int64_t rank;                                           /* Number of active dimensions. [1, MAX_DIMS] */
     int64_t shape[MAG_MAX_DIMS];                            /* Shape of the tensor. */
     int64_t strides[MAG_MAX_DIMS];                          /* Strides of the tensor. We store the strides in element counts and NOT in bytes. */
-    mag_DType dtype;                                        /* Data type of the tensor. */
+    mag_DType dtype : 8;                                    /* Data type of the tensor. */
+    mag_TensorFlags flags : 8;                              /* Tensor flags. */
+    mag_Operator op : 8;                                    /* Opcode for operators. */
     mag_IStorageBuffer* _Nonnull storage;                   /* Storage buffer. */
     int64_t numel;                                          /* Number of elements in the tensor. */
-    mag_TensorFlags flags;                                  /* Tensor flags. */
-    mag_Operator op;                                        /* Opcode for operators. */
     mag_Tensor* _Nullable op_inputs[MAG_MAX_OP_INPUTS];     /* Input tensors for operators. */
     mag_OPParam op_params[MAG_MAX_OP_PARAMS];               /* Operator parameters. */
     mag_InitOperator init_op;                               /* Initialization op */

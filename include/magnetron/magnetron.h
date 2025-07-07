@@ -41,6 +41,10 @@ extern "C" {
 #endif
 #endif
 
+#define mag_assert_name2(name, line) name ## line
+#define mag_assert_name(line) mag_assert_name2(_assert_, line)
+#define mag_static_assert(expr) extern void mag_assert_name(__LINE__)(bool STATIC_ASSERTION_FAILED[_Nonnull((expr)?1:-1)])
+
 #define mag_version_pack(maj, mi) ((uint32_t)((((maj)&255)<<8)+((mi)&255)))
 #define mag_version_major(ver) (((ver)>>8)&255)
 #define mag_version_minor(ver) ((ver)&255)
@@ -166,6 +170,8 @@ typedef enum mag_DType {
 
     MAG_DTYPE__NUM
 } mag_DType;
+
+mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fix in 1 byte */
 
 /**
  * @brief Stores various information about a data type such as size, name, etc.
