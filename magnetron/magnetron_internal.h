@@ -767,17 +767,12 @@ typedef struct mag_OPParamSlot {
     bool is_required;
 } mag_OPParamSlot;
 
-typedef struct mag_DTypeSlot {
-    mag_DType type;
-    bool is_used;
-} mag_DTypeSlot;
-
 /* Stores operator metadata such as operation type, number of inputs and parameters, and the types of the parameters. */
 typedef struct mag_OPMetadata {
     const char* const _Nonnull mnemonic;                                    /* Operation mnemonic */
     const char* const _Nonnull desc;                                        /* Operation mnemonic */
     const uint8_t input_count;                                              /* Number of inputs */
-    const mag_DTypeSlot input_dtypes[MAG_MAX_OP_INPUTS][MAG_DTYPE__NUM];    /* Input data types */
+    uint64_t dtype_mask;                                                    /* DType mask, bitmask of all supported input dtypes. */
     const mag_OPParamSlot op_param_layout[MAG_MAX_OP_PARAMS];               /* Parameter types */
     const mag_OPFlags flags;                                                /* Operation flags */
 

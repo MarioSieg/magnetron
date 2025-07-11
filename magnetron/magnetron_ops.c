@@ -8,6 +8,14 @@
 
 #include <stdarg.h>
 
+#define mag_dtype_bit(x) (1ull<<((x)&63))
+#define mag_dtype_mask(enume) mag_dtype_bit(MAG_DTYPE_##enume)
+#define MAG_DTYPE_MASK_ALL (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10)|mag_dtype_mask(BOOL)|mag_dtype_mask(I32)) /* All data types */
+#define MAG_DTYPE_MASK_FLOATING (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))   /* Floating-point data types */
+#define MAG_DTYPE_MASK_INTEGRAL (mag_dtype_mask(BOOL)|mag_dtype_mask(I32))      /* Integral data types with boolean */
+#define MAG_DTYPE_MASK_INTEGER (MAG_DTYPE_MASK_INTEGRAL&~mag_dtype_mask(BOOL))  /* Integral (integer) data types without boolean */
+#define MAG_DTYPE_MASK_NUMERIC (MAG_DTYPE_MASK_ALL&~mag_dtype_mask(BOOL))       /* Numeric data types (all except boolean) */
+
 extern mag_Tensor* mag_tensor_init_internal(mag_Context* ctx, mag_DType type, int64_t rank, const int64_t* shape, mag_Tensor* view, size_t view_offs);
 
 static mag_Tensor* mag_tensor_inplace_view(mag_Tensor* base) {
@@ -119,29 +127,14 @@ static bool mag_verify_can_broadcast(mag_StrStream** ss, const mag_Tensor* x, co
 static bool mag_verify_dtype_compat(mag_StrStream** ss, mag_Operator op, mag_Tensor** inputs) {
     const mag_OPMetadata* meta = mag_op_meta_of(op);
     for (uint32_t i=0; i < meta->input_count; ++i) { /* Check that the input data types are supported by the operator. */
-        const mag_DTypeSlot (*supported)[MAG_DTYPE__NUM] = &meta->input_dtypes[i];
-        bool found = false;
-        for (int j=0; j < sizeof(*supported)/sizeof(**supported); ++j) { /* Linear search for a supported dtype */
-            if ((*supported)[j].is_used && (*supported)[j].type == inputs[i]->dtype) {
-                found = true;
-                break;
-            }
-        }
-        if (mag_unlikely(!found)) {
+        bool supported = meta->dtype_mask & mag_dtype_bit(inputs[i]->dtype);
+        if (mag_unlikely(!supported)) {
             const char* dtype = mag_dtype_meta_of(inputs[i]->dtype)->name;
-            mag_StrStream supported_dtypes;
-            mag_strstream_init(&supported_dtypes);
-            for (int j=0; j < sizeof(*supported)/sizeof(**supported); ++j) {
-                if (!(*supported)[j].is_used) continue;
-                if (j > 0) mag_strstream_append(&supported_dtypes, ", ");
-                mag_strstream_append(&supported_dtypes, mag_dtype_meta_of((*supported)[j].type)->name);
-            }
             mag_push_verification_error(ss,
                 "Unsupported data type '%s' for operator: %s\n"
-                "    Hint: Cast or convert the tensor to a supported data type: %s.\n",
-                dtype, meta->mnemonic, supported_dtypes.buf
+                "    Hint: Cast the tensor.\n",
+                dtype, meta->mnemonic
             );
-            mag_strstream_free(&supported_dtypes);
             return false;
         }
     }
@@ -1228,7 +1221,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "nop",
             .desc = "nop",
             .input_count = 0,
-            .input_dtypes = {},
+            .dtype_mask = 0,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
@@ -1239,14 +1232,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "clone",
             .desc = "clone",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_clone,
@@ -1257,14 +1243,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "view",
             .desc = "view",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 {.type=MAG_OPP_I64, .is_required=true}, /* view shape count : u32 */
                 {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
@@ -1284,14 +1263,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "transpose",
             .desc = "𝑥ᵀ",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 {.type=MAG_OPP_I64, .is_required=true},   /* axis index 0 : u32 */
                 {.type=MAG_OPP_I64, .is_required=true},  /* axis index 1 : u32 */
@@ -1311,14 +1283,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "permute",
             .desc = "permute",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
                 {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
@@ -1338,12 +1303,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "mean",
             .desc = "(∑𝑥)∕𝑛",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {
                 {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
                 {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
@@ -1363,12 +1323,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "min",
             .desc = "min(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {
                 {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
                 {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
@@ -1388,12 +1343,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "max",
             .desc = "max(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {
                 {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
                 {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
@@ -1413,12 +1363,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "sum",
             .desc = "∑𝑥",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {
                 {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
                 {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
@@ -1438,12 +1383,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "abs",
             .desc = "|𝑥|",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_abs,
@@ -1458,12 +1398,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "sgn",
             .desc = "𝑥⁄",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1478,12 +1413,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "neg",
             .desc = "−𝑥",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_neg,
@@ -1498,12 +1428,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "log",
             .desc = "log₁₀(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_log,
@@ -1518,12 +1443,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "sqr",
             .desc = "𝑥²",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sqr,
@@ -1538,12 +1458,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "sqrt",
             .desc = "√𝑥",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags =  MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sqrt,
@@ -1558,12 +1473,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "sin",
             .desc = "sin(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sin,
@@ -1578,12 +1488,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "cos",
             .desc = "cos(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_cos,
@@ -1598,12 +1503,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "step",
             .desc = "𝐻(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1618,12 +1518,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "exp",
             .desc = "𝑒ˣ",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_exp,
@@ -1638,12 +1533,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "floor",
             .desc = "⌊𝑥⌋",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1658,12 +1548,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "ceil",
             .desc = "⌈𝑥⌉",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1678,12 +1563,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "round",
             .desc = "⟦𝑥⟧",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1698,12 +1578,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "softmax",
             .desc = "𝑒ˣⁱ∕∑𝑒ˣʲ",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_softmax,
@@ -1718,12 +1593,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "softmax_dv",
             .desc = "𝑑⁄𝑑𝑥 softmax(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1738,12 +1608,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "sigmoid",
             .desc = "1∕(1 + 𝑒⁻ˣ)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = mag_op_backward_sigmoid,
@@ -1758,12 +1623,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "sigmoid_dv",
             .desc = "𝑑⁄𝑑𝑥 sigmoid(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1778,12 +1638,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "hard_sigmoid",
             .desc = "max(0,min(1,0.2×𝑥+0.5))",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1798,12 +1653,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "silu",
             .desc = "𝑥∕(1+𝑒⁻ˣ)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_silu,
@@ -1818,12 +1668,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "silu_dv",
             .desc = "𝑑⁄𝑑𝑥 silu(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1838,12 +1683,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "tanh",
             .desc = "tanh(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_tanh,
@@ -1858,12 +1698,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "tanh_dv",
             .desc = "𝑑⁄𝑑𝑥 tanh(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1878,12 +1713,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "relu",
             .desc = "max(0, 𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_relu,
@@ -1898,12 +1728,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "relu_dv",
             .desc = "𝑑⁄𝑑𝑥 relu(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1918,12 +1743,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "gelu",
             .desc = "0.5×𝑥×(1+erf(𝑥∕√2))",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_gelu,
@@ -1938,12 +1758,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "gelu_dv",
             .desc = "𝑑⁄𝑑𝑥 gelu(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1958,14 +1773,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "tril",
             .desc = "tril(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 {.type=MAG_OPP_I64, .is_required=true},
             },
@@ -1982,14 +1790,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "triu",
             .desc = "triu(𝑥)",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 {.type=MAG_OPP_I64, .is_required=true},
             },
@@ -2006,18 +1807,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "add",
             .desc = "𝑥 + 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_add,
@@ -2032,18 +1822,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "sub",
             .desc = "𝑥 − 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sub,
@@ -2058,18 +1837,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "mul",
             .desc = "𝑥 ⊙ 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_mul,
@@ -2084,18 +1852,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "div",
             .desc = "𝑥 ∕ 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_div,
@@ -2109,16 +1866,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
         [MAG_OP_MATMUL] = {
             .mnemonic = "matmul",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_matmul,
@@ -2132,16 +1880,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
         [MAG_OP_REPEAT_BACK] = {
             .mnemonic = "repeat_back",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE,
             .backward = NULL,
@@ -2152,16 +1891,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "and",
             .desc = "𝑥 ∧ 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_INTEGRAL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2176,16 +1906,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "or",
             .desc = "𝑥 ∨ 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_INTEGRAL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2200,16 +1921,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "xor",
             .desc = "𝑥 ⊕ 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_INTEGRAL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2224,12 +1936,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "not",
             .desc = "¬𝑥",
             .input_count = 1,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_INTEGRAL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2244,14 +1951,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "shl",
             .desc = "𝑥 ≪ 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_INTEGER,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2266,14 +1966,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "shr",
             .desc = "𝑥 ≫ 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_INTEGER,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2288,20 +1981,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "eq",
             .desc = "𝑥 == 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2316,20 +1996,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "ne",
             .desc = "𝑥 != 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_BOOL, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2344,18 +2011,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "le",
             .desc = "𝑥 <= 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2370,18 +2026,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "ge",
             .desc = "𝑥 >= 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2396,18 +2041,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "gt",
             .desc = "𝑥 < 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -2422,18 +2056,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .mnemonic = "lt",
             .desc = "𝑥 > 𝑦",
             .input_count = 2,
-            .input_dtypes = {
-                [0] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                },
-                [1] = {
-                    {.type=MAG_DTYPE_E8M23, .is_used=true},
-                    {.type=MAG_DTYPE_E5M10, .is_used=true},
-                    {.type=MAG_DTYPE_I32, .is_used=true},
-                }
-            },
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
