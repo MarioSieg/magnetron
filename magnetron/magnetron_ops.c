@@ -8,14 +8,6 @@
 
 #include <stdarg.h>
 
-#define mag_dtype_bit(x) (1ull<<((x)&63))
-#define mag_dtype_mask(enume) mag_dtype_bit(MAG_DTYPE_##enume)
-#define MAG_DTYPE_MASK_ALL (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10)|mag_dtype_mask(BOOL)|mag_dtype_mask(I32)) /* All data types */
-#define MAG_DTYPE_MASK_FLOATING (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))   /* Floating-point data types */
-#define MAG_DTYPE_MASK_INTEGRAL (mag_dtype_mask(BOOL)|mag_dtype_mask(I32))      /* Integral data types with boolean */
-#define MAG_DTYPE_MASK_INTEGER (MAG_DTYPE_MASK_INTEGRAL&~mag_dtype_mask(BOOL))  /* Integral (integer) data types without boolean */
-#define MAG_DTYPE_MASK_NUMERIC (MAG_DTYPE_MASK_ALL&~mag_dtype_mask(BOOL))       /* Numeric data types (all except boolean) */
-
 extern mag_Tensor* mag_tensor_init_internal(mag_Context* ctx, mag_DType type, int64_t rank, const int64_t* shape, mag_Tensor* view, size_t view_offs);
 
 static mag_Tensor* mag_tensor_inplace_view(mag_Tensor* base) {
@@ -31,7 +23,7 @@ static mag_Tensor* mag_tensor_inplace_view(mag_Tensor* base) {
 static bool mag_op_requires_op_params(mag_Operator op) { /* Returns true if the op requires any op params and thus requires validation of them. */
     const mag_OPMetadata* meta = mag_op_meta_of(op);
     for (int i=0; i < MAG_MAX_OP_PARAMS; ++i) {
-        if (meta->op_param_layout[i].is_required) {
+        if (meta->op_param_layout[i] != MAG_OPP_NONE) {
             return true;
         }
     }
@@ -61,10 +53,10 @@ static void mag_assert_correct_op_data(
         mag_assert(op_params != NULL, "operation '%s' requires operation parameters, but none were provided", meta->mnemonic);
         mag_assert(num_op_params <= MAG_MAX_OP_PARAMS, "too many operation parameters for operation '%s': %u > %u", meta->mnemonic, num_op_params, MAG_MAX_OP_PARAMS);
         for (uint32_t i=0; i < num_op_params; ++i) {
-            if (meta->op_param_layout[i].is_required) { /* Only check for type equality if op param is required */
-                mag_assert(op_params[i].type == meta->op_param_layout[i].type,
+            if (meta->op_param_layout[i] != MAG_OPP_NONE) { /* Only check for type equality if op param is required */
+                mag_assert(op_params[i].type == meta->op_param_layout[i],
                     "invalid operation parameter type for operation '%s': %d != %d",
-                    meta->mnemonic, op_params[i].type, meta->op_param_layout[i].type
+                    meta->mnemonic, op_params[i].type, meta->op_param_layout[i]
                 );
             }
         }
@@ -1245,14 +1237,13 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .input_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
-                {.type=MAG_OPP_I64, .is_required=true}, /* view shape count : u32 */
-                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_I64, .is_required=false}, /* view shape : u32 */
-                {.type=MAG_OPP_NONE, .is_required=false},
+                MAG_OPP_I64, /* view shape count : u32 */
+                MAG_OPP_I64, /* view shape : u32 */
+                MAG_OPP_I64, /* view shape : u32 */
+                MAG_OPP_I64, /* view shape : u32 */
+                MAG_OPP_I64, /* view shape : u32 */
+                MAG_OPP_I64, /* view shape : u32 */
+                MAG_OPP_I64, /* view shape : u32 */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_view,
@@ -1265,14 +1256,8 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .input_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
-                {.type=MAG_OPP_I64, .is_required=true},   /* axis index 0 : u32 */
-                {.type=MAG_OPP_I64, .is_required=true},  /* axis index 1 : u32 */
-                {.type=MAG_OPP_NONE, .is_required=false},
-                {.type=MAG_OPP_NONE, .is_required=false},
-                {.type=MAG_OPP_NONE, .is_required=false},
-                {.type=MAG_OPP_NONE, .is_required=false},
-                {.type=MAG_OPP_NONE, .is_required=false},
-                {.type=MAG_OPP_NONE, .is_required=false},
+                MAG_OPP_I64,   /* axis index 0 : u32 */
+                MAG_OPP_I64,  /* axis index 1 : u32 */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_transpose,
@@ -1285,14 +1270,12 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .input_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
-                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_I64, .is_required=true}, /* perm axis : u32 */
-                {.type=MAG_OPP_NONE, .is_required=false},
-                {.type=MAG_OPP_NONE, .is_required=false},
+                MAG_OPP_I64, /* perm axis : u32 */
+                MAG_OPP_I64, /* perm axis : u32 */
+                MAG_OPP_I64, /* perm axis : u32 */
+                MAG_OPP_I64, /* perm axis : u32 */
+                MAG_OPP_I64, /* perm axis : u32 */
+                MAG_OPP_I64, /* perm axis : u32 */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
@@ -1305,14 +1288,14 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .input_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {
-                {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
-                {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64,  /* reduction dim count : u32 */
+                MAG_OPP_I64,  /* keepdim : bool */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_mean,
@@ -1325,14 +1308,14 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .input_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {
-                {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
-                {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64,  /* reduction dim count : u32 */
+                MAG_OPP_I64,  /* keepdim : bool */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
@@ -1345,14 +1328,14 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .input_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {
-                {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
-                {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64,  /* reduction dim count : u32 */
+                MAG_OPP_I64,  /* keepdim : bool */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
@@ -1365,14 +1348,14 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .input_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_FLOATING,
             .op_param_layout = {
-                {.type=MAG_OPP_I64, .is_required=true},  /* reduction dim count : u32 */
-                {.type=MAG_OPP_I64, .is_required=true},  /* keepdim : bool */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
-                {.type=MAG_OPP_I64, .is_required=false}, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64,  /* reduction dim count : u32 */
+                MAG_OPP_I64,  /* keepdim : bool */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
+                MAG_OPP_I64, /* reduction dim : u32 [optional] */
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_sum,
@@ -1775,7 +1758,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .input_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
-                {.type=MAG_OPP_I64, .is_required=true},
+                MAG_OPP_I64
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
@@ -1792,7 +1775,7 @@ const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
             .input_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
-                {.type=MAG_OPP_I64, .is_required=true},
+                MAG_OPP_I64
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,

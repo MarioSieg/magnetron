@@ -337,6 +337,8 @@ extern MAG_EXPORT mag_Tensor* _Nullable mag_tensor_get_view_base(const mag_Tenso
 extern MAG_EXPORT size_t mag_tensor_get_view_offset(const mag_Tensor* _Nonnull t);
 extern MAG_EXPORT bool mag_tensor_is_floating_point_typed(const mag_Tensor* _Nonnull t);
 extern MAG_EXPORT bool mag_tensor_is_integral_typed(const mag_Tensor* _Nonnull t);
+extern MAG_EXPORT bool mag_tensor_is_integer_typed(const mag_Tensor* _Nonnull t);
+extern MAG_EXPORT bool mag_tensor_is_numeric_typed(const mag_Tensor* _Nonnull t);
 
 /* ============ Tensor Shape Utils ============ */
 

@@ -1691,10 +1691,10 @@ int64_t mag_tensor_get_channels(const mag_Tensor* t) { return t->shape[0]; }
 bool mag_tensor_is_view(const mag_Tensor* t) { return t->flags & MAG_TFLAG_IS_VIEW; }
 mag_Tensor* mag_tensor_get_view_base(const mag_Tensor* t) { return t->view_uplink; }
 size_t mag_tensor_get_view_offset(const mag_Tensor* t) { return t->view_offs; }
-bool mag_tensor_is_floating_point_typed(const mag_Tensor* t) {
-    return t->dtype == MAG_DTYPE_E8M23 || t->dtype == MAG_DTYPE_E5M10;
-}
-bool mag_tensor_is_integral_typed(const mag_Tensor* t) { return !mag_tensor_is_floating_point_typed(t); }
+bool mag_tensor_is_floating_point_typed(const mag_Tensor* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_FLOATING; }
+bool mag_tensor_is_integral_typed(const mag_Tensor* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGRAL; }
+bool mag_tensor_is_integer_typed(const mag_Tensor* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGER; }
+bool mag_tensor_is_numeric_typed(const mag_Tensor* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC; }
 
 #ifdef __APPLE__
     static bool mag_sysctl_mib01(uint8_t (*out)[256], size_t* o_len, int mib0, int mib1) { /* Get sysctl data */

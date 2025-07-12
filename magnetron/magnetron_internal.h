@@ -762,19 +762,24 @@ typedef enum mag_OPFlags {
     MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING = 1<<1,      /* Supports multithreading on CPU. */
 } mag_OPFlags;
 
-typedef struct mag_OPParamSlot {
-    mag_OPParamType type;
-    bool is_required;
-} mag_OPParamSlot;
+typedef uint8_t mag_DTypeMask; /* Bitmask of supported dtypes, 1 bit per dtype. */
+mag_static_assert(MAG_DTYPE__NUM <= 8); /* Must fit in 8 bits, if this fails increase the type of dtpe_mask. */
+#define mag_dtype_bit(x) (((mag_DTypeMask)1)<<((x)&63))
+#define mag_dtype_mask(enume) mag_dtype_bit(MAG_DTYPE_##enume)
+#define MAG_DTYPE_MASK_ALL (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10)|mag_dtype_mask(BOOL)|mag_dtype_mask(I32)) /* All data types */
+#define MAG_DTYPE_MASK_FLOATING (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))   /* Floating-point data types */
+#define MAG_DTYPE_MASK_INTEGRAL (mag_dtype_mask(BOOL)|mag_dtype_mask(I32))      /* Integral data types with boolean */
+#define MAG_DTYPE_MASK_INTEGER (MAG_DTYPE_MASK_INTEGRAL&~mag_dtype_mask(BOOL))  /* Integral (integer) data types without boolean */
+#define MAG_DTYPE_MASK_NUMERIC (MAG_DTYPE_MASK_ALL&~mag_dtype_mask(BOOL))       /* Numeric data types (all except boolean) */
 
 /* Stores operator metadata such as operation type, number of inputs and parameters, and the types of the parameters. */
 typedef struct mag_OPMetadata {
     const char* const _Nonnull mnemonic;                                    /* Operation mnemonic */
     const char* const _Nonnull desc;                                        /* Operation mnemonic */
-    const uint8_t input_count;                                              /* Number of inputs */
-    uint64_t dtype_mask;                                                    /* DType mask, bitmask of all supported input dtypes. */
-    const mag_OPParamSlot op_param_layout[MAG_MAX_OP_PARAMS];               /* Parameter types */
+    const mag_DTypeMask dtype_mask;                                              /* DType mask, bitmask of all supported input dtypes. */
+    const mag_OPParamType op_param_layout[MAG_MAX_OP_PARAMS];               /* Parameter types */
     const mag_OPFlags flags;                                                /* Operation flags */
+    const uint8_t input_count;                                              /* Number of inputs */
 
     /* Backward pass function or NULL if op is not differentiable */
     void (*_Nullable const backward)(
