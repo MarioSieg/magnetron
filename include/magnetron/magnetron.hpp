@@ -85,30 +85,6 @@ namespace magnetron {
     };
 
     /**
-     * Function type used for all memory allocations in magnetron. Can be overwritten by user.
-     * @param block Block of memory to reallocate or nullptr.
-     * @param size Size to resize to or 0.
-     * @return Allocated or reallocated block or nullptr.
-     */
-    using alloc_fn = auto(void* block, std::size_t size) -> void*;
-
-    /**
-     * Get the global allocator function.
-     * @return Get the global allocator function.
-     */
-    [[nodiscard]] inline auto allocator() noexcept -> alloc_fn* {
-        return mag_get_alloc_fn();
-    }
-
-    /**
-     * Set the global allocator function.
-     * @param alloc Allocator function to set.
-     */
-    inline auto allocator(alloc_fn* alloc) noexcept -> void {
-        mag_set_alloc_fn(alloc);
-    }
-
-    /**
      * Enable or disable internal magnetron logging to stdout.
      * @param enable
      */

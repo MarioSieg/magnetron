@@ -371,16 +371,15 @@ extern void mag_fmt_shape(char (*_Nonnull buf)[MAG_FMT_DIM_BUF_SIZE], const int6
 ** Allocator function. Can be set to custom allocator.
 **   ! Never returns NULL, if re/allocation fails, it will abort the program by calling mag_panic().
 **   ! Never zero initializes, use manual memset if zeroing is required.
+**   ! Set alignment value to 0 for system default alignment, else aligned adress is returned.
+**     If alignment value > 0, it must be the same when using the realloc and dealloc mode.
 **
 ** This single function is essentially a realloc and is used for allocating, reallocating and deallocating the following way:
-** (*mag_alloc)(NULL, size) <=> malloc(size)            <- Passing NULL as reallocation base and size != 0 => allocation.
-** (*mag_alloc)(ptr, size) <=> realloc(ptr, size)       <- Passing non-NULL pointer as reallocation base and size != 0 => reallocation.
-** (*mag_alloc)(ptr, 0) <=> free(ptr)                   <- Passing NULL as reallocation base and size == 0 => free.
+** (*mag_alloc)(NULL, size, 0) <=> malloc(size)            <- Passing NULL as reallocation base and size != 0 => allocation.
+** (*mag_alloc)(ptr, size, 0) <=> realloc(ptr, size)       <- Passing non-NULL pointer as reallocation base and size != 0 => reallocation.
+** (*mag_alloc)(ptr, 0, 0) <=> free(ptr)                   <- Passing NULL as reallocation base and size == 0 => free.
 */
-extern MAG_EXPORT void* _Nonnull (*_Nonnull mag_alloc)(void* _Nullable blk, size_t size);
-
-extern void* _Nonnull mag_alloc_aligned(size_t size, size_t align); /* Aligned allocator function. */
-extern void mag_free_aligned(void* _Nonnull blk); /* Free aligned memory. */
+extern MAG_EXPORT void* _Nonnull (*_Nonnull mag_alloc)(void* _Nullable blk, size_t size, size_t align);
 
 /* Humanize memory size. Format and convert a memory size to the appropriate unit. For example. 1024 => 1 KiB */
 extern void mag_humanize_memory_size(size_t n, mag_E11M52* _Nonnull out, const char* _Nonnull* _Nonnull unit);

@@ -98,8 +98,8 @@ typedef enum mag_ColorChannels {
     MAG_COLOR_CHANNELS__NUM
 } mag_ColorChannels;
 
-extern MAG_EXPORT void* _Nonnull (*_Nonnull mag_get_alloc_fn(void))(void* _Nullable blk, size_t size); /* Get global allocator. */
-extern MAG_EXPORT void mag_set_alloc_fn(void* _Nonnull (*_Nonnull alloc)(void* _Nullable blk, size_t size)); /* Set global allocator. */
+extern MAG_EXPORT void* _Nonnull (*_Nonnull mag_get_alloc_fn(void))(void* _Nullable, size_t, size_t); /* Get global allocator. */
+extern MAG_EXPORT void mag_set_alloc_fn(void* _Nonnull (*_Nonnull alloc)(void* _Nullable, size_t, size_t)); /* Set global allocator. */
 extern MAG_EXPORT void mag_set_log_mode(bool enabled); /* Enable/disable logging. */
 extern MAG_EXPORT uint32_t mag_pack_color_u8(uint8_t r, uint8_t g, uint8_t b);
 extern MAG_EXPORT uint32_t mag_pack_color_f32(float r, float g, float b);

@@ -65,7 +65,7 @@ static void mag_assert_correct_op_data(
 
 static void mag_push_verification_error(mag_StrStream** ss, const char* fmt, ...) {
     if (!*ss) {  /* Lazy init error stream if needed */
-        *ss = (*mag_alloc)(NULL, sizeof(**ss));
+        *ss = (*mag_alloc)(NULL, sizeof(**ss), 0);
         mag_strstream_init(*ss);
     }
     va_list ap;
@@ -638,7 +638,7 @@ static mag_Tensor* MAG_HOTPROC mag_tensor_operator(
         fflush(out);
         if (msg) { /* Free error message stream if it was created. */
             mag_strstream_free(msg);
-            (*mag_alloc)(msg, 0);
+            (*mag_alloc)(msg, 0, 0);
         }
         mag_panic("Invalid operation '%s'", meta->mnemonic);
     }

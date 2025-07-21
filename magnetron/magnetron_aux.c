@@ -12,15 +12,15 @@
 #define MAG_USE_STB_IMAGE_RESIZE /* Use stb_image_resize for image resizing. */
 
 /* Include STB libraries and override their allocator with ours. */
-#define STBI_MALLOC(sz) ((*mag_alloc)(NULL, (sz)))
-#define STBI_FREE(ptr) ((*mag_alloc)((ptr), 0))
-#define STBI_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz)))
-#define STBIW_MALLOC(sz) ((*mag_alloc)(NULL, (sz)))
-#define STBIW_FREE(ptr) ((*mag_alloc)((ptr), 0))
-#define STBIW_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz)))
-#define STBIR_MALLOC(sz, usr) ((*mag_alloc)(NULL, (sz)))
-#define STBIR_FREE(ptr, usr) ((*mag_alloc)((ptr), 0))
-#define STBIR_REALLOC(ptr, sz, usr) ((*mag_alloc)((ptr), (sz)))
+#define STBI_MALLOC(sz) ((*mag_alloc)(NULL, (sz), 0))
+#define STBI_FREE(ptr) ((*mag_alloc)((ptr), 0, 0))
+#define STBI_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz), 0))
+#define STBIW_MALLOC(sz) ((*mag_alloc)(NULL, (sz), 0))
+#define STBIW_FREE(ptr) ((*mag_alloc)((ptr), 0, 0))
+#define STBIW_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz), 0))
+#define STBIR_MALLOC(sz, usr) ((*mag_alloc)(NULL, (sz), 0))
+#define STBIR_FREE(ptr, usr) ((*mag_alloc)((ptr), 0, 0))
+#define STBIR_REALLOC(ptr, sz, usr) ((*mag_alloc)((ptr), (sz), 0))
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
@@ -134,7 +134,7 @@ void mag_tensor_save_image(const mag_Tensor* t, const char* file) {
    int64_t c = mag_tensor_get_channels(t);
    mag_assert(c == 1 || c == 3 || c == 4, "Invalid number of channels: %zu", (size_t)c);
    mag_assert(w*h*c == mag_tensor_get_numel(t), "Buffer size mismatch: %zu != %zu", w*h*c, (size_t)mag_tensor_get_numel(t));
-   uint8_t* dst = (*mag_alloc)(NULL, w*h*c); /* Allocate memory for image data */
+   uint8_t* dst = (*mag_alloc)(NULL, w*h*c, 0); /* Allocate memory for image data */
    const mag_E8M23* src = mag_tensor_get_data_ptr(t);
    for (int64_t k = 0; k < c; ++k) /* Convert from planar to interleaved format. */
       for (int64_t i = 0; i < w*h; ++i)
@@ -156,6 +156,6 @@ void mag_tensor_save_image(const mag_Tensor* t, const char* file) {
    else
       mag_panic("Invalid image file extension: %s", file);
    mag_assert(stat, "Failed to save tensor to image file %s", file);
-   (*mag_alloc)(dst, 0); /* Free image data */
+   (*mag_alloc)(dst, 0, 0); /* Free image data */
    mag_log_info("Saved tensor to image: %s, width: %d, height: %d, channels: %d", file, (int)w, (int)h, (int)c);
 }
