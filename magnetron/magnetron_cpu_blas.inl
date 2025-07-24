@@ -4388,7 +4388,7 @@ mag_cpu_blas_impl_reduce( \
     *br = mag_e8m23_cvt_e5m10(acc); )
 
 #define VLA(type, name, size) \
-type* name = (type*)(*mag_alloc)(NULL, (size)*sizeof(type))
+type* name = (type*)(*mag_alloc)(NULL, (size)*sizeof(type),0)
 
 static int64_t mag_offset_rmn(const mag_Tensor* _Nonnull t, int64_t batch, int64_t i, int64_t j) {
     int64_t ts0 = t->strides[0];
@@ -4447,15 +4447,15 @@ typedef struct mag_MMScratchBuf {
 
 static void* _Nonnull mag_mm_scratch_acquire(mag_MMScratchBuf* _Nonnull sb, size_t size) {
     if (size <= sb->cap) return sb->p; /* We have enough space */
-    void* p = mag_alloc_aligned(size, MAG_MM_SCRATCH_BUG_ALIGN);
-    if (sb->p) mag_free_aligned(sb->p);
+    void* p = (*mag_alloc)(NULL, size, MAG_MM_SCRATCH_BUG_ALIGN);
+    if (sb->p) (*mag_alloc)(sb->p, 0, MAG_MM_SCRATCH_BUG_ALIGN);
     sb->p = p;
     sb->cap = size;
     return p;
 }
 
 static void mag_mm_scratch_release(mag_MMScratchBuf* _Nonnull sb) {
-    if (sb->p) mag_free_aligned(sb->p);
+    if (sb->p) (*mag_alloc)(sb->p, 0, MAG_MM_SCRATCH_BUG_ALIGN);
     sb->p = NULL;
     sb->cap = 0;
 }
@@ -4579,9 +4579,9 @@ static void MAG_HOTPROC mag_blas_matmul_e5m10(const mag_CPUKernelPayload* _Nonnu
                     pr[mag_offset_rmn(r, b, i, n)] = rbuf[i*N + n];
         }
     }
-    (*mag_alloc)(xbuf, 0);
-    (*mag_alloc)(ybuf, 0);
-    (*mag_alloc)(rbuf, 0);
+    (*mag_alloc)(xbuf, 0, 0);
+    (*mag_alloc)(ybuf, 0, 0);
+    (*mag_alloc)(rbuf, 0, 0);
 }
 
 static void MAG_HOTPROC  mag_blas_repeat_back_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {

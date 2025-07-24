@@ -218,9 +218,9 @@ static MAG_HOTPROC void* mag_worker_thread_exec_op(void* arg) {
 
 /* Create thread pool and allocate threads */
 static mag_ThreadPool* mag_threadpool_create(mag_Context* host_ctx, uint32_t num_workers, const mag_CPUKernelRegistry* kernels, mag_ThreadPrio prio) { /* Create a thread pool */
-    mag_ThreadPool* pool = mag_alloc_aligned(sizeof(*pool), __alignof(mag_ThreadPool));
+    mag_ThreadPool* pool = (*mag_alloc)(NULL, sizeof(*pool), __alignof(mag_ThreadPool));
     memset(pool, 0, sizeof(*pool));
-    mag_WorkerThread* workers = mag_alloc_aligned(num_workers*sizeof(*workers), __alignof(mag_WorkerThread));
+    mag_WorkerThread* workers = (*mag_alloc)(NULL, num_workers*sizeof(*workers), __alignof(mag_WorkerThread));
     memset(workers, 0, num_workers*sizeof(*workers));
     *pool = (mag_ThreadPool){
         .interrupt = false,
@@ -273,8 +273,8 @@ static void mag_threadpool_destroy(mag_ThreadPool* pool) {
             mag_thread_join(pool->workers[i].thread);
     mag_cv_destroy(&pool->cv);
     mag_mutex_destroy(&pool->mtx);
-    mag_free_aligned(pool->workers);
-    mag_free_aligned(pool);
+    (*mag_alloc)(pool->workers, 0, __alignof(mag_WorkerThread));
+    (*mag_alloc)(pool, 0, __alignof(mag_ThreadPool));
 }
 
 /* Submits work payload and awakens all threads */
@@ -440,13 +440,13 @@ static void mag_cpu_storage_dtor(void* self) {
     mag_Context* ctx = buf->ctx;
     mag_assert(ctx->num_storages > 0, "double freed storage");
     --ctx->num_storages;
-    mag_free_aligned((void*)buf->base);
+    (*mag_alloc)((void*)buf->base, 0, MAG_CPU_BUF_ALIGN);
     mag_fixed_intrusive_pool_free(&ctx->storage_pool, buf);
 }
 
 static void mag_cpu_alloc_storage(mag_IComputeDevice* host, mag_IStorageBuffer** out, size_t size, mag_DType dtype) {
     mag_Context* ctx = host->ctx;
-    void* block = mag_alloc_aligned(size, MAG_CPU_BUF_ALIGN);
+    void* block = (*mag_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
     *out = mag_fixed_intrusive_pool_malloc(&ctx->storage_pool);
     **out = (mag_IStorageBuffer){ /* Set up storage buffer. */
         .ctx = ctx,
@@ -466,7 +466,7 @@ static void mag_cpu_alloc_storage(mag_IComputeDevice* host, mag_IStorageBuffer**
 
 static mag_CPUComputeDeviceImpl* mag_cpu_init_device(mag_Context* ctx, uint32_t num_threads) {
     mag_ThreadPrio sched_prio = MAG_THREAD_PRIO_HIGH;
-    mag_CPUComputeDeviceImpl* dvc = (*mag_alloc)(NULL, sizeof(*dvc));
+    mag_CPUComputeDeviceImpl* dvc = (*mag_alloc)(NULL, sizeof(*dvc), 0);
     memset(dvc, 0, sizeof(*dvc));
     *dvc = (mag_CPUComputeDeviceImpl) {
         .ctx = ctx,
@@ -502,12 +502,12 @@ static uint32_t mag_cpu_dynamic_work_scaling(mag_CPUComputeDeviceImpl* dvc, mag_
 static void mag_cpu_destroy_device(mag_CPUComputeDeviceImpl* dvc) {
     if (dvc->pool)
         mag_threadpool_destroy(dvc->pool);
-    (*mag_alloc)(dvc, 0);
+    (*mag_alloc)(dvc, 0, 0);
 }
 
 static mag_IComputeDevice* mag_cpu_init_interface(mag_Context* ctx, uint32_t num_threads) {
     mag_CPUComputeDeviceImpl* cpu_dvc = mag_cpu_init_device(ctx, num_threads);
-    mag_IComputeDevice* dvc = (*mag_alloc)(NULL, sizeof(*dvc));
+    mag_IComputeDevice* dvc = (*mag_alloc)(NULL, sizeof(*dvc), 0);
     *dvc = (mag_IComputeDevice){ /* Initialize device interface */
         .ctx = ctx,
         .name = "CPU",
@@ -525,7 +525,7 @@ static mag_IComputeDevice* mag_cpu_init_interface(mag_Context* ctx, uint32_t num
 static void mag_cpu_release_interface(mag_IComputeDevice* ctx) {
     mag_CPUComputeDeviceImpl* cpu_dvc = ctx->impl;
     mag_cpu_destroy_device(cpu_dvc);
-    (*mag_alloc)(ctx, 0); /* Free all memory */
+    (*mag_alloc)(ctx, 0, 0); /* Free all memory */
 }
 
 mag_IComputeDevice* mag_init_device_cpu(mag_Context* ctx, const mag_ComputeDeviceDesc* desc) {
