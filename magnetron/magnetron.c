@@ -2158,9 +2158,9 @@ static void MAG_COLDPROC mag_machine_probe_memory(uint64_t* out_phys_mem_total, 
         /* Check if AMD CPU using brand string. */
         char vendor[12+1];
         mag_cpuid(0, -1, &eax, &ebx, &ecx, &edx);
-        ((uint32_t*)vendor)[0] = ebx;
-        ((uint32_t*)vendor)[1] = edx;
-        ((uint32_t*)vendor)[2] = ecx;
+        memcpy(vendor + 4*0, &ebx, sizeof(ebx));
+        memcpy(vendor + 4*1, &edx, sizeof(ebx));
+        memcpy(vendor + 4*2, &ecx, sizeof(ebx));
         vendor[sizeof(vendor)-1] = '\0';
         *is_amd = !strncmp(vendor, "AuthenticAMD", sizeof(vendor));
 
