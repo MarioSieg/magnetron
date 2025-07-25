@@ -5,8 +5,10 @@ import magnetron as mag
 import magnetron.io as io
 from transformers import GPT2LMHeadModel, AutoTokenizer, AutoConfig
 
+OUTPUT_FILE: str = 'gpt2.mag'
 
 def download_gpt2(model_name: str = 'gpt2') -> tuple[dict, 'PretrainedConfig', 'PreTrainedTokenizerBase']:
+    print('Downloading GPT-2 model...')
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = GPT2LMHeadModel.from_pretrained(model_name)
     model.eval()
@@ -14,12 +16,12 @@ def download_gpt2(model_name: str = 'gpt2') -> tuple[dict, 'PretrainedConfig', '
     config = AutoConfig.from_pretrained(model_name)
     return state_dict, config, tokenizer
 
-
-print('Downloading GPT-2 model...')
 state_dict, config, tokenizer = download_gpt2()
+
 with io.StorageStream() as storage:
     for key, val in state_dict.items():
         print(f'Converting {key} ({val.size()}) {val.dtype}')
-        storage.put(key, mag.tensor(val.tolist()))
+        storage.put(key, mag.Tensor.of(val.tolist()))
     print(storage.tensor_keys())
-    storage.serialize('gpt2.mag')
+    storage.serialize(OUTPUT_FILE)
+    print(f'GPT-2 model converted and saved to {OUTPUT_FILE}')
