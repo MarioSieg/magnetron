@@ -313,48 +313,37 @@ defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
 #define MAG_PAGE_SIZE_4K 0x1000     /* 4 KiB page size */
 #define MAG_PAGE_SIZE_2M 0x200000   /* 2 MiB page size */
 
-/* Swap bytes of integer, ONLY if the host system is big endian. If the host is little endian, this is a no-op. */
 static uint16_t MAG_AINLINE mag_bswap16(uint16_t x) {
-    #ifdef MAG_BE
     #if (defined(__GNUC__) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) || defined(__clang__)
-        x = (uint32_t)__builtin_bswap16((int32_t)x);
+        x = __builtin_bswap16(x);
     #else
         x = (x&0xff00)>>8 | x&0xff<<8;
     #endif
-    #endif
     return x;
 }
-
-/* Swap bytes of integer, ONLY if the host system is big endian. If the host is little endian, this is a no-op. */
 static uint32_t MAG_AINLINE mag_bswap32(uint32_t x) {
-    #ifdef MAG_BE
-        #if (defined(__GNUC__) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) || defined(__clang__)
-            x = (uint32_t)__builtin_bswap32((int32_t)x);
-        #else
-            x = (x&0xff000000)>>24 |
+    #if (defined(__GNUC__) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) || defined(__clang__)
+        x = __builtin_bswap32(x);
+    #else
+        x = (x&0xff000000)>>24 |
             (x&0xff0000)>>8 |
             (x&0xff00)<<8 |
             (x&0xff)<<24;
-        #endif
     #endif
     return x;
 }
-
-/* Swap bytes of integer, ONLY if the host system is big endian. If the host is little endian, this is a no-op. */
 static uint64_t MAG_AINLINE mag_bswap64(uint64_t x) {
-    #ifdef MAG_BE
-        #if (defined(__GNUC__) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) || defined(__clang__)
-            x = (uint64_t)__builtin_bswap64((int64_t)x);
-        #else
-            x = (x & 0xff00000000000000) >> 56 |
-            (x & 0xff000000000000) >> 40 |
-            (x & 0xff0000000000) >> 24 |
-            (x & 0xff00000000) >> 8 |
-            (x & 0xff000000) << 8 |
-            (x & 0xff0000) << 24 |
-            (x & 0xff00) << 40 |
-            (x & 0xff) << 56;
-        #endif
+    #if (defined(__GNUC__) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) || defined(__clang__)
+        x = __builtin_bswap64(x);
+    #else
+        x = (x&0xff00000000000000)>>56 |
+            (x&0xff000000000000)>>40 |
+            (x&0xff0000000000)>>24 |
+            (x&0xff00000000)>>8 |
+            (x&0xff000000)<<8 |
+            (x&0xff0000)<<24 |
+            (x&0xff00)<<40 |
+            (x&0xff)<<56;
     #endif
     return x;
 }
@@ -1129,46 +1118,6 @@ static inline void mag_hash_combine(uint32_t* _Nonnull seed, uint32_t value) {
 
 extern uint64_t mag_hash(const void* _Nonnull key, size_t len, uint32_t seed); /* Compute murmur3_64 hash */
 extern uint32_t mag_crc32c(const void* _Nonnull buffer, size_t size); /* Compute CRC32 checksum with CRC32c polynomial. */
-
-#define MAG_DEF_MAP_GROW_FACTOR 0.6 /* 60% - Default grow factor. */
-#define MAG_DEF_MAP_SHRINK_FACTOR 0.1 /* 10% - Default shrink factor. */
-#define MAG_DEF_MAP_LOAD_FACTOR MAG_DEF_MAP_GROW_FACTOR /* 60% - Default load factor. */
-
-/*
-** Generic hashmap for storing key-value pairs.
-** Uses open addressing with robin-hood hashing.
-*/
-typedef struct mag_HashMap mag_HashMap;
-
-/* Create a new hashmap. */
-extern mag_HashMap* _Nonnull mag_hashmap_create(
-    size_t elsize,
-    size_t cap,
-    uint32_t seed,
-    uint64_t (*_Nonnull hash)(const void* _Nonnull item, uint32_t seed),
-    bool (*_Nonnull cmp)(const void* _Nonnull a, const void* _Nonnull b, void* _Nullable ud),
-    void (*_Nullable elfree)(void* _Nonnull item),
-    void* _Nullable ud,
-    double grow_fac,
-    double shrink_fac,
-    double load_fac
-);
-
-extern void mag_hashmap_destroy(mag_HashMap* _Nonnull map);
-extern void mag_hashmap_clear(mag_HashMap* _Nonnull map, bool update_cap);
-extern size_t mag_hashmap_count(mag_HashMap* _Nonnull map);
-extern bool mag_hashmap_is_oom(mag_HashMap* _Nonnull map);
-extern const void* _Nullable mag_hashmap_lookup(mag_HashMap* _Nonnull map, const void* _Nonnull item);
-extern const void* _Nullable mag_hashmap_insert(mag_HashMap* _Nonnull map, const void* _Nonnull item);
-extern const void* _Nullable mag_hashmap_delete(mag_HashMap* _Nonnull map, const void* _Nonnull item);
-extern const void* _Nullable mag_hashmap_probe(mag_HashMap* _Nonnull map, uint64_t position);
-extern bool mag_hashmap_scan(mag_HashMap* _Nonnull map, bool (*_Nonnull iter)(const void* _Nonnull item, void* _Nullable ud), void* _Nullable ud);
-extern bool mag_hashmap_iter(mag_HashMap* _Nonnull map, size_t* _Nonnull i, void* _Nonnull* _Nonnull item);
-extern const void* _Nullable mag_hashmap_get_with_hash(mag_HashMap* _Nonnull map, const void* _Nonnull key, uint64_t hash);
-extern const void* _Nullable mag_hashmap_delete_with_hash(mag_HashMap* _Nonnull map, const void* _Nonnull key, uint64_t hash);
-extern const void* _Nullable mag_hashmap_set_with_hash(mag_HashMap* _Nonnull map, const void* _Nonnull item, uint64_t hash);
-extern void mag_hashmap_set_grow_by_power(mag_HashMap* _Nonnull map, size_t pow);
-extern void mag_hashmap_set_load_factor(mag_HashMap* _Nonnull map, double load_factor);
 
 #ifdef __cplusplus
 }

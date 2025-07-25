@@ -10,14 +10,14 @@ The checksum field in the header is a CRC32 checksum of the file header, metadat
 To get the pointer to the tensor data buffer, the `data_offset` field in each tensor record is used.
 The auxiliary field `aux` in the header and metadata records are reserved for future use and should be set to zero when writing files.
 ### File Header
-| Name         | Type       | Description                   |
-|--------------|------------|-------------------------------|
-| magic        | uint8_t[4] | Magic number, always "MAG!"   |
-| version      | uint32_t   | Version of the file format    |
-| checksum     | uint32_t   | CRC32 of the file headers     |
-| num_tensors  | uint32_t   | Number of tensors in the file |
-| num_metadata | uint32_t   | Number of metadata entries    |
-| aux          | uint32_t   | Auxiliary field, reserved     |
+| Name        | Type       | Description                   |
+|-------------|------------|-------------------------------|
+| magic       | uint8_t[4] | Magic number, always "MAG!"   |
+| version     | uint32_t   | Version of the file format    |
+| checksum    | uint32_t   | CRC32 of the file headers     |
+| num_tensors | uint32_t   | Number of tensors in the file |
+| num_meta_kv | uint32_t   | Number of metadata entries    |
+| aux         | uint32_t   | Auxiliary field, reserved     |
 
 ### Metadata Record
 | Name         | Type      | Description                       |
