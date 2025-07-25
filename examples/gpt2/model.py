@@ -56,5 +56,5 @@ class CausalSelfAttention(nn.Module):
 
 cfg = GPTConfig()
 csa = CausalSelfAttention(cfg)
-x = mag.Tensor.uniform(1024, cfg.n_embd, 1, from_=-1.0, to=1.0)
+x = mag.Tensor.uniform(1024, cfg.n_embd, 1, low=-1.0, high=1.0)
 print(csa(x))

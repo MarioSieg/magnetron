@@ -386,20 +386,6 @@ extern MAG_EXPORT void mag_tensor_save_image(const mag_Tensor* _Nonnull t, const
 extern MAG_EXPORT void mag_tensor_export_forward_graph_graphviz(mag_Tensor* _Nonnull t, const char* _Nonnull file);                                                                      /* Export tensor computation graph as Graphviz DOT file *//* Get image channels from tensor */
 extern MAG_EXPORT void mag_tensor_export_backward_graph_graphviz(mag_Tensor* _Nonnull t, const char* _Nonnull file);
 
-/* ============ Magnetron (.mag) file read/write API. ============ */
-
-typedef struct mag_StorageStream mag_StorageStream;
-
-extern MAG_EXPORT mag_StorageStream* _Nonnull mag_storage_stream_new(mag_Context* _Nonnull ctx);
-extern MAG_EXPORT bool mag_storage_stream_serialize(mag_StorageStream* _Nonnull st, const char* _Nonnull path);
-extern MAG_EXPORT mag_StorageStream* _Nullable mag_storage_stream_deserialize(mag_Context* _Nonnull ctx, const char* _Nonnull file);
-extern MAG_EXPORT void mag_storage_stream_close(mag_StorageStream* _Nonnull st);
-
-extern MAG_EXPORT bool mag_storage_stream_put_tensor(mag_StorageStream* _Nonnull st, const char* _Nonnull key, mag_Tensor* _Nonnull t);
-extern MAG_EXPORT mag_Tensor* _Nullable mag_storage_stream_get_tensor(mag_StorageStream* _Nonnull st, const char* _Nonnull key);
-extern MAG_EXPORT const char* _Nonnull* _Nonnull mag_storage_stream_get_all_tensor_keys(mag_StorageStream* _Nonnull st, size_t* _Nonnull count);
-extern MAG_EXPORT void mag_storage_stream_get_all_tensor_keys_free_data(const char* _Nonnull* _Nonnull ret_val);
-
 #ifdef __cplusplus
 }
 #endif
