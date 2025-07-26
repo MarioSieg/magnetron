@@ -46,12 +46,27 @@ def broadcast_shape(a: tuple[int,...], b: tuple[int,...]) -> tuple[int,...]:
     rev.extend(longer[:abs(len(a)-len(b))][::-1])
     return tuple(rev[::-1])
 
-def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tuple[int,...], tuple[int,...]]]:
+def iter_shapes(rank: int, lim: int) -> Iterator[tuple[int, ...]]:
+    if rank == 0:
+        yield ()
+        return
+    tup = [1] * rank
+    while True:
+        yield tuple(tup)
+        i = rank - 1
+        while i >= 0 and tup[i] == lim:
+            tup[i] = 1
+            i -= 1
+        if i < 0:
+            break
+        tup[i] += 1
+
+def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tuple[int, ...], tuple[int, ...]]]:
     max_batch_rank = max_total_rank-2
     rng = range(1, lim + 1)
-    for batch_rank in range(max_batch_rank+1):
-        for batch_a in itertools.product(range(1, lim+1), repeat=batch_rank):
-            for batch_b in itertools.product(range(1, lim+1), repeat=batch_rank):
+    for batch_rank in range(max_batch_rank + 1):
+        for batch_a in iter_shapes(batch_rank, lim):
+            for batch_b in iter_shapes(batch_rank, lim):
                 if not broadcastable(batch_a, batch_b):
                     continue
                 batched = broadcast_shape(batch_a, batch_b)
