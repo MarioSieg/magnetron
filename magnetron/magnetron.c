@@ -2516,7 +2516,7 @@ static bool mag_utf8_validate(const char* str, size_t len) {
 
 #define mag_sto_san(expr) do { if (mag_unlikely(!(expr))) return false; } while (0)
 #define mag_sto_san_do(expr, then) do { if (mag_unlikely(!(expr))) { then; } } while (0)
-#define MAG_STO_MAX_STR_LEN 0xffff
+#define MAG_STO_MAX_STR_LEN 65535
 
 static inline bool mag_sto_wu32le(uint8_t** p, uint8_t* e, uint32_t v) {
     mag_sto_san((size_t)(e - *p) <= sizeof(v));
@@ -2577,7 +2577,7 @@ static inline bool mag_sto_rstr(const uint8_t** p, const uint8_t* e, char** str)
     return true;
 }
 
-#define mag_make_magic4(a, b, c, d) ((((d)&0xff)<<24) + (((c)&0xff)<<16) + (((b)&0xff)<<8) + ((a)&0xff))
+#define mag_make_magic4(a, b, c, d) ((((d)&255)<<24) + (((c)&255)<<16) + (((b)&255)<<8) + ((a)&255))
 #define MAG_STO_FILE_MAGIC mag_make_magic4('M', 'A', 'G', '!')
 #define MAG_STO_FILE_HEADER_SIZE (4*1 + 4 + 4 + 4 + 4 + 4)
 
@@ -2592,7 +2592,7 @@ static bool mag_sto_file_hdr_patch_checksum(uint8_t** checksum_needle, uint32_t 
 }
 
 static bool mag_sto_file_hdr_ser(uint8_t** p, uint8_t* e, uint32_t ver, uint32_t num_tensors, uint32_t num_meta_kv, uint8_t** checksum_needle) {
-    mag_sto_san(mag_sto_wu32le(p, e, mag_make_magic4('M', 'A', 'G', '!')));
+    mag_sto_san(mag_sto_wu32le(p, e, MAG_STO_FILE_MAGIC));
     mag_sto_san(mag_sto_wu32le(p, e, ver));
     *checksum_needle = *p; /* Save the pointer to the checksum field. */
     mag_sto_san(mag_sto_wu32le(p, e, 0)); /* Checksum is written later. */

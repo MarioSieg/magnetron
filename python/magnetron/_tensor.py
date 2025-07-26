@@ -554,6 +554,19 @@ class Tensor:
         else:
             C.mag_tensor_fill_int(self._ptr, int(value))
 
+    def masked_fill_(self, mask: Tensor, value: float | int | bool) -> None:
+        assert mask.dtype == boolean, f'Mask tensor must be of boolean dtype, but is {mask.dtype}'
+        self._validate_inplace_op()
+        if self.dtype.is_floating_point:
+            C.mag_tensor_masked_fill_float(self._ptr, mask._ptr, float(value))
+        else:
+            C.mag_tensor_masked_fill_int(self._ptr, mask._ptr, int(value))
+
+    def masked_fill(self, mask: Tensor, value: float | int | bool) -> Tensor:
+        filled = self.clone()
+        filled.masked_fill_(mask, value)
+        return filled
+
     def fill_random_uniform_(self, low: float | int | None = None, high: float | int | None = None) -> None:
         self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         self._validate_inplace_op()

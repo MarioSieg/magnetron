@@ -2,14 +2,23 @@
 
 from ..common import *
 
-def test_tensor_clone() -> None:
-    a = Tensor.of([[1, 2], [3, 4]])
-    b = a.clone()
-    assert a.shape == b.shape
-    assert a.numel == b.numel
-    assert a.rank == b.rank
-    assert a.tolist() == b.tolist()
-    assert a.is_contiguous == b.is_contiguous
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_clone(dtype: DataType) -> None:
+    def func(shape: tuple[int, ...]) -> None:
+        if dtype == boolean:
+            x = Tensor.bernoulli(shape)
+        else:
+            x = Tensor.uniform(shape, dtype=dtype)
+        a = x
+        b = a.clone()
+        assert a.shape == b.shape
+        assert a.strides == b.strides
+        assert a.numel == b.numel
+        assert a.rank == b.rank
+        assert a.is_contiguous == b.is_contiguous
+        assert a.tolist() == b.tolist()
+
+    square_shape_permutations(func, 4)
 
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])

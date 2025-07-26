@@ -1725,6 +1725,114 @@ static MAG_HOTPROC void mag_blas_init_broadcast_i32(const mag_CPUKernelPayload* 
         b_r[i] = xi;
 }
 
+static MAG_HOTPROC void mag_blas_init_masked_broadcast_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    mag_E8M23 yi = mag_op_param_unpack_e8m23_or_panic(r->init_op_params[0]);
+    const mag_Tensor* mask = (const mag_Tensor*)(uintptr_t)mag_op_param_unpack_i64_or_panic(r->init_op_params[1]);
+    mag_E8M23* br = mag_e8m23p_mut(r);
+    const uint8_t* bm = mag_boolp(mask);
+    int64_t total = r->numel;
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    int64_t rx = r->rank - mask->rank;
+    for (int64_t i=ra; i < rb; ++i) {
+        int64_t ax = i;
+        int64_t xi = 0;
+        for (int64_t d=r->rank-1; d >= 0; --d) {
+            int64_t coord = ax % r->shape[d];
+            ax /= r->shape[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && mask->shape[dx] > 1)
+                xi += coord*mask->strides[dx];
+        }
+        if (bm[xi]) br[i] = yi;
+    }
+}
+
+static MAG_HOTPROC void mag_blas_init_masked_broadcast_e5m10(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    mag_E5M10 yi = mag_e8m23_cvt_e5m10(mag_op_param_unpack_e8m23_or_panic(r->init_op_params[0]));
+    const mag_Tensor* mask = (const mag_Tensor*)(uintptr_t)mag_op_param_unpack_i64_or_panic(r->init_op_params[1]);
+    mag_E5M10* br = mag_e5m10p_mut(r);
+    const uint8_t* bm = mag_boolp(mask);
+    int64_t total = r->numel;
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    int64_t rx = r->rank - mask->rank;
+    for (int64_t i=ra; i < rb; ++i) {
+        int64_t ax = i;
+        int64_t xi = 0;
+        for (int64_t d=r->rank-1; d >= 0; --d) {
+            int64_t coord = ax % r->shape[d];
+            ax /= r->shape[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && mask->shape[dx] > 1)
+                xi += coord*mask->strides[dx];
+        }
+        if (bm[xi]) br[i] = yi;
+    }
+}
+
+static MAG_HOTPROC void mag_blas_init_masked_broadcast_i32(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    int32_t yi = (int32_t)mag_op_param_unpack_i64_or_panic(r->init_op_params[0]);
+    const mag_Tensor* mask = (const mag_Tensor*)(uintptr_t)mag_op_param_unpack_i64_or_panic(r->init_op_params[1]);
+    int32_t* br = mag_i32p_mut(r);
+    const uint8_t* bm = mag_boolp(mask);
+    int64_t total = r->numel;
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    int64_t rx = r->rank - mask->rank;
+    for (int64_t i=ra; i < rb; ++i) {
+        int64_t ax = i;
+        int64_t xi = 0;
+        for (int64_t d=r->rank-1; d >= 0; --d) {
+            int64_t coord = ax % r->shape[d];
+            ax /= r->shape[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && mask->shape[dx] > 1)
+                xi += coord*mask->strides[dx];
+        }
+        if (bm[xi]) br[i] = yi;
+    }
+}
+
+static MAG_HOTPROC void mag_blas_init_masked_broadcast_bool(const mag_CPUKernelPayload* _Nonnull payload) {
+    mag_Tensor* r = payload->node;
+    uint8_t yi = (uint8_t)mag_op_param_unpack_i64_or_panic(r->init_op_params[0]);
+    const mag_Tensor* mask = (const mag_Tensor*)(uintptr_t)mag_op_param_unpack_i64_or_panic(r->init_op_params[1]);
+    uint8_t* br = mag_boolp_mut(r);
+    const uint8_t* bm = mag_boolp(mask);
+    int64_t total = r->numel;
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
+    int64_t rx = r->rank - mask->rank;
+    for (int64_t i=ra; i < rb; ++i) {
+        int64_t ax = i;
+        int64_t xi = 0;
+        for (int64_t d=r->rank-1; d >= 0; --d) {
+            int64_t coord = ax % r->shape[d];
+            ax /= r->shape[d];
+            int64_t dx = d - rx;
+            if (dx >= 0 && mask->shape[dx] > 1)
+                xi += coord*mask->strides[dx];
+        }
+        if (bm[xi]) br[i] = yi;
+    }
+}
+
 static MAG_HOTPROC void mag_blas_init_rand_uniform_e8m23(const mag_CPUKernelPayload* _Nonnull payload) {
     mag_Tensor* r = payload->node;
     mag_E8M23 min = mag_op_param_unpack_e8m23_or_panic(r->init_op_params[0]);
@@ -8063,6 +8171,12 @@ static void (*_Nonnull const mag_blas_lut_init_kernels[MAG_IOP__NUM][MAG_DTYPE__
         [MAG_DTYPE_E5M10] = &mag_blas_init_broadcast_e5m10,
         [MAG_DTYPE_BOOL] = &mag_blas_init_broadcast_bool,
         [MAG_DTYPE_I32] = &mag_blas_init_broadcast_i32,
+    },
+    [MAG_IOP_MASKED_BROADCAST] = {
+        [MAG_DTYPE_E8M23] = &mag_blas_init_masked_broadcast_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_blas_init_masked_broadcast_e5m10,
+        [MAG_DTYPE_BOOL] = &mag_blas_init_masked_broadcast_bool,
+        [MAG_DTYPE_I32] = &mag_blas_init_masked_broadcast_i32,
     },
     [MAG_IOP_RAND_UNIFORM] = {
         [MAG_DTYPE_E8M23] = &mag_blas_init_rand_uniform_e8m23,

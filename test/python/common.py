@@ -19,11 +19,16 @@ DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
     boolean: torch.bool
 }
 
+def totorch_dtype(dtype: DataType) -> torch.dtype:
+    if dtype not in DTYPE_TORCH_MAP:
+        raise ValueError(f'Unsupported dtype: {dtype}')
+    return DTYPE_TORCH_MAP[dtype]
+
 def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) -> torch.Tensor:
     if not isinstance(obj, Tensor) and not isinstance(obj, torch.Tensor):
         return obj
     if dtype is None:
-        dtype = DTYPE_TORCH_MAP[obj.dtype]
+        dtype = totorch_dtype(obj.dtype)
     return torch.tensor(obj.tolist(), dtype=dtype).reshape(obj.shape)
 
 def square_shape_permutations(f: callable, lim: int) -> None:

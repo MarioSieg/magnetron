@@ -738,6 +738,7 @@ mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 typedef enum mag_InitOperator {
     MAG_IOP_NOP,
     MAG_IOP_BROADCAST,
+    MAG_IOP_MASKED_BROADCAST,
     MAG_IOP_RAND_UNIFORM,
     MAG_IOP_RAND_NORMAL,
     MAG_IOP_RAND_BERNOULLI,

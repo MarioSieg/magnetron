@@ -305,6 +305,8 @@ extern MAG_EXPORT void mag_tensor_fill_from_floats(mag_Tensor* _Nonnull t, const
 extern MAG_EXPORT void mag_tensor_fill_from_raw_bytes(mag_Tensor* _Nonnull t, const void* _Nonnull data, size_t len);     /* Copy raw bytes into tensor buffer */
 extern MAG_EXPORT void mag_tensor_fill_float(mag_Tensor* _Nonnull t, float x);                                            /* Set all tensor elements to a specific value. */
 extern MAG_EXPORT void mag_tensor_fill_int(mag_Tensor* _Nonnull t, int32_t x);                                            /* Set all tensor elements to a specific value. */
+extern MAG_EXPORT void mag_tensor_masked_fill_float(mag_Tensor* _Nonnull t, mag_Tensor* _Nonnull mask, float x);          /* Set all tensor elements to a specific value if the mask value at the same index is true. */
+extern MAG_EXPORT void mag_tensor_masked_fill_int(mag_Tensor* _Nonnull t, mag_Tensor* _Nonnull mask, int32_t x);          /* Set all tensor elements to a specific value if the mask value at the same index is true. */
 extern MAG_EXPORT void mag_tensor_fill_random_uniform_float(mag_Tensor* _Nonnull t, float min, float max);                /* Fill tensor with random values from uniform distribution within [min, max] */
 extern MAG_EXPORT void mag_tensor_fill_random_uniform_int(mag_Tensor* _Nonnull t, int32_t min, int32_t max);              /* Fill tensor with random values from uniform distribution within [min, max] */
 extern MAG_EXPORT void mag_tensor_fill_random_normal(mag_Tensor* _Nonnull t, float mean, float stddev);                   /* Fill tensor with random values from the normal distribution. */

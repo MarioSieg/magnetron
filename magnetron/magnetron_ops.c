@@ -1158,6 +1158,30 @@ void mag_tensor_fill_int(mag_Tensor* t, int32_t x) {
     mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
 }
 
+void mag_tensor_masked_fill_float(mag_Tensor* t, mag_Tensor* mask, mag_E8M23 x) {
+    mag_assert2(mag_tensor_is_floating_point_typed(t));
+    mag_assert2(mask->dtype == MAG_DTYPE_BOOL);
+    t->init_op = MAG_IOP_MASKED_BROADCAST;
+    mag_OPParamLayout layout;
+    mag_op_param_layout_init(&layout);
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(x));
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64((int64_t)(uintptr_t)mask));
+    mag_op_param_layout_transfer(&layout, &t->init_op_params);
+    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+}
+
+void mag_tensor_masked_fill_int(mag_Tensor* t, mag_Tensor* mask, int32_t x) {
+    mag_assert2(mag_tensor_is_integral_typed(t));
+    mag_assert2(mask->dtype == MAG_DTYPE_BOOL);
+    t->init_op = MAG_IOP_MASKED_BROADCAST;
+    mag_OPParamLayout layout;
+    mag_op_param_layout_init(&layout);
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(x));
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64((int64_t)(uintptr_t)mask));
+    mag_op_param_layout_transfer(&layout, &t->init_op_params);
+    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+}
+
 void mag_tensor_fill_random_uniform_float(mag_Tensor* t, mag_E8M23 min, mag_E8M23 max) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
     t->init_op = MAG_IOP_RAND_UNIFORM;
