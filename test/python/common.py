@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import itertools
 import random
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Iterator
 
 import torch
 import pytest
@@ -31,15 +32,37 @@ def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) 
         dtype = totorch_dtype(obj.dtype)
     return torch.tensor(obj.tolist(), dtype=dtype).reshape(obj.shape)
 
+def broadcastable(a: tuple[int,...], b: tuple[int,...]) -> bool:
+    for x, y in zip(a[::-1], b[::-1]):
+        if not (x == y or x == 1 or y == 1):
+            return False
+    return True
+
+def broadcast_shape(a: tuple[int,...], b: tuple[int,...]) -> tuple[int,...]:
+    rev = []
+    for x, y in zip(a[::-1], b[::-1]):
+        rev.append(max(x, y))
+    longer = a if len(a) > len(b) else b
+    rev.extend(longer[:abs(len(a)-len(b))][::-1])
+    return tuple(rev[::-1])
+
+def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tuple[int,...], tuple[int,...]]]:
+    max_batch_rank = max_total_rank-2
+    for batch_rank in range(max_batch_rank+1):
+        for batch_a in itertools.product(range(1, lim+1), repeat=batch_rank):
+            for batch_b in itertools.product(range(1, lim+1), repeat=batch_rank):
+                if not broadcastable(batch_a, batch_b):
+                    continue
+                batched = broadcast_shape(batch_a, batch_b)
+                for M, K, N in itertools.product(range(1, lim+1), repeat=3):
+                    shape_A = (*batched, M, K)
+                    shape_B = (*batched, K, N)
+                    yield shape_A, shape_B
+
 def square_shape_permutations(f: callable, lim: int) -> None:
     lim += 1
-    for i0 in range(1, lim):
-        for i1 in range(1, lim):
-            for i2 in range(1, lim):
-                for i3 in range(1, lim):
-                    for i4 in range(1, lim):
-                        for i5 in range(1, lim):
-                            f((i0, i1, i2, i3, i4, i5))
+    for shape in itertools.product(range(1, lim+1), repeat=MAX_DIMS):
+        f(shape)
 
 @unique
 class BinaryOpParamKind(Enum):

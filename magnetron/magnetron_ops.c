@@ -143,18 +143,39 @@ static bool mag_verify_dtype_compat(mag_StrStream** ss, mag_Operator op, mag_Ten
     return true;
 }
 static bool mag_verify_can_matmul(mag_StrStream** ss, const mag_Tensor* x, const mag_Tensor* y) {
-    if (mag_unlikely(y->shape[0] != x->shape[1])) {
-        char fmt_shape_x[MAG_FMT_DIM_BUF_SIZE];
-        char fmt_shape_y[MAG_FMT_DIM_BUF_SIZE];
-        mag_fmt_shape(&fmt_shape_x, &x->shape, x->rank);
-        mag_fmt_shape(&fmt_shape_y, &y->shape, y->rank);
-        mag_push_verification_error(ss,
-            "Shape mismatch: %s cannot be matrix-multiplied with %s\n"
-            "    Hint: Tensors must have compatible shapes for matrix multiplication.\n",
-            fmt_shape_x, fmt_shape_y
-        );
+    int64_t k_x = x->shape[x->rank - 1]; /* Find contracted dims */
+    int64_t k_y = y->rank == 1 ? y->shape[0] : y->rank == 2 && x->rank == 1 ? y->shape[0] : y->shape[y->rank-2];
+    if (k_x != k_y) {
+        char fmt_x[MAG_FMT_DIM_BUF_SIZE], fmt_y[MAG_FMT_DIM_BUF_SIZE];
+        mag_fmt_shape(&fmt_x, &x->shape, x->rank);
+        mag_fmt_shape(&fmt_y, &y->shape, y->rank);
+        mag_push_verification_error(
+            ss,
+            "Shape mismatch: %s cannot be matrix-multiplied with %s "
+            "(contracted dims %" PRIi64 " != %" PRIi64 ")\n",
+            fmt_x, fmt_y, k_x, k_y);
         return false;
     }
+    /* verify broadcastability of batch dims */
+    int64_t x_bd = x->rank > 2 ? x->rank-2 : 0;
+    int64_t y_bd = y->rank > 2 ? y->rank-2 : 0;
+    int64_t r_bd = x_bd > y_bd ? x_bd : y_bd;
+    for (int64_t i = 0; i < r_bd; ++i) {
+        int64_t x_dim = i < r_bd-x_bd ? 1 : x->shape[i-(r_bd-x_bd)];
+        int64_t y_dim = i < r_bd-y_bd ? 1 : y->shape[i-(r_bd-y_bd)];
+        if (x_dim != y_dim && x_dim != 1 && y_dim != 1) {
+            char fmt_x[MAG_FMT_DIM_BUF_SIZE], fmt_y[MAG_FMT_DIM_BUF_SIZE];
+            mag_fmt_shape(&fmt_x, &x->shape, x->rank);
+            mag_fmt_shape(&fmt_y, &y->shape, y->rank);
+            mag_push_verification_error(
+                ss,
+                "Cannot broadcast batch dims of %s and %s for matmul\n",
+                fmt_x, fmt_y);
+            return false;
+        }
+    }
+    return true;
+
     return true;
 }
 static bool mag_verify_is_contiguous(mag_StrStream** ss, const mag_Tensor* x) {
@@ -319,25 +340,34 @@ static mag_Tensor* mag_result_constructor_routine_permuted(mag_Tensor** inputs, 
 
 static mag_Tensor* mag_result_constructor_routine_matmul(mag_Tensor** inputs,  const mag_OPParam* params) { /* MxR = MxN * NxR */
     (void)params;
-    int64_t shape[MAG_MAX_DIMS] = {0};
-    int64_t* rd0 = shape;
-    int64_t* rd1 = shape+1;
-    int64_t rank = 0;
-    if (inputs[0]->rank == 1 && inputs[1]->rank == 2) { /* (ℝⁿ)(ℝⁿˣʳ) → ℝʳ */
-        *rd0 = 1;
-        *rd1 = inputs[1]->shape[1];
-        rank = 2;
-    } else if (inputs[0]->rank == 2 && inputs[1]->rank == 1) { /* (ℝᵐˣⁿ)(ℝⁿ) → ℝᵐ */
-        *rd0 = inputs[0]->shape[0];
-        rank = 1;
-    } else if (inputs[0]->rank == 1 && inputs[1]->rank == 1) { /* (ℝⁿ)(ℝⁿ) → ℝ */
-        rank = 1;
-    } else { /* (ℝᵐˣⁿ)(ℝⁿˣʳ) → ℝᵐˣʳ */
-        *rd0 = inputs[0]->shape[0];
-        *rd1 = inputs[1]->shape[1];
-        rank = 2;
+    mag_Tensor* a = inputs[0];
+    mag_Tensor* b = inputs[1];
+    /* Handle degenerate 1D cases first */
+    if (a->rank == 1 && b->rank == 1) { /* (K)x(K) -> () */
+        int64_t shape[1] = {1};
+        return mag_tensor_init_internal(a->ctx, a->dtype, 1, shape, NULL, 0);
     }
-    return mag_tensor_init_internal(inputs[0]->ctx, inputs[0]->dtype, rank, shape, NULL, 0);
+    if (a->rank == 1 && b->rank == 2) { /* (K)x(K,N) -> (N) */
+        int64_t shape[1] = {b->shape[1]};
+        return mag_tensor_init_internal(a->ctx, a->dtype, 1, shape, NULL, 0);
+    }
+    if (a->rank == 2 && b->rank == 1) { /* (M,K)x(K) -> (M) */
+        int64_t shape[1] = {a->shape[0]};
+        return mag_tensor_init_internal(a->ctx, a->dtype, 1, shape, NULL, 0);
+    }
+    /* Batched ND version */
+    int64_t a_bd = a->rank-2;
+    int64_t b_bd = b->rank-2;
+    int64_t r_bd = a_bd > b_bd ? a_bd : b_bd;
+    int64_t shape[MAG_MAX_DIMS] = {0};
+    for (int64_t i=0; i < r_bd; ++i) {
+        int64_t a_dim = i < r_bd-a_bd ? 1 : a->shape[i-(r_bd-a_bd)];
+        int64_t b_dim = i < r_bd-b_bd ? 1 : b->shape[i-(r_bd-b_bd)];
+        shape[i] = a_dim > b_dim ? a_dim : b_dim;
+    }
+    shape[r_bd] = a->shape[a->rank-2];    /* M */
+    shape[r_bd+1] = b->shape[b->rank-1];    /* N */
+    return mag_tensor_init_internal(a->ctx, a->dtype, r_bd + 2, shape, NULL, 0);
 }
 
 static mag_Tensor* mag_result_constructor_routine_repeat_back(mag_Tensor** inputs,  const mag_OPParam* params) {
