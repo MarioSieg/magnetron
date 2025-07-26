@@ -48,21 +48,30 @@ def broadcast_shape(a: tuple[int,...], b: tuple[int,...]) -> tuple[int,...]:
 
 def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tuple[int,...], tuple[int,...]]]:
     max_batch_rank = max_total_rank-2
+    rng = range(1, lim + 1)
     for batch_rank in range(max_batch_rank+1):
         for batch_a in itertools.product(range(1, lim+1), repeat=batch_rank):
             for batch_b in itertools.product(range(1, lim+1), repeat=batch_rank):
                 if not broadcastable(batch_a, batch_b):
                     continue
                 batched = broadcast_shape(batch_a, batch_b)
-                for M, K, N in itertools.product(range(1, lim+1), repeat=3):
-                    shape_A = (*batched, M, K)
-                    shape_B = (*batched, K, N)
-                    yield shape_A, shape_B
+                for M in rng:
+                    for K in rng:
+                        for N in rng:
+                            shape_A = (*batched, M, K)
+                            shape_B = (*batched, K, N)
+                            yield shape_A, shape_B
 
 def square_shape_permutations(f: callable, lim: int) -> None:
     lim += 1
-    for shape in itertools.product(range(1, lim+1), repeat=MAX_DIMS):
-        f(shape)
+    for i0 in range(1, lim): # We don't use itertools.product as it is noticeable slower
+        for i1 in range(1, lim):
+            for i2 in range(1, lim):
+                for i3 in range(1, lim):
+                    for i4 in range(1, lim):
+                        for i5 in range(1, lim):
+                            f((i0, i1, i2, i3, i4, i5))
+
 
 @unique
 class BinaryOpParamKind(Enum):
