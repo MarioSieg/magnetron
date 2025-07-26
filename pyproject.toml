@@ -33,7 +33,8 @@ dev = [
     "numpy",
     "transformers",
     "matplotlib",
-    "pytest"
+    "pytest",
+    "pytest-xdist"
 ]
 
 [tool.scikit-build.cmake.define]
