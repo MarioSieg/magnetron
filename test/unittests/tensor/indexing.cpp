@@ -33,6 +33,39 @@ TEST(cpu_tensor_indexing, subscript_flattened_e5m10) {
     });
 }
 
+TEST(cpu_tensor_indexing, view) {
+    constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
+    auto ctx = context{compute_device::cpu};
+    tensor base {ctx, dtype::e8m23, shape};
+    tensor view = base.view();
+    ASSERT_EQ(view.rank(), 3);
+    ASSERT_EQ(view.shape()[0], 8);
+    ASSERT_EQ(view.shape()[1], 3);
+    ASSERT_EQ(view.shape()[2], 4);
+    ASSERT_TRUE(view.is_view());
+    ASSERT_EQ(view.strides()[0], base.strides()[0]);
+    auto base_addr = std::bit_cast<std::uintptr_t>(base.data_ptr());
+    auto view_addr = std::bit_cast<std::uintptr_t>(view.data_ptr());
+    ASSERT_EQ(view_addr, base_addr);
+}
+
+TEST(cpu_tensor_indexing, view_of_view) {
+    constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
+    auto ctx = context{compute_device::cpu};
+    tensor base {ctx, dtype::e8m23, shape};
+    tensor view1 = base.view();
+    tensor view2 = view1.view();
+    ASSERT_EQ(view2.rank(), 3);
+    ASSERT_EQ(view2.shape()[0], 8);
+    ASSERT_EQ(view2.shape()[1], 3);
+    ASSERT_EQ(view2.shape()[2], 4);
+    ASSERT_TRUE(view2.is_view());
+    ASSERT_EQ(view2.strides()[0], base.strides()[0]);
+    auto base_addr = std::bit_cast<std::uintptr_t>(base.data_ptr());
+    auto view_addr = std::bit_cast<std::uintptr_t>(view2.data_ptr());
+    ASSERT_EQ(view_addr, base_addr);
+}
+
 TEST(cpu_tensor_indexing, view_slice_positive_step) {
     constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{compute_device::cpu};
@@ -48,6 +81,18 @@ TEST(cpu_tensor_indexing, view_slice_positive_step) {
     auto view_addr = std::bit_cast<std::uintptr_t>(view.data_ptr());
     std::uintptr_t expected = base_addr + 2*base.strides()[0] * sizeof(e8m23_t);
     ASSERT_EQ(view_addr, expected);
+}
+
+TEST(cpu_tensor_indexing, view_of_view_slice) {
+    constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
+    auto ctx = context{compute_device::cpu};
+    tensor base {ctx, dtype::e8m23, shape};
+    tensor view1 = base.view_slice(0, 2, 3, 1);
+    tensor view2 = view1.view({9, 4}); // view of view
+    ASSERT_EQ(view2.rank(), 2);
+    ASSERT_EQ(view2.shape()[0], 9);
+    ASSERT_EQ(view2.shape()[1], 4);
+    ASSERT_TRUE(view2.is_view());
 }
 
 TEST(cpu_tensor_indexing, view_slice_chain_accumulates_offset) {

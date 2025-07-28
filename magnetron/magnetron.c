@@ -1015,7 +1015,7 @@ mag_Tensor* mag_tensor_init_internal(mag_Context* ctx, mag_DType type, int64_t r
     uintptr_t tr_id = mag_thread_id();
     mag_assert(tr_id == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", tr_id, ctx->tr_id);     /* Ensure that the tensor is created on the same thread as the context. */
     mag_assert(shape != NULL && rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within (0, %d]", MAG_MAX_DIMS); /* Check rank */
-    int64_t dts = mag_dtype_meta_of(type)->size;
+    int64_t dts = (int64_t)mag_dtype_meta_of(type)->size;
     int64_t numel = 1;
     for (int64_t i=0; i < rank; ++i) /* Calculate buffer size and check for overflow. */
         mag_assert2(shape[i] > 0 && !mag_imull64_ov(shape[i], numel, &numel)); /* Overflow in buffer size. Max: INT64_MAX. Reduce dimensions. */

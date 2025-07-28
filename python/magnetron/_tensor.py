@@ -511,6 +511,21 @@ class Tensor:
         view_dims: FFI.CData = FFI.new(f'int64_t[{num_dims}]', dims)
         return Tensor(C.mag_view(self._ptr, view_dims, num_dims))
 
+    def split(self, chunk_size: int, dim: int = 0) -> tuple[Tensor, ...]:
+        assert chunk_size > 0, 'chunk_size must be greater than 0, got {chunk_size}'
+        assert (-self.rank <= dim < self.rank), f'Dimension {dim} out of range for tensor with rank {self.rank}'
+        dim = dim % self.rank
+        size = self.shape[dim]
+        n_chunks = (size + chunk_size - 1) // chunk_size
+        chunks = []
+        start = 0
+        for _ in range(n_chunks):
+            length = min(chunk_size, size - start)
+            view = Tensor(C.mag_view_slice(self._ptr, dim, start, length, 1))
+            chunks.append(view)
+            start += chunk_size
+        return tuple(chunks)
+
     def reshape(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(dims)
         num_dims: int = len(dims)
