@@ -8,9 +8,9 @@
 
 #include <stdarg.h>
 
-extern mag_Tensor* mag_tensor_init_internal(mag_Context* ctx, mag_DType type, int64_t rank, const int64_t* shape, mag_Tensor* view, size_t view_offs);
+extern mag_tensor_t* mag_tensor_init_internal(mag_context_t* ctx, mag_dtype_t type, int64_t rank, const int64_t* shape, mag_tensor_t* view, size_t view_offs);
 
-static mag_Tensor* mag_tensor_inplace_view(mag_Tensor* base) {
+static mag_tensor_t* mag_tensor_inplace_view(mag_tensor_t* base) {
     return mag_tensor_init_internal(base->ctx, base->dtype, base->rank, base->shape, base, 0);
 }
 
@@ -20,8 +20,8 @@ static mag_Tensor* mag_tensor_inplace_view(mag_Tensor* base) {
 ** ###################################################################################################################
 */
 
-static bool mag_op_requires_op_params(mag_Operator op) { /* Returns true if the op requires any op params and thus requires validation of them. */
-    const mag_OPMetadata* meta = mag_op_meta_of(op);
+static bool mag_op_requires_op_params(mag_opcode_t op) { /* Returns true if the op requires any op params and thus requires validation of them. */
+    const mag_opmeta_t* meta = mag_op_meta_of(op);
     for (int i=0; i < MAG_MAX_OP_PARAMS; ++i) {
         if (meta->op_param_layout[i] != MAG_OPP_NONE) {
             return true;
@@ -31,14 +31,14 @@ static bool mag_op_requires_op_params(mag_Operator op) { /* Returns true if the 
 }
 
 static void mag_assert_correct_op_data(
-    mag_Operator op,
-    mag_Tensor** inputs,
+    mag_opcode_t op,
+    mag_tensor_t** inputs,
     uint32_t num_inputs,
-    const mag_OPParam* op_params,
+    const mag_opparam_t* op_params,
     uint32_t num_op_params
 ) {
     mag_assert(op != MAG_OP_NOP, "invalid operation: %d", op);
-    const mag_OPMetadata* meta = mag_op_meta_of(op);
+    const mag_opmeta_t* meta = mag_op_meta_of(op);
 
     /* Check input tensors */
     mag_assert(inputs != NULL, "input tensors for operation '%s' are NULL", meta->mnemonic);
@@ -63,19 +63,19 @@ static void mag_assert_correct_op_data(
     }
 }
 
-static void mag_push_verification_error(mag_StrStream** ss, const char* fmt, ...) {
+static void mag_push_verification_error(mag_sstream_t** ss, const char* fmt, ...) {
     if (!*ss) {  /* Lazy init error stream if needed */
         *ss = (*mag_alloc)(NULL, sizeof(**ss), 0);
-        mag_strstream_init(*ss);
+        mag_sstream_init(*ss);
     }
     va_list ap;
     va_start(ap, fmt);
-    mag_strstream_vappend(*ss, fmt, ap);
+    mag_sstream_vappend(*ss, fmt, ap);
     va_end(ap);
-    mag_strstream_putc(*ss, '\n');
+    mag_sstream_putc(*ss, '\n');
 }
 
-static bool mag_verify_is_shape_eq(mag_StrStream** ss, const mag_Tensor* x, const mag_Tensor* y) {
+static bool mag_verify_is_shape_eq(mag_sstream_t** ss, const mag_tensor_t* x, const mag_tensor_t* y) {
     if (mag_unlikely(!mag_tensor_is_shape_eq(x, y))) {
         char fmt_shape_x[MAG_FMT_DIM_BUF_SIZE];
         char fmt_shape_y[MAG_FMT_DIM_BUF_SIZE];
@@ -90,7 +90,7 @@ static bool mag_verify_is_shape_eq(mag_StrStream** ss, const mag_Tensor* x, cons
     }
     return true;
 }
-static bool mag_verify_is_min_rank(mag_StrStream** ss, const mag_Tensor* x, int64_t min_rank) {
+static bool mag_verify_is_min_rank(mag_sstream_t** ss, const mag_tensor_t* x, int64_t min_rank) {
     if (mag_unlikely(x->rank < min_rank)) {
         mag_push_verification_error(ss,
             "Rank >= %" PRIi64 " required, but is: %" PRIi64
@@ -101,7 +101,7 @@ static bool mag_verify_is_min_rank(mag_StrStream** ss, const mag_Tensor* x, int6
     }
     return true;
 }
-static bool mag_verify_can_broadcast(mag_StrStream** ss, const mag_Tensor* x, const mag_Tensor* y) {
+static bool mag_verify_can_broadcast(mag_sstream_t** ss, const mag_tensor_t* x, const mag_tensor_t* y) {
     if (mag_unlikely(!mag_tensor_can_broadcast(y, x))) {
         char fmt_shape_x[MAG_FMT_DIM_BUF_SIZE];
         char fmt_shape_y[MAG_FMT_DIM_BUF_SIZE];
@@ -116,8 +116,8 @@ static bool mag_verify_can_broadcast(mag_StrStream** ss, const mag_Tensor* x, co
     }
     return true;
 }
-static bool mag_verify_dtype_compat(mag_StrStream** ss, mag_Operator op, mag_Tensor** inputs) {
-    const mag_OPMetadata* meta = mag_op_meta_of(op);
+static bool mag_verify_dtype_compat(mag_sstream_t** ss, mag_opcode_t op, mag_tensor_t** inputs) {
+    const mag_opmeta_t* meta = mag_op_meta_of(op);
     for (uint32_t i=0; i < meta->input_count; ++i) { /* Check that the input data types are supported by the operator. */
         bool supported = meta->dtype_mask & mag_dtype_bit(inputs[i]->dtype);
         if (mag_unlikely(!supported)) {
@@ -142,7 +142,7 @@ static bool mag_verify_dtype_compat(mag_StrStream** ss, mag_Operator op, mag_Ten
     }
     return true;
 }
-static bool mag_verify_can_matmul(mag_StrStream** ss, const mag_Tensor* x, const mag_Tensor* y) {
+static bool mag_verify_can_matmul(mag_sstream_t** ss, const mag_tensor_t* x, const mag_tensor_t* y) {
     int64_t k_x = x->shape[x->rank - 1]; /* Find contracted dims */
     int64_t k_y = y->rank == 1 ? y->shape[0] : y->rank == 2 && x->rank == 1 ? y->shape[0] : y->shape[y->rank-2];
     if (k_x != k_y) {
@@ -178,7 +178,7 @@ static bool mag_verify_can_matmul(mag_StrStream** ss, const mag_Tensor* x, const
 
     return true;
 }
-static bool mag_verify_is_contiguous(mag_StrStream** ss, const mag_Tensor* x) {
+static bool mag_verify_is_contiguous(mag_sstream_t** ss, const mag_tensor_t* x) {
     if (mag_unlikely(!mag_tensor_is_contiguous(x))) {
         mag_push_verification_error(ss,
             "Tensor is not contiguous: %s\n"
@@ -188,7 +188,7 @@ static bool mag_verify_is_contiguous(mag_StrStream** ss, const mag_Tensor* x) {
     }
     return true;
 }
-static bool mag_verify_is_inplace_and_grad_mode_off(mag_StrStream** ss, const mag_Tensor* result, bool is_inplace) {
+static bool mag_verify_is_inplace_and_grad_mode_off(mag_sstream_t** ss, const mag_tensor_t* result, bool is_inplace) {
     if (mag_unlikely(is_inplace && (result->ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && (result->flags & MAG_TFLAG_REQUIRES_GRAD))) {
         mag_push_verification_error(ss,
             "Inplace operation is not allowed when recording gradients: %s\n"
@@ -200,7 +200,7 @@ static bool mag_verify_is_inplace_and_grad_mode_off(mag_StrStream** ss, const ma
     return true;
 }
 
-static bool mag_validate_op_unary(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
+static bool mag_validate_op_unary(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     bool ok = true;
     ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
     ok = ok && mag_verify_dtype_compat(ss, result->op, inputs);                     /* Check if the operator is defined between the given dtypes */
@@ -208,7 +208,7 @@ static bool mag_validate_op_unary(mag_StrStream** ss, bool is_inplace, mag_Tenso
     ok = ok && mag_verify_is_contiguous(ss, result);                                /* Check if result is contiguous */
     return ok;
 }
-static bool mag_validate_op_view(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
+static bool mag_validate_op_view(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     bool ok = true;
     ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
     ok = ok && mag_verify_dtype_compat(ss, result->op, inputs);                     /* Check if the operator is defined between the given dtypes */
@@ -216,12 +216,12 @@ static bool mag_validate_op_view(mag_StrStream** ss, bool is_inplace, mag_Tensor
     ok = ok && mag_verify_is_contiguous(ss, inputs[0]);                             /* Check if x is contiguous */
     return ok;
 }
-static bool mag_validate_op_unary_matrix(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
+static bool mag_validate_op_unary_matrix(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     bool ok = mag_validate_op_unary(ss, is_inplace, result, inputs, params);
     ok = ok && mag_verify_is_min_rank(ss, result, 2); /* Verify that we have a matrix or higher-dimensional (rank >= 2). */
     return ok;
 }
-static bool mag_validate_op_binary(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
+static bool mag_validate_op_binary(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     bool ok = true;
     ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
     ok = ok && mag_verify_dtype_compat(ss, result->op, inputs);                     /* Check if the operator is defined between the given dtypes */
@@ -230,20 +230,20 @@ static bool mag_validate_op_binary(mag_StrStream** ss, bool is_inplace, mag_Tens
     ok = ok && mag_verify_is_contiguous(ss, result);                                /* Check if result is contiguous TODO: this is always true? */
     return ok;
 }
-static bool mag_validate_op_transpose(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
+static bool mag_validate_op_transpose(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return true; /* TODO */
 }
-static bool mag_validate_op_scalar(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
+static bool mag_validate_op_scalar(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace) &&   /* Check if inplace operation is allowed */
         mag_verify_dtype_compat(ss, result->op, inputs) &&                      /* Check if the operator is defined between the given dtypes */
         mag_verify_is_contiguous(ss, inputs[0]);                                /* Check if X is contiguous */
 }
-static bool mag_validate_op_matmul(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
+static bool mag_validate_op_matmul(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_verify_can_matmul(ss, inputs[0], inputs[1]) &&   /* Check if inputs can be matrix-multiplied */
         mag_verify_dtype_compat(ss, result->op, inputs) &&          /* Check if the operator is defined between the given dtypes */
         mag_verify_is_contiguous(ss, result);                       /* Check if result is contiguous TODO: this is always true? */
 }
-static bool mag_validate_op_repeat_rev(mag_StrStream** ss, bool is_inplace, mag_Tensor* result, mag_Tensor** inputs, const mag_OPParam* params) {
+static bool mag_validate_op_repeat_rev(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_verify_can_broadcast(ss, inputs[0], inputs[1]) &&    /* Check if inputs can be matrix-multiplied */
         mag_verify_dtype_compat(ss, result->op, inputs) &&              /* Check if the operator is defined between the given dtypes */
         mag_verify_is_contiguous(ss, result);                           /* Check if result is contiguous. TODO: this is always true? */
@@ -255,17 +255,17 @@ static bool mag_validate_op_repeat_rev(mag_StrStream** ss, bool is_inplace, mag_
 ** ###################################################################################################################
 */
 
-static mag_Tensor* mag_result_constructor_routine_isomorph(mag_Tensor** inputs, const mag_OPParam* params) {
+static mag_tensor_t* mag_result_constructor_routine_isomorph(mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_tensor_empty_like(*inputs);
 }
 
-static mag_Tensor* mag_result_constructor_routine_bool_isomorph(mag_Tensor** inputs, const mag_OPParam* params) {
-    mag_Tensor* base = *inputs;
+static mag_tensor_t* mag_result_constructor_routine_bool_isomorph(mag_tensor_t** inputs, const mag_opparam_t* params) {
+    mag_tensor_t* base = *inputs;
     return mag_tensor_empty(base->ctx, MAG_DTYPE_BOOL, base->rank, base->shape);
 }
 
-static mag_Tensor* mag_result_constructor_routine_view(mag_Tensor** inputs, const mag_OPParam* params) {
-    mag_Tensor* base = *inputs;
+static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, const mag_opparam_t* params) {
+    mag_tensor_t* base = *inputs;
     uint32_t nd_new = (uint32_t)mag_op_param_unpack_i64_or_panic(params[0]);
     if (!nd_new)
         return mag_tensor_inplace_view(base); /* If no new dimensions are specified, return the inplace view of the base tensor. */
@@ -291,19 +291,19 @@ static mag_Tensor* mag_result_constructor_routine_view(mag_Tensor** inputs, cons
     } else {
         mag_assert2(known_prod == old_numel);
     }
-    mag_Tensor* result = mag_tensor_init_internal(base->ctx, base->dtype, nd_new, canon, base, 0);
+    mag_tensor_t* result = mag_tensor_init_internal(base->ctx, base->dtype, nd_new, canon, base, 0);
     if (*base->name)
         mag_tensor_fmt_name(result, "%s (view)", base->name);
     return result;
 }
 
-static mag_Tensor* mag_result_constructor_routine_scalar(mag_Tensor** inputs,  const mag_OPParam* params) {
-    mag_Tensor* base = *inputs;
+static mag_tensor_t* mag_result_constructor_routine_scalar(mag_tensor_t** inputs,  const mag_opparam_t* params) {
+    mag_tensor_t* base = *inputs;
     return mag_tensor_empty_scalar(base->ctx, base->dtype);
 }
 
-static mag_Tensor* mag_result_constructor_routine_transposed(mag_Tensor** inputs,  const mag_OPParam* params) {
-    mag_Tensor* transposed = mag_tensor_inplace_view(*inputs);
+static mag_tensor_t* mag_result_constructor_routine_transposed(mag_tensor_t** inputs,  const mag_opparam_t* params) {
+    mag_tensor_t* transposed = mag_tensor_inplace_view(*inputs);
     uint64_t ax0 = mag_op_param_unpack_i64_or_panic(params[0]);
     uint64_t ax1 = mag_op_param_unpack_i64_or_panic(params[1]);
     mag_swap(int64_t, transposed->shape[ax0], transposed->shape[ax1]);
@@ -313,10 +313,10 @@ static mag_Tensor* mag_result_constructor_routine_transposed(mag_Tensor** inputs
     return transposed;
 }
 
-static mag_Tensor* mag_result_constructor_routine_permuted(mag_Tensor** inputs,  const mag_OPParam* params) {
+static mag_tensor_t* mag_result_constructor_routine_permuted(mag_tensor_t** inputs,  const mag_opparam_t* params) {
     mag_assert2(params != NULL);
-    const mag_Tensor* base = inputs[0];
-    mag_Tensor* permuted = mag_tensor_inplace_view(*inputs);
+    const mag_tensor_t* base = inputs[0];
+    mag_tensor_t* permuted = mag_tensor_inplace_view(*inputs);
     int64_t axes[MAG_MAX_DIMS];
     for (int64_t i=0; i < base->rank; ++i)
         axes[i] = mag_op_param_unpack_i64_or_panic(params[i]);
@@ -338,10 +338,10 @@ static mag_Tensor* mag_result_constructor_routine_permuted(mag_Tensor** inputs, 
     return permuted;
 }
 
-static mag_Tensor* mag_result_constructor_routine_matmul(mag_Tensor** inputs,  const mag_OPParam* params) { /* MxR = MxN * NxR */
+static mag_tensor_t* mag_result_constructor_routine_matmul(mag_tensor_t** inputs,  const mag_opparam_t* params) { /* MxR = MxN * NxR */
     (void)params;
-    mag_Tensor* a = inputs[0];
-    mag_Tensor* b = inputs[1];
+    mag_tensor_t* a = inputs[0];
+    mag_tensor_t* b = inputs[1];
     /* Handle degenerate 1D cases first */
     if (a->rank == 1 && b->rank == 1) { /* (K)x(K) -> () */
         int64_t shape[1] = {1};
@@ -370,7 +370,7 @@ static mag_Tensor* mag_result_constructor_routine_matmul(mag_Tensor** inputs,  c
     return mag_tensor_init_internal(a->ctx, a->dtype, r_bd + 2, shape, NULL, 0);
 }
 
-static mag_Tensor* mag_result_constructor_routine_repeat_back(mag_Tensor** inputs,  const mag_OPParam* params) {
+static mag_tensor_t* mag_result_constructor_routine_repeat_back(mag_tensor_t** inputs,  const mag_opparam_t* params) {
     return mag_tensor_init_internal(inputs[0]->ctx, inputs[0]->dtype, inputs[1]->rank, inputs[1]->shape, NULL, 0);
 }
 
@@ -380,41 +380,41 @@ static mag_Tensor* mag_result_constructor_routine_repeat_back(mag_Tensor** input
 ** ###################################################################################################################
 */
 
-static void mag_op_backward_clone(mag_Tensor* node, mag_Tensor** grads) {
+static void mag_op_backward_clone(mag_tensor_t* node, mag_tensor_t** grads) {
     *grads = mag_clone(node->grad);
 }
 
-static void mag_op_backward_view(mag_Tensor* node, mag_Tensor** grads) {
+static void mag_op_backward_view(mag_tensor_t* node, mag_tensor_t** grads) {
     *grads = mag_clone(node->grad);
 }
 
-static void mag_op_backward_transpose(mag_Tensor* node, mag_Tensor** grads) {
+static void mag_op_backward_transpose(mag_tensor_t* node, mag_tensor_t** grads) {
     uint64_t ax0 = mag_op_param_unpack_i64_or_panic(node->op_params[0]);
     uint64_t ax1 = mag_op_param_unpack_i64_or_panic(node->op_params[1]);
     *grads = mag_transpose(node->grad, ax0, ax1);
 }
 
-static void mag_op_backward_mean(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* scale = mag_tensor_full_like(x, (mag_E8M23)(1.0/(mag_E11M52)x->numel));
+static void mag_op_backward_mean(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* scale = mag_tensor_full_like(x, (mag_e8m23_t)(1.0/(mag_e11m52_t)x->numel));
     *grads = mag_mul(scale, node->grad);
     mag_tensor_decref(scale);
 }
 
-static void mag_op_backward_sum(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* ones = mag_tensor_full_like(x, 1.0f);
+static void mag_op_backward_sum(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* ones = mag_tensor_full_like(x, 1.0f);
     *grads = mag_mul(ones, node->grad);
     mag_tensor_decref(ones);
 }
 
-static void mag_op_backward_abs(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* step = mag_step(x);
-    mag_Tensor* one = mag_tensor_scalar(x->ctx, x->dtype, 1.0f);
-    mag_Tensor* two = mag_tensor_scalar(x->ctx, x->dtype, 2.0f);
-    mag_Tensor* step2 = mag_mul(step, two);
-    mag_Tensor* sign = mag_sub(step2, one);
+static void mag_op_backward_abs(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* step = mag_step(x);
+    mag_tensor_t* one = mag_tensor_scalar(x->ctx, x->dtype, 1.0f);
+    mag_tensor_t* two = mag_tensor_scalar(x->ctx, x->dtype, 2.0f);
+    mag_tensor_t* step2 = mag_mul(step, two);
+    mag_tensor_t* sign = mag_sub(step2, one);
     grads[0] = mag_mul(node->grad, sign);
     mag_tensor_decref(two);
     mag_tensor_decref(one);
@@ -423,66 +423,66 @@ static void mag_op_backward_abs(mag_Tensor* node, mag_Tensor** grads) {
     mag_tensor_decref(sign);
 }
 
-static void mag_op_backward_neg(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* m1 = mag_tensor_scalar(node->grad->ctx, node->grad->dtype, -1.f);
+static void mag_op_backward_neg(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* m1 = mag_tensor_scalar(node->grad->ctx, node->grad->dtype, -1.f);
     grads[0] = mag_mul(node->grad, m1);
     mag_tensor_decref(m1);
 }
 
-static void mag_op_backward_log(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
+static void mag_op_backward_log(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
     grads[0] = mag_div(node->grad, x);
 }
 
-static void mag_op_backward_sqr(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* two = mag_tensor_scalar(x->ctx, x->dtype, 2.0f);
-    mag_Tensor* two_x = mag_mul(x, two);
+static void mag_op_backward_sqr(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* two = mag_tensor_scalar(x->ctx, x->dtype, 2.0f);
+    mag_tensor_t* two_x = mag_mul(x, two);
     grads[0] = mag_mul(node->grad, two_x);
     mag_tensor_decref(two);
     mag_tensor_decref(two_x);
 }
 
-static void mag_op_backward_sqrt(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* sqrt_x = mag_sqrt(x);
-    mag_Tensor* two = mag_tensor_scalar(x->ctx, x->dtype, 2.0f);
-    mag_Tensor* denom = mag_mul(sqrt_x, two);
+static void mag_op_backward_sqrt(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* sqrt_x = mag_sqrt(x);
+    mag_tensor_t* two = mag_tensor_scalar(x->ctx, x->dtype, 2.0f);
+    mag_tensor_t* denom = mag_mul(sqrt_x, two);
     grads[0] = mag_div(node->grad, denom);
     mag_tensor_decref(two);
     mag_tensor_decref(sqrt_x);
     mag_tensor_decref(denom);
 }
 
-static void mag_op_backward_sin(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* cos_x = mag_cos(x);
+static void mag_op_backward_sin(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* cos_x = mag_cos(x);
     grads[0] = mag_mul(node->grad, cos_x);
     mag_tensor_decref(cos_x);
 }
 
-static void mag_op_backward_cos(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* sinx = mag_sin(x);
-    mag_Tensor* nsinx = mag_neg(sinx);
+static void mag_op_backward_cos(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* sinx = mag_sin(x);
+    mag_tensor_t* nsinx = mag_neg(sinx);
     grads[0] = mag_mul(node->grad, nsinx);
     mag_tensor_decref(sinx);
     mag_tensor_decref(nsinx);
 }
 
-static void mag_op_backward_exp(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* exp_x = mag_exp(x);
+static void mag_op_backward_exp(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* exp_x = mag_exp(x);
     grads[0] = mag_mul(node->grad, exp_x);
     mag_tensor_decref(exp_x);
 }
 
-static void mag_op_backward_softmax(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* y = mag_softmax(x);
-    mag_Tensor* tmp = mag_mul(node->grad, y);
-    mag_Tensor* sum_tmp = mag_sum(tmp, NULL, 0, false);
-    mag_Tensor* diff = mag_sub(node->grad, sum_tmp);
+static void mag_op_backward_softmax(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* y = mag_softmax(x);
+    mag_tensor_t* tmp = mag_mul(node->grad, y);
+    mag_tensor_t* sum_tmp = mag_sum(tmp, NULL, 0, false);
+    mag_tensor_t* diff = mag_sub(node->grad, sum_tmp);
     grads[0] = mag_mul(y, diff);
     mag_tensor_decref(tmp);
     mag_tensor_decref(sum_tmp);
@@ -490,49 +490,49 @@ static void mag_op_backward_softmax(mag_Tensor* node, mag_Tensor** grads) {
     mag_tensor_decref(y);
 }
 
-static void mag_op_backward_sigmoid(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* dv = mag_sigmoid_dv(x);
+static void mag_op_backward_sigmoid(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* dv = mag_sigmoid_dv(x);
     grads[0] = mag_mul(dv, node->grad);
     mag_tensor_decref(dv);
 }
 
-static void mag_op_backward_silu(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* dv = mag_silu_dv(x);
+static void mag_op_backward_silu(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* dv = mag_silu_dv(x);
     grads[0] = mag_mul(node->grad, dv);
     mag_tensor_decref(dv);
 }
 
-static void mag_op_backward_tanh(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* dv = mag_tanh_dv(x);
+static void mag_op_backward_tanh(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* dv = mag_tanh_dv(x);
     grads[0] = mag_mul(node->grad, dv);
     mag_tensor_decref(dv);
 }
 
-static void mag_op_backward_relu(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* mask = mag_step(x);
+static void mag_op_backward_relu(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* mask = mag_step(x);
     grads[0] = mag_mul(node->grad, mask);
     mag_tensor_decref(mask);
 }
 
-static void mag_op_backward_gelu(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* dv = mag_gelu_dv(x);
+static void mag_op_backward_gelu(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* dv = mag_gelu_dv(x);
     grads[0] = mag_mul(node->grad, dv);
     mag_tensor_decref(dv);
 }
 
-static void mag_op_backward_add(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* y = node->op_inputs[1];
+static void mag_op_backward_add(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
         grads[0] = mag_clone(node->grad);
     }
     if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-        mag_Tensor* grad = node->grad;
+        mag_tensor_t* grad = node->grad;
         if (!mag_tensor_is_shape_eq(x, y)) {
             grad = mag_repeat_back(grad, y);
         } else {
@@ -542,16 +542,16 @@ static void mag_op_backward_add(mag_Tensor* node, mag_Tensor** grads) {
     }
 }
 
-static void mag_op_backward_sub(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* y = node->op_inputs[1];
+static void mag_op_backward_sub(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
         grads[0] = mag_clone(node->grad);
     }
     if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-        mag_Tensor* mg = mag_neg(node->grad);
+        mag_tensor_t* mg = mag_neg(node->grad);
         if (!mag_tensor_is_shape_eq(x, y)) {
-            mag_Tensor* pmg = mg;
+            mag_tensor_t* pmg = mg;
             mg = mag_repeat_back(pmg, y);
             mag_tensor_decref(pmg);
         }
@@ -559,16 +559,16 @@ static void mag_op_backward_sub(mag_Tensor* node, mag_Tensor** grads) {
     }
 }
 
-static void mag_op_backward_mul(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* y = node->op_inputs[1];
+static void mag_op_backward_mul(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
         grads[0] = mag_mul(node->grad, y);
     }
     if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-        mag_Tensor* xg = mag_mul(x, node->grad);
+        mag_tensor_t* xg = mag_mul(x, node->grad);
         if (!mag_tensor_is_shape_eq(x, y)) {
-            mag_Tensor* pxg = xg;
+            mag_tensor_t* pxg = xg;
             xg = mag_repeat_back(pxg, y);
             mag_tensor_decref(pxg);
         }
@@ -576,19 +576,19 @@ static void mag_op_backward_mul(mag_Tensor* node, mag_Tensor** grads) {
     }
 }
 
-static void mag_op_backward_div(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* y = node->op_inputs[1];
+static void mag_op_backward_div(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
         grads[0] = mag_div(node->grad, y);
     }
     if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-        mag_Tensor* gx = mag_mul(node->grad, x);
-        mag_Tensor* yy = mag_mul(y, y);
-        mag_Tensor* gxyy = mag_div(gx, yy);
-        mag_Tensor* mgxyy = mag_neg(gxyy);
+        mag_tensor_t* gx = mag_mul(node->grad, x);
+        mag_tensor_t* yy = mag_mul(y, y);
+        mag_tensor_t* gxyy = mag_div(gx, yy);
+        mag_tensor_t* mgxyy = mag_neg(gxyy);
         if (!mag_tensor_is_shape_eq(x, y)) {
-            mag_Tensor* pmgxyy = mgxyy;
+            mag_tensor_t* pmgxyy = mgxyy;
             mgxyy = mag_repeat_back(pmgxyy, y);
             mag_tensor_decref(pmgxyy);
         }
@@ -599,60 +599,60 @@ static void mag_op_backward_div(mag_Tensor* node, mag_Tensor** grads) {
     }
 }
 
-static void mag_op_backward_matmul(mag_Tensor* node, mag_Tensor** grads) {
-    mag_Tensor* x = node->op_inputs[0];
-    mag_Tensor* y = node->op_inputs[1];
+static void mag_op_backward_matmul(mag_tensor_t* node, mag_tensor_t** grads) {
+    mag_tensor_t* x = node->op_inputs[0];
+    mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
-        mag_Tensor* yt = mag_transpose(y, 0, 1);
+        mag_tensor_t* yt = mag_transpose(y, 0, 1);
         grads[0] = mag_matmul(node->grad, yt);
         mag_tensor_decref(yt);
     }
     if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-        mag_Tensor* xt = mag_transpose(x, 0, 1);
+        mag_tensor_t* xt = mag_transpose(x, 0, 1);
         grads[1] = mag_matmul(xt, node->grad);
         mag_tensor_decref(xt);
     }
 }
 
 /* Execute init/normal operator on R. */
-static void MAG_HOTPROC mag_op_exec(mag_Tensor* R, mag_IComputeDevice* dvc, mag_ExecStage stage) {
-    void (*exec)(mag_IComputeDevice*, mag_Tensor*) = stage == MAG_STAGE_INIT ? dvc->eager_exec_init : dvc->eager_exec_fwd;
+static void MAG_HOTPROC mag_op_exec(mag_tensor_t* R, mag_idevice_t* dvc, mag_exec_stage_t stage) {
+    void (*exec)(mag_idevice_t*, mag_tensor_t*) = stage == MAG_STAGE_INIT ? dvc->eager_exec_init : dvc->eager_exec_fwd;
     (*exec)(dvc, R); /* Dispatch to backend. */
 }
 
-extern void mag_tensor_detach_inplace(mag_Tensor* target);
+extern void mag_tensor_detach_inplace(mag_tensor_t* target);
 
 /* Execute an operator on the active compute device and return result tensor. */
-static mag_Tensor* MAG_HOTPROC mag_tensor_operator(
-    mag_Context* ctx,                 /* Context to use. All involved tensors must be allocated from this context. */
-    mag_Operator op,                    /* Operator code */
+static mag_tensor_t* MAG_HOTPROC mag_tensor_operator(
+    mag_context_t* ctx,                 /* Context to use. All involved tensors must be allocated from this context. */
+    mag_opcode_t op,                    /* Operator code */
     bool inplace,                   /* Attempt to perform inplace operation? e.g. r <- x += y instead of      r <- x + y */
-    mag_Tensor** inputs,          /* Input tensors. Must point to an array of 'num_inputs' (N) non-null tensors. */
+    mag_tensor_t** inputs,          /* Input tensors. Must point to an array of 'num_inputs' (N) non-null tensors. */
     uint32_t num_inputs,            /* Number of valid non-null input tensors in the inputs array. Must be same as specified in the op metadata. */
-    const mag_OPParam* params,   /* Operation parameters or NULL. Must be same as specified in the op metadata. */
+    const mag_opparam_t* params,   /* Operation parameters or NULL. Must be same as specified in the op metadata. */
     uint32_t num_params,            /* Number of operation parameters. Must be same as specified in the op metadata. */
-    mag_ExecStage stage          /* Graph evaluation direction. */
+    mag_exec_stage_t stage          /* Graph evaluation direction. */
 ) {
     /* Assert that general operator data is correct and valid */
     mag_assert_correct_op_data(op, inputs, num_inputs, params, num_params);
 
     /* Query validate and result constructor functions for the scheduled opcode. */
-    const mag_OPMetadata* meta = mag_op_meta_of(op);
-    mag_Tensor* (*r_alloc)(mag_Tensor**, const mag_OPParam*) = meta->r_alloc;                                        /* Get result allocator function. */
-    bool (*validate_op)(mag_StrStream**, bool, mag_Tensor*, mag_Tensor**, const mag_OPParam*) = meta->validator;   /* Get validator function. */
+    const mag_opmeta_t* meta = mag_op_meta_of(op);
+    mag_tensor_t* (*r_alloc)(mag_tensor_t**, const mag_opparam_t*) = meta->r_alloc;                                        /* Get result allocator function. */
+    bool (*validate_op)(mag_sstream_t**, bool, mag_tensor_t*, mag_tensor_t**, const mag_opparam_t*) = meta->validator;   /* Get validator function. */
     inplace &= !!(meta->flags & MAG_OP_FLAG_SUPPORTS_INPLACE);                                                              /* Inplace operation requested and supported? */
 
     /* Allocate result tensor and validate operation */
-    mag_Tensor* result = inplace ? mag_tensor_inplace_view(*inputs) : (*r_alloc)(inputs, params);     /* If inplace, result views x (input 0), else a new result tensor is allocated. */
+    mag_tensor_t* result = inplace ? mag_tensor_inplace_view(*inputs) : (*r_alloc)(inputs, params);     /* If inplace, result views x (input 0), else a new result tensor is allocated. */
     result->op = op;                                                                                    /* Set opcode of result. */
-    mag_StrStream* msg = NULL;
+    mag_sstream_t* msg = NULL;
     if (mag_unlikely(!(*validate_op)(&msg, inplace, result, inputs, params))) { /* Operation is invalid */
         const char* err = msg ? msg->buf : "Unknown error";
         FILE* out = stdout;
         fprintf(out, MAG_CC_RED "%s" MAG_CC_RESET, err); /* Print error message to stdout. */
         fflush(out);
         if (msg) { /* Free error message stream if it was created. */
-            mag_strstream_free(msg);
+            mag_sstream_free(msg);
             (*mag_alloc)(msg, 0, 0);
         }
         mag_panic("Invalid operation '%s'", meta->mnemonic);
@@ -661,7 +661,7 @@ static mag_Tensor* MAG_HOTPROC mag_tensor_operator(
     /* Apply input tensor's gradient rules and increase their lifetime. */
     bool is_recording_grads = !!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER);
     for (uint32_t i=0; i < num_inputs; ++i) {
-        mag_Tensor* input = inputs[i];
+        mag_tensor_t* input = inputs[i];
         result->op_inputs[i] = input;
         /* If gradient tracking is enabled, the result tensor inherits the input's gradient rules. */
         if (is_recording_grads) {
@@ -677,13 +677,13 @@ static mag_Tensor* MAG_HOTPROC mag_tensor_operator(
     return result;
 }
 
-mag_Tensor* mag_clone(mag_Tensor* x) {
+mag_tensor_t* mag_clone(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_CLONE, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_view(mag_Tensor* x, const int64_t* dims, uint32_t num_dims) {
+mag_tensor_t* mag_view(mag_tensor_t* x, const int64_t* dims, uint32_t num_dims) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid view dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims));
     if (dims)
@@ -692,20 +692,20 @@ mag_Tensor* mag_view(mag_Tensor* x, const int64_t* dims, uint32_t num_dims) {
     return mag_tensor_operator(x->ctx, MAG_OP_VIEW, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_reshape(mag_Tensor* x, const int64_t* dims, uint32_t num_dims) {
+mag_tensor_t* mag_reshape(mag_tensor_t* x, const int64_t* dims, uint32_t num_dims) {
   if (x->rank == num_dims && !memcmp(x->shape, dims, sizeof(*dims)*num_dims)) {
     mag_tensor_incref(x); /* Incref by one because return value of function must be a "new" tensor */
     return x;
   }
   if (mag_tensor_is_contiguous(x)) /* If cont, just view directly */
     return mag_view(x, dims, num_dims);
-  mag_Tensor* base = mag_clone(x);
-  mag_Tensor* view = mag_view(base, dims, num_dims);
+  mag_tensor_t* base = mag_clone(x);
+  mag_tensor_t* view = mag_view(base, dims, num_dims);
   mag_tensor_decref(base); /* Decref so base goes out of scope, if RC > 1 base would be leaked due to lost instance */
   return view;
 }
 
-mag_Tensor* mag_view_slice(mag_Tensor* x, int64_t dim, int64_t start, int64_t len, int64_t step) {
+mag_tensor_t* mag_view_slice(mag_tensor_t* x, int64_t dim, int64_t start, int64_t len, int64_t step) {
     mag_assert(step > 0, "negative step not supported");
     mag_assert(dim  >= 0 && dim < x->rank, "dim out of range");
     int64_t sz = x->shape[dim];
@@ -724,7 +724,7 @@ mag_Tensor* mag_view_slice(mag_Tensor* x, int64_t dim, int64_t start, int64_t le
     return mag_tensor_init_internal(x->ctx, x->dtype, x->rank, shape, x, byte_offs);
 }
 
-mag_Tensor* mag_transpose(mag_Tensor* x, int64_t dim1, int64_t dim2) {
+mag_tensor_t* mag_transpose(mag_tensor_t* x, int64_t dim1, int64_t dim2) {
     mag_assert(dim1 != dim2, "transposition axes must be unequal, but: %" PRIi64 " = %" PRIi64, dim1, dim2);
     int64_t ra = x->rank;
     int64_t ax0 = dim1;
@@ -733,25 +733,25 @@ mag_Tensor* mag_transpose(mag_Tensor* x, int64_t dim1, int64_t dim2) {
     if (ax1 < 0) ax1 += ra;
     mag_assert(ax0 >= 0 && ax0 < ra, "invalid transposition axis: %" PRIi64, dim1);
     mag_assert(ax1 >= 0 && ax1 < ra, "invalid transposition axis: %" PRIi64, dim2);
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(ax0));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(ax1));
     return mag_tensor_operator(x->ctx, MAG_OP_TRANSPOSE, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_permute(mag_Tensor* x, const int64_t* dims, uint32_t num_dims) {
+mag_tensor_t* mag_permute(mag_tensor_t* x, const int64_t* dims, uint32_t num_dims) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid permutation dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     for (uint32_t i=0; i < num_dims; ++i)
         mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_PERMUTE, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_mean(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
+mag_tensor_t* mag_mean(mag_tensor_t* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
@@ -760,9 +760,9 @@ mag_Tensor* mag_mean(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool
     return mag_tensor_operator(x->ctx, MAG_OP_MEAN, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_min(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
+mag_tensor_t* mag_min(mag_tensor_t* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
@@ -771,9 +771,9 @@ mag_Tensor* mag_min(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool 
     return mag_tensor_operator(x->ctx, MAG_OP_MIN, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_max(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
+mag_tensor_t* mag_max(mag_tensor_t* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
@@ -782,9 +782,9 @@ mag_Tensor* mag_max(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool 
     return mag_tensor_operator(x->ctx, MAG_OP_MAX, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sum(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
+mag_tensor_t* mag_sum(mag_tensor_t* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
@@ -793,9 +793,9 @@ mag_Tensor* mag_sum(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool 
     return mag_tensor_operator(x->ctx, MAG_OP_SUM, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_argmin(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
+mag_tensor_t* mag_argmin(mag_tensor_t* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
@@ -804,9 +804,9 @@ mag_Tensor* mag_argmin(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bo
     return mag_tensor_operator(x->ctx, MAG_OP_MIN, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_argmax(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
+mag_tensor_t* mag_argmax(mag_tensor_t* x, const int64_t* dims, uint32_t num_dims, bool keepdim) {
     mag_assert(num_dims <= MAG_MAX_DIMS, "invalid reduction dimensions count, max %d but is %u", MAG_MAX_DIMS, num_dims);
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_dims)); /* Store number of reduction axes in op_params[0] */
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim)); /* Store keepdim in op_params[1] */
@@ -815,384 +815,384 @@ mag_Tensor* mag_argmax(mag_Tensor* x, const int64_t* dims, uint32_t num_dims, bo
     return mag_tensor_operator(x->ctx, MAG_OP_MAX, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_abs(mag_Tensor* x) {
+mag_tensor_t* mag_abs(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_ABS, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_abs_(mag_Tensor* x) {
+mag_tensor_t* mag_abs_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_ABS, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sgn(mag_Tensor* x) {
+mag_tensor_t* mag_sgn(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SGN, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sgn_(mag_Tensor* x) {
+mag_tensor_t* mag_sgn_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SGN, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_neg(mag_Tensor* x) {
+mag_tensor_t* mag_neg(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_NEG, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_neg_(mag_Tensor* x) {
+mag_tensor_t* mag_neg_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_NEG, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_log(mag_Tensor* x) {
+mag_tensor_t* mag_log(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_LOG, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_log_(mag_Tensor* x) {
+mag_tensor_t* mag_log_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_LOG, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sqr(mag_Tensor* x) {
+mag_tensor_t* mag_sqr(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SQR, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sqr_(mag_Tensor* x) {
+mag_tensor_t* mag_sqr_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SQR, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sqrt(mag_Tensor* x) {
+mag_tensor_t* mag_sqrt(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SQRT, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sqrt_(mag_Tensor* x) {
+mag_tensor_t* mag_sqrt_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SQRT, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sin(mag_Tensor* x) {
+mag_tensor_t* mag_sin(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SIN, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sin_(mag_Tensor* x) {
+mag_tensor_t* mag_sin_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SIN, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_cos(mag_Tensor* x) {
+mag_tensor_t* mag_cos(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_COS, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_cos_(mag_Tensor* x) {
+mag_tensor_t* mag_cos_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_COS, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_step(mag_Tensor* x) {
+mag_tensor_t* mag_step(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_STEP, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_step_(mag_Tensor* x) {
+mag_tensor_t* mag_step_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_STEP, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_exp(mag_Tensor* x) {
+mag_tensor_t* mag_exp(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_EXP, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_exp_(mag_Tensor* x) {
+mag_tensor_t* mag_exp_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_EXP, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_floor(mag_Tensor* x) {
+mag_tensor_t* mag_floor(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_FLOOR, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_floor_(mag_Tensor* x) {
+mag_tensor_t* mag_floor_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_FLOOR, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_ceil(mag_Tensor* x) {
+mag_tensor_t* mag_ceil(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_CEIL, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_ceil_(mag_Tensor* x) {
+mag_tensor_t* mag_ceil_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_CEIL, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_round(mag_Tensor* x) {
+mag_tensor_t* mag_round(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_ROUND, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_round_(mag_Tensor* x) {
+mag_tensor_t* mag_round_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_ROUND, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_softmax(mag_Tensor* x) {
+mag_tensor_t* mag_softmax(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SOFTMAX, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_softmax_(mag_Tensor* x) {
+mag_tensor_t* mag_softmax_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SOFTMAX, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_softmax_dv(mag_Tensor* x) {
+mag_tensor_t* mag_softmax_dv(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SOFTMAX_DV, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_softmax_dv_(mag_Tensor* x) {
+mag_tensor_t* mag_softmax_dv_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SOFTMAX_DV, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sigmoid(mag_Tensor* x) {
+mag_tensor_t* mag_sigmoid(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SIGMOID, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sigmoid_(mag_Tensor* x) {
+mag_tensor_t* mag_sigmoid_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SIGMOID, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sigmoid_dv(mag_Tensor* x) {
+mag_tensor_t* mag_sigmoid_dv(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SIGMOID_DV, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sigmoid_dv_(mag_Tensor* x) {
+mag_tensor_t* mag_sigmoid_dv_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SIGMOID_DV, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_hard_sigmoid(mag_Tensor* x) {
+mag_tensor_t* mag_hard_sigmoid(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_HARD_SIGMOID, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_hard_sigmoid_(mag_Tensor* x) {
+mag_tensor_t* mag_hard_sigmoid_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_HARD_SIGMOID, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_silu(mag_Tensor* x) {
+mag_tensor_t* mag_silu(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SILU, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_silu_(mag_Tensor* x) {
+mag_tensor_t* mag_silu_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SILU, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_silu_dv(mag_Tensor* x) {
+mag_tensor_t* mag_silu_dv(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SILU_DV, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_silu_dv_(mag_Tensor* x) {
+mag_tensor_t* mag_silu_dv_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_SILU_DV, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_tanh(mag_Tensor* x) {
+mag_tensor_t* mag_tanh(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_TANH, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_tanh_(mag_Tensor* x) {
+mag_tensor_t* mag_tanh_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_TANH, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_tanh_dv(mag_Tensor* x) {
+mag_tensor_t* mag_tanh_dv(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_TANH_DV, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_tanh_dv_(mag_Tensor* x) {
+mag_tensor_t* mag_tanh_dv_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_TANH_DV, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_relu(mag_Tensor* x) {
+mag_tensor_t* mag_relu(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_RELU, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_relu_(mag_Tensor* x) {
+mag_tensor_t* mag_relu_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_RELU, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_relu_dv(mag_Tensor* x) {
+mag_tensor_t* mag_relu_dv(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_RELU_DV, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_relu_dv_(mag_Tensor* x) {
+mag_tensor_t* mag_relu_dv_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_RELU_DV, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_gelu(mag_Tensor* x) {
+mag_tensor_t* mag_gelu(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_GELU, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_gelu_(mag_Tensor* x) {
+mag_tensor_t* mag_gelu_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_GELU, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_gelu_dv(mag_Tensor* x) {
+mag_tensor_t* mag_gelu_dv(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_GELU_DV, false, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_gelu_dv_(mag_Tensor* x) {
+mag_tensor_t* mag_gelu_dv_(mag_tensor_t* x) {
     return mag_tensor_operator(x->ctx, MAG_OP_GELU_DV, true, &x, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_add(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_ADD, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_add(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_ADD, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_add_(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_ADD, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_add_(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_ADD, true, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sub(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_SUB, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_sub(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_SUB, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_sub_(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_SUB, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_sub_(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_SUB, true, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_mul(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_MUL, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_mul(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_MUL, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_mul_(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_MUL, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_mul_(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_MUL, true, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_div(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_DIV, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_div(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_DIV, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_div_(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_DIV, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_div_(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_DIV, true, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_matmul(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_MATMUL, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_matmul(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_MATMUL, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_repeat_back(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_REPEAT_BACK, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_repeat_back(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_REPEAT_BACK, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_and(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_AND, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_and(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_AND, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_and_(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_AND, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_and_(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_AND, true, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_or(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_OR, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_or(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_OR, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_or_(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_OR, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_or_(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_OR, true, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_xor(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_XOR, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_xor(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_XOR, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_xor_(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_XOR, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_xor_(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_XOR, true, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_not(mag_Tensor* x) {
-    return mag_tensor_operator(x->ctx, MAG_OP_NOT, false, (mag_Tensor*[]){x}, 1, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_not(mag_tensor_t* x) {
+    return mag_tensor_operator(x->ctx, MAG_OP_NOT, false, (mag_tensor_t*[]){x}, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_not_(mag_Tensor* x) {
-    return mag_tensor_operator(x->ctx, MAG_OP_NOT, true, (mag_Tensor*[]){x}, 1, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_not_(mag_tensor_t* x) {
+    return mag_tensor_operator(x->ctx, MAG_OP_NOT, true, (mag_tensor_t*[]){x}, 1, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_shl(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_SHL, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_shl(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_SHL, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_shl_(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_SHL, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_shl_(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_SHL, true, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_shr(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_SHR, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_shr(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_SHR, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_shr_(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_SHR, true, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_shr_(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_SHR, true, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_eq(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_EQ, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_eq(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_EQ, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_ne(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_NE, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_ne(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_NE, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_le(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_LE, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_le(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_LE, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_ge(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_GE, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_ge(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_GE, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_lt(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_LT, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_lt(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_LT, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* mag_gt(mag_Tensor* x, mag_Tensor* y) {
-    return mag_tensor_operator(x->ctx, MAG_OP_GT, false, (mag_Tensor*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+mag_tensor_t* mag_gt(mag_tensor_t* x, mag_tensor_t* y) {
+    return mag_tensor_operator(x->ctx, MAG_OP_GT, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* _Nonnull mag_tril(mag_Tensor* _Nonnull x, int32_t diag) {
-    mag_OPParam param = mag_op_param_wrap_i64(diag);
+mag_tensor_t* _Nonnull mag_tril(mag_tensor_t* _Nonnull x, int32_t diag) {
+    mag_opparam_t param = mag_op_param_wrap_i64(diag);
     return mag_tensor_operator(x->ctx, MAG_OP_TRIL, false, &x, 1, &param, 1, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* _Nonnull mag_tril_(mag_Tensor* _Nonnull x, int32_t diag) {
-    mag_OPParam param = mag_op_param_wrap_i64(diag);
+mag_tensor_t* _Nonnull mag_tril_(mag_tensor_t* _Nonnull x, int32_t diag) {
+    mag_opparam_t param = mag_op_param_wrap_i64(diag);
     return mag_tensor_operator(x->ctx, MAG_OP_TRIL, true, &x, 1, &param, 1, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* _Nonnull mag_triu(mag_Tensor* _Nonnull x, int32_t diag) {
-    mag_OPParam param = mag_op_param_wrap_i64(diag);
+mag_tensor_t* _Nonnull mag_triu(mag_tensor_t* _Nonnull x, int32_t diag) {
+    mag_opparam_t param = mag_op_param_wrap_i64(diag);
     return mag_tensor_operator(x->ctx, MAG_OP_TRIU, false, &x, 1, &param, 1, MAG_STAGE_EVAL);
 }
 
-mag_Tensor* _Nonnull mag_triu_(mag_Tensor* _Nonnull x, int32_t diag) {
-    mag_OPParam param = mag_op_param_wrap_i64(diag);
+mag_tensor_t* _Nonnull mag_triu_(mag_tensor_t* _Nonnull x, int32_t diag) {
+    mag_opparam_t param = mag_op_param_wrap_i64(diag);
     return mag_tensor_operator(x->ctx, MAG_OP_TRIU, true, &x, 1, &param, 1, MAG_STAGE_EVAL);
 }
 
 
-void mag_tensor_fill_from_floats(mag_Tensor* t, const mag_E8M23* data, size_t len) {
+void mag_tensor_fill_from_floats(mag_tensor_t* t, const mag_e8m23_t* data, size_t len) {
     mag_assert(data && len, "invalid data pointer or length");
-    mag_IStorageBuffer* sto = t->storage;
+    mag_istorage_t* sto = t->storage;
     (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, 0, (void*)data, len*sizeof(*data), MAG_DTYPE_E8M23);
 }
 
-void mag_tensor_fill_from_raw_bytes(mag_Tensor* t, const void* data, size_t len) {
+void mag_tensor_fill_from_raw_bytes(mag_tensor_t* t, const void* data, size_t len) {
     mag_assert(data && len, "invalid data pointer or length");
-    mag_IStorageBuffer* sto = t->storage;
+    mag_istorage_t* sto = t->storage;
     (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, 0, (void*)data, len);
 }
 
-void mag_tensor_fill_float(mag_Tensor* t, mag_E8M23 x) {
+void mag_tensor_fill_float(mag_tensor_t* t, mag_e8m23_t x) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
     t->init_op = MAG_IOP_BROADCAST;
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(x));
     mag_op_param_layout_transfer(&layout, &t->init_op_params);
     mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
 }
 
-void mag_tensor_fill_int(mag_Tensor* t, int32_t x) {
+void mag_tensor_fill_int(mag_tensor_t* t, int32_t x) {
     mag_assert2(mag_tensor_is_integral_typed(t));
     t->init_op = MAG_IOP_BROADCAST;
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(x));
     mag_op_param_layout_transfer(&layout, &t->init_op_params);
     mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
 }
 
-void mag_tensor_masked_fill_float(mag_Tensor* t, mag_Tensor* mask, mag_E8M23 x) {
+void mag_tensor_masked_fill_float(mag_tensor_t* t, mag_tensor_t* mask, mag_e8m23_t x) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
     mag_assert2(mask->dtype == MAG_DTYPE_BOOL);
     t->init_op = MAG_IOP_MASKED_BROADCAST;
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(x));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64((int64_t)(uintptr_t)mask));
@@ -1200,11 +1200,11 @@ void mag_tensor_masked_fill_float(mag_Tensor* t, mag_Tensor* mask, mag_E8M23 x) 
     mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
 }
 
-void mag_tensor_masked_fill_int(mag_Tensor* t, mag_Tensor* mask, int32_t x) {
+void mag_tensor_masked_fill_int(mag_tensor_t* t, mag_tensor_t* mask, int32_t x) {
     mag_assert2(mag_tensor_is_integral_typed(t));
     mag_assert2(mask->dtype == MAG_DTYPE_BOOL);
     t->init_op = MAG_IOP_MASKED_BROADCAST;
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(x));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64((int64_t)(uintptr_t)mask));
@@ -1212,10 +1212,10 @@ void mag_tensor_masked_fill_int(mag_Tensor* t, mag_Tensor* mask, int32_t x) {
     mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
 }
 
-void mag_tensor_fill_random_uniform_float(mag_Tensor* t, mag_E8M23 min, mag_E8M23 max) {
+void mag_tensor_fill_random_uniform_float(mag_tensor_t* t, mag_e8m23_t min, mag_e8m23_t max) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
     t->init_op = MAG_IOP_RAND_UNIFORM;
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(min));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(max));
@@ -1223,10 +1223,10 @@ void mag_tensor_fill_random_uniform_float(mag_Tensor* t, mag_E8M23 min, mag_E8M2
     mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
 }
 
-void mag_tensor_fill_random_uniform_int(mag_Tensor* t, int32_t min, int32_t max) {
+void mag_tensor_fill_random_uniform_int(mag_tensor_t* t, int32_t min, int32_t max) {
     mag_assert2(mag_tensor_is_integral_typed(t));
     t->init_op = MAG_IOP_RAND_UNIFORM;
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(min));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(max));
@@ -1234,10 +1234,10 @@ void mag_tensor_fill_random_uniform_int(mag_Tensor* t, int32_t min, int32_t max)
     mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
 }
 
-void mag_tensor_fill_random_normal(mag_Tensor* t, mag_E8M23 mean, mag_E8M23 stddev) {
+void mag_tensor_fill_random_normal(mag_tensor_t* t, mag_e8m23_t mean, mag_e8m23_t stddev) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
     t->init_op = MAG_IOP_RAND_NORMAL;
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(mean));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(stddev));
@@ -1245,10 +1245,10 @@ void mag_tensor_fill_random_normal(mag_Tensor* t, mag_E8M23 mean, mag_E8M23 stdd
     mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
 }
 
-void mag_tensor_fill_random_bernoulli(mag_Tensor* t, mag_E8M23 p) {
+void mag_tensor_fill_random_bernoulli(mag_tensor_t* t, mag_e8m23_t p) {
     mag_assert2(t->dtype == MAG_DTYPE_BOOL);
     t->init_op = MAG_IOP_RAND_BERNOULLI;
-    mag_OPParamLayout layout;
+    mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(p));
     mag_op_param_layout_transfer(&layout, &t->init_op_params);
@@ -1261,8 +1261,8 @@ void mag_tensor_fill_random_bernoulli(mag_Tensor* t, mag_E8M23 p) {
 ** ###################################################################################################################
 */
 
-const mag_OPMetadata* mag_op_meta_of(mag_Operator opc) {
-    static const mag_OPMetadata infos[MAG_OP__NUM] = {
+const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
+    static const mag_opmeta_t infos[MAG_OP__NUM] = {
         [MAG_OP_NOP] = {
             .mnemonic = "nop",
             .desc = "nop",

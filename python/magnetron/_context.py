@@ -29,7 +29,7 @@ class Context:
 
     def __init__(self, device: ComputeDeviceInfo.CPU | ComputeDeviceInfo.CUDA = Config.compute_device) -> None:
         assert _MAIN_TID == threading.get_native_id(), 'Context must be created in the main thread'
-        desc: FFI.CData = FFI.new('mag_ComputeDeviceDesc*')
+        desc: FFI.CData = FFI.new('mag_device_desc_t*')
         if isinstance(device, ComputeDeviceInfo.CPU):
             desc[0] = C.mag_compute_device_desc_cpu(device.num_threads)
         elif isinstance(device, ComputeDeviceInfo.CUDA):

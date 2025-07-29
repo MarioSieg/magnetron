@@ -23,11 +23,11 @@
         } \
     } while (0)
 
-[[nodiscard]] static std::pair<mag_E11M52, const char*> humanize_vram_size_size(size_t nb) {
-    if (nb < 1<<10) return {static_cast<mag_E11M52>(nb), "B"};
-    if (nb < 1<<20) return {static_cast<mag_E11M52>(nb)/static_cast<mag_E11M52>(1<<10), "KiB"};
-    if (nb < 1<<30) return {static_cast<mag_E11M52>(nb)/static_cast<mag_E11M52>(1<<20), "MiB"};
-    return {static_cast<mag_E11M52>(nb)/static_cast<mag_E11M52>(1<<30), "GiB"};
+[[nodiscard]] static std::pair<mag_e11m52_t, const char*> humanize_vram_size_size(size_t nb) {
+    if (nb < 1<<10) return {static_cast<mag_e11m52_t>(nb), "B"};
+    if (nb < 1<<20) return {static_cast<mag_e11m52_t>(nb)/static_cast<mag_e11m52_t>(1<<10), "KiB"};
+    if (nb < 1<<30) return {static_cast<mag_e11m52_t>(nb)/static_cast<mag_e11m52_t>(1<<20), "MiB"};
+    return {static_cast<mag_e11m52_t>(nb)/static_cast<mag_e11m52_t>(1<<30), "GiB"};
 }
 
 namespace kernels {
@@ -50,20 +50,20 @@ namespace kernels {
 
 namespace storage {
     static void dealloc(void* self) {
-        auto* buffer = static_cast<mag_IStorageBuffer*>(self);
-        mag_Context* ctx = buffer->ctx;
+        auto* buffer = static_cast<mag_istorage_t*>(self);
+        mag_context_t* ctx = buffer->ctx;
         mag_assert(ctx->num_storages > 0, "double freed storage");
         --ctx->num_storages;
         mag_cuda_check(cudaFree(reinterpret_cast<void*>(buffer->base)));
         mag_fixed_intrusive_pool_free(&ctx->storage_pool, buffer);
     }
 
-    static void alloc(mag_IComputeDevice* host, mag_IStorageBuffer** out, size_t size, mag_DType dtype) {
-        mag_Context* ctx = host->ctx;
+    static void alloc(mag_idevice_t* host, mag_istorage_t** out, size_t size, mag_dtype_t dtype) {
+        mag_context_t* ctx = host->ctx;
         void* block = nullptr;
         mag_cuda_check(cudaMalloc(&block, size));
-        auto* buffer = static_cast<mag_IStorageBuffer*>(mag_fixed_intrusive_pool_malloc(&ctx->storage_pool));
-        new (buffer) mag_IStorageBuffer {
+        auto* buffer = static_cast<mag_istorage_t*>(mag_fixed_intrusive_pool_malloc(&ctx->storage_pool));
+        new (buffer) mag_istorage_t {
             .ctx = ctx,
             .rc_control = mag_rc_control_init(buffer, &dealloc),
             .base = reinterpret_cast<uintptr_t>(buffer),
@@ -94,7 +94,7 @@ struct PhysicalDevice final {
     size_t vmm_granularity = 0;         /* Virtual memory management granularity */
 };
 
-extern "C" mag_IComputeDevice* mag_init_device_cuda(mag_Context* ctx, const mag_ComputeDeviceDesc* desc) {
+extern "C" mag_idevice_t* mag_init_device_cuda(mag_context_t* ctx, const mag_device_desc_t* desc) {
     int requested_device_id = static_cast<int>(desc->cuda_device_id);
     int ngpus = 0;
     if (cudaGetDeviceCount(&ngpus) != cudaSuccess)
@@ -151,11 +151,11 @@ extern "C" mag_IComputeDevice* mag_init_device_cuda(mag_Context* ctx, const mag_
     requested_device_id = requested_device_id < ngpus ? requested_device_id : DEFAULT_DEVICE_ID;
     auto* active_device = new PhysicalDevice{device_list[requested_device_id]};
 
-    auto* compute_device = new mag_IComputeDevice {
+    auto* compute_device = new mag_idevice_t {
         .name = "GPU",
         .impl = active_device,
         .is_async = true,
-        .type = MAG_COMPUTE_DEVICE_TYPE_GPU_CUDA,
+        .type = MAG_DEVICE_TYPE_GPU_CUDA,
         .eager_exec_init = nullptr,
         .eager_exec_fwd = nullptr,
         .alloc_storage = &storage::alloc,
@@ -165,7 +165,7 @@ extern "C" mag_IComputeDevice* mag_init_device_cuda(mag_Context* ctx, const mag_
     return compute_device;
 }
 
-extern "C" void mag_destroy_device_cuda(mag_IComputeDevice* dvc) {
+extern "C" void mag_destroy_device_cuda(mag_idevice_t* dvc) {
     delete static_cast<PhysicalDevice*>(dvc->impl);
     delete dvc;
 }

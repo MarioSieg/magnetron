@@ -17,22 +17,22 @@
 
 #include <math.h>
 
-extern void mag_cpu_blas_specialization_fallback(mag_CPUKernelRegistry* kernels); /* Generic any CPU impl */
+extern void mag_cpu_blas_specialization_fallback(mag_kernel_registry_t* kernels); /* Generic any CPU impl */
 
 #if defined(__x86_64__) || defined(_M_X64) /* Specialized impls for x86-64 with runtime CPU detection */
 
-typedef struct mag_AMD64BLASSpec {
+typedef struct mag_amd64_blas_spec_t {
     const char* name;
     uint64_t (*get_feature_permutation)(void);
-    void (*inject_kernels)(mag_CPUKernelRegistry* kernels);
-} mag_AMD64BLASSpec;
+    void (*inject_kernels)(mag_kernel_registry_t* kernels);
+} mag_amd64_blas_spec_t;
 
 #define mag_amd64_blas_spec_decl(feat) \
     uint64_t mag_cpu_blas_specialization_amd64_v##feat##_features(void); \
-    extern void mag_cpu_blas_specialization_amd64_v##feat(mag_CPUKernelRegistry* kernels)
+    extern void mag_cpu_blas_specialization_amd64_v##feat(mag_kernel_registry_t* kernels)
 
 #define mag_amd64_blas_spec_permute(feat) \
-    (mag_AMD64BLASSpec) { \
+    (mag_amd64_blas_spec_t) { \
         .name = "amd64-v."#feat, \
         .get_feature_permutation = &mag_cpu_blas_specialization_amd64_v##feat##_features, \
         .inject_kernels = &mag_cpu_blas_specialization_amd64_v##feat \
@@ -44,8 +44,8 @@ mag_amd64_blas_spec_decl(3);
 mag_amd64_blas_spec_decl(2_5);
 mag_amd64_blas_spec_decl(2);
 
-static bool mag_blas_detect_gen_optimal_spec(const mag_Context* host_ctx, mag_CPUKernelRegistry* kernels) {
-    const mag_AMD64BLASSpec mag_AMD64BLASSpecs[] = { /* Dynamic selectable BLAS permutations, sorted from best to worst score. */
+static bool mag_blas_detect_gen_optimal_spec(const mag_context_t* host_ctx, mag_kernel_registry_t* kernels) {
+    const mag_amd64_blas_spec_t impls[] = { /* Dynamic selectable BLAS permutations, sorted from best to worst score. */
         mag_amd64_blas_spec_permute(4_5),
         mag_amd64_blas_spec_permute(4),
         mag_amd64_blas_spec_permute(3),
@@ -54,8 +54,8 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_Context* host_ctx, mag_CP
     };
 
     uint64_t cap_avail = host_ctx->machine.amd64_cpu_caps;
-    for (size_t i=0; i < sizeof(mag_AMD64BLASSpecs)/sizeof(*mag_AMD64BLASSpecs); ++i) { /* Find best blas spec for the host CPU */
-        const mag_AMD64BLASSpec* spec = mag_AMD64BLASSpecs+i;
+    for (size_t i=0; i < sizeof(impls)/sizeof(*impls); ++i) { /* Find best blas spec for the host CPU */
+        const mag_amd64_blas_spec_t* spec = impls+i;
         uint64_t cap_required = (*spec->get_feature_permutation)(); /* Get requires features */
         if ((cap_avail & cap_required) == cap_required) { /* Since specializations are sorted by score, we found the perfect spec. */
             (*spec->inject_kernels)(kernels);
@@ -74,18 +74,18 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_Context* host_ctx, mag_CP
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
 
-typedef struct mag_ARM64BLASSpec {
+typedef struct mag_arm64_blas_spec_t {
     const char* name;
     uint64_t (*get_cap_permutation)(void);
-    void (*inject_kernels)(mag_CPUKernelRegistry* kernels);
-} mag_ARM64BLASSpec;
+    void (*inject_kernels)(mag_kernel_registry_t* kernels);
+} mag_arm64_blas_spec_t;
 
 #define mag_arm64_blas_spec_decl(feat) \
     uint64_t mag_cpu_blas_specialization_arm64_v_##feat##_features(void); \
-    extern void mag_cpu_blas_specialization_arm64_v_##feat(mag_CPUKernelRegistry* kernels)
+    extern void mag_cpu_blas_specialization_arm64_v_##feat(mag_kernel_registry_t* kernels)
 
 #define mag_arm64_blas_spec_permute(feat) \
-    (mag_ARM64BLASSpec) { \
+    (mag_arm64_blas_spec_t) { \
         .name = "arm64-v."#feat, \
         .get_cap_permutation = &mag_cpu_blas_specialization_arm64_v_##feat##_features, \
         .inject_kernels = &mag_cpu_blas_specialization_arm64_v_##feat \
@@ -94,15 +94,15 @@ typedef struct mag_ARM64BLASSpec {
 mag_arm64_blas_spec_decl(9);
 mag_arm64_blas_spec_decl(8_2);
 
-static bool mag_blas_detect_gen_optimal_spec(const mag_Context* ctx, mag_CPUKernelRegistry* kernels) {
-    const mag_ARM64BLASSpec mag_ARM64BLASSpecs[] = { /* Dynamic selectable BLAS permutations, sorted from best to worst score. */
+static bool mag_blas_detect_gen_optimal_spec(const mag_context_t* ctx, mag_kernel_registry_t* kernels) {
+    const mag_arm64_blas_spec_t impls[] = { /* Dynamic selectable BLAS permutations, sorted from best to worst score. */
         mag_arm64_blas_spec_permute(9),
         mag_arm64_blas_spec_permute(8_2),
     };
 
     uint64_t cap_avail = ctx->machine.arm64_cpu_caps;
-    for (size_t i=0; i < sizeof(mag_ARM64BLASSpecs)/sizeof(*mag_ARM64BLASSpecs); ++i) { /* Find best blas spec for the host CPU */
-        const mag_ARM64BLASSpec* spec = mag_ARM64BLASSpecs+i;
+    for (size_t i=0; i < sizeof(impls)/sizeof(*impls); ++i) { /* Find best blas spec for the host CPU */
+        const mag_arm64_blas_spec_t* spec = impls+i;
         uint64_t cap_required = (*spec->get_cap_permutation)(); /* Get requires features */
         if ((cap_avail & cap_required) == cap_required) { /* Since specializations are sorted by score, we found the perfect spec. */
             (*spec->inject_kernels)(kernels);
@@ -120,47 +120,47 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_Context* ctx, mag_CPUKern
 
 #endif
 
-static bool mag_blas_detect_optimal_specialization(const mag_Context* ctx, mag_CPUKernelRegistry* kernels) {
+static bool mag_blas_detect_optimal_specialization(const mag_context_t* ctx, mag_kernel_registry_t* kernels) {
     if (mag_likely(mag_blas_detect_gen_optimal_spec(ctx, kernels))) return true;
     mag_cpu_blas_specialization_fallback(kernels);
     return false; /* No spec used, fallback is active */
 }
 
-typedef struct mag_WorkerThread mag_WorkerThread;
-typedef struct mag_ThreadPool {
+typedef struct mag_worker_t mag_worker_t;
+typedef struct mag_thread_pool_t {
     mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) volatile bool interrupt;   /* Interrupt flag, 1=stop */
     mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) uint64_t phase;            /* Current compute phase */
     mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) uint64_t num_completed;    /* Number of workers that have completed their work */
-    mag_CondVar cv;                              /* Condition variable for thread wakeup */
-    mag_Mutex mtx;                                /* Mutex for synchronization */
+    mag_condvar_t cv;                              /* Condition variable for thread wakeup */
+    mag_mutex_t mtx;                                /* Mutex for synchronization */
     uint32_t num_allocated_workers;                 /* Number of intra-op workers allocated */
     uint32_t num_active_workers;                    /* Number of intra-op workers that are actively used in this compute step. */
-    volatile mag_Atomic64 num_workers_online;       /* Number of workers that are online */
-    mag_WorkerThread* workers;                          /* Array of workers */
-    const mag_CPUKernelRegistry* kernels;           /* Specialized compute kernel registry */
-    mag_ThreadPrio sched_prio;             /* Scheduling priority */
-    mag_Context* host_ctx;                            /* Host context */
-} mag_ThreadPool;
+    volatile mag_atomic64_t num_workers_online;       /* Number of workers that are online */
+    mag_worker_t* workers;                          /* Array of workers */
+    const mag_kernel_registry_t* kernels;           /* Specialized compute kernel registry */
+    mag_thread_prio_t sched_prio;             /* Scheduling priority */
+    mag_context_t* host_ctx;                            /* Host context */
+} mag_thread_pool_t;
 
-struct mag_WorkerThread {
+struct mag_worker_t {
     uint64_t phase;                         /* Current compute phase */
-    mag_CPUKernelPayload payload;          /* Compute op payload */
-    mag_PRNGState prng;                  /* Thread local prng */
-    mag_ThreadPool* pool;                 /* Host thread pool */
+    mag_kernel_payload_t payload;          /* Compute op payload */
+    mag_prng_state_t prng;                  /* Thread local prng */
+    mag_thread_pool_t* pool;                 /* Host thread pool */
     bool is_async;                          /* True if worker is async (executed on a different thread)  */
-    mag_Thread thread;                    /* Thread handle */
+    mag_thread_t thread;                    /* Thread handle */
 } mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE);
 
-typedef struct mag_CPUComputeDeviceImpl {
-    mag_Context* ctx;
-    mag_ThreadPool* pool;               /* Thread pool. NULL if num_allocated_workers <= 1 */
+typedef struct mag_cpu_device_t {
+    mag_context_t* ctx;
+    mag_thread_pool_t* pool;               /* Thread pool. NULL if num_allocated_workers <= 1 */
     uint32_t num_allocated_workers;     /* Amount of worker thread used. if == 1 then single threaded mode and thread pool is not created */
-    mag_CPUKernelRegistry kernels;      /* Compute kernels. Specialized by arch optimized version at boot (e.g. AVX, AVX512 etc..) */
-    mag_PRNGState primary_prng;         /* Primary prng context. */
-} mag_CPUComputeDeviceImpl;
+    mag_kernel_registry_t kernels;      /* Compute kernels. Specialized by arch optimized version at boot (e.g. AVX, AVX512 etc..) */
+    mag_prng_state_t primary_prng;         /* Primary prng context. */
+} mag_cpu_device_t;
 
 /* Await signal to start work */
-static bool mag_worker_await_work(mag_WorkerThread* worker, mag_ThreadPool* pool) {
+static bool mag_worker_await_work(mag_worker_t* worker, mag_thread_pool_t* pool) {
     mag_mutex_lock(&pool->mtx);
     while (!(pool->interrupt || pool->phase > worker->phase)) /* Wait for work 🥱*/
         mag_cv_wait(&pool->cv, &pool->mtx);
@@ -174,22 +174,22 @@ static bool mag_worker_await_work(mag_WorkerThread* worker, mag_ThreadPool* pool
 }
 
 /* Execute the operation on the current thread */
-static void mag_worker_exec_thread_local(const mag_CPUKernelRegistry* kernels, mag_CPUKernelPayload* payload) {
+static void mag_worker_exec_thread_local(const mag_kernel_registry_t* kernels, mag_kernel_payload_t* payload) {
     if (mag_unlikely(!payload->node)) return;
-    mag_Operator op = payload->node->op;
-    mag_InitOperator iop = payload->node->init_op;
-    mag_DType dtype = *payload->node->op_inputs ? (*payload->node->op_inputs)->dtype : payload->node->dtype;
+    mag_opcode_t op = payload->node->op;
+    mag_init_opcode_t iop = payload->node->init_op;
+    mag_dtype_t dtype = *payload->node->op_inputs ? (*payload->node->op_inputs)->dtype : payload->node->dtype;
     mag_assert2(op >= 0 && op < MAG_OP__NUM);
     mag_assert2(iop >= 0 && iop < MAG_IOP__NUM);
     mag_assert2(dtype >= 0 && dtype < MAG_DTYPE__NUM);
-    void (*kernel)(const mag_CPUKernelPayload*) = payload->stage == MAG_STAGE_INIT ? kernels->init[iop][dtype] : kernels->eval[op][dtype];
+    void (*kernel)(const mag_kernel_payload_t*) = payload->stage == MAG_STAGE_INIT ? kernels->init[iop][dtype] : kernels->eval[op][dtype];
     mag_assert(kernel, "no kernel found for op '%s' (iop #%d) with dtype %s", mag_op_meta_of(op)->mnemonic, iop, mag_dtype_meta_of(dtype)->name);
     (*kernel)(payload);
     payload->node = NULL;
 }
 
 /* Execute the operation and broadcast completion if last chunk was done */
-static void mag_worker_exec_and_broadcast(mag_ThreadPool* pool, const mag_CPUKernelRegistry* kernels, mag_CPUKernelPayload* payload) {
+static void mag_worker_exec_and_broadcast(mag_thread_pool_t* pool, const mag_kernel_registry_t* kernels, mag_kernel_payload_t* payload) {
     if (mag_likely(payload->thread_idx < pool->num_active_workers)) /* Execute the operation if we are an active thread. */
         mag_worker_exec_thread_local(kernels, payload);
     mag_mutex_lock(&pool->mtx);
@@ -200,10 +200,10 @@ static void mag_worker_exec_and_broadcast(mag_ThreadPool* pool, const mag_CPUKer
 
 /* Worker thread entry point */
 static MAG_HOTPROC void* mag_worker_thread_exec_op(void* arg) {
-    mag_WorkerThread* worker = arg;
-    mag_ThreadPool* pool = worker->pool;
-    mag_CPUKernelPayload* payload = &worker->payload;
-    const mag_CPUKernelRegistry* kernels = pool->kernels;
+    mag_worker_t* worker = arg;
+    mag_thread_pool_t* pool = worker->pool;
+    mag_kernel_payload_t* payload = &worker->payload;
+    const mag_kernel_registry_t* kernels = pool->kernels;
     char name[32];
     snprintf(name, sizeof(name), "mag_worker_%" PRIx64, payload->thread_idx);
     mag_thread_set_name(name);
@@ -217,12 +217,12 @@ static MAG_HOTPROC void* mag_worker_thread_exec_op(void* arg) {
 }
 
 /* Create thread pool and allocate threads */
-static mag_ThreadPool* mag_threadpool_create(mag_Context* host_ctx, uint32_t num_workers, const mag_CPUKernelRegistry* kernels, mag_ThreadPrio prio) { /* Create a thread pool */
-    mag_ThreadPool* pool = (*mag_alloc)(NULL, sizeof(*pool), __alignof(mag_ThreadPool));
+static mag_thread_pool_t* mag_threadpool_create(mag_context_t* host_ctx, uint32_t num_workers, const mag_kernel_registry_t* kernels, mag_thread_prio_t prio) { /* Create a thread pool */
+    mag_thread_pool_t* pool = (*mag_alloc)(NULL, sizeof(*pool), __alignof(mag_thread_pool_t));
     memset(pool, 0, sizeof(*pool));
-    mag_WorkerThread* workers = (*mag_alloc)(NULL, num_workers*sizeof(*workers), __alignof(mag_WorkerThread));
+    mag_worker_t* workers = (*mag_alloc)(NULL, num_workers*sizeof(*workers), __alignof(mag_worker_t));
     memset(workers, 0, num_workers*sizeof(*workers));
-    *pool = (mag_ThreadPool){
+    *pool = (mag_thread_pool_t){
         .interrupt = false,
         .phase = 0,
         .num_completed = 0,
@@ -237,10 +237,10 @@ static mag_ThreadPool* mag_threadpool_create(mag_Context* host_ctx, uint32_t num
     mag_cv_create(&pool->cv);
     mag_mutex_create(&pool->mtx);
     for (uint32_t ti=0; ti < num_workers; ++ti) { /* Initialize workers */
-        mag_WorkerThread* worker = workers+ti;
-        *worker = (mag_WorkerThread){
+        mag_worker_t* worker = workers+ti;
+        *worker = (mag_worker_t){
             .phase = 0,
-            .payload = (mag_CPUKernelPayload){
+            .payload = (mag_kernel_payload_t){
                 .thread_num = num_workers,
                 .thread_idx = ti,
                 .node = NULL,
@@ -260,7 +260,7 @@ static mag_ThreadPool* mag_threadpool_create(mag_Context* host_ctx, uint32_t num
 }
 
 /* Destroy thread pool */
-static void mag_threadpool_destroy(mag_ThreadPool* pool) {
+static void mag_threadpool_destroy(mag_thread_pool_t* pool) {
     mag_mutex_lock(&pool->mtx);
         pool->interrupt = true;
         ++pool->phase;
@@ -273,16 +273,16 @@ static void mag_threadpool_destroy(mag_ThreadPool* pool) {
             mag_thread_join(pool->workers[i].thread);
     mag_cv_destroy(&pool->cv);
     mag_mutex_destroy(&pool->mtx);
-    (*mag_alloc)(pool->workers, 0, __alignof(mag_WorkerThread));
-    (*mag_alloc)(pool, 0, __alignof(mag_ThreadPool));
+    (*mag_alloc)(pool->workers, 0, __alignof(mag_worker_t));
+    (*mag_alloc)(pool, 0, __alignof(mag_thread_pool_t));
 }
 
 /* Submits work payload and awakens all threads */
-static void mag_threadpool_kickoff(mag_ThreadPool* pool, mag_Tensor* node, mag_ExecStage stage, uint32_t num_active_workers) {
+static void mag_threadpool_kickoff(mag_thread_pool_t* pool, mag_tensor_t* node, mag_exec_stage_t stage, uint32_t num_active_workers) {
     mag_mutex_lock(&pool->mtx);
     pool->num_active_workers = num_active_workers;
     for (uint32_t i=0; i < pool->num_allocated_workers; ++i) { /* Set up payload */
-        mag_CPUKernelPayload* payload = &pool->workers[i].payload;
+        mag_kernel_payload_t* payload = &pool->workers[i].payload;
         payload->thread_num = num_active_workers;
         payload->node = node;
         payload->stage = stage;
@@ -293,7 +293,7 @@ static void mag_threadpool_kickoff(mag_ThreadPool* pool, mag_Tensor* node, mag_E
 }
 
 /* Blocks until all threads have completed their work */
-static void mag_threadpool_barrier(mag_ThreadPool* pool) {
+static void mag_threadpool_barrier(mag_thread_pool_t* pool) {
     mag_mutex_lock(&pool->mtx);
     while (pool->num_completed != pool->num_allocated_workers) /* Wait for all workers to finish */
         mag_cv_wait(&pool->cv, &pool->mtx);
@@ -305,7 +305,7 @@ static void mag_threadpool_barrier(mag_ThreadPool* pool) {
 }
 
 /* Execute an operator tensor on the CPU */
-static MAG_HOTPROC void mag_threadpool_parallel_compute(mag_ThreadPool* pool, mag_Tensor* node, mag_ExecStage stage, uint32_t num_active_workers) {
+static MAG_HOTPROC void mag_threadpool_parallel_compute(mag_thread_pool_t* pool, mag_tensor_t* node, mag_exec_stage_t stage, uint32_t num_active_workers) {
     mag_assert2(pool != NULL);
     mag_threadpool_kickoff(pool, node, stage, num_active_workers);               /* Kick off workers */
     mag_cv_broadcast(&pool->cv);                                                    /* Wake up all workers */
@@ -313,13 +313,13 @@ static MAG_HOTPROC void mag_threadpool_parallel_compute(mag_ThreadPool* pool, ma
     mag_threadpool_barrier(pool);                                                   /* Wait for all workers to finish */
 }
 
-static uint32_t mag_cpu_dynamic_work_scaling(mag_CPUComputeDeviceImpl* dvc, mag_Operator op, int64_t numel);
+static uint32_t mag_cpu_dynamic_work_scaling(mag_cpu_device_t* dvc, mag_opcode_t op, int64_t numel);
 
-static MAG_HOTPROC void mag_cpu_exec(mag_IComputeDevice* dvc, mag_ExecStage stage, mag_Tensor* node) {
-    mag_CPUComputeDeviceImpl* cpu_dvc = dvc->impl;
+static MAG_HOTPROC void mag_cpu_exec(mag_idevice_t* dvc, mag_exec_stage_t stage, mag_tensor_t* node) {
+    mag_cpu_device_t* cpu_dvc = dvc->impl;
     uint32_t intraop_workers = stage == MAG_STAGE_INIT ? 0 : mag_cpu_dynamic_work_scaling(cpu_dvc, node->op, node->numel);   /* Use thread count recommended by pre-kernel or compute general thread count heuristic. */
     if (intraop_workers <= 1) { /* Main thread does the work (single threaded mode). */
-        mag_CPUKernelPayload payload = {
+        mag_kernel_payload_t payload = {
             .node = node,
             .thread_idx = 0,
             .thread_num = 1,
@@ -332,15 +332,15 @@ static MAG_HOTPROC void mag_cpu_exec(mag_IComputeDevice* dvc, mag_ExecStage stag
     mag_threadpool_parallel_compute(cpu_dvc->pool, node, stage, intraop_workers); /* Multithreaded exec + barrier */
 }
 
-static void mag_cpu_exec_init(mag_IComputeDevice* dvc, mag_Tensor* node) {
+static void mag_cpu_exec_init(mag_idevice_t* dvc, mag_tensor_t* node) {
     mag_cpu_exec(dvc, MAG_STAGE_INIT, node);
 }
 
-static void mag_cpu_exec_fwd(mag_IComputeDevice* dvc, mag_Tensor* node) {
+static void mag_cpu_exec_fwd(mag_idevice_t* dvc, mag_tensor_t* node) {
     mag_cpu_exec(dvc, MAG_STAGE_EVAL, node);
 }
 
-static void mag_cpu_broadcast(mag_IStorageBuffer* sto, size_t offs, const void* x, size_t stride) {
+static void mag_cpu_broadcast(mag_istorage_t* sto, size_t offs, const void* x, size_t stride) {
     mag_assert2(offs <= sto->size);
     size_t len = sto->size-offs;
     uint8_t* dst8 = (uint8_t*)sto->base+offs;
@@ -380,7 +380,7 @@ static void mag_cpu_broadcast(mag_IStorageBuffer* sto, size_t offs, const void* 
 
 #define mag_ranges_overlap(a, asz, b, bsz) ((uintptr_t)((a)+(asz)) > (uintptr_t)(b) && (uintptr_t)((b)+(bsz)) > (uintptr_t)(a))
 
-static void mag_cpu_transfer(mag_IStorageBuffer* sto, mag_TransferDir dir, size_t offs, void* inout, size_t size) {
+static void mag_cpu_transfer(mag_istorage_t* sto, mag_transfer_dir_t dir, size_t offs, void* inout, size_t size) {
     mag_assert2(inout && size);
     mag_assert2(!(size & (sto->granularity-1)));
     uintptr_t base = sto->base;
@@ -399,9 +399,9 @@ static void mag_cpu_transfer(mag_IStorageBuffer* sto, mag_TransferDir dir, size_
     else memcpy(host, device, size);
 }
 
-static void mag_cpu_convert(mag_IStorageBuffer* sto, mag_TransferDir dir, size_t offs, void* restrict host, size_t size, mag_DType hdt) {
+static void mag_cpu_convert(mag_istorage_t* sto, mag_transfer_dir_t dir, size_t offs, void* restrict host, size_t size, mag_dtype_t hdt) {
     mag_assert2(host && size);
-    mag_DType ddt = sto->dtype;
+    mag_dtype_t ddt = sto->dtype;
     if (ddt == hdt) { /* identical dtype – delegate to raw copy */
         (*sto->transfer)(sto, dir, offs, host, size);
         return;
@@ -420,8 +420,8 @@ static void mag_cpu_convert(mag_IStorageBuffer* sto, mag_TransferDir dir, size_t
     size_t tnb = helem * sto->granularity;      /* device bytes */
     mag_assert2(tnb <= sto->size-offs);
     void* dvb = (void*)(base+offs);
-    void (*kern)(size_t, const void*, mag_DType, void*, mag_DType)
-        = ((mag_CPUComputeDeviceImpl*)sto->host->impl)->kernels.vector_cast;
+    void (*kern)(size_t, const void*, mag_dtype_t, void*, mag_dtype_t)
+        = ((mag_cpu_device_t*)sto->host->impl)->kernels.vector_cast;
     mag_assert2(kern);
     mag_assert2(!mag_ranges_overlap(host, size, dvb, tnb));
     void* restrict device = dvb;
@@ -436,19 +436,19 @@ mag_static_assert((MAG_CPU_BUF_ALIGN & 31)==0);
 mag_static_assert((MAG_CPU_BUF_ALIGN & 63)==0);
 
 static void mag_cpu_storage_dtor(void* self) {
-    mag_IStorageBuffer* buf = self;
-    mag_Context* ctx = buf->ctx;
+    mag_istorage_t* buf = self;
+    mag_context_t* ctx = buf->ctx;
     mag_assert(ctx->num_storages > 0, "double freed storage");
     --ctx->num_storages;
     (*mag_alloc)((void*)buf->base, 0, MAG_CPU_BUF_ALIGN);
     mag_fixed_intrusive_pool_free(&ctx->storage_pool, buf);
 }
 
-static void mag_cpu_alloc_storage(mag_IComputeDevice* host, mag_IStorageBuffer** out, size_t size, mag_DType dtype) {
-    mag_Context* ctx = host->ctx;
+static void mag_cpu_alloc_storage(mag_idevice_t* host, mag_istorage_t** out, size_t size, mag_dtype_t dtype) {
+    mag_context_t* ctx = host->ctx;
     void* block = (*mag_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
     *out = mag_fixed_intrusive_pool_malloc(&ctx->storage_pool);
-    **out = (mag_IStorageBuffer){ /* Set up storage buffer. */
+    **out = (mag_istorage_t){ /* Set up storage buffer. */
         .ctx = ctx,
         .rc_control = mag_rc_control_init(*out, &mag_cpu_storage_dtor),
         .base = (uintptr_t)block,
@@ -464,11 +464,11 @@ static void mag_cpu_alloc_storage(mag_IComputeDevice* host, mag_IStorageBuffer**
     ++host->ctx->num_storages;
 }
 
-static mag_CPUComputeDeviceImpl* mag_cpu_init_device(mag_Context* ctx, uint32_t num_threads) {
-    mag_ThreadPrio sched_prio = MAG_THREAD_PRIO_HIGH;
-    mag_CPUComputeDeviceImpl* dvc = (*mag_alloc)(NULL, sizeof(*dvc), 0);
+static mag_cpu_device_t* mag_cpu_init_device(mag_context_t* ctx, uint32_t num_threads) {
+    mag_thread_prio_t sched_prio = MAG_THREAD_PRIO_HIGH;
+    mag_cpu_device_t* dvc = (*mag_alloc)(NULL, sizeof(*dvc), 0);
     memset(dvc, 0, sizeof(*dvc));
-    *dvc = (mag_CPUComputeDeviceImpl) {
+    *dvc = (mag_cpu_device_t) {
         .ctx = ctx,
         .pool = NULL,
         .num_allocated_workers = 0,
@@ -489,31 +489,31 @@ static mag_CPUComputeDeviceImpl* mag_cpu_init_device(mag_Context* ctx, uint32_t 
 ** A logarithmic scaling is used, see: https://www.desmos.com/calculator/xiunrskpwu
 ** TODO: This can be improved by using a more sophisticated heuristic and a benchmarked, numerical approach.
 */
-static uint32_t mag_cpu_dynamic_work_scaling(mag_CPUComputeDeviceImpl* dvc, mag_Operator op, int64_t numel) {
-    const mag_OPMetadata* meta = mag_op_meta_of(op);
+static uint32_t mag_cpu_dynamic_work_scaling(mag_cpu_device_t* dvc, mag_opcode_t op, int64_t numel) {
+    const mag_opmeta_t* meta = mag_op_meta_of(op);
     if (!dvc->pool || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel < meta->cpu.thread_treshold)  /* Use a single worker (main thread). */
         return 1;
     numel -= meta->cpu.thread_treshold;                                                             /* Saturate threshold */
-    uint32_t workers = (uint32_t)ceil(meta->cpu.thread_growth * log2((mag_E11M52)numel));         /* Logarithmic scaling */
+    uint32_t workers = (uint32_t)ceil(meta->cpu.thread_growth * log2((mag_e11m52_t)numel));         /* Logarithmic scaling */
     workers = mag_xmin(dvc->num_allocated_workers, mag_xmax(1, workers));
     return workers;
 }
 
-static void mag_cpu_destroy_device(mag_CPUComputeDeviceImpl* dvc) {
+static void mag_cpu_destroy_device(mag_cpu_device_t* dvc) {
     if (dvc->pool)
         mag_threadpool_destroy(dvc->pool);
     (*mag_alloc)(dvc, 0, 0);
 }
 
-static mag_IComputeDevice* mag_cpu_init_interface(mag_Context* ctx, uint32_t num_threads) {
-    mag_CPUComputeDeviceImpl* cpu_dvc = mag_cpu_init_device(ctx, num_threads);
-    mag_IComputeDevice* dvc = (*mag_alloc)(NULL, sizeof(*dvc), 0);
-    *dvc = (mag_IComputeDevice){ /* Initialize device interface */
+static mag_idevice_t* mag_cpu_init_interface(mag_context_t* ctx, uint32_t num_threads) {
+    mag_cpu_device_t* cpu_dvc = mag_cpu_init_device(ctx, num_threads);
+    mag_idevice_t* dvc = (*mag_alloc)(NULL, sizeof(*dvc), 0);
+    *dvc = (mag_idevice_t){ /* Initialize device interface */
         .ctx = ctx,
         .name = "CPU",
         .impl = cpu_dvc,
         .is_async = false,
-        .type = MAG_COMPUTE_DEVICE_TYPE_CPU,
+        .type = MAG_DEVICE_TYPE_CPU,
         .eager_exec_init = &mag_cpu_exec_init,
         .eager_exec_fwd = &mag_cpu_exec_fwd,
         .alloc_storage = &mag_cpu_alloc_storage,
@@ -522,20 +522,20 @@ static mag_IComputeDevice* mag_cpu_init_interface(mag_Context* ctx, uint32_t num
     return dvc;
 }
 
-static void mag_cpu_release_interface(mag_IComputeDevice* ctx) {
-    mag_CPUComputeDeviceImpl* cpu_dvc = ctx->impl;
+static void mag_cpu_release_interface(mag_idevice_t* ctx) {
+    mag_cpu_device_t* cpu_dvc = ctx->impl;
     mag_cpu_destroy_device(cpu_dvc);
     (*mag_alloc)(ctx, 0, 0); /* Free all memory */
 }
 
-mag_IComputeDevice* mag_init_device_cpu(mag_Context* ctx, const mag_ComputeDeviceDesc* desc) {
+mag_idevice_t* mag_init_device_cpu(mag_context_t* ctx, const mag_device_desc_t* desc) {
     uint32_t hw_concurrency = mag_xmax(1, ctx->machine.cpu_virtual_cores);
     uint32_t num_threads = desc->cpu_thread_count;
     num_threads = num_threads ? num_threads : hw_concurrency;
-    mag_IComputeDevice* dvc = mag_cpu_init_interface(ctx, num_threads);
+    mag_idevice_t* dvc = mag_cpu_init_interface(ctx, num_threads);
     return dvc;
 }
 
-void mag_destroy_device_cpu(mag_IComputeDevice* dvc) {
+void mag_destroy_device_cpu(mag_idevice_t* dvc) {
     mag_cpu_release_interface(dvc);
 }
