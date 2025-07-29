@@ -20,6 +20,24 @@ def test_tensor_clone(dtype: DataType) -> None:
 
     square_shape_permutations(func, 4)
 
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_split(dtype: DataType) -> None:
+    def func(shape: tuple[int, ...]) -> None:
+        if dtype == boolean:
+            x = Tensor.bernoulli(shape)
+        else:
+            x = Tensor.uniform(shape, dtype=dtype)
+        if len(shape) <= 1:
+            return
+        dim = random.randint(0, len(shape)-1)
+        split_size = random.randint(1, shape[dim])
+        a = x.split(split_size, dim)
+        b = totorch(x).split(split_size, dim)
+        assert len(a) == len(b)
+        for i in range(len(a)):
+            torch.testing.assert_close(totorch(a[i]), b[i])
+
+    square_shape_permutations(func, 4)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_tolist(dtype: DataType) -> None:
@@ -35,12 +53,9 @@ def test_tensor_tolist(dtype: DataType) -> None:
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_transpose(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if len(shape) <= 1:
-            return
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype)
+        if len(shape) <= 1: return
+        if dtype == boolean: x = Tensor.bernoulli(shape)
+        else: x = Tensor.uniform(shape, dtype=dtype)
         sample = lambda: random.randint(-len(shape)+1, len(shape)-1)
         dim1: int = sample()
         dim2: int = dim1
