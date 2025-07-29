@@ -55,14 +55,14 @@ namespace storage {
         mag_assert(ctx->num_storages > 0, "double freed storage");
         --ctx->num_storages;
         mag_cuda_check(cudaFree(reinterpret_cast<void*>(buffer->base)));
-        mag_fixed_intrusive_pool_free(&ctx->storage_pool, buffer);
+        mag_fixed_pool_free(&ctx->storage_pool, buffer);
     }
 
     static void alloc(mag_idevice_t* host, mag_istorage_t** out, size_t size, mag_dtype_t dtype) {
         mag_context_t* ctx = host->ctx;
         void* block = nullptr;
         mag_cuda_check(cudaMalloc(&block, size));
-        auto* buffer = static_cast<mag_istorage_t*>(mag_fixed_intrusive_pool_malloc(&ctx->storage_pool));
+        auto* buffer = static_cast<mag_istorage_t*>(mag_fixed_pool_malloc(&ctx->storage_pool));
         new (buffer) mag_istorage_t {
             .ctx = ctx,
             .rc_control = mag_rc_control_init(buffer, &dealloc),

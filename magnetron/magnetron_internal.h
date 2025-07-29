@@ -854,11 +854,11 @@ typedef struct mag_fixed_pool_t {
     uint64_t num_allocs;                 /* Number of total allocations */
 } mag_fixed_pool_t;
 
-extern MAG_EXPORT void mag_fixed_intrusive_pool_init(mag_fixed_pool_t* _Nonnull pool, size_t block_size, size_t block_align, size_t blocks_per_chunk);
-extern MAG_EXPORT void* _Nonnull mag_fixed_intrusive_pool_malloc(mag_fixed_pool_t* _Nonnull pool);
-extern MAG_EXPORT void mag_fixed_intrusive_pool_free(mag_fixed_pool_t* _Nonnull pool, void* _Nonnull blk);
-extern MAG_EXPORT void mag_fixed_intrusive_pool_destroy(mag_fixed_pool_t* _Nonnull pool);
-extern MAG_EXPORT void mag_fixed_intrusive_pool_print_info(mag_fixed_pool_t* _Nonnull pool, const char* _Nonnull name);
+extern MAG_EXPORT void mag_fixed_pool_init(mag_fixed_pool_t* _Nonnull pool, size_t block_size, size_t block_align, size_t blocks_per_chunk);
+extern MAG_EXPORT void* _Nonnull mag_fixed_pool_malloc(mag_fixed_pool_t* _Nonnull pool);
+extern MAG_EXPORT void mag_fixed_pool_free(mag_fixed_pool_t* _Nonnull pool, void* _Nonnull blk);
+extern MAG_EXPORT void mag_fixed_pool_destroy(mag_fixed_pool_t* _Nonnull pool);
+extern MAG_EXPORT void mag_fixed_pool_print_info(mag_fixed_pool_t* _Nonnull pool, const char* _Nonnull name);
 
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 typedef struct mag_idevice_t mag_idevice_t;

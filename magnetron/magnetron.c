@@ -695,8 +695,8 @@ mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info) {
     memset(ctx, 0, sizeof(*ctx));
 
     /* Init memory pools */
-    mag_fixed_intrusive_pool_init(&ctx->tensor_pool, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
-    mag_fixed_intrusive_pool_init(&ctx->storage_pool, sizeof(mag_istorage_t), __alignof(mag_istorage_t), 0x1000);
+    mag_fixed_pool_init(&ctx->tensor_pool, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
+    mag_fixed_pool_init(&ctx->storage_pool, sizeof(mag_istorage_t), __alignof(mag_istorage_t), 0x1000);
 
     ctx->tr_id = mag_thread_id(); /* Get thread ID. */
     ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
@@ -722,8 +722,8 @@ void mag_ctx_destroy(mag_context_t* ctx) { /* Destroy magnetron context. */
     #endif
     mag_assert(ctx->num_tensors == 0, "Memory leak: %zu tensors have not been freed", ctx->num_tensors);     /* Leak check if all tensors are freed. */
     mag_assert(ctx->num_storages == 0, "Memory leak: %zu storages have not been freed", ctx->num_storages);  /* Leak check if all storages are freed. */
-    mag_fixed_intrusive_pool_destroy(&ctx->tensor_pool);
-    mag_fixed_intrusive_pool_destroy(&ctx->storage_pool);
+    mag_fixed_pool_destroy(&ctx->tensor_pool);
+    mag_fixed_pool_destroy(&ctx->storage_pool);
     mag_destroy_dynamic_device(ctx->device); ctx->device = NULL; /* Shutdown compute device. */
     memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
     (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
@@ -878,7 +878,7 @@ static mag_pool_chunk_t* mag_fixed_pool_chunk_new(size_t block_size, size_t bloc
 }
 
 /* Initialize fixed intrusive pool and allocate start chunk. */
-void mag_fixed_intrusive_pool_init(mag_fixed_pool_t* pool, size_t block_size, size_t block_align, size_t blocks_per_chunk) {
+void mag_fixed_pool_init(mag_fixed_pool_t* pool, size_t block_size, size_t block_align, size_t blocks_per_chunk) {
     mag_assert2(blocks_per_chunk);
     block_size = mag_xmax(sizeof(void*), block_size); /* Ensure block size is at least sizeof(void*) to store intrusive free list. */
     mag_pool_chunk_t* chunk = mag_fixed_pool_chunk_new(block_size, block_align, blocks_per_chunk);
@@ -897,7 +897,7 @@ void mag_fixed_intrusive_pool_init(mag_fixed_pool_t* pool, size_t block_size, si
 }
 
 /* Allocate a new fixed block from the pool. Memory is uninitialized. */
-void* mag_fixed_intrusive_pool_malloc(mag_fixed_pool_t* pool) {
+void* mag_fixed_pool_malloc(mag_fixed_pool_t* pool) {
     ++pool->num_allocs;
     if (mag_likely(pool->free_list)) { /* 1. Try to pop from free_list (fastest path) */
         ++pool->num_freelist_hits;
@@ -923,13 +923,13 @@ void* mag_fixed_intrusive_pool_malloc(mag_fixed_pool_t* pool) {
 }
 
 /* Free a fixed block back to the pool. This effectively pushes it into the freelist. */
-void mag_fixed_intrusive_pool_free(mag_fixed_pool_t* pool, void* blk) {
+void mag_fixed_pool_free(mag_fixed_pool_t* pool, void* blk) {
     *(void**)blk = pool->free_list;
     pool->free_list = blk;
 }
 
 /* Destroy fixed intrusive pool and free all allocated memory. */
-void mag_fixed_intrusive_pool_destroy(mag_fixed_pool_t* pool) {
+void mag_fixed_pool_destroy(mag_fixed_pool_t* pool) {
     mag_pool_chunk_t* chunk = pool->chunks;
     while (chunk) {
         mag_pool_chunk_t* next = chunk->next;
@@ -940,7 +940,7 @@ void mag_fixed_intrusive_pool_destroy(mag_fixed_pool_t* pool) {
 }
 
 /* Print pool information and allocation stats. */
-MAG_COLDPROC void mag_fixed_intrusive_pool_print_info(mag_fixed_pool_t* pool, const char* name) {
+MAG_COLDPROC void mag_fixed_pool_print_info(mag_fixed_pool_t* pool, const char* name) {
     mag_log_info("Fixed Intrusive Pool: %s", name);
     mag_log_info(
         "\tBlock Size: %zu B, Block Align: %zu B, Blocks Per Chunk: %zu B",
@@ -1031,7 +1031,7 @@ mag_tensor_t* mag_tensor_init_internal(mag_context_t* ctx, mag_dtype_t type, int
             numbytes + view_offs, mag_tensor_get_data_size(view)
         );
     }
-    mag_tensor_t* hdr = mag_fixed_intrusive_pool_malloc(&ctx->tensor_pool); /* Allocate tensor header. */
+    mag_tensor_t* hdr = mag_fixed_pool_malloc(&ctx->tensor_pool); /* Allocate tensor header. */
     #ifndef NDEBUG
         memset(hdr, 0, sizeof(*hdr));
     #endif
@@ -1098,7 +1098,7 @@ static void mag_tensor_dtor(void* self) {
     mag_leak_detector_dequeue(t); /* Pop from alive list */
     memset(t, 0, sizeof(*t));
 #endif
-    mag_fixed_intrusive_pool_free(&ctx->tensor_pool, t);
+    mag_fixed_pool_free(&ctx->tensor_pool, t);
 }
 
 mag_tensor_t* mag_tensor_empty(mag_context_t* ctx, mag_dtype_t type, int64_t rank, const int64_t* shape) {
