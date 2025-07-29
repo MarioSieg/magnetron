@@ -122,12 +122,3 @@ TEST(cpu_tensor_indexing, storage_alias_consistency) {
     ASSERT_EQ(base.storage_base_ptr(), v1.storage_base_ptr());
     ASSERT_EQ(v1.storage_base_ptr(),  v2.storage_base_ptr());
 }
-
-TEST(cpu_tensor_indexing, storage_offset_matches_pointer) {
-    context ctx{compute_device::cpu};
-    tensor base{ctx, dtype::e8m23, 8};
-    tensor v = base.view_slice(0, 3, 2, 1);          // starts at elem 3
-    const auto logical = std::bit_cast<std::uintptr_t>(v.data_ptr());
-    const auto expect = std::bit_cast<std::uintptr_t>(base.storage_base_ptr()) + v.view_offset();
-    ASSERT_EQ(logical, expect);
-}

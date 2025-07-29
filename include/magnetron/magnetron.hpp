@@ -502,8 +502,6 @@ namespace magnetron {
         [[nodiscard]] auto is_permuted() const noexcept -> bool { return mag_tensor_is_permuted(m_tensor); }
         [[nodiscard]] auto is_contiguous() const noexcept -> bool { return mag_tensor_is_contiguous(m_tensor); }
         [[nodiscard]] auto is_view() const noexcept -> bool { return mag_tensor_is_view(m_tensor); }
-        [[nodiscard]] auto view_base() const noexcept -> tensor { return tensor {mag_tensor_get_view_base(m_tensor)}; }
-        [[nodiscard]] auto view_offset() const noexcept -> std::size_t { return mag_tensor_get_view_offset(m_tensor); }
         [[nodiscard]] auto is_floating_point_typed() const noexcept -> bool { return mag_tensor_is_floating_point_typed(m_tensor); }
         [[nodiscard]] auto is_integral_point_typed() const noexcept -> bool { return mag_tensor_is_integral_typed(m_tensor); }
 

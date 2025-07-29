@@ -182,14 +182,8 @@ typedef struct mag_dtype_meta_t {
 } mag_dtype_meta_t;
 extern MAG_EXPORT const mag_dtype_meta_t* _Nonnull mag_dtype_meta_of(mag_dtype_t type);
 
-/**
- * @brief Create a new N-dimensional tensor.
- *      Data is uninitialized, should be filled with values before using it.
- * @param ctx Context to create the tensor in. Must not be NULL.
- * @param type Data type of the tensor. Must be a valid mag_dtype_t.
- * @param d1 Size of the first dimension. Must be > 0 and < INT64_MAX.
- * @returns New tensor. Is never NULL.
- */
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_tensor_new(mag_context_t* _Nonnull ctx, mag_dtype_t type, int64_t rank, const int64_t* _Nonnull shape);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_tensor_as_strided(mag_context_t* _Nonnull ctx, mag_tensor_t* _Nonnull base, int64_t rank, const int64_t* _Nonnull shape, const int64_t* _Nonnull strides, int64_t offset);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_tensor_empty(mag_context_t* _Nonnull ctx, mag_dtype_t type, int64_t rank, const int64_t* _Nonnull shape);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_tensor_empty_like(mag_tensor_t* _Nonnull isomorph);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_tensor_empty_scalar(mag_context_t* _Nonnull ctx, mag_dtype_t type);
@@ -323,6 +317,7 @@ extern MAG_EXPORT int64_t mag_tensor_get_rank(const mag_tensor_t* _Nonnull t);  
 extern MAG_EXPORT const int64_t* _Nonnull mag_tensor_get_shape(const mag_tensor_t* _Nonnull t);                             /* Get the dimensions of the tensor */
 extern MAG_EXPORT const int64_t* _Nonnull mag_tensor_get_strides(const mag_tensor_t* _Nonnull t);                           /* Get the strides of the tensor */
 extern MAG_EXPORT mag_dtype_t mag_tensor_get_dtype(const mag_tensor_t* _Nonnull t);                                           /* Get the data type of the tensor */
+extern MAG_EXPORT size_t mag_tensor_get_data_offset(const mag_tensor_t* _Nonnull t);
 extern MAG_EXPORT void* _Nonnull mag_tensor_get_data_ptr(const mag_tensor_t* _Nonnull t);                                   /* Get pointer to first element. Might point to GPU or any other device memory. */
 extern MAG_EXPORT void* _Nonnull mag_tensor_get_storage_base_ptr(const mag_tensor_t* _Nonnull t);                           /* Get pointer to storage memory block base. Might point to GPU or any other device memory. */
 extern MAG_EXPORT int64_t mag_tensor_get_data_size(const mag_tensor_t* _Nonnull );                                          /* Get the size of the tensor buffer in bytes. */
@@ -334,8 +329,6 @@ extern MAG_EXPORT int64_t mag_tensor_get_width(const mag_tensor_t* _Nonnull t);
 extern MAG_EXPORT int64_t mag_tensor_get_height(const mag_tensor_t* _Nonnull t);
 extern MAG_EXPORT int64_t mag_tensor_get_channels(const mag_tensor_t* _Nonnull t);
 extern MAG_EXPORT bool mag_tensor_is_view(const mag_tensor_t* _Nonnull t);                                                /* Check if the tensor is a view of another tensor */
-extern MAG_EXPORT mag_tensor_t* _Nullable mag_tensor_get_view_base(const mag_tensor_t* _Nonnull t);
-extern MAG_EXPORT size_t mag_tensor_get_view_offset(const mag_tensor_t* _Nonnull t);
 extern MAG_EXPORT bool mag_tensor_is_floating_point_typed(const mag_tensor_t* _Nonnull t);
 extern MAG_EXPORT bool mag_tensor_is_integral_typed(const mag_tensor_t* _Nonnull t);
 extern MAG_EXPORT bool mag_tensor_is_integer_typed(const mag_tensor_t* _Nonnull t);

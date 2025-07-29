@@ -8,12 +8,6 @@
 
 #include <stdarg.h>
 
-extern mag_tensor_t* mag_tensor_init_internal(mag_context_t* ctx, mag_dtype_t type, int64_t rank, const int64_t* shape, mag_tensor_t* view, size_t view_offs);
-
-static mag_tensor_t* mag_tensor_inplace_view(mag_tensor_t* base) {
-    return mag_tensor_init_internal(base->ctx, base->dtype, base->rank, base->shape, base, 0);
-}
-
 /*
 ** ###################################################################################################################
 ** Operator Validation Helpers
@@ -267,34 +261,23 @@ static mag_tensor_t* mag_result_constructor_routine_bool_isomorph(mag_tensor_t**
 static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, const mag_opparam_t* params) {
     mag_tensor_t* base = *inputs;
     uint32_t nd_new = (uint32_t)mag_op_param_unpack_i64_or_panic(params[0]);
-    if (!nd_new)
-        return mag_tensor_inplace_view(base); /* If no new dimensions are specified, return the inplace view of the base tensor. */
-    int64_t old_numel = base->numel;
+    if (!nd_new)  /* If no new dimensions are specified, return the inplace view of the base tensor. */
+        return mag_tensor_as_strided(base->ctx, base, base->rank, base->shape, base->strides, base->storage_offset);
     int64_t canon[MAG_MAX_DIMS];
     int64_t infer_dim = -1;
     int64_t known_prod = 1;
     for (uint32_t i=0; i < nd_new; ++i) {
-        int64_t s = mag_op_param_unpack_i64_or_panic(params[i+1]);
-        if (s == -1) {
-            mag_assert2(infer_dim == -1);
-            infer_dim = i;
-            canon[i] = 1;
-        } else {
-            mag_assert2(s > 0);
-            canon[i] = s;
-            known_prod *= s;
-        }
+        int64_t s = mag_op_param_unpack_i64_or_panic(params[i + 1]);
+        if (s == -1) { mag_assert2(infer_dim == -1); infer_dim = i; canon[i] = 1; }
+        else { mag_assert2(s > 0); canon[i] = s; known_prod *= s; }
     }
-    if (infer_dim >= 0) {
-        mag_assert2(old_numel % known_prod == 0);
-        canon[infer_dim] = old_numel / known_prod;
-    } else {
-        mag_assert2(known_prod == old_numel);
-    }
-    mag_tensor_t* result = mag_tensor_init_internal(base->ctx, base->dtype, nd_new, canon, base, 0);
-    if (*base->name)
-        mag_tensor_fmt_name(result, "%s (view)", base->name);
-    return result;
+    if (infer_dim >= 0) canon[infer_dim] = base->numel / known_prod;
+    else mag_assert2(known_prod == base->numel);
+    int64_t strides[MAG_MAX_DIMS];
+    strides[nd_new - 1] = 1;
+    for (int32_t i=(int32_t)nd_new-2; i >= 0; --i)
+        strides[i] = strides[i+1] * canon[i+1];
+    return mag_tensor_as_strided(base->ctx, base, nd_new, canon, strides, base->storage_offset);
 }
 
 static mag_tensor_t* mag_result_constructor_routine_scalar(mag_tensor_t** inputs,  const mag_opparam_t* params) {
@@ -303,39 +286,33 @@ static mag_tensor_t* mag_result_constructor_routine_scalar(mag_tensor_t** inputs
 }
 
 static mag_tensor_t* mag_result_constructor_routine_transposed(mag_tensor_t** inputs,  const mag_opparam_t* params) {
-    mag_tensor_t* transposed = mag_tensor_inplace_view(*inputs);
+    mag_tensor_t* base = *inputs;
     uint64_t ax0 = mag_op_param_unpack_i64_or_panic(params[0]);
     uint64_t ax1 = mag_op_param_unpack_i64_or_panic(params[1]);
-    mag_swap(int64_t, transposed->shape[ax0], transposed->shape[ax1]);
-    mag_swap(int64_t, transposed->strides[ax0], transposed->strides[ax1]);
-    if (*inputs[0]->name)
-        mag_tensor_fmt_name(transposed, "%s (T)", inputs[0]->name);
-    return transposed;
+    int64_t shape[MAG_MAX_DIMS];
+    int64_t stride[MAG_MAX_DIMS];
+    memcpy(shape,  base->shape,   sizeof shape);
+    memcpy(stride, base->strides, sizeof stride);
+    mag_swap(int64_t, shape [ax0],  shape [ax1]);
+    mag_swap(int64_t, stride[ax0],  stride[ax1]);
+    return mag_tensor_as_strided(base->ctx, base, base->rank, shape, stride, base->storage_offset);
 }
 
 static mag_tensor_t* mag_result_constructor_routine_permuted(mag_tensor_t** inputs,  const mag_opparam_t* params) {
-    mag_assert2(params != NULL);
-    const mag_tensor_t* base = inputs[0];
-    mag_tensor_t* permuted = mag_tensor_inplace_view(*inputs);
+    mag_tensor_t* base = *inputs;
     int64_t axes[MAG_MAX_DIMS];
     for (int64_t i=0; i < base->rank; ++i)
         axes[i] = mag_op_param_unpack_i64_or_panic(params[i]);
+    for (int64_t i=0; i < base->rank; ++i)
+        for (int64_t j = i+1; j < base->rank; ++j)
+            mag_assert(axes[i] != axes[j], "Axes must be unique: %" PRIi64 " == %" PRIi64, axes[i], axes[j]);
+    int64_t shape[MAG_MAX_DIMS];
+    int64_t stride[MAG_MAX_DIMS];
     for (int64_t i=0; i < base->rank; ++i) {
-        mag_assert2(axes[i] < base->rank);
-        for (int64_t j=i+1; j < base->rank; ++j)
-            mag_assert(axes[i] != axes[j], "Axes must be unique: %zu == %zu", axes[i], axes[j]);
+        shape[i] = base->shape[axes[i]];
+        stride[i] = base->strides[axes[i]];
     }
-    int64_t tmp_shape[MAG_MAX_DIMS];
-    int64_t tmp_stride[MAG_MAX_DIMS];
-    memcpy(tmp_shape, base->shape, sizeof(tmp_shape));
-    memcpy(tmp_stride, base->strides, sizeof(tmp_stride));
-    for (int64_t i=0; i < base->rank; ++i) {
-        permuted->shape[i] = tmp_shape[axes[i]];
-        permuted->strides[i] = tmp_stride[axes[i]];
-    }
-    if (*base->name)
-        mag_tensor_fmt_name(permuted, "%s (perm)", base->name);
-    return permuted;
+    return mag_tensor_as_strided(base->ctx, base, base->rank, shape, stride, base->storage_offset);
 }
 
 static mag_tensor_t* mag_result_constructor_routine_matmul(mag_tensor_t** inputs,  const mag_opparam_t* params) { /* MxR = MxN * NxR */
@@ -345,15 +322,15 @@ static mag_tensor_t* mag_result_constructor_routine_matmul(mag_tensor_t** inputs
     /* Handle degenerate 1D cases first */
     if (a->rank == 1 && b->rank == 1) { /* (K)x(K) -> () */
         int64_t shape[1] = {1};
-        return mag_tensor_init_internal(a->ctx, a->dtype, 1, shape, NULL, 0);
+        return mag_tensor_new(a->ctx, a->dtype, 1, shape);
     }
     if (a->rank == 1 && b->rank == 2) { /* (K)x(K,N) -> (N) */
         int64_t shape[1] = {b->shape[1]};
-        return mag_tensor_init_internal(a->ctx, a->dtype, 1, shape, NULL, 0);
+        return mag_tensor_new(a->ctx, a->dtype, 1, shape);
     }
     if (a->rank == 2 && b->rank == 1) { /* (M,K)x(K) -> (M) */
         int64_t shape[1] = {a->shape[0]};
-        return mag_tensor_init_internal(a->ctx, a->dtype, 1, shape, NULL, 0);
+        return mag_tensor_new(a->ctx, a->dtype, 1, shape);
     }
     /* Batched ND version */
     int64_t a_bd = a->rank-2;
@@ -367,11 +344,11 @@ static mag_tensor_t* mag_result_constructor_routine_matmul(mag_tensor_t** inputs
     }
     shape[r_bd] = a->shape[a->rank-2];    /* M */
     shape[r_bd+1] = b->shape[b->rank-1];    /* N */
-    return mag_tensor_init_internal(a->ctx, a->dtype, r_bd + 2, shape, NULL, 0);
+    return mag_tensor_new(a->ctx, a->dtype, r_bd + 2, shape);
 }
 
 static mag_tensor_t* mag_result_constructor_routine_repeat_back(mag_tensor_t** inputs,  const mag_opparam_t* params) {
-    return mag_tensor_init_internal(inputs[0]->ctx, inputs[0]->dtype, inputs[1]->rank, inputs[1]->shape, NULL, 0);
+    return mag_tensor_new(inputs[0]->ctx, inputs[0]->dtype, inputs[1]->rank, inputs[1]->shape);
 }
 
 /*
@@ -621,6 +598,11 @@ static void MAG_HOTPROC mag_op_exec(mag_tensor_t* R, mag_idevice_t* dvc, mag_exe
 }
 
 extern void mag_tensor_detach_inplace(mag_tensor_t* target);
+static void mag_bump_version(mag_tensor_t* t) {
+    if (t->flags & MAG_TFLAG_IS_VIEW) /* If this is a view, bump the version of the base tensor */
+        t = t->view_meta->base;
+    ++t->version;
+}
 
 /* Execute an operator on the active compute device and return result tensor. */
 static mag_tensor_t* MAG_HOTPROC mag_tensor_operator(
@@ -643,7 +625,9 @@ static mag_tensor_t* MAG_HOTPROC mag_tensor_operator(
     inplace &= !!(meta->flags & MAG_OP_FLAG_SUPPORTS_INPLACE);                                                              /* Inplace operation requested and supported? */
 
     /* Allocate result tensor and validate operation */
-    mag_tensor_t* result = inplace ? mag_tensor_inplace_view(*inputs) : (*r_alloc)(inputs, params);     /* If inplace, result views x (input 0), else a new result tensor is allocated. */
+    mag_tensor_t* base = *inputs;
+    mag_tensor_t* result = inplace ? mag_tensor_as_strided(ctx, base, base->rank, base->shape, base->strides, base->storage_offset)
+        : (*r_alloc)(inputs, params);     /* If inplace, result views x (input 0), else a new result tensor is allocated. */
     result->op = op;                                                                                    /* Set opcode of result. */
     mag_sstream_t* msg = NULL;
     if (mag_unlikely(!(*validate_op)(&msg, inplace, result, inputs, params))) { /* Operation is invalid */
@@ -672,6 +656,7 @@ static mag_tensor_t* MAG_HOTPROC mag_tensor_operator(
     if (params) /* If available, copy operation parameters to result */
         memcpy(result->op_params, params, num_params*sizeof(*params));
     mag_op_exec(result, ctx->device, stage);  /* Execute the operator. */
+    if (inplace) mag_bump_version(result);   /* result aliases the modified storage */
     if (!is_recording_grads)
         mag_tensor_detach_inplace(result); /* If gradient are not recorded, detach the tensor's parents (clear parent and opcode). TODO: why are we doing this? */
     return result;
@@ -706,22 +691,22 @@ mag_tensor_t* mag_reshape(mag_tensor_t* x, const int64_t* dims, uint32_t num_dim
 }
 
 mag_tensor_t* mag_view_slice(mag_tensor_t* x, int64_t dim, int64_t start, int64_t len, int64_t step) {
-    mag_assert(step > 0, "negative step not supported");
+    mag_assert(step  > 0, "negative step");
     mag_assert(dim  >= 0 && dim < x->rank, "dim out of range");
     int64_t sz = x->shape[dim];
     if (start < 0) start += sz;
-    mag_assert(start >= 0 && start < sz, "start out of bounds");
+    mag_assert(start >= 0 && start <  sz, "start out of bounds");
     if (len < 0) len = sz - start;
     mag_assert(len > 0, "len must be > 0");
-    mag_assert(start + (len-1)*step < sz, "slice exceeds tensor bounds");
-    int64_t shape[MAG_MAX_DIMS];
+    mag_assert(start + (len - 1)*step < sz, "slice exceeds bounds");
+    int64_t shape  [MAG_MAX_DIMS];
     int64_t strides[MAG_MAX_DIMS];
     memcpy(shape, x->shape, sizeof(shape));
     memcpy(strides, x->strides, sizeof(strides));
     shape[dim] = len;
     strides[dim] *= step;
-    size_t byte_offs = start*x->strides[dim]*mag_dtype_meta_of(x->dtype)->size;
-    return mag_tensor_init_internal(x->ctx, x->dtype, x->rank, shape, x, byte_offs);
+    int64_t offset = x->storage_offset + start*x->strides[dim];
+    return mag_tensor_as_strided(x->ctx, x, x->rank, shape, strides, offset);
 }
 
 mag_tensor_t* mag_transpose(mag_tensor_t* x, int64_t dim1, int64_t dim2) {

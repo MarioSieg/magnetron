@@ -558,6 +558,24 @@ mag_device_desc_t mag_compute_device_desc_cuda(uint32_t cuda_device_id) {
     };
 }
 
+static void mag_view_meta_dtor(void* p) {
+    mag_view_meta_t* vm = p;
+    mag_context_t* ctx = vm->base->ctx;
+    if (vm->base->view_meta == vm)
+        vm->base->view_meta = NULL;
+    mag_rc_control_decref(&vm->base->rc_control);
+    mag_fixed_pool_free_block(&ctx->view_meta_pool, vm);
+}
+
+mag_view_meta_t* mag_view_meta_alloc(mag_tensor_t* base){
+    mag_view_meta_t* vm = mag_fixed_pool_alloc_block(&base->ctx->view_meta_pool);
+    vm->rc = mag_rc_control_init(vm, &mag_view_meta_dtor);
+    vm->base = base;
+    mag_rc_control_incref(&base->rc_control);       /* keep base alive */
+    vm->version_snapshot = base->version;      /* autograd */
+    return vm;
+}
+
 /* Initialize and seed PRNG state. */
 void mag_prng_seed(mag_prng_state_t* prng, mag_prngalgo_t algo, uint64_t seed) {
     seed = seed ? seed : 0x853c49e6748fea9bull;
@@ -697,6 +715,7 @@ mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info) {
     /* Init memory pools */
     mag_fixed_pool_init(&ctx->tensor_pool, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
     mag_fixed_pool_init(&ctx->storage_pool, sizeof(mag_istorage_t), __alignof(mag_istorage_t), 0x1000);
+    mag_fixed_pool_init(&ctx->view_meta_pool, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
 
     ctx->tr_id = mag_thread_id(); /* Get thread ID. */
     ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
@@ -722,6 +741,7 @@ void mag_ctx_destroy(mag_context_t* ctx) { /* Destroy magnetron context. */
     #endif
     mag_assert(ctx->num_tensors == 0, "Memory leak: %zu tensors have not been freed", ctx->num_tensors);     /* Leak check if all tensors are freed. */
     mag_assert(ctx->num_storages == 0, "Memory leak: %zu storages have not been freed", ctx->num_storages);  /* Leak check if all storages are freed. */
+    mag_fixed_pool_destroy(&ctx->view_meta_pool);
     mag_fixed_pool_destroy(&ctx->tensor_pool);
     mag_fixed_pool_destroy(&ctx->storage_pool);
     mag_destroy_dynamic_device(ctx->device); ctx->device = NULL; /* Shutdown compute device. */
@@ -897,7 +917,7 @@ void mag_fixed_pool_init(mag_fixed_pool_t* pool, size_t block_size, size_t block
 }
 
 /* Allocate a new fixed block from the pool. Memory is uninitialized. */
-void* mag_fixed_pool_malloc(mag_fixed_pool_t* pool) {
+void* mag_fixed_pool_alloc_block(mag_fixed_pool_t* pool) {
     ++pool->num_allocs;
     if (mag_likely(pool->free_list)) { /* 1. Try to pop from free_list (fastest path) */
         ++pool->num_freelist_hits;
@@ -923,7 +943,7 @@ void* mag_fixed_pool_malloc(mag_fixed_pool_t* pool) {
 }
 
 /* Free a fixed block back to the pool. This effectively pushes it into the freelist. */
-void mag_fixed_pool_free(mag_fixed_pool_t* pool, void* blk) {
+void mag_fixed_pool_free_block(mag_fixed_pool_t* pool, void* blk) {
     *(void**)blk = pool->free_list;
     pool->free_list = blk;
 }
@@ -1010,31 +1030,9 @@ const mag_dtype_meta_t* mag_dtype_meta_of(mag_dtype_t type) {
 
 static void mag_tensor_dtor(void* self); /* Destructor forward declaration. */
 
-/* Create a new tensor. The must be created on the same thread as the context. */
-mag_tensor_t* mag_tensor_init_internal(mag_context_t* ctx, mag_dtype_t type, int64_t rank, const int64_t* shape, mag_tensor_t* view, size_t view_offs) {
-    uintptr_t tr_id = mag_thread_id();
-    mag_assert(tr_id == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", tr_id, ctx->tr_id);     /* Ensure that the tensor is created on the same thread as the context. */
-    mag_assert(shape != NULL && rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within (0, %d]", MAG_MAX_DIMS); /* Check rank */
-    int64_t dts = (int64_t)mag_dtype_meta_of(type)->size;
-    int64_t numel = 1;
-    for (int64_t i=0; i < rank; ++i) /* Calculate buffer size and check for overflow. */
-        mag_assert2(shape[i] > 0 && !mag_imull64_ov(shape[i], numel, &numel)); /* Overflow in buffer size. Max: INT64_MAX. Reduce dimensions. */
-    int64_t numbytes = numel*dts; /* Total bytes required for the data. */
-    if (view) { /* Check if we have a view (base) tensor. */
-        if (view->view_uplink) { /* Walk to the real storage owner and accumulate any existing offset */
-            view_offs += view->view_offs;
-            view = view->view_uplink;
-        }
-        mag_assert( /* Make sure the slice stays inside the parent’s storage buffer */
-            !numbytes || numbytes + view_offs <= mag_tensor_get_data_size(view),
-            "Slice exceeds backing storage (%" PRIi64 " > %" PRIi64 ")",
-            numbytes + view_offs, mag_tensor_get_data_size(view)
-        );
-    }
-    mag_tensor_t* hdr = mag_fixed_pool_malloc(&ctx->tensor_pool); /* Allocate tensor header. */
-    #ifndef NDEBUG
-        memset(hdr, 0, sizeof(*hdr));
-    #endif
+static mag_tensor_t* mag_tensor_init_header(mag_context_t* ctx, mag_dtype_t type, int64_t rank, int64_t numel) {
+    mag_tensor_t* hdr = mag_fixed_pool_alloc_block(&ctx->tensor_pool); /* Allocate tensor header. */
+    memset(hdr, 0, sizeof(*hdr));
     *hdr = (mag_tensor_t) { /* Initialize tensor header. */
         .ctx = ctx,
         .rc_control = mag_rc_control_init(hdr, &mag_tensor_dtor), /* Initialize reference counter. */
@@ -1044,41 +1042,86 @@ mag_tensor_t* mag_tensor_init_internal(mag_context_t* ctx, mag_dtype_t type, int
         .dtype = type,
         .storage = NULL,
         .numel = numel,
-        .flags = view ? MAG_TFLAG_IS_VIEW : MAG_TFLAG_NONE, /* Set flags. */
+        .flags = MAG_TFLAG_NONE,
         .op = MAG_OP_NOP,
         .op_inputs = {0},
         .op_params = {mag_op_param_none()},
         .init_op = MAG_IOP_NOP,
         .init_op_params = {mag_op_param_none()},
-        .view_uplink = view,
-        .view_offs = view_offs,
+        .storage_offset = 0,
+        .view_meta = NULL,
+        .version = 0,
         .grad = NULL,
         .name = "",
         .ud = NULL
     };
-    #ifdef MAG_DEBUG
-        hdr->alive_next = NULL;
-        mag_leak_detector_enqueue(hdr);
-    #endif
+#ifdef MAG_DEBUG
+    hdr->alive_next = NULL;
+    mag_leak_detector_enqueue(hdr);
+#endif
     ++ctx->num_tensors; /* Increase tensor count in context. */
-    /* Allocate device memory */
+    return hdr;
+}
+
+/* Create a new tensor. The must be created on the same thread as the context. */
+mag_tensor_t* mag_tensor_new(mag_context_t* ctx, mag_dtype_t type, int64_t rank, const int64_t* shape) {
+    uintptr_t tr_id = mag_thread_id();
+    mag_assert(ctx && tr_id == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", tr_id, ctx->tr_id);  /* Ensure that the tensor is created on the same thread as the context. */
+    mag_assert(shape && rank > 0 && rank <= MAG_MAX_DIMS, "Rank must be within (0, %d]", MAG_MAX_DIMS); /* Check rank */
+    int64_t dts = (int64_t)mag_dtype_meta_of(type)->size;
+    int64_t numel = 1;
+    for (int64_t i=0; i < rank; ++i) /* Calculate buffer size and check for overflow. */
+        mag_assert2(shape[i] > 0 && !mag_imull64_ov(shape[i], numel, &numel)); /* Overflow in buffer size. Max: INT64_MAX. Reduce dimensions. */
+    int64_t numbytes = numel*dts; /* Total bytes required for the data. */
+    mag_tensor_t* tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
     mag_idevice_t* dvc = ctx->device;
     void (*allocator)(mag_idevice_t*, mag_istorage_t**, size_t, mag_dtype_t) = dvc->alloc_storage; /* Get allocator function. */
-    if (view) { /* Reference memory from view */
-        hdr->storage = view->storage;
-        mag_rc_control_incref(&view->storage->rc_control); /* Increase reference count of the view's storage. */
+    (*allocator)(dvc, &tensor->storage, numbytes, type); /* Else allocate new device memory */
+    for (int i=0; i < MAG_MAX_DIMS; ++i)  {  /* Copy dimensions and set unused to identity. */
+        tensor->shape[i] = i < rank ? shape[i] : 1;
+        tensor->strides[i] = 1;
     }
-    else (*allocator)(dvc, &hdr->storage, numbytes, type); /* Else allocate new device memory */
-    for (int i=0; i < MAG_MAX_DIMS; ++i)  {   /* Copy dimensions and set unused to identity. */
-        hdr->shape[i] = i < rank ? shape[i] : 1;
-        hdr->strides[i] = 1;
-    }
-    /* Compute strides and check for overflow. Strides follow C's row major convention, NO Fortran ordering. */
-    hdr->strides[rank-1] = 1;
+    /* Compute contiguous row-major strides and check for overflow. */
+    tensor->strides[rank-1] = 1;
     for (int64_t i=rank-2; i >= 0; --i) {
-        mag_assert(!mag_imull64_ov(hdr->strides[i+1], hdr->shape[i+1], hdr->strides+i), "overflow in strides");
+        mag_assert(!mag_imull64_ov(tensor->strides[i+1], tensor->shape[i+1], tensor->strides+i), "overflow in strides");
     }
-    return hdr;
+    return tensor;
+}
+
+mag_tensor_t* mag_tensor_as_strided(mag_context_t* ctx, mag_tensor_t* base, int64_t rank, const int64_t* shape, const int64_t* strides, int64_t offset) {
+    uintptr_t tr_id = mag_thread_id();
+    mag_assert(ctx && tr_id == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", tr_id, ctx->tr_id);  /* Ensure that the tensor is created on the same thread as the context. */
+    mag_assert(base && shape && strides && rank > 0 && rank <= MAG_MAX_DIMS, "Rank must be within (0, %d]", MAG_MAX_DIMS);
+    mag_assert(offset >= 0, "negative storage offset: %" PRIi64, offset);
+    int64_t last = offset;
+    int64_t numel = 1;
+    for (int64_t i=0; i < rank; ++i) {
+        mag_assert2(strides[i] > 0 && shape[i] > 0);
+        int64_t span;
+        mag_assert2(!mag_imull64_ov(shape[i]-1, strides[i], &span));
+        last += span;
+        numel *= shape[i];
+    }
+    int64_t numel_end = (int64_t)base->storage->size/base->storage->granularity;
+    mag_assert(last < numel_end, "view exceeds backing storage size: %" PRIi64 " >= %" PRIi64, last, numel_end);
+    mag_tensor_t* tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
+    for (int i=0; i < MAG_MAX_DIMS; ++i) {
+        tensor->shape[i] = i < rank ? shape[i] : 1;
+        tensor->strides[i] = i < rank ? strides[i] : 1;
+    }
+    tensor->storage = base->storage;
+    mag_rc_control_incref(&base->storage->rc_control); /* Retain base storage */
+    tensor->storage_offset = offset;
+    tensor->version = base->version;
+    if (!(base->flags & MAG_TFLAG_IS_VIEW)) /* first view */
+        tensor->view_meta = mag_view_meta_alloc(base);
+    else {
+        tensor->view_meta = base->view_meta;
+        mag_rc_control_incref(&tensor->view_meta->rc); /* Retain view meta */
+    }
+    tensor->flags = base->flags | MAG_TFLAG_IS_VIEW; /* Set view flag */
+    return tensor;
 }
 
 static void mag_tensor_dtor(void* self) {
@@ -1086,6 +1129,10 @@ static void mag_tensor_dtor(void* self) {
     mag_context_t* ctx = t->ctx;
     mag_assert(ctx->num_tensors > 0, "double freed tensor");
     --ctx->num_tensors;
+    if (t->view_meta) {
+        mag_rc_control_decref(&t->view_meta->rc);
+        t->view_meta = NULL;
+    }
     if (t->grad) {
         mag_tensor_decref(t->grad);
         t->grad = NULL;
@@ -1098,15 +1145,15 @@ static void mag_tensor_dtor(void* self) {
     mag_leak_detector_dequeue(t); /* Pop from alive list */
     memset(t, 0, sizeof(*t));
 #endif
-    mag_fixed_pool_free(&ctx->tensor_pool, t);
+    mag_fixed_pool_free_block(&ctx->tensor_pool, t);
 }
 
 mag_tensor_t* mag_tensor_empty(mag_context_t* ctx, mag_dtype_t type, int64_t rank, const int64_t* shape) {
-    return mag_tensor_init_internal(ctx, type, rank, shape, NULL, 0);
+    return mag_tensor_new(ctx, type, rank, shape);
 }
 
 mag_tensor_t* mag_tensor_empty_like(mag_tensor_t* isomorph) {
-    return mag_tensor_init_internal(isomorph->ctx, isomorph->dtype, isomorph->rank, isomorph->shape, NULL, 0);
+    return mag_tensor_new(isomorph->ctx, isomorph->dtype, isomorph->rank, isomorph->shape);
 }
 
 mag_tensor_t* mag_tensor_empty_scalar(mag_context_t* ctx, mag_dtype_t type) {
@@ -1209,7 +1256,12 @@ int64_t mag_tensor_get_rank(const mag_tensor_t* t) { return t->rank; }
 const int64_t* mag_tensor_get_shape(const mag_tensor_t* t) { return t->shape; }
 const int64_t* mag_tensor_get_strides(const mag_tensor_t* t) { return t->strides; }
 mag_dtype_t mag_tensor_get_dtype(const mag_tensor_t* t) { return t->dtype; }
-void* mag_tensor_get_data_ptr(const mag_tensor_t* t) { return (void*)(t->storage->base+t->view_offs); }
+size_t mag_tensor_get_data_offset(const mag_tensor_t *t){
+    return (size_t)t->storage_offset*t->storage->granularity; /* Return offset in bytes */
+}
+void* mag_tensor_get_data_ptr(const mag_tensor_t* t) {
+    return (void*)(t->storage->base + mag_tensor_get_data_offset(t));
+}
 void* _Nonnull mag_tensor_get_storage_base_ptr(const mag_tensor_t* t) { return (void*)t->storage->base; }
 
 void* mag_tensor_get_raw_data_as_bytes(mag_tensor_t* t) {
@@ -1217,7 +1269,7 @@ void* mag_tensor_get_raw_data_as_bytes(mag_tensor_t* t) {
     mag_assert2(size);
     void* dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_istorage_t* sto = t->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, dst, size);
+    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), dst, size);
     return dst;
 }
 
@@ -1231,7 +1283,7 @@ mag_e8m23_t* mag_tensor_get_data_as_floats(mag_tensor_t* t) {
     mag_assert2(size);
     mag_e8m23_t* dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_istorage_t* sto = t->storage;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, dst, size, MAG_DTYPE_E8M23);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), dst, size, MAG_DTYPE_E8M23);
     return dst;
 }
 
@@ -1242,21 +1294,21 @@ void mag_tensor_get_data_as_floats_free(mag_e8m23_t* ret_val) {
 mag_e8m23_t mag_tensor_get_item_float(const mag_tensor_t* t) {
     mag_istorage_t* sto = t->storage;
     mag_e8m23_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, &val, sizeof(val), MAG_DTYPE_E8M23);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_E8M23);
     return val;
 }
 
 int32_t mag_tensor_get_item_int(const mag_tensor_t* t) {
     mag_istorage_t* sto = t->storage;
     int32_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, &val, sizeof(val), MAG_DTYPE_I32);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_I32);
     return val;
 }
 
 bool mag_tensor_get_item_bool(const mag_tensor_t* t) {
     mag_istorage_t* sto = t->storage;
     uint8_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs, &val, sizeof(val), MAG_DTYPE_BOOL);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_BOOL);
     return !!val;
 }
 
@@ -1479,7 +1531,7 @@ mag_e8m23_t mag_tensor_subscript_get_multi(mag_tensor_t* t, int64_t i0, int64_t 
     mag_load_local_storage_group(t, s, strides);
     mag_istorage_t* sto = t->storage;
     mag_e8m23_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H,t->view_offs + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val), MAG_DTYPE_E8M23);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t) + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val), MAG_DTYPE_E8M23);
     return val;
 }
 
@@ -1487,7 +1539,7 @@ void mag_tensor_subscript_set_multi(mag_tensor_t* t, int64_t i0, int64_t i1, int
     mag_static_assert(MAG_MAX_DIMS == 6);
     mag_load_local_storage_group(t, s, strides);
     mag_istorage_t* sto = t->storage;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, t->view_offs + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val), MAG_DTYPE_E8M23);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, mag_tensor_get_data_offset(t) + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val), MAG_DTYPE_E8M23);
 }
 
 static MAG_AINLINE void mag_tensor_unravel_index(const mag_tensor_t* t, int64_t v_idx, int64_t(*p_idx)[MAG_MAX_DIMS]) {
@@ -1509,7 +1561,7 @@ mag_e8m23_t mag_tensor_subscript_get_flattened(mag_tensor_t* t, int64_t idx) {
     }
     mag_istorage_t* sto = t->storage;
     mag_e8m23_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, t->view_offs + sto->granularity*idx, &val, sizeof(val), MAG_DTYPE_E8M23);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t) + sto->granularity*(size_t)idx, &val, sizeof(val), MAG_DTYPE_E8M23);
     return val;
 }
 
@@ -1521,7 +1573,7 @@ void mag_tensor_subscript_set_flattened(mag_tensor_t* t, int64_t idx, mag_e8m23_
         return;
     }
     mag_istorage_t* sto = t->storage;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, t->view_offs + sto->granularity*idx, &val, sizeof(val), MAG_DTYPE_E8M23);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, mag_tensor_get_data_offset(t) + sto->granularity*(size_t)idx, &val, sizeof(val), MAG_DTYPE_E8M23);
 }
 
 void mag_tensor_img_draw_box(mag_tensor_t* t, int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t wi, uint32_t rgb) {
@@ -1716,8 +1768,6 @@ int64_t mag_tensor_get_width(const mag_tensor_t* t) { return t->shape[2]; }
 int64_t mag_tensor_get_height(const mag_tensor_t* t) { return t->shape[1]; }
 int64_t mag_tensor_get_channels(const mag_tensor_t* t) { return t->shape[0]; }
 bool mag_tensor_is_view(const mag_tensor_t* t) { return t->flags & MAG_TFLAG_IS_VIEW; }
-mag_tensor_t* mag_tensor_get_view_base(const mag_tensor_t* t) { return t->view_uplink; }
-size_t mag_tensor_get_view_offset(const mag_tensor_t* t) { return t->view_offs; }
 bool mag_tensor_is_floating_point_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_FLOATING; }
 bool mag_tensor_is_integral_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGRAL; }
 bool mag_tensor_is_integer_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGER; }

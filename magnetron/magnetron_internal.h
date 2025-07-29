@@ -855,8 +855,8 @@ typedef struct mag_fixed_pool_t {
 } mag_fixed_pool_t;
 
 extern MAG_EXPORT void mag_fixed_pool_init(mag_fixed_pool_t* _Nonnull pool, size_t block_size, size_t block_align, size_t blocks_per_chunk);
-extern MAG_EXPORT void* _Nonnull mag_fixed_pool_malloc(mag_fixed_pool_t* _Nonnull pool);
-extern MAG_EXPORT void mag_fixed_pool_free(mag_fixed_pool_t* _Nonnull pool, void* _Nonnull blk);
+extern MAG_EXPORT void* _Nonnull mag_fixed_pool_alloc_block(mag_fixed_pool_t* _Nonnull pool);
+extern MAG_EXPORT void mag_fixed_pool_free_block(mag_fixed_pool_t* _Nonnull pool, void* _Nonnull blk);
 extern MAG_EXPORT void mag_fixed_pool_destroy(mag_fixed_pool_t* _Nonnull pool);
 extern MAG_EXPORT void mag_fixed_pool_print_info(mag_fixed_pool_t* _Nonnull pool, const char* _Nonnull name);
 
@@ -1018,6 +1018,7 @@ struct mag_context_t {
     size_t num_storages;                        /* Total storage buffers allocated. */
     mag_fixed_pool_t tensor_pool;                       /* Tensor struct memory pool. */
     mag_fixed_pool_t storage_pool;                      /* Storage struct memory pool. */
+    mag_fixed_pool_t view_meta_pool;                      /* Storage struct memory pool. */
     mag_context_flags_t flags;                     /* Context flags. */
     mag_prngalgo_t prng_algo;                     /* Active PRNG algorithm. */
     uintptr_t tr_id;                            /* Context thread ID. */
@@ -1042,6 +1043,14 @@ typedef enum mag_tensor_flags_t {
 } mag_tensor_flags_t;
 mag_static_assert(MAG_TFLAG_LEN <= 8); /* Must fit in one byte */
 
+typedef struct mag_view_meta_t {
+    mag_rccontrol_t rc;
+    mag_tensor_t* base;
+    uint32_t version_snapshot;
+} mag_view_meta_t;
+
+extern mag_view_meta_t* _Nonnull mag_view_meta_alloc(mag_tensor_t* _Nonnull base);
+
 /*
 ** Reference counted tensor header. Stores shape, strides, gradient and other metadata.
 ** The actual data buffer is compute-device specific and can be only accessed via the storage buffer.
@@ -1062,8 +1071,9 @@ struct mag_tensor_t {
     mag_opparam_t op_params[MAG_MAX_OP_PARAMS];               /* Operator parameters. */
     mag_init_opcode_t init_op;                               /* Initialization op */
     mag_opparam_t init_op_params[MAG_MAX_OP_PARAMS];          /* Init operator parameters */
-    mag_tensor_t* _Nullable view_uplink;                      /* View base tensor. */
-    size_t view_offs;                                       /* Offset in view tensor. */
+    int64_t storage_offset;                                    /* Offset in elements in the storage buffer for views. */
+    mag_view_meta_t* _Nullable view_meta;                /* View metadata, if this is a view. */
+    uint64_t version;                                        /* Version of the tensor. Used for views to detect changes in the base tensor. */
     mag_tensor_t* _Nullable grad;                             /* ∇f - Gradient tensor. */
     uint8_t name[MAG_MAX_TENSOR_NAME_LEN];                  /* Tensor debug name. */
     void* _Nullable ud;                                     /* User data. */
