@@ -267,55 +267,52 @@ bool mag_solve_view_strides(
     int64_t nrk                     /* New rank */
 ) {
     int64_t numel = 1;
-    for (int64_t i=0; i < ork; ++i)
-        mag_assert2(!mag_mulov64(numel, osz[i], &numel));
-    if (!numel) {
-        if (mag_unlikely(!nrk)) return false;
-        (*out)[nrk-1] = 1;
-        for (int64_t d=nrk-2; d >= 0; --d)
-            mag_assert2(!mag_mulov64((*out)[d+1], nsz[d+1], &(*out)[d]));
+    for (int64_t i = 0; i < ork; ++i) numel *= osz[i];
+    if (numel == 0) {
+        if (nrk == 0) return false;
+        (*out)[nrk - 1] = 1;
+        for (int64_t d = nrk-2; d >= 0; --d)
+            (*out)[d] = (*out)[d+1] * nsz[d + 1];
         return true;
     }
     int64_t oi = ork-1;
     int64_t ni = nrk-1;
     while (oi >= 0 && ni >= 0) {
         if (nsz[ni] == 1) { (*out)[ni] = 0; --ni; continue; }
-        for (; oi >= 0 && osz[oi] == 1; --oi);
+        while (oi >= 0 && osz[oi] == 1) --oi;
         if (oi < 0) return false;
         if (nsz[ni] == osz[oi]) {
             (*out)[ni] = ost[oi];
             --ni; --oi;
             continue;
         }
-        int64_t nc = nsz[ni];
-        int64_t oc = osz[oi];
-        int64_t cs = ost[oi];
-        int64_t nkf = ni;
-        while (nc != oc) {
-            if (nc < oc) {
+        int64_t new_chunk = nsz[ni];
+        int64_t old_chunk = osz[oi];
+        int64_t chunk_stride = ost[oi];
+        int64_t nk_first = ni;
+        while (new_chunk != old_chunk) {
+            if (new_chunk < old_chunk) {
                 --ni;
                 if (ni < 0) return false;
-                mag_assert2(!mag_mulov64(cs, nsz[ni], &cs));
+                new_chunk *= nsz[ni];
             } else {
                 --oi;
                 while (oi >= 0 && osz[oi] == 1) --oi;
                 if (oi < 0) return false;
-                int64_t tmm;
-                mag_assert2(!mag_mulov64(osz[oi+1], ost[oi+1], &tmm));
-                if (ost[oi] != tmm)
+                if (ost[oi] != osz[oi+1] * ost[oi + 1])
                     return false;
-                mag_assert2(!mag_mulov64(oc, osz[oi], &oc));
+                old_chunk *= osz[oi];
             }
         }
-        int64_t stride = cs;
-        for (int64_t k=ni; k <= nkf; ++k) {
+        int64_t stride = chunk_stride;
+        for (int64_t k = ni; k <= nk_first; ++k) {
             (*out)[k] = stride;
-            mag_assert2(!mag_mulov64(stride, nsz[k], &stride));
+            stride *= nsz[k];
         }
         --ni; --oi;
     }
-    for (; ni >= 0; (*out)[ni] = 0, --ni);
-    for (; oi >= 0 && osz[oi] == 1; --oi);
+    while (ni >= 0) { (*out)[ni] = 0; --ni; }
+    while (oi >= 0 && osz[oi] == 1) --oi;
     return oi < 0;
 }
 
@@ -356,7 +353,7 @@ static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, 
         memcpy(strides, base->strides, rank*sizeof(int64_t));
     } else {
         mag_assert(
-            mag_solve_view_strides(&strides, base->shape,  base->strides,  base->rank, shape, rank),
+            mag_solve_view_strides(&strides, base->shape, base->strides,  base->rank, shape, rank),
             "Tensor is not contiguous enough to be viewed. Consider calling contiguous() or reshape() instead"
         );
     }
@@ -763,20 +760,20 @@ mag_tensor_t* mag_view(mag_tensor_t* x, const int64_t* dims, int64_t rank) {
 mag_tensor_t* mag_reshape(mag_tensor_t* x, const int64_t* dims, int64_t rank) {
     int64_t shape[MAG_MAX_DIMS];
     mag_infer_missing_dim(&shape, dims, rank, x->numel);
-    if (x->rank == rank && !memcmp(x->shape, shape, sizeof(*dims)*rank)) { /* Tensor already in the shape */
+    if (x->rank == rank && !memcmp(x->shape, shape, sizeof(*dims)*rank)) {
         mag_tensor_incref(x);
         return x;
     }
     if (mag_tensor_is_contiguous(x)) {
         int64_t strides[MAG_MAX_DIMS];
         strides[rank-1] = 1;
-        for (int64_t d = rank-2; d >= 0; --d)
+        for (int64_t d=rank-2; d >= 0; --d)
             mag_assert2(!mag_mulov64(shape[d+1], strides[d+1], strides+d));
         return mag_tensor_as_strided(x->ctx, x, rank, shape, strides, x->storage_offset);
     }
-    if (mag_tensor_can_view(x, shape, rank)) /* Tensor can be viewed as the new shape */
+    if (mag_tensor_can_view(x, shape, rank))
         return mag_view(x, shape, rank);
-    mag_tensor_t* cont = mag_contiguous(x); /* Make a contiguous copy of the tensor */
+    mag_tensor_t* cont = mag_contiguous(x);
     int64_t strides[MAG_MAX_DIMS];
     strides[rank-1] = 1;
     for (int64_t d = rank-2; d >= 0; --d)

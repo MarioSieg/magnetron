@@ -219,6 +219,7 @@ typedef double mag_e11m52_t;  /* f32 = IEEE 754 64-bit double precision float. *
 typedef float mag_e8m23_t;    /* f64 = IEEE 754 32-bit single precision float. */
 typedef struct mag_e5m10_t { uint16_t bits; } mag_e5m10_t; /* f16 = IEEE 754 16-bit half precision float. */
 
+
 #define mag_u64x(hi, lo) (((uint64_t)0x##hi<<32)+(uint64_t)0x##lo)
 #define mag_e11m52_sgn(x) (((x)>>63)&0x1ull)
 #define mag_e11m52_exp(x) (((x)>>52)&0x7ffull)

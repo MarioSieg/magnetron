@@ -343,7 +343,7 @@ extern MAG_EXPORT bool mag_tensor_can_broadcast(const mag_tensor_t* _Nonnull sma
 extern MAG_EXPORT bool mag_tensor_is_transposed(const mag_tensor_t* _Nonnull t);                                          /* Check if the tensor is transposed */
 extern MAG_EXPORT bool mag_tensor_is_permuted(const mag_tensor_t* _Nonnull t);                                            /* Check if the tensor is permuted */
 extern MAG_EXPORT bool mag_tensor_is_contiguous(const mag_tensor_t* _Nonnull t);                                          /* Check if the tensor memory is contiguous */
-extern MAG_EXPORT bool mag_tensor_can_view(const mag_tensor_t* _Nonnull t, const int64_t* _Nullable dims, int64_t rank); /* Check if the tensor can be viewed with the given dimensions */
+extern MAG_EXPORT bool mag_tensor_can_view(const mag_tensor_t* _Nonnull t, const int64_t* _Nonnull dims, int64_t rank); /* Check if the tensor can be viewed with the given dimensions */
 
 /* ============ Gradient & Backprop API ============ */
 
