@@ -1626,7 +1626,7 @@ static void MAG_HOTPROC mag_vgt_i32(int64_t numel, mag_bool_t* _Nonnull o, const
 
 static void mag_nop(const mag_kernel_payload_t* _Nonnull payload) { (void)payload; }
 
-static MAG_AINLINE int64_t mag_offset_like(const mag_tensor_t* _Nonnull r, const mag_tensor_t* _Nonnull t, int64_t i) {
+static MAG_HOTPROC int64_t mag_offset_like(const mag_tensor_t* _Nonnull r, const mag_tensor_t* _Nonnull t, int64_t i) {
     int64_t gap = r->rank - t->rank;
     int64_t off = 0;
     for (int64_t d = r->rank - 1; d >= 0; --d) {
@@ -1642,7 +1642,7 @@ static MAG_AINLINE int64_t mag_offset_like(const mag_tensor_t* _Nonnull r, const
     return off;
 }
 
-static MAG_AINLINE int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r, const mag_tensor_t* _Nonnull x, int64_t idx) {
+static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r, const mag_tensor_t* _Nonnull x, int64_t idx) {
     int64_t rx = r->rank;
     int64_t xx = x->rank;
     int64_t shift = xx - rx;
