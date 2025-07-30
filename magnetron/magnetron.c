@@ -1178,6 +1178,14 @@ mag_tensor_t* mag_tensor_full_like(mag_tensor_t* isomorph, mag_e8m23_t value) {
     return tensor;
 }
 
+mag_tensor_t* mag_contiguous(mag_tensor_t* x){
+    if (mag_tensor_is_contiguous(x)) {
+        mag_tensor_incref(x); /* If already contiguous, just incref */
+        return x;
+    }
+    return mag_clone(x);
+}
+
 int64_t mag_tensor_get_data_size(const mag_tensor_t* t) { return t->storage->size; }
 int64_t mag_tensor_get_numel(const mag_tensor_t* t) { return t->numel; }
 
@@ -1265,11 +1273,13 @@ void* mag_tensor_get_data_ptr(const mag_tensor_t* t) {
 void* _Nonnull mag_tensor_get_storage_base_ptr(const mag_tensor_t* t) { return (void*)t->storage->base; }
 
 void* mag_tensor_get_raw_data_as_bytes(mag_tensor_t* t) {
+    t = mag_contiguous(t); /* Ensure tensor is contiguous */
     size_t size = t->storage->size;
     mag_assert2(size);
     void* dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_istorage_t* sto = t->storage;
     (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), dst, size);
+    mag_tensor_decref(t);
     return dst;
 }
 
@@ -1278,12 +1288,14 @@ void mag_tensor_get_raw_data_as_bytes_free(void* ret_val) {
 }
 
 mag_e8m23_t* mag_tensor_get_data_as_floats(mag_tensor_t* t) {
+    t = mag_contiguous(t); /* Ensure tensor is contiguous */
     mag_assert(mag_tensor_is_floating_point_typed(t), "Tensor must be a floating point tensor, but has dtype: %s", mag_dtype_meta_of(t->dtype)->name);
     size_t size = t->numel*sizeof(mag_e8m23_t);
     mag_assert2(size);
     mag_e8m23_t* dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_istorage_t* sto = t->storage;
     (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), dst, size, MAG_DTYPE_E8M23);
+    mag_tensor_decref(t);
     return dst;
 }
 

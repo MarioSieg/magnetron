@@ -199,6 +199,7 @@ extern MAG_EXPORT mag_tensor_t* _Nonnull mag_view_slice(mag_tensor_t* _Nonnull x
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_reshape(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_transpose(mag_tensor_t* _Nonnull x, int64_t dim1, int64_t dim2);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_permute(mag_tensor_t* _Nonnull x, const int64_t* _Nonnull dims, uint32_t num_dims);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_contiguous(mag_tensor_t* _Nonnull x);
 
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_mean(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims, bool keepdim);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_min(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims, bool keepdim);

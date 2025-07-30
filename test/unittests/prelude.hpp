@@ -292,7 +292,7 @@ namespace magnetron::test {
         for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape) {
             tensor base{ctx, ty, shape};
             base.fill_rand_uniform_float(min, max);
-            tensor t_a = SUBVIEW ?  make_random_view(base) : base;
+            tensor t_a = SUBVIEW ? make_random_view(base) : base;
             if constexpr (SUBVIEW)
                 ASSERT_TRUE(t_a.is_view());
             std::vector<e8m23_t> d_a{t_a.to_float_vector()};

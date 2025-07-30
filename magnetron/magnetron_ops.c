@@ -259,25 +259,52 @@ static mag_tensor_t* mag_result_constructor_routine_bool_isomorph(mag_tensor_t**
 }
 
 static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, const mag_opparam_t* params) {
-    mag_tensor_t* base = *inputs;
+     mag_tensor_t* base = *inputs;
+
+    /* 0. Fast-path: (num_dims==0) → plain alias ---------------------- */
     uint32_t nd_new = (uint32_t)mag_op_param_unpack_i64_or_panic(params[0]);
-    if (!nd_new)  /* If no new dimensions are specified, return the inplace view of the base tensor. */
-        return mag_tensor_as_strided(base->ctx, base, base->rank, base->shape, base->strides, base->storage_offset);
-    int64_t canon[MAG_MAX_DIMS];
-    int64_t infer_dim = -1;
-    int64_t known_prod = 1;
-    for (uint32_t i=0; i < nd_new; ++i) {
+    if (!nd_new)
+        return mag_tensor_as_strided(base->ctx, base,
+                                     base->rank,
+                                     base->shape,
+                                     base->strides,
+                                     base->storage_offset);
+
+    /* 1. Canonicalise new shape -------------------------------------- */
+    int64_t sizes[MAG_MAX_DIMS];
+    int64_t infer_dim = -1, known_prod = 1;
+    for (uint32_t i = 0; i < nd_new; ++i) {
         int64_t s = mag_op_param_unpack_i64_or_panic(params[i + 1]);
-        if (s == -1) { mag_assert2(infer_dim == -1); infer_dim = i; canon[i] = 1; }
-        else { mag_assert2(s > 0); canon[i] = s; known_prod *= s; }
+        if (s == -1) { mag_assert2(infer_dim == -1); infer_dim = i; sizes[i] = 1; }
+        else         { mag_assert2(s > 0);           sizes[i] = s; known_prod *= s; }
     }
-    if (infer_dim >= 0) canon[infer_dim] = base->numel / known_prod;
-    else mag_assert2(known_prod == base->numel);
+    if (infer_dim >= 0) sizes[infer_dim] = base->numel / known_prod;
+    else mag_assert(known_prod == base->numel,
+                    "Invalid total size for view, expected %" PRIi64 ", got %" PRIi64,
+                    base->numel, known_prod);
+
+    /* 2. Decide stride policy ---------------------------------------- */
+    bool same_shape = (nd_new == (uint32_t)base->rank);
+    if (same_shape)
+        for (uint32_t i = 0; i < nd_new; ++i)
+            if (sizes[i] != base->shape[i]) { same_shape = false; break; }
+
     int64_t strides[MAG_MAX_DIMS];
-    strides[nd_new - 1] = 1;
-    for (int32_t i=(int32_t)nd_new-2; i >= 0; --i)
-        strides[i] = strides[i+1] * canon[i+1];
-    return mag_tensor_as_strided(base->ctx, base, nd_new, canon, strides, base->storage_offset);
+    if (same_shape) {
+        /* keep original (possibly strided) layout -------------------- */
+        memcpy(strides, base->strides, nd_new * sizeof(int64_t));
+    } else {
+        /* reshape: require contiguous base --------------------------- */
+        mag_assert(mag_tensor_is_contiguous(base),
+                   "view/reshape requires contiguous tensor");
+        strides[nd_new - 1] = 1;
+        for (int i = (int)nd_new - 2; i >= 0; --i)
+            strides[i] = strides[i + 1] * sizes[i + 1];
+    }
+
+    return mag_tensor_as_strided(base->ctx, base,
+                                 nd_new, sizes, strides,
+                                 base->storage_offset);
 }
 
 static mag_tensor_t* mag_result_constructor_routine_scalar(mag_tensor_t** inputs,  const mag_opparam_t* params) {
@@ -698,7 +725,7 @@ mag_tensor_t* mag_view_slice(mag_tensor_t* x, int64_t dim, int64_t start, int64_
     mag_assert(start >= 0 && start <  sz, "start out of bounds");
     if (len < 0) len = sz - start;
     mag_assert(len > 0, "len must be > 0");
-    mag_assert(start + (len - 1)*step < sz, "slice exceeds bounds");
+    mag_assert(start + (len - 1)*step < sz, "slice exceeds bounds %" PRIi64 " + (%" PRIi64 " - 1) * %" PRIi64 " < %" PRIi64, start, len, step, sz);
     int64_t shape  [MAG_MAX_DIMS];
     int64_t strides[MAG_MAX_DIMS];
     memcpy(shape, x->shape, sizeof(shape));

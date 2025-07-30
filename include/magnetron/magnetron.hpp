@@ -534,10 +534,11 @@ namespace magnetron {
             mag_tensor_subscript_set_flattened(m_tensor, idx, x);
         }
 
+        explicit tensor(mag_tensor_t* ptr) noexcept : m_tensor{ptr} {}
+
     private:
         friend class storage_stream;
 
-        explicit tensor(mag_tensor_t* ptr) noexcept : m_tensor{ptr} {}
         mag_tensor_t* m_tensor {};
     };
 }
