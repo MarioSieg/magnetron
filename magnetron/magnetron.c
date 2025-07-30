@@ -1340,6 +1340,20 @@ bool mag_tensor_is_contiguous(const mag_tensor_t* t) {
     return true;
 }
 
+extern bool mag_solve_view_strides(
+    const int64_t* osz,
+    const int64_t* ost,
+    int64_t ork,
+    const int64_t* nsz,
+    int64_t nrk,
+    int64_t* out
+);
+
+bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t* dims, int64_t rank){
+    int64_t tmp[MAG_MAX_DIMS];
+    return mag_solve_view_strides(t->shape, t->strides, t->rank, dims, rank, tmp);
+}
+
 mag_tensor_t* mag_tensor_get_grad(const mag_tensor_t* t) {
     mag_assert2(t->flags & MAG_TFLAG_REQUIRES_GRAD);
     if (t->grad) mag_tensor_incref(t->grad);

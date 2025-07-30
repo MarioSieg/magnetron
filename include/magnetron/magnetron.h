@@ -194,19 +194,19 @@ extern MAG_EXPORT mag_tensor_t* _Nonnull mag_tensor_full_like(mag_tensor_t* _Non
 /* ============ Tensor Operators ============ */
 
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_clone(mag_tensor_t* _Nonnull x);
-extern MAG_EXPORT mag_tensor_t* _Nonnull mag_view(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_view(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, int64_t rank);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_view_slice(mag_tensor_t* _Nonnull x, int64_t dim, int64_t start, int64_t len, int64_t step);
-extern MAG_EXPORT mag_tensor_t* _Nonnull mag_reshape(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_reshape(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, int64_t rank);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_transpose(mag_tensor_t* _Nonnull x, int64_t dim1, int64_t dim2);
-extern MAG_EXPORT mag_tensor_t* _Nonnull mag_permute(mag_tensor_t* _Nonnull x, const int64_t* _Nonnull dims, uint32_t num_dims);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_permute(mag_tensor_t* _Nonnull x, const int64_t* _Nonnull dims, int64_t rank);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_contiguous(mag_tensor_t* _Nonnull x);
 
-extern MAG_EXPORT mag_tensor_t* _Nonnull mag_mean(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims, bool keepdim);
-extern MAG_EXPORT mag_tensor_t* _Nonnull mag_min(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims, bool keepdim);
-extern MAG_EXPORT mag_tensor_t* _Nonnull mag_max(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims, bool keepdim);
-extern MAG_EXPORT mag_tensor_t* _Nonnull mag_sum(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims, bool keepdim);
-extern MAG_EXPORT mag_tensor_t* _Nonnull mag_argmin(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims, bool keepdim);
-extern MAG_EXPORT mag_tensor_t* _Nonnull mag_argmax(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, uint32_t num_dims, bool keepdim);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_mean(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_min(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_max(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_sum(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_argmin(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_argmax(mag_tensor_t* _Nonnull x, const int64_t* _Nullable dims, int64_t rank, bool keepdim);
 
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_abs(mag_tensor_t* _Nonnull x);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_abs_(mag_tensor_t* _Nonnull x);
@@ -343,6 +343,7 @@ extern MAG_EXPORT bool mag_tensor_can_broadcast(const mag_tensor_t* _Nonnull sma
 extern MAG_EXPORT bool mag_tensor_is_transposed(const mag_tensor_t* _Nonnull t);                                          /* Check if the tensor is transposed */
 extern MAG_EXPORT bool mag_tensor_is_permuted(const mag_tensor_t* _Nonnull t);                                            /* Check if the tensor is permuted */
 extern MAG_EXPORT bool mag_tensor_is_contiguous(const mag_tensor_t* _Nonnull t);                                          /* Check if the tensor memory is contiguous */
+extern MAG_EXPORT bool mag_tensor_can_view(const mag_tensor_t* _Nonnull t, const int64_t* _Nullable dims, int64_t rank); /* Check if the tensor can be viewed with the given dimensions */
 
 /* ============ Gradient & Backprop API ============ */
 
