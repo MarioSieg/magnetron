@@ -1049,7 +1049,8 @@ mag_tensor_t* mag_tensor_new(mag_context_t* ctx, mag_dtype_t type, int64_t rank,
     int64_t numel = 1;
     for (int64_t i=0; i < rank; ++i)
         mag_assert2(shape[i] > 0 && !mag_mulov64(shape[i], numel, &numel));
-    int64_t numbytes = numel*dts; /* Total bytes required for the data. */
+    int64_t numbytes;
+    mag_assert2(!mag_mulov64(numel, dts, &numbytes)); /* Compute number of bytes */
     mag_tensor_t* tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
     mag_idevice_t* dvc = ctx->device;
     void (*allocator)(mag_idevice_t*, mag_istorage_t**, size_t, mag_dtype_t) = dvc->alloc_storage;

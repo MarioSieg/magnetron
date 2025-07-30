@@ -1670,6 +1670,8 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         for (int64_t i=0; i < r->numel; ++i) { \
             int64_t ri = mag_offset_like(r, r, i); \
             int64_t xi = mag_offset_like(r, x, i); \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             br[ri] = bx[xi]; \
         } \
     }
@@ -1678,14 +1680,12 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
     static MAG_HOTPROC void mag_fill_##T(const mag_kernel_payload_t* _Nonnull payload) { \
         mag_tensor_t* r = payload->node; \
         mag_##T##_t val = CVT(mag_op_param_unpack_##UT##_or_panic(r->init_op_params[0])); \
-        mag_##T##_t* b_r = mag_##T##p_mut(r); \
-        if (G(val) == 0) { \
-            memset(b_r, 0, mag_tensor_get_data_size(r)); \
-            return; \
-        } \
+        mag_##T##_t* br = mag_##T##p_mut(r); \
         int64_t numel = r->numel; \
-        for (int64_t i=0; i < numel; ++i) \
-            b_r[i] = val; \
+        for (int64_t ri=0; ri < numel; ++ri) { \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
+            br[ri] = val; \
+        } \
     }
 
 #define mag_gen_stub_masked_fill(T, G, UT, CVT) \
@@ -1703,6 +1703,8 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         int64_t rb = mag_xmin(ra + chunk, total); \
         for (int64_t i=ra; i < rb; ++i) { \
             int64_t mi = mag_offset_like(r, mask, i); \
+            mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
+            mag_bnd_chk(bm+mi, bm, mag_tensor_get_data_size(mask)); \
             if (bm[mi]) br[i] = val; \
         } \
     }
@@ -1731,6 +1733,8 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri = mag_offset_like(r, r, i); \
             int64_t xi = mag_offset_like(r, x, i); \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             mag_v##FUNC##_##T(1, br+ri, bx+xi); \
         } \
     }
@@ -1751,12 +1755,14 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         int64_t cols = r->shape[r->rank-1]; \
         int64_t rows = r->shape[r->rank-2]; \
         int64_t mat = rows*cols; \
-        for (int64_t i=ra; i < rb; ++i) { \
-            int64_t inner = i % mat; \
+        for (int64_t ri=ra; ri < rb; ++ri) { \
+            int64_t inner = ri % mat; \
             int64_t row = inner / cols; \
             int64_t col = inner - row*cols; \
-            int64_t xo = mag_offset_like(r, x, i); \
-            br[i] = ((col-row) CMP diag) ? bx[xo] : (Z); \
+            int64_t xi = mag_offset_like(r, x, ri); \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
+            br[ri] = ((col-row) CMP diag) ? bx[xi] : (Z); \
         }  \
     }
 
@@ -1778,6 +1784,9 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
             int64_t ri = mag_offset_like(r, r, i); \
             int64_t xi = mag_offset_like(r, x, i); \
             int64_t yi = mag_offset_like(r, y, i); \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             br[ri] = RCVT(CVT(bx[xi]) OP CVT(by[yi])); \
         } \
     }
@@ -1805,11 +1814,15 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         const mag_tensor_t* x = r->op_inputs[0]; \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
-        for (int64_t i=0; i < r->numel; ++i) \
+        for (int64_t i=0; i < r->numel; ++i) { \
+            mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
             br[mag_offset_like(r, r, i)] = (Z); \
+        } \
         for (int64_t i=0; i < x->numel; ++i) { \
             int64_t xi = mag_offset_like(x, x, i); \
             int64_t ri = mag_offset_repeat_like(r, x, i); \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             br[ri] = RCVT(CVT(br[ri]) + CVT(bx[xi])); \
         } \
     }
@@ -1832,6 +1845,9 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
             int64_t ri = mag_offset_like(r, r, i); \
             int64_t xi = mag_offset_like(r, x, i); \
             int64_t yi = mag_offset_like(r, y, i); \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
+            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             br[ri] = CVT(bx[xi]) OP CVT(by[yi]); \
         } \
     }
