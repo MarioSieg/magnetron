@@ -1768,6 +1768,8 @@ static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t*
         int64_t rb = mag_xmin(ra + chunk, total); \
         bool xc = mag_tensor_is_contiguous(x) && x->numel == total && mag_tensor_is_contiguous(r); \
         if (mag_likely(xc)) { \
+            mag_bnd_chk(bx+ra, bx, mag_tensor_get_data_size(x)); \
+            mag_bnd_chk(br+ra, br, mag_tensor_get_data_size(r)); \
             mag_v##FUNC##_##T(rb - ra, br + ra, bx + ra); \
             return; \
         } \
@@ -1783,6 +1785,8 @@ static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t*
                 if (dx >= 0 && x->shape[dx] > 1) \
                     xi += coord*x->strides[dx]; \
             } \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             mag_v##FUNC##_##T(1, br + ri, bx + xi); \
         } \
     }
@@ -1941,6 +1945,8 @@ mag_gen_stub_unary(i32, not)
                 int64_t inner = i % mat; \
                 int64_t row = inner/cols; \
                 int64_t col = inner - row*cols; \
+                mag_bnd_chk(bx+i, bx, mag_tensor_get_data_size(x)); \
+                mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
                 br[i] = col-row CMP diag ? bx[i] : Z; \
             } \
             return; \
@@ -1960,6 +1966,8 @@ mag_gen_stub_unary(i32, not)
                 if (dx >= 0 && x->shape[dx] > 1) \
                     xi += coord*x->strides[dx]; \
             } \
+            mag_bnd_chk(bx+i, bx, mag_tensor_get_data_size(x)); \
+            mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
             br[i] = col-row CMP diag ? bx[xi] : Z;  \
         }  \
     }
