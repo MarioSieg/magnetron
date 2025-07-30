@@ -1156,7 +1156,7 @@ mag_tensor_t* mag_tensor_full_like(mag_tensor_t* isomorph, mag_e8m23_t value) {
 }
 
 mag_tensor_t* mag_contiguous(mag_tensor_t* x) {
-    if (mag_tensor_is_contiguous(x)) {
+    if (!x->storage_offset && mag_tensor_is_contiguous(x)) {
         mag_tensor_incref(x); /* If already contiguous, just incref */
         return x;
     }
