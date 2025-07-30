@@ -1045,7 +1045,7 @@ mag_static_assert(MAG_TFLAG_LEN <= 8); /* Must fit in one byte */
 
 typedef struct mag_view_meta_t {
     mag_rccontrol_t rc;
-    mag_tensor_t* base;
+    mag_tensor_t* _Nonnull base;
     uint32_t version_snapshot;
 } mag_view_meta_t;
 
