@@ -342,20 +342,25 @@ static void mag_infer_missing_dim(int64_t(*out)[MAG_MAX_DIMS], const int64_t* di
 
 static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, const mag_opparam_t* params) {
     mag_tensor_t* base = *inputs;
-    int64_t rank = mag_op_param_unpack_i64_or_panic(params[0]); /* Rank of new dims. 0 if view is not reshaped */
+    int64_t rank = mag_op_param_unpack_i64_or_panic(params[0]);
     if (rank <= 0) return mag_tensor_as_strided(base->ctx, base, base->rank, base->shape, base->strides, base->storage_offset);
-    int64_t shape[MAG_MAX_DIMS];
     int64_t new_dims[MAG_MAX_DIMS];
     for (int64_t i=0; i < rank; ++i)
-        new_dims[i] = mag_op_param_unpack_i64_or_panic(params[i+1]);
+        new_dims[i] = mag_op_param_unpack_i64_or_panic(params[i + 1]);
+    int64_t shape[MAG_MAX_DIMS];
     mag_infer_missing_dim(&shape, new_dims, rank, base->numel);
     int64_t strides[MAG_MAX_DIMS];
-    if (rank == base->rank && !memcmp(shape, base->shape, rank*sizeof(*base->shape))) { /* Same shape, just copy strides */
-        memcpy(strides, base->strides, rank*sizeof(int64_t));
-    } else {
-        mag_assert(
-            mag_solve_view_strides(&strides, base->shape, base->strides,  base->rank, shape, rank),
-            "Tensor is not contiguous enough to be viewed. Consider calling contiguous() or reshape() instead"
+    if (rank == base->rank && !memcmp(shape, base->shape, rank*sizeof(*shape))) { /* Stride strategy: same shape as base */
+        memcpy(strides, base->strides, rank*sizeof(*shape));
+    } else if (mag_tensor_is_contiguous(base)) { /* Stride strategy: contiguous row-major */
+        strides[rank-1] = 1;
+        for (int64_t d = rank-2; d >= 0; --d)
+            mag_assert2(!mag_mulov64(shape[d+1], strides[d+1], strides+d));
+    } else { /* Stride strategy: solve generc strides */
+        bool ok = mag_solve_view_strides(&strides, base->shape, base->strides, base->rank, shape, rank);
+        mag_assert(ok,
+            "Tensor is not contiguous enough to be viewed. "
+            "Consider calling contiguous() or reshape() instead"
         );
     }
     return mag_tensor_as_strided(base->ctx, base, rank, shape, strides, base->storage_offset);
