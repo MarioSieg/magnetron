@@ -258,6 +258,68 @@ static mag_tensor_t* mag_result_constructor_routine_bool_isomorph(mag_tensor_t**
     return mag_tensor_empty(base->ctx, MAG_DTYPE_BOOL, base->rank, base->shape);
 }
 
+static bool mag_compute_view_strides(
+    const int64_t* old_sz,
+    const int64_t* old_st,
+    int64_t old_rank,
+    const int64_t* new_sz,
+    int64_t new_rank,
+    int64_t* out_st
+) {
+    if (!new_rank) return false;
+    if (old_rank == new_rank && !memcmp(old_sz, new_sz, sizeof(int64_t)*new_rank)) {
+        memcpy(out_st, old_st, sizeof(int64_t)*new_rank);
+        return true;
+    }
+    int64_t numel = 1;
+    for (int64_t i = 0; i < old_rank; ++i) numel *= old_sz[i];
+    if (!numel) {
+        out_st[new_rank-1] = 1;
+        for (int64_t i=new_rank-2; i >= 0; --i)
+            out_st[i] = out_st[i+1]*new_sz[i+1];
+        return true;
+    }
+    int64_t oi = old_rank-1;
+    int64_t ni = new_rank-1;
+    while (ni >= 0) {
+        if (new_sz[ni] == 1) { out_st[ni] = 0; --ni; continue; }
+        while (oi >= 0 && old_sz[oi] == 1) --oi;
+        if (oi < 0) return false;
+        if (new_sz[ni] == old_sz[oi]) {
+            out_st[ni] = old_st[oi];
+            --ni; --oi;
+            continue;
+        }
+        int64_t new_chunk = new_sz[ni];
+        int64_t old_chunk = old_sz[oi];
+        int64_t chunk_stride = old_st[oi];
+        int64_t nk_first = ni;
+        while (new_chunk != old_chunk) {
+            if (new_chunk < old_chunk) {
+                --ni;
+                if (ni < 0) return false;
+                new_chunk *= new_sz[ni];
+            } else {
+                --oi;
+                while (oi >= 0 && old_sz[oi] == 1) --oi;
+                if (oi < 0) return false;
+                if (old_st[oi] != old_st[oi+1]*old_sz[oi+1])
+                    return false;
+                old_chunk *= old_sz[oi];
+            }
+        }
+        int64_t stride = chunk_stride;
+        for (int64_t k=ni; k <= nk_first; ++k) {
+            out_st[k] = stride;
+            stride *= new_sz[k];
+        }
+        --ni;
+        --oi;
+    }
+    while (oi >= 0 && old_sz[oi] == 1) --oi;
+    return oi < 0;
+}
+
 static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, const mag_opparam_t* params) {
     mag_tensor_t* base = *inputs;
     int64_t rank = mag_op_param_unpack_i64_or_panic(params[0]); /* Rank of new dims. 0 if view is not reshaped */
@@ -275,10 +337,10 @@ static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, 
     if (rank == base->rank && !memcmp(shape, base->shape, rank*sizeof(*base->shape))) { /* Same shape, just copy strides */
         memcpy(strides, base->strides, rank*sizeof(int64_t));
     } else {
-        mag_assert(mag_tensor_is_contiguous(base), "view/reshape requires contiguous tensor");
-        strides[rank-1] = 1;
-        for (int64_t i=rank-2; i >= 0; --i)
-            mag_assert2(!mag_mulov64(shape[i+1], strides[i+1], strides+i));
+        mag_assert(
+            mag_compute_view_strides(base->shape,  base->strides,  base->rank, shape, rank, strides),
+            "Tensor is not contiguous enough to be viewed. Consider calling contiguous() or reshape() instead"
+        );
     }
     return mag_tensor_as_strided(base->ctx, base, rank, shape, strides, base->storage_offset);
 }
@@ -708,10 +770,9 @@ mag_tensor_t* mag_view_slice(mag_tensor_t* x, int64_t dim, int64_t start, int64_
     memcpy(strides, x->strides, sizeof strides);
     shape[dim] = len;
     strides[dim] *= step;
-    if (step == 1 && mag_tensor_is_contiguous(x)) {
-        strides[x->rank-1] = 1;
-        for (int64_t d = x->rank-2; d >= 0; --d)
-            mag_assert2(!mag_mulov64(strides[d+1], shape[d+1], strides+d));
+    int64_t ts[MAG_MAX_DIMS];
+    if (step == 1 && mag_compute_view_strides(shape, strides, x->rank, shape, x->rank, ts)) {
+        memcpy(strides, ts, sizeof(ts));
     }
     int64_t offset = x->storage_offset + start*x->strides[dim];
     return mag_tensor_as_strided(x->ctx, x, x->rank, shape, strides, offset);

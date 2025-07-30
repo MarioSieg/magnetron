@@ -1074,7 +1074,7 @@ mag_tensor_t* mag_tensor_as_strided(mag_context_t* ctx, mag_tensor_t* base, int6
     int64_t last = offset;
     int64_t numel = 1;
     for (int64_t i=0; i < rank; ++i) {
-        mag_assert2(strides[i] > 0 && shape[i] > 0);
+        mag_assert2(shape[i] > 0 && (shape[i] == 1 ? strides[i] >= 0 : strides[i] > 0));
         int64_t span;
         mag_assert2(!mag_mulov64(shape[i]-1, strides[i], &span));
         mag_assert2(!mag_mulov64(shape[i], numel, &numel));

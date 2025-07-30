@@ -512,7 +512,6 @@ class Tensor:
 
     def view(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(dims)
-        assert self.is_contiguous, 'Tensor must be contiguous to be viewed'
         num_dims: int = len(dims)
         view_dims: FFI.CData = FFI.new(f'int64_t[{num_dims}]', dims)
         return Tensor(C.mag_view(self._ptr, view_dims, num_dims))
