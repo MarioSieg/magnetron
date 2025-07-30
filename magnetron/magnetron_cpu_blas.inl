@@ -1642,13 +1642,14 @@ typedef uint8_t mag_bool_t;
         const mag_tensor_t* x = r->op_inputs[0]; \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
-        if (mag_likely(mag_tensor_is_contiguous(x))) { \
+        if (mag_likely(x->numel == r->numel && mag_tensor_is_contiguous(x) && mag_tensor_is_contiguous(r))) { \
             memcpy(br, bx, mag_tensor_get_data_size(r)); \
             return; \
         } \
         for (int64_t i=0; i < r->numel; ++i) { \
-            int64_t off_src = mag_offset_from_flat(x, i); \
-            br[i] = bx[off_src]; \
+            int64_t ir = mag_offset_from_flat(r, i); \
+            int64_t ix = mag_offset_from_flat(x, i); \
+            br[ir] = bx[ix]; \
         } \
     }
 

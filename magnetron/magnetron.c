@@ -1154,7 +1154,7 @@ mag_tensor_t* mag_tensor_full_like(mag_tensor_t* isomorph, mag_e8m23_t value) {
     return tensor;
 }
 
-mag_tensor_t* mag_contiguous(mag_tensor_t* x){
+mag_tensor_t* mag_contiguous(mag_tensor_t* x) {
     if (mag_tensor_is_contiguous(x)) {
         mag_tensor_incref(x); /* If already contiguous, just incref */
         return x;
@@ -1240,7 +1240,7 @@ int64_t mag_tensor_get_rank(const mag_tensor_t* t) { return t->rank; }
 const int64_t* mag_tensor_get_shape(const mag_tensor_t* t) { return t->shape; }
 const int64_t* mag_tensor_get_strides(const mag_tensor_t* t) { return t->strides; }
 mag_dtype_t mag_tensor_get_dtype(const mag_tensor_t* t) { return t->dtype; }
-size_t mag_tensor_get_data_offset(const mag_tensor_t *t){
+size_t mag_tensor_get_data_offset(const mag_tensor_t *t) {
     return (size_t)t->storage_offset*t->storage->granularity; /* Return offset in bytes */
 }
 void* mag_tensor_get_data_ptr(const mag_tensor_t* t) {

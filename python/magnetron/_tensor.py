@@ -48,6 +48,11 @@ def _flatten_nested_lists(nested: list[Any]) -> tuple[tuple[int], list[Any]]:
     walk(nested)
     return tuple(d for d in dims if d is not None), flat
 
+def _row_major_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
+    strides = [1] * len(shape)
+    for d in range(len(shape)-2, -1, -1):
+        strides[d] = strides[d+1]*shape[d+1]
+    return tuple(strides)
 
 def _ravel_nested_lists(flat: list[Any], shape: tuple[int], strides: tuple[int], offset: int, dim: int) -> list[Any, ...]:
     if dim == len(shape):
@@ -145,7 +150,8 @@ class Tensor:
             ptr = FFI.cast(f'const {native}*', ptr)
         flat = list(FFI.unpack(ptr, self.numel))
         free_fn(ptr)
-        return _ravel_nested_lists(flat, self.shape, self.strides, offset=0, dim=0)
+        cont_strides = _row_major_strides(self.shape)
+        return _ravel_nested_lists(flat, self.shape, cont_strides, offset=0, dim=0)
 
     @property
     def data_size(self) -> int:
