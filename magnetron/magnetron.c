@@ -521,29 +521,6 @@ static mag_e11m52_t* mag_chebyshev_setup(mag_e11m52_t (*f)(mag_e11m52_t), mag_e1
     return r;
 }
 
-/* Performs c = ab with overflow checking. Returns true on overflow, else false. */
-static bool MAG_AINLINE mag_imull64_ov(int64_t a, int64_t b, int64_t* c) {
-    #ifdef _MSC_VER
-    #ifdef _M_ARM64
-        uint64_t high = __umulh(a, b);
-        *c = a*b;
-        return high != (*c>>63);
-    #else
-        int64_t high;
-        int64_t low = _mul128(a, b, &high);
-        int64_t sign = low >> 63;
-        *c = low;
-        return high != sign;
-    #endif
-    #else
-    #if __SIZEOF_LONG_LONG__ == 8 && __SIZEOF_LONG__ == 8
-        return __builtin_smulll_overflow(a, b, (long long*)c);
-    #else
-        return __builtin_smull_overflow(a, b, c);
-    #endif
-    #endif
-}
-
 mag_device_desc_t mag_compute_device_desc_cpu(uint32_t thread_count) {
     return (mag_device_desc_t){
         .type = MAG_DEVICE_TYPE_CPU,
@@ -1070,22 +1047,21 @@ mag_tensor_t* mag_tensor_new(mag_context_t* ctx, mag_dtype_t type, int64_t rank,
     mag_assert(shape && rank > 0 && rank <= MAG_MAX_DIMS, "Rank must be within (0, %d]", MAG_MAX_DIMS); /* Check rank */
     int64_t dts = (int64_t)mag_dtype_meta_of(type)->size;
     int64_t numel = 1;
-    for (int64_t i=0; i < rank; ++i) /* Calculate buffer size and check for overflow. */
-        mag_assert2(shape[i] > 0 && !mag_imull64_ov(shape[i], numel, &numel)); /* Overflow in buffer size. Max: INT64_MAX. Reduce dimensions. */
+    for (int64_t i=0; i < rank; ++i)
+        mag_assert2(shape[i] > 0 && !mag_mulov64(shape[i], numel, &numel));
     int64_t numbytes = numel*dts; /* Total bytes required for the data. */
     mag_tensor_t* tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
     mag_idevice_t* dvc = ctx->device;
-    void (*allocator)(mag_idevice_t*, mag_istorage_t**, size_t, mag_dtype_t) = dvc->alloc_storage; /* Get allocator function. */
-    (*allocator)(dvc, &tensor->storage, numbytes, type); /* Else allocate new device memory */
-    for (int i=0; i < MAG_MAX_DIMS; ++i)  {  /* Copy dimensions and set unused to identity. */
+    void (*allocator)(mag_idevice_t*, mag_istorage_t**, size_t, mag_dtype_t) = dvc->alloc_storage;
+    (*allocator)(dvc, &tensor->storage, numbytes, type);
+    for (int i=0; i < MAG_MAX_DIMS; ++i)  {
         tensor->shape[i] = i < rank ? shape[i] : 1;
         tensor->strides[i] = 1;
     }
     /* Compute contiguous row-major strides and check for overflow. */
     tensor->strides[rank-1] = 1;
-    for (int64_t i=rank-2; i >= 0; --i) {
-        mag_assert(!mag_imull64_ov(tensor->strides[i+1], tensor->shape[i+1], tensor->strides+i), "overflow in strides");
-    }
+    for (int64_t i=rank-2; i >= 0; --i)
+        mag_assert2(!mag_mulov64(tensor->strides[i+1], tensor->shape[i+1], tensor->strides+i));
     return tensor;
 }
 
@@ -1099,9 +1075,9 @@ mag_tensor_t* mag_tensor_as_strided(mag_context_t* ctx, mag_tensor_t* base, int6
     for (int64_t i=0; i < rank; ++i) {
         mag_assert2(strides[i] > 0 && shape[i] > 0);
         int64_t span;
-        mag_assert2(!mag_imull64_ov(shape[i]-1, strides[i], &span));
+        mag_assert2(!mag_mulov64(shape[i]-1, strides[i], &span));
+        mag_assert2(!mag_mulov64(shape[i], numel, &numel));
         last += span;
-        numel *= shape[i];
     }
     int64_t numel_end = (int64_t)base->storage->size/base->storage->granularity;
     mag_assert(last < numel_end, "view exceeds backing storage size: %" PRIi64 " >= %" PRIi64, last, numel_end);

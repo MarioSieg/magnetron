@@ -469,6 +469,29 @@ static inline mag_div_state_t mag_ivdiv_mkdi(uint32_t d) { /* Create packed divi
     return r;
 }
 
+/* Performs c = ab with overflow checking. Returns true on overflow, else false. */
+static bool MAG_AINLINE mag_mulov64(int64_t a, int64_t b, int64_t* c) {
+    #ifdef _MSC_VER
+    #ifdef _M_ARM64
+        uint64_t high = __umulh(a, b);
+        *c = a*b;
+        return high != (*c>>63);
+    #else
+        int64_t high;
+        int64_t low = _mul128(a, b, &high);
+        int64_t sign = low >> 63;
+        *c = low;
+        return high != sign;
+    #endif
+    #else
+    #if __SIZEOF_LONG_LONG__ == 8 && __SIZEOF_LONG__ == 8
+        return __builtin_smulll_overflow(a, b, (long long*)c);
+    #else
+        return __builtin_smull_overflow(a, b, c);
+    #endif
+    #endif
+}
+
 /*
 ** r = x / y.
 ** Fast division using invariant multiplication.
