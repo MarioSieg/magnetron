@@ -267,52 +267,53 @@ bool mag_solve_view_strides(
     int64_t nrk                     /* New rank */
 ) {
     int64_t numel = 1;
-    for (int64_t i = 0; i < ork; ++i) numel *= osz[i];
-    if (numel == 0) {
-        if (nrk == 0) return false;
-        (*out)[nrk - 1] = 1;
-        for (int64_t d = nrk-2; d >= 0; --d)
-            (*out)[d] = (*out)[d+1] * nsz[d + 1];
+    for (int64_t i=0; i < ork; ++i)
+        mag_assert2(!mag_mulov64(numel, osz[i], &numel));
+    if (!numel) {
+        if (!nrk) return false;
+        (*out)[nrk-1] = 1;
+        for (int64_t d=nrk-2; d >= 0; --d)
+            mag_assert2(!mag_mulov64((*out)[d+1], nsz[d+1], &(*out)[d]));
         return true;
     }
     int64_t oi = ork-1;
     int64_t ni = nrk-1;
     while (oi >= 0 && ni >= 0) {
         if (nsz[ni] == 1) { (*out)[ni] = 0; --ni; continue; }
-        while (oi >= 0 && osz[oi] == 1) --oi;
+        for (; oi >= 0 && osz[oi] == 1; --oi);
         if (oi < 0) return false;
         if (nsz[ni] == osz[oi]) {
             (*out)[ni] = ost[oi];
             --ni; --oi;
             continue;
         }
-        int64_t new_chunk = nsz[ni];
-        int64_t old_chunk = osz[oi];
-        int64_t chunk_stride = ost[oi];
-        int64_t nk_first = ni;
-        while (new_chunk != old_chunk) {
-            if (new_chunk < old_chunk) {
+        int64_t nc = nsz[ni];
+        int64_t oc = osz[oi];
+        int64_t cs = ost[oi];
+        int64_t nkf = ni;
+        while (nc != oc) {
+            if (nc < oc) {
                 --ni;
                 if (ni < 0) return false;
-                new_chunk *= nsz[ni];
+                nc *= nsz[ni];
             } else {
                 --oi;
-                while (oi >= 0 && osz[oi] == 1) --oi;
+                for (; oi >= 0 && osz[oi] == 1; --oi);
                 if (oi < 0) return false;
-                if (ost[oi] != osz[oi+1] * ost[oi + 1])
+                if (ost[oi] != osz[oi+1]*ost[oi+1])
                     return false;
-                old_chunk *= osz[oi];
+                oc *= osz[oi];
             }
         }
-        int64_t stride = chunk_stride;
-        for (int64_t k = ni; k <= nk_first; ++k) {
+        int64_t stride = cs;
+        for (int64_t k=ni; k <= nkf; ++k) {
             (*out)[k] = stride;
-            stride *= nsz[k];
+            mag_assert2(!mag_mulov64(stride, nsz[k], &stride));
         }
         --ni; --oi;
     }
     while (ni >= 0) { (*out)[ni] = 0; --ni; }
-    while (oi >= 0 && osz[oi] == 1) --oi;
+    for (; oi >= 0 && osz[oi] == 1; --oi);
     return oi < 0;
 }
 
