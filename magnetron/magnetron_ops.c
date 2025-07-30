@@ -259,52 +259,33 @@ static mag_tensor_t* mag_result_constructor_routine_bool_isomorph(mag_tensor_t**
 }
 
 static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, const mag_opparam_t* params) {
-     mag_tensor_t* base = *inputs;
-
-    /* 0. Fast-path: (num_dims==0) → plain alias ---------------------- */
+    mag_tensor_t* base = *inputs;
     uint32_t nd_new = (uint32_t)mag_op_param_unpack_i64_or_panic(params[0]);
     if (!nd_new)
-        return mag_tensor_as_strided(base->ctx, base,
-                                     base->rank,
-                                     base->shape,
-                                     base->strides,
-                                     base->storage_offset);
-
-    /* 1. Canonicalise new shape -------------------------------------- */
+        return mag_tensor_as_strided(base->ctx, base, base->rank, base->shape, base->strides, base->storage_offset);
     int64_t sizes[MAG_MAX_DIMS];
     int64_t infer_dim = -1, known_prod = 1;
-    for (uint32_t i = 0; i < nd_new; ++i) {
-        int64_t s = mag_op_param_unpack_i64_or_panic(params[i + 1]);
+    for (uint32_t i=0; i < nd_new; ++i) {
+        int64_t s = mag_op_param_unpack_i64_or_panic(params[i+1]);
         if (s == -1) { mag_assert2(infer_dim == -1); infer_dim = i; sizes[i] = 1; }
-        else         { mag_assert2(s > 0);           sizes[i] = s; known_prod *= s; }
+        else { mag_assert2(s > 0); sizes[i] = s; known_prod *= s; }
     }
     if (infer_dim >= 0) sizes[infer_dim] = base->numel / known_prod;
-    else mag_assert(known_prod == base->numel,
-                    "Invalid total size for view, expected %" PRIi64 ", got %" PRIi64,
-                    base->numel, known_prod);
-
-    /* 2. Decide stride policy ---------------------------------------- */
-    bool same_shape = (nd_new == (uint32_t)base->rank);
+    else mag_assert(known_prod == base->numel, "Invalid total size for view, expected %" PRIi64 ", got %" PRIi64, base->numel, known_prod);
+    bool same_shape = nd_new == (uint32_t)base->rank;
     if (same_shape)
-        for (uint32_t i = 0; i < nd_new; ++i)
+        for (uint32_t i=0; i < nd_new; ++i)
             if (sizes[i] != base->shape[i]) { same_shape = false; break; }
-
     int64_t strides[MAG_MAX_DIMS];
     if (same_shape) {
-        /* keep original (possibly strided) layout -------------------- */
         memcpy(strides, base->strides, nd_new * sizeof(int64_t));
     } else {
-        /* reshape: require contiguous base --------------------------- */
-        mag_assert(mag_tensor_is_contiguous(base),
-                   "view/reshape requires contiguous tensor");
+        mag_assert(mag_tensor_is_contiguous(base), "view/reshape requires contiguous tensor");
         strides[nd_new - 1] = 1;
-        for (int i = (int)nd_new - 2; i >= 0; --i)
-            strides[i] = strides[i + 1] * sizes[i + 1];
+        for (int32_t i = (int32_t)nd_new-2; i >= 0; --i)
+            strides[i] = strides[i+1]*sizes[i+1];
     }
-
-    return mag_tensor_as_strided(base->ctx, base,
-                                 nd_new, sizes, strides,
-                                 base->storage_offset);
+    return mag_tensor_as_strided(base->ctx, base, nd_new, sizes, strides, base->storage_offset);
 }
 
 static mag_tensor_t* mag_result_constructor_routine_scalar(mag_tensor_t** inputs,  const mag_opparam_t* params) {

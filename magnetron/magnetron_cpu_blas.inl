@@ -1772,16 +1772,17 @@ static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t*
         } \
         int64_t rx = r->rank - x->rank; \
         for (int64_t i=ra; i < rb; ++i) { \
-            int64_t ax = i; \
-            int64_t xi = 0; \
-            for (int64_t d=r->rank-1; d >= 0; --d) { \
+            int64_t ax = i, xi = 0, ri = 0; \
+            for (int64_t d = r->rank-1; d >= 0; --d) { \
                 int64_t coord = ax % r->shape[d]; \
                 ax /= r->shape[d]; \
+                if (r->shape[d] > 1) \
+                    ri += coord*r->strides[d]; \
                 int64_t dx = d - rx; \
                 if (dx >= 0 && x->shape[dx] > 1) \
                     xi += coord*x->strides[dx]; \
             } \
-            mag_v##FUNC##_##T(1, br+i, bx+xi); \
+            mag_v##FUNC##_##T(1, br + ri, bx + xi); \
         } \
     }
 
