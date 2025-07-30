@@ -1246,11 +1246,11 @@ size_t mag_tensor_get_data_offset(const mag_tensor_t *t) {
 void* mag_tensor_get_data_ptr(const mag_tensor_t* t) {
     return (void*)(t->storage->base + mag_tensor_get_data_offset(t));
 }
-void* _Nonnull mag_tensor_get_storage_base_ptr(const mag_tensor_t* t) { return (void*)t->storage->base; }
+void* mag_tensor_get_storage_base_ptr(const mag_tensor_t* t) { return (void*)t->storage->base; }
 
 void* mag_tensor_get_raw_data_as_bytes(mag_tensor_t* t) {
     t = mag_contiguous(t); /* Ensure tensor is contiguous */
-    size_t size = t->storage->size;
+    size_t size = mag_tensor_get_data_size(t);
     mag_assert2(size);
     void* dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_istorage_t* sto = t->storage;
