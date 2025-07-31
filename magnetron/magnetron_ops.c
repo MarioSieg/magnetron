@@ -172,16 +172,6 @@ static bool mag_verify_can_matmul(mag_sstream_t** ss, const mag_tensor_t* x, con
 
     return true;
 }
-static bool mag_verify_is_contiguous(mag_sstream_t** ss, const mag_tensor_t* x) {
-    if (mag_unlikely(!mag_tensor_is_contiguous(x))) {
-        mag_push_verification_error(ss,
-            "Tensor is not contiguous: %s\n"
-            "    Hint: Tensors must be contiguous for this operation.\n",
-            x->name
-        );
-    }
-    return true;
-}
 static bool mag_verify_is_inplace_and_grad_mode_off(mag_sstream_t** ss, const mag_tensor_t* result, bool is_inplace) {
     if (mag_unlikely(is_inplace && (result->ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && (result->flags & MAG_TFLAG_REQUIRES_GRAD))) {
         mag_push_verification_error(ss,
@@ -199,15 +189,12 @@ static bool mag_validate_op_unary(mag_sstream_t** ss, bool is_inplace, mag_tenso
     ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
     ok = ok && mag_verify_dtype_compat(ss, result->op, inputs);                     /* Check if the operator is defined between the given dtypes */
     ok = ok && mag_verify_is_shape_eq(ss, result, inputs[0]);                   /* Check if result shape matches input */
-    ok = ok && mag_verify_is_contiguous(ss, result);                                /* Check if result is contiguous */
     return ok;
 }
 static bool mag_validate_op_view(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     bool ok = true;
     ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
     ok = ok && mag_verify_dtype_compat(ss, result->op, inputs);                     /* Check if the operator is defined between the given dtypes */
-    ok = ok && mag_verify_is_contiguous(ss, result);                                /* Check if result is contiguous */
-    ok = ok && mag_verify_is_contiguous(ss, inputs[0]);                             /* Check if x is contiguous */
     return ok;
 }
 static bool mag_validate_op_unary_matrix(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
@@ -221,7 +208,6 @@ static bool mag_validate_op_binary(mag_sstream_t** ss, bool is_inplace, mag_tens
     ok = ok && mag_verify_dtype_compat(ss, result->op, inputs);                     /* Check if the operator is defined between the given dtypes */
     ok = ok && mag_verify_is_shape_eq(ss, result, inputs[0]);                   /* Check if result shape matches first input */
     ok = ok && mag_verify_can_broadcast(ss, inputs[0], inputs[1]);              /* Check if second input can be broadcasted to first input */
-    ok = ok && mag_verify_is_contiguous(ss, result);                                /* Check if result is contiguous TODO: this is always true? */
     return ok;
 }
 static bool mag_validate_op_transpose(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
@@ -229,18 +215,15 @@ static bool mag_validate_op_transpose(mag_sstream_t** ss, bool is_inplace, mag_t
 }
 static bool mag_validate_op_scalar(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace) &&   /* Check if inplace operation is allowed */
-        mag_verify_dtype_compat(ss, result->op, inputs) &&                      /* Check if the operator is defined between the given dtypes */
-        mag_verify_is_contiguous(ss, inputs[0]);                                /* Check if X is contiguous */
+        mag_verify_dtype_compat(ss, result->op, inputs);                      /* Check if the operator is defined between the given dtypes */
 }
 static bool mag_validate_op_matmul(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_verify_can_matmul(ss, inputs[0], inputs[1]) &&   /* Check if inputs can be matrix-multiplied */
-        mag_verify_dtype_compat(ss, result->op, inputs) &&          /* Check if the operator is defined between the given dtypes */
-        mag_verify_is_contiguous(ss, result);                       /* Check if result is contiguous TODO: this is always true? */
+        mag_verify_dtype_compat(ss, result->op, inputs);          /* Check if the operator is defined between the given dtypes */
 }
 static bool mag_validate_op_repeat_rev(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_verify_can_broadcast(ss, inputs[0], inputs[1]) &&    /* Check if inputs can be matrix-multiplied */
-        mag_verify_dtype_compat(ss, result->op, inputs) &&              /* Check if the operator is defined between the given dtypes */
-        mag_verify_is_contiguous(ss, result);                           /* Check if result is contiguous. TODO: this is always true? */
+        mag_verify_dtype_compat(ss, result->op, inputs);              /* Check if the operator is defined between the given dtypes */
 }
 
 /*
