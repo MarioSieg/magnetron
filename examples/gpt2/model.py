@@ -126,7 +126,6 @@ class GPT(nn.Module):
     @mag.no_grad()
     def generate(self, idx: mag.Tensor, max_tokens: int, temp: float = 1.0) -> mag.Tensor:
         for _ in range(max_tokens):
-            # if the sequence context is growing too long we must crop it at block_size
             idx_cond = idx if idx.shape[1] <= self.config.block_size else idx[:, -self.config.block_size :]
             logits, _ = self(idx_cond)
             logits = logits[:, -1, :] / temp
