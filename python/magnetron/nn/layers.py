@@ -16,6 +16,7 @@ class Linear(Module):
         weight = Tensor.normal(out_features, in_features, mean=0.0, std=1.0)
         weight = weight / math.sqrt(in_features + out_features)
         self.weight = Parameter(weight)
+        self.bias = None
         if bias:
             self.bias = Parameter(Tensor.zeros(out_features, name='bias'))
 
@@ -64,11 +65,18 @@ class Dropout(Module):
 
 
 class LayerNorm(Module):
-    def __init__(self, ndim: int, eps: float = 1e-5, bias: bool = True) -> None:
+
+    def __init__(self, ndim: int, bias: bool = True, eps: float = 1e-5) -> None:
         super().__init__()
-        self.weight = Parameter(Tensor.ones((ndim,)))
-        self.bias = Parameter(Tensor.zeros((ndim,))) if bias else None
+        self.weight = Parameter(Tensor.ones(ndim))
+        self.bias = Parameter(Tensor.zeros(ndim)) if bias else None
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
-        return x.layer_norm(self.weight.x.shape, self.weight.x, self.bias.x if self.bias else None, self.eps)
+        xm = (x - x.mean(dim=-1, keepdim=True))
+        var = (xm*xm).mean(dim=-1, keepdim=True)
+        x_hat = xm / (var + self.eps).sqrt()
+        y = self.weight.x * x_hat
+        if self.bias is not None:
+            y = y + self.bias.x
+        return y

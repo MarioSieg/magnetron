@@ -48,11 +48,13 @@ def _flatten_nested_lists(nested: list[Any]) -> tuple[tuple[int], list[Any]]:
     walk(nested)
     return tuple(d for d in dims if d is not None), flat
 
+
 def _row_major_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
     strides = [1] * len(shape)
-    for d in range(len(shape)-2, -1, -1):
-        strides[d] = strides[d+1]*shape[d+1]
+    for d in range(len(shape) - 2, -1, -1):
+        strides[d] = strides[d + 1] * shape[d + 1]
     return tuple(strides)
+
 
 def _ravel_nested_lists(flat: list[Any], shape: tuple[int], strides: tuple[int], offset: int, dim: int) -> list[Any, ...]:
     if dim == len(shape):
@@ -64,7 +66,8 @@ def _ravel_nested_lists(flat: list[Any], shape: tuple[int], strides: tuple[int],
 
 def _unpack_shape(*shape: int | tuple[int, ...]) -> tuple[int, ...]:
     if len(shape) == 1 and isinstance(shape[0], tuple):
-        return shape[0]
+        shape = shape[0]
+    assert len(shape) <= MAX_DIMS, f'Invalid number of dimensions: {len(shape)}, maximum is {MAX_DIMS}'
     return shape
 
 
@@ -79,6 +82,32 @@ def _get_reduction_axes(dim: int | tuple[int] | None) -> tuple[FFI.CData, int]:
         return axes, num
     else:
         raise TypeError('Dimension must be an int or a tuple of ints.')
+
+
+# Variants for indexing into Tensors.
+Index = int | slice | type(Ellipsis) | None | object
+
+
+def _expand_ellipsis(idxs: tuple[Index, ...], rank: int) -> tuple[Index, ...]:
+    consuming = sum(1 for x in idxs if x is not None and x is not Ellipsis)
+    if Ellipsis in idxs:
+        if idxs.count(Ellipsis) > 1:
+            raise IndexError("Only one Ellipsis (...) is allowed in the index tuple")
+        ellipsis_pos = idxs.index(Ellipsis)
+        to_insert = rank - consuming
+        if to_insert < 0:
+            raise IndexError(f"Too many indices for a tensor of rank {rank}")
+        expanded = (
+            idxs[:ellipsis_pos]
+            + (slice(None),) * to_insert
+            + idxs[ellipsis_pos + 1 :]
+        )
+    else:
+        if consuming < rank:
+            expanded = idxs + (slice(None),) * (rank - consuming)
+        else:
+            expanded = idxs
+    return expanded
 
 
 class Tensor:
@@ -249,14 +278,45 @@ class Tensor:
     def __repr__(self) -> str:
         return str(self)
 
-    def __getitem__(self, indices: int | tuple[int, ...]) -> float:
-        if isinstance(indices, int):
-            return C.mag_tensor_subscript_get_flattened(self._ptr, indices)
-        elif isinstance(indices, tuple):
-            idx = indices + (0,) * (MAX_DIMS - len(indices))
-            return C.mag_tensor_subscript_get_multi(self._ptr, *idx)
-        else:
-            raise TypeError('Indices must be an int or a tuple of ints.')
+    def __getitem__(self, index: Index | tuple[Index, ...]) -> Tensor:
+        if not isinstance(index, tuple):
+            index = (index,)
+        index = _expand_ellipsis(index, self.rank)
+        curr: Tensor = self
+        axis: int = 0
+        for idx in index:
+            print(f"[DEBUG] before idx={idx!r}: axis={axis}, shape={tuple(curr.shape)}")
+            if idx is None:
+                if curr.rank == MAX_DIMS:
+                    raise NotImplementedError("Rank > 6 not supported")
+                curr = curr.view(*curr.shape[:axis], 1, *curr.shape[axis:])
+                axis += 1
+                continue
+            elif isinstance(idx, int):
+                dim_size = curr.shape[axis]
+                if idx < 0:
+                    idx += dim_size
+                if idx < 0 or idx >= dim_size:
+                    raise IndexError(
+                        f"index {idx} is out of bounds for axis {axis} with size {dim_size}"
+                    )
+                curr = curr.view_slice(axis, idx, 1, 1)
+                new_shape = list(curr.shape)
+                del new_shape[axis]
+                curr = curr.view(*new_shape) if new_shape else curr.view(tuple())
+                continue
+            elif isinstance(idx, slice):
+                start, stop, step = idx.indices(curr.shape[axis])
+                if step <= 0:
+                    raise NotImplementedError("Non-positive slice steps are not supported")
+                length = len(range(start, stop, step))
+                if length == 0:
+                    raise NotImplementedError("Zero-length slice not implemented")
+                curr = curr.view_slice(axis, start, length, step)
+                axis += 1
+                continue
+            raise RuntimeError(f"Invalid index component {idx!r}")
+        return curr
 
     def __setitem__(self, indices: int | tuple[int, ...], value: float) -> None:
         if isinstance(indices, int):
@@ -503,9 +563,15 @@ class Tensor:
         view_dims: FFI.CData = FFI.new(f'int64_t[{num_dims}]', dims)
         return Tensor(C.mag_view(self._ptr, view_dims, num_dims))
 
+    def view_slice(self, dim: int, start: int, len: int, step: int = 1) -> Tensor:
+        assert 0 <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
+        assert start >= 0 and len > 0
+        assert start + len <= self.shape[dim], f'Slice exceeds tensor bounds: start={start}, length={len}, tensor size={self.shape[dim]}'
+        return Tensor(C.mag_view_slice(self._ptr, dim, start, len, step))
+
     def split(self, chunk_size: int, dim: int = 0) -> tuple[Tensor, ...]:
         assert chunk_size > 0, 'chunk_size must be greater than 0, got {chunk_size}'
-        assert (-self.rank <= dim < self.rank), f'Dimension {dim} out of range for tensor with rank {self.rank}'
+        assert -self.rank <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
         dim = dim % self.rank
         size = self.shape[dim]
         n_chunks = (size + chunk_size - 1) // chunk_size
@@ -513,7 +579,7 @@ class Tensor:
         start = 0
         for _ in range(n_chunks):
             length = min(chunk_size, size - start)
-            view = Tensor(C.mag_view_slice(self._ptr, dim, start, length, 1))
+            view = self.view_slice(dim, start, length, 1)
             chunks.append(view)
             start += chunk_size
         return tuple(chunks)

@@ -7,6 +7,7 @@ from transformers import GPT2LMHeadModel, AutoTokenizer, AutoConfig
 
 OUTPUT_FILE: str = 'gpt2.mag'
 
+
 def download_gpt2(model_name: str = 'gpt2') -> tuple[dict, 'PretrainedConfig', 'PreTrainedTokenizerBase']:
     print('Downloading GPT-2 model...')
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -15,6 +16,7 @@ def download_gpt2(model_name: str = 'gpt2') -> tuple[dict, 'PretrainedConfig', '
     state_dict = model.state_dict()
     config = AutoConfig.from_pretrained(model_name)
     return state_dict, config, tokenizer
+
 
 state_dict, config, tokenizer = download_gpt2()
 

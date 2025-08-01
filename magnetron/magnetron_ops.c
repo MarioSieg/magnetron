@@ -773,24 +773,38 @@ mag_tensor_t* mag_reshape(mag_tensor_t* x, const int64_t* dims, int64_t rank) {
 }
 
 mag_tensor_t* mag_view_slice(mag_tensor_t* x, int64_t dim, int64_t start, int64_t len, int64_t step) {
-    mag_assert(step > 0, "negative step not supported, but is %" PRIi64, step);
-    mag_assert(dim >= 0 && dim < x->rank, "dim out of range %" PRIi64 " >= 0 && %" PRIi64 " < %" PRIi64, dim, dim, x->rank);
+    mag_assert(dim >= 0 && dim < x->rank, "dim %" PRIi64 " out of range for rank %" PRIi64, dim, x->rank);
+    mag_assert(step != 0, "slice step cannot be 0");
     int64_t sz = x->shape[dim];
-    if (start < 0) start += sz;
-    mag_assert(start >= 0 && start < sz, "start out of bounds %" PRIi64 " >= 0 && %" PRIi64 " < %" PRIi64, start, start, sz);
-    if (len < 0) len = sz - start;
-    mag_assert(len > 0, "len must be > 0, but is %" PRIi64, len);
-    mag_assert(start + (len-1)*step < sz, "slice exceeds bounds %" PRIi64 " + (%" PRIi64 "-1)*%" PRIi64 " < %" PRIi64, start, len, step, sz);
-    int64_t shape[MAG_MAX_DIMS];
-    int64_t strides[MAG_MAX_DIMS];
-    memcpy(shape, x->shape, sizeof shape);
-    memcpy(strides, x->strides, sizeof strides);
-    shape[dim] = len;
-    strides[dim] *= step;
-    int64_t ts[MAG_MAX_DIMS];
-    if (step == 1 && mag_solve_view_strides(&ts, shape, strides, x->rank, shape, x->rank)) {
-        memcpy(strides, ts, sizeof(ts));
+    int64_t stop;
+    if (step > 0) {
+        if (start < 0) start += sz;
+        if (len < 0) stop = sz;
+        else stop = start + len * step;
+        mag_assert(0 <= start && start < sz, "start out of bounds for dim %" PRIi64 ": %" PRIi64 " >= %" PRIi64, dim, start, sz);
+        mag_assert(stop >= start, "slice stop < start with %" PRIi64 " < %" PRIi64, stop, start);
+        int64_t last = start + (len - 1)*step;
+        mag_assert(last < sz, "slice exceeds bounds for dim %" PRIi64 ": last index %" PRIi64 " >= %" PRIi64, dim, last, sz);
+    } else {
+        step = (int64_t)(~(uint64_t)step+1);
+        if (start < 0) start += sz;
+        if (len < 0) stop = -1;
+        else stop = start - len*step;
+        mag_assert(0 <= start && start < sz, "start out of bounds");
+        mag_assert(stop < start, "slice stop >= start with negative step");
+        mag_assert(stop >= -1, "slice exceeds bounds (neg)");
     }
+    if (len < 0) len = step > 0 ? (stop - start + step - 1)/step : (start - stop + step - 1)/step;
+    mag_assert(len > 0, "slice length is 0");
+    int64_t shape [MAG_MAX_DIMS];
+    int64_t strides[MAG_MAX_DIMS];
+    memcpy(shape, x->shape, sizeof(shape));
+    memcpy(strides, x->strides, sizeof(strides));
+    shape[dim] = len;
+    strides[dim] = x->strides[dim]*step;
+    int64_t tmp[MAG_MAX_DIMS];
+    if (mag_solve_view_strides(&tmp, shape, strides, x->rank, shape, x->rank))
+        memcpy(strides, tmp, sizeof(tmp));
     int64_t offset = x->storage_offset + start*x->strides[dim];
     return mag_tensor_as_strided(x->ctx, x, x->rank, shape, strides, offset);
 }
