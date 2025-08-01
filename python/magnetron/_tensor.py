@@ -811,11 +811,15 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(C.mag_round_(self._ptr))
 
-    def softmax(self) -> Tensor:
+    def softmax(self, dim: int = -1) -> Tensor:
+        if dim != -1:
+            raise NotImplementedError('Softmax only supports the last dimension (-1) for now')
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return Tensor(C.mag_softmax(self._ptr))
 
-    def softmax_(self) -> Tensor:
+    def softmax_(self, dim: int = -1) -> Tensor:
+        if dim != -1:
+            raise NotImplementedError('Softmax only supports the last dimension (-1) for now')
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
         return Tensor(C.mag_softmax_(self._ptr))

@@ -356,14 +356,14 @@ static mag_tensor_t* mag_result_constructor_routine_scalar(mag_tensor_t** inputs
 
 static mag_tensor_t* mag_result_constructor_routine_transposed(mag_tensor_t** inputs,  const mag_opparam_t* params) {
     mag_tensor_t* base = *inputs;
-    uint64_t ax0 = mag_op_param_unpack_i64_or_panic(params[0]);
-    uint64_t ax1 = mag_op_param_unpack_i64_or_panic(params[1]);
+    int64_t ax0 = mag_op_param_unpack_i64_or_panic(params[0]);
+    int64_t ax1 = mag_op_param_unpack_i64_or_panic(params[1]);
     int64_t shape[MAG_MAX_DIMS];
     int64_t stride[MAG_MAX_DIMS];
-    memcpy(shape,  base->shape,   sizeof shape);
+    memcpy(shape, base->shape, sizeof shape);
     memcpy(stride, base->strides, sizeof stride);
-    mag_swap(int64_t, shape [ax0],  shape [ax1]);
-    mag_swap(int64_t, stride[ax0],  stride[ax1]);
+    mag_swap(int64_t, shape[ax0], shape[ax1]);
+    mag_swap(int64_t, stride[ax0], stride[ax1]);
     return mag_tensor_as_strided(base->ctx, base, base->rank, shape, stride, base->storage_offset);
 }
 
@@ -435,8 +435,8 @@ static void mag_op_backward_view(mag_tensor_t* node, mag_tensor_t** grads) {
 }
 
 static void mag_op_backward_transpose(mag_tensor_t* node, mag_tensor_t** grads) {
-    uint64_t ax0 = mag_op_param_unpack_i64_or_panic(node->op_params[0]);
-    uint64_t ax1 = mag_op_param_unpack_i64_or_panic(node->op_params[1]);
+    int64_t ax0 = mag_op_param_unpack_i64_or_panic(node->op_params[0]);
+    int64_t ax1 = mag_op_param_unpack_i64_or_panic(node->op_params[1]);
     *grads = mag_transpose(node->grad, ax0, ax1);
 }
 
