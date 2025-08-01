@@ -20,7 +20,7 @@ def test_xor_network():
         optimizer.step()
         optimizer.zero_grad()
 
-    assert round(model(x)[0]) == 0
-    assert round(model(x)[1]) == 1
-    assert round(model(x)[2]) == 1
-    assert round(model(x)[3]) == 0
+    assert round(model(x)[0].item()) == 0
+    assert round(model(x)[1].item()) == 1
+    assert round(model(x)[2].item()) == 1
+    assert round(model(x)[3].item()) == 0

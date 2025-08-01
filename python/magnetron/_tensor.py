@@ -714,6 +714,10 @@ class Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return self.neg()
 
+    def __round__(self, n=None) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return self.round()
+
     def log(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return Tensor(C.mag_log(self._ptr))

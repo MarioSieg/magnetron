@@ -13,7 +13,7 @@ TARGET: list[list[float]] = [[0.0], [1.0], [1.0], [0.0]]
 HIDDEN_DIM: int = 4
 
 
-def xor_nn_np() -> None:
+def xor_nn_np() -> list[float]:
     def sigmoid(x: np.array) -> np.array:
         return 1 / (1 + np.exp(-x))
 
@@ -64,7 +64,7 @@ def xor_nn_np() -> None:
     return [float(predict(xr)[0][0]) for xr in x]
 
 
-def xor_nn_mag() -> None:
+def xor_nn_mag() -> list[Tensor]:
     x = Tensor.of(INPUT)
     y = Tensor.of(TARGET)
 
@@ -105,7 +105,7 @@ def xor_nn_mag() -> None:
         a2 = z2.sigmoid()
         return a2
 
-    return [predict(Tensor.of([xr]))[0] for xr in INPUT]
+    return [predict(Tensor.of([xr]))[0].item() for xr in INPUT]
 
 
 def test_xor_nn() -> None:

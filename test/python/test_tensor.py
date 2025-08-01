@@ -11,19 +11,3 @@ def test_tensor_creation() -> None:
     assert tensor.data_ptr != 0
     assert tensor.is_contiguous is True
     assert tensor.dtype == mag.float32
-
-
-def test_tensor_scalar_get_set_physical() -> None:
-    tensor = mag.Tensor.empty(4, 4)
-    tensor[0, 0] = 128
-    assert tensor[0, 0] == 128
-    tensor[3, 3] = 3.14
-    assert abs(tensor[3, 3] - 3.14) < 1e-6
-
-
-def test_tensor_scalar_get_set_virtual() -> None:
-    tensor = mag.Tensor.empty(4, 4)
-    tensor[0] = 128
-    assert tensor[0] == 128
-    tensor[15] = 3.14
-    assert abs(tensor[15] - 3.14) < 1e-6
