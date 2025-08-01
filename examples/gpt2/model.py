@@ -111,9 +111,9 @@ class GPT(nn.Module):
         for pn, p in self.named_parameters():
             if pn.endswith('c_proj.weight'):
                 p.x.fill_random_normal_(mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer))
-        print(f'Parameter count: {self.get_num_params() / 1e6}M')
+        print(f'Parameter count: {self.get_num_params(False) // 1e6}M')
 
-    def get_num_params(self, non_embedding: bool = True) -> int:
+    def get_num_params(self, non_embedding: bool = False) -> int:
         n_params = sum(p.x.numel for p in self.parameters())
         if non_embedding:
             n_params -= self.transformer.wpe.weight.x.numel

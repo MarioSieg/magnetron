@@ -4,7 +4,7 @@ from model import GPTConfig, GPT
 
 mag.active_context().stop_grad_recorder()
 
-start = 'Hoppe hoppe Reiter,\n'
+start = 'Hello, who are you?\n'
 num_samples = 10
 max_new_tokens = 500
 temp = 0.8
@@ -18,8 +18,7 @@ enc = tiktoken.get_encoding('gpt2')
 encode = lambda s: enc.encode(s, allowed_special={'<|endoftext|>'})
 decode = lambda l: enc.decode(l)
 
-start_ids: list[int] = encode(start)
-x = mag.Tensor.of(start_ids, dtype=mag.int32)[None, ...]
+x = mag.Tensor.of(encode(start), dtype=mag.int32)[None, ...]
 print(x)
 y = gpt.generate(x, 4, temp=1.0)
 print(y)
