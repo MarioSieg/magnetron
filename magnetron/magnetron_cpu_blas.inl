@@ -50,12 +50,16 @@
 
 #include <math.h>
 
+/* Uniform names for macro expansion */
+typedef int32_t mag_i32_t;
+typedef uint8_t mag_bool_t;
+
 #define mag_e8m23p(t) ((const mag_e8m23_t*)mag_tensor_get_data_ptr(t))
 #define mag_e8m23p_mut(t) ((mag_e8m23_t*)mag_tensor_get_data_ptr(t))
 #define mag_e5m10p(t) ((const mag_e5m10_t*)mag_tensor_get_data_ptr(t))
 #define mag_e5m10p_mut(t) ((mag_e5m10_t*)mag_tensor_get_data_ptr(t))
-#define mag_boolp(t) ((const uint8_t*)mag_tensor_get_data_ptr(t))
-#define mag_boolp_mut(t) ((uint8_t*)mag_tensor_get_data_ptr(t))
+#define mag_boolp(t) ((const mag_bool_t*)mag_tensor_get_data_ptr(t))
+#define mag_boolp_mut(t) ((mag_bool_t*)mag_tensor_get_data_ptr(t))
 #define mag_i32p(t) ((const int32_t*)mag_tensor_get_data_ptr(t))
 #define mag_i32p_mut(t) ((int32_t*)mag_tensor_get_data_ptr(t))
 
@@ -69,10 +73,6 @@ typedef uint16_t __fp16; /* MSVC does not support __fp16. */
 #define __F16C__ 1
 #endif
 #endif
-
-/* Uniform names for macro expansion */
-typedef int32_t mag_i32_t;
-typedef uint8_t mag_bool_t;
 
 static MAG_AINLINE mag_e5m10_t mag_e8m23_cvt_e5m10(mag_e8m23_t x) {
     uint16_t r;
@@ -221,27 +221,27 @@ static void MAG_HOTPROC mag_vcast_i32_e8m23(int64_t numel, void* _Nonnull restri
 }
 
 static void MAG_HOTPROC mag_vcast_e8m23_bool(int64_t numel, void* _Nonnull restrict xo, const void* _Nonnull restrict xx) {
-    uint8_t* o = xo;
+    mag_bool_t* o = xo;
     const mag_e8m23_t* x = xx;
     for (int64_t i=0; i < numel; ++i)
-        o[i] = (uint8_t)(x[i] != .0f);
+        o[i] = (mag_bool_t)(x[i] != .0f);
 }
 static void MAG_HOTPROC mag_vcast_bool_e8m23(int64_t numel, void* _Nonnull restrict xo, const void* _Nonnull restrict xx) {
     mag_e8m23_t* o = xo;
-    const uint8_t* x = xx;
+    const mag_bool_t* x = xx;
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i] ? 1.f : 0.f;
 }
 
 static void MAG_HOTPROC mag_vcast_i32_bool(int64_t numel, void* _Nonnull restrict xo, const void* _Nonnull restrict xx) {
-    uint8_t* o = xo;
+    mag_bool_t* o = xo;
     const int32_t* x = xx;
     for (int64_t i=0; i < numel; ++i)
-        o[i] = (uint8_t)(x[i] != 0);
+        o[i] = (mag_bool_t)(x[i] != 0);
 }
 static void MAG_HOTPROC mag_vcast_bool_i32(int64_t numel, void* _Nonnull restrict xo, const void* _Nonnull restrict xx) {
     int32_t* o = xo;
-    const uint8_t* x = xx;
+    const mag_bool_t* x = xx;
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i] ? 1 : 0;
 }
@@ -260,14 +260,14 @@ static void MAG_HOTPROC mag_vcast_i32_e5m10(int64_t numel, void* _Nonnull restri
 }
 
 static void MAG_HOTPROC mag_vcast_e5m10_bool(int64_t numel, void* _Nonnull restrict xo, const void* _Nonnull restrict xx) {
-    uint8_t* o = xo;
+    mag_bool_t* o = xo;
     const mag_e5m10_t* x = xx;
     for (int64_t i=0; i < numel; ++i)
-        o[i] = (uint8_t)(x[i].bits != 0);
+        o[i] = (mag_bool_t)(x[i].bits != 0);
 }
 static void MAG_HOTPROC mag_vcast_bool_e5m10(int64_t numel, void* _Nonnull restrict xo, const void* _Nonnull restrict xx) {
     mag_e5m10_t* o = xo;
-    const uint8_t* x = xx;
+    const mag_bool_t* x = xx;
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i] ? MAG_E5M10_ONE : MAG_E5M10_ZERO;
 }
@@ -391,7 +391,7 @@ static void MAG_HOTPROC mag_vrand_normal_e5m10(mag_prng_state_t* _Nonnull prng, 
 }
 
 /* Generate N bernoulli distributed e5m10 floats. */
-static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_prng_state_t* _Nonnull prng, int64_t numel, uint8_t* restrict _Nonnull o, mag_e8m23_t p) {
+static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_prng_state_t* _Nonnull prng, int64_t numel, mag_bool_t* restrict _Nonnull o, mag_e8m23_t p) {
     uint32_t thresh = (uint32_t)(p*4294967296.f); /* 2^32 */
     switch (prng->algo) {
         case MAG_PRNG_MERSENNE_TWISTER: { /* Use Mersenne Twister. */
@@ -1694,7 +1694,7 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         mag_##T##_t val = CVT(mag_op_param_unpack_##UT##_or_panic(r->init_op_params[0])); \
         const mag_tensor_t* mask = (const mag_tensor_t*)(uintptr_t)mag_op_param_unpack_i64_or_panic(r->init_op_params[1]); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
-        const uint8_t* bm = mag_boolp(mask); \
+        const mag_bool_t* bm = mag_boolp(mask); \
         int64_t total = r->numel; \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
@@ -1883,7 +1883,7 @@ mag_gen_stub_fill_rand(normal, e5m10, e8m23, e8m23)
 static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t* _Nonnull payload) {
     mag_tensor_t* r = payload->node;
     mag_e8m23_t p = mag_op_param_unpack_e8m23_or_panic(r->init_op_params[0]);
-    uint8_t* b_r = mag_boolp_mut(r);
+    mag_bool_t* b_r = mag_boolp_mut(r);
     int64_t numel = r->numel;
     mag_vrand_bernoulli_bool(payload->local_prng, numel, b_r, p);
 }
