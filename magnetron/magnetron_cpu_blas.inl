@@ -1872,29 +1872,75 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         const mag_i32_t* bi = mag_i32p(index); \
         int64_t axis = mag_op_param_unpack_i64_or_panic(r->op_params[0]); \
         if (axis < 0) axis += src->rank; \
+        mag_assert2(axis >= 0 && axis < src->rank); \
+        mag_assert2(index->rank >= 1 && (index->rank == src->rank || index->rank == 1 || index->rank > 1)); /* covers all cases */ \
         int64_t axis_dim = src->shape[axis]; \
-        int64_t numel = src->numel; \
-        int64_t coords[MAG_MAX_DIMS]; \
+        int64_t out_numel = r->numel; \
+        int64_t out_coords[MAG_MAX_DIMS]; \
         int64_t src_coords[MAG_MAX_DIMS]; \
-        for (int64_t flat = 0; flat < numel; ++flat) { \
+        for (int64_t flat = 0; flat < out_numel; ++flat) { \
+            /* decode output multi-index */ \
             int64_t tmp = flat; \
-            for (int64_t d = src->rank - 1; d >= 0; --d) { \
-                coords[d] = tmp % src->shape[d]; \
-                tmp /= src->shape[d]; \
+            for (int64_t d = r->rank - 1; d >= 0; --d) { \
+                out_coords[d] = tmp % r->shape[d]; \
+                tmp /= r->shape[d]; \
             } \
-            int64_t index_offset = mag_offset_from_flat(index, flat); \
-            int64_t gather_idx = bi[index_offset]; \
+            /* determine gather index value */ \
+            int64_t gather_idx; \
+            if (index->rank == src->rank) { \
+                /* full-rank gather: map flat output back to index flat in same layout */ \
+                int64_t index_offset = mag_offset_from_flat(index, flat); \
+                gather_idx = bi[index_offset]; \
+            } else if (index->rank == 1) { \
+                /* 1D index along axis; output has same rank as src */ \
+                int64_t idx_pos = out_coords[axis]; \
+                mag_assert2(idx_pos >= 0 && idx_pos < index->shape[0]); \
+                int64_t index_offset = idx_pos * index->strides[0]; \
+                gather_idx = bi[index_offset]; \
+            } else { \
+                /* advanced indexing: index.shape inserted in output at axis; need to extract the corresponding index multi-coordinate */ \
+                /* Build index multi-coordinate from out_coords: output = src.shape[:axis] + index.shape + src.shape[axis+1:] */ \
+                int64_t idx_coords[MAG_MAX_DIMS]; \
+                /* copy the index-part from out_coords starting at position 'axis' */ \
+                for (int64_t i = 0; i < index->rank; ++i) { \
+                    idx_coords[i] = out_coords[axis + i]; \
+                } \
+                /* flatten index coords into offset */ \
+                int64_t index_offset = 0; \
+                for (int64_t d = 0; d < index->rank; ++d) { \
+                    index_offset += idx_coords[d] * index->strides[d]; \
+                } \
+                gather_idx = bi[index_offset]; \
+            } \
             if (gather_idx < 0) gather_idx += axis_dim; \
             mag_assert2(gather_idx >= 0 && gather_idx < axis_dim); \
-            for (int64_t d = 0; d < src->rank; ++d) { \
-                src_coords[d] = coords[d]; \
+            /* build source coordinate: copy output coords mapping back to src space */ \
+            if (index->rank == src->rank) { \
+                for (int64_t d = 0; d < src->rank; ++d) { \
+                    src_coords[d] = out_coords[d]; \
+                } \
+            } else if (index->rank == 1) { \
+                for (int64_t d = 0; d < src->rank; ++d) { \
+                    src_coords[d] = out_coords[d]; \
+                } \
+            } else { \
+                /* advanced: output = src[:axis] + index + src[axis+1:], so rebuild src_coords */ \
+                for (int64_t d = 0; d < axis; ++d) { \
+                    src_coords[d] = out_coords[d]; \
+                } \
+                src_coords[axis] = gather_idx; \
+                for (int64_t d = axis + 1; d < src->rank; ++d) { \
+                    src_coords[d] = out_coords[index->rank + d - 1]; \
+                } \
             } \
-            src_coords[axis] = gather_idx; \
+            /* compute flat offsets */ \
             int64_t src_offset = 0; \
             int64_t dest_offset = 0; \
             for (int64_t d = 0; d < src->rank; ++d) { \
                 src_offset += src_coords[d] * src->strides[d]; \
-                dest_offset += coords[d] * r->strides[d]; \
+            } \
+            for (int64_t d = 0; d < r->rank; ++d) { \
+                dest_offset += out_coords[d] * r->strides[d]; \
             } \
             mag_bnd_chk(bx + src_offset, bx, mag_tensor_get_data_size(src)); \
             mag_bnd_chk(br + dest_offset, br, mag_tensor_get_data_size(r)); \

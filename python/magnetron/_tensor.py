@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import weakref
-from typing import Any
+from typing import Any, Sequence
 
 from ._context import active_context, default_dtype
 from ._core import *
@@ -311,6 +311,15 @@ class Tensor:
                 if length == 0:
                     raise NotImplementedError('Zero-length slice not implemented')
                 curr = curr.view_slice(axis, start, length, step)
+                axis += 1
+                continue
+            elif isinstance(idx, Sequence) and not isinstance(idx, Tensor):
+                idx = Tensor.of(list(idx), dtype=int32)
+
+            if isinstance(idx, Tensor):
+                if idx.dtype != int32:
+                    raise RuntimeError(f'Tensor index must be int32, got {idx.dtype}')
+                curr = curr.gather(axis, idx)
                 axis += 1
                 continue
             raise RuntimeError(f'Invalid index component {idx!r}')

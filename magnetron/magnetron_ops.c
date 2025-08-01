@@ -434,13 +434,49 @@ static mag_tensor_t* mag_result_constructor_routine_gather(mag_tensor_t** inputs
     int64_t axis = mag_op_param_unpack_i64_or_panic(params[0]);
     if (axis < 0) axis += src->rank;
     mag_assert2(axis >= 0 && axis < src->rank);
-    mag_assert2(index->rank == src->rank);
-    for (int64_t i=0; i < src->rank; ++i) {
-        if (i == axis) continue;
-        mag_assert2(index->shape[i] == src->shape[i]);
+    int64_t out_shape[MAG_MAX_DIMS];
+    int64_t out_rank = 0;
+    bool full_rank_gather = false;
+    if (index->rank == src->rank) {
+        full_rank_gather = true;
+        for (int64_t d = 0; d < src->rank; ++d) {
+            if (d == axis) continue;
+            if (index->shape[d] != src->shape[d]) {
+                full_rank_gather = false;
+                break;
+            }
+        }
     }
-    mag_assert2(src->rank >= 1 && src->rank <= MAG_MAX_DIMS);
-    return mag_tensor_empty(src->ctx, src->dtype, src->rank, index->shape);
+    if (full_rank_gather) {
+        for (int64_t d = 0; d < src->rank; ++d) {
+            if (d == axis) {
+                out_shape[out_rank++] = index->shape[d];
+            } else {
+                out_shape[out_rank++] = index->shape[d];
+            }
+        }
+    } else if (index->rank == 1) {
+        for (int64_t d = 0; d < src->rank; ++d) {
+            if (d == axis) {
+                out_shape[out_rank++] = index->shape[0];
+            } else {
+                out_shape[out_rank++] = src->shape[d];
+            }
+        }
+    } else {
+        for (int64_t d = 0; d < axis; ++d) {
+            out_shape[out_rank++] = src->shape[d];
+        }
+        for (int64_t i = 0; i < index->rank; ++i) {
+            out_shape[out_rank++] = index->shape[i];
+        }
+        for (int64_t d = axis + 1; d < src->rank; ++d) {
+            out_shape[out_rank++] = src->shape[d];
+        }
+    }
+
+    mag_assert2(out_rank >= 1 && out_rank <= MAG_MAX_DIMS);
+    return mag_tensor_empty(src->ctx, src->dtype, out_rank, out_shape);
 }
 
 /*
