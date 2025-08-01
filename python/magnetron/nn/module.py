@@ -56,7 +56,7 @@ class Module:
 
     def named_parameters(
         self,
-        prefix: str = "",
+        prefix: str = '',
     ) -> Iterator[tuple[str, Parameter]]:
         seen: set[int] = set()
         for attr_name, value in self.__dict__.items():
@@ -65,12 +65,10 @@ class Module:
                     seen.add(id(value))
                     yield prefix + attr_name, value
             elif isinstance(value, Module):
-                yield from value.named_parameters(prefix + attr_name + ".")
+                yield from value.named_parameters(prefix + attr_name + '.')
             elif isinstance(value, ModuleList):
                 for idx, sub_mod in enumerate(value):
-                    yield from sub_mod.named_parameters(
-                        f"{prefix}{attr_name}.{idx}."
-                    )
+                    yield from sub_mod.named_parameters(f'{prefix}{attr_name}.{idx}.')
 
     def children(self) -> Iterator[Module]:
         """Yield immediate child modules."""

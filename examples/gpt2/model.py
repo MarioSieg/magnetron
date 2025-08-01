@@ -25,7 +25,7 @@ class CausalSelfAttention(nn.Module):
         self.n_head = config.n_head
         self.n_embd = config.n_embd
         self.register_buffer(
-            "mask",
+            'mask',
             mag.Tensor.ones(config.block_size, config.block_size).tril().view(1, 1, config.block_size, config.block_size),
         )
 
@@ -36,12 +36,13 @@ class CausalSelfAttention(nn.Module):
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.shape[-1]))
-        att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
-        att = att.softmax()
+        att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf'))
+        att = att.softmax(dim=-1)
         y = att @ v
         y = y.transpose(1, 2).contiguous().view(B, T, C)
         y = self.c_proj(y)
         return y
+
 
 class MLP(nn.Module):
     def __init__(self, config: GPTConfig) -> None:
@@ -56,50 +57,79 @@ class MLP(nn.Module):
         x = self.c_proj(x)
         return x
 
+
 class Block(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: GPTConfig) -> None:
         super().__init__()
         self.ln_1 = nn.LayerNorm(config.n_embd, bias=config.bias)
         self.attn = CausalSelfAttention(config)
         self.ln_2 = nn.LayerNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
 
-    def forward(self, x):
+    def forward(self, x: mag.Tensor) -> mag.Tensor:
         x = x + self.attn(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x
 
+
 class GPT(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: GPTConfig) -> None:
         super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None
         self.config = config
-        self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(config.vocab_size, config.n_embd),
-            wpe = nn.Embedding(config.block_size, config.n_embd),
-            drop = nn.Dropout(config.dropout),
-            h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-            ln_f = nn.LayerNorm(config.n_embd, bias=config.bias),
-        ))
+        self.transformer = nn.ModuleDict(
+            dict(
+                wte=nn.Embedding(config.vocab_size, config.n_embd),
+                wpe=nn.Embedding(config.block_size, config.n_embd),
+                drop=nn.Dropout(config.dropout),
+                h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+                ln_f=nn.LayerNorm(config.n_embd, bias=config.bias),
+            )
+        )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight
         self.apply(self._init_weights)
         for pn, p in self.named_parameters():
             if pn.endswith('c_proj.weight'):
-                p.x.fill_random_normal_(mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
-        print(f'Parameter count: {self.get_num_params()/1e6}M')
+                p.x.fill_random_normal_(mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer))
+        print(f'Parameter count: {self.get_num_params() / 1e6}M')
 
-    def get_num_params(self, non_embedding=True) -> int:
+    def get_num_params(self, non_embedding: bool = True) -> int:
         n_params = sum(p.x.numel for p in self.parameters())
         if non_embedding:
             n_params -= self.transformer.wpe.weight.x.numel
         return n_params
 
-    def _init_weights(self, module):
+    def _init_weights(self, module: nn.Module) -> None:
         if isinstance(module, nn.Linear):
             module.weight.x.fill_random_normal_(mean=0.0, std=0.02)
             if module.bias is not None:
                 module.bias.x.zeros_()
         elif isinstance(module, nn.Embedding):
             module.weight.x.fill_random_normal_(mean=0.0, std=0.02)
+
+    def forward(self, idx: mag.Tensor) -> mag.Tensor:
+        b, t = idx.shape
+        assert t <= self.config.block_size, f'Block size {self.config.block_size} exceeded by input length {t}'
+        pos = torch.arange(0, t, dtype=mag.int32)
+        tok_emb = self.transformer.wte(idx)
+        pos_emb = self.transformer.wpe(pos)
+        x = tok_emb + pos_emb
+        for block in self.transformer.h:
+            x = block(x)
+        x = self.transformer.ln_f(x)
+        logits = self.lm_head(x[:, [-1], :])
+        return logits
+
+    @mag.no_grad()
+    def generate(self, idx: mag.Tensor, max_tokens: int, temp: float = 1.0) -> mag.Tensor:
+        for _ in range(max_tokens):
+            # if the sequence context is growing too long we must crop it at block_size
+            idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size :]
+            logits, _ = self(idx_cond)
+            logits = logits[:, -1, :] / temp
+            probs = logits.softmax(dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat((idx, idx_next), dim=1)
+        return idx

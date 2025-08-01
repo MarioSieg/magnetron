@@ -57,11 +57,21 @@ def test_tensor_getitem_basic(dtype: DataType) -> None:
             index = tuple(idx_components)
             if len(index) == 0:
                 index = (slice(None),)
+
             try:
                 y_m = x[index]
             except NotImplementedError:
                 continue
-            y_t = tx[index]
+            except IndexError:
+                with pytest.raises(IndexError):
+                    _ = tx[index]
+                continue
+            try:
+                y_t = tx[index]
+                if y_t.dim() == 0:
+                    y_t = y_t.unsqueeze(0) # TODO: Because we don't support 0-dim tensors yet
+            except IndexError:
+                pytest.fail(f"torch raised IndexError for {index} but custom did not")
             torch.testing.assert_close(totorch(y_m), y_t, rtol=1e-3, atol=1e-3)
 
     square_shape_permutations(func, lim=4)

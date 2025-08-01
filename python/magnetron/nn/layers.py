@@ -65,7 +65,6 @@ class Dropout(Module):
 
 
 class LayerNorm(Module):
-
     def __init__(self, ndim: int, bias: bool = True, eps: float = 1e-5) -> None:
         super().__init__()
         self.weight = Parameter(Tensor.ones(ndim))
@@ -73,8 +72,8 @@ class LayerNorm(Module):
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
-        xm = (x - x.mean(dim=-1, keepdim=True))
-        var = (xm*xm).mean(dim=-1, keepdim=True)
+        xm = x - x.mean(dim=-1, keepdim=True)
+        var = (xm * xm).mean(dim=-1, keepdim=True)
         x_hat = xm / (var + self.eps).sqrt()
         y = self.weight.x * x_hat
         if self.bias is not None:

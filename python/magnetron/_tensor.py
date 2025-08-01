@@ -92,16 +92,12 @@ def _expand_ellipsis(idxs: tuple[Index, ...], rank: int) -> tuple[Index, ...]:
     consuming = sum(1 for x in idxs if x is not None and x is not Ellipsis)
     if Ellipsis in idxs:
         if idxs.count(Ellipsis) > 1:
-            raise IndexError("Only one Ellipsis (...) is allowed in the index tuple")
+            raise IndexError('Only one Ellipsis (...) is allowed in the index tuple')
         ellipsis_pos = idxs.index(Ellipsis)
         to_insert = rank - consuming
         if to_insert < 0:
-            raise IndexError(f"Too many indices for a tensor of rank {rank}")
-        expanded = (
-            idxs[:ellipsis_pos]
-            + (slice(None),) * to_insert
-            + idxs[ellipsis_pos + 1 :]
-        )
+            raise IndexError(f'Too many indices for a tensor of rank {rank}')
+        expanded = idxs[:ellipsis_pos] + (slice(None),) * to_insert + idxs[ellipsis_pos + 1 :]
     else:
         if consuming < rank:
             expanded = idxs + (slice(None),) * (rank - consuming)
@@ -285,37 +281,36 @@ class Tensor:
         curr: Tensor = self
         axis: int = 0
         for idx in index:
-            print(f"[DEBUG] before idx={idx!r}: axis={axis}, shape={tuple(curr.shape)}")
             if idx is None:
                 if curr.rank == MAX_DIMS:
-                    raise NotImplementedError("Rank > 6 not supported")
+                    raise NotImplementedError('Rank > 6 not supported')
                 curr = curr.view(*curr.shape[:axis], 1, *curr.shape[axis:])
                 axis += 1
                 continue
             elif isinstance(idx, int):
-                dim_size = curr.shape[axis]
+                dim_size: int = curr.shape[axis]
                 if idx < 0:
                     idx += dim_size
                 if idx < 0 or idx >= dim_size:
-                    raise IndexError(
-                        f"index {idx} is out of bounds for axis {axis} with size {dim_size}"
-                    )
+                    raise IndexError(f'Index {idx} is out of bounds for axis {axis} with size {dim_size}')
                 curr = curr.view_slice(axis, idx, 1, 1)
                 new_shape = list(curr.shape)
                 del new_shape[axis]
-                curr = curr.view(*new_shape) if new_shape else curr.view(tuple())
+                if not new_shape:
+                    new_shape = [1]
+                curr = curr.view(*new_shape) if new_shape else curr.view()
                 continue
             elif isinstance(idx, slice):
                 start, stop, step = idx.indices(curr.shape[axis])
                 if step <= 0:
-                    raise NotImplementedError("Non-positive slice steps are not supported")
+                    raise NotImplementedError('Non-positive slice steps are not supported')
                 length = len(range(start, stop, step))
                 if length == 0:
-                    raise NotImplementedError("Zero-length slice not implemented")
+                    raise NotImplementedError('Zero-length slice not implemented')
                 curr = curr.view_slice(axis, start, length, step)
                 axis += 1
                 continue
-            raise RuntimeError(f"Invalid index component {idx!r}")
+            raise RuntimeError(f'Invalid index component {idx!r}')
         return curr
 
     def __setitem__(self, indices: int | tuple[int, ...], value: float) -> None:
@@ -563,20 +558,22 @@ class Tensor:
         view_dims: FFI.CData = FFI.new(f'int64_t[{num_dims}]', dims)
         return Tensor(C.mag_view(self._ptr, view_dims, num_dims))
 
-    def view_slice(self, dim: int, start: int, len: int, step: int = 1) -> Tensor:
+    def view_slice(self, dim: int, start: int, length: int, step: int = 1) -> Tensor:
         assert 0 <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
-        assert start >= 0 and len > 0
-        assert start + len <= self.shape[dim], f'Slice exceeds tensor bounds: start={start}, length={len}, tensor size={self.shape[dim]}'
-        return Tensor(C.mag_view_slice(self._ptr, dim, start, len, step))
+        assert start >= 0 and length > 0
+        assert start + (length - 1) * step < self.shape[dim], (
+            f'Slice out of bounds: start={start}, length={length}, step={step}, shape={self.shape[dim]}'
+        )
+        return Tensor(C.mag_view_slice(self._ptr, dim, start, length, step))
 
     def split(self, chunk_size: int, dim: int = 0) -> tuple[Tensor, ...]:
         assert chunk_size > 0, 'chunk_size must be greater than 0, got {chunk_size}'
         assert -self.rank <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
-        dim = dim % self.rank
-        size = self.shape[dim]
-        n_chunks = (size + chunk_size - 1) // chunk_size
-        chunks = []
-        start = 0
+        dim: int = dim % self.rank
+        size: int = self.shape[dim]
+        n_chunks: int = (size + chunk_size - 1) // chunk_size
+        chunks: list[Tensor] = []
+        start: int = 0
         for _ in range(n_chunks):
             length = min(chunk_size, size - start)
             view = self.view_slice(dim, start, length, 1)
