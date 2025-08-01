@@ -225,6 +225,13 @@ static bool mag_validate_op_repeat_rev(mag_sstream_t** ss, bool is_inplace, mag_
     return mag_verify_can_broadcast(ss, inputs[0], inputs[1]) &&    /* Check if inputs can be matrix-multiplied */
         mag_verify_dtype_compat(ss, result->op, inputs);              /* Check if the operator is defined between the given dtypes */
 }
+static bool mag_validate_op_gather(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+    bool ok = true;
+    ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
+    /*ok = ok && mag_verify_dtype_compat(ss, result->op, inputs); TODO: index always has type i32, and x any */
+    ok = ok && mag_verify_is_min_rank(ss, inputs[1], 1);                    /* Check if index tensor has at least rank 1 */
+    return ok;
+}
 
 /*
 ** ###################################################################################################################
@@ -418,6 +425,22 @@ static mag_tensor_t* mag_result_constructor_routine_matmul(mag_tensor_t** inputs
 
 static mag_tensor_t* mag_result_constructor_routine_repeat_back(mag_tensor_t** inputs,  const mag_opparam_t* params) {
     return mag_tensor_new(inputs[0]->ctx, inputs[0]->dtype, inputs[1]->rank, inputs[1]->shape);
+}
+
+static mag_tensor_t* mag_result_constructor_routine_gather(mag_tensor_t** inputs,  const mag_opparam_t* params) {
+    mag_tensor_t* src = inputs[0];
+    mag_tensor_t* index = inputs[1];
+    mag_assert2(index->dtype == MAG_DTYPE_I32);
+    int64_t axis = mag_op_param_unpack_i64_or_panic(params[0]);
+    if (axis < 0) axis += src->rank;
+    mag_assert2(axis >= 0 && axis < src->rank);
+    mag_assert2(index->rank == src->rank);
+    for (int64_t i=0; i < src->rank; ++i) {
+        if (i == axis) continue;
+        mag_assert2(index->shape[i] == src->shape[i]);
+    }
+    mag_assert2(src->rank >= 1 && src->rank <= MAG_MAX_DIMS);
+    return mag_tensor_empty(src->ctx, src->dtype, src->rank, index->shape);
 }
 
 /*
@@ -1146,6 +1169,14 @@ mag_tensor_t* mag_matmul(mag_tensor_t* x, mag_tensor_t* y) {
 
 mag_tensor_t* mag_repeat_back(mag_tensor_t* x, mag_tensor_t* y) {
     return mag_tensor_operator(x->ctx, MAG_OP_REPEAT_BACK, false, (mag_tensor_t*[]){x, y}, 2, NULL, 0, MAG_STAGE_EVAL);
+}
+
+mag_tensor_t* mag_gather(mag_tensor_t* x, int64_t dim, mag_tensor_t* idx){
+    mag_assert(dim >= 0 && dim < x->rank, "gather dimension %" PRIi64 " out of range for rank %" PRIi64, dim, x->rank);
+    mag_opparam_layout_t layout;
+    mag_op_param_layout_init(&layout);
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dim)); /* Store dimension in op_params[0] */
+    return mag_tensor_operator(x->ctx, MAG_OP_GATHER, false, (mag_tensor_t*[]){x, idx}, 2, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
 mag_tensor_t* mag_and(mag_tensor_t* x, mag_tensor_t* y) {
@@ -2008,6 +2039,19 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .backward = NULL,
             .r_alloc = &mag_result_constructor_routine_repeat_back,
             .validator = mag_validate_op_repeat_rev
+        },
+        [MAG_OP_GATHER] = {
+            .mnemonic = "gather",
+            .desc = "gather",
+            .input_count = 2,
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
+            .op_param_layout = {
+                MAG_OPP_I64, /* dim : i64 */
+            },
+            .flags = MAG_OP_FLAG_NONE,
+            .backward = NULL,
+            .r_alloc = &mag_result_constructor_routine_gather,
+            .validator = &mag_validate_op_gather
         },
         [MAG_OP_AND] = {
             .mnemonic = "and",

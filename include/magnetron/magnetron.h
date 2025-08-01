@@ -270,6 +270,7 @@ extern MAG_EXPORT mag_tensor_t* _Nonnull mag_div(mag_tensor_t* _Nonnull x, mag_t
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_div_(mag_tensor_t* _Nonnull x, mag_tensor_t* _Nonnull y);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_matmul(mag_tensor_t* _Nonnull x, mag_tensor_t* _Nonnull y);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_repeat_back(mag_tensor_t* _Nonnull x, mag_tensor_t* _Nonnull y);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_gather(mag_tensor_t* _Nonnull x, int64_t dim, mag_tensor_t* _Nonnull idx);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_and(mag_tensor_t* _Nonnull x, mag_tensor_t* _Nonnull y);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_and_(mag_tensor_t* _Nonnull x, mag_tensor_t* _Nonnull y);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_or(mag_tensor_t* _Nonnull x, mag_tensor_t* _Nonnull y);

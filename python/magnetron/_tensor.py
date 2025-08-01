@@ -584,6 +584,11 @@ class Tensor:
             start += chunk_size
         return tuple(chunks)
 
+    def gather(self, dim: int, index: Tensor) -> Tensor:
+        assert 0 <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
+        assert index.dtype == int32, f'Index tensor must be of int32 dtype, but is {index.dtype}'
+        return Tensor(C.mag_gather(self._ptr, dim, index._ptr))
+
     def reshape(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(dims)
         num_dims: int = len(dims)

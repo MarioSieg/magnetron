@@ -738,6 +738,7 @@ typedef enum mag_opcode_t {
     MAG_OP_DIV,
     MAG_OP_MATMUL,
     MAG_OP_REPEAT_BACK,
+    MAG_OP_GATHER,
     MAG_OP_AND,
     MAG_OP_OR,
     MAG_OP_XOR,

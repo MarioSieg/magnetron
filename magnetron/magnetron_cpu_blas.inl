@@ -1642,6 +1642,16 @@ static MAG_HOTPROC int64_t mag_offset_like(const mag_tensor_t* _Nonnull r, const
     return off;
 }
 
+static MAG_HOTPROC int64_t mag_offset_from_flat(const mag_tensor_t* _Nonnull t, int64_t i) {
+    int64_t off = 0;
+    for (int64_t d=t->rank-1; d >= 0; --d) {
+        int64_t coord = i % t->shape[d];
+        i /= t->shape[d];
+        off += coord*t->strides[d];
+    }
+    return off;
+}
+
 static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r, const mag_tensor_t* _Nonnull x, int64_t idx) {
     int64_t rx = r->rank;
     int64_t xx = x->rank;
@@ -1849,6 +1859,46 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
             mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y)); \
             mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             br[ri] = CVT(bx[xi]) OP CVT(by[yi]); \
+        } \
+    }
+
+#define mag_gen_stub_gather(T) \
+    static MAG_HOTPROC void mag_gather_##T(const mag_kernel_payload_t* _Nonnull payload) { \
+        mag_tensor_t* r = payload->node; \
+        const mag_tensor_t* src = r->op_inputs[0]; \
+        const mag_tensor_t* index = r->op_inputs[1]; \
+        mag_##T##_t* br = mag_##T##p_mut(r); \
+        const mag_##T##_t* bx = mag_##T##p(src); \
+        const mag_i32_t* bi = mag_i32p(index); \
+        int64_t axis = mag_op_param_unpack_i64_or_panic(r->op_params[0]); \
+        if (axis < 0) axis += src->rank; \
+        int64_t axis_dim = src->shape[axis]; \
+        int64_t numel = src->numel; \
+        int64_t coords[MAG_MAX_DIMS]; \
+        int64_t src_coords[MAG_MAX_DIMS]; \
+        for (int64_t flat = 0; flat < numel; ++flat) { \
+            int64_t tmp = flat; \
+            for (int64_t d = src->rank - 1; d >= 0; --d) { \
+                coords[d] = tmp % src->shape[d]; \
+                tmp /= src->shape[d]; \
+            } \
+            int64_t index_offset = mag_offset_from_flat(index, flat); \
+            int64_t gather_idx = bi[index_offset]; \
+            if (gather_idx < 0) gather_idx += axis_dim; \
+            mag_assert2(gather_idx >= 0 && gather_idx < axis_dim); \
+            for (int64_t d = 0; d < src->rank; ++d) { \
+                src_coords[d] = coords[d]; \
+            } \
+            src_coords[axis] = gather_idx; \
+            int64_t src_offset = 0; \
+            int64_t dest_offset = 0; \
+            for (int64_t d = 0; d < src->rank; ++d) { \
+                src_offset += src_coords[d] * src->strides[d]; \
+                dest_offset += coords[d] * r->strides[d]; \
+            } \
+            mag_bnd_chk(bx + src_offset, bx, mag_tensor_get_data_size(src)); \
+            mag_bnd_chk(br + dest_offset, br, mag_tensor_get_data_size(r)); \
+            br[dest_offset] = bx[src_offset]; \
         } \
     }
 
@@ -2096,6 +2146,11 @@ mag_cpu_impl_reduce( \
 
 mag_gen_stub_repeat_back(e8m23, .0f, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_repeat_back(e5m10, MAG_E5M10_ZERO, mag_e5m10_cvt_e8m23, mag_e8m23_cvt_e5m10)
+
+mag_gen_stub_gather(e8m23)
+mag_gen_stub_gather(e5m10)
+mag_gen_stub_gather(i32)
+mag_gen_stub_gather(bool)
 
 mag_gen_stub_cmp(eq, e8m23, ==, mag_cvt_nop)
 mag_gen_stub_cmp(eq, e5m10, ==, mag_e5m10_cvt_e8m23)
@@ -2726,6 +2781,12 @@ static void (*_Nonnull const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(
     [MAG_OP_REPEAT_BACK] = {
         [MAG_DTYPE_E8M23] = &mag_repeat_back_e8m23,
         [MAG_DTYPE_E5M10] = &mag_repeat_back_e5m10,
+    },
+    [MAG_OP_GATHER] = {
+        [MAG_DTYPE_E8M23] = &mag_gather_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_gather_e5m10,
+        [MAG_DTYPE_BOOL] = &mag_gather_bool,
+        [MAG_DTYPE_I32] = &mag_gather_i32,
     },
     [MAG_OP_AND] = {
         [MAG_DTYPE_BOOL] = &mag_and_bool,
