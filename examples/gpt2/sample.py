@@ -1,4 +1,5 @@
 import magnetron as mag
+import tiktoken
 from model import GPTConfig, GPT
 
 mag.active_context().stop_grad_recorder()
@@ -11,3 +12,12 @@ top_k = 200
 seed = 1337
 
 gpt = GPT(GPTConfig())
+
+enc = tiktoken.get_encoding('gpt2')
+
+encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
+decode = lambda l: enc.decode(l)
+
+start_ids: list[int] = encode(start)
+x = (mag.Tensor.of(start_ids, dtype=mag.int32)[None, ...])
+y = gpt.generate(x, 4, temp=1.0)

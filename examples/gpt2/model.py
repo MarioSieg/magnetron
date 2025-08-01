@@ -1,4 +1,5 @@
 import math
+import torch
 
 import magnetron as mag
 import magnetron.nn as nn
@@ -112,7 +113,7 @@ class GPT(nn.Module):
     def forward(self, idx: mag.Tensor) -> mag.Tensor:
         b, t = idx.shape
         assert t <= self.config.block_size, f'Block size {self.config.block_size} exceeded by input length {t}'
-        pos = torch.arange(0, t, dtype=mag.int32)
+        pos = mag.Tensor.of(torch.arange(0, t, dtype=torch.int32).tolist(), dtype=mag.int32)
         tok_emb = self.transformer.wte(idx)
         pos_emb = self.transformer.wpe(pos)
         x = tok_emb + pos_emb
@@ -126,10 +127,10 @@ class GPT(nn.Module):
     def generate(self, idx: mag.Tensor, max_tokens: int, temp: float = 1.0) -> mag.Tensor:
         for _ in range(max_tokens):
             # if the sequence context is growing too long we must crop it at block_size
-            idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size :]
+            idx_cond = idx if idx.shape[1] <= self.config.block_size else idx[:, -self.config.block_size :]
             logits, _ = self(idx_cond)
             logits = logits[:, -1, :] / temp
             probs = logits.softmax(dim=-1)
-            idx_next = torch.multinomial(probs, num_samples=1)
-            idx = torch.cat((idx, idx_next), dim=1)
+            idx_next = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1)
+            idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), idx_next), dim=1).tolist())
         return idx
