@@ -90,15 +90,18 @@ Index = int | slice | type(Ellipsis) | None | object
 
 def _expand_ellipsis(idxs: tuple[Index, ...], rank: int) -> tuple[Index, ...]:
     consuming = sum(1 for x in idxs if x is not None and x is not Ellipsis)
-    if Ellipsis in idxs:
-        if idxs.count(Ellipsis) > 1:
-            raise IndexError('Only one Ellipsis (...) is allowed in the index tuple')
-        ellipsis_pos = idxs.index(Ellipsis)
+    ellipsis_occurrences = sum(1 for x in idxs if x is Ellipsis)
+    if ellipsis_occurrences > 1:
+        raise IndexError('Only one Ellipsis (...) is allowed in the index tuple')
+    if any(x is Ellipsis for x in idxs):
+        ellipsis_pos = next(i for i, x in enumerate(idxs) if x is Ellipsis)
         to_insert = rank - consuming
         if to_insert < 0:
             raise IndexError(f'Too many indices for a tensor of rank {rank}')
         expanded = idxs[:ellipsis_pos] + (slice(None),) * to_insert + idxs[ellipsis_pos + 1 :]
     else:
+        if consuming > rank:
+            raise IndexError(f'Too many indices for a tensor of rank {rank}')
         if consuming < rank:
             expanded = idxs + (slice(None),) * (rank - consuming)
         else:
@@ -714,7 +717,7 @@ class Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return self.neg()
 
-    def __round__(self, n=None) -> Tensor:
+    def __round__(self, n: int | None = None) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return self.round()
 
