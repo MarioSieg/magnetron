@@ -471,7 +471,7 @@ static inline mag_div_state_t mag_ivdiv_mkdi(uint32_t d) { /* Create packed divi
 }
 
 /* Performs c = ab with overflow checking. Returns true on overflow, else false. */
-static bool MAG_AINLINE mag_mulov64(int64_t a, int64_t b, int64_t* c) {
+static bool MAG_AINLINE mag_mulov64(int64_t a, int64_t b, int64_t* _Nonnull c) {
     #ifdef _MSC_VER
     #ifdef _M_ARM64
         uint64_t high = __umulh(a, b);
