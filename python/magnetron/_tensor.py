@@ -85,6 +85,13 @@ def _get_reduction_axes(dim: int | Sequence[int] | None) -> tuple[FFI.CData, int
 
     raise TypeError("Dimension must be an int, a sequence of ints, or None.")
 
+def _get_uniform_sample_range(is_int: bool, low: float | int | None = None, high: float | int | None = None) -> tuple[int | float, int | float]:
+    if low is None:
+        low = -0x80000000 if is_int else 0.0
+    if high is None:
+        high = 0x7fffffff if is_int else 1.0
+    assert high > low, f'Invalid uniform sample range {high} must be > {low}'
+    return low, high
 
 # Variants for indexing into Tensors.
 Index = int | slice | type(Ellipsis) | None | object
@@ -346,15 +353,6 @@ class Tensor:
         for i, tensor in enumerate(args):
             if not tensor.dtype in allowed_types:
                 raise RuntimeError(f'Operation requires dtype {allowed_types} for arg {i + 1} but got {tensor.dtype}')
-
-    def _get_uniform_sample_range(self, low: float | int | None = None, high: float | int | None = None) -> tuple[int | float, int | float]:
-        is_int: bool = self.dtype.is_integer
-        if low is None:
-            low = -0x80000000 if is_int else 0.0
-        if high is None:
-            high = 0x7FFFFFFF if is_int else 1.0
-        assert high > low, f'Invalid uniform sample range {high} must be > {low}'
-        return low, high
 
     def __init__(self, native_object: FFI.CData | None) -> None:
         assert _MAIN_TID == threading.get_native_id(), 'Context must be created in the main thread'
@@ -650,7 +648,7 @@ class Tensor:
     def fill_random_uniform_(self, low: float | int | None = None, high: float | int | None = None) -> None:
         self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         self._validate_inplace_op()
-        low, high = self._get_uniform_sample_range(low, high)
+        low, high = _get_uniform_sample_range(self.dtype.is_integer, low, high)
         if self.dtype.is_floating_point:
             C.mag_tensor_fill_random_uniform_float(self._ptr, low, high)
         else:

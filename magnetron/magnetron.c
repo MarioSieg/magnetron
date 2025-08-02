@@ -513,7 +513,7 @@ static mag_e11m52_t* mag_chebyshev_setup(mag_e11m52_t (*f)(mag_e11m52_t), mag_e1
             r[i] += 2.0*y*weight/dsteps;
         }
     }
-    mag_e11m52_t xmi = 0.0, xma = 0.0;
+    mag_e11m52_t xmi=0.0, xma = 0.0;
     if (linear_l) xmi = (*f)(a) - mag_chebyshev_eval(a, a, b, r, steps);
     if (linear_r) xma = (*f)(b) - mag_chebyshev_eval(b, a, b, r, steps);
     r[0] += 2.0*(xma + xmi)*0.5;
@@ -1322,15 +1322,6 @@ bool mag_tensor_is_contiguous(const mag_tensor_t* t) {
     return true;
 }
 
-extern bool mag_solve_view_strides(
-    int64_t (*out)[MAG_MAX_DIMS],
-    const int64_t* osz,
-    const int64_t* ost,
-    int64_t ork,
-    const int64_t* nsz,
-    int64_t nrk
-);
-
 bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t* dims, int64_t rank) {
     int64_t tmp[MAG_MAX_DIMS];
     return mag_solve_view_strides(&tmp, t->shape, t->strides, t->rank, dims, rank);
@@ -2004,7 +1995,7 @@ static void MAG_COLDPROC mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint
             } else if (*line == '\n') {
                 if (got_physical_id && got_core_id) {
                     bool is_unique = true;
-                    for (int32_t i = 0; i < cpu_count; ++i) if (physical_ids[i] == current_physical_id && core_ids[i] == current_core_id) { is_unique = false; break; }
+                    for (int32_t i=0; i < cpu_count; ++i) if (physical_ids[i] == current_physical_id && core_ids[i] == current_core_id) { is_unique = false; break; }
                     if (is_unique) {
                         if (cpu_count < MAG_MAX_CPUS) {
                             physical_ids[cpu_count] = current_physical_id;
@@ -2013,7 +2004,7 @@ static void MAG_COLDPROC mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint
                         } else break;
                     }
                     is_unique = true;
-                    for (int32_t i = 0; i < package_count; ++i) if (package_ids[i] == current_physical_id) { is_unique = false; break; }
+                    for (int32_t i=0; i < package_count; ++i) if (package_ids[i] == current_physical_id) { is_unique = false; break; }
                     if (is_unique) {
                         if (package_count < MAG_MAX_CPUS) package_ids[package_count++] = current_physical_id;
                         else break;
@@ -2282,7 +2273,7 @@ static MAG_COLDPROC void mag_graphviz_dump(const mag_tensor_t* node, FILE *fp, m
     if (mag_hashset_contains_key(visited, node)) return;
     mag_hashset_insert(visited, node);
     bool is_input = true;
-    for (unsigned i = 0; i < MAG_MAX_OP_INPUTS; ++i) {
+    for (unsigned i=0; i < MAG_MAX_OP_INPUTS; ++i) {
         if (node->op_inputs[i] != NULL) {
             is_input = false;
             break;
@@ -2541,6 +2532,92 @@ static bool mag_utf8_validate(const char* str, size_t len) {
           if (cp <= 0xffff || 0x10ffff < cp) return false;
         } else return false;
         pos = next_pos;
+    }
+    return true;
+}
+
+bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t* osz, const int64_t* ost, int64_t ork, const int64_t* nsz, int64_t nrk) {
+    int64_t numel = 1;
+    for (int64_t i=0; i < ork; ++i)
+        mag_assert2(!mag_mulov64(numel, osz[i], &numel));
+    if (!numel) {
+        if (!nrk) return false;
+        (*out)[nrk-1] = 1;
+        for (int64_t d=nrk-2; d >= 0; --d)
+            mag_assert2(!mag_mulov64((*out)[d+1], nsz[d+1], &(*out)[d]));
+        return true;
+    }
+    int64_t oi = ork-1;
+    int64_t ni = nrk-1;
+    while (oi >= 0 && ni >= 0) {
+        if (nsz[ni] == 1) { (*out)[ni] = 0; --ni; continue; }
+        for (; oi >= 0 && osz[oi] == 1; --oi);
+        if (oi < 0) return false;
+        if (nsz[ni] == osz[oi]) {
+            (*out)[ni] = ost[oi];
+            --ni; --oi;
+            continue;
+        }
+        int64_t nc = nsz[ni];
+        int64_t oc = osz[oi];
+        int64_t cs = ost[oi];
+        int64_t nkf = ni;
+        while (nc != oc) {
+            if (nc < oc) {
+                --ni;
+                if (ni < 0) return false;
+                nc *= nsz[ni];
+            } else {
+                --oi;
+                for (; oi >= 0 && osz[oi] == 1; --oi);
+                if (oi < 0) return false;
+                if (ost[oi] != osz[oi+1]*ost[oi+1])
+                    return false;
+                oc *= osz[oi];
+            }
+        }
+        int64_t stride = cs;
+        for (int64_t k=ni; k <= nkf; ++k) {
+            (*out)[k] = stride;
+            mag_assert2(!mag_mulov64(stride, nsz[k], &stride));
+        }
+        --ni; --oi;
+    }
+    while (ni >= 0) { (*out)[ni] = 0; --ni; }
+    for (; oi >= 0 && osz[oi] == 1; --oi);
+    return oi < 0;
+}
+
+void mag_infer_missing_dim(int64_t(*out)[MAG_MAX_DIMS], const int64_t* dims, int64_t rank, int64_t numel) {
+    int64_t prod = 1, infer = -1;
+    for (int64_t i=0; i < rank; ++i) {
+        int64_t ax = dims[i];
+        if (ax == -1) {
+            mag_assert(infer == -1, "only one dimension can be -1");
+            infer = i;
+            (*out)[i] = 1;
+        } else {
+            mag_assert(ax > 0, "dimension must be > 0 or -1");
+            (*out)[i] = ax;
+            mag_assert2(!mag_mulov64(prod, ax, &prod));
+        }
+    }
+    if (infer >= 0) {
+        mag_assert(numel % prod == 0, "cannot infer dimension size from %" PRIi64 " and known product %" PRIi64, numel, prod);
+        (*out)[infer] = numel / prod;
+    } else {
+        mag_assert(prod == numel, "total shape size mismatch: expected %" PRIi64 ", got %" PRIi64, numel, prod);
+    }
+}
+
+bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, int64_t* dims, int64_t* rank) {
+    int64_t ar = a->rank, br = b->rank;
+    int64_t r = *rank = ar > br ? ar : br;
+    for (int64_t i=0; i < r; ++i) {
+        int64_t ra = ar-1-i >= 0 ? a->shape[ar-1-i] : 1;
+        int64_t rb = br-1-i >= 0 ? b->shape[br-1-i] : 1;
+        if (mag_unlikely(!(ra == rb || ra == 1 || rb == 1))) return false;
+        dims[r-1-i] = ra == 1 ? rb : ra;
     }
     return true;
 }

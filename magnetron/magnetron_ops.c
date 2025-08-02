@@ -24,19 +24,6 @@ static bool mag_op_requires_op_params(mag_opcode_t op) { /* Returns true if the 
     return false;
 }
 
-static bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, int64_t* dims, int64_t* rank) {
-    const int64_t ar = a->rank, br = b->rank;
-    const int64_t r  = (*rank = (ar > br) ? ar : br);
-
-    for (int64_t i = 0; i < r; ++i) {
-        const int64_t A = (ar - 1 - i >= 0) ? a->shape[ar - 1 - i] : 1;
-        const int64_t B = (br - 1 - i >= 0) ? b->shape[br - 1 - i] : 1;
-        if (!(A == B || A == 1 || B == 1)) return false;   /* incompatible */
-        dims[r - 1 - i] = (A == 1) ? B : A;
-    }
-    return true;
-}
-
 static void mag_assert_correct_op_data(
     mag_opcode_t op,
     mag_tensor_t** inputs,
@@ -196,25 +183,25 @@ static bool mag_verify_is_inplace_and_grad_mode_off(mag_sstream_t** ss, const ma
     return true;
 }
 
-static bool mag_validate_op_unary(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+static bool mag_verify_unary(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     bool ok = true;
     ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
     ok = ok && mag_verify_dtype_compat(ss, result->op, inputs);                     /* Check if the operator is defined between the given dtypes */
     ok = ok && mag_verify_is_shape_eq(ss, result, inputs[0]);                   /* Check if result shape matches input */
     return ok;
 }
-static bool mag_validate_op_view(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+static bool mag_verify_view(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     bool ok = true;
     ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
     ok = ok && mag_verify_dtype_compat(ss, result->op, inputs);                     /* Check if the operator is defined between the given dtypes */
     return ok;
 }
-static bool mag_validate_op_unary_matrix(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
-    bool ok = mag_validate_op_unary(ss, is_inplace, result, inputs, params);
+static bool mag_verify_unary_matrix(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+    bool ok = mag_verify_unary(ss, is_inplace, result, inputs, params);
     ok = ok && mag_verify_is_min_rank(ss, result, 2); /* Verify that we have a matrix or higher-dimensional (rank >= 2). */
     return ok;
 }
-static bool mag_validate_op_binary(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+static bool mag_verify_binary(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     const mag_tensor_t* x = inputs[0];
     const mag_tensor_t* y = inputs[1];
     bool ok = true;
@@ -239,22 +226,22 @@ static bool mag_validate_op_binary(mag_sstream_t** ss, bool is_inplace, mag_tens
     }
     return ok;
 }
-static bool mag_validate_op_transpose(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+static bool mag_verify_transpose(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return true; /* TODO */
 }
-static bool mag_validate_op_scalar(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+static bool mag_verify_scalar(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace) &&   /* Check if inplace operation is allowed */
         mag_verify_dtype_compat(ss, result->op, inputs);                      /* Check if the operator is defined between the given dtypes */
 }
-static bool mag_validate_op_matmul(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+static bool mag_verify_matmul(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_verify_can_matmul(ss, inputs[0], inputs[1]) &&   /* Check if inputs can be matrix-multiplied */
         mag_verify_dtype_compat(ss, result->op, inputs);          /* Check if the operator is defined between the given dtypes */
 }
-static bool mag_validate_op_repeat_rev(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+static bool mag_verify_repeat_rev(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_verify_can_broadcast(ss, inputs[0], inputs[1]) &&    /* Check if inputs can be matrix-multiplied */
         mag_verify_dtype_compat(ss, result->op, inputs);              /* Check if the operator is defined between the given dtypes */
 }
-static bool mag_validate_op_gather(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
+static bool mag_verify_gather(mag_sstream_t** ss, bool is_inplace, mag_tensor_t* result, mag_tensor_t** inputs, const mag_opparam_t* params) {
     bool ok = true;
     ok = ok && mag_verify_is_inplace_and_grad_mode_off(ss, result, is_inplace);     /* Check if inplace operation is allowed */
     /*ok = ok && mag_verify_dtype_compat(ss, result->op, inputs); TODO: index always has type i32, and x any */
@@ -269,16 +256,16 @@ static bool mag_validate_op_gather(mag_sstream_t** ss, bool is_inplace, mag_tens
 */
 
 
-static mag_tensor_t* mag_result_constructor_routine_isomorph(mag_tensor_t** inputs, const mag_opparam_t* params) {
+static mag_tensor_t* mag_result_isomorph(mag_tensor_t** inputs, const mag_opparam_t* params) {
     return mag_tensor_empty_like(*inputs);
 }
 
-static mag_tensor_t* mag_result_constructor_binary(mag_tensor_t** inputs, const mag_opparam_t* params) {
+static mag_tensor_t* mag_result_binary(mag_tensor_t** inputs, const mag_opparam_t* params) {
     const mag_tensor_t* x = inputs[0];
     const mag_tensor_t* y = inputs[1];
     int64_t dims[MAG_MAX_DIMS];
     int64_t rank;
-    mag_assert2(mag_compute_broadcast_shape(x, y, dims, &rank));
+    mag_compute_broadcast_shape(x, y, dims, &rank);
     if (rank == 0) {
         int64_t one = 1;
         return mag_tensor_empty(x->ctx, x->dtype, 1, &one);
@@ -286,7 +273,7 @@ static mag_tensor_t* mag_result_constructor_binary(mag_tensor_t** inputs, const 
     return mag_tensor_empty(x->ctx, x->dtype, rank, dims);
 }
 
-static mag_tensor_t* mag_result_constructor_binary_boolean(mag_tensor_t** inputs, const mag_opparam_t* params) {
+static mag_tensor_t* mag_result_binary_boolean(mag_tensor_t** inputs, const mag_opparam_t* params) {
     const mag_tensor_t* x = inputs[0];
     const mag_tensor_t* y = inputs[1];
     int64_t dims[MAG_MAX_DIMS];
@@ -299,89 +286,7 @@ static mag_tensor_t* mag_result_constructor_binary_boolean(mag_tensor_t** inputs
     return mag_tensor_empty(x->ctx, MAG_DTYPE_BOOL, rank, dims);
 }
 
-bool mag_solve_view_strides(
-    int64_t (*out)[MAG_MAX_DIMS],   /* Output strides */
-    const int64_t* osz,             /* Old shape */
-    const int64_t* ost,             /* Old strides */
-    int64_t ork,                    /* Old rank */
-    const int64_t* nsz,             /* New shape */
-    int64_t nrk                     /* New rank */
-) {
-    int64_t numel = 1;
-    for (int64_t i=0; i < ork; ++i)
-        mag_assert2(!mag_mulov64(numel, osz[i], &numel));
-    if (!numel) {
-        if (!nrk) return false;
-        (*out)[nrk-1] = 1;
-        for (int64_t d=nrk-2; d >= 0; --d)
-            mag_assert2(!mag_mulov64((*out)[d+1], nsz[d+1], &(*out)[d]));
-        return true;
-    }
-    int64_t oi = ork-1;
-    int64_t ni = nrk-1;
-    while (oi >= 0 && ni >= 0) {
-        if (nsz[ni] == 1) { (*out)[ni] = 0; --ni; continue; }
-        for (; oi >= 0 && osz[oi] == 1; --oi);
-        if (oi < 0) return false;
-        if (nsz[ni] == osz[oi]) {
-            (*out)[ni] = ost[oi];
-            --ni; --oi;
-            continue;
-        }
-        int64_t nc = nsz[ni];
-        int64_t oc = osz[oi];
-        int64_t cs = ost[oi];
-        int64_t nkf = ni;
-        while (nc != oc) {
-            if (nc < oc) {
-                --ni;
-                if (ni < 0) return false;
-                nc *= nsz[ni];
-            } else {
-                --oi;
-                for (; oi >= 0 && osz[oi] == 1; --oi);
-                if (oi < 0) return false;
-                if (ost[oi] != osz[oi+1]*ost[oi+1])
-                    return false;
-                oc *= osz[oi];
-            }
-        }
-        int64_t stride = cs;
-        for (int64_t k=ni; k <= nkf; ++k) {
-            (*out)[k] = stride;
-            mag_assert2(!mag_mulov64(stride, nsz[k], &stride));
-        }
-        --ni; --oi;
-    }
-    while (ni >= 0) { (*out)[ni] = 0; --ni; }
-    for (; oi >= 0 && osz[oi] == 1; --oi);
-    return oi < 0;
-}
-
-static void mag_infer_missing_dim(int64_t(*out)[MAG_MAX_DIMS], const int64_t* dims, int64_t rank, int64_t numel) {
-    int64_t known_prod = 1;
-    int64_t infer_dim = -1;
-    for (int64_t i=0; i < rank; ++i) {
-        int64_t ax = dims[i];
-        if (ax == -1) {
-            mag_assert(infer_dim == -1, "only one dimension can be -1");
-            infer_dim = i;
-            (*out)[i] = 1;
-        } else {
-            mag_assert(ax > 0, "dimension must be > 0 or -1");
-            (*out)[i] = ax;
-            mag_assert2(!mag_mulov64(known_prod, ax, &known_prod));
-        }
-    }
-    if (infer_dim >= 0) {
-        mag_assert(numel % known_prod == 0, "cannot infer dimension size from %" PRIi64 " and known product %" PRIi64, numel, known_prod);
-        (*out)[infer_dim] = numel / known_prod;
-    } else {
-        mag_assert(known_prod == numel, "total shape size mismatch: expected %" PRIi64 ", got %" PRIi64, numel, known_prod);
-    }
-}
-
-static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, const mag_opparam_t* params) {
+static mag_tensor_t* mag_result_view(mag_tensor_t** inputs, const mag_opparam_t* params) {
     mag_tensor_t* base = *inputs;
     int64_t rank = mag_op_param_unpack_i64_or_panic(params[0]);
     if (rank <= 0) return mag_tensor_as_strided(base->ctx, base, base->rank, base->shape, base->strides, base->storage_offset);
@@ -407,12 +312,7 @@ static mag_tensor_t* mag_result_constructor_routine_view(mag_tensor_t** inputs, 
     return mag_tensor_as_strided(base->ctx, base, rank, shape, strides, base->storage_offset);
 }
 
-static mag_tensor_t* mag_result_constructor_routine_scalar(mag_tensor_t** inputs,  const mag_opparam_t* params) {
-    mag_tensor_t* base = *inputs;
-    return mag_tensor_empty_scalar(base->ctx, base->dtype);
-}
-
-static mag_tensor_t* mag_result_constructor_routine_transposed(mag_tensor_t** inputs,  const mag_opparam_t* params) {
+static mag_tensor_t* mag_result_transposed(mag_tensor_t** inputs,  const mag_opparam_t* params) {
     mag_tensor_t* base = *inputs;
     int64_t ax0 = mag_op_param_unpack_i64_or_panic(params[0]);
     int64_t ax1 = mag_op_param_unpack_i64_or_panic(params[1]);
@@ -425,7 +325,7 @@ static mag_tensor_t* mag_result_constructor_routine_transposed(mag_tensor_t** in
     return mag_tensor_as_strided(base->ctx, base, base->rank, shape, stride, base->storage_offset);
 }
 
-static mag_tensor_t* mag_result_constructor_routine_permuted(mag_tensor_t** inputs,  const mag_opparam_t* params) {
+static mag_tensor_t* mag_result_permuted(mag_tensor_t** inputs,  const mag_opparam_t* params) {
     mag_tensor_t* base = *inputs;
     int64_t axes[MAG_MAX_DIMS];
     for (int64_t i=0; i < base->rank; ++i)
@@ -442,7 +342,7 @@ static mag_tensor_t* mag_result_constructor_routine_permuted(mag_tensor_t** inpu
     return mag_tensor_as_strided(base->ctx, base, base->rank, shape, stride, base->storage_offset);
 }
 
-static mag_tensor_t* mag_result_constructor_routine_matmul(mag_tensor_t** inputs,  const mag_opparam_t* params) { /* MxR = MxN * NxR */
+static mag_tensor_t* mag_result_matmul(mag_tensor_t** inputs,  const mag_opparam_t* params) { /* MxR = MxN * NxR */
     (void)params;
     mag_tensor_t* a = inputs[0];
     mag_tensor_t* b = inputs[1];
@@ -474,11 +374,11 @@ static mag_tensor_t* mag_result_constructor_routine_matmul(mag_tensor_t** inputs
     return mag_tensor_new(a->ctx, a->dtype, r_bd+2, shape);
 }
 
-static mag_tensor_t* mag_result_constructor_routine_repeat_back(mag_tensor_t** inputs,  const mag_opparam_t* params) {
+static mag_tensor_t* mag_result_repeat_back(mag_tensor_t** inputs,  const mag_opparam_t* params) {
     return mag_tensor_new(inputs[0]->ctx, inputs[0]->dtype, inputs[1]->rank, inputs[1]->shape);
 }
 
-static mag_tensor_t* mag_result_constructor_routine_gather(mag_tensor_t** inputs,  const mag_opparam_t* params) {
+static mag_tensor_t* mag_result_gather(mag_tensor_t** inputs,  const mag_opparam_t* params) {
     mag_tensor_t* src = inputs[0];
     mag_tensor_t* index = inputs[1];
     mag_assert2(index->dtype == MAG_DTYPE_I32);
@@ -530,12 +430,7 @@ static mag_tensor_t* mag_result_constructor_routine_gather(mag_tensor_t** inputs
     return mag_tensor_empty(src->ctx, src->dtype, out_rank, out_shape);
 }
 
-static int mag_cmp_i64(const void* a, const void* b) {
-    int64_t da = *(const int64_t*)a, db = *(const int64_t*)b;
-    return (da > db) - (da < db);
-}
-
-static mag_tensor_t* mag_result_constructor_reduce(mag_tensor_t** inputs, const mag_opparam_t* params) {
+static mag_tensor_t* mag_result_reduce(mag_tensor_t** inputs, const mag_opparam_t* params) {
     const mag_tensor_t* x = *inputs;
     const int64_t xrank = x->rank;
     int64_t rank = mag_op_param_unpack_i64_or_panic(params[0]);
@@ -1601,8 +1496,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_clone,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary
         },
         [MAG_OP_VIEW] = {
             .mnemonic = "view",
@@ -1620,8 +1515,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_view,
-            .r_alloc = &mag_result_constructor_routine_view,
-            .validator = &mag_validate_op_view
+            .r_alloc = &mag_result_view,
+            .validator = &mag_verify_view
         },
         [MAG_OP_TRANSPOSE] = {
             .mnemonic = "transpose",
@@ -1634,8 +1529,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_transpose,
-            .r_alloc = &mag_result_constructor_routine_transposed,
-            .validator = &mag_validate_op_transpose
+            .r_alloc = &mag_result_transposed,
+            .validator = &mag_verify_transpose
         },
         [MAG_OP_PERMUTE] = {
             .mnemonic = "permute",
@@ -1652,8 +1547,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_permuted,
-            .validator = &mag_validate_op_transpose
+            .r_alloc = &mag_result_permuted,
+            .validator = &mag_verify_transpose
         },
         [MAG_OP_MEAN] = {
             .mnemonic = "mean",
@@ -1672,8 +1567,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_mean,
-            .r_alloc = &mag_result_constructor_reduce,
-            .validator = &mag_validate_op_scalar
+            .r_alloc = &mag_result_reduce,
+            .validator = &mag_verify_scalar
         },
         [MAG_OP_MIN] = {
             .mnemonic = "min",
@@ -1692,8 +1587,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_reduce,
-            .validator = &mag_validate_op_scalar
+            .r_alloc = &mag_result_reduce,
+            .validator = &mag_verify_scalar
         },
         [MAG_OP_MAX] = {
             .mnemonic = "max",
@@ -1712,8 +1607,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_reduce,
-            .validator = &mag_validate_op_scalar
+            .r_alloc = &mag_result_reduce,
+            .validator = &mag_verify_scalar
         },
         [MAG_OP_SUM] = {
             .mnemonic = "sum",
@@ -1732,8 +1627,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = &mag_op_backward_sum,
-            .r_alloc = &mag_result_constructor_reduce,
-            .validator = &mag_validate_op_scalar
+            .r_alloc = &mag_result_reduce,
+            .validator = &mag_verify_scalar
         },
         [MAG_OP_ABS] = {
             .mnemonic = "abs",
@@ -1743,8 +1638,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_abs,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1758,8 +1653,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1773,8 +1668,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_neg,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1788,8 +1683,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_log,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1803,8 +1698,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sqr,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1818,8 +1713,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags =  MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sqrt,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1833,8 +1728,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sin,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1848,8 +1743,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_cos,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1863,8 +1758,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1878,8 +1773,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_exp,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1893,8 +1788,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1908,8 +1803,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1923,8 +1818,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1938,8 +1833,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_softmax,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1953,8 +1848,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1968,8 +1863,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = mag_op_backward_sigmoid,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1983,8 +1878,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -1998,8 +1893,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2013,8 +1908,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_silu,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2028,8 +1923,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2043,8 +1938,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_tanh,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2058,8 +1953,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2073,8 +1968,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_relu,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2088,8 +1983,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2103,8 +1998,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_gelu,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2118,8 +2013,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2135,8 +2030,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary_matrix,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary_matrix,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2152,8 +2047,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary_matrix,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary_matrix,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2167,8 +2062,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_add,
-            .r_alloc = &mag_result_constructor_binary,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2182,8 +2077,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sub,
-            .r_alloc = &mag_result_constructor_binary,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2197,8 +2092,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_mul,
-            .r_alloc = &mag_result_constructor_binary,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2212,8 +2107,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_div,
-            .r_alloc = &mag_result_constructor_binary,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2226,8 +2121,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_matmul,
-            .r_alloc = &mag_result_constructor_routine_matmul,
-            .validator = &mag_validate_op_matmul,
+            .r_alloc = &mag_result_matmul,
+            .validator = &mag_verify_matmul,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 10000
@@ -2240,8 +2135,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_repeat_back,
-            .validator = mag_validate_op_repeat_rev
+            .r_alloc = &mag_result_repeat_back,
+            .validator = mag_verify_repeat_rev
         },
         [MAG_OP_GATHER] = {
             .mnemonic = "gather",
@@ -2253,8 +2148,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_gather,
-            .validator = &mag_validate_op_gather
+            .r_alloc = &mag_result_gather,
+            .validator = &mag_verify_gather
         },
         [MAG_OP_AND] = {
             .mnemonic = "and",
@@ -2264,8 +2159,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2279,8 +2174,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2294,8 +2189,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2309,8 +2204,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_routine_isomorph,
-            .validator = &mag_validate_op_unary,
+            .r_alloc = &mag_result_isomorph,
+            .validator = &mag_verify_unary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2324,8 +2219,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2339,8 +2234,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2354,8 +2249,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary_boolean,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary_boolean,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2369,8 +2264,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary_boolean,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary_boolean,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2384,8 +2279,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary_boolean,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary_boolean,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2399,8 +2294,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary_boolean,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary_boolean,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2414,8 +2309,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary_boolean,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary_boolean,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
@@ -2429,8 +2324,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
-            .r_alloc = &mag_result_constructor_binary_boolean,
-            .validator = &mag_validate_op_binary,
+            .r_alloc = &mag_result_binary_boolean,
+            .validator = &mag_verify_binary,
             .cpu = {
                 .thread_growth = 0.1,
                 .thread_treshold = 250000
