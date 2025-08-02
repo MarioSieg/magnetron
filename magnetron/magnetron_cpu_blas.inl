@@ -1909,11 +1909,15 @@ static int mag_cmp_i64(const void* a, const void* b) {
         mag_##T##_t* br = mag_##T##p_mut(r);                                                              \
         const int64_t nd = x->rank;                                                                       \
         int64_t rank = mag_op_param_unpack_i64_or_panic(r->op_params[0]);                                          \
+        const bool keep = !!mag_op_param_unpack_i64_or_panic(r->op_params[1]); \
+        int64_t red_count = 1;\
+    (void)red_count; \
         int64_t axes[MAG_MAX_DIMS];                                                                       \
         for (int64_t i=0;i<rank;++i){                                                                     \
             int64_t a =mag_op_param_unpack_i64_or_panic(r->op_params[2+i]); \
             if (a<0) a += nd;                                                                             \
             axes[i]=a;                                                                                    \
+            red_count *= x->shape[axes[i]]; \
         }                                                                                                 \
         qsort(axes,(size_t)rank,sizeof(int64_t),&mag_cmp_i64);                                                  \
         int64_t rr=0; for(int64_t i=0;i<rank;++i) if(i==0||axes[i]!=axes[i-1]) axes[rr++]=axes[i];        \
@@ -1923,14 +1927,12 @@ static int mag_cmp_i64(const void* a, const void* b) {
             bool red=false; for (int64_t k=0;k<rank;++k) if (axes[k]==d){ red=true; break; }              \
             if (!red) keep_axes[nk++]=d;                                                                  \
         }                                                                                                 \
-        int64_t red_count = 1;\
-        for (int64_t k = 0; k < rank; ++k) red_count *= x->shape[axes[k]];\
         const int64_t out_numel = r->numel;                                                               \
         int64_t red_prod = 1; for (int64_t k=0;k<rank;++k) red_prod *= x->shape[axes[k]];                 \
         for (int64_t oi=0; oi<out_numel; ++oi) {                                                          \
             int64_t rem = oi, off = 0;                                                                    \
             for (int64_t j = nk-1; j >= 0; --j) {                                                         \
-                int64_t ax = keep_axes[j]; \
+                int64_t ax = keep ? keep_axes[j] : keep_axes[j]; \
                 int64_t sz = x->shape[ax];                                                                \
                 int64_t idx = (sz>1) ? (rem % sz) : 0;                                                    \
                 if (sz>1) rem /= sz;                                                                      \

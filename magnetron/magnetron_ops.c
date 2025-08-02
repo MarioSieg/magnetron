@@ -999,27 +999,38 @@ mag_tensor_t* mag_mean(mag_tensor_t* x, const int64_t* dims, int64_t rank, bool 
     }
     mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(rank));        // [0]
-    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim));   // [1]
-    for (int64_t i=0; i<rank; ++i)                                           // [2..]
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(rank));
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim));
+    for (int64_t i=0; i<rank; ++i)
         mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
-    return mag_tensor_operator(x->ctx, MAG_OP_MEAN, false, &x, 1,
-                               layout.slots, layout.count, MAG_STAGE_EVAL);
+    return mag_tensor_operator(x->ctx, MAG_OP_MEAN, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
 
 mag_tensor_t* mag_min(mag_tensor_t* x, const int64_t* dims, int64_t rank, bool keepdim) {
     int64_t local_axes[MAG_MAX_DIMS];
     if (!dims && !rank) {
         rank = x->rank;
-        for (int64_t i=0; i < rank; ++i)
-            local_axes[i] = i;
+        for (int64_t i=0; i<rank; ++i) local_axes[i] = i;
+        dims = local_axes;
+    } else if (dims) {
+        for (int64_t i=0; i<rank; ++i) {
+            int64_t a = dims[i];
+            if (a < 0) a += x->rank;
+            mag_assert(0 <= a && a < x->rank, "axis OOB");
+            local_axes[i] = a;
+        }
+        qsort(local_axes, (size_t)rank, sizeof(int64_t), cmp_i64);
+        int64_t r=0;
+        for (int64_t i=0; i<rank; ++i)
+            if (i==0 || local_axes[i]!=local_axes[i-1]) local_axes[r++] = local_axes[i];
+        rank = r;
         dims = local_axes;
     }
     mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(rank));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim));
-    for (int64_t i=0; i < rank; ++i)
+    for (int64_t i=0; i<rank; ++i)
         mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_MIN, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
@@ -1028,15 +1039,27 @@ mag_tensor_t* mag_max(mag_tensor_t* x, const int64_t* dims, int64_t rank, bool k
     int64_t local_axes[MAG_MAX_DIMS];
     if (!dims && !rank) {
         rank = x->rank;
-        for (int64_t i=0; i < rank; ++i)
-            local_axes[i] = i;
+        for (int64_t i=0; i<rank; ++i) local_axes[i] = i;
+        dims = local_axes;
+    } else if (dims) {
+        for (int64_t i=0; i<rank; ++i) {
+            int64_t a = dims[i];
+            if (a < 0) a += x->rank;
+            mag_assert(0 <= a && a < x->rank, "axis OOB");
+            local_axes[i] = a;
+        }
+        qsort(local_axes, (size_t)rank, sizeof(int64_t), cmp_i64);
+        int64_t r=0;
+        for (int64_t i=0; i<rank; ++i)
+            if (i==0 || local_axes[i]!=local_axes[i-1]) local_axes[r++] = local_axes[i];
+        rank = r;
         dims = local_axes;
     }
     mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(rank));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim));
-    for (int64_t i=0; i < rank; ++i)
+    for (int64_t i=0; i<rank; ++i)
         mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_MAX, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
@@ -1045,15 +1068,27 @@ mag_tensor_t* mag_sum(mag_tensor_t* x, const int64_t* dims, int64_t rank, bool k
     int64_t local_axes[MAG_MAX_DIMS];
     if (!dims && !rank) {
         rank = x->rank;
-        for (int64_t i=0; i < rank; ++i)
-            local_axes[i] = i;
+        for (int64_t i=0; i<rank; ++i) local_axes[i] = i;
+        dims = local_axes;
+    } else if (dims) {
+        for (int64_t i=0; i<rank; ++i) {
+            int64_t a = dims[i];
+            if (a < 0) a += x->rank;
+            mag_assert(0 <= a && a < x->rank, "axis OOB");
+            local_axes[i] = a;
+        }
+        qsort(local_axes, (size_t)rank, sizeof(int64_t), cmp_i64);
+        int64_t r=0;
+        for (int64_t i=0; i<rank; ++i)
+            if (i==0 || local_axes[i]!=local_axes[i-1]) local_axes[r++] = local_axes[i];
+        rank = r;
         dims = local_axes;
     }
     mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(rank));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!keepdim));
-    for (int64_t i=0; i < rank; ++i)
+    for (int64_t i=0; i<rank; ++i)
         mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
     return mag_tensor_operator(x->ctx, MAG_OP_SUM, false, &x, 1, layout.slots, layout.count, MAG_STAGE_EVAL);
 }
