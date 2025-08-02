@@ -660,9 +660,8 @@ static MAG_COLDPROC void mag_leak_detector_dump_results(mag_context_t* ctx) {
         mag_fmt_shape(&shape, &leaked->shape, leaked->rank);
         fprintf(
             stderr,
-            MAG_CC_RED "[magnetron] " MAG_CC_RESET "Leaked tensor: %p, Name: %s, Shape: %s, Op: %s \n",
+            MAG_CC_RED "[magnetron] " MAG_CC_RESET "Leaked tensor: %p, Shape: %s, Op: %s \n",
             leaked,
-            mag_tensor_get_name(leaked),
             shape,
             mag_op_meta_of(leaked->op)->mnemonic
         );

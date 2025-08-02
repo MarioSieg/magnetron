@@ -32,6 +32,7 @@ dev = [
     "torch",
     "numpy",
     "transformers",
+    "tiktoken",
     "matplotlib",
     "pytest",
     "pytest-xdist"

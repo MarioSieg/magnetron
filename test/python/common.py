@@ -26,11 +26,16 @@ def totorch_dtype(dtype: DataType) -> torch.dtype:
     return DTYPE_TORCH_MAP[dtype]
 
 def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) -> torch.Tensor:
-    if not isinstance(obj, Tensor) and not isinstance(obj, torch.Tensor):
-        return obj
+    if isinstance(obj, torch.Tensor):
+        return obj.to(dtype) if dtype is not None else obj
+    if not isinstance(obj, Tensor):
+        return torch.tensor(obj, dtype=dtype) if dtype is not None else torch.tensor(obj)
     if dtype is None:
         dtype = totorch_dtype(obj.dtype)
-    return torch.tensor(obj.tolist(), dtype=dtype).reshape(obj.shape)
+    t = torch.tensor(obj.tolist(), dtype=dtype)
+    if tuple(obj.shape) == (1,):
+        return t.reshape(())
+    return t.reshape(obj.shape)
 
 def broadcastable(a: tuple[int,...], b: tuple[int,...]) -> bool:
     for x, y in zip(a[::-1], b[::-1]):

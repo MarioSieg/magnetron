@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Iterable
 
 from ._tensor import Tensor
 from ._context import no_grad
@@ -24,8 +25,14 @@ class PolynomialDecayLRScheduler:
 class Optimizer(ABC):
     """Base class for all optimizers."""
 
-    def __init__(self, params: list[Parameter], lr: float) -> None:
-        self.params = params
+    def __init__(self, params: Iterable[Parameter], lr: float) -> None:
+        seen: set[int] = set()
+        self.params: list[Parameter] = []
+        for p in params:
+            pid = id(p)
+            if pid not in seen:
+                seen.add(pid)
+                self.params.append(p)
         self.lr = lr
 
     @abstractmethod
@@ -41,8 +48,9 @@ class Optimizer(ABC):
 class SGD(Optimizer):
     """Stochastic Gradient Descent"""
 
-    def __init__(self, params: list[Parameter], lr: float) -> None:
+    def __init__(self, params: Iterable[Parameter], lr: float) -> None:
         super().__init__(params, lr)
+        self.lr = float(lr)
 
     @no_grad()
     def step(self) -> None:
@@ -56,7 +64,7 @@ class Adam(Optimizer):
 
     def __init__(
         self,
-        params: list[Parameter],
+        params: Iterable[Parameter],
         lr: float = 0.001,
         betas: tuple[float, float] = (0.9, 0.999),
         eps: float = 1e-8,

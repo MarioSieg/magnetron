@@ -1895,21 +1895,68 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         } \
     }
 
-#define mag_cpu_impl_reduce(T, FUNC, ACC_T, INIT_EXPR, UPDATE_STMT, FINAL_STMT) \
-    static void MAG_HOTPROC mag_##FUNC##_##T(const mag_kernel_payload_t* _Nonnull payload) { \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* x = r->op_inputs[0]; \
-        if (payload->thread_idx != 0) return; \
-        const mag_##T##_t* bx = mag_##T##p(x); \
-        mag_##T##_t* br = mag_##T##p_mut(r); \
-        ACC_T acc = (INIT_EXPR); \
-        for (int64_t i=0; i < x->numel; ++i) { \
-            int64_t off = mag_offset_like(x, x, i); \
-            mag_bnd_chk(bx+off, bx, mag_tensor_get_data_size(x)); \
-            UPDATE_STMT; \
-        } \
-        FINAL_STMT; \
+
+static int mag_cmp_i64(const void* a, const void* b) {
+    int64_t da = *(const int64_t*)a, db = *(const int64_t*)b;
+    return (da > db) - (da < db);
+}
+
+#define mag_cpu_impl_reduce_axes(T, FUNC, ACC_T, INIT_EXPR, UPDATE_STMT, FINAL_STMT)                  \
+    static void MAG_HOTPROC mag_##FUNC##_##T(const mag_kernel_payload_t* _Nonnull payload) {             \
+        mag_tensor_t* r = payload->node;                                                                  \
+        const mag_tensor_t* x = r->op_inputs[0];                                                          \
+        const mag_##T##_t* bx = mag_##T##p(x);                                                            \
+        mag_##T##_t* br = mag_##T##p_mut(r);                                                              \
+        const int64_t nd = x->rank;                                                                       \
+        int64_t rank = mag_op_param_unpack_i64_or_panic(r->op_params[0]);                                          \
+        int64_t axes[MAG_MAX_DIMS];                                                                       \
+        for (int64_t i=0;i<rank;++i){                                                                     \
+            int64_t a =mag_op_param_unpack_i64_or_panic(r->op_params[2+i]); \
+            if (a<0) a += nd;                                                                             \
+            axes[i]=a;                                                                                    \
+        }                                                                                                 \
+        qsort(axes,(size_t)rank,sizeof(int64_t),&mag_cmp_i64);                                                  \
+        int64_t rr=0; for(int64_t i=0;i<rank;++i) if(i==0||axes[i]!=axes[i-1]) axes[rr++]=axes[i];        \
+        rank=rr;                                                                                          \
+        int64_t keep_axes[MAG_MAX_DIMS]; int64_t nk=0;                                                    \
+        for (int64_t d=0; d<nd; ++d) {                                                                    \
+            bool red=false; for (int64_t k=0;k<rank;++k) if (axes[k]==d){ red=true; break; }              \
+            if (!red) keep_axes[nk++]=d;                                                                  \
+        }                                                                                                 \
+        int64_t red_count = 1;\
+        for (int64_t k = 0; k < rank; ++k) red_count *= x->shape[axes[k]];\
+        const int64_t out_numel = r->numel;                                                               \
+        int64_t red_prod = 1; for (int64_t k=0;k<rank;++k) red_prod *= x->shape[axes[k]];                 \
+        for (int64_t oi=0; oi<out_numel; ++oi) {                                                          \
+            int64_t rem = oi, off = 0;                                                                    \
+            for (int64_t j = nk-1; j >= 0; --j) {                                                         \
+                int64_t ax = keep_axes[j]; \
+                int64_t sz = x->shape[ax];                                                                \
+                int64_t idx = (sz>1) ? (rem % sz) : 0;                                                    \
+                if (sz>1) rem /= sz;                                                                      \
+                off += idx * x->strides[ax];                                                              \
+            }                                                                                             \
+            ACC_T acc = (INIT_EXPR);                                                                      \
+            int64_t ctr[MAG_MAX_DIMS] = {0};                                                              \
+            int64_t cur = off;                                                                            \
+            for (;;) {                                                                                   \
+                int64_t roff = cur;                                                                       \
+                mag_bnd_chk(bx+roff, bx, mag_tensor_get_data_size(x));                                    \
+                { UPDATE_STMT }                                                                           \
+                int64_t k=0;                                                                              \
+                for (; k<rank; ++k) {                                                                     \
+                    int64_t ax = axes[k];                                                                 \
+                    if (++ctr[k] < x->shape[ax]) { cur += x->strides[ax]; break; }                        \
+                    cur -= x->strides[ax] * (x->shape[ax]-1);                                             \
+                    ctr[k]=0;                                                                             \
+                }                                                                                         \
+                if (k==rank) break;                                                                       \
+            }                                                                                             \
+            mag_##T##_t* outp = br + oi;                                                                  \
+            { FINAL_STMT }                                                                                \
+        }                                                                                                 \
     }
+
 
 #define mag_gen_stub_repeat_back(T, Z, CVT, RCVT) \
     static void MAG_HOTPROC mag_repeat_back_##T(const mag_kernel_payload_t* _Nonnull payload) { \
@@ -2227,41 +2274,41 @@ mag_gen_stub_binop(bool, and, &, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(bool, or , |, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(bool, xor, ^, mag_cvt_nop, mag_cvt_nop)
 
-mag_cpu_impl_reduce( \
+mag_cpu_impl_reduce_axes( \
     e8m23, sum, mag_e11m52_t, 0.0, \
-    acc += (mag_e11m52_t)bx[off];, \
-    *br = (mag_e8m23_t)acc; )
-mag_cpu_impl_reduce( \
+    acc += (mag_e11m52_t)bx[roff];, \
+    *outp = (mag_e8m23_t)acc; )
+mag_cpu_impl_reduce_axes( \
     e5m10, sum, mag_e8m23_t, 0.0f, \
-    acc += mag_e5m10_cvt_e8m23(bx[off]);, \
-    *br = mag_e8m23_cvt_e5m10(acc); )
+    acc += mag_e5m10_cvt_e8m23(bx[roff]);, \
+    *outp = mag_e8m23_cvt_e5m10(acc); )
 
-mag_cpu_impl_reduce( \
+mag_cpu_impl_reduce_axes( \
     e8m23, mean, mag_e11m52_t, 0.0, \
-    acc += (mag_e11m52_t)bx[off];, \
-    acc /= (mag_e11m52_t)x->numel; *br = (mag_e8m23_t)acc; )
-mag_cpu_impl_reduce( \
+    acc += (mag_e11m52_t)bx[roff];, \
+    acc /= (mag_e11m52_t)red_count; *outp = (mag_e8m23_t)acc; )
+mag_cpu_impl_reduce_axes( \
     e5m10, mean, mag_e8m23_t, 0.0f, \
-    acc += mag_e5m10_cvt_e8m23(bx[off]);, \
-    acc /= (mag_e8m23_t)x->numel; *br = mag_e8m23_cvt_e5m10(acc); )
+    acc += mag_e5m10_cvt_e8m23(bx[roff]);, \
+    acc /= (mag_e8m23_t)red_count; *outp = mag_e8m23_cvt_e5m10(acc); )
 
-mag_cpu_impl_reduce( \
+mag_cpu_impl_reduce_axes( \
     e8m23, min, mag_e8m23_t, INFINITY, \
-    acc = fminf(acc, bx[off]);, \
-    *br = acc; )
-mag_cpu_impl_reduce( \
+    acc = fminf(acc, bx[roff]);, \
+    *outp = acc; )
+mag_cpu_impl_reduce_axes( \
     e5m10, min, mag_e8m23_t, INFINITY, \
-    acc = fminf(acc, mag_e5m10_cvt_e8m23(bx[off]));, \
-    *br = mag_e8m23_cvt_e5m10(acc); )
+    acc = fminf(acc, mag_e5m10_cvt_e8m23(bx[roff]));, \
+    *outp = mag_e8m23_cvt_e5m10(acc); )
 
-mag_cpu_impl_reduce( \
+mag_cpu_impl_reduce_axes( \
     e8m23, max, mag_e8m23_t, -INFINITY, \
-    acc = fmaxf(acc, bx[off]);, \
-    *br = acc; )
-mag_cpu_impl_reduce( \
+    acc = fmaxf(acc, bx[roff]);, \
+    *outp = acc; )
+mag_cpu_impl_reduce_axes( \
     e5m10, max, mag_e8m23_t, -INFINITY, \
-    acc = fmaxf(acc, mag_e5m10_cvt_e8m23(bx[off]));, \
-    *br = mag_e8m23_cvt_e5m10(acc); )
+    acc = fmaxf(acc, mag_e5m10_cvt_e8m23(bx[roff]));, \
+    *outp = mag_e8m23_cvt_e5m10(acc); )
 
 mag_gen_stub_repeat_back(e8m23, .0f, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_repeat_back(e5m10, MAG_E5M10_ZERO, mag_e5m10_cvt_e8m23, mag_e8m23_cvt_e5m10)

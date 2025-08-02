@@ -71,17 +71,19 @@ def _unpack_shape(*shape: int | tuple[int, ...]) -> tuple[int, ...]:
     return shape
 
 
-def _get_reduction_axes(dim: int | tuple[int] | None) -> tuple[FFI.CData, int]:
+def _get_reduction_axes(dim: int | Sequence[int] | None) -> tuple[FFI.CData, int]:
     if dim is None:
         return FFI.NULL, 0
     if isinstance(dim, int):
-        return FFI.new('int64_t[1]', [dim]), 1
-    elif isinstance(dim, tuple):
-        num: int = len(dim)
-        axes: FFI.CData = (FFI.new(f'int64_t[{num}]', dim),)
-        return axes, num
-    else:
-        raise TypeError('Dimension must be an int or a tuple of ints.')
+        arr = FFI.new("int64_t[1]", [dim]); return arr, 1
+    if isinstance(dim, Sequence) and not isinstance(dim, (str, bytes)):
+        vals = [int(d) for d in dim]
+        if len(vals) == 0:
+            dummy = FFI.new("int64_t[1]", [0])
+            return dummy, 0
+        arr = FFI.new(f"int64_t[{len(vals)}]", vals); return arr, len(vals)
+
+    raise TypeError("Dimension must be an int, a sequence of ints, or None.")
 
 
 # Variants for indexing into Tensors.
@@ -676,32 +678,34 @@ class Tensor:
     def ones_(self) -> None:
         self.fill_(1)
 
-    def mean(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
+    def mean(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_mean(self._ptr, dims, num_dims, keepdim))
 
-    def min(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
+    def min(self,  dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_min(self._ptr, dims, num_dims, keepdim))
 
-    def max(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
+    def max(self,  dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_max(self._ptr, dims, num_dims, keepdim))
 
-    def sum(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
+    def sum(self,  dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_sum(self._ptr, dims, num_dims, keepdim))
 
     def argmin(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
+        raise NotImplementedError('argmin is not implemented for complex tensors')
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_argmin(self._ptr, dims, num_dims, keepdim))
 
     def argmax(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
+        raise NotImplementedError('argmin is not implemented for complex tensors')
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_argmax(self._ptr, dims, num_dims, keepdim))

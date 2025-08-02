@@ -5,24 +5,6 @@ import magnetron as mag
 import magnetron.nn as nn
 from dataclasses import dataclass
 
-class LayerNorm(nn.Module): # Torch helping layer norm till we have fixed reductions
-    def __init__(self, ndim: int, bias: bool = True, eps: float = 1e-5) -> None:
-        super().__init__()
-        self.weight = nn.Parameter(mag.Tensor.ones(ndim))
-        self.bias = nn.Parameter(mag.Tensor.zeros(ndim)) if bias else None
-        self.eps = eps
-
-    def forward(self, x: mag.Tensor) -> mag.Tensor: # TODO: ASAP
-        x = torch.tensor(x.tolist())
-        xm = x - x.mean(dim=-1, keepdim=True)
-        var = (xm * xm).mean(dim=-1, keepdim=True)
-        x_hat = xm / (var + self.eps).sqrt()
-        y = torch.tensor(self.weight.x.tolist()) * x_hat
-        if self.bias is not None:
-            y = y + torch.tensor(self.bias.x.tolist())
-        return mag.Tensor.of(y.tolist())
-
-
 @dataclass
 class GPTConfig:
     block_size: int = 1024
@@ -79,9 +61,9 @@ class MLP(nn.Module):
 class Block(nn.Module):
     def __init__(self, config: GPTConfig) -> None:
         super().__init__()
-        self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
+        self.ln_1 = nn.LayerNorm(config.n_embd, bias=config.bias)
         self.attn = CausalSelfAttention(config)
-        self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
+        self.ln_2 = nn.LayerNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
 
     def forward(self, x: mag.Tensor) -> mag.Tensor:
@@ -102,7 +84,7 @@ class GPT(nn.Module):
                 wpe=nn.Embedding(config.block_size, config.n_embd),
                 drop=nn.Dropout(config.dropout),
                 h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-                ln_f=LayerNorm(config.n_embd, bias=config.bias),
+                ln_f=nn.LayerNorm(config.n_embd, bias=config.bias),
             )
         )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
