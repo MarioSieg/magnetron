@@ -130,7 +130,7 @@ class GPT(nn.Module):
     def forward(self, idx: mag.Tensor) -> mag.Tensor:
         b, t = idx.shape
         assert t <= self.config.block_size, f'Block size {self.config.block_size} exceeded by input length {t}'
-        pos = mag.Tensor.of(torch.arange(0, t, dtype=torch.int32).tolist(), dtype=mag.int32)
+        pos = mag.Tensor.arange(0, t, dtype=mag.int32)
         tok_emb = self.transformer.wte(idx)
         pos_emb = self.transformer.wpe(pos)
         x = tok_emb + pos_emb

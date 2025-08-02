@@ -175,9 +175,8 @@ static bool mag_verify_can_matmul(mag_sstream_t** ss, const mag_tensor_t* x, con
 static bool mag_verify_is_inplace_and_grad_mode_off(mag_sstream_t** ss, const mag_tensor_t* result, bool is_inplace) {
     if (mag_unlikely(is_inplace && (result->ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && (result->flags & MAG_TFLAG_REQUIRES_GRAD))) {
         mag_push_verification_error(ss,
-            "Inplace operation is not allowed when recording gradients: %s\n"
-            "    Hint: Disable gradient recording or use a non-inplace operation.\n",
-            result->name
+            "Inplace operation is not allowed when recording gradients.\n"
+            "    Hint: Disable gradient recording or use a non-inplace operation.\n"
         );
         return false;
     }
@@ -1403,6 +1402,17 @@ void mag_tensor_fill_random_bernoulli(mag_tensor_t* t, mag_e8m23_t p) {
     mag_opparam_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(p));
+    mag_op_param_layout_transfer(&layout, &t->init_op_params);
+    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+}
+
+void mag_tensor_fill_arange(mag_tensor_t* t, float start, float step){
+    mag_assert2(t->rank == 1 && (mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC));
+    t->init_op = MAG_IOP_ARANGE;
+    mag_opparam_layout_t layout;
+    mag_op_param_layout_init(&layout);
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(start));
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(step));
     mag_op_param_layout_transfer(&layout, &t->init_op_params);
     mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
 }

@@ -115,14 +115,6 @@ class Tensor:
     __slots__ = ('__weakref__', '_ctx', '_ptr', '_finalizer')
 
     @property
-    def name(self) -> str:
-        return FFI.string(C.mag_tensor_get_name(self._ptr)).decode('utf-8')
-
-    @name.setter
-    def name(self, name: str) -> None:
-        C.mag_tensor_set_name(self._ptr, bytes(name, 'utf-8'))
-
-    @property
     def rank(self) -> int:
         return C.mag_tensor_get_rank(self._ptr)
 
@@ -373,8 +365,7 @@ class Tensor:
         cls,
         *shape: int | tuple[int, ...],
         dtype: DataType = default_dtype(),
-        requires_grad: bool = False,
-        name: str | None = None,
+        requires_grad: bool = False
     ) -> Tensor:
         shape: tuple[int, ...] = _unpack_shape(*shape)
         assert 0 < len(shape) <= MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
@@ -383,8 +374,6 @@ class Tensor:
         instance: FFI.CData = C.mag_tensor_empty(active_context().native_ptr, dtype.enum_value, len(shape), dims)
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
-        if name is not None:
-            tensor.name = name
         return tensor
 
     @classmethod
@@ -393,10 +382,9 @@ class Tensor:
         template: Tensor,
         *,
         dtype: DataType | None = None,
-        requires_grad: bool = False,
-        name: str | None = None,
+        requires_grad: bool = False
     ) -> Tensor:
-        return cls.empty(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad, name=name)
+        return cls.empty(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad)
 
     @classmethod
     def full(
@@ -404,15 +392,13 @@ class Tensor:
         *shape: int | tuple[int, ...],
         fill_value: int | float | bool,
         dtype: DataType = default_dtype(),
-        requires_grad: bool = False,
-        name: str | None = None,
+        requires_grad: bool = False
     ) -> Tensor:
         shape: tuple[int, ...] = _unpack_shape(*shape)
         tensor: Tensor = cls.empty(
             *shape,
             dtype=dtype,
             requires_grad=requires_grad,
-            name=name,
         )
         tensor.fill_(fill_value)
         return tensor
@@ -424,15 +410,13 @@ class Tensor:
         fill_value: int | float | bool,
         *,
         dtype: DataType | None = None,
-        requires_grad: bool = False,
-        name: str | None = None,
+        requires_grad: bool = False
     ) -> Tensor:
         return cls.full(
             template.shape,
             fill_value=fill_value,
             dtype=dtype if dtype is not None else template.dtype,
             requires_grad=requires_grad,
-            name=name,
         )
 
     @classmethod
@@ -441,8 +425,7 @@ class Tensor:
         data: NestedList,
         *,
         dtype: DataType | None = None,
-        requires_grad: bool = False,
-        name: str | None = None,
+        requires_grad: bool = False
     ) -> Tensor:
         if not data:
             return cls.empty(0, dtype=dtype if dtype is not None else default_dtype())
@@ -453,8 +436,7 @@ class Tensor:
         tensor: Tensor = cls.empty(
             *shape,
             dtype=dtype,
-            requires_grad=requires_grad,
-            name=name,
+            requires_grad=requires_grad
         )
         staging_buffer: FFI.CData = FFI.new(f'{native_name}[{len(flattened_data)}]', flattened_data)
         copy_bytes_numel: int = len(flattened_data)
@@ -471,9 +453,8 @@ class Tensor:
         *shape: int | tuple[int, ...],
         dtype: DataType = default_dtype(),
         requires_grad: bool = False,
-        name: str | None = None,
     ) -> Tensor:
-        return cls.full(*shape, fill_value=0, dtype=dtype, requires_grad=requires_grad, name=name)
+        return cls.full(*shape, fill_value=0, dtype=dtype, requires_grad=requires_grad)
 
     @classmethod
     def zeros_like(
@@ -481,20 +462,18 @@ class Tensor:
         template: Tensor,
         dtype: DataType | None = None,
         *,
-        requires_grad: bool = False,
-        name: str | None = None,
+        requires_grad: bool = False
     ) -> Tensor:
-        return cls.zeros(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad, name=name)
+        return cls.zeros(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad)
 
     @classmethod
     def ones(
         cls,
         *shape: int | tuple[int, ...],
         dtype: DataType = default_dtype(),
-        requires_grad: bool = False,
-        name: str | None = None,
+        requires_grad: bool = False
     ) -> Tensor:
-        return cls.full(*shape, fill_value=1, dtype=dtype, requires_grad=requires_grad, name=name)
+        return cls.full(*shape, fill_value=1, dtype=dtype, requires_grad=requires_grad)
 
     @classmethod
     def ones_like(
@@ -502,10 +481,9 @@ class Tensor:
         template: Tensor,
         *,
         dtype: DataType | None = None,
-        requires_grad: bool = False,
-        name: str | None = None,
+        requires_grad: bool = False
     ) -> Tensor:
-        return cls.ones(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad, name=name)
+        return cls.ones(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad)
 
     @classmethod
     def uniform(
@@ -514,14 +492,12 @@ class Tensor:
         low: float | int | None = None,
         high: float | int | None = None,
         dtype: DataType = default_dtype(),
-        requires_grad: bool = False,
-        name: str | None = None,
+        requires_grad: bool = False
     ) -> Tensor:
         tensor: Tensor = cls.empty(
             *_unpack_shape(*shape),
             dtype=dtype,
-            requires_grad=requires_grad,
-            name=name,
+            requires_grad=requires_grad
         )
         tensor.fill_random_uniform_(low, high)
         return tensor
@@ -534,13 +510,11 @@ class Tensor:
         std: float = 1.0,
         dtype: DataType = default_dtype(),
         requires_grad: bool = False,
-        name: str | None = None,
     ) -> Tensor:
         tensor: Tensor = cls.empty(
             *_unpack_shape(*shape),
             dtype=dtype,
-            requires_grad=requires_grad,
-            name=name,
+            requires_grad=requires_grad
         )
         tensor.fill_random_normal_(mean, std)
         return tensor
@@ -549,16 +523,33 @@ class Tensor:
     def bernoulli(
         cls,
         *shape: int | tuple[int, ...],
-        p: float = 0.5,
-        name: str | None = None,
+        p: float = 0.5
     ) -> Tensor:
         tensor: Tensor = cls.empty(
             *_unpack_shape(*shape),
             dtype=boolean,
-            requires_grad=False,
-            name=name,
+            requires_grad=False
         )
         tensor.fill_random_bernoulli_(p)
+        return tensor
+
+    @classmethod
+    def arange(cls,
+        start: float | int = 0,
+        stop: float | int | None = None,
+        step: float | int = 1,
+        dtype: DataType = default_dtype(),
+        requires_grad: bool = False,
+    ) -> Tensor:
+        if stop is None:
+            stop = start
+            start = 0
+        tensor: Tensor = cls.empty(
+            (stop - start + step - 1) // step,
+            dtype=dtype,
+            requires_grad=requires_grad
+        )
+        tensor.fill_arange_(start, step)
         return tensor
 
     def clone(self) -> Tensor:
@@ -672,6 +663,12 @@ class Tensor:
         self._validate_dtypes(self, allowed_types={boolean})
         self._validate_inplace_op()
         C.mag_tensor_fill_random_bernoulli(self._ptr, p)
+
+    def fill_arange_(self, start: float | int = 0, step: float | int = 1) -> None:
+        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        self._validate_inplace_op()
+        assert self.rank == 1, f'Tensor must be 1-dimensional for arange fill, but is {self.rank}-dimensional'
+        C.mag_tensor_fill_arange(self._ptr, float(start), float(step))
 
     def zeros_(self) -> None:
         self.fill_(0)

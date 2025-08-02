@@ -18,7 +18,7 @@ class Linear(Module):
         self.weight = Parameter(weight)
         self.bias = None
         if bias:
-            self.bias = Parameter(Tensor.zeros(out_features, name='bias'))
+            self.bias = Parameter(Tensor.zeros(out_features))
 
     def forward(self, x: Tensor) -> Tensor:
         x = x @ self.weight.x.T

@@ -767,6 +767,7 @@ typedef enum mag_init_opcode_t {
     MAG_IOP_RAND_UNIFORM,
     MAG_IOP_RAND_NORMAL,
     MAG_IOP_RAND_BERNOULLI,
+    MAG_IOP_ARANGE,
     MAG_IOP__NUM
 } mag_init_opcode_t;
 
@@ -1100,7 +1101,6 @@ struct mag_tensor_t {
     mag_view_meta_t* _Nullable view_meta;                /* View metadata, if this is a view. */
     uint64_t version;                                        /* Version of the tensor. Used for views to detect changes in the base tensor. */
     mag_tensor_t* _Nullable grad;                             /* ∇f - Gradient tensor. */
-    uint8_t name[MAG_MAX_TENSOR_NAME_LEN];                  /* Tensor debug name. */
     void* _Nullable ud;                                     /* User data. */
 #ifdef MAG_DEBUG
     mag_tensor_t* _Nullable alive_next;                       /* Next alive tensor used for leak detection. */

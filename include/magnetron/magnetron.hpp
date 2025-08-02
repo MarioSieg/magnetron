@@ -24,7 +24,6 @@
 
 namespace magnetron {
     constexpr std::size_t k_max_dims {MAG_MAX_DIMS};
-    constexpr std::size_t k_max_tensor_name_len {MAG_MAX_TENSOR_NAME_LEN};
     constexpr std::size_t k_max_input_tensors {MAG_MAX_OP_INPUTS};
     constexpr std::size_t k_max_op_params {MAG_MAX_OP_PARAMS};
     constexpr std::uint16_t k_version {MAG_VERSION};
@@ -445,14 +444,12 @@ namespace magnetron {
 
         [[nodiscard]] auto refcount() const noexcept -> std::uint64_t { return mag_tensor_get_refcount(m_tensor); }
         [[nodiscard]] auto memory_usage() const noexcept -> std::size_t { return mag_tensor_get_memory_usage(m_tensor); }
-        auto set_name(const std::string& name) -> void { mag_tensor_set_name(m_tensor, name.c_str()); }
         [[nodiscard]] auto to_string(bool with_data = true, std::size_t from_start = 0, std::size_t from_end = 0) const -> std::string {
             char* fmt {mag_tensor_to_string(m_tensor, with_data, from_start, from_end)};
             std::string str {fmt};
             mag_tensor_to_string_free_data(fmt);
             return str;
         }
-        [[nodiscard]] auto get_name() const noexcept -> std::string_view { return mag_tensor_get_name(m_tensor); }
         [[nodiscard]] auto rank() const noexcept -> std::int64_t { return mag_tensor_get_rank(m_tensor); }
         [[nodiscard]] auto shape() const noexcept -> std::span<const std::int64_t> {
             return {mag_tensor_get_shape(m_tensor), static_cast<std::size_t>(rank())};

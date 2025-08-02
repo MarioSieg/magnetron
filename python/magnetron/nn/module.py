@@ -34,25 +34,26 @@ class Parameter:
 class Module:
     """Base class for all neural network modules."""
 
-    def parameters(self) -> list[Parameter]:
-        """Return all unique and nested parameters of the module."""
-        params: list[Parameter] = []
+    def __init__(self) -> None:
+        self._buffer_names = set()
+
+    def _parameters(self, visited: set[int]) -> Iterator[Parameter]:
         for v in self.__dict__.values():
             if isinstance(v, Parameter):
-                params.append(v)
+                vid = id(v)
+                if vid not in visited:
+                    visited.add(vid)
+                    yield v
             elif isinstance(v, Module):
-                params.extend(v.parameters())
+                yield from v._parameters(visited)
             elif isinstance(v, ModuleList):
                 for m in v:
-                    params.extend(m.parameters())
-        # dedupe while preserving order
-        unique: list[Parameter] = []
-        seen = set()
-        for p in params:
-            if id(p) not in seen:
-                seen.add(id(p))
-                unique.append(p)
-        return unique
+                    yield from m._parameters(visited)
+
+    def parameters(self) -> Iterator["Parameter"]:
+        """Yield all unique and nested parameters of the module."""
+        visited: set[int] = set()
+        yield from self._parameters(visited)
 
     def named_parameters(
         self,
@@ -85,27 +86,41 @@ class Module:
         for child in self.children():
             yield from child.modules()
 
+    def named_children(self) -> Iterator[tuple[str, Module]]:
+        for attr_name, value in self.__dict__.items():
+            if isinstance(value, Module):
+                yield attr_name, value
+            elif isinstance(value, ModuleList):
+                for i, m in enumerate(value):
+                    yield f"{attr_name}.{i}", m
+
+    def named_modules(self, memo: set[int] | None = None, prefix: str = '') -> Iterator[tuple[str, Module]]:
+        if memo is None: memo = set()
+        if id(self) in memo:
+            return
+        memo.add(id(self))
+        yield prefix, self
+        for name, child in self.named_children():
+            next_prefix = f"{prefix}.{name}" if prefix else name
+            yield from child.named_modules(memo, next_prefix)
+
+    def _state_items(self, prefix: str = '') -> Iterator[tuple[str, Tensor]]:
+        for name, attr in self.__dict__.items():
+            if isinstance(attr, Parameter):
+                yield f'{prefix}{name}', attr.x.clone()
+            elif isinstance(attr, Tensor):
+                yield f'{prefix}{name}', attr.clone()
+            elif isinstance(attr, Module):
+                yield from attr._state_items(f'{prefix}{name}.')
+            elif isinstance(attr, ModuleList):
+                for i, sub in enumerate(attr):
+                    yield from sub._state_items(f'{prefix}{name}.{i}.')
+
+    def state_items(self) -> Iterator[tuple[str, Tensor]]:
+        yield from self._state_items()
+
     def state_dict(self) -> OrderedDict[str, Tensor]:
-        dest = OrderedDict()
-
-        def _recurse(m: Module | ModuleList, prefix: str = '') -> None:
-            if isinstance(m, ModuleList):
-                for i, sub in enumerate(m):
-                    _recurse(sub, f'{prefix}{i}.')
-                return
-
-            for name, attr in m.__dict__.items():
-                if isinstance(attr, Parameter):
-                    dest[f'{prefix}{name}'] = attr.x.clone()
-                elif isinstance(attr, Tensor):
-                    dest[f'{prefix}{name}'] = attr.clone()
-                elif isinstance(attr, Module):
-                    _recurse(attr, f'{prefix}{name}.')
-                elif isinstance(attr, ModuleList):
-                    _recurse(attr, f'{prefix}{name}.')
-
-        _recurse(self)
-        return dest
+        return OrderedDict(self.state_items())
 
     def load_state_dict(
         self,
@@ -204,6 +219,26 @@ class Module:
         buf = tensor.clone().detach() if isinstance(tensor, Tensor) else tensor
         setattr(self, name, buf)
 
+    def register_buffer(self, name: str, tensor: Tensor) -> None:
+        buf = tensor.clone().detach() if isinstance(tensor, Tensor) else tensor
+        setattr(self, name, buf)
+        names = getattr(self, "_buffer_names", set())
+        names.add(name)
+        self._buffer_names = names
+
+    def named_buffers(self, prefix: str = '') -> Iterator[tuple[str, Tensor]]:
+        for name in getattr(self, "_buffer_names", set()):
+            yield prefix + name, getattr(self, name)
+        for attr_name, value in self.__dict__.items():
+            if isinstance(value, Module):
+                yield from value.named_buffers(prefix + attr_name + '.')
+            elif isinstance(value, ModuleList):
+                for i, m in enumerate(value):
+                    yield from m.named_buffers(f'{prefix}{attr_name}.{i}.')
+    def buffers(self) -> Iterator[Tensor]:
+        for _, t in self.named_buffers():
+            yield t
+
 
 class ModuleList(Module, list):
     """A list of modules that can be used as a single module."""
@@ -223,12 +258,10 @@ class ModuleList(Module, list):
     def __getitem__(self, k: int) -> Module:
         return super().__getitem__(k)
 
-    def parameters(self) -> list[Parameter]:
-        """Returns all unique and nested parameters of the module."""
-        params: list[Parameter] = []
+    def parameters(self) -> Iterator[Parameter]:
+        seen: set[int] = set()
         for mod in self:
-            params += mod.parameters()
-        return list(set(params))
+            yield from mod._parameters(seen)
 
     def _register(self, idx: int, mod: Module) -> None:
         if not isinstance(mod, Module):
@@ -288,19 +321,18 @@ class ModuleDict(Module, MutableMapping[str, Module]):
     def values(self) -> 'dict_values[str, Module]':
         return self._modules.values()
 
-    def parameters(self) -> list[Parameter]:
-        # flatten out all parameters from each module
-        params: list[Parameter] = []
+    def parameters(self) -> Iterator[Parameter]:
+        seen: set[int] = set()
         for mod in self._modules.values():
-            params.extend(mod.parameters())
-        # dedupe
-        unique: list[Parameter] = []
-        seen = set()
-        for p in params:
-            if id(p) not in seen:
-                seen.add(id(p))
-                unique.append(p)
-        return unique
+            yield from mod._parameters(seen)
+
+    def named_parameters(self, prefix: str = '') -> Iterator[tuple[str, Parameter]]:
+        seen: set[int] = set()
+        for name, mod in self._modules.items():
+            for sub_name, p in mod.named_parameters(prefix + name + '.'):
+                if id(p) not in seen:
+                    seen.add(id(p))
+                    yield sub_name, p
 
 
 class Sequential(ModuleList):

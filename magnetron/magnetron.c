@@ -1029,7 +1029,6 @@ static mag_tensor_t* mag_tensor_init_header(mag_context_t* ctx, mag_dtype_t type
         .view_meta = NULL,
         .version = 0,
         .grad = NULL,
-        .name = "",
         .ud = NULL
     };
 #ifdef MAG_DEBUG
@@ -1219,22 +1218,6 @@ uint64_t mag_tensor_get_refcount(const mag_tensor_t* t) { return t->rc_control.r
 uint64_t mag_tensor_get_storage_refcount(const mag_tensor_t* t) { return t->storage->rc_control.rc; }
 size_t mag_tensor_get_memory_usage(const mag_tensor_t* t) {
     return sizeof(*t) + mag_tensor_get_data_size(t);
-}
-
-mag_static_assert(sizeof(char) == sizeof(uint8_t));
-void mag_tensor_set_name(mag_tensor_t* t, const char* name) {
-    snprintf((char*)t->name, MAG_MAX_TENSOR_NAME_LEN, "%s", name);
-}
-
-void mag_tensor_fmt_name(mag_tensor_t* t, const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf((char*)t->name, sizeof(t->name), fmt, args);
-    va_end(args);
-}
-
-const char* mag_tensor_get_name(const mag_tensor_t* t) {
-    return (const char*)t->name;
 }
 
 int64_t mag_tensor_get_rank(const mag_tensor_t* t) { return t->rank; }
@@ -1451,7 +1434,6 @@ static void mag_collect_topo_iterative(mag_tensor_t* root, mag_tensor_set_t* out
 static void mag_tensor_patch_grad(mag_tensor_t* dst, mag_tensor_t* grad) {
     if (dst->grad)
         mag_tensor_decref(dst->grad);
-    mag_tensor_fmt_name(grad, "%s (grad)", dst->name);
     grad->flags = (grad->flags|MAG_TFLAG_IS_GRAD)&~MAG_TFLAG_REQUIRES_GRAD;
     dst->grad = grad;
 }
@@ -2325,8 +2307,7 @@ static MAG_COLDPROC void mag_graphviz_dump(const mag_tensor_t* node, FILE *fp, m
         mag_tensor_t* input = node->op_inputs[i];
         if (!input) continue;
         char name[128];
-        if (*input->name) snprintf(name, sizeof(name), " in %u (%s)", i, input->name);
-        else snprintf(name, sizeof(name), " in %u", i);
+        snprintf(name, sizeof(name), " in %u", i);
         fprintf(fp, "  \"%p\" -> \"%p\" [label=\"%s\"];\n", (void*)input, (void*)node, name);
         mag_graphviz_dump(input, fp, visited);
     }

@@ -21,7 +21,6 @@ extern "C" {
 #endif
 
 #define MAG_MAX_DIMS 6                      /* Maximum number of dimensions for a tensor */
-#define MAG_MAX_TENSOR_NAME_LEN 64          /* Maximum length for tensor name */
 #define MAG_MAX_OP_INPUTS 2                 /* Maximum number of input tensors for an operation */
 #define MAG_MAX_OP_PARAMS 8                 /* Maximum number of parameters for an operation */
 
@@ -306,15 +305,13 @@ extern MAG_EXPORT void mag_tensor_fill_random_uniform_float(mag_tensor_t* _Nonnu
 extern MAG_EXPORT void mag_tensor_fill_random_uniform_int(mag_tensor_t* _Nonnull t, int32_t min, int32_t max);              /* Fill tensor with random values from uniform distribution within [min, max] */
 extern MAG_EXPORT void mag_tensor_fill_random_normal(mag_tensor_t* _Nonnull t, float mean, float stddev);                   /* Fill tensor with random values from the normal distribution. */
 extern MAG_EXPORT void mag_tensor_fill_random_bernoulli(mag_tensor_t* _Nonnull t, float p);                                 /* Fill bool tensor with random values from the bernoulli distribution. */
+extern MAG_EXPORT void mag_tensor_fill_arange(mag_tensor_t* _Nonnull t, float start, float step);                            /* Fill tensor with values from start to end with step. */
 
 /* ============ Tensor Property Accessors ============ */
 
 extern MAG_EXPORT uint64_t mag_tensor_get_refcount(const mag_tensor_t* _Nonnull t);                                         /* Return reference count of tensor itself. */
 extern MAG_EXPORT uint64_t mag_tensor_get_storage_refcount(const mag_tensor_t* _Nonnull t);                                 /* Return reference count of tensor itself. */
 extern MAG_EXPORT size_t mag_tensor_get_memory_usage(const mag_tensor_t* _Nonnull t);                                       /* Return memory used by this tensor in bytes. */
-extern MAG_EXPORT void mag_tensor_set_name(mag_tensor_t* _Nonnull t, const char* _Nonnull name);                            /* Set the name of the tensor */
-extern MAG_EXPORT void mag_tensor_fmt_name(mag_tensor_t* _Nonnull t, const char* _Nonnull fmt, ...);                        /* Format the name of the tensor */
-extern MAG_EXPORT const char* _Nonnull mag_tensor_get_name(const mag_tensor_t* _Nonnull t);                                 /* Get the name of the tensor */
 extern MAG_EXPORT int64_t mag_tensor_get_rank(const mag_tensor_t* _Nonnull t);                                              /* Get the rank (number of dimensions) of the tensor */
 extern MAG_EXPORT const int64_t* _Nonnull mag_tensor_get_shape(const mag_tensor_t* _Nonnull t);                             /* Get the dimensions of the tensor */
 extern MAG_EXPORT const int64_t* _Nonnull mag_tensor_get_strides(const mag_tensor_t* _Nonnull t);                           /* Get the strides of the tensor */

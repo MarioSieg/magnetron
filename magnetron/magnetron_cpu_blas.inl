@@ -1809,6 +1809,19 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         mag_vrand_##D##_##T(payload->local_prng, r->numel, b_r, min, max); \
     }
 
+#define mag_gen_stub_fill_arange(T, CVT) \
+    static MAG_HOTPROC void mag_fill_arange_##T(const mag_kernel_payload_t* _Nonnull payload) { \
+        mag_tensor_t* r = payload->node; \
+        mag_##T##_t* br = mag_##T##p_mut(r); \
+        mag_e8m23_t start = mag_op_param_unpack_e8m23_or_panic(r->init_op_params[0]); /* TODO: Use double precision as ACC */ \
+        mag_e8m23_t step = mag_op_param_unpack_e8m23_or_panic(r->init_op_params[1]); \
+        int64_t total = r->numel; \
+        for (int64_t i=0; i < total; ++i) { \
+            mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
+            br[i] = CVT(start + (mag_e8m23_t)i*step); \
+        } \
+    }
+
 #define mag_gen_stub_unary(T, FUNC) \
     static void MAG_HOTPROC mag_##FUNC##_##T(const mag_kernel_payload_t* _Nonnull payload) { \
         mag_tensor_t* r = payload->node; \
@@ -2031,6 +2044,10 @@ mag_gen_stub_fill_rand(uniform, e5m10, e8m23, e8m23)
 mag_gen_stub_fill_rand(uniform, i32, i32, i64)
 mag_gen_stub_fill_rand(normal, e8m23, e8m23, e8m23)
 mag_gen_stub_fill_rand(normal, e5m10, e8m23, e8m23)
+
+mag_gen_stub_fill_arange(e8m23, mag_cvt_nop)
+mag_gen_stub_fill_arange(e5m10, mag_e8m23_cvt_e5m10)
+mag_gen_stub_fill_arange(i32, mag_cvt_i642i32)
 
 static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t* _Nonnull payload) {
     mag_tensor_t* r = payload->node;
@@ -2690,6 +2707,11 @@ static void (*_Nonnull const mag_lut_init_kernels[MAG_IOP__NUM][MAG_DTYPE__NUM])
     },
     [MAG_IOP_RAND_BERNOULLI] = {
         [MAG_DTYPE_BOOL] = &mag_fill_rand_bernoulli_bool,
+    },
+    [MAG_IOP_ARANGE] = {
+        [MAG_DTYPE_E8M23] = &mag_fill_arange_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_fill_arange_e5m10,
+        [MAG_DTYPE_I32] = &mag_fill_arange_i32
     },
 };
 
