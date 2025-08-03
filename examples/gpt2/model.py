@@ -5,6 +5,8 @@ import magnetron as mag
 import magnetron.nn as nn
 from dataclasses import dataclass
 
+from magnetron import FFI, C
+
 
 @dataclass
 class GPTConfig:
@@ -127,16 +129,22 @@ class GPT(nn.Module):
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')]
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
         assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+        def copy(r: mag.Tensor, x: torch.tensor) -> None: # TODO
+            assert x.is_contiguous and r.is_contiguous
+            assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
+            assert r.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
+            bytes = x.numel() * x.element_size()
+            C.mag_tensor_fill_from_raw_bytes(r._ptr, FFI.cast('void*', x.data_ptr()), bytes)
         for k in sd_keys_hf:
             if any(k.endswith(w) for w in transposed):
                 assert sd_hf[k].shape[::-1] == sd[k].shape
                 with mag.no_grad():
-                    sd[k].copy_(mag.Tensor.of(sd_hf[k].T.tolist()))
+                    copy(sd[k], sd_hf[k].T.contiguous())
                     print(f'Copying weights for {k}')
             else:
                 assert sd_hf[k].shape == sd[k].shape
                 with mag.no_grad():
-                    sd[k].copy_(mag.Tensor.of(sd_hf[k].tolist()))
+                    copy(sd[k], sd_hf[k].contiguous())
                     print(f'Copying weights for {k}')
 
         return model

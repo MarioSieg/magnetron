@@ -10,10 +10,8 @@ from magnetron import Tensor
 class Parameter:
     """A tensor that is a learnable parameter of a model."""
 
-    def __init__(self, x: Tensor, name: str | None = None) -> None:
+    def __init__(self, x: Tensor) -> None:
         x.requires_grad = True
-        if name is not None:
-            x.name = name
         self.x = x
 
     @property
