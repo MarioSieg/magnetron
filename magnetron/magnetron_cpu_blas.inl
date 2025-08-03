@@ -1927,7 +1927,7 @@ static int mag_cmp_i64(const void* _Nonnull a, const void* _Nonnull b) {
             if (!red) keep_axes[nk++] = d; \
         } \
         int64_t out_numel = r->numel; \
-        int64_t red_prod = 1; (void)red_prod; \
+        int64_t red_prod = 1; (void)red_prod;ck \
         for (int64_t k=0; k < rank; ++k) \
             red_prod *= x->shape[axes[k]]; \
         for (int64_t oi=0; oi<out_numel; ++oi) { \
