@@ -2460,56 +2460,6 @@ static void mag_mm_scratch_release(mag_mmscratch_t* _Nonnull sb) {
 #define MAG_MM_KC 256
 #define MAG_MM_NC 128
 
-static MAG_AINLINE void mag_gemm4x8_e8m23(
-    int64_t kc,
-    const mag_e8m23_t *_Nonnull a,
-    ptrdiff_t lda,
-    const mag_e8m23_t *_Nonnull b,
-    ptrdiff_t ldb,
-    mag_e8m23_t *_Nonnull c,
-    ptrdiff_t ldc,
-    bool acc
-) {
-    float32x4_t c00, c01, c10, c11, c20, c21, c30, c31;
-    if (acc) {
-        c00 = vld1q_f32(c + 0*ldc + 0);
-        c01 = vld1q_f32(c + 0*ldc + 4);
-        c10 = vld1q_f32(c + 1*ldc + 0);
-        c11 = vld1q_f32(c + 1*ldc + 4);
-        c20 = vld1q_f32(c + 2*ldc + 0);
-        c21 = vld1q_f32(c + 2*ldc + 4);
-        c30 = vld1q_f32(c + 3*ldc + 0);
-        c31 = vld1q_f32(c + 3*ldc + 4);
-    } else {
-        c00 = vdupq_n_f32(0.f);  c01 = c00;
-        c10 = c00; c11 = c00; c20 = c00; c21 = c00; c30 = c00; c31 = c00;
-    }
-    for (int64_t k=0; k < kc; ++k) {
-        float32x4_t bk0 = vld1q_f32(b + k*ldb + 0);
-        float32x4_t bk1 = vld1q_f32(b + k*ldb + 4);
-        float32x4_t a0 = vdupq_n_f32(a[0*lda + k]);
-        float32x4_t a1 = vdupq_n_f32(a[1*lda + k]);
-        float32x4_t a2 = vdupq_n_f32(a[2*lda + k]);
-        float32x4_t a3 = vdupq_n_f32(a[3*lda + k]);
-        c00 = vfmaq_f32(c00, bk0, a0);
-        c01 = vfmaq_f32(c01, bk1, a0);
-        c10 = vfmaq_f32(c10, bk0, a1);
-        c11 = vfmaq_f32(c11, bk1, a1);
-        c20 = vfmaq_f32(c20, bk0, a2);
-        c21 = vfmaq_f32(c21, bk1, a2);
-        c30 = vfmaq_f32(c30, bk0, a3);
-        c31 = vfmaq_f32(c31, bk1, a3);
-    }
-    vst1q_f32(c + 0*ldc + 0, c00);
-    vst1q_f32(c + 0*ldc + 4, c01);
-    vst1q_f32(c + 1*ldc + 0, c10);
-    vst1q_f32(c + 1*ldc + 4, c11);
-    vst1q_f32(c + 2*ldc + 0, c20);
-    vst1q_f32(c + 2*ldc + 4, c21);
-    vst1q_f32(c + 3*ldc + 0, c30);
-    vst1q_f32(c + 3*ldc + 4, c31);
-}
-
 static MAG_AINLINE void mag_gemm8x8_e8m23(
     int64_t kc,
     const mag_e8m23_t *_Nonnull a,
@@ -2520,33 +2470,57 @@ static MAG_AINLINE void mag_gemm8x8_e8m23(
     ptrdiff_t ldc,
     bool acc
 ) {
-    float32x4_t C[8][2];
-    if (acc) {
+    #ifdef __ARM_NEON__
+        float32x4_t C[8][2];
+        if (acc) {
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                C[r][0] = vld1q_f32(c + r*ldc + 0);
+                C[r][1] = vld1q_f32(c + r*ldc + 4);
+            }
+        } else {
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r)
+                C[r][0] = C[r][1] = vdupq_n_f32(0.f);
+        }
+        for (int64_t k=0; k < kc; ++k) {
+            float32x4_t B0 = vld1q_f32(b + k*ldb + 0);
+            float32x4_t B1 = vld1q_f32(b + k*ldb + 4);
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                float32x4_t A = vdupq_n_f32(a[r*lda + k]);
+                C[r][0] = vfmaq_f32(C[r][0], B0, A);
+                C[r][1] = vfmaq_f32(C[r][1], B1, A);
+            }
+        }
         #pragma GCC unroll 8
         for (int r=0; r < 8; ++r) {
-            C[r][0] = vld1q_f32(c + r*ldc + 0);
-            C[r][1] = vld1q_f32(c + r*ldc + 4);
+            vst1q_f32(c + r*ldc + 0, C[r][0]);
+            vst1q_f32(c + r*ldc + 4, C[r][1]);
         }
-    } else {
+    #elif defined(__AVX2__) && defined(__FMA__)
+        __m256 C[8];
+        if (acc) {
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r)
+                C[r] = _mm256_loadu_ps(c + r*ldc);
+        } else {
+            __m256 z = _mm256_setzero_ps();
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) C[r] = z;
+        }
+        for (int64_t k=0; k < kc; ++k) {
+            __m256 B = _mm256_loadu_ps(b + k*ldb);
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                __m256 A = _mm256_broadcast_ss(a + r*lda + k);
+                C[r] = _mm256_fmadd_ps(A, B, C[r]);
+            }
+        }
         #pragma GCC unroll 8
         for (int r=0; r < 8; ++r)
-            C[r][0] = C[r][1] = vdupq_n_f32(0.f);
-    }
-    for (int64_t k=0; k < kc; ++k) {
-        float32x4_t B0 = vld1q_f32(b + k*ldb + 0);
-        float32x4_t B1 = vld1q_f32(b + k*ldb + 4);
-        #pragma GCC unroll 8
-        for (int r=0; r < 8; ++r) {
-            float32x4_t A = vdupq_n_f32(a[r*lda + k]);
-            C[r][0] = vfmaq_f32(C[r][0], B0, A);
-            C[r][1] = vfmaq_f32(C[r][1], B1, A);
-        }
-    }
-    #pragma GCC unroll 8
-    for (int r=0; r < 8; ++r) {
-        vst1q_f32(c + r*ldc + 0, C[r][0]);
-        vst1q_f32(c + r*ldc + 4, C[r][1]);
-    }
+            _mm256_storeu_ps(c + r*ldc, C[r]);
+    #endif
 }
 
 static MAG_AINLINE void mag_gemm8x16_e8m23(
@@ -2651,10 +2625,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
                 int64_t mr = ir + MAG_MM_MR <= mc ? MAG_MM_MR : mc-ir;
                 for (int64_t jr=0; jr < nc; jr += MAG_MM_NR) {
                     int64_t nr = jr + MAG_MM_NR <= nc ? MAG_MM_NR : nc-jr;
-                    if (mr == 4 && nr == 8) { /* Hot Tile */
-                        mag_gemm4x8_e8m23(kc, Ap + ir*kc, kc, Bp + jr, nc, pr_base + (i0 + ir)*N + (j0 + jr), N, acc);
-                        continue;
-                    } else if (mr == 8 && nr == 16) { /* Hot Tile Wide */
+                    if (mr == 8 && nr == 16) { /* Hot Tile */
                         mag_gemm8x16_e8m23(kc, Ap + ir*kc, kc, Bp + jr, nc, pr_base + (i0 + ir)*N + (j0 + jr), N, acc);
                         continue;
                     }
