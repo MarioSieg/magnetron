@@ -393,7 +393,7 @@ static mag_tensor_t* mag_op_stub_unary(mag_opcode_t op, mag_tensor_t* x, const m
     mag_tensor_t* result = NULL;
     if (inplace) {
         result = mag_tensor_strided_view(x); /* Use the same storage as x */
-        mag_assert_inplace_and_grad_mode_off(result);
+        mag_assert_inplace_and_grad_mode_off(x);
     } else {
         result = mag_tensor_empty_like(x); /* Allocate a new tensor for the result */
     }
@@ -481,8 +481,8 @@ static mag_tensor_t* mag_op_stub_binary(mag_opcode_t op, mag_tensor_t* x, mag_te
     mag_tensor_t* result = NULL;
     if (inplace) {
         mag_assert2(!boolean_result);
+        mag_assert_inplace_and_grad_mode_off(x);
         result = mag_tensor_strided_view(x); /* Use the same storage as x */
-        mag_assert_inplace_and_grad_mode_off(result);
     } else {
         int64_t dims[MAG_MAX_DIMS];
         int64_t rank;
