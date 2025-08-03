@@ -2022,6 +2022,14 @@ static int mag_cmp_i64(const void* _Nonnull a, const void* _Nonnull b) {
         int64_t on = r->numel; \
         int64_t oc[MAG_MAX_DIMS]; \
         int64_t sc[MAG_MAX_DIMS]; \
+        bool full = true; \
+        for (int64_t d = 0; d < src->rank; ++d) { \
+            if (d == axis) continue; \
+            if (index->shape[d] != src->shape[d]) { \
+                full = false; \
+                break; \
+            } \
+        } \
         for (int64_t flat=0; flat < on; ++flat) { \
             int64_t tmp = flat; \
             for (int64_t d=r->rank-1; d >= 0; --d) { \
@@ -2029,7 +2037,7 @@ static int mag_cmp_i64(const void* _Nonnull a, const void* _Nonnull b) {
                 tmp /= r->shape[d]; \
             } \
             int64_t gather_idx; \
-            if (index->rank == src->rank) { \
+            if (full) { \
                 int64_t index_offset = mag_offset_from_flat(index, flat); \
                 gather_idx = bi[index_offset]; \
             } else if (index->rank == 1) { \
@@ -2046,7 +2054,7 @@ static int mag_cmp_i64(const void* _Nonnull a, const void* _Nonnull b) {
             } \
             if (gather_idx < 0) gather_idx += ax; \
             mag_assert2(gather_idx >= 0 && gather_idx < ax); \
-            if (index->rank == src->rank) { \
+            if (full) { \
                 for (int64_t d=0; d < src->rank; ++d) sc[d] = oc[d]; \
                 sc[axis] = gather_idx; \
             } else if (index->rank == 1) { \

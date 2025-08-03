@@ -34,6 +34,8 @@ class Module:
 
     def __init__(self) -> None:
         self._buffer_names = set()
+        self._fwd_hooks: list[Callable[[Module, tuple, Tensor], None]] = []
+        self._fwd_pre_hooks: list[Callable[[Module, tuple], None]] = []
 
     def _parameters(self, visited: set[int]) -> Iterator[Parameter]:
         for v in self.__dict__.values():
@@ -47,6 +49,14 @@ class Module:
             elif isinstance(v, ModuleList):
                 for m in v:
                     yield from m._parameters(visited)
+
+    def register_forward_hook(self, hook: Callable[[Module, tuple, Tensor], None]):
+        self._fwd_hooks.append(hook)
+        return hook
+
+    def register_forward_pre_hook(self, hook: Callable[[Module, tuple], None]):
+        self._fwd_pre_hooks.append(hook)
+        return hook
 
     def parameters(self) -> Iterator['Parameter']:
         """Yield all unique and nested parameters of the module."""
@@ -196,22 +206,29 @@ class Module:
             fn(m)
         return self
 
-    def eval(self) -> None:
+    def eval(self) -> Module:
         """Set module to evaluation mode (disable gradients)."""
         for p in self.parameters():
             p.x.requires_grad = False
+        return self
 
-    def train(self) -> None:
+    def train(self) -> Module:
         """Set module to training mode (enable gradients)."""
         for p in self.parameters():
             p.x.requires_grad = True
+        return self
 
     def forward(self, *args: Tensor, **kwargs: dict) -> Tensor:
         """Forward pass; must be implemented by subclasses."""
         raise NotImplementedError
 
-    def __call__(self, *args: Tensor, **kwargs: dict) -> Tensor:
-        return self.forward(*args, **kwargs)
+    def __call__(self, *args, **kwargs) -> Tensor:
+        for h in self._fwd_pre_hooks:
+            h(self, args)
+        out = self.forward(*args, **kwargs)
+        for h in self._fwd_hooks:
+            h(self, args, out)
+        return out
 
     def register_buffer(self, name: str, tensor: Tensor) -> None:
         buf = tensor.clone().detach() if isinstance(tensor, Tensor) else tensor
