@@ -35,6 +35,7 @@
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
+#include <mach/mach_time.h>
 #include <sys/sysctl.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -361,7 +362,7 @@ const char* const mag_arm64_cpu_caps_names[MAG_ARM64_CAP__NUM] = {
 };
 #endif
 
-static uint64_t mag_hpc_clock_ns(void) { /* High precision clock in nanoseconds. */
+uint64_t mag_hpc_clock_ns(void) { /* High precision clock in nanoseconds. */
     #ifdef _WIN32
         static LONGLONG t_freq;
         static LONGLONG t_boot;
@@ -383,14 +384,45 @@ static uint64_t mag_hpc_clock_ns(void) { /* High precision clock in nanoseconds.
         return (uint64_t)ts.tv_sec*1000000000 + (uint64_t)ts.tv_nsec;
     #endif
 }
-static uint64_t mag_hpc_clock_elapsed_ns(uint64_t start) { /* High precision clock elapsed time in microseconds. */
+uint64_t mag_hpc_clock_elapsed_ns(uint64_t start) { /* High precision clock elapsed time in microseconds. */
     return (uint64_t)llabs((long long)mag_hpc_clock_ns() - (long long)start);
 }
-static mag_e11m52_t mag_hpc_clock_elapsed_ms(uint64_t start) { /* High precision clock elapsed time in milliseconds. */
+mag_e11m52_t mag_hpc_clock_elapsed_ms(uint64_t start) { /* High precision clock elapsed time in milliseconds. */
     return (mag_e11m52_t)mag_hpc_clock_elapsed_ns(start) / 1e6;
 }
-#define mag_clock_cycles() ((uint64_t)clock())
-#define mag_cycles_per_ms() ((uint64_t)CLOCKS_PER_SEC/1000)
+
+#ifdef _MSC_VER
+extern "C" uint64_t __rdtsc();
+#pragma intrinsic(__rdtsc)
+#endif
+
+uint64_t mag_cycles(void) {
+    #ifdef __APPLE__
+        return mach_absolute_time();
+    #elif defined(_MSC_VER)
+        return __rdtsc();
+    #elif defined(__x86_64__) || defined(__amd64__)
+        uint64_t lo, hi;
+        __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+        return (hi<<32) | lo;
+    #elif defined(__aarch64__)
+        uint32_t cntrl;
+        uint32_t rwx;
+        uint32_t fset;
+        __asm__ __volatile__("mrc p15, 0, %0, c9, c14, 0" : "=r"(rwx)); /* Read perfmon access control register */
+        if (rwx & 1) {
+            __asm__ __volatile__("mrc p15, 0, %0, c9, c12, 1" : "=r"(fset));
+            if (fset & 0x80000000U) {
+                __asm__ __volatile__("mrc p15, 0, %0, c9, c13, 0" : "=r"(cntrl));
+                return (uint64_t)(cntrl)<<6;
+            }
+        }
+    #else
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        return (uint64_t)(tv.tv_sec)*1000000 + tv.tv_usec;
+    #endif
+}
 
 /* Bitset for 32-bit integers. */
 typedef uint32_t mag_bitset_t;

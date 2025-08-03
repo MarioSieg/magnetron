@@ -374,6 +374,10 @@ extern MAG_EXPORT void* _Nonnull (*_Nonnull mag_alloc)(void* _Nullable blk, size
 /* Humanize memory size. Format and convert a memory size to the appropriate unit. For example. 1024 => 1 KiB */
 extern void mag_humanize_memory_size(size_t n, mag_e11m52_t* _Nonnull out, const char* _Nonnull* _Nonnull unit);
 extern uintptr_t mag_thread_id(void); /* Get current native thread ID. */
+extern uint64_t mag_hpc_clock_ns(void); /* Get high precision clock in nanoseconds. */
+extern uint64_t mag_hpc_clock_elapsed_ns(uint64_t start);
+extern mag_e11m52_t mag_hpc_clock_elapsed_ms(uint64_t start);
+extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 
 #define mag_swap(T, a, b) do { T tmp = (a); (a) = (b); (b) = tmp; } while (0)
 #define mag_xmax(x, y) (((x) > (y)) ? (x) : (y))
