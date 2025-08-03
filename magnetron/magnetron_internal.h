@@ -660,27 +660,27 @@ static MAG_AINLINE int64_t mag_op_param_unpack_i64_or(mag_opparam_t pa, int64_t 
 typedef struct mag_opparam_layout_t {
     mag_opparam_t slots[MAG_MAX_OP_PARAMS];
     uint32_t count;
-} mag_opparam_layout_t;
+} mag_op_param_layout_t;
 
-static inline void mag_op_param_layout_init(mag_opparam_layout_t* _Nonnull set) {
+static inline void mag_op_param_layout_init(mag_op_param_layout_t* _Nonnull set) {
     set->count = 0;
     for (int i=0; i < MAG_MAX_OP_PARAMS; ++i)
         set->slots[i] = mag_op_param_none();
 }
 
-static inline size_t mag_op_param_layout_insert(mag_opparam_layout_t* _Nonnull set, mag_opparam_t param) {
+static inline size_t mag_op_param_layout_insert(mag_op_param_layout_t* _Nonnull set, mag_opparam_t param) {
     mag_assert(set->count < MAG_MAX_OP_PARAMS, "Too many operation parameters");
     set->slots[set->count] = param;
     return set->count++;
 }
 
-static inline void mag_op_param_layout_store(mag_opparam_layout_t* _Nonnull set, size_t idx, mag_opparam_t param) {
+static inline void mag_op_param_layout_store(mag_op_param_layout_t* _Nonnull set, size_t idx, mag_opparam_t param) {
     mag_assert(idx < set->count, "Invalid operation parameter index");
     mag_assert(set->slots[idx].type == MAG_OPP_NONE, "Operation parameter already set");
     set->slots[idx] = param;
 }
 
-static inline void mag_op_param_layout_transfer(const mag_opparam_layout_t* _Nonnull set, mag_opparam_t (*_Nonnull out)[MAG_MAX_OP_PARAMS]) {
+static inline void mag_op_param_layout_transfer(const mag_op_param_layout_t* _Nonnull set, mag_opparam_t (*_Nonnull out)[MAG_MAX_OP_PARAMS]) {
     memcpy(*out, set->slots, set->count*sizeof(*set->slots));
     for (size_t i=set->count; i < MAG_MAX_OP_PARAMS; ++i)
         (*out)[i] = mag_op_param_none();
@@ -800,21 +800,6 @@ typedef struct mag_opmeta_t {
     void (*_Nullable const backward)(
         mag_tensor_t* _Nonnull,
         mag_tensor_t* _Nonnull* _Nonnull
-    );
-
-    /* Result allocator function or NULL. */
-    mag_tensor_t* _Nonnull (*_Nullable const r_alloc)(
-        mag_tensor_t* _Nonnull* _Nonnull,
-        const mag_opparam_t* _Nullable
-    );
-
-    /* Validator function or NULL. */
-    bool (*_Nullable const validator)(
-        mag_sstream_t* _Nullable* _Nonnull,
-        bool,
-        mag_tensor_t* _Nonnull,
-        mag_tensor_t* _Nonnull* _Nonnull,
-        const mag_opparam_t* _Nullable
     );
 
     struct {
