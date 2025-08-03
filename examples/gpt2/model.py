@@ -9,7 +9,7 @@ from dataclasses import dataclass
 @dataclass
 class GPTConfig:
     block_size: int = 1024
-    vocab_size: int = 50304  # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
+    vocab_size: int = 50304
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
@@ -26,7 +26,7 @@ class CausalSelfAttention(nn.Module):
         self.n_head = config.n_head
         self.n_embd = config.n_embd
         self.register_buffer(
-            'mask',
+            'bias',
             mag.Tensor.ones(config.block_size, config.block_size).tril().view(1, 1, config.block_size, config.block_size),
         )
 
@@ -37,7 +37,7 @@ class CausalSelfAttention(nn.Module):
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.shape[-1]))
-        att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf'))
+        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
         att = att.softmax(dim=-1)
         y = att @ v
         y = y.transpose(1, 2).contiguous().view(B, T, C)
@@ -95,6 +95,51 @@ class GPT(nn.Module):
             if pn.endswith('c_proj.weight'):
                 p.x.fill_random_normal_(mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer))
         print(f'Parameter count: {self.get_num_params(False) // 1e6}M')
+
+    @classmethod
+    def from_pretrained(cls, model_type, override_args=None):
+        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
+        override_args = override_args or {}
+        assert all(k == 'dropout' for k in override_args)
+        from transformers import GPT2LMHeadModel
+        config_args = {
+            'gpt2': dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
+            'gpt2-medium': dict(n_layer=24, n_head=16, n_embd=1024),  # 350M params
+            'gpt2-large': dict(n_layer=36, n_head=20, n_embd=1280),  # 774M params
+            'gpt2-xl': dict(n_layer=48, n_head=25, n_embd=1600),  # 1558M params
+        }[model_type]
+        config_args['vocab_size'] = 50257
+        config_args['block_size'] = 1024
+        config_args['bias'] = True
+        if 'dropout' in override_args:
+            print(f"overriding dropout rate to {override_args['dropout']}")
+            config_args['dropout'] = override_args['dropout']
+        config = GPTConfig(**config_args)
+        print(f'Loading {model_type} with config: {config}')
+        model = GPT(config)
+        sd = model.state_dict()
+        sd_keys = sd.keys()
+        sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')]
+        model_hf = GPT2LMHeadModel.from_pretrained(model_type)
+        sd_hf = model_hf.state_dict()
+        sd_keys_hf = sd_hf.keys()
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')]
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')]
+        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+        for k in sd_keys_hf:
+            if any(k.endswith(w) for w in transposed):
+                assert sd_hf[k].shape[::-1] == sd[k].shape
+                with mag.no_grad():
+                    sd[k].copy_(mag.Tensor.of(sd_hf[k].T.tolist()))
+                    print(f'Copying weights for {k}')
+            else:
+                assert sd_hf[k].shape == sd[k].shape
+                with mag.no_grad():
+                    sd[k].copy_(mag.Tensor.of(sd_hf[k].tolist()))
+                    print(f'Copying weights for {k}')
+
+        return model
 
     def get_num_params(self, non_embedding: bool = False) -> int:
         n_params = sum(p.x.numel for p in self.parameters())

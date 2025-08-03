@@ -606,6 +606,12 @@ class Tensor:
         assert self.rank == 1, f'Tensor must be 1-dimensional for arange fill, but is {self.rank}-dimensional'
         C.mag_tensor_fill_arange(self._ptr, float(start), float(step))
 
+    def copy_(self, x: Tensor) -> None:
+        assert self.rank == x.rank, f'Tensor ranks do not match: {self.rank} != {x.rank}'
+        assert self.is_shape_eq(x), f'Tensor shapes do not match: {self.shape} != {x.shape}'
+        assert self.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
+        C.mag_tensor_fill_from_raw_bytes(self._ptr, FFI.cast('void*', x.data_ptr), x.data_size)
+
     def zeros_(self) -> None:
         self.fill_(0)
 
