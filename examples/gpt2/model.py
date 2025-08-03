@@ -5,6 +5,7 @@ import magnetron as mag
 import magnetron.nn as nn
 from dataclasses import dataclass
 
+
 @dataclass
 class GPTConfig:
     block_size: int = 1024

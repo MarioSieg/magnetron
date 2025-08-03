@@ -50,7 +50,7 @@ class Module:
                 for m in v:
                     yield from m._parameters(visited)
 
-    def parameters(self) -> Iterator["Parameter"]:
+    def parameters(self) -> Iterator['Parameter']:
         """Yield all unique and nested parameters of the module."""
         visited: set[int] = set()
         yield from self._parameters(visited)
@@ -92,16 +92,17 @@ class Module:
                 yield attr_name, value
             elif isinstance(value, ModuleList):
                 for i, m in enumerate(value):
-                    yield f"{attr_name}.{i}", m
+                    yield f'{attr_name}.{i}', m
 
     def named_modules(self, memo: set[int] | None = None, prefix: str = '') -> Iterator[tuple[str, Module]]:
-        if memo is None: memo = set()
+        if memo is None:
+            memo = set()
         if id(self) in memo:
             return
         memo.add(id(self))
         yield prefix, self
         for name, child in self.named_children():
-            next_prefix = f"{prefix}.{name}" if prefix else name
+            next_prefix = f'{prefix}.{name}' if prefix else name
             yield from child.named_modules(memo, next_prefix)
 
     def _state_items(self, prefix: str = '') -> Iterator[tuple[str, Tensor]]:
@@ -222,12 +223,12 @@ class Module:
     def register_buffer(self, name: str, tensor: Tensor) -> None:
         buf = tensor.clone().detach() if isinstance(tensor, Tensor) else tensor
         setattr(self, name, buf)
-        names = getattr(self, "_buffer_names", set())
+        names = getattr(self, '_buffer_names', set())
         names.add(name)
         self._buffer_names = names
 
     def named_buffers(self, prefix: str = '') -> Iterator[tuple[str, Tensor]]:
-        for name in getattr(self, "_buffer_names", set()):
+        for name in getattr(self, '_buffer_names', set()):
             yield prefix + name, getattr(self, name)
         for attr_name, value in self.__dict__.items():
             if isinstance(value, Module):
@@ -235,6 +236,7 @@ class Module:
             elif isinstance(value, ModuleList):
                 for i, m in enumerate(value):
                     yield from m.named_buffers(f'{prefix}{attr_name}.{i}.')
+
     def buffers(self) -> Iterator[Tensor]:
         for _, t in self.named_buffers():
             yield t

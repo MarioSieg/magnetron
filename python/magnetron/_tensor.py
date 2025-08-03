@@ -75,23 +75,27 @@ def _get_reduction_axes(dim: int | Sequence[int] | None) -> tuple[FFI.CData, int
     if dim is None:
         return FFI.NULL, 0
     if isinstance(dim, int):
-        arr = FFI.new("int64_t[1]", [dim]); return arr, 1
+        arr = FFI.new('int64_t[1]', [dim])
+        return arr, 1
     if isinstance(dim, Sequence) and not isinstance(dim, (str, bytes)):
         vals = [int(d) for d in dim]
         if len(vals) == 0:
-            dummy = FFI.new("int64_t[1]", [0])
+            dummy = FFI.new('int64_t[1]', [0])
             return dummy, 0
-        arr = FFI.new(f"int64_t[{len(vals)}]", vals); return arr, len(vals)
+        arr = FFI.new(f'int64_t[{len(vals)}]', vals)
+        return arr, len(vals)
 
-    raise TypeError("Dimension must be an int, a sequence of ints, or None.")
+    raise TypeError('Dimension must be an int, a sequence of ints, or None.')
+
 
 def _get_uniform_sample_range(is_int: bool, low: float | int | None = None, high: float | int | None = None) -> tuple[int | float, int | float]:
     if low is None:
         low = -0x80000000 if is_int else 0.0
     if high is None:
-        high = 0x7fffffff if is_int else 1.0
+        high = 0x7FFFFFFF if is_int else 1.0
     assert high > low, f'Invalid uniform sample range {high} must be > {low}'
     return low, high
+
 
 # Variants for indexing into Tensors.
 Index = int | slice | type(Ellipsis) | None | object
@@ -361,12 +365,7 @@ class Tensor:
         self._finalizer = weakref.finalize(self, C.mag_tensor_decref, self._ptr)
 
     @classmethod
-    def empty(
-        cls,
-        *shape: int | tuple[int, ...],
-        dtype: DataType = default_dtype(),
-        requires_grad: bool = False
-    ) -> Tensor:
+    def empty(cls, *shape: int | tuple[int, ...], dtype: DataType = default_dtype(), requires_grad: bool = False) -> Tensor:
         shape: tuple[int, ...] = _unpack_shape(*shape)
         assert 0 < len(shape) <= MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
         assert all(0 < dim <= DIM_MAX for dim in shape), 'Invalid dimension size'
@@ -377,22 +376,12 @@ class Tensor:
         return tensor
 
     @classmethod
-    def empty_like(
-        cls,
-        template: Tensor,
-        *,
-        dtype: DataType | None = None,
-        requires_grad: bool = False
-    ) -> Tensor:
+    def empty_like(cls, template: Tensor, *, dtype: DataType | None = None, requires_grad: bool = False) -> Tensor:
         return cls.empty(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad)
 
     @classmethod
     def full(
-        cls,
-        *shape: int | tuple[int, ...],
-        fill_value: int | float | bool,
-        dtype: DataType = default_dtype(),
-        requires_grad: bool = False
+        cls, *shape: int | tuple[int, ...], fill_value: int | float | bool, dtype: DataType = default_dtype(), requires_grad: bool = False
     ) -> Tensor:
         shape: tuple[int, ...] = _unpack_shape(*shape)
         tensor: Tensor = cls.empty(
@@ -404,14 +393,7 @@ class Tensor:
         return tensor
 
     @classmethod
-    def full_like(
-        cls,
-        template: Tensor,
-        fill_value: int | float | bool,
-        *,
-        dtype: DataType | None = None,
-        requires_grad: bool = False
-    ) -> Tensor:
+    def full_like(cls, template: Tensor, fill_value: int | float | bool, *, dtype: DataType | None = None, requires_grad: bool = False) -> Tensor:
         return cls.full(
             template.shape,
             fill_value=fill_value,
@@ -420,24 +402,14 @@ class Tensor:
         )
 
     @classmethod
-    def of(
-        cls,
-        data: NestedList,
-        *,
-        dtype: DataType | None = None,
-        requires_grad: bool = False
-    ) -> Tensor:
+    def of(cls, data: NestedList, *, dtype: DataType | None = None, requires_grad: bool = False) -> Tensor:
         if not data:
             return cls.empty(0, dtype=dtype if dtype is not None else default_dtype())
         shape, flattened_data = _flatten_nested_lists(data)
         dtype: DataType = dtype if dtype is not None else _deduce_tensor_dtype(flattened_data[0])
         native_name: str = dtype.native_type
         alloc_fn: FFI.CData = dtype.fill_fn
-        tensor: Tensor = cls.empty(
-            *shape,
-            dtype=dtype,
-            requires_grad=requires_grad
-        )
+        tensor: Tensor = cls.empty(*shape, dtype=dtype, requires_grad=requires_grad)
         staging_buffer: FFI.CData = FFI.new(f'{native_name}[{len(flattened_data)}]', flattened_data)
         copy_bytes_numel: int = len(flattened_data)
         if (
@@ -457,32 +429,15 @@ class Tensor:
         return cls.full(*shape, fill_value=0, dtype=dtype, requires_grad=requires_grad)
 
     @classmethod
-    def zeros_like(
-        cls,
-        template: Tensor,
-        dtype: DataType | None = None,
-        *,
-        requires_grad: bool = False
-    ) -> Tensor:
+    def zeros_like(cls, template: Tensor, dtype: DataType | None = None, *, requires_grad: bool = False) -> Tensor:
         return cls.zeros(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad)
 
     @classmethod
-    def ones(
-        cls,
-        *shape: int | tuple[int, ...],
-        dtype: DataType = default_dtype(),
-        requires_grad: bool = False
-    ) -> Tensor:
+    def ones(cls, *shape: int | tuple[int, ...], dtype: DataType = default_dtype(), requires_grad: bool = False) -> Tensor:
         return cls.full(*shape, fill_value=1, dtype=dtype, requires_grad=requires_grad)
 
     @classmethod
-    def ones_like(
-        cls,
-        template: Tensor,
-        *,
-        dtype: DataType | None = None,
-        requires_grad: bool = False
-    ) -> Tensor:
+    def ones_like(cls, template: Tensor, *, dtype: DataType | None = None, requires_grad: bool = False) -> Tensor:
         return cls.ones(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad)
 
     @classmethod
@@ -492,13 +447,9 @@ class Tensor:
         low: float | int | None = None,
         high: float | int | None = None,
         dtype: DataType = default_dtype(),
-        requires_grad: bool = False
+        requires_grad: bool = False,
     ) -> Tensor:
-        tensor: Tensor = cls.empty(
-            *_unpack_shape(*shape),
-            dtype=dtype,
-            requires_grad=requires_grad
-        )
+        tensor: Tensor = cls.empty(*_unpack_shape(*shape), dtype=dtype, requires_grad=requires_grad)
         tensor.fill_random_uniform_(low, high)
         return tensor
 
@@ -511,30 +462,19 @@ class Tensor:
         dtype: DataType = default_dtype(),
         requires_grad: bool = False,
     ) -> Tensor:
-        tensor: Tensor = cls.empty(
-            *_unpack_shape(*shape),
-            dtype=dtype,
-            requires_grad=requires_grad
-        )
+        tensor: Tensor = cls.empty(*_unpack_shape(*shape), dtype=dtype, requires_grad=requires_grad)
         tensor.fill_random_normal_(mean, std)
         return tensor
 
     @classmethod
-    def bernoulli(
-        cls,
-        *shape: int | tuple[int, ...],
-        p: float = 0.5
-    ) -> Tensor:
-        tensor: Tensor = cls.empty(
-            *_unpack_shape(*shape),
-            dtype=boolean,
-            requires_grad=False
-        )
+    def bernoulli(cls, *shape: int | tuple[int, ...], p: float = 0.5) -> Tensor:
+        tensor: Tensor = cls.empty(*_unpack_shape(*shape), dtype=boolean, requires_grad=False)
         tensor.fill_random_bernoulli_(p)
         return tensor
 
     @classmethod
-    def arange(cls,
+    def arange(
+        cls,
         start: float | int = 0,
         stop: float | int | None = None,
         step: float | int = 1,
@@ -544,11 +484,7 @@ class Tensor:
         if stop is None:
             stop = start
             start = 0
-        tensor: Tensor = cls.empty(
-            (stop - start + step - 1) // step,
-            dtype=dtype,
-            requires_grad=requires_grad
-        )
+        tensor: Tensor = cls.empty((stop - start + step - 1) // step, dtype=dtype, requires_grad=requires_grad)
         tensor.fill_arange_(start, step)
         return tensor
 
@@ -681,17 +617,17 @@ class Tensor:
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_mean(self._ptr, dims, num_dims, keepdim))
 
-    def min(self,  dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
+    def min(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_min(self._ptr, dims, num_dims, keepdim))
 
-    def max(self,  dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
+    def max(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_max(self._ptr, dims, num_dims, keepdim))
 
-    def sum(self,  dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
+    def sum(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(C.mag_sum(self._ptr, dims, num_dims, keepdim))

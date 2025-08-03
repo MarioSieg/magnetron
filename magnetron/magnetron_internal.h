@@ -471,7 +471,7 @@ static inline mag_div_state_t mag_ivdiv_mkdi(uint32_t d) { /* Create packed divi
 }
 
 /* Performs c = ab with overflow checking. Returns true on overflow, else false. */
-static bool MAG_AINLINE mag_mulov64(int64_t a, int64_t b, int64_t* c) {
+static bool MAG_AINLINE mag_mulov64(int64_t a, int64_t b, int64_t* _Nonnull c) {
     #ifdef _MSC_VER
     #ifdef _M_ARM64
         uint64_t high = __umulh(a, b);
@@ -660,27 +660,27 @@ static MAG_AINLINE int64_t mag_op_param_unpack_i64_or(mag_opparam_t pa, int64_t 
 typedef struct mag_opparam_layout_t {
     mag_opparam_t slots[MAG_MAX_OP_PARAMS];
     uint32_t count;
-} mag_opparam_layout_t;
+} mag_op_param_layout_t;
 
-static inline void mag_op_param_layout_init(mag_opparam_layout_t* _Nonnull set) {
+static inline void mag_op_param_layout_init(mag_op_param_layout_t* _Nonnull set) {
     set->count = 0;
     for (int i=0; i < MAG_MAX_OP_PARAMS; ++i)
         set->slots[i] = mag_op_param_none();
 }
 
-static inline size_t mag_op_param_layout_insert(mag_opparam_layout_t* _Nonnull set, mag_opparam_t param) {
+static inline size_t mag_op_param_layout_insert(mag_op_param_layout_t* _Nonnull set, mag_opparam_t param) {
     mag_assert(set->count < MAG_MAX_OP_PARAMS, "Too many operation parameters");
     set->slots[set->count] = param;
     return set->count++;
 }
 
-static inline void mag_op_param_layout_store(mag_opparam_layout_t* _Nonnull set, size_t idx, mag_opparam_t param) {
+static inline void mag_op_param_layout_store(mag_op_param_layout_t* _Nonnull set, size_t idx, mag_opparam_t param) {
     mag_assert(idx < set->count, "Invalid operation parameter index");
     mag_assert(set->slots[idx].type == MAG_OPP_NONE, "Operation parameter already set");
     set->slots[idx] = param;
 }
 
-static inline void mag_op_param_layout_transfer(const mag_opparam_layout_t* _Nonnull set, mag_opparam_t (*_Nonnull out)[MAG_MAX_OP_PARAMS]) {
+static inline void mag_op_param_layout_transfer(const mag_op_param_layout_t* _Nonnull set, mag_opparam_t (*_Nonnull out)[MAG_MAX_OP_PARAMS]) {
     memcpy(*out, set->slots, set->count*sizeof(*set->slots));
     for (size_t i=set->count; i < MAG_MAX_OP_PARAMS; ++i)
         (*out)[i] = mag_op_param_none();
@@ -800,21 +800,6 @@ typedef struct mag_opmeta_t {
     void (*_Nullable const backward)(
         mag_tensor_t* _Nonnull,
         mag_tensor_t* _Nonnull* _Nonnull
-    );
-
-    /* Result allocator function or NULL. */
-    mag_tensor_t* _Nonnull (*_Nullable const r_alloc)(
-        mag_tensor_t* _Nonnull* _Nonnull,
-        const mag_opparam_t* _Nullable
-    );
-
-    /* Validator function or NULL. */
-    bool (*_Nullable const validator)(
-        mag_sstream_t* _Nullable* _Nonnull,
-        bool,
-        mag_tensor_t* _Nonnull,
-        mag_tensor_t* _Nonnull* _Nonnull,
-        const mag_opparam_t* _Nullable
     );
 
     struct {
@@ -1155,9 +1140,9 @@ static inline void mag_hash_combine(uint32_t* _Nonnull seed, uint32_t value) {
 extern uint64_t mag_hash(const void* _Nonnull key, size_t len, uint32_t seed); /* Compute murmur3_64 hash */
 extern uint32_t mag_crc32c(const void* _Nonnull buffer, size_t size); /* Compute CRC32 checksum with CRC32c polynomial. */
 
-extern bool mag_solve_view_strides( int64_t (*out)[MAG_MAX_DIMS], const int64_t* osz, const int64_t* ost, int64_t ork, const int64_t* nsz, int64_t nrk);
-extern void mag_infer_missing_dim(int64_t(*out)[MAG_MAX_DIMS], const int64_t* dims, int64_t rank, int64_t numel);
-extern bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, int64_t* dims, int64_t* rank);
+extern bool mag_solve_view_strides(int64_t (*_Nonnull out)[MAG_MAX_DIMS], const int64_t* _Nonnull osz, const int64_t* _Nonnull ost, int64_t ork, const int64_t* _Nonnull nsz, int64_t nrk);
+extern void mag_infer_missing_dim(int64_t (*_Nonnull out)[MAG_MAX_DIMS], const int64_t* _Nonnull dims, int64_t rank, int64_t numel);
+extern bool mag_compute_broadcast_shape(const mag_tensor_t* _Nonnull a, const mag_tensor_t* _Nonnull b, int64_t* _Nonnull dims, int64_t* _Nonnull rank);
 
 #ifdef __cplusplus
 }
