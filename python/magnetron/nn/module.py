@@ -108,9 +108,9 @@ class Module:
     def _state_items(self, prefix: str = '') -> Iterator[tuple[str, Tensor]]:
         for name, attr in self.__dict__.items():
             if isinstance(attr, Parameter):
-                yield f'{prefix}{name}', attr.x.clone()
+                yield f'{prefix}{name}', attr.x
             elif isinstance(attr, Tensor):
-                yield f'{prefix}{name}', attr.clone()
+                yield f'{prefix}{name}', attr
             elif isinstance(attr, Module):
                 yield from attr._state_items(f'{prefix}{name}.')
             elif isinstance(attr, ModuleList):
@@ -214,11 +214,6 @@ class Module:
 
     def __call__(self, *args: Tensor, **kwargs: dict) -> Tensor:
         return self.forward(*args, **kwargs)
-
-    def register_buffer(self, name: str, tensor: Tensor) -> None:
-        """Register a persistent buffer (non-parameter tensor)."""
-        buf = tensor.clone().detach() if isinstance(tensor, Tensor) else tensor
-        setattr(self, name, buf)
 
     def register_buffer(self, name: str, tensor: Tensor) -> None:
         buf = tensor.clone().detach() if isinstance(tensor, Tensor) else tensor
