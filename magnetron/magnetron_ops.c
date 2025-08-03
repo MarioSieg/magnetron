@@ -162,11 +162,15 @@ mag_tensor_t* mag_view(mag_tensor_t* x, const int64_t* dims, int64_t rank) {
         int64_t strides[MAG_MAX_DIMS];
         if (rank == x->rank && !memcmp(shape, x->shape, rank*sizeof(*shape))) { /* Stride strategy: same shape as base */
             memcpy(strides, x->strides, rank*sizeof(*shape));
+        } else if (rank == x->rank+1 && shape[rank-2]*shape[rank-1] == x->shape[x->rank-1]) { /* Stride strategy: last dim only */
+            memcpy(strides, x->strides, (rank-2)*sizeof(*strides));
+            strides[rank-2] = x->strides[x->rank-1]*shape[rank-1];
+            strides[rank-1] = x->strides[x->rank-1];
         } else if (mag_tensor_is_contiguous(x)) { /* Stride strategy: contiguous row-major */
             strides[rank-1] = 1;
             for (int64_t d = rank-2; d >= 0; --d)
                 mag_assert2(!mag_mulov64(shape[d+1], strides[d+1], strides+d));
-        } else { /* Stride strategy: solve generc strides */
+        } else { /* Stride strategy: solve generic strides */
             mag_assert(mag_solve_view_strides(&strides, x->shape, x->strides, x->rank, shape, rank),
                 "Tensor is not contiguous enough to be viewed\n"
                 "Consider calling contiguous() or reshape() instead"
