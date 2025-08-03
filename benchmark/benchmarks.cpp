@@ -24,18 +24,18 @@ static auto bench_op(dtype type) -> void {
         y.fill_float(3.0f);
 
         bench.run(std::to_string(numel) + " elements", [&] {
-            tensor r {x & y};
+            tensor r {x % y};
             ankerl::nanobench::doNotOptimizeAway(r);
         });
     }};
     //run_cycle(10000);
     run_cycle(1000);
-    run_cycle(750);
-    run_cycle(500);
-    run_cycle(250);
-    run_cycle(100);
-    run_cycle(10);
-    run_cycle(4);
+    //run_cycle(750);
+    //run_cycle(500);
+    //run_cycle(250);
+    //run_cycle(100);
+    //run_cycle(10);
+    //run_cycle(4);
 }
 
 auto main() -> int {

@@ -2454,60 +2454,221 @@ static void mag_mm_scratch_release(mag_mmscratch_t* _Nonnull sb) {
     sb->cap = 0;
 }
 
-static MAG_HOTPROC void mag_matmul_e8m23(const mag_kernel_payload_t* _Nonnull payload) {
-    if (payload->thread_idx != 0) return;
-    mag_tensor_t* r  = payload->node;
-    const mag_tensor_t* x  = r->op_inputs[0];
-    const mag_tensor_t* y  = r->op_inputs[1];
-    mag_e8m23_t* br = mag_e8m23p_mut(r);
+#define MAG_MM_MR 8
+#define MAG_MM_NR 16
+#define MAG_MM_MC 256
+#define MAG_MM_KC 256
+#define MAG_MM_NC 128
+
+static MAG_AINLINE void mag_gemm4x8_e8m23(
+    int64_t kc,
+    const mag_e8m23_t *_Nonnull a,
+    ptrdiff_t lda,
+    const mag_e8m23_t *_Nonnull b,
+    ptrdiff_t ldb,
+    mag_e8m23_t *_Nonnull c,
+    ptrdiff_t ldc,
+    bool acc
+) {
+    float32x4_t c00, c01, c10, c11, c20, c21, c30, c31;
+    if (acc) {
+        c00 = vld1q_f32(c + 0*ldc + 0);
+        c01 = vld1q_f32(c + 0*ldc + 4);
+        c10 = vld1q_f32(c + 1*ldc + 0);
+        c11 = vld1q_f32(c + 1*ldc + 4);
+        c20 = vld1q_f32(c + 2*ldc + 0);
+        c21 = vld1q_f32(c + 2*ldc + 4);
+        c30 = vld1q_f32(c + 3*ldc + 0);
+        c31 = vld1q_f32(c + 3*ldc + 4);
+    } else {
+        c00 = vdupq_n_f32(0.f);  c01 = c00;
+        c10 = c00; c11 = c00; c20 = c00; c21 = c00; c30 = c00; c31 = c00;
+    }
+    for (int64_t k=0; k < kc; ++k) {
+        float32x4_t bk0 = vld1q_f32(b + k*ldb + 0);
+        float32x4_t bk1 = vld1q_f32(b + k*ldb + 4);
+        float32x4_t a0 = vdupq_n_f32(a[0*lda + k]);
+        float32x4_t a1 = vdupq_n_f32(a[1*lda + k]);
+        float32x4_t a2 = vdupq_n_f32(a[2*lda + k]);
+        float32x4_t a3 = vdupq_n_f32(a[3*lda + k]);
+        c00 = vfmaq_f32(c00, bk0, a0);
+        c01 = vfmaq_f32(c01, bk1, a0);
+        c10 = vfmaq_f32(c10, bk0, a1);
+        c11 = vfmaq_f32(c11, bk1, a1);
+        c20 = vfmaq_f32(c20, bk0, a2);
+        c21 = vfmaq_f32(c21, bk1, a2);
+        c30 = vfmaq_f32(c30, bk0, a3);
+        c31 = vfmaq_f32(c31, bk1, a3);
+    }
+    vst1q_f32(c + 0*ldc + 0, c00);
+    vst1q_f32(c + 0*ldc + 4, c01);
+    vst1q_f32(c + 1*ldc + 0, c10);
+    vst1q_f32(c + 1*ldc + 4, c11);
+    vst1q_f32(c + 2*ldc + 0, c20);
+    vst1q_f32(c + 2*ldc + 4, c21);
+    vst1q_f32(c + 3*ldc + 0, c30);
+    vst1q_f32(c + 3*ldc + 4, c31);
+}
+
+static MAG_AINLINE void mag_gemm8x8_e8m23(
+    int64_t kc,
+    const mag_e8m23_t *_Nonnull a,
+    ptrdiff_t lda,
+    const mag_e8m23_t *_Nonnull b,
+    ptrdiff_t ldb,
+    mag_e8m23_t *_Nonnull c,
+    ptrdiff_t ldc,
+    bool acc
+) {
+    float32x4_t C[8][2];
+    if (acc) {
+        #pragma GCC unroll 8
+        for (int r=0; r < 8; ++r) {
+            C[r][0] = vld1q_f32(c + r*ldc + 0);
+            C[r][1] = vld1q_f32(c + r*ldc + 4);
+        }
+    } else {
+        #pragma GCC unroll 8
+        for (int r=0; r < 8; ++r)
+            C[r][0] = C[r][1] = vdupq_n_f32(0.f);
+    }
+    for (int64_t k=0; k < kc; ++k) {
+        float32x4_t B0 = vld1q_f32(b + k*ldb + 0);
+        float32x4_t B1 = vld1q_f32(b + k*ldb + 4);
+        #pragma GCC unroll 8
+        for (int r=0; r < 8; ++r) {
+            float32x4_t A = vdupq_n_f32(a[r*lda + k]);
+            C[r][0] = vfmaq_f32(C[r][0], B0, A);
+            C[r][1] = vfmaq_f32(C[r][1], B1, A);
+        }
+    }
+    #pragma GCC unroll 8
+    for (int r=0; r < 8; ++r) {
+        vst1q_f32(c + r*ldc + 0, C[r][0]);
+        vst1q_f32(c + r*ldc + 4, C[r][1]);
+    }
+}
+
+static MAG_AINLINE void mag_gemm8x16_e8m23(
+    int64_t kc,
+    const mag_e8m23_t *_Nonnull a,
+    ptrdiff_t lda,
+    const mag_e8m23_t *_Nonnull b,
+    ptrdiff_t ldb,
+    mag_e8m23_t *_Nonnull c,
+    ptrdiff_t ldc,
+    bool acc
+) {
+    mag_gemm8x8_e8m23(kc, a, lda, b, ldb, c, ldc, acc);
+    mag_gemm8x8_e8m23(kc, a, lda, b+8, ldb, c+8, ldc, acc);
+}
+
+MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull payload) {
+    mag_tensor_t* r = payload->node;
+    const mag_tensor_t* x = r->op_inputs[0];
+    const mag_tensor_t* y = r->op_inputs[1];
     const mag_e8m23_t* bx = mag_e8m23p(x);
     const mag_e8m23_t* by = mag_e8m23p(y);
-    int64_t M = x->rank == 1 ? 1 : x->shape[x->rank - 2];
-    int64_t N = y->rank == 1 ? 1 : y->shape[y->rank - 1];
-    int64_t K = x->shape[x->rank - 1];
-    int64_t bdr = r->rank > 2 ? r->rank-2 : 0;
+    mag_e8m23_t* br = mag_e8m23p_mut(r);
+    int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
+    int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
+    int64_t K =  x->shape[x->rank-1];
+    int64_t bdr = r->rank > 2 ? r->rank - 2 : 0;
     int64_t batch_total = 1;
-    for (int64_t d=0; d < bdr; ++d) batch_total *= r->shape[d];
+    for (int64_t d=0; d < bdr; ++d)
+        batch_total *= r->shape[d];
     int64_t bdx = x->rank > 2 ? x->rank-2 : 0;
     int64_t bdy = y->rank > 2 ? y->rank-2 : 0;
+    int64_t tic = (M+MAG_MM_MC-1)/MAG_MM_MC;
+    int64_t tjc = (N+MAG_MM_NC-1)/MAG_MM_NC;
+    int64_t tpb = tic * tjc;
+    int64_t tt = batch_total * tpb;
+    static MAG_THREAD_LOCAL mag_mmscratch_t sb = {0};
+    mag_e8m23_t* scratch = mag_mm_scratch_acquire(&sb,  sizeof(*scratch)*(MAG_MM_KC*MAG_MM_NC + MAG_MM_MC*MAG_MM_KC));
+    mag_e8m23_t* Bp = scratch;
+    mag_e8m23_t* Ap = Bp + MAG_MM_KC*MAG_MM_NC;
+    int64_t ti = payload->thread_idx;
+    int64_t nt = payload->thread_num;
     bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
-    size_t scratch_sz = sizeof(mag_e8m23_t)*(K*N + (x_row ? 0 : M*K));   /* y-panel mandatory, x-panel optional */
-    static MAG_THREAD_LOCAL mag_mmscratch_t sb; /* auto-reused, TODO: free this buffer  */
-    mag_e8m23_t* scratch = mag_mm_scratch_acquire(&sb, scratch_sz);
-    mag_e8m23_t* xbuf = x_row ? NULL : scratch;
-    mag_e8m23_t* ybuf = scratch + (x_row ? 0 : M*K);
-    int64_t idx_r[4] = {0};
-    for (int64_t b=0; b < batch_total; ++b) {
-        int64_t rem = b;
-        for (int64_t d = bdr-1; d >= 0; --d) {
-            idx_r[d] = rem % r->shape[d];
-            rem /= r->shape[d];
+    for (int64_t tile=ti; tile < tt; tile += nt) {
+        int64_t batch_idx = tile / tpb;
+        int64_t rem = tile % tpb;
+        int64_t jc = rem % tjc;
+        int64_t ic = rem / tjc;
+        int64_t idx_r[18] = {0};
+        for (int64_t d=bdr-1, t=batch_idx; d >= 0; --d) {
+            idx_r[d] = t % r->shape[d];
+            t /= r->shape[d];
         }
-        int64_t xb_flat = 0, yb_flat = 0;
-        if (bdx) {
-            for (int64_t d=0; d < bdx; ++d) {
-                int64_t rd = bdr - bdx + d;
-                int64_t idx = x->shape[d] == 1 ? 0 : idx_r[rd];
-                xb_flat = xb_flat * x->shape[d] + idx;
+        int64_t xb_flat = 0;
+        for (int64_t d=0; d < bdx; ++d) {
+            int64_t rd = bdr - bdx + d;
+            xb_flat = xb_flat*x->shape[d] + (x->shape[d] == 1 ? 0 : idx_r[rd]);
+        }
+        int64_t yb_flat = 0;
+        for (int64_t d=0; d < bdy; ++d) {
+            int64_t rd = bdr - bdy + d;
+            yb_flat = yb_flat*y->shape[d] + (y->shape[d] == 1 ? 0 : idx_r[rd]);
+        }
+        const mag_e8m23_t* px_base = bx + mag_offset_rmn(x, xb_flat, 0, 0);
+        const mag_e8m23_t* py_base = by + mag_offset_rmn(y, yb_flat, 0, 0);
+        mag_e8m23_t* pr_base = br + mag_offset_rmn(r, batch_idx, 0, 0);
+        int64_t i0 = ic*MAG_MM_MC;
+        int64_t mc = i0+MAG_MM_MC <= M ? MAG_MM_MC : M-i0;
+        int64_t j0 = jc*MAG_MM_NC;
+        int64_t nc = j0+MAG_MM_NC <= N ? MAG_MM_NC : N-j0;
+        for (int64_t pc=0; pc < K; pc += MAG_MM_KC) {
+            const int64_t kc = pc + MAG_MM_KC <= K ? MAG_MM_KC : K-pc;
+            bool acc = !!pc;
+            if (y->rank == 1) {
+                for (int64_t k=0; k < kc; ++k) {
+                    mag_e8m23_t v = py_base[pc+k];
+                    for (int64_t j=0; j < nc; ++j)
+                        Bp[k*nc + j] = v;
+                }
+            } else {
+                int64_t strideK = y->strides[y->rank-2];
+                int64_t strideN = y->strides[y->rank-1];
+                for (int64_t k=0; k < kc; ++k) {
+                    int64_t baseK = (pc + k)*strideK;
+                    for (int64_t j=0; j < nc; ++j)
+                        Bp[k*nc + j] = py_base[baseK + (j0 + j)*strideN];
+                }
             }
-        }
-        if (bdy) {
-            for (int64_t d=0; d < bdy; ++d) {
-                int64_t rd = bdr - bdy + d;
-                int64_t idx = y->shape[d] == 1 ? 0 : idx_r[rd];
-                yb_flat = yb_flat * y->shape[d] + idx;
+            if (x_row) {
+                for (int64_t i = 0; i < mc; ++i)
+                    memcpy(Ap + i*kc, px_base + (i0 + i)*K + pc, sizeof(mag_e8m23_t)*kc);
+            } else {
+                int64_t strideM = x->strides[x->rank-2];
+                int64_t strideK = x->strides[x->rank-1];
+                for (int64_t i = 0; i < mc; ++i) {
+                    int64_t baseM = (i0 + i)*strideM;
+                    for (int64_t k=0; k < kc; ++k)
+                        Ap[i*kc + k] = px_base[baseM + (pc + k)*strideK];
+                }
             }
-        }
-        const mag_e8m23_t* px = bx + mag_offset_rmn(x, xb_flat, 0, 0);
-        mag_e8m23_t* pr = br + mag_offset_rmn(r,b, 0, 0);
-        const mag_e8m23_t* restrict A = x_row ? px : mag_mm_pack_x_e8m23(xbuf, M, K, xb_flat, x, bx);
-        const mag_e8m23_t* restrict B = mag_mm_pack_y_e8m23(ybuf, K, N, yb_flat, y, by);
-        mag_e8m23_t* restrict C = pr;
-        for (int64_t i=0; i < M; ++i) {
-            const mag_e8m23_t* restrict a_row = A + i*K;
-            for (int64_t n=0; n < N; ++n) {
-                const mag_e8m23_t* restrict b_col = B + n*K;
-                C[i*N + n] = mag_vdot_e8m23(K, b_col, a_row);
+            for (int64_t ir=0; ir < mc; ir += MAG_MM_MR) {
+                int64_t mr = ir + MAG_MM_MR <= mc ? MAG_MM_MR : mc-ir;
+                for (int64_t jr=0; jr < nc; jr += MAG_MM_NR) {
+                    int64_t nr = jr + MAG_MM_NR <= nc ? MAG_MM_NR : nc-jr;
+                    if (mr == 4 && nr == 8) { /* Hot Tile */
+                        mag_gemm4x8_e8m23(kc, Ap + ir*kc, kc, Bp + jr, nc, pr_base + (i0 + ir)*N + (j0 + jr), N, acc);
+                        continue;
+                    } else if (mr == 8 && nr == 16) { /* Hot Tile Wide */
+                        mag_gemm8x16_e8m23(kc, Ap + ir*kc, kc, Bp + jr, nc, pr_base + (i0 + ir)*N + (j0 + jr), N, acc);
+                        continue;
+                    }
+                    for (int64_t i2=0; i2 < mr; ++i2) {
+                        mag_e8m23_t* cp = pr_base + (i0 + ir + i2)*N + (j0 + jr);
+                        const mag_e8m23_t* ap = Ap + (ir + i2)*kc;
+                        for (int64_t j2=0; j2 < nr; ++j2) {
+                            mag_e8m23_t sum = acc ? cp[j2] : 0.f;
+                            for (int64_t k=0; k < kc; ++k)
+                                sum += ap[k]*Bp[k*nc + jr + j2];
+                            cp[j2] = sum;
+                        }
+                    }
+                }
             }
         }
     }

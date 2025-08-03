@@ -1553,8 +1553,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_matmul,
             .cpu = {
-                .thread_growth = 0.1,
-                .thread_treshold = 10000
+                .thread_growth = 1.0,
+                .thread_treshold = 1000
             }
         },
         [MAG_OP_REPEAT_BACK] = {
