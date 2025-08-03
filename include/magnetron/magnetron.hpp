@@ -24,7 +24,6 @@
 
 namespace magnetron {
     constexpr std::size_t k_max_dims {MAG_MAX_DIMS};
-    constexpr std::size_t k_max_tensor_name_len {MAG_MAX_TENSOR_NAME_LEN};
     constexpr std::size_t k_max_input_tensors {MAG_MAX_OP_INPUTS};
     constexpr std::size_t k_max_op_params {MAG_MAX_OP_PARAMS};
     constexpr std::uint16_t k_version {MAG_VERSION};
@@ -34,9 +33,9 @@ namespace magnetron {
     /**
      * Enumerates compute device types.
      */
-    enum class compute_device : std::underlying_type_t<mag_ComputeDeviceType> {
-        cpu = MAG_COMPUTE_DEVICE_TYPE_CPU,
-        gpu_cuda = MAG_COMPUTE_DEVICE_TYPE_GPU_CUDA
+    enum class compute_device : std::underlying_type_t<mag_device_type_t> {
+        cpu = MAG_DEVICE_TYPE_CPU,
+        gpu_cuda = MAG_DEVICE_TYPE_GPU_CUDA
     };
 
     /**
@@ -45,13 +44,13 @@ namespace magnetron {
      * @return Enum name of the compute device.
      */
     [[nodiscard]] inline auto compute_device_name(compute_device device) noexcept -> std::string_view {
-        return mag_device_type_get_name(static_cast<mag_ComputeDeviceType>(device));
+        return mag_device_type_get_name(static_cast<mag_device_type_t>(device));
     }
 
     /**
      * Pseudo-random number generator (PRNG) algorithm
      */
-    enum class prng_algorithm : std::underlying_type_t<mag_PRNGAlgo> {
+    enum class prng_algorithm : std::underlying_type_t<mag_prngalgo_t> {
         /**
          * Merseene Twister 64
          */
@@ -66,7 +65,7 @@ namespace magnetron {
     /**
      * Thread scheduling priority for CPU compute, higher priority means more CPU time
      */
-    enum class thread_sched_prio : std::underlying_type_t<mag_ThreadPrio> {
+    enum class thread_sched_prio : std::underlying_type_t<mag_thread_prio_t> {
         normal = MAG_THREAD_PRIO_NORMAL,
         medium = MAG_THREAD_PRIO_MEDIUM,
         high = MAG_THREAD_PRIO_HIGH,
@@ -76,37 +75,13 @@ namespace magnetron {
     /**
      * Desired color channels to load from image tensor
      */
-    enum class color_channel : std::underlying_type_t<mag_ColorChannels> {
+    enum class color_channel : std::underlying_type_t<mag_color_channels_t> {
         automatic = MAG_COLOR_CHANNELS_AUTO,
         grayscale = MAG_COLOR_CHANNELS_GRAY,
         grayscale_alpha = MAG_COLOR_CHANNELS_GRAY_A,
         rgb = MAG_COLOR_CHANNELS_RGB,
         rgba = MAG_COLOR_CHANNELS_RGBA
     };
-
-    /**
-     * Function type used for all memory allocations in magnetron. Can be overwritten by user.
-     * @param block Block of memory to reallocate or nullptr.
-     * @param size Size to resize to or 0.
-     * @return Allocated or reallocated block or nullptr.
-     */
-    using alloc_fn = auto(void* block, std::size_t size) -> void*;
-
-    /**
-     * Get the global allocator function.
-     * @return Get the global allocator function.
-     */
-    [[nodiscard]] inline auto allocator() noexcept -> alloc_fn* {
-        return mag_get_alloc_fn();
-    }
-
-    /**
-     * Set the global allocator function.
-     * @param alloc Allocator function to set.
-     */
-    inline auto allocator(alloc_fn* alloc) noexcept -> void {
-        mag_set_alloc_fn(alloc);
-    }
 
     /**
      * Enable or disable internal magnetron logging to stdout.
@@ -152,18 +127,18 @@ namespace magnetron {
     class context final {
     public:
         explicit context(compute_device dvc) noexcept {
-            m_ctx = mag_ctx_create(static_cast<mag_ComputeDeviceType>(dvc));
+            m_ctx = mag_ctx_create(static_cast<mag_device_type_t>(dvc));
         }
 
         explicit context(device_descriptor device) {
-            mag_ComputeDeviceDesc desc {};
+            mag_device_desc_t desc {};
             if (std::holds_alternative<cpu_device>(device)) {
                 const auto& cpu = std::get<cpu_device>(device);
-                desc.type = MAG_COMPUTE_DEVICE_TYPE_CPU;
+                desc.type = MAG_DEVICE_TYPE_CPU;
                 desc.cpu_thread_count = cpu.thread_count;
             } else if (std::holds_alternative<cuda_device>(device)) {
                 const auto& cuda = std::get<cuda_device>(device);
-                desc.type = MAG_COMPUTE_DEVICE_TYPE_GPU_CUDA;
+                desc.type = MAG_DEVICE_TYPE_GPU_CUDA;
                 desc.cuda_device_id = cuda.device_index;
             } else {
                 throw std::invalid_argument("Invalid device type");
@@ -180,10 +155,10 @@ namespace magnetron {
             mag_ctx_destroy(m_ctx);
         }
 
-        [[nodiscard]] auto operator *() noexcept -> mag_Context& { return *m_ctx; }
-        [[nodiscard]] auto operator *() const noexcept -> const mag_Context& { return *m_ctx; }
+        [[nodiscard]] auto operator *() noexcept -> mag_context_t& { return *m_ctx; }
+        [[nodiscard]] auto operator *() const noexcept -> const mag_context_t& { return *m_ctx; }
         [[nodiscard]] auto prng_algorithm() const noexcept -> prng_algorithm { return static_cast<enum prng_algorithm>(mag_ctx_get_prng_algorithm(m_ctx)); }
-        auto prng_algorithm(enum prng_algorithm algorithm, std::uint64_t seed) noexcept -> void { mag_ctx_set_prng_algorithm(m_ctx, static_cast<mag_PRNGAlgo>(algorithm), seed); }
+        auto prng_algorithm(enum prng_algorithm algorithm, std::uint64_t seed) noexcept -> void { mag_ctx_set_prng_algorithm(m_ctx, static_cast<mag_prngalgo_t>(algorithm), seed); }
         [[nodiscard]] auto device_type() const noexcept -> compute_device { return static_cast<compute_device>(mag_ctx_get_compute_device_type(m_ctx)); }
         [[nodiscard]] auto device_name() const noexcept -> std::string_view { return mag_ctx_get_compute_device_name(m_ctx); }
         [[nodiscard]] auto os_name() const noexcept -> std::string_view { return mag_ctx_get_os_name(m_ctx); }
@@ -200,10 +175,10 @@ namespace magnetron {
         [[nodiscard]] auto is_recording_gradients() const noexcept -> bool { return mag_ctx_grad_recorder_is_running(m_ctx); }
 
     private:
-        mag_Context* m_ctx {};
+        mag_context_t* m_ctx {};
     };
 
-    enum class dtype : std::underlying_type_t<mag_DType> {
+    enum class dtype : std::underlying_type_t<mag_dtype_t> {
         e8m23 = MAG_DTYPE_E8M23,
         e5m10 = MAG_DTYPE_E5M10,
         boolean = MAG_DTYPE_BOOL,
@@ -211,11 +186,11 @@ namespace magnetron {
     };
 
     [[nodiscard]] inline auto dtype_size(dtype t) noexcept -> std::size_t {
-        return mag_dtype_meta_of(static_cast<mag_DType>(t))->size;
+        return mag_dtype_meta_of(static_cast<mag_dtype_t>(t))->size;
     }
 
     [[nodiscard]] inline auto dtype_name(dtype t) noexcept -> std::string_view {
-        return mag_dtype_meta_of(static_cast<mag_DType>(t))->name;
+        return mag_dtype_meta_of(static_cast<mag_dtype_t>(t))->name;
     }
 
     /**
@@ -224,7 +199,7 @@ namespace magnetron {
     class tensor final {
     public:
         tensor(context& ctx, dtype type, std::span<const std::int64_t> shape) {
-            m_tensor = mag_tensor_empty(&*ctx, static_cast<mag_DType>(type), shape.size(), shape.data());
+            m_tensor = mag_tensor_empty(&*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.data());
         }
 
         template <typename... S> requires std::is_integral_v<std::common_type_t<S...>>
@@ -274,14 +249,19 @@ namespace magnetron {
             }
         }
 
-        [[nodiscard]] auto operator * () noexcept -> mag_Tensor& { return *m_tensor; }
-        [[nodiscard]] auto operator * () const noexcept -> const mag_Tensor& { return *m_tensor; }
+        [[nodiscard]] auto operator * () noexcept -> mag_tensor_t& { return *m_tensor; }
+        [[nodiscard]] auto operator * () const noexcept -> const mag_tensor_t& { return *m_tensor; }
 
         [[nodiscard]] auto clone() const noexcept -> tensor { return tensor{mag_clone(m_tensor)}; }
-        [[nodiscard]] auto view() const noexcept -> tensor { return tensor{mag_view(m_tensor)}; }
+        [[nodiscard]] auto view(std::initializer_list<std::int64_t> dims = {}) const noexcept -> tensor {
+            return tensor{mag_view(m_tensor, std::empty(dims) ? nullptr : std::data(dims), std::size(dims))};
+        }
+        [[nodiscard]] auto reshape(std::initializer_list<std::int64_t> dims = {}) const noexcept -> tensor {
+            return tensor{mag_reshape(m_tensor, std::data(dims), std::size(dims))};
+        }
         [[nodiscard]] auto view_slice(std::int64_t dim, std::int64_t start, std::int64_t len, std::int64_t step) -> tensor { return tensor {mag_view_slice(m_tensor, dim, start, len, step)}; }
-        [[nodiscard]] auto T() const noexcept -> tensor { return tensor{mag_transpose(m_tensor)}; }
-        [[nodiscard]] auto transpose() const noexcept -> tensor { return tensor{mag_transpose(m_tensor)}; }
+        [[nodiscard]] auto T(std::int64_t dim1 = 0, std::int64_t dim2 = 1) const noexcept -> tensor { return tensor{mag_transpose(m_tensor, dim1, dim2)}; }
+        [[nodiscard]] auto transpose(std::int64_t dim1 = 0, std::int64_t dim2 = 1) const noexcept -> tensor { return tensor{mag_transpose(m_tensor, dim1, dim2)}; }
         [[nodiscard]] auto permute(const std::array<std::int64_t, k_max_dims>& axes) const noexcept -> tensor { return tensor{mag_permute(m_tensor, axes.data(), axes.size())}; }
         [[nodiscard]] auto mean() const noexcept -> tensor { return tensor{mag_mean(m_tensor, nullptr, 0, false)}; }
         [[nodiscard]] auto min() const noexcept -> tensor { return tensor{mag_min(m_tensor, nullptr, 0, false)}; }
@@ -394,6 +374,24 @@ namespace magnetron {
         [[nodiscard]] auto operator >> (tensor other) const noexcept -> tensor { return bshr(other); }
         auto operator >>= (tensor other) const noexcept -> tensor { return bshr_(other); }
 
+        auto operator == (tensor other) const noexcept -> tensor {
+            return tensor{mag_eq(m_tensor, &*other)};
+        }
+        auto operator != (tensor other) const noexcept -> tensor {
+            return tensor{mag_ne(m_tensor, &*other)};
+        }
+        auto operator <= (tensor other) const noexcept -> tensor {
+            return tensor{mag_le(m_tensor, &*other)};
+        }
+        auto operator >= (tensor other) const noexcept -> tensor {
+            return tensor{mag_ge(m_tensor, &*other)};
+        }
+        auto operator < (tensor other) const noexcept -> tensor {
+            return tensor{mag_lt(m_tensor, &*other)};
+        }
+        auto operator > (tensor other) const noexcept -> tensor {
+            return tensor{mag_gt(m_tensor, &*other)};
+        }
 
         auto fill_from(const void* buf, std::size_t nb) -> void {
             mag_tensor_fill_from_raw_bytes(m_tensor, buf, nb);
@@ -446,14 +444,12 @@ namespace magnetron {
 
         [[nodiscard]] auto refcount() const noexcept -> std::uint64_t { return mag_tensor_get_refcount(m_tensor); }
         [[nodiscard]] auto memory_usage() const noexcept -> std::size_t { return mag_tensor_get_memory_usage(m_tensor); }
-        auto set_name(const std::string& name) -> void { mag_tensor_set_name(m_tensor, name.c_str()); }
         [[nodiscard]] auto to_string(bool with_data = true, std::size_t from_start = 0, std::size_t from_end = 0) const -> std::string {
             char* fmt {mag_tensor_to_string(m_tensor, with_data, from_start, from_end)};
             std::string str {fmt};
             mag_tensor_to_string_free_data(fmt);
             return str;
         }
-        [[nodiscard]] auto get_name() const noexcept -> std::string_view { return mag_tensor_get_name(m_tensor); }
         [[nodiscard]] auto rank() const noexcept -> std::int64_t { return mag_tensor_get_rank(m_tensor); }
         [[nodiscard]] auto shape() const noexcept -> std::span<const std::int64_t> {
             return {mag_tensor_get_shape(m_tensor), static_cast<std::size_t>(rank())};
@@ -503,8 +499,6 @@ namespace magnetron {
         [[nodiscard]] auto is_permuted() const noexcept -> bool { return mag_tensor_is_permuted(m_tensor); }
         [[nodiscard]] auto is_contiguous() const noexcept -> bool { return mag_tensor_is_contiguous(m_tensor); }
         [[nodiscard]] auto is_view() const noexcept -> bool { return mag_tensor_is_view(m_tensor); }
-        [[nodiscard]] auto view_base() const noexcept -> tensor { return tensor {mag_tensor_get_view_base(m_tensor)}; }
-        [[nodiscard]] auto view_offset() const noexcept -> std::size_t { return mag_tensor_get_view_offset(m_tensor); }
         [[nodiscard]] auto is_floating_point_typed() const noexcept -> bool { return mag_tensor_is_floating_point_typed(m_tensor); }
         [[nodiscard]] auto is_integral_point_typed() const noexcept -> bool { return mag_tensor_is_integral_typed(m_tensor); }
 
@@ -537,75 +531,11 @@ namespace magnetron {
             mag_tensor_subscript_set_flattened(m_tensor, idx, x);
         }
 
+        explicit tensor(mag_tensor_t* ptr) noexcept : m_tensor{ptr} {}
+
     private:
         friend class storage_stream;
 
-        explicit tensor(mag_Tensor* ptr) noexcept : m_tensor{ptr} {}
-        mag_Tensor* m_tensor {};
-    };
-
-    class storage_stream final {
-    public:
-        explicit storage_stream(context& ctx) {
-            m_stream = mag_storage_stream_new(&*ctx);
-        }
-        storage_stream(context& ctx, const std::string& file_path) {
-            m_stream = mag_storage_stream_deserialize(&*ctx, file_path.c_str());
-            if (!m_stream) [[unlikely]]
-                throw std::runtime_error{"Failed to deserialize storage stream from file: " + file_path};
-        }
-        storage_stream(const storage_stream&) = delete;
-        storage_stream(storage_stream&& other) {
-            if (this != &other) {
-                m_stream = other.m_stream;
-                other.m_stream = nullptr;
-            }
-        }
-        auto operator = (const storage_stream&) -> storage_stream& = delete;
-        auto operator = (storage_stream&& other) -> storage_stream& {
-            if (this != &other) {
-                mag_storage_stream_close(m_stream);
-                m_stream = other.m_stream;
-                other.m_stream = nullptr;
-            }
-            return *this;
-        }
-        ~storage_stream() {
-            if (m_stream) {
-                mag_storage_stream_close(m_stream);
-            }
-        }
-
-        auto operator * () noexcept -> mag_StorageStream& { return *m_stream; }
-        auto operator * () const noexcept -> const mag_StorageStream& { return *m_stream; }
-
-        auto serialize(const std::string& file_path) -> void {
-            mag_storage_stream_serialize(m_stream, file_path.c_str());
-        }
-
-        auto put(const std::string& key, tensor value) -> void {
-            mag_storage_stream_put_tensor(m_stream, key.c_str(), &*value);
-        }
-
-        auto get(const std::string& key) -> std::optional<tensor> {
-            if (auto* t = mag_storage_stream_get_tensor(m_stream, key.c_str())) {
-                return tensor{t};
-            }
-            return std::nullopt;
-        }
-
-        [[nodiscard]] auto all_tensor_keys() -> std::vector<std::string> {
-            std::size_t count {};
-            const char** keys {mag_storage_stream_get_all_tensor_keys(m_stream, &count)};
-            std::vector<std::string> result {};
-            result.reserve(count);
-            for (std::size_t i {}; i < count; ++i)
-                result.emplace_back(keys[i]);
-            mag_storage_stream_get_all_tensor_keys_free_data(keys);
-            return result;
-        }
-
-    private:
-        mag_StorageStream* m_stream {};
+        mag_tensor_t* m_tensor {};
     };
 }

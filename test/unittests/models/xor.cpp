@@ -29,10 +29,10 @@ TEST(models, xor_e8m23) {
     xor_model model{ctx, dtype::e8m23};
     nn::sgd optimizer{model.params(), 0.1f};
 
-    static constexpr std::array<mag_E8M23, 2*4> x_data {
+    static constexpr std::array<mag_e8m23_t, 2*4> x_data {
         0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f, 1.0f,1.0f
     };
-    static constexpr std::array<mag_E8M23, 4> y_data {
+    static constexpr std::array<mag_e8m23_t, 4> y_data {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 
@@ -68,10 +68,10 @@ TEST(models, xor_e5m10) {
     xor_model model{ctx, dtype::e5m10};
     nn::sgd optimizer{model.params(), 0.1f};
 
-    static constexpr std::array<mag_E8M23, 2*4> x_data {
+    static constexpr std::array<mag_e8m23_t, 2*4> x_data {
         0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f, 1.0f,1.0f
     };
-    static constexpr std::array<mag_E8M23, 4> y_data {
+    static constexpr std::array<mag_e8m23_t, 4> y_data {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 

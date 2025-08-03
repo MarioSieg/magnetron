@@ -21,16 +21,6 @@ TEST(misc, enable_disable_logging) {
     enable_logging(true);
 }
 
-TEST(misc, get_set_allocator) {
-    ASSERT_NE(nullptr, allocator());
-    auto* prev {allocator()};
-    constexpr auto mock {static_cast<std::uintptr_t>(0xdeadbeef)};
-    allocator(std::bit_cast<alloc_fn*>(mock));
-    ASSERT_EQ(allocator(), std::bit_cast<alloc_fn*>(mock));
-    allocator(prev);
-    ASSERT_EQ(allocator(), prev);
-}
-
 TEST(misc, hash_function) {
     ASSERT_EQ(mag_hash("hello", 5, 0), 15821672119091348640ull);
     ASSERT_EQ(mag_hash("hello", 5, 0), 15821672119091348640ull);

@@ -1,19 +1,19 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
 import numpy as np
-from magnetron import Tensor, Context
+from magnetron import Tensor, Context, active_context
 
 np.random.seed(932002)
-Context.primary().seed(932002)
+active_context().seed(932002)
 
 LR: float = 0.1
 EPOCHS: int = 10000
-INPUT: list[list[float]] = [[0, 0], [0, 1], [1, 0], [1, 1]]
-TARGET: list[list[float]] = [[0], [1], [1], [0]]
+INPUT: list[list[float]] = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
+TARGET: list[list[float]] = [[0.0], [1.0], [1.0], [0.0]]
 HIDDEN_DIM: int = 4
 
 
-def xor_nn_np() -> None:
+def xor_nn_np() -> list[float]:
     def sigmoid(x: np.array) -> np.array:
         return 1 / (1 + np.exp(-x))
 
@@ -64,17 +64,17 @@ def xor_nn_np() -> None:
     return [float(predict(xr)[0][0]) for xr in x]
 
 
-def xor_nn_mag() -> None:
-    x = Tensor.from_data(INPUT)
-    y = Tensor.from_data(TARGET)
+def xor_nn_mag() -> list[Tensor]:
+    x = Tensor.of(INPUT)
+    y = Tensor.of(TARGET)
 
     def sigmoid_derivative(x: Tensor) -> Tensor:
         return x * (1 - x)
 
-    w1 = Tensor.uniform((2, HIDDEN_DIM))
-    b1 = Tensor.zeros((1, HIDDEN_DIM))
-    w2 = Tensor.uniform((HIDDEN_DIM, 1))
-    b2 = Tensor.zeros((1, 1))
+    w1 = Tensor.uniform(2, HIDDEN_DIM)
+    b1 = Tensor.zeros(1, HIDDEN_DIM)
+    w2 = Tensor.uniform(HIDDEN_DIM, 1)
+    b2 = Tensor.zeros(1, 1)
 
     for epoch in range(EPOCHS):
         a1 = (x @ w1 + b1).sigmoid()
@@ -105,7 +105,7 @@ def xor_nn_mag() -> None:
         a2 = z2.sigmoid()
         return a2
 
-    return [predict(Tensor.from_data([xr]))[0] for xr in INPUT]
+    return [predict(Tensor.of([xr]))[0].item() for xr in INPUT]
 
 
 def test_xor_nn() -> None:

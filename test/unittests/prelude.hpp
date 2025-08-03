@@ -40,27 +40,27 @@ namespace magnetron::test {
     };
 
     [[nodiscard]] inline auto shape_as_vec(tensor t) -> std::vector<std::int64_t> {
-        mag_Tensor* internal {&*t};
+        mag_tensor_t* internal {&*t};
         return {std::begin(internal->shape), std::end(internal->shape)};
     }
 
     [[nodiscard]] inline auto strides_as_vec(tensor t) -> std::vector<std::int64_t> {
-        mag_Tensor* internal {&*t};
+        mag_tensor_t* internal {&*t};
         return {std::begin(internal->strides), std::end(internal->strides)};
     }
 
-    [[nodiscard]] inline auto op_inputs_as_vec(tensor t) -> std::vector<mag_Tensor*> {
-        mag_Tensor* internal {&*t};
+    [[nodiscard]] inline auto op_inputs_as_vec(tensor t) -> std::vector<mag_tensor_t*> {
+        mag_tensor_t* internal {&*t};
         return {std::begin(internal->op_inputs), std::end(internal->op_inputs)};
     }
 
-    [[nodiscard]] inline auto op_params_as_vec(tensor t) -> std::vector<mag_OPParam> {
-        mag_Tensor* internal {&*t};
+    [[nodiscard]] inline auto op_params_as_vec(tensor t) -> std::vector<mag_opparam_t> {
+        mag_tensor_t* internal {&*t};
         return {std::begin(internal->op_params), std::end(internal->op_params)};
     }
 
-    [[nodiscard]] inline auto init_op_params_as_vec(tensor t) -> std::vector<mag_OPParam> {
-        mag_Tensor* internal {&*t};
+    [[nodiscard]] inline auto init_op_params_as_vec(tensor t) -> std::vector<mag_opparam_t> {
+        mag_tensor_t* internal {&*t};
         return {std::begin(internal->init_op_params), std::end(internal->init_op_params)};
     }
 
@@ -167,7 +167,7 @@ namespace magnetron::test {
     }
 
     template <bool BROADCAST, bool INPLACE, typename A, typename B>
-     requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, bool, bool>
+        requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, bool, bool>
     auto test_binary_boolean_operator(std::int64_t lim, A&& a, B&& b) -> decltype(auto) {
         auto ctx = context{compute_device::cpu};
         ctx.stop_grad_recorder();
@@ -192,6 +192,72 @@ namespace magnetron::test {
             for (std::int64_t i = 0; i < d_r.size(); ++i) {
                 ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " op " << d_b[i] << " = " << d_r[i];
             }
+        });
+    }
+
+    template <bool BROADCAST, typename A, typename B>
+        requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, e8m23_t, e8m23_t>
+    auto test_binary_float_compare(std::int64_t lim, dtype ty, A&& a, B&& b, e8m23_t min = -10.0, e8m23_t max = 10.0) -> decltype(auto) {
+        auto ctx = context{compute_device::cpu};
+        ctx.stop_grad_recorder();
+        for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape){
+            tensor t_a{ctx, ty, shape};
+            t_a.fill_rand_uniform_float(min, max);
+            tensor t_b{t_a.clone()};
+            std::vector<e8m23_t> d_a {t_a.to_float_vector()};
+            std::vector<e8m23_t> d_b {t_b.to_float_vector()};
+            tensor t_r {std::invoke(a, t_a, t_b)};
+            ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
+            ASSERT_EQ(t_r.dtype(), dtype::boolean);
+            ASSERT_EQ(d_a.size(), d_b.size());
+            ASSERT_EQ(d_a.size(), t_r.numel());
+            std::vector<bool> d_r {t_r.to_bool_vector()};
+            for (std::int64_t i = 0; i < d_r.size(); ++i)
+                ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
+        });
+    }
+
+    template <bool BROADCAST, typename A, typename B>
+        requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, std::int32_t, std::int32_t>
+    auto test_binary_int_compare(std::int64_t lim, dtype ty, A&& a, B&& b, std::int32_t min = -10, std::int32_t max =  10) -> decltype(auto) {
+        auto ctx = context{compute_device::cpu};
+        ctx.stop_grad_recorder();
+        std::uniform_int_distribution<std::int32_t> dist{min, max};
+        for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape){
+            tensor t_a{ctx, ty, shape};  t_a.fill_int(dist(gen));
+            tensor t_b{t_a.clone()};
+            std::vector<std::int32_t> d_a{t_a.to_int_vector()};
+            std::vector<std::int32_t> d_b{t_b.to_int_vector()};
+            tensor t_r{std::invoke(a, t_a, t_b)};
+            ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
+            ASSERT_EQ(t_r.dtype(), dtype::boolean);
+            ASSERT_EQ(d_a.size(), d_b.size());
+            ASSERT_EQ(d_a.size(), t_r.numel());
+            std::vector<bool> d_r{t_r.to_bool_vector()};
+            for (std::int64_t i = 0; i < d_r.size(); ++i)
+                ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
+        });
+    }
+
+    template <bool BROADCAST, typename A, typename B>
+        requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, bool, bool>
+    auto test_binary_bool_compare(std::int64_t lim, A&& a, B&& b) -> decltype(auto) {
+        auto ctx = context{compute_device::cpu};
+        ctx.stop_grad_recorder();
+        for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape){
+            tensor t_a{ctx, dtype::boolean, shape};  t_a.fill_int(true);
+            tensor t_b{t_a.clone()};
+            t_b.fill_int(false);
+            std::vector<bool> d_a{t_a.to_bool_vector()};
+            std::vector<bool> d_b{t_b.to_bool_vector()};
+            tensor t_r{std::invoke(a, t_a, t_b)};
+            ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
+            ASSERT_EQ(t_r.dtype(), dtype::boolean);
+            ASSERT_EQ(d_a.size(), d_b.size());
+            ASSERT_EQ(d_a.size(), t_r.numel());
+            std::vector<bool> d_r{t_r.to_bool_vector()};
+            for (std::int64_t i = 0; i < d_r.size(); ++i)
+                ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
         });
     }
 
@@ -226,7 +292,7 @@ namespace magnetron::test {
         for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape) {
             tensor base{ctx, ty, shape};
             base.fill_rand_uniform_float(min, max);
-            tensor t_a = SUBVIEW ?  make_random_view(base) : base;
+            tensor t_a = SUBVIEW ? make_random_view(base) : base;
             if constexpr (SUBVIEW)
                 ASSERT_TRUE(t_a.is_view());
             std::vector<e8m23_t> d_a{t_a.to_float_vector()};
@@ -245,29 +311,29 @@ namespace magnetron::test {
     }
 
     template <typename T>
-    [[nodiscard]] auto compute_mean(std::span<const T> data) -> mag_E8M23 {
-        mag_E8M23 sum {};
+    [[nodiscard]] auto compute_mean(std::span<const T> data) -> mag_e8m23_t {
+        mag_e8m23_t sum {};
         for (const T x : data) sum += x;
-        return sum / static_cast<mag_E8M23>(data.size());
+        return sum / static_cast<mag_e8m23_t>(data.size());
     }
 
     template <typename T>
-    [[nodiscard]] auto compute_mean(const mag_Tensor* tensor) -> mag_E8M23 {
+    [[nodiscard]] auto compute_mean(const mag_tensor_t* tensor) -> mag_e8m23_t {
         return compute_mean(std::span<const T>{reinterpret_cast<const T*>(mag_tensor_get_data_ptr(tensor)), static_cast<std::size_t>(tensor->numel)});
     }
 
     template <typename T>
-    [[nodiscard]] auto compute_std(std::span<const T> data) -> mag_E11M52 {
-        mag_E8M23 sum {};
-        mag_E8M23 mean {compute_mean(data)};
+    [[nodiscard]] auto compute_std(std::span<const T> data) -> mag_e11m52_t {
+        mag_e8m23_t sum {};
+        mag_e8m23_t mean {compute_mean(data)};
         for (const T x : data) {
             sum += std::pow(x-mean, 2.0f);
         }
-        return std::sqrt(sum / static_cast<mag_E8M23>(data.size()));
+        return std::sqrt(sum / static_cast<mag_e8m23_t>(data.size()));
     }
 
     template <typename T>
-    [[nodiscard]] auto compute_std(const mag_Tensor* tensor) -> mag_E11M52 {
+    [[nodiscard]] auto compute_std(const mag_tensor_t* tensor) -> mag_e11m52_t {
         return compute_std(std::span<const T>{reinterpret_cast<const T*>(mag_tensor_get_data_ptr(tensor)), static_cast<std::size_t>(tensor->numel)});
     }
 
@@ -377,7 +443,6 @@ namespace magnetron::test {
         public:
             linear_layer(context& ctx, std::int64_t in_features, std::int64_t out_features, dtype type = dtype::e8m23, bool has_bias = true) {
                 tensor weight {ctx, type, out_features, in_features};
-                weight.set_name("weight");
                 weight.fill_rand_normal(0.0f, 1.0f);
                 weight = weight / static_cast<e8m23_t>(std::sqrt(in_features + out_features));
                 register_param(weight);
@@ -385,7 +450,6 @@ namespace magnetron::test {
                 if (has_bias) {
                     tensor bias {ctx, type, out_features};
                     bias.fill_float(0.f);
-                    bias.set_name("bias");
                     register_param(bias);
                     this->bias = bias;
                 }

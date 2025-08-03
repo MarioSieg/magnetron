@@ -10,8 +10,8 @@ def test_xor_network():
     criterion = nn.MSELoss()
 
     # Data
-    x = mag.Tensor.from_data([[0, 0], [0, 1], [1, 0], [1, 1]])
-    y = mag.Tensor.from_data([[0], [1], [1], [0]])
+    x = mag.Tensor.of([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=mag.float32)
+    y = mag.Tensor.of([[0], [1], [1], [0]], dtype=mag.float32)
 
     # Train 2000 epochs
     for epoch in range(2000):
@@ -20,7 +20,7 @@ def test_xor_network():
         optimizer.step()
         optimizer.zero_grad()
 
-    assert round(model(x)[0]) == 0
-    assert round(model(x)[1]) == 1
-    assert round(model(x)[2]) == 1
-    assert round(model(x)[3]) == 0
+    assert round(model(x)[0].item()) == 0
+    assert round(model(x)[1].item()) == 1
+    assert round(model(x)[2].item()) == 1
+    assert round(model(x)[3].item()) == 0

@@ -10,12 +10,13 @@ EPOCHS: int = 2000
 
 # Create the model, optimizer, and loss function
 model = nn.Sequential(nn.Linear(2, 2), nn.Tanh(), nn.Linear(2, 1), nn.Tanh())
+print(model.state_dict())
 optimizer = optim.SGD(model.parameters(), lr=1e-1)
 criterion = nn.MSELoss()
 loss_values: list[float] = []
 
-x = mag.Tensor.from_data([[0, 0], [0, 1], [1, 0], [1, 1]])
-y = mag.Tensor.from_data([[0], [1], [1], [0]])
+x = mag.Tensor.of([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
+y = mag.Tensor.of([[0.0], [1.0], [1.0], [0.0]])
 
 # Train the model
 for epoch in range(EPOCHS):
@@ -52,4 +53,4 @@ try:
     plt.show()
 
 except ImportError:
-    print("matplotlib not installed; skipping loss plot.")
+    print('matplotlib not installed; skipping loss plot.')

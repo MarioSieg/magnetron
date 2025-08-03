@@ -12,15 +12,15 @@
 #define MAG_USE_STB_IMAGE_RESIZE /* Use stb_image_resize for image resizing. */
 
 /* Include STB libraries and override their allocator with ours. */
-#define STBI_MALLOC(sz) ((*mag_alloc)(NULL, (sz)))
-#define STBI_FREE(ptr) ((*mag_alloc)((ptr), 0))
-#define STBI_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz)))
-#define STBIW_MALLOC(sz) ((*mag_alloc)(NULL, (sz)))
-#define STBIW_FREE(ptr) ((*mag_alloc)((ptr), 0))
-#define STBIW_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz)))
-#define STBIR_MALLOC(sz, usr) ((*mag_alloc)(NULL, (sz)))
-#define STBIR_FREE(ptr, usr) ((*mag_alloc)((ptr), 0))
-#define STBIR_REALLOC(ptr, sz, usr) ((*mag_alloc)((ptr), (sz)))
+#define STBI_MALLOC(sz) ((*mag_alloc)(NULL, (sz), 0))
+#define STBI_FREE(ptr) ((*mag_alloc)((ptr), 0, 0))
+#define STBI_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz), 0))
+#define STBIW_MALLOC(sz) ((*mag_alloc)(NULL, (sz), 0))
+#define STBIW_FREE(ptr) ((*mag_alloc)((ptr), 0, 0))
+#define STBIW_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz), 0))
+#define STBIR_MALLOC(sz, usr) ((*mag_alloc)(NULL, (sz), 0))
+#define STBIR_FREE(ptr, usr) ((*mag_alloc)((ptr), 0, 0))
+#define STBIR_REALLOC(ptr, sz, usr) ((*mag_alloc)((ptr), (sz), 0))
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
@@ -31,7 +31,7 @@
 #include <stb/stb_image_write.h>
 #include <stb/stb_image_resize2.h>
 
-mag_Tensor* mag_tensor_load_image(mag_Context* ctx, const char* file, mag_ColorChannels channels, uint32_t rw, uint32_t rh) {
+mag_tensor_t* mag_tensor_load_image(mag_context_t* ctx, const char* file, mag_color_channels_t channels, uint32_t rw, uint32_t rh) {
    mag_assert2(file && *file);
    int w, h, c, dc;
    switch (channels) {
@@ -69,7 +69,7 @@ mag_Tensor* mag_tensor_load_image(mag_Context* ctx, const char* file, mag_ColorC
          for (int64_t j=0; j < whc[1]; ++j)
              for (int64_t i=0; i < whc[0]; ++i)
                  ori[i + whc[0]*j + whc[0]*whc[1]*k] = (mag_e8m23_t)buf[k + whc[2]*i + whc[2]*whc[0]*j] / 255.0f;
-        mag_Tensor* t = mag_tensor_create_3d(ctx, MAG_DTYPE_E8M23, whc[2], rh, rw);
+        mag_tensor_t* t = mag_tensor_create_3d(ctx, MAG_DTYPE_E8M23, whc[2], rh, rw);
         mag_e8m23_t* dst = mag_tensor_get_data_ptr(t);
         mag_e8m23_t* part = (*mag_alloc)(NULL, whc[2] * whc[1] * rw * sizeof(*part));
         mag_e8m23_t ws = (mag_e8m23_t)(whc[0] - 1)/(mag_e8m23_t)(rw - 1);
@@ -111,12 +111,12 @@ mag_Tensor* mag_tensor_load_image(mag_Context* ctx, const char* file, mag_ColorC
        return t;
     #endif
    }
-   mag_Tensor* t = mag_tensor_empty(ctx, MAG_DTYPE_E8M23, 3, (int64_t[3]){whc[2], whc[1], whc[0]});
-   mag_E8M23* dst = mag_tensor_get_data_ptr(t);
+   mag_tensor_t* t = mag_tensor_empty(ctx, MAG_DTYPE_E8M23, 3, (int64_t[3]){whc[2], whc[1], whc[0]});
+   mag_e8m23_t* dst = mag_tensor_get_data_ptr(t);
    for (int64_t k = 0; k < whc[2]; ++k) { /* Convert from interleaved to planar representation. */
      for (int64_t j = 0; j < whc[1]; ++j) {
          for (int64_t i = 0; i < whc[0]; ++i) {
-             dst[i + whc[0]*j + whc[0]*whc[1]*k] = (mag_E8M23)buf[k + whc[2]*i + whc[2]*whc[0]*j] / 255.0f;  /* Normalize pixel values to [0, 1] */
+             dst[i + whc[0]*j + whc[0]*whc[1]*k] = (mag_e8m23_t)buf[k + whc[2]*i + whc[2]*whc[0]*j] / 255.0f;  /* Normalize pixel values to [0, 1] */
          }
      }
    }
@@ -126,7 +126,7 @@ mag_Tensor* mag_tensor_load_image(mag_Context* ctx, const char* file, mag_ColorC
    return t;
 }
 
-void mag_tensor_save_image(const mag_Tensor* t, const char* file) {
+void mag_tensor_save_image(const mag_tensor_t* t, const char* file) {
    int64_t rank = mag_tensor_get_rank(t);
    mag_assert(rank == 3, "Tensor rank must be 3, but is: %" PRIi64, (size_t)rank);
    int64_t w = mag_tensor_get_width(t);
@@ -134,8 +134,8 @@ void mag_tensor_save_image(const mag_Tensor* t, const char* file) {
    int64_t c = mag_tensor_get_channels(t);
    mag_assert(c == 1 || c == 3 || c == 4, "Invalid number of channels: %zu", (size_t)c);
    mag_assert(w*h*c == mag_tensor_get_numel(t), "Buffer size mismatch: %zu != %zu", w*h*c, (size_t)mag_tensor_get_numel(t));
-   uint8_t* dst = (*mag_alloc)(NULL, w*h*c); /* Allocate memory for image data */
-   const mag_E8M23* src = mag_tensor_get_data_ptr(t);
+   uint8_t* dst = (*mag_alloc)(NULL, w*h*c, 0); /* Allocate memory for image data */
+   const mag_e8m23_t* src = mag_tensor_get_data_ptr(t);
    for (int64_t k = 0; k < c; ++k) /* Convert from planar to interleaved format. */
       for (int64_t i = 0; i < w*h; ++i)
          dst[i*c + k] = (uint8_t)(src[i + k*w*h]*255.0f);
@@ -156,6 +156,6 @@ void mag_tensor_save_image(const mag_Tensor* t, const char* file) {
    else
       mag_panic("Invalid image file extension: %s", file);
    mag_assert(stat, "Failed to save tensor to image file %s", file);
-   (*mag_alloc)(dst, 0); /* Free image data */
+   (*mag_alloc)(dst, 0, 0); /* Free image data */
    mag_log_info("Saved tensor to image: %s, width: %d, height: %d, channels: %d", file, (int)w, (int)h, (int)c);
 }

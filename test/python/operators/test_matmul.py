@@ -1,25 +1,24 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
-import random
-
-from magnetron import *
 import torch
 
-DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
-    float16: torch.float16,
-    float32: torch.float32,
-    int32: torch.int32,
-    boolean: torch.bool
-}
+from ..common import *
 
-def totorch(t: Tensor) -> torch.Tensor:
-    return torch.tensor(t.tolist(), dtype=DTYPE_TORCH_MAP[t.dtype]).reshape(t.shape)
+@pytest.mark.parametrize('dtype', [float16, float32])
+def test_matmul_squared(dtype: DataType) -> None:
+    binary_op_square(dtype, lambda x, y: x + y, kind=BinaryOpParamKind.TENSOR)
 
+@pytest.mark.parametrize('dtype', [float16, float32])
+def test_matmul_full(dtype: DataType) -> None:
+    for A, B in matmul_shape_pairs(lim=3, max_total_rank=MAX_DIMS):
+        a = Tensor.uniform(A, dtype=dtype)
+        b = Tensor.uniform(B, dtype=dtype)
+        r = a @ b
+        rt = torch.matmul(totorch(a), totorch(b))
+        assert r.rank == rt.dim(), f"Expected rank {rt.dim()}, got {r.rank}"
+        assert r.shape == rt.shape, f"Expected shape {rt.shape}, got {r.shape}"
+        assert torch.allclose(totorch(r), rt, atol=1e-4, rtol=1e-4)
 
-def sigmoid(x: torch.Tensor) -> None:
-    return 1 / (1 + torch.exp(-x))
-
-
-def test_simple_ff() -> None:
+def test_matmul_simple_mlp() -> None:
     truth_table = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
 
     W1 = Tensor.uniform((2, 4))
@@ -32,6 +31,9 @@ def test_simple_ff() -> None:
     nW2 = totorch(W2)
     nb2 = totorch(b2)
 
+    def sigmoid(x: torch.Tensor) -> None:
+        return 1 / (1 + torch.exp(-x))
+
     np_data = []
     for x in truth_table:
         z1 = torch.tensor(x) @ nW1 + nb1
@@ -42,7 +44,7 @@ def test_simple_ff() -> None:
 
     mag_data = []
     for x in truth_table:
-        x = Tensor.from_data([x])
+        x = Tensor.of([x])
 
         z1 = x @ W1 + b1
         a1 = z1.sigmoid()

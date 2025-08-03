@@ -10,5 +10,5 @@ def test_import_magnetron() -> None:
 def test_simple_exec() -> None:
     import magnetron as mag
 
-    a = mag.Tensor.from_data([1, 4, 1])
+    a = mag.Tensor.of([1.0, 4.0, 1.0])
     assert a.max()[0] == 4

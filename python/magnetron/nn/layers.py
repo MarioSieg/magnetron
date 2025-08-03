@@ -1,5 +1,7 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
+from __future__ import annotations
+
 import math
 
 from magnetron import Tensor
@@ -11,11 +13,12 @@ class Linear(Module):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        weight = Tensor.normal(shape=(out_features, in_features), mean=0.0, std=1.0)
+        weight = Tensor.normal(out_features, in_features, mean=0.0, std=1.0)
         weight = weight / math.sqrt(in_features + out_features)
         self.weight = Parameter(weight)
+        self.bias = None
         if bias:
-            self.bias = Parameter(Tensor.zeros((out_features,), name='bias'))
+            self.bias = Parameter(Tensor.zeros(out_features))
 
     def forward(self, x: Tensor) -> Tensor:
         x = x @ self.weight.x.T
@@ -29,17 +32,17 @@ class Embedding(Module):
         super().__init__()
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        self.weight = Parameter(Tensor.normal((num_embeddings, embedding_dim)) / embedding_dim)
+        self.weight = Parameter(Tensor.normal(num_embeddings, embedding_dim) / embedding_dim)
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.weight[x]
+        return self.weight.x[x]
 
 
 class RMSNorm(Module):
     def __init__(self, dim: int, eps: float = 1e-5) -> None:
         super().__init__()
         self.eps = eps
-        self.weight = Parameter(Tensor.zeros(shape=(dim,)))
+        self.weight = Parameter(Tensor.zeros(dim))
 
     def _norm(self, x: Tensor) -> Tensor:
         rms = ((x**2).mean(axis=-1, keepdim=True) + self.eps) ** 0.5
@@ -50,26 +53,29 @@ class RMSNorm(Module):
         return output * self.weight
 
 
-class LayerNorm(Module):
-    """Layer Normalization over the last dimension with optional affine transform."""
-
-    def __init__(self, normalized_shape: int, eps: float = 1e-5, elementwise_affine: bool = True) -> None:
+class Dropout(Module):
+    def __init__(self, p: float = 0.5, inplace: bool = False) -> None:
         super().__init__()
-        self.normalized_shape = normalized_shape
-        self.eps = eps
-        self.elementwise_affine = elementwise_affine
-
-        if self.elementwise_affine:
-            self.weight = Parameter(Tensor.full((normalized_shape,), fill_value=1.0), name='weight')
-            self.bias = Parameter(Tensor.zeros((normalized_shape,)), name='bias')
-        else:
-            self.weight = None
-            self.bias = None
+        assert 0 <= p <= 1, 'Bernoulli probability must be between 0 and 1'
+        self.p = p
+        self.inplace = inplace
 
     def forward(self, x: Tensor) -> Tensor:
-        mean = x.mean(axis=-1, keepdim=True)
-        var = ((x - mean) ** 2).mean(axis=-1, keepdim=True)
-        x_norm = (x - mean) / (var + self.eps) ** 0.5
-        if self.elementwise_affine:
-            x_norm = x_norm * self.weight.x + self.bias.x
-        return x_norm
+        return x.dropout_(self.p) if self.inplace else x.dropout(self.p)
+
+
+class LayerNorm(Module):
+    def __init__(self, ndim: int, bias: bool = True, eps: float = 1e-5) -> None:
+        super().__init__()
+        self.weight = Parameter(Tensor.ones(ndim))
+        self.bias = Parameter(Tensor.zeros(ndim)) if bias else None
+        self.eps = eps
+
+    def forward(self, x: Tensor) -> Tensor:
+        xm = x - x.mean(dim=-1, keepdim=True)
+        var = (xm * xm).mean(dim=-1, keepdim=True)
+        x_hat = xm / (var + self.eps).sqrt()
+        y = self.weight.x * x_hat
+        if self.bias is not None:
+            y = y + self.bias.x
+        return y

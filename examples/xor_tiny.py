@@ -7,8 +7,8 @@ optimizer = optim.SGD(model.parameters(), lr=1e-1)
 criterion = nn.MSELoss()
 
 # Data
-x = mag.Tensor.from_data([[0, 0], [0, 1], [1, 0], [1, 1]])
-y = mag.Tensor.from_data([[0], [1], [1], [0]])
+x = mag.Tensor.of([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
+y = mag.Tensor.of([[0.0], [1.0], [1.0], [0.0]])
 
 # Train 2000 epochs
 for epoch in range(2000):

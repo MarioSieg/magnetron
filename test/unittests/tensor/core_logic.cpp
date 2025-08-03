@@ -14,7 +14,7 @@ TEST(core_tensor_logic, dynamic_graph_complex) {
     tensor c {a*b};
     tensor d {c.tanh()};
 
-    mag_Tensor* ta {&*a};
+    mag_tensor_t* ta {&*a};
     ASSERT_EQ(ta->op, MAG_OP_NOP);
     ASSERT_EQ(ta->flags, 0);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -27,7 +27,7 @@ TEST(core_tensor_logic, dynamic_graph_complex) {
     ASSERT_EQ(ta->init_op_params[0].type, MAG_OPP_E8M23);
     ASSERT_FLOAT_EQ(mag_op_param_unpack_e8m23_or_panic(ta->init_op_params[0]), 2.5f);
 
-    mag_Tensor* tb {&*b};
+    mag_tensor_t* tb {&*b};
     ASSERT_EQ(tb->op, MAG_OP_CLONE);
     ASSERT_EQ(tb->flags, 0);
     ASSERT_EQ(tb->op_inputs[0], ta);
@@ -40,7 +40,7 @@ TEST(core_tensor_logic, dynamic_graph_complex) {
         ASSERT_EQ(tb->init_op_params[i].type, MAG_OPP_NONE);
     }
 
-    mag_Tensor* tc {&*c};
+    mag_tensor_t* tc {&*c};
     ASSERT_EQ(tc->op, MAG_OP_MUL);
     ASSERT_EQ(tc->flags, 0);
     ASSERT_EQ(tc->op_inputs[0], ta);
@@ -53,7 +53,7 @@ TEST(core_tensor_logic, dynamic_graph_complex) {
         ASSERT_EQ(tc->init_op_params[i].type, MAG_OPP_NONE);
     }
 
-    mag_Tensor* td {&*d};
+    mag_tensor_t* td {&*d};
     ASSERT_EQ(td->op, MAG_OP_TANH);
     ASSERT_EQ(td->flags, 0);
     ASSERT_EQ(td->op_inputs[0], tc);
@@ -72,7 +72,7 @@ TEST(core_tensor_logic, dynamic_graph_init_op) {
     tensor a {ctx, dtype::e8m23, 10};
     a.fill_rand_uniform_float(0.0f, 1.0f);
 
-    mag_Tensor* ta {&*a};
+    mag_tensor_t* ta {&*a};
     ASSERT_EQ(ta->op, MAG_OP_NOP);
     ASSERT_EQ(ta->flags, 0);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -94,7 +94,7 @@ TEST(core_tensor_logic, dynamic_graph_binary_op) {
     tensor b {ctx, dtype::e8m23, 10};
     tensor c {a + b};
 
-    mag_Tensor* ta {&*a};
+    mag_tensor_t* ta {&*a};
     ASSERT_EQ(ta->op, MAG_OP_NOP);
     ASSERT_EQ(ta->flags, 0);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -108,7 +108,7 @@ TEST(core_tensor_logic, dynamic_graph_binary_op) {
         ASSERT_EQ(ta->init_op_params[i].type, MAG_OPP_NONE);
     }
 
-    mag_Tensor* tb {&*b};
+    mag_tensor_t* tb {&*b};
     ASSERT_EQ(tb->op, MAG_OP_NOP);
     ASSERT_EQ(tb->flags, 0);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -122,7 +122,7 @@ TEST(core_tensor_logic, dynamic_graph_binary_op) {
         ASSERT_EQ(tb->init_op_params[i].type, MAG_OPP_NONE);
     }
 
-    mag_Tensor* tc {&*c};
+    mag_tensor_t* tc {&*c};
     ASSERT_EQ(tc->op, MAG_OP_ADD);
     ASSERT_EQ(tc->flags, 0);
     ASSERT_EQ(tc->op_inputs[0], ta);
@@ -141,7 +141,7 @@ TEST(core_tensor_logic, dynamic_graph_unary_op) {
     tensor a {ctx, dtype::e8m23, 10};
     tensor b {a.neg()};
 
-    mag_Tensor* ta {&*a};
+    mag_tensor_t* ta {&*a};
     ASSERT_EQ(ta->op, MAG_OP_NOP);
     ASSERT_EQ(ta->flags, 0);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -155,7 +155,7 @@ TEST(core_tensor_logic, dynamic_graph_unary_op) {
         ASSERT_EQ(ta->init_op_params[i].type, MAG_OPP_NONE);
     }
 
-    mag_Tensor* tb {&*b};
+    mag_tensor_t* tb {&*b};
     ASSERT_EQ(tb->op, MAG_OP_NEG);
     ASSERT_EQ(tb->flags, 0);
     ASSERT_EQ(tb->op_inputs[0], ta);
@@ -271,15 +271,13 @@ TEST(core_tensor_logic, init_1d) {
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
-    mag_Tensor* internal {&*t};
+    mag_tensor_t* internal {&*t};
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
     ASSERT_NE(internal->storage->host, nullptr);
     ASSERT_NE(internal->storage->broadcast, nullptr);
     ASSERT_NE(internal->storage->transfer, nullptr);
-    ASSERT_EQ(internal->view_offs, 0);
-    ASSERT_EQ(internal->view_uplink, nullptr);
     ASSERT_EQ(internal->op, MAG_OP_NOP);
     ASSERT_EQ(internal->init_op, MAG_IOP_NOP);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -315,15 +313,13 @@ TEST(core_tensor_logic, init_2d) {
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
-    mag_Tensor* internal {&*t};
+    mag_tensor_t* internal {&*t};
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
     ASSERT_NE(internal->storage->host, nullptr);
     ASSERT_NE(internal->storage->broadcast, nullptr);
     ASSERT_NE(internal->storage->transfer, nullptr);
-    ASSERT_EQ(internal->view_offs, 0);
-    ASSERT_EQ(internal->view_uplink, nullptr);
     ASSERT_EQ(internal->op, MAG_OP_NOP);
     ASSERT_EQ(internal->init_op, MAG_IOP_NOP);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -361,15 +357,13 @@ TEST(core_tensor_logic, init_3d) {
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
-    mag_Tensor* internal {&*t};
+    mag_tensor_t* internal {&*t};
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
     ASSERT_NE(internal->storage->host, nullptr);
     ASSERT_NE(internal->storage->broadcast, nullptr);
     ASSERT_NE(internal->storage->transfer, nullptr);
-    ASSERT_EQ(internal->view_offs, 0);
-    ASSERT_EQ(internal->view_uplink, nullptr);
     ASSERT_EQ(internal->op, MAG_OP_NOP);
     ASSERT_EQ(internal->init_op, MAG_IOP_NOP);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -408,15 +402,13 @@ TEST(core_tensor_logic, init_4d) {
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
-    mag_Tensor* internal {&*t};
+    mag_tensor_t* internal {&*t};
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
     ASSERT_NE(internal->storage->host, nullptr);
     ASSERT_NE(internal->storage->broadcast, nullptr);
     ASSERT_NE(internal->storage->transfer, nullptr);
-    ASSERT_EQ(internal->view_offs, 0);
-    ASSERT_EQ(internal->view_uplink, nullptr);
     ASSERT_EQ(internal->op, MAG_OP_NOP);
     ASSERT_EQ(internal->init_op, MAG_IOP_NOP);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -458,15 +450,13 @@ TEST(core_tensor_logic, init_5d) {
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
-    mag_Tensor* internal {&*t};
+    mag_tensor_t* internal {&*t};
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
     ASSERT_NE(internal->storage->host, nullptr);
     ASSERT_NE(internal->storage->broadcast, nullptr);
     ASSERT_NE(internal->storage->transfer, nullptr);
-    ASSERT_EQ(internal->view_offs, 0);
-    ASSERT_EQ(internal->view_uplink, nullptr);
     ASSERT_EQ(internal->op, MAG_OP_NOP);
     ASSERT_EQ(internal->init_op, MAG_IOP_NOP);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
@@ -510,15 +500,13 @@ TEST(core_tensor_logic, init_6d) {
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
-    mag_Tensor* internal {&*t};
+    mag_tensor_t* internal {&*t};
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
     ASSERT_NE(internal->storage->host, nullptr);
     ASSERT_NE(internal->storage->broadcast, nullptr);
     ASSERT_NE(internal->storage->transfer, nullptr);
-    ASSERT_EQ(internal->view_offs, 0);
-    ASSERT_EQ(internal->view_uplink, nullptr);
     ASSERT_EQ(internal->op, MAG_OP_NOP);
     ASSERT_EQ(internal->init_op, MAG_IOP_NOP);
     for (std::size_t i {}; i < k_max_input_tensors; ++i) {
