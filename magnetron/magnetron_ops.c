@@ -379,12 +379,12 @@ mag_tensor_t* mag_sum(mag_tensor_t* x, const int64_t* dims, int64_t rank, bool k
 
 mag_tensor_t* mag_argmin(mag_tensor_t* x, const int64_t* dims, int64_t rank, bool keepdim) {
     mag_panic("Not implemented yet");
-    return NULL;
+    return mag_tensor_empty_like(x);
 }
 
 mag_tensor_t* mag_argmax(mag_tensor_t* x, const int64_t* dims, int64_t rank, bool keepdim) {
     mag_panic("Not implemented yet");
-    return NULL;
+    return mag_tensor_empty_like(x);
 }
 
 static mag_tensor_t* mag_op_stub_unary(mag_opcode_t op, mag_tensor_t* x, const mag_op_param_layout_t* layout, bool inplace) {

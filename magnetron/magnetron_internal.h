@@ -1140,9 +1140,9 @@ static inline void mag_hash_combine(uint32_t* _Nonnull seed, uint32_t value) {
 extern uint64_t mag_hash(const void* _Nonnull key, size_t len, uint32_t seed); /* Compute murmur3_64 hash */
 extern uint32_t mag_crc32c(const void* _Nonnull buffer, size_t size); /* Compute CRC32 checksum with CRC32c polynomial. */
 
-extern bool mag_solve_view_strides( int64_t (*out)[MAG_MAX_DIMS], const int64_t* osz, const int64_t* ost, int64_t ork, const int64_t* nsz, int64_t nrk);
-extern void mag_infer_missing_dim(int64_t(*out)[MAG_MAX_DIMS], const int64_t* dims, int64_t rank, int64_t numel);
-extern bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, int64_t* dims, int64_t* rank);
+extern bool mag_solve_view_strides(int64_t (*_Nonnull out)[MAG_MAX_DIMS], const int64_t* _Nonnull osz, const int64_t* _Nonnull ost, int64_t ork, const int64_t* _Nonnull nsz, int64_t nrk);
+extern void mag_infer_missing_dim(int64_t (*_Nonnull out)[MAG_MAX_DIMS], const int64_t* _Nonnull dims, int64_t rank, int64_t numel);
+extern bool mag_compute_broadcast_shape(const mag_tensor_t* _Nonnull a, const mag_tensor_t* _Nonnull b, int64_t* _Nonnull dims, int64_t* _Nonnull rank);
 
 #ifdef __cplusplus
 }
