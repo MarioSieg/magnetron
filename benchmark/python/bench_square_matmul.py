@@ -2,4 +2,4 @@
 
 from bench import bench_square_matmul
 
-bench_square_matmul(dim_lim=1024)
+bench_square_matmul(dim_lim=1024, step=512)

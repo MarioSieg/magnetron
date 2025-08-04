@@ -4,9 +4,9 @@ import magnetron as mag
 import time
 
 
-N = 1024
-A = mag.Tensor.uniform((N, N))
-B = mag.Tensor.uniform((N, N))
+N = 10000
+A = mag.Tensor.uniform(N//2, N)
+B = mag.Tensor.uniform(N, N//2)
 print(A.shape)
 
 flop = 2 * N**3

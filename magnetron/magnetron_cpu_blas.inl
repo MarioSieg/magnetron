@@ -1884,7 +1884,7 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        for (int64_t i = ra; i < rb; ++i) { \
+        for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri = mag_offset_like(r, r, i); \
             int64_t xi = mag_offset_like(r, x, i); \
             int64_t yi = mag_offset_like(r, y, i); \

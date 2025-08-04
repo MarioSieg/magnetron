@@ -28,14 +28,14 @@ static auto bench_op(dtype type) -> void {
             ankerl::nanobench::doNotOptimizeAway(r);
         });
     }};
-    //run_cycle(10000);
+    run_cycle(10000);
     run_cycle(1000);
-    //run_cycle(750);
-    //run_cycle(500);
-    //run_cycle(250);
-    //run_cycle(100);
-    //run_cycle(10);
-    //run_cycle(4);
+    run_cycle(750);
+    run_cycle(500);
+    run_cycle(250);
+    run_cycle(100);
+    run_cycle(10);
+    run_cycle(4);
 }
 
 auto main() -> int {

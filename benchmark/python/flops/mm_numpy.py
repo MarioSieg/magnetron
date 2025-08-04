@@ -3,9 +3,9 @@
 import numpy as np
 import time
 
-N = 1024
-A = np.random.randn(N, N).astype(dtype=np.float32)
-B = np.random.randn(N, N).astype(dtype=np.float32)
+N = 10000
+A = np.random.rand(N//2, N).astype(dtype=np.float32)
+B = np.random.rand(N, N//2).astype(dtype=np.float32)
 
 flop = 2 * N**3
 avg = 0

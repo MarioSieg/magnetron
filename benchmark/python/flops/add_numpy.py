@@ -9,7 +9,7 @@ B = np.random.randn(N, N).astype(dtype=np.float32)
 
 flop = 2 * N**3
 avg = 0
-I = 1000
+I = 10
 for _ in range(I):
     st = time.monotonic()
     C = A + B

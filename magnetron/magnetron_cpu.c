@@ -317,7 +317,10 @@ static uint32_t mag_cpu_dynamic_work_scaling(mag_cpu_device_t* dvc, mag_opcode_t
 
 static MAG_HOTPROC void mag_cpu_exec(mag_idevice_t* dvc, mag_exec_stage_t stage, mag_tensor_t* node) {
     mag_cpu_device_t* cpu_dvc = dvc->impl;
-    uint32_t intraop_workers = stage == MAG_STAGE_INIT ? 0 : mag_cpu_dynamic_work_scaling(cpu_dvc, node->op, node->numel);   /* Use thread count recommended by pre-kernel or compute general thread count heuristic. */
+    int64_t tune_numel = node->numel;
+    for (int i=0; i < MAG_MAX_OP_INPUTS; ++i)
+        if (node->op_inputs[i]) tune_numel = mag_xmax(tune_numel, node->op_inputs[i]->numel); /* Tune numel to max of all inputs */
+    uint32_t intraop_workers = stage == MAG_STAGE_INIT ? 0 : mag_cpu_dynamic_work_scaling(cpu_dvc, node->op, tune_numel);   /* Use thread count recommended by pre-kernel or compute general thread count heuristic. */
     if (intraop_workers <= 1) { /* Main thread does the work (single threaded mode). */
         mag_kernel_payload_t payload = {
             .node = node,
