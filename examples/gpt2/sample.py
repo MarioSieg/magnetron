@@ -6,7 +6,7 @@ from model import GPTHParams, GPT
 
 mag.active_context().stop_grad_recorder()
 
-start = 'What is the answer to life??'
+start = 'What is the answer to life?'
 max_new_tokens = 64
 temp = 0.9
 
