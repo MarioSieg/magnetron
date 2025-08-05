@@ -92,7 +92,6 @@ class GPT(nn.Module):
         )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight
-        self.apply(self._init_weights)
         for pn, p in self.named_parameters():
             if pn.endswith('c_proj.weight'):
                 p.x.fill_random_normal_(mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer))
@@ -147,14 +146,6 @@ class GPT(nn.Module):
         if non_embedding:
             n_params -= self.transformer.wpe.weight.x.numel
         return n_params
-
-    def _init_weights(self, module: nn.Module) -> None:
-        if isinstance(module, nn.Linear):
-            module.weight.x.fill_random_normal_(mean=0.0, std=0.02)
-            if module.bias is not None:
-                module.bias.x.zeros_()
-        elif isinstance(module, nn.Embedding):
-            module.weight.x.fill_random_normal_(mean=0.0, std=0.02)
 
     def forward(self, idx: mag.Tensor) -> mag.Tensor:
         b, t = idx.shape
