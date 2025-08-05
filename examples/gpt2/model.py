@@ -9,7 +9,7 @@ from magnetron import FFI, C
 
 
 @dataclass
-class GPTConfig:
+class GPTHParams:
     block_size: int = 1024
     vocab_size: int = 50304
     n_layer: int = 12
@@ -20,7 +20,7 @@ class GPTConfig:
 
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
+    def __init__(self, config: GPTHParams) -> None:
         super().__init__()
         assert config.n_embd % config.n_head == 0
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
@@ -48,7 +48,7 @@ class CausalSelfAttention(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
+    def __init__(self, config: GPTHParams) -> None:
         super().__init__()
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
         self.gelu = nn.GeLU()
@@ -62,7 +62,7 @@ class MLP(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
+    def __init__(self, config: GPTHParams) -> None:
         super().__init__()
         self.ln_1 = nn.LayerNorm(config.n_embd, bias=config.bias)
         self.attn = CausalSelfAttention(config)
@@ -76,7 +76,7 @@ class Block(nn.Module):
 
 
 class GPT(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
+    def __init__(self, config: GPTHParams) -> None:
         super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None
@@ -99,26 +99,21 @@ class GPT(nn.Module):
         print(f'Parameter count: {self.get_num_params(False) // 1e6}M')
 
     @classmethod
-    def from_pretrained(cls, model_type, override_args=None):
+    def from_pretrained(cls, model_type):
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
-        override_args = override_args or {}
-        assert all(k == 'dropout' for k in override_args)
         from transformers import GPT2LMHeadModel
-        config_args = {
-            'gpt2': dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
-            'gpt2-medium': dict(n_layer=24, n_head=16, n_embd=1024),  # 350M params
-            'gpt2-large': dict(n_layer=36, n_head=20, n_embd=1280),  # 774M params
-            'gpt2-xl': dict(n_layer=48, n_head=25, n_embd=1600),  # 1558M params
+        cfg = {
+            'gpt2': dict(n_layer=12, n_head=12, n_embd=768),
+            'gpt2-medium': dict(n_layer=24, n_head=16, n_embd=1024),
+            'gpt2-large': dict(n_layer=36, n_head=20, n_embd=1280),
+            'gpt2-xl': dict(n_layer=48, n_head=25, n_embd=1600),
         }[model_type]
-        config_args['vocab_size'] = 50257
-        config_args['block_size'] = 1024
-        config_args['bias'] = True
-        if 'dropout' in override_args:
-            print(f"overriding dropout rate to {override_args['dropout']}")
-            config_args['dropout'] = override_args['dropout']
-        config = GPTConfig(**config_args)
-        print(f'Loading {model_type} with config: {config}')
-        model = GPT(config)
+        cfg['vocab_size'] = 50257
+        cfg['block_size'] = 1024
+        cfg['bias'] = True
+        cfg = GPTHParams(**cfg)
+        print(f'Loading {model_type} with config: {cfg}')
+        model = GPT(cfg)
         sd = model.state_dict()
         sd_keys = sd.keys()
         sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')]
@@ -140,12 +135,10 @@ class GPT(nn.Module):
                 assert sd_hf[k].shape[::-1] == sd[k].shape
                 with mag.no_grad():
                     copy(sd[k], sd_hf[k].T.contiguous())
-                    print(f'Copying weights for {k}')
             else:
                 assert sd_hf[k].shape == sd[k].shape
                 with mag.no_grad():
                     copy(sd[k], sd_hf[k].contiguous())
-                    print(f'Copying weights for {k}')
 
         return model
 
@@ -183,6 +176,6 @@ class GPT(nn.Module):
             logits = self(idx_cond)
             logits = logits[:, -1, :] / temp
             probs = logits.softmax(dim=-1)
-            idx_next = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1)
-            idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), idx_next), dim=1).tolist())
+            idx_next = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1) # TODO
+            idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), idx_next), dim=1).tolist()) # TODO
         return idx

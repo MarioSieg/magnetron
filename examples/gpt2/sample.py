@@ -2,11 +2,11 @@ import time
 
 import magnetron as mag
 import tiktoken
-from model import GPTConfig, GPT
+from model import GPTHParams, GPT
 
 mag.active_context().stop_grad_recorder()
 
-start = 'Hello, who are you?\n'
+start = 'What is the answer to life??'
 max_new_tokens = 64
 temp = 0.9
 
