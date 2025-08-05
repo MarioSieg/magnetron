@@ -28,7 +28,7 @@ static auto bench_op(dtype type) -> void {
             ankerl::nanobench::doNotOptimizeAway(r);
         });
     }};
-    run_cycle(10000);
+    run_cycle(2000);
     run_cycle(1000);
     run_cycle(750);
     run_cycle(500);

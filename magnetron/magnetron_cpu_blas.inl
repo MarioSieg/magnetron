@@ -67,6 +67,17 @@ typedef uint8_t mag_bool_t;
 #define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
 #define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
 
+#ifdef __AVX512F__ /* Vector register width in bytes */
+#define MAG_VREG_WIDTH 64
+#elif defined(__AVX__)
+#define MAG_VREG_WIDTH 32
+#elif defined(__SSE2__)
+#define MAG_VREG_WIDTH 16
+#elif defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+#else
+#error "Add support for your architecture here"
+#endif
+
 #if defined(_MSC_VER)
 typedef uint16_t __fp16; /* MSVC does not support __fp16. */
 #ifdef __AVX2__ /*MSVC does not define FMA and F16C with AVX 2*/
@@ -2454,12 +2465,6 @@ static void mag_mm_scratch_release(mag_mmscratch_t* _Nonnull sb) {
     sb->cap = 0;
 }
 
-#define MAG_MM_MR 8
-#define MAG_MM_NR 16
-#define MAG_MM_MC 256
-#define MAG_MM_KC 256
-#define MAG_MM_NC 128
-
 static MAG_AINLINE void mag_gemm8x8_e8m23(
     int64_t kc,
     const mag_e8m23_t *_Nonnull a,
@@ -2537,6 +2542,43 @@ static MAG_AINLINE void mag_gemm8x16_e8m23(
     mag_gemm8x8_e8m23(kc, a, lda, b+8, ldb, c+8, ldc, acc);
 }
 
+static int64_t mag_align_down(int64_t x, int64_t a) { return !(a & (a-1)) ? x&-a : x - x%a; }
+
+static void mag_tune_mm_block_sizes(
+    size_t sz,
+    size_t L1,
+    size_t L2,
+    int64_t* _Nonnull MR,
+    int64_t* _Nonnull NR,
+    int64_t* _Nonnull MC,
+    int64_t* _Nonnull KC,
+    int64_t* _Nonnull NC,
+    mag_e11m52_t aL1,
+    mag_e11m52_t aL2
+) {
+    if (mag_unlikely(!L1 || !L2 || !sz)) { /* No tuning possible use default values */
+        *MR = 8;
+        *NR = 16;
+        *MC = 256;
+        *KC = 256;
+        *NC = 128;
+        return;
+    }
+    aL1 = aL1 ? aL1 : 0.80; /* default: 80% of L1 */
+    aL2 = aL2 ? aL2 : 0.80; /* default: 80% of L2 */
+    *MR = MAG_VREG_WIDTH/sz;
+    *NR = *MR<<1;
+    *KC = mag_align_down((int64_t)(aL1*(mag_e11m52_t)L1 / (mag_e11m52_t)(sz * (*MR + *NR))), 8);
+    if (*KC < 8) *KC = 8;
+    size_t L2e = (size_t)(aL2*(mag_e11m52_t)L2 / (mag_e11m52_t)sz);
+    *MC = mag_align_down((int64_t)(L2e / *KC) - *NR, *MR);
+    if (*MC < *MR) *MC = *MR;
+    size_t used = *MC * *KC;
+    size_t free = L2e > used ? L2e - used : 0;
+    *NC = mag_align_down((int64_t)(free / *KC), *NR);
+    if (*NC < *NR) *NC = *NR;
+}
+
 MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull payload) {
     mag_tensor_t* r = payload->node;
     const mag_tensor_t* x = r->op_inputs[0];
@@ -2544,6 +2586,15 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
     const mag_e8m23_t* bx = mag_e8m23p(x);
     const mag_e8m23_t* by = mag_e8m23p(y);
     mag_e8m23_t* br = mag_e8m23p_mut(r);
+    const mag_context_t* ctx = r->ctx;
+    size_t L1 = ctx->machine.cpu_l1d_size;
+    size_t L2 = ctx->machine.cpu_l2_size;
+    int64_t MR = 8;
+    int64_t NR = 16;
+    int64_t MC = 256;
+    int64_t KC = 256;
+    int64_t NC = 128;
+    mag_tune_mm_block_sizes(sizeof(*br), L1, L2, &MR, &NR, &MC, &KC, &NC, 0.25, 0.25);
     int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
     int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
     int64_t K =  x->shape[x->rank-1];
@@ -2553,14 +2604,14 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
         batch_total *= r->shape[d];
     int64_t bdx = x->rank > 2 ? x->rank-2 : 0;
     int64_t bdy = y->rank > 2 ? y->rank-2 : 0;
-    int64_t tic = (M+MAG_MM_MC-1)/MAG_MM_MC;
-    int64_t tjc = (N+MAG_MM_NC-1)/MAG_MM_NC;
+    int64_t tic = (M+MC-1)/MC;
+    int64_t tjc = (N+NC-1)/NC;
     int64_t tpb = tic * tjc;
     int64_t tt = batch_total * tpb;
     static MAG_THREAD_LOCAL mag_mmscratch_t sb = {0};
-    mag_e8m23_t* scratch = mag_mm_scratch_acquire(&sb,  sizeof(*scratch)*(MAG_MM_KC*MAG_MM_NC + MAG_MM_MC*MAG_MM_KC));
+    mag_e8m23_t* scratch = mag_mm_scratch_acquire(&sb,  sizeof(*scratch)*(KC*NC + MC*KC));
     mag_e8m23_t* Bp = scratch;
-    mag_e8m23_t* Ap = Bp + MAG_MM_KC*MAG_MM_NC;
+    mag_e8m23_t* Ap = Bp + KC*NC;
     int64_t ti = payload->thread_idx;
     int64_t nt = payload->thread_num;
     bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
@@ -2587,12 +2638,12 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
         const mag_e8m23_t* px_base = bx + mag_offset_rmn(x, xb_flat, 0, 0);
         const mag_e8m23_t* py_base = by + mag_offset_rmn(y, yb_flat, 0, 0);
         mag_e8m23_t* pr_base = br + mag_offset_rmn(r, batch_idx, 0, 0);
-        int64_t i0 = ic*MAG_MM_MC;
-        int64_t mc = i0+MAG_MM_MC <= M ? MAG_MM_MC : M-i0;
-        int64_t j0 = jc*MAG_MM_NC;
-        int64_t nc = j0+MAG_MM_NC <= N ? MAG_MM_NC : N-j0;
-        for (int64_t pc=0; pc < K; pc += MAG_MM_KC) {
-            const int64_t kc = pc + MAG_MM_KC <= K ? MAG_MM_KC : K-pc;
+        int64_t i0 = ic*MC;
+        int64_t mc = i0+MC <= M ? MC : M-i0;
+        int64_t j0 = jc*NC;
+        int64_t nc = j0+NC <= N ? NC : N-j0;
+        for (int64_t pc=0; pc < K; pc += KC) {
+            const int64_t kc = pc + KC <= K ? KC : K-pc;
             bool acc = !!pc;
             if (y->rank == 1) {
                 for (int64_t k=0; k < kc; ++k) {
@@ -2621,10 +2672,10 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
                         Ap[i*kc + k] = px_base[baseM + (pc + k)*strideK];
                 }
             }
-            for (int64_t ir=0; ir < mc; ir += MAG_MM_MR) {
-                int64_t mr = ir + MAG_MM_MR <= mc ? MAG_MM_MR : mc-ir;
-                for (int64_t jr=0; jr < nc; jr += MAG_MM_NR) {
-                    int64_t nr = jr + MAG_MM_NR <= nc ? MAG_MM_NR : nc-jr;
+            for (int64_t ir=0; ir < mc; ir += MR) {
+                int64_t mr = ir + MR <= mc ? MR : mc-ir;
+                for (int64_t jr=0; jr < nc; jr += NR) {
+                    int64_t nr = jr + NR <= nc ? NR : nc-jr;
                     if (mr == 8 && nr == 16) { /* Hot Tile */
                         mag_gemm8x16_e8m23(kc, Ap + ir*kc, kc, Bp + jr, nc, pr_base + (i0 + ir)*N + (j0 + jr), N, acc);
                         continue;

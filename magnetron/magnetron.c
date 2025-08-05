@@ -619,7 +619,16 @@ static void mag_system_host_info_dump(mag_context_t* ctx) {
     #else
     #error "Unknwon CPU arch"
     #endif
-    mag_log_info("CPU: %s, Virtual Cores: %u, Physical Cores: %u, Sockets: %u", ctx->machine.cpu_name, ctx->machine.cpu_virtual_cores, ctx->machine.cpu_physical_cores, ctx->machine.cpu_sockets);
+    mag_log_info(
+        "CPU: %s, Virtual Cores: %u, Physical Cores: %u, Sockets: %u, L1D: %.01f KiB, L2: %.01f KiB, L3: %.01f MiB",
+        ctx->machine.cpu_name,
+        ctx->machine.cpu_virtual_cores,
+        ctx->machine.cpu_physical_cores,
+        ctx->machine.cpu_sockets,
+        (mag_e11m52_t)ctx->machine.cpu_l1d_size/1024.0,
+        (mag_e11m52_t) ctx->machine.cpu_l2_size/1024.0,
+        (mag_e11m52_t)ctx->machine.cpu_l3_size/1024.0/1024.0
+    );
     #if defined(__x86_64__) || defined(_M_X64) /* Print detected CPU features for x86-64 platforms. */
         if (mag_log_enabled) {
             printf(MAG_CC_CYAN "[magnetron] " MAG_CC_RESET "%s caps: ", cpu_arch);
@@ -1867,7 +1876,7 @@ static void mag_trim_quotes(char* in) {
 }
 #endif
 
-static void MAG_COLDPROC mag_machine_probe_os_name(char (*out_os_name)[128]) { /* Get OS name */
+static void mag_machine_probe_os_name(char (*out_os_name)[128]) { /* Get OS name */
     #ifdef _WIN32
 
     #elif defined(__APPLE__)
@@ -1944,7 +1953,7 @@ static void MAG_COLDPROC mag_machine_probe_os_name(char (*out_os_name)[128]) { /
     #endif
 }
 
-static void MAG_COLDPROC mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) { /* Get CPU name */
+static void mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) { /* Get CPU name */
     #ifdef _WIN32
         HKEY key;
         if (mag_unlikely(RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0, KEY_READ, &key))) return;
@@ -1965,7 +1974,7 @@ static void MAG_COLDPROC mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) {
     #endif
 }
 
-static void MAG_COLDPROC mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint32_t* out_physical, uint32_t* out_sockets) { /* Get CPU virtual (logical) cores. */
+static void mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint32_t* out_physical, uint32_t* out_sockets) { /* Get CPU virtual (logical) cores. */
     #ifdef _WIN32
         DWORD size = 0;
         GetLogicalProcessorInformation(NULL, &size);
@@ -2055,7 +2064,7 @@ static void MAG_COLDPROC mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint
     #endif
 }
 
-static void MAG_COLDPROC mag_machine_probe_memory(uint64_t* out_phys_mem_total, uint64_t* out_phys_mem_free) { /* Get physical memory */
+static void mag_machine_probe_memory(uint64_t* out_phys_mem_total, uint64_t* out_phys_mem_free) { /* Get physical memory */
     #ifdef _WIN32
         MEMORYSTATUSEX mem;
         mem.dwLength = sizeof(mem);
@@ -2086,6 +2095,71 @@ static void MAG_COLDPROC mag_machine_probe_memory(uint64_t* out_phys_mem_total, 
     #endif
 }
 
+#ifdef __linux__
+#include <dirent.h>
+#endif
+
+static size_t mag_query_cache_size(unsigned lvl, const char* wanted) {
+    #ifdef __linux__
+        char path[PATH_MAX];
+        char buf[64];
+        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache");
+        DIR *d = opendir(path);
+        if (!d) return 0;
+        struct dirent *e;
+        while ((e = readdir(d))) {
+            if (strncmp(e->d_name, "index", sizeof("index")-1)) continue;
+            unsigned idx = (unsigned)strtoul(e->d_name+sizeof("index")-1, NULL, 10);
+            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache/index%u/level", idx);
+            FILE* f = fopen(path, "r");
+            if (!f) continue;
+            unsigned lv = 0;
+            if (fgets(buf, sizeof(buf), f) == NULL) {
+                fclose(f);
+                continue;
+            }
+            fclose(f);
+            if (lv = (unsigned)strtoul(buf, NULL, 10), lv != lvl) continue;
+            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache/index%u/type", idx);
+            f = fopen(path, "r");
+            if (!f) continue;
+            if (fgets(buf, sizeof(buf), f) == NULL) {
+                fclose(f);
+                continue;
+            }
+            fclose(f);
+            buf[strcspn(buf, "\n")] = '\0';
+            if (strcmp(buf, wanted)) continue;     /* not the type we need */
+            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache/index%u/size", idx);
+            f = fopen(path, "r");
+            if (!f) continue;
+            unsigned long long v = 0; char suf = '\0';
+            if (fscanf(f, "%llu%c", &v, &suf) != 2) {
+                fclose(f);
+                continue;
+            }
+            fclose(f);
+            closedir(d);
+            switch (suf) {
+                case 'K': v *= 1ull<<10; break;
+                case 'M': v *= 1ull<<20; break;
+                case 'G': v *= 1ull<<30; break;
+                default: break;
+            }
+            return v; /* Return size in bytes */
+        }
+        closedir(d);
+        return 0;
+    #endif
+    return 0;
+}
+
+static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
+    *l1 = mag_query_cache_size(1, "Data");
+    *l2 = mag_query_cache_size(2, "Unified");
+    *l3 = mag_query_cache_size(3, "Unified");
+}
+
 #if defined(__x86_64__) || defined(_M_X64)
     static void mag_cpuid(uint32_t leaf, int32_t sub, uint32_t* oeax, uint32_t* oebx, uint32_t* oecx, uint32_t* oedx) {
         #ifdef _MSC_VER
@@ -2109,7 +2183,7 @@ static void MAG_COLDPROC mag_machine_probe_memory(uint64_t* out_phys_mem_total, 
             return (uint64_t)lo | ((uint64_t)hi << 32);
         #endif
     }
-    static void MAG_COLDPROC mag_system_info_query_amd64_cpu_caps(uint64_t* caps, bool* is_amd) {
+    static void mag_system_info_query_amd64_cpu_caps(uint64_t* caps, bool* is_amd) {
         *caps = 0;
         uint32_t regs[8][4] = {0};
 
@@ -2237,7 +2311,7 @@ static void MAG_COLDPROC mag_machine_probe_memory(uint64_t* out_phys_mem_total, 
     }
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
-static void MAG_COLDPROC mag_system_info_query_arm64_cpu_caps(uint64_t* caps, int64_t* sve_width) {
+static void mag_system_info_query_arm64_cpu_caps(uint64_t* caps, int64_t* sve_width) {
     *caps = MAG_ARM64_CAP_NONE;
     #ifdef __linux__
         unsigned long hwcap = getauxval(AT_HWCAP);
@@ -2287,11 +2361,12 @@ static void MAG_COLDPROC mag_system_info_query_arm64_cpu_caps(uint64_t* caps, in
 }
 #endif
 
-static void MAG_COLDPROC mag_machine_probe(mag_context_t* ctx) {
+static void mag_machine_probe(mag_context_t* ctx) {
     mag_machine_probe_os_name(&ctx->machine.os_name);
     mag_machine_probe_cpu_name(&ctx->machine.cpu_name);
     mag_machine_probe_cpu_cores(&ctx->machine.cpu_virtual_cores, &ctx->machine.cpu_physical_cores, &ctx->machine.cpu_sockets);
     mag_machine_probe_memory(&ctx->machine.phys_mem_total, &ctx->machine.phys_mem_free);
+    mag_machine_probe_caches(&ctx->machine.cpu_l1d_size, &ctx->machine.cpu_l2_size, &ctx->machine.cpu_l3_size);
     #if defined(__x86_64__) || defined(_M_X64)
         mag_system_info_query_amd64_cpu_caps(&ctx->machine.amd64_cpu_caps, &ctx->machine.is_amd);
     #elif defined(__aarch64__)

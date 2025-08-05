@@ -1014,33 +1014,36 @@ typedef enum mag_context_flags_t {
 
 struct mag_context_t {
     struct {
-        char os_name[128];                        /* OS name. */
-        char cpu_name[128];                       /* CPU name. */
-        uint32_t cpu_virtual_cores;               /* Virtual CPUs. */
-        uint32_t cpu_physical_cores;              /* Physical CPU cores. */
-        uint32_t cpu_sockets;                     /* CPU sockets. */
-        uint64_t phys_mem_total;                  /* Total physical memory in bytes. */
-        uint64_t phys_mem_free;                   /* Free physical memory in bytes. */
+        char os_name[128];                      /* OS name. */
+        char cpu_name[128];                     /* CPU name. */
+        uint32_t cpu_virtual_cores;             /* Virtual CPUs. */
+        uint32_t cpu_physical_cores;            /* Physical CPU cores. */
+        uint32_t cpu_sockets;                   /* CPU sockets. */
+        size_t cpu_l1d_size;                    /* L1 data cache size in bytes. */
+        size_t cpu_l2_size;                     /* L2 cache size in bytes. */
+        size_t cpu_l3_size;                     /* L3 cache size in bytes. */
+        size_t phys_mem_total;                  /* Total physical memory in bytes. */
+        size_t phys_mem_free;                   /* Free physical memory in bytes. */
 #if defined(__x86_64__) || defined(_M_X64)
-        uint64_t amd64_cpu_caps;                  /* x86-64 CPU features. Bitset of 1ull<<MAG_AMD64_CAP_* */
-        bool is_amd;                              /* Is AMD CPU? */
+        uint64_t amd64_cpu_caps;                /* x86-64 CPU features. Bitset of 1ull<<MAG_AMD64_CAP_* */
+        bool is_amd;                            /* Is AMD CPU? */
 #elif defined (__aarch64__) || defined(_M_ARM64)
-        uint64_t arm64_cpu_caps;                  /* ARM64 CPU features. */
-        int64_t arm64_cpu_sve_width;              /* ARM64 SVE vector register width. */
+        uint64_t arm64_cpu_caps;                /* ARM64 CPU features. */
+        int64_t arm64_cpu_sve_width;            /* ARM64 SVE vector register width. */
 #endif
     } machine;
     size_t num_tensors;                         /* Total tensor instances allocated. */
     size_t num_storages;                        /* Total storage buffers allocated. */
-    mag_fixed_pool_t tensor_pool;                       /* Tensor struct memory pool. */
-    mag_fixed_pool_t storage_pool;                      /* Storage struct memory pool. */
-    mag_fixed_pool_t view_meta_pool;                      /* Storage struct memory pool. */
-    mag_context_flags_t flags;                     /* Context flags. */
-    mag_prngalgo_t prng_algo;                     /* Active PRNG algorithm. */
+    mag_fixed_pool_t tensor_pool;               /* Tensor struct memory pool. */
+    mag_fixed_pool_t storage_pool;              /* Storage struct memory pool. */
+    mag_fixed_pool_t view_meta_pool;            /* Storage struct memory pool. */
+    mag_context_flags_t flags;                  /* Context flags. */
+    mag_prngalgo_t prng_algo;                   /* Active PRNG algorithm. */
     uintptr_t tr_id;                            /* Context thread ID. */
     size_t sh_len;                              /* Number of shutdown hooks. */
     size_t sh_cap;                              /* Maximum number of shutdown hooks. */
-    mag_device_type_t device_type;          /* Active compute device type. */
-    mag_idevice_t* _Nonnull device;        /* Active compute device interface. */
+    mag_device_type_t device_type;              /* Active compute device type. */
+    mag_idevice_t* _Nonnull device;             /* Active compute device interface. */
     void* _Nullable ud;                         /* User data. */
 #ifdef MAG_DEBUG
     mag_tensor_t* _Nullable alive_head;           /* List of alive tensors used for leak detection. */
