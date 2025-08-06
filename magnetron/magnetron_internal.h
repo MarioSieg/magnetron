@@ -1127,6 +1127,11 @@ typedef struct mag_kernel_payload_t {
     mag_tensor_t* _Nullable node;                   /* Result tensor. Stores input tensors and all other op-specific data. */
     mag_exec_stage_t stage;                         /* Graph evaluation type. */
     mag_prng_state_t* _Nonnull local_prng;          /* Thread-local CPU PRNG state. */
+    int64_t MR;
+    int64_t NR;
+    int64_t MC;
+    int64_t KC;
+    int64_t NC;
 } mag_kernel_payload_t;
 
 /*
@@ -1139,6 +1144,7 @@ typedef struct mag_kernel_registry_t {
     void (*_Nonnull init[MAG_IOP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t* _Nonnull);      /* Initialization operator kernels. */
     void (*_Nonnull eval[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t* _Nonnull);       /* Eval operator kernels. */
     void (*_Nonnull vector_cast)(size_t nb, const void* _Nonnull src, mag_dtype_t src_t, void* _Nonnull dst, mag_dtype_t dst_t); /* Vector cast (dtype conversion) kernel. */
+    size_t (*_Nonnull vreg_width)(void);
 } mag_kernel_registry_t;
 
 /* Combine two hash values. */
@@ -1152,6 +1158,23 @@ extern uint32_t mag_crc32c(const void* _Nonnull buffer, size_t size); /* Compute
 extern bool mag_solve_view_strides(int64_t (*_Nonnull out)[MAG_MAX_DIMS], const int64_t* _Nonnull osz, const int64_t* _Nonnull ost, int64_t ork, const int64_t* _Nonnull nsz, int64_t nrk);
 extern void mag_infer_missing_dim(int64_t (*_Nonnull out)[MAG_MAX_DIMS], const int64_t* _Nonnull dims, int64_t rank, int64_t numel);
 extern bool mag_compute_broadcast_shape(const mag_tensor_t* _Nonnull a, const mag_tensor_t* _Nonnull b, int64_t* _Nonnull dims, int64_t* _Nonnull rank);
+extern void mag_tune_mm_block_sizes(
+    int64_t nthreads,
+    int64_t sz,
+    int64_t vrw,
+    int64_t M,
+    int64_t N,
+    int64_t K,
+    int64_t L1,
+    int64_t L2,
+    int64_t* _Nonnull MR,
+    int64_t* _Nonnull NR,
+    int64_t* _Nonnull MC,
+    int64_t* _Nonnull KC,
+    int64_t* _Nonnull NC,
+    mag_e11m52_t aL1,
+    mag_e11m52_t aL2
+);
 
 #ifdef __cplusplus
 }

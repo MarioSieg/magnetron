@@ -2580,6 +2580,59 @@ static MAG_AINLINE void mag_mm_tile_8x32_e8m23(
     mag_mm_tile_8x16_e8m23(kc, a, lda, b+16, ldb, c+16, ldc, acc);
 }
 
+static MAG_AINLINE void mag_mm_tile_1x8_e8m23(int64_t kc, const mag_e8m23_t* a, const mag_e8m23_t* b, ptrdiff_t ldb, mag_e8m23_t* c, bool acc) {
+    #if defined(__AVX__) && defined(__FMA__)
+        __m256 C0 = acc ? _mm256_loadu_ps(c) : _mm256_setzero_ps();
+        for (int64_t k=0; k < kc; ++k) {
+            __m256 A = _mm256_broadcast_ss(a + k);
+            __m256 B0 = _mm256_loadu_ps(b + k*ldb + 0);
+            C0 = _mm256_fmadd_ps(A, B0, C0);
+        }
+        _mm256_storeu_ps(c, C0);
+    #else
+        #pragma GCC unroll 8
+        for (int64_t j=0; j < 8; ++j)
+            c[j] = acc ? c[j] : 0.f;
+        for (int64_t k=0; k < kc; ++k) {
+            mag_e8m23_t a0 = a[k];
+            #pragma GCC unroll 8
+            for (int64_t j=0; j < 8; ++j)
+                c[j] += a0*b[k*ldb + j];
+        }
+    #endif
+    }
+
+static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* a, const mag_e8m23_t* b, ptrdiff_t ldb, mag_e8m23_t* c,bool acc) {
+    #if defined(__AVX__) && defined(__FMA__)
+        __m256 C0 = acc ? _mm256_loadu_ps(c) : _mm256_setzero_ps();
+        __m256 C1 = acc ? _mm256_loadu_ps(c+8) : _mm256_setzero_ps();
+        for (int64_t k=0; k < kc; ++k) {
+            __m256 A = _mm256_broadcast_ss(a + k);
+            __m256 B0 = _mm256_loadu_ps(b + k*ldb + 0);
+            __m256 B1 = _mm256_loadu_ps(b + k*ldb + 8);
+            C0 = _mm256_fmadd_ps(A, B0, C0);
+            C1 = _mm256_fmadd_ps(A, B1, C1);
+        }
+        _mm256_storeu_ps(c + 0, C0);
+        _mm256_storeu_ps(c + 8, C1);
+    #else
+        #pragma GCC unroll 16
+        for (int64_t j=0; j < 16; ++j)
+            c[j] = acc ? c[j] : 0.f;
+        for (int64_t k=0; k < kc; ++k) {
+            mag_e8m23_t a0 = a[k];
+            #pragma GCC unroll 16
+            for (int64_t j=0; j < 16; ++j)
+                c[j] += a0*b[k*ldb + j];
+        }
+    #endif
+}
+
+static MAG_AINLINE void mag_mm_tile_1x32_e8m23(int64_t kc, const mag_e8m23_t* a, const mag_e8m23_t* b, ptrdiff_t ldb, mag_e8m23_t *c,  bool acc) {
+    mag_mm_tile_1x16_e8m23(kc, a, b, ldb, c, acc);
+    mag_mm_tile_1x16_e8m23(kc, a, b+16, ldb, c+16, acc);
+}
+
 static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const mag_e8m23_t* _Nonnull restrict Bsrc, ptrdiff_t strideK, ptrdiff_t strideN, mag_e8m23_t* _Nonnull restrict Bp) {
     if (strideN == 1) {
         for (int64_t k=0; k < kc; ++k) {
@@ -2687,44 +2740,6 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
     #endif
 }
 
-
-static int64_t mag_align_down(int64_t x, int64_t a) { return !(a & (a-1)) ? x&-a : x - x%a; }
-
-static void mag_tune_mm_block_sizes(
-    size_t sz,
-    size_t L1,
-    size_t L2,
-    int64_t* _Nonnull MR,
-    int64_t* _Nonnull NR,
-    int64_t* _Nonnull MC,
-    int64_t* _Nonnull KC,
-    int64_t* _Nonnull NC,
-    mag_e11m52_t aL1,
-    mag_e11m52_t aL2
-) {
-    if (mag_unlikely(!L1 || !L2 || !sz)) { /* No tuning possible use default values */
-        *MR = 8;
-        *NR = 16;
-        *MC = 256;
-        *KC = 256;
-        *NC = 128;
-        return;
-    }
-    aL1 = aL1 ? aL1 : 0.80; /* default: 80% of L1 */
-    aL2 = aL2 ? aL2 : 0.80; /* default: 80% of L2 */
-    *MR = MAG_VREG_WIDTH/sz;
-    *NR = *MR<<1;
-    *KC = mag_align_down((int64_t)(aL1*(mag_e11m52_t)L1 / (mag_e11m52_t)(sz * (*MR + *NR))), 8);
-    if (*KC < 8) *KC = 8;
-    size_t L2e = (size_t)(aL2*(mag_e11m52_t)L2 / (mag_e11m52_t)sz);
-    *MC = mag_align_down((int64_t)(L2e / *KC) - *NR, *MR);
-    if (*MC < *MR) *MC = *MR;
-    size_t used = *MC * *KC;
-    size_t free = L2e > used ? L2e - used : 0;
-    *NC = mag_align_down((int64_t)(free / *KC), *NR);
-    if (*NC < *NR) *NC = *NR;
-}
-
 MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull payload) {
     mag_tensor_t* r = payload->node;
     const mag_tensor_t* x = r->op_inputs[0];
@@ -2732,18 +2747,13 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
     const mag_e8m23_t* bx = mag_e8m23p(x);
     const mag_e8m23_t* by = mag_e8m23p(y);
     mag_e8m23_t* br = mag_e8m23p_mut(r);
-    const mag_context_t* ctx = r->ctx;
-    size_t L1 = ctx->machine.cpu_l1d_size;
-    size_t L2 = ctx->machine.cpu_l2_size;
-    int64_t MR = 8;
-    int64_t NR = 16;
-    int64_t MC = 256;
-    int64_t KC = 256;
-    int64_t NC = 128;
-    mag_tune_mm_block_sizes(sizeof(*br), L1, L2, &MR, &NR, &MC, &KC, &NC, 0.90, 0.90);
+    int64_t MR = payload->MR;
+    int64_t MC = payload->MC;
+    int64_t KC = payload->KC;
+    int64_t NC = payload->NC;
     int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
     int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
-    int64_t K =  x->shape[x->rank-1];
+    int64_t K = x->shape[x->rank-1];
     int64_t bdr = r->rank > 2 ? r->rank - 2 : 0;
     int64_t batch_total = 1;
     for (int64_t d=0; d < bdr; ++d)
@@ -2813,6 +2823,44 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
                 int64_t mr = mag_xmin(MR, mc - ir);
                 for (int64_t jr=0; jr < nc; jr += 32) {
                     int64_t nr = mag_xmin(32, nc - jr);
+                    if (mr < 8) {
+                        switch (nr) {
+                            case 32: {
+                                for (int64_t i2=0; i2 < mr; ++i2) {
+                                    const mag_e8m23_t* ap = Ap + (ir + i2)*kc;
+                                    mag_e8m23_t* cp = pr_base + (i0 + ir + i2)*N + (j0 + jr);
+                                    mag_mm_tile_1x32_e8m23(kc, ap, Bp + jr, nc, cp, acc);
+                                }
+                            } continue;
+                            case 16: {
+                                for (int64_t i2=0; i2 < mr; ++i2) {
+                                    const mag_e8m23_t* ap = Ap + (ir + i2)*kc;
+                                    mag_e8m23_t* cp = pr_base + (i0 + ir + i2)*N + (j0 + jr);
+                                    mag_mm_tile_1x16_e8m23(kc, ap, Bp + jr, nc, cp, acc);
+                                }
+                            } continue;
+                            case 8: {
+                                for (int64_t i2=0; i2 < mr; ++i2) {
+                                    const mag_e8m23_t* ap = Ap + (ir + i2)*kc;
+                                    mag_e8m23_t* cp = pr_base + (i0 + ir + i2)*N + (j0 + jr);
+                                    mag_mm_tile_1x8_e8m23(kc, ap, Bp + jr, nc, cp, acc);
+                                }
+                            } continue;
+                            default: {
+                                for (int64_t i2 = 0; i2 < mr; ++i2) {
+                                    const mag_e8m23_t *ap = Ap + (ir + i2)*kc;
+                                    mag_e8m23_t* cp = pr_base + (i0 + ir + i2)*N + (j0 + jr);
+                                    mag_e8m23_t sum;
+                                    for (int64_t j2=0; j2 < nr; ++j2) {
+                                        sum = acc ? cp[j2] : 0.f;
+                                        for (int64_t k=0; k < kc; ++k)
+                                            sum += ap[k]*Bp[k*nc + (jr + j2)];
+                                        cp[j2] = sum;
+                                    }
+                                }
+                            } continue;
+                        }
+                    }
                     if (mr == 8 && nr == 32) {
                         mag_mm_tile_8x32_e8m23(kc,
                             Ap + ir*kc, kc,
@@ -3402,6 +3450,10 @@ static void MAG_HOTPROC mag_vector_cast_stub(size_t nb, const void* _Nonnull src
     (*kern)(numel, dst, src);
 }
 
+static size_t mag_vreg_width(void) {
+    return MAG_VREG_WIDTH;
+}
+
 void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t* _Nonnull kernels) {
     for (int i=0; i < MAG_IOP__NUM; ++i)
         for (int j=0; j < MAG_DTYPE__NUM; ++j)
@@ -3412,4 +3464,5 @@ void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t* _Nonnull kernels) {
         }
     }
     kernels->vector_cast = &mag_vector_cast_stub;
+    kernels->vreg_width = &mag_vreg_width;
 }

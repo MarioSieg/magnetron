@@ -3,19 +3,20 @@
 import numpy as np
 import time
 
-N = 10000
-A = np.random.rand(N//2, N).astype(dtype=np.float32)
-B = np.random.rand(N, N//2).astype(dtype=np.float32)
+A = np.random.rand(7, 768, 3072).astype(dtype=np.float32)
+B = np.random.rand(7, 3072, 768).astype(dtype=np.float32)
 
-flop = 2 * N**3
-avg = 0
+batch, M, K = 7, 768, 3072
+N = 768
+flops = 2 * batch * M * N * K
+acc = 0
 I = 10
 for _ in range(I):
-    st = time.monotonic()
+    t0 = time.perf_counter()
     C = A @ B
-    et = time.monotonic()
-    s = et - st
-    print(f'{flop / s * 1e-12} TFLOP/s')
-    avg += flop / s
+    t1 = time.perf_counter()
+    gflops = flops / (t1 - t0) / 1e9
+    print(f"{gflops:.1f}GFLOP/s")
+    acc += gflops
 
-print(f'Average: {avg / I * 1e-12} TFLOP/s')
+print("Average:", acc / 10, "GFLOP/s")

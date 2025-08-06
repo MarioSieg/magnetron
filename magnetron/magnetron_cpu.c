@@ -317,12 +317,59 @@ static MAG_HOTPROC void mag_threadpool_parallel_compute(mag_thread_pool_t* pool,
 
 static uint32_t mag_cpu_dynamic_work_scaling(mag_cpu_device_t* dvc, mag_opcode_t op, int64_t numel);
 
-static MAG_HOTPROC void mag_cpu_exec(mag_idevice_t* dvc, mag_exec_stage_t stage, mag_tensor_t* node) {
+static uint32_t mag_mm_choose_workers(uint64_t flops, uint32_t tiles_total, uint32_t max_threads) {
+    if (flops < 0x800000) return 1;
+    uint32_t threads = mag_xmin(max_threads, tiles_total);
+    uint32_t ideal_threads = (uint32_t)(flops / 0x400000);
+    if (ideal_threads < 1) ideal_threads = 1;
+    threads = mag_xmin(threads, ideal_threads);
+    if (threads & (threads-1))
+        threads = 1u<<(31-__builtin_clz(threads));
+    return threads ? threads : 1;
+}
+
+static uint32_t mag_cpu_tune_heuristics_intraop_workers(mag_exec_stage_t stage, mag_tensor_t* node, mag_idevice_t* dvc) {
     mag_cpu_device_t* cpu_dvc = dvc->impl;
+    if (stage == MAG_STAGE_INIT) return 1;
+    if (node->op == MAG_OP_MATMUL) {
+        const mag_tensor_t* x = node->op_inputs[0];
+        const mag_tensor_t* y = node->op_inputs[1];
+        int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
+        int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
+        int64_t K = x->shape[x->rank-1];
+        int64_t MC = 0, NC = 0, KC = 0, MR = 0, NR = 0;
+        mag_tune_mm_block_sizes(
+            cpu_dvc->num_allocated_workers,
+            (int64_t)x->storage->granularity,
+            (int64_t)(*cpu_dvc->kernels.vreg_width)(),
+            M, N, K,
+            (int64_t)dvc->ctx->machine.cpu_l1d_size,
+            (int64_t)dvc->ctx->machine.cpu_l2_size,
+            &MR, &NR, &MC, &KC, &NC,
+            0.0, 0.0
+        );
+        for (uint32_t i=0; i < cpu_dvc->pool->num_allocated_workers; ++i) { /* Set up payload */
+            mag_kernel_payload_t* payload = &cpu_dvc->pool->workers[i].payload;
+            payload->MC = MC;
+            payload->NC = NC;
+            payload->KC = KC;
+            payload->MR = MR;
+            payload->NR = NR;
+        }
+        int64_t flops = M*N*K;
+        uint32_t tiles_total = (uint32_t)(((M + MC - 1)/MC)*((N + NC - 1)/NC));
+        return mag_mm_choose_workers(flops, tiles_total, cpu_dvc->num_allocated_workers);
+    }
     int64_t tune_numel = node->numel;
     for (int i=0; i < MAG_MAX_OP_INPUTS; ++i)
-        if (node->op_inputs[i]) tune_numel = mag_xmax(tune_numel, node->op_inputs[i]->numel); /* Tune numel to max of all inputs */
-    uint32_t intraop_workers = stage == MAG_STAGE_INIT ? 0 : mag_cpu_dynamic_work_scaling(cpu_dvc, node->op, tune_numel);   /* Use thread count recommended by pre-kernel or compute general thread count heuristic. */
+        if (node->op_inputs[i])
+            tune_numel = mag_xmax(tune_numel, node->op_inputs[i]->numel); /* Tune numel to max of all inputs */
+    return mag_cpu_dynamic_work_scaling(cpu_dvc, node->op, tune_numel);
+}
+
+static MAG_HOTPROC void mag_cpu_exec(mag_idevice_t* dvc, mag_exec_stage_t stage, mag_tensor_t* node) {
+    mag_cpu_device_t* cpu_dvc = dvc->impl;
+    uint32_t intraop_workers = mag_cpu_tune_heuristics_intraop_workers(stage, node, dvc); /* Determine number of intra-op workers */
     if (intraop_workers <= 1) { /* Main thread does the work (single threaded mode). */
         volatile mag_atomic64_t next_tile = 0; /* Tile index for the next tile to process. */
         mag_kernel_payload_t payload = {
@@ -331,7 +378,12 @@ static MAG_HOTPROC void mag_cpu_exec(mag_idevice_t* dvc, mag_exec_stage_t stage,
             .thread_num = 1,
             .stage = stage,
             .local_prng = &cpu_dvc->primary_prng,
-            .next_mm_tile = &next_tile
+            .next_mm_tile = &next_tile,
+            .MR=8,
+            .NR=16,
+            .MC=256,
+            .KC=256,
+            .NC=128
         };
         mag_worker_exec_thread_local(&cpu_dvc->kernels, &payload);
         return; /* We're done */
