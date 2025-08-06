@@ -358,7 +358,9 @@ static uint32_t mag_cpu_tune_heuristics_intraop_workers(mag_exec_stage_t stage, 
         }
         int64_t flops = M*N*K;
         uint32_t tiles_total = (uint32_t)(((M + MC - 1)/MC)*((N + NC - 1)/NC));
-        return mag_mm_choose_workers(flops, tiles_total, cpu_dvc->num_allocated_workers);
+        uint32_t nt = mag_mm_choose_workers(flops, tiles_total, cpu_dvc->num_allocated_workers);
+        /*printf("MM nt: %u, M=%" PRId64 ", N=%" PRId64 ", K=%" PRId64 ", MC=%" PRId64 ", NC=%" PRId64 ", KC=%" PRId64 ", MR=%" PRId64 ", NR=%" PRId64 "\n", nt, M, N, K, MC, NC, KC, MR, NR);*/
+        return nt;
     }
     int64_t tune_numel = node->numel;
     for (int i=0; i < MAG_MAX_OP_INPUTS; ++i)
