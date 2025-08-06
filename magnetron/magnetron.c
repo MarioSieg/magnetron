@@ -2064,7 +2064,7 @@ static void mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint32_t* out_phy
     #endif
 }
 
-static void mag_machine_probe_memory(uint64_t* out_phys_mem_total, uint64_t* out_phys_mem_free) { /* Get physical memory */
+static void mag_machine_probe_memory(size_t* out_phys_mem_total, size_t* out_phys_mem_free) { /* Get physical memory */
     #ifdef _WIN32
         MEMORYSTATUSEX mem;
         mem.dwLength = sizeof(mem);

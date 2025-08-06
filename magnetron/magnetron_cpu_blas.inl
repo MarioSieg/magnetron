@@ -74,6 +74,7 @@ typedef uint8_t mag_bool_t;
 #elif defined(__SSE2__)
 #define MAG_VREG_WIDTH 16
 #elif defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+#define MAG_VREG_WIDTH 16
 #else
 #error "Add support for your architecture here"
 #endif
@@ -2439,11 +2440,11 @@ static void mag_mm_scratch_release(mag_mmscratch_t* _Nonnull sb) {
 
 static MAG_AINLINE void mag_mm_tile_8x8_e8m23(
     int64_t kc,
-    const mag_e8m23_t *_Nonnull a,
+    const mag_e8m23_t* _Nonnull a,
     ptrdiff_t lda,
-    const mag_e8m23_t *_Nonnull b,
+    const mag_e8m23_t* _Nonnull b,
     ptrdiff_t ldb,
-    mag_e8m23_t *_Nonnull c,
+    mag_e8m23_t* _Nonnull c,
     ptrdiff_t ldc,
     bool acc
 ) {
@@ -2512,11 +2513,11 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(
 
 static MAG_AINLINE void mag_mm_tile_8x16_e8m23(
     int64_t kc,
-    const mag_e8m23_t *_Nonnull a,
+    const mag_e8m23_t* _Nonnull a,
     ptrdiff_t lda,
-    const mag_e8m23_t *_Nonnull b,
+    const mag_e8m23_t* _Nonnull b,
     ptrdiff_t ldb,
-    mag_e8m23_t *_Nonnull c,
+    mag_e8m23_t* _Nonnull c,
     ptrdiff_t ldc,
     bool acc
 ) {
@@ -2526,11 +2527,11 @@ static MAG_AINLINE void mag_mm_tile_8x16_e8m23(
 
 static MAG_AINLINE void mag_mm_tile_8x32_e8m23(
     int64_t kc,
-    const mag_e8m23_t *_Nonnull a,
+    const mag_e8m23_t* _Nonnull a,
     ptrdiff_t lda,
-    const mag_e8m23_t *_Nonnull b,
+    const mag_e8m23_t* _Nonnull b,
     ptrdiff_t ldb,
-    mag_e8m23_t *_Nonnull c,
+    mag_e8m23_t* _Nonnull c,
     ptrdiff_t ldc,
     bool acc
 ) {
@@ -2538,7 +2539,7 @@ static MAG_AINLINE void mag_mm_tile_8x32_e8m23(
     mag_mm_tile_8x16_e8m23(kc, a, lda, b+16, ldb, c+16, ldc, acc);
 }
 
-static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const mag_e8m23_t *restrict Bsrc, ptrdiff_t strideK, ptrdiff_t strideN, mag_e8m23_t* restrict Bp) {
+static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const mag_e8m23_t* _Nonnull restrict Bsrc, ptrdiff_t strideK, ptrdiff_t strideN, mag_e8m23_t* _Nonnull restrict Bp) {
     if (strideN == 1) {
         for (int64_t k=0; k < kc; ++k) {
             const mag_e8m23_t* src = Bsrc + k*strideK;
@@ -2582,7 +2583,7 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const 
     }
 }
 
-static MAG_AINLINE void mag_mm_pack_A_mr8_kc_e8m23(int64_t kc, const mag_e8m23_t* restrict Asrc, ptrdiff_t strideK, mag_e8m23_t* restrict Ap) {
+static MAG_AINLINE void mag_mm_pack_A_mr8_kc_e8m23(int64_t kc, const mag_e8m23_t* _Nonnull restrict Asrc, ptrdiff_t strideK, mag_e8m23_t* _Nonnull restrict Ap) {
     if (strideK == 1) {
         #if defined(__AVX2__)
             #pragma GCC unroll 8
@@ -2614,7 +2615,7 @@ static MAG_AINLINE void mag_mm_pack_A_mr8_kc_e8m23(int64_t kc, const mag_e8m23_t
         }
     }
 }
-static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const mag_e8m23_t* restrict yvec, mag_e8m23_t* restrict Bp) {
+static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const mag_e8m23_t* _Nonnull restrict yvec, mag_e8m23_t* _Nonnull restrict Bp) {
     #if defined(__AVX2__)
         for (int64_t k=0; k < kc; ++k) {
             __m256 val = _mm256_broadcast_ss(yvec + k);
