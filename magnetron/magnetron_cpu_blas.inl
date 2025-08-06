@@ -2580,7 +2580,7 @@ static MAG_AINLINE void mag_mm_tile_8x32_e8m23(
     mag_mm_tile_8x16_e8m23(kc, a, lda, b+16, ldb, c+16, ldc, acc);
 }
 
-static MAG_AINLINE void mag_mm_tile_1x8_e8m23(int64_t kc, const mag_e8m23_t* a, const mag_e8m23_t* b, ptrdiff_t ldb, mag_e8m23_t* c, bool acc) {
+static MAG_AINLINE void mag_mm_tile_1x8_e8m23(int64_t kc, const mag_e8m23_t* _Nonnull a, const mag_e8m23_t* _Nonnull b, ptrdiff_t ldb, mag_e8m23_t* _Nonnull c, bool acc) {
     #if defined(__AVX__) && defined(__FMA__)
         __m256 C0 = acc ? _mm256_loadu_ps(c) : _mm256_setzero_ps();
         for (int64_t k=0; k < kc; ++k) {
@@ -2602,7 +2602,7 @@ static MAG_AINLINE void mag_mm_tile_1x8_e8m23(int64_t kc, const mag_e8m23_t* a, 
     #endif
     }
 
-static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* a, const mag_e8m23_t* b, ptrdiff_t ldb, mag_e8m23_t* c,bool acc) {
+static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* _Nonnull a, const mag_e8m23_t* _Nonnull b, ptrdiff_t ldb, mag_e8m23_t* _Nonnull c,bool acc) {
     #if defined(__AVX__) && defined(__FMA__)
         __m256 C0 = acc ? _mm256_loadu_ps(c) : _mm256_setzero_ps();
         __m256 C1 = acc ? _mm256_loadu_ps(c+8) : _mm256_setzero_ps();
@@ -2628,7 +2628,7 @@ static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* a,
     #endif
 }
 
-static MAG_AINLINE void mag_mm_tile_1x32_e8m23(int64_t kc, const mag_e8m23_t* a, const mag_e8m23_t* b, ptrdiff_t ldb, mag_e8m23_t *c,  bool acc) {
+static MAG_AINLINE void mag_mm_tile_1x32_e8m23(int64_t kc, const mag_e8m23_t* _Nonnull a, const mag_e8m23_t* _Nonnull b, ptrdiff_t ldb, mag_e8m23_t* _Nonnull c,  bool acc) {
     mag_mm_tile_1x16_e8m23(kc, a, b, ldb, c, acc);
     mag_mm_tile_1x16_e8m23(kc, a, b+16, ldb, c+16, acc);
 }
