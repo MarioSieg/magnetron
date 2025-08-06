@@ -278,7 +278,7 @@ static void mag_threadpool_destroy(mag_thread_pool_t* pool) {
 }
 
 /* Submits work payload and awakens all threads */
-static void mag_threadpool_kickoff(mag_thread_pool_t* pool, mag_tensor_t* node, mag_exec_stage_t stage, uint32_t num_active_workers) {
+static void mag_threadpool_kickoff(mag_thread_pool_t* pool, mag_tensor_t* node, mag_exec_stage_t stage, uint32_t num_active_workers, volatile mag_atomic64_t* next_tile) {
     mag_mutex_lock(&pool->mtx);
     pool->num_active_workers = num_active_workers;
     for (uint32_t i=0; i < pool->num_allocated_workers; ++i) { /* Set up payload */
@@ -286,6 +286,7 @@ static void mag_threadpool_kickoff(mag_thread_pool_t* pool, mag_tensor_t* node, 
         payload->thread_num = num_active_workers;
         payload->node = node;
         payload->stage = stage;
+        payload->next_mm_tile = next_tile;
     }
     ++pool->phase;
     pool->num_completed = 0; /* Reset completion counter */
@@ -307,7 +308,8 @@ static void mag_threadpool_barrier(mag_thread_pool_t* pool) {
 /* Execute an operator tensor on the CPU */
 static MAG_HOTPROC void mag_threadpool_parallel_compute(mag_thread_pool_t* pool, mag_tensor_t* node, mag_exec_stage_t stage, uint32_t num_active_workers) {
     mag_assert2(pool != NULL);
-    mag_threadpool_kickoff(pool, node, stage, num_active_workers);               /* Kick off workers */
+    volatile mag_atomic64_t next_tile = 0;
+    mag_threadpool_kickoff(pool, node, stage, num_active_workers, &next_tile);               /* Kick off workers */
     mag_cv_broadcast(&pool->cv);                                                    /* Wake up all workers */
     mag_worker_exec_and_broadcast(pool, pool->kernels, &pool->workers->payload);    /* Main thread does work too */
     mag_threadpool_barrier(pool);                                                   /* Wait for all workers to finish */
@@ -322,12 +324,14 @@ static MAG_HOTPROC void mag_cpu_exec(mag_idevice_t* dvc, mag_exec_stage_t stage,
         if (node->op_inputs[i]) tune_numel = mag_xmax(tune_numel, node->op_inputs[i]->numel); /* Tune numel to max of all inputs */
     uint32_t intraop_workers = stage == MAG_STAGE_INIT ? 0 : mag_cpu_dynamic_work_scaling(cpu_dvc, node->op, tune_numel);   /* Use thread count recommended by pre-kernel or compute general thread count heuristic. */
     if (intraop_workers <= 1) { /* Main thread does the work (single threaded mode). */
+        volatile mag_atomic64_t next_tile = 0; /* Tile index for the next tile to process. */
         mag_kernel_payload_t payload = {
             .node = node,
             .thread_idx = 0,
             .thread_num = 1,
             .stage = stage,
-            .local_prng = &cpu_dvc->primary_prng
+            .local_prng = &cpu_dvc->primary_prng,
+            .next_mm_tile = &next_tile
         };
         mag_worker_exec_thread_local(&cpu_dvc->kernels, &payload);
         return; /* We're done */

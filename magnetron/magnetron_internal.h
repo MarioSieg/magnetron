@@ -1120,11 +1120,12 @@ void mag_prng_seed(mag_prng_state_t* _Nonnull prng, mag_prngalgo_t algo, uint64_
 
 /* CPU Compute kernel payload passed to each CPU thread. */
 typedef struct mag_kernel_payload_t {
-    int64_t thread_num;                     /* Total number of threads involved. */
-    int64_t thread_idx;                     /* Current thread index used to compute thread-local partition. */
-    mag_tensor_t* _Nullable node;             /* Result tensor. Stores input tensors and all other op-specific data. */
-    mag_exec_stage_t stage;                    /* Graph evaluation type. */
-    mag_prng_state_t* _Nonnull local_prng;     /* Thread-local CPU PRNG state. */
+    int64_t thread_num;                             /* Total number of threads involved. */
+    int64_t thread_idx;                             /* Current thread index used to compute thread-local partition. */
+    volatile mag_atomic64_t* _Nonnull next_mm_tile;    /* Pointer to next tile index. Used for parallel execution of kernels. */
+    mag_tensor_t* _Nullable node;                   /* Result tensor. Stores input tensors and all other op-specific data. */
+    mag_exec_stage_t stage;                         /* Graph evaluation type. */
+    mag_prng_state_t* _Nonnull local_prng;          /* Thread-local CPU PRNG state. */
 } mag_kernel_payload_t;
 
 /*

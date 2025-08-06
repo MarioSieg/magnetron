@@ -2716,15 +2716,15 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
     mag_e8m23_t* scratch = mag_mm_scratch_acquire(&sb,  sizeof(*scratch)*(KC*NC + MC*KC));
     mag_e8m23_t* Bp = scratch;
     mag_e8m23_t* Ap = Bp + KC*NC;
-    int64_t ti = payload->thread_idx;
-    int64_t nt = payload->thread_num;
     bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
-    for (int64_t tile=ti; tile < tt; tile += nt) {
+    for (;;) {
+        int64_t tile = mag_atomic_fetch_add(payload->next_mm_tile, 1, MAG_MO_RELAXED);
+        if (tile >= tt) break;
         int64_t batch_idx = tile / tpb;
         int64_t rem = tile % tpb;
         int64_t jc = rem % tjc;
         int64_t ic = rem / tjc;
-        int64_t idx_r[18] = {0};
+        int64_t idx_r[MAG_MAX_DIMS] = {0};
         for (int64_t d=bdr-1, t=batch_idx; d >= 0; --d) {
             idx_r[d] = t % r->shape[d];
             t /= r->shape[d];
