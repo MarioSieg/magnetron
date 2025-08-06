@@ -356,6 +356,8 @@ static uint32_t mag_cpu_tune_heuristics_intraop_workers(mag_exec_stage_t stage, 
             payload->MR = MR;
             payload->NR = NR;
         }
+        if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) /* GEMV special case */
+            return 1;
         int64_t flops = M*N*K;
         uint32_t tiles_total = (uint32_t)(((M + MC - 1)/MC)*((N + NC - 1)/NC));
         return mag_mm_choose_workers(flops, tiles_total, cpu_dvc->num_allocated_workers);

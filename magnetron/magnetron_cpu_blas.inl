@@ -2821,6 +2821,41 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
     #endif
 }
 
+static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e8m23_t* A, const mag_e8m23_t* B, int64_t ldb, mag_e8m23_t* C) {
+#if defined(__AVX2__) && defined(__FMA__)
+    int64_t NN = N&-8;
+    for (int64_t j=0; j < NN; j += 8) {
+        __m256 sum = _mm256_setzero_ps();
+        for (int64_t k=0; k < K; ++k) {
+            __m256 b = _mm256_loadu_ps(B + k*ldb + j);
+            __m256 a = _mm256_broadcast_ss(A + k);
+            sum = _mm256_fmadd_ps(a, b, sum);
+        }
+        _mm256_storeu_ps(C + j, sum);
+    }
+    int64_t rem = N - NN;
+    if (rem) {
+        int32_t mask_arr[8] = {0};
+        for (int64_t i=0; i < rem; ++i) mask_arr[i] = -1;
+        __m256i mask = _mm256_loadu_si256((const __m256i*)mask_arr);
+        __m256 sum = _mm256_setzero_ps();
+        for (int64_t k=0; k < K; ++k) {
+            __m256 b = _mm256_maskload_ps(B + k*ldb + NN, mask);
+            __m256 a = _mm256_broadcast_ss(A + k);
+            sum = _mm256_fmadd_ps(a, b, sum);
+        }
+        _mm256_maskstore_ps(C + NN, mask, sum);
+    }
+#else
+    for (int64_t j = 0; j < N; ++j) {
+        mag_e8m23_t sum = 0.f;
+        for (int64_t k = 0; k < K; ++k)
+            sum += A[k]*B[k*ldb + j];
+        C[j] = sum;
+    }
+#endif
+}
+
 MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull payload) {
     mag_tensor_t* r = payload->node;
     const mag_tensor_t* x = r->op_inputs[0];
@@ -2839,6 +2874,17 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
     int64_t batch_total = 1;
     for (int64_t d=0; d < bdr; ++d)
         batch_total *= r->shape[d];
+    if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) { /* GEMV detected, exist early */
+        if (payload->thread_idx != 0)
+            return;
+        for (int64_t batch = 0; batch < batch_total; ++batch) {
+            const mag_e8m23_t* A = bx + mag_offset_rmn(x, batch, 0, 0);
+            const mag_e8m23_t* B = by + mag_offset_rmn(y, batch, 0, 0);
+            mag_e8m23_t* C = br + mag_offset_rmn(r, batch, 0, 0);
+            mag_gemv_f32_avx2_tail(K, N, A, B, N, C);
+        }
+        return;
+    }
     int64_t bdx = x->rank > 2 ? x->rank-2 : 0;
     int64_t bdy = y->rank > 2 ? y->rank-2 : 0;
     int64_t tic = (M+MC-1)/MC;
