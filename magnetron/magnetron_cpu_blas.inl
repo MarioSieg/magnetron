@@ -2464,6 +2464,14 @@ typedef struct mag_mmscratch_t {
 #define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 #define MAG_PREFETCH_SPAN 8
 
+#ifdef __ARM_NEON__
+#ifdef __ARM_FEATURE_FMA
+#define mag_vfmadd_e8m23(acc, a, b) vfmaq_f32((acc), (a), (b))
+#else
+#define mag_vfmadd_e8m23(acc, a, b) vmlaq_f32((acc), (a), (b))
+#endif
+#endif
+
 static void* _Nonnull mag_mm_scratch_acquire(mag_mmscratch_t* _Nonnull sb, size_t size) {
     if (size <= sb->cap) return sb->p; /* We have enough space */
     void* p = (*mag_alloc)(NULL, size, MAG_MM_SCRATCH_ALIGN);
@@ -2589,6 +2597,18 @@ static MAG_AINLINE void mag_mm_tile_1x8_e8m23(int64_t kc, const mag_e8m23_t* _No
             C0 = _mm256_fmadd_ps(A, B0, C0);
         }
         _mm256_storeu_ps(c, C0);
+    #elif defined(__ARM_NEON)
+        float32x4_t C0 = acc ? vld1q_f32(c + 0) : vdupq_n_f32(0.0f);
+        float32x4_t C1 = acc ? vld1q_f32(c + 4) : vdupq_n_f32(0.0f);
+        for (int64_t k = 0; k < kc; ++k) {
+            float32x4_t A = vdupq_n_f32(a[k]);
+            float32x4_t B0 = vld1q_f32(b + k*ldb + 0);
+            float32x4_t B1 = vld1q_f32(b + k*ldb + 4);
+            C0 = mag_vfmadd_e8m23(C0, A, B0);
+            C1 = mag_vfmadd_e8m23(C1, A, B1);
+        }
+        vst1q_f32(c + 0, C0);
+        vst1q_f32(c + 4, C1);
     #else
         #pragma GCC unroll 8
         for (int64_t j=0; j < 8; ++j)
@@ -2615,6 +2635,23 @@ static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* _N
         }
         _mm256_storeu_ps(c + 0, C0);
         _mm256_storeu_ps(c + 8, C1);
+    #elif defined(__ARM_NEON)
+        float32x4_t C0 = acc ? vld1q_f32(c + 0) : vdupq_n_f32(0.0f);
+        float32x4_t C1 = acc ? vld1q_f32(c + 4) : vdupq_n_f32(0.0f);
+        float32x4_t C2 = acc ? vld1q_f32(c + 8) : vdupq_n_f32(0.0f);
+        float32x4_t C3 = acc ? vld1q_f32(c + 12) : vdupq_n_f32(0.0f);
+        for (int64_t k=0; k < kc; ++k) {
+            float32x4_t A = vdupq_n_f32(a[k]);
+            const mag_e8m23_t* Bk = b + k*ldb;
+            C0 = mag_vfmadd_e8m23(C0, A, vld1q_f32(Bk + 0));
+            C1 = mag_vfmadd_e8m23(C1, A, vld1q_f32(Bk + 4));
+            C2 = mag_vfmadd_e8m23(C2, A, vld1q_f32(Bk + 8));
+            C3 = mag_vfmadd_e8m23(C3, A, vld1q_f32(Bk + 12));
+        }
+        vst1q_f32(c +  0, C0);
+        vst1q_f32(c +  4, C1);
+        vst1q_f32(c +  8, C2);
+        vst1q_f32(c + 12, C3);
     #else
         #pragma GCC unroll 16
         for (int64_t j=0; j < 16; ++j)
@@ -2664,6 +2701,18 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const 
                         _mm_storeu_ps(Bp + k*nc + j, v);
                     }
                     for (; j < nc; ++j) Bp[k*nc + j] = src[j];
+                #elif defined(__ARM_NEON)
+                    int64_t j = 0;
+                    for (; j+15 < nc; j += 16) {
+                        vst1q_f32(Bp + k*nc + j + 0, vld1q_f32(src + j + 0));
+                        vst1q_f32(Bp + k*nc + j + 4, vld1q_f32(src + j + 4));
+                        vst1q_f32(Bp + k*nc + j + 8, vld1q_f32(src + j + 8));
+                        vst1q_f32(Bp + k*nc + j + 12, vld1q_f32(src + j + 12));
+                    }
+                    for (; j+3 < nc; j += 4)
+                        vst1q_f32(Bp + k*nc + j, vld1q_f32(src + j));
+                    for (; j < nc; ++j)
+                        Bp[k*nc + j] = src[j];
                 #else
                     memcpy(Bp + k*nc, src, nc*sizeof(*Bsrc));
                 #endif
@@ -2694,6 +2743,23 @@ static MAG_AINLINE void mag_mm_pack_A_mr8_kc_e8m23(int64_t kc, const mag_e8m23_t
                     _mm_storeu_ps(dst + k, v);
                 }
                 for (; k < kc; ++k) dst[k] = src[k];
+            }
+        #elif defined(__ARM_NEON)
+            #pragma GCC unroll 8
+            for (int i=0; i < 8; ++i) {
+                const mag_e8m23_t* src = Asrc + i*kc;
+                mag_e8m23_t* dst = Ap + i*kc;
+                int64_t k=0;
+                for (; k+15 < kc; k += 16) {
+                    vst1q_f32(dst + k + 0, vld1q_f32(src + k + 0));
+                    vst1q_f32(dst + k + 4, vld1q_f32(src + k + 4));
+                    vst1q_f32(dst + k + 8, vld1q_f32(src + k + 8));
+                    vst1q_f32(dst + k + 12, vld1q_f32(src + k + 12));
+                }
+                for (; k+3 < kc; k += 4)
+                    vst1q_f32(dst + k, vld1q_f32(src + k));
+                for (; k < kc; ++k)
+                    dst[k] = src[k];
             }
         #else
             #pragma GCC unroll 8
@@ -2731,6 +2797,21 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
             for (; j < nc; ++j)
                 Bp[k*nc + j] = yvec[k];
         }
+        #elif defined(__ARM_NEON)
+            for (int64_t k=0; k < kc; ++k) {
+                float32x4_t val = vdupq_n_f32(yvec[k]);
+                int64_t j=0;
+                for (; j+15 < nc; j += 16) {
+                    vst1q_f32(Bp + k*nc + j +  0, val);
+                    vst1q_f32(Bp + k*nc + j +  4, val);
+                    vst1q_f32(Bp + k*nc + j +  8, val);
+                    vst1q_f32(Bp + k*nc + j + 12, val);
+                }
+                for (; j+3 < nc; j += 4)
+                    vst1q_f32(Bp + k*nc + j, val);
+                for (; j < nc; ++j)
+                    Bp[k*nc + j] = yvec[k];
+            }
     #else
         for (int64_t k = 0; k < kc; ++k) {
             mag_e8m23_t v = yvec[k];
