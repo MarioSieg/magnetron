@@ -833,6 +833,15 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(C.mag_gelu_(self._ptr))
 
+    def gelu_approx(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(C.mag_gelu_approx(self._ptr))
+
+    def gelu_approx_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(C.mag_gelu_approx_(self._ptr))
+
     def tril(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Tril requires a rank >= 2 but is {self.rank}'
         return Tensor(C.mag_tril(self._ptr, diagonal))

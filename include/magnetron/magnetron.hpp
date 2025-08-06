@@ -309,6 +309,8 @@ namespace magnetron {
         [[nodiscard]] auto relu_() const noexcept -> tensor { return tensor{mag_relu_(m_tensor)}; }
         [[nodiscard]] auto gelu() const noexcept -> tensor { return tensor{mag_gelu(m_tensor)}; }
         [[nodiscard]] auto gelu_() const noexcept -> tensor { return tensor{mag_gelu_(m_tensor)}; }
+        [[nodiscard]] auto gelu_approx() const noexcept -> tensor { return tensor{mag_gelu_approx(m_tensor)}; }
+        [[nodiscard]] auto gelu_approx_() const noexcept -> tensor { return tensor{mag_gelu_approx_(m_tensor)}; }
         [[nodiscard]] auto add(tensor other) const noexcept -> tensor {return tensor{mag_add(m_tensor, &*other)}; }
         [[nodiscard]] auto add_(tensor other) const noexcept -> tensor { return tensor{mag_add_(m_tensor, &*other)}; }
         [[nodiscard]] auto sub(tensor other) const noexcept -> tensor { return tensor{mag_sub(m_tensor, &*other)}; }

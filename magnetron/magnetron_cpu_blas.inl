@@ -1482,6 +1482,35 @@ static void MAG_HOTPROC mag_vgelu_e5m10(int64_t numel, mag_e5m10_t* _Nonnull o, 
     }
 }
 
+static void MAG_HOTPROC mag_vgelu_approx_e8m23(int64_t numel, mag_e8m23_t* _Nonnull o, const mag_e8m23_t* _Nonnull x) {
+    int64_t i=0;
+    #if defined(__AVX2__) && !defined(__AVX512F__)
+        __m256 coeff = _mm256_set1_ps(MAG_INVSQRT2);
+        __m256 coeff2 = _mm256_set1_ps(MAG_GELU_COEFF);
+        __m256 one = _mm256_set1_ps(1.0f);
+        __m256 half = _mm256_set1_ps(0.5f);
+        for (; i+7 < numel; i += 8) {
+            __m256 xi = _mm256_loadu_ps(x+i);
+            __m256 xi3 = _mm256_mul_ps(xi, _mm256_mul_ps(xi, xi));
+            __m256 tan1 = _mm256_add_ps(one, mag_simd_tanh_e8m23(_mm256_mul_ps(coeff, _mm256_add_ps(xi, _mm256_mul_ps(coeff2, xi3)))));
+            __m256 r = _mm256_mul_ps(_mm256_mul_ps(xi, tan1), half);
+            _mm256_storeu_ps(o+i, r);
+        }
+    #endif
+    for (; i < numel; ++i) {
+        mag_e8m23_t xi = x[i];
+        o[i] = 0.5f*xi*(1.0f+tanhf(MAG_INVSQRT2*(xi+MAG_GELU_COEFF*xi*xi*xi)));
+    }
+}
+
+static void MAG_HOTPROC mag_vgelu_approx_e5m10(int64_t numel, mag_e5m10_t* _Nonnull o, const mag_e5m10_t* _Nonnull x) {
+    for (int64_t i=0; i < numel; ++i) {
+        mag_e8m23_t xi = mag_e5m10_cvt_e8m23(x[i]);
+        o[i] = mag_e8m23_cvt_e5m10(0.5f*xi*(1.0f+tanhf(MAG_INVSQRT2*(xi+MAG_GELU_COEFF*xi*xi*xi))));
+    }
+}
+
+
 static void MAG_HOTPROC mag_vgelu_dv_e8m23(int64_t numel, mag_e8m23_t* _Nonnull o, const mag_e8m23_t* _Nonnull x) {
     for (int64_t i=0; i < numel; ++i) {
         mag_e8m23_t xi = x[i];
@@ -1846,6 +1875,11 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
+        bool full_cont = x->numel == r->numel && mag_tensor_is_contiguous(x) && mag_tensor_is_contiguous(r); \
+        if (full_cont) { \
+            mag_v##FUNC##_##T(rb-ra, br+ra, bx+ra); \
+            return; \
+        } \
         for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri = mag_offset_like(r, r, i); \
             int64_t xi = mag_offset_like(r, x, i); \
@@ -1896,6 +1930,11 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
+        bool full_cont = x->numel == r->numel && x->numel == y->numel && mag_tensor_is_contiguous(x) && mag_tensor_is_contiguous(y) && mag_tensor_is_contiguous(r); \
+        if (full_cont) { \
+            mag_v##FUNC##_##T(rb-ra, br+ra, bx+ra, by+ra); \
+            return; \
+        } \
         for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri = mag_offset_like(r, r, i); \
             int64_t xi = mag_offset_like(r, x, i); \
@@ -2257,6 +2296,8 @@ mag_gen_stub_unary(e8m23, relu_dv)
 mag_gen_stub_unary(e5m10, relu_dv)
 mag_gen_stub_unary(e8m23, gelu)
 mag_gen_stub_unary(e5m10, gelu)
+mag_gen_stub_unary(e8m23, gelu_approx)
+mag_gen_stub_unary(e5m10, gelu_approx)
 mag_gen_stub_unary(e8m23, gelu_dv)
 mag_gen_stub_unary(e5m10, gelu_dv)
 
@@ -3214,6 +3255,10 @@ static void (*_Nonnull const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(
     [MAG_OP_GELU] = {
         [MAG_DTYPE_E8M23] = &mag_gelu_e8m23,
         [MAG_DTYPE_E5M10] = &mag_gelu_e5m10,
+    },
+    [MAG_OP_GELU_APPROX] = {
+        [MAG_DTYPE_E8M23] = &mag_gelu_approx_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_gelu_approx_e5m10,
     },
     [MAG_OP_GELU_DV] = {
         [MAG_DTYPE_E8M23] = &mag_gelu_dv_e8m23,

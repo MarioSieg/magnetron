@@ -434,6 +434,7 @@ mag_impl_unary_pair(tanh_dv, TANH_DV)
 mag_impl_unary_pair(relu, RELU)
 mag_impl_unary_pair(relu_dv, RELU_DV)
 mag_impl_unary_pair(gelu, GELU)
+mag_impl_unary_pair(gelu_approx, GELU_APPROX)
 mag_impl_unary_pair(gelu_dv, GELU_DV)
 
 #undef mag_impl_unary_pair
@@ -1446,8 +1447,21 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_gelu,
             .cpu = {
-                .thread_growth = 0.1,
-                .thread_treshold = 250000
+                .thread_growth = 2.5,
+                .thread_treshold = 1000
+            }
+        },
+        [MAG_OP_GELU_APPROX] = {
+            .mnemonic = "gelu",
+            .desc = "0.5×𝑥×(1+erf(𝑥∕√2))",
+            .input_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
+            .backward = &mag_op_backward_gelu,
+            .cpu = {
+                .thread_growth = 2.5,
+                .thread_treshold = 1000
             }
         },
         [MAG_OP_GELU_DV] = {

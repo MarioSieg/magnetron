@@ -257,6 +257,8 @@ extern MAG_EXPORT mag_tensor_t* _Nonnull mag_relu_dv(mag_tensor_t* _Nonnull x);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_relu_dv_(mag_tensor_t* _Nonnull x);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_gelu(mag_tensor_t* _Nonnull x);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_gelu_(mag_tensor_t* _Nonnull x);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_gelu_approx(mag_tensor_t* _Nonnull x);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_gelu_approx_(mag_tensor_t* _Nonnull x);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_gelu_dv(mag_tensor_t* _Nonnull x);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_gelu_dv_(mag_tensor_t* _Nonnull x);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_add(mag_tensor_t* _Nonnull x, mag_tensor_t* _Nonnull y);

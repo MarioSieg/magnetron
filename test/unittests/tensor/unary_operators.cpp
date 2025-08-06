@@ -96,3 +96,6 @@ impl_unary_operator_test_group(relu, e8m23, [](auto x) { return std::max(0.0f, x
 impl_unary_operator_test_group(relu, e5m10, [](auto x) { return std::max(0.0f, x); })
 impl_unary_operator_test_group(gelu, e8m23, [](auto x) { return .5f * x * (1.f + std::erf(x * (1.0f / std::sqrt(2.0f)))); })
 impl_unary_operator_test_group(gelu, e5m10, [](auto x) { return .5f * x * (1.f + std::erf(x * (1.0f / std::sqrt(2.0f)))); })
+impl_unary_operator_test_group(gelu_approx, e8m23, [](auto x) { return .5f * x * (1.f + std::erf(x * (1.0f / std::sqrt(2.0f)))); })
+impl_unary_operator_test_group(gelu_approx, e5m10, [](auto x) { return .5f * x * (1.f + std::erf(x * (1.0f / std::sqrt(2.0f)))); })
+

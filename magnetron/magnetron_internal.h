@@ -731,6 +731,7 @@ typedef enum mag_opcode_t {
     MAG_OP_RELU,
     MAG_OP_RELU_DV,
     MAG_OP_GELU,
+    MAG_OP_GELU_APPROX,
     MAG_OP_GELU_DV,
     MAG_OP_TRIL,
     MAG_OP_TRIU,
