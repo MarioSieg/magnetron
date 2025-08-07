@@ -11,7 +11,7 @@ batch, M, K = 7, 768, 3072
 N = 768
 flops = 2 * batch * M * N * K
 acc = 0
-I = 10
+I = 1000
 for _ in range(I):
     t0 = time.perf_counter()
     C = A @ B
@@ -20,4 +20,4 @@ for _ in range(I):
     print(f"{gflops:.1f}GFLOP/s")
     acc += gflops
 
-print("Average:", acc / 10, "GFLOP/s")
+print("Average:", acc / I, "GFLOP/s")
