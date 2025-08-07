@@ -2826,7 +2826,7 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
     #endif
 }
 
-static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e8m23_t* A, const mag_e8m23_t* B, int64_t ldb, mag_e8m23_t* C) {
+static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e8m23_t* _Nonnull A, const mag_e8m23_t* _Nonnull B, int64_t ldb, mag_e8m23_t* _Nonnull C) {
 #if defined(__AVX2__) && defined(__FMA__)
     int64_t NN = N&-8;
     for (int64_t j=0; j < NN; j += 8) {
