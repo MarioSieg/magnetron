@@ -2827,39 +2827,61 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
 }
 
 static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e8m23_t* _Nonnull A, const mag_e8m23_t* _Nonnull B, int64_t ldb, mag_e8m23_t* _Nonnull C) {
-#if defined(__AVX2__) && defined(__FMA__)
-    int64_t NN = N&-8;
-    for (int64_t j=0; j < NN; j += 8) {
-        __m256 sum = _mm256_setzero_ps();
-        for (int64_t k=0; k < K; ++k) {
-            _mm_prefetch((const char*)(B + k*ldb + j + MAG_PREFETCH_SPAN), _MM_HINT_T0);
-            __m256 b = _mm256_loadu_ps(B + k*ldb + j);
-            __m256 a = _mm256_broadcast_ss(A + k);
-            sum = _mm256_fmadd_ps(a, b, sum);
-        }
-        _mm256_storeu_ps(C + j, sum);
-    }
-    int64_t rem = N - NN;
-    if (rem) {
-        int32_t mask_arr[8] = {0};
-        for (int64_t i=0; i < rem; ++i) mask_arr[i] = -1;
-            __m256i mask = _mm256_loadu_si256((const __m256i*)mask_arr);
+    #if defined(__AVX2__) && defined(__FMA__)
+        int64_t NN = N&-8;
+        for (int64_t j=0; j < NN; j += 8) {
             __m256 sum = _mm256_setzero_ps();
             for (int64_t k=0; k < K; ++k) {
-                __m256 b = _mm256_maskload_ps(B + k*ldb + NN, mask);
+                _mm_prefetch((const char*)(B + k*ldb + j + MAG_PREFETCH_SPAN), _MM_HINT_T0);
+                __m256 b = _mm256_loadu_ps(B + k*ldb + j);
                 __m256 a = _mm256_broadcast_ss(A + k);
                 sum = _mm256_fmadd_ps(a, b, sum);
             }
-            _mm256_maskstore_ps(C + NN, mask, sum);
-    }
-#else
-    for (int64_t j = 0; j < N; ++j) {
-        mag_e8m23_t sum = 0.f;
-        for (int64_t k = 0; k < K; ++k)
-            sum += A[k]*B[k*ldb + j];
-        C[j] = sum;
-    }
-#endif
+            _mm256_storeu_ps(C + j, sum);
+        }
+        int64_t rem = N - NN;
+        if (rem) {
+            int32_t mask_arr[8] = {0};
+            for (int64_t i=0; i < rem; ++i) mask_arr[i] = -1;
+                __m256i mask = _mm256_loadu_si256((const __m256i*)mask_arr);
+                __m256 sum = _mm256_setzero_ps();
+                for (int64_t k=0; k < K; ++k) {
+                    __m256 b = _mm256_maskload_ps(B + k*ldb + NN, mask);
+                    __m256 a = _mm256_broadcast_ss(A + k);
+                    sum = _mm256_fmadd_ps(a, b, sum);
+                }
+                _mm256_maskstore_ps(C + NN, mask, sum);
+        }
+    #elif defined(__ARM_NEON__)
+        int64_t NN = N&-8;
+        int64_t j=0;
+        for (; j < NN; j += 8) {
+            float32x4_t sum0 = vdupq_n_f32(0.f);
+            float32x4_t sum1 = vdupq_n_f32(0.f);
+            for (int64_t k=0; k < K; ++k) {
+                float32x4_t b0 = vld1q_f32(B + k*ldb + j + 0);
+                float32x4_t b1 = vld1q_f32(B + k*ldb + j + 4);
+                float32x4_t a = vdupq_n_f32(A[k]);
+                sum0 = mag_vfmadd_e8m23(sum0, a, b0);
+                sum1 = mag_vfmadd_e8m23(sum1, a, b1);
+            }
+            vst1q_f32(C + j + 0, sum0);
+            vst1q_f32(C + j + 4, sum1);
+        }
+        for (; j < N; ++j) {
+            mag_e8m23_t sum = 0.f;
+            for (int64_t k = 0; k < K; ++k)
+                sum += A[k]*B[k*ldb + j];
+            C[j] = sum;
+        }
+    #else
+        for (int64_t j = 0; j < N; ++j) {
+            mag_e8m23_t sum = 0.f;
+            for (int64_t k = 0; k < K; ++k)
+                sum += A[k]*B[k*ldb + j];
+            C[j] = sum;
+        }
+    #endif
 }
 
 MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull payload) {
