@@ -2940,13 +2940,16 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
     for (int64_t d=0; d < bdr; ++d)
         batch_total *= r->shape[d];
     if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) { /* Detect GEMV */
-        if (payload->thread_idx != 0)
-            return;
+        int64_t nth = payload->thread_num;
+        int64_t tid = payload->thread_idx;
+        int64_t j_per_thread = (N + nth - 1) / nth;
+        int64_t j0 = tid * j_per_thread;
+        int64_t j1 = mag_xmin(N, j0 + j_per_thread);
         for (int64_t batch = 0; batch < batch_total; ++batch) {
             const mag_e8m23_t* A = bx + mag_offset_rmn(x, batch, 0, 0);
-            const mag_e8m23_t* B = by + mag_offset_rmn(y, batch, 0, 0);
-            mag_e8m23_t* C = br + mag_offset_rmn(r, batch, 0, 0);
-            mag_gemv_f32_avx2_tail(K, N, A, B, N, C);
+            const mag_e8m23_t* B = by + mag_offset_rmn(y, batch, 0, 0) + j0;
+            mag_e8m23_t* C = br + mag_offset_rmn(r, batch, 0, 0) + j0;
+            mag_gemv_f32_avx2_tail(K, j1 - j0, A, B, N, C);
         }
         return;
     }
