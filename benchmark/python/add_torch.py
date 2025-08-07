@@ -1,10 +1,10 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
-import magnetron as mag
+import torch
 import time
 
-A = mag.Tensor.uniform(7, 3072, 768)
-B = mag.Tensor.uniform(7, 3072, 768)
+A = torch.rand(7, 3072, 768)
+B = torch.rand(7, 3072, 768)
 
 batch, M, K = 7, 3072, 768
 N = 768

@@ -25,3 +25,4 @@ magnetron_chat/.idea
 /.venv/
 /.cmake/
 **/__pycache__
+perf.data
