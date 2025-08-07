@@ -2826,31 +2826,68 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
     #endif
 }
 
-static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e8m23_t* _Nonnull A, const mag_e8m23_t* _Nonnull B, int64_t ldb, mag_e8m23_t* _Nonnull C) {
+static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e8m23_t* restrict _Nonnull A, const mag_e8m23_t* restrict _Nonnull B, int64_t ldb, mag_e8m23_t* restrict _Nonnull C) {
     #if defined(__AVX2__) && defined(__FMA__)
-        int64_t NN = N&-8;
-        for (int64_t j=0; j < NN; j += 8) {
-            __m256 sum = _mm256_setzero_ps();
-            for (int64_t k=0; k < K; ++k) {
-                _mm_prefetch((const char*)(B + k*ldb + j + MAG_PREFETCH_SPAN), _MM_HINT_T0);
-                __m256 b = _mm256_loadu_ps(B + k*ldb + j);
-                __m256 a = _mm256_broadcast_ss(A + k);
-                sum = _mm256_fmadd_ps(a, b, sum);
+        int64_t j = 0;
+        for (; j+63 < N; j += 64) {
+            __m256 s0 = _mm256_setzero_ps();
+            __m256 s1 = _mm256_setzero_ps();
+            __m256 s2 = _mm256_setzero_ps();
+            __m256 s3 = _mm256_setzero_ps();
+            __m256 s4 = _mm256_setzero_ps();
+            __m256 s5 = _mm256_setzero_ps();
+            __m256 s6 = _mm256_setzero_ps();
+            __m256 s7 = _mm256_setzero_ps();
+            const mag_e8m23_t* restrict brow = B + j;
+            int64_t kstep = ldb<<2;
+            for (int64_t k=0; k+3 < K; k += 4, brow += kstep) {
+                #define STEP(i) do {                                        \
+                    __m256 a = _mm256_broadcast_ss(A + k + i);              \
+                    const mag_e8m23_t* restrict bp = brow + i*ldb;          \
+                    s0 = _mm256_fmadd_ps(a, _mm256_loadu_ps(bp +  0), s0);  \
+                    s1 = _mm256_fmadd_ps(a, _mm256_loadu_ps(bp +  8), s1);  \
+                    s2 = _mm256_fmadd_ps(a, _mm256_loadu_ps(bp + 16), s2);  \
+                    s3 = _mm256_fmadd_ps(a, _mm256_loadu_ps(bp + 24), s3);  \
+                    s4 = _mm256_fmadd_ps(a, _mm256_loadu_ps(bp + 32), s4);  \
+                    s5 = _mm256_fmadd_ps(a, _mm256_loadu_ps(bp + 40), s5);  \
+                    s6 = _mm256_fmadd_ps(a, _mm256_loadu_ps(bp + 48), s6);  \
+                    s7 = _mm256_fmadd_ps(a, _mm256_loadu_ps(bp + 56), s7);  \
+                } while(0)
+                STEP(0); STEP(1); STEP(2); STEP(3);
+                #undef STEP
             }
-            _mm256_storeu_ps(C + j, sum);
+            for (int64_t k=K & ~3; k < K; ++k, brow += ldb) {
+                __m256 a = _mm256_broadcast_ss(A + k);
+                s0 = _mm256_fmadd_ps(a, _mm256_loadu_ps(brow +  0), s0);
+                s1 = _mm256_fmadd_ps(a, _mm256_loadu_ps(brow +  8), s1);
+                s2 = _mm256_fmadd_ps(a, _mm256_loadu_ps(brow + 16), s2);
+                s3 = _mm256_fmadd_ps(a, _mm256_loadu_ps(brow + 24), s3);
+                s4 = _mm256_fmadd_ps(a, _mm256_loadu_ps(brow + 32), s4);
+                s5 = _mm256_fmadd_ps(a, _mm256_loadu_ps(brow + 40), s5);
+                s6 = _mm256_fmadd_ps(a, _mm256_loadu_ps(brow + 48), s6);
+                s7 = _mm256_fmadd_ps(a, _mm256_loadu_ps(brow + 56), s7);
+            }
+            _mm256_storeu_ps(C + j +  0, s0);
+            _mm256_storeu_ps(C + j +  8, s1);
+            _mm256_storeu_ps(C + j + 16, s2);
+            _mm256_storeu_ps(C + j + 24, s3);
+            _mm256_storeu_ps(C + j + 32, s4);
+            _mm256_storeu_ps(C + j + 40, s5);
+            _mm256_storeu_ps(C + j + 48, s6);
+            _mm256_storeu_ps(C + j + 56, s7);
         }
-        int64_t rem = N - NN;
-        if (rem) {
-            int32_t mask_arr[8] = {0};
-            for (int64_t i=0; i < rem; ++i) mask_arr[i] = -1;
-                __m256i mask = _mm256_loadu_si256((const __m256i*)mask_arr);
-                __m256 sum = _mm256_setzero_ps();
-                for (int64_t k=0; k < K; ++k) {
-                    __m256 b = _mm256_maskload_ps(B + k*ldb + NN, mask);
-                    __m256 a = _mm256_broadcast_ss(A + k);
-                    sum = _mm256_fmadd_ps(a, b, sum);
-                }
-                _mm256_maskstore_ps(C + NN, mask, sum);
+        for (; j+7 < N; j += 8) {
+            __m256 s = _mm256_setzero_ps();
+            const mag_e8m23_t* restrict b = B + j;
+            for (int64_t k=0; k < K; ++k, b += ldb)
+                s = _mm256_fmadd_ps(_mm256_broadcast_ss(A + k), _mm256_loadu_ps(b), s);
+            _mm256_storeu_ps(C + j, s);
+        }
+        for (; j < N; ++j) {
+            mag_e8m23_t s = 0.f;
+            for (int64_t k=0; k < K; ++k)
+                s += A[k]*B[k*ldb + j];
+            C[j] = s;
         }
     #elif defined(__ARM_NEON__)
         int64_t NN = N&-8;
