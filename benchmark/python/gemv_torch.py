@@ -1,22 +1,21 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
-import numpy as np
+import torch
 import time
 
-A = np.random.rand(7, 768, 3072).astype(dtype=np.float32)
-B = np.random.rand(7, 3072, 768).astype(dtype=np.float32)
+A = torch.rand(1, 1, 768, dtype=torch.float32)
+B = torch.rand(768, 50257, dtype=torch.float32)
 
-batch, M, K = 7, 768, 3072
+batch, M, K = 1, 1, 768
 N = 768
 flops = 2 * batch * M * N * K
 acc = 0
-I = 10
+I = 1000
 for _ in range(I):
     t0 = time.perf_counter()
     C = A @ B
     t1 = time.perf_counter()
     gflops = flops / (t1 - t0) / 1e9
-    print(f"{gflops:.1f}GFLOP/s")
     acc += gflops
 
-print("Average:", acc / 10, "GFLOP/s")
+print("Average:", acc / I, "GFLOP/s")
