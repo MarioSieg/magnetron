@@ -17,7 +17,6 @@ for _ in range(I):
     C = A @ B
     t1 = time.perf_counter()
     gflops = flops / (t1 - t0) / 1e9
-    print(f"{gflops:.1f}GFLOP/s")
     acc += gflops
 
 print("Average:", acc / I, "GFLOP/s")

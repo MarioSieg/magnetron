@@ -1,7 +1,10 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
+import multiprocessing
 import torch
 import time
+
+torch.set_num_threads(multiprocessing.cpu_count())
 
 A = torch.rand(1, 1, 768, dtype=torch.float32)
 B = torch.rand(768, 50257, dtype=torch.float32)
