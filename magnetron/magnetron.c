@@ -44,6 +44,8 @@
 #ifdef __linux__
 #include <linux/prctl.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
+#include <linux/futex.h>
 #ifdef __aarch64__
 #include <sys/auxv.h>
 #endif
@@ -834,6 +836,31 @@ void mag_thread_yield(void) {
         sched_yield();
     #endif
 }
+
+int mag_futex_wait(volatile mag_atomic32_t* addr, mag_atomic32_t expect) {
+    #ifdef __linux__
+        return syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, expect, NULL, NULL, 0);
+    #else
+    #error "Not implemented for this platform"
+    #endif
+}
+
+void mag_futex_wake1(volatile mag_atomic32_t* addr) {
+    #ifdef __linux__
+        syscall(SYS_futex, addr, FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0);
+    #else
+    #error "Not implemented for this platform"
+    #endif
+}
+
+void mag_futex_wakeall(volatile mag_atomic32_t* addr) {
+    #ifdef __linux__
+        syscall(SYS_futex, addr, FUTEX_WAKE_PRIVATE, 0x7fffffff, NULL, NULL, 0);
+    #else
+    #error "Not implemented for this platform"
+    #endif
+}
+
 
 void mag_sstream_init(mag_sstream_t* ss) {
     memset(ss, 0, sizeof(*ss));

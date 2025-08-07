@@ -2046,7 +2046,12 @@ static int mag_cmp_i64(const void* _Nonnull a, const void* _Nonnull b) {
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-         for (int64_t i=ra; i < rb; ++i) { \
+        bool full_cont = x->numel == r->numel && x->numel == y->numel && mag_tensor_is_contiguous(x) && mag_tensor_is_contiguous(y) && mag_tensor_is_contiguous(r); \
+        if (full_cont) { \
+            mag_v##FUNC##_##T(rb-ra, br+ra, bx+ra, by+ra); \
+            return; \
+        } \
+        for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri = mag_offset_like(r, r, i); \
             int64_t xi = mag_offset_like(r, x, i); \
             int64_t yi = mag_offset_like(r, y, i); \
@@ -2543,8 +2548,8 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(
                 __m256 A0 = _mm256_broadcast_ss(a + r*lda + k + 0);
                 C[r] = _mm256_fmadd_ps(A0, B0, C[r]);
             }
-            _mm_prefetch((const uint8_t*)(b + (k+MAG_PREFETCH_SPAN)*ldb), _MM_HINT_T0);
-            _mm_prefetch((const uint8_t*)(a + k+MAG_PREFETCH_SPAN), _MM_HINT_T0);
+            _mm_prefetch((const char*)(b + (k+MAG_PREFETCH_SPAN)*ldb), _MM_HINT_T0);
+            _mm_prefetch((const char*)(a + k+MAG_PREFETCH_SPAN), _MM_HINT_T0);
             if (mag_likely(k+1 < kc)) {
                 __m256 B1 = _mm256_loadu_ps(b + (k+1)*ldb);
                 #pragma GCC unroll 8
@@ -2827,6 +2832,7 @@ static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e
     for (int64_t j=0; j < NN; j += 8) {
         __m256 sum = _mm256_setzero_ps();
         for (int64_t k=0; k < K; ++k) {
+            _mm_prefetch((const char*)(B + k*ldb + j + MAG_PREFETCH_SPAN), _MM_HINT_T0);
             __m256 b = _mm256_loadu_ps(B + k*ldb + j);
             __m256 a = _mm256_broadcast_ss(A + k);
             sum = _mm256_fmadd_ps(a, b, sum);
@@ -2837,14 +2843,14 @@ static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e
     if (rem) {
         int32_t mask_arr[8] = {0};
         for (int64_t i=0; i < rem; ++i) mask_arr[i] = -1;
-        __m256i mask = _mm256_loadu_si256((const __m256i*)mask_arr);
-        __m256 sum = _mm256_setzero_ps();
-        for (int64_t k=0; k < K; ++k) {
-            __m256 b = _mm256_maskload_ps(B + k*ldb + NN, mask);
-            __m256 a = _mm256_broadcast_ss(A + k);
-            sum = _mm256_fmadd_ps(a, b, sum);
-        }
-        _mm256_maskstore_ps(C + NN, mask, sum);
+            __m256i mask = _mm256_loadu_si256((const __m256i*)mask_arr);
+            __m256 sum = _mm256_setzero_ps();
+            for (int64_t k=0; k < K; ++k) {
+                __m256 b = _mm256_maskload_ps(B + k*ldb + NN, mask);
+                __m256 a = _mm256_broadcast_ss(A + k);
+                sum = _mm256_fmadd_ps(a, b, sum);
+            }
+            _mm256_maskstore_ps(C + NN, mask, sum);
     }
 #else
     for (int64_t j = 0; j < N; ++j) {
@@ -2874,7 +2880,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
     int64_t batch_total = 1;
     for (int64_t d=0; d < bdr; ++d)
         batch_total *= r->shape[d];
-    if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) { /* GEMV detected, exist early */
+    if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) { /* Detect GEMV */
         if (payload->thread_idx != 0)
             return;
         for (int64_t batch = 0; batch < batch_total; ++batch) {
@@ -2897,7 +2903,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *_Nonnull pa
     mag_e8m23_t* Ap = Bp + KC*NC;
     bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
     for (;;) {
-        int64_t tile = mag_atomic_fetch_add(payload->next_mm_tile, 1, MAG_MO_RELAXED);
+        int64_t tile = mag_atomic64_fetch_add(payload->next_mm_tile, 1, MAG_MO_RELAXED);
         if (tile >= tt) break;
         int64_t batch_idx = tile / tpb;
         int64_t rem = tile % tpb;

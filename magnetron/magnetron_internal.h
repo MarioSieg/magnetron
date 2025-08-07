@@ -93,8 +93,8 @@ typedef enum mag_exec_stage_t {
 #define mag_ffs64(x) ((uint32_t)__builtin_ctzll(x))
 #define mag_fls64(x) ((uint32_t)(__builtin_clzll(x)^63))
 
-typedef int64_t mag_atomic64_t;       /* Atomic integer type */
-typedef enum mag_memory_order_t {             /* Atomic memory order */
+/* Memory order for atomic operations. */
+typedef enum mag_memory_order_t {
     MAG_MO_RELAXED = __ATOMIC_RELAXED,
     MAG_MO_CONSUME = __ATOMIC_CONSUME,
     MAG_MO_ACQUIRE = __ATOMIC_ACQUIRE,
@@ -103,16 +103,37 @@ typedef enum mag_memory_order_t {             /* Atomic memory order */
     MAG_MO_SEQ_CST = __ATOMIC_SEQ_CST
 } mag_memory_order_t;
 
-static MAG_AINLINE void mag_atomic_store(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { __atomic_store_n(o, x, order); }
-static MAG_AINLINE mag_atomic64_t mag_atomic_load(volatile mag_atomic64_t* _Nonnull o, mag_memory_order_t order) { return __atomic_load_n(o, order); }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_add(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_add(o, x, order); }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_sub(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_sub(o, x, order); }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_and(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_and(o, x, order); }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_or(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_or(o, x, order); }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_xor(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_xor(o, x, order); }
-static MAG_AINLINE mag_atomic64_t mag_atomic_exchange(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_exchange_n(o, x, order); }
-static MAG_AINLINE bool mag_atomic_compare_exchange_weak(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t* _Nonnull exp, mag_atomic64_t* _Nonnull des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) { return __atomic_compare_exchange(o, exp, des, true, order_succ, order_fail); }
-static MAG_AINLINE bool mag_atomic_compare_exchange_strong(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t* _Nonnull exp, mag_atomic64_t* _Nonnull des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) { return __atomic_compare_exchange(o, exp, des, false, order_succ, order_fail); }
+typedef int64_t mag_atomic64_t;
+static MAG_AINLINE void mag_atomic64_store(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { __atomic_store_n(o, x, order); }
+static MAG_AINLINE mag_atomic64_t mag_atomic64_load(volatile mag_atomic64_t* _Nonnull o, mag_memory_order_t order) { return __atomic_load_n(o, order); }
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_add(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_add(o, x, order); }
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_sub(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_sub(o, x, order); }
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_and(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_and(o, x, order); }
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_or(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_or(o, x, order); }
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_xor(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_fetch_xor(o, x, order); }
+static MAG_AINLINE mag_atomic64_t mag_atomic64_exchange(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t x, mag_memory_order_t order) { return __atomic_exchange_n(o, x, order); }
+static MAG_AINLINE bool mag_atomic64_compare_exchange_weak(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t* _Nonnull exp, mag_atomic64_t* _Nonnull des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
+    return __atomic_compare_exchange(o, exp, des, true, order_succ, order_fail);
+}
+static MAG_AINLINE bool mag_atomic64_compare_exchange_strong(volatile mag_atomic64_t* _Nonnull o, mag_atomic64_t* _Nonnull exp, mag_atomic64_t* _Nonnull des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
+    return __atomic_compare_exchange(o, exp, des, false, order_succ, order_fail);
+}
+
+typedef int32_t mag_atomic32_t;
+static MAG_AINLINE void mag_atomic32_store(volatile mag_atomic32_t* _Nonnull o, mag_atomic32_t x, mag_memory_order_t order) { __atomic_store_n(o, x, order); }
+static MAG_AINLINE mag_atomic32_t mag_atomic32_load(volatile mag_atomic32_t* _Nonnull o, mag_memory_order_t order) { return __atomic_load_n(o, order); }
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_add(volatile mag_atomic32_t* _Nonnull o, mag_atomic32_t x, mag_memory_order_t order) { return __atomic_fetch_add(o, x, order); }
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_sub(volatile mag_atomic32_t* _Nonnull o, mag_atomic32_t x, mag_memory_order_t order) { return __atomic_fetch_sub(o, x, order); }
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_and(volatile mag_atomic32_t* _Nonnull o, mag_atomic32_t x, mag_memory_order_t order) { return __atomic_fetch_and(o, x, order); }
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_or(volatile mag_atomic32_t* _Nonnull o, mag_atomic32_t x, mag_memory_order_t order) { return __atomic_fetch_or(o, x, order); }
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_xor(volatile mag_atomic32_t* _Nonnull o, mag_atomic32_t x, mag_memory_order_t order) { return __atomic_fetch_xor(o, x, order); }
+static MAG_AINLINE mag_atomic32_t mag_atomic32_exchange(volatile mag_atomic32_t* _Nonnull o, mag_atomic32_t x, mag_memory_order_t order) { return __atomic_exchange_n(o, x, order); }
+static MAG_AINLINE bool mag_atomic32_compare_exchange_weak(volatile mag_atomic32_t* _Nonnull o, mag_atomic32_t* _Nonnull exp, mag_atomic32_t* _Nonnull des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
+    return __atomic_compare_exchange(o, exp, des, true, order_succ, order_fail);
+}
+static MAG_AINLINE bool mag_atomic32_compare_exchange_strong(volatile mag_atomic32_t* _Nonnull o, mag_atomic32_t* _Nonnull exp, mag_atomic32_t* _Nonnull des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
+    return __atomic_compare_exchange(o, exp, des, false, order_succ, order_fail);
+}
 
 /* Compiler specific macros and utils for MSVC. */
 #elif defined(_MSC_VER)
@@ -568,9 +589,20 @@ typedef pthread_cond_t mag_condvar_t;
 
 #endif
 
+#if defined(__amd64__) || defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+#define mag_cpu_pause() __asm__ __volatile__("pause" ::: "memory")
+#elif defined(__aarch64__)
+#define mag_cpu_pause() __asm__ __volatile__("yield" ::: "memory")
+#else
+#error "Unsupported architecture for mag_cpu_pause()"
+#endif
+
 extern void mag_thread_set_prio(mag_thread_prio_t prio); /* Set thread scheduling priority of current thread. */
 extern void mag_thread_set_name(const char* _Nonnull name); /* Set thread name. */
 extern void mag_thread_yield(void); /* Yield current thread. */
+extern int mag_futex_wait(volatile mag_atomic32_t* _Nonnull addr, mag_atomic32_t expect);
+extern void mag_futex_wake1(volatile mag_atomic32_t* _Nonnull addr);
+extern void mag_futex_wakeall(volatile mag_atomic32_t* _Nonnull addr);
 
 /* Dynamic zero-terminated string buffer. */
 typedef struct mag_sstream_t {
