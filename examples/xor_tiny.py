@@ -20,4 +20,4 @@ for epoch in range(2000):
         print(f'Epoch: {epoch}, Loss: {loss.item()}')
 
 # Print results
-print([(int(y[i]), float(model(x)[i])) for i in range(4)])
+print([(int(y[i].item()), float(model(x)[i].item())) for i in range(4)])

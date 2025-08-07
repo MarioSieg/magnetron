@@ -7,7 +7,6 @@ import time
 N = 2048
 A = mag.Tensor.uniform((N, N))
 B = mag.Tensor.uniform((N, N))
-print(A.shape)
 
 flop = 2 * N**3
 avg = 0
