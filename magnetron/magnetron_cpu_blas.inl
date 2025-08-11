@@ -3188,31 +3188,31 @@ uint64_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
     #ifdef __AVX512VL__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512VL;
     #endif
-    #ifdef __AVX512_4FMAPS__
+    #ifdef __AVX5124FMAPS__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512_4FMAPS;
     #endif
-    #ifdef __AVX512_4VNNIW__
+    #ifdef __AVX5124VNNIW__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512_4VNNIW;
     #endif
-    #ifdef __AVX512_FP16__
+    #ifdef __AVX512FP16__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512_FP16;
     #endif
-    #ifdef __AVX512_BF16__
+    #ifdef __AVX512BF16__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512_BF16;
     #endif
-    #ifdef __AVX512_BITALG__
+    #ifdef __AVX512BITALG__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512_BITALG;
     #endif
-    #ifdef __AVX512_VBMI2__
+    #ifdef __AVX512VBMI2__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512_VBMI2;
     #endif
-    #ifdef __AVX512_VNNI__
+    #ifdef __AVX512VNNI__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512_VNNI;
     #endif
-    #ifdef __AVX512_VP2INTERSECT__
+    #ifdef __AVX512VP2INTERSECT__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512_VP2INTERSECT;
     #endif
-    #ifdef __AVX512_VPOPCNTDQ__
+    #ifdef __AVX512VPOPCNTDQ__
         caps |= 1ull<<MAG_AMD64_CAP_AVX512_VPOPCNTDQ;
     #endif
     #ifdef __AVX__
