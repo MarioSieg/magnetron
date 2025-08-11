@@ -110,6 +110,18 @@ function(configure_mag_lib target_name)
             endif()
         endif()
 
+        if(NOT APPLE) # Use LLD linker on non-Apple platforms for faster linking
+            find_program(LLD_PATH NAMES ld.lld lld)
+            if(LLD_PATH)
+                message(STATUS "LLD found: ${LLD_PATH}")
+                target_link_options(${target_name} PRIVATE -fuse-ld=lld)
+                target_link_options(${target_name} PRIVATE "-Wl,--thinlto-cache-dir=${PROJECT_BINARY_DIR}/LTO.cache")
+                target_link_options(${target_name} PRIVATE "-Wl,--thinlto-jobs=64")
+            else()
+                message(STATUS "LLD not found, using default linker")
+            endif()
+        endif()
+
         if (${MAGNETRON_CPU_APPROX_MATH})
             target_compile_definitions(${target_name} PRIVATE MAG_APPROXMATH)
         endif()
