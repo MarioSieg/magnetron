@@ -479,6 +479,23 @@ mag_tensor_t* _Nonnull mag_triu_(mag_tensor_t* _Nonnull x, int32_t diag) {
     return mag_op_stub_unary(MAG_OP_TRIU, x, &layout, true);
 }
 
+mag_tensor_t* mag_multinomial(mag_tensor_t* x, int64_t num_samples, bool replacement){
+    mag_assert2(x != NULL);
+    mag_assert(x->rank == 1 || x->rank == 2, "Multinomial dist requires rank 1 or 2, but got: %" PRIi64, x->rank);
+    mag_assert2(mag_tensor_is_contiguous(x));
+    mag_assert(num_samples > 0, "Number of samples must be > 0, but got: %" PRIi64, num_samples);
+    mag_assert_dtype_compat(MAG_OP_MULTINOMIAL, &x);
+    int64_t shape[MAG_MAX_DIMS] = {0};
+    if (x->rank > 1) { memcpy(shape, x->shape, (x->rank - 1)*sizeof(*shape)); }
+    shape[x->rank-1] = num_samples;
+    mag_tensor_t* result = mag_tensor_new(x->ctx, MAG_DTYPE_I32, x->rank, shape);
+    mag_op_param_layout_t layout;
+    mag_op_param_layout_init(&layout);
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_samples));
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!replacement));
+    return mag_dispatch(result, MAG_OP_MULTINOMIAL, false, &x, 1, &layout, MAG_STAGE_EVAL);
+}
+
 static mag_tensor_t* mag_op_stub_binary(mag_opcode_t op, mag_tensor_t* x, mag_tensor_t* y, bool boolean_result, bool inplace) {
     mag_assert2(x != NULL);
     mag_assert2(y != NULL);
@@ -1499,6 +1516,22 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 MAG_OPP_I64
+            },
+            .flags = MAG_OP_FLAG_NONE,
+            .backward = NULL,
+            .cpu = {
+                .thread_growth = 0.1,
+                .thread_treshold = 250000
+            }
+        },
+        [MAG_OP_MULTINOMIAL] = {
+            .mnemonic = "multinomial",
+            .desc = "multinomial(D)",
+            .input_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .op_param_layout = {
+                MAG_OPP_I64,
+                MAG_OPP_I64,
             },
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,

@@ -1,4 +1,5 @@
 # (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
+import torch
 
 from ..common import *
 

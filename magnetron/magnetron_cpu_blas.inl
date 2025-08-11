@@ -564,7 +564,7 @@ static void MAG_HOTPROC mag_vcast_bool_e5m10(int64_t numel, void* _Nonnull restr
         o[i] = x[i] ? MAG_E5M10_ONE : MAG_E5M10_ZERO;
 }
 
-static uint32_t MAG_AINLINE mag_mt19937_step(uint32_t* _Nonnull rem, uint32_t* _Nonnull next, uint32_t* _Nonnull state) {
+static uint32_t mag_mt19937_step(uint32_t* _Nonnull rem, uint32_t* _Nonnull next, uint32_t* _Nonnull state) {
     if (--*rem <= 0) {
         *rem = 624;
         *next = 0;
@@ -588,7 +588,7 @@ static uint32_t MAG_AINLINE mag_mt19937_step(uint32_t* _Nonnull rem, uint32_t* _
     return y;
 }
 
-static uint32_t MAG_AINLINE mag_pcg_step(uint64_t* _Nonnull state, uint64_t inc) {
+static uint32_t mag_pcg_step(uint64_t* _Nonnull state, uint64_t inc) {
     uint64_t prev = *state;
     *state = prev*6364136223846793005ull + inc;
     uint32_t mixed = ((prev>>18u) ^ prev) >> 27u;
@@ -596,7 +596,16 @@ static uint32_t MAG_AINLINE mag_pcg_step(uint64_t* _Nonnull state, uint64_t inc)
     return (mixed>>rot) | (mixed << ((-rot)&31));
 }
 
-#define mag_e8m23_canonical(y) (1.f/0x1.0p23f*((mag_e8m23_t)((y)>>9) + 0.5f)) /* Transform u32 -> xi ∈ [0, 1) */
+#define mag_e8m23_map_canonical(y) (1.f/0x1.0p23f*((mag_e8m23_t)((y)>>9) + 0.5f)) /* Map y ∈ {0, 1, ..., 0xffffffff} -> r ∈ [0, 1) */
+
+static mag_e8m23_t mag_prng_sample_canonical_e8m23(mag_prng_state_t* _Nonnull prng) { /* Sample a canonical e8m23 float from the current active PRNG. */
+    switch (prng->algo) {
+        case MAG_PRNG_MERSENNE_TWISTER: return mag_e8m23_map_canonical(mag_mt19937_step(&prng->mersenne.remaining, &prng->mersenne.next, prng->mersenne.state));
+        case MAG_PRNG_PCG: return mag_e8m23_map_canonical(mag_pcg_step(&prng->pcg.state, prng->pcg.inc));
+        default:
+            mag_panic("Invalid PRNG algorithm: %d", prng->algo);
+    }
+}
 
 /* Generate N uniform distributed e8m23 floats ∈ [min, max]. */
 static void MAG_AINLINE mag_vrand_uniform_e8m23(mag_prng_state_t* _Nonnull prng, int64_t numel, mag_e8m23_t* restrict _Nonnull o, mag_e8m23_t min, mag_e8m23_t max) {
@@ -607,14 +616,14 @@ static void MAG_AINLINE mag_vrand_uniform_e8m23(mag_prng_state_t* _Nonnull prng,
             uint32_t* next = &prng->mersenne.next;
             uint32_t* state = prng->mersenne.state;
             for (int64_t i=0; i < numel; ++i) {
-                o[i] = min + rescale_uniform*mag_e8m23_canonical(mag_mt19937_step(rem, next, state)); /* Generate canonical and rescale. */
+                o[i] = min + rescale_uniform*mag_e8m23_map_canonical(mag_mt19937_step(rem, next, state)); /* Generate canonical and rescale. */
             }
         } break;
         case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
             uint64_t* state = &prng->pcg.state;
             uint64_t inc = prng->pcg.inc;
             for (int64_t i=0; i < numel; ++i) {
-                o[i] = min + rescale_uniform*mag_e8m23_canonical(mag_pcg_step(state, inc)); /* Generate canonical and rescale. */
+                o[i] = min + rescale_uniform*mag_e8m23_map_canonical(mag_pcg_step(state, inc)); /* Generate canonical and rescale. */
             }
         } break;
         default:
@@ -631,14 +640,14 @@ static void MAG_AINLINE mag_vrand_uniform_e5m10(mag_prng_state_t* _Nonnull prng,
             uint32_t* next = &prng->mersenne.next;
             uint32_t* state = prng->mersenne.state;
             for (int64_t i=0; i < numel; ++i) {
-                o[i] = mag_e8m23_cvt_e5m10(min + rescale_uniform*mag_e8m23_canonical(mag_mt19937_step(rem, next, state))); /* Generate canonical and rescale. */
+                o[i] = mag_e8m23_cvt_e5m10(min + rescale_uniform*mag_e8m23_map_canonical(mag_mt19937_step(rem, next, state))); /* Generate canonical and rescale. */
             }
         } break;
         case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
             uint64_t* state = &prng->pcg.state;
             uint64_t inc = prng->pcg.inc;
             for (int64_t i=0; i < numel; ++i) {
-                o[i] = mag_e8m23_cvt_e5m10(min + rescale_uniform*mag_e8m23_canonical(mag_pcg_step(state, inc))); /* Generate canonical and rescale. */
+                o[i] = mag_e8m23_cvt_e5m10(min + rescale_uniform*mag_e8m23_map_canonical(mag_pcg_step(state, inc))); /* Generate canonical and rescale. */
             }
         } break;
         default:
@@ -1889,6 +1898,150 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* _Nonnull r
         } \
     }
 
+#define RNG_NEXT() (rng = rng * 2862933555777941757ULL + 3037000493ULL)
+#define RNG_U01()  ((mag_e8m23_t)((RNG_NEXT(), (rng >> 40) & 0xFFFFFFu) * (1.0f/16777216.0f)))
+
+#define mag_gen_stub_multinomial(T, CVT) \
+    static void MAG_HOTPROC mag_multinomial_##T(const mag_kernel_payload_t* _Nonnull payload) { \
+        mag_tensor_t* r = payload->node; \
+        const mag_tensor_t* x = r->op_inputs[0]; \
+        mag_i32_t* br = mag_i32p_mut(r); \
+        const mag_##T##_t* bx = mag_##T##p(x); \
+        int64_t num_samples = mag_op_param_unpack_i64_or_panic(r->op_params[0]); \
+        bool replacement = !!mag_op_param_unpack_i64_or_panic(r->op_params[1]); \
+        int64_t K = x->shape[x->rank-1]; \
+        if (K <= 0) return; \
+        int64_t B = x->numel / K; \
+        int64_t tc = payload->thread_num; \
+        int64_t ti = payload->thread_idx; \
+        int64_t chunk = (B + tc - 1)/tc; \
+        int64_t ba = ti*chunk; \
+        int64_t bb = ba + chunk < B ? ba + chunk : B; \
+        uint64_t rng = (0x9e3779b97f4a7c15ull ^ (uint64_t)ti ^ (uint64_t)(uintptr_t)r ^ (uint64_t)(uintptr_t)payload); \
+        for (int64_t b = ba; b < bb; ++b) { \
+            const mag_##T##_t* w = bx + b*K; \
+            mag_i32_t* out = br + b*num_samples; \
+            mag_e8m23_t sumw = 0.0f; \
+            int64_t nnz = 0; \
+            for (int64_t i = 0; i < K; ++i) { \
+                mag_e8m23_t wi = CVT(w[i]); \
+                if (!isfinite(wi) || wi <= 0.0f) \
+                    wi = 0.0f; \
+                sumw += wi; \
+                if (wi > 0.0f) ++nnz; \
+            } \
+            if (!(sumw > 0.0f) || nnz == 0) { \
+                for (int64_t s = 0; s < num_samples; ++s) \
+                    out[s] = -1; \
+                continue; \
+            } \
+            if (replacement) { \
+                mag_e8m23_t* cdf = alloca(K*sizeof(*cdf)); \
+                mag_e8m23_t run = 0.0f; \
+                for (int64_t i=0; i < K; ++i) { \
+                    mag_e8m23_t wi = CVT(w[i]); \
+                    if (!isfinite(wi) || wi <= 0.0f) \
+                        wi = .0f; \
+                    run += wi; \
+                    cdf[i] = run; \
+                } \
+                for (int64_t s=0; s < num_samples; ++s) { \
+                    mag_e8m23_t u = RNG_U01(); \
+                    if (u <= 1e-8f) u = 1e-8f; \
+                    if (u >= 1.0f-1e-8f) u = 1.0f-1e-8f; \
+                    mag_e8m23_t target = u*sumw; \
+                    int64_t lo = 0, hi = K; \
+                    while (lo < hi) { \
+                        int64_t mid = lo + ((hi - lo)>>1); \
+                        if (cdf[mid] <= target) lo = mid + 1; \
+                        else hi = mid; \
+                    } \
+                    int64_t idx = lo < K ? lo : K-1; \
+                    out[s] = (mag_i32_t)idx; \
+                } \
+            } else { \
+                int64_t k = num_samples; \
+                if (k > nnz) k = nnz; \
+                mag_e8m23_t* heap_s = alloca((k > 0 ? k : 1)*sizeof(*heap_s)); \
+                mag_i32_t* heap_i = alloca((k > 0 ? k : 1)*sizeof(*heap_i)); \
+                int64_t hsz = 0; \
+                for (int64_t i = 0; i < K; ++i) { \
+                    mag_e8m23_t wi = CVT(w[i]); \
+                    if (!isfinite(wi) || wi <= 0.0f) continue; \
+                    mag_e8m23_t u = RNG_U01(); \
+                    if (u <= 1e-7f) u = 1e-7f; \
+                    if (u >= 1.0f-1e-7f) u = 1.0f-1e-7f; \
+                    mag_e8m23_t g = -logf(-logf(u)); \
+                    mag_e8m23_t score = logf(wi) + g; \
+                    if (hsz < k) { \
+                        int64_t pos = hsz++; \
+                        heap_s[pos] = score; \
+                        heap_i[pos] = (mag_i32_t)i; \
+                        while (pos > 0) { \
+                            int64_t p = (pos - 1)>>1; \
+                            if (heap_s[p] <= heap_s[pos]) break; \
+                            mag_e8m23_t ts = heap_s[p]; \
+                            heap_s[p] = heap_s[pos]; \
+                            heap_s[pos] = ts; \
+                            mag_i32_t tii = heap_i[p]; \
+                            heap_i[p] = heap_i[pos]; \
+                            heap_i[pos] = tii; \
+                            pos = p; \
+                        } \
+                    } else if (k > 0 && score > *heap_s) { \
+                        *heap_s = score; \
+                        *heap_i = (mag_i32_t)i; \
+                        int64_t pos = 0; \
+                        for (;;) { \
+                            int64_t l = (pos<<1) + 1; \
+                            int64_t rr = l + 1; \
+                            int64_t m = pos; \
+                            if (l < k && heap_s[l] < heap_s[m]) m = l; \
+                            if (rr < k && heap_s[rr] < heap_s[m]) m = rr; \
+                            if (m == pos) break; \
+                            mag_e8m23_t ts = heap_s[pos]; \
+                            heap_s[pos] = heap_s[m]; \
+                            heap_s[m] = ts; \
+                            mag_i32_t tii = heap_i[pos]; \
+                            heap_i[pos] = heap_i[m]; \
+                            heap_i[m] = tii; \
+                            pos = m; \
+                        } \
+                    } \
+                } \
+                int64_t out_cnt = k; \
+                for (int64_t s=k-1; s >= 0; --s) { \
+                    mag_i32_t top_i = heap_i[0]; \
+                    --out_cnt; \
+                    if (out_cnt >= 0) { \
+                        *heap_s = heap_s[out_cnt]; \
+                        *heap_i = heap_i[out_cnt]; \
+                        int64_t pos = 0; \
+                        for (;;) { \
+                            int64_t l = (pos<<1) + 1; \
+                            int64_t rr = l + 1; \
+                            int64_t m = pos; \
+                            if (l < out_cnt && heap_s[l] < heap_s[m]) m = l; \
+                            if (rr < out_cnt && heap_s[rr] < heap_s[m]) m = rr; \
+                            if (m == pos) break; \
+                            mag_e8m23_t ts = heap_s[pos]; \
+                            heap_s[pos] = heap_s[m]; \
+                            heap_s[m] = ts; \
+                            mag_i32_t tii = heap_i[pos]; \
+                            heap_i[pos] = heap_i[m]; \
+                            heap_i[m] = tii; \
+                            pos = m; \
+                        } \
+                    } \
+                    out[s] = top_i; \
+                    if (!s) break; \
+                } \
+                for (int64_t s=k; s < num_samples; ++s) \
+                    out[s] = -1; \
+            } \
+        } \
+    }
+
 #define mag_gen_stub_trix(T, S, Z, CMP) \
     static void MAG_HOTPROC mag_tri##S##_##T(const mag_kernel_payload_t* _Nonnull payload) { \
         mag_tensor_t* r = payload->node; \
@@ -2171,9 +2324,6 @@ static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t*
     mag_vrand_bernoulli_bool(payload->local_prng, numel, b_r, p);
 }
 
-#undef mag_cvt_nop
-#undef mag_cvt_i642bool
-#undef mag_cvt_i642i32
 #undef mag_G
 #undef mag_G_underlying
 
@@ -2278,6 +2428,9 @@ static void MAG_HOTPROC mag_softmax_e5m10(const mag_kernel_payload_t* _Nonnull p
         }
     }
 }
+
+mag_gen_stub_multinomial(e8m23, mag_cvt_nop)
+mag_gen_stub_multinomial(e5m10, mag_e5m10_cvt_e8m23)
 
 mag_gen_stub_unary(e8m23, softmax_dv)
 mag_gen_stub_unary(e5m10, softmax_dv)
@@ -3518,6 +3671,10 @@ static void (*_Nonnull const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(
         [MAG_DTYPE_E5M10] = &mag_triu_e5m10,
         [MAG_DTYPE_BOOL] = &mag_triu_bool,
         [MAG_DTYPE_I32] = &mag_triu_i32,
+    },
+    [MAG_OP_MULTINOMIAL] = {
+        [MAG_DTYPE_E8M23] = &mag_multinomial_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_multinomial_e5m10,
     },
     [MAG_OP_ADD] = {
         [MAG_DTYPE_E8M23] = &mag_add_e8m23,

@@ -92,9 +92,6 @@ class GPT(nn.Module):
         )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight
-        for pn, p in self.named_parameters():
-            if pn.endswith('c_proj.weight'):
-                p.x.fill_random_normal_(mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer))
         print(f'Parameter count: {self.get_num_params(False) // 1e6}M')
 
     @classmethod

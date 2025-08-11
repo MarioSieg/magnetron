@@ -602,7 +602,7 @@ mag_view_meta_t* mag_view_meta_alloc(mag_tensor_t* base){
 }
 
 /* Initialize and seed PRNG state. */
-void mag_prng_seed(mag_prng_state_t* prng, mag_prngalgo_t algo, uint64_t seed) {
+void mag_prng_seed(mag_prng_state_t* prng, mag_prng_algo_t algo, uint64_t seed) {
     seed = seed ? seed : 0x853c49e6748fea9bull;
     switch ((prng->algo = algo)) {
         case MAG_PRNG_MERSENNE_TWISTER: { /* Mersenne Twister */
@@ -784,11 +784,11 @@ void mag_ctx_destroy(mag_context_t* ctx) { /* Destroy magnetron context. */
     mag_log_info("magnetron context destroyed.");
 }
 
-mag_prngalgo_t mag_ctx_get_prng_algorithm(const mag_context_t* ctx) {
+mag_prng_algo_t mag_ctx_get_prng_algorithm(const mag_context_t* ctx) {
     return ctx->prng_algo;
 }
 
-void mag_ctx_set_prng_algorithm(mag_context_t* ctx, mag_prngalgo_t algorithm, uint64_t seed) {
+void mag_ctx_set_prng_algorithm(mag_context_t* ctx, mag_prng_algo_t algorithm, uint64_t seed) {
     mag_log_warn("Setting the PRNG algorithm is not implemented at the moment");
 }
 

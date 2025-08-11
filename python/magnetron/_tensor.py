@@ -860,6 +860,12 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(C.mag_triu_(self._ptr, diagonal))
 
+    def multinomial(self, num_samples: int = 1, replacement: bool = False) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        assert self.rank in (1, 2), f'Multinomial sampling requires a 1D or 2D tensor, but got rank {self.rank}'
+        assert num_samples > 0
+        return Tensor(C.mag_multinomial(self._ptr, num_samples, replacement))
+
     def logical_and(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
         return Tensor(C.mag_and(self._ptr, rhs._ptr))

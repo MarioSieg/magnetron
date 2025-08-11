@@ -767,6 +767,7 @@ typedef enum mag_opcode_t {
     MAG_OP_GELU_DV,
     MAG_OP_TRIL,
     MAG_OP_TRIU,
+    MAG_OP_MULTINOMIAL,
 
     /* Binary */
     MAG_OP_ADD,
@@ -935,13 +936,13 @@ struct mag_istorage_t {
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 struct mag_idevice_t {
     mag_context_t* _Nonnull ctx;
-    char name[128];                                                                                             /* Device name. */
-    void* _Nonnull impl;                                                                                        /* Device specific implementation, if applicable. */
-    bool is_async;                                                                                              /* If device is async. */
-    mag_device_type_t type;                                                                                 /* Device type enum. */
-    void (*_Nonnull eager_exec_init)(mag_idevice_t* _Nonnull dvc, mag_tensor_t* _Nonnull root);                                         /* Execute a single init op. */
-    void (*_Nonnull eager_exec_fwd)(mag_idevice_t* _Nonnull dvc, mag_tensor_t* _Nonnull root);                                          /* Execute a single op forward. */
-    void (*_Nonnull alloc_storage)(mag_idevice_t* _Nonnull dvc, mag_istorage_t* _Nonnull* _Nonnull out, size_t size, mag_dtype_t dtype);   /* Allocate storage buffer in device memory */
+    char name[128];                 /* Device name. */
+    void* _Nonnull impl;            /* Device specific implementation, if applicable. */
+    bool is_async;                  /* If device is async. */
+    mag_device_type_t type;         /* Device type enum. */
+    void (*_Nonnull eager_exec_init)(mag_idevice_t* _Nonnull dvc, mag_tensor_t* _Nonnull root);                                             /* Execute a single init op. */
+    void (*_Nonnull eager_exec_fwd)(mag_idevice_t* _Nonnull dvc, mag_tensor_t* _Nonnull root);                                              /* Execute a single op forward. */
+    void (*_Nonnull alloc_storage)(mag_idevice_t* _Nonnull dvc, mag_istorage_t* _Nonnull* _Nonnull out, size_t size, mag_dtype_t dtype);    /* Allocate storage buffer in device memory */
 };
 
 /* Device creation and destruction. */
@@ -1071,7 +1072,7 @@ struct mag_context_t {
     mag_fixed_pool_t storage_pool;              /* Storage struct memory pool. */
     mag_fixed_pool_t view_meta_pool;            /* Storage struct memory pool. */
     mag_context_flags_t flags;                  /* Context flags. */
-    mag_prngalgo_t prng_algo;                   /* Active PRNG algorithm. */
+    mag_prng_algo_t prng_algo;                   /* Active PRNG algorithm. */
     uintptr_t tr_id;                            /* Context thread ID. */
     size_t sh_len;                              /* Number of shutdown hooks. */
     size_t sh_cap;                              /* Maximum number of shutdown hooks. */
@@ -1145,11 +1146,11 @@ typedef struct mag_prng_state_t {
             uint32_t state[624];
         } mersenne;
     };
-    mag_prngalgo_t algo; /* PRNG algorithm. */
+    mag_prng_algo_t algo; /* PRNG algorithm. */
 } mag_prng_state_t;
 
 /* Initialize and seed PRNG with specific algorithm. */
-void mag_prng_seed(mag_prng_state_t* _Nonnull prng, mag_prngalgo_t algo, uint64_t seed);
+void mag_prng_seed(mag_prng_state_t* _Nonnull prng, mag_prng_algo_t algo, uint64_t seed);
 
 /* CPU Compute kernel payload passed to each CPU thread. */
 typedef struct mag_kernel_payload_t {

@@ -234,7 +234,7 @@ static MAG_HOTPROC void* mag_worker_thread_exec_op(void* arg) {
     snprintf(name, sizeof(name), "mag_worker_%" PRIx64, payload->thread_idx);
     mag_thread_set_name(name);
     /*mag_thread_set_prio(pool->sched_prio);*/
-    mag_prng_seed(&worker->prng, pool->host_ctx->prng_algo, mag_thread_id()^(uintptr_t)worker);
+    mag_prng_seed(&worker->prng, pool->host_ctx->prng_algo, rand()^mag_thread_id()^((uintptr_t)worker>>4)^((uintptr_t)kernels->vector_cast>>4));
     mag_atomic32_fetch_add(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
     while (mag_likely(mag_worker_await_work(worker, pool)))  /* Main work loop: wait, work, signal status */
         mag_worker_exec_and_broadcast(pool, kernels, payload);
@@ -547,7 +547,7 @@ static mag_cpu_device_t* mag_cpu_init_device(mag_context_t* ctx, uint32_t num_th
         .primary_prng = {}
     };
     mag_blas_detect_optimal_specialization(ctx, &dvc->kernels);
-    mag_prng_seed(&dvc->primary_prng, ctx->prng_algo, num_threads);
+    mag_prng_seed(&dvc->primary_prng, ctx->prng_algo, rand()^((uintptr_t)ctx>>4)^((uintptr_t)dvc>>4));
     if (num_threads > 1) {
         dvc->pool = mag_threadpool_create(ctx, num_threads, &dvc->kernels, sched_prio);
         dvc->num_allocated_workers = num_threads;

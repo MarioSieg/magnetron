@@ -64,12 +64,12 @@ extern MAG_EXPORT const char* _Nonnull mag_device_type_get_name(mag_device_type_
  * @brief Pseudo-random number generator (PRNG) algorithms used for number generation and random tensor initialization.
  *      The default PRNG is Mersenne Twister, switching to PCG can yield better performance in some cases.
  */
-typedef enum mag_prngalgo_t {
+typedef enum mag_prng_algo_t {
     MAG_PRNG_MERSENNE_TWISTER = 0,  /* Mersenne Twister PRNG */
     MAG_PRNG_PCG = 1,               /* Permuted Congruential Generator PRNG */
 
     MAG_PRNG__NUM
-} mag_prngalgo_t;
+} mag_prng_algo_t;
 
 /**
  * @brief Thread scheduling priority for CPU compute.
@@ -128,8 +128,8 @@ extern MAG_EXPORT mag_device_desc_t mag_compute_device_desc_cuda(uint32_t cuda_d
 
 extern MAG_EXPORT mag_context_t* _Nonnull mag_ctx_create(mag_device_type_t device);                                 /* Create context with default config, and only specify device type. */
 extern MAG_EXPORT mag_context_t* _Nonnull mag_ctx_create2(const mag_device_desc_t* _Nonnull device_info);           /* Create context with customized device config, and only specify device type. */
-extern MAG_EXPORT mag_prngalgo_t mag_ctx_get_prng_algorithm(const mag_context_t* _Nonnull ctx);                           /* Get PRNG algorithm */
-extern MAG_EXPORT void mag_ctx_set_prng_algorithm(mag_context_t* _Nonnull ctx, mag_prngalgo_t algorithm, uint64_t seed);  /* Set PRNG algorithm */
+extern MAG_EXPORT mag_prng_algo_t mag_ctx_get_prng_algorithm(const mag_context_t* _Nonnull ctx);                           /* Get PRNG algorithm */
+extern MAG_EXPORT void mag_ctx_set_prng_algorithm(mag_context_t* _Nonnull ctx, mag_prng_algo_t algorithm, uint64_t seed);  /* Set PRNG algorithm */
 extern MAG_EXPORT mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t* _Nonnull ctx);             /* Get compute device type */
 extern MAG_EXPORT const char* _Nonnull mag_ctx_get_compute_device_name(const mag_context_t* _Nonnull ctx);              /* Get the name of the compute device */
 extern MAG_EXPORT const char* _Nonnull mag_ctx_get_os_name(const mag_context_t* _Nonnull ctx);                          /* Get the name of the operating system */
@@ -294,6 +294,7 @@ extern MAG_EXPORT mag_tensor_t* _Nonnull mag_tril(mag_tensor_t* _Nonnull x, int3
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_tril_(mag_tensor_t* _Nonnull x, int32_t diag);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_triu(mag_tensor_t* _Nonnull x, int32_t diag);
 extern MAG_EXPORT mag_tensor_t* _Nonnull mag_triu_(mag_tensor_t* _Nonnull x, int32_t diag);
+extern MAG_EXPORT mag_tensor_t* _Nonnull mag_multinomial(mag_tensor_t* _Nonnull x, int64_t num_samples, bool replacement);
 
 /* ============ Tensor Init Operators ============ */
 
