@@ -13,58 +13,18 @@
 message("Configuring magnetron project for ${CMAKE_SYSTEM_PROCESSOR}...")
 message("C compiler: ${CMAKE_C_COMPILER_ID}")
 
-set(MAG_MSVC_COMPILE_FLAGS
-    /W3
-    /Oi
-    /arch:SSE2
-)
-set(MAG_MSVC_RELEASE_COMPILE_FLAGS
-    /O2
-    /Oy
-    /Ot
-    /Ob3
-    /RTC-
-)
+set(MAG_MSVC_COMPILE_FLAGS /W3 /Oi /arch:SSE2)
+set(MAG_MSVC_RELEASE_COMPILE_FLAGS /O2 /Oy /Ot /Ob3 /RTC-)
 set(MAG_MSVC_LINK_OPTIONS "")
 set(MAG_MSVC_RELEASE_LINK_OPTIONS "")
 
-set(MAG_CLANG_COMPILE_FLAGS
-    -std=c99
-    -std=gnu99
-    -fvisibility=hidden
-    -fno-math-errno
-    -Wall
-    -Werror
-    -Wno-error=overflow
-    -Wno-error=unused-function
-    -Wno-unused-parameter
-    -Wno-unused-function
-)
-set(MAG_CLANG_RELEASE_COMPILE_FLAGS
-    -O3
-    -flto
-    -fomit-frame-pointer
-)
+set(MAG_CLANG_COMPILE_FLAGS -std=c99 -std=gnu99 -fvisibility=hidden -fno-math-errno -Wall -Werror -Wno-error=overflow -Wno-error=unused-function -Wno-unused-parameter -Wno-unused-function)
+set(MAG_CLANG_RELEASE_COMPILE_FLAGS -O3 -flto=thin -fomit-frame-pointer)
 set(MAG_CLANG_LINK_OPTIONS "")
-set(MAG_CLANG_RELEASE_LINK_OPTIONS -flto)
+set(MAG_CLANG_RELEASE_LINK_OPTIONS -flto=thin)
 
-set(MAG_GCC_COMPILE_FLAGS
-    -std=c99
-    -std=gnu99
-    -fvisibility=hidden
-    -fno-math-errno
-    -Wall
-    -Werror
-    -Wno-error=overflow
-    -Wno-error=unused-function
-    -Wno-error=format-truncation
-    -Wno-unused-parameter
-    -Wno-unused-function
-)
-set(MAG_GCC_RELEASE_COMPILE_FLAGS
-    -O3
-    -flto=auto
-    -fomit-frame-pointer
+set(MAG_GCC_COMPILE_FLAGS -std=c99 -std=gnu99 -fvisibility=hidden -fno-math-errno -Wall -Werror -Wno-error=overflow -Wno-error=unused-function -Wno-error=format-truncation -Wno-unused-parameter -Wno-unused-function)
+set(MAG_GCC_RELEASE_COMPILE_FLAGS -O3 -flto=auto -fomit-frame-pointer
 )
 set(MAG_GCC_LINK_OPTIONS "")
 set(MAG_GCC_RELEASE_LINK_OPTIONS -flto=auto)
