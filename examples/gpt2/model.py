@@ -164,6 +164,8 @@ class GPT(nn.Module):
             logits = self(idx_cond)
             logits = logits[:, -1, :] / temp
             probs = logits.softmax(dim=-1)
-            idx_next = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1) # TODO
+            idx_next = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1)
             idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), idx_next), dim=1).tolist()) # TODO
+            #idx_next = probs.multinomial(num_samples=1)
+            #idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), torch.tensor(idx_next.tolist())), dim=1).tolist()) # TODO
         return idx
