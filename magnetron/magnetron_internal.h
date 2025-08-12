@@ -694,7 +694,7 @@ extern const char* _Nonnull const mag_op_param_type_names[MAG_OPP__NUM]; /* Oper
 ** The opp is a tagged union (variant).
 */
 typedef struct mag_opparam_t {
-    mag_opparam_type_t type : 2;
+    uint8_t type : 2;
     int64_t i62 : 62;
 } mag_opparam_t;
 
