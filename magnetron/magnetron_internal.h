@@ -159,8 +159,7 @@ static MAG_AINLINE uint32_t mag_fls(uint32_t x) { unsigned long r; _BitScanRever
 static MAG_AINLINE uint32_t mag_ffs64(uint64_t x) { unsigned long r; _BitScanForward64(&r, x); return (uint32_t)r; }
 static MAG_AINLINE uint32_t mag_fls64(uint64_t x) { unsigned long r; _BitScanReverse64(&r, x); return (uint32_t)r; }
 
-typedef __int64 mag_atomic64_t;       /* Atomic integer type */
-typedef enum mag_memory_order_t {             /* Atomic memory order. Has no effect with MSVC for now, all operations are sequencial consistent. */
+typedef enum mag_memory_order_t { /* Atomic memory order. Has no effect with MSVC for now, all operations are sequencial consistent. */
     MAG_MO_RELAXED,
     MAG_MO_CONSUME,
     MAG_MO_ACQUIRE,
@@ -169,48 +168,98 @@ typedef enum mag_memory_order_t {             /* Atomic memory order. Has no eff
     MAG_MO_SEQ_CST
 } mag_memory_order_t;
 
-static MAG_AINLINE void mag_atomic_store(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
+typedef long long mag_atomic64_t;
+static MAG_AINLINE void mag_atomic64_store(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
     (void)order; _InterlockedExchange64(o, x);
 }
-static MAG_AINLINE mag_atomic64_t mag_atomic_load(volatile mag_atomic64_t* o, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic64_t mag_atomic64_load(volatile mag_atomic64_t* o, mag_memory_order_t order) {
     (void)order;
     mag_atomic64_t r;
     _InterlockedExchange64(&r, *o);
     return r;
 }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_add(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_add(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
     (void)order;
     return _InterlockedExchangeAdd64(o, x);
 }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_sub(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_sub(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
     (void)order;
     return _InterlockedExchangeAdd64(o, -x);
 }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_and(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_and(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
     (void)order;
     return _InterlockedAnd64(o, x);
 }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_or(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_or(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
     (void)order;
     return _InterlockedOr64(o, x);
 }
-static MAG_AINLINE mag_atomic64_t mag_atomic_fetch_xor(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_xor(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
     (void)order;
     return _InterlockedXor64(o, x);
 }
-static MAG_AINLINE mag_atomic64_t mag_atomic_exchange(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic64_t mag_atomic64_exchange(volatile mag_atomic64_t* o, mag_atomic64_t x, mag_memory_order_t order) {
     (void)order;
     return _InterlockedExchange64(o, x);
 }
-static MAG_AINLINE bool mag_atomic_compare_exchange_weak(volatile mag_atomic64_t* o, mag_atomic64_t *exp, mag_atomic64_t *des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
+static MAG_AINLINE bool mag_atomic64_compare_exchange_weak(volatile mag_atomic64_t* o, mag_atomic64_t *exp, mag_atomic64_t *des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
     (void)order_succ; (void)order_fail;
     mag_atomic64_t old = _InterlockedCompareExchange64(o, *des, *exp);
     if (old == *exp) return true; /* Emulate GCC's weak compare exchange. */
     else { *exp = old; return false; }
 }
-static MAG_AINLINE bool mag_atomic_compare_exchange_strong(volatile mag_atomic64_t* o, mag_atomic64_t *exp, mag_atomic64_t *des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
+static MAG_AINLINE bool mag_atomic64_compare_exchange_strong(volatile mag_atomic64_t* o, mag_atomic64_t *exp, mag_atomic64_t *des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
     (void)order_succ; (void)order_fail;
     mag_atomic64_t old = _InterlockedCompareExchange64(o, *des, *exp);
+    if (old == *exp) return true; /* Emulate GCC's weak compare exchange. */
+    else { *exp = old; return false; }
+}
+
+#define restrict __restrict
+
+typedef long mag_atomic32_t;
+static MAG_AINLINE void mag_atomic32_store(volatile mag_atomic32_t* o, mag_atomic32_t x, mag_memory_order_t order) {
+    (void)order; _InterlockedExchange(o, x);
+}
+static MAG_AINLINE mag_atomic32_t mag_atomic32_load(volatile mag_atomic32_t* o, mag_memory_order_t order) {
+    (void)order;
+    mag_atomic32_t r;
+    _InterlockedExchange(&r, *o);
+    return r;
+}
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_add(volatile mag_atomic32_t* o, mag_atomic32_t x, mag_memory_order_t order) {
+    (void)order;
+    return _InterlockedExchangeAdd(o, x);
+}
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_sub(volatile mag_atomic32_t* o, mag_atomic32_t x, mag_memory_order_t order) {
+    (void)order;
+    return _InterlockedExchangeAdd(o, -x);
+}
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_and(volatile mag_atomic32_t* o, mag_atomic32_t x, mag_memory_order_t order) {
+    (void)order;
+    return _InterlockedAnd(o, x);
+}
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_or(volatile mag_atomic32_t* o, mag_atomic32_t x, mag_memory_order_t order) {
+    (void)order;
+    return _InterlockedOr(o, x);
+}
+static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_xor(volatile mag_atomic32_t* o, mag_atomic32_t x, mag_memory_order_t order) {
+    (void)order;
+    return _InterlockedXor(o, x);
+}
+static MAG_AINLINE mag_atomic32_t mag_atomic32_exchange(volatile mag_atomic32_t* o, mag_atomic32_t x, mag_memory_order_t order) {
+    (void)order;
+    return _InterlockedExchange(o, x);
+}
+static MAG_AINLINE bool mag_atomic32_compare_exchange_weak(volatile mag_atomic32_t* o, mag_atomic32_t* exp, mag_atomic32_t* des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
+    (void)order_succ; (void)order_fail;
+    mag_atomic32_t old = _InterlockedCompareExchange(o, *des, *exp);
+    if (old == *exp) return true; /* Emulate GCC's weak compare exchange. */
+    else { *exp = old; return false; }
+}
+static MAG_AINLINE bool mag_atomic32_compare_exchange_strong(volatile mag_atomic32_t* o, mag_atomic32_t* exp, mag_atomic32_t* des, mag_memory_order_t order_succ, mag_memory_order_t order_fail) {
+    (void)order_succ; (void)order_fail;
+    mag_atomic32_t old = _InterlockedCompareExchange(o, *des, *exp);
     if (old == *exp) return true; /* Emulate GCC's weak compare exchange. */
     else { *exp = old; return false; }
 }
@@ -590,7 +639,11 @@ typedef pthread_cond_t mag_condvar_t;
 #endif
 
 #if defined(__amd64__) || defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+#ifdef _MSC_VER
+#define mag_cpu_pause() _mm_pause()
+#else
 #define mag_cpu_pause() __asm__ __volatile__("pause" ::: "memory")
+#endif
 #elif defined(__aarch64__)
 #define mag_cpu_pause() __asm__ __volatile__("yield" ::: "memory")
 #else
@@ -644,7 +697,6 @@ typedef struct mag_opparam_t {
     mag_opparam_type_t type : 2;
     int64_t i62 : 62;
 } mag_opparam_t;
-mag_static_assert(sizeof(mag_opparam_t) == 8);
 
 static MAG_AINLINE mag_opparam_t mag_op_param_none() {
     mag_opparam_t p;

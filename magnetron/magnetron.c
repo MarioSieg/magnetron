@@ -32,6 +32,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <synchapi.h>
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
@@ -408,7 +409,7 @@ mag_e11m52_t mag_hpc_clock_elapsed_ms(uint64_t start) { /* High precision clock 
 }
 
 #ifdef _MSC_VER
-extern "C" uint64_t __rdtsc();
+extern uint64_t __rdtsc();
 #pragma intrinsic(__rdtsc)
 #endif
 
@@ -857,6 +858,11 @@ int mag_futex_wait(volatile mag_atomic32_t* addr, mag_atomic32_t expect) {
     #elif defined(__APPLE__)
         mag_assert2(__ulock_wait);
         return __ulock_wait(UL_COMPARE_AND_WAIT, (void*)addr, expect, 0);
+    #elif defined(_WIN32)
+        BOOL ok = WaitOnAddress((volatile VOID*)addr, &expect, sizeof(expect), INFINITE);
+        if (mag_likely(ok)) return 0;
+        errno = GetLastError() == ERROR_TIMEOUT ? ETIMEDOUT : EAGAIN;
+        return -1;
     #else
     #error "Not implemented for this platform"
     #endif
@@ -868,6 +874,8 @@ void mag_futex_wake1(volatile mag_atomic32_t* addr) {
     #elif defined(__APPLE__)
         mag_assert2(__ulock_wake);
         __ulock_wake(UL_COMPARE_AND_WAIT, (void*)addr, 0);
+    #elif defined(_WIN32)
+        WakeByAddressSingle((PVOID)addr);
     #else
     #error "Not implemented for this platform"
     #endif
@@ -879,6 +887,8 @@ void mag_futex_wakeall(volatile mag_atomic32_t* addr) {
     #elif defined(__APPLE__)
         mag_assert2(__ulock_wake);
         __ulock_wake(UL_COMPARE_AND_WAIT|ULF_WAKE_ALL, (void*)addr, 0);
+    #elif defined(_WIN32)
+        WakeByAddressAll((PVOID)addr);
     #else
     #error "Not implemented for this platform"
     #endif
@@ -2028,7 +2038,7 @@ static void mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint32_t* out_phy
         DWORD size = 0;
         GetLogicalProcessorInformation(NULL, &size);
         if (mag_unlikely(!size)) return;
-        SYSTEM_LOGICAL_PROCESSOR_INFORMATION* info = (*mag_alloc)(NULL, size);
+        SYSTEM_LOGICAL_PROCESSOR_INFORMATION* info = (*mag_alloc)(NULL, size, 0);
         if (mag_unlikely(!GetLogicalProcessorInformation(info, &size))) goto end;
         for (DWORD i=0; i < size/sizeof(*info); ++i) {
             switch (info[i].Relationship) {
@@ -2043,7 +2053,7 @@ static void mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint32_t* out_phy
                 } continue;
             }
         }
-        end: (*mag_alloc)(info, 0);
+        end: (*mag_alloc)(info, 0, 0);
     #elif defined(__APPLE__)
         uint8_t tmp[256];
         size_t len;

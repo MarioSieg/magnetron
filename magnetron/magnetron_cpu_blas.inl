@@ -76,7 +76,7 @@ typedef uint8_t mag_bool_t;
 #elif defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON__))
 #define MAG_VREG_WIDTH 16
 #else
-#error "Add support for your architecture here"
+#define MAG_VREG_WIDTH 16
 #endif
 
 #if defined(_MSC_VER)

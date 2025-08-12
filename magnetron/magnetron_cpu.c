@@ -331,7 +331,7 @@ static uint32_t mag_mm_choose_workers(uint64_t flops, uint32_t tiles_total, uint
     if (ideal_threads < 1) ideal_threads = 1;
     threads = mag_xmin(threads, ideal_threads);
     if (threads & (threads-1))
-        threads = 1u<<(31-__builtin_clz(threads));
+        threads = 1u<<mag_fls(threads);
     return threads ? threads : 1;
 }
 
@@ -449,7 +449,7 @@ static void mag_cpu_broadcast(mag_istorage_t* sto, size_t offs, const void* x, s
     }
 }
 
-#define mag_ranges_overlap(a, asz, b, bsz) ((uintptr_t)((a)+(asz)) > (uintptr_t)(b) && (uintptr_t)((b)+(bsz)) > (uintptr_t)(a))
+#define mag_ranges_overlap(a, asz, b, bsz) (((uintptr_t)(a)+(asz)) > (uintptr_t)(b) && ((uintptr_t)(b)+(bsz)) > (uintptr_t)(a))
 
 static void mag_cpu_transfer(mag_istorage_t* sto, mag_transfer_dir_t dir, size_t offs, void* inout, size_t size) {
     mag_assert2(inout && size);

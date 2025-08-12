@@ -91,6 +91,10 @@ function(configure_mag_lib target_name)
         endif()
     endif()
 
+    if (WIN32) # Link sync lib on Win32
+        target_link_libraries(${target_name} Synchronization.lib)
+    endif()
+
     get_target_property(MAIN_CFLAGS ${target_name} COMPILE_OPTIONS)
     message(STATUS "${target_name} target flags: ${MAIN_CFLAGS}")
 endfunction()
