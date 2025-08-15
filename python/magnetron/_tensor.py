@@ -864,6 +864,7 @@ class Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         assert self.rank in (1, 2), f'Multinomial sampling requires a 1D or 2D tensor, but got rank {self.rank}'
         assert num_samples > 0
+        assert not replacement, 'Multinomial sampling with replacement is not implemented yet'
         return Tensor(C.mag_multinomial(self._ptr, num_samples, replacement))
 
     def logical_and(self, rhs: Tensor) -> Tensor:
