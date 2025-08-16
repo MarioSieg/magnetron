@@ -2233,7 +2233,7 @@ static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
     static void mag_cpuid(uint32_t (*o)[4], uint32_t eax) {
         mag_cpuid_ex(o, eax, 0);
     }
-    static bool mag_cpuid_streq(uint32_t ebx, uint32_t ecx, uint32_t edx, const char str[12]) {
+    static bool mag_cpuid_streq(uint32_t ebx, uint32_t ecx, uint32_t edx, const char str[static 12]) {
         #define mag_strbe(x) ((x)[0] | ((x)[1]<<8) | ((x)[2]<<16) | ((x)[3]<<24))
         return ebx == mag_strbe(str) && edx == mag_strbe(str+4) && ecx == mag_strbe(str+8);
         #undef mag_strbe
