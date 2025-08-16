@@ -42,7 +42,7 @@ class CausalSelfAttention(nn.Module):
         att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
         att = att.softmax(dim=-1)
         y = att @ v
-        y = y.transpose(1, 2).contiguous().view(B, T, C)
+        y = y.transpose(1, 2).reshape(B, T, C)
         y = self.c_proj(y)
         return y
 
