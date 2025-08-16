@@ -1007,67 +1007,82 @@ typedef struct mag_idevice_factory_t {
 extern mag_idevice_t* _Nonnull mag_init_dynamic_device(mag_context_t* _Nonnull ctx, const mag_device_desc_t* _Nonnull desc);
 extern void mag_destroy_dynamic_device(mag_idevice_t* _Nonnull dvc);
 
-#if defined(__x86_64__) || defined(_M_X64) /* x86_64 or AMD64 specific CPU features. */
-#define mag_x86_64_feature_def(_, __) /* Enumerator | CPUDID Leaf | Register | Shift */\
-    _(NONE                 , 0,         EAX,   0)__\
-    _(AVX                  , H1,        ECX,  28)__\
-    _(AVX2                 , H7,        EBX,   5)__\
-    _(AVXVNNI              , H7_1H,     EAX,   4)__\
-    _(AVXVNNIINT8          , H7_1H,     EDX,   4)__\
-    _(AVXVNNIINT16         , H7_1H,     EDX,  10)__\
-    _(AVX512BW             , H7,        EBX,  30)__\
-    _(AVX512CD             , H7,        EBX,  28)__\
-    _(AVX512DQ             , H7,        EBX,  17)__\
-    _(AVX512ER             , H7,        EBX,  27)__\
-    _(AVX512F              , H7,        EBX,  16)__\
-    _(AVX512IFMA           , H7,        EBX,  21)__\
-    _(AVX512PF             , H7,        EBX,  26)__\
-    _(AVX512VBMI           , H7,        ECX,   1)__\
-    _(AVX512VL             , H7,        EBX,  31)__\
-    _(AVX512_4FMAPS        , H7,        EDX,   3)__\
-    _(AVX512_4VNNIW        , H7,        EDX,   2)__\
-    _(AVX512_FP16          , H7,        EDX,  23)__\
-    _(AVX512_BF16          , H7_1H,     EAX,   5)__\
-    _(AVX512_BITALG        , H7,        ECX,  12)__\
-    _(AVX512_VBMI2         , H7,        ECX,   6)__\
-    _(AVX512_VNNI          , H7,        ECX,  11)__\
-    _(AVX512_VP2INTERSECT  , H7,        EDX,   8)__\
-    _(AVX512_VPOPCNTDQ     , H7,        ECX,  14)__\
-    _(BMI                  , H7,        EBX,   3)__\
-    _(BMI2                 , H7,        EBX,   8)__\
-    _(F16C                 , H1,        ECX,  29)__\
-    _(FMA                  , H1,        ECX,  12)__\
-    _(FPU                  , H1,        EDX,   0)__\
-    _(GFNI                 , H7,        ECX,   8)__\
-    _(IA64                 , H1,        EDX,  30)__\
-    _(MMX                  , H1,        EDX,  23)__\
-    _(OSXSAVE              , H1,        ECX,  27)__\
-    _(PCLMUL               , H1,        ECX,   1)__\
-    _(RDRND                , H1,        ECX,  30)__\
-    _(RDSEED               , H7,        EBX,  18)__\
-    _(RDTSCP               , H80000001, EDX,  27)__\
-    _(SHA                  , H7,        EBX,  29)__\
-    _(SSE                  , H1,        EDX,  25)__\
-    _(SSE2                 , H1,        EDX,  26)__\
-    _(SSE3                 , H1,        ECX,   0)__\
-    _(SSE4_1               , H1,        ECX,  19)__\
-    _(SSE4_2               , H1,        ECX,  20)__\
-    _(SSSE3                , H1,        ECX,   9)__\
-    _(VAES                 , H7,        ECX,   9)__\
-    _(VME                  , H1,        EDX,   1)__\
-    _(VMX                  , H1,        ECX,   5)__\
-    _(VPCLMULQDQ           , H7,        ECX,  10)__\
-    _(XSAVE                , H1,        ECX,  26)__\
-    _(HYBRID_CPU           , H7,        EDX,  15)__
+#if defined(__x86_64__) || defined(_M_X64)
 
-#define _(ident, leaf, reg, bit) MAG_AMD64_CAP_##ident
-typedef enum mag_amd64_cap_t {
-    mag_x86_64_feature_def(_, MAG_SEP)
-    MAG_AMD64_CAP__NUM
-} mag_amd64_cap_t;
+typedef struct mag_amd64_cap_t { uint64_t lo, hi; } mag_amd64_cap_t;
+#define mag_amd64_cap_from_id(i) (mag_amd64_cap_t){.lo=((i) < 64 ? (1ull<<((i)%64)) : 0),.hi=((i) >= 64 ? (1ull<<((i)%64)) : 0)}
+#define mag_amd64_cap_union(x, y) (mag_amd64_cap_t){.lo=((x).lo|(y).lo),.hi=((x).hi|(y).hi)}
+#define mag_amd64_cap_intersect(x, y) (mag_amd64_cap_t){.lo=((x).lo&(y).lo),.hi=((x).hi&(y).hi)}
+#define mag_amd64_cap_symdiff(x, y) (mag_amd64_cap_t){.lo=((x).lo^(y).lo),.hi=((x).hi^(y).hi)}
+#define mag_amd64_cap_has(x, y) (0!=(((x).lo&(y).lo)|((x).hi&(y).hi)))
+#define mag_amd64_cap_eq(x, y) ((x).lo == (y).lo && (x).hi == (y).hi)
+
+#define mag_x86_64_define_caps(_, __)\
+    _(0, INTEL)__\
+    _(1, AMD)__\
+    \
+    _(2,  SSE)__\
+    _(3,  SSE2)__\
+    _(4,  SSE3)__\
+    _(5,  SSSE3)__\
+    _(6,  SSE41)__\
+    _(7,  SSE42)__\
+    _(8,  SSE4A)__\
+    \
+    _(9,  AVX)__\
+    _(10, FMA)__\
+    _(11, AVX2)__\
+    _(12, F16C)__\
+    _(13, AVX_VNNI)__\
+    _(14, AVX_VNNI_INT8)__\
+    _(15, AVX_NE_CONVERT)__\
+    _(16, AVX_IFMA)__\
+    _(17, AVX_VNNI_INT16)__\
+    _(18, AVX10)__\
+    \
+    _(19, AVX512_F)__\
+    _(20, AVX512_DQ)__\
+    _(21, AVX512_IFMA)__\
+    _(22, AVX512_PF)__\
+    _(23, AVX512_ER)__\
+    _(24, AVX512_CD)__\
+    _(25, AVX512_BW)__\
+    _(26, AVX512_VL)__\
+    _(27, AVX512_VBMI)__\
+    _(28, AVX512_4VNNIW)__\
+    _(29, AVX512_4FMAPS)__\
+    _(30, AVX512_VBMI2)__\
+    _(31, AVX512_VNNI)__\
+    _(32, AVX512_BITALG)__\
+    _(33, AVX512_VPOPCNTDQ)__\
+    _(34, AVX512_BF16)__\
+    _(35, AVX512_VP2INTERSECT)__\
+    _(36, AVX512_FP16)__\
+    \
+    _(37, AMX_TILE)__\
+    _(38, AMX_INT8)__\
+    _(39, AMX_BF16)__\
+    _(40, AMX_FP16)__\
+    _(41, AMX_TRANSPOSE)__\
+    _(42, AMX_TF32)__\
+    _(43, AMX_AVX512)__\
+    _(44, AMX_MOVRS)__\
+    _(45, AMX_FP8)__\
+    \
+    _(46, BMI1)__\
+    _(47, BMI2)__\
+    \
+    _(48, OSXSAVE)__\
+    _(49, GFNI)__\
+    _(50, APX_F)__
+
+#define MAG_AMD64_CAP__NUM 51
+
+#define _(i, name) static const mag_amd64_cap_t MAG_AMD64_##name = mag_amd64_cap_from_id(i);
+    mag_x86_64_define_caps(_, ;)
 #undef _
 
-extern const char* _Nullable const mag_amd64_cap_names[MAG_AMD64_CAP__NUM];
+extern const char* const mag_amd64_cpu_cap_names[MAG_AMD64_CAP__NUM]; /* Names of x86-64 CPU capabilities. */
 
 #elif defined(__aarch64__) || defined(_M_ARM64) /* ARM 64 specific CPU features. */
 
@@ -1111,8 +1126,8 @@ struct mag_context_t {
         size_t phys_mem_total;                  /* Total physical memory in bytes. */
         size_t phys_mem_free;                   /* Free physical memory in bytes. */
 #if defined(__x86_64__) || defined(_M_X64)
-        uint64_t amd64_cpu_caps;                /* x86-64 CPU features. Bitset of 1ull<<MAG_AMD64_CAP_* */
-        bool is_amd;                            /* Is AMD CPU? */
+        mag_amd64_cap_t amd64_cpu_caps;         /* x86-64 CPU capabilities. */
+        uint32_t amd64_avx10_ver;               /* x86-64 AVX10 version. */
 #elif defined (__aarch64__) || defined(_M_ARM64)
         uint64_t arm64_cpu_caps;                /* ARM64 CPU features. */
         int64_t arm64_cpu_sve_width;            /* ARM64 SVE vector register width. */
