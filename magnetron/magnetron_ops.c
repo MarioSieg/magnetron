@@ -439,7 +439,7 @@ mag_impl_unary_pair(gelu_dv, GELU_DV)
 
 #undef mag_impl_unary_pair
 
-mag_tensor_t* _Nonnull mag_tril(mag_tensor_t* _Nonnull x, int32_t diag) {
+mag_tensor_t* mag_tril(mag_tensor_t* x, int32_t diag) {
     mag_assert2(x != NULL);
     mag_assert(x->rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->rank);
 
@@ -449,7 +449,7 @@ mag_tensor_t* _Nonnull mag_tril(mag_tensor_t* _Nonnull x, int32_t diag) {
     return mag_op_stub_unary(MAG_OP_TRIL, x, &layout, false);
 }
 
-mag_tensor_t* _Nonnull mag_tril_(mag_tensor_t* _Nonnull x, int32_t diag) {
+mag_tensor_t* mag_tril_(mag_tensor_t* x, int32_t diag) {
     mag_assert2(x != NULL);
     mag_assert(x->rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->rank);
 
@@ -459,7 +459,7 @@ mag_tensor_t* _Nonnull mag_tril_(mag_tensor_t* _Nonnull x, int32_t diag) {
     return mag_op_stub_unary(MAG_OP_TRIL, x, &layout, true);
 }
 
-mag_tensor_t* _Nonnull mag_triu(mag_tensor_t* _Nonnull x, int32_t diag) {
+mag_tensor_t* mag_triu(mag_tensor_t* x, int32_t diag) {
     mag_assert2(x != NULL);
     mag_assert(x->rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->rank);
 
@@ -469,7 +469,7 @@ mag_tensor_t* _Nonnull mag_triu(mag_tensor_t* _Nonnull x, int32_t diag) {
     return mag_op_stub_unary(MAG_OP_TRIU, x, &layout, false);
 }
 
-mag_tensor_t* _Nonnull mag_triu_(mag_tensor_t* _Nonnull x, int32_t diag) {
+mag_tensor_t* mag_triu_(mag_tensor_t* x, int32_t diag) {
     mag_assert2(x != NULL);
     mag_assert(x->rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->rank);
 
