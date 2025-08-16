@@ -119,7 +119,7 @@ class GPT(nn.Module):
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')]
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')]
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
-        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+        assert len(sd_keys_hf) == len(sd_keys), f'mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}'
         def copy(r: mag.Tensor, x: torch.tensor) -> None: # TODO
             assert x.is_contiguous and r.is_contiguous
             assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
@@ -164,6 +164,38 @@ class GPT(nn.Module):
             logits = self(idx_cond)
             logits = logits[:, -1, :] / temp
             probs = logits.softmax(dim=-1)
-            idx_next = probs.multinomial(num_samples=1)
-            idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), torch.tensor(idx_next.tolist())), dim=1).tolist()) # TODO
+            idx_next = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1)
+            idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), idx_next), dim=1).tolist()) # TODO
+            #idx_next = probs.multinomial(num_samples=1)
+            #idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), torch.tensor(idx_next.tolist())), dim=1).tolist()) # TODO
         return idx
+
+@mag.no_grad()
+def _main() -> None:
+    import tiktoken
+    import argparse
+    import time
+
+    args = argparse.ArgumentParser(description='Run GPT-2 model')
+    args.add_argument('prompt', type=str, default='What is the answer to life?', help='Prompt to start generation')
+    args.add_argument('--model', type=str, default='gpt2', help='Model type (gpt2, gpt2-medium, gpt2-large, gpt2-xl)')
+    args.add_argument('--max_new_tokens', type=int, default=64, help='Maximum number of new tokens to generate')
+    args.add_argument('--temp', type=float, default=1.0, help='Temperature for sampling')
+    args = args.parse_args()
+
+    model = GPT.from_pretrained(args.model)
+    enc = tiktoken.get_encoding('gpt2')
+
+    encode = lambda x: enc.encode(x, allowed_special={'<|endoftext|>'})
+    decode = lambda x: enc.decode(x)
+
+    x = mag.Tensor.of(encode(args.prompt), dtype=mag.int32)[None, ...]
+    start = time.perf_counter()
+    y = model.generate(x, args.max_new_tokens, temp=args.temp)
+    elapsed = time.perf_counter() - start
+    ans: str = decode(y[0].tolist())
+    print(f'Generated in: {elapsed:.9f} seconds')
+    print(ans)
+
+if __name__ == '__main__':
+    _main()

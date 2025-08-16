@@ -26,3 +26,4 @@ magnetron_chat/.idea
 /.cmake/
 **/__pycache__
 perf.data
+uv.lock
