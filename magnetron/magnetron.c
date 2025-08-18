@@ -368,7 +368,7 @@ uintptr_t mag_thread_id(void) { /* Get the current thread ID. */
 
 #if defined(__x86_64__) || defined(_M_X64)
 const char* const mag_amd64_cpu_cap_names[MAG_AMD64_CAP__NUM] = {
-    #define _(i, name) #name
+    #define _(name) #name
     mag_x86_64_define_caps(_, MAG_SEP)
     #undef _
 };
@@ -649,10 +649,9 @@ static void mag_system_host_info_dump(mag_context_t* ctx) {
     #if defined(__x86_64__) || defined(_M_X64) /* Print detected CPU features for x86-64 platforms. */
         if (mag_log_enabled) {
             printf(MAG_CC_CYAN "[magnetron] " MAG_CC_RESET "%s caps: ", cpu_arch);
-            for (uint64_t i=0; i < MAG_AMD64_CAP__NUM; ++i) {
-                mag_amd64_cap_t cap = mag_amd64_cap_from_id(i);
-                if (mag_amd64_cap_eq(cap, MAG_AMD64_INTEL) || mag_amd64_cap_eq(cap, MAG_AMD64_AMD)) continue; /* Skip vendor caps */
-                if (mag_amd64_cap_has(ctx->machine.amd64_cpu_caps, cap))
+            for (unsigned i=0; i < MAG_AMD64_CAP__NUM; ++i) {
+                if (i == MAG_AMD64_CAP_AMD || i == MAG_AMD64_CAP_INTEL) continue; /* Skip vendor caps */
+                if (ctx->machine.amd64_cpu_caps & mag_amd64_cap_bit(i))
                     printf("%s ", mag_amd64_cpu_cap_names[i]);
             }
             putchar('\n');
@@ -2247,55 +2246,56 @@ static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
             return (uint64_t)edx<<32 | eax;
         #endif
     }
-    static void mag_probe_cpu_amd64(mag_amd64_cap_t* o, uint32_t* avx10ver) {
+    static void mag_probe_cpu_amd64(mag_amd64_cap_bitset_t* o, uint32_t* avx10ver) {
         memset(o, 0, sizeof(*o));
         uint32_t id[4] = {0};
         const uint32_t* eax = id+0, *ebx = id+1, *ecx = id+2, *edx = id+3;
         mag_cpuid(&id, 0);
         uint32_t max = *eax;
-        if (mag_cpuid_streq(*ebx, *ecx, *edx, "AuthenticAMD")) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMD);
-        else if (mag_cpuid_streq(*ebx, *ecx, *edx, "GenuineIntel")) *o = mag_amd64_cap_union(*o, MAG_AMD64_INTEL);
+        if (mag_cpuid_streq(*ebx, *ecx, *edx, "AuthenticAMD")) *o|=mag_amd64_cap(AMD);
+        else if (mag_cpuid_streq(*ebx, *ecx, *edx, "GenuineIntel")) *o|=mag_amd64_cap(INTEL);
         mag_cpuid(&id, 0x80000000);
+        #define mag_captest(reg, bit, cp) if (*(reg)&(1u<<((bit)&31))) *o|=mag_amd64_cap(cp)
         uint32_t max_ex = *eax;
         if (max_ex >= 0x80000001) {
             mag_cpuid(&id, 0x80000001);
-            if (*ecx & 1u<<6) *o = mag_amd64_cap_union(*o, MAG_AMD64_SSE4A);
+            mag_captest(ecx, 0, SSE4A);
         }
         mag_cpuid(&id, 1);
-        if (*ecx & 1u<<0) *o = mag_amd64_cap_union(*o, MAG_AMD64_SSE3);
-        if (*ecx & 1u<<9) *o = mag_amd64_cap_union(*o, MAG_AMD64_SSSE3);
-        if (*ecx & 1u<<19) *o = mag_amd64_cap_union(*o, MAG_AMD64_SSE41);
-        if (*ecx & 1u<<20) *o = mag_amd64_cap_union(*o, MAG_AMD64_SSE42);
-        if (*ecx & 1u<<27) *o = mag_amd64_cap_union(*o, MAG_AMD64_OSXSAVE);
-        if (*ecx & 1u<<29) *o = mag_amd64_cap_union(*o, MAG_AMD64_F16C);
-        if (*edx & 1u<<25) *o = mag_amd64_cap_union(*o, MAG_AMD64_SSE);
-        if (*edx & 1u<<26) *o = mag_amd64_cap_union(*o, MAG_AMD64_SSE2);
-        if (mag_amd64_cap_has(*o, MAG_AMD64_OSXSAVE)) {
+        mag_captest(ecx, 0, SSE3);
+        mag_captest(ecx, 9, SSSE3);
+        mag_captest(ecx, 19, SSE41);
+        mag_captest(ecx, 20, SSE42);
+        mag_captest(ecx, 27, OSXSAVE);
+        mag_captest(ecx, 29, F16C);
+        mag_captest(edx, 25, SSE);
+        mag_captest(edx, 26, SSE2);
+        if (*o & mag_amd64_cap(OSXSAVE)) {
             uint64_t cr = mag_xgetbv();
             if ((cr&6) == 6) {
-                if (*ecx & 1u<<12) *o = mag_amd64_cap_union(*o, MAG_AMD64_FMA);
-                if (*ecx & 1u<<28) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX);
+                mag_captest(ecx, 12, FMA);
+                mag_captest(ecx, 28, AVX);
                 if (((cr>>5)&7) == 7) {
                     mag_cpuid_ex(&id, 7, 0);
-                    if (*ebx & 1<<16) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_F);
-                    if (mag_amd64_cap_has(*o, MAG_AMD64_AVX512_F)) {
-                        if (*ebx & 1u<<17) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_DQ);
-                        if (*ebx & 1u<<21) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_IFMA);
-                        if (*ebx & 1u<<26) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_PF);
-                        if (*ebx & 1u<<27) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_ER);
-                        if (*ebx & 1u<<28) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_CD);
-                        if (*ebx & 1u<<30) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_BW);
-                        if (*ebx & 1u<<31) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_VL);
-                        if (*ecx & 1u<<1) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_VBMI);
-                        if (*ecx & 1u<<6) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_VBMI2);
-                        if (*ecx & 1u<<11) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_VNNI);
-                        if (*ecx & 1u<<12) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_BITALG);
-                        if (*ecx & 1u<<14) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_VPOPCNTDQ);
-                        if (*edx & 1u<<2) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_4VNNIW);
-                        if (*edx & 1u<<3) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_4FMAPS);
-                        if (*edx & 1u<<8) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_VP2INTERSECT);
-                        if (mag_amd64_cap_has(*o, MAG_AMD64_AVX512_BW) && (*edx & 1u<<23))
-                            *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_FP16);
+                    mag_captest(ebx, 16, AVX512_F);
+                    if (*o & mag_amd64_cap(AVX512_F)) {
+                        mag_captest(ebx, 17, AVX512_DQ);
+                        mag_captest(ebx, 21, AVX512_IFMA);
+                        mag_captest(ebx, 26, AVX512_PF);
+                        mag_captest(ebx, 27, AVX512_ER);
+                        mag_captest(ebx, 28, AVX512_CD);
+                        mag_captest(ebx, 30, AVX512_BW);
+                        mag_captest(ebx, 31, AVX512_VL);
+                        mag_captest(ecx, 1, AVX512_VBMI);
+                        mag_captest(ecx, 6, AVX512_VBMI2);
+                        mag_captest(ecx, 11, AVX512_VNNI);
+                        mag_captest(ecx, 12, AVX512_BITALG);
+                        mag_captest(ecx, 14, AVX512_VPOPCNTDQ);
+                        mag_captest(edx, 2, AVX512_4VNNIW);
+                        mag_captest(edx, 3, AVX512_4FMAPS);
+                        mag_captest(edx, 8, AVX512_VP2INTERSECT);
+                        if (*o & mag_amd64_cap(AVX512_BW))
+                            mag_captest(edx, 23, AVX512_FP16);
                     }
                 }
             }
@@ -2303,34 +2303,35 @@ static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
         if (max >= 7) {
             mag_cpuid_ex(&id, 7, 0);
             uint32_t max_sub = *eax;
-            if (mag_amd64_cap_has(*o, MAG_AMD64_AVX) && (*ebx & 1u<<5))
-                *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX2);
-            if (*ebx & 1u<<3) *o = mag_amd64_cap_union(*o, MAG_AMD64_BMI1);
-            if (*ebx & 1u<<8) *o = mag_amd64_cap_union(*o, MAG_AMD64_BMI2);
-            if (*ecx & 1u<<8) *o = mag_amd64_cap_union(*o, MAG_AMD64_GFNI);
-            if (*edx & 1u<<22) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMX_BF16);
-            if (*edx & 1u<<24) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMX_TILE);
-            if (*edx & 1u<<25) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMX_INT8);
+            if (*o & mag_amd64_cap(AVX) && (*ebx & 1u<<5))
+                *o |= mag_amd64_cap(AVX2);
+            mag_captest(ebx, 3, BMI1);
+            mag_captest(ebx, 8, BMI2);
+            mag_captest(ecx, 8, GFNI);
+            mag_captest(edx, 22, AMX_BF16);
+            mag_captest(edx, 24, AMX_TILE);
+            mag_captest(edx, 25, AMX_INT8);
             if (max_sub >= 1) {
                 mag_cpuid_ex(&id, 7, 1);
-                if (*eax & 1u<<4) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX_VNNI);
-                if (mag_amd64_cap_has(*o, MAG_AMD64_AVX512_F) && (*eax & 1u<< 5))
-                    *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX512_BF16);
-                if (*edx & 1u<<22) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMX_FP16);
-                if (*edx & 1u<<4) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX_VNNI_INT8);
-                if (*edx & 1u<<5) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX_NE_CONVERT);
-                if (*edx & 1u<<10) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX_VNNI_INT16);
-                if (*edx & 1u<<19) *o = mag_amd64_cap_union(*o, MAG_AMD64_AVX10);
-                if (*edx & 1u<<21) *o = mag_amd64_cap_union(*o, MAG_AMD64_APX_F);
+                mag_captest(eax, 4, AVX_VNNI);
+                if (*o & mag_amd64_cap(AVX512_F))
+                    mag_captest(eax, 5, AVX512_BF16);
+                mag_captest(edx, 22, AMX_FP16);
+                mag_captest(edx, 4, AVX_VNNI_INT8);
+                mag_captest(edx, 5, AVX_NE_CONVERT);
+                mag_captest(edx, 10, AVX_VNNI_INT16);
+                mag_captest(edx, 19, AVX10);
+                mag_captest(edx, 21, APX_F);
                 mag_cpuid_ex(&id, 0x1e, 1);
-                if (*eax & 1u<<4) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMX_FP8);
-                if (*eax & 1u<<5) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMX_TRANSPOSE);
-                if (*eax & 1u<<6) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMX_TF32);
-                if (*eax & 1u<<7) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMX_AVX512);
-                if (*eax & 1u<<8) *o = mag_amd64_cap_union(*o, MAG_AMD64_AMX_MOVRS);
+                mag_captest(eax, 4, AMX_FP8);
+                mag_captest(eax, 5, AMX_TRANSPOSE);
+                mag_captest(eax, 6, AMX_TF32);
+                mag_captest(eax, 7, AMX_AVX512);
+                mag_captest(eax, 8, AMX_MOVRS);
             }
         }
-        if (mag_amd64_cap_has(*o, MAG_AMD64_AVX10)) {
+        #undef mag_captest
+        if (*o & mag_amd64_cap(AVX10)) {
             mag_cpuid_ex(&id, 0x24, 0);
             *avx10ver = *ebx & 127;
         }

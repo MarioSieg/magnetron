@@ -3233,157 +3233,157 @@ static MAG_HOTPROC void mag_matmul_e5m10(const mag_kernel_payload_t* payload) {
 #endif
 
 #if defined(__x86_64__) || defined(_M_X64)
-mag_amd64_cap_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
-    mag_amd64_cap_t caps = {0};
+mag_amd64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
+    mag_amd64_cap_bitset_t caps = 0;
     #ifdef __SSE__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_SSE);
+        caps|=mag_amd64_cap(SSE);
     #endif
     #ifdef __SSE2__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_SSE2);
+        caps|=mag_amd64_cap(SSE2);
     #endif
     #ifdef __SSE3__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_SSE3);
+        caps|=mag_amd64_cap(SSE3);
     #endif
     #ifdef __SSSE3__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_SSSE3);
+        caps|=mag_amd64_cap(SSSE3);
     #endif
     #ifdef __SSE4_1__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_SSE41);
+        caps|=mag_amd64_cap(SSE41);
     #endif
     #ifdef __SSE4_2__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_SSE42);
+        caps|=mag_amd64_cap(SSE42);
     #endif
     #ifdef __SSE4A__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_SSE42);
+        caps|=mag_amd64_cap(SSE42);
     #endif
 
     #ifdef __AVX__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX);
+        caps|=mag_amd64_cap(AVX);
     #endif
     #ifdef __FMA__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_FMA);
+        caps|=mag_amd64_cap(FMA);
     #endif
     #ifdef __AVX2__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX2);
+        caps|=mag_amd64_cap(AVX2);
     #endif
     #ifdef __F16C__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_F16C);
+        caps|=mag_amd64_cap(F16C);
     #endif
     #ifdef __AVXVNNI__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX_VNNI);
+        caps|=mag_amd64_cap(AVX_VNNI);
     #endif
     #ifdef __AVXVNNIINT8__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX_VNNI_INT8);
+        caps|=mag_amd64_cap(AVX_VNNI_INT8);
     #endif
     #ifdef __AVXNECONVERT__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX_NE_CONVERT);
+        caps|=mag_amd64_cap(AVX_NE_CONVERT);
     #endif
     #ifdef __AVXIFMA__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX_IFMA);
+        caps|=mag_amd64_cap(AVX_IFMA);
     #endif
     #ifdef __AVXVNNIINT16__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX_VNNI_INT16);
+        caps|=mag_amd64_cap(AVX_VNNI_INT16);
     #endif
     #ifdef __AVX10__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX10);
+        caps|=mag_amd64_cap(AVX10);
     #endif
 
     #ifdef __AVX512F__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_F);
+        caps|=mag_amd64_cap(AVX512_F);
     #endif
     #ifdef __AVX512DQ__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_DQ);
+        caps|=mag_amd64_cap(AVX512_DQ);
     #endif
     #ifdef __AVX512IFMA__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_IFMA);
+        caps|=mag_amd64_cap(AVX512_IFMA);
     #endif
     #ifdef __AVX512PF__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_PF);
+        caps|=mag_amd64_cap(AVX512_PF);
     #endif
     #ifdef __AVX512ER__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_EQ);
+        caps|=mag_amd64_cap(AVX512_EQ);
     #endif
     #ifdef __AVX512CD__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_CD);
+        caps|=mag_amd64_cap(AVX512_CD);
     #endif
     #ifdef __AVX512BW__
-         caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_BW);
+         caps|=mag_amd64_cap(AVX512_BW);
     #endif
     #ifdef __AVX512VL__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_VL);
+        caps|=mag_amd64_cap(AVX512_VL);
     #endif
     #ifdef __AVX512VBMI__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_VBMI);
+        caps|=mag_amd64_cap(AVX512_VBMI);
     #endif
     #ifdef __AVX5124VNNIW__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_4VNNIW);
+        caps|=mag_amd64_cap(AVX512_4VNNIW);
     #endif
     #ifdef __AVX5124FMAPS__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_4FMAPS);
+        caps|=mag_amd64_cap(AVX512_4FMAPS);
     #endif
     #ifdef __AVX512VBMI2__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_VBMI2);
+        caps|=mag_amd64_cap(AVX512_VBMI2);
     #endif
     #ifdef __AVX512VNNI__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_VNNI);
+        caps|=mag_amd64_cap(AVX512_VNNI);
     #endif
     #ifdef __AVX512BITALG__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_BITALG);
+        caps|=mag_amd64_cap(AVX512_BITALG);
     #endif
     #ifdef __AVX512VPOPCNTDQ__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_VPOPCNTDQ);
+        caps|=mag_amd64_cap(AVX512_VPOPCNTDQ);
     #endif
     #ifdef __AVX512BF16__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_BF16);
+        caps|=mag_amd64_cap(AVX512_BF16);
     #endif
     #ifdef __AVX512VP2INTERSECT__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_VP2INTERSECT);
+        caps|=mag_amd64_cap(AVX512_VP2INTERSECT);
     #endif
     #ifdef __AVX512FP16__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AVX512_FP16);
+        caps|=mag_amd64_cap(AVX512_FP16);
     #endif
 
     #ifdef __AMX_TILE__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AMX_TILE);
+        caps|=mag_amd64_cap(AMX_TILE);
     #endif
     #ifdef __AMX_INT8__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AMX_INT8);
+        caps|=mag_amd64_cap(AMX_INT8);
     #endif
     #ifdef __AMX_BF16__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AMX_BF16);
+        caps|=mag_amd64_cap(AMX_BF16);
     #endif
     #ifdef __AMX_FP16__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AMX_FP16);
+        caps|=mag_amd64_cap(AMX_FP16);
     #endif
     #ifdef __AMX_TRANSPOSE__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AMX_TRANSPOSE);
+        caps|=mag_amd64_cap(AMX_TRANSPOSE);
     #endif
     #ifdef __AMX_TF32__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AMX_TF32);
+        caps|=mag_amd64_cap(AMX_TF32);
     #endif
     #ifdef __AMX_AVX512__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AMX_AVX512);
+        caps|=mag_amd64_cap(AMX_AVX512);
     #endif
     #ifdef __AMX_MOVRS__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AMX_MOVRS);
+        caps|=mag_amd64_cap(AMX_MOVRS);
     #endif
     #ifdef __AMX_FP8__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_AMX_FP8);
+        caps|=mag_amd64_cap(AMX_FP8);
     #endif
 
 
     #ifdef __BMI__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_BMI1);
+        caps|=mag_amd64_cap(BMI1);
     #endif
     #ifdef __BMI2__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_BMI2);
+        caps|=mag_amd64_cap(BMI2);
     #endif
 
     #ifdef __GFNI__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_GFNI);
+        caps|=mag_amd64_cap(GFNI);
     #endif
     #ifdef __APXF__
-        caps = mag_amd64_cap_union(caps, MAG_AMD64_APX_F);
+        caps|=mag_amd64_cap(APX_F);
     #endif
 
     return caps;

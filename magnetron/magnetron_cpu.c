@@ -53,11 +53,11 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_context_t* host_ctx, mag_
         mag_amd64_blas_spec_permute(2),
     };
 
-    mag_amd64_cap_t cap_machine = host_ctx->machine.amd64_cpu_caps;
+    mag_amd64_cap_bitset_t cap_machine = host_ctx->machine.amd64_cpu_caps;
     for (size_t i=0; i < sizeof(impls)/sizeof(*impls); ++i) { /* Find best blas spec for the host CPU */
         const mag_amd64_blas_spec_t* spec = impls+i;
-        mag_amd64_cap_t cap_required = (*spec->get_feature_permutation)(); /* Get requires features */
-        if (mag_amd64_cap_eq(mag_amd64_cap_intersect(cap_machine, cap_required), cap_required)) { /* Since specializations are sorted by score, we found the perfect spec. */
+        mag_amd64_cap_bitset_t cap_required = (*spec->get_feature_permutation)(); /* Get requires features */
+        if ((cap_machine & cap_required) == cap_required) { /* Since specializations are sorted by score, we found the perfect spec. */
             (*spec->inject_kernels)(kernels);
             mag_log_info("Using tuned BLAS specialization: %s", spec->name);
             return true;
