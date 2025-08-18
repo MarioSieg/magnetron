@@ -54,6 +54,10 @@ if (${MAGNETRON_BUILD_BENCHMARKS})
     add_subdirectory(benchmark)
 endif()
 
-install(TARGETS magnetron LIBRARY DESTINATION . RUNTIME DESTINATION .)
+install(TARGETS magnetron
+    LIBRARY DESTINATION magnetron
+    RUNTIME DESTINATION magnetron
+    ARCHIVE DESTINATION magnetron
+)
 
 message(STATUS "magnetron configuration complete!")
