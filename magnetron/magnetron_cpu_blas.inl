@@ -73,7 +73,7 @@ typedef uint8_t mag_bool_t;
 #define MAG_VREG_WIDTH 32
 #elif defined(__SSE2__)
 #define MAG_VREG_WIDTH 16
-#elif defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+#elif defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON))
 #define MAG_VREG_WIDTH 16
 #else
 #define MAG_VREG_WIDTH 16
@@ -2543,7 +2543,7 @@ typedef struct mag_mmscratch_t {
 #define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 #define MAG_PREFETCH_SPAN 8
 
-#ifdef __ARM_NEON__
+#if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
 #ifdef __ARM_FEATURE_FMA
 #define mag_vfmadd_e8m23(acc, a, b) vfmaq_f32((acc), (a), (b))
 #else
@@ -2576,7 +2576,7 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(
     ptrdiff_t ldc,
     bool acc
 ) {
-    #ifdef __ARM_NEON__
+    #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
         float32x4_t C[8][2];
         if (acc) {
             #pragma GCC unroll 8
@@ -2676,7 +2676,7 @@ static MAG_AINLINE void mag_mm_tile_1x8_e8m23(int64_t kc, const mag_e8m23_t* a, 
             C0 = _mm256_fmadd_ps(A, B0, C0);
         }
         _mm256_storeu_ps(c, C0);
-    #elif defined(__ARM_NEON)
+    #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
         float32x4_t C0 = acc ? vld1q_f32(c + 0) : vdupq_n_f32(0.0f);
         float32x4_t C1 = acc ? vld1q_f32(c + 4) : vdupq_n_f32(0.0f);
         for (int64_t k = 0; k < kc; ++k) {
@@ -2714,7 +2714,7 @@ static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* a,
         }
         _mm256_storeu_ps(c + 0, C0);
         _mm256_storeu_ps(c + 8, C1);
-    #elif defined(__ARM_NEON)
+    #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
         float32x4_t C0 = acc ? vld1q_f32(c + 0) : vdupq_n_f32(0.0f);
         float32x4_t C1 = acc ? vld1q_f32(c + 4) : vdupq_n_f32(0.0f);
         float32x4_t C2 = acc ? vld1q_f32(c + 8) : vdupq_n_f32(0.0f);
@@ -2780,7 +2780,7 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const 
                         _mm_storeu_ps(Bp + k*nc + j, v);
                     }
                     for (; j < nc; ++j) Bp[k*nc + j] = src[j];
-                #elif defined(__ARM_NEON)
+                #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
                     int64_t j = 0;
                     for (; j+15 < nc; j += 16) {
                         vst1q_f32(Bp + k*nc + j + 0, vld1q_f32(src + j + 0));
@@ -2823,7 +2823,7 @@ static MAG_AINLINE void mag_mm_pack_A_mr8_kc_e8m23(int64_t kc, const mag_e8m23_t
                 }
                 for (; k < kc; ++k) dst[k] = src[k];
             }
-        #elif defined(__ARM_NEON)
+        #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
             #pragma GCC unroll 8
             for (int i=0; i < 8; ++i) {
                 const mag_e8m23_t* src = Asrc + i*kc;
@@ -2876,21 +2876,21 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
             for (; j < nc; ++j)
                 Bp[k*nc + j] = yvec[k];
         }
-        #elif defined(__ARM_NEON)
-            for (int64_t k=0; k < kc; ++k) {
-                float32x4_t val = vdupq_n_f32(yvec[k]);
-                int64_t j=0;
-                for (; j+15 < nc; j += 16) {
-                    vst1q_f32(Bp + k*nc + j +  0, val);
-                    vst1q_f32(Bp + k*nc + j +  4, val);
-                    vst1q_f32(Bp + k*nc + j +  8, val);
-                    vst1q_f32(Bp + k*nc + j + 12, val);
-                }
-                for (; j+3 < nc; j += 4)
-                    vst1q_f32(Bp + k*nc + j, val);
-                for (; j < nc; ++j)
-                    Bp[k*nc + j] = yvec[k];
+    #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+        for (int64_t k=0; k < kc; ++k) {
+            float32x4_t val = vdupq_n_f32(yvec[k]);
+            int64_t j=0;
+            for (; j+15 < nc; j += 16) {
+                vst1q_f32(Bp + k*nc + j +  0, val);
+                vst1q_f32(Bp + k*nc + j +  4, val);
+                vst1q_f32(Bp + k*nc + j +  8, val);
+                vst1q_f32(Bp + k*nc + j + 12, val);
             }
+            for (; j+3 < nc; j += 4)
+                vst1q_f32(Bp + k*nc + j, val);
+            for (; j < nc; ++j)
+                Bp[k*nc + j] = yvec[k];
+        }
     #else
         for (int64_t k = 0; k < kc; ++k) {
             mag_e8m23_t v = yvec[k];
@@ -2963,7 +2963,7 @@ static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e
                 s += A[k]*B[k*ldb + j];
             C[j] = s;
         }
-    #elif defined(__ARM_NEON__)
+    #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
         int64_t NN = N&-8;
         int64_t j=0;
         for (; j < NN; j += 8) {
@@ -3391,28 +3391,31 @@ mag_amd64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
 
-uint64_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(void) {
-    uint64_t caps = 1u<<MAG_ARM64_CAP_NEON; /* Always required on arm64. */
+mag_arm64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(void) {
+    mag_arm64_cap_bitset_t caps = 0;
+    #ifdef __ARM_NEON
+        caps|=mag_arm64_cap(NEON);
+    #endif
     #ifdef __ARM_FEATURE_DOTPROD
-        caps |= 1u<<MAG_ARM64_CAP_DOTPROD;
+        caps|=mag_arm64_cap(DOTPROD);
     #endif
     #ifdef __ARM_FEATURE_MATMUL_INT8
-        caps |= 1u<<MAG_ARM64_CAP_I8MM;
+        caps|=mag_arm64_cap(I8MM);
     #endif
     #ifdef __ARM_FEATURE_FP16_SCALAR_ARITHMETIC
-        caps |= 1u<<MAG_ARM64_CAP_F16SCA;
+        caps|=mag_arm64_cap(F16SCA);
     #endif
     #ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
-        caps |= 1u<<MAG_ARM64_CAP_F16VEC;
+        caps|=mag_arm64_cap(F16VEC);
     #endif
     #ifdef __ARM_FEATURE_BF16
-        caps |= 1u<<MAG_ARM64_CAP_BF16;
+        caps|=mag_arm64_cap(BF16);
     #endif
     #ifdef __ARM_FEATURE_SVE
-        caps |= 1u<<MAG_ARM64_CAP_SVE;
+        caps|=mag_arm64_cap(SVE);
     #endif
     #ifdef __ARM_FEATURE_SVE2
-        caps |= 1u<<MAG_ARM64_CAP_SVE2;
+        caps|=mag_arm64_cap(SVE2);
     #endif
     return caps;
 }

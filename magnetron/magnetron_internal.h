@@ -1010,6 +1010,7 @@ extern void mag_destroy_dynamic_device(mag_idevice_t* dvc);
 #if defined(__x86_64__) || defined(_M_X64)
 
 #define mag_x86_64_define_caps(_, __)\
+    _(NONE)__\
     _(INTEL)__\
     _(AMD)__\
     \
@@ -1094,13 +1095,18 @@ extern const char* const mag_amd64_cpu_cap_names[MAG_AMD64_CAP__NUM]; /* Names o
     _(SVE)__\
     _(SVE2)__
 
-#define _(ident) MAG_ARM64_CAP_##ident
 typedef enum mag_arm64_cap_t {
+    #define _(ident) MAG_ARM64_CAP_##ident
     mag_arm64_feature_def(_, MAG_SEP)
     MAG_ARM64_CAP__NUM
+    #undef _
 } mag_arm64_cap_t;
-#undef _
-extern const char* const mag_arm64_cpu_caps_names[MAG_ARM64_CAP__NUM];
+typedef uint64_t mag_arm64_cap_bitset_t;
+mag_static_assert(MAG_ARM64_CAP__NUM <= sizeof(mag_arm64_cap_bitset_t)<<3); /* Must fit in 64 bits. */
+#define mag_arm64_cap_bit(x) (((mag_arm64_cap_bitset_t)1)<<((x)&63))
+#define mag_arm64_cap(name) mag_arm64_cap_bit(MAG_ARM64_CAP_##name)
+
+extern const char* const mag_arm64_cpu_cap_names[MAG_ARM64_CAP__NUM];
 
 #endif
 
@@ -1126,7 +1132,7 @@ struct mag_context_t {
         mag_amd64_cap_bitset_t amd64_cpu_caps;  /* x86-64 CPU capability bits. */
         uint32_t amd64_avx10_ver;               /* x86-64 AVX10 version. */
 #elif defined (__aarch64__) || defined(_M_ARM64)
-        uint64_t arm64_cpu_caps;                /* ARM64 CPU features. */
+        mag_arm64_cap_bitset_t arm64_cpu_caps;  /* ARM64 CPU features. */
         int64_t arm64_cpu_sve_width;            /* ARM64 SVE vector register width. */
 #endif
     } machine;

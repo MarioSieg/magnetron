@@ -23,12 +23,12 @@ extern void mag_cpu_blas_specialization_fallback(mag_kernel_registry_t* kernels)
 
 typedef struct mag_amd64_blas_spec_t {
     const char* name;
-    mag_amd64_cap_t (*get_feature_permutation)(void);
+    mag_amd64_cap_bitset_t (*get_feature_permutation)(void);
     void (*inject_kernels)(mag_kernel_registry_t* kernels);
 } mag_amd64_blas_spec_t;
 
 #define mag_amd64_blas_spec_decl(feat) \
-    mag_amd64_cap_t mag_cpu_blas_specialization_amd64_v##feat##_features(void); \
+    mag_amd64_cap_bitset_t mag_cpu_blas_specialization_amd64_v##feat##_features(void); \
     extern void mag_cpu_blas_specialization_amd64_v##feat(mag_kernel_registry_t* kernels)
 
 #define mag_amd64_blas_spec_permute(feat) \
@@ -76,12 +76,12 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_context_t* host_ctx, mag_
 
 typedef struct mag_arm64_blas_spec_t {
     const char* name;
-    uint64_t (*get_cap_permutation)(void);
+    mag_arm64_cap_bitset_t (*get_cap_permutation)(void);
     void (*inject_kernels)(mag_kernel_registry_t* kernels);
 } mag_arm64_blas_spec_t;
 
 #define mag_arm64_blas_spec_decl(feat) \
-    uint64_t mag_cpu_blas_specialization_arm64_v_##feat##_features(void); \
+    mag_arm64_cap_bitset_t mag_cpu_blas_specialization_arm64_v_##feat##_features(void); \
     extern void mag_cpu_blas_specialization_arm64_v_##feat(mag_kernel_registry_t* kernels)
 
 #define mag_arm64_blas_spec_permute(feat) \
@@ -100,10 +100,10 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_context_t* ctx, mag_kerne
         mag_arm64_blas_spec_permute(8_2),
     };
 
-    uint64_t cap_avail = ctx->machine.arm64_cpu_caps;
+    mag_arm64_cap_bitset_t cap_avail = ctx->machine.arm64_cpu_caps;
     for (size_t i=0; i < sizeof(impls)/sizeof(*impls); ++i) { /* Find best blas spec for the host CPU */
         const mag_arm64_blas_spec_t* spec = impls+i;
-        uint64_t cap_required = (*spec->get_cap_permutation)(); /* Get requires features */
+        mag_arm64_cap_bitset_t cap_required = (*spec->get_cap_permutation)(); /* Get requires features */
         if ((cap_avail & cap_required) == cap_required) { /* Since specializations are sorted by score, we found the perfect spec. */
             (*spec->inject_kernels)(kernels);
             mag_log_info("Using tuned BLAS specialization: %s", spec->name);
