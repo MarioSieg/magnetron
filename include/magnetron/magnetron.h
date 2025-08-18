@@ -368,8 +368,6 @@ extern MAG_EXPORT mag_tensor_t* mag_tensor_detach(mag_tensor_t* t);
 extern MAG_EXPORT uint32_t mag_tensor_weak_hash(const mag_tensor_t* t); /* Returns hash of the tensor properties, not including data. */
 extern MAG_EXPORT char* mag_tensor_to_string(mag_tensor_t* t, bool with_header, size_t from_start_count, size_t from_end_count);
 extern MAG_EXPORT void mag_tensor_to_string_free_data(char* ret_val);
-extern MAG_EXPORT void mag_tensor_img_draw_box(mag_tensor_t* t, int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t wi, uint32_t rgb);
-extern MAG_EXPORT void mag_tensor_img_draw_text(mag_tensor_t* t, int32_t x, int32_t y, int32_t size, uint32_t rgb, const char* txt);
 extern MAG_EXPORT mag_tensor_t* mag_tensor_load_image(mag_context_t* ctx, const char* file, mag_color_channels_t channels, uint32_t resize_w, uint32_t resize_h);    /* Create a tensor from an image file. */
 extern MAG_EXPORT void mag_tensor_save_image(const mag_tensor_t* t, const char* file);                                                                                    /* Save tensor data as an image */
 extern MAG_EXPORT void mag_tensor_export_forward_graph_graphviz(mag_tensor_t* t, const char* file);                                                                      /* Export tensor computation graph as Graphviz DOT file *//* Get image channels from tensor */
