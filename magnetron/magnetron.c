@@ -1124,13 +1124,10 @@ static mag_tensor_t* mag_tensor_init_header(mag_context_t* ctx, mag_dtype_t type
         .op = MAG_OP_NOP,
         .op_inputs = {0},
         .op_params = {mag_op_param_none()},
-        .init_op = MAG_IOP_NOP,
-        .init_op_params = {mag_op_param_none()},
         .storage_offset = 0,
         .view_meta = NULL,
         .version = 0,
         .grad = NULL,
-        .ud = NULL
     };
 #ifdef MAG_DEBUG
     hdr->alive_next = NULL;
@@ -1276,11 +1273,9 @@ bool mag_tensor_decref(mag_tensor_t* t) { /* Decrease reference count of the ten
 
 void mag_tensor_detach_inplace(mag_tensor_t* target) {
     target->op = MAG_OP_NOP; /* Detach from operations */
-    target->init_op = MAG_IOP_NOP;
     target->flags &= ~MAG_TFLAG_REQUIRES_GRAD; /* Detach from gradient recording */
     memset(target->op_inputs, 0, sizeof(target->op_inputs)); /* Clear op inputs */
     memset(target->op_params, 0, sizeof(target->op_params));
-    memset(target->init_op_params, 0, sizeof(target->init_op_params));
 }
 
 mag_tensor_t* mag_tensor_detach(mag_tensor_t* t) {
@@ -1722,13 +1717,11 @@ void mag_tensor_to_string_free_data(char* ret_val) {
 }
 
 mag_context_t* mag_tensor_get_ctx(const mag_tensor_t* t) { return t->ctx; }
-void* mag_tensor_get_user_data(const mag_tensor_t* t) { return t->ud; }
-void mag_tensor_set_user_data(mag_tensor_t* t, void* ud) { t->ud = ud; }
 int64_t mag_tensor_get_width(const mag_tensor_t* t) { return t->shape[2]; }
 int64_t mag_tensor_get_height(const mag_tensor_t* t) { return t->shape[1]; }
 int64_t mag_tensor_get_channels(const mag_tensor_t* t) { return t->shape[0]; }
 bool mag_tensor_is_view(const mag_tensor_t* t) { return t->flags & MAG_TFLAG_IS_VIEW; }
-bool mag_tensor_is_floating_point_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_FLOATING; }
+bool mag_tensor_is_floating_point_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_FP; }
 bool mag_tensor_is_integral_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGRAL; }
 bool mag_tensor_is_integer_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGER; }
 bool mag_tensor_is_numeric_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC; }

@@ -64,12 +64,6 @@ extern "C" {
 
 #define MAG_GELU_COEFF 0.044715f /* Coefficient for GELU approximation. */
 
-/* Compute execution stage. */
-typedef enum mag_exec_stage_t {
-    MAG_STAGE_EVAL,     /* Eval op. */
-    MAG_STAGE_INIT      /* Execute init op. */
-} mag_exec_stage_t;
-
 #define MAG_MAX_CPUS 8192               /* Maximum number of virtual CPUs supported. */
 #define MAG_MAX_NUMA_NODES 64           /* Maximum number of NUMA nodes supported. */
 
@@ -778,6 +772,15 @@ static inline void mag_op_param_layout_transfer(const mag_op_param_layout_t* set
 typedef enum mag_opcode_t {
     /* Pseudo */
     MAG_OP_NOP,
+
+    /* Init ops */
+    MAG_OP_FILL,
+    MAG_OP_MASKED_FILL,
+    MAG_OP_RAND_UNIFORM,
+    MAG_OP_RAND_NORMAL,
+    MAG_OP_RAND_BERNOULLI,
+    MAG_OP_ARANGE,
+
     MAG_OP_CLONE,
     MAG_OP_VIEW,
     MAG_OP_TRANSPOSE,
@@ -849,18 +852,6 @@ mag_static_assert(MAG_OP_NOP == 0);
 mag_static_assert(MAG_OP_GT+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
-/* Initialization opcodes. */
-typedef enum mag_init_opcode_t {
-    MAG_IOP_NOP,
-    MAG_IOP_BROADCAST,
-    MAG_IOP_MASKED_BROADCAST,
-    MAG_IOP_RAND_UNIFORM,
-    MAG_IOP_RAND_NORMAL,
-    MAG_IOP_RAND_BERNOULLI,
-    MAG_IOP_ARANGE,
-    MAG_IOP__NUM
-} mag_init_opcode_t;
-
 typedef enum mag_opflags_t {
     MAG_OP_FLAG_NONE = 0,
     MAG_OP_FLAG_SUPPORTS_INPLACE = 1<<0,                /* Allows to be executed inplace on the input tensor. */
@@ -872,26 +863,22 @@ mag_static_assert(MAG_DTYPE__NUM <= 8); /* Must fit in 8 bits, if this fails inc
 #define mag_dtype_bit(x) (((mag_dtype_mask_t)1)<<((x)&63))
 #define mag_dtype_mask(enume) mag_dtype_bit(MAG_DTYPE_##enume)
 #define MAG_DTYPE_MASK_ALL (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10)|mag_dtype_mask(BOOL)|mag_dtype_mask(I32)) /* All data types */
-#define MAG_DTYPE_MASK_FLOATING (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))   /* Floating-point data types */
+#define MAG_DTYPE_MASK_FP (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))   /* Floating-point data types */
 #define MAG_DTYPE_MASK_INTEGRAL (mag_dtype_mask(BOOL)|mag_dtype_mask(I32))      /* Integral data types with boolean */
 #define MAG_DTYPE_MASK_INTEGER (MAG_DTYPE_MASK_INTEGRAL&~mag_dtype_mask(BOOL))  /* Integral (integer) data types without boolean */
 #define MAG_DTYPE_MASK_NUMERIC (MAG_DTYPE_MASK_ALL&~mag_dtype_mask(BOOL))       /* Numeric data types (all except boolean) */
 
+#define MAG_OP_INOUT_DYN SIZE_MAX /* Dynamic input/output count. Used for operations that can have arbitrary number of inputs/outputs. */
+
 /* Stores operator metadata such as operation type, number of inputs and parameters, and the types of the parameters. */
 typedef struct mag_opmeta_t {
-    const char* const mnemonic;                                    /* Operation mnemonic */
-    const char* const desc;                                        /* Operation mnemonic */
-    const mag_dtype_mask_t dtype_mask;                                              /* DType mask, bitmask of all supported input dtypes. */
-    const mag_opparam_type_t op_param_layout[MAG_MAX_OP_PARAMS];               /* Parameter types */
-    const mag_opflags_t flags;                                                /* Operation flags */
-    const uint8_t input_count;                                              /* Number of inputs */
-
-    /* Backward pass function or NULL if op is not differentiable */
-    void (*const backward)(
-        mag_tensor_t*,
-        mag_tensor_t**
-    );
-
+    const char* const mnemonic;                                     /* Operation mnemonic */
+    const mag_dtype_mask_t dtype_mask;                              /* DType mask, bitmask of all supported input dtypes. */
+    const mag_opparam_type_t op_param_layout[MAG_MAX_OP_PARAMS];    /* Parameter types */
+    const mag_opflags_t flags;                                      /* Operation flags */
+    const uint32_t input_count;                                     /* Number of inputs or MAG_OP_INOUT_DYN */
+    const uint32_t output_count;                                    /* Number of outputs or MAG_OP_INOUT_DYN */
+    void (*const backward)(mag_tensor_t*, mag_tensor_t**);          /* Backward pass function or NULL if op is not differentiable */
     struct {
         double thread_growth;
         int64_t thread_treshold;
@@ -985,6 +972,15 @@ struct mag_istorage_t {
     void (*convert)(mag_istorage_t* sto, mag_transfer_dir_t dir, size_t offs, void* inout, size_t size, mag_dtype_t inout_type);
 };
 
+typedef struct mag_command_t {
+    mag_opcode_t op;
+    mag_tensor_t** in;
+    mag_tensor_t** out;
+    uint32_t num_in;
+    uint32_t num_out;
+    mag_opparam_t params[MAG_MAX_OP_PARAMS];
+} mag_command_t;
+
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 struct mag_idevice_t {
     mag_context_t* ctx;
@@ -992,8 +988,7 @@ struct mag_idevice_t {
     void* impl;            /* Device specific implementation, if applicable. */
     bool is_async;                  /* If device is async. */
     mag_device_type_t type;         /* Device type enum. */
-    void (*eager_exec_init)(mag_idevice_t* dvc, mag_tensor_t* root);                                             /* Execute a single init op. */
-    void (*eager_exec_fwd)(mag_idevice_t* dvc, mag_tensor_t* root);                                              /* Execute a single op forward. */
+    void (*submit)(mag_idevice_t* dvc, const mag_command_t* cmd);                                       /* Execute a single op. */
     void (*alloc_storage)(mag_idevice_t* dvc, mag_istorage_t** out, size_t size, mag_dtype_t dtype);    /* Allocate storage buffer in device memory */
 };
 
@@ -1179,25 +1174,22 @@ extern mag_view_meta_t* mag_view_meta_alloc(mag_tensor_t* base);
 ** A tensor can be a view, which references the storage buffer of another tensor, but views have their own header too.
 */
 struct mag_tensor_t {
-    mag_context_t*  ctx;                             /* Host context. */
-    mag_rccontrol_t rc_control;                          /* Reference counting control block. */
-    int64_t rank;                                           /* Number of active dimensions. [1, MAX_DIMS] */
-    int64_t shape[MAG_MAX_DIMS];                            /* Shape of the tensor. */
-    int64_t strides[MAG_MAX_DIMS];                          /* Strides of the tensor. We store the strides in element counts and NOT in bytes. */
-    mag_dtype_t dtype : 8;                                    /* Data type of the tensor. */
-    mag_tensor_flags_t flags : 8;                              /* Tensor flags. */
-    mag_opcode_t op : 8;                                    /* Opcode for operators. */
-    mag_istorage_t* storage;                   /* Storage buffer. */
-    int64_t numel;                                          /* Number of elements in the tensor. */
+    mag_context_t*  ctx;                            /* Host context. */
+    mag_rccontrol_t rc_control;                     /* Reference counting control block. */
+    int64_t rank;                                   /* Number of active dimensions. [1, MAX_DIMS] */
+    int64_t shape[MAG_MAX_DIMS];                    /* Shape of the tensor. */
+    int64_t strides[MAG_MAX_DIMS];                  /* Strides of the tensor. We store the strides in element counts and NOT in bytes. */
+    mag_dtype_t dtype : 8;                          /* Data type of the tensor. */
+    mag_tensor_flags_t flags : 8;                   /* Tensor flags. */
+    mag_opcode_t op : 8;                            /* Opcode for operators. */
+    mag_istorage_t* storage;                        /* Storage buffer. */
+    int64_t numel;                                  /* Number of elements in the tensor. */
     mag_tensor_t* op_inputs[MAG_MAX_OP_INPUTS];     /* Input tensors for operators. */
-    mag_opparam_t op_params[MAG_MAX_OP_PARAMS];               /* Operator parameters. */
-    mag_init_opcode_t init_op;                               /* Initialization op */
-    mag_opparam_t init_op_params[MAG_MAX_OP_PARAMS];          /* Init operator parameters */
-    int64_t storage_offset;                                    /* Offset in elements in the storage buffer for views. */
-    mag_view_meta_t* view_meta;                /* View metadata, if this is a view. */
-    uint64_t version;                                        /* Version of the tensor. Used for views to detect changes in the base tensor. */
+    mag_opparam_t op_params[MAG_MAX_OP_PARAMS];     /* Operator parameters. */
+    int64_t storage_offset;                         /* Offset in elements in the storage buffer for views. */
+    mag_view_meta_t* view_meta;                     /* View metadata, if this is a view. */
+    uint64_t version;                               /* Version of the tensor. Used for views to detect changes in the base tensor. */
     mag_tensor_t* grad;                             /* ∇f - Gradient tensor. */
-    void* ud;                                     /* User data. */
 #ifdef MAG_DEBUG
     mag_tensor_t* alive_next;                       /* Next alive tensor used for leak detection. */
 #endif
@@ -1224,12 +1216,11 @@ void mag_prng_seed(mag_prng_state_t* prng, mag_prng_algo_t algo, uint64_t seed);
 
 /* CPU Compute kernel payload passed to each CPU thread. */
 typedef struct mag_kernel_payload_t {
-    int64_t thread_num;                             /* Total number of threads involved. */
-    int64_t thread_idx;                             /* Current thread index used to compute thread-local partition. */
-    volatile mag_atomic64_t* next_mm_tile;    /* Pointer to next tile index. Used for parallel execution of kernels. */
-    mag_tensor_t* node;                   /* Result tensor. Stores input tensors and all other op-specific data. */
-    mag_exec_stage_t stage;                         /* Graph evaluation type. */
-    mag_prng_state_t* local_prng;          /* Thread-local CPU PRNG state. */
+    const mag_command_t* cmd;
+    int64_t thread_num;
+    int64_t thread_idx;
+    volatile mag_atomic64_t* next_mm_tile;
+    mag_prng_state_t* local_prng;
     int64_t MR;
     int64_t NR;
     int64_t MC;
@@ -1244,8 +1235,7 @@ typedef struct mag_kernel_payload_t {
 ** See magnetron_cpu.c for details.
 */
 typedef struct mag_kernel_registry_t {
-    void (*init[MAG_IOP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t*);      /* Initialization operator kernels. */
-    void (*eval[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t*);       /* Eval operator kernels. */
+    void (*operators[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t*);       /* Eval operator kernels. */
     void (*vector_cast)(size_t nb, const void* src, mag_dtype_t src_t, void* dst, mag_dtype_t dst_t); /* Vector cast (dtype conversion) kernel. */
     size_t (*vreg_width)(void);
 } mag_kernel_registry_t;

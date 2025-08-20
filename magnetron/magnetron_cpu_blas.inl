@@ -51,6 +51,10 @@
 #include <float.h>
 #include <math.h>
 
+#define mag_cmd_in(i) (payload->cmd->in[(i)])
+#define mag_cmd_out(i) (payload->cmd->out[(i)])
+#define mag_cmd_param(i) (payload->cmd->params[(i)])
+
 /* Uniform names for macro expansion */
 typedef int32_t mag_i32_t;
 typedef uint8_t mag_bool_t;
@@ -1800,8 +1804,8 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* r, const m
 
 #define mag_gen_stub_clone(T) \
     static MAG_HOTPROC void mag_clone_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* x = r->op_inputs[0]; \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const mag_tensor_t* x = mag_cmd_in(0); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
         if (mag_likely(x->numel == r->numel && mag_tensor_is_contiguous(x) && mag_tensor_is_contiguous(r))) { \
@@ -1819,8 +1823,8 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* r, const m
 
 #define mag_gen_stub_fill(T, G, UT, CVT) \
     static MAG_HOTPROC void mag_fill_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        mag_##T##_t val = CVT(mag_op_param_unpack_##UT##_or_panic(r->init_op_params[0])); \
+        mag_tensor_t* r = mag_cmd_in(0); \
+        mag_##T##_t val = CVT(mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(0))); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         int64_t numel = r->numel; \
         for (int64_t ri=0; ri < numel; ++ri) { \
@@ -1831,9 +1835,9 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* r, const m
 
 #define mag_gen_stub_masked_fill(T, G, UT, CVT) \
     static MAG_HOTPROC void mag_masked_fill_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        mag_##T##_t val = CVT(mag_op_param_unpack_##UT##_or_panic(r->init_op_params[0])); \
-        const mag_tensor_t* mask = (const mag_tensor_t*)(uintptr_t)mag_op_param_unpack_i64_or_panic(r->init_op_params[1]); \
+        mag_tensor_t* r = mag_cmd_in(0); \
+        mag_##T##_t val = CVT(mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(0))); \
+        const mag_tensor_t* mask = (const mag_tensor_t*)(uintptr_t)mag_op_param_unpack_i64_or_panic(mag_cmd_param(1)); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         const mag_bool_t* bm = mag_boolp(mask); \
         int64_t total = r->numel; \
@@ -1852,19 +1856,19 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* r, const m
 
 #define mag_gen_stub_fill_rand(D, T, TS, UT) \
     static MAG_HOTPROC void mag_fill_rand_##D##_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        mag_##TS##_t min = mag_op_param_unpack_##UT##_or_panic(r->init_op_params[0]); \
-        mag_##TS##_t max = mag_op_param_unpack_##UT##_or_panic(r->init_op_params[1]); \
+        mag_tensor_t* r = mag_cmd_in(0); \
+        mag_##TS##_t min = mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(0)); \
+        mag_##TS##_t max = mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(1)); \
         mag_##T##_t* b_r = mag_##T##p_mut(r); \
         mag_vrand_##D##_##T(payload->local_prng, r->numel, b_r, min, max); \
     }
 
 #define mag_gen_stub_fill_arange(T, CVT) \
     static MAG_HOTPROC void mag_fill_arange_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
+        mag_tensor_t* r = mag_cmd_in(0); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
-        mag_e8m23_t start = mag_op_param_unpack_e8m23_or_panic(r->init_op_params[0]); /* TODO: Use double precision as ACC */ \
-        mag_e8m23_t step = mag_op_param_unpack_e8m23_or_panic(r->init_op_params[1]); \
+        mag_e8m23_t start = mag_op_param_unpack_e8m23_or_panic(mag_cmd_param(0)); /* TODO: Use double precision as ACC */ \
+        mag_e8m23_t step = mag_op_param_unpack_e8m23_or_panic(mag_cmd_param(1)); \
         int64_t total = r->numel; \
         for (int64_t i=0; i < total; ++i) { \
             mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
@@ -1874,8 +1878,8 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* r, const m
 
 #define mag_gen_stub_unary(T, FUNC) \
     static void MAG_HOTPROC mag_##FUNC##_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* x = r->op_inputs[0]; \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const mag_tensor_t* x = mag_cmd_in(0); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
         int64_t total = r->numel; \
@@ -1911,11 +1915,11 @@ static int mag_discrete_sample_pair_cmp(const void* a, const void* b) {
 
 #define mag_gen_stub_multinomial(T, CVT) \
     static void MAG_HOTPROC mag_multinomial_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* x = r->op_inputs[0]; \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const mag_tensor_t* x = mag_cmd_in(0); \
         mag_i32_t* br = mag_i32p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
-        int64_t num_samples = mag_op_param_unpack_i64_or_panic(r->op_params[0]); \
+        int64_t num_samples = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
         mag_prng_state_t* rng = payload->local_prng; \
         int64_t K = x->shape[x->rank-1]; \
         if (mag_unlikely(K <= 0)) return; \
@@ -1965,11 +1969,11 @@ static int mag_discrete_sample_pair_cmp(const void* a, const void* b) {
 
 #define mag_gen_stub_trix(T, S, Z, CMP) \
     static void MAG_HOTPROC mag_tri##S##_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* x = r->op_inputs[0]; \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const mag_tensor_t* x = mag_cmd_in(0); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
-        int64_t diag = mag_op_param_unpack_i64_or_panic(r->op_params[0]); \
+        int64_t diag = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
         int64_t total = r->numel; \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
@@ -1992,9 +1996,9 @@ static int mag_discrete_sample_pair_cmp(const void* a, const void* b) {
 
 #define mag_gen_stub_binop(T, FUNC, OP, CVT, RCVT) \
     static void MAG_HOTPROC mag_##FUNC##_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* x = r->op_inputs[0]; \
-        const mag_tensor_t* y = r->op_inputs[1]; \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const mag_tensor_t* x = mag_cmd_in(0); \
+        const mag_tensor_t* y = mag_cmd_in(1); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
         const mag_##T##_t* by = mag_##T##p(y); \
@@ -2028,15 +2032,15 @@ static int mag_cmp_i64(const void* a, const void* b) {
 
 #define mag_cpu_impl_reduce_axes(T, FUNC, ACC_T, INIT_EXPR, UPDATE_STMT, FINAL_STMT) \
     static void MAG_HOTPROC mag_##FUNC##_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* x = r->op_inputs[0]; \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const mag_tensor_t* x = mag_cmd_in(0); \
         const mag_##T##_t* bx = mag_##T##p(x); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         int64_t nd = x->rank; \
-        int64_t rank = mag_op_param_unpack_i64_or_panic(r->op_params[0]); \
+        int64_t rank = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
         int64_t axes[MAG_MAX_DIMS]; \
         for (int64_t i=0; i<rank; ++i){ \
-            int64_t a =mag_op_param_unpack_i64_or_panic(r->op_params[2+i]); \
+            int64_t a =mag_op_param_unpack_i64_or_panic(mag_cmd_param(2+i)); \
             if (a<0) a += nd; \
             axes[i]=a; \
         } \
@@ -2089,8 +2093,8 @@ static int mag_cmp_i64(const void* a, const void* b) {
 #define mag_gen_stub_repeat_back(T, Z, CVT, RCVT) \
     static void MAG_HOTPROC mag_repeat_back_##T(const mag_kernel_payload_t* payload) { \
         if (payload->thread_idx != 0) return; \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* x = r->op_inputs[0]; \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const mag_tensor_t* x = mag_cmd_in(0); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
         for (int64_t i=0; i < r->numel; ++i) { \
@@ -2108,9 +2112,9 @@ static int mag_cmp_i64(const void* a, const void* b) {
 
 #define mag_gen_stub_cmp(FUNC, T, OP, CVT) \
     static void MAG_HOTPROC mag_##FUNC##_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* x = r->op_inputs[0]; \
-        const mag_tensor_t* y = r->op_inputs[1]; \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const mag_tensor_t* x = mag_cmd_in(0); \
+        const mag_tensor_t* y = mag_cmd_in(1); \
         mag_bool_t* br = mag_boolp_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
         const mag_##T##_t* by = mag_##T##p(y); \
@@ -2138,13 +2142,13 @@ static int mag_cmp_i64(const void* a, const void* b) {
 
 #define mag_gen_stub_gather(T) \
     static MAG_HOTPROC void mag_gather_##T(const mag_kernel_payload_t* payload) { \
-        mag_tensor_t* r = payload->node; \
-        const mag_tensor_t* src = r->op_inputs[0]; \
-        const mag_tensor_t* index = r->op_inputs[1]; \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const mag_tensor_t* src = mag_cmd_in(0); \
+        const mag_tensor_t* index = mag_cmd_in(1); \
         mag_##T##_t* br = mag_##T##p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(src); \
         const mag_i32_t* bi = mag_i32p(index); \
-        int64_t axis = mag_op_param_unpack_i64_or_panic(r->op_params[0]); \
+        int64_t axis = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
         if (axis < 0) axis += src->rank; \
         mag_assert2(axis >= 0 && axis < src->rank); \
         mag_assert2(index->rank >= 1); \
@@ -2238,8 +2242,8 @@ mag_gen_stub_fill_arange(e5m10, mag_e8m23_cvt_e5m10)
 mag_gen_stub_fill_arange(i32, mag_cvt_i642i32)
 
 static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t* payload) {
-    mag_tensor_t* r = payload->node;
-    mag_e8m23_t p = mag_op_param_unpack_e8m23_or_panic(r->init_op_params[0]);
+    mag_tensor_t* r = mag_cmd_in(0);
+    mag_e8m23_t p = mag_op_param_unpack_e8m23_or_panic(mag_cmd_param(0));
     mag_bool_t* b_r = mag_boolp_mut(r);
     int64_t numel = r->numel;
     mag_vrand_bernoulli_bool(payload->local_prng, numel, b_r, p);
@@ -2276,8 +2280,8 @@ mag_gen_stub_unary(e8m23, round)
 mag_gen_stub_unary(e5m10, round)
 
 static void MAG_HOTPROC mag_softmax_e8m23(const mag_kernel_payload_t* payload) {
-    mag_tensor_t* r = payload->node;
-    const mag_tensor_t* x = r->op_inputs[0];
+    mag_tensor_t* r = mag_cmd_out(0);
+    const mag_tensor_t* x = mag_cmd_in(0);
     mag_e8m23_t* br = mag_e8m23p_mut(r);
     const mag_e8m23_t* bx = mag_e8m23p(x);
     int64_t last_dim = r->shape[r->rank-1];
@@ -2312,8 +2316,8 @@ static void MAG_HOTPROC mag_softmax_e8m23(const mag_kernel_payload_t* payload) {
 }
 
 static void MAG_HOTPROC mag_softmax_e5m10(const mag_kernel_payload_t* payload) {
-    mag_tensor_t* r = payload->node;
-    const mag_tensor_t* x = r->op_inputs[0];
+    mag_tensor_t* r = mag_cmd_out(0);
+    const mag_tensor_t* x = mag_cmd_in(0);
     mag_e5m10_t* br = mag_e5m10p_mut(r);
     const mag_e5m10_t* bx = mag_e5m10p(x);
     int64_t last_dim = r->shape[r->rank-1];
@@ -2996,9 +3000,9 @@ static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e
 }
 
 MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
-    mag_tensor_t* r = payload->node;
-    const mag_tensor_t* x = r->op_inputs[0];
-    const mag_tensor_t* y = r->op_inputs[1];
+    mag_tensor_t* r = mag_cmd_out(0);
+    const mag_tensor_t* x = mag_cmd_in(0);
+    const mag_tensor_t* y = mag_cmd_in(1);
     const mag_e8m23_t* bx = mag_e8m23p(x);
     const mag_e8m23_t* by = mag_e8m23p(y);
     mag_e8m23_t* br = mag_e8m23p_mut(r);
@@ -3168,9 +3172,9 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
 
 static MAG_HOTPROC void mag_matmul_e5m10(const mag_kernel_payload_t* payload) {
     if (payload->thread_idx != 0) return;
-    mag_tensor_t* r  = payload->node;
-    const mag_tensor_t* x  = r->op_inputs[0];
-    const mag_tensor_t* y  = r->op_inputs[1];
+    mag_tensor_t* r  = mag_cmd_out(0);
+    const mag_tensor_t* x  = mag_cmd_in(0);
+    const mag_tensor_t* y  = mag_cmd_in(1);
     mag_e5m10_t* br = mag_e5m10p_mut(r);
     const mag_e5m10_t* bx = mag_e5m10p(x);
     const mag_e5m10_t* by = mag_e5m10p(y);
@@ -3422,50 +3426,41 @@ mag_arm64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(void) {
 
 #endif
 
-static void (*const mag_lut_init_kernels[MAG_IOP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t*) = {
-    [MAG_IOP_NOP] = {
-        [MAG_DTYPE_E8M23] = &mag_nop,
-        [MAG_DTYPE_E5M10] = &mag_nop,
-        [MAG_DTYPE_BOOL] = &mag_nop,
-        [MAG_DTYPE_I32] = &mag_nop,
-    },
-    [MAG_IOP_BROADCAST] = {
-        [MAG_DTYPE_E8M23] = &mag_fill_e8m23,
-        [MAG_DTYPE_E5M10] = &mag_fill_e5m10,
-        [MAG_DTYPE_BOOL] = &mag_fill_bool,
-        [MAG_DTYPE_I32] = &mag_fill_i32,
-    },
-    [MAG_IOP_MASKED_BROADCAST] = {
-        [MAG_DTYPE_E8M23] = &mag_masked_fill_e8m23,
-        [MAG_DTYPE_E5M10] = &mag_masked_fill_e5m10,
-        [MAG_DTYPE_BOOL] = &mag_masked_fill_bool,
-        [MAG_DTYPE_I32] = &mag_masked_fill_i32,
-    },
-    [MAG_IOP_RAND_UNIFORM] = {
-        [MAG_DTYPE_E8M23] = &mag_fill_rand_uniform_e8m23,
-        [MAG_DTYPE_E5M10] = &mag_fill_rand_uniform_e5m10,
-        [MAG_DTYPE_I32] = &mag_fill_rand_uniform_i32
-    },
-    [MAG_IOP_RAND_NORMAL] = {
-        [MAG_DTYPE_E8M23] = &mag_fill_rand_normal_e8m23,
-        [MAG_DTYPE_E5M10] = &mag_fill_rand_normal_e5m10,
-    },
-    [MAG_IOP_RAND_BERNOULLI] = {
-        [MAG_DTYPE_BOOL] = &mag_fill_rand_bernoulli_bool,
-    },
-    [MAG_IOP_ARANGE] = {
-        [MAG_DTYPE_E8M23] = &mag_fill_arange_e8m23,
-        [MAG_DTYPE_E5M10] = &mag_fill_arange_e5m10,
-        [MAG_DTYPE_I32] = &mag_fill_arange_i32
-    },
-};
-
 static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t*) = {
     [MAG_OP_NOP] = {
         [MAG_DTYPE_E8M23] = &mag_nop,
         [MAG_DTYPE_E5M10] = &mag_nop,
         [MAG_DTYPE_BOOL] = &mag_nop,
         [MAG_DTYPE_I32] = &mag_nop,
+    },
+    [MAG_OP_FILL] = {
+        [MAG_DTYPE_E8M23] = &mag_fill_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_fill_e5m10,
+        [MAG_DTYPE_BOOL] = &mag_fill_bool,
+        [MAG_DTYPE_I32] = &mag_fill_i32,
+    },
+    [MAG_OP_MASKED_FILL] = {
+        [MAG_DTYPE_E8M23] = &mag_masked_fill_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_masked_fill_e5m10,
+        [MAG_DTYPE_BOOL] = &mag_masked_fill_bool,
+        [MAG_DTYPE_I32] = &mag_masked_fill_i32,
+    },
+    [MAG_OP_RAND_UNIFORM] = {
+        [MAG_DTYPE_E8M23] = &mag_fill_rand_uniform_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_fill_rand_uniform_e5m10,
+        [MAG_DTYPE_I32] = &mag_fill_rand_uniform_i32
+    },
+    [MAG_OP_RAND_NORMAL] = {
+        [MAG_DTYPE_E8M23] = &mag_fill_rand_normal_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_fill_rand_normal_e5m10,
+    },
+    [MAG_OP_RAND_BERNOULLI] = {
+        [MAG_DTYPE_BOOL] = &mag_fill_rand_bernoulli_bool,
+    },
+    [MAG_OP_ARANGE] = {
+        [MAG_DTYPE_E8M23] = &mag_fill_arange_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_fill_arange_e5m10,
+        [MAG_DTYPE_I32] = &mag_fill_arange_i32
     },
     [MAG_OP_CLONE] = {
         [MAG_DTYPE_E8M23] = &mag_clone_e8m23,
@@ -3762,12 +3757,9 @@ static size_t mag_vreg_width(void) {
 }
 
 void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t* kernels) {
-    for (int i=0; i < MAG_IOP__NUM; ++i)
-        for (int j=0; j < MAG_DTYPE__NUM; ++j)
-            kernels->init[i][j] = mag_lut_init_kernels[i][j];
     for (int i=0; i < MAG_OP__NUM; ++i) {
         for (int j=0; j < MAG_DTYPE__NUM; ++j) {
-            kernels->eval[i][j] = mag_lut_eval_kernels[i][j];
+            kernels->operators[i][j] = mag_lut_eval_kernels[i][j];
         }
     }
     kernels->vector_cast = &mag_vector_cast_stub;

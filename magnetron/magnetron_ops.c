@@ -55,12 +55,6 @@ static void mag_assert_correct_op_data(
     }
 }
 
-/* Execute init/normal operator on R. */
-static void MAG_HOTPROC mag_op_exec(mag_tensor_t* R, mag_idevice_t* dvc, mag_exec_stage_t stage) {
-    void (*exec)(mag_idevice_t*, mag_tensor_t*) = stage == MAG_STAGE_INIT ? dvc->eager_exec_init : dvc->eager_exec_fwd;
-    (*exec)(dvc, R); /* Dispatch to backend. */
-}
-
 extern void mag_tensor_detach_inplace(mag_tensor_t* target);
 static void mag_bump_version(mag_tensor_t* t) {
     if (t->flags & MAG_TFLAG_IS_VIEW) /* If this is a view, bump the version of the base tensor */
@@ -73,38 +67,45 @@ static mag_tensor_t* mag_tensor_strided_view(mag_tensor_t* base) {
 }
 
 /* Execute an operator on the active compute device and return result tensor. */
-static mag_tensor_t* MAG_HOTPROC mag_dispatch(
-    mag_tensor_t* r,
-    mag_opcode_t op,
-    bool inplace,
-    mag_tensor_t** inputs,
-    uint32_t num_inputs,
-    const mag_op_param_layout_t* layout,
-    mag_exec_stage_t stage
-) {
+static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op_param_layout_t* layout, mag_tensor_t** in, uint32_t num_in, mag_tensor_t** out, uint32_t num_out) {
+    mag_assert2(num_in <= MAG_MAX_OP_INPUTS && num_out <= MAG_MAX_OP_INPUTS);
+    mag_assert2((in && num_in) || (out && num_out));
+    mag_assert2(op != MAG_OP_NOP);
+    mag_context_t* ctx = in ? (*in)->ctx : (*out)->ctx;
+    bool is_recording_grads = !!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER);
     const mag_opparam_t* params = layout ? layout->slots : NULL;
     uint32_t num_params = layout ? layout->count : 0;
-    mag_assert_correct_op_data(op, inputs, num_inputs, params, num_params);
+    mag_assert_correct_op_data(op, in, num_in, params, num_params);
     const mag_opmeta_t* meta = mag_op_meta_of(op);
     inplace &= !!(meta->flags & MAG_OP_FLAG_SUPPORTS_INPLACE);
-    r->op = op; /* Set opcode of result. */
-    bool is_recording_grads = !!(r->ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER);
-    for (uint32_t i=0; i < num_inputs; ++i) {
-        mag_tensor_t* input = inputs[i];
-        r->op_inputs[i] = input;
-        /* If gradient tracking is enabled, the result tensor inherits the input's gradient rules. */
-        if (is_recording_grads) {
-            r->flags |= input->flags & MAG_TFLAG_REQUIRES_GRAD; /* Set gradient tracking flag if set in input. */
-            mag_tensor_incref(input);                                /* Keep input alive for the backward pass. */
+    for (uint32_t i=0; i < num_out; ++i) { /* Set result tensor data */
+        mag_tensor_t* r = out[i];
+        r->op = op; /* Set opcode of result. */
+        for (uint32_t j=0; j < num_in; ++j) {
+            mag_tensor_t* input = in[j];
+            r->op_inputs[j] = input;
+            /* If gradient tracking is enabled, the result tensor inherits the input's gradient rules. */
+            if (is_recording_grads) {
+                r->flags |= input->flags & MAG_TFLAG_REQUIRES_GRAD; /* Set gradient tracking flag if set in input. */
+                mag_tensor_incref(input);                                /* Keep input alive for the backward pass. */
+            }
         }
+        if (params) memcpy(r->op_params, params, num_params*sizeof(*params));
     }
-    if (params) /* If available, copy operation parameters to result */
-        memcpy(r->op_params, params, num_params*sizeof(*params));
-    mag_op_exec(r, r->ctx->device, stage);  /* Execute the operator. */
-    if (inplace) mag_bump_version(r);   /* result aliases the modified storage */
-    if (!is_recording_grads)
-        mag_tensor_detach_inplace(r); /* If gradient are not recorded, detach the tensor's parents (clear parent and opcode). TODO: why are we doing this? */
-    return r;
+    mag_command_t cmd = {
+        .op = op,
+        .in = in,
+        .out = out,
+        .num_in = num_in,
+        .num_out = num_out,
+    };
+    if (params) memcpy(cmd.params, params, num_params*sizeof(*params));
+    void (*submit)(mag_idevice_t*, const mag_command_t*) = ctx->device->submit;
+    (*submit)(ctx->device, &cmd);
+    for (uint32_t i=0; i < num_out; ++i) {
+        if (inplace) mag_bump_version(out[i]);   /* Result aliases the modified storage */
+        if (!is_recording_grads) mag_tensor_detach_inplace(out[i]); /* If gradient are not recorded, detach the tensor's parents (clear parent and opcode). TODO: why are we doing this? */
+    }
 }
 
 static void mag_assert_dtype_compat(mag_opcode_t op, mag_tensor_t** inputs) {
@@ -142,7 +143,9 @@ static void mag_assert_inplace_and_grad_mode_off(const mag_tensor_t* result) {
 
 mag_tensor_t* mag_clone(mag_tensor_t* x) {
     mag_assert2(x != NULL);
-    return mag_dispatch(mag_tensor_empty_like(x), MAG_OP_CLONE, false, &x, 1,NULL, MAG_STAGE_EVAL);
+    mag_tensor_t* result = mag_tensor_empty_like(x);
+    mag_dispatch(MAG_OP_CLONE, false, NULL, &x, 1, &result, 1);
+    return result;
 }
 
 mag_tensor_t* mag_view(mag_tensor_t* x, const int64_t* dims, int64_t rank) {
@@ -186,7 +189,8 @@ mag_tensor_t* mag_view(mag_tensor_t* x, const int64_t* dims, int64_t rank) {
         for (int64_t i=0; i < rank; ++i)
             mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
 
-    return mag_dispatch(result, MAG_OP_VIEW, false, &x, 1, &layout, MAG_STAGE_EVAL);
+    mag_dispatch(MAG_OP_VIEW, false, &layout, &x, 1, &result, 1);
+    return result;
 }
 
 mag_tensor_t* mag_reshape(mag_tensor_t* x, const int64_t* dims, int64_t rank) {
@@ -280,7 +284,8 @@ mag_tensor_t* mag_transpose(mag_tensor_t* x, int64_t dim1, int64_t dim2) {
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(ax0));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(ax1));
 
-    return mag_dispatch(result, MAG_OP_TRANSPOSE, false, &x, 1, &layout, MAG_STAGE_EVAL);
+    mag_dispatch(MAG_OP_TRANSPOSE, false, &layout, &x, 1, &result, 1);
+    return result;
 }
 
 mag_tensor_t* mag_permute(mag_tensor_t* x, const int64_t* dims, int64_t rank) {
@@ -302,7 +307,8 @@ mag_tensor_t* mag_permute(mag_tensor_t* x, const int64_t* dims, int64_t rank) {
     }
     mag_tensor_t* result = mag_tensor_as_strided(x->ctx, x, x->rank, shape, stride, x->storage_offset);
 
-    return mag_dispatch(result, MAG_OP_PERMUTE, false, &x, 1, NULL, MAG_STAGE_EVAL);
+    mag_dispatch(MAG_OP_PERMUTE, false, NULL, &x, 1, &result, 1);
+    return result;
 }
 
 static int mag_cmp_axis(const void* a, const void* b) {
@@ -362,7 +368,8 @@ static mag_tensor_t* mag_op_stub_reduction(mag_opcode_t op, mag_tensor_t* x, con
     for (int64_t i=0; i<rank; ++i)
         mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dims[i]));
 
-    return mag_dispatch(result, op, false, &x, 1, &layout, MAG_STAGE_EVAL);
+    mag_dispatch(op, false, &layout, &x, 1, &result, 1);
+    return result;
 }
 
 mag_tensor_t* mag_mean(mag_tensor_t* x, const int64_t* dims, int64_t rank, bool keepdim) {
@@ -401,7 +408,8 @@ static mag_tensor_t* mag_op_stub_unary(mag_opcode_t op, mag_tensor_t* x, const m
     } else {
         result = mag_tensor_empty_like(x); /* Allocate a new tensor for the result */
     }
-    return mag_dispatch(result, op, inplace, &x, 1, layout, MAG_STAGE_EVAL);
+    mag_dispatch(op, inplace, layout, &x, 1, &result, 1);
+    return result;
 }
 
 #define mag_impl_unary_pair(name, op) \
@@ -493,7 +501,9 @@ mag_tensor_t* mag_multinomial(mag_tensor_t* x, int64_t num_samples, bool replace
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(num_samples));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!replacement));
-    return mag_dispatch(result, MAG_OP_MULTINOMIAL, false, &x, 1, &layout, MAG_STAGE_EVAL);
+
+    mag_dispatch(MAG_OP_MULTINOMIAL, false, &layout, &x, 1, &result, 1);
+    return result;
 }
 
 static mag_tensor_t* mag_op_stub_binary(mag_opcode_t op, mag_tensor_t* x, mag_tensor_t* y, bool boolean_result, bool inplace) {
@@ -522,7 +532,9 @@ static mag_tensor_t* mag_op_stub_binary(mag_opcode_t op, mag_tensor_t* x, mag_te
         mag_dtype_t rtype = boolean_result ? MAG_DTYPE_BOOL : x->dtype;
         result = rank ? mag_tensor_empty(x->ctx, rtype, rank, dims) : mag_tensor_empty_scalar(x->ctx, rtype);
     }
-    return mag_dispatch(result, op, inplace, (mag_tensor_t*[]){x, y}, 2, NULL, MAG_STAGE_EVAL);
+
+    mag_dispatch(op, inplace, NULL, (mag_tensor_t*[2]){x, y}, 2, &result, 1);
+    return result;
 }
 
 #define mag_impl_binary_pair(name, op, boolean_result) \
@@ -608,7 +620,8 @@ mag_tensor_t* mag_matmul(mag_tensor_t* x, mag_tensor_t* y) {
         shape[r_bd+1] = y->shape[y->rank-1];
         result = mag_tensor_new(x->ctx, x->dtype, r_bd+2, shape);
     }
-    return mag_dispatch(result, MAG_OP_MATMUL, false, (mag_tensor_t*[]){x, y}, 2, NULL, MAG_STAGE_EVAL);
+    mag_dispatch(MAG_OP_MATMUL, false, false, (mag_tensor_t*[2]){x, y}, 2, &result, 1);
+    return result;
 }
 
 mag_tensor_t* mag_repeat_back(mag_tensor_t* x, mag_tensor_t* y) {
@@ -617,7 +630,8 @@ mag_tensor_t* mag_repeat_back(mag_tensor_t* x, mag_tensor_t* y) {
     mag_assert_dtype_compat(MAG_OP_REPEAT_BACK, (mag_tensor_t*[]){x, y});
     mag_tensor_t* result = mag_tensor_new(x->ctx, x->dtype, y->rank, y->shape);
     /* TODO: Check for broadcastability of x and y */
-    return mag_dispatch(result, MAG_OP_REPEAT_BACK, false, (mag_tensor_t*[]){x, y}, 2, NULL, MAG_STAGE_EVAL);
+    mag_dispatch(MAG_OP_REPEAT_BACK, false, NULL, (mag_tensor_t*[2]){x, y}, 2, &result, 1);
+    return result;
 }
 
 mag_tensor_t* mag_gather(mag_tensor_t* x, int64_t dim, mag_tensor_t* idx){
@@ -662,7 +676,8 @@ mag_tensor_t* mag_gather(mag_tensor_t* x, int64_t dim, mag_tensor_t* idx){
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dim)); /* Store dimension in op_params[0] */
-    return mag_dispatch(result, MAG_OP_GATHER, false, (mag_tensor_t*[]){x, idx}, 2, &layout, MAG_STAGE_EVAL);
+    mag_dispatch(MAG_OP_GATHER, false, &layout, (mag_tensor_t*[2]){x, idx}, 2, &result, 1);
+    return result;
 }
 
 void mag_tensor_fill_from_floats(mag_tensor_t* t, const mag_e8m23_t* data, size_t len) {
@@ -679,100 +694,100 @@ void mag_tensor_fill_from_raw_bytes(mag_tensor_t* t, const void* data, size_t le
 
 void mag_tensor_fill_float(mag_tensor_t* t, mag_e8m23_t x) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
-    t->init_op = MAG_IOP_BROADCAST;
+
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(x));
-    mag_op_param_layout_transfer(&layout, &t->init_op_params);
-    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+
+    mag_dispatch(MAG_OP_FILL, false, &layout, &t, 1, NULL, 0);
 }
 
 void mag_tensor_fill_int(mag_tensor_t* t, int32_t x) {
     mag_assert2(mag_tensor_is_integral_typed(t));
-    t->init_op = MAG_IOP_BROADCAST;
+
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(x));
-    mag_op_param_layout_transfer(&layout, &t->init_op_params);
-    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+
+    mag_dispatch(MAG_OP_FILL, false, &layout, &t, 1, NULL, 0);
 }
 
 void mag_tensor_masked_fill_float(mag_tensor_t* t, mag_tensor_t* mask, mag_e8m23_t x) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
     mag_assert2(mask->dtype == MAG_DTYPE_BOOL);
-    t->init_op = MAG_IOP_MASKED_BROADCAST;
+
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(x));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64((int64_t)(uintptr_t)mask));
-    mag_op_param_layout_transfer(&layout, &t->init_op_params);
-    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+
+    mag_dispatch(MAG_OP_MASKED_FILL, false, &layout, &t, 1, NULL, 0);
 }
 
 void mag_tensor_masked_fill_int(mag_tensor_t* t, mag_tensor_t* mask, int32_t x) {
     mag_assert2(mag_tensor_is_integral_typed(t));
     mag_assert2(mask->dtype == MAG_DTYPE_BOOL);
-    t->init_op = MAG_IOP_MASKED_BROADCAST;
+
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(x));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64((int64_t)(uintptr_t)mask));
-    mag_op_param_layout_transfer(&layout, &t->init_op_params);
-    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+
+    mag_dispatch(MAG_OP_MASKED_FILL, false, &layout, &t, 1, NULL, 0);
 }
 
 void mag_tensor_fill_random_uniform_float(mag_tensor_t* t, mag_e8m23_t min, mag_e8m23_t max) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
-    t->init_op = MAG_IOP_RAND_UNIFORM;
+
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(min));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(max));
-    mag_op_param_layout_transfer(&layout, &t->init_op_params);
-    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+
+    mag_dispatch(MAG_OP_RAND_UNIFORM, false, &layout, &t, 1, NULL, 0);
 }
 
 void mag_tensor_fill_random_uniform_int(mag_tensor_t* t, int32_t min, int32_t max) {
     mag_assert2(mag_tensor_is_integral_typed(t));
-    t->init_op = MAG_IOP_RAND_UNIFORM;
+
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(min));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(max));
-    mag_op_param_layout_transfer(&layout, &t->init_op_params);
-    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+
+    mag_dispatch(MAG_OP_RAND_UNIFORM, false, &layout, &t, 1, NULL, 0);
 }
 
 void mag_tensor_fill_random_normal(mag_tensor_t* t, mag_e8m23_t mean, mag_e8m23_t stddev) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
-    t->init_op = MAG_IOP_RAND_NORMAL;
+
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(mean));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(stddev));
-    mag_op_param_layout_transfer(&layout, &t->init_op_params);
-    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+
+    mag_dispatch(MAG_OP_RAND_NORMAL, false, &layout, &t, 1, NULL, 0);
 }
 
 void mag_tensor_fill_random_bernoulli(mag_tensor_t* t, mag_e8m23_t p) {
     mag_assert2(t->dtype == MAG_DTYPE_BOOL);
-    t->init_op = MAG_IOP_RAND_BERNOULLI;
+
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(p));
-    mag_op_param_layout_transfer(&layout, &t->init_op_params);
-    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+
+    mag_dispatch(MAG_OP_RAND_BERNOULLI, false, &layout, &t, 1, NULL, 0);
 }
 
 void mag_tensor_fill_arange(mag_tensor_t* t, float start, float step){
     mag_assert2(t->rank == 1 && (mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC));
-    t->init_op = MAG_IOP_ARANGE;
+
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(start));
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_e8m23(step));
-    mag_op_param_layout_transfer(&layout, &t->init_op_params);
-    mag_op_exec(t, t->ctx->device, MAG_STAGE_INIT);
+
+    mag_dispatch(MAG_OP_ARANGE, false, &layout, &t, 1, NULL, 0);
 }
 
 /*
@@ -1025,17 +1040,71 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
     static const mag_opmeta_t infos[MAG_OP__NUM] = {
         [MAG_OP_NOP] = {
             .mnemonic = "nop",
-            .desc = "nop",
             .input_count = 0,
+            .output_count = 0,
             .dtype_mask = 0,
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_NONE,
+            .backward = NULL,
+        },
+        [MAG_OP_FILL] = {
+            .mnemonic = "fill",
+            .input_count = 1,
+            .output_count = 0,
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_NONE,
+            .backward = NULL,
+        },
+        [MAG_OP_MASKED_FILL] = {
+            .mnemonic = "masked_fill",
+            .input_count = 1,
+            .output_count = 0,
+            .dtype_mask = MAG_DTYPE_MASK_ALL,
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_NONE,
+            .backward = NULL,
+        },
+        [MAG_OP_RAND_UNIFORM] = {
+            .mnemonic = "rand(uniform)",
+            .input_count = 1,
+            .output_count = 0,
+            .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_NONE,
+            .backward = NULL,
+        },
+        [MAG_OP_RAND_NORMAL] = {
+            .mnemonic = "rand(normal)",
+            .input_count = 1,
+            .output_count = 0,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_NONE,
+            .backward = NULL,
+        },
+        [MAG_OP_RAND_BERNOULLI] = {
+            .mnemonic = "rand(bernoulli)",
+            .input_count = 1,
+            .output_count = 0,
+            .dtype_mask = mag_dtype_mask(BOOL),
+            .op_param_layout = {},
+            .flags = MAG_OP_FLAG_NONE,
+            .backward = NULL,
+        },
+        [MAG_OP_ARANGE] = {
+            .mnemonic = "arange",
+            .input_count = 1,
+            .output_count = 0,
+            .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_NONE,
             .backward = NULL,
         },
         [MAG_OP_CLONE] = {
             .mnemonic = "clone",
-            .desc = "clone",
             .input_count = 1,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_NONE,
@@ -1043,8 +1112,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_VIEW] = {
             .mnemonic = "view",
-            .desc = "view",
             .input_count = 1,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_NONE,
@@ -1052,8 +1121,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_TRANSPOSE] = {
             .mnemonic = "transpose",
-            .desc = "𝑥ᵀ",
             .input_count = 1,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 MAG_OPP_I64, /*ax0*/
@@ -1064,8 +1133,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_PERMUTE] = {
             .mnemonic = "permute",
-            .desc = "permute",
             .input_count = 1,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_NONE,
@@ -1073,9 +1142,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_MEAN] = {
             .mnemonic = "mean",
-            .desc = "(∑𝑥)∕𝑛",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {
                 MAG_OPP_I64,  /* reduction dim count : u32 */
                 MAG_OPP_I64,  /* keepdim : bool */
@@ -1091,9 +1160,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_MIN] = {
             .mnemonic = "min",
-            .desc = "min(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {
                 MAG_OPP_I64,  /* reduction dim count : u32 */
                 MAG_OPP_I64,  /* keepdim : bool */
@@ -1109,9 +1178,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_MAX] = {
             .mnemonic = "max",
-            .desc = "max(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {
                 MAG_OPP_I64,  /* reduction dim count : u32 */
                 MAG_OPP_I64,  /* keepdim : bool */
@@ -1127,9 +1196,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SUM] = {
             .mnemonic = "sum",
-            .desc = "∑𝑥",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {
                 MAG_OPP_I64,  /* reduction dim count : u32 */
                 MAG_OPP_I64,  /* keepdim : bool */
@@ -1145,9 +1214,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_ABS] = {
             .mnemonic = "abs",
-            .desc = "|𝑥|",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_abs,
@@ -1158,9 +1227,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SGN] = {
             .mnemonic = "sgn",
-            .desc = "𝑥⁄",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1171,9 +1240,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_NEG] = {
             .mnemonic = "neg",
-            .desc = "−𝑥",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_neg,
@@ -1184,9 +1253,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_LOG] = {
             .mnemonic = "log",
-            .desc = "log₁₀(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_log,
@@ -1197,9 +1266,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SQR] = {
             .mnemonic = "sqr",
-            .desc = "𝑥²",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sqr,
@@ -1210,9 +1279,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SQRT] = {
             .mnemonic = "sqrt",
-            .desc = "√𝑥",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags =  MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sqrt,
@@ -1223,9 +1292,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SIN] = {
             .mnemonic = "sin",
-            .desc = "sin(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_sin,
@@ -1236,9 +1305,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_COS] = {
             .mnemonic = "cos",
-            .desc = "cos(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_cos,
@@ -1249,9 +1318,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_STEP] = {
             .mnemonic = "step",
-            .desc = "𝐻(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1262,9 +1331,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_EXP] = {
             .mnemonic = "exp",
-            .desc = "𝑒ˣ",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_exp,
@@ -1275,9 +1344,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_FLOOR] = {
             .mnemonic = "floor",
-            .desc = "⌊𝑥⌋",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1288,9 +1357,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_CEIL] = {
             .mnemonic = "ceil",
-            .desc = "⌈𝑥⌉",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1301,9 +1370,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_ROUND] = {
             .mnemonic = "round",
-            .desc = "⟦𝑥⟧",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1314,9 +1383,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SOFTMAX] = {
             .mnemonic = "softmax",
-            .desc = "𝑒ˣⁱ∕∑𝑒ˣʲ",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_softmax,
@@ -1327,9 +1396,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SOFTMAX_DV] = {
             .mnemonic = "softmax_dv",
-            .desc = "𝑑⁄𝑑𝑥 softmax(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1340,9 +1409,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SIGMOID] = {
             .mnemonic = "sigmoid",
-            .desc = "1∕(1 + 𝑒⁻ˣ)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = mag_op_backward_sigmoid,
@@ -1353,9 +1422,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SIGMOID_DV] = {
             .mnemonic = "sigmoid_dv",
-            .desc = "𝑑⁄𝑑𝑥 sigmoid(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1366,9 +1435,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_HARD_SIGMOID] = {
             .mnemonic = "hard_sigmoid",
-            .desc = "max(0,min(1,0.2×𝑥+0.5))",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1379,9 +1448,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SILU] = {
             .mnemonic = "silu",
-            .desc = "𝑥∕(1+𝑒⁻ˣ)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_silu,
@@ -1392,9 +1461,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SILU_DV] = {
             .mnemonic = "silu_dv",
-            .desc = "𝑑⁄𝑑𝑥 silu(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1405,9 +1474,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_TANH] = {
             .mnemonic = "tanh",
-            .desc = "tanh(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_tanh,
@@ -1418,9 +1487,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_TANH_DV] = {
             .mnemonic = "tanh_dv",
-            .desc = "𝑑⁄𝑑𝑥 tanh(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1431,9 +1500,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_RELU] = {
             .mnemonic = "relu",
-            .desc = "max(0, 𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_relu,
@@ -1444,9 +1513,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_RELU_DV] = {
             .mnemonic = "relu_dv",
-            .desc = "𝑑⁄𝑑𝑥 relu(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1457,9 +1526,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_GELU] = {
             .mnemonic = "gelu",
-            .desc = "0.5×𝑥×(1+erf(𝑥∕√2))",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_gelu,
@@ -1470,9 +1539,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_GELU_APPROX] = {
             .mnemonic = "gelu",
-            .desc = "0.5×𝑥×(1+erf(𝑥∕√2))",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_gelu,
@@ -1483,9 +1552,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_GELU_DV] = {
             .mnemonic = "gelu_dv",
-            .desc = "𝑑⁄𝑑𝑥 gelu(𝑥)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = NULL,
@@ -1496,8 +1565,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_TRIL] = {
             .mnemonic = "tril",
-            .desc = "tril(𝑥)",
             .input_count = 1,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 MAG_OPP_I64
@@ -1511,8 +1580,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_TRIU] = {
             .mnemonic = "triu",
-            .desc = "triu(𝑥)",
             .input_count = 1,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 MAG_OPP_I64
@@ -1526,9 +1595,9 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_MULTINOMIAL] = {
             .mnemonic = "multinomial",
-            .desc = "multinomial(D)",
             .input_count = 1,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {
                 MAG_OPP_I64,
                 MAG_OPP_I64,
@@ -1542,8 +1611,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_ADD] = {
             .mnemonic = "add",
-            .desc = "𝑥 + 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1555,8 +1624,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SUB] = {
             .mnemonic = "sub",
-            .desc = "𝑥 − 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1568,8 +1637,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_MUL] = {
             .mnemonic = "mul",
-            .desc = "𝑥 ⊙ 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1581,8 +1650,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_DIV] = {
             .mnemonic = "div",
-            .desc = "𝑥 ∕ 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_NUMERIC,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1595,7 +1664,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         [MAG_OP_MATMUL] = {
             .mnemonic = "matmul",
             .input_count = 2,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
             .backward = &mag_op_backward_matmul,
@@ -1607,15 +1677,16 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         [MAG_OP_REPEAT_BACK] = {
             .mnemonic = "repeat_back",
             .input_count = 2,
-            .dtype_mask = MAG_DTYPE_MASK_FLOATING,
+            .output_count = 1,
+            .dtype_mask = MAG_DTYPE_MASK_FP,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE,
             .backward = NULL,
         },
         [MAG_OP_GATHER] = {
             .mnemonic = "gather",
-            .desc = "gather",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {
                 MAG_OPP_I64, /* dim : i64 */
@@ -1625,8 +1696,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_AND] = {
             .mnemonic = "and",
-            .desc = "𝑥 ∧ 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_INTEGRAL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1638,8 +1709,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_OR] = {
             .mnemonic = "or",
-            .desc = "𝑥 ∨ 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_INTEGRAL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1651,8 +1722,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_XOR] = {
             .mnemonic = "xor",
-            .desc = "𝑥 ⊕ 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_INTEGRAL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1664,8 +1735,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_NOT] = {
             .mnemonic = "not",
-            .desc = "¬𝑥",
             .input_count = 1,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_INTEGRAL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1677,8 +1748,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SHL] = {
             .mnemonic = "shl",
-            .desc = "𝑥 ≪ 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_INTEGER,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1690,8 +1761,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_SHR] = {
             .mnemonic = "shr",
-            .desc = "𝑥 ≫ 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_INTEGER,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORTS_INPLACE | MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1703,8 +1774,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_EQ] = {
             .mnemonic = "eq",
-            .desc = "𝑥 == 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1716,8 +1787,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_NE] = {
             .mnemonic = "ne",
-            .desc = "𝑥 != 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1729,8 +1800,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_LE] = {
             .mnemonic = "le",
-            .desc = "𝑥 <= 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1742,8 +1813,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_GE] = {
             .mnemonic = "ge",
-            .desc = "𝑥 >= 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1755,8 +1826,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_GT] = {
             .mnemonic = "gt",
-            .desc = "𝑥 < 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,
@@ -1768,8 +1839,8 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
         },
         [MAG_OP_LT] = {
             .mnemonic = "lt",
-            .desc = "𝑥 > 𝑦",
             .input_count = 2,
+            .output_count = 1,
             .dtype_mask = MAG_DTYPE_MASK_ALL,
             .op_param_layout = {},
             .flags = MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING,

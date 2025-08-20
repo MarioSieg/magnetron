@@ -317,8 +317,6 @@ extern MAG_EXPORT void* mag_tensor_get_storage_base_ptr(const mag_tensor_t* t); 
 extern MAG_EXPORT int64_t mag_tensor_get_data_size(const mag_tensor_t* );                                          /* Get the size of the tensor buffer in bytes. */
 extern MAG_EXPORT int64_t mag_tensor_get_numel(const mag_tensor_t* t);                                             /* Get the total amount of elements in the tensor. */
 extern MAG_EXPORT mag_context_t* mag_tensor_get_ctx(const mag_tensor_t* t);                                 /* Get the context of the tensor */
-extern MAG_EXPORT void* mag_tensor_get_user_data(const mag_tensor_t* t);                                 /* Get the user data of the tensor */
-extern MAG_EXPORT void mag_tensor_set_user_data(mag_tensor_t* t, void* ud);
 extern MAG_EXPORT int64_t mag_tensor_get_width(const mag_tensor_t* t);
 extern MAG_EXPORT int64_t mag_tensor_get_height(const mag_tensor_t* t);
 extern MAG_EXPORT int64_t mag_tensor_get_channels(const mag_tensor_t* t);
