@@ -17,6 +17,78 @@
 
 #include <math.h>
 
+typedef struct mag_op_cpu_info_t {
+    mag_e11m52_t growth;        /* Logarithmic growth factor for the number of threads */
+    int64_t thread_treshold;    /* Number of elements after which multithreading kicks in */
+} mag_op_cpu_info_t;
+
+static const mag_op_cpu_info_t mag_op_cpu_info_lut[MAG_OP__NUM] = {
+    [MAG_OP_NOP] = {0.1, 250000},
+    [MAG_OP_FILL] = {0.1, 250000},
+    [MAG_OP_MASKED_FILL] = {0.1, 250000},
+    [MAG_OP_RAND_UNIFORM] = {0.1, 250000},
+    [MAG_OP_RAND_NORMAL] = {0.1, 250000},
+    [MAG_OP_RAND_BERNOULLI] = {0.1, 250000},
+    [MAG_OP_ARANGE] = {0.1, 250000},
+    [MAG_OP_CLONE] = {0.1, 250000},
+    [MAG_OP_VIEW] = {0.1, 250000},
+    [MAG_OP_TRANSPOSE] = {0.1, 250000},
+    [MAG_OP_PERMUTE] = {0.1, 250000},
+    [MAG_OP_MEAN] = {0.1, 250000},
+    [MAG_OP_MIN] = {0.1, 250000},
+    [MAG_OP_MAX] = {0.1, 250000},
+    [MAG_OP_SUM] = {0.1, 250000},
+    [MAG_OP_ABS] = {0.1, 250000},
+    [MAG_OP_SGN] = {0.1, 250000},
+    [MAG_OP_NEG] = {0.1, 250000},
+    [MAG_OP_LOG] = {0.1, 250000},
+    [MAG_OP_SQR] = {0.1, 250000},
+    [MAG_OP_SQRT] = {0.1, 250000},
+    [MAG_OP_SIN] = {0.1, 250000},
+    [MAG_OP_COS] = {0.1, 250000},
+    [MAG_OP_STEP] = {0.1, 250000},
+    [MAG_OP_EXP] = {0.1, 250000},
+    [MAG_OP_FLOOR] = {0.1, 250000},
+    [MAG_OP_CEIL] = {0.1, 250000},
+    [MAG_OP_ROUND] = {0.1, 250000},
+    [MAG_OP_SOFTMAX] = {0.1, 250000},
+    [MAG_OP_SOFTMAX_DV] = {0.1, 250000},
+    [MAG_OP_SIGMOID] = {0.1, 250000},
+    [MAG_OP_SIGMOID_DV] = {0.1, 250000},
+    [MAG_OP_HARD_SIGMOID] = {0.1, 250000},
+    [MAG_OP_SILU] = {0.1, 250000},
+    [MAG_OP_SILU_DV] = {0.1, 250000},
+    [MAG_OP_TANH] = {0.1, 250000},
+    [MAG_OP_TANH_DV] = {0.1, 250000},
+    [MAG_OP_RELU] = {0.1, 250000},
+    [MAG_OP_RELU_DV] = {0.1, 250000},
+    [MAG_OP_GELU] = {0.1, 250000},
+    [MAG_OP_GELU_APPROX] = {0.1, 250000},
+    [MAG_OP_GELU_DV] = {0.1, 250000},
+    [MAG_OP_TRIL] = {0.1, 250000},
+    [MAG_OP_TRIU] = {0.1, 250000},
+    [MAG_OP_MULTINOMIAL] = {0.1, 250000},
+    [MAG_OP_ADD] = {3.5, 10000},
+    [MAG_OP_SUB] = {3.5, 10000},
+    [MAG_OP_MUL] = {3.5, 10000},
+    [MAG_OP_DIV] = {3.5, 10000},
+    [MAG_OP_MATMUL] = {0.4, 1000},
+    [MAG_OP_REPEAT_BACK] = {0.1, 250000},
+    [MAG_OP_GATHER] = {0.1, 250000},
+    [MAG_OP_AND] = {3.5, 10000},
+    [MAG_OP_OR] = {3.5, 10000},
+    [MAG_OP_XOR] = {3.5, 10000},
+    [MAG_OP_NOT] = {3.5, 10000},
+    [MAG_OP_SHL] = {3.5, 10000},
+    [MAG_OP_SHR] = {3.5, 10000},
+    [MAG_OP_EQ] = {3.5, 10000},
+    [MAG_OP_NE] = {3.5, 10000},
+    [MAG_OP_LE] = {3.5, 10000},
+    [MAG_OP_GE] = {3.5, 10000},
+    [MAG_OP_LT] = {3.5, 10000},
+    [MAG_OP_GT] = {3.5, 10000},
+};
+
 extern void mag_cpu_blas_specialization_fallback(mag_kernel_registry_t* kernels); /* Generic any CPU impl */
 
 #if defined(__x86_64__) || defined(_M_X64) /* Specialized impls for x86-64 with runtime CPU detection */
@@ -547,10 +619,11 @@ static mag_cpu_device_t* mag_cpu_init_device(mag_context_t* ctx, uint32_t num_th
 */
 static uint32_t mag_cpu_dynamic_work_scaling(mag_cpu_device_t* dvc, mag_opcode_t op, int64_t numel) {
     const mag_opmeta_t* meta = mag_op_meta_of(op);
-    if (!dvc->pool || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel < meta->cpu.thread_treshold)  /* Use a single worker (main thread). */
+    const mag_op_cpu_info_t* info = mag_op_cpu_info_lut+op;
+    if (!dvc->pool || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel < info->thread_treshold)  /* Use a single worker (main thread). */
         return 1;
-    numel -= meta->cpu.thread_treshold;                                                             /* Saturate threshold */
-    uint32_t workers = (uint32_t)ceil(meta->cpu.thread_growth * log2((mag_e11m52_t)numel));         /* Logarithmic scaling */
+    numel -= info->thread_treshold;                                                             /* Saturate threshold */
+    uint32_t workers = (uint32_t)ceil(info->growth * log2((mag_e11m52_t)numel));         /* Logarithmic scaling */
     workers = mag_xmin(dvc->num_allocated_workers, mag_xmax(1, workers));
     return workers;
 }

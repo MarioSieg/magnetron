@@ -768,121 +768,116 @@ static inline void mag_op_param_layout_transfer(const mag_op_param_layout_t* set
         (*out)[i] = mag_op_param_none();
 }
 
-/* Standard opcodes, not including initialization operators. */
-typedef enum mag_opcode_t {
-    /* Pseudo */
-    MAG_OP_NOP,
-
-    /* Init ops */
-    MAG_OP_FILL,
-    MAG_OP_MASKED_FILL,
-    MAG_OP_RAND_UNIFORM,
-    MAG_OP_RAND_NORMAL,
-    MAG_OP_RAND_BERNOULLI,
-    MAG_OP_ARANGE,
-
-    MAG_OP_CLONE,
-    MAG_OP_VIEW,
-    MAG_OP_TRANSPOSE,
-    MAG_OP_PERMUTE,
-
-    /* Reductions */
-    MAG_OP_MEAN,
-    MAG_OP_MIN,
-    MAG_OP_MAX,
-    MAG_OP_SUM,
-
-    /* Unary */
-    MAG_OP_ABS,
-    MAG_OP_SGN,
-    MAG_OP_NEG,
-    MAG_OP_LOG,
-    MAG_OP_SQR,
-    MAG_OP_SQRT,
-    MAG_OP_SIN,
-    MAG_OP_COS,
-    MAG_OP_STEP,
-    MAG_OP_EXP,
-    MAG_OP_FLOOR,
-    MAG_OP_CEIL,
-    MAG_OP_ROUND,
-    MAG_OP_SOFTMAX,
-    MAG_OP_SOFTMAX_DV,
-    MAG_OP_SIGMOID,
-    MAG_OP_SIGMOID_DV,
-    MAG_OP_HARD_SIGMOID,
-    MAG_OP_SILU,
-    MAG_OP_SILU_DV,
-    MAG_OP_TANH,
-    MAG_OP_TANH_DV,
-    MAG_OP_RELU,
-    MAG_OP_RELU_DV,
-    MAG_OP_GELU,
-    MAG_OP_GELU_APPROX,
-    MAG_OP_GELU_DV,
-    MAG_OP_TRIL,
-    MAG_OP_TRIU,
-    MAG_OP_MULTINOMIAL,
-
-    /* Binary */
-    MAG_OP_ADD,
-    MAG_OP_SUB,
-    MAG_OP_MUL,
-    MAG_OP_DIV,
-    MAG_OP_MATMUL,
-    MAG_OP_REPEAT_BACK,
-    MAG_OP_GATHER,
-    MAG_OP_AND,
-    MAG_OP_OR,
-    MAG_OP_XOR,
-    MAG_OP_NOT,
-    MAG_OP_SHL,
-    MAG_OP_SHR,
-
-    MAG_OP_EQ,
-    MAG_OP_NE,
-    MAG_OP_LE,
-    MAG_OP_GE,
-    MAG_OP_LT,
-    MAG_OP_GT,
-
-    MAG_OP__NUM
-} mag_opcode_t;
-mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_GT+1 == MAG_OP__NUM);
-mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
-
 typedef enum mag_opflags_t {
     MAG_OP_FLAG_NONE = 0,
     MAG_OP_FLAG_SUPPORTS_INPLACE = 1<<0,                /* Allows to be executed inplace on the input tensor. */
     MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING = 1<<1,      /* Supports multithreading on CPU. */
 } mag_opflags_t;
 
+#define MAG_OP_FLAGS_COMMON (MAG_OP_FLAG_SUPPORTS_INPLACE+MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING)
+#define mag_params(...) { __VA_ARGS__ }
+
+/* Enumerator, Input Count, Output Count, DType Mask, Op Param Layout, Flags, Backward Function, cpu growth, cpu tresh */
+#define mag_opdef(_, __)\
+    _(NOP, 0, 0, NONE, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(FILL, 1, 0, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(MASKED_FILL, 1, 0, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(RAND_UNIFORM, 1, 0, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(RAND_NORMAL, 1, 0, FP, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(RAND_BERNOULLI, 1, 0, BOOL, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(ARANGE, 1, 0, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, mag_op_backward_clone)__\
+    _(VIEW, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, mag_op_backward_view)__\
+    _(TRANSPOSE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, mag_op_backward_transpose)__\
+    _(PERMUTE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(MEAN, 1, 1, FP, {}, MAG_OP_FLAG_NONE, mag_op_backward_mean)__\
+    _(MIN, 1, 1, FP, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(MAX, 1, 1, FP, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(SUM, 1, 1, FP, {}, MAG_OP_FLAG_NONE, mag_op_backward_sum)__\
+    _(ABS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_abs)__\
+    _(SGN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(NEG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_neg)__\
+    _(LOG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_log)__\
+    _(SQR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sqr)__\
+    _(SQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sqrt)__\
+    _(SIN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sin)__\
+    _(COS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_cos)__\
+    _(STEP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(EXP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_exp)__\
+    _(FLOOR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(CEIL, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(ROUND, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(SOFTMAX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_softmax)__\
+    _(SOFTMAX_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sigmoid)__\
+    _(SIGMOID_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(HARD_SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(SILU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_silu)__\
+    _(SILU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(TANH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_tanh)__\
+    _(TANH_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(RELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_relu)__\
+    _(RELU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(GELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_gelu)__\
+    _(GELU_APPROX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_gelu)__\
+    _(GELU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(TRIL, 1, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(TRIU, 1, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(MULTINOMIAL, 1, 1, FP, mag_params(MAG_OPP_I64, MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(ADD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_add)__\
+    _(SUB, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sub)__\
+    _(MUL, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_mul)__\
+    _(DIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_div)__\
+    _(MATMUL, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_matmul)__\
+    _(REPEAT_BACK, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(GATHER, 2, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(AND, 2, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(OR, 2, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(XOR, 2, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(NOT, 1, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(SHL, 2, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(SHR, 2, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(EQ, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(NE, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(LE, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(GE, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(LT, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(GT, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+
+/* Standard opcodes, not including initialization operators. */
+typedef enum mag_opcode_t {
+    #define _(enu, in, out, dtm, opp, flags, diff) MAG_OP_##enu
+        mag_opdef(_, MAG_SEP)
+    #undef _
+    MAG_OP__NUM
+} mag_opcode_t;
+mag_static_assert(MAG_OP_NOP == 0);
+mag_static_assert(MAG_OP_GT+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
+
 typedef uint8_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */
 mag_static_assert(MAG_DTYPE__NUM <= 8); /* Must fit in 8 bits, if this fails increase the type of dtpe_mask. */
-#define mag_dtype_bit(x) (((mag_dtype_mask_t)1)<<((x)&63))
+#define mag_dtype_bit(x) (((mag_dtype_mask_t)1)<<((x)&7))
 #define mag_dtype_mask(enume) mag_dtype_bit(MAG_DTYPE_##enume)
+#define MAG_DTYPE_MASK_NONE 0
 #define MAG_DTYPE_MASK_ALL (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10)|mag_dtype_mask(BOOL)|mag_dtype_mask(I32)) /* All data types */
-#define MAG_DTYPE_MASK_FP (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))   /* Floating-point data types */
+#define MAG_DTYPE_MASK_FP (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))         /* Floating-point data types */
 #define MAG_DTYPE_MASK_INTEGRAL (mag_dtype_mask(BOOL)|mag_dtype_mask(I32))      /* Integral data types with boolean */
 #define MAG_DTYPE_MASK_INTEGER (MAG_DTYPE_MASK_INTEGRAL&~mag_dtype_mask(BOOL))  /* Integral (integer) data types without boolean */
 #define MAG_DTYPE_MASK_NUMERIC (MAG_DTYPE_MASK_ALL&~mag_dtype_mask(BOOL))       /* Numeric data types (all except boolean) */
+#define MAG_DTYPE_MASK_BOOL (mag_dtype_mask(BOOL))                              /* Boolean data type */
 
 #define MAG_OP_INOUT_DYN SIZE_MAX /* Dynamic input/output count. Used for operations that can have arbitrary number of inputs/outputs. */
 
 /* Stores operator metadata such as operation type, number of inputs and parameters, and the types of the parameters. */
 typedef struct mag_opmeta_t {
-    const char* const mnemonic;                                     /* Operation mnemonic */
-    const mag_dtype_mask_t dtype_mask;                              /* DType mask, bitmask of all supported input dtypes. */
-    const mag_opparam_type_t op_param_layout[MAG_MAX_OP_PARAMS];    /* Parameter types */
-    const mag_opflags_t flags;                                      /* Operation flags */
-    const uint32_t input_count;                                     /* Number of inputs or MAG_OP_INOUT_DYN */
-    const uint32_t output_count;                                    /* Number of outputs or MAG_OP_INOUT_DYN */
-    void (*const backward)(mag_tensor_t*, mag_tensor_t**);          /* Backward pass function or NULL if op is not differentiable */
-    struct {
-        double thread_growth;
-        int64_t thread_treshold;
-    } cpu; /* CPU specific metadata. */
+    const char* const mnemonic;
+    const uint32_t in;
+    const uint32_t out;
+    const mag_dtype_mask_t dtype_mask;
+    const mag_opparam_type_t op_param_layout[MAG_MAX_OP_PARAMS];
+    const mag_opflags_t flags;
+    void (*const backward)(mag_tensor_t*, mag_tensor_t**);
 } mag_opmeta_t;
 
 extern const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc); /* Get operation metadata for a specific opcode. */
@@ -1004,7 +999,7 @@ extern void mag_destroy_dynamic_device(mag_idevice_t* dvc);
 
 #if defined(__x86_64__) || defined(_M_X64)
 
-#define mag_x86_64_define_caps(_, __)\
+#define mag_amd64_capdef(_, __)\
     _(NONE)__\
     _(INTEL)__\
     _(AMD)__\
@@ -1066,7 +1061,7 @@ extern void mag_destroy_dynamic_device(mag_idevice_t* dvc);
 
 typedef enum mag_amd64_cap_t {
 #define _(name) MAG_AMD64_CAP_##name
-    mag_x86_64_define_caps(_, MAG_SEP)
+    mag_amd64_capdef(_, MAG_SEP)
     MAG_AMD64_CAP__NUM
 #undef _
 } mag_amd64_cap_t;
@@ -1079,7 +1074,7 @@ extern const char* const mag_amd64_cpu_cap_names[MAG_AMD64_CAP__NUM]; /* Names o
 
 #elif defined(__aarch64__) || defined(_M_ARM64) /* ARM 64 specific CPU features. */
 
-#define mag_arm64_feature_def(_, __) /* Enumerator */\
+#define mag_armd64_capdef(_, __) /* Enumerator */\
     _(NONE)__\
     _(NEON)__\
     _(DOTPROD)__\
@@ -1092,7 +1087,7 @@ extern const char* const mag_amd64_cpu_cap_names[MAG_AMD64_CAP__NUM]; /* Names o
 
 typedef enum mag_arm64_cap_t {
     #define _(ident) MAG_ARM64_CAP_##ident
-    mag_arm64_feature_def(_, MAG_SEP)
+    mag_armd64_capdef(_, MAG_SEP)
     MAG_ARM64_CAP__NUM
     #undef _
 } mag_arm64_cap_t;

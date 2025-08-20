@@ -369,13 +369,13 @@ uintptr_t mag_thread_id(void) { /* Get the current thread ID. */
 #if defined(__x86_64__) || defined(_M_X64)
 const char* const mag_amd64_cpu_cap_names[MAG_AMD64_CAP__NUM] = {
     #define _(name) #name
-    mag_x86_64_define_caps(_, MAG_SEP)
+    mag_amd64_capdef(_, MAG_SEP)
     #undef _
 };
 #elif defined(__aarch64__)
 #define _(ident) #ident
 const char* const mag_arm64_cpu_cap_names[MAG_ARM64_CAP__NUM] = {
-    mag_arm64_feature_def(_, MAG_SEP)
+    mag_armd64_capdef(_, MAG_SEP)
 };
 #endif
 
@@ -1497,7 +1497,7 @@ static void mag_collect_topo_iterative(mag_tensor_t* root, mag_tensor_set_t* out
     while (sta_len) { /* Iterative DFS */
         mag_topo_record_t* top = &stack[sta_len - 1];
         mag_tensor_t* cur_tensor = top->tensor;
-        if (top->next_child_idx < mag_op_meta_of(cur_tensor->op)->input_count) {
+        if (top->next_child_idx < mag_op_meta_of(cur_tensor->op)->in) {
             mag_tensor_t* child = cur_tensor->op_inputs[top->next_child_idx++];
             if (child && (child->flags & MAG_TFLAG_REQUIRES_GRAD)) {
                 if (!mag_hashset_contains_key(&visited, child)) {
@@ -1548,7 +1548,7 @@ void mag_tensor_backward(mag_tensor_t* root) {
         void (*op_bwd)(mag_tensor_t*, mag_tensor_t**) = meta->backward;
         mag_assert2(op_bwd);
         (*op_bwd)(child, grads);
-        uint32_t numin = meta->input_count;
+        uint32_t numin = meta->in;
         mag_assert2(numin <= MAG_MAX_OP_INPUTS);
         for (uint32_t i=0; i < numin; ++i) {
             mag_tensor_t* input = child->op_inputs[i];
@@ -2365,7 +2365,7 @@ MAG_COLDPROC void mag_tensor_export_backward_graph_graphviz(mag_tensor_t* t, con
     for (size_t i=0; i < post_order.size; ++i) {
         mag_tensor_t* node = post_order.data[i];
         const mag_opmeta_t* meta = mag_op_meta_of(node->op);
-        for (uint32_t j = 0; j < meta->input_count; ++j) {
+        for (uint32_t j = 0; j < meta->in; ++j) {
             mag_tensor_t* input = node->op_inputs[j];
             if (input) {
                 fprintf(fp, "    \"%p\" -> \"%p\" [label=\"input %u\"];\n", node, input, j);
