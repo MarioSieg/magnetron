@@ -786,49 +786,49 @@ typedef enum mag_opflags_t {
     _(RAND_NORMAL, 1, 0, FP, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(RAND_BERNOULLI, 1, 0, BOOL, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(ARANGE, 1, 0, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, mag_op_backward_clone)__\
-    _(VIEW, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, mag_op_backward_view)__\
-    _(TRANSPOSE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, mag_op_backward_transpose)__\
+    _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
+    _(VIEW, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, view)__\
+    _(TRANSPOSE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, transpose)__\
     _(PERMUTE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(MEAN, 1, 1, FP, {}, MAG_OP_FLAG_NONE, mag_op_backward_mean)__\
+    _(MEAN, 1, 1, FP, {}, MAG_OP_FLAG_NONE, mean)__\
     _(MIN, 1, 1, FP, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(MAX, 1, 1, FP, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(SUM, 1, 1, FP, {}, MAG_OP_FLAG_NONE, mag_op_backward_sum)__\
-    _(ABS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_abs)__\
+    _(SUM, 1, 1, FP, {}, MAG_OP_FLAG_NONE, sum)__\
+    _(ABS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, abs)__\
     _(SGN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(NEG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_neg)__\
-    _(LOG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_log)__\
-    _(SQR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sqr)__\
-    _(SQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sqrt)__\
-    _(SIN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sin)__\
-    _(COS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_cos)__\
+    _(NEG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, neg)__\
+    _(LOG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, log)__\
+    _(SQR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sqr)__\
+    _(SQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sqrt)__\
+    _(SIN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sin)__\
+    _(COS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, cos)__\
     _(STEP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(EXP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_exp)__\
+    _(EXP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, exp)__\
     _(FLOOR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(CEIL, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(ROUND, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(SOFTMAX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_softmax)__\
+    _(SOFTMAX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, softmax)__\
     _(SOFTMAX_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sigmoid)__\
+    _(SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sigmoid)__\
     _(SIGMOID_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(HARD_SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(SILU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_silu)__\
+    _(SILU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, silu)__\
     _(SILU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(TANH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_tanh)__\
+    _(TANH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, tanh)__\
     _(TANH_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(RELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_relu)__\
+    _(RELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, relu)__\
     _(RELU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(GELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_gelu)__\
-    _(GELU_APPROX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_gelu)__\
+    _(GELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, gelu)__\
+    _(GELU_APPROX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, gelu)__\
     _(GELU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(TRIL, 1, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(TRIU, 1, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(MULTINOMIAL, 1, 1, FP, mag_params(MAG_OPP_I64, MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
-    _(ADD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_add)__\
-    _(SUB, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_sub)__\
-    _(MUL, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_mul)__\
-    _(DIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_div)__\
-    _(MATMUL, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, mag_op_backward_matmul)__\
+    _(ADD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, add)__\
+    _(SUB, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, sub)__\
+    _(MUL, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mul)__\
+    _(DIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, div)__\
+    _(MATMUL, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, matmul)__\
     _(REPEAT_BACK, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(GATHER, 2, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(AND, 2, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\

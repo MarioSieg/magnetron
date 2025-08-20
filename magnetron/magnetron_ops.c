@@ -1038,6 +1038,7 @@ static void mag_op_backward_matmul(mag_tensor_t* node, mag_tensor_t** grads) {
 
 const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
     static const mag_opmeta_t infos[MAG_OP__NUM] = {
+        #define mag_op_backward_NULL NULL
         #define _(enu, in, out, dtm, opp, flags, diff) [MAG_OP_##enu] = (mag_opmeta_t){ \
                 #enu, \
                 in, \
@@ -1045,10 +1046,11 @@ const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc) {
                 MAG_DTYPE_MASK_##dtm, \
                 opp, \
                 flags, \
-                diff \
+                mag_op_backward_##diff \
             }
             mag_opdef(_, MAG_SEP)
         #undef _
+        #undef mag_op_backward_NULL
     };
     return infos+opc;
 }
