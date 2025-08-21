@@ -2570,44 +2570,82 @@ static void mag_mm_scratch_release(mag_mmscratch_t* sb) {
     sb->cap = 0;
 }
 
-static MAG_AINLINE void mag_mm_tile_8x8_e8m23(
-    int64_t kc,
-    const mag_e8m23_t* a,
-    ptrdiff_t lda,
-    const mag_e8m23_t* b,
-    ptrdiff_t ldb,
-    mag_e8m23_t* c,
-    ptrdiff_t ldc,
-    bool acc
-) {
-    #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
-        float32x4_t C[8][2];
+static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* restrict a, ptrdiff_t lda, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, ptrdiff_t ldc, bool acc) {
+    #ifdef __AVX512F__
+        __m512 C01;
+        __m512 C23;
+        __m512 C45;
+        __m512 C67;
         if (acc) {
-            #pragma GCC unroll 8
-            for (int r=0; r < 8; ++r) {
-                C[r][0] = vld1q_f32(c + r*ldc + 0);
-                C[r][1] = vld1q_f32(c + r*ldc + 4);
-            }
+            __m256 c0 = _mm256_loadu_ps(c + 0*ldc);
+            __m256 c1 = _mm256_loadu_ps(c + 1*ldc);
+            __m256 c2 = _mm256_loadu_ps(c + 2*ldc);
+            __m256 c3 = _mm256_loadu_ps(c + 3*ldc);
+            __m256 c4 = _mm256_loadu_ps(c + 4*ldc);
+            __m256 c5 = _mm256_loadu_ps(c + 5*ldc);
+            __m256 c6 = _mm256_loadu_ps(c + 6*ldc);
+            __m256 c7 = _mm256_loadu_ps(c + 7*ldc);
+            C01 = _mm512_insertf32x8(_mm512_castps256_ps512(c0), c1, 1);
+            C23 = _mm512_insertf32x8(_mm512_castps256_ps512(c2), c3, 1);
+            C45 = _mm512_insertf32x8(_mm512_castps256_ps512(c4), c5, 1);
+            C67 = _mm512_insertf32x8(_mm512_castps256_ps512(c6), c7, 1);
         } else {
-            #pragma GCC unroll 8
-            for (int r=0; r < 8; ++r)
-                C[r][0] = C[r][1] = vdupq_n_f32(0.f);
+            __m512 z = _mm512_setzero_ps();
+            C01 = z;
+            C23 = z;
+            C45 = z;
+            C67 = z;
         }
-        for (int64_t k=0; k < kc; ++k) {
-            float32x4_t B0 = vld1q_f32(b + k*ldb + 0);
-            float32x4_t B1 = vld1q_f32(b + k*ldb + 4);
-            #pragma GCC unroll 8
-            for (int r=0; r < 8; ++r) {
-                float32x4_t A = vdupq_n_f32(a[r*lda + k]);
-                C[r][0] = vfmaq_f32(C[r][0], B0, A);
-                C[r][1] = vfmaq_f32(C[r][1], B1, A);
+        for (int64_t k=0; k < kc; k += 2) {
+            __m256 b0_256 = _mm256_loadu_ps(b + (k+0)*ldb);
+            __m512 b0 = _mm512_insertf32x8(_mm512_castps256_ps512(b0_256), b0_256, 1);
+            __m256 a00 = _mm256_set1_ps(a[0*lda + (k+0)]);
+            __m256 a10 = _mm256_set1_ps(a[1*lda + (k+0)]);
+            __m256 a20 = _mm256_set1_ps(a[2*lda + (k+0)]);
+            __m256 a30 = _mm256_set1_ps(a[3*lda + (k+0)]);
+            __m256 a40 = _mm256_set1_ps(a[4*lda + (k+0)]);
+            __m256 a50 = _mm256_set1_ps(a[5*lda + (k+0)]);
+            __m256 a60 = _mm256_set1_ps(a[6*lda + (k+0)]);
+            __m256 a70 = _mm256_set1_ps(a[7*lda + (k+0)]);
+            __m512 A01_0 = _mm512_insertf32x8(_mm512_castps256_ps512(a00), a10, 1);
+            __m512 A23_0 = _mm512_insertf32x8(_mm512_castps256_ps512(a20), a30, 1);
+            __m512 A45_0 = _mm512_insertf32x8(_mm512_castps256_ps512(a40), a50, 1);
+            __m512 A67_0 = _mm512_insertf32x8(_mm512_castps256_ps512(a60), a70, 1);
+            C01 = _mm512_fmadd_ps(A01_0, b0, C01);
+            C23 = _mm512_fmadd_ps(A23_0, b0, C23);
+            C45 = _mm512_fmadd_ps(A45_0, b0, C45);
+            C67 = _mm512_fmadd_ps(A67_0, b0, C67);
+            _mm_prefetch((const char*)(b + (k+MAG_PREFETCH_SPAN)*ldb), _MM_HINT_T0);
+            _mm_prefetch((const char*)(a + (k+MAG_PREFETCH_SPAN)), _MM_HINT_T0);
+            if (mag_likely(k+1 < kc)) {
+                __m256 b1_256 = _mm256_loadu_ps(b + (k+1)*ldb);
+                __m512 b1 = _mm512_insertf32x8(_mm512_castps256_ps512(b1_256), b1_256, 1);
+                __m256 a01 = _mm256_set1_ps(a[0*lda + (k+1)]);
+                __m256 a11 = _mm256_set1_ps(a[1*lda + (k+1)]);
+                __m256 a21 = _mm256_set1_ps(a[2*lda + (k+1)]);
+                __m256 a31 = _mm256_set1_ps(a[3*lda + (k+1)]);
+                __m256 a41 = _mm256_set1_ps(a[4*lda + (k+1)]);
+                __m256 a51 = _mm256_set1_ps(a[5*lda + (k+1)]);
+                __m256 a61 = _mm256_set1_ps(a[6*lda + (k+1)]);
+                __m256 a71 = _mm256_set1_ps(a[7*lda + (k+1)]);
+                __m512 A01_1 = _mm512_insertf32x8(_mm512_castps256_ps512(a01), a11, 1);
+                __m512 A23_1 = _mm512_insertf32x8(_mm512_castps256_ps512(a21), a31, 1);
+                __m512 A45_1 = _mm512_insertf32x8(_mm512_castps256_ps512(a41), a51, 1);
+                __m512 A67_1 = _mm512_insertf32x8(_mm512_castps256_ps512(a61), a71, 1);
+                C01 = _mm512_fmadd_ps(A01_1, b1, C01);
+                C23 = _mm512_fmadd_ps(A23_1, b1, C23);
+                C45 = _mm512_fmadd_ps(A45_1, b1, C45);
+                C67 = _mm512_fmadd_ps(A67_1, b1, C67);
             }
         }
-        #pragma GCC unroll 8
-        for (int r=0; r < 8; ++r) {
-            vst1q_f32(c + r*ldc + 0, C[r][0]);
-            vst1q_f32(c + r*ldc + 4, C[r][1]);
-        }
+        _mm256_storeu_ps(c + 0*ldc, _mm512_extractf32x8_ps(C01, 0));
+        _mm256_storeu_ps(c + 1*ldc, _mm512_extractf32x8_ps(C01, 1));
+        _mm256_storeu_ps(c + 2*ldc, _mm512_extractf32x8_ps(C23, 0));
+        _mm256_storeu_ps(c + 3*ldc, _mm512_extractf32x8_ps(C23, 1));
+        _mm256_storeu_ps(c + 4*ldc, _mm512_extractf32x8_ps(C45, 0));
+        _mm256_storeu_ps(c + 5*ldc, _mm512_extractf32x8_ps(C45, 1));
+        _mm256_storeu_ps(c + 6*ldc, _mm512_extractf32x8_ps(C67, 0));
+        _mm256_storeu_ps(c + 7*ldc, _mm512_extractf32x8_ps(C67, 1));
     #elif defined(__AVX2__) && defined(__FMA__)
         __m256 C[8];
         if (acc) {
@@ -2640,39 +2678,81 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(
         #pragma GCC unroll 8
         for (int r=0; r < 8; ++r)
             _mm256_storeu_ps(c + r*ldc, C[r]);
+    #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+        float32x4_t C[8][2];
+        if (acc) {
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                C[r][0] = vld1q_f32(c + r*ldc + 0);
+                C[r][1] = vld1q_f32(c + r*ldc + 4);
+            }
+        } else {
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r)
+                C[r][0] = C[r][1] = vdupq_n_f32(0.f);
+        }
+        for (int64_t k=0; k < kc; ++k) {
+            float32x4_t B0 = vld1q_f32(b + k*ldb + 0);
+            float32x4_t B1 = vld1q_f32(b + k*ldb + 4);
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                float32x4_t A = vdupq_n_f32(a[r*lda + k]);
+                C[r][0] = vfmaq_f32(C[r][0], B0, A);
+                C[r][1] = vfmaq_f32(C[r][1], B1, A);
+            }
+        }
+        #pragma GCC unroll 8
+        for (int r=0; r < 8; ++r) {
+            vst1q_f32(c + r*ldc + 0, C[r][0]);
+            vst1q_f32(c + r*ldc + 4, C[r][1]);
+        }
     #endif
 }
 
-static MAG_AINLINE void mag_mm_tile_8x16_e8m23(
-    int64_t kc,
-    const mag_e8m23_t* a,
-    ptrdiff_t lda,
-    const mag_e8m23_t* b,
-    ptrdiff_t ldb,
-    mag_e8m23_t* c,
-    ptrdiff_t ldc,
-    bool acc
-) {
+static MAG_AINLINE void mag_mm_tile_8x16_e8m23(int64_t kc, const mag_e8m23_t* restrict a, ptrdiff_t lda, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, ptrdiff_t ldc, bool acc) {
     mag_mm_tile_8x8_e8m23(kc, a, lda, b, ldb, c, ldc, acc);
     mag_mm_tile_8x8_e8m23(kc, a, lda, b+8, ldb, c+8, ldc, acc);
 }
 
-static MAG_AINLINE void mag_mm_tile_8x32_e8m23(
-    int64_t kc,
-    const mag_e8m23_t* a,
-    ptrdiff_t lda,
-    const mag_e8m23_t* b,
-    ptrdiff_t ldb,
-    mag_e8m23_t* c,
-    ptrdiff_t ldc,
-    bool acc
-) {
+static MAG_AINLINE void mag_mm_tile_8x32_e8m23(int64_t kc, const mag_e8m23_t* restrict a, ptrdiff_t lda, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, ptrdiff_t ldc, bool acc) {
     mag_mm_tile_8x16_e8m23(kc, a, lda, b, ldb, c, ldc, acc);
     mag_mm_tile_8x16_e8m23(kc, a, lda, b+16, ldb, c+16, ldc, acc);
 }
 
-static MAG_AINLINE void mag_mm_tile_1x8_e8m23(int64_t kc, const mag_e8m23_t* a, const mag_e8m23_t* b, ptrdiff_t ldb, mag_e8m23_t* c, bool acc) {
-    #if defined(__AVX__) && defined(__FMA__)
+static MAG_AINLINE void mag_mm_tile_1x8_e8m23(int64_t kc, const mag_e8m23_t* restrict a, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, bool acc) {
+    #ifdef __AVX512F__
+        __mmask16 m8 = 0x00ff;
+        __m512 C = acc ? _mm512_maskz_loadu_ps(m8, c) : _mm512_setzero_ps();
+        __m512 P0 = _mm512_setzero_ps();
+        __m512 P1 = _mm512_setzero_ps();
+        __m512 P2 = _mm512_setzero_ps();
+        __m512 P3 = _mm512_setzero_ps();
+        int64_t k=0;
+        for (; k+3 < kc; k += 4) {
+            _mm_prefetch((const char*)(b + (k + MAG_PREFETCH_SPAN)*ldb), _MM_HINT_T0);
+            __m512 a0 = _mm512_set1_ps(a[k+0]);
+            __m512 a1 = _mm512_set1_ps(a[k+1]);
+            __m512 a2 = _mm512_set1_ps(a[k+2]);
+            __m512 a3 = _mm512_set1_ps(a[k+3]);
+            __m512 b0 = _mm512_maskz_loadu_ps(m8, b + (k + 0)*ldb);
+            __m512 b1 = _mm512_maskz_loadu_ps(m8, b + (k + 1)*ldb);
+            __m512 b2 = _mm512_maskz_loadu_ps(m8, b + (k + 2)*ldb);
+            __m512 b3 = _mm512_maskz_loadu_ps(m8, b + (k + 3)*ldb);
+            P0 = _mm512_fmadd_ps(a0, b0, P0);
+            P1 = _mm512_fmadd_ps(a1, b1, P1);
+            P2 = _mm512_fmadd_ps(a2, b2, P2);
+            P3 = _mm512_fmadd_ps(a3, b3, P3);
+        }
+        __m512 PSum01 = _mm512_add_ps(P0, P1);
+        __m512 PSum23 = _mm512_add_ps(P2, P3);
+        C = _mm512_add_ps(C, _mm512_add_ps(PSum01, PSum23));
+        for (; k < kc; ++k) {
+            __m512 aS = _mm512_set1_ps(a[k]);
+            __m512 bV = _mm512_maskz_loadu_ps(m8, b + k*ldb);
+            C = _mm512_fmadd_ps(aS, bV, C);
+        }
+        _mm512_mask_storeu_ps(c, m8, C);
+    #elif defined(__AVX__) && defined(__FMA__)
         __m256 C0 = acc ? _mm256_loadu_ps(c) : _mm256_setzero_ps();
         for (int64_t k=0; k < kc; ++k) {
             __m256 A = _mm256_broadcast_ss(a + k);
@@ -2703,10 +2783,43 @@ static MAG_AINLINE void mag_mm_tile_1x8_e8m23(int64_t kc, const mag_e8m23_t* a, 
                 c[j] += a0*b[k*ldb + j];
         }
     #endif
-    }
+}
 
-static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* a, const mag_e8m23_t* b, ptrdiff_t ldb, mag_e8m23_t* c,bool acc) {
-    #if defined(__AVX__) && defined(__FMA__)
+static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* restrict a, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, bool acc) {
+    #ifdef __AVX512F__
+        __m512 C = acc ? _mm512_loadu_ps(c) : _mm512_setzero_ps();
+        __m512 P0 = _mm512_setzero_ps();
+        __m512 P1 = _mm512_setzero_ps();
+        __m512 P2 = _mm512_setzero_ps();
+        __m512 P3 = _mm512_setzero_ps();
+        int64_t k=0;
+        for (; k+3 < kc; k += 4) {
+            _mm_prefetch((const char*)(b + (k + MAG_PREFETCH_SPAN) * ldb), _MM_HINT_T0);
+            __m512 a0 = _mm512_set1_ps(a[k + 0]);
+            __m512 a1 = _mm512_set1_ps(a[k + 1]);
+            __m512 a2 = _mm512_set1_ps(a[k + 2]);
+            __m512 a3 = _mm512_set1_ps(a[k + 3]);
+            const mag_e8m23_t* B0p = b + (k + 0)*ldb;
+            const mag_e8m23_t* B1p = b + (k + 1)*ldb;
+            const mag_e8m23_t* B2p = b + (k + 2)*ldb;
+            const mag_e8m23_t* B3p = b + (k + 3)*ldb;
+            __m512 B0 = _mm512_loadu_ps(B0p);
+            __m512 B1 = _mm512_loadu_ps(B1p);
+            __m512 B2 = _mm512_loadu_ps(B2p);
+            __m512 B3 = _mm512_loadu_ps(B3p);
+            P0 = _mm512_fmadd_ps(a0, B0, P0);
+            P1 = _mm512_fmadd_ps(a1, B1, P1);
+            P2 = _mm512_fmadd_ps(a2, B2, P2);
+            P3 = _mm512_fmadd_ps(a3, B3, P3);
+        }
+        C = _mm512_add_ps(C, _mm512_add_ps(_mm512_add_ps(P0, P1), _mm512_add_ps(P2, P3)));
+        for (; k < kc; ++k) {
+            __m512 aS = _mm512_set1_ps(a[k]);
+            __m512 bV = _mm512_loadu_ps(b + k*ldb);
+            C = _mm512_fmadd_ps(aS, bV, C);
+        }
+        _mm512_storeu_ps(c, C);
+    #elif defined(__AVX__) && defined(__FMA__)
         __m256 C0 = acc ? _mm256_loadu_ps(c) : _mm256_setzero_ps();
         __m256 C1 = acc ? _mm256_loadu_ps(c+8) : _mm256_setzero_ps();
         for (int64_t k=0; k < kc; ++k) {
@@ -2731,9 +2844,9 @@ static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* a,
             C2 = mag_vfmadd_e8m23(C2, A, vld1q_f32(Bk + 8));
             C3 = mag_vfmadd_e8m23(C3, A, vld1q_f32(Bk + 12));
         }
-        vst1q_f32(c +  0, C0);
-        vst1q_f32(c +  4, C1);
-        vst1q_f32(c +  8, C2);
+        vst1q_f32(c + 0, C0);
+        vst1q_f32(c + 4, C1);
+        vst1q_f32(c + 8, C2);
         vst1q_f32(c + 12, C3);
     #else
         #pragma GCC unroll 16
@@ -2748,7 +2861,7 @@ static MAG_AINLINE void mag_mm_tile_1x16_e8m23(int64_t kc, const mag_e8m23_t* a,
     #endif
 }
 
-static MAG_AINLINE void mag_mm_tile_1x32_e8m23(int64_t kc, const mag_e8m23_t* a, const mag_e8m23_t* b, ptrdiff_t ldb, mag_e8m23_t* c,  bool acc) {
+static MAG_AINLINE void mag_mm_tile_1x32_e8m23(int64_t kc, const mag_e8m23_t* restrict a, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c,  bool acc) {
     mag_mm_tile_1x16_e8m23(kc, a, b, ldb, c, acc);
     mag_mm_tile_1x16_e8m23(kc, a, b+16, ldb, c+16, acc);
 }
@@ -2757,23 +2870,53 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const 
     if (strideN == 1) {
         for (int64_t k=0; k < kc; ++k) {
             const mag_e8m23_t* src = Bsrc + k*strideK;
-                #if defined(__AVX__)
+                #ifdef __AVX512F__
+                    int64_t j=0;
+                    mag_e8m23_t* dst = Bp + k*nc;
+                    for (; j+63 < nc; j += 64) {
+                        _mm_prefetch((const char*)(src + j + 256), _MM_HINT_T0);
+                        __m512 v0 = _mm512_loadu_ps(src + j + 0);
+                        __m512 v1 = _mm512_loadu_ps(src + j + 16);
+                        __m512 v2 = _mm512_loadu_ps(src + j + 32);
+                        __m512 v3 = _mm512_loadu_ps(src + j + 48);
+                        _mm512_storeu_ps(dst + j + 0, v0);
+                        _mm512_storeu_ps(dst + j + 16, v1);
+                        _mm512_storeu_ps(dst + j + 32, v2);
+                        _mm512_storeu_ps(dst + j + 48, v3);
+                    }
+                    for (; j+31 < nc; j += 32) {
+                        __m512 v0 = _mm512_loadu_ps(src + j +  0);
+                        __m512 v1 = _mm512_loadu_ps(src + j + 16);
+                        _mm512_storeu_ps(dst + j +  0, v0);
+                        _mm512_storeu_ps(dst + j + 16, v1);
+                    }
+                    for (; j+15 < nc; j += 16) {
+                        __m512 v = _mm512_loadu_ps(src + j);
+                        _mm512_storeu_ps(dst + j, v);
+                    }
+                    if (j < nc) {
+                        int64_t rem = nc - j;
+                        __mmask16 m = (rem == 16) ? 0xffff : (__mmask16)((1u<<rem)-1);
+                        __m512 v = _mm512_maskz_loadu_ps(m, src + j);
+                        _mm512_mask_storeu_ps(dst + j, m, v);
+                    }
+                #elif defined(__AVX__)
                     int64_t j=0;
                     for (; j+31 < nc; j += 32) {
                         __m256 v0 = _mm256_loadu_ps(src + j +  0);
                         __m256 v1 = _mm256_loadu_ps(src + j +  8);
                         __m256 v2 = _mm256_loadu_ps(src + j + 16);
                         __m256 v3 = _mm256_loadu_ps(src + j + 24);
-                        _mm256_storeu_ps(Bp + k*nc + j +  0, v0);
-                        _mm256_storeu_ps(Bp + k*nc + j +  8, v1);
+                        _mm256_storeu_ps(Bp + k*nc + j + 0, v0);
+                        _mm256_storeu_ps(Bp + k*nc + j + 8, v1);
                         _mm256_storeu_ps(Bp + k*nc + j + 16, v2);
                         _mm256_storeu_ps(Bp + k*nc + j + 24, v3);
                     }
                     for (; j+15 < nc; j += 16) {
-                        __m256 v0 = _mm256_loadu_ps(src + j +  0);
-                        __m256 v1 = _mm256_loadu_ps(src + j +  8);
-                        _mm256_storeu_ps(Bp + k*nc + j +  0, v0);
-                        _mm256_storeu_ps(Bp + k*nc + j +  8, v1);
+                        __m256 v0 = _mm256_loadu_ps(src + j + 0);
+                        __m256 v1 = _mm256_loadu_ps(src + j + 8);
+                        _mm256_storeu_ps(Bp + k*nc + j + 0, v0);
+                        _mm256_storeu_ps(Bp + k*nc + j + 8, v1);
                     }
                     for (; j+7 < nc; j += 8) {
                         __m256 v = _mm256_loadu_ps(src + j);
@@ -2811,7 +2954,41 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const 
 
 static MAG_AINLINE void mag_mm_pack_A_mr8_kc_e8m23(int64_t kc, const mag_e8m23_t* restrict Asrc, ptrdiff_t strideK, mag_e8m23_t* restrict Ap) {
     if (strideK == 1) {
-        #if defined(__AVX2__)
+        #ifdef __AVX512F__
+            #pragma GCC unroll 8
+            for (int i=0; i < 8; ++i) {
+                const mag_e8m23_t* src = Asrc + i*kc;
+                mag_e8m23_t* dst = Ap + i*kc;
+                int64_t k=0;
+                for (; k+63 < kc; k += 64) {
+                    _mm_prefetch((const char*)(src + k + 256), _MM_HINT_T0);
+                    __m512 v0 = _mm512_loadu_ps(src + k + 0);
+                    __m512 v1 = _mm512_loadu_ps(src + k + 16);
+                    __m512 v2 = _mm512_loadu_ps(src + k + 32);
+                    __m512 v3 = _mm512_loadu_ps(src + k + 48);
+                    _mm512_storeu_ps(dst + k + 0, v0);
+                    _mm512_storeu_ps(dst + k + 16, v1);
+                    _mm512_storeu_ps(dst + k + 32, v2);
+                    _mm512_storeu_ps(dst + k + 48, v3);
+                }
+                for (; k+31 < kc; k += 32) {
+                    __m512 v0 = _mm512_loadu_ps(src + k + 0);
+                    __m512 v1 = _mm512_loadu_ps(src + k + 16);
+                    _mm512_storeu_ps(dst + k + 0, v0);
+                    _mm512_storeu_ps(dst + k + 16, v1);
+                }
+                for (; k+15 < kc; k += 16) {
+                    __m512 v = _mm512_loadu_ps(src + k);
+                    _mm512_storeu_ps(dst + k, v);
+                }
+                if (k < kc) {
+                    int64_t rem = kc - k;
+                    __mmask16 m = (__mmask16)((1u<<rem)-1);
+                    __m512 v = _mm512_maskz_loadu_ps(m, src + k);
+                    _mm512_mask_storeu_ps(dst + k, m, v);
+                }
+            }
+        #elif defined(__AVX2__)
             #pragma GCC unroll 8
             for (int i=0; i < 8; ++i) {
                 const mag_e8m23_t* src = Asrc + i*kc;
@@ -2858,14 +3035,39 @@ static MAG_AINLINE void mag_mm_pack_A_mr8_kc_e8m23(int64_t kc, const mag_e8m23_t
         }
     }
 }
+
 static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const mag_e8m23_t* restrict yvec, mag_e8m23_t* restrict Bp) {
-    #if defined(__AVX2__)
+    #ifdef __AVX512F__
+        for (int64_t k=0; k < kc; ++k) {
+            __m512 val = _mm512_set1_ps(yvec[k]);
+            mag_e8m23_t* dst = Bp + k*nc;
+            int64_t j=0;
+            for (; j+63 < nc; j += 64) {
+                _mm512_storeu_ps(dst + j + 0, val);
+                _mm512_storeu_ps(dst + j + 16, val);
+                _mm512_storeu_ps(dst + j + 32, val);
+                _mm512_storeu_ps(dst + j + 48, val);
+            }
+            for (; j+31 < nc; j += 32) {
+                _mm512_storeu_ps(dst + j + 0, val);
+                _mm512_storeu_ps(dst + j + 16, val);
+            }
+            for (; j+15 < nc; j += 16) {
+                _mm512_storeu_ps(dst + j, val);
+            }
+            if (j < nc) {
+                int64_t rem = nc - j;
+                __mmask16 m = (__mmask16)((1u<<rem)-1);
+                _mm512_mask_storeu_ps(dst + j, m, val);
+            }
+        }
+    #elif defined(__AVX2__)
         for (int64_t k=0; k < kc; ++k) {
             __m256 val = _mm256_broadcast_ss(yvec + k);
             int64_t j = 0;
             for (; j+31 < nc; j += 32) {
-                _mm256_storeu_ps(Bp + k*nc + j +  0, val);
-                _mm256_storeu_ps(Bp + k*nc + j +  8, val);
+                _mm256_storeu_ps(Bp + k*nc + j + 0, val);
+                _mm256_storeu_ps(Bp + k*nc + j + 8, val);
                 _mm256_storeu_ps(Bp + k*nc + j + 16, val);
                 _mm256_storeu_ps(Bp + k*nc + j + 24, val);
             }
@@ -2885,9 +3087,9 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
             float32x4_t val = vdupq_n_f32(yvec[k]);
             int64_t j=0;
             for (; j+15 < nc; j += 16) {
-                vst1q_f32(Bp + k*nc + j +  0, val);
-                vst1q_f32(Bp + k*nc + j +  4, val);
-                vst1q_f32(Bp + k*nc + j +  8, val);
+                vst1q_f32(Bp + k*nc + j + 0, val);
+                vst1q_f32(Bp + k*nc + j + 4, val);
+                vst1q_f32(Bp + k*nc + j + 8, val);
                 vst1q_f32(Bp + k*nc + j + 12, val);
             }
             for (; j+3 < nc; j += 4)
@@ -2905,7 +3107,109 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
 }
 
 static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e8m23_t* restrict A, const mag_e8m23_t* restrict B, int64_t ldb, mag_e8m23_t* restrict C) {
-    #if defined(__AVX2__) && defined(__FMA__)
+    #ifdef __AVX512F__
+        int64_t j=0;
+        for (; j+127 < N; j += 128) {
+            __m512 s0 = _mm512_setzero_ps();
+            __m512 s1 = _mm512_setzero_ps();
+            __m512 s2 = _mm512_setzero_ps();
+            __m512 s3 = _mm512_setzero_ps();
+            __m512 s4 = _mm512_setzero_ps();
+            __m512 s5 = _mm512_setzero_ps();
+            __m512 s6 = _mm512_setzero_ps();
+            __m512 s7 = _mm512_setzero_ps();
+            const mag_e8m23_t* restrict brow = B + j;
+            int64_t kstep = ldb<<2;
+            for (int64_t k=0; k+3 < K; k += 4, brow += kstep) {
+                #define STEP(i) do { \
+                    __m512 a = _mm512_set1_ps(A[k + (i)]); \
+                    const mag_e8m23_t* bp = brow + (i)*ldb; \
+                    s0 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 0), s0); \
+                    s1 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 16), s1); \
+                    s2 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 32), s2); \
+                    s3 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 48), s3); \
+                    s4 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 64), s4); \
+                    s5 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 80), s5); \
+                    s6 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 96), s6); \
+                    s7 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 112), s7); \
+                } while (0)
+                STEP(0); STEP(1); STEP(2); STEP(3);
+                #undef STEP
+            }
+            for (int64_t k=(K&~3); k < K; ++k, brow += ldb) {
+                __m512 a = _mm512_set1_ps(A[k]);
+                s0 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 0), s0);
+                s1 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 16), s1);
+                s2 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 32), s2);
+                s3 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 48), s3);
+                s4 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 64), s4);
+                s5 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 80), s5);
+                s6 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 96), s6);
+                s7 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 112), s7);
+            }
+            _mm512_storeu_ps(C + j + 0, s0);
+            _mm512_storeu_ps(C + j + 16, s1);
+            _mm512_storeu_ps(C + j + 32, s2);
+            _mm512_storeu_ps(C + j + 48, s3);
+            _mm512_storeu_ps(C + j + 64, s4);
+            _mm512_storeu_ps(C + j + 80, s5);
+            _mm512_storeu_ps(C + j + 96, s6);
+            _mm512_storeu_ps(C + j + 112, s7);
+        }
+        for (; j+63 < N; j += 64) {
+            __m512 s0 = _mm512_setzero_ps();
+            __m512 s1 = _mm512_setzero_ps();
+            __m512 s2 = _mm512_setzero_ps();
+            __m512 s3 = _mm512_setzero_ps();
+            const mag_e8m23_t* restrict brow = B + j;
+            int64_t kstep = ldb<<2;
+            for (int64_t k=0; k+3 < K; k += 4, brow += kstep) {
+                #define STEP(i) do { \
+                    __m512 a = _mm512_set1_ps(A[k + (i)]); \
+                    const mag_e8m23_t* bp = brow + (i)*ldb; \
+                    s0 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 0), s0); \
+                    s1 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 16), s1); \
+                    s2 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 32), s2); \
+                    s3 = _mm512_fmadd_ps(a, _mm512_loadu_ps(bp + 48), s3); \
+                } while (0)
+                STEP(0); STEP(1); STEP(2); STEP(3);
+                #undef STEP
+            }
+            for (int64_t k=(K&~3); k < K; ++k, brow += ldb) {
+                __m512 a = _mm512_set1_ps(A[k]);
+                s0 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 0), s0);
+                s1 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 16), s1);
+                s2 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 32), s2);
+                s3 = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow + 48), s3);
+            }
+
+            _mm512_storeu_ps(C + j + 0, s0);
+            _mm512_storeu_ps(C + j + 16, s1);
+            _mm512_storeu_ps(C + j + 32, s2);
+            _mm512_storeu_ps(C + j + 48, s3);
+        }
+        for (; j+15 < N; j += 16) {
+            __m512 s = _mm512_setzero_ps();
+            const mag_e8m23_t* restrict brow = B + j;
+            for (int64_t k=0; k < K; ++k, brow += ldb) {
+                __m512 a = _mm512_set1_ps(A[k]);
+                s = _mm512_fmadd_ps(a, _mm512_loadu_ps(brow), s);
+            }
+            _mm512_storeu_ps(C + j, s);
+        }
+        if (j < N) {
+            int64_t rem = N - j;
+            __mmask16 m = (rem == 16) ? (__mmask16)0xffff : (__mmask16)((1u<<rem)-1);
+            __m512 s = _mm512_setzero_ps();
+            const mag_e8m23_t* restrict brow = B + j;
+            for (int64_t k=0; k < K; ++k, brow += ldb) {
+                __m512 a = _mm512_set1_ps(A[k]);
+                __m512 bv = _mm512_maskz_loadu_ps(m, brow);
+                s = _mm512_fmadd_ps(a, bv, s);
+            }
+            _mm512_mask_storeu_ps(C + j, m, s);
+        }
+    #elif defined(__AVX2__) && defined(__FMA__)
         int64_t j = 0;
         for (; j+63 < N; j += 64) {
             __m256 s0 = _mm256_setzero_ps();
