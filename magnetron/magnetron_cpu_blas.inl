@@ -2903,8 +2903,8 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const 
                 #elif defined(__AVX__)
                     int64_t j=0;
                     for (; j+31 < nc; j += 32) {
-                        __m256 v0 = _mm256_loadu_ps(src + j +  0);
-                        __m256 v1 = _mm256_loadu_ps(src + j +  8);
+                        __m256 v0 = _mm256_loadu_ps(src + j + 0);
+                        __m256 v1 = _mm256_loadu_ps(src + j + 8);
                         __m256 v2 = _mm256_loadu_ps(src + j + 16);
                         __m256 v3 = _mm256_loadu_ps(src + j + 24);
                         _mm256_storeu_ps(Bp + k*nc + j + 0, v0);
@@ -3303,6 +3303,16 @@ static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e
     #endif
 }
 
+static MAG_AINLINE void mag_mm_tile_16x16_e8m23(int64_t kc, const mag_e8m23_t* restrict a, ptrdiff_t lda, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, ptrdiff_t ldc, bool acc) {
+    mag_mm_tile_8x16_e8m23(kc, a, lda, b, ldb, c, ldc, acc);
+    mag_mm_tile_8x16_e8m23(kc, a + 8*lda, lda, b, ldb, c + 8*ldc, ldc, acc);
+}
+
+static MAG_AINLINE void mag_mm_tile_16x32_e8m23(int64_t kc, const mag_e8m23_t* restrict a, ptrdiff_t lda, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, ptrdiff_t ldc, bool acc) {
+    mag_mm_tile_16x16_e8m23(kc, a, lda, b, ldb, c, ldc, acc);
+    mag_mm_tile_16x16_e8m23(kc, a, lda, b+16, ldb, c+16, ldc, acc);
+}
+
 MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
     mag_tensor_t* r = mag_cmd_out(0);
     const mag_tensor_t* x = mag_cmd_in(0);
@@ -3438,35 +3448,51 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
                             } continue;
                         }
                     }
-                    if (mr == 8 && nr == 32) {
-                        mag_mm_tile_8x32_e8m23(kc,
-                            Ap + ir*kc, kc,
-                            Bp + jr, nc,
-                            pr_base + (i0 + ir)*N + (j0 + jr),
-                            N, acc);
-                    } else if (mr == 8 && nr == 16) {
-                        mag_mm_tile_8x16_e8m23(kc,
-                            Ap + ir*kc, kc,
-                            Bp + jr, nc,
-                            pr_base + (i0 + ir)*N + (j0 + jr),
-                            N, acc);
-                    } else if (mr == 8 && nr == 8) {
-                        mag_mm_tile_8x8_e8m23(kc,
-                            Ap + ir*kc, kc,
-                            Bp + jr, nc,
-                            pr_base + (i0 + ir)*N + (j0 + jr),
-                            N, acc);
-                    } else {
-                        for (int64_t i2=0; i2 < mr; ++i2) {
-                            mag_e8m23_t* cp = pr_base + (i0 + ir + i2)*N + (j0 + jr);
-                            const mag_e8m23_t* ap = Ap + (ir + i2)*kc;
-                            for (int64_t j2=0; j2 < nr; ++j2) {
-                                float sum = acc ? cp[j2] : 0.f;
-                                for (int64_t k=0; k < kc; ++k)
-                                    sum += ap[k]*Bp[k*nc + (jr + j2)];
-                                cp[j2] = sum;
+                    #define mag_dim_pair(a, b) ((((a)&255)<<16)+((b)&255))
+                    switch (mag_dim_pair(mr, nr)) {
+                        case mag_dim_pair(8, 32):
+                            mag_mm_tile_8x32_e8m23(kc,
+                                Ap + ir*kc, kc,
+                                Bp + jr, nc,
+                                pr_base + (i0 + ir)*N + (j0 + jr),
+                                N, acc
+                            );
+                        break;
+                        case mag_dim_pair(8, 16):
+                            mag_mm_tile_8x16_e8m23(kc,
+                                Ap + ir*kc, kc,
+                                Bp + jr, nc,
+                                pr_base + (i0 + ir)*N + (j0 + jr),
+                                N, acc
+                            );
+                        break;
+                        case mag_dim_pair(8, 8):
+                            mag_mm_tile_8x8_e8m23(kc,
+                                Ap + ir*kc, kc,
+                                Bp + jr, nc,
+                                pr_base + (i0 + ir)*N + (j0 + jr),
+                                N, acc
+                            );
+                        break;
+                        case mag_dim_pair(16, 32):
+                            mag_mm_tile_16x32_e8m23(kc,
+                                Ap + ir*kc, kc,
+                                Bp + jr,    nc,
+                                pr_base + (i0 + ir)*N + (j0 + jr),
+                                N, acc);
+                        break;
+                        default:
+                            for (int64_t i2=0; i2 < mr; ++i2) {
+                                mag_e8m23_t* cp = pr_base + (i0 + ir + i2)*N + (j0 + jr);
+                                const mag_e8m23_t* ap = Ap + (ir + i2)*kc;
+                                for (int64_t j2=0; j2 < nr; ++j2) {
+                                    float sum = acc ? cp[j2] : 0.f;
+                                    for (int64_t k=0; k < kc; ++k)
+                                        sum += ap[k]*Bp[k*nc + (jr + j2)];
+                                    cp[j2] = sum;
+                                }
                             }
-                        }
+                        #undef mag_dim_pair
                     }
                 }
             }

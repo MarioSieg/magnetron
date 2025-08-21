@@ -416,8 +416,8 @@ static uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t* cmd
         int64_t KC = 0;
         int64_t MR = 0;
         int64_t NR = 0;
-        int64_t L1 = cpu_dvc->ctx->machine.cpu_l1_size;
-        int64_t L2 = cpu_dvc->ctx->machine.cpu_l2_size>>1;
+        int64_t L1 = 64*1024;
+        int64_t L2 = 512*1024;
         mag_tune_mm_block_sizes(
             cpu_dvc->num_allocated_workers, (int64_t)x->storage->granularity, (int64_t)(*cpu_dvc->kernels.vreg_width)(),
             M, N, K, L1, L2, &MR, &NR, &MC, &KC, &NC, 0.0, 0.0

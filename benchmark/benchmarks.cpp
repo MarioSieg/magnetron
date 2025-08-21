@@ -18,12 +18,12 @@ auto main() -> int {
         .warmup(100)
         .performanceCounters(true);
         context ctx {compute_device::cpu};
-        tensor x {ctx, type, 1, 1, 768};
+        tensor x {ctx, type, 7, 768, 3072};
         x.fill_float(1.0f);
-        tensor y {ctx, type, 768, 50257};
+        tensor y {ctx, type, 7, 3072, 768};
         y.fill_float(3.0f);
 
-        bench.run("MM (7, 768, 3072)", [&] {
+        bench.run("matmul", [&] {
             tensor r {x % y};
             ankerl::nanobench::doNotOptimizeAway(r);
         });
