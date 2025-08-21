@@ -411,16 +411,16 @@ static uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t* cmd
         int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
         int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
         int64_t K = x->shape[x->rank-1];
-        int64_t MC = 0, NC = 0, KC = 0, MR = 0, NR = 0;
+        int64_t MC = 0;
+        int64_t NC = 0;
+        int64_t KC = 0;
+        int64_t MR = 0;
+        int64_t NR = 0;
+        int64_t L1 = cpu_dvc->ctx->machine.cpu_l1_size;
+        int64_t L2 = cpu_dvc->ctx->machine.cpu_l2_size>>1;
         mag_tune_mm_block_sizes(
-            cpu_dvc->num_allocated_workers,
-            (int64_t)x->storage->granularity,
-            (int64_t)(*cpu_dvc->kernels.vreg_width)(),
-            M, N, K,
-            64*1024, /* TODO: true cache sizes */
-            512*1024, /* TODO: true cache sizes */
-            &MR, &NR, &MC, &KC, &NC,
-            0.0, 0.0
+            cpu_dvc->num_allocated_workers, (int64_t)x->storage->granularity, (int64_t)(*cpu_dvc->kernels.vreg_width)(),
+            M, N, K, L1, L2, &MR, &NR, &MC, &KC, &NC, 0.0, 0.0
         );
         for (uint32_t i=0; i < cpu_dvc->pool->num_allocated_workers; ++i) { /* Set up payload */
             mag_kernel_payload_t* payload = &cpu_dvc->pool->workers[i].payload;

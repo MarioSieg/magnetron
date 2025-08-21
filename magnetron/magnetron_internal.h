@@ -64,8 +64,10 @@ extern "C" {
 
 #define MAG_GELU_COEFF 0.044715f /* Coefficient for GELU approximation. */
 
-#define MAG_MAX_CPUS 8192               /* Maximum number of virtual CPUs supported. */
-#define MAG_MAX_NUMA_NODES 64           /* Maximum number of NUMA nodes supported. */
+#define MAG_MAX_CPUS 8192
+#define MAG_MAX_CPU_TOPO_DEPTH 2
+#define MAG_MAX_CPU_CACHE_DEPTH 10
+#define MAG_MAX_CPU_NUMA_NODES 64
 
 /* Compiler specific macros and utils for GCC, Clang and ICC. */
 #if defined(__GNUC__) || defined(__clang__) || defined(__INTEL_COMPILER)
@@ -1113,7 +1115,7 @@ struct mag_context_t {
         uint32_t cpu_virtual_cores;             /* Virtual CPUs. */
         uint32_t cpu_physical_cores;            /* Physical CPU cores. */
         uint32_t cpu_sockets;                   /* CPU sockets. */
-        size_t cpu_l1d_size;                    /* L1 data cache size in bytes. */
+        size_t cpu_l1_size;                    /* L1 data cache size in bytes. */
         size_t cpu_l2_size;                     /* L2 cache size in bytes. */
         size_t cpu_l3_size;                     /* L3 cache size in bytes. */
         size_t phys_mem_total;                  /* Total physical memory in bytes. */

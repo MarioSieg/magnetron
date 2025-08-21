@@ -642,7 +642,7 @@ static void mag_system_host_info_dump(mag_context_t* ctx) {
         ctx->machine.cpu_virtual_cores,
         ctx->machine.cpu_physical_cores,
         ctx->machine.cpu_sockets,
-        (mag_e11m52_t)ctx->machine.cpu_l1d_size/1024.0,
+        (mag_e11m52_t)ctx->machine.cpu_l1_size/1024.0,
         (mag_e11m52_t) ctx->machine.cpu_l2_size/1024.0,
         (mag_e11m52_t)ctx->machine.cpu_l3_size/1024.0/1024.0
     );
@@ -2212,6 +2212,167 @@ static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
             *avx10ver = *ebx & 127;
         }
     }
+
+    #define mag_bextract(x, b, e) (((x)>>(b))&((1u<<((e)+1-(b)))-1))
+
+    typedef enum mag_cpu_topology_level {
+        MAG_CPU_TOPO_STMT = 1,
+        MAG_CPU_TOPO_CORE = 2
+    } mag_cpu_topology_level;
+
+    static void mag_probe_cpu_core_topology(mag_amd64_cap_bitset_t caps, uint32_t (*num_cores)[MAG_MAX_CPU_TOPO_DEPTH]) {
+		uint32_t id[4] = {0};
+		mag_cpuid(&id, 0x0);
+		if (*id >= 0xB) {
+			mag_cpuid_ex(&id, 0xb, 0);
+			if (*id || id[1]) {
+				for (uint32_t i=0; i < MAG_MAX_CPU_TOPO_DEPTH; ++i) {
+					mag_cpuid_ex(&id, 0xb, i);
+					mag_cpu_topology_level level = (mag_cpu_topology_level)mag_bextract(id[2], 8, 15);
+					if (level == MAG_CPU_TOPO_STMT || level == MAG_CPU_TOPO_CORE)
+						(*num_cores)[level-1] = mag_bextract(id[1], 0, 15);
+				}
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = mag_xmax(1u, (*num_cores)[MAG_CPU_TOPO_STMT-1]);
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = mag_xmax((*num_cores)[MAG_CPU_TOPO_STMT-1], (*num_cores)[MAG_CPU_TOPO_CORE-1]);
+				return;
+			}
+		}
+		if (caps & mag_amd64_cap(AMD)) {
+			int32_t ptc = 0;
+			mag_cpuid(&id, 0x1);
+			int32_t ltc = mag_bextract(id[1], 16, 23);
+			int32_t htn = mag_bextract(id[3], 28, 28);
+			mag_cpuid(&id, 0x80000000);
+			uint32_t max_leaf = *id;
+			if (max_leaf >= 0x80000008) {
+				mag_cpuid(&id, 0x80000008);
+				ptc = mag_bextract(id[2], 0, 7) + 1;
+			}
+			if (!htn) {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = 1;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = 1;
+			} else if (ptc > 1) {
+			    mag_cpuid(&id, 1);
+			    int32_t fam_ext = mag_bextract(*id, 20, 27);
+			    int32_t fam = mag_bextract(*id, 8, 11);
+			    int32_t dis_fam = fam;
+			    if (dis_fam == 0x0f) dis_fam += fam_ext;
+				if (dis_fam >= 0x17 && max_leaf >= 0x8000001e) {
+					mag_cpuid(&id, 0x8000001e);
+					ptc /= mag_bextract(id[1], 8, 15)+1;
+				}
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = ltc/ptc;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = ltc;
+			} else {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = 1;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = ltc > 1 ? ltc : 2;
+			}
+		} else if (caps & mag_amd64_cap(INTEL)) {
+			int32_t ptc = 0;
+			mag_cpuid(&id, 0x1);
+			int32_t lpc = mag_bextract(id[1], 16, 23);
+			int32_t htt = mag_bextract(id[3], 28, 28);
+			mag_cpuid(&id, 0);
+			if (*id >= 0x4) {
+				mag_cpuid(&id, 0x4);
+				ptc = mag_bextract(id[0], 26, 31)+1;
+			}
+			if (!htt) {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = 1;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = 1;
+			} else if (ptc > 1) {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = lpc/ptc;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = lpc;
+			} else {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = 1;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = lpc > 0 ? lpc : 1;
+			}
+		}
+    }
+
+    static void mag_probe_cpu_cache_topology(
+        mag_amd64_cap_bitset_t caps,
+        uint32_t* levels,
+        uint32_t (*data_cache)[MAG_MAX_CPU_CACHE_DEPTH],
+        uint32_t (*shared_cache)[MAG_MAX_CPU_CACHE_DEPTH]
+    ) {
+        uint32_t num_cores[MAG_MAX_CPU_TOPO_DEPTH] = {0};
+        mag_probe_cpu_core_topology(caps, &num_cores);
+        uint32_t id[4] = {0};
+        if (caps & mag_amd64_cap(AMD)) {
+            mag_cpuid(&id, 0x80000000);
+            if (*id >= 0x8000001d) {
+                *levels = 0;
+                for (uint32_t leaf=0; *levels < MAG_MAX_CPU_CACHE_DEPTH; ++leaf) {
+                    mag_cpuid_ex(&id, 0x8000001d, leaf);
+                    int32_t type = mag_bextract(*id, 0, 4);
+                    if (!type) break;
+                    if (type == 0x2) continue;
+                    int32_t assoc = mag_bextract(*id, 9, 9);
+                    int32_t sharing = mag_bextract(*id, 14, 25)+1;
+                    int32_t ways = mag_bextract(id[1], 22, 31)+1;
+                    int32_t partitions = mag_bextract(id[1], 12, 21)+1;
+                    int32_t line = mag_bextract(id[1], 0, 11)+1;
+                    int32_t sets = id[2]+1;
+                    (*data_cache)[*levels] = line*partitions*ways;
+                    if (!assoc) (*data_cache)[*levels] *= sets;
+                    if (leaf > 0) {
+                        sharing = mag_xmin(sharing, num_cores[1]);
+                        sharing /= mag_xmax(1u, **shared_cache);
+                    }
+                    (*shared_cache)[*levels] = sharing;
+                    ++*levels;
+                }
+                **shared_cache = mag_xmin(1u, **shared_cache);
+            } else if (*id >= 0x80000006) {
+                *levels = 1;
+                mag_cpuid(&id, 0x80000005);
+                int32_t l1dc = mag_bextract(id[2], 24, 31);
+                **data_cache = l1dc<<10;
+                **shared_cache = 1;
+                mag_cpuid(&id, 0x80000006);
+                int32_t l2 = mag_bextract(id[2], 12, 15);
+                if (l2 > 0) {
+                    *levels = 2;
+                    int32_t l2s = mag_bextract(id[2], 16, 31);
+                    (*data_cache)[1] = l2s<<10;
+                    (*shared_cache)[1] = 1;
+                }
+                int32_t l3 = mag_bextract(id[3], 12, 15);
+                if (l3 > 0) {
+                    *levels = 3;
+                    int32_t l3s = mag_bextract(id[3], 18, 31);
+                    (*data_cache)[2] = l3s<<19;
+                    (*shared_cache)[2] = num_cores[1];
+                }
+            }
+        } else if (caps & mag_amd64_cap(INTEL)) {
+            uint32_t smt_width = *num_cores;
+            uint32_t logical_cores = num_cores[1];
+            for (uint32_t i=0; *levels < MAG_MAX_CPU_CACHE_DEPTH; ++i) {
+                mag_cpuid_ex(&id, 0x4, i);
+                uint32_t type = mag_bextract(*id, 0, 4);
+                if (!type) break;
+                if (type == 1 || type == 3) {
+                    uint32_t actual_logical_cores = mag_bextract(*id, 14, 25)+1;
+                    if (logical_cores != 0) actual_logical_cores = mag_xmin(actual_logical_cores, logical_cores);
+                    mag_assert2(actual_logical_cores);
+                    (*data_cache)[*levels] =
+                        (mag_bextract(id[1], 22, 31)+1)
+                        * (mag_bextract(id[1], 12, 21)+1)
+                        * (mag_bextract(id[1], 0, 11)+1)
+                        * (id[2]+1);
+                    if (type == 1 && smt_width == 0) smt_width = actual_logical_cores;
+                    mag_assert2(smt_width != 0);
+                    (*shared_cache)[*levels] = mag_xmax(actual_logical_cores / smt_width, 1u);
+                    ++*levels;
+                }
+            }
+        }
+    }
+
+    #undef mag_bextract
+
 #elif defined(__aarch64__) || defined(_M_ARM64)
 static void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t* o, int64_t* sve_width) {
     *o = MAG_ARM64_CAP_NONE;
@@ -2278,12 +2439,25 @@ static void mag_machine_probe(mag_context_t* ctx) {
     mag_machine_probe_cpu_name(&ctx->machine.cpu_name);
     mag_machine_probe_cpu_cores(&ctx->machine.cpu_virtual_cores, &ctx->machine.cpu_physical_cores, &ctx->machine.cpu_sockets);
     mag_machine_probe_memory(&ctx->machine.phys_mem_total, &ctx->machine.phys_mem_free);
-    mag_machine_probe_caches(&ctx->machine.cpu_l1d_size, &ctx->machine.cpu_l2_size, &ctx->machine.cpu_l3_size);
+    mag_machine_probe_caches(&ctx->machine.cpu_l1_size, &ctx->machine.cpu_l2_size, &ctx->machine.cpu_l3_size);
     #if defined(__x86_64__) || defined(_M_X64)
         mag_probe_cpu_amd64(&ctx->machine.amd64_cpu_caps, &ctx->machine.amd64_avx10_ver);
     #elif defined(__aarch64__)
         mag_probe_cpu_arm64(&ctx->machine.arm64_cpu_caps, &ctx->machine.arm64_cpu_sve_width);
     #endif
+    uint32_t cache_levels = 0;
+    uint32_t data_cache_size[MAG_MAX_CPU_CACHE_DEPTH] = {0};
+    uint32_t shared_cache_size[MAG_MAX_CPU_CACHE_DEPTH] = {0};
+    mag_probe_cpu_cache_topology(ctx->machine.amd64_cpu_caps, &cache_levels, &data_cache_size, &shared_cache_size);
+    if (!cache_levels) {
+        ctx->machine.cpu_l1_size = 32ull<<10;
+        ctx->machine.cpu_l2_size = 512ull<<10;
+        ctx->machine.cpu_l3_size = 1024ull<<10;
+    } else {
+        ctx->machine.cpu_l1_size = data_cache_size[0]/shared_cache_size[0];
+        ctx->machine.cpu_l2_size = data_cache_size[1]/shared_cache_size[1];
+        ctx->machine.cpu_l3_size = data_cache_size[2]/shared_cache_size[2];
+    }
     if (mag_unlikely(!*ctx->machine.os_name)) snprintf(ctx->machine.os_name, sizeof(ctx->machine.os_name), "Unknown");
     if (mag_unlikely(!*ctx->machine.cpu_name)) snprintf(ctx->machine.cpu_name, sizeof(ctx->machine.cpu_name), "Unknown");
 }
