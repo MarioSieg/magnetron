@@ -13,58 +13,18 @@
 message("Configuring magnetron project for ${CMAKE_SYSTEM_PROCESSOR}...")
 message("C compiler: ${CMAKE_C_COMPILER_ID}")
 
-set(MAG_MSVC_COMPILE_FLAGS
-    /W3
-    /Oi
-    /arch:SSE2
-)
-set(MAG_MSVC_RELEASE_COMPILE_FLAGS
-    /O2
-    /Oy
-    /Ot
-    /Ob3
-    /RTC-
-)
+set(MAG_MSVC_COMPILE_FLAGS /W3 /Oi /arch:SSE2)
+set(MAG_MSVC_RELEASE_COMPILE_FLAGS /O2 /Oy /Ot /Ob3 /RTC-)
 set(MAG_MSVC_LINK_OPTIONS "")
 set(MAG_MSVC_RELEASE_LINK_OPTIONS "")
 
-set(MAG_CLANG_COMPILE_FLAGS
-    -std=c99
-    -std=gnu99
-    -fvisibility=hidden
-    -fno-math-errno
-    -Wall
-    -Werror
-    -Wno-error=overflow
-    -Wno-error=unused-function
-    -Wno-unused-parameter
-    -Wno-unused-function
-)
-set(MAG_CLANG_RELEASE_COMPILE_FLAGS
-    -O3
-    -flto
-    -fomit-frame-pointer
-)
+set(MAG_CLANG_COMPILE_FLAGS -std=c99 -std=gnu99 -fvisibility=hidden -fno-math-errno -Wall -Werror -Wno-error=overflow -Wno-error=unused-function -Wno-unused-parameter -Wno-unused-function)
+set(MAG_CLANG_RELEASE_COMPILE_FLAGS -O3 -flto=thin -fomit-frame-pointer)
 set(MAG_CLANG_LINK_OPTIONS "")
-set(MAG_CLANG_RELEASE_LINK_OPTIONS -flto)
+set(MAG_CLANG_RELEASE_LINK_OPTIONS -flto=thin)
 
-set(MAG_GCC_COMPILE_FLAGS
-    -std=c99
-    -std=gnu99
-    -fvisibility=hidden
-    -fno-math-errno
-    -Wall
-    -Werror
-    -Wno-error=overflow
-    -Wno-error=unused-function
-    -Wno-error=format-truncation
-    -Wno-unused-parameter
-    -Wno-unused-function
-)
-set(MAG_GCC_RELEASE_COMPILE_FLAGS
-    -O3
-    -flto=auto
-    -fomit-frame-pointer
+set(MAG_GCC_COMPILE_FLAGS -std=c99 -std=gnu99 -fvisibility=hidden -fno-math-errno -Wall -Werror -Wno-error=overflow -Wno-error=unused-function -Wno-error=format-truncation -Wno-unused-parameter -Wno-unused-function)
+set(MAG_GCC_RELEASE_COMPILE_FLAGS -O3 -flto=auto -fomit-frame-pointer
 )
 set(MAG_GCC_LINK_OPTIONS "")
 set(MAG_GCC_RELEASE_LINK_OPTIONS -flto=auto)
@@ -110,12 +70,29 @@ function(configure_mag_lib target_name)
             endif()
         endif()
 
+        # For some reasons, no symbols are exported with LDD, will investigate later
+        # if(NOT APPLE) # Use LLD linker on non-Apple platforms for faster linking
+        #    find_program(LLD_PATH NAMES ld.lld lld)
+        #    if(LLD_PATH)
+        #        message(STATUS "LLD found: ${LLD_PATH}")
+        #        target_link_options(${target_name} PRIVATE -fuse-ld=lld)
+        #        target_link_options(${target_name} PRIVATE "-Wl,--thinlto-cache-dir=${PROJECT_BINARY_DIR}/LTO.cache")
+        #        target_link_options(${target_name} PRIVATE "-Wl,--thinlto-jobs=64")
+        #    else()
+        #        message(STATUS "LLD not found, using default linker")
+        #    endif()
+        #endif()
+
         if (${MAGNETRON_CPU_APPROX_MATH})
             target_compile_definitions(${target_name} PRIVATE MAG_APPROXMATH)
         endif()
         if (${MAGNETRON_DEBUG})
             target_compile_definitions(${target_name} PRIVATE MAG_DEBUG)
         endif()
+    endif()
+
+    if (WIN32) # Link sync lib on Win32
+        target_link_libraries(${target_name} Synchronization.lib)
     endif()
 
     get_target_property(MAIN_CFLAGS ${target_name} COMPILE_OPTIONS)

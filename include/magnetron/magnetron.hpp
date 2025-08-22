@@ -50,7 +50,7 @@ namespace magnetron {
     /**
      * Pseudo-random number generator (PRNG) algorithm
      */
-    enum class prng_algorithm : std::underlying_type_t<mag_prngalgo_t> {
+    enum class prng_algorithm : std::underlying_type_t<mag_prng_algo_t> {
         /**
          * Merseene Twister 64
          */
@@ -158,7 +158,7 @@ namespace magnetron {
         [[nodiscard]] auto operator *() noexcept -> mag_context_t& { return *m_ctx; }
         [[nodiscard]] auto operator *() const noexcept -> const mag_context_t& { return *m_ctx; }
         [[nodiscard]] auto prng_algorithm() const noexcept -> prng_algorithm { return static_cast<enum prng_algorithm>(mag_ctx_get_prng_algorithm(m_ctx)); }
-        auto prng_algorithm(enum prng_algorithm algorithm, std::uint64_t seed) noexcept -> void { mag_ctx_set_prng_algorithm(m_ctx, static_cast<mag_prngalgo_t>(algorithm), seed); }
+        auto prng_algorithm(enum prng_algorithm algorithm, std::uint64_t seed) noexcept -> void { mag_ctx_set_prng_algorithm(m_ctx, static_cast<mag_prng_algo_t>(algorithm), seed); }
         [[nodiscard]] auto device_type() const noexcept -> compute_device { return static_cast<compute_device>(mag_ctx_get_compute_device_type(m_ctx)); }
         [[nodiscard]] auto device_name() const noexcept -> std::string_view { return mag_ctx_get_compute_device_name(m_ctx); }
         [[nodiscard]] auto os_name() const noexcept -> std::string_view { return mag_ctx_get_os_name(m_ctx); }
@@ -309,6 +309,8 @@ namespace magnetron {
         [[nodiscard]] auto relu_() const noexcept -> tensor { return tensor{mag_relu_(m_tensor)}; }
         [[nodiscard]] auto gelu() const noexcept -> tensor { return tensor{mag_gelu(m_tensor)}; }
         [[nodiscard]] auto gelu_() const noexcept -> tensor { return tensor{mag_gelu_(m_tensor)}; }
+        [[nodiscard]] auto gelu_approx() const noexcept -> tensor { return tensor{mag_gelu_approx(m_tensor)}; }
+        [[nodiscard]] auto gelu_approx_() const noexcept -> tensor { return tensor{mag_gelu_approx_(m_tensor)}; }
         [[nodiscard]] auto add(tensor other) const noexcept -> tensor {return tensor{mag_add(m_tensor, &*other)}; }
         [[nodiscard]] auto add_(tensor other) const noexcept -> tensor { return tensor{mag_add_(m_tensor, &*other)}; }
         [[nodiscard]] auto sub(tensor other) const noexcept -> tensor { return tensor{mag_sub(m_tensor, &*other)}; }

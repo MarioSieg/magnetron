@@ -114,8 +114,9 @@ class PerformanceInfo:
         ax2.legend()
         ax2.grid(True)
 
-        plt.suptitle(f'{mag.Context.primary().cpu_name}', y=1.05)
+        plt.suptitle(f'{mag.active_context().cpu_name}', y=1.05)
         plt.tight_layout()
+        plt.savefig(f'{self.name}_benchmark.png', dpi=300)
         plt.show()
 
 

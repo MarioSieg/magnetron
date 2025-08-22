@@ -4,23 +4,21 @@ cmake_minimum_required(VERSION 3.18)
 
 project(magnetron LANGUAGES C)
 
-message("Configuring magnetron project for ${CMAKE_SYSTEM_PROCESSOR}...")
+message("Configuring magnetron for ${CMAKE_SYSTEM_PROCESSOR}...")
+message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
+message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
 
 set(CMAKE_C_STANDARD 99) # Use C99 standard
 set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}")
 set(EXECUTABLE_OUTPUT_PATH "${CMAKE_BINARY_DIR}")
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-option(MAGNETRON_BUILD_TESTS "Build tests" ON)                                  # Build tests
-option(MAGNETRON_BUILD_BENCHMARKS "Build benchmarks" ON)                        # Build benchmarks
-option(MAGNETRON_BUILD_FUZZERS "Build fuzzers" OFF)                             # (Experimental) Build fuzzers
-
-option(MAGNETRON_DEBUG "Enable debug mode" OFF)                                 # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
-option(MAGNETRON_CPU_APPROX_MATH "Trade precision for performance" ON)          # (CPU only) Enable SIMD math function approximations. Greatly increases performance. Try disabling if you encounter numerical instability. Does NOT enable -ffast-math or similar compiler flags.
-
-
-option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" OFF)                          # Enable CUDA support
-option(MAGNETRON_ENABLE_MIMALLOC "Use mimalloc as memory allocator" ON)         # Use mimalloc as memory allocator for faster memory allocation
+option(MAGNETRON_BUILD_TESTS "Build tests" ON)                           # Build C++ unit tests
+option(MAGNETRON_BUILD_BENCHMARKS "Build benchmarks" ON)                 # Build C++ benchmarks
+option(MAGNETRON_BUILD_FUZZERS "Build fuzzers" OFF)                      # (Experimental) Build C++ data format fuzzer
+option(MAGNETRON_DEBUG "Enable debug mode" OFF)                          # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
+option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" OFF)                  # Enable CUDA backend support (requires CUDA toolkit)
+option(MAGNETRON_ENABLE_MIMALLOC "Use mimalloc as memory allocator" ON)  # Use mimalloc as memory allocator for faster memory allocation
 
 set(MAGNETRON_CUDA_COMPILER "/usr/local/cuda-12.9/bin/nvcc" CACHE STRING "Path to the CUDA compiler") # Set to your CUDA compiler path, only used if CMAKE can't find the CUDA compiler on its own
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
@@ -56,8 +54,10 @@ if (${MAGNETRON_BUILD_BENCHMARKS})
     add_subdirectory(benchmark)
 endif()
 
-message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
-message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
-message(STATUS "Configuring magnetron project for ${CMAKE_SYSTEM_PROCESSOR}... done")
+install(TARGETS magnetron
+    LIBRARY DESTINATION magnetron
+    RUNTIME DESTINATION magnetron
+    ARCHIVE DESTINATION magnetron
+)
 
-install(TARGETS magnetron LIBRARY DESTINATION . RUNTIME DESTINATION .)
+message(STATUS "magnetron configuration complete!")

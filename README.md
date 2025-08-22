@@ -14,10 +14,10 @@
   <p align="center">
     Super minimalistic machine-learning framework.
     <br />
-    <a href="https://github.com/MarioSieg/magnetron/tree/master/python/examples/simple"><strong>Explore the docs »</strong></a>
+    <a href="https://github.com/MarioSieg/magnetron/tree/master/docs"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/MarioSieg/magnetron/blob/master/python/examples/xor.py">View Example</a>
+    <a href="https://github.com/MarioSieg/magnetron/blob/master/examples/gpt2/gpt2.py">View GPT-2 Example</a>
     |
     <a href="https://github.com/MarioSieg/magnetron/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     |
@@ -55,6 +55,45 @@ A CUDA backend is also WIP.<br>
 * No external **C or Python dependencies** (except **CFFI** for the Python wrapper)  
   → Lightweight and portable – great for embedded or restricted environments
 
+## GPT-2 Inference Example
+Run the [GPT-2 example](examples/gpt2/gpt2.py) locally on your machine, purely using Magnetron.<br>
+The model data will be downloaded automatically from Hugging Face.<br>
+1. **Clone and enter the Magnetron repository:**
+
+    ```bash
+    git clone https://github.com/MarioSieg/magnetron && cd magnetron
+    ```
+
+3. **Create and activate a virtual environment:**
+
+    ```bash
+    python3 -m venv .venv && source .venv/bin/activate
+    ```
+
+4. **Install Magnetron**  
+   *(Make sure CMake and a C compiler are installed – see [Prerequisites](#prerequisites)):*
+
+    ```bash
+    pip install . tiktoken
+    ```
+
+5. **Run the GPT-2 inference:**
+
+    ```bash
+    python3 examples/gpt2/gpt2.py "What is the answer to the universe?"
+    ```
+
+**Example Output**
+```
+Loading gpt2 with config: GPTHParams(block_size=1024, vocab_size=50257, n_layer=12, n_head=12, n_embd=768, dropout=0.0, bias=True)
+Parameter count: 124.0M
+Generated in: 4.243197377 seconds
+What is the answer to the universe?
+
+The answer could be that late in the creation the Sun may even cause protons to decay, possibly by
+...
+```
+
 ## XOR Training Example
 A simple XOR neuronal network (MLP) trained with Magnetron. Copy and paste the code below into a file called `xor.py` and run it with Python.
 ```python
@@ -70,8 +109,8 @@ optimizer = optim.SGD(model.parameters(), lr=1e-1)
 criterion = nn.MSELoss()
 loss_values: list[float] = []
 
-x = mag.Tensor.from_data([[0, 0], [0, 1], [1, 0], [1, 1]])
-y = mag.Tensor.from_data([[0], [1], [1], [0]])
+x = mag.Tensor.of([[0, 0], [0, 1], [1, 0], [1, 1]])
+y = mag.Tensor.of([[0], [1], [1], [0]])
 
 # Train the model
 for epoch in range(EPOCHS):
@@ -108,53 +147,6 @@ plt.show()
 This results in the following output:
 
 ![ScreenShot](media/xor.png)
-
-## Getting Started
-
-To get a local copy up and running follow these simple steps.<br>
-Magnetron itself has **no** Python dependencies except for CFFI to call the C library from Python.<br>
-Some examples use matplotlib and numpy for plotting and data generation, but these are not required to use the framework.
-
-### Prerequisites
-* Linux, MacOS or Windows
-* A modern, C-99 capable compiler (gcc, clang, msvc)
-* Python 3.6 or higher
-* CMake (Linux: `sudo apt install cmake`, OSX: `brew install cmake`)
-
-### Installation
-
-*A pip-installable package will be provided once all core features are implemented. Until then, follow these steps to build Magnetron from source:*
-
----
-
-1. **Clone and enter the Magnetron repository:**
-
-    ```bash
-    git clone https://github.com/MarioSieg/magnetron && cd magnetron
-    ```
-
-3. **Create and activate a virtual environment:**
-
-    ```bash
-    python3 -m venv .venv && source .venv/bin/activate
-    ```
-
-4. **Install Magnetron**  
-   *(Make sure CMake and a C compiler are installed – see [Prerequisites](#prerequisites)):*
-
-    ```bash
-    pip install .
-    ```
-
-5. **Run the XOR training example:**
-
-    ```bash
-    python3 examples/xor.py
-    ```
-
-## Usage
-See the [Examples](python/examples) directory which contains various models and training examples.<br>
-For usage in C or C++ see the [Unit Tests](test) directory.
 
 ### Operators
 The following table lists all available operators and their properties.
@@ -217,8 +209,6 @@ Distributed under the Apache 2 License. See `LICENSE.txt` for more information.
 * [GGML](https://github.com/ggerganov/ggml)
 * [TINYGRAD](https://github.com/tinygrad/tinygrad)
 * [MICROGRAD](https://github.com/karpathy/micrograd)
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 [contributors-shield]: https://img.shields.io/github/contributors/MarioSieg/magnetron.svg?style=for-the-badge
 [contributors-url]: https://github.com/MarioSieg/magnetron/graphs/contributors

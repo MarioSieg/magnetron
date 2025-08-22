@@ -35,7 +35,8 @@ dev = [
     "tiktoken",
     "matplotlib",
     "pytest",
-    "pytest-xdist"
+    "pytest-xdist",
+    "pyinstrument"
 ]
 
 [tool.scikit-build.cmake.define]

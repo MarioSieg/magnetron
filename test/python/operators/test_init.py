@@ -30,6 +30,19 @@ def test_tensor_fill(dtype: DataType) -> None:
     square_shape_permutations(func, 4)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_copy(dtype: DataType) -> None:
+    call = 0
+
+    def func(shape: tuple[int, ...]) -> None:
+        fill_val = _get_random_fill_val(dtype) if call != 0 else 0 # Use 0 for the first call to avoid randomness in the first test
+        x = Tensor.empty(*shape, dtype=dtype)
+        x.copy_(Tensor.full(*shape, fill_value=fill_val, dtype=dtype))
+        y = torch.full(shape, fill_val, dtype=totorch_dtype(dtype))
+        torch.testing.assert_close(totorch(x), y)
+
+    square_shape_permutations(func, 4)
+
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_masked_fill(dtype: DataType) -> None:
 
     call = 0
