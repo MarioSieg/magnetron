@@ -85,7 +85,7 @@ jobs:
         shell: bash
         run: |
           uv venv
-          . .venv/bin/activate
+          source .venv/bin/activate
 
       - name: Build Python wheel
         if: runner.os != 'windows'
@@ -97,5 +97,5 @@ jobs:
         if: runner.os != 'windows'
         shell: bash
         run: |
-          . .venv/bin/activate
+          source .venv/bin/activate
           pytest -n 4 -s "${{ github.workspace }}/test/python/"

@@ -1,0 +1,68 @@
+name: Build and Publish Wheels
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python (controller)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install cibuildwheel==2.* build
+
+      - name: Get version from tag
+        id: get_version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Update version in __init__.py
+        shell: bash
+        run: |
+          tmp=python/magnetron/__init__.py.tmp
+          sed '/^__version__\s*=.*/d' python/magnetron/__init__.py > "$tmp"
+          mv "$tmp" python/magnetron/__init__.py
+          echo "__version__ = \"$VERSION\"" >> python/magnetron/__init__.py
+
+      - name: Build wheels (Linux x86_64, Python ≥3.11)
+        env:
+          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_BUILD: "cp311-manylinux_x86_64 cp312-manylinux_x86_64 cp313-manylinux_x86_64"
+          CIBW_SKIP: "*-musllinux_*"
+        run: |
+          python -m cibuildwheel --output-dir wheelhouse python
+
+      - name: Build sdist (with same version)
+        run: |
+          mkdir -p dist
+          python -m build --sdist python --outdir dist
+          mv wheelhouse/*.whl dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-x86_64-py311plus
+          path: dist/*
+
+      - name: Publish to PyPI
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: pypa/gh-action-pypi-publish@v1.10.3
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages_dir: dist
+          skip_existing: true
