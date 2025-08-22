@@ -14,7 +14,7 @@ batch, M, K, N = 7, 768, 3072, 768
 A = torch.rand(batch, M, K, dtype=torch.float32)
 B = torch.rand(batch, K, N, dtype=torch.float32)
 
-@torch.compile(backend='inductor', fullgraph=True)
+@torch.compile(fullgraph=True)
 def matmul_fn(a, b):
     return a @ b
 
