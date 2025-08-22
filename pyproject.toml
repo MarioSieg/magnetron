@@ -9,7 +9,7 @@ build-backend = "scikit_build_core.build"
 name = "magnetron"
 version = "0.1.0"
 description = "High-performance, lightweight deep-learning library with a PyTorch like API and GPU support."
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Mario Sieg", email = "mario.sieg.64@gmail.com" }]
@@ -44,8 +44,9 @@ MAGNETRON_ENABLE_CUDA = false
 MAGNETRON_BUILD_TESTS = false
 MAGNETRON_BUILD_BENCHMARKS = false
 
-[tool.scikit-build.wheel]
-packages = ["python/magnetron"]
+[tool.scikit-build]
+wheel.packages = ["python/magnetron"]
+editable.mode = "redirect"
 
 [tool.ruff]
 line-length = 150

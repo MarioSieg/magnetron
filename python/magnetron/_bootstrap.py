@@ -1,51 +1,57 @@
-# (c) 2025 Mario 'Neo' Sieg. <mario.sieg.64@gmail.com>
-
 from __future__ import annotations
-
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from cffi import FFI
 import sys
+from importlib.machinery import EXTENSION_SUFFIXES
 
 from magnetron._ffi_cdecl_generated import __MAG_CDECLS
-
 
 @lru_cache(maxsize=1)
 def _load_native_module() -> tuple[FFI, Any]:
     platform = sys.platform
-    pkg_dir = Path(__file__).parent  # .../src/magnetron
-    root_dir = pkg_dir.parent  # .../src
+    pkg_dir = Path(__file__).parent
 
-    # decide which patterns to try
+    candidates = []
     if platform.startswith('linux'):
-        patterns = ['libmagnetron.so', 'magnetron*.so']
+        candidates += ['libmagnetron.so'] + [f'magnetron{ext}' for ext in EXTENSION_SUFFIXES]
     elif platform.startswith('darwin'):
-        patterns = ['libmagnetron.dylib', 'magnetron*.so']
+        candidates += ['libmagnetron.dylib'] + [f'magnetron{ext}' for ext in EXTENSION_SUFFIXES]
     elif platform.startswith('win32'):
-        patterns = ['magnetron.dll']
+        candidates += ['magnetron.pyd', 'magnetron.dll']
     else:
         raise RuntimeError(f'Unsupported platform: {platform!r}')
 
-    # search in both the package folder and its parent
-    lib_path = None
-    for search_dir in (pkg_dir, root_dir):
-        for pat in patterns:
-            hits = list(search_dir.glob(pat))
-            if hits:
-                lib_path = hits[0]
-                break
-        if lib_path:
-            break
+    def find_in_dir(d: Path) -> Path | None:
+        for name in candidates:
+            p = d / name
+            if p.exists():
+                return p
+        for ext in EXTENSION_SUFFIXES:
+            for p in d.glob(f'magnetron*{ext}'):
+                return p
+        return None
+    lib_path = find_in_dir(pkg_dir)
+    if lib_path is None:
+        for entry in map(Path, sys.path):
+            try:
+                p = entry / 'magnetron'
+                if p.is_dir():
+                    hit = find_in_dir(p)
+                    if hit:
+                        lib_path = hit
+                        break
+            except Exception:
+                pass
 
-    if not lib_path or not lib_path.exists():
-        searched = '; '.join(f'{d!r}:{patterns}' for d in (pkg_dir, root_dir))
+    if lib_path is None:
+        searched = f"{pkg_dir!r}:{candidates} plus site-packages scan"
         raise FileNotFoundError(f'magnetron shared library not found. Searched: {searched}')
 
     ffi = FFI()
     ffi.cdef(__MAG_CDECLS)
     lib = ffi.dlopen(str(lib_path))
     return ffi, lib
-
 
 FFI, C = _load_native_module()
