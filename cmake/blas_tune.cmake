@@ -71,5 +71,9 @@ if(${IS_AMD64})  # x86-64 specific compilation options
 elseif(${IS_ARM64})
     set(MAGNETRON_SOURCES ${MAGNETRON_SOURCES} ${MAG_BLAS_SPEC_ARM64_SOURCES})
     set_blas_spec_arch("magnetron_cpu_blas_arm64_v8_2.c" "-march=armv8.2-a+dotprod+fp16" "")
-    set_blas_spec_arch("magnetron_cpu_blas_arm64_v9.c" "-march=armv9-a+sve+sve2" "")
+    if (NOT APPLE)
+        # On Apple arm64, enabling SVE crashes LLVM with some error: LLVM ERROR: Cannot select: 0x10f4f5200: nxv4i32 = AArch64ISD::SUNPKHI 0x10f4f4a20
+        # So we disable SVE for now, as no Apple silicon Mac supports SVE yet.
+        set_blas_spec_arch("magnetron_cpu_blas_arm64_v9.c" "-march=armv9-a+sve+sve2" "")
+    endif()
 endif()
