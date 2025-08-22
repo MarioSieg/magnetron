@@ -448,6 +448,8 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 #define mag_swap(T, a, b) do { T tmp = (a); (a) = (b); (b) = tmp; } while (0)
 #define mag_xmax(x, y) (((x) > (y)) ? (x) : (y))
 #define mag_xmin(x, y) (((x) < (y)) ? (x) : (y))
+#define mag_rd_down(x,m) ((x)/(m) * (m))
+#define mag_clamp(v, lo, hi) ((v) < (lo) ? (lo) : (v) > (hi) ? (hi) : (v))
 
 /* Logging and debugging macros. */
 #define MAG_CC_RED "\x1b[31m"
