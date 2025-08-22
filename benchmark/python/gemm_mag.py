@@ -1,22 +1,36 @@
-# (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
+# (c) 2025 Mario 'Neo' Sieg. <mario.sieg.64@gmail.com>
 
+import time, statistics as stats
+import torch
 import magnetron as mag
-import time
 
+VERIFY = False
 
-A = mag.Tensor.uniform(7, 768, 3072)
-B = mag.Tensor.uniform(7, 3072, 768)
+batch, M, K, N = 7, 768, 3072, 768
+A = mag.Tensor.uniform(batch, M, K)
+B = mag.Tensor.uniform(batch, K, N)
 
-batch, M, K = 7, 768, 3072
-N = 768
+for _ in range(10):
+    C = A @ B
+    _ = C[0,0,0].item()
+
 flops = 2 * batch * M * N * K
-acc = 0
+times = []
+results = []
 I = 1000
 for _ in range(I):
     t0 = time.perf_counter()
     C = A @ B
+    s = float(C[0,0,0].item())
     t1 = time.perf_counter()
-    gflops = flops / (t1 - t0) / 1e9
-    acc += gflops
+    times.append(t1 - t0)
+    results.append(C)
 
-print("Average:", acc / I, "GFLOP/s")
+if VERIFY:
+    print('Verifying results...')
+    correct = torch.tensor(A.tolist(), dtype=torch.float32) @ torch.tensor(B.tolist(), dtype=torch.float32)
+    for r in results:
+        assert torch.allclose(torch.tensor(r.tolist()), correct, atol=1e-5), 'Results do not match!'
+
+gflops = [flops/t/1e9 for t in times]
+print(f'Magnetron matmul: median={stats.median(gflops):.1f} GFLOP/s, p10={stats.quantiles(gflops, n=10)[0]:.1f}, p90={stats.quantiles(gflops, n=10)[-1]:.1f}')
