@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import multiprocessing
 import random
 from collections.abc import Callable
 from typing import Any, Iterator
@@ -12,6 +13,9 @@ import pytest
 from magnetron import *
 from collections import deque
 from enum import Enum, unique
+
+# Give torch 1/4 of the total cores to not overload the CPU with inner parallelism threads + parallel spawned pytests
+torch.set_num_threads(multiprocessing.cpu_count() // 4)
 
 DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
     float16: torch.float16,

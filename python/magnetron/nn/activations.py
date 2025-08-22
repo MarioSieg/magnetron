@@ -55,8 +55,9 @@ class ReLU(Module):
 
 
 class GeLU(Module):
-    def __init__(self) -> None:
+    def __init__(self, use_tanh_approx: bool = False) -> None:
         super().__init__()
+        self.use_tanh_approx = use_tanh_approx
 
     def forward(self, x: Tensor) -> Tensor:
-        return x.gelu()
+        return x.gelu_approx() if self.use_tanh_approx else x.gelu()

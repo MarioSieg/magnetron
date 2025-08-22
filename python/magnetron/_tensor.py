@@ -606,6 +606,12 @@ class Tensor:
         assert self.rank == 1, f'Tensor must be 1-dimensional for arange fill, but is {self.rank}-dimensional'
         C.mag_tensor_fill_arange(self._ptr, float(start), float(step))
 
+    def copy_(self, x: Tensor) -> None:
+        assert self.rank == x.rank, f'Tensor ranks do not match: {self.rank} != {x.rank}'
+        assert self.is_shape_eq(x), f'Tensor shapes do not match: {self.shape} != {x.shape}'
+        assert self.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
+        C.mag_tensor_fill_from_raw_bytes(self._ptr, FFI.cast('void*', x.data_ptr), x.data_size)
+
     def zeros_(self) -> None:
         self.fill_(0)
 
@@ -827,6 +833,15 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(C.mag_gelu_(self._ptr))
 
+    def gelu_approx(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(C.mag_gelu_approx(self._ptr))
+
+    def gelu_approx_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(C.mag_gelu_approx_(self._ptr))
+
     def tril(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Tril requires a rank >= 2 but is {self.rank}'
         return Tensor(C.mag_tril(self._ptr, diagonal))
@@ -844,6 +859,13 @@ class Tensor:
         assert self.rank >= 2, f'Triu requires a rank >= 2 but is {self.rank}'
         self._validate_inplace_op()
         return Tensor(C.mag_triu_(self._ptr, diagonal))
+
+    def multinomial(self, num_samples: int = 1, replacement: bool = False) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        assert self.rank in (1, 2), f'Multinomial sampling requires a 1D or 2D tensor, but got rank {self.rank}'
+        assert num_samples > 0
+        assert not replacement, 'Multinomial sampling with replacement is not implemented yet'
+        return Tensor(C.mag_multinomial(self._ptr, num_samples, replacement))
 
     def logical_and(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)

@@ -32,17 +32,35 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <synchapi.h>
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
+#include <mach/mach_time.h>
 #include <sys/sysctl.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <dlfcn.h>
+#define UL_COMPARE_AND_WAIT 1
+#define UL_UNFAIR_LOCK 2
+#define UL_COMPARE_AND_WAIT_SHARED 3
+#define UL_UNFAIR_LOCK64_SHARED 4
+#define UL_COMPARE_AND_WAIT64 5
+#define UL_COMPARE_AND_WAIT64_SHARED 6
+#define UL_OSSPINLOCK UL_COMPARE_AND_WAIT
+#define UL_HANDOFFLOCK UL_UNFAIR_LOCK
+#define ULF_WAKE_ALL 0x00000100
+#define ULF_WAKE_THREAD 0x00000200
+#define ULF_WAKE_ALLOW_NON_OWNER 0x00000400
+__attribute__((weak_import)) extern int __ulock_wait(uint32_t op, void* addr, uint64_t value, uint32_t timeout);
+__attribute__((weak_import)) extern int __ulock_wake(uint32_t op, void* addr, uint64_t value);
 #else
 #include <unistd.h>
 #ifdef __linux__
 #include <linux/prctl.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
+#include <linux/futex.h>
 #ifdef __aarch64__
 #include <sys/auxv.h>
 #endif
@@ -349,19 +367,19 @@ uintptr_t mag_thread_id(void) { /* Get the current thread ID. */
 }
 
 #if defined(__x86_64__) || defined(_M_X64)
-#define _(enumerator, leaf, reg, bit) #enumerator
-const char* const mag_amd64_cap_names[MAG_AMD64_CAP__NUM] = {
-    mag_x86_64_feature_def(_, MAG_SEP)
+const char* const mag_amd64_cpu_cap_names[MAG_AMD64_CAP__NUM] = {
+    #define _(name) #name
+    mag_amd64_capdef(_, MAG_SEP)
+    #undef _
 };
-#undef _
 #elif defined(__aarch64__)
 #define _(ident) #ident
-const char* const mag_arm64_cpu_caps_names[MAG_ARM64_CAP__NUM] = {
-    mag_arm64_feature_def(_, MAG_SEP)
+const char* const mag_arm64_cpu_cap_names[MAG_ARM64_CAP__NUM] = {
+    mag_armd64_capdef(_, MAG_SEP)
 };
 #endif
 
-static uint64_t mag_hpc_clock_ns(void) { /* High precision clock in nanoseconds. */
+uint64_t mag_hpc_clock_ns(void) { /* High precision clock in nanoseconds. */
     #ifdef _WIN32
         static LONGLONG t_freq;
         static LONGLONG t_boot;
@@ -383,14 +401,45 @@ static uint64_t mag_hpc_clock_ns(void) { /* High precision clock in nanoseconds.
         return (uint64_t)ts.tv_sec*1000000000 + (uint64_t)ts.tv_nsec;
     #endif
 }
-static uint64_t mag_hpc_clock_elapsed_ns(uint64_t start) { /* High precision clock elapsed time in microseconds. */
+uint64_t mag_hpc_clock_elapsed_ns(uint64_t start) { /* High precision clock elapsed time in microseconds. */
     return (uint64_t)llabs((long long)mag_hpc_clock_ns() - (long long)start);
 }
-static mag_e11m52_t mag_hpc_clock_elapsed_ms(uint64_t start) { /* High precision clock elapsed time in milliseconds. */
+mag_e11m52_t mag_hpc_clock_elapsed_ms(uint64_t start) { /* High precision clock elapsed time in milliseconds. */
     return (mag_e11m52_t)mag_hpc_clock_elapsed_ns(start) / 1e6;
 }
-#define mag_clock_cycles() ((uint64_t)clock())
-#define mag_cycles_per_ms() ((uint64_t)CLOCKS_PER_SEC/1000)
+
+#ifdef _MSC_VER
+extern uint64_t __rdtsc();
+#pragma intrinsic(__rdtsc)
+#endif
+
+uint64_t mag_cycles(void) {
+    #ifdef __APPLE__
+        return mach_absolute_time();
+    #elif defined(_MSC_VER)
+        return __rdtsc();
+    #elif defined(__x86_64__) || defined(__amd64__)
+        uint64_t lo, hi;
+        __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+        return (hi<<32) | lo;
+    #elif defined(__aarch64__)
+        uint32_t cntrl;
+        uint32_t rwx;
+        uint32_t fset;
+        __asm__ __volatile__("mrc p15, 0, %0, c9, c14, 0" : "=r"(rwx)); /* Read perfmon access control register */
+        if (rwx & 1) {
+            __asm__ __volatile__("mrc p15, 0, %0, c9, c12, 1" : "=r"(fset));
+            if (fset & 0x80000000U) {
+                __asm__ __volatile__("mrc p15, 0, %0, c9, c13, 0" : "=r"(cntrl));
+                return (uint64_t)(cntrl)<<6;
+            }
+        }
+    #else
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        return (uint64_t)(tv.tv_sec)*1000000 + tv.tv_usec;
+    #endif
+}
 
 /* Bitset for 32-bit integers. */
 typedef uint32_t mag_bitset_t;
@@ -554,7 +603,7 @@ mag_view_meta_t* mag_view_meta_alloc(mag_tensor_t* base){
 }
 
 /* Initialize and seed PRNG state. */
-void mag_prng_seed(mag_prng_state_t* prng, mag_prngalgo_t algo, uint64_t seed) {
+void mag_prng_seed(mag_prng_state_t* prng, mag_prng_algo_t algo, uint64_t seed) {
     seed = seed ? seed : 0x853c49e6748fea9bull;
     switch ((prng->algo = algo)) {
         case MAG_PRNG_MERSENNE_TWISTER: { /* Mersenne Twister */
@@ -587,13 +636,24 @@ static void mag_system_host_info_dump(mag_context_t* ctx) {
     #else
     #error "Unknwon CPU arch"
     #endif
-    mag_log_info("CPU: %s, Virtual Cores: %u, Physical Cores: %u, Sockets: %u", ctx->machine.cpu_name, ctx->machine.cpu_virtual_cores, ctx->machine.cpu_physical_cores, ctx->machine.cpu_sockets);
+    mag_log_info(
+        "CPU: %s, Virtual Cores: %u, Physical Cores: %u, Sockets: %u, L1D: %.01f KiB, L2: %.01f KiB, L3: %.01f MiB",
+        ctx->machine.cpu_name,
+        ctx->machine.cpu_virtual_cores,
+        ctx->machine.cpu_physical_cores,
+        ctx->machine.cpu_sockets,
+        (mag_e11m52_t)ctx->machine.cpu_l1_size/1024.0,
+        (mag_e11m52_t) ctx->machine.cpu_l2_size/1024.0,
+        (mag_e11m52_t)ctx->machine.cpu_l3_size/1024.0/1024.0
+    );
     #if defined(__x86_64__) || defined(_M_X64) /* Print detected CPU features for x86-64 platforms. */
         if (mag_log_enabled) {
             printf(MAG_CC_CYAN "[magnetron] " MAG_CC_RESET "%s caps: ", cpu_arch);
-            for (uint64_t i=0; i < MAG_AMD64_CAP__NUM; ++i) /* Print all amd64 feature flags such as AVX, AVX2, etc. */
-                if (ctx->machine.amd64_cpu_caps & (1ull<<i))
-                    printf("%s ", mag_amd64_cap_names[i]);
+            for (unsigned i=0; i < MAG_AMD64_CAP__NUM; ++i) {
+                if (i == MAG_AMD64_CAP_AMD || i == MAG_AMD64_CAP_INTEL) continue; /* Skip vendor caps */
+                if (ctx->machine.amd64_cpu_caps & mag_amd64_cap_bit(i))
+                    printf("%s ", mag_amd64_cpu_cap_names[i]);
+            }
             putchar('\n');
         }
     #elif defined(__aarch64__) /* Print detected CPU features for ARM64 platforms. */
@@ -601,7 +661,7 @@ static void mag_system_host_info_dump(mag_context_t* ctx) {
             printf(MAG_CC_CYAN "[magnetron] " MAG_CC_RESET "%s caps: ", cpu_arch);
             for (uint32_t i=0; i < MAG_ARM64_CAP__NUM; ++i)
                 if (ctx->machine.arm64_cpu_caps & (1ull<<i))
-                    printf("%s ", mag_arm64_cpu_caps_names[i]);
+                    printf("%s ", mag_arm64_cpu_cap_names[i]);
             putchar('\n');
         }
     #endif
@@ -727,11 +787,11 @@ void mag_ctx_destroy(mag_context_t* ctx) { /* Destroy magnetron context. */
     mag_log_info("magnetron context destroyed.");
 }
 
-mag_prngalgo_t mag_ctx_get_prng_algorithm(const mag_context_t* ctx) {
+mag_prng_algo_t mag_ctx_get_prng_algorithm(const mag_context_t* ctx) {
     return ctx->prng_algo;
 }
 
-void mag_ctx_set_prng_algorithm(mag_context_t* ctx, mag_prngalgo_t algorithm, uint64_t seed) {
+void mag_ctx_set_prng_algorithm(mag_context_t* ctx, mag_prng_algo_t algorithm, uint64_t seed) {
     mag_log_warn("Setting the PRNG algorithm is not implemented at the moment");
 }
 
@@ -791,6 +851,48 @@ void mag_thread_yield(void) {
         YieldProcessor();
     #else
         sched_yield();
+    #endif
+}
+
+int mag_futex_wait(volatile mag_atomic32_t* addr, mag_atomic32_t expect) {
+    #ifdef __linux__
+        return syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, expect, NULL, NULL, 0);
+    #elif defined(__APPLE__)
+        mag_assert2(__ulock_wait);
+        return __ulock_wait(UL_COMPARE_AND_WAIT, (void*)addr, expect, 0);
+    #elif defined(_WIN32)
+        BOOL ok = WaitOnAddress((volatile VOID*)addr, &expect, sizeof(expect), INFINITE);
+        if (mag_likely(ok)) return 0;
+        errno = GetLastError() == ERROR_TIMEOUT ? ETIMEDOUT : EAGAIN;
+        return -1;
+    #else
+    #error "Not implemented for this platform"
+    #endif
+}
+
+void mag_futex_wake1(volatile mag_atomic32_t* addr) {
+    #ifdef __linux__
+        syscall(SYS_futex, addr, FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0);
+    #elif defined(__APPLE__)
+        mag_assert2(__ulock_wake);
+        __ulock_wake(UL_COMPARE_AND_WAIT, (void*)addr, 0);
+    #elif defined(_WIN32)
+        WakeByAddressSingle((PVOID)addr);
+    #else
+    #error "Not implemented for this platform"
+    #endif
+}
+
+void mag_futex_wakeall(volatile mag_atomic32_t* addr) {
+    #ifdef __linux__
+        syscall(SYS_futex, addr, FUTEX_WAKE_PRIVATE, 0x7fffffff, NULL, NULL, 0);
+    #elif defined(__APPLE__)
+        mag_assert2(__ulock_wake);
+        __ulock_wake(UL_COMPARE_AND_WAIT|ULF_WAKE_ALL, (void*)addr, 0);
+    #elif defined(_WIN32)
+        WakeByAddressAll((PVOID)addr);
+    #else
+    #error "Not implemented for this platform"
     #endif
 }
 
@@ -1022,13 +1124,10 @@ static mag_tensor_t* mag_tensor_init_header(mag_context_t* ctx, mag_dtype_t type
         .op = MAG_OP_NOP,
         .op_inputs = {0},
         .op_params = {mag_op_param_none()},
-        .init_op = MAG_IOP_NOP,
-        .init_op_params = {mag_op_param_none()},
         .storage_offset = 0,
         .view_meta = NULL,
         .version = 0,
         .grad = NULL,
-        .ud = NULL
     };
 #ifdef MAG_DEBUG
     hdr->alive_next = NULL;
@@ -1102,7 +1201,7 @@ mag_tensor_t* mag_tensor_as_strided(mag_context_t* ctx, mag_tensor_t* base, int6
 static void mag_tensor_dtor(void* self) {
     mag_tensor_t* t = self;
     mag_context_t* ctx = t->ctx;
-    mag_assert(ctx->num_tensors > 0, "double freed tensor");
+    mag_assert(ctx->num_tensors > 0, "mag_e11m52_t freed tensor");
     --ctx->num_tensors;
     if (t->view_meta) {
         mag_rc_control_decref(&t->view_meta->rc);
@@ -1174,11 +1273,9 @@ bool mag_tensor_decref(mag_tensor_t* t) { /* Decrease reference count of the ten
 
 void mag_tensor_detach_inplace(mag_tensor_t* target) {
     target->op = MAG_OP_NOP; /* Detach from operations */
-    target->init_op = MAG_IOP_NOP;
     target->flags &= ~MAG_TFLAG_REQUIRES_GRAD; /* Detach from gradient recording */
     memset(target->op_inputs, 0, sizeof(target->op_inputs)); /* Clear op inputs */
     memset(target->op_params, 0, sizeof(target->op_params));
-    memset(target->init_op_params, 0, sizeof(target->init_op_params));
 }
 
 mag_tensor_t* mag_tensor_detach(mag_tensor_t* t) {
@@ -1400,7 +1497,7 @@ static void mag_collect_topo_iterative(mag_tensor_t* root, mag_tensor_set_t* out
     while (sta_len) { /* Iterative DFS */
         mag_topo_record_t* top = &stack[sta_len - 1];
         mag_tensor_t* cur_tensor = top->tensor;
-        if (top->next_child_idx < mag_op_meta_of(cur_tensor->op)->input_count) {
+        if (top->next_child_idx < mag_op_meta_of(cur_tensor->op)->in) {
             mag_tensor_t* child = cur_tensor->op_inputs[top->next_child_idx++];
             if (child && (child->flags & MAG_TFLAG_REQUIRES_GRAD)) {
                 if (!mag_hashset_contains_key(&visited, child)) {
@@ -1451,7 +1548,7 @@ void mag_tensor_backward(mag_tensor_t* root) {
         void (*op_bwd)(mag_tensor_t*, mag_tensor_t**) = meta->backward;
         mag_assert2(op_bwd);
         (*op_bwd)(child, grads);
-        uint32_t numin = meta->input_count;
+        uint32_t numin = meta->in;
         mag_assert2(numin <= MAG_MAX_OP_INPUTS);
         for (uint32_t i=0; i < numin; ++i) {
             mag_tensor_t* input = child->op_inputs[i];
@@ -1551,123 +1648,6 @@ void mag_tensor_subscript_set_flattened(mag_tensor_t* t, int64_t idx, mag_e8m23_
     (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, mag_tensor_get_data_offset(t) + sto->granularity*(size_t)idx, &val, sizeof(val), MAG_DTYPE_E8M23);
 }
 
-void mag_tensor_img_draw_box(mag_tensor_t* t, int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t wi, uint32_t rgb) {
-    mag_assert(t->rank == 3, "Tensor must be 3D image tensor");
-    mag_assert2(x2 > x1 && y2 > y1 && x1 > 0 && y1 > 0 && x2 > 0 && y2 > 0);
-    mag_e8m23_t* buf = mag_tensor_get_data_ptr(t);
-    int32_t w = (int32_t)mag_tensor_get_width(t);
-    int32_t h = (int32_t)mag_tensor_get_height(t);
-    int32_t c = (int32_t)mag_tensor_get_channels(t);
-    mag_assert2(w && h && c == 3);
-    mag_e8m23_t r = (mag_e8m23_t)((rgb>>16)&0xff) / 255.0f;
-    mag_e8m23_t g = (mag_e8m23_t)((rgb>>8)&0xff) / 255.0f;
-    mag_e8m23_t b = (mag_e8m23_t)(rgb&0xff) / 255.0f;
-    wi = mag_xmax(1, wi);
-    for (int32_t i=0; i < wi; ++i) {
-        int32_t xx1 = x1+i;
-        int32_t yy1 = y1+i;
-        int32_t xx2 = x2-i;
-        int32_t yy2 = y2-i;
-        if (mag_unlikely(xx1 >= w)) xx1 = w-1;
-        if (mag_unlikely(xx2 >= w)) xx2 = w-1;
-        if (mag_unlikely(yy1 >= h)) yy1 = h-1;
-        if (mag_unlikely(yy2 >= h)) yy2 = h-1;
-        for (int32_t j=xx1; j <= xx2; ++j) {
-            mag_e8m23_t* r1 = buf + j + yy1*w + 0*w*h;
-            mag_e8m23_t* r2 = buf + j + yy2*w + 0*w*h;
-            mag_e8m23_t* g1 = buf + j + yy1*w + 1*w*h;
-            mag_e8m23_t* g2 = buf + j + yy2*w + 1*w*h;
-            mag_e8m23_t* b1 = buf + j + yy1*w + 2*w*h;
-            mag_e8m23_t* b2 = buf + j + yy2*w + 2*w*h;
-            mag_bnd_chk(r1, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(r2, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(g1, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(g2, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(b1, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(b2, buf, mag_tensor_get_data_size(t));
-            *r1 = *r2 = r;
-            *g1 = *g2 = g;
-            *b1 = *b2 = b;
-        }
-        for (int32_t j = yy1; j <= yy2; ++j) {
-            mag_e8m23_t* r1 = buf + xx1 + j*w + 0*w*h;
-            mag_e8m23_t* r2 = buf + xx2 + j*w + 0*w*h;
-            mag_e8m23_t* g1 = buf + xx1 + j*w + 1*w*h;
-            mag_e8m23_t* g2 = buf + xx2 + j*w + 1*w*h;
-            mag_e8m23_t* b1 = buf + xx1 + j*w + 2*w*h;
-            mag_e8m23_t* b2 = buf + xx2 + j*w + 2*w*h;
-            mag_bnd_chk(r1, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(r2, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(g1, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(g2, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(b1, buf, mag_tensor_get_data_size(t));
-            mag_bnd_chk(b2, buf, mag_tensor_get_data_size(t));
-            *r1 = *r2 = r;
-            *g1 = *g2 = g;
-            *b1 = *b2 = b;
-        }
-    }
-}
-
-static bool mag_glyph(uint32_t c, uint32_t x, uint32_t y) {
-    c -= 33, --x;
-    if (mag_unlikely(c > 93 || x > 6 || y > 13)) return false;
-    uint32_t i = 98*c + 7*y + x;
-    return (("0@P01248@00120000P49B0000000000000:DXlW2UoDX@10008@h;IR4n@R<Y?48000PYDF"
-             "PP011J:U1000<T8QQQDAR4a50000@P012000000000000222448@P024@010028P0148@PP011100000"
-             "ABELDU410000000048@l7124000000000000000H`01100000000n10000000000000000006<0000@P"
-             "P011224488@00000`CXHY:=:D8?0000004<DT01248@000000l4:444444h700000`C8@Ph02D8?0000"
-             "008HX89b?8@P000000n58`7@P05b300000`CP0O25:D8?00000POPP0112248000000l4:D8?Q25b300"
-             "000`CX@Ql1244700000000H`0000<H00000000`P1000H`0110000044444@014@0000000n100PO000"
-             "0000004@014@@@@@0000h948@@@@00120000`G`l5;F\\Lf0n100000l4:DXOQ25:400000hCX@Qn4:D"
-             "X?000000?Q248@P0Ql000000N49DX@Q25i100000hGP01N48@PO00000PO124hAP012000000l4:@PLQ"
-             "25b3000008DX@Qn5:DX@000000748@P0124L00000001248@P25b3000008DT456D8AT@00000P01248"
-             "@P01n10000017G=IbP1364000008dXAU:U:E\\H000000?Q25:DX@Ql000000n4:DX?1248000000`CX"
-             "@Q2U:E4GP0000P?Q25jCR8Q2100000l4:@0?P05b300000l71248@P01200000P@Q25:DX@Ql0000002"
-             "5:D89BT`P1000004<HbT9[:BT800000P@QT8QQ49Q210000013:B4548@P000000h7888888@PO00000"
-             "7248@P01248`10P0148P0148P0148000h01248@P0124>000015A000000000000000000000000h?00"
-             "04@010000000000000000l0bGX@aL10000124XcX@Q25j300000000?Q248@8?000008@Pl5:DX@aL10"
-             "000000`CX@o24`70000`AP01N48@P0100000000l5:DX@aL12T70124XcX@Q25:40000@P0P348@P01>"
-             "00000240HP01248@P0a101248@T47B4940000HP01248@P01L00000000oBV<IbT910000000hCX@Q25"
-             ":400000000?Q25:D8?00000000j<:DX@Qn48@00000`GX@Q25c58@P0000P>S248@P000000000l48P7"
-             "@Pn0000048@`31248@030000000P@Q25:D<G0000000025:T49<H000000004<HbTE5920000000P@QT"
-             "`@BX@0000000025:DX@aL12T70000h744444h70000PS01248>P0124`1001248@P01248@P0007@P01"
-             "24`@P01R30000000S9S10000000"[i/6]-'0')>>(i%6))&1;
-}
-
-void mag_tensor_img_draw_text(mag_tensor_t* t, int32_t x, int32_t y, int32_t size, uint32_t rgb, const char* txt) { /* TODO: Implement font scaling, size is ignored currently */
-    mag_assert(t->rank == 3, "Tensor must be a 3D image tensor");
-    mag_assert2(x >= 0 && y >= 0 && size >= 8 && txt && *txt);
-    mag_assert2(t->ctx->device_type == MAG_DEVICE_TYPE_CPU);
-    mag_e8m23_t* buf = (mag_e8m23_t*)mag_tensor_get_data_ptr(t);
-    int32_t w = (int32_t)mag_tensor_get_width(t);
-    int32_t h = (int32_t)mag_tensor_get_height(t);
-    int32_t c = (int32_t)mag_tensor_get_channels(t);
-    mag_assert2(w && h && c == 3);
-    mag_e8m23_t* pr = buf;
-    mag_e8m23_t* pg = buf + w*h;
-    mag_e8m23_t* pb = buf + w*h*2;
-    mag_e8m23_t r = (mag_e8m23_t)((rgb>>16)&0xff) / 255.0f;
-    mag_e8m23_t g = (mag_e8m23_t)((rgb>>8)&0xff) / 255.0f;
-    mag_e8m23_t b = (mag_e8m23_t)(rgb&0xff) / 255.0f;
-    int32_t ly = y;
-    for (int32_t lx = x; *txt; lx = (*txt == '\n' ? x : lx+8), ly = (*txt == '\n' ? ly+14 : ly), txt++) {
-        if (mag_unlikely(!isprint(*txt))) continue;
-        for (int32_t yy = 0; yy < 14; ++yy) {
-            for (int32_t xx = 0; xx < 8; ++xx) {
-                if (!mag_glyph(*txt, xx, yy)) continue;
-                int32_t px = lx + xx;
-                int32_t py = ly + yy;
-                if (mag_unlikely(px >= w || py >= h)) continue;
-                int32_t ii = py*w + px;
-                pr[ii] = r;
-                pg[ii] = g;
-                pb[ii] = b;
-            }
-        }
-    }
-}
-
 static void mag_fmt_single_elem(mag_sstream_t* ss, const void* buf, size_t i, mag_dtype_t dtype) {
     switch (dtype) {
         case MAG_DTYPE_E8M23:
@@ -1737,13 +1717,11 @@ void mag_tensor_to_string_free_data(char* ret_val) {
 }
 
 mag_context_t* mag_tensor_get_ctx(const mag_tensor_t* t) { return t->ctx; }
-void* mag_tensor_get_user_data(const mag_tensor_t* t) { return t->ud; }
-void mag_tensor_set_user_data(mag_tensor_t* t, void* ud) { t->ud = ud; }
 int64_t mag_tensor_get_width(const mag_tensor_t* t) { return t->shape[2]; }
 int64_t mag_tensor_get_height(const mag_tensor_t* t) { return t->shape[1]; }
 int64_t mag_tensor_get_channels(const mag_tensor_t* t) { return t->shape[0]; }
 bool mag_tensor_is_view(const mag_tensor_t* t) { return t->flags & MAG_TFLAG_IS_VIEW; }
-bool mag_tensor_is_floating_point_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_FLOATING; }
+bool mag_tensor_is_floating_point_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_FP; }
 bool mag_tensor_is_integral_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGRAL; }
 bool mag_tensor_is_integer_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGER; }
 bool mag_tensor_is_numeric_typed(const mag_tensor_t* t) { return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC; }
@@ -1835,7 +1813,7 @@ static void mag_trim_quotes(char* in) {
 }
 #endif
 
-static void MAG_COLDPROC mag_machine_probe_os_name(char (*out_os_name)[128]) { /* Get OS name */
+static void mag_machine_probe_os_name(char (*out_os_name)[128]) { /* Get OS name */
     #ifdef _WIN32
 
     #elif defined(__APPLE__)
@@ -1912,7 +1890,7 @@ static void MAG_COLDPROC mag_machine_probe_os_name(char (*out_os_name)[128]) { /
     #endif
 }
 
-static void MAG_COLDPROC mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) { /* Get CPU name */
+static void mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) { /* Get CPU name */
     #ifdef _WIN32
         HKEY key;
         if (mag_unlikely(RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0, KEY_READ, &key))) return;
@@ -1933,12 +1911,12 @@ static void MAG_COLDPROC mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) {
     #endif
 }
 
-static void MAG_COLDPROC mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint32_t* out_physical, uint32_t* out_sockets) { /* Get CPU virtual (logical) cores. */
+static void mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint32_t* out_physical, uint32_t* out_sockets) { /* Get CPU virtual (logical) cores. */
     #ifdef _WIN32
         DWORD size = 0;
         GetLogicalProcessorInformation(NULL, &size);
         if (mag_unlikely(!size)) return;
-        SYSTEM_LOGICAL_PROCESSOR_INFORMATION* info = (*mag_alloc)(NULL, size);
+        SYSTEM_LOGICAL_PROCESSOR_INFORMATION* info = (*mag_alloc)(NULL, size, 0);
         if (mag_unlikely(!GetLogicalProcessorInformation(info, &size))) goto end;
         for (DWORD i=0; i < size/sizeof(*info); ++i) {
             switch (info[i].Relationship) {
@@ -1953,7 +1931,7 @@ static void MAG_COLDPROC mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint
                 } continue;
             }
         }
-        end: (*mag_alloc)(info, 0);
+        end: (*mag_alloc)(info, 0, 0);
     #elif defined(__APPLE__)
         uint8_t tmp[256];
         size_t len;
@@ -2023,7 +2001,7 @@ static void MAG_COLDPROC mag_machine_probe_cpu_cores(uint32_t* out_virtual, uint
     #endif
 }
 
-static void MAG_COLDPROC mag_machine_probe_memory(uint64_t* out_phys_mem_total, uint64_t* out_phys_mem_free) { /* Get physical memory */
+static void mag_machine_probe_memory(size_t* out_phys_mem_total, size_t* out_phys_mem_free) { /* Get physical memory */
     #ifdef _WIN32
         MEMORYSTATUSEX mem;
         mem.dwLength = sizeof(mem);
@@ -2054,217 +2032,432 @@ static void MAG_COLDPROC mag_machine_probe_memory(uint64_t* out_phys_mem_total, 
     #endif
 }
 
+#ifdef __linux__
+#include <dirent.h>
+#endif
+
+static size_t mag_query_cache_size(unsigned lvl, const char* wanted) {
+    #ifdef __linux__
+        char path[PATH_MAX];
+        char buf[64];
+        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache");
+        DIR *d = opendir(path);
+        if (!d) return 0;
+        struct dirent *e;
+        while ((e = readdir(d))) {
+            if (strncmp(e->d_name, "index", sizeof("index")-1)) continue;
+            unsigned idx = (unsigned)strtoul(e->d_name+sizeof("index")-1, NULL, 10);
+            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache/index%u/level", idx);
+            FILE* f = fopen(path, "r");
+            if (!f) continue;
+            unsigned lv = 0;
+            if (fgets(buf, sizeof(buf), f) == NULL) {
+                fclose(f);
+                continue;
+            }
+            fclose(f);
+            if (lv = (unsigned)strtoul(buf, NULL, 10), lv != lvl) continue;
+            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache/index%u/type", idx);
+            f = fopen(path, "r");
+            if (!f) continue;
+            if (fgets(buf, sizeof(buf), f) == NULL) {
+                fclose(f);
+                continue;
+            }
+            fclose(f);
+            buf[strcspn(buf, "\n")] = '\0';
+            if (strcmp(buf, wanted)) continue;     /* not the type we need */
+            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache/index%u/size", idx);
+            f = fopen(path, "r");
+            if (!f) continue;
+            unsigned long long v = 0; char suf = '\0';
+            if (fscanf(f, "%llu%c", &v, &suf) != 2) {
+                fclose(f);
+                continue;
+            }
+            fclose(f);
+            closedir(d);
+            switch (suf) {
+                case 'K': v *= 1ull<<10; break;
+                case 'M': v *= 1ull<<20; break;
+                case 'G': v *= 1ull<<30; break;
+                default: break;
+            }
+            return v; /* Return size in bytes */
+        }
+        closedir(d);
+        return 0;
+    #endif
+    return 0;
+}
+
+static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
+    *l1 = mag_query_cache_size(1, "Data");
+    *l2 = mag_query_cache_size(2, "Unified");
+    *l3 = mag_query_cache_size(3, "Unified");
+}
+
 #if defined(__x86_64__) || defined(_M_X64)
-    static void mag_cpuid(uint32_t leaf, int32_t sub, uint32_t* oeax, uint32_t* oebx, uint32_t* oecx, uint32_t* oedx) {
-        #ifdef _MSC_VER
-            int regs[4];
-            if (sub != -1) __cpuidex(regs, leaf, sub);
-            else __cpuid(regs, leaf);
-            *oeax = regs[0], *oebx = regs[1], *oecx = regs[2], *oedx = regs[3];
+    static void mag_cpuid_ex(uint32_t (*o)[4], uint32_t eax, uint32_t ecx) {
+        #ifdef _WIN32
+            __cpuidex((int*)(*o), eaxIn, ecxIn);
         #else
-            uint32_t eax, ebx, ecx, edx;
-            if (sub != -1) __cpuid_count(leaf, sub, eax, ebx, ecx, edx);
-            else __cpuid(leaf, eax, ebx, ecx, edx);
-            *oeax = eax, *oebx = ebx, *oecx = ecx, *oedx = edx;
+            __cpuid_count(eax, ecx, (*o)[0], (*o)[1], (*o)[2], (*o)[3]);
         #endif
+    }
+    static void mag_cpuid(uint32_t (*o)[4], uint32_t eax) {
+        mag_cpuid_ex(o, eax, 0);
+    }
+    static bool mag_cpuid_streq(uint32_t ebx, uint32_t ecx, uint32_t edx, const char str[static 12]) {
+        #define mag_strbe(x) ((x)[0] | ((x)[1]<<8) | ((x)[2]<<16) | ((x)[3]<<24))
+        return ebx == mag_strbe(str) && edx == mag_strbe(str+4) && ecx == mag_strbe(str+8);
+        #undef mag_strbe
     }
     static uint64_t MAG_AINLINE mag_xgetbv(void) { /* Query extended control register value. */
         #ifdef _MSC_VER
             return _xgetbv(0);
         #else
-            uint32_t lo, hi;
-            __asm__ __volatile__("xgetbv\n\t" : "=a" (lo), "=d" (hi) : "c" (0));
-            return (uint64_t)lo | ((uint64_t)hi << 32);
+            uint32_t eax, edx;
+            __asm__ volatile(".byte 0x0f,0x01,0xd0" : "=a"(eax), "=d"(edx) : "c"(0));
+            return (uint64_t)edx<<32 | eax;
         #endif
     }
-    static void MAG_COLDPROC mag_system_info_query_amd64_cpu_caps(uint64_t* caps, bool* is_amd) {
-        *caps = 0;
-        uint32_t regs[8][4] = {0};
-
-        #define H0 0
-        #define H1 1
-        #define H2 2
-        #define H7 3
-        #define H80000001 4
-        #define H80000007 5
-        #define H16 6
-        #define H7_1H 7
-        #define EAX 0
-        #define EBX 1
-        #define ECX 2
-        #define EDX 3
-
-        #define mag_cpy_regs(id) \
-        regs[id][EAX] = eax; \
-        regs[id][EBX] = ebx; \
-        regs[id][ECX] = ecx; \
-        regs[id][EDX] = edx
-
-        #define _(enumerator, leaf, reg, shift) (0xff&leaf)
-            static const uint8_t feature_leaves[MAG_AMD64_CAP__NUM] = {
-                mag_x86_64_feature_def(_, MAG_SEP)
-            };
-        #undef _
-        #define _(enumerator, leaf, reg, shift) (0xff&reg)
-            static const uint8_t feature_regs[MAG_AMD64_CAP__NUM] = {
-                mag_x86_64_feature_def(_, MAG_SEP)
-            };
-        #undef _
-        #define _(enumerator, leaf, reg, shift) (1u<<(shift))
-            static const uint32_t feature_masks[MAG_AMD64_CAP__NUM] = {
-                mag_x86_64_feature_def(_, MAG_SEP)
-            };
-        #undef _
-        #undef mag_x86_64_feature_def
-        #undef _
-        /* Detect features. */
-        uint32_t eax=0, ebx=0, ecx=0, edx=0;
-        uint32_t max_basic_leaf, max_extended_leaf;
-        mag_cpuid(0, -1, &eax, &ebx, &ecx, &edx);
-        mag_cpy_regs(H0);
-        max_basic_leaf = eax;
-        mag_cpuid(0x80000000u, -1, &eax, &ebx, &ecx, &edx);
-        max_extended_leaf = eax;
-        if (max_basic_leaf >= 1u) {
-            mag_cpuid(1, -1, &eax, &ebx, &ecx, &edx);
-            mag_cpy_regs(H1);
+    static void mag_probe_cpu_amd64(mag_amd64_cap_bitset_t* o, uint32_t* avx10ver) {
+        memset(o, 0, sizeof(*o));
+        uint32_t id[4] = {0};
+        const uint32_t* eax = id+0, *ebx = id+1, *ecx = id+2, *edx = id+3;
+        mag_cpuid(&id, 0);
+        uint32_t max = *eax;
+        if (mag_cpuid_streq(*ebx, *ecx, *edx, "AuthenticAMD")) *o|=mag_amd64_cap(AMD);
+        else if (mag_cpuid_streq(*ebx, *ecx, *edx, "GenuineIntel")) *o|=mag_amd64_cap(INTEL);
+        mag_cpuid(&id, 0x80000000);
+        #define mag_captest(reg, bit, cp) if (*(reg)&(1u<<((bit)&31))) *o|=mag_amd64_cap(cp)
+        uint32_t max_ex = *eax;
+        if (max_ex >= 0x80000001) {
+            mag_cpuid(&id, 0x80000001);
+            mag_captest(ecx, 0, SSE4A);
         }
-        if (max_basic_leaf >= 2u) {
-            mag_cpuid(2u, -1, &eax, &ebx, &ecx, &edx);
-            mag_cpy_regs(H2);
-        }
-        if (max_basic_leaf >= 7u) {
-            mag_cpuid(7u, 0, &eax, &ebx, &ecx, &edx);
-            mag_cpy_regs(H7);
-        }
-        if (max_basic_leaf >= 7u) {
-            mag_cpuid(7u, 1, &eax, &ebx, &ecx, &edx);
-            mag_cpy_regs(H7_1H);
-        }
-        if (max_basic_leaf >= 0x16u) {
-            mag_cpuid(0x16u, -1, &eax, &ebx, &ecx, &edx);
-            mag_cpy_regs(H16);
-        }
-        if (max_extended_leaf >= 0x80000001u) {
-            mag_cpuid(0x80000001u, -1, &eax, &ebx, &ecx, &edx);
-            mag_cpy_regs(H80000001);
-        }
-        if (max_extended_leaf >= 0x80000007u) {
-            mag_cpuid(0x80000007u, -1, &eax, &ebx, &ecx, &edx);
-            mag_cpy_regs(H80000007);
-        }
-        bool cpu_avx_support = !!(regs[H1][ECX] & 0x10000000u);
-        bool cpu_osxsave_support = !!(regs[H1][ECX] & 0x8000000u);
-        if (cpu_avx_support && cpu_osxsave_support) {
-            uint64_t xcr0 = mag_xgetbv();
-            if ((xcr0 & 0x6) != 0x6u) {
-                regs[H1][ECX] &= ~0x10000000u; /* Clear AVX */
-                regs[H7][EBX] &= ~0x20u; /* Clear AVX2 */
+        mag_cpuid(&id, 1);
+        mag_captest(ecx, 0, SSE3);
+        mag_captest(ecx, 9, SSSE3);
+        mag_captest(ecx, 19, SSE41);
+        mag_captest(ecx, 20, SSE42);
+        mag_captest(ecx, 27, OSXSAVE);
+        mag_captest(ecx, 29, F16C);
+        mag_captest(edx, 25, SSE);
+        mag_captest(edx, 26, SSE2);
+        if (*o & mag_amd64_cap(OSXSAVE)) {
+            uint64_t cr = mag_xgetbv();
+            if ((cr&6) == 6) {
+                mag_captest(ecx, 12, FMA);
+                mag_captest(ecx, 28, AVX);
+                if (((cr>>5)&7) == 7) {
+                    mag_cpuid_ex(&id, 7, 0);
+                    mag_captest(ebx, 16, AVX512_F);
+                    if (*o & mag_amd64_cap(AVX512_F)) {
+                        mag_captest(ebx, 17, AVX512_DQ);
+                        mag_captest(ebx, 21, AVX512_IFMA);
+                        mag_captest(ebx, 26, AVX512_PF);
+                        mag_captest(ebx, 27, AVX512_ER);
+                        mag_captest(ebx, 28, AVX512_CD);
+                        mag_captest(ebx, 30, AVX512_BW);
+                        mag_captest(ebx, 31, AVX512_VL);
+                        mag_captest(ecx, 1, AVX512_VBMI);
+                        mag_captest(ecx, 6, AVX512_VBMI2);
+                        mag_captest(ecx, 11, AVX512_VNNI);
+                        mag_captest(ecx, 12, AVX512_BITALG);
+                        mag_captest(ecx, 14, AVX512_VPOPCNTDQ);
+                        mag_captest(edx, 2, AVX512_4VNNIW);
+                        mag_captest(edx, 3, AVX512_4FMAPS);
+                        mag_captest(edx, 8, AVX512_VP2INTERSECT);
+                        if (*o & mag_amd64_cap(AVX512_BW))
+                            mag_captest(edx, 23, AVX512_FP16);
+                    }
+                }
             }
-            if ((xcr0 & 0xe0) != 0xe0u) { /* OS does not support AVX-512, clear AVX512 */
-                regs[H7][EBX] &= ~0xdc230000u;
-                regs[H7][ECX] &= ~0x5842u;
-                regs[H7][EDX] &= ~0x10cu;
-                regs[H7_1H][EAX] &= ~0x20u;
-            }
-        } else {
-            regs[H1][ECX] &= ~0x10000000u;  /* Clear AVX */
-            regs[H7][EBX] &= ~0x20u;        /* Clear AVX2 */
-            regs[H7][EBX] &= ~0xdc230000u;  /* Clear AVX512 */
-            regs[H7][ECX] &= ~0x5842u;      /* Clear AVX512 */
-            regs[H7][EDX] &= ~0x10cu;       /* Clear AVX512 */
-            regs[H7_1H][EAX] &= ~0x20u;     /* Clear AVX512 */
         }
-
-        for (uint64_t i=1; i < MAG_AMD64_CAP__NUM; ++i) /* Create bitset of features */
-            if (regs[feature_leaves[i]][feature_regs[i]] & feature_masks[i])
-                *caps |= 1ull<<i;
-
-        /* Check if AMD CPU using brand string. */
-        char vendor[12+1];
-        mag_cpuid(0, -1, &eax, &ebx, &ecx, &edx);
-        memcpy(vendor + 4*0, &ebx, sizeof(ebx));
-        memcpy(vendor + 4*1, &edx, sizeof(ebx));
-        memcpy(vendor + 4*2, &ecx, sizeof(ebx));
-        vendor[sizeof(vendor)-1] = '\0';
-        *is_amd = !strncmp(vendor, "AuthenticAMD", sizeof(vendor));
-
-        #undef H0
-        #undef H1
-        #undef H2
-        #undef H7
-        #undef H80000001
-        #undef H80000007
-        #undef H16
-        #undef H7_1H
-        #undef EAX
-        #undef EBX
-        #undef ECX
-        #undef EDX
-        #undef mag_cpy_regs
+        if (max >= 7) {
+            mag_cpuid_ex(&id, 7, 0);
+            uint32_t max_sub = *eax;
+            if (*o & mag_amd64_cap(AVX) && (*ebx & 1u<<5))
+                *o |= mag_amd64_cap(AVX2);
+            mag_captest(ebx, 3, BMI1);
+            mag_captest(ebx, 8, BMI2);
+            mag_captest(ecx, 8, GFNI);
+            mag_captest(edx, 22, AMX_BF16);
+            mag_captest(edx, 24, AMX_TILE);
+            mag_captest(edx, 25, AMX_INT8);
+            if (max_sub >= 1) {
+                mag_cpuid_ex(&id, 7, 1);
+                mag_captest(eax, 4, AVX_VNNI);
+                if (*o & mag_amd64_cap(AVX512_F))
+                    mag_captest(eax, 5, AVX512_BF16);
+                mag_captest(edx, 22, AMX_FP16);
+                mag_captest(edx, 4, AVX_VNNI_INT8);
+                mag_captest(edx, 5, AVX_NE_CONVERT);
+                mag_captest(edx, 10, AVX_VNNI_INT16);
+                mag_captest(edx, 19, AVX10);
+                mag_captest(edx, 21, APX_F);
+                mag_cpuid_ex(&id, 0x1e, 1);
+                mag_captest(eax, 4, AMX_FP8);
+                mag_captest(eax, 5, AMX_TRANSPOSE);
+                mag_captest(eax, 6, AMX_TF32);
+                mag_captest(eax, 7, AMX_AVX512);
+                mag_captest(eax, 8, AMX_MOVRS);
+            }
+        }
+        #undef mag_captest
+        if (*o & mag_amd64_cap(AVX10)) {
+            mag_cpuid_ex(&id, 0x24, 0);
+            *avx10ver = *ebx & 127;
+        }
     }
 
+    #define mag_bextract(x, b, e) (((x)>>(b))&((1u<<((e)+1-(b)))-1))
+
+    typedef enum mag_cpu_topology_level {
+        MAG_CPU_TOPO_STMT = 1,
+        MAG_CPU_TOPO_CORE = 2
+    } mag_cpu_topology_level;
+
+    static void mag_probe_cpu_core_topology(mag_amd64_cap_bitset_t caps, uint32_t (*num_cores)[MAG_MAX_CPU_TOPO_DEPTH]) {
+		uint32_t id[4] = {0};
+		mag_cpuid(&id, 0x0);
+		if (*id >= 0xB) {
+			mag_cpuid_ex(&id, 0xb, 0);
+			if (*id || id[1]) {
+				for (uint32_t i=0; i < MAG_MAX_CPU_TOPO_DEPTH; ++i) {
+					mag_cpuid_ex(&id, 0xb, i);
+					mag_cpu_topology_level level = (mag_cpu_topology_level)mag_bextract(id[2], 8, 15);
+					if (level == MAG_CPU_TOPO_STMT || level == MAG_CPU_TOPO_CORE)
+						(*num_cores)[level-1] = mag_bextract(id[1], 0, 15);
+				}
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = mag_xmax(1u, (*num_cores)[MAG_CPU_TOPO_STMT-1]);
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = mag_xmax((*num_cores)[MAG_CPU_TOPO_STMT-1], (*num_cores)[MAG_CPU_TOPO_CORE-1]);
+				return;
+			}
+		}
+		if (caps & mag_amd64_cap(AMD)) {
+			int32_t ptc = 0;
+			mag_cpuid(&id, 0x1);
+			int32_t ltc = mag_bextract(id[1], 16, 23);
+			int32_t htn = mag_bextract(id[3], 28, 28);
+			mag_cpuid(&id, 0x80000000);
+			uint32_t max_leaf = *id;
+			if (max_leaf >= 0x80000008) {
+				mag_cpuid(&id, 0x80000008);
+				ptc = mag_bextract(id[2], 0, 7) + 1;
+			}
+			if (!htn) {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = 1;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = 1;
+			} else if (ptc > 1) {
+			    mag_cpuid(&id, 1);
+			    int32_t fam_ext = mag_bextract(*id, 20, 27);
+			    int32_t fam = mag_bextract(*id, 8, 11);
+			    int32_t dis_fam = fam;
+			    if (dis_fam == 0x0f) dis_fam += fam_ext;
+				if (dis_fam >= 0x17 && max_leaf >= 0x8000001e) {
+					mag_cpuid(&id, 0x8000001e);
+					ptc /= mag_bextract(id[1], 8, 15)+1;
+				}
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = ltc/ptc;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = ltc;
+			} else {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = 1;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = ltc > 1 ? ltc : 2;
+			}
+		} else if (caps & mag_amd64_cap(INTEL)) {
+			int32_t ptc = 0;
+			mag_cpuid(&id, 0x1);
+			int32_t lpc = mag_bextract(id[1], 16, 23);
+			int32_t htt = mag_bextract(id[3], 28, 28);
+			mag_cpuid(&id, 0);
+			if (*id >= 0x4) {
+				mag_cpuid(&id, 0x4);
+				ptc = mag_bextract(id[0], 26, 31)+1;
+			}
+			if (!htt) {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = 1;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = 1;
+			} else if (ptc > 1) {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = lpc/ptc;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = lpc;
+			} else {
+				(*num_cores)[MAG_CPU_TOPO_STMT-1] = 1;
+				(*num_cores)[MAG_CPU_TOPO_CORE-1] = lpc > 0 ? lpc : 1;
+			}
+		}
+    }
+
+    static void mag_probe_cpu_cache_topology(
+        mag_amd64_cap_bitset_t caps,
+        uint32_t* levels,
+        uint32_t (*data_cache)[MAG_MAX_CPU_CACHE_DEPTH],
+        uint32_t (*shared_cache)[MAG_MAX_CPU_CACHE_DEPTH]
+    ) {
+        uint32_t num_cores[MAG_MAX_CPU_TOPO_DEPTH] = {0};
+        mag_probe_cpu_core_topology(caps, &num_cores);
+        uint32_t id[4] = {0};
+        if (caps & mag_amd64_cap(AMD)) {
+            mag_cpuid(&id, 0x80000000);
+            if (*id >= 0x8000001d) {
+                *levels = 0;
+                for (uint32_t leaf=0; *levels < MAG_MAX_CPU_CACHE_DEPTH; ++leaf) {
+                    mag_cpuid_ex(&id, 0x8000001d, leaf);
+                    int32_t type = mag_bextract(*id, 0, 4);
+                    if (!type) break;
+                    if (type == 0x2) continue;
+                    int32_t assoc = mag_bextract(*id, 9, 9);
+                    int32_t sharing = mag_bextract(*id, 14, 25)+1;
+                    int32_t ways = mag_bextract(id[1], 22, 31)+1;
+                    int32_t partitions = mag_bextract(id[1], 12, 21)+1;
+                    int32_t line = mag_bextract(id[1], 0, 11)+1;
+                    int32_t sets = id[2]+1;
+                    (*data_cache)[*levels] = line*partitions*ways;
+                    if (!assoc) (*data_cache)[*levels] *= sets;
+                    if (leaf > 0) {
+                        sharing = mag_xmin(sharing, num_cores[1]);
+                        sharing /= mag_xmax(1u, **shared_cache);
+                    }
+                    (*shared_cache)[*levels] = sharing;
+                    ++*levels;
+                }
+                **shared_cache = mag_xmin(1u, **shared_cache);
+            } else if (*id >= 0x80000006) {
+                *levels = 1;
+                mag_cpuid(&id, 0x80000005);
+                int32_t l1dc = mag_bextract(id[2], 24, 31);
+                **data_cache = l1dc<<10;
+                **shared_cache = 1;
+                mag_cpuid(&id, 0x80000006);
+                int32_t l2 = mag_bextract(id[2], 12, 15);
+                if (l2 > 0) {
+                    *levels = 2;
+                    int32_t l2s = mag_bextract(id[2], 16, 31);
+                    (*data_cache)[1] = l2s<<10;
+                    (*shared_cache)[1] = 1;
+                }
+                int32_t l3 = mag_bextract(id[3], 12, 15);
+                if (l3 > 0) {
+                    *levels = 3;
+                    int32_t l3s = mag_bextract(id[3], 18, 31);
+                    (*data_cache)[2] = l3s<<19;
+                    (*shared_cache)[2] = num_cores[1];
+                }
+            }
+        } else if (caps & mag_amd64_cap(INTEL)) {
+            uint32_t smt_width = *num_cores;
+            uint32_t logical_cores = num_cores[1];
+            for (uint32_t i=0; *levels < MAG_MAX_CPU_CACHE_DEPTH; ++i) {
+                mag_cpuid_ex(&id, 0x4, i);
+                uint32_t type = mag_bextract(*id, 0, 4);
+                if (!type) break;
+                if (type == 1 || type == 3) {
+                    uint32_t actual_logical_cores = mag_bextract(*id, 14, 25)+1;
+                    if (logical_cores != 0) actual_logical_cores = mag_xmin(actual_logical_cores, logical_cores);
+                    mag_assert2(actual_logical_cores);
+                    (*data_cache)[*levels] =
+                        (mag_bextract(id[1], 22, 31)+1)
+                        * (mag_bextract(id[1], 12, 21)+1)
+                        * (mag_bextract(id[1], 0, 11)+1)
+                        * (id[2]+1);
+                    if (type == 1 && smt_width == 0) smt_width = actual_logical_cores;
+                    mag_assert2(smt_width != 0);
+                    (*shared_cache)[*levels] = mag_xmax(actual_logical_cores / smt_width, 1u);
+                    ++*levels;
+                }
+            }
+        }
+    }
+
+    #undef mag_bextract
+
 #elif defined(__aarch64__) || defined(_M_ARM64)
-static void MAG_COLDPROC mag_system_info_query_arm64_cpu_caps(uint64_t* caps, int64_t* sve_width) {
-    *caps = MAG_ARM64_CAP_NONE;
+static void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t* o, int64_t* sve_width) {
+    *o = MAG_ARM64_CAP_NONE;
     #ifdef __linux__
         unsigned long hwcap = getauxval(AT_HWCAP);
         unsigned long hwcap2 = getauxval(AT_HWCAP2);
         (void)hwcap2;
-        if (hwcap & HWCAP_ASIMD) *caps |= 1ull<<MAG_ARM64_CAP_NEON;
-        if (hwcap & HWCAP_ASIMDDP) *caps |= 1ull<<MAG_ARM64_CAP_DOTPROD;
+        *o|=mag_arm64_cap(NEON); /* NEON is always required by build */
+        #ifdef HWCAP_ASIMD
+            if (hwcap & HWCAP_ASIMD) *o|=mag_arm64_cap(NEON);
+        #endif
+        #ifdef HWCAP_ASIMDDP
+            if (hwcap & HWCAP_ASIMDDP) *o|=mag_arm64_cap(DOTPROD);
+        #endif
         #ifdef HWCAP2_I8MM
-            if (hwcap2 & HWCAP2_I8MM) *caps |= 1ull<<MAG_ARM64_CAP_I8MM;
+            if (hwcap2 & HWCAP2_I8MM) *o|=mag_arm64_cap(I8MM);
         #endif
-        if (hwcap & HWCAP_FPHP) *caps |= 1ull<<MAG_ARM64_CAP_F16SCA;
-        if (hwcap & HWCAP_ASIMDHP) *caps |= 1ull<<MAG_ARM64_CAP_F16VEC;
+        #ifdef HWCAP_FPHP
+            if (hwcap & HWCAP_FPHP) *o|=mag_arm64_cap(F16SCA);
+        #endif
+        #ifdef HWCAP_ASIMDHP
+            if (hwcap & HWCAP_ASIMDHP) *o|=mag_arm64_cap(F16VEC);
+        #endif
         #ifdef HWCAP2_BF16
-            if (hwcap2 & HWCAP2_BF16) *caps |= 1ull<<MAG_ARM64_CAP_BF16;
+            if (hwcap2 & HWCAP2_BF16) *o|=mag_arm64_cap(BF16);
         #endif
-        if (hwcap & HWCAP_SVE) *caps |= 1ull<<MAG_ARM64_CAP_SVE;
+        #ifdef HWCAP_SVE
+            if (hwcap & HWCAP_SVE) *o|=mag_arm64_cap(SVE);
+        #endif
         #ifdef HWCAP2_SVE2
-                if (hwcap2 & HWCAP2_SVE2) *caps |= 1ull<<MAG_ARM64_CAP_SVE2;
+            if (hwcap2 & HWCAP2_SVE2) *o|=mag_arm64_cap(SVE2);
         #endif
         *sve_width = 0; /* NYI */
     #elif defined(_WIN32)
-        if (IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE))
-            *caps |= 1ull << MAG_ARM64_CAP_NEON;
-        if (IsProcessorFeaturePresent(PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE))
-            *caps |= 1ull << MAG_ARM64_CAP_DOTPROD;
+        if (IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(NEON);
+        if (IsProcessorFeaturePresent(PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(DOTPROD);
         /* Other features not supported by IsProcessorFeaturePresent*/
         *sve_width = 0; /* NYI */
     #elif defined(__APPLE__)
+        *o|=mag_arm64_cap(NEON); /* NEON is always required by build */
         int sx = 0;
         size_t size = sizeof(sx);
         if (sysctlbyname("hw.optional.AdvSIMD", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *caps |= 1ull<<MAG_ARM64_CAP_NEON;
+        if (sx) *o|=mag_arm64_cap(NEON);
         if (sysctlbyname("hw.optional.arm.FEAT_DotProd", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *caps |= 1ull<<MAG_ARM64_CAP_DOTPROD;
+        if (sx) *o|=mag_arm64_cap(DOTPROD);
         if (sysctlbyname("hw.optional.arm.FEAT_I8MM", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *caps |= 1ull<<MAG_ARM64_CAP_I8MM;
+        if (sx) *o|=mag_arm64_cap(I8MM);
         if (sysctlbyname("hw.optional.arm.FEAT_FP16", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *caps |= 1ull<<MAG_ARM64_CAP_F16SCA;
+        if (sx) *o|=mag_arm64_cap(F16SCA);
         if (sysctlbyname("hw.optional.AdvSIMD_HPFPCvt", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *caps |= 1ull<<MAG_ARM64_CAP_F16VEC;
+        if (sx) *o|=mag_arm64_cap(F16VEC);
         if (sysctlbyname("hw.optional.arm.FEAT_BF16", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *caps |= 1ull<<MAG_ARM64_CAP_BF16;
+        if (sx) *o|=mag_arm64_cap(BF16);
         if (sysctlbyname("hw.optional.arm.FEAT_SVE", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *caps |= 1ull<<MAG_ARM64_CAP_SVE;
+        if (sx) *o|=mag_arm64_cap(SVE);
         *sve_width = 0; /* NYI */
     #endif
 }
 #endif
 
-static void MAG_COLDPROC mag_machine_probe(mag_context_t* ctx) {
+static void mag_machine_probe(mag_context_t* ctx) {
     mag_machine_probe_os_name(&ctx->machine.os_name);
     mag_machine_probe_cpu_name(&ctx->machine.cpu_name);
     mag_machine_probe_cpu_cores(&ctx->machine.cpu_virtual_cores, &ctx->machine.cpu_physical_cores, &ctx->machine.cpu_sockets);
     mag_machine_probe_memory(&ctx->machine.phys_mem_total, &ctx->machine.phys_mem_free);
+    mag_machine_probe_caches(&ctx->machine.cpu_l1_size, &ctx->machine.cpu_l2_size, &ctx->machine.cpu_l3_size);
     #if defined(__x86_64__) || defined(_M_X64)
-        mag_system_info_query_amd64_cpu_caps(&ctx->machine.amd64_cpu_caps, &ctx->machine.is_amd);
+        mag_probe_cpu_amd64(&ctx->machine.amd64_cpu_caps, &ctx->machine.amd64_avx10_ver);
     #elif defined(__aarch64__)
-        mag_system_info_query_arm64_cpu_caps(&ctx->machine.arm64_cpu_caps, &ctx->machine.arm64_cpu_sve_width);
+        mag_probe_cpu_arm64(&ctx->machine.arm64_cpu_caps, &ctx->machine.arm64_cpu_sve_width);
     #endif
+    uint32_t cache_levels = 0;
+    uint32_t data_cache_size[MAG_MAX_CPU_CACHE_DEPTH] = {0};
+    uint32_t shared_cache_size[MAG_MAX_CPU_CACHE_DEPTH] = {0};
+    mag_probe_cpu_cache_topology(ctx->machine.amd64_cpu_caps, &cache_levels, &data_cache_size, &shared_cache_size);
+    if (!cache_levels) {
+        ctx->machine.cpu_l1_size = 32ull<<10;
+        ctx->machine.cpu_l2_size = 512ull<<10;
+        ctx->machine.cpu_l3_size = 1024ull<<10;
+    } else {
+        ctx->machine.cpu_l1_size = data_cache_size[0]/shared_cache_size[0];
+        ctx->machine.cpu_l2_size = data_cache_size[1]/shared_cache_size[1];
+        ctx->machine.cpu_l3_size = data_cache_size[2]/shared_cache_size[2];
+    }
     if (mag_unlikely(!*ctx->machine.os_name)) snprintf(ctx->machine.os_name, sizeof(ctx->machine.os_name), "Unknown");
     if (mag_unlikely(!*ctx->machine.cpu_name)) snprintf(ctx->machine.cpu_name, sizeof(ctx->machine.cpu_name), "Unknown");
 }
@@ -2346,7 +2539,7 @@ MAG_COLDPROC void mag_tensor_export_backward_graph_graphviz(mag_tensor_t* t, con
     for (size_t i=0; i < post_order.size; ++i) {
         mag_tensor_t* node = post_order.data[i];
         const mag_opmeta_t* meta = mag_op_meta_of(node->op);
-        for (uint32_t j = 0; j < meta->input_count; ++j) {
+        for (uint32_t j = 0; j < meta->in; ++j) {
             mag_tensor_t* input = node->op_inputs[j];
             if (input) {
                 fprintf(fp, "    \"%p\" -> \"%p\" [label=\"input %u\"];\n", node, input, j);
@@ -2621,6 +2814,91 @@ bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, i
     }
     return true;
 }
+
+void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_matmul_block_params_t* params) {
+    if (!info->l1_size || !info->l2_size || !info->elsize) {
+        *params = (mag_matmul_block_params_t){
+            .MR = 8,
+            .NR = 16,
+            .MC = 256,
+            .KC = 256,
+            .NC = 128
+        };
+        return;
+    }
+    int64_t nt = info->nthreads;
+    int64_t M = info->M;
+    int64_t N = info->N;
+    int64_t K = info->K;
+    int64_t MR;
+    int64_t NR;
+    int64_t KC;
+    int64_t VW = info->vecreg_width;
+    int64_t W = VW >= 64 ? 64 : VW >= 32 ? 32 : 16;
+    MR = VW / info->elsize;
+    int64_t NR_cap = W == 64 ? 32 : W == 32 ? 32 : 16;
+    NR = mag_clamp((MR)<<1, MR, NR_cap);
+    if (W == 64) MR = 16, NR = 32;
+    mag_e11m52_t aL1 = info->l1_load_factor ? info->l1_load_factor : (W == 64 ? 0.55 : W == 32 ? 0.60 : 0.65);
+    mag_e11m52_t aL2 = info->l2_load_factor ? info->l2_load_factor : (W == 64 ? 0.40 : W == 32 ? 0.45 : 0.50);
+    mag_e11m52_t L1e = aL1 * (mag_e11m52_t)info->l1_size;
+    mag_e11m52_t L2e = aL2 * (mag_e11m52_t)info->l2_size;
+    if (nt >= 2) {
+        L1e *= 0.85;
+        L2e *= 0.85;
+    }
+    mag_e11m52_t nb = (mag_e11m52_t)info->elsize;
+    int64_t kc = (int64_t)(L1e / (nb*(mag_e11m52_t)(MR + NR)));
+    kc = mag_rd_down(kc, 8);
+    int64_t KC_lo = W == 64 ? 384 : W == 32 ? 256 : 192;
+    int64_t KC_hi = W == 64 ? 1024 : W == 32 ? 768 : 512;
+    kc = mag_clamp(kc, KC_lo, KC_hi);
+    if (K >= 2048) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
+    KC = kc;
+    int64_t MC = (int64_t)(info->split_a*L2e / (nb*(mag_e11m52_t)KC));
+    int64_t NC = (int64_t)((1.0-info->split_a)*L2e / (nb*(mag_e11m52_t)KC));
+    MC = mag_rd_down(MC, MR);
+    NC = mag_rd_down(NC, NR);
+    if (MC < MR) MC = MR;
+    if (NC < NR) NC = NR;
+    int64_t NC_cap = W == 64 ? 256 : 128;
+    if (N < 8192) NC_cap = 128;
+    if (NC > NC_cap) NC = mag_rd_down(NC_cap, NR);
+    int64_t tic = (M + MC - 1)/MC;
+    int64_t tjc = (N + NC - 1)/NC;
+    int64_t tiles = tic * tjc;
+    int64_t flops_call = (M*N*K)<<1;
+    int64_t min_tiles_core = flops_call >= 0x10000000ll ? 1 : flops_call >= 0x2000000ll ? 2 : 4;
+    int64_t tiles_needed = min_tiles_core * nt;
+    if (tiles_needed < (nt<<1)+nt) tiles_needed = (nt<<1)+nt;
+    while (tiles < tiles_needed && (MC > MR<<4 || NC > NR<<4)) {
+        bool changed = false;
+        int64_t nMC = MC>>1;
+        if (!changed && nMC >= MR && (nMC*NC*KC)<<1 >= info->min_tile_flops) {
+            MC = mag_rd_down(nMC, MR);
+            changed = true;
+        }
+        int64_t nNC = NC>>1;
+        if (!changed && nNC >= NR && (MC*nNC*KC)<<1 >= info->min_tile_flops) {
+            NC = mag_rd_down(nNC, NR);
+            changed = true;
+        }
+        if (!changed) break;
+        tic = (M + MC - 1)/MC;
+        tjc = (N + NC - 1)/NC;
+        tiles = tic * tjc;
+    }
+    if (N >= 512 && NC < NR<<1) NC = NR<<1;
+    *params = (mag_matmul_block_params_t){
+        .MR = MR,
+        .NR = NR,
+        .MC = MC,
+        .KC = KC,
+        .NC = NC
+    };
+}
+
+#undef mag_cdiv
 
 /* The file format is implemented after the spec in ../docs/mag-file-format.md */
 
