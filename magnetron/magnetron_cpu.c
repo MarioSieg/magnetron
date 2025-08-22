@@ -371,7 +371,7 @@ static void mag_threadpool_kickoff(mag_thread_pool_t* pool, const mag_command_t*
         mag_kernel_payload_t* payload = &pool->workers[i].payload;
         payload->cmd = cmd;
         payload->thread_num = num_active_workers;
-        payload->next_mm_tile = next_tile;
+        payload->mm_next_tile = next_tile;
     }
     mag_phase_fence_kick(&pool->fence, pool->num_allocated_workers);
 }
@@ -411,29 +411,34 @@ static uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t* cmd
         int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
         int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
         int64_t K = x->shape[x->rank-1];
-        int64_t MC = 0;
-        int64_t NC = 0;
-        int64_t KC = 0;
-        int64_t MR = 0;
-        int64_t NR = 0;
         int64_t L1 = 64*1024;
         int64_t L2 = 512*1024;
-        mag_tune_mm_block_sizes(
-            cpu_dvc->num_allocated_workers, (int64_t)x->storage->granularity, (int64_t)(*cpu_dvc->kernels.vreg_width)(),
-            M, N, K, L1, L2, &MR, &NR, &MC, &KC, &NC, 0.0, 0.0
-        );
+        const mag_matmul_block_tune_info_t tune_info = {
+            .nthreads = cpu_dvc->num_allocated_workers,
+            .elsize = (int64_t)x->storage->granularity,
+            .vecreg_width = (int64_t)(*cpu_dvc->kernels.vreg_width)(),
+            .M = M,
+            .N = N,
+            .K = K,
+            .l1_size = L1,
+            .l2_size = L2,
+            .l1_load_factor = 0.8,
+            .l2_load_factor = 0.8,
+            .min_tile_flops = (16*1024*1024),
+            .split_a = 0.8,
+            .min_n_factor = 16,
+            .min_m_factor = 16,
+        };
+        mag_matmul_block_params_t tuned;
+        mag_matmul_tune_block_params(&tune_info, &tuned); /* Tune block params */
         for (uint32_t i=0; i < cpu_dvc->pool->num_allocated_workers; ++i) { /* Set up payload */
             mag_kernel_payload_t* payload = &cpu_dvc->pool->workers[i].payload;
-            payload->MC = MC;
-            payload->NC = NC;
-            payload->KC = KC;
-            payload->MR = MR;
-            payload->NR = NR;
+            payload->mm_params = tuned;
         }
         if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) /* Special case for GEMV */
             return 8;
         int64_t flops = M*N*K;
-        uint32_t tiles_total = (uint32_t)(((M + MC - 1)/MC)*((N + NC - 1)/NC));
+        uint32_t tiles_total = (uint32_t)(((M + tuned.MC - 1)/tuned.MC)*((N + tuned.NC - 1)/tuned.NC));
         uint32_t nt = mag_mm_choose_workers(flops, tiles_total, cpu_dvc->num_allocated_workers);
         /*printf("MM nt: %u, M=%" PRId64 ", N=%" PRId64 ", K=%" PRId64 ", MC=%" PRId64 ", NC=%" PRId64 ", KC=%" PRId64 ", MR=%" PRId64 ", NR=%" PRId64 "\n", nt, M, N, K, MC, NC, KC, MR, NR);*/
         return nt;
@@ -455,12 +460,8 @@ static MAG_HOTPROC void mag_cpu_submit(mag_idevice_t* dvc, const mag_command_t* 
             .thread_idx = 0,
             .thread_num = 1,
             .local_prng = &cpu_dvc->primary_prng,
-            .next_mm_tile = &next_tile,
-            .MC=yy->MC,
-            .NC=yy->NC,
-            .KC=yy->KC,
-            .MR=yy->MR,
-            .NR=yy->NR,
+            .mm_next_tile = &next_tile,
+            .mm_params = yy->mm_params
         };
         mag_worker_exec_thread_local(&cpu_dvc->kernels, &payload);
         return; /* We're done */

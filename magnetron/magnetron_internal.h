@@ -1211,18 +1211,41 @@ typedef struct mag_prng_state_t {
 /* Initialize and seed PRNG with specific algorithm. */
 void mag_prng_seed(mag_prng_state_t* prng, mag_prng_algo_t algo, uint64_t seed);
 
-/* CPU Compute kernel payload passed to each CPU thread. */
-typedef struct mag_kernel_payload_t {
-    const mag_command_t* cmd;
-    int64_t thread_num;
-    int64_t thread_idx;
-    volatile mag_atomic64_t* next_mm_tile;
-    mag_prng_state_t* local_prng;
+typedef struct mag_matmul_block_tune_info_t {
+    int64_t nthreads;
+    int64_t elsize;
+    int64_t vecreg_width;
+    int64_t M;
+    int64_t N;
+    int64_t K;
+    int64_t l1_size;
+    int64_t l2_size;
+    mag_e11m52_t l1_load_factor;
+    mag_e11m52_t l2_load_factor;
+    int64_t min_tile_flops;
+    mag_e11m52_t split_a;
+    int64_t min_n_factor;
+    int64_t min_m_factor;
+} mag_matmul_block_tune_info_t;
+
+typedef struct mag_matmul_block_params_t {
     int64_t MR;
     int64_t NR;
     int64_t MC;
     int64_t KC;
     int64_t NC;
+} mag_matmul_block_params_t;
+
+extern void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_matmul_block_params_t* params);
+
+/* CPU Compute kernel payload passed to each CPU thread. */
+typedef struct mag_kernel_payload_t {
+    const mag_command_t* cmd;
+    int64_t thread_num;
+    int64_t thread_idx;
+    mag_prng_state_t* local_prng;
+    volatile mag_atomic64_t* mm_next_tile;
+    mag_matmul_block_params_t mm_params;
 } mag_kernel_payload_t;
 
 /*
@@ -1248,23 +1271,6 @@ extern uint32_t mag_crc32c(const void* buffer, size_t size); /* Compute CRC32 ch
 extern bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t* osz, const int64_t* ost, int64_t ork, const int64_t* nsz, int64_t nrk);
 extern void mag_infer_missing_dim(int64_t (*out)[MAG_MAX_DIMS], const int64_t* dims, int64_t rank, int64_t numel);
 extern bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, int64_t* dims, int64_t* rank);
-extern void mag_tune_mm_block_sizes(
-    int64_t nthreads,
-    int64_t sz,
-    int64_t vrw,
-    int64_t M,
-    int64_t N,
-    int64_t K,
-    int64_t L1,
-    int64_t L2,
-    int64_t* MR,
-    int64_t* NR,
-    int64_t* MC,
-    int64_t* KC,
-    int64_t* NC,
-    mag_e11m52_t aL1,
-    mag_e11m52_t aL2
-);
 
 #ifdef __cplusplus
 }

@@ -3313,17 +3313,17 @@ static MAG_AINLINE void mag_mm_tile_16x32_e8m23(int64_t kc, const mag_e8m23_t* r
     mag_mm_tile_16x16_e8m23(kc, a, lda, b+16, ldb, c+16, ldc, acc);
 }
 
-MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
+MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
     mag_tensor_t* r = mag_cmd_out(0);
     const mag_tensor_t* x = mag_cmd_in(0);
     const mag_tensor_t* y = mag_cmd_in(1);
     const mag_e8m23_t* bx = mag_e8m23p(x);
     const mag_e8m23_t* by = mag_e8m23p(y);
     mag_e8m23_t* br = mag_e8m23p_mut(r);
-    int64_t MR = payload->MR;
-    int64_t MC = payload->MC;
-    int64_t KC = payload->KC;
-    int64_t NC = payload->NC;
+    int64_t MR = payload->mm_params.MR;
+    int64_t MC = payload->mm_params.MC;
+    int64_t KC = payload->mm_params.KC;
+    int64_t NC = payload->mm_params.NC;
     int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
     int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
     int64_t K = x->shape[x->rank-1];
@@ -3357,7 +3357,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
     mag_e8m23_t* Ap = Bp + KC*NC;
     bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
     for (;;) {
-        int64_t tile = mag_atomic64_fetch_add(payload->next_mm_tile, 1, MAG_MO_RELAXED);
+        int64_t tile = mag_atomic64_fetch_add(payload->mm_next_tile, 1, MAG_MO_RELAXED);
         if (tile >= tt) break;
         int64_t batch_idx = tile / tpb;
         int64_t rem = tile % tpb;

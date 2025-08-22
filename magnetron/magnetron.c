@@ -2817,70 +2817,71 @@ bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, i
 
 #define mag_cdiv(x,y) (((x) + (y) - 1)/(y))
 
-void mag_tune_mm_block_sizes(
-    int64_t nthreads,
-    int64_t sz,
-    int64_t vrw,
-    int64_t M,
-    int64_t N,
-    int64_t K,
-    int64_t L1,
-    int64_t L2,
-    int64_t* MR,
-    int64_t* NR,
-    int64_t* MC,
-    int64_t* KC,
-    int64_t* NC,
-    mag_e11m52_t aL1,
-    mag_e11m52_t aL2
-) {
-    static const int64_t MIN_TILE_FLOPS = 16*1024*1024;
-    static const mag_e11m52_t splitA = 0.80;
-    static const int64_t MIN_N_FACTOR = 16;
-    static const int64_t MIN_M_FACTOR = 16;
-    if (!L1 || !L2 || !sz) { *MR=8; *NR=16; *MC=256; *KC=256; *NC=128; return; }
-    aL1 = aL1 ? aL1 : 0.80;
-    aL2 = aL2 ? aL2 : 0.80;
-    *MR = vrw / sz;
-    *NR = *MR<<1;
-    mag_e11m52_t bytes = (mag_e11m52_t)sz;
-    mag_e11m52_t L1e = aL1 * (mag_e11m52_t)L1;
-    mag_e11m52_t L2e = aL2 * (mag_e11m52_t)L2;
-    *KC = (int64_t)(L1e / (bytes*(mag_e11m52_t)(*MR+*NR)));
-    *KC &= ~7;
-    if (*KC < 64) *KC = 64;
-    *MC = (int64_t)(splitA*L2e / (bytes*(mag_e11m52_t)*KC));
-    *MC = (*MC / *MR)**MR;
-    if (*MC < *MR) *MC = *MR;
-    *NC = (int64_t)((1.0 - splitA)*L2e / (bytes*(mag_e11m52_t)*KC));
-    *NC = (*NC / *NR)**NR;
-    if (*NC < *NR) *NC = *NR;
-    int64_t tic = mag_cdiv(M, *MC);
-    int64_t tjc = mag_cdiv(N, *NC);
+void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_matmul_block_params_t* params) {
+    if (!info->l1_size || !info->l2_size || !info->elsize) {
+        *params = (mag_matmul_block_params_t){
+            .MR = 8,
+            .NR = 16,
+            .MC = 256,
+            .KC = 256,
+            .NC = 128
+        };
+        return;
+    }
+    mag_e11m52_t aL1 = info->l1_load_factor ? info->l1_load_factor : 0.8;
+    mag_e11m52_t aL2 = info->l2_load_factor ? info->l2_load_factor : 0.8;
+    int64_t MR;
+    int64_t NR;
+    int64_t MC;
+    int64_t KC;
+    int64_t NC;
+    MR = info->vecreg_width/info->elsize;
+    NR = MR<<1;
+    mag_e11m52_t bytes = (mag_e11m52_t)info->elsize;
+    mag_e11m52_t L1e = aL1 * (mag_e11m52_t)info->l1_size;
+    mag_e11m52_t L2e = aL2 * (mag_e11m52_t)info->l2_size;
+    KC = (int64_t)(L1e / (bytes*(mag_e11m52_t)(MR+NR)));
+    KC &= ~7;
+    if (KC < 64) KC = 64;
+    MC = (int64_t)(info->split_a*L2e / (bytes*(mag_e11m52_t)KC));
+    MC = (MC / MR)*MR;
+    if (MC < MR) MC = MR;
+    NC = (int64_t)((1.0 - info->split_a)*L2e / (bytes*(mag_e11m52_t)KC));
+    NC = (NC / NR)*NR;
+    if (NC < NR) NC = NR;
+    int64_t tic = mag_cdiv(info->M, MC);
+    int64_t tjc = mag_cdiv(info->N, NC);
     int64_t tiles = tic*tjc;
-    int64_t flops_call = (M*N*K)<<1;
+    int64_t flops_call = (info->M*info->N*info->K)<<1;
     int64_t min_tiles_core = flops_call >= 0x10000000LL ? 1 : flops_call >= 0x2000000LL ? 2 : 4;
-    int64_t tiles_needed = min_tiles_core*nthreads;
-    for (bool changed = false; tiles < tiles_needed && (*MC > *MR*MIN_M_FACTOR || *NC > *NR*MIN_N_FACTOR); ) {
-        if (*MC > *MR*MIN_M_FACTOR) {
-            int64_t newMC = *MC>>1;
-            if ((newMC**NC**KC)<<1 >= MIN_TILE_FLOPS) {
-                *MC = newMC;
-                tic = mag_cdiv(M,*MC);
+    int64_t tiles_needed = min_tiles_core*info->nthreads;
+    for (bool changed = false; tiles < tiles_needed && (MC > MR*info->min_m_factor || NC > NR*info->min_n_factor); ) {
+        if (MC > MR*info->min_m_factor) {
+            int64_t newMC = MC>>1;
+            if ((newMC*NC*KC)<<1 >= info->min_tile_flops) {
+                MC = newMC;
+                tic = mag_cdiv(info->M, MC);
                 changed=true;
             }
         }
-        if (!changed && *NC > *NR*MIN_N_FACTOR) {
-            int64_t newNC = *NC>>1;
-            if ((*MC*newNC**KC)<<1 >= MIN_TILE_FLOPS) {
-                *NC = newNC;
-                tjc = mag_cdiv(N,*NC);
+        if (!changed && NC > NR*info->min_n_factor) {
+            int64_t newNC = NC>>1;
+            if ((MC*newNC*KC)<<1 >= info->min_tile_flops) {
+                NC = newNC;
+                tjc = mag_cdiv(info->N, NC);
                 changed=true;
             }
         }
         if (!changed) break;
         tiles = tic*tjc;
     }
+    *params = (mag_matmul_block_params_t){
+        .MR = MR,
+        .NR = NR,
+        .MC = MC,
+        .KC = KC,
+        .NC = NC
+    };
 }
 
 #undef mag_cdiv
