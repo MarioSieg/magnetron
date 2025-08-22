@@ -1,2 +1,6 @@
-python3 -m venv .venv && source .venv/bin/activate
-pip install .[dev]
+#!/usr/bin/env bash
+set -euo pipefail
+
+uv venv
+source .venv/bin/activate.fish
+uv sync --extra dev

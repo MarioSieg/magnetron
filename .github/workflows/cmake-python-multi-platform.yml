@@ -49,6 +49,9 @@ jobs:
             python3-setuptools \
             python3-wheel
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Configure CMake
         shell: bash
         run: |
@@ -73,9 +76,6 @@ jobs:
       - name: Build C++ Runtime
         run: cmake --build "${{ steps.strings.outputs.build-output-dir }}" --config ${{ matrix.build_type }} -j4
 
-      - name: Prepare C++ Test Data
-        run: cp -r "${{ github.workspace }}/test/test_data" "${{ steps.strings.outputs.build-output-dir }}/test/unittests/test_data"
-
       - name: Run C++ Runtime Tests
         working-directory: "${{ steps.strings.outputs.build-output-dir }}"
         run: ctest --build-config ${{ matrix.build_type }} --verbose
@@ -84,20 +84,18 @@ jobs:
         if: runner.os != 'windows'
         shell: bash
         run: |
-          python3 -m venv .venv
-          . .venv/bin/activate
-          pip install --upgrade pip
+          uv venv
+          source .venv/bin/activate
 
       - name: Build Python wheel
         if: runner.os != 'windows'
         shell: bash
         run: |
-          . .venv/bin/activate
-          pip install .[dev]
+          uv sync --extra dev
 
       - name: Run Python Tests
         if: runner.os != 'windows'
         shell: bash
         run: |
-          . .venv/bin/activate
-          python -m pytest "${{ github.workspace }}/test/python/"
+          source .venv/bin/activate
+          pytest -n 4 -s "${{ github.workspace }}/test/python/"

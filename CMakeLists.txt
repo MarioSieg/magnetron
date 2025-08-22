@@ -54,10 +54,17 @@ if (${MAGNETRON_BUILD_BENCHMARKS})
     add_subdirectory(benchmark)
 endif()
 
+set_target_properties(magnetron PROPERTIES OUTPUT_NAME "magnetron")
+
+set_target_properties(magnetron PROPERTIES
+    BUILD_RPATH "\$ORIGIN"
+    INSTALL_RPATH "\$ORIGIN"
+)
+
 install(TARGETS magnetron
-    LIBRARY DESTINATION magnetron
-    RUNTIME DESTINATION magnetron
-    ARCHIVE DESTINATION magnetron
+    LIBRARY DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron
+    RUNTIME DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron
+    ARCHIVE DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron
 )
 
 message(STATUS "magnetron configuration complete!")

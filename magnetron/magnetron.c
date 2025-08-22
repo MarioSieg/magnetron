@@ -434,6 +434,9 @@ uint64_t mag_cycles(void) {
                 return (uint64_t)(cntrl)<<6;
             }
         }
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        return (uint64_t)(tv.tv_sec)*1000000 + tv.tv_usec;
     #else
         struct timeval tv;
         gettimeofday(&tv, NULL);
@@ -2374,64 +2377,78 @@ static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
     #undef mag_bextract
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
-static void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t* o, int64_t* sve_width) {
-    *o = MAG_ARM64_CAP_NONE;
-    #ifdef __linux__
-        unsigned long hwcap = getauxval(AT_HWCAP);
-        unsigned long hwcap2 = getauxval(AT_HWCAP2);
-        (void)hwcap2;
-        *o|=mag_arm64_cap(NEON); /* NEON is always required by build */
-        #ifdef HWCAP_ASIMD
-            if (hwcap & HWCAP_ASIMD) *o|=mag_arm64_cap(NEON);
+
+    static void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t* o, int64_t* sve_width) {
+        *o = MAG_ARM64_CAP_NONE;
+        #ifdef __linux__
+            unsigned long hwcap = getauxval(AT_HWCAP);
+            unsigned long hwcap2 = getauxval(AT_HWCAP2);
+            (void)hwcap2;
+            *o|=mag_arm64_cap(NEON); /* NEON is always required by build */
+            #ifdef HWCAP_ASIMD
+                if (hwcap & HWCAP_ASIMD) *o|=mag_arm64_cap(NEON);
+            #endif
+            #ifdef HWCAP_ASIMDDP
+                if (hwcap & HWCAP_ASIMDDP) *o|=mag_arm64_cap(DOTPROD);
+            #endif
+            #ifdef HWCAP2_I8MM
+                if (hwcap2 & HWCAP2_I8MM) *o|=mag_arm64_cap(I8MM);
+            #endif
+            #ifdef HWCAP_FPHP
+                if (hwcap & HWCAP_FPHP) *o|=mag_arm64_cap(F16SCA);
+            #endif
+            #ifdef HWCAP_ASIMDHP
+                if (hwcap & HWCAP_ASIMDHP) *o|=mag_arm64_cap(F16VEC);
+            #endif
+            #ifdef HWCAP2_BF16
+                if (hwcap2 & HWCAP2_BF16) *o|=mag_arm64_cap(BF16);
+            #endif
+            #ifdef HWCAP_SVE
+                if (hwcap & HWCAP_SVE) *o|=mag_arm64_cap(SVE);
+            #endif
+            #ifdef HWCAP2_SVE2
+                if (hwcap2 & HWCAP2_SVE2) *o|=mag_arm64_cap(SVE2);
+            #endif
+            *sve_width = 0; /* NYI */
+        #elif defined(_WIN32)
+            if (IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(NEON);
+            if (IsProcessorFeaturePresent(PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(DOTPROD);
+            /* Other features not supported by IsProcessorFeaturePresent*/
+            *sve_width = 0; /* NYI */
+        #elif defined(__APPLE__)
+            *o|=mag_arm64_cap(NEON); /* NEON is always required by build */
+            int sx = 0;
+            size_t size = sizeof(sx);
+            if (sysctlbyname("hw.optional.AdvSIMD", &sx, &size, NULL, 0) != 0) sx = 0;
+            if (sx) *o|=mag_arm64_cap(NEON);
+            if (sysctlbyname("hw.optional.arm.FEAT_DotProd", &sx, &size, NULL, 0) != 0) sx = 0;
+            if (sx) *o|=mag_arm64_cap(DOTPROD);
+            if (sysctlbyname("hw.optional.arm.FEAT_I8MM", &sx, &size, NULL, 0) != 0) sx = 0;
+            if (sx) *o|=mag_arm64_cap(I8MM);
+            if (sysctlbyname("hw.optional.arm.FEAT_FP16", &sx, &size, NULL, 0) != 0) sx = 0;
+            if (sx) *o|=mag_arm64_cap(F16SCA);
+            if (sysctlbyname("hw.optional.AdvSIMD_HPFPCvt", &sx, &size, NULL, 0) != 0) sx = 0;
+            if (sx) *o|=mag_arm64_cap(F16VEC);
+            if (sysctlbyname("hw.optional.arm.FEAT_BF16", &sx, &size, NULL, 0) != 0) sx = 0;
+            if (sx) *o|=mag_arm64_cap(BF16);
+            if (sysctlbyname("hw.optional.arm.FEAT_SVE", &sx, &size, NULL, 0) != 0) sx = 0;
+            if (sx) *o|=mag_arm64_cap(SVE);
+            *sve_width = 0; /* NYI */
         #endif
-        #ifdef HWCAP_ASIMDDP
-            if (hwcap & HWCAP_ASIMDDP) *o|=mag_arm64_cap(DOTPROD);
-        #endif
-        #ifdef HWCAP2_I8MM
-            if (hwcap2 & HWCAP2_I8MM) *o|=mag_arm64_cap(I8MM);
-        #endif
-        #ifdef HWCAP_FPHP
-            if (hwcap & HWCAP_FPHP) *o|=mag_arm64_cap(F16SCA);
-        #endif
-        #ifdef HWCAP_ASIMDHP
-            if (hwcap & HWCAP_ASIMDHP) *o|=mag_arm64_cap(F16VEC);
-        #endif
-        #ifdef HWCAP2_BF16
-            if (hwcap2 & HWCAP2_BF16) *o|=mag_arm64_cap(BF16);
-        #endif
-        #ifdef HWCAP_SVE
-            if (hwcap & HWCAP_SVE) *o|=mag_arm64_cap(SVE);
-        #endif
-        #ifdef HWCAP2_SVE2
-            if (hwcap2 & HWCAP2_SVE2) *o|=mag_arm64_cap(SVE2);
-        #endif
-        *sve_width = 0; /* NYI */
-    #elif defined(_WIN32)
-        if (IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(NEON);
-        if (IsProcessorFeaturePresent(PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(DOTPROD);
-        /* Other features not supported by IsProcessorFeaturePresent*/
-        *sve_width = 0; /* NYI */
-    #elif defined(__APPLE__)
-        *o|=mag_arm64_cap(NEON); /* NEON is always required by build */
-        int sx = 0;
-        size_t size = sizeof(sx);
-        if (sysctlbyname("hw.optional.AdvSIMD", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *o|=mag_arm64_cap(NEON);
-        if (sysctlbyname("hw.optional.arm.FEAT_DotProd", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *o|=mag_arm64_cap(DOTPROD);
-        if (sysctlbyname("hw.optional.arm.FEAT_I8MM", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *o|=mag_arm64_cap(I8MM);
-        if (sysctlbyname("hw.optional.arm.FEAT_FP16", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *o|=mag_arm64_cap(F16SCA);
-        if (sysctlbyname("hw.optional.AdvSIMD_HPFPCvt", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *o|=mag_arm64_cap(F16VEC);
-        if (sysctlbyname("hw.optional.arm.FEAT_BF16", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *o|=mag_arm64_cap(BF16);
-        if (sysctlbyname("hw.optional.arm.FEAT_SVE", &sx, &size, NULL, 0) != 0) sx = 0;
-        if (sx) *o|=mag_arm64_cap(SVE);
-        *sve_width = 0; /* NYI */
-    #endif
-}
+    }
+
+    static void mag_probe_cpu_cache_topology(
+          mag_arm64_cap_bitset_t caps,
+          uint32_t* levels,
+          uint32_t (*data_cache)[MAG_MAX_CPU_CACHE_DEPTH],
+          uint32_t (*shared_cache)[MAG_MAX_CPU_CACHE_DEPTH]
+    ) {
+        /* NYI */
+        *levels = 0;
+        (void)data_cache, (void)shared_cache;
+        (void)caps;
+    }
+
 #endif
 
 static void mag_machine_probe(mag_context_t* ctx) {
@@ -2440,15 +2457,18 @@ static void mag_machine_probe(mag_context_t* ctx) {
     mag_machine_probe_cpu_cores(&ctx->machine.cpu_virtual_cores, &ctx->machine.cpu_physical_cores, &ctx->machine.cpu_sockets);
     mag_machine_probe_memory(&ctx->machine.phys_mem_total, &ctx->machine.phys_mem_free);
     mag_machine_probe_caches(&ctx->machine.cpu_l1_size, &ctx->machine.cpu_l2_size, &ctx->machine.cpu_l3_size);
+    uint64_t caps = 0;
     #if defined(__x86_64__) || defined(_M_X64)
         mag_probe_cpu_amd64(&ctx->machine.amd64_cpu_caps, &ctx->machine.amd64_avx10_ver);
+        caps = ctx->machine.amd64_cpu_caps;
     #elif defined(__aarch64__)
         mag_probe_cpu_arm64(&ctx->machine.arm64_cpu_caps, &ctx->machine.arm64_cpu_sve_width);
+        caps = ctx->machine.arm64_cpu_caps;
     #endif
     uint32_t cache_levels = 0;
     uint32_t data_cache_size[MAG_MAX_CPU_CACHE_DEPTH] = {0};
     uint32_t shared_cache_size[MAG_MAX_CPU_CACHE_DEPTH] = {0};
-    mag_probe_cpu_cache_topology(ctx->machine.amd64_cpu_caps, &cache_levels, &data_cache_size, &shared_cache_size);
+    mag_probe_cpu_cache_topology(caps, &cache_levels, &data_cache_size, &shared_cache_size);
     if (!cache_levels) {
         ctx->machine.cpu_l1_size = 32ull<<10;
         ctx->machine.cpu_l2_size = 512ull<<10;
