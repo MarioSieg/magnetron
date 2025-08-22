@@ -1,2 +1,3 @@
-python3 -m venv .venv && source .venv/bin/activate
-pip install .[dev]
+uv venv
+source .venv/bin/activate.fish
+uv sync --extra dev
