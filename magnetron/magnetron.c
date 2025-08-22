@@ -434,6 +434,9 @@ uint64_t mag_cycles(void) {
                 return (uint64_t)(cntrl)<<6;
             }
         }
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        return (uint64_t)(tv.tv_sec)*1000000 + tv.tv_usec;
     #else
         struct timeval tv;
         gettimeofday(&tv, NULL);
