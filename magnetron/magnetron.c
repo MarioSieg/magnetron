@@ -637,7 +637,7 @@ static void mag_system_host_info_dump(mag_context_t* ctx) {
     #elif defined(__aarch64__) || defined(_M_ARM64)
         cpu_arch = "aarch64";
     #else
-    #error "Unknwon CPU arch"
+    #error "Unknown CPU arch"
     #endif
     mag_log_info(
         "CPU: %s, Virtual Cores: %u, Physical Cores: %u, Sockets: %u, L1D: %.01f KiB, L2: %.01f KiB, L3: %.01f MiB",
@@ -1704,7 +1704,7 @@ char* mag_tensor_to_string(mag_tensor_t* t, bool with_header, size_t from_start_
     void* buf = NULL;
     if (mag_tensor_is_floating_point_typed(t)) /* For all float types we want a (maybe converted) fp32 buffer for easy formatting. */
         buf = mag_tensor_get_data_as_floats(t);
-    else /* Integral types can be formated easily */
+    else /* Integral types can be formatted easily */
         buf = mag_tensor_get_raw_data_as_bytes(t);
     mag_sstream_t ss;
     mag_sstream_init(&ss);

@@ -155,7 +155,7 @@ static MAG_AINLINE uint32_t mag_fls(uint32_t x) { unsigned long r; _BitScanRever
 static MAG_AINLINE uint32_t mag_ffs64(uint64_t x) { unsigned long r; _BitScanForward64(&r, x); return (uint32_t)r; }
 static MAG_AINLINE uint32_t mag_fls64(uint64_t x) { unsigned long r; _BitScanReverse64(&r, x); return (uint32_t)r; }
 
-typedef enum mag_memory_order_t { /* Atomic memory order. Has no effect with MSVC for now, all operations are sequencial consistent. */
+typedef enum mag_memory_order_t { /* Atomic memory order. Has no effect with MSVC for now, all operations are sequential consistent. */
     MAG_MO_RELAXED,
     MAG_MO_CONSUME,
     MAG_MO_ACQUIRE,
@@ -427,7 +427,7 @@ extern void mag_fmt_shape(char (*buf)[MAG_FMT_DIM_BUF_SIZE], const int64_t (*dim
 ** Allocator function. Can be set to custom allocator.
 **   ! Never returns NULL, if re/allocation fails, it will abort the program by calling mag_panic().
 **   ! Never zero initializes, use manual memset if zeroing is required.
-**   ! Set alignment value to 0 for system default alignment, else aligned adress is returned.
+**   ! Set alignment value to 0 for system default alignment, else aligned address is returned.
 **     If alignment value > 0, it must be the same when using the realloc and dealloc mode.
 **
 ** This single function is essentially a realloc and is used for allocating, reallocating and deallocating the following way:
@@ -897,7 +897,7 @@ typedef struct mag_rccontrol_t {
     void (*dtor)(void*);  /* Destructor function (required). */
 } mag_rccontrol_t;
 
-/* Initialize reference count header for a new object. Self-reference and destructor functon must be provided. */
+/* Initialize reference count header for a new object. Self-reference and destructor function must be provided. */
 static MAG_AINLINE mag_rccontrol_t mag_rc_control_init(void* self, void (*dtor)(void*)) {
     mag_assert2(self && dtor); /* Self and destructor must be set. */
     mag_rccontrol_t control;

@@ -263,11 +263,11 @@ namespace magnetron::test {
         for (auto s : base.shape())
             if (s > 1) { all_one = false; break; }
         if (all_one) return base.view();
-        std::vector<std::int64_t> slicable;
+        std::vector<std::int64_t> sliceable;
         for (std::int64_t d {}; d < base.rank(); ++d)
-            if (base.shape()[d] > 1) slicable.push_back(d);
-        std::uniform_int_distribution<size_t> dim_dis(0, slicable.size() - 1);
-        std::int64_t dim {slicable[dim_dis(rng)]};
+            if (base.shape()[d] > 1) sliceable.push_back(d);
+        std::uniform_int_distribution<size_t> dim_dis(0, sliceable.size() - 1);
+        std::int64_t dim {sliceable[dim_dis(rng)]};
         std::int64_t size {base.shape()[dim]};
         std::uniform_int_distribution<std::int64_t> step_dis {2, std::min<std::int64_t>(4, size)};
         std::int64_t step {step_dis(rng)};

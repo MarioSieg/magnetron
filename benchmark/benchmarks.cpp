@@ -1,7 +1,7 @@
 // (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
 
 // ON LINUX: Before running the benchmark, execute: prepare_system.sh to setup the system for performance measurements.
-// To supress sample stability warnings, add to environ: NANOBENCH_SUPPRESS_WARNINGS=1
+// To suppress sample stability warnings, add to environ: NANOBENCH_SUPPRESS_WARNINGS=1
 
 #include <magnetron/magnetron.hpp>
 

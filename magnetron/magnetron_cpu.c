@@ -19,7 +19,7 @@
 
 typedef struct mag_op_cpu_info_t {
     mag_e11m52_t growth;        /* Logarithmic growth factor for the number of threads */
-    int64_t thread_treshold;    /* Number of elements after which multithreading kicks in */
+    int64_t thread_threshold;    /* Number of elements after which multithreading kicks in */
 } mag_op_cpu_info_t;
 
 static const mag_op_cpu_info_t mag_op_cpu_info_lut[MAG_OP__NUM] = {
@@ -621,9 +621,9 @@ static mag_cpu_device_t* mag_cpu_init_device(mag_context_t* ctx, uint32_t num_th
 static uint32_t mag_cpu_dynamic_work_scaling(mag_cpu_device_t* dvc, mag_opcode_t op, int64_t numel) {
     const mag_opmeta_t* meta = mag_op_meta_of(op);
     const mag_op_cpu_info_t* info = mag_op_cpu_info_lut+op;
-    if (!dvc->pool || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel < info->thread_treshold)  /* Use a single worker (main thread). */
+    if (!dvc->pool || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel < info->thread_threshold)  /* Use a single worker (main thread). */
         return 1;
-    numel -= info->thread_treshold;                                                             /* Saturate threshold */
+    numel -= info->thread_threshold;                                                             /* Saturate threshold */
     uint32_t workers = (uint32_t)ceil(info->growth * log2((mag_e11m52_t)numel));         /* Logarithmic scaling */
     workers = mag_xmin(dvc->num_allocated_workers, mag_xmax(1, workers));
     return workers;
