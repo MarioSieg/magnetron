@@ -2035,71 +2035,6 @@ static void mag_machine_probe_memory(size_t* out_phys_mem_total, size_t* out_phy
     #endif
 }
 
-#ifdef __linux__
-#include <dirent.h>
-#endif
-
-static size_t mag_query_cache_size(unsigned lvl, const char* wanted) {
-    #ifdef __linux__
-        char path[PATH_MAX];
-        char buf[64];
-        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache");
-        DIR *d = opendir(path);
-        if (!d) return 0;
-        struct dirent *e;
-        while ((e = readdir(d))) {
-            if (strncmp(e->d_name, "index", sizeof("index")-1)) continue;
-            unsigned idx = (unsigned)strtoul(e->d_name+sizeof("index")-1, NULL, 10);
-            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache/index%u/level", idx);
-            FILE* f = fopen(path, "r");
-            if (!f) continue;
-            unsigned lv = 0;
-            if (fgets(buf, sizeof(buf), f) == NULL) {
-                fclose(f);
-                continue;
-            }
-            fclose(f);
-            if (lv = (unsigned)strtoul(buf, NULL, 10), lv != lvl) continue;
-            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache/index%u/type", idx);
-            f = fopen(path, "r");
-            if (!f) continue;
-            if (fgets(buf, sizeof(buf), f) == NULL) {
-                fclose(f);
-                continue;
-            }
-            fclose(f);
-            buf[strcspn(buf, "\n")] = '\0';
-            if (strcmp(buf, wanted)) continue;     /* not the type we need */
-            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu0/cache/index%u/size", idx);
-            f = fopen(path, "r");
-            if (!f) continue;
-            unsigned long long v = 0; char suf = '\0';
-            if (fscanf(f, "%llu%c", &v, &suf) != 2) {
-                fclose(f);
-                continue;
-            }
-            fclose(f);
-            closedir(d);
-            switch (suf) {
-                case 'K': v *= 1ull<<10; break;
-                case 'M': v *= 1ull<<20; break;
-                case 'G': v *= 1ull<<30; break;
-                default: break;
-            }
-            return v; /* Return size in bytes */
-        }
-        closedir(d);
-        return 0;
-    #endif
-    return 0;
-}
-
-static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
-    *l1 = mag_query_cache_size(1, "Data");
-    *l2 = mag_query_cache_size(2, "Unified");
-    *l3 = mag_query_cache_size(3, "Unified");
-}
-
 #if defined(__x86_64__) || defined(_M_X64)
     static void mag_cpuid_ex(uint32_t (*o)[4], uint32_t eax, uint32_t ecx) {
         #ifdef _WIN32
@@ -2293,20 +2228,18 @@ static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
 		}
     }
 
-    static void mag_probe_cpu_cache_topology(
-        mag_amd64_cap_bitset_t caps,
-        uint32_t* levels,
-        uint32_t (*data_cache)[MAG_MAX_CPU_CACHE_DEPTH],
-        uint32_t (*shared_cache)[MAG_MAX_CPU_CACHE_DEPTH]
-    ) {
+    static void mag_probe_cpu_cache_topology(mag_amd64_cap_bitset_t caps, uint64_t* ol1, uint64_t* ol2, uint64_t* ol3) {
+        uint32_t levels = 0;
+        uint32_t data_cache[MAG_MAX_CPU_CACHE_DEPTH] = {0};
+        uint32_t shared_cache[MAG_MAX_CPU_CACHE_DEPTH] = {0};
         uint32_t num_cores[MAG_MAX_CPU_TOPO_DEPTH] = {0};
         mag_probe_cpu_core_topology(caps, &num_cores);
         uint32_t id[4] = {0};
         if (caps & mag_amd64_cap(AMD)) {
             mag_cpuid(&id, 0x80000000);
             if (*id >= 0x8000001d) {
-                *levels = 0;
-                for (uint32_t leaf=0; *levels < MAG_MAX_CPU_CACHE_DEPTH; ++leaf) {
+                levels = 0;
+                for (uint32_t leaf=0; levels < MAG_MAX_CPU_CACHE_DEPTH; ++leaf) {
                     mag_cpuid_ex(&id, 0x8000001d, leaf);
                     int32_t type = mag_bextract(*id, 0, 4);
                     if (!type) break;
@@ -2317,42 +2250,42 @@ static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
                     int32_t partitions = mag_bextract(id[1], 12, 21)+1;
                     int32_t line = mag_bextract(id[1], 0, 11)+1;
                     int32_t sets = id[2]+1;
-                    (*data_cache)[*levels] = line*partitions*ways;
-                    if (!assoc) (*data_cache)[*levels] *= sets;
+                    data_cache[levels] = line*partitions*ways;
+                    if (!assoc) data_cache[levels] *= sets;
                     if (leaf > 0) {
                         sharing = mag_xmin(sharing, num_cores[1]);
-                        sharing /= mag_xmax(1u, **shared_cache);
+                        sharing /= mag_xmax(1u, *shared_cache);
                     }
-                    (*shared_cache)[*levels] = sharing;
-                    ++*levels;
+                    shared_cache[levels] = sharing;
+                    ++levels;
                 }
-                **shared_cache = mag_xmin(1u, **shared_cache);
+                *shared_cache = mag_xmin(1u, *shared_cache);
             } else if (*id >= 0x80000006) {
-                *levels = 1;
+                levels = 1;
                 mag_cpuid(&id, 0x80000005);
                 int32_t l1dc = mag_bextract(id[2], 24, 31);
-                **data_cache = l1dc<<10;
-                **shared_cache = 1;
+                *data_cache = l1dc<<10;
+                *shared_cache = 1;
                 mag_cpuid(&id, 0x80000006);
                 int32_t l2 = mag_bextract(id[2], 12, 15);
                 if (l2 > 0) {
-                    *levels = 2;
+                    levels = 2;
                     int32_t l2s = mag_bextract(id[2], 16, 31);
-                    (*data_cache)[1] = l2s<<10;
-                    (*shared_cache)[1] = 1;
+                    data_cache[1] = l2s<<10;
+                    shared_cache[1] = 1;
                 }
                 int32_t l3 = mag_bextract(id[3], 12, 15);
                 if (l3 > 0) {
-                    *levels = 3;
+                    levels = 3;
                     int32_t l3s = mag_bextract(id[3], 18, 31);
-                    (*data_cache)[2] = l3s<<19;
-                    (*shared_cache)[2] = num_cores[1];
+                    data_cache[2] = l3s<<19;
+                    shared_cache[2] = num_cores[1];
                 }
             }
         } else if (caps & mag_amd64_cap(INTEL)) {
             uint32_t smt_width = *num_cores;
             uint32_t logical_cores = num_cores[1];
-            for (uint32_t i=0; *levels < MAG_MAX_CPU_CACHE_DEPTH; ++i) {
+            for (uint32_t i=0; levels < MAG_MAX_CPU_CACHE_DEPTH; ++i) {
                 mag_cpuid_ex(&id, 0x4, i);
                 uint32_t type = mag_bextract(*id, 0, 4);
                 if (!type) break;
@@ -2360,17 +2293,26 @@ static void mag_machine_probe_caches(size_t* l1, size_t* l2, size_t* l3) {
                     uint32_t actual_logical_cores = mag_bextract(*id, 14, 25)+1;
                     if (logical_cores != 0) actual_logical_cores = mag_xmin(actual_logical_cores, logical_cores);
                     mag_assert2(actual_logical_cores);
-                    (*data_cache)[*levels] =
+                    data_cache[levels] =
                         (mag_bextract(id[1], 22, 31)+1)
                         * (mag_bextract(id[1], 12, 21)+1)
                         * (mag_bextract(id[1], 0, 11)+1)
                         * (id[2]+1);
                     if (type == 1 && smt_width == 0) smt_width = actual_logical_cores;
                     mag_assert2(smt_width != 0);
-                    (*shared_cache)[*levels] = mag_xmax(actual_logical_cores / smt_width, 1u);
-                    ++*levels;
+                    shared_cache[levels] = mag_xmax(actual_logical_cores / smt_width, 1u);
+                    ++levels;
                 }
             }
+        }
+        if (levels) {
+            *ol1 = data_cache[0]/shared_cache[0];
+            *ol2 = data_cache[1]/shared_cache[1];
+            *ol3 = data_cache[2]/shared_cache[2];
+        } else {
+            *ol1 = 32ull<<10;
+            *ol2 = 512ull<<10;
+            *ol3 = 1024ull<<10;
         }
     }
 
@@ -2456,7 +2398,6 @@ static void mag_machine_probe(mag_context_t* ctx) {
     mag_machine_probe_cpu_name(&ctx->machine.cpu_name);
     mag_machine_probe_cpu_cores(&ctx->machine.cpu_virtual_cores, &ctx->machine.cpu_physical_cores, &ctx->machine.cpu_sockets);
     mag_machine_probe_memory(&ctx->machine.phys_mem_total, &ctx->machine.phys_mem_free);
-    mag_machine_probe_caches(&ctx->machine.cpu_l1_size, &ctx->machine.cpu_l2_size, &ctx->machine.cpu_l3_size);
     uint64_t caps = 0;
     #if defined(__x86_64__) || defined(_M_X64)
         mag_probe_cpu_amd64(&ctx->machine.amd64_cpu_caps, &ctx->machine.amd64_avx10_ver);
@@ -2465,19 +2406,7 @@ static void mag_machine_probe(mag_context_t* ctx) {
         mag_probe_cpu_arm64(&ctx->machine.arm64_cpu_caps, &ctx->machine.arm64_cpu_sve_width);
         caps = ctx->machine.arm64_cpu_caps;
     #endif
-    uint32_t cache_levels = 0;
-    uint32_t data_cache_size[MAG_MAX_CPU_CACHE_DEPTH] = {0};
-    uint32_t shared_cache_size[MAG_MAX_CPU_CACHE_DEPTH] = {0};
-    mag_probe_cpu_cache_topology(caps, &cache_levels, &data_cache_size, &shared_cache_size);
-    if (!cache_levels) {
-        ctx->machine.cpu_l1_size = 32ull<<10;
-        ctx->machine.cpu_l2_size = 512ull<<10;
-        ctx->machine.cpu_l3_size = 1024ull<<10;
-    } else {
-        ctx->machine.cpu_l1_size = data_cache_size[0]/shared_cache_size[0];
-        ctx->machine.cpu_l2_size = data_cache_size[1]/shared_cache_size[1];
-        ctx->machine.cpu_l3_size = data_cache_size[2]/shared_cache_size[2];
-    }
+    mag_probe_cpu_cache_topology(caps, &ctx->machine.cpu_l1_size, &ctx->machine.cpu_l2_size, &ctx->machine.cpu_l3_size);
     if (mag_unlikely(!*ctx->machine.os_name)) snprintf(ctx->machine.os_name, sizeof(ctx->machine.os_name), "Unknown");
     if (mag_unlikely(!*ctx->machine.cpu_name)) snprintf(ctx->machine.cpu_name, sizeof(ctx->machine.cpu_name), "Unknown");
 }
