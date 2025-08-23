@@ -3324,6 +3324,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
     int64_t MC = payload->mm_params.MC;
     int64_t KC = payload->mm_params.KC;
     int64_t NC = payload->mm_params.NC;
+    int64_t NR = payload->mm_params.NR;
     int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
     int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
     int64_t K = x->shape[x->rank-1];
@@ -3408,8 +3409,8 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
             }
             for (int64_t ir=0; ir < mc; ir += MR) {
                 int64_t mr = mag_xmin(MR, mc - ir);
-                for (int64_t jr=0; jr < nc; jr += 32) {
-                    int64_t nr = mag_xmin(32, nc - jr);
+                for (int64_t jr=0; jr < nc; jr += NR) {
+                    int64_t nr = mag_xmin(NR, nc - jr);
                     if (mr < 8) {
                         switch (nr) {
                             case 32: {

@@ -2228,7 +2228,7 @@ static void mag_machine_probe_memory(size_t* out_phys_mem_total, size_t* out_phy
 		}
     }
 
-    static void mag_probe_cpu_cache_topology(mag_amd64_cap_bitset_t caps, uint64_t* ol1, uint64_t* ol2, uint64_t* ol3) {
+    static void mag_probe_cpu_cache_topology(mag_amd64_cap_bitset_t caps, size_t* ol1, size_t* ol2, size_t* ol3) {
         uint32_t levels = 0;
         uint32_t data_cache[MAG_MAX_CPU_CACHE_DEPTH] = {0};
         uint32_t shared_cache[MAG_MAX_CPU_CACHE_DEPTH] = {0};
@@ -2379,16 +2379,16 @@ static void mag_machine_probe_memory(size_t* out_phys_mem_total, size_t* out_phy
         #endif
     }
 
-    static void mag_probe_cpu_cache_topology(
-          mag_arm64_cap_bitset_t caps,
-          uint32_t* levels,
-          uint32_t (*data_cache)[MAG_MAX_CPU_CACHE_DEPTH],
-          uint32_t (*shared_cache)[MAG_MAX_CPU_CACHE_DEPTH]
-    ) {
-        /* NYI */
-        *levels = 0;
-        (void)data_cache, (void)shared_cache;
-        (void)caps;
+    static void mag_probe_cpu_cache_topology(mag_arm64_cap_bitset_t caps, size_t* ol1, size_t* ol2, size_t* ol3) {
+        #ifdef __APPLE__
+        *ol1 = 64<<10;
+        *ol2 = 512<<10;
+        *ol3 = 1024ull<<10;
+        #else
+            *ol1 = 32ull<<10;
+            *ol2 = 512ull<<10;
+            *ol3 = 1024ull<<10;
+        #endif
     }
 
 #endif
