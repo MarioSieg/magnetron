@@ -152,7 +152,7 @@ namespace magnetron {
         auto operator=(context&) -> context& = delete;
 
         ~context() {
-            mag_ctx_destroy(m_ctx);
+            mag_ctx_destroy(m_ctx, false);
         }
 
         [[nodiscard]] auto operator *() noexcept -> mag_context_t& { return *m_ctx; }

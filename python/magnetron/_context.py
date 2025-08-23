@@ -36,7 +36,7 @@ class Context:
             desc[0] = C.mag_compute_device_desc_cuda(device.device_id)
         self._ptr = C.mag_ctx_create2(desc)
         self.default_dtype = Config.default_dtype
-        self._finalizer = weakref.finalize(self, C.mag_ctx_destroy, self._ptr)
+        self._finalizer = weakref.finalize(self, C.mag_ctx_destroy, self._ptr, True)
 
     @property
     def native_ptr(self) -> FFI.CData:

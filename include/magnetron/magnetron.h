@@ -115,28 +115,28 @@ typedef struct mag_device_desc_t {
     uint32_t cpu_thread_count;   /* Number of threads if type == MAG_DEVICE_TYPE_CPU. If set to 0, hardware concurrency of host CPU is detected. */
     uint32_t cuda_device_id;     /* CUDA device ID if type == MAG_DEVICE_TYPE_GPU_CUDA. Default: 0 (first GPU). */
 } mag_device_desc_t;
-extern MAG_EXPORT mag_device_desc_t mag_compute_device_desc_cpu(uint32_t thread_count);                           /* Helper to fill device descriptor for CPU compute device. */
-extern MAG_EXPORT mag_device_desc_t mag_compute_device_desc_cuda(uint32_t cuda_device_id);                        /* Helper to fill device descriptor for CUDA GPU compute device. */
+extern MAG_EXPORT mag_device_desc_t mag_compute_device_desc_cpu(uint32_t thread_count);                                 /* Helper to fill device descriptor for CPU compute device. */
+extern MAG_EXPORT mag_device_desc_t mag_compute_device_desc_cuda(uint32_t cuda_device_id);                              /* Helper to fill device descriptor for CUDA GPU compute device. */
 
-extern MAG_EXPORT mag_context_t* mag_ctx_create(mag_device_type_t device);                                 /* Create context with default config, and only specify device type. */
-extern MAG_EXPORT mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info);           /* Create context with customized device config, and only specify device type. */
-extern MAG_EXPORT mag_prng_algo_t mag_ctx_get_prng_algorithm(const mag_context_t* ctx);                           /* Get PRNG algorithm */
-extern MAG_EXPORT void mag_ctx_set_prng_algorithm(mag_context_t* ctx, mag_prng_algo_t algorithm, uint64_t seed);  /* Set PRNG algorithm */
-extern MAG_EXPORT mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t* ctx);             /* Get compute device type */
-extern MAG_EXPORT const char* mag_ctx_get_compute_device_name(const mag_context_t* ctx);              /* Get the name of the compute device */
-extern MAG_EXPORT const char* mag_ctx_get_os_name(const mag_context_t* ctx);                          /* Get the name of the operating system */
-extern MAG_EXPORT const char* mag_ctx_get_cpu_name(const mag_context_t* ctx);                         /* Get the name of the CPU */
-extern MAG_EXPORT uint32_t mag_ctx_get_cpu_virtual_cores(const mag_context_t* ctx);                            /* Get the number of virtual cores */
-extern MAG_EXPORT uint32_t mag_ctx_get_cpu_physical_cores(const mag_context_t* ctx);                           /* Get the number of physical cores */
-extern MAG_EXPORT uint32_t mag_ctx_get_cpu_sockets(const mag_context_t* ctx);                                  /* Get the number of CPU sockets */
-extern MAG_EXPORT uint64_t mag_ctx_get_physical_memory_total(const mag_context_t* ctx);                        /* Get the total physical memory in bytes */
-extern MAG_EXPORT uint64_t mag_ctx_get_physical_memory_free(const mag_context_t* ctx);                         /* Get the free physical memory in bytes */
-extern MAG_EXPORT bool mag_ctx_is_numa_system(const mag_context_t* ctx);                                       /* Check if the system is NUMA */
-extern MAG_EXPORT size_t mag_ctx_get_total_tensors_created(const mag_context_t* ctx);                          /* Get total tensors created. (Including views) */
-extern MAG_EXPORT void mag_ctx_grad_recorder_start(mag_context_t* ctx);                                        /* Start gradient recording */
-extern MAG_EXPORT void mag_ctx_grad_recorder_stop(mag_context_t* ctx);                                         /* Stop gradient recording */
-extern MAG_EXPORT bool mag_ctx_grad_recorder_is_running(const mag_context_t* ctx);                             /* Check if gradient recording is running */
-extern MAG_EXPORT void mag_ctx_destroy(mag_context_t* ctx);                                                    /* Destroy context and free memory */
+extern MAG_EXPORT mag_context_t* mag_ctx_create(mag_device_type_t device);                                              /* Create context with default config, and only specify device type. */
+extern MAG_EXPORT mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info);                                 /* Create context with customized device config, and only specify device type. */
+extern MAG_EXPORT mag_prng_algo_t mag_ctx_get_prng_algorithm(const mag_context_t* ctx);                                 /* Get PRNG algorithm */
+extern MAG_EXPORT void mag_ctx_set_prng_algorithm(mag_context_t* ctx, mag_prng_algo_t algorithm, uint64_t seed);        /* Set PRNG algorithm */
+extern MAG_EXPORT mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t* ctx);                          /* Get compute device type */
+extern MAG_EXPORT const char* mag_ctx_get_compute_device_name(const mag_context_t* ctx);                                /* Get the name of the compute device */
+extern MAG_EXPORT const char* mag_ctx_get_os_name(const mag_context_t* ctx);                                            /* Get the name of the operating system */
+extern MAG_EXPORT const char* mag_ctx_get_cpu_name(const mag_context_t* ctx);                                           /* Get the name of the CPU */
+extern MAG_EXPORT uint32_t mag_ctx_get_cpu_virtual_cores(const mag_context_t* ctx);                                     /* Get the number of virtual cores */
+extern MAG_EXPORT uint32_t mag_ctx_get_cpu_physical_cores(const mag_context_t* ctx);                                    /* Get the number of physical cores */
+extern MAG_EXPORT uint32_t mag_ctx_get_cpu_sockets(const mag_context_t* ctx);                                           /* Get the number of CPU sockets */
+extern MAG_EXPORT uint64_t mag_ctx_get_physical_memory_total(const mag_context_t* ctx);                                 /* Get the total physical memory in bytes */
+extern MAG_EXPORT uint64_t mag_ctx_get_physical_memory_free(const mag_context_t* ctx);                                  /* Get the free physical memory in bytes */
+extern MAG_EXPORT bool mag_ctx_is_numa_system(const mag_context_t* ctx);                                                /* Check if the system is NUMA */
+extern MAG_EXPORT size_t mag_ctx_get_total_tensors_created(const mag_context_t* ctx);                                   /* Get total tensors created. (Including views) */
+extern MAG_EXPORT void mag_ctx_grad_recorder_start(mag_context_t* ctx);                                                 /* Start gradient recording */
+extern MAG_EXPORT void mag_ctx_grad_recorder_stop(mag_context_t* ctx);                                                  /* Stop gradient recording */
+extern MAG_EXPORT bool mag_ctx_grad_recorder_is_running(const mag_context_t* ctx);                                      /* Check if gradient recording is running */
+extern MAG_EXPORT void mag_ctx_destroy(mag_context_t* ctx, bool suppress_leak_detection);                               /* Destroy context and free memory */
 
 /**
  * @brief Multidimensional tensor of arbitrary rank and data type.

@@ -774,12 +774,17 @@ mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info) {
     return ctx;
 }
 
-void mag_ctx_destroy(mag_context_t* ctx) { /* Destroy magnetron context. */
+void mag_ctx_destroy(mag_context_t* ctx, bool suppress_leak_detection) { /* Destroy magnetron context. */
     #ifdef MAG_DEBUG
         mag_leak_detector_dump_results(ctx);  /* Provide detailed leak check info */
     #endif
-    mag_assert(ctx->num_tensors == 0, "Memory leak: %zu tensors have not been freed", ctx->num_tensors);     /* Leak check if all tensors are freed. */
-    mag_assert(ctx->num_storages == 0, "Memory leak: %zu storages have not been freed", ctx->num_storages);  /* Leak check if all storages are freed. */
+    bool leaks_detected = ctx->num_tensors || ctx->num_storages;
+    if (mag_unlikely(leaks_detected)) {
+        char msg[256] = {0};
+        snprintf(msg, sizeof(msg), "magnetron context destroyed with %zu leaked tensors and %zu leaked storages", ctx->num_tensors, ctx->num_storages);
+        if (suppress_leak_detection) mag_log_warn("%s", msg);
+        else mag_panic("%s", msg);
+    }
     mag_fixed_pool_destroy(&ctx->view_meta_pool);
     mag_fixed_pool_destroy(&ctx->tensor_pool);
     mag_fixed_pool_destroy(&ctx->storage_pool);
@@ -787,7 +792,7 @@ void mag_ctx_destroy(mag_context_t* ctx) { /* Destroy magnetron context. */
     memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
     (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
     ctx = NULL;
-    mag_log_info("magnetron context destroyed.");
+    mag_log_info("magnetron context destroyed");
 }
 
 mag_prng_algo_t mag_ctx_get_prng_algorithm(const mag_context_t* ctx) {
