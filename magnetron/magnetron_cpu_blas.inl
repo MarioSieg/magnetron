@@ -71,6 +71,34 @@ typedef uint8_t mag_bool_t;
 #define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
 #define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
 
+#define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
+
+typedef struct mag_scratch_buf_t {
+    void* top;
+    size_t cap;
+} mag_scratch_buf_t;
+
+static MAG_THREAD_LOCAL mag_scratch_buf_t mag_tls_scratch = {0};
+
+static void* mag_sb_acquire(size_t size) {
+    mag_scratch_buf_t* sb = &mag_tls_scratch;
+    if (size <= sb->cap) return sb->top; /* Enough space allocated */
+    sb->top = (*mag_alloc)(sb->top, size, MAG_MM_SCRATCH_ALIGN); /* Reallocate */
+    sb->cap = size;
+    void* p = sb->top;
+    #ifndef _MSC_VER
+        p = __builtin_assume_aligned(p, MAG_MM_SCRATCH_ALIGN);
+    #endif
+    return p;
+}
+
+static void mag_sb_release(void) {
+    mag_scratch_buf_t* sb = &mag_tls_scratch;
+    if (sb->top) (*mag_alloc)(sb->top, 0, MAG_MM_SCRATCH_ALIGN);
+    sb->top = NULL;
+    sb->cap = 0;
+}
+
 #ifdef __AVX512F__ /* Vector register width in bytes */
 #define MAG_VREG_WIDTH 64
 #elif defined(__AVX__)
@@ -2539,12 +2567,6 @@ static MAG_HOTPROC mag_e5m10_t* mag_mm_pack_y_e5m10(mag_e5m10_t* ybuf, int64_t K
     return ybuf;
 }
 
-typedef struct mag_mmscratch_t {
-    void* p;
-    size_t cap;
-} mag_mmscratch_t;
-
-#define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 #define MAG_PREFETCH_SPAN 8
 
 #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
@@ -2554,21 +2576,6 @@ typedef struct mag_mmscratch_t {
 #define mag_vfmadd_e8m23(acc, a, b) vmlaq_f32((acc), (a), (b))
 #endif
 #endif
-
-static void* mag_mm_scratch_acquire(mag_mmscratch_t* sb, size_t size) {
-    if (size <= sb->cap) return sb->p; /* We have enough space */
-    void* p = (*mag_alloc)(NULL, size, MAG_MM_SCRATCH_ALIGN);
-    if (sb->p) (*mag_alloc)(sb->p, 0, MAG_MM_SCRATCH_ALIGN);
-    sb->p = p;
-    sb->cap = size;
-    return p;
-}
-
-static void mag_mm_scratch_release(mag_mmscratch_t* sb) {
-    if (sb->p) (*mag_alloc)(sb->p, 0, MAG_MM_SCRATCH_ALIGN);
-    sb->p = NULL;
-    sb->cap = 0;
-}
 
 static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* restrict a, ptrdiff_t lda, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, ptrdiff_t ldc, bool acc) {
     #ifdef __AVX512F__
@@ -3352,8 +3359,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
     int64_t tjc = (N+NC-1)/NC;
     int64_t tpb = tic * tjc;
     int64_t tt = batch_total * tpb;
-    static MAG_THREAD_LOCAL mag_mmscratch_t sb = {0};
-    mag_e8m23_t* scratch = mag_mm_scratch_acquire(&sb,  sizeof(*scratch)*(KC*NC + MC*KC));
+    mag_e8m23_t* scratch = mag_sb_acquire(sizeof(*scratch)*(KC*NC + MC*KC));
     mag_e8m23_t* Bp = scratch;
     mag_e8m23_t* Ap = Bp + KC*NC;
     bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
@@ -3518,9 +3524,7 @@ static MAG_HOTPROC void mag_matmul_e5m10(const mag_kernel_payload_t* payload) {
     int64_t bdx = x->rank > 2 ? x->rank-2 : 0;
     int64_t bdy = y->rank > 2 ? y->rank-2 : 0;
     bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
-    size_t scratch_sz = sizeof(mag_e5m10_t)*(K*N + (x_row ? 0 : M*K));   /* y-panel mandatory, x-panel optional */
-    static MAG_THREAD_LOCAL mag_mmscratch_t sb; /* auto-reused, TODO: free this buffer  */
-    mag_e5m10_t* scratch = mag_mm_scratch_acquire(&sb, scratch_sz);
+    mag_e5m10_t* scratch = mag_sb_acquire(sizeof(mag_e5m10_t)*(K*N + (x_row ? 0 : M*K)));
     mag_e5m10_t* xbuf = x_row ? NULL : scratch;
     mag_e5m10_t* ybuf = scratch + (x_row ? 0 : M*K);
     int64_t idx_r[4] = {0};
@@ -4083,11 +4087,19 @@ static void MAG_HOTPROC mag_vector_cast_stub(size_t nb, const void* src, mag_dty
     (*kern)(numel, dst, src);
 }
 
-static size_t mag_vreg_width(void) {
-    return MAG_VREG_WIDTH;
+static size_t mag_vreg_width(void) { return MAG_VREG_WIDTH; }
+
+static void mag_impl_init(void) {
+    mag_sb_acquire(1ull<<20); /* preallocate 1MiB of scratch buffer */
+}
+
+static void mag_impl_deinit(void) {
+    mag_sb_release();
 }
 
 void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t* kernels) {
+    kernels->init = &mag_impl_init;
+    kernels->deinit = &mag_impl_deinit;
     for (int i=0; i < MAG_OP__NUM; ++i) {
         for (int j=0; j < MAG_DTYPE__NUM; ++j) {
             kernels->operators[i][j] = mag_lut_eval_kernels[i][j];

@@ -1269,6 +1269,8 @@ typedef struct mag_kernel_payload_t {
 ** See magnetron_cpu.c for details.
 */
 typedef struct mag_kernel_registry_t {
+    void (*init)(void);
+    void (*deinit)(void);
     void (*operators[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t*);       /* Eval operator kernels. */
     void (*vector_cast)(size_t nb, const void* src, mag_dtype_t src_t, void* dst, mag_dtype_t dst_t); /* Vector cast (dtype conversion) kernel. */
     size_t (*vreg_width)(void);

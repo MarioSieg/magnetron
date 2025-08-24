@@ -610,6 +610,7 @@ static mag_cpu_device_t* mag_cpu_init_device(mag_context_t* ctx, uint32_t num_th
         dvc->pool = mag_threadpool_create(ctx, num_threads, &dvc->kernels, sched_prio);
         dvc->num_allocated_workers = num_threads;
     }
+    if (*dvc->kernels.init) (*dvc->kernels.init)();
     return dvc;
 }
 
@@ -630,8 +631,8 @@ static uint32_t mag_cpu_dynamic_work_scaling(mag_cpu_device_t* dvc, mag_opcode_t
 }
 
 static void mag_cpu_destroy_device(mag_cpu_device_t* dvc) {
-    if (dvc->pool)
-        mag_threadpool_destroy(dvc->pool);
+    if (*dvc->kernels.deinit) (*dvc->kernels.deinit)();
+    if (dvc->pool) mag_threadpool_destroy(dvc->pool);
     (*mag_alloc)(dvc, 0, 0);
 }
 
