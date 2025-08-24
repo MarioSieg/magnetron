@@ -600,9 +600,34 @@ mag_view_meta_t* mag_view_meta_alloc(mag_tensor_t* base){
     mag_view_meta_t* vm = mag_fixed_pool_alloc_block(&base->ctx->view_meta_pool);
     vm->rc = mag_rc_control_init(vm, &mag_view_meta_dtor);
     vm->base = base;
-    mag_rc_control_incref(&base->rc_control);       /* keep base alive */
-    vm->version_snapshot = base->version;      /* autograd */
+    mag_rc_control_incref(&base->rc_control);
+    vm->version_snapshot = base->version;
     return vm;
+}
+
+static void mag_au_state_dtor(void* p) {
+    mag_au_state_t* au = p;
+    if (au->grad) {
+        mag_tensor_decref(au->grad);
+        au->grad = NULL;
+    }
+    for (size_t i=0; i < sizeof(au->op_inputs)/sizeof(*au->op_inputs); ++i)
+        if (au->op_inputs[i]) mag_tensor_decref(au->op_inputs[i]);
+    mag_fixed_pool_free_block(&au->ctx->view_meta_pool, au);
+}
+
+mag_au_state_t* mag_au_state_lazy_alloc(mag_au_state_t** au_state, mag_context_t* ctx) {
+    if (*au_state) return *au_state;
+    *au_state = mag_fixed_pool_alloc_block(&ctx->au_state_pool);
+    **au_state = (mag_au_state_t){
+        .ctx = ctx,
+        .rc = mag_rc_control_init(*au_state, &mag_au_state_dtor),
+        .op = MAG_OP_NOP,
+        .op_inputs = {},
+        .op_params = {},
+        .grad = NULL,
+    };
+    return *au_state;
 }
 
 /* Initialize and seed PRNG state. */
@@ -723,10 +748,9 @@ static MAG_COLDPROC void mag_leak_detector_dump_results(mag_context_t* ctx) {
         mag_fmt_shape(&shape, &leaked->shape, leaked->rank);
         fprintf(
             stderr,
-            MAG_CC_RED "[magnetron] " MAG_CC_RESET "Leaked tensor: %p, Shape: %s, Op: %s \n",
+            MAG_CC_RED "[magnetron] " MAG_CC_RESET "Leaked tensor: %p, Shape: %s\n",
             leaked,
-            shape,
-            mag_op_meta_of(leaked->op)->mnemonic
+            shape
         );
     }
     fflush(stderr);
@@ -755,6 +779,7 @@ mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info) {
     mag_fixed_pool_init(&ctx->tensor_pool, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
     mag_fixed_pool_init(&ctx->storage_pool, sizeof(mag_istorage_t), __alignof(mag_istorage_t), 0x1000);
     mag_fixed_pool_init(&ctx->view_meta_pool, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
+    mag_fixed_pool_init(&ctx->au_state_pool, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
 
     ctx->tr_id = mag_thread_id(); /* Get thread ID. */
     ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
@@ -785,6 +810,7 @@ void mag_ctx_destroy(mag_context_t* ctx, bool suppress_leak_detection) { /* Dest
         if (suppress_leak_detection) mag_log_warn("%s", msg);
         else mag_panic("%s", msg);
     }
+    mag_fixed_pool_destroy(&ctx->au_state_pool);
     mag_fixed_pool_destroy(&ctx->view_meta_pool);
     mag_fixed_pool_destroy(&ctx->tensor_pool);
     mag_fixed_pool_destroy(&ctx->storage_pool);
@@ -1129,13 +1155,10 @@ static mag_tensor_t* mag_tensor_init_header(mag_context_t* ctx, mag_dtype_t type
         .storage = NULL,
         .numel = numel,
         .flags = MAG_TFLAG_NONE,
-        .op = MAG_OP_NOP,
-        .op_inputs = {0},
-        .op_params = {mag_op_param_none()},
         .storage_offset = 0,
         .view_meta = NULL,
+        .au_state = NULL,
         .version = 0,
-        .grad = NULL,
     };
 #ifdef MAG_DEBUG
     hdr->alive_next = NULL;
@@ -1215,13 +1238,10 @@ static void mag_tensor_dtor(void* self) {
         mag_rc_control_decref(&t->view_meta->rc);
         t->view_meta = NULL;
     }
-    if (t->grad) {
-        mag_tensor_decref(t->grad);
-        t->grad = NULL;
+    if (t->au_state) {
+        mag_rc_control_decref(&t->au_state->rc);
+        t->au_state = NULL;
     }
-    for (int i=0; i < MAG_MAX_OP_INPUTS; ++i)
-        if (t->op_inputs[i])
-            mag_tensor_decref(t->op_inputs[i]);
     mag_rc_control_decref(&t->storage->rc_control);
 #ifdef MAG_DEBUG
     mag_leak_detector_dequeue(t); /* Pop from alive list */
@@ -1280,42 +1300,17 @@ bool mag_tensor_decref(mag_tensor_t* t) { /* Decrease reference count of the ten
 }
 
 void mag_tensor_detach_inplace(mag_tensor_t* target) {
-    target->op = MAG_OP_NOP; /* Detach from operations */
     target->flags &= ~MAG_TFLAG_REQUIRES_GRAD; /* Detach from gradient recording */
-    memset(target->op_inputs, 0, sizeof(target->op_inputs)); /* Clear op inputs */
-    memset(target->op_params, 0, sizeof(target->op_params));
+    if (target->au_state) {
+        target->au_state->op = MAG_OP_NOP; /* Detach from operations */
+        memset(target->au_state->op_inputs, 0, sizeof(target->au_state->op_inputs)); /* Clear op inputs */
+        memset(target->au_state->op_params, 0, sizeof(target->au_state->op_params));
+    }
 }
 
 mag_tensor_t* mag_tensor_detach(mag_tensor_t* t) {
    mag_tensor_detach_inplace(t);
     return t;
-}
-
-/*
-** Hash the tensor header metadata (shape, strides, dtype, numel), TODO @mario: these values are codependent and give no new source of entropy.
-** without the tensors data, opcode or parent tensors.
-**
-*/
-uint32_t mag_tensor_weak_hash(const mag_tensor_t* t) {
-    uint32_t h = 0;
-    for (int64_t i=0; i < t->rank; ++i) {
-        mag_hash_combine(&h, t->shape[i]^(t->shape[i]>>32));
-        mag_hash_combine(&h, t->strides[i]^(t->strides[i]>>32));
-    }
-    mag_hash_combine(&h, t->dtype);
-    mag_hash_combine(&h, t->numel^(t->numel>>32));
-    return h;
-}
-
-mag_tensor_t* mag_tensor_get_arg(const mag_tensor_t* t, size_t slot) {
-    mag_assert(slot < MAG_MAX_OP_INPUTS, "slot must be within [0, %d)", MAG_MAX_OP_INPUTS);
-    return t->op_inputs[slot];
-}
-
-void mag_tensor_set_arg(mag_tensor_t* t, size_t slot, mag_tensor_t* arg) {
-    mag_assert(slot < MAG_MAX_OP_INPUTS, "slot must be within [0, %d)", MAG_MAX_OP_INPUTS);
-    mag_assert(t->op_inputs[slot] == NULL, "argument at slot #%zu already set", slot);
-    t->op_inputs[slot] = arg;
 }
 
 uint64_t mag_tensor_get_refcount(const mag_tensor_t* t) { return t->rc_control.rc; }
@@ -1433,9 +1428,9 @@ bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t* dims, int64_t ran
 }
 
 mag_tensor_t* mag_tensor_get_grad(const mag_tensor_t* t) {
-    mag_assert2(t->flags & MAG_TFLAG_REQUIRES_GRAD);
-    if (t->grad) mag_tensor_incref(t->grad);
-    return t->grad;
+    mag_assert2(t->flags & MAG_TFLAG_REQUIRES_GRAD && t->au_state);
+    if (t->au_state->grad) mag_tensor_incref(t->au_state->grad);
+    return t->au_state->grad;
 }
 
 bool mag_tensor_requires_grad(const mag_tensor_t* t) {
@@ -1445,9 +1440,9 @@ bool mag_tensor_requires_grad(const mag_tensor_t* t) {
 void mag_tensor_set_requires_grad(mag_tensor_t* t, bool requires_grad) {
     if (requires_grad) {
         mag_assert(mag_tensor_is_floating_point_typed(t), "Gradient tracking tensors must be floating-point typed, but tensor has dtype: %s", mag_dtype_meta_of(t->dtype)->name);
-    }
-    if (requires_grad) t->flags |= MAG_TFLAG_REQUIRES_GRAD;
-    else t->flags &= ~MAG_TFLAG_REQUIRES_GRAD;
+        t->flags |= MAG_TFLAG_REQUIRES_GRAD;
+        mag_au_state_lazy_alloc(&t->au_state, t->ctx);
+    } else t->flags &= ~MAG_TFLAG_REQUIRES_GRAD;
 }
 
 typedef struct mag_topo_record_t {
@@ -1505,8 +1500,9 @@ static void mag_collect_topo_iterative(mag_tensor_t* root, mag_tensor_set_t* out
     while (sta_len) { /* Iterative DFS */
         mag_topo_record_t* top = &stack[sta_len - 1];
         mag_tensor_t* cur_tensor = top->tensor;
-        if (top->next_child_idx < mag_op_meta_of(cur_tensor->op)->in) {
-            mag_tensor_t* child = cur_tensor->op_inputs[top->next_child_idx++];
+        mag_assert(cur_tensor->au_state, "Autodiff state not allocated for tensor that requires gradient");
+        if (top->next_child_idx < mag_op_meta_of(cur_tensor->au_state->op)->in) {
+            mag_tensor_t* child = cur_tensor->au_state->op_inputs[top->next_child_idx++];
             if (child && (child->flags & MAG_TFLAG_REQUIRES_GRAD)) {
                 if (!mag_hashset_contains_key(&visited, child)) {
                     mag_hashset_insert(&visited, child);
@@ -1527,10 +1523,10 @@ static void mag_collect_topo_iterative(mag_tensor_t* root, mag_tensor_set_t* out
 }
 
 static void mag_tensor_patch_grad(mag_tensor_t* dst, mag_tensor_t* grad) {
-    if (dst->grad)
-        mag_tensor_decref(dst->grad);
+    if (dst->au_state->grad)
+        mag_tensor_decref(dst->au_state->grad);
     grad->flags = (grad->flags|MAG_TFLAG_IS_GRAD)&~MAG_TFLAG_REQUIRES_GRAD;
-    dst->grad = grad;
+    dst->au_state->grad = grad;
 }
 
 void mag_tensor_backward(mag_tensor_t* root) {
@@ -1545,29 +1541,29 @@ void mag_tensor_backward(mag_tensor_t* root) {
         mag_swap(mag_tensor_t*, post_order.data[i], post_order.data[j]);
     for (size_t id=0; id < post_order.size; ++id) {
         mag_tensor_t* child = post_order.data[id];
-        mag_assert2(child);
-        const mag_opmeta_t* meta = mag_op_meta_of(child->op);
-        if (!child->grad) {
+        mag_assert(child && child->au_state, "Autodiff state not allocated for tensor that requires gradient");
+        const mag_opmeta_t* meta = mag_op_meta_of(child->au_state->op);
+        if (!child->au_state->grad) {
             mag_tensor_t* grad = mag_tensor_full_like(child, 1.0f);
             mag_tensor_patch_grad(child, grad);
         }
-        if (mag_unlikely(child->op == MAG_OP_NOP)) continue;
+        if (mag_unlikely(child->au_state->op == MAG_OP_NOP)) continue;
         mag_tensor_t* grads[MAG_MAX_OP_INPUTS] = {0};
-        void (*op_bwd)(mag_tensor_t*, mag_tensor_t**) = meta->backward;
-        mag_assert2(op_bwd);
-        (*op_bwd)(child, grads);
+        void (*backward)(mag_au_state_t*, mag_tensor_t**) = meta->backward;
+        mag_assert2(backward);
+        (*backward)(child->au_state, grads);
         uint32_t numin = meta->in;
         mag_assert2(numin <= MAG_MAX_OP_INPUTS);
         for (uint32_t i=0; i < numin; ++i) {
-            mag_tensor_t* input = child->op_inputs[i];
+            mag_tensor_t* input = child->au_state->op_inputs[i];
             mag_assert2(input);
             if (!(input->flags & MAG_TFLAG_REQUIRES_GRAD)) continue;
             mag_tensor_t* gri = grads[i];
             mag_assert(gri, "Gradient for op %s, input #%d is not computed", meta->mnemonic, i);
-            if (!input->grad) {
+            if (!input->au_state->grad) {
                 mag_tensor_patch_grad(input, gri);
             } else {
-                mag_tensor_t* acc = mag_add(gri, input->grad);
+                mag_tensor_t* acc = mag_add(gri, input->au_state->grad);
                 mag_tensor_patch_grad(input, acc);
                 mag_tensor_decref(gri);
             }
@@ -1579,8 +1575,8 @@ void mag_tensor_backward(mag_tensor_t* root) {
 }
 
 void mag_tensor_zero_grad(mag_tensor_t* t) {
-    if (t->grad && t->flags & MAG_TFLAG_REQUIRES_GRAD)
-        mag_tensor_fill_float(t->grad, 0.0f);
+    if (t->flags & MAG_TFLAG_REQUIRES_GRAD && t->au_state && t->au_state->grad)
+        mag_tensor_fill_float(t->au_state->grad, 0.0f);
 }
 
 /*
@@ -2417,11 +2413,12 @@ static void mag_machine_probe(mag_context_t* ctx) {
 }
 
 static MAG_COLDPROC void mag_graphviz_dump(const mag_tensor_t* node, FILE *fp, mag_hashset_t* visited) {
+    if (!node->au_state) return;
     if (mag_hashset_contains_key(visited, node)) return;
     mag_hashset_insert(visited, node);
     bool is_input = true;
     for (unsigned i=0; i < MAG_MAX_OP_INPUTS; ++i) {
-        if (node->op_inputs[i] != NULL) {
+        if (node->au_state->op_inputs[i] != NULL) {
             is_input = false;
             break;
         }
@@ -2434,14 +2431,14 @@ static MAG_COLDPROC void mag_graphviz_dump(const mag_tensor_t* node, FILE *fp, m
         fp,
         "  \"%p\" [label=\"⊕ %s|∇ %s|%s|0x%x\", shape=record, style=\"rounded,filled\", fillcolor=%s];\n",
         (void*)node,
-        mag_op_meta_of(node->op)->mnemonic,\
+        mag_op_meta_of(node->au_state->op)->mnemonic,\
         gra ? "✓" : "🗙",
         dim_buf,
         node->flags,
         fillcolor
     );
     for (unsigned i=0; i < MAG_MAX_OP_INPUTS; ++i) {
-        mag_tensor_t* input = node->op_inputs[i];
+        mag_tensor_t* input = node->au_state->op_inputs[i];
         if (!input) continue;
         char name[128];
         snprintf(name, sizeof(name), " in %u", i);
@@ -2481,20 +2478,21 @@ MAG_COLDPROC void mag_tensor_export_backward_graph_graphviz(mag_tensor_t* t, con
     fprintf(fp, "    node [shape=record, style=\"rounded,filled\", fontname=\"Helvetica\"];\n");
     for (size_t i=0; i < post_order.size; ++i) {
         mag_tensor_t* node = post_order.data[i];
-        const mag_opmeta_t* meta = mag_op_meta_of(node->op);
+        if (!node->au_state) continue;
+        const mag_opmeta_t* meta = mag_op_meta_of(node->au_state->op);
         fprintf(fp, "    \"%p\" [label=\"%s\\nShape: (", node, meta->mnemonic);
-        for (int r = 0; r < node->rank; ++r) {
+        for (int64_t r=0; r < node->rank; ++r) {
             fprintf(fp, "%zu", (size_t)node->shape[r]);
             if (r < node->rank - 1)
                 fprintf(fp, ", ");
         }
-        fprintf(fp, ")\\nGrad: %s\"];\n", node->grad ? "set" : "none");
+        fprintf(fp, ")\\nGrad: %s\"];\n", node->au_state->grad ? "set" : "none");
     }
     for (size_t i=0; i < post_order.size; ++i) {
         mag_tensor_t* node = post_order.data[i];
-        const mag_opmeta_t* meta = mag_op_meta_of(node->op);
+        const mag_opmeta_t* meta = mag_op_meta_of(node->au_state->op);
         for (uint32_t j = 0; j < meta->in; ++j) {
-            mag_tensor_t* input = node->op_inputs[j];
+            mag_tensor_t* input = node->au_state->op_inputs[j];
             if (input) {
                 fprintf(fp, "    \"%p\" -> \"%p\" [label=\"input %u\"];\n", node, input, j);
             }

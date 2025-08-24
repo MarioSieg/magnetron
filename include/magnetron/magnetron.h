@@ -363,7 +363,6 @@ extern MAG_EXPORT bool mag_tensor_get_item_bool(const mag_tensor_t* t);
 extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t* t);
 extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t* t);
 extern MAG_EXPORT mag_tensor_t* mag_tensor_detach(mag_tensor_t* t);
-extern MAG_EXPORT uint32_t mag_tensor_weak_hash(const mag_tensor_t* t); /* Returns hash of the tensor properties, not including data. */
 extern MAG_EXPORT char* mag_tensor_to_string(mag_tensor_t* t, bool with_header, size_t from_start_count, size_t from_end_count);
 extern MAG_EXPORT void mag_tensor_to_string_free_data(char* ret_val);
 extern MAG_EXPORT mag_tensor_t* mag_tensor_load_image(mag_context_t* ctx, const char* file, mag_color_channels_t channels, uint32_t resize_w, uint32_t resize_h);    /* Create a tensor from an image file. */
