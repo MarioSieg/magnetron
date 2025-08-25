@@ -49,16 +49,6 @@ namespace magnetron::test {
         return {std::begin(internal->strides), std::end(internal->strides)};
     }
 
-    [[nodiscard]] inline auto op_inputs_as_vec(tensor t) -> std::vector<mag_tensor_t*> {
-        mag_tensor_t* internal {&*t};
-        return {std::begin(internal->op_inputs), std::end(internal->op_inputs)};
-    }
-
-    [[nodiscard]] inline auto op_params_as_vec(tensor t) -> std::vector<mag_opparam_t> {
-        mag_tensor_t* internal {&*t};
-        return {std::begin(internal->op_params), std::end(internal->op_params)};
-    }
-
     [[nodiscard]] inline auto shape_to_string(std::span<const std::int64_t> shape) -> std::string {
         std::stringstream ss {};
         ss << "(";

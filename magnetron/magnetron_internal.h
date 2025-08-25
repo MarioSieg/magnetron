@@ -878,6 +878,8 @@ mag_static_assert(MAG_DTYPE__NUM <= 8); /* Must fit in 8 bits, if this fails inc
 
 #define MAG_OP_INOUT_DYN SIZE_MAX /* Dynamic input/output count. Used for operations that can have arbitrary number of inputs/outputs. */
 
+typedef struct mag_au_state_t mag_au_state_t;
+
 /* Stores operator metadata such as operation type, number of inputs and parameters, and the types of the parameters. */
 typedef struct mag_opmeta_t {
     const char* const mnemonic;
@@ -886,7 +888,7 @@ typedef struct mag_opmeta_t {
     const mag_dtype_mask_t dtype_mask;
     const mag_opparam_type_t op_param_layout[MAG_MAX_OP_PARAMS];
     const mag_opflags_t flags;
-    void (*const backward)(mag_tensor_t*, mag_tensor_t**);
+    void (*const backward)(mag_au_state_t*, mag_tensor_t**);
 } mag_opmeta_t;
 
 extern const mag_opmeta_t* mag_op_meta_of(mag_opcode_t opc); /* Get operation metadata for a specific opcode. */
@@ -1137,9 +1139,10 @@ struct mag_context_t {
     } machine;
     size_t num_tensors;                         /* Total tensor instances allocated. */
     size_t num_storages;                        /* Total storage buffers allocated. */
-    mag_fixed_pool_t tensor_pool;               /* Tensor struct memory pool. */
-    mag_fixed_pool_t storage_pool;              /* Storage struct memory pool. */
-    mag_fixed_pool_t view_meta_pool;            /* Storage struct memory pool. */
+    mag_fixed_pool_t tensor_pool;               /* Tensor header memory pool. */
+    mag_fixed_pool_t storage_pool;              /* Storage header memory pool. */
+    mag_fixed_pool_t view_meta_pool;            /* View metadata header memory pool. */
+    mag_fixed_pool_t au_state_pool;             /* Autodiff state memory pool. */
     mag_context_flags_t flags;                  /* Context flags. */
     mag_prng_algo_t prng_algo;                   /* Active PRNG algorithm. */
     uintptr_t tr_id;                            /* Context thread ID. */
@@ -1164,6 +1167,7 @@ typedef enum mag_tensor_flags_t {
 } mag_tensor_flags_t;
 mag_static_assert(MAG_TFLAG_LEN <= 8); /* Must fit in one byte */
 
+/* Metadata for view tensors */
 typedef struct mag_view_meta_t {
     mag_rccontrol_t rc;
     mag_tensor_t* base;
@@ -1171,6 +1175,17 @@ typedef struct mag_view_meta_t {
 } mag_view_meta_t;
 
 extern mag_view_meta_t* mag_view_meta_alloc(mag_tensor_t* base);
+
+/* Autodiff state for parameters */
+struct mag_au_state_t {
+    mag_context_t* ctx;
+    mag_rccontrol_t rc;
+    mag_opcode_t op;
+    mag_tensor_t* op_inputs[MAG_MAX_OP_INPUTS];
+    mag_opparam_t op_params[MAG_MAX_OP_PARAMS];
+    mag_tensor_t* grad;
+};
+extern mag_au_state_t* mag_au_state_lazy_alloc(mag_au_state_t** au_state, mag_context_t* ctx);
 
 /*
 ** Reference counted tensor header. Stores shape, strides, gradient and other metadata.
@@ -1185,15 +1200,12 @@ struct mag_tensor_t {
     int64_t strides[MAG_MAX_DIMS];                  /* Strides of the tensor. We store the strides in element counts and NOT in bytes. */
     mag_dtype_t dtype : 8;                          /* Data type of the tensor. */
     mag_tensor_flags_t flags : 8;                   /* Tensor flags. */
-    mag_opcode_t op : 8;                            /* Opcode for operators. */
     mag_istorage_t* storage;                        /* Storage buffer. */
     int64_t numel;                                  /* Number of elements in the tensor. */
-    mag_tensor_t* op_inputs[MAG_MAX_OP_INPUTS];     /* Input tensors for operators. */
-    mag_opparam_t op_params[MAG_MAX_OP_PARAMS];     /* Operator parameters. */
     int64_t storage_offset;                         /* Offset in elements in the storage buffer for views. */
     mag_view_meta_t* view_meta;                     /* View metadata, if this is a view. */
+    mag_au_state_t* au_state;                       /* Autodiff state, if gradient recording is active. */
     uint64_t version;                               /* Version of the tensor. Used for views to detect changes in the base tensor. */
-    mag_tensor_t* grad;                             /* ∇f - Gradient tensor. */
 #ifdef MAG_DEBUG
     mag_tensor_t* alive_next;                       /* Next alive tensor used for leak detection. */
 #endif
@@ -1262,6 +1274,8 @@ typedef struct mag_kernel_payload_t {
 ** See magnetron_cpu.c for details.
 */
 typedef struct mag_kernel_registry_t {
+    void (*init)(void);
+    void (*deinit)(void);
     void (*operators[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t*);       /* Eval operator kernels. */
     void (*vector_cast)(size_t nb, const void* src, mag_dtype_t src_t, void* dst, mag_dtype_t dst_t); /* Vector cast (dtype conversion) kernel. */
     size_t (*vreg_width)(void);

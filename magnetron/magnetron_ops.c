@@ -83,19 +83,20 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
     mag_assert_correct_op_data(op, in, num_in, params, num_params);
     const mag_opmeta_t* meta = mag_op_meta_of(op);
     inplace &= !!(meta->flags & MAG_OP_FLAG_SUPPORTS_INPLACE);
-    for (uint32_t i=0; i < num_out; ++i) { /* Set result tensor data */
+    for (uint32_t i=0; i < num_out; ++i) { /* Populate autodiff state and handle gradient tracking */
         mag_tensor_t* r = out[i];
-        r->op = op; /* Set opcode of result. */
+        mag_au_state_t* au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
+        au->op = op;
         for (uint32_t j=0; j < num_in; ++j) {
             mag_tensor_t* input = in[j];
-            r->op_inputs[j] = input;
-            /* If gradient tracking is enabled, the result tensor inherits the input's gradient rules. */
+            au->op_inputs[j] = input;
             if (is_recording_grads) {
-                r->flags |= input->flags & MAG_TFLAG_REQUIRES_GRAD; /* Set gradient tracking flag if set in input. */
-                mag_tensor_incref(input);                                /* Keep input alive for the backward pass. */
+                if (input->flags & MAG_TFLAG_REQUIRES_GRAD && !(r->flags & MAG_TFLAG_REQUIRES_GRAD)) /* If any input requires grad, the output must also require grad*/
+                    mag_tensor_set_requires_grad(r, true);
+                mag_tensor_incref(input); /* Keep input alive for the backward pass. */
             }
         }
-        if (params) memcpy(r->op_params, params, num_params*sizeof(*params));
+        if (params) memcpy(au->op_params, params, num_params*sizeof(*params));
     }
     mag_command_t cmd = {
         .op = op,
@@ -801,35 +802,35 @@ void mag_tensor_fill_arange(mag_tensor_t* t, float start, float step){
 ** ###################################################################################################################
 */
 
-static void mag_op_backward_clone(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_clone(mag_au_state_t* node, mag_tensor_t** grads) {
     *grads = mag_clone(node->grad);
 }
 
-static void mag_op_backward_view(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_view(mag_au_state_t* node, mag_tensor_t** grads) {
     *grads = mag_clone(node->grad);
 }
 
-static void mag_op_backward_transpose(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_transpose(mag_au_state_t* node, mag_tensor_t** grads) {
     int64_t ax0 = mag_op_param_unpack_i64_or_panic(node->op_params[0]);
     int64_t ax1 = mag_op_param_unpack_i64_or_panic(node->op_params[1]);
     *grads = mag_transpose(node->grad, ax0, ax1);
 }
 
-static void mag_op_backward_mean(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_mean(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* scale = mag_tensor_full_like(x, (mag_e8m23_t)(1.0/(mag_e11m52_t)x->numel));
     *grads = mag_mul(scale, node->grad);
     mag_tensor_decref(scale);
 }
 
-static void mag_op_backward_sum(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_sum(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* ones = mag_tensor_full_like(x, 1.0f);
     *grads = mag_mul(ones, node->grad);
     mag_tensor_decref(ones);
 }
 
-static void mag_op_backward_abs(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_abs(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* step = mag_step(x);
     mag_tensor_t* one = mag_tensor_scalar(x->ctx, x->dtype, 1.0f);
@@ -844,18 +845,18 @@ static void mag_op_backward_abs(mag_tensor_t* node, mag_tensor_t** grads) {
     mag_tensor_decref(sign);
 }
 
-static void mag_op_backward_neg(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_neg(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* m1 = mag_tensor_scalar(node->grad->ctx, node->grad->dtype, -1.f);
     grads[0] = mag_mul(node->grad, m1);
     mag_tensor_decref(m1);
 }
 
-static void mag_op_backward_log(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_log(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     grads[0] = mag_div(node->grad, x);
 }
 
-static void mag_op_backward_sqr(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_sqr(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* two = mag_tensor_scalar(x->ctx, x->dtype, 2.0f);
     mag_tensor_t* two_x = mag_mul(x, two);
@@ -864,7 +865,7 @@ static void mag_op_backward_sqr(mag_tensor_t* node, mag_tensor_t** grads) {
     mag_tensor_decref(two_x);
 }
 
-static void mag_op_backward_sqrt(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_sqrt(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* sqrt_x = mag_sqrt(x);
     mag_tensor_t* two = mag_tensor_scalar(x->ctx, x->dtype, 2.0f);
@@ -875,14 +876,14 @@ static void mag_op_backward_sqrt(mag_tensor_t* node, mag_tensor_t** grads) {
     mag_tensor_decref(denom);
 }
 
-static void mag_op_backward_sin(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_sin(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* cos_x = mag_cos(x);
     grads[0] = mag_mul(node->grad, cos_x);
     mag_tensor_decref(cos_x);
 }
 
-static void mag_op_backward_cos(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_cos(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* sinx = mag_sin(x);
     mag_tensor_t* nsinx = mag_neg(sinx);
@@ -891,14 +892,14 @@ static void mag_op_backward_cos(mag_tensor_t* node, mag_tensor_t** grads) {
     mag_tensor_decref(nsinx);
 }
 
-static void mag_op_backward_exp(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_exp(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* exp_x = mag_exp(x);
     grads[0] = mag_mul(node->grad, exp_x);
     mag_tensor_decref(exp_x);
 }
 
-static void mag_op_backward_softmax(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_softmax(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* y = mag_softmax(x);
     mag_tensor_t* tmp = mag_mul(node->grad, y);
@@ -911,42 +912,42 @@ static void mag_op_backward_softmax(mag_tensor_t* node, mag_tensor_t** grads) {
     mag_tensor_decref(y);
 }
 
-static void mag_op_backward_sigmoid(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_sigmoid(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* dv = mag_sigmoid_dv(x);
     grads[0] = mag_mul(dv, node->grad);
     mag_tensor_decref(dv);
 }
 
-static void mag_op_backward_silu(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_silu(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* dv = mag_silu_dv(x);
     grads[0] = mag_mul(node->grad, dv);
     mag_tensor_decref(dv);
 }
 
-static void mag_op_backward_tanh(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_tanh(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* dv = mag_tanh_dv(x);
     grads[0] = mag_mul(node->grad, dv);
     mag_tensor_decref(dv);
 }
 
-static void mag_op_backward_relu(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_relu(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* mask = mag_step(x);
     grads[0] = mag_mul(node->grad, mask);
     mag_tensor_decref(mask);
 }
 
-static void mag_op_backward_gelu(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_gelu(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* dv = mag_gelu_dv(x);
     grads[0] = mag_mul(node->grad, dv);
     mag_tensor_decref(dv);
 }
 
-static void mag_op_backward_add(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_add(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
@@ -963,7 +964,7 @@ static void mag_op_backward_add(mag_tensor_t* node, mag_tensor_t** grads) {
     }
 }
 
-static void mag_op_backward_sub(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_sub(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
@@ -980,7 +981,7 @@ static void mag_op_backward_sub(mag_tensor_t* node, mag_tensor_t** grads) {
     }
 }
 
-static void mag_op_backward_mul(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_mul(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
@@ -997,7 +998,7 @@ static void mag_op_backward_mul(mag_tensor_t* node, mag_tensor_t** grads) {
     }
 }
 
-static void mag_op_backward_div(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_div(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
@@ -1020,7 +1021,7 @@ static void mag_op_backward_div(mag_tensor_t* node, mag_tensor_t** grads) {
     }
 }
 
-static void mag_op_backward_matmul(mag_tensor_t* node, mag_tensor_t** grads) {
+static void mag_op_backward_matmul(mag_au_state_t* node, mag_tensor_t** grads) {
     mag_tensor_t* x = node->op_inputs[0];
     mag_tensor_t* y = node->op_inputs[1];
     if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
