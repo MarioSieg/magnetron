@@ -115,7 +115,7 @@ static mi_decl_noinline void* mi_heap_malloc_zero_aligned_at_overalloc(mi_heap_t
 
   // now zero the block if needed
   if (alignment > MI_BLOCK_ALIGNMENT_MAX) {
-    // for the tracker, on huge aligned allocations only from the start of the large block is defined
+    // for the tracker, on huge aligned allocations only the memory from the start of the large block is defined
     mi_track_mem_undefined(aligned_p, size);
     if (zero) {
       _mi_memzero_aligned(aligned_p, mi_usable_size(aligned_p));
@@ -216,6 +216,11 @@ mi_decl_nodiscard mi_decl_restrict void* mi_heap_malloc_aligned_at(mi_heap_t* he
 mi_decl_nodiscard mi_decl_restrict void* mi_heap_malloc_aligned(mi_heap_t* heap, size_t size, size_t alignment) mi_attr_noexcept {
   return mi_heap_malloc_aligned_at(heap, size, alignment, 0);
 }
+
+// ensure a definition is emitted
+#if defined(__cplusplus)
+void* _mi_extern_heap_malloc_aligned = (void*)&mi_heap_malloc_aligned;
+#endif
 
 // ------------------------------------------------------
 // Aligned Allocation

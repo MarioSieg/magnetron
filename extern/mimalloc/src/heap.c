@@ -95,6 +95,11 @@ static bool mi_heap_page_collect(mi_heap_t* heap, mi_page_queue_t* pq, mi_page_t
   mi_assert_internal(mi_heap_page_is_valid(heap, pq, page, NULL, NULL));
   mi_collect_t collect = *((mi_collect_t*)arg_collect);
   _mi_page_free_collect(page, collect >= MI_FORCE);
+  if (collect == MI_FORCE) {
+    // note: call before a potential `_mi_page_free` as the segment may be freed if this was the last used page in that segment.
+    mi_segment_t* segment = _mi_page_segment(page);
+    _mi_segment_collect(segment, true /* force? */);
+  }
   if (mi_page_all_free(page)) {
     // no more used blocks, free the page.
     // note: this will free retired pages as well.
@@ -127,14 +132,15 @@ static void mi_heap_collect_ex(mi_heap_t* heap, mi_collect_t collect)
   const bool is_main_thread = (_mi_is_main_thread() && heap->thread_id == _mi_thread_id());
 
   // note: never reclaim on collect but leave it to threads that need storage to reclaim
-  if (
-  #ifdef NDEBUG
+  const bool force_main =
+    #ifdef NDEBUG
       collect == MI_FORCE
-  #else
+    #else
       collect >= MI_FORCE
-  #endif
-    && is_main_thread && mi_heap_is_backing(heap) && !heap->no_reclaim)
-  {
+    #endif
+      && is_main_thread && mi_heap_is_backing(heap) && !heap->no_reclaim;
+
+  if (force_main) {
     // the main thread is abandoned (end-of-program), try to reclaim all abandoned segments.
     // if all memory is freed by now, all segments should be freed.
     // note: this only collects in the current subprocess
@@ -157,8 +163,9 @@ static void mi_heap_collect_ex(mi_heap_t* heap, mi_collect_t collect)
   mi_heap_visit_pages(heap, &mi_heap_page_collect, &collect, NULL);
   mi_assert_internal( collect != MI_ABANDON || mi_atomic_load_ptr_acquire(mi_block_t,&heap->thread_delayed_free) == NULL );
 
-  // collect segments (purge pages, this can be expensive so don't force on abandonment)
-  _mi_segments_collect(collect == MI_FORCE, &heap->tld->segments);
+  // collect abandoned segments (in particular, purge expired parts of segments in the abandoned segment list)
+  // note: forced purge can be quite expensive if many threads are created/destroyed so we do not force on abandonment
+  _mi_abandoned_collect(heap, collect == MI_FORCE /* force? */, &heap->tld->segments);
 
   // if forced, collect thread data cache on program-exit (or shared library unload)
   if (force && is_main_thread && mi_heap_is_backing(heap)) {
@@ -169,9 +176,7 @@ static void mi_heap_collect_ex(mi_heap_t* heap, mi_collect_t collect)
   _mi_arenas_collect(collect == MI_FORCE /* force purge? */);
 
   // merge statistics
-  if (collect <= MI_FORCE) {
-    mi_stats_merge();
-  }
+  if (collect <= MI_FORCE) { _mi_stats_merge_thread(heap->tld); }
 }
 
 void _mi_heap_collect_abandon(mi_heap_t* heap) {
@@ -328,8 +333,14 @@ static bool _mi_heap_page_destroy(mi_heap_t* heap, mi_page_queue_t* pq, mi_page_
 
   // stats
   const size_t bsize = mi_page_block_size(page);
-  if (bsize > MI_LARGE_OBJ_SIZE_MAX) {
-    mi_heap_stat_decrease(heap, malloc_huge, bsize);
+  if (bsize > MI_MEDIUM_OBJ_SIZE_MAX) {
+    //if (bsize <= MI_LARGE_OBJ_SIZE_MAX) {
+    //  mi_heap_stat_decrease(heap, malloc_large, bsize);
+    //}
+    //else 
+    {
+      mi_heap_stat_decrease(heap, malloc_huge, bsize);
+    }
   }
   #if (MI_STAT>0)
   _mi_page_free_collect(page, false);  // update used count

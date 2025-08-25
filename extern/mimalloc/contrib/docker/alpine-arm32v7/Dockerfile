@@ -1,6 +1,6 @@
 # install from an image
 # download first an appropriate tar.gz image into the current directory
-# from: <https://github.com/alpinelinux/docker-alpine/tree/edge/armv7>
+# from <https://github.com/alpinelinux/docker-alpine/tree/edge/armv7>
 FROM scratch
 
 # Substitute the image name that was downloaded

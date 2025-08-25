@@ -114,8 +114,8 @@ static void mi_stats_add(mi_stats_t* stats, const mi_stats_t* src) {
   }
   #endif
   for (size_t i = 0; i <= MI_BIN_HUGE; i++) {
-    mi_stat_count_add_mt(&stats->page_bins[i], &src->page_bins[i]);    
-  }  
+    mi_stat_count_add_mt(&stats->page_bins[i], &src->page_bins[i]);
+  }
 }
 
 #undef MI_STAT_COUNT
@@ -218,12 +218,14 @@ static void mi_stat_peak_print(const mi_stat_count_t* stat, const char* msg, int
   _mi_fprintf(out, arg, "\n");
 }
 
+#if MI_STAT>1
 static void mi_stat_total_print(const mi_stat_count_t* stat, const char* msg, int64_t unit, mi_output_fun* out, void* arg) {
   _mi_fprintf(out, arg, "%10s:", msg);
   _mi_fprintf(out, arg, "%12s", " ");  // no peak
   mi_print_amount(stat->total, unit, out, arg);
   _mi_fprintf(out, arg, "\n");
 }
+#endif
 
 static void mi_stat_counter_print(const mi_stat_counter_t* stat, const char* msg, mi_output_fun* out, void* arg ) {
   _mi_fprintf(out, arg, "%10s:", msg);
@@ -314,9 +316,11 @@ static void _mi_stats_print(mi_stats_t* stats, mi_output_fun* out0, void* arg0) 
   #endif
   #if MI_STAT
   mi_stat_print(&stats->malloc_normal, "binned", (stats->malloc_normal_count.total == 0 ? 1 : -1), out, arg);
+  // mi_stat_print(&stats->malloc_large, "large", (stats->malloc_large_count.total == 0 ? 1 : -1), out, arg);
   mi_stat_print(&stats->malloc_huge, "huge", (stats->malloc_huge_count.total == 0 ? 1 : -1), out, arg);
   mi_stat_count_t total = { 0,0,0 };
   mi_stat_count_add_mt(&total, &stats->malloc_normal);
+  // mi_stat_count_add(&total, &stats->malloc_large);
   mi_stat_count_add_mt(&total, &stats->malloc_huge);
   mi_stat_print_ex(&total, "total", 1, out, arg, "");
   #endif
@@ -346,7 +350,7 @@ static void _mi_stats_print(mi_stats_t* stats, mi_output_fun* out0, void* arg0) 
   mi_stat_counter_print(&stats->malloc_guarded_count, "guarded", out, arg);
   mi_stat_print(&stats->threads, "threads", -1, out, arg);
   mi_stat_counter_print_avg(&stats->page_searches, "searches", out, arg);
-  _mi_fprintf(out, arg, "%10s: %5zu\n", "numa nodes", _mi_os_numa_node_count());
+  _mi_fprintf(out, arg, "%10s: %5i\n", "numa nodes", _mi_os_numa_node_count());
 
   size_t elapsed;
   size_t user_time;
@@ -357,9 +361,9 @@ static void _mi_stats_print(mi_stats_t* stats, mi_output_fun* out0, void* arg0) 
   size_t peak_commit;
   size_t page_faults;
   mi_process_info(&elapsed, &user_time, &sys_time, &current_rss, &peak_rss, &current_commit, &peak_commit, &page_faults);
-  _mi_fprintf(out, arg, "%10s: %5ld.%03ld s\n", "elapsed", elapsed/1000, elapsed%1000);
-  _mi_fprintf(out, arg, "%10s: user: %ld.%03ld s, system: %ld.%03ld s, faults: %lu, rss: ", "process",
-              user_time/1000, user_time%1000, sys_time/1000, sys_time%1000, (unsigned long)page_faults );
+  _mi_fprintf(out, arg, "%10s: %5zu.%03zu s\n", "elapsed", elapsed/1000, elapsed%1000);
+  _mi_fprintf(out, arg, "%10s: user: %zu.%03zu s, system: %zu.%03zu s, faults: %zu, rss: ", "process",
+              user_time/1000, user_time%1000, sys_time/1000, sys_time%1000, page_faults );
   mi_printf_amount((int64_t)peak_rss, 1, out, arg, "%s");
   if (peak_commit > 0) {
     _mi_fprintf(out, arg, ", commit: ");
@@ -391,6 +395,10 @@ void mi_stats_reset(void) mi_attr_noexcept {
 
 void mi_stats_merge(void) mi_attr_noexcept {
   mi_stats_merge_from( mi_stats_get_default() );
+}
+
+void _mi_stats_merge_thread(mi_tld_t* tld) {
+  mi_stats_merge_from( &tld->stats );
 }
 
 void _mi_stats_done(mi_stats_t* stats) {  // called from `mi_thread_done`
@@ -496,7 +504,7 @@ static bool mi_heap_buf_expand(mi_heap_buf_t* hbuf) {
     hbuf->buf[hbuf->size-1] = 0;
   }
   if (hbuf->size > SIZE_MAX/2 || !hbuf->can_realloc) return false;
-  const size_t newsize = (hbuf->size == 0 ? 2*MI_KiB : 2*hbuf->size);
+  const size_t newsize = (hbuf->size == 0 ? mi_good_size(12*MI_KiB) : 2*hbuf->size);
   char* const  newbuf  = (char*)mi_rezalloc(hbuf->buf, newsize);
   if (newbuf == NULL) return false;
   hbuf->buf = newbuf;
@@ -523,7 +531,12 @@ static void mi_heap_buf_print_count_bin(mi_heap_buf_t* hbuf, const char* prefix,
   const size_t binsize = _mi_bin_size(bin);
   const size_t pagesize = (binsize <= MI_SMALL_OBJ_SIZE_MAX ? MI_SMALL_PAGE_SIZE :
                             (binsize <= MI_MEDIUM_OBJ_SIZE_MAX ? MI_MEDIUM_PAGE_SIZE :
-                              (binsize <= MI_LARGE_OBJ_SIZE_MAX ? MI_LARGE_PAGE_SIZE : 0)));
+                              #if MI_LARGE_PAGE_SIZE
+                              (binsize <= MI_LARGE_OBJ_SIZE_MAX ? MI_LARGE_PAGE_SIZE : 0)
+                              #else
+                              0
+                              #endif
+                              ));
   char buf[128];
   _mi_snprintf(buf, 128, "%s{ \"total\": %lld, \"peak\": %lld, \"current\": %lld, \"block_size\": %zu, \"page_size\": %zu }%s\n", prefix, stat->total, stat->peak, stat->current, binsize, pagesize, (add_comma ? "," : ""));
   buf[127] = 0;
@@ -616,7 +629,7 @@ char* mi_stats_get_json(size_t output_size, char* output_buf) mi_attr_noexcept {
   for (size_t i = 0; i <= MI_BIN_HUGE; i++) {
     mi_heap_buf_print_count_bin(&hbuf, "    ", &stats->page_bins[i], i, i!=MI_BIN_HUGE);
   }
-  mi_heap_buf_print(&hbuf, "  ]\n");  
+  mi_heap_buf_print(&hbuf, "  ]\n");
   mi_heap_buf_print(&hbuf, "}\n");
   return hbuf.buf;
 }

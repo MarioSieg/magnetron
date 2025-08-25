@@ -13,8 +13,9 @@ terms of the MIT license. A copy of the license can be found in the file
 // mi_heap_t      : all data for a thread-local heap, contains
 //                  lists of all managed heap pages.
 // mi_segment_t   : a larger chunk of memory (32GiB) from where pages
-//                  are allocated.
-// mi_page_t      : a mimalloc page (usually 64KiB or 512KiB) from
+//                  are allocated. A segment is divided in slices (64KiB) from
+//                  which pages are allocated.
+// mi_page_t      : a "mimalloc" page (usually 64KiB or 512KiB) from
 //                  where objects are allocated.
 //                  Note: we write "OS page" for OS memory pages while
 //                  using plain "page" for mimalloc pages (`mi_page_t`).
@@ -167,38 +168,40 @@ typedef int32_t  mi_ssize_t;
 // ------------------------------------------------------
 
 // Main tuning parameters for segment and page sizes
-// Sizes for 64-bit, divide by two for 32-bit
+// Sizes for 64-bit (usually divide by two for 32-bit)
+#ifndef MI_SEGMENT_SLICE_SHIFT
+#define MI_SEGMENT_SLICE_SHIFT            (13 + MI_INTPTR_SHIFT)         // 64KiB  (32KiB on 32-bit)
+#endif
+
+#ifndef MI_SEGMENT_SHIFT
+#if MI_INTPTR_SIZE > 4
+#define MI_SEGMENT_SHIFT                  ( 9 + MI_SEGMENT_SLICE_SHIFT)  // 32MiB
+#else
+#define MI_SEGMENT_SHIFT                  ( 7 + MI_SEGMENT_SLICE_SHIFT)  // 4MiB on 32-bit
+#endif
+#endif
+
 #ifndef MI_SMALL_PAGE_SHIFT
-#define MI_SMALL_PAGE_SHIFT               (13 + MI_INTPTR_SHIFT)      // 64KiB
+#define MI_SMALL_PAGE_SHIFT               (MI_SEGMENT_SLICE_SHIFT)       // 64KiB
 #endif
 #ifndef MI_MEDIUM_PAGE_SHIFT
-#define MI_MEDIUM_PAGE_SHIFT              ( 3 + MI_SMALL_PAGE_SHIFT)  // 512KiB
-#endif
-#ifndef MI_LARGE_PAGE_SHIFT
-#define MI_LARGE_PAGE_SHIFT               ( 3 + MI_MEDIUM_PAGE_SHIFT) // 4MiB
-#endif
-#ifndef MI_SEGMENT_SHIFT
-#define MI_SEGMENT_SHIFT                  ( MI_LARGE_PAGE_SHIFT)      // 4MiB -- must be equal to `MI_LARGE_PAGE_SHIFT`
+#define MI_MEDIUM_PAGE_SHIFT              ( 3 + MI_SMALL_PAGE_SHIFT)     // 512KiB
 #endif
 
 // Derived constants
 #define MI_SEGMENT_SIZE                   (MI_ZU(1)<<MI_SEGMENT_SHIFT)
-#define MI_SEGMENT_ALIGN                  (MI_SEGMENT_SIZE)
+#define MI_SEGMENT_ALIGN                  MI_SEGMENT_SIZE
 #define MI_SEGMENT_MASK                   ((uintptr_t)(MI_SEGMENT_ALIGN - 1))
+#define MI_SEGMENT_SLICE_SIZE             (MI_ZU(1)<< MI_SEGMENT_SLICE_SHIFT)
+#define MI_SLICES_PER_SEGMENT             (MI_SEGMENT_SIZE / MI_SEGMENT_SLICE_SIZE) // 1024
 
 #define MI_SMALL_PAGE_SIZE                (MI_ZU(1)<<MI_SMALL_PAGE_SHIFT)
 #define MI_MEDIUM_PAGE_SIZE               (MI_ZU(1)<<MI_MEDIUM_PAGE_SHIFT)
-#define MI_LARGE_PAGE_SIZE                (MI_ZU(1)<<MI_LARGE_PAGE_SHIFT)
 
-#define MI_SMALL_PAGES_PER_SEGMENT        (MI_SEGMENT_SIZE/MI_SMALL_PAGE_SIZE)
-#define MI_MEDIUM_PAGES_PER_SEGMENT       (MI_SEGMENT_SIZE/MI_MEDIUM_PAGE_SIZE)
-#define MI_LARGE_PAGES_PER_SEGMENT        (MI_SEGMENT_SIZE/MI_LARGE_PAGE_SIZE)
-
-// The max object size are checked to not waste more than 12.5% internally over the page sizes.
-// (Except for large pages since huge objects are allocated in 4MiB chunks)
-#define MI_SMALL_OBJ_SIZE_MAX             (MI_SMALL_PAGE_SIZE/8)   // 8 KiB
-#define MI_MEDIUM_OBJ_SIZE_MAX            (MI_MEDIUM_PAGE_SIZE/8)  // 64 KiB
-#define MI_LARGE_OBJ_SIZE_MAX             (MI_LARGE_PAGE_SIZE/4)   // 1 MiB
+#define MI_SMALL_OBJ_SIZE_MAX             (MI_SMALL_PAGE_SIZE/8)   // 8 KiB on 64-bit
+#define MI_MEDIUM_OBJ_SIZE_MAX            (MI_MEDIUM_PAGE_SIZE/8)  // 64 KiB on 64-bit
+#define MI_MEDIUM_OBJ_WSIZE_MAX           (MI_MEDIUM_OBJ_SIZE_MAX/MI_INTPTR_SIZE)
+#define MI_LARGE_OBJ_SIZE_MAX             (MI_SEGMENT_SIZE/2)      // 16 MiB on 64-bit
 #define MI_LARGE_OBJ_WSIZE_MAX            (MI_LARGE_OBJ_SIZE_MAX/MI_INTPTR_SIZE)
 
 // Maximum number of size classes. (spaced exponentially in 12.5% increments)
@@ -206,18 +209,27 @@ typedef int32_t  mi_ssize_t;
 #error "mimalloc internal: expecting 73 bins"
 #endif
 
-#if (MI_LARGE_OBJ_WSIZE_MAX >= 655360)
+#if (MI_MEDIUM_OBJ_WSIZE_MAX >= 655360)
 #error "mimalloc internal: define more bins"
 #endif
 
 // Maximum block size for which blocks are guaranteed to be block size aligned. (see `segment.c:_mi_segment_page_start`)
-#define MI_MAX_ALIGN_GUARANTEE   (MI_MEDIUM_OBJ_SIZE_MAX)
+#define MI_MAX_ALIGN_GUARANTEE            (MI_MEDIUM_OBJ_SIZE_MAX)
 
 // Alignments over MI_BLOCK_ALIGNMENT_MAX are allocated in dedicated huge page segments
-#define MI_BLOCK_ALIGNMENT_MAX   (MI_SEGMENT_SIZE >> 1)
+#define MI_BLOCK_ALIGNMENT_MAX            (MI_SEGMENT_SIZE >> 1)
 
-// We never allocate more than PTRDIFF_MAX (see also <https://sourceware.org/ml/libc-announce/2019/msg00001.html>)
+// Maximum slice count (255) for which we can find the page for interior pointers
+#define MI_MAX_SLICE_OFFSET_COUNT         ((MI_BLOCK_ALIGNMENT_MAX / MI_SEGMENT_SLICE_SIZE) - 1)
+
+// we never allocate more than PTRDIFF_MAX (see also <https://sourceware.org/ml/libc-announce/2019/msg00001.html>)
+// on 64-bit+ systems we also limit the maximum allocation size such that the slice count fits in 32-bits. (issue #877)
+#if (PTRDIFF_MAX > INT32_MAX) && (PTRDIFF_MAX >= (MI_SEGMENT_SLIZE_SIZE * UINT32_MAX))
+#define MI_MAX_ALLOC_SIZE   (MI_SEGMENT_SLICE_SIZE * (UINT32_MAX-1))
+#else
 #define MI_MAX_ALLOC_SIZE   PTRDIFF_MAX
+#endif
+
 
 // ------------------------------------------------------
 // Mimalloc pages contain allocated blocks
@@ -296,8 +308,8 @@ typedef uintptr_t mi_thread_free_t;
 // Notes:
 // - Access is optimized for `free.c:mi_free` and `alloc.c:mi_page_alloc`
 // - Using `uint16_t` does not seem to slow things down
-// - The size is 10 words on 64-bit which helps the page index calculations
-//   (and 12 words on 32-bit, and encoded free lists add 2 words)
+// - The size is 12 words on 64-bit which helps the page index calculations
+//   (and 14 words on 32-bit, and encoded free lists add 2 words)
 // - `xthread_free` uses the bottom bits as a delayed-free flags to optimize
 //   concurrent frees where only the first concurrent free adds to the owning
 //   heap `thread_delayed_free` list (see `free.c:mi_free_block_mt`).
@@ -307,12 +319,12 @@ typedef uintptr_t mi_thread_free_t;
 //   will be freed correctly even if only other threads free blocks.
 typedef struct mi_page_s {
   // "owned" by the segment
-  uint8_t               segment_idx;       // index in the segment `pages` array, `page == &segment->pages[page->segment_idx]`
-  uint8_t               segment_in_use:1;  // `true` if the segment allocated this page
+  uint32_t              slice_count;       // slices in this page (0 if not a page)
+  uint32_t              slice_offset;      // distance from the actual page data slice (0 if a page)
   uint8_t               is_committed:1;    // `true` if the page virtual memory is committed
   uint8_t               is_zero_init:1;    // `true` if the page was initially zero initialized
-  uint8_t               is_huge:1;         // `true` if the page is in a huge segment
-
+  uint8_t               is_huge:1;         // `true` if the page is in a huge segment (`segment->kind == MI_SEGMENT_HUGE`)
+                                           // padding
   // layout like this to optimize access in `mi_malloc` and `mi_free`
   uint16_t              capacity;          // number of blocks committed, must be the first field, see `segment.c:page_clear`
   uint16_t              reserved;          // number of blocks reserved in memory
@@ -336,12 +348,11 @@ typedef struct mi_page_s {
   _Atomic(mi_thread_free_t) xthread_free;  // list of deferred free blocks freed by other threads
   _Atomic(uintptr_t)        xheap;
 
-  struct mi_page_s*     next;              // next page owned by the heap with the same `block_size`
-  struct mi_page_s*     prev;              // previous page owned by the heap with the same `block_size`
+  struct mi_page_s*     next;              // next page owned by this thread with the same `block_size`
+  struct mi_page_s*     prev;              // previous page owned by this thread with the same `block_size`
 
-  #if MI_INTPTR_SIZE==4                    // pad to 12 words on 32-bit
+  // 64-bit 11 words, 32-bit 13 words, (+2 for secure)
   void* padding[1];
-  #endif
 } mi_page_t;
 
 
@@ -354,9 +365,43 @@ typedef enum mi_page_kind_e {
   MI_PAGE_SMALL,    // small blocks go into 64KiB pages inside a segment
   MI_PAGE_MEDIUM,   // medium blocks go into 512KiB pages inside a segment
   MI_PAGE_LARGE,    // larger blocks go into a single page spanning a whole segment
-  MI_PAGE_HUGE      // a huge page is a single page in a segment of variable size (but still 2MiB aligned)
-                    // used for blocks `> MI_LARGE_OBJ_SIZE_MAX` or an alignment `> MI_BLOCK_ALIGNMENT_MAX`.
+  MI_PAGE_HUGE      // a huge page is a single page in a segment of variable size
+                    // used for blocks `> MI_LARGE_OBJ_SIZE_MAX` or an aligment `> MI_BLOCK_ALIGNMENT_MAX`.
 } mi_page_kind_t;
+
+typedef enum mi_segment_kind_e {
+  MI_SEGMENT_NORMAL, // MI_SEGMENT_SIZE size with pages inside.
+  MI_SEGMENT_HUGE,   // segment with just one huge page inside.
+} mi_segment_kind_t;
+
+// ------------------------------------------------------
+// A segment holds a commit mask where a bit is set if
+// the corresponding MI_COMMIT_SIZE area is committed.
+// The MI_COMMIT_SIZE must be a multiple of the slice
+// size. If it is equal we have the most fine grained
+// decommit (but setting it higher can be more efficient).
+// The MI_MINIMAL_COMMIT_SIZE is the minimal amount that will
+// be committed in one go which can be set higher than
+// MI_COMMIT_SIZE for efficiency (while the decommit mask
+// is still tracked in fine-grained MI_COMMIT_SIZE chunks)
+// ------------------------------------------------------
+
+#define MI_MINIMAL_COMMIT_SIZE      (1*MI_SEGMENT_SLICE_SIZE)
+#define MI_COMMIT_SIZE              (MI_SEGMENT_SLICE_SIZE)              // 64KiB
+#define MI_COMMIT_MASK_BITS         (MI_SEGMENT_SIZE / MI_COMMIT_SIZE)
+#define MI_COMMIT_MASK_FIELD_BITS    MI_SIZE_BITS
+#define MI_COMMIT_MASK_FIELD_COUNT  (MI_COMMIT_MASK_BITS / MI_COMMIT_MASK_FIELD_BITS)
+
+#if (MI_COMMIT_MASK_BITS != (MI_COMMIT_MASK_FIELD_COUNT * MI_COMMIT_MASK_FIELD_BITS))
+#error "the segment size must be exactly divisible by the (commit size * size_t bits)"
+#endif
+
+typedef struct mi_commit_mask_s {
+  size_t mask[MI_COMMIT_MASK_FIELD_COUNT];
+} mi_commit_mask_t;
+
+typedef mi_page_t  mi_slice_t;
+typedef int64_t    mi_msecs_t;
 
 
 // ---------------------------------------------------------------
@@ -401,43 +446,57 @@ typedef struct mi_memid_s {
 } mi_memid_t;
 
 
-// ---------------------------------------------------------------
-// Segments contain mimalloc pages
-// ---------------------------------------------------------------
+// -----------------------------------------------------------------------------------------
+// Segments are large allocated memory blocks (32mb on 64 bit) from arenas or the OS.
+//
+// Inside segments we allocated fixed size mimalloc pages (`mi_page_t`) that contain blocks.
+// The start of a segment is this structure with a fixed number of slice entries (`slices`)
+// usually followed by a guard OS page and the actual allocation area with pages.
+// While a page is not allocated, we view it's data as a `mi_slice_t` (instead of a `mi_page_t`).
+// Of any free area, the first slice has the info and `slice_offset == 0`; for any subsequent
+// slices part of the area, the `slice_offset` is the byte offset back to the first slice
+// (so we can quickly find the page info on a free, `internal.h:_mi_segment_page_of`).
+// For slices, the `block_size` field is repurposed to signify if a slice is used (`1`) or not (`0`).
+// Small and medium pages use a fixed amount of slices to reduce slice fragmentation, while
+// large and huge pages span a variable amount of slices.
+
 typedef struct mi_subproc_s mi_subproc_t;
 
-// Segments are large allocated memory blocks (2MiB on 64 bit) from the OS.
-// Inside segments we allocated fixed size _pages_ that contain blocks.
 typedef struct mi_segment_s {
   // constant fields
-  mi_memid_t           memid;            // memory id to track provenance
-  bool                 allow_decommit;
-  bool                 allow_purge;
-  size_t               segment_size;     // for huge pages this may be different from `MI_SEGMENT_SIZE`
-  mi_subproc_t*        subproc;          // segment belongs to sub process
+  mi_memid_t        memid;              // memory id for arena/OS allocation
+  bool              allow_decommit;     // can we decommmit the memory
+  bool              allow_purge;        // can we purge the memory (reset or decommit)
+  size_t            segment_size;
+  mi_subproc_t*     subproc;            // segment belongs to sub process
 
   // segment fields
-  struct mi_segment_s* next;             // must be the first (non-constant) segment field  -- see `segment.c:segment_init`
-  struct mi_segment_s* prev;
-  bool                 was_reclaimed;    // true if it was reclaimed (used to limit reclaim-on-free reclamation)
-  bool                 dont_free;        // can be temporarily true to ensure the segment is not freed
+  mi_msecs_t        purge_expire;       // purge slices in the `purge_mask` after this time
+  mi_commit_mask_t  purge_mask;         // slices that can be purged
+  mi_commit_mask_t  commit_mask;        // slices that are currently committed
 
-  size_t               abandoned;        // abandoned pages (i.e. the original owning thread stopped) (`abandoned <= used`)
-  size_t               abandoned_visits; // count how often this segment is visited for reclaiming (to force reclaim if it is too long)
+  // from here is zero initialized
+  struct mi_segment_s* next;            // the list of freed segments in the cache (must be first field, see `segment.c:mi_segment_init`)
+  bool              was_reclaimed;      // true if it was reclaimed (used to limit on-free reclamation)
+  bool              dont_free;          // can be temporarily true to ensure the segment is not freed
 
-  size_t               used;             // count of pages in use (`used <= capacity`)
-  size_t               capacity;         // count of available pages (`#free + used`)
-  size_t               segment_info_size;// space we are using from the first page for segment meta-data and possible guard pages.
-  uintptr_t            cookie;           // verify addresses in secure mode: `_mi_ptr_cookie(segment) == segment->cookie`
+  size_t            abandoned;          // abandoned pages (i.e. the original owning thread stopped) (`abandoned <= used`)
+  size_t            abandoned_visits;   // count how often this segment is visited during abondoned reclamation (to force reclaim if it takes too long)
+  size_t            used;               // count of pages in use
+  uintptr_t         cookie;             // verify addresses in debug mode: `mi_ptr_cookie(segment) == segment->cookie`
 
   struct mi_segment_s* abandoned_os_next; // only used for abandoned segments outside arena's, and only if `mi_option_visit_abandoned` is enabled
   struct mi_segment_s* abandoned_os_prev;
 
+  size_t            segment_slices;      // for huge segments this may be different from `MI_SLICES_PER_SEGMENT`
+  size_t            segment_info_slices; // initial count of slices that we are using for segment info and possible guard pages.
+
   // layout like this to optimize access in `mi_free`
+  mi_segment_kind_t kind;
+  size_t            slice_entries;       // entries in the `slices` array, at most `MI_SLICES_PER_SEGMENT`
   _Atomic(mi_threadid_t) thread_id;      // unique id of the thread owning this segment
-  size_t               page_shift;       // `1 << page_shift` == the page sizes == `page->block_size * page->reserved` (unless the first page, then `-segment_info_size`).
-  mi_page_kind_t       page_kind;        // kind of pages: small, medium, large, or huge
-  mi_page_t            pages[1];         // up to `MI_SMALL_PAGES_PER_SEGMENT` pages
+
+  mi_slice_t        slices[MI_SLICES_PER_SEGMENT+1];  // one extra final entry for huge blocks with large alignment
 } mi_segment_t;
 
 
@@ -512,7 +571,6 @@ struct mi_heap_s {
   size_t                guarded_size_min;                    // minimal size for guarded objects
   size_t                guarded_size_max;                    // maximal size for guarded objects
   size_t                guarded_sample_rate;                 // sample rate (set to 0 to disable guarded pages)
-  size_t                guarded_sample_seed;                 // starting sample count
   size_t                guarded_sample_count;                // current sample count (counting down to 0)
   #endif
   mi_page_t*            pages_free_direct[MI_PAGES_DIRECT];  // optimize: array where every entry points a page with possibly free blocks in the corresponding queue for that size.
@@ -541,20 +599,19 @@ struct mi_subproc_s {
 // Thread Local data
 // ------------------------------------------------------
 
-// Milliseconds as in `int64_t` to avoid overflows
-typedef int64_t  mi_msecs_t;
+// A "span" is is an available range of slices. The span queues keep
+// track of slice spans of at most the given `slice_count` (but more than the previous size class).
+typedef struct mi_span_queue_s {
+  mi_slice_t* first;
+  mi_slice_t* last;
+  size_t      slice_count;
+} mi_span_queue_t;
 
-// Queue of segments
-typedef struct mi_segment_queue_s {
-  mi_segment_t* first;
-  mi_segment_t* last;
-} mi_segment_queue_t;
+#define MI_SEGMENT_BIN_MAX (35)     // 35 == mi_segment_bin(MI_SLICES_PER_SEGMENT)
 
 // Segments thread local data
 typedef struct mi_segments_tld_s {
-  mi_segment_queue_t  small_free;   // queue of segments with free small pages
-  mi_segment_queue_t  medium_free;  // queue of segments with free medium pages
-  mi_page_queue_t     pages_purge;  // queue of freed pages that are delay purged
+  mi_span_queue_t     spans[MI_SEGMENT_BIN_MAX+1];  // free slice spans inside segments
   size_t              count;        // current number of segments;
   size_t              peak_count;   // peak number of segments
   size_t              current_size; // current size of all segments
@@ -575,7 +632,6 @@ struct mi_tld_s {
 };
 
 
-
 // ------------------------------------------------------
 // Debug
 // ------------------------------------------------------
@@ -588,26 +644,6 @@ struct mi_tld_s {
 #endif
 #if !defined(MI_DEBUG_PADDING)
 #define MI_DEBUG_PADDING    (0xDE)
-#endif
-
-#if (MI_DEBUG)
-// use our own assertion to print without memory allocation
-void _mi_assert_fail(const char* assertion, const char* fname, unsigned int line, const char* func );
-#define mi_assert(expr)     ((expr) ? (void)0 : _mi_assert_fail(#expr,__FILE__,__LINE__,__func__))
-#else
-#define mi_assert(x)
-#endif
-
-#if (MI_DEBUG>1)
-#define mi_assert_internal    mi_assert
-#else
-#define mi_assert_internal(x)
-#endif
-
-#if (MI_DEBUG>2)
-#define mi_assert_expensive   mi_assert
-#else
-#define mi_assert_expensive(x)
 #endif
 
 
