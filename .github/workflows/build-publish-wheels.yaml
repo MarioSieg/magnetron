@@ -42,8 +42,8 @@ jobs:
       - name: Build wheels (Linux x86_64, Python ≥3.11)
         env:
           CIBW_ARCHS_LINUX: "x86_64"
-          CIBW_BUILD: "cp311-manylinux_x86_64 cp312-manylinux_x86_64 cp313-manylinux_x86_64"
-          CIBW_SKIP: "*-musllinux_*"
+          CIBW_BUILD: "cp3*-manylinux_x86_64"
+          CIBW_SKIP: "cp310-* *-musllinux_*"
         run: |
           python -m cibuildwheel --output-dir wheelhouse .
 
