@@ -111,6 +111,7 @@ static inline intptr_t mi_atomic_subi(_Atomic(intptr_t)*p, intptr_t sub);
 #define mi_atomic_cas_ptr_weak_release(tp,p,exp,des)    mi_atomic_cas_weak_release(p,exp,(tp*)des)
 #define mi_atomic_cas_ptr_weak_acq_rel(tp,p,exp,des)    mi_atomic_cas_weak_acq_rel(p,exp,(tp*)des)
 #define mi_atomic_cas_ptr_strong_release(tp,p,exp,des)  mi_atomic_cas_strong_release(p,exp,(tp*)des)
+#define mi_atomic_cas_ptr_strong_acq_rel(tp,p,exp,des)  mi_atomic_cas_strong_acq_rel(p,exp,(tp*)des)
 #define mi_atomic_exchange_ptr_relaxed(tp,p,x)          mi_atomic_exchange_relaxed(p,(tp*)x)
 #define mi_atomic_exchange_ptr_release(tp,p,x)          mi_atomic_exchange_release(p,(tp*)x)
 #define mi_atomic_exchange_ptr_acq_rel(tp,p,x)          mi_atomic_exchange_acq_rel(p,(tp*)x)
@@ -120,6 +121,7 @@ static inline intptr_t mi_atomic_subi(_Atomic(intptr_t)*p, intptr_t sub);
 #define mi_atomic_cas_ptr_weak_release(tp,p,exp,des)    mi_atomic_cas_weak_release(p,exp,des)
 #define mi_atomic_cas_ptr_weak_acq_rel(tp,p,exp,des)    mi_atomic_cas_weak_acq_rel(p,exp,des)
 #define mi_atomic_cas_ptr_strong_release(tp,p,exp,des)  mi_atomic_cas_strong_release(p,exp,des)
+#define mi_atomic_cas_ptr_strong_acq_rel(tp,p,exp,des)  mi_atomic_cas_strong_acq_rel(p,exp,des)
 #define mi_atomic_exchange_ptr_relaxed(tp,p,x)          mi_atomic_exchange_relaxed(p,x)
 #define mi_atomic_exchange_ptr_release(tp,p,x)          mi_atomic_exchange_release(p,x)
 #define mi_atomic_exchange_ptr_acq_rel(tp,p,x)          mi_atomic_exchange_acq_rel(p,x)
@@ -303,6 +305,7 @@ static inline bool mi_atomic_casi64_strong_acq_rel(volatile _Atomic(int64_t*)p, 
 #define mi_atomic_cas_ptr_weak_release(tp,p,exp,des)    mi_atomic_cas_weak_release((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
 #define mi_atomic_cas_ptr_weak_acq_rel(tp,p,exp,des)    mi_atomic_cas_weak_acq_rel((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
 #define mi_atomic_cas_ptr_strong_release(tp,p,exp,des)  mi_atomic_cas_strong_release((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
+#define mi_atomic_cas_ptr_strong_acq_rel(tp,p,exp,des)  mi_atomic_cas_strong_acq_rel((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
 #define mi_atomic_exchange_ptr_relaxed(tp,p,x)          (tp*)mi_atomic_exchange_relaxed((_Atomic(uintptr_t)*)(p),(uintptr_t)x)
 #define mi_atomic_exchange_ptr_release(tp,p,x)          (tp*)mi_atomic_exchange_release((_Atomic(uintptr_t)*)(p),(uintptr_t)x)
 #define mi_atomic_exchange_ptr_acq_rel(tp,p,x)          (tp*)mi_atomic_exchange_acq_rel((_Atomic(uintptr_t)*)(p),(uintptr_t)x)
@@ -370,8 +373,9 @@ static inline void mi_atomic_yield(void) {
   _mm_pause();
 }
 #elif (defined(__GNUC__) || defined(__clang__)) && \
-      (defined(__x86_64__) || defined(__i386__) || defined(__arm__) || defined(__armel__) || defined(__ARMEL__) || \
-       defined(__aarch64__) || defined(__powerpc__) || defined(__ppc__) || defined(__PPC__)) || defined(__POWERPC__)
+      (defined(__x86_64__) || defined(__i386__) || \
+       defined(__aarch64__) || defined(__arm__) || \
+       defined(__powerpc__) || defined(__ppc__) || defined(__PPC__) || defined(__POWERPC__))
 #if defined(__x86_64__) || defined(__i386__)
 static inline void mi_atomic_yield(void) {
   __asm__ volatile ("pause" ::: "memory");
@@ -380,10 +384,16 @@ static inline void mi_atomic_yield(void) {
 static inline void mi_atomic_yield(void) {
   __asm__ volatile("wfe");
 }
-#elif (defined(__arm__) && __ARM_ARCH__ >= 7)
+#elif defined(__arm__)
+#if __ARM_ARCH >= 7
 static inline void mi_atomic_yield(void) {
   __asm__ volatile("yield" ::: "memory");
 }
+#else
+static inline void mi_atomic_yield(void) {
+  __asm__ volatile ("nop" ::: "memory");
+}
+#endif
 #elif defined(__powerpc__) || defined(__ppc__) || defined(__PPC__) || defined(__POWERPC__)
 #ifdef __APPLE__
 static inline void mi_atomic_yield(void) {
@@ -394,10 +404,6 @@ static inline void mi_atomic_yield(void) {
   __asm__ __volatile__ ("or 27,27,27" ::: "memory");
 }
 #endif
-#elif defined(__armel__) || defined(__ARMEL__)
-static inline void mi_atomic_yield(void) {
-  __asm__ volatile ("nop" ::: "memory");
-}
 #endif
 #elif defined(__sun)
 // Fallback for other archs

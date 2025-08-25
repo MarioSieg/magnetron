@@ -12,7 +12,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #ifndef MI_IN_PAGE_C
 #error "this file should be included from 'page.c'"
 // include to help an IDE
-#include "mimalloc.h"     
+#include "mimalloc.h"
 #include "mimalloc/internal.h"
 #include "mimalloc/atomic.h"
 #endif
@@ -38,15 +38,15 @@ terms of the MIT license. A copy of the license can be found in the file
 
 
 static inline bool mi_page_queue_is_huge(const mi_page_queue_t* pq) {
-  return (pq->block_size == (MI_LARGE_OBJ_SIZE_MAX+sizeof(uintptr_t)));
+  return (pq->block_size == (MI_MEDIUM_OBJ_SIZE_MAX+sizeof(uintptr_t)));
 }
 
 static inline bool mi_page_queue_is_full(const mi_page_queue_t* pq) {
-  return (pq->block_size == (MI_LARGE_OBJ_SIZE_MAX+(2*sizeof(uintptr_t))));
+  return (pq->block_size == (MI_MEDIUM_OBJ_SIZE_MAX+(2*sizeof(uintptr_t))));
 }
 
 static inline bool mi_page_queue_is_special(const mi_page_queue_t* pq) {
-  return (pq->block_size > MI_LARGE_OBJ_SIZE_MAX);
+  return (pq->block_size > MI_MEDIUM_OBJ_SIZE_MAX);
 }
 
 /* -----------------------------------------------------------
@@ -58,7 +58,7 @@ static inline bool mi_page_queue_is_special(const mi_page_queue_t* pq) {
 // We use `wsize` for the size in "machine word sizes",
 // i.e. byte size == `wsize*sizeof(void*)`.
 static inline size_t mi_bin(size_t size) {
-  size_t wsize = _mi_wsize_from_size(size);  
+  size_t wsize = _mi_wsize_from_size(size);
 #if defined(MI_ALIGN4W)
   if mi_likely(wsize <= 4) {
     return (wsize <= 1 ? 1 : (wsize+1)&~1); // round to double word sizes
@@ -72,7 +72,7 @@ static inline size_t mi_bin(size_t size) {
     return (wsize == 0 ? 1 : wsize);
   }
 #endif
-  else if mi_unlikely(wsize > MI_LARGE_OBJ_WSIZE_MAX) {
+  else if mi_unlikely(wsize > MI_MEDIUM_OBJ_WSIZE_MAX) {
     return MI_BIN_HUGE;
   }
   else {
@@ -107,7 +107,7 @@ size_t _mi_bin_size(size_t bin) {
 
 // Good size for allocation
 size_t mi_good_size(size_t size) mi_attr_noexcept {
-  if (size <= MI_LARGE_OBJ_SIZE_MAX) {
+  if (size <= MI_MEDIUM_OBJ_SIZE_MAX) {
     return _mi_bin_size(mi_bin(size + MI_PADDING_SIZE));
   }
   else {
@@ -136,7 +136,11 @@ static bool mi_heap_contains_queue(const mi_heap_t* heap, const mi_page_queue_t*
 }
 #endif
 
-static size_t mi_page_bin(const mi_page_t* page) {
+static inline bool mi_page_is_large_or_huge(const mi_page_t* page) {
+  return (mi_page_block_size(page) > MI_MEDIUM_OBJ_SIZE_MAX || mi_page_is_huge(page));
+}
+
+size_t _mi_page_bin(const mi_page_t* page) {
   const size_t bin = (mi_page_is_in_full(page) ? MI_BIN_FULL : (mi_page_is_huge(page) ? MI_BIN_HUGE : mi_bin(mi_page_block_size(page))));
   mi_assert_internal(bin <= MI_BIN_FULL);
   return bin;
@@ -144,10 +148,10 @@ static size_t mi_page_bin(const mi_page_t* page) {
 
 static mi_page_queue_t* mi_heap_page_queue_of(mi_heap_t* heap, const mi_page_t* page) {
   mi_assert_internal(heap!=NULL);
-  const size_t bin = mi_page_bin(page);
+  const size_t bin = _mi_page_bin(page);
   mi_page_queue_t* pq = &heap->pages[bin];
   mi_assert_internal((mi_page_block_size(page) == pq->block_size) ||
-                       (mi_page_is_huge(page) && mi_page_queue_is_huge(pq)) ||
+                       (mi_page_is_large_or_huge(page) && mi_page_queue_is_huge(pq)) ||
                          (mi_page_is_in_full(page) && mi_page_queue_is_full(pq)));
   return pq;
 }
@@ -210,10 +214,11 @@ static bool mi_page_queue_is_empty(mi_page_queue_t* queue) {
 static void mi_page_queue_remove(mi_page_queue_t* queue, mi_page_t* page) {
   mi_assert_internal(page != NULL);
   mi_assert_expensive(mi_page_queue_contains(queue, page));
-  mi_assert_internal(mi_page_block_size(page) == queue->block_size || 
-                      (mi_page_is_huge(page) && mi_page_queue_is_huge(queue)) || 
+  mi_assert_internal(mi_page_block_size(page) == queue->block_size ||
+                      (mi_page_is_large_or_huge(page) && mi_page_queue_is_huge(queue)) ||
                         (mi_page_is_in_full(page) && mi_page_queue_is_full(queue)));
   mi_heap_t* heap = mi_page_heap(page);
+
   if (page->prev != NULL) page->prev->next = page->next;
   if (page->next != NULL) page->next->prev = page->prev;
   if (page == queue->last)  queue->last = page->prev;
@@ -235,10 +240,10 @@ static void mi_page_queue_push(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_
   mi_assert_internal(mi_page_heap(page) == heap);
   mi_assert_internal(!mi_page_queue_contains(queue, page));
   #if MI_HUGE_PAGE_ABANDON
-  mi_assert_internal(_mi_page_segment(page)->page_kind != MI_PAGE_HUGE);
+  mi_assert_internal(_mi_page_segment(page)->kind != MI_SEGMENT_HUGE);
   #endif
   mi_assert_internal(mi_page_block_size(page) == queue->block_size ||
-                      (mi_page_is_huge(page) && mi_page_queue_is_huge(queue)) ||
+                      (mi_page_is_large_or_huge(page) && mi_page_queue_is_huge(queue)) ||
                         (mi_page_is_in_full(page) && mi_page_queue_is_full(queue)));
 
   mi_page_set_in_full(page, mi_page_queue_is_full(queue));
@@ -277,8 +282,8 @@ static void mi_page_queue_enqueue_from_ex(mi_page_queue_t* to, mi_page_queue_t* 
   mi_assert_internal((bsize == to->block_size && bsize == from->block_size) ||
                      (bsize == to->block_size && mi_page_queue_is_full(from)) ||
                      (bsize == from->block_size && mi_page_queue_is_full(to)) ||
-                     (mi_page_is_huge(page) && mi_page_queue_is_huge(to)) ||
-                     (mi_page_is_huge(page) && mi_page_queue_is_full(to)));
+                     (mi_page_is_large_or_huge(page) && mi_page_queue_is_huge(to)) ||
+                     (mi_page_is_large_or_huge(page) && mi_page_queue_is_full(to)));
 
   mi_heap_t* heap = mi_page_heap(page);
 
@@ -317,8 +322,8 @@ static void mi_page_queue_enqueue_from_ex(mi_page_queue_t* to, mi_page_queue_t* 
       page->prev = to->first;
       page->next = next;
       to->first->next = page;
-      if (next != NULL) { 
-        next->prev = page; 
+      if (next != NULL) {
+        next->prev = page;
       }
       else {
         to->last = page;

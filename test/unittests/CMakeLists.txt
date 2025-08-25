@@ -1,4 +1,4 @@
-# (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
+# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
 
 file(GLOB_RECURSE TEST_SOURCES *.hpp *.cpp)
 add_executable(magnetron_test ${TEST_SOURCES})

@@ -106,11 +106,11 @@ typedef struct mi_option_desc_s {
 static mi_option_desc_t options[_mi_option_last] =
 {
   // stable options
-#if MI_DEBUG || defined(MI_SHOW_ERRORS)
+  #if MI_DEBUG || defined(MI_SHOW_ERRORS)
   { 1, UNINIT, MI_OPTION(show_errors) },
-#else
+  #else
   { 0, UNINIT, MI_OPTION(show_errors) },
-#endif
+  #endif
   { 0, UNINIT, MI_OPTION(show_stats) },
   { MI_DEFAULT_VERBOSE, UNINIT, MI_OPTION(verbose) },
 
@@ -129,7 +129,7 @@ static mi_option_desc_t options[_mi_option_last] =
        UNINIT, MI_OPTION(reserve_os_memory)     },      // reserve N KiB OS memory in advance (use `option_get_size`)
   { 0, UNINIT, MI_OPTION(deprecated_segment_cache) },   // cache N segments per thread
   { 0, UNINIT, MI_OPTION(deprecated_page_reset) },      // reset page memory on free
-  { 0, UNINIT, MI_OPTION(abandoned_page_purge) },       // purge free page memory when a thread terminates
+  { 0, UNINIT, MI_OPTION_LEGACY(abandoned_page_purge,abandoned_page_reset) },       // reset free page memory when a thread terminates
   { 0, UNINIT, MI_OPTION(deprecated_segment_reset) },   // reset segment memory on free (needs eager commit)
 #if defined(__NetBSD__)
   { 0, UNINIT, MI_OPTION(eager_commit_delay) },         // the first N segments per thread are not eagerly committed
@@ -425,14 +425,14 @@ static mi_decl_noinline void mi_recurse_exit_prim(void) {
 }
 
 static bool mi_recurse_enter(void) {
-  #if defined(__APPLE__) || defined(MI_TLS_RECURSE_GUARD)
+  #if defined(__APPLE__) || defined(__ANDROID__) || defined(MI_TLS_RECURSE_GUARD)
   if (_mi_preloading()) return false;
   #endif
   return mi_recurse_enter_prim();
 }
 
 static void mi_recurse_exit(void) {
-  #if defined(__APPLE__) || defined(MI_TLS_RECURSE_GUARD)
+  #if defined(__APPLE__) || defined(__ANDROID__) || defined(MI_TLS_RECURSE_GUARD)
   if (_mi_preloading()) return;
   #endif
   mi_recurse_exit_prim();
@@ -525,7 +525,7 @@ void _mi_warning_message(const char* fmt, ...) {
 
 
 #if MI_DEBUG
-void _mi_assert_fail(const char* assertion, const char* fname, unsigned line, const char* func ) {
+mi_decl_noreturn mi_decl_cold void _mi_assert_fail(const char* assertion, const char* fname, unsigned line, const char* func ) mi_attr_noexcept {
   _mi_fprintf(NULL, NULL, "mimalloc: assertion failed: at \"%s\":%u, %s\n  assertion: \"%s\"\n", fname, line, (func==NULL?"":func), assertion);
   abort();
 }

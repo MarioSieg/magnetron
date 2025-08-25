@@ -1,17 +1,25 @@
+from __future__ import annotations
+
 import math
 import torch
 
 import magnetron as mag
 import magnetron.nn as nn
+import tiktoken
 from dataclasses import dataclass
 
 from magnetron import FFI, C
 
 
+tok = tiktoken.get_encoding('gpt2')
+
+encode = lambda x: tok.encode(x, allowed_special={'<|endoftext|>'})
+decode = lambda x: tok.decode(x)
+
 @dataclass
-class GPTHParams:
+class GPT2HyperParams:
     block_size: int = 1024
-    vocab_size: int = 50304
+    vocab_size: int = 50257
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
@@ -20,7 +28,7 @@ class GPTHParams:
 
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, config: GPTHParams) -> None:
+    def __init__(self, config: GPT2HyperParams) -> None:
         super().__init__()
         assert config.n_embd % config.n_head == 0
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
@@ -48,7 +56,7 @@ class CausalSelfAttention(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, config: GPTHParams) -> None:
+    def __init__(self, config: GPT2HyperParams) -> None:
         super().__init__()
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
         self.gelu = nn.GeLU()
@@ -62,7 +70,7 @@ class MLP(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, config: GPTHParams) -> None:
+    def __init__(self, config: GPT2HyperParams) -> None:
         super().__init__()
         self.ln_1 = nn.LayerNorm(config.n_embd, bias=config.bias)
         self.attn = CausalSelfAttention(config)
@@ -75,8 +83,8 @@ class Block(nn.Module):
         return x
 
 
-class GPT(nn.Module):
-    def __init__(self, config: GPTHParams) -> None:
+class GPT2(nn.Module):
+    def __init__(self, config: GPT2HyperParams) -> None:
         super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None
@@ -95,7 +103,8 @@ class GPT(nn.Module):
         print(f'Parameter count: {self.get_num_params(False) // 1e6}M')
 
     @classmethod
-    def from_pretrained(cls, model_type):
+    @mag.no_grad()
+    def from_pretrained(cls, model_type: str = 'gpt2') -> GPT2:
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         from transformers import GPT2LMHeadModel
         cfg = {
@@ -107,9 +116,9 @@ class GPT(nn.Module):
         cfg['vocab_size'] = 50257
         cfg['block_size'] = 1024
         cfg['bias'] = True
-        cfg = GPTHParams(**cfg)
+        cfg = GPT2HyperParams(**cfg)
         print(f'Loading {model_type} with config: {cfg}')
-        model = GPT(cfg)
+        model = cls(cfg)
         sd = model.state_dict()
         sd_keys = sd.keys()
         sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')]
@@ -158,7 +167,8 @@ class GPT(nn.Module):
         return logits
 
     @mag.no_grad()
-    def generate(self, idx: mag.Tensor, max_tokens: int, temp: float = 1.0) -> mag.Tensor:
+    def generate(self, prompt: str, max_tokens: int, temp: float = 1.0) -> str:
+        idx = mag.Tensor.of(encode(prompt), dtype=mag.int32)[None, ...]
         for _ in range(max_tokens):
             idx_cond = idx if idx.shape[1] <= self.config.block_size else idx[:, -self.config.block_size :]
             logits = self(idx_cond)
@@ -168,34 +178,22 @@ class GPT(nn.Module):
             idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), idx_next), dim=1).tolist()) # TODO
             #idx_next = probs.multinomial(num_samples=1)
             #idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), torch.tensor(idx_next.tolist())), dim=1).tolist()) # TODO
-        return idx
+        return decode(idx[0].tolist())
 
-@mag.no_grad()
-def _main() -> None:
-    import tiktoken
+if __name__ == '__main__':
     import argparse
     import time
 
-    args = argparse.ArgumentParser(description='Run GPT-2 model')
-    args.add_argument('prompt', type=str, default='What is the answer to life?', help='Prompt to start generation')
+    args = argparse.ArgumentParser(description='Run GPT-2 model inference')
+    args.add_argument('prompt', type=str, help='Prompt to start generation')
     args.add_argument('--model', type=str, default='gpt2', help='Model type (gpt2, gpt2-medium, gpt2-large, gpt2-xl)')
     args.add_argument('--max_new_tokens', type=int, default=64, help='Maximum number of new tokens to generate')
     args.add_argument('--temp', type=float, default=1.0, help='Temperature for sampling')
     args = args.parse_args()
 
-    model = GPT.from_pretrained(args.model)
-    enc = tiktoken.get_encoding('gpt2')
-
-    encode = lambda x: enc.encode(x, allowed_special={'<|endoftext|>'})
-    decode = lambda x: enc.decode(x)
-
-    x = mag.Tensor.of(encode(args.prompt), dtype=mag.int32)[None, ...]
+    model = GPT2.from_pretrained(args.model)
     start = time.perf_counter()
-    y = model.generate(x, args.max_new_tokens, temp=args.temp)
+    response = model.generate(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp)
     elapsed = time.perf_counter() - start
-    ans: str = decode(y[0].tolist())
     print(f'Generated in: {elapsed:.9f} seconds')
-    print(ans)
-
-if __name__ == '__main__':
-    _main()
+    print(response)

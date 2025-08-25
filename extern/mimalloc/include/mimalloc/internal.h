@@ -8,7 +8,6 @@ terms of the MIT license. A copy of the license can be found in the file
 #ifndef MIMALLOC_INTERNAL_H
 #define MIMALLOC_INTERNAL_H
 
-
 // --------------------------------------------------------------------------
 // This file contains the internal API's of mimalloc and various utility
 // functions and macros.
@@ -17,50 +16,88 @@ terms of the MIT license. A copy of the license can be found in the file
 #include "types.h"
 #include "track.h"
 
+
+// --------------------------------------------------------------------------
+// Compiler defines
+// --------------------------------------------------------------------------
+
 #if (MI_DEBUG>0)
 #define mi_trace_message(...)  _mi_trace_message(__VA_ARGS__)
 #else
 #define mi_trace_message(...)
 #endif
 
-#define MI_CACHE_LINE          64
+#define mi_decl_cache_align     mi_decl_align(64)
+
 #if defined(_MSC_VER)
 #pragma warning(disable:4127)   // suppress constant conditional warning (due to MI_SECURE paths)
 #pragma warning(disable:26812)  // unscoped enum warning
 #define mi_decl_noinline        __declspec(noinline)
 #define mi_decl_thread          __declspec(thread)
-#define mi_decl_cache_align     __declspec(align(MI_CACHE_LINE))
+#define mi_decl_align(a)        __declspec(align(a))
+#define mi_decl_noreturn        __declspec(noreturn)
 #define mi_decl_weak
 #define mi_decl_hidden
+#define mi_decl_cold
 #elif (defined(__GNUC__) && (__GNUC__ >= 3)) || defined(__clang__) // includes clang and icc
 #define mi_decl_noinline        __attribute__((noinline))
 #define mi_decl_thread          __thread
-#define mi_decl_cache_align     __attribute__((aligned(MI_CACHE_LINE)))
+#define mi_decl_align(a)        __attribute__((aligned(a)))
+#define mi_decl_noreturn        __attribute__((noreturn))
 #define mi_decl_weak            __attribute__((weak))
 #define mi_decl_hidden          __attribute__((visibility("hidden")))
+#if (__GNUC__ >= 4) || defined(__clang__)
+#define mi_decl_cold            __attribute__((cold))
+#else
+#define mi_decl_cold
+#endif
 #elif __cplusplus >= 201103L    // c++11
 #define mi_decl_noinline
 #define mi_decl_thread          thread_local
-#define mi_decl_cache_align     alignas(MI_CACHE_LINE)
+#define mi_decl_align(a)        alignas(a)
+#define mi_decl_noreturn        [[noreturn]]
 #define mi_decl_weak
 #define mi_decl_hidden
+#define mi_decl_cold
 #else
 #define mi_decl_noinline
 #define mi_decl_thread          __thread        // hope for the best :-)
-#define mi_decl_cache_align
+#define mi_decl_align(a)
+#define mi_decl_noreturn
 #define mi_decl_weak
 #define mi_decl_hidden
+#define mi_decl_cold
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#define mi_unlikely(x)     (__builtin_expect(!!(x),false))
+#define mi_likely(x)       (__builtin_expect(!!(x),true))
+#elif (defined(__cplusplus) && (__cplusplus >= 202002L)) || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
+#define mi_unlikely(x)     (x) [[unlikely]]
+#define mi_likely(x)       (x) [[likely]]
+#else
+#define mi_unlikely(x)     (x)
+#define mi_likely(x)       (x)
+#endif
+
+#ifndef __has_builtin
+#define __has_builtin(x)    0
+#endif
+
+#if defined(__cplusplus)
+#define mi_decl_externc     extern "C"
+#else
+#define mi_decl_externc
 #endif
 
 #if defined(__EMSCRIPTEN__) && !defined(__wasi__)
 #define __wasi__
 #endif
 
-#if defined(__cplusplus)
-#define mi_decl_externc       extern "C"
-#else
-#define mi_decl_externc
-#endif
+
+// --------------------------------------------------------------------------
+// Internal functions
+// --------------------------------------------------------------------------
 
 // "libc.c"
 #include    <stdarg.h>
@@ -96,10 +133,10 @@ uintptr_t   _mi_os_random_weak(uintptr_t extra_seed);
 static inline uintptr_t _mi_random_shuffle(uintptr_t x);
 
 // init.c
-extern mi_decl_cache_align mi_stats_t       _mi_stats_main;
+extern mi_decl_hidden mi_decl_cache_align mi_stats_t       _mi_stats_main;
 extern mi_decl_hidden mi_decl_cache_align const mi_page_t  _mi_page_empty;
-void        _mi_process_load(void);
-void mi_cdecl _mi_process_done(void);
+void        _mi_auto_process_init(void);
+void mi_cdecl _mi_auto_process_done(void) mi_attr_noexcept;
 bool        _mi_is_redirected(void);
 bool        _mi_allocator_init(const char** message);
 void        _mi_allocator_done(void);
@@ -117,6 +154,7 @@ void        _mi_heap_guarded_init(mi_heap_t* heap);
 // os.c
 void        _mi_os_init(void);                                            // called from process init
 void*       _mi_os_alloc(size_t size, mi_memid_t* memid);
+void*       _mi_os_zalloc(size_t size, mi_memid_t* memid);
 void        _mi_os_free(void* p, size_t size, mi_memid_t memid);
 void        _mi_os_free_ex(void* p, size_t size, bool still_committed, mi_memid_t memid);
 
@@ -126,13 +164,14 @@ bool        _mi_os_has_overcommit(void);
 bool        _mi_os_has_virtual_reserve(void);
 
 bool        _mi_os_reset(void* addr, size_t size);
-bool        _mi_os_commit(void* p, size_t size, bool* is_zero);
-bool        _mi_os_commit_ex(void* addr, size_t size, bool* is_zero, size_t stat_size);
 bool        _mi_os_decommit(void* addr, size_t size);
-bool        _mi_os_protect(void* addr, size_t size);
 bool        _mi_os_unprotect(void* addr, size_t size);
 bool        _mi_os_purge(void* p, size_t size);
 bool        _mi_os_purge_ex(void* p, size_t size, bool allow_reset, size_t stat_size);
+void        _mi_os_reuse(void* p, size_t size);
+mi_decl_nodiscard bool _mi_os_commit(void* p, size_t size, bool* is_zero);
+mi_decl_nodiscard bool _mi_os_commit_ex(void* addr, size_t size, bool* is_zero, size_t stat_size);
+bool        _mi_os_protect(void* addr, size_t size);
 
 void*       _mi_os_alloc_aligned(size_t size, size_t alignment, bool commit, bool allow_large, mi_memid_t* memid);
 void*       _mi_os_alloc_aligned_at_offset(size_t size, size_t alignment, size_t align_offset, bool commit, bool allow_large, mi_memid_t* memid);
@@ -140,8 +179,10 @@ void*       _mi_os_alloc_aligned_at_offset(size_t size, size_t alignment, size_t
 void*       _mi_os_get_aligned_hint(size_t try_alignment, size_t size);
 bool        _mi_os_use_large_page(size_t size, size_t alignment);
 size_t      _mi_os_large_page_size(void);
-
 void*       _mi_os_alloc_huge_os_pages(size_t pages, int numa_node, mi_msecs_t max_secs, size_t* pages_reserved, size_t* psize, mi_memid_t* memid);
+
+int         _mi_os_numa_node_count(void);
+int         _mi_os_numa_node(void);
 
 // arena.c
 mi_arena_id_t _mi_arena_id_none(void);
@@ -178,10 +219,11 @@ void        _mi_segment_map_freed_at(const mi_segment_t* segment);
 void        _mi_segment_map_unsafe_destroy(void);
 
 // "segment.c"
-mi_page_t*  _mi_segment_page_alloc(mi_heap_t* heap, size_t block_size, size_t page_alignment, mi_segments_tld_t* tld);
-void        _mi_segment_page_free(mi_page_t* page, bool force, mi_segments_tld_t* tld);
-void        _mi_segment_page_abandon(mi_page_t* page, mi_segments_tld_t* tld);
-uint8_t*    _mi_segment_page_start(const mi_segment_t* segment, const mi_page_t* page, size_t* page_size);
+mi_page_t* _mi_segment_page_alloc(mi_heap_t* heap, size_t block_size, size_t page_alignment, mi_segments_tld_t* tld);
+void       _mi_segment_page_free(mi_page_t* page, bool force, mi_segments_tld_t* tld);
+void       _mi_segment_page_abandon(mi_page_t* page, mi_segments_tld_t* tld);
+bool       _mi_segment_try_reclaim_abandoned( mi_heap_t* heap, bool try_all, mi_segments_tld_t* tld);
+void       _mi_segment_collect(mi_segment_t* segment, bool force);
 
 #if MI_HUGE_PAGE_ABANDON
 void        _mi_segment_huge_page_free(mi_segment_t* segment, mi_page_t* page, mi_block_t* block);
@@ -189,10 +231,11 @@ void        _mi_segment_huge_page_free(mi_segment_t* segment, mi_page_t* page, m
 void        _mi_segment_huge_page_reset(mi_segment_t* segment, mi_page_t* page, mi_block_t* block);
 #endif
 
-void        _mi_segments_collect(bool force, mi_segments_tld_t* tld);
-void        _mi_abandoned_reclaim_all(mi_heap_t* heap, mi_segments_tld_t* tld);
-bool        _mi_segment_attempt_reclaim(mi_heap_t* heap, mi_segment_t* segment);
-bool        _mi_segment_visit_blocks(mi_segment_t* segment, int heap_tag, bool visit_blocks, mi_block_visit_fun* visitor, void* arg);
+uint8_t*   _mi_segment_page_start(const mi_segment_t* segment, const mi_page_t* page, size_t* page_size); // page start for any page
+void       _mi_abandoned_reclaim_all(mi_heap_t* heap, mi_segments_tld_t* tld);
+void       _mi_abandoned_collect(mi_heap_t* heap, bool force, mi_segments_tld_t* tld);
+bool       _mi_segment_attempt_reclaim(mi_heap_t* heap, mi_segment_t* segment);
+bool       _mi_segment_visit_blocks(mi_segment_t* segment, int heap_tag, bool visit_blocks, mi_block_visit_fun* visitor, void* arg);
 
 // "page.c"
 void*       _mi_malloc_generic(mi_heap_t* heap, size_t size, bool zero, size_t huge_alignment)  mi_attr_noexcept mi_attr_malloc;
@@ -215,6 +258,7 @@ void        _mi_deferred_free(mi_heap_t* heap, bool force);
 void        _mi_page_free_collect(mi_page_t* page,bool force);
 void        _mi_page_reclaim(mi_heap_t* heap, mi_page_t* page);   // callback from segments
 
+size_t      _mi_page_bin(const mi_page_t* page); // for stats
 size_t      _mi_bin_size(size_t bin);            // for stats
 size_t      _mi_bin(size_t size);                // for stats
 
@@ -231,6 +275,7 @@ bool        _mi_heap_area_visit_blocks(const mi_heap_area_t* area, mi_page_t* pa
 
 // "stats.c"
 void        _mi_stats_done(mi_stats_t* stats);
+void        _mi_stats_merge_thread(mi_tld_t* tld);
 mi_msecs_t  _mi_clock_now(void);
 mi_msecs_t  _mi_clock_end(mi_msecs_t start);
 mi_msecs_t  _mi_clock_start(void);
@@ -249,26 +294,6 @@ void        _mi_padding_shrink(const mi_page_t* page, const mi_block_t* block, c
 
 #if MI_DEBUG>1
 bool        _mi_page_is_valid(mi_page_t* page);
-#endif
-
-
-// ------------------------------------------------------
-// Branches
-// ------------------------------------------------------
-
-#if defined(__GNUC__) || defined(__clang__)
-#define mi_unlikely(x)     (__builtin_expect(!!(x),false))
-#define mi_likely(x)       (__builtin_expect(!!(x),true))
-#elif (defined(__cplusplus) && (__cplusplus >= 202002L)) || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
-#define mi_unlikely(x)     (x) [[unlikely]]
-#define mi_likely(x)       (x) [[likely]]
-#else
-#define mi_unlikely(x)     (x)
-#define mi_likely(x)       (x)
-#endif
-
-#ifndef __has_builtin
-#define __has_builtin(x)  0
 #endif
 
 
@@ -294,6 +319,32 @@ bool        _mi_page_is_valid(mi_page_t* page);
 #ifndef EOVERFLOW      // count*size overflow
 #define EOVERFLOW (75)
 #endif
+
+
+// ------------------------------------------------------
+// Assertions
+// ------------------------------------------------------
+
+#if (MI_DEBUG)
+// use our own assertion to print without memory allocation
+mi_decl_noreturn mi_decl_cold void _mi_assert_fail(const char* assertion, const char* fname, unsigned int line, const char* func) mi_attr_noexcept;
+#define mi_assert(expr)     ((expr) ? (void)0 : _mi_assert_fail(#expr,__FILE__,__LINE__,__func__))
+#else
+#define mi_assert(x)
+#endif
+
+#if (MI_DEBUG>1)
+#define mi_assert_internal    mi_assert
+#else
+#define mi_assert_internal(x)
+#endif
+
+#if (MI_DEBUG>2)
+#define mi_assert_expensive   mi_assert
+#else
+#define mi_assert_expensive(x)
+#endif
+
 
 
 /* -----------------------------------------------------------
@@ -342,10 +393,26 @@ static inline uintptr_t _mi_align_up(uintptr_t sz, size_t alignment) {
   }
 }
 
+// Align downwards
+static inline uintptr_t _mi_align_down(uintptr_t sz, size_t alignment) {
+  mi_assert_internal(alignment != 0);
+  uintptr_t mask = alignment - 1;
+  if ((alignment & mask) == 0) { // power of two?
+    return (sz & ~mask);
+  }
+  else {
+    return ((sz / alignment) * alignment);
+  }
+}
 
 // Align a pointer upwards
 static inline void* mi_align_up_ptr(void* p, size_t alignment) {
   return (void*)_mi_align_up((uintptr_t)p, alignment);
+}
+
+// Align a pointer downwards
+static inline void* mi_align_down_ptr(void* p, size_t alignment) {
+  return (void*)_mi_align_down((uintptr_t)p, alignment);
 }
 
 
@@ -370,6 +437,7 @@ static inline bool mi_mem_is_zero(const void* p, size_t size) {
   }
   return true;
 }
+
 
 // Align a byte size to a size in _machine words_,
 // i.e. byte size == `wsize*sizeof(void*)`.
@@ -465,29 +533,44 @@ static inline mi_segment_t* _mi_ptr_segment(const void* p) {
   #endif
 }
 
+static inline mi_page_t* mi_slice_to_page(mi_slice_t* s) {
+  mi_assert_internal(s->slice_offset== 0 && s->slice_count > 0);
+  return (mi_page_t*)(s);
+}
+
+static inline mi_slice_t* mi_page_to_slice(mi_page_t* p) {
+  mi_assert_internal(p->slice_offset== 0 && p->slice_count > 0);
+  return (mi_slice_t*)(p);
+}
+
 // Segment belonging to a page
 static inline mi_segment_t* _mi_page_segment(const mi_page_t* page) {
   mi_assert_internal(page!=NULL);
   mi_segment_t* segment = _mi_ptr_segment(page);
-  mi_assert_internal(segment == NULL || page == &segment->pages[page->segment_idx]);
+  mi_assert_internal(segment == NULL || ((mi_slice_t*)page >= segment->slices && (mi_slice_t*)page < segment->slices + segment->slice_entries));
   return segment;
 }
 
-// used internally
-static inline size_t _mi_segment_page_idx_of(const mi_segment_t* segment, const void* p) {
-  // if (segment->page_size > MI_SEGMENT_SIZE) return &segment->pages[0];  // huge pages
-  ptrdiff_t diff = (uint8_t*)p - (uint8_t*)segment;
-  mi_assert_internal(diff >= 0 && (size_t)diff <= MI_SEGMENT_SIZE /* for huge alignment it can be equal */);
-  size_t idx = (size_t)diff >> segment->page_shift;
-  mi_assert_internal(idx < segment->capacity);
-  mi_assert_internal(segment->page_kind <= MI_PAGE_MEDIUM || idx == 0);
-  return idx;
+static inline mi_slice_t* mi_slice_first(const mi_slice_t* slice) {
+  mi_slice_t* start = (mi_slice_t*)((uint8_t*)slice - slice->slice_offset);
+  mi_assert_internal(start >= _mi_ptr_segment(slice)->slices);
+  mi_assert_internal(start->slice_offset == 0);
+  mi_assert_internal(start + start->slice_count > slice);
+  return start;
 }
 
-// Get the page containing the pointer
+// Get the page containing the pointer (performance critical as it is called in mi_free)
 static inline mi_page_t* _mi_segment_page_of(const mi_segment_t* segment, const void* p) {
-  size_t idx = _mi_segment_page_idx_of(segment, p);
-  return &((mi_segment_t*)segment)->pages[idx];
+  mi_assert_internal(p > (void*)segment);
+  ptrdiff_t diff = (uint8_t*)p - (uint8_t*)segment;
+  mi_assert_internal(diff > 0 && diff <= (ptrdiff_t)MI_SEGMENT_SIZE);
+  size_t idx = (size_t)diff >> MI_SEGMENT_SLICE_SHIFT;
+  mi_assert_internal(idx <= segment->slice_entries);
+  mi_slice_t* slice0 = (mi_slice_t*)&segment->slices[idx];
+  mi_slice_t* slice = mi_slice_first(slice0);  // adjust to the block that holds the page data
+  mi_assert_internal(slice->slice_offset == 0);
+  mi_assert_internal(slice >= segment->slices && slice < segment->slices + segment->slice_entries);
+  return mi_slice_to_page(slice);
 }
 
 // Quick page start for initialized pages
@@ -510,8 +593,8 @@ static inline size_t mi_page_block_size(const mi_page_t* page) {
 }
 
 static inline bool mi_page_is_huge(const mi_page_t* page) {
-  mi_assert_internal((page->is_huge && _mi_page_segment(page)->page_kind == MI_PAGE_HUGE) ||
-                     (!page->is_huge && _mi_page_segment(page)->page_kind != MI_PAGE_HUGE));
+  mi_assert_internal((page->is_huge && _mi_page_segment(page)->kind == MI_SEGMENT_HUGE) ||
+                     (!page->is_huge && _mi_page_segment(page)->kind != MI_SEGMENT_HUGE));
   return page->is_huge;
 }
 
@@ -523,7 +606,11 @@ static inline size_t mi_page_usable_block_size(const mi_page_t* page) {
 
 // size of a segment
 static inline size_t mi_segment_size(mi_segment_t* segment) {
-  return segment->segment_size;
+  return segment->segment_slices * MI_SEGMENT_SLICE_SIZE;
+}
+
+static inline uint8_t* mi_segment_end(mi_segment_t* segment) {
+  return (uint8_t*)segment + mi_segment_size(segment);
 }
 
 // Thread free access
@@ -678,12 +765,13 @@ static inline bool mi_is_in_same_segment(const void* p, const void* q) {
 }
 
 static inline bool mi_is_in_same_page(const void* p, const void* q) {
-  mi_segment_t* segmentp = _mi_ptr_segment(p);
-  mi_segment_t* segmentq = _mi_ptr_segment(q);
-  if (segmentp != segmentq) return false;
-  size_t idxp = _mi_segment_page_idx_of(segmentp, p);
-  size_t idxq = _mi_segment_page_idx_of(segmentq, q);
-  return (idxp == idxq);
+  mi_segment_t* segment = _mi_ptr_segment(p);
+  if (_mi_ptr_segment(q) != segment) return false;
+  // assume q may be invalid // return (_mi_segment_page_of(segment, p) == _mi_segment_page_of(segment, q));
+  mi_page_t* page = _mi_segment_page_of(segment, p);
+  size_t psize;
+  uint8_t* start = _mi_segment_page_start(segment, page, &psize);
+  return (start <= (uint8_t*)q && (uint8_t*)q < start + psize);
 }
 
 static inline uintptr_t mi_rotl(uintptr_t x, uintptr_t shift) {
@@ -765,6 +853,50 @@ static inline void mi_block_set_next(const mi_page_t* page, mi_block_t* block, c
 }
 
 
+// -------------------------------------------------------------------
+// commit mask
+// -------------------------------------------------------------------
+
+static inline void mi_commit_mask_create_empty(mi_commit_mask_t* cm) {
+  for (size_t i = 0; i < MI_COMMIT_MASK_FIELD_COUNT; i++) {
+    cm->mask[i] = 0;
+  }
+}
+
+static inline void mi_commit_mask_create_full(mi_commit_mask_t* cm) {
+  for (size_t i = 0; i < MI_COMMIT_MASK_FIELD_COUNT; i++) {
+    cm->mask[i] = ~((size_t)0);
+  }
+}
+
+static inline bool mi_commit_mask_is_empty(const mi_commit_mask_t* cm) {
+  for (size_t i = 0; i < MI_COMMIT_MASK_FIELD_COUNT; i++) {
+    if (cm->mask[i] != 0) return false;
+  }
+  return true;
+}
+
+static inline bool mi_commit_mask_is_full(const mi_commit_mask_t* cm) {
+  for (size_t i = 0; i < MI_COMMIT_MASK_FIELD_COUNT; i++) {
+    if (cm->mask[i] != ~((size_t)0)) return false;
+  }
+  return true;
+}
+
+// defined in `segment.c`:
+size_t _mi_commit_mask_committed_size(const mi_commit_mask_t* cm, size_t total);
+size_t _mi_commit_mask_next_run(const mi_commit_mask_t* cm, size_t* idx);
+
+#define mi_commit_mask_foreach(cm,idx,count) \
+  idx = 0; \
+  while ((count = _mi_commit_mask_next_run(cm,&idx)) > 0) {
+
+#define mi_commit_mask_foreach_end() \
+    idx += count; \
+  }
+
+
+
 /* -----------------------------------------------------------
   memory id's
 ----------------------------------------------------------- */
@@ -780,8 +912,10 @@ static inline mi_memid_t _mi_memid_none(void) {
   return _mi_memid_create(MI_MEM_NONE);
 }
 
-static inline mi_memid_t _mi_memid_create_os(bool committed, bool is_zero, bool is_large) {
+static inline mi_memid_t _mi_memid_create_os(void* base, size_t size, bool committed, bool is_zero, bool is_large) {
   mi_memid_t memid = _mi_memid_create(MI_MEM_OS);
+  memid.mem.os.base = base;
+  memid.mem.os.size = size;
   memid.initially_committed = committed;
   memid.initially_zero = is_zero;
   memid.is_pinned = is_large;
@@ -811,24 +945,6 @@ static inline uintptr_t _mi_random_shuffle(uintptr_t x) {
   x ^= x >> 16;
 #endif
   return x;
-}
-
-// -------------------------------------------------------------------
-// Optimize numa node access for the common case (= one node)
-// -------------------------------------------------------------------
-
-int    _mi_os_numa_node_get(void);
-size_t _mi_os_numa_node_count_get(void);
-
-extern mi_decl_hidden _Atomic(size_t) _mi_numa_node_count;
-static inline int _mi_os_numa_node(void) {
-  if mi_likely(mi_atomic_load_relaxed(&_mi_numa_node_count) == 1) { return 0; }
-  else return _mi_os_numa_node_get();
-}
-static inline size_t _mi_os_numa_node_count(void) {
-  const size_t count = mi_atomic_load_relaxed(&_mi_numa_node_count);
-  if mi_likely(count > 0) { return count; }
-  else return _mi_os_numa_node_count_get();
 }
 
 
@@ -871,7 +987,7 @@ static inline size_t mi_clz(size_t x) {
   #else
     _BitScanReverse64(&idx, x);
   #endif
-  return ((MI_SIZE_BITS - 1) - idx);
+  return ((MI_SIZE_BITS - 1) - (size_t)idx);
 }
 static inline size_t mi_ctz(size_t x) {
   if (x==0) return MI_SIZE_BITS;
@@ -881,7 +997,7 @@ static inline size_t mi_ctz(size_t x) {
   #else
     _BitScanForward64(&idx, x);
   #endif
-  return idx;
+  return (size_t)idx;
 }
 
 #else
@@ -974,8 +1090,8 @@ static inline size_t mi_popcount(size_t x) {
 
 #if !MI_TRACK_ENABLED && defined(_WIN32) && (defined(_M_IX86) || defined(_M_X64))
 #include <intrin.h>
-extern bool _mi_cpu_has_fsrm;
-extern bool _mi_cpu_has_erms;
+extern mi_decl_hidden bool _mi_cpu_has_fsrm;
+extern mi_decl_hidden bool _mi_cpu_has_erms;
 static inline void _mi_memcpy(void* dst, const void* src, size_t n) {
   if ((_mi_cpu_has_fsrm && n <= 128) || (_mi_cpu_has_erms && n > 128)) {
     __movsb((unsigned char*)dst, (const unsigned char*)src, n);

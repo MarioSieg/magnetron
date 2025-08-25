@@ -37,7 +37,7 @@ static inline mi_block_t* mi_page_block_at(const mi_page_t* page, void* page_sta
 }
 
 static void mi_page_init(mi_heap_t* heap, mi_page_t* page, size_t size, mi_tld_t* tld);
-static void mi_page_extend_free(mi_heap_t* heap, mi_page_t* page, mi_tld_t* tld);
+static bool mi_page_extend_free(mi_heap_t* heap, mi_page_t* page, mi_tld_t* tld);
 
 #if (MI_DEBUG>=3)
 static size_t mi_page_list_count(mi_page_t* page, mi_block_t* head) {
@@ -82,11 +82,9 @@ static bool mi_page_is_valid_init(mi_page_t* page) {
   mi_assert_internal(page->used <= page->capacity);
   mi_assert_internal(page->capacity <= page->reserved);
 
-  // const size_t bsize = mi_page_block_size(page);
-  mi_segment_t* segment = _mi_page_segment(page);
   uint8_t* start = mi_page_start(page);
-  mi_assert_internal(start == _mi_segment_page_start(segment,page,NULL));
-  mi_assert_internal(page->is_huge == (segment->page_kind == MI_PAGE_HUGE));
+  mi_assert_internal(start == _mi_segment_page_start(_mi_page_segment(page), page, NULL));
+  mi_assert_internal(page->is_huge == (_mi_page_segment(page)->kind == MI_SEGMENT_HUGE));
   //mi_assert_internal(start + page->capacity*page->block_size == page->top);
 
   mi_assert_internal(mi_page_list_is_valid(page,page->free));
@@ -114,7 +112,7 @@ static bool mi_page_is_valid_init(mi_page_t* page) {
   return true;
 }
 
-extern bool _mi_process_is_initialized;             // has mi_process_init been called?
+extern mi_decl_hidden bool _mi_process_is_initialized;             // has mi_process_init been called?
 
 bool _mi_page_is_valid(mi_page_t* page) {
   mi_assert_internal(mi_page_is_valid_init(page));
@@ -123,14 +121,15 @@ bool _mi_page_is_valid(mi_page_t* page) {
   #endif
   if (mi_page_heap(page)!=NULL) {
     mi_segment_t* segment = _mi_page_segment(page);
-    mi_assert_internal(!_mi_process_is_initialized || segment->thread_id == mi_page_heap(page)->thread_id || segment->thread_id==0);
+
+    mi_assert_internal(!_mi_process_is_initialized || segment->thread_id==0 || segment->thread_id == mi_page_heap(page)->thread_id);
     #if MI_HUGE_PAGE_ABANDON
-    if (segment->page_kind != MI_PAGE_HUGE)
+    if (segment->kind != MI_SEGMENT_HUGE)
     #endif
     {
       mi_page_queue_t* pq = mi_page_queue_of(page);
       mi_assert_internal(mi_page_queue_contains(pq, page));
-      mi_assert_internal(pq->block_size==mi_page_block_size(page) || mi_page_block_size(page) > MI_LARGE_OBJ_SIZE_MAX || mi_page_is_in_full(page));
+      mi_assert_internal(pq->block_size==mi_page_block_size(page) || mi_page_block_size(page) > MI_MEDIUM_OBJ_SIZE_MAX || mi_page_is_in_full(page));
       mi_assert_internal(mi_heap_contains_queue(mi_page_heap(page),pq));
     }
   }
@@ -257,10 +256,11 @@ void _mi_page_free_collect(mi_page_t* page, bool force) {
 // called from segments when reclaiming abandoned pages
 void _mi_page_reclaim(mi_heap_t* heap, mi_page_t* page) {
   mi_assert_expensive(mi_page_is_valid_init(page));
+
   mi_assert_internal(mi_page_heap(page) == heap);
   mi_assert_internal(mi_page_thread_free_flag(page) != MI_NEVER_DELAYED_FREE);
   #if MI_HUGE_PAGE_ABANDON
-  mi_assert_internal(_mi_page_segment(page)->page_kind != MI_PAGE_HUGE);
+  mi_assert_internal(_mi_page_segment(page)->kind != MI_SEGMENT_HUGE);
   #endif
 
   // TODO: push on full queue immediately if it is full?
@@ -274,7 +274,7 @@ static mi_page_t* mi_page_fresh_alloc(mi_heap_t* heap, mi_page_queue_t* pq, size
   #if !MI_HUGE_PAGE_ABANDON
   mi_assert_internal(pq != NULL);
   mi_assert_internal(mi_heap_contains_queue(heap, pq));
-  mi_assert_internal(page_alignment > 0 || block_size > MI_LARGE_OBJ_SIZE_MAX || block_size == pq->block_size);
+  mi_assert_internal(page_alignment > 0 || block_size > MI_MEDIUM_OBJ_SIZE_MAX || block_size == pq->block_size);
   #endif
   mi_page_t* page = _mi_segment_page_alloc(heap, block_size, page_alignment, &heap->tld->segments);
   if (page == NULL) {
@@ -284,13 +284,14 @@ static mi_page_t* mi_page_fresh_alloc(mi_heap_t* heap, mi_page_queue_t* pq, size
   #if MI_HUGE_PAGE_ABANDON
   mi_assert_internal(pq==NULL || _mi_page_segment(page)->page_kind != MI_PAGE_HUGE);
   #endif
+  mi_assert_internal(page_alignment >0 || block_size > MI_MEDIUM_OBJ_SIZE_MAX || _mi_page_segment(page)->kind != MI_SEGMENT_HUGE);
   mi_assert_internal(pq!=NULL || mi_page_block_size(page) >= block_size);
   // a fresh page was found, initialize it
   const size_t full_block_size = (pq == NULL || mi_page_is_huge(page) ? mi_page_block_size(page) : block_size); // see also: mi_segment_huge_page_alloc
   mi_assert_internal(full_block_size >= block_size);
   mi_page_init(heap, page, full_block_size, heap->tld);
   mi_heap_stat_increase(heap, pages, 1);
-  mi_heap_stat_increase(heap, page_bins[mi_page_bin(page)], 1);
+  mi_heap_stat_increase(heap, page_bins[_mi_page_bin(page)], 1);
   if (pq != NULL) { mi_page_queue_push(heap, pq, page); }
   mi_assert_expensive(_mi_page_is_valid(page));
   return page;
@@ -426,6 +427,7 @@ void _mi_page_force_abandon(mi_page_t* page) {
   }
 }
 
+
 // Free a page with no more free blocks
 void _mi_page_free(mi_page_t* page, mi_page_queue_t* pq, bool force) {
   mi_assert_internal(page != NULL);
@@ -443,13 +445,12 @@ void _mi_page_free(mi_page_t* page, mi_page_queue_t* pq, bool force) {
   mi_segments_tld_t* segments_tld = &heap->tld->segments;
   mi_page_queue_remove(pq, page);
 
-  // and free it
-  mi_heap_stat_decrease(heap, page_bins[mi_page_bin(page)], 1);
+  // and free it  
   mi_page_set_heap(page,NULL);
   _mi_segment_page_free(page, force, segments_tld);
 }
 
-#define MI_MAX_RETIRE_SIZE    MI_LARGE_OBJ_SIZE_MAX   // should be less than size for MI_BIN_HUGE
+#define MI_MAX_RETIRE_SIZE    MI_MEDIUM_OBJ_SIZE_MAX   // should be less than size for MI_BIN_HUGE
 #define MI_RETIRE_CYCLES      (16)
 
 // Retire a page with no more used blocks
@@ -623,7 +624,7 @@ static mi_decl_noinline void mi_page_free_list_extend( mi_page_t* const page, co
 #if (MI_SECURE>0)
 #define MI_MIN_EXTEND         (8*MI_SECURE) // extend at least by this many
 #else
-#define MI_MIN_EXTEND         (1)
+#define MI_MIN_EXTEND         (4)
 #endif
 
 // Extend the capacity (up to reserved) by initializing a free list
@@ -631,18 +632,15 @@ static mi_decl_noinline void mi_page_free_list_extend( mi_page_t* const page, co
 // Note: we also experimented with "bump" allocation on the first
 // allocations but this did not speed up any benchmark (due to an
 // extra test in malloc? or cache effects?)
-static void mi_page_extend_free(mi_heap_t* heap, mi_page_t* page, mi_tld_t* tld) {
+static bool mi_page_extend_free(mi_heap_t* heap, mi_page_t* page, mi_tld_t* tld) {
   mi_assert_expensive(mi_page_is_valid_init(page));
   #if (MI_SECURE<=2)
   mi_assert(page->free == NULL);
   mi_assert(page->local_free == NULL);
-  if (page->free != NULL) return;
+  if (page->free != NULL) return true;
   #endif
-  if (page->capacity >= page->reserved) return;
+  if (page->capacity >= page->reserved) return true;
 
-  size_t page_size;
-  //uint8_t* page_start =
-  _mi_segment_page_start(_mi_page_segment(page), page, &page_size);
   mi_stat_counter_increase(tld->stats.pages_extended, 1);
 
   // calculate the extend count
@@ -674,6 +672,7 @@ static void mi_page_extend_free(mi_heap_t* heap, mi_page_t* page, mi_tld_t* tld)
   page->capacity += (uint16_t)extend;
   mi_stat_increase(tld->stats.page_committed, extend * bsize);
   mi_assert_expensive(mi_page_is_valid_init(page));
+  return true;
 }
 
 // Initialize a fresh page
@@ -688,6 +687,8 @@ static void mi_page_init(mi_heap_t* heap, mi_page_t* page, size_t block_size, mi
   size_t page_size;
   page->page_start = _mi_segment_page_start(segment, page, &page_size);
   mi_track_mem_noaccess(page->page_start,page_size);
+  mi_assert_internal(mi_page_block_size(page) <= page_size);
+  mi_assert_internal(page_size <= page->slice_count*MI_SEGMENT_SLICE_SIZE);
   mi_assert_internal(page_size / block_size < (1L<<16));
   page->reserved = (uint16_t)(page_size / block_size);
   mi_assert_internal(page->reserved > 0);
@@ -702,6 +703,7 @@ static void mi_page_init(mi_heap_t* heap, mi_page_t* page, size_t block_size, mi
     mi_assert_expensive(mi_mem_is_zero(page->page_start, page_size));
   }
   #endif
+  mi_assert_internal(page->is_committed);
   if (block_size > 0 && _mi_is_power_of_two(block_size)) {
     page->block_size_shift = (uint8_t)(mi_ctz((uintptr_t)block_size));
   }
@@ -725,8 +727,10 @@ static void mi_page_init(mi_heap_t* heap, mi_page_t* page, size_t block_size, mi
   mi_assert_expensive(mi_page_is_valid_init(page));
 
   // initialize an initial free list
-  mi_page_extend_free(heap,page,tld);
-  mi_assert(mi_page_immediate_available(page));
+  if (mi_page_extend_free(heap,page,tld)) {
+    mi_assert(mi_page_immediate_available(page));
+  }
+  return;
 }
 
 
@@ -818,13 +822,18 @@ static mi_page_t* mi_page_queue_find_free_ex(mi_heap_t* heap, mi_page_queue_t* p
   if (page_candidate != NULL) {
     page = page_candidate;
   }
-  if (page != NULL && !mi_page_immediate_available(page)) {
-    mi_assert_internal(mi_page_is_expandable(page));
-    mi_page_extend_free(heap, page, heap->tld);
+  if (page != NULL) {
+    if (!mi_page_immediate_available(page)) {
+      mi_assert_internal(mi_page_is_expandable(page));
+      if (!mi_page_extend_free(heap, page, heap->tld)) {
+        page = NULL; // failed to extend
+      }
+    }
+    mi_assert_internal(page == NULL || mi_page_immediate_available(page));
   }
 
   if (page == NULL) {
-    _mi_heap_collect_retired(heap, false); // perhaps make a page available
+    _mi_heap_collect_retired(heap, false); // perhaps make a page available?
     page = mi_page_fresh(heap, pq);
     if (page == NULL && first_try) {
       // out-of-memory _or_ an abandoned page with free blocks was reclaimed, try once again
@@ -902,31 +911,47 @@ void mi_register_deferred_free(mi_deferred_free_fun* fn, void* arg) mi_attr_noex
   General allocation
 ----------------------------------------------------------- */
 
-// Huge pages contain just one block, and the segment contains just that page.
+// Large and huge page allocation.
+// Huge pages contain just one block, and the segment contains just that page (as `MI_SEGMENT_HUGE`).
 // Huge pages are also use if the requested alignment is very large (> MI_BLOCK_ALIGNMENT_MAX)
 // so their size is not always `> MI_LARGE_OBJ_SIZE_MAX`.
-static mi_page_t* mi_huge_page_alloc(mi_heap_t* heap, size_t size, size_t page_alignment) {
+static mi_page_t* mi_large_huge_page_alloc(mi_heap_t* heap, size_t size, size_t page_alignment) {
   size_t block_size = _mi_os_good_alloc_size(size);
   mi_assert_internal(mi_bin(block_size) == MI_BIN_HUGE || page_alignment > 0);
+  bool is_huge = (block_size > MI_LARGE_OBJ_SIZE_MAX || page_alignment > 0);
   #if MI_HUGE_PAGE_ABANDON
-  mi_page_queue_t* pq = NULL;
+  mi_page_queue_t* pq = (is_huge ? NULL : mi_page_queue(heap, block_size));
   #else
-  mi_page_queue_t* pq = mi_page_queue(heap, MI_LARGE_OBJ_SIZE_MAX+1);  // always in the huge queue regardless of the block size
-  mi_assert_internal(mi_page_queue_is_huge(pq));
+  mi_page_queue_t* pq = mi_page_queue(heap, is_huge ? MI_LARGE_OBJ_SIZE_MAX+1 : block_size);
+  mi_assert_internal(!is_huge || mi_page_queue_is_huge(pq));
   #endif
   mi_page_t* page = mi_page_fresh_alloc(heap, pq, block_size, page_alignment);
   if (page != NULL) {
-    mi_assert_internal(mi_page_block_size(page) >= size);
     mi_assert_internal(mi_page_immediate_available(page));
-    mi_assert_internal(mi_page_is_huge(page));
-    mi_assert_internal(_mi_page_segment(page)->page_kind == MI_PAGE_HUGE);
-    mi_assert_internal(_mi_page_segment(page)->used==1);
-    #if MI_HUGE_PAGE_ABANDON
-    mi_assert_internal(_mi_page_segment(page)->thread_id==0); // abandoned, not in the huge queue
-    mi_page_set_heap(page, NULL);
-    #endif
-    mi_heap_stat_increase(heap, malloc_huge, mi_page_block_size(page));
-    mi_heap_stat_counter_increase(heap, malloc_huge_count, 1);
+
+    if (is_huge) {
+      mi_assert_internal(mi_page_is_huge(page));
+      mi_assert_internal(_mi_page_segment(page)->kind == MI_SEGMENT_HUGE);
+      mi_assert_internal(_mi_page_segment(page)->used==1);
+      #if MI_HUGE_PAGE_ABANDON
+      mi_assert_internal(_mi_page_segment(page)->thread_id==0); // abandoned, not in the huge queue
+      mi_page_set_heap(page, NULL);
+      #endif
+    }
+    else {
+      mi_assert_internal(!mi_page_is_huge(page));
+    }
+
+    const size_t bsize = mi_page_usable_block_size(page);  // note: not `mi_page_block_size` to account for padding
+    /*if (bsize <= MI_LARGE_OBJ_SIZE_MAX) {
+      mi_heap_stat_increase(heap, malloc_large, bsize);
+      mi_heap_stat_counter_increase(heap, malloc_large_count, 1);
+    }
+    else */
+    {
+      _mi_stat_increase(&heap->tld->stats.malloc_huge, bsize);
+      _mi_stat_counter_increase(&heap->tld->stats.malloc_huge_count, 1);
+    }
   }
   return page;
 }
@@ -937,13 +962,13 @@ static mi_page_t* mi_huge_page_alloc(mi_heap_t* heap, size_t size, size_t page_a
 static mi_page_t* mi_find_page(mi_heap_t* heap, size_t size, size_t huge_alignment) mi_attr_noexcept {
   // huge allocation?
   const size_t req_size = size - MI_PADDING_SIZE;  // correct for padding_size in case of an overflow on `size`
-  if mi_unlikely(req_size > (MI_LARGE_OBJ_SIZE_MAX - MI_PADDING_SIZE) || huge_alignment > 0) {
+  if mi_unlikely(req_size > (MI_MEDIUM_OBJ_SIZE_MAX - MI_PADDING_SIZE) || huge_alignment > 0) {
     if mi_unlikely(req_size > MI_MAX_ALLOC_SIZE) {
       _mi_error_message(EOVERFLOW, "allocation request is too large (%zu bytes)\n", req_size);
       return NULL;
     }
     else {
-      return mi_huge_page_alloc(heap,size,huge_alignment);
+      return mi_large_huge_page_alloc(heap,size,huge_alignment);
     }
   }
   else {
@@ -979,9 +1004,9 @@ void* _mi_malloc_generic(mi_heap_t* heap, size_t size, bool zero, size_t huge_al
 
     // free delayed frees from other threads (but skip contended ones)
     _mi_heap_delayed_free_partial(heap);
-    
+
     // collect every once in a while (10000 by default)
-    const long generic_collect = mi_option_get_clamp(mi_option_generic_collect, 1, 1000000L);    
+    const long generic_collect = mi_option_get_clamp(mi_option_generic_collect, 1, 1000000L);
     if (heap->generic_collect_count >= generic_collect) {
       heap->generic_collect_count = 0;
       mi_heap_collect(heap, false /* force? */);

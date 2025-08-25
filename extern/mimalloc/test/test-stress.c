@@ -320,11 +320,17 @@ int main(int argc, char** argv) {
 
   // Run ITER full iterations where half the objects in the transfer buffer survive to the next round.
   srand(0x7feb352d);
-  // mi_stats_reset();
+  
+  //mi_reserve_os_memory(512ULL << 20, true, true);
+
+  #if !defined(NDEBUG) && !defined(USE_STD_MALLOC)
+  mi_stats_reset();
+  #endif
+
 #ifdef STRESS
-    test_stress();
+  test_stress();
 #else
-    test_leak();
+  test_leak();
 #endif
 
 #ifndef USE_STD_MALLOC
@@ -337,6 +343,7 @@ int main(int argc, char** argv) {
     mi_free(json);
   }
   #endif
+  mi_collect(true);
   mi_stats_print(NULL);  
 #endif
   //bench_end_program();

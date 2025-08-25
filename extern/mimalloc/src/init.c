@@ -34,13 +34,12 @@ const mi_page_t _mi_page_empty = {
   MI_ATOMIC_VAR_INIT(0), // xthread_free
   MI_ATOMIC_VAR_INIT(0), // xheap
   NULL, NULL
-  #if MI_INTPTR_SIZE==4
-  , { NULL }
-  #endif
+  , { 0 }  // padding
 };
 
 #define MI_PAGE_EMPTY() ((mi_page_t*)&_mi_page_empty)
 
+#if (MI_SMALL_WSIZE_MAX==128)
 #if (MI_PADDING>0) && (MI_INTPTR_SIZE >= 8)
 #define MI_SMALL_PAGES_EMPTY  { MI_INIT128(MI_PAGE_EMPTY), MI_PAGE_EMPTY(), MI_PAGE_EMPTY() }
 #elif (MI_PADDING>0)
@@ -48,7 +47,9 @@ const mi_page_t _mi_page_empty = {
 #else
 #define MI_SMALL_PAGES_EMPTY  { MI_INIT128(MI_PAGE_EMPTY), MI_PAGE_EMPTY() }
 #endif
-
+#else
+#error "define right initialization sizes corresponding to MI_SMALL_WSIZE_MAX"
+#endif
 
 // Empty page queues for every bin
 #define QNULL(sz)  { NULL, NULL, (sz)*sizeof(uintptr_t) }
@@ -63,8 +64,8 @@ const mi_page_t _mi_page_empty = {
     QNULL( 10240), QNULL( 12288), QNULL( 14336), QNULL( 16384), QNULL( 20480), QNULL( 24576), QNULL( 28672), QNULL( 32768), /* 56 */ \
     QNULL( 40960), QNULL( 49152), QNULL( 57344), QNULL( 65536), QNULL( 81920), QNULL( 98304), QNULL(114688), QNULL(131072), /* 64 */ \
     QNULL(163840), QNULL(196608), QNULL(229376), QNULL(262144), QNULL(327680), QNULL(393216), QNULL(458752), QNULL(524288), /* 72 */ \
-    QNULL(MI_LARGE_OBJ_WSIZE_MAX + 1  /* 655360, Huge queue */), \
-    QNULL(MI_LARGE_OBJ_WSIZE_MAX + 2) /* Full queue */ }
+    QNULL(MI_MEDIUM_OBJ_WSIZE_MAX + 1  /* 655360, Huge queue */), \
+    QNULL(MI_MEDIUM_OBJ_WSIZE_MAX + 2) /* Full queue */ }
 
 #define MI_STAT_COUNT_NULL()  {0,0,0}
 
@@ -85,6 +86,18 @@ const mi_page_t _mi_page_empty = {
   \
   { MI_INIT74(MI_STAT_COUNT_NULL) }, \
   { MI_INIT74(MI_STAT_COUNT_NULL) }
+
+
+// Empty slice span queues for every bin
+#define SQNULL(sz)  { NULL, NULL, sz }
+#define MI_SEGMENT_SPAN_QUEUES_EMPTY \
+  { SQNULL(1), \
+    SQNULL(     1), SQNULL(     2), SQNULL(     3), SQNULL(     4), SQNULL(     5), SQNULL(     6), SQNULL(     7), SQNULL(    10), /*  8 */ \
+    SQNULL(    12), SQNULL(    14), SQNULL(    16), SQNULL(    20), SQNULL(    24), SQNULL(    28), SQNULL(    32), SQNULL(    40), /* 16 */ \
+    SQNULL(    48), SQNULL(    56), SQNULL(    64), SQNULL(    80), SQNULL(    96), SQNULL(   112), SQNULL(   128), SQNULL(   160), /* 24 */ \
+    SQNULL(   192), SQNULL(   224), SQNULL(   256), SQNULL(   320), SQNULL(   384), SQNULL(   448), SQNULL(   512), SQNULL(   640), /* 32 */ \
+    SQNULL(   768), SQNULL(   896), SQNULL(  1024) /* 35 */ }
+
 
 // --------------------------------------------------------
 // Statically allocate an empty heap as the initial
@@ -110,12 +123,23 @@ mi_decl_cache_align const mi_heap_t _mi_heap_empty = {
   false,            // can reclaim
   0,                // tag
   #if MI_GUARDED
-  0, 0, 0, 0, 1,    // count is 1 so we never write to it (see `internal.h:mi_heap_malloc_use_guarded`)
+  0, 0, 0, 1,       // count is 1 so we never write to it (see `internal.h:mi_heap_malloc_use_guarded`)
   #endif
   MI_SMALL_PAGES_EMPTY,
   MI_PAGE_QUEUES_EMPTY
 };
 
+static mi_decl_cache_align mi_subproc_t mi_subproc_default;
+
+#define tld_empty_stats  ((mi_stats_t*)((uint8_t*)&tld_empty + offsetof(mi_tld_t,stats)))
+
+mi_decl_cache_align static const mi_tld_t tld_empty = {
+  0,
+  false,
+  NULL, NULL,
+  { MI_SEGMENT_SPAN_QUEUES_EMPTY, 0, 0, 0, 0, 0, &mi_subproc_default, tld_empty_stats }, // segments
+  { MI_STAT_VERSION, MI_STATS_NULL }       // stats
+};
 
 mi_threadid_t _mi_thread_id(void) mi_attr_noexcept {
   return _mi_prim_thread_id();
@@ -126,15 +150,10 @@ mi_decl_thread mi_heap_t* _mi_heap_default = (mi_heap_t*)&_mi_heap_empty;
 
 extern mi_decl_hidden mi_heap_t _mi_heap_main;
 
-static mi_decl_cache_align mi_subproc_t mi_subproc_default;
-
 static mi_decl_cache_align mi_tld_t tld_main = {
   0, false,
-  &_mi_heap_main, &_mi_heap_main,
-  { { NULL, NULL }, {NULL ,NULL}, {NULL ,NULL, 0},
-    0, 0, 0, 0, 0, &mi_subproc_default,
-    &tld_main.stats
-  }, // segments
+  &_mi_heap_main, & _mi_heap_main,
+  { MI_SEGMENT_SPAN_QUEUES_EMPTY, 0, 0, 0, 0, 0, &mi_subproc_default, &tld_main.stats }, // segments
   { MI_STAT_VERSION, MI_STATS_NULL }       // stats
 };
 
@@ -153,7 +172,7 @@ mi_decl_cache_align mi_heap_t _mi_heap_main = {
   false,            // can reclaim
   0,                // tag
   #if MI_GUARDED
-  0, 0, 0, 0, 0,
+  0, 0, 0, 0,
   #endif
   MI_SMALL_PAGES_EMPTY,
   MI_PAGE_QUEUES_EMPTY
@@ -165,15 +184,14 @@ mi_stats_t _mi_stats_main = { MI_STAT_VERSION, MI_STATS_NULL };
 
 #if MI_GUARDED
 mi_decl_export void mi_heap_guarded_set_sample_rate(mi_heap_t* heap, size_t sample_rate, size_t seed) {
-  heap->guarded_sample_seed = seed;
-  if (heap->guarded_sample_seed == 0) {
-    heap->guarded_sample_seed = _mi_heap_random_next(heap);
-  }
   heap->guarded_sample_rate  = sample_rate;
-  if (heap->guarded_sample_rate >= 1) {
-    heap->guarded_sample_seed = heap->guarded_sample_seed % heap->guarded_sample_rate;
+  heap->guarded_sample_count = sample_rate;  // count down samples
+  if (heap->guarded_sample_rate > 1) {
+    if (seed == 0) {
+      seed = _mi_heap_random_next(heap);
+    }
+    heap->guarded_sample_count = (seed % heap->guarded_sample_rate) + 1;  // start at random count between 1 and `sample_rate`
   }
-  heap->guarded_sample_count = heap->guarded_sample_seed;  // count down samples
 }
 
 mi_decl_export void mi_heap_guarded_set_size_bound(mi_heap_t* heap, size_t min, size_t max) {
@@ -225,7 +243,6 @@ mi_heap_t* _mi_heap_main_get(void) {
   mi_heap_main_init();
   return &_mi_heap_main;
 }
-
 
 /* -----------------------------------------------------------
   Sub process
@@ -300,7 +317,6 @@ static _Atomic(mi_thread_data_t*) td_cache[TD_CACHE_SIZE];
 
 static mi_thread_data_t* mi_thread_data_zalloc(void) {
   // try to find thread metadata in the cache
-  bool is_zero = false;
   mi_thread_data_t* td = NULL;
   for (int i = 0; i < TD_CACHE_SIZE; i++) {
     td = mi_atomic_load_ptr_relaxed(mi_thread_data_t, &td_cache[i]);
@@ -308,32 +324,25 @@ static mi_thread_data_t* mi_thread_data_zalloc(void) {
       // found cached allocation, try use it
       td = mi_atomic_exchange_ptr_acq_rel(mi_thread_data_t, &td_cache[i], NULL);
       if (td != NULL) {
-        break;
+        _mi_memzero(td, offsetof(mi_thread_data_t,memid));
+        return td;
       }
     }
   }
 
   // if that fails, allocate as meta data
+  mi_memid_t memid;
+  td = (mi_thread_data_t*)_mi_os_zalloc(sizeof(mi_thread_data_t), &memid);
   if (td == NULL) {
-    mi_memid_t memid;
-    td = (mi_thread_data_t*)_mi_os_alloc(sizeof(mi_thread_data_t), &memid);
+    // if this fails, try once more. (issue #257)
+    td = (mi_thread_data_t*)_mi_os_zalloc(sizeof(mi_thread_data_t), &memid);
     if (td == NULL) {
-      // if this fails, try once more. (issue #257)
-      td = (mi_thread_data_t*)_mi_os_alloc(sizeof(mi_thread_data_t), &memid);
-      if (td == NULL) {
-        // really out of memory
-        _mi_error_message(ENOMEM, "unable to allocate thread local heap metadata (%zu bytes)\n", sizeof(mi_thread_data_t));
-      }
-    }
-    if (td != NULL) {
-      td->memid = memid;
-      is_zero = memid.initially_zero;
+      // really out of memory
+      _mi_error_message(ENOMEM, "unable to allocate thread local heap metadata (%zu bytes)\n", sizeof(mi_thread_data_t));
+      return NULL;
     }
   }
-
-  if (td != NULL && !is_zero) {
-    _mi_memzero_aligned(td, offsetof(mi_thread_data_t,memid));
-  }
+  td->memid = memid;
   return td;
 }
 
@@ -391,7 +400,7 @@ static bool _mi_thread_heap_init(void) {
 
 // initialize thread local data
 void _mi_tld_init(mi_tld_t* tld, mi_heap_t* bheap) {
-  _mi_memzero_aligned(tld,sizeof(mi_tld_t));
+  _mi_memcpy_aligned(tld, &tld_empty, sizeof(mi_tld_t));
   tld->heap_backing = bheap;
   tld->heaps = NULL;
   tld->segments.subproc = &mi_subproc_default;
@@ -432,7 +441,10 @@ static bool _mi_thread_heap_done(mi_heap_t* heap) {
 
   // free if not the main thread
   if (heap != &_mi_heap_main) {
-    mi_assert_internal(heap->tld->segments.count == 0 || heap->thread_id != _mi_thread_id());
+    // the following assertion does not always hold for huge segments as those are always treated
+    // as abondened: one may allocate it in one thread, but deallocate in another in which case
+    // the count can be too large or negative. todo: perhaps not count huge segments? see issue #363
+    // mi_assert_internal(heap->tld->segments.count == 0 || heap->thread_id != _mi_thread_id());
     mi_thread_data_free((mi_thread_data_t*)heap);
   }
   else {
@@ -565,7 +577,7 @@ mi_decl_nodiscard bool mi_is_redirected(void) mi_attr_noexcept {
 }
 
 // Called once by the process loader from `src/prim/prim.c`
-void _mi_process_load(void) {
+void _mi_auto_process_init(void) {
   mi_heap_main_init();
   #if defined(__APPLE__) || defined(MI_TLS_RECURSE_GUARD)
   volatile mi_heap_t* dummy = _mi_heap_default; // access TLS to allocate it before setting tls_initialized to true;
@@ -647,13 +659,13 @@ void mi_process_init(void) mi_attr_noexcept {
   if (mi_option_is_enabled(mi_option_reserve_os_memory)) {
     long ksize = mi_option_get(mi_option_reserve_os_memory);
     if (ksize > 0) {
-      mi_reserve_os_memory((size_t)ksize*MI_KiB, true, true);
+      mi_reserve_os_memory((size_t)ksize*MI_KiB, true /* commit? */, true /* allow large pages? */);
     }
   }
 }
 
-// Called when the process is done (through `at_exit`)
-void mi_cdecl _mi_process_done(void) {
+// Called when the process is done (cdecl as it is used with `at_exit` on some platforms)
+void mi_cdecl mi_process_done(void) mi_attr_noexcept {
   // only shutdown if we were initialized
   if (!_mi_process_is_initialized) return;
   // ensure we are called once
@@ -696,3 +708,7 @@ void mi_cdecl _mi_process_done(void) {
   os_preloading = true; // don't call the C runtime anymore
 }
 
+void mi_cdecl _mi_auto_process_done(void) mi_attr_noexcept {
+  if (_mi_option_get_fast(mi_option_destroy_on_exit)>1) return;
+  mi_process_done();
+}

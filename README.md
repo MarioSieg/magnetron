@@ -77,8 +77,9 @@ Please open issues for ideas, or submit pull requests for new **features**.
 PRs that only fix typos or minor formatting will not be accepted.
 
 ## 📜 License
-(c) 2025 Mario "Neo" Sieg. mario.sieg.64@gmail.com<br>
-Distributed under the Apache 2 License. See `LICENSE.txt` for more information.
+(c) 2025 Mario Sieg. mario.sieg.64@gmail.com<br>
+Distributed under the Apache 2 License.
+See `LICENSE` for more information.
 
 ## 🧩 Similar Projects
 

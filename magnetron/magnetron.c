@@ -1,16 +1,12 @@
 /*
-** +=======================================================================+
-** | (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>                  |
-** +=======================================================================+
-**
-** This file implements the magnetron runtime core:
-**  - The magnetron core API which is used from Python and C as declared in magnetron.h.
-**  - Context creation, destruction and all related functions.
-**  - Tensor creation, destruction and utility functions, all except the compute functions.
-**  - Automatic differentiation and gradient computation.
-**  - Metadata of datatypes and operators and misc functions.
-**  - Hardware detection and system information.
-**  - File storage format loading and saving for (*.mag) files.
+** +---------------------------------------------------------------------+
+** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | Licensed under the Apache License, Version 2.0                      |
+** |                                                                     |
+** | Website : https://mariosieg.com                                     |
+** | GitHub  : https://github.com/MarioSieg                              |
+** | License : https://www.apache.org/licenses/LICENSE-2.0               |
+** +---------------------------------------------------------------------+
 */
 
 #include <magnetron/magnetron.h>
