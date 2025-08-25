@@ -1,4 +1,4 @@
-# (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
+# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
 
 import numpy as np
 from magnetron import Tensor, Context, active_context

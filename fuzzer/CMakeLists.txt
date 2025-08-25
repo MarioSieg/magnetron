@@ -1,4 +1,4 @@
-# (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
+# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
 
 enable_language(CXX)
 set(CMAKE_CXX_STANDARD 17)

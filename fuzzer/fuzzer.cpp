@@ -1,4 +1,4 @@
-// (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
+// (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
 
 // Command line options:
 // -jobs=64 -workers=64 -max_len=16384 -rss_limit_mb=16384 -max_total_time=3600 -exact_artifact_path="bin/fuzz"

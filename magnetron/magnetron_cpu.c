@@ -1,16 +1,12 @@
 /*
-** +=======================================================================+
-** | (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>                  |
-** +=======================================================================+
-**
-**
-** Implement CPU dispatch to specialized runtime kernels generated from magnetron_cpu_blas.inl and multithreading logic for parallel computations.
-** Each CPU kernel has an optional pre- and post-kernel, which can be used to initialize and destroy temporary data for the op.
-** A tensor can also have an init op, to fill it with a fixed value or with random numbers. The operation order is as follows:
-** 1. Init OP (if any)
-** 2. Pre Kernel (if any)
-** 3. Primary Kernel
-** 4. Post Kernel (if any)
+** +---------------------------------------------------------------------+
+** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                 |
+** | Licensed under the Apache License, Version 2.0                      |
+** |                                                                     |
+** | Website : https://mariosieg.com                                     |
+** | GitHub  : https://github.com/MarioSieg                              |
+** | License : https://www.apache.org/licenses/LICENSE-2.0                |
+** +---------------------------------------------------------------------+
 */
 
 #include "magnetron_internal.h"

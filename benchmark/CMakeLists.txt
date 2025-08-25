@@ -1,4 +1,4 @@
-# (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>
+# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
 
 add_executable(magnetron_benchmark benchmarks.cpp)
 target_link_libraries(magnetron_benchmark magnetron)

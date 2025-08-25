@@ -1,49 +1,12 @@
 /*
-** +=======================================================================+
-** | (c) 2025 Mario "Neo" Sieg. <mario.sieg.64@gmail.com>                  |
-** +=======================================================================+
-**
-**
-** !!! Make sure all functions in this file are static. This is required to correctly clone the impl for each specialized compilation unit.
-** This file implements the core math for magnetron, optimized for different CPU instruction sets.
-** This file is also included into different compilation units, which are all compiled with different architecture flags, thus the impl is 'cloned'.
-** At runtime the best impl for the host-CPU is chose automatically, by detecting the CPU and querying the hardware features.
-**
-** !!! Minimum Requirements!!!
-**  AMD 64 CPUs: SSE & SSE2 (any 64-bit AMD64 CPU).
-**  ARM 64 CPUs: ARM v8-a (Raspberry Pi 4, 5, Apple M1-4, Neoverse/Graviton etc..)
-**
-** +==============+=============+==============+======================================================+
-** | AMD 64 Versions and Features
-** +==============+=============+==============+======================================================+
-** | x86-64-v1	| CMOV, CX8, FPU, FXSR, MMX, OSFXSR, SCE, SSE, SSE2
-** | x86-64-v2	| CMPXCHG16B, LAHF-SAHF, POPCNT, SSE3, SSE4_1, SSE4_2, SSSE3
-** | x86-64-v3	| AVX, AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, OSXSAVE
-** | x86-64-v4	| AVX512F, AVX512BW, AVX512CD, AVX512DQ, AVX512VL
-** +==============+=============+==============+======================================================+
-** Some CPUs fall inbetween those, for example my old rusty test server has four old AMD Opteron CPUs with 16 cores each. They support AVX but not AVX2.
-** For CPUs like this, we still support more granular feature levels: SSE42, AVX, AVX2 and AVX512F.
-**
-** +==============+=============+==============+======================================================+
-** | ARM 64 Versions and Features
-** +==============+=============+==============+======================================================+
-** | armv8-a      |  Armv8-A    |              |  +fp, +simd
-** | armv8.1-a    |  Armv8.1-A  |  armv8-a,    |  +crc, +lse, +rdma
-** | armv8.2-a    |  Armv8.2-A  |  armv8.1-a   |
-** | armv8.3-a    |  Armv8.3-A  |  armv8.2-a,  |  +pauth, +fcma, +jscvt
-** | armv8.4-a    |  Armv8.4-A  |  armv8.3-a,  |  +flagm, +fp16fml, +dotprod, +rcpc2
-** | armv8.5-a    |  Armv8.5-A  |  armv8.4-a,  |  +sb, +ssbs, +predres, +frintts, +flagm2
-** | armv8.6-a    |  Armv8.6-A  |  armv8.5-a,  |  +bf16, +i8mm
-** | armv8.7-a    |  Armv8.7-A  |  armv8.6-a,  |  +wfxt, +xs
-** | armv8.8-a    |  Armv8.8-a  |  armv8.7-a,  |  +mops
-** | armv8.9-a    |  Armv8.9-a  |  armv8.8-a   |
-** | armv9-a      |  Armv9-A    |  armv8.5-a,  |  +sve, +sve2
-** | armv9.1-a    |  Armv9.1-A  |  armv9-a,    |  +bf16, +i8mm
-** | armv9.2-a    |  Armv9.2-A  |  armv9.1-a   |
-** | armv9.3-a    |  Armv9.3-A  |  armv9.2-a,  |  +mops
-** | armv9.4-a    |  Armv9.4-A  |  armv9.3-a   |
-** | armv8-r      |  Armv8-R    |  armv8-r     |
-** +==============+=============+==============+======================================================+
+** +---------------------------------------------------------------------+
+** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                 |
+** | Licensed under the Apache License, Version 2.0                      |
+** |                                                                     |
+** | Website : https://mariosieg.com                                     |
+** | GitHub  : https://github.com/MarioSieg                              |
+** | License : https://www.apache.org/licenses/LICENSE-2.0                |
+** +---------------------------------------------------------------------+
 */
 
 #include "magnetron_internal.h"
