@@ -56,6 +56,8 @@ __attribute__((weak_import)) extern int __ulock_wake(uint32_t op, void* addr, ui
 #include <linux/prctl.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include <linux/futex.h>
 #ifdef __aarch64__
 #include <sys/auxv.h>
@@ -1228,7 +1230,7 @@ mag_tensor_t* mag_tensor_as_strided(mag_context_t* ctx, mag_tensor_t* base, int6
 static void mag_tensor_dtor(void* self) {
     mag_tensor_t* t = self;
     mag_context_t* ctx = t->ctx;
-    mag_assert(ctx->num_tensors > 0, "mag_e11m52_t freed tensor");
+    mag_assert(ctx->num_tensors > 0, "double freed tensor");
     --ctx->num_tensors;
     if (t->view_meta) {
         mag_rc_control_decref(&t->view_meta->rc);
@@ -2630,7 +2632,7 @@ uint32_t mag_crc32c(const void* buffer, size_t size) {
     return ~crc;
 }
 
-static bool mag_utf8_validate(const char* str, size_t len) {
+bool mag_utf8_validate(const char* str, size_t len) {
     const uint8_t* data = (const uint8_t*)str;
     size_t pos = 0;
     uint32_t cp = 0;
@@ -2675,6 +2677,15 @@ static bool mag_utf8_validate(const char* str, size_t len) {
         pos = next_pos;
     }
     return true;
+}
+
+char* mag_strdup(const char* s) {
+    if (mag_unlikely(!s)) return NULL;
+    size_t len = strlen(s);
+    char* clone = (*mag_alloc)(NULL, len+1, 0);
+    memcpy(clone, s, len);
+    clone[len] = '\0';
+    return clone;
 }
 
 bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t* osz, const int64_t* ost, int64_t ork, const int64_t* nsz, int64_t nrk) {
@@ -2850,12 +2861,195 @@ void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_
 
 /* The file format is implemented after the spec in ../docs/mag-file-format.md */
 
+typedef union mag_record_val_t {
+    mag_tensor_t* tensor;
+    int64_t i64;
+    mag_e11m52_t f64;
+} mag_record_val_t;
+mag_static_assert(sizeof(mag_record_val_t) == 8);
+
+typedef struct mag_record_tval_t {
+    mag_record_type_t type;
+    mag_record_val_t v;
+} mag_record_tval_t;
+mag_static_assert(sizeof(mag_record_tval_t) == 16);
+
+typedef struct mag_storage_record_t {
+    const char* key;
+    size_t key_len;
+    mag_record_tval_t val;
+} mag_storage_record_t;
+
+typedef struct mag_record_map_t {
+    mag_storage_record_t* arr;
+    size_t len;
+    size_t cap;
+} mag_record_map_t;
+
+static void mag_record_map_rehash(mag_record_map_t* map, size_t nc) {
+    mag_storage_record_t* old = map->arr;
+    size_t oc = map->cap;
+    map->arr = (*mag_alloc)(NULL, nc*sizeof(*map->arr), 0);
+    memset(map->arr, 0, nc*sizeof(*map->arr));
+    map->cap = nc;
+    map->len = 0;
+    for (size_t i=0; i<oc; ++i) {
+        if (mag_unlikely(!old[i].key)) continue;
+        const char* key = old[i].key;
+        size_t kl = old[i].key_len;
+        size_t h = mag_hash(key, kl, 0);
+        size_t mask = nc-1;
+        for (i=h&mask;;i=(i+1)&mask) {
+            if (!map->arr[i].key) {
+                map->arr[i] = old[i];
+                ++map->len;
+                break;
+            }
+        }
+    }
+    (*mag_alloc)(old, 0, 0);
+}
+
+static void mag_record_map_init(mag_record_map_t* map) {
+    size_t cap = 32;
+    *map = (mag_record_map_t){
+        .arr = (*mag_alloc)(NULL, cap*sizeof(*map->arr), 0),
+        .len = 0,
+        .cap = cap
+    };
+    memset(map->arr, 0, cap*sizeof(*map->arr));
+}
+
+static size_t mag_record_required_size(const mag_storage_record_t* records, size_t num_records) {
+    size_t size = 0;
+    for (size_t i=0; i < num_records; ++i) {
+        size += records[i].key_len;
+    }
+    return size;
+}
+
+static void mag_record_map_free(mag_record_map_t* map) {
+    for (size_t i=0; i < map->cap; ++i) {
+        if (!map->arr[i].key) continue;
+        (*mag_alloc)((void*)map->arr[i].key, 0, 0);
+        if (map->arr[i].val.type == MAG_RECORD_TYPE_TENSOR && map->arr[i].val.v.tensor)
+            mag_tensor_decref(map->arr[i].val.v.tensor);
+    }
+    (*mag_alloc)(map->arr, 0, 0);
+    memset(map, 0, sizeof(*map));
+}
+
+static bool mag_record_map_insert_tensor(mag_record_map_t* map, const char* key, mag_record_tval_t val) {
+    if (mag_unlikely(!key)) return false;
+    size_t kl = strlen(key);
+    if (mag_unlikely(!kl)) return false;
+    if (mag_unlikely(!mag_utf8_validate(key, kl))) return false;
+    if ((map->len+1)*10 > map->cap*7)
+        mag_record_map_rehash(map, map->cap<<1);
+    size_t h = mag_hash(key, kl, 0);
+    size_t mask = map->cap-1;
+    size_t i;
+    for (i=h&mask;;i=(i+1)&mask) {
+        mag_storage_record_t* slot = &map->arr[i];
+        if (!slot->key) break;
+        if (mag_unlikely(slot->key_len == kl && !memcmp(slot->key, key, kl))) return false;
+        i = (i+1) & mask;
+    }
+    char* cloned_key = mag_strdup(key);
+    if (val.type == MAG_RECORD_TYPE_TENSOR) {
+        if (mag_unlikely(!val.v.tensor)) {
+            (*mag_alloc)(cloned_key, 0, 0);
+            return false;
+        }
+        mag_tensor_incref(val.v.tensor);
+    }
+    map->arr[i] = (mag_storage_record_t){
+        .key = cloned_key,
+        .key_len = kl,
+        .val = val
+    };
+    map->len++;
+    return true;
+}
+
+static mag_record_tval_t* mag_record_map_find(mag_record_map_t* map, const char* key) {
+    if (mag_unlikely(!key)) return false;
+    size_t kl = strlen(key);
+    if (mag_unlikely(!kl || !mag_utf8_validate(key, kl))) return NULL;
+    size_t h = mag_hash(key, kl, 0);
+    size_t mask = map->cap-1;
+    for (size_t i=h&mask;;i=(i+1)&mask) {
+        mag_storage_record_t* slot = &map->arr[i];
+        if (!slot->key) return NULL;
+        if (slot->key_len == kl && !memcmp(slot->key, key, kl))
+            return &slot->val;
+    }
+}
+
+static bool mag_record_map_erase(mag_record_map_t* map, const char* key) {
+    size_t kl = strlen(key);
+    if (mag_unlikely(!kl || !mag_utf8_validate(key, kl))) return false;
+    size_t mask = map->cap-1;
+    size_t h = mag_hash(key, kl, 0);
+    size_t i;
+    for (i=h&mask;;i=(i+1)&mask) {
+        mag_storage_record_t* slot = &map->arr[i];
+        if (!slot->key) return false;
+        if (slot->key_len == kl && !memcmp(slot->key, key, kl)) break;
+        i = (i+1) & mask;
+    }
+    (*mag_alloc)((void*)map->arr[i].key, 0, 0);
+    if (map->arr[i].val.type == MAG_RECORD_TYPE_TENSOR && map->arr[i].val.v.tensor)
+        mag_tensor_decref(map->arr[i].val.v.tensor);
+    size_t hole = i;
+    for (;;) {
+        size_t j = (hole+1) & mask;
+        mag_storage_record_t* s = &map->arr[j];
+        if (!s->key) {
+            map->arr[hole] = (mag_storage_record_t){0};
+            break;
+        }
+        size_t sh = mag_hash(s->key, s->key_len, 0) & mask;
+        size_t dist_j = (j-sh) & mask;
+        if (dist_j == 0) {
+            map->arr[hole] = (mag_storage_record_t){0};
+            break;
+        }
+        map->arr[hole] = *s;
+        map->arr[j] = (mag_storage_record_t){0};
+        hole = j;
+    }
+
+    map->len--;
+    return true;
+}
+
 #define mag_sto_san(expr) do { if (mag_unlikely(!(expr))) return false; } while (0)
 #define mag_sto_san_do(expr, then) do { if (mag_unlikely(!(expr))) { then; } } while (0)
+#define mag_sto_magic4(a,b,c,d) ((((d)&255)<<24) + (((c)&255)<<16) + (((b)&255)<<8) + ((a)&255))
+#define MAG_STO_FILE_MAGIC mag_sto_magic4('M', 'A', 'G', '!')
 #define MAG_STO_MAX_STR_LEN 65535
+#define MAG_STO_FILE_HEADER_SIZE (4*1 + 4 + 4 + 4 + 4 + 4)
+#define MAG_STO_META_HEADER_SIZE (4 + 8) /* aux + payload (key+key_len excluded) */
+#define MAG_STO_TENSOR_HEADER_SIZE (4 + 8 + 8)
+#define mag_sto_pack_aux(a,b,c,d) ((((uint8_t)(d)&255)<<24) + (((uint8_t)(c)&255)<<16) + (((uint8_t)(b)&255)<<8) + ((uint8_t)(a)&255))
+#define mag_sto_unpack_aux(v, a, b, c, d) do { \
+    *(a) = (v)&255; \
+    *(b) = ((v)>>8)&255; \
+    *(c) = ((v)>>16)&255; \
+    *(d) = ((v)>>24)&255; \
+} while (0)
+
+static size_t mag_sto_aligned_buf_size(const mag_tensor_t* t) {
+    mag_assert2(t->storage->host->type == MAG_DEVICE_TYPE_CPU);
+    size_t sz = mag_tensor_get_data_size(t);
+    mag_assert2(t->storage->alignment == MAG_CPU_BUF_ALIGN);
+    mag_sto_san(sz <= SIZE_MAX-MAG_CPU_BUF_ALIGN-1);
+    return (sz+(MAG_CPU_BUF_ALIGN-1))&~(MAG_CPU_BUF_ALIGN-1);
+}
 
 static inline bool mag_sto_wu32le(uint8_t** p, uint8_t* e, uint32_t v) {
-    mag_sto_san((size_t)(e - *p) <= sizeof(v));
+    mag_sto_san((size_t)(e - *p) >= sizeof(v));
     #ifdef MAG_BE
         v = mag_bswap32(v);
     #endif
@@ -2864,7 +3058,7 @@ static inline bool mag_sto_wu32le(uint8_t** p, uint8_t* e, uint32_t v) {
     return true;
 }
 static inline bool mag_sto_wu64le(uint8_t** p, uint8_t* e, uint64_t v) {
-    mag_sto_san((size_t)(e - *p) <= sizeof(v));
+    mag_sto_san((size_t)(e - *p) >= sizeof(v));
     #ifdef MAG_BE
         v = mag_bswap64(v);
     #endif
@@ -2874,16 +3068,17 @@ static inline bool mag_sto_wu64le(uint8_t** p, uint8_t* e, uint64_t v) {
 }
 static inline bool mag_sto_wstr(uint8_t** p, uint8_t* e, const char* str) {
     size_t len = strlen(str);
+    mag_sto_san(len <= MAG_STO_MAX_STR_LEN);
     mag_sto_san(mag_utf8_validate(str, len));
-    mag_sto_san(mag_sto_wu64le(p, e, len));
-    mag_sto_san((size_t)(e - *p) <= len);
+    mag_sto_san(mag_sto_wu32le(p, e, len));
+    mag_sto_san((size_t)(e - *p) >= len);
     memcpy(*p, str, len);
     *p += len;
     return true;
 }
 
 static inline bool mag_sto_ru32le(const uint8_t** p, const uint8_t* e, uint32_t* v) {
-    mag_sto_san((size_t)(e - *p) <= sizeof(*v));
+    mag_sto_san((size_t)(e - *p) >= sizeof(*v));
     memcpy(v, *p, sizeof(*v));
     #ifdef MAG_BE
         *v = mag_bswap32(*v);
@@ -2892,7 +3087,7 @@ static inline bool mag_sto_ru32le(const uint8_t** p, const uint8_t* e, uint32_t*
     return true;
 }
 static inline bool mag_sto_ru64le(const uint8_t** p, const uint8_t* e, uint64_t* v) {
-    mag_sto_san((size_t)(e - *p) <= sizeof(*v));
+    mag_sto_san((size_t)(e - *p) >= sizeof(*v));
     memcpy(v, *p, sizeof(*v));
     #ifdef MAG_BE
         *v = mag_bswap64(*v);
@@ -2901,10 +3096,10 @@ static inline bool mag_sto_ru64le(const uint8_t** p, const uint8_t* e, uint64_t*
     return true;
 }
 static inline bool mag_sto_rstr(const uint8_t** p, const uint8_t* e, char** str) {
-    uint64_t len;
-    mag_sto_san(mag_sto_ru64le(p, e, &len));
+    uint32_t len;
+    mag_sto_san(mag_sto_ru32le(p, e, &len));
     mag_sto_san(len <= MAG_STO_MAX_STR_LEN);
-    mag_sto_san((size_t)(e - *p) <= len);
+    mag_sto_san((size_t)(e - *p) >= len);
     *str = (*mag_alloc)(NULL, len+1, 0);
     memcpy(*str, *p, len);
     (*str)[len] = '\0';
@@ -2913,21 +3108,17 @@ static inline bool mag_sto_rstr(const uint8_t** p, const uint8_t* e, char** str)
     return true;
 }
 
-#define mag_make_magic4(a, b, c, d) ((((d)&255)<<24) + (((c)&255)<<16) + (((b)&255)<<8) + ((a)&255))
-#define MAG_STO_FILE_MAGIC mag_make_magic4('M', 'A', 'G', '!')
-#define MAG_STO_FILE_HEADER_SIZE (4*1 + 4 + 4 + 4 + 4 + 4)
-
 static bool mag_sto_file_hdr_patch_checksum(uint8_t** checksum_needle, uint32_t checksum) {
     uint8_t* p = *checksum_needle;
-    mag_sto_san((size_t)(p - *checksum_needle) >= 4);
-    #ifdef MAG_BE
-        checksum = mag_bswap32(checksum);
-    #endif
+#ifdef MAG_BE
+    checksum = mag_bswap32(checksum);
+#endif
     memcpy(p, &checksum, sizeof(checksum));
     return true;
 }
 
 static bool mag_sto_file_hdr_ser(uint8_t** p, uint8_t* e, uint32_t ver, uint32_t num_tensors, uint32_t num_meta_kv, uint8_t** checksum_needle) {
+    uint8_t* b = *p;
     mag_sto_san(mag_sto_wu32le(p, e, MAG_STO_FILE_MAGIC));
     mag_sto_san(mag_sto_wu32le(p, e, ver));
     *checksum_needle = *p; /* Save the pointer to the checksum field. */
@@ -2935,10 +3126,12 @@ static bool mag_sto_file_hdr_ser(uint8_t** p, uint8_t* e, uint32_t ver, uint32_t
     mag_sto_san(mag_sto_wu32le(p, e, num_tensors));
     mag_sto_san(mag_sto_wu32le(p, e, num_meta_kv));
     mag_sto_san(mag_sto_wu32le(p, e, 0));
+    mag_assert2(*p-b == MAG_STO_FILE_HEADER_SIZE);
     return true;
 }
 
 static bool mag_sto_file_hdr_deser(const uint8_t** p, uint8_t* e, uint32_t* ver, uint32_t* checksum, uint32_t* num_tensors, uint32_t* num_meta_kv) {
+    const uint8_t* b = *p;
     uint32_t magic;
     mag_sto_san(mag_sto_ru32le(p, e, &magic));
     mag_sto_san(magic == MAG_STO_FILE_MAGIC);
@@ -2950,6 +3143,261 @@ static bool mag_sto_file_hdr_deser(const uint8_t** p, uint8_t* e, uint32_t* ver,
     uint32_t aux;
     mag_sto_san(mag_sto_ru32le(p, e, &aux)); /* Reserved field, must be zero. */
     mag_sto_san(aux == 0);
+    mag_assert2(*p-b == MAG_STO_FILE_HEADER_SIZE);
     return true;
+}
+
+static bool mag_sto_meta_hdr_ser(uint8_t** p, uint8_t* e, const char* key, mag_record_tval_t val) {
+    const uint8_t* b = *p;
+    mag_sto_san(mag_sto_wu32le(p, e, mag_sto_pack_aux(val.type, 0, 0, 0)));
+    switch (val.type) {
+        case MAG_RECORD_TYPE_I64: {
+            uint64_t u;
+            memcpy(&u, &val.v.i64, sizeof(u));
+            mag_sto_san(mag_sto_wu64le(p, e, u));
+        } break;
+        case MAG_RECORD_TYPE_F64: {
+            uint64_t u;
+            memcpy(&u, &val.v.f64, sizeof(u));
+            mag_sto_san(mag_sto_wu64le(p, e, u));
+        } break;
+        case MAG_RECORD_TYPE_TENSOR:
+        default: mag_sto_san(false);
+    }
+    mag_assert2(*p-b == MAG_STO_META_HEADER_SIZE);
+    mag_sto_san(mag_sto_wstr(p, e, key));
+    mag_assert2(*p-b == MAG_STO_META_HEADER_SIZE+4+strlen(key));
+    return true;
+}
+
+static bool mag_sto_meta_hdr_deser(const uint8_t** p, const uint8_t* e, char** key, mag_record_tval_t* val) {
+    const uint8_t* b = *p;
+    uint32_t aux;
+    mag_sto_san(mag_sto_ru32le(p, e, &aux));
+    uint8_t t, u1, u2, u3;
+    mag_sto_unpack_aux(aux, &t, &u1, &u2, &u3);
+    mag_sto_san(t < MAG_RECORD_TYPE__COUNT && (aux>>8) == 0);
+    val->type = (mag_record_type_t)t;
+    switch (val->type) {
+        case MAG_RECORD_TYPE_I64: {
+            uint64_t v;
+            mag_sto_san(mag_sto_ru64le(p, e, &v));
+            memcpy(&val->v.i64, &v, sizeof(v));
+        } break;
+        case MAG_RECORD_TYPE_F64: {
+            uint64_t v;
+            mag_sto_san(mag_sto_ru64le(p, e, &v));
+            memcpy(&val->v.f64, &v, sizeof(v));
+        } break;
+        case MAG_RECORD_TYPE_TENSOR:
+        default: mag_sto_san(false);
+    }
+    mag_assert2(*p-b == MAG_STO_META_HEADER_SIZE);
+    mag_sto_san(mag_sto_rstr(p, e, key));
+    mag_assert2(*p-b == MAG_STO_META_HEADER_SIZE+4+strlen(*key));
+    return true;
+}
+
+static bool mag_sto_tensor_hdr_ser(uint8_t** p, uint8_t* e, const char* key, const mag_tensor_t* t, size_t* data_acc) {
+    mag_sto_san(t->storage->host->type == MAG_DEVICE_TYPE_CPU);
+    mag_sto_san(mag_tensor_is_contiguous(t));
+    const uint8_t* b = *p;
+    mag_sto_san(t->rank > 0 && t->rank <= MAG_MAX_DIMS);
+    mag_sto_san(t->dtype < MAG_DTYPE__NUM);
+    mag_sto_san(mag_sto_wu32le(p, e, mag_sto_pack_aux(t->dtype, (uint8_t)t->rank, 0, 0)));
+    size_t sz = mag_sto_aligned_buf_size(t);
+    mag_sto_san(mag_sto_wu64le(p, e, sz));
+    mag_sto_san(mag_sto_wu64le(p, e, *data_acc));
+    *data_acc += sz;
+    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE);
+    for (int64_t i=0; i<t->rank; ++i) {
+        mag_sto_san(t->shape[i] > 0);
+        mag_sto_san(mag_sto_wu64le(p, e, (uint64_t)t->shape[i]));
+    }
+    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + t->rank*8);
+    mag_sto_san(mag_sto_wstr(p, e, key));
+    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + t->rank*8 + 4+strlen(key));
+    return true;
+}
+
+typedef enum mag_storage_mode_t {
+    MAG_STORAGE_MODE_READ = 1<<0,
+    MAG_STORAGE_MODE_WRITE = 1<<1,
+} mag_storage_mode_t;
+
+struct mag_storage_archive_t {
+    mag_context_t* ctx;
+    char* path;
+    mag_storage_mode_t mode;
+    mag_record_map_t tensors;
+    mag_record_map_t metadata;
+};
+
+static size_t mag_sto_estimate_file_size(const mag_record_map_t* tensors, const mag_record_map_t* metadata) {
+    size_t size = MAG_STO_FILE_HEADER_SIZE;
+    for (size_t i=0; i < metadata->cap; ++i) {
+        if (!metadata->arr[i].key) continue;
+        size += MAG_STO_META_HEADER_SIZE;
+        size += metadata->arr[i].key_len;
+        if (metadata->arr[i].val.type != MAG_RECORD_TYPE_TENSOR)
+            size += sizeof(mag_record_val_t);
+    }
+    for (size_t i=0; i < tensors->cap; ++i) {
+        if (!tensors->arr[i].key) continue;
+        size += MAG_STO_TENSOR_HEADER_SIZE;
+        size += 8*tensors->arr[i].val.v.tensor->rank; /* shape */
+        size += 4+tensors->arr[i].key_len; /* key length + key */
+        size += mag_sto_aligned_buf_size(tensors->arr[i].val.v.tensor); /* data + padding */
+    }
+    return size;
+}
+
+static bool mag_storage_archive_write_to_disk(mag_storage_archive_t* archive, const char* filename) {
+    if (mag_unlikely(!archive || !filename || !*filename)) return false;
+    if (mag_unlikely(archive->tensors.len > UINT32_MAX || archive->metadata.len > UINT32_MAX)) return false;
+    uint8_t* base = NULL;
+    size_t fs = mag_sto_estimate_file_size(&archive->tensors, &archive->metadata);
+    #ifdef __linux__
+        int fd = open(filename, O_RDWR|O_CREAT, 0666);
+        if (mag_unlikely(fd == -1)) return false;
+        if (mag_unlikely(ftruncate(fd, fs) == -1)) {
+            close(fd);
+            return false;
+        }
+        void* map = mmap(NULL, fs, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+        if (mag_unlikely(map == MAP_FAILED)) {
+            close(fd);
+            return false;
+        }
+        base = map;
+    #endif
+
+    uint8_t* p = base;
+    uint8_t* e = base + fs;
+    uint8_t* checksum_needle = NULL;
+
+    /* Write the file header */
+    mag_sto_file_hdr_ser(&p, e, MAG_STORAGE_VERSION, (uint32_t)archive->tensors.len, (uint32_t)archive->metadata.len, &checksum_needle);
+
+    /* Write the metadata key-value pairs */
+    for (size_t i=0; i < archive->metadata.cap; ++i) {
+        if (!archive->metadata.arr[i].key) continue;
+        mag_sto_meta_hdr_ser(&p, e, archive->metadata.arr[i].key, archive->metadata.arr[i].val);
+    }
+
+    size_t data_acc = 0;
+    for (size_t i=0; i < archive->tensors.cap; ++i) {
+        if (!archive->tensors.arr[i].key) continue;
+        mag_sto_tensor_hdr_ser(&p, e, archive->tensors.arr[i].key, archive->tensors.arr[i].val.v.tensor, &data_acc);
+    }
+
+    #ifdef __linux__
+        if (mag_unlikely(msync(map, fs, MS_SYNC) == -1)) {
+            munmap(map, fs);
+            close(fd);
+            return false;
+        }
+        if (mag_unlikely(munmap(map, fs) == -1)) {
+            close(fd);
+            return false;
+        }
+        close(fd);
+    #endif
+    return true;
+}
+
+mag_storage_archive_t* mag_storage_archive_open(mag_context_t* ctx, const char* filename, char mode) {
+    if (mag_unlikely(!ctx || !filename || !*filename)) return NULL;
+    if (mag_unlikely(mode != 'r' && mode != 'w')) return NULL;
+    mag_storage_archive_t* archive = (*mag_alloc)(NULL, sizeof(*archive), 0);
+    archive->ctx = ctx;
+    archive->path = mag_strdup(filename);
+    archive->mode = mode == 'r' ? MAG_STORAGE_MODE_READ : MAG_STORAGE_MODE_WRITE;
+    mag_record_map_init(&archive->tensors);
+    mag_record_map_init(&archive->metadata);
+    return archive;
+}
+
+void mag_storage_archive_close(mag_storage_archive_t* archive) {
+    if (mag_unlikely(!archive)) return;
+    if (archive->mode & MAG_STORAGE_MODE_WRITE)
+        mag_storage_archive_write_to_disk(archive, archive->path);
+    (*mag_alloc)(archive->path, 0, 0);
+    mag_record_map_free(&archive->tensors);
+    mag_record_map_free(&archive->metadata);
+    (*mag_alloc)(archive, 0, 0);
+}
+
+bool mag_storage_archive_has_tensor(mag_storage_archive_t* archive, const char* key){
+    if (mag_unlikely(!archive || !key || !*key)) return false;
+    return mag_record_map_find(&archive->tensors, key);
+}
+
+bool mag_storage_archive_put_tensor(mag_storage_archive_t* archive, const char* key, mag_tensor_t* tensor){
+    if (mag_unlikely(!archive || !key || !*key || !tensor)) return false;
+    mag_record_tval_t val = {
+        .type = MAG_RECORD_TYPE_TENSOR,
+        .v = {.tensor = tensor}
+    };
+    return mag_record_map_insert_tensor(&archive->tensors, key, val);
+}
+
+mag_tensor_t* mag_storage_archive_get_tensor(mag_storage_archive_t* archive, const char* key){
+    if (mag_unlikely(!archive || !key || !*key)) return NULL;
+    mag_record_tval_t* val = mag_record_map_find(&archive->tensors, key);
+    if (mag_unlikely(!val || val->type != MAG_RECORD_TYPE_TENSOR || !val->v.tensor)) return NULL;
+    mag_tensor_incref(val->v.tensor);
+    return val->v.tensor;
+}
+
+bool mag_storage_archive_put_metadata_i64(mag_storage_archive_t* archive, const char* key, int64_t value) {
+    if (mag_unlikely(!archive || !key || !*key)) return false;
+    mag_record_tval_t val = {
+        .type = MAG_RECORD_TYPE_I64,
+        .v = {.i64 = value}
+    };
+    return mag_record_map_insert_tensor(&archive->metadata, key, val);
+}
+
+bool mag_storage_archive_get_metadata_i64(mag_storage_archive_t* archive, const char* key, int64_t* value) {
+    if (mag_unlikely(!archive || !key || !*key || !value)) return false;
+    mag_record_tval_t* val = mag_record_map_find(&archive->metadata, key);
+    if (mag_unlikely(!val || val->type != MAG_RECORD_TYPE_I64)) {
+        *value = 0;
+        return false;
+    }
+    *value = val->v.i64;
+    return true;
+}
+
+bool mag_storage_archive_put_metadata_f64(mag_storage_archive_t* archive, const char* key, mag_e11m52_t value) {
+    if (mag_unlikely(!archive || !key || !*key)) return false;
+    mag_record_tval_t val = {
+        .type = MAG_RECORD_TYPE_F64,
+        .v = {.f64 = value}
+    };
+    return mag_record_map_insert_tensor(&archive->metadata, key, val);
+}
+
+bool mag_storage_archive_get_metadata_f64(mag_storage_archive_t* archive, const char* key, mag_e11m52_t* value) {
+    if (mag_unlikely(!archive || !key || !*key || !value)) return false;
+    mag_record_tval_t* val = mag_record_map_find(&archive->metadata, key);
+    if (mag_unlikely(!val || val->type != MAG_RECORD_TYPE_F64)) {
+        *value = 0;
+        return false;
+    }
+    *value = val->v.f64;
+    return true;
+}
+
+bool mag_storage_archive_has_metadata(mag_storage_archive_t* archive, const char* key) {
+    if (mag_unlikely(!archive || !key || !*key)) return false;
+    return mag_record_map_find(&archive->metadata, key);
+}
+
+mag_record_type_t mag_storage_archive_get_metadata_type(mag_storage_archive_t* archive, const char* key) {
+    if (mag_unlikely(!archive || !key || !*key)) return MAG_RECORD_TYPE__COUNT;
+    mag_record_tval_t* val = mag_record_map_find(&archive->metadata, key);
+    return val ? val->type : MAG_RECORD_TYPE__COUNT;
 }
 

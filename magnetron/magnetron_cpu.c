@@ -554,12 +554,6 @@ static void mag_cpu_convert(mag_istorage_t* sto, mag_transfer_dir_t dir, size_t 
     else (*kern)(tnb, device, ddt, host, hdt);
 }
 
-/* Align CPU buffer to cache line size, which should also be satisfy alignment requirements for SSE, AVX and AVX512 on x86-64. */
-#define MAG_CPU_BUF_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
-mag_static_assert((MAG_CPU_BUF_ALIGN & 15)==0);
-mag_static_assert((MAG_CPU_BUF_ALIGN & 31)==0);
-mag_static_assert((MAG_CPU_BUF_ALIGN & 63)==0);
-
 static void mag_cpu_storage_dtor(void* self) {
     mag_istorage_t* buf = self;
     mag_context_t* ctx = buf->ctx;
