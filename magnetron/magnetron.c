@@ -3381,7 +3381,7 @@ static bool mag_sto_file_hdr_ser(uint8_t** p, uint8_t* e, uint32_t ver, uint32_t
     return true;
 }
 
-static bool mag_sto_file_hdr_deser(const uint8_t** p, uint8_t* e, uint32_t* ver, uint32_t* checksum, uint32_t* num_tensors, uint32_t* num_meta_kv) {
+static bool mag_sto_file_hdr_deser(const uint8_t** p, const uint8_t* e, uint32_t* ver, uint32_t* checksum, uint32_t* num_tensors, uint32_t* num_meta_kv) {
     const uint8_t* b = *p;
     uint32_t magic;
     mag_sto_san(mag_sto_ru32le(p, e, &magic));
@@ -3456,8 +3456,7 @@ static bool mag_sto_tensor_hdr_ser(uint8_t** p, uint8_t* e, const char* key, con
     mag_sto_san(t->rank > 0 && t->rank <= MAG_MAX_DIMS);
     mag_sto_san(t->dtype < MAG_DTYPE__NUM);
     mag_sto_san(mag_sto_wu32le(p, e, mag_sto_pack_aux(t->dtype, (uint8_t)t->rank, 0, 0)));
-    size_t sz = mag_sto_aligned_buf_size(t);
-    mag_sto_san(mag_sto_wu64le(p, e, sz));
+    mag_sto_san(mag_sto_wu64le(p, e, t->numel));
     mag_sto_san(mag_sto_wu64le(p, e, data_base+data_offs));
     mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE);
     for (int64_t i=0; i<t->rank; ++i) {
@@ -3467,6 +3466,30 @@ static bool mag_sto_tensor_hdr_ser(uint8_t** p, uint8_t* e, const char* key, con
     mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + t->rank*8);
     mag_sto_san(mag_sto_wstr(p, e, key));
     mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + t->rank*8 + 4+strlen(key));
+    return true;
+}
+
+static bool mag_sto_tensor_hdr_deser(const uint8_t** p, const uint8_t* e, char** key, mag_dtype_t* odt, int64_t* ork, int64_t(*oshape)[MAG_MAX_DIMS], uint64_t* sz, uint64_t* abs_offs) {
+    const uint8_t* b = *p;
+    uint32_t aux;
+    mag_sto_san(mag_sto_ru32le(p, e, &aux));
+    uint8_t dt, rank, u2, u3;
+    mag_sto_unpack_aux(aux, &dt, &rank, &u2, &u3);
+    mag_sto_san(dt < MAG_DTYPE__NUM && rank > 0 && rank <= MAG_MAX_DIMS && (aux>>16) == 0);
+    mag_sto_san(mag_sto_ru64le(p, e, sz));
+    mag_sto_san(mag_sto_ru64le(p, e, abs_offs));
+    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE);
+    for (int64_t i=0; i<rank; ++i) {
+        uint64_t d;
+        mag_sto_san(mag_sto_ru64le(p, e, &d));
+        mag_sto_san(d > 0 && d <= INT64_MAX);
+        (*oshape)[i] = (int64_t)d;
+    }
+    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + rank*8);
+    mag_sto_san(mag_sto_rstr(p, e, key));
+    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + rank*8 + 4+strlen(*key));
+    *odt = (mag_dtype_t)dt;
+    *ork = (int64_t)rank;
     return true;
 }
 
@@ -3486,6 +3509,28 @@ static bool mag_sto_tensor_buf_ser(uint8_t** p, uint8_t* e, const mag_tensor_t* 
     if (tail) memset(*p+payload, 0xff, tail);
     *p += payload+tail;
     mag_assert2(mag_sto_aligned_buf_size(t) == payload+tail);
+    return true;
+}
+
+static bool mag_sto_tensor_buf_deser(const uint8_t** p, const uint8_t* file_begin, const uint8_t* e, size_t abs_offs, size_t logical_nb, size_t aligned_nb, void* dst) {
+    mag_sto_san(logical_nb <= aligned_nb);
+    const uint8_t* src = file_begin + abs_offs;
+    const uint8_t* region_end = src + aligned_nb;
+    mag_sto_san(src >= file_begin && region_end <= e);
+    if (*p != src) {
+        mag_sto_san(*p <= src);
+        for (const uint8_t* q=*p; q < src; ++q)
+            mag_sto_san(*q == 0xff);
+        *p = src;
+    }
+    mag_sto_san(dst != NULL);
+    mag_sto_san((size_t)(e - *p) >= logical_nb);
+    memcpy(dst, *p, logical_nb);
+    const uint8_t* pad = *p + logical_nb;
+    const uint8_t* pad_end = src + aligned_nb;
+    for (const uint8_t* q=pad; q < pad_end; ++q)
+        mag_sto_san(*q == 0xff);
+    *p = region_end;
     return true;
 }
 
@@ -3522,6 +3567,47 @@ static size_t mag_sto_estimate_file_size(const mag_record_map_t* tensors, const 
     return size;
 }
 
+static bool mag_storage_read_from_disk(mag_storage_archive_t* archive, const char* filename) {
+    if (mag_unlikely(!archive || !filename || !*filename)) return false;
+    mag_mapped_file_t map;
+    if (mag_unlikely(!mag_map_file(&map, filename, 0, MAG_MAP_READ)))
+        return false;
+    const uint8_t* b = map.map;
+    const uint8_t* p = b;
+    const uint8_t* e = p+map.fs;
+    uint32_t ver, checksum, num_tensors, num_meta_kv;
+    mag_sto_san_do(mag_sto_file_hdr_deser(&p, e, &ver, &checksum, &num_tensors, &num_meta_kv), goto error);
+    uint32_t actual_checksum = mag_crc32c(4+p, (size_t)(e-(4+p)));
+    mag_sto_san_do(actual_checksum == checksum, goto error);
+    for (uint32_t i=0; i < num_meta_kv; ++i) { /* Read the metadata key-value pairs */
+        char* key = NULL;
+        mag_record_tagged_payload_t val = {0};
+        mag_sto_san_do(mag_sto_meta_hdr_deser(&p, e, &key, &val), goto error);
+        mag_sto_san_do(mag_record_map_insert(&archive->metadata, key, val), (*mag_alloc)(key, 0, 0); goto error);
+        (*mag_alloc)(key, 0, 0);
+    }
+    for (uint32_t i=0; i < num_tensors; ++i) { /* Read the tensor records */
+        char* key = NULL;
+        mag_dtype_t dt;
+        int64_t rank;
+        int64_t shape[MAG_MAX_DIMS];
+        uint64_t sz, abs_offs;
+        mag_sto_san_do(mag_sto_tensor_hdr_deser(&p, e, &key, &dt, &rank, &shape, &sz, &abs_offs), goto error);
+        mag_sto_san_do(sz <= SIZE_MAX && abs_offs <= SIZE_MAX && sz > 0 && abs_offs+sz <= map.fs, (*mag_alloc)(key, 0, 0); goto error);
+        mag_sto_san_do(dt < MAG_DTYPE__NUM && rank > 0 && rank <= MAG_MAX_DIMS, (*mag_alloc)(key, 0, 0); goto error);
+        int64_t numel=0;
+        for (int64_t j=0; j < rank; ++j) {
+            mag_sto_san_do(shape[j] > 0, (*mag_alloc)(key, 0, 0); goto error);
+            mag_sto_san_do(mag_mulov64(numel, (uint64_t)shape[j], &numel), (*mag_alloc)(key, 0, 0); goto error);
+        }
+        mag_sto_san_do(numel && mag_mulov64(numel, mag_dtype_meta_of(dt)->size, &numel) && numel, (*mag_alloc)(key, 0, 0); goto error);
+    }
+    return mag_unmap_file(&map);
+    error:
+        mag_unmap_file(&map);
+        return false;
+}
+
 static bool mag_storage_write_to_disk(mag_storage_archive_t* archive, const char* filename) {
     if (mag_unlikely(!archive || !filename || !*filename)) return false;
     if (mag_unlikely(archive->tensors.len > UINT32_MAX || archive->metadata.len > UINT32_MAX)) return false;
@@ -3533,19 +3619,14 @@ static bool mag_storage_write_to_disk(mag_storage_archive_t* archive, const char
     uint8_t* p = b;
     uint8_t* e = p+fs;
     uint8_t* checksum_needle = NULL;
-
     /* Write the file header */
     mag_sto_san_do(mag_sto_file_hdr_ser(&p, e, MAG_STORAGE_VERSION, (uint32_t)archive->tensors.len, (uint32_t)archive->metadata.len, &checksum_needle), goto error);
-
-    /* Write the metadata key-value pairs */
-    for (size_t i=0; i < archive->metadata.cap; ++i) {
+    for (size_t i=0; i < archive->metadata.cap; ++i) { /* Write the metadata key-value pairs */
         if (!archive->metadata.arr[i].key) continue;
         mag_sto_san_do(mag_sto_meta_hdr_ser(&p, e, archive->metadata.arr[i].key, archive->metadata.arr[i].payload), goto error);
     }
-
-    /* Compute the base offset for tensor data */
     uint8_t* dp = p;
-    for (size_t i = 0; i < archive->tensors.cap; ++i) {
+    for (size_t i=0; i < archive->tensors.cap; ++i) { /* Compute the base offset for tensor data */
         if (!archive->tensors.arr[i].key) continue;
         mag_tensor_t* t = archive->tensors.arr[i].payload.payload.tensor;
         dp += MAG_STO_TENSOR_HEADER_SIZE;
@@ -3555,22 +3636,16 @@ static bool mag_storage_write_to_disk(mag_storage_archive_t* archive, const char
     size_t nbh = (size_t)(dp-b);
     size_t al = MAG_CPU_BUF_ALIGN;
     size_t data_base = (nbh+(al-1))&~(al-1);
-
-    /* Write the tensor records */
-    for (size_t i=0,data_offs=0; i < archive->tensors.cap; ++i) {
+    for (size_t i=0,data_offs=0; i < archive->tensors.cap; ++i) {     /* Write the tensor records */
         if (!archive->tensors.arr[i].key) continue;
         const char* key = archive->tensors.arr[i].key;
         mag_tensor_t* tensor = archive->tensors.arr[i].payload.payload.tensor;
         mag_sto_san_do(mag_sto_tensor_hdr_ser(&p, e, key, tensor, data_base, data_offs), goto error);
         data_offs += mag_sto_aligned_buf_size(tensor);
     }
-
-    /* Compute checksum and patch the file header */
-    uint32_t crc = mag_crc32c(4+checksum_needle, (size_t)(p-(4+checksum_needle)));
+    uint32_t crc = mag_crc32c(4+checksum_needle, (size_t)(p-(4+checksum_needle)));     /* Compute checksum and patch the file header */
     mag_sto_san_do(mag_sto_file_hdr_patch_checksum(checksum_needle, crc), goto error);
-
-    /* Write the tensor data */
-    for (size_t i=0; i < archive->tensors.cap; ++i) {
+    for (size_t i=0; i < archive->tensors.cap; ++i) { /* Write the tensor data */
         if (!archive->tensors.arr[i].key) continue;
         const mag_tensor_t* t = archive->tensors.arr[i].payload.payload.tensor;
         mag_sto_san_do(mag_sto_tensor_buf_ser(&p, e, t), goto error);
@@ -3590,6 +3665,10 @@ mag_storage_archive_t* mag_storage_open(mag_context_t* ctx, const char* filename
     archive->mode = mode == 'r' ? MAG_STORAGE_MODE_READ : MAG_STORAGE_MODE_WRITE;
     mag_record_map_init(&archive->tensors);
     mag_record_map_init(&archive->metadata);
+    if (archive->mode & MAG_STORAGE_MODE_READ && mag_unlikely(!mag_storage_read_from_disk(archive, archive->path))) {
+        (*mag_alloc)(archive, 0, 0);
+        return NULL;
+    }
     return archive;
 }
 

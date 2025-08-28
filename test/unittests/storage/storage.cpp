@@ -80,11 +80,13 @@ TEST(storage, write_disk_metadata_only) {
   }
 }
 
-TEST(storage, write_tensor_to_disk) {
-  context ctx {cpu_device{}};
-  tensor t {ctx, dtype::e8m23, 32, 32, 2};
-  t.fill_rand_uniform_float(-1.0f, 1.0f);
-  mag_storage_archive_t* archive = mag_storage_open(&*ctx, "meow.mag", 'w');
-  ASSERT_TRUE(mag_storage_set_tensor(archive, "mat32x32x2", &*t));
-  ASSERT_TRUE(mag_storage_close(archive));
+TEST(storage, write_read_tensor_to_disk) {
+  {
+    context ctx {cpu_device{}};
+    tensor t {ctx, dtype::e8m23, 32, 32, 2};
+    t.fill_float(-2.5f);
+    mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test2.mag", 'w');
+    ASSERT_TRUE(mag_storage_set_tensor(archive, "mat32x32x2", &*t));
+    ASSERT_TRUE(mag_storage_close(archive));
+  }
 }
