@@ -384,19 +384,21 @@ typedef enum mag_record_type_t {
     MAG_RECORD_TYPE__COUNT
 } mag_record_type_t;
 
-extern MAG_EXPORT mag_storage_archive_t* mag_storage_archive_open(mag_context_t* ctx, const char* filename, char mode);
-extern MAG_EXPORT void mag_storage_archive_close(mag_storage_archive_t* archive);
+extern MAG_EXPORT mag_storage_archive_t* mag_storage_open(mag_context_t* ctx, const char* filename, char mode);
+extern MAG_EXPORT bool mag_storage_close(mag_storage_archive_t* archive);
 
-extern MAG_EXPORT bool mag_storage_archive_has_tensor(mag_storage_archive_t* archive, const char* key);
-extern MAG_EXPORT bool mag_storage_archive_put_tensor(mag_storage_archive_t* archive, const char* key, mag_tensor_t* tensor);
-extern MAG_EXPORT mag_tensor_t* mag_storage_archive_get_tensor(mag_storage_archive_t* archive, const char* key);
+extern MAG_EXPORT const char** mag_storage_get_all_tensor_keys(mag_storage_archive_t* archive, size_t* out_len);
+extern MAG_EXPORT const char** mag_storage_get_all_metadata_keys(mag_storage_archive_t* archive, size_t* out_len);
+extern MAG_EXPORT void mag_storage_get_all_keys_free(const char** keys, size_t len);
 
-extern MAG_EXPORT bool mag_storage_archive_has_metadata(mag_storage_archive_t* archive, const char* key);
-extern MAG_EXPORT mag_record_type_t mag_storage_archive_get_metadata_type(mag_storage_archive_t* archive, const char* key);
-extern MAG_EXPORT bool mag_storage_archive_put_metadata_i64(mag_storage_archive_t* archive, const char* key, int64_t value);
-extern MAG_EXPORT bool mag_storage_archive_get_metadata_i64(mag_storage_archive_t* archive, const char* key, int64_t* value);
-extern MAG_EXPORT bool mag_storage_archive_put_metadata_f64(mag_storage_archive_t* archive, const char* key, double value);
-extern MAG_EXPORT bool mag_storage_archive_get_metadata_f64(mag_storage_archive_t* archive, const char* key, double* value);
+extern MAG_EXPORT bool mag_storage_set_tensor(mag_storage_archive_t* archive, const char* key, mag_tensor_t* tensor);
+extern MAG_EXPORT mag_tensor_t* mag_storage_get_tensor(mag_storage_archive_t* archive, const char* key);
+
+extern MAG_EXPORT mag_record_type_t mag_storage_get_metadata_type(mag_storage_archive_t* archive, const char* key);
+extern MAG_EXPORT bool mag_storage_set_metadata_i64(mag_storage_archive_t* archive, const char* key, int64_t value);
+extern MAG_EXPORT bool mag_storage_get_metadata_i64(mag_storage_archive_t* archive, const char* key, int64_t* value);
+extern MAG_EXPORT bool mag_storage_set_metadata_f64(mag_storage_archive_t* archive, const char* key, double value);
+extern MAG_EXPORT bool mag_storage_get_metadata_f64(mag_storage_archive_t* archive, const char* key, double* value);
 
 #ifdef __cplusplus
 }

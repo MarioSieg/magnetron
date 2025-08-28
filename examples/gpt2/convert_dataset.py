@@ -1,29 +1,42 @@
 # This script downloads a pretrained GPT2 model from huggingface and converts it into Magnetron's custom file format.
-# Only needed if you want a different GPT2 dataset, as the example downloads the already converted files automatically.
 
 import magnetron as mag
 import magnetron.io as io
-from transformers import GPT2LMHeadModel, AutoTokenizer, AutoConfig
+import torch
+from magnetron import FFI, C
+from transformers import GPT2LMHeadModel
 
 OUTPUT_FILE: str = 'gpt2.mag'
+MODEL_TYPES: set[str] = {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
+MODEL_LAYOUTS = {
+    'gpt2': dict(n_layer=12, n_head=12, n_embd=768),
+    'gpt2-medium': dict(n_layer=24, n_head=16, n_embd=1024),
+    'gpt2-large': dict(n_layer=36, n_head=20, n_embd=1280),
+    'gpt2-xl': dict(n_layer=48, n_head=25, n_embd=1600),
+}
 
-
-def download_gpt2(model_name: str = 'gpt2') -> tuple[dict, 'PretrainedConfig', 'PreTrainedTokenizerBase']:
-    print('Downloading GPT-2 model...')
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = GPT2LMHeadModel.from_pretrained(model_name)
+def convert_hf_to_mag_file(model_type: str) -> None:
+    assert model_type in MODEL_TYPES
+    print(f'Converting GPT-2 model variant {model_type}')
+    cfg = MODEL_LAYOUTS[model_type]
+    cfg['vocab_size'] = 50257
+    cfg['block_size'] = 1024
+    cfg['bias'] = True
+    model = GPT2LMHeadModel.from_pretrained(model_type)
     model.eval()
     state_dict = model.state_dict()
-    config = AutoConfig.from_pretrained(model_name)
-    return state_dict, config, tokenizer
+    with io.StorageArchive(f'{model_type}-fp32.mag', 'w') as out:
+        for k, v, in cfg.items():
+            out[k] = v
+        for k, v in state_dict.items():
+            assert v.is_contiguous()
+            assert v.device == torch.device('cpu')
+            mag_tensor = mag.Tensor.empty(v.shape)
+            bytes = v.numel() * v.element_size()
+            C.mag_tensor_fill_from_raw_bytes(mag_tensor.native_ptr, FFI.cast('void*', v.data_ptr()), bytes)
+            out[k] = mag_tensor
 
+        print(out.metadata())
+        print(out.tensor_keys())
 
-state_dict, config, tokenizer = download_gpt2()
-
-with io.StorageStream() as storage:
-    for key, val in state_dict.items():
-        print(f'Converting {key} ({val.size()}) {val.dtype}')
-        storage.put(key, mag.Tensor.of(val.tolist()))
-    print(storage.tensor_keys())
-    storage.serialize(OUTPUT_FILE)
-    print(f'GPT-2 model converted and saved to {OUTPUT_FILE}')
+convert_hf_to_mag_file('gpt2')

@@ -20,14 +20,13 @@ The auxiliary field `aux` in the header and metadata records are reserved for fu
 | aux         | uint32_t   | Auxiliary field, reserved     |
 
 ### Metadata Record
-| Name         | Type      | Description                       |
-|--------------|-----------|-----------------------------------|
-| key_length   | uint32_t  | Length of the key string          |
-| key          | uint8_t[] | UTF-8 string, not null terminated |
-| type         | uint8_t   | Type of the metadata value        |
-| value_length | uint32_t  | Length of the value data          |
-| value        | uint8_t[] | Value data, type specific         |
-| aux          | uint32_t  | Auxiliary field, reserved         |
+| Name           | Type        | Description                         |
+|----------------|-------------|-------------------------------------|
+| aux            | uint32_t    | Auxiliary field                     |
+| payload        | uint64_t    | Payload bits                        |
+| -------------- | ----------- | ----------------------------------- |
+| key_length     | uint32_t    | Length of the key string            |
+| key            | uint8_t[]   | UTF-8 string, not null terminated   |
 
 ### Tensor Record
 | Name        | Type       | Description                             |
