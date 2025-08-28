@@ -3139,27 +3139,28 @@ typedef struct mag_record_map_t {
 } mag_record_map_t;
 
 static void mag_record_map_rehash(mag_record_map_t* map, size_t nc) {
-    mag_storage_record_t* old = map->arr;
+    mag_storage_record_t* pv = map->arr;
     size_t oc = map->cap;
-    map->arr = (*mag_alloc)(NULL, nc*sizeof(*map->arr), 0);
-    memset(map->arr, 0, nc*sizeof(*map->arr));
-    map->cap = nc;
-    map->len = 0;
-    for (size_t i=0; i<oc; ++i) {
-        if (mag_unlikely(!old[i].key)) continue;
-        const char* key = old[i].key;
-        size_t kl = old[i].key_len;
-        size_t h = mag_hash(key, kl, 0);
-        size_t mask = nc-1;
-        for (i=h&mask;;i=(i+1)&mask) {
-            if (!map->arr[i].key) {
-                map->arr[i] = old[i];
-                ++map->len;
+    mag_storage_record_t* fresh = (*mag_alloc)(NULL, nc*sizeof(*fresh), 0);
+    memset(fresh, 0, nc*sizeof(*fresh));
+    size_t nl = 0;
+    size_t mask = nc-1;
+    for (size_t k=0; k < oc; ++k) {
+        mag_storage_record_t rec = pv[k];
+        if (!rec.key) continue;
+        size_t h = mag_hash(rec.key, rec.key_len, 0)&mask;
+        for (size_t j=h;;j=(j+1)&mask) {
+            if (!fresh[j].key) {
+                fresh[j] = rec;
+                ++nl;
                 break;
             }
         }
     }
-    (*mag_alloc)(old, 0, 0);
+    (*mag_alloc)(pv, 0, 0);
+    map->arr = fresh;
+    map->cap = nc;
+    map->len = nl;
 }
 
 static void mag_record_map_init(mag_record_map_t* map) {

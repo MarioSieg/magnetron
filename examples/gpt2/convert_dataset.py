@@ -6,7 +6,6 @@ import torch
 from magnetron import FFI, C
 from transformers import GPT2LMHeadModel
 
-OUTPUT_FILE: str = 'gpt2.mag'
 MODEL_TYPES: set[str] = {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
 MODEL_LAYOUTS = {
     'gpt2': dict(n_layer=12, n_head=12, n_embd=768),
@@ -29,6 +28,7 @@ def convert_hf_to_mag_file(model_type: str) -> None:
         for k, v, in cfg.items():
             out[k] = v
         for k, v in state_dict.items():
+            print(f'Converting tensor {k}, Shape: {v.shape}, DType: {v.dtype}, Size: {v.numel()*v.element_size()/1024.0**2.0} MiB')
             assert v.is_contiguous()
             assert v.device == torch.device('cpu')
             mag_tensor = mag.Tensor.empty(v.shape)
@@ -39,4 +39,5 @@ def convert_hf_to_mag_file(model_type: str) -> None:
         print(out.metadata())
         print(out.tensor_keys())
 
-convert_hf_to_mag_file('gpt2')
+for model in MODEL_LAYOUTS:
+    convert_hf_to_mag_file(model)
