@@ -1,5 +1,6 @@
 // (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
 
+#include <filesystem>
 #include <prelude.hpp>
 
 using namespace magnetron;
@@ -53,7 +54,7 @@ TEST(storage, write_inmemory_metadata_only) {
   mag_storage_close(archive);
 }
 
-TEST(storage, write_disk_metadata_only) {
+TEST(storage, read_write_disk_metadata_only) {
   context ctx {cpu_device{}};
 
   std::mt19937_64 rng {std::random_device{}()};
@@ -71,13 +72,36 @@ TEST(storage, write_disk_metadata_only) {
     mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test.mag", 'w');
     ASSERT_NE(nullptr, archive);
     for (std::size_t i=0; i < i64s.size(); ++i) {
-      ASSERT_TRUE(mag_storage_set_metadata_i64(archive, ("i64." + std::to_string(i)).c_str(), i64s[i]));
+      std::string name {"i64." + std::to_string(i)};
+      ASSERT_TRUE(mag_storage_set_metadata_i64(archive, name.c_str(), i64s[i]));
     }
     for (std::size_t i=0; i < f64s.size(); ++i) {
-      ASSERT_TRUE(mag_storage_set_metadata_f64(archive, ("f64." + std::to_string(i)).c_str(), f64s[i]));
+      std::string name {"f64." + std::to_string(i)};
+      ASSERT_TRUE(mag_storage_set_metadata_f64(archive, name.c_str(), f64s[i]));
+    }
+    ASSERT_TRUE(mag_storage_close(archive));
+    ASSERT_TRUE(std::filesystem::exists("test.mag"));
+  }
+
+  {
+    mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test.mag", 'r');
+    ASSERT_NE(nullptr, archive);
+    for (std::size_t i=0; i < i64s.size(); ++i) {
+      std::int64_t v {};
+      std::string name {"i64." + std::to_string(i)};
+      ASSERT_TRUE(mag_storage_get_metadata_i64(archive, name.c_str(), &v)) << name;
+      ASSERT_EQ(i64s[i], v);
+    }
+    for (std::size_t i=0; i < f64s.size(); ++i) {
+      double v {};
+      std::string name {"f64." + std::to_string(i)};
+      ASSERT_TRUE(mag_storage_get_metadata_f64(archive, name.c_str(), &v)) << name;
+      ASSERT_EQ(f64s[i], v);
     }
     ASSERT_TRUE(mag_storage_close(archive));
   }
+
+  ASSERT_TRUE(std::filesystem::remove("test.mag"));
 }
 
 TEST(storage, write_read_tensor_to_disk) {
@@ -88,5 +112,8 @@ TEST(storage, write_read_tensor_to_disk) {
     mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test2.mag", 'w');
     ASSERT_TRUE(mag_storage_set_tensor(archive, "mat32x32x2", &*t));
     ASSERT_TRUE(mag_storage_close(archive));
+    ASSERT_TRUE(std::filesystem::exists("test2.mag"));
   }
+
+  ASSERT_TRUE(std::filesystem::remove("test2.mag"));
 }

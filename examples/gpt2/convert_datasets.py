@@ -7,12 +7,16 @@ from magnetron import FFI, C
 from transformers import GPT2LMHeadModel
 
 MODEL_TYPES: set[str] = {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
-MODEL_LAYOUTS = {
+MODEL_LAYOUTS: dict[str, dict[str, object]] = {
     'gpt2': dict(n_layer=12, n_head=12, n_embd=768),
     'gpt2-medium': dict(n_layer=24, n_head=16, n_embd=1024),
     'gpt2-large': dict(n_layer=36, n_head=20, n_embd=1280),
     'gpt2-xl': dict(n_layer=48, n_head=25, n_embd=1600),
 }
+
+with io.StorageArchive('gpt2-fp32.mag', 'r') as sto:
+    print(sto.metadata())
+    exit(0)
 
 def convert_hf_to_mag_file(model_type: str) -> None:
     assert model_type in MODEL_TYPES
@@ -32,12 +36,14 @@ def convert_hf_to_mag_file(model_type: str) -> None:
             assert v.is_contiguous()
             assert v.device == torch.device('cpu')
             mag_tensor = mag.Tensor.empty(v.shape)
-            bytes = v.numel() * v.element_size()
-            C.mag_tensor_fill_from_raw_bytes(mag_tensor.native_ptr, FFI.cast('void*', v.data_ptr()), bytes)
+            nb: int = v.numel()*v.element_size()
+            C.mag_tensor_fill_from_raw_bytes(mag_tensor.native_ptr, FFI.cast('void*', v.data_ptr()), nb)
             out[k] = mag_tensor
 
         print(out.metadata())
         print(out.tensor_keys())
 
-for model in MODEL_LAYOUTS:
-    convert_hf_to_mag_file(model)
+#for model in MODEL_LAYOUTS:
+    #convert_hf_to_mag_file(model)
+
+convert_hf_to_mag_file('gpt2')
