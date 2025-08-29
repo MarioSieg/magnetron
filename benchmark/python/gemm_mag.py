@@ -12,7 +12,7 @@ B = mag.Tensor.uniform(batch, K, N)
 
 for _ in range(10):
     C = A @ B
-    _ = C[0,0,0].item()
+    _ = C[0, 0, 0].item()
 
 flops = 2 * batch * M * N * K
 times = []
@@ -21,7 +21,7 @@ I = 1000
 for _ in range(I):
     t0 = time.perf_counter()
     C = A @ B
-    s = float(C[0,0,0].item())
+    s = float(C[0, 0, 0].item())
     t1 = time.perf_counter()
     times.append(t1 - t0)
     results.append(C)
@@ -32,5 +32,7 @@ if VERIFY:
     for r in results:
         assert torch.allclose(torch.tensor(r.tolist()), correct, atol=1e-5), 'Results do not match!'
 
-gflops = [flops/t/1e9 for t in times]
-print(f'Magnetron matmul: median={stats.median(gflops):.1f} GFLOP/s, p10={stats.quantiles(gflops, n=10)[0]:.1f}, p90={stats.quantiles(gflops, n=10)[-1]:.1f}')
+gflops = [flops / t / 1e9 for t in times]
+print(
+    f'Magnetron matmul: median={stats.median(gflops):.1f} GFLOP/s, p10={stats.quantiles(gflops, n=10)[0]:.1f}, p90={stats.quantiles(gflops, n=10)[-1]:.1f}'
+)

@@ -16,6 +16,7 @@ from ._context import active_context
 from ._tensor import Tensor
 from ._bootstrap import FFI, C
 
+
 class StorageArchive:
     def __init__(self, path: str | Path, mode: str) -> None:
         assert str(path).endswith('.mag')

@@ -4,16 +4,15 @@ import codecs
 import math
 import time
 import argparse
-
-import torch
-
 import magnetron as mag
 import magnetron.nn as nn
 import tiktoken
+from collections.abc import Iterator
 from dataclasses import dataclass
-
 from magnetron import FFI, C
+from rich.console import Console
 
+console = Console()
 
 tok = tiktoken.get_encoding('gpt2')
 
@@ -22,6 +21,7 @@ encode = lambda x: tok.encode(x, allowed_special={EOS})
 decode = lambda x: tok.decode(x)
 EOS_ID: int = encode(EOS)[0]
 
+
 @dataclass
 class GPT2HyperParams:
     block_size: int = 1024
@@ -29,7 +29,6 @@ class GPT2HyperParams:
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
-    dropout: float = 0.0
     bias: bool = True
 
 
@@ -99,20 +98,20 @@ class GPT2(nn.Module):
             dict(
                 wte=nn.Embedding(config.vocab_size, config.n_embd),
                 wpe=nn.Embedding(config.block_size, config.n_embd),
-                drop=nn.Dropout(config.dropout),
                 h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
                 ln_f=nn.LayerNorm(config.n_embd, bias=config.bias),
             )
         )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight
-        print(f'Parameter count: {self.get_num_params(False) // 1e6}M')
+        console.print(f'Parameter count: {self.get_num_params(False) // 1e6}M', style='dim')
 
     @classmethod
     @mag.no_grad()
     def from_pretrained(cls, model_type: str = 'gpt2') -> GPT2:
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         from transformers import GPT2LMHeadModel
+
         cfg = {
             'gpt2': dict(n_layer=12, n_head=12, n_embd=768),
             'gpt2-medium': dict(n_layer=24, n_head=16, n_embd=1024),
@@ -123,7 +122,7 @@ class GPT2(nn.Module):
         cfg['block_size'] = 1024
         cfg['bias'] = True
         cfg = GPT2HyperParams(**cfg)
-        print(f'Loading {model_type} with config: {cfg}')
+        console.print(f'Loading {model_type} with config: {cfg}', style='dim')
         model = cls(cfg)
         sd = model.state_dict()
         sd_keys = sd.keys()
@@ -135,12 +134,14 @@ class GPT2(nn.Module):
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')]
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
         assert len(sd_keys_hf) == len(sd_keys), f'mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}'
-        def copy(r: mag.Tensor, x: torch.tensor) -> None: # TODO
+
+        def copy(r: mag.Tensor, x) -> None:  # TODO
             assert x.is_contiguous and r.is_contiguous
             assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
             assert r.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
             bytes = x.numel() * x.element_size()
             C.mag_tensor_fill_from_raw_bytes(r._ptr, FFI.cast('void*', x.data_ptr()), bytes)
+
         for k in sd_keys_hf:
             if any(k.endswith(w) for w in transposed):
                 assert sd_hf[k].shape[::-1] == sd[k].shape
@@ -176,26 +177,25 @@ class GPT2(nn.Module):
     def generate(self, prompt: str, max_tokens: int, temp: float = 1.0) -> str:
         tokens = encode(prompt)
         for _ in range(max_tokens):
-            ctx = tokens[-self.config.block_size:] if len(tokens) > self.config.block_size else tokens
+            ctx = tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens
             idx = mag.Tensor.of(ctx, dtype=mag.int32)[None, ...]
             logits = self(idx)[:, -1, :] / temp
-            probs  = logits.softmax(dim=-1)
-            next_id = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1).item()
-            tokens.append(next_id)
+            probs = logits.softmax(dim=-1)
+            tokens.append(probs.multinomial(num_samples=1).item())
         return decode(tokens)
 
     @mag.no_grad()
-    def generate_stream(self, prompt: str, max_tokens: int, temp: float = 1.0):
+    def generate_stream(self, prompt: str, max_tokens: int, temp: float = 1.0) -> Iterator[str]:
         tokens = encode(prompt)
         dec = codecs.getincrementaldecoder('utf-8')(errors='replace')  # tolerant
         start = time.perf_counter()
         n = 0
         for _ in range(max_tokens):
-            ctx = tokens[-self.config.block_size:] if len(tokens) > self.config.block_size else tokens
+            ctx = tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens
             idx = mag.Tensor.of(ctx, dtype=mag.int32)[None, ...]
             logits = self(idx)[:, -1, :] / temp
-            probs  = logits.softmax(dim=-1)
-            next_id = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1).item()
+            probs = logits.softmax(dim=-1)
+            next_id = probs.multinomial(num_samples=1).item()
             tokens.append(next_id)
             n += 1
             delta = dec.decode(tok.decode_single_token_bytes(next_id))
@@ -206,7 +206,8 @@ class GPT2(nn.Module):
             yield tail
         elapsed = time.perf_counter() - start
         if n > 0:
-            print(f"\nTokens/s: {n / elapsed:.2f}, {n} tokens in {elapsed:.3f}s")
+            console.print(f'\nTokens/s: {n / elapsed:.2f}, {n} tokens in {elapsed:.3f}s', style='dim')
+
 
 if __name__ == '__main__':
     mag.active_context().stop_grad_recorder()
@@ -214,11 +215,16 @@ if __name__ == '__main__':
     args = argparse.ArgumentParser(description='Run GPT-2 model inference')
     args.add_argument('prompt', type=str, help='Prompt to start generation')
     args.add_argument('--model', type=str, default='gpt2', help='Model type (gpt2, gpt2-medium, gpt2-large, gpt2-xl)')
-    args.add_argument('--max_new_tokens', type=int, default=64, help='Maximum number of new tokens to generate')
+    args.add_argument('--max_new_tokens', type=int, default=128, help='Maximum number of new tokens to generate')
     args.add_argument('--temp', type=float, default=1.0, help='Temperature for sampling')
+    args.add_argument('--no-stream', action='store_true', help='Disable streaming output')
     args = args.parse_args()
 
     model = GPT2.from_pretrained(args.model)
-    print(args.prompt, end='', flush=True)
-    for chunk in model.generate_stream(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp):
-        print(chunk, end='', flush=True)
+    print_response = lambda s: console.print(s, style='bold white', end='')
+    print_response(args.prompt)
+    if not args.no_stream:
+        for chunk in model.generate_stream(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp):
+            print_response(chunk)
+    else:
+        print_response(model.generate(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp))
