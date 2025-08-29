@@ -585,6 +585,7 @@ class Tensor:
 
     def masked_fill(self, mask: Tensor, value: float | int | bool) -> Tensor:
         filled = self.clone()
+        filled.requires_grad = False # TODO
         filled.masked_fill_(mask, value)
         return filled
 

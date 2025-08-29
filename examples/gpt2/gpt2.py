@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import codecs
 import math
+import time
+import argparse
+
 import torch
 
 import magnetron as mag
@@ -13,8 +17,10 @@ from magnetron import FFI, C
 
 tok = tiktoken.get_encoding('gpt2')
 
-encode = lambda x: tok.encode(x, allowed_special={'<|endoftext|>'})
+EOS: str = '<|endoftext|>'
+encode = lambda x: tok.encode(x, allowed_special={EOS})
 decode = lambda x: tok.decode(x)
+EOS_ID: int = encode(EOS)[0]
 
 @dataclass
 class GPT2HyperParams:
@@ -168,21 +174,42 @@ class GPT2(nn.Module):
 
     @mag.no_grad()
     def generate(self, prompt: str, max_tokens: int, temp: float = 1.0) -> str:
-        idx = mag.Tensor.of(encode(prompt), dtype=mag.int32)[None, ...]
+        tokens = encode(prompt)
         for _ in range(max_tokens):
-            idx_cond = idx if idx.shape[1] <= self.config.block_size else idx[:, -self.config.block_size :]
-            logits = self(idx_cond)
-            logits = logits[:, -1, :] / temp
-            probs = logits.softmax(dim=-1)
-            idx_next = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1)
-            idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), idx_next), dim=1).tolist()) # TODO
-            #idx_next = probs.multinomial(num_samples=1)
-            #idx = mag.Tensor.of(torch.cat((torch.tensor(idx.tolist()), torch.tensor(idx_next.tolist())), dim=1).tolist()) # TODO
-        return decode(idx[0].tolist())
+            ctx = tokens[-self.config.block_size:] if len(tokens) > self.config.block_size else tokens
+            idx = mag.Tensor.of(ctx, dtype=mag.int32)[None, ...]
+            logits = self(idx)[:, -1, :] / temp
+            probs  = logits.softmax(dim=-1)
+            next_id = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1).item()
+            tokens.append(next_id)
+        return decode(tokens)
+
+    @mag.no_grad()
+    def generate_stream(self, prompt: str, max_tokens: int, temp: float = 1.0):
+        tokens = encode(prompt)
+        dec = codecs.getincrementaldecoder('utf-8')(errors='replace')  # tolerant
+        start = time.perf_counter()
+        n = 0
+        for _ in range(max_tokens):
+            ctx = tokens[-self.config.block_size:] if len(tokens) > self.config.block_size else tokens
+            idx = mag.Tensor.of(ctx, dtype=mag.int32)[None, ...]
+            logits = self(idx)[:, -1, :] / temp
+            probs  = logits.softmax(dim=-1)
+            next_id = torch.multinomial(torch.tensor(probs.tolist()), num_samples=1).item()
+            tokens.append(next_id)
+            n += 1
+            delta = dec.decode(tok.decode_single_token_bytes(next_id))
+            if delta:
+                yield delta
+        tail = dec.decode(b'', final=True)
+        if tail:
+            yield tail
+        elapsed = time.perf_counter() - start
+        if n > 0:
+            print(f"\nTokens/s: {n / elapsed:.2f}, {n} tokens in {elapsed:.3f}s")
 
 if __name__ == '__main__':
-    import argparse
-    import time
+    mag.active_context().stop_grad_recorder()
 
     args = argparse.ArgumentParser(description='Run GPT-2 model inference')
     args.add_argument('prompt', type=str, help='Prompt to start generation')
@@ -192,8 +219,6 @@ if __name__ == '__main__':
     args = args.parse_args()
 
     model = GPT2.from_pretrained(args.model)
-    start = time.perf_counter()
-    response = model.generate(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp)
-    elapsed = time.perf_counter() - start
-    print(f'Generated in: {elapsed:.9f} seconds')
-    print(response)
+    print(args.prompt, end='', flush=True)
+    for chunk in model.generate_stream(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp):
+        print(chunk, end='', flush=True)
