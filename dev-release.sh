@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 # Require master
 branch=$(git rev-parse --abbrev-ref HEAD)
