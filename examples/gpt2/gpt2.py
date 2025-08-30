@@ -187,7 +187,7 @@ class GPT2(nn.Module):
     @mag.no_grad()
     def generate_stream(self, prompt: str, max_tokens: int, temp: float = 1.0) -> Iterator[str]:
         tokens = encode(prompt)
-        dec = codecs.getincrementaldecoder('utf-8')(errors='replace')  # tolerant
+        dec = codecs.getincrementaldecoder('utf-8')()
         start = time.perf_counter()
         n = 0
         for _ in range(max_tokens):
@@ -221,10 +221,10 @@ if __name__ == '__main__':
     args = args.parse_args()
 
     model = GPT2.from_pretrained(args.model)
-    print_response = lambda s: console.print(s, style='bold white', end='')
-    print_response(args.prompt)
+    puts = lambda s: console.print(s, style='bold white', end='')
+    puts(args.prompt)
     if not args.no_stream:
         for chunk in model.generate_stream(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp):
-            print_response(chunk)
+            puts(chunk)
     else:
-        print_response(model.generate(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp))
+        puts(model.generate(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp))
