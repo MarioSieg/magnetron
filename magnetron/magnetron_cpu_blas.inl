@@ -2568,7 +2568,11 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
         }
         for (int64_t k=0; k < kc; k += 2) {
             __m256 b0_256 = _mm256_loadu_ps(b + (k+0)*ldb);
-            __m512 b0 = _mm512_insertf32x8(_mm512_castps256_ps512(b0_256), b0_256, 1);
+            #ifdef __AVX512DQ__
+                __m512 b0 = _mm512_broadcast_f32x8(b0_256);
+            #else
+                __m512 b0 = _mm512_insertf32x8(_mm512_castps256_ps512(b0_256), b0_256, 1);
+            #endif
             __m256 a00 = _mm256_set1_ps(a[0*lda + (k+0)]);
             __m256 a10 = _mm256_set1_ps(a[1*lda + (k+0)]);
             __m256 a20 = _mm256_set1_ps(a[2*lda + (k+0)]);
@@ -2589,7 +2593,11 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
             _mm_prefetch((const char*)(a + (k+MAG_PREFETCH_SPAN)), _MM_HINT_T0);
             if (mag_likely(k+1 < kc)) {
                 __m256 b1_256 = _mm256_loadu_ps(b + (k+1)*ldb);
-                __m512 b1 = _mm512_insertf32x8(_mm512_castps256_ps512(b1_256), b1_256, 1);
+                #ifdef __AVX512DQ__
+                    __m512 b1 = _mm512_broadcast_f32x8(b1_256);
+                #else
+                    __m512 b1 = _mm512_insertf32x8(_mm512_castps256_ps512(b1_256), b1_256, 1);
+                #endif
                 __m256 a01 = _mm256_set1_ps(a[0*lda + (k+1)]);
                 __m256 a11 = _mm256_set1_ps(a[1*lda + (k+1)]);
                 __m256 a21 = _mm256_set1_ps(a[2*lda + (k+1)]);
@@ -2866,7 +2874,7 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23(int64_t kc, int64_t nc, const 
                     }
                     if (j < nc) {
                         int64_t rem = nc - j;
-                        __mmask16 m = (rem == 16) ? 0xffff : (__mmask16)((1u<<rem)-1);
+                        __mmask16 m = rem == 16 ? 0xffff : (__mmask16)((1u<<rem)-1);
                         __m512 v = _mm512_maskz_loadu_ps(m, src + j);
                         _mm512_mask_storeu_ps(dst + j, m, v);
                     }
@@ -3076,7 +3084,7 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
     #endif
 }
 
-static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e8m23_t* restrict A, const mag_e8m23_t* restrict B, int64_t ldb, mag_e8m23_t* restrict C) {
+static MAG_AINLINE void mag_mv_e8m23(int64_t K, int64_t N, const mag_e8m23_t* restrict A, const mag_e8m23_t* restrict B, int64_t ldb, mag_e8m23_t* restrict C) {
     #ifdef __AVX512F__
         int64_t j=0;
         for (; j+127 < N; j += 128) {
@@ -3168,8 +3176,8 @@ static MAG_AINLINE void mag_gemv_f32_avx2_tail(int64_t K, int64_t N, const mag_e
             _mm512_storeu_ps(C + j, s);
         }
         if (j < N) {
-            int64_t rem = N - j;
-            __mmask16 m = (rem == 16) ? (__mmask16)0xffff : (__mmask16)((1u<<rem)-1);
+            int64_t rem = N-j;
+            __mmask16 m = rem == 16 ? (__mmask16)0xffff : (__mmask16)((1u<<rem)-1);
             __m512 s = _mm512_setzero_ps();
             const mag_e8m23_t* restrict brow = B + j;
             for (int64_t k=0; k < K; ++k, brow += ldb) {
@@ -3346,7 +3354,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
             const mag_e8m23_t* A = bx + mag_offset_rmn(x, batch, 0, 0);
             const mag_e8m23_t* B = by + mag_offset_rmn(y, batch, 0, 0) + j0;
             mag_e8m23_t* C = br + mag_offset_rmn(r, batch, 0, 0) + j0;
-            mag_gemv_f32_avx2_tail(K, j1 - j0, A, B, N, C);
+            mag_mv_e8m23(K, j1 - j0, A, B, N, C);
         }
         return;
     }
