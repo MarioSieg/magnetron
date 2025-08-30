@@ -18,9 +18,9 @@ auto main() -> int {
         .warmup(100)
         .performanceCounters(true);
         context ctx {compute_device::cpu};
-        tensor x {ctx, type, 1, 14, 3072};
+        tensor x {ctx, type, 1, 1, 768};
         x.fill_float(1.0f);
-        tensor y {ctx, type, 3072, 768};
+        tensor y {ctx, type, 768, 50257};
         y.fill_float(3.0f);
 
         bench.run("matmul", [&] {

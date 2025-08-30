@@ -432,7 +432,7 @@ static uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t* cmd
             payload->mm_params = tuned;
         }
         if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) /* Special case for GEMV */
-            return mag_xmin(cpu_dvc->num_allocated_workers, 8)>>3;
+            return mag_xmax(cpu_dvc->num_allocated_workers, 4)>>1;
         int64_t flops = M*N*K;
         uint32_t tiles_total = (uint32_t)(((M + tuned.MC - 1)/tuned.MC)*((N + tuned.NC - 1)/tuned.NC));
         uint32_t nt = mag_mm_choose_workers(flops, tiles_total, cpu_dvc->num_allocated_workers);

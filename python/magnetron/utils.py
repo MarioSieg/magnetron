@@ -41,7 +41,7 @@ class OpProfiler:
         self._lock = threading.Lock()
         atexit.register(self._report)
 
-    def wrap(self, op: str, operands: Sequence[Any], fn: Callable[[], T]) -> T:
+    def wrap(self, op: str, operands: Sequence[Any], fn: Callable[[], Any]) -> Any:
         if not self.enabled:
             return fn()
         key = self._make_key(op, operands)
