@@ -215,7 +215,7 @@ if __name__ == '__main__':
     args = argparse.ArgumentParser(description='Run GPT-2 model inference')
     args.add_argument('prompt', type=str, help='Prompt to start generation')
     args.add_argument('--model', type=str, default='gpt2', help='Model type (gpt2, gpt2-medium, gpt2-large, gpt2-xl)')
-    args.add_argument('--max_new_tokens', type=int, default=128, help='Maximum number of new tokens to generate')
+    args.add_argument('--max_tokens', type=int, default=128, help='Maximum number of new tokens to generate')
     args.add_argument('--temp', type=float, default=1.0, help='Temperature for sampling')
     args.add_argument('--no-stream', action='store_true', help='Disable streaming output')
     args = args.parse_args()
@@ -224,7 +224,7 @@ if __name__ == '__main__':
     puts = lambda s: console.print(s, style='bold white', end='')
     puts(args.prompt)
     if not args.no_stream:
-        for chunk in model.generate_stream(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp):
+        for chunk in model.generate_stream(args.prompt, max_tokens=args.max_tokens, temp=args.temp):
             puts(chunk)
     else:
-        puts(model.generate(args.prompt, max_tokens=args.max_new_tokens, temp=args.temp))
+        puts(model.generate(args.prompt, max_tokens=args.max_tokens, temp=args.temp))
