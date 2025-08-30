@@ -2803,8 +2803,8 @@ void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_
     int64_t NR_cap = W == 64 ? 32 : W == 32 ? 32 : 16;
     NR = mag_clamp((MR)<<1, MR, NR_cap);
     if (W == 64) MR = 16, NR = 32;
-    mag_e11m52_t aL1 = info->l1_load_factor ? info->l1_load_factor : (W == 64 ? 0.55 : W == 32 ? 0.60 : 0.65);
-    mag_e11m52_t aL2 = info->l2_load_factor ? info->l2_load_factor : (W == 64 ? 0.40 : W == 32 ? 0.45 : 0.50);
+    mag_e11m52_t aL1 = info->l1_load_factor ? info->l1_load_factor : W == 64 ? 0.55 : W == 32 ? 0.60 : 0.65;
+    mag_e11m52_t aL2 = info->l2_load_factor ? info->l2_load_factor : W == 64 ? 0.40 : W == 32 ? 0.45 : 0.50;
     mag_e11m52_t L1e = aL1 * (mag_e11m52_t)info->l1_size;
     mag_e11m52_t L2e = aL2 * (mag_e11m52_t)info->l2_size;
     if (nt >= 2) {
