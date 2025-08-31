@@ -38,6 +38,8 @@
 #include <sys/sysctl.h>
 #include <sys/types.h>
 #include <sys/fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <dlfcn.h>
 #define UL_COMPARE_AND_WAIT 1
