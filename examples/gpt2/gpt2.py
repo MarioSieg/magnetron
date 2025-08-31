@@ -36,8 +36,8 @@ class CausalSelfAttention(nn.Module):
     def __init__(self, config: GPT2HyperParams) -> None:
         super().__init__()
         assert config.n_embd % config.n_head == 0
-        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias, init_weights=False)
+        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias, init_weights=False)
         self.n_head = config.n_head
         self.n_embd = config.n_embd
         self.register_buffer(
@@ -63,9 +63,9 @@ class CausalSelfAttention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, config: GPT2HyperParams) -> None:
         super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
+        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias, init_weights=False)
         self.gelu = nn.GeLU()
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias, init_weights=False)
 
     def forward(self, x: mag.Tensor) -> mag.Tensor:
         x = self.c_fc(x)
@@ -102,7 +102,7 @@ class GPT2(nn.Module):
                 ln_f=nn.LayerNorm(config.n_embd, bias=config.bias),
             )
         )
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False, init_weights=False)
         self.transformer.wte.weight = self.lm_head.weight
         console.print(f'Parameter count: {self.get_num_params(False) // 1e6}M', style='dim')
 
