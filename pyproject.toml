@@ -36,7 +36,8 @@ dev = [
     "matplotlib",
     "pytest",
     "pytest-xdist",
-    "pyinstrument"
+    "pyinstrument",
+    "rich"
 ]
 
 [tool.scikit-build.cmake.define]

@@ -27,3 +27,4 @@ magnetron_chat/.idea
 **/__pycache__
 perf.data
 uv.lock
+profile.html

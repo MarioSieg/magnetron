@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 # Must be in venv already with .[dev] installed
 uv pip install . --force-reinstall

@@ -57,11 +57,11 @@ class Module:
                 for m in v:
                     yield from m._parameters(visited)
 
-    def register_forward_hook(self, hook: Callable[[Module, tuple, Tensor], None]):
+    def register_forward_hook(self, hook: Callable[[Module, tuple, Tensor], None]) -> Callable[[Module, tuple, Tensor], None]:
         self._fwd_hooks.append(hook)
         return hook
 
-    def register_forward_pre_hook(self, hook: Callable[[Module, tuple], None]):
+    def register_forward_pre_hook(self, hook: Callable[[Module, tuple], None]) -> Callable[[Module, tuple], None]:
         self._fwd_pre_hooks.append(hook)
         return hook
 
@@ -229,7 +229,7 @@ class Module:
         """Forward pass; must be implemented by subclasses."""
         raise NotImplementedError
 
-    def __call__(self, *args, **kwargs) -> Tensor:
+    def __call__(self, *args: Tensor, **kwargs: dict) -> Tensor:
         for h in self._fwd_pre_hooks:
             h(self, args)
         out = self.forward(*args, **kwargs)

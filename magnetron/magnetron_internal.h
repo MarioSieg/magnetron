@@ -385,6 +385,10 @@ defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
 #define MAG_PAGE_SIZE_4K 0x1000     /* 4 KiB page size */
 #define MAG_PAGE_SIZE_2M 0x200000   /* 2 MiB page size */
 
+#define MAG_CPU_BUF_ALIGN 64
+
+mag_static_assert(MAG_CPU_BUF_ALIGN >= 8 && !(MAG_CPU_BUF_ALIGN&(MAG_CPU_BUF_ALIGN-1)));
+
 static uint16_t MAG_AINLINE mag_bswap16(uint16_t x) {
     #if (defined(__GNUC__) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) || defined(__clang__)
         x = __builtin_bswap16(x);
@@ -1288,7 +1292,8 @@ static inline void mag_hash_combine(uint32_t* seed, uint32_t value) {
 
 extern uint64_t mag_hash(const void* key, size_t len, uint32_t seed); /* Compute murmur3_64 hash */
 extern uint32_t mag_crc32c(const void* buffer, size_t size); /* Compute CRC32 checksum with CRC32c polynomial. */
-
+extern bool mag_utf8_validate(const char* str, size_t len);
+extern char* mag_strdup(const char* s);
 extern bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t* osz, const int64_t* ost, int64_t ork, const int64_t* nsz, int64_t nrk);
 extern void mag_infer_missing_dim(int64_t (*out)[MAG_MAX_DIMS], const int64_t* dims, int64_t rank, int64_t numel);
 extern bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, int64_t* dims, int64_t* rank);

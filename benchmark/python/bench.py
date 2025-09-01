@@ -46,7 +46,7 @@ class MagnetronBenchmark(BenchParticipant):
 
 participants = [
     MagnetronBenchmark(),
-    #NumpyBenchmark(),
+    # NumpyBenchmark(),
     PyTorchBenchmark(),
 ]
 

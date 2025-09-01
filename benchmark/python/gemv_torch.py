@@ -21,4 +21,4 @@ for _ in range(I):
     gflops = flops / (t1 - t0) / 1e9
     acc += gflops
 
-print("Average:", acc / I, "GFLOP/s")
+print('Average:', acc / I, 'GFLOP/s')

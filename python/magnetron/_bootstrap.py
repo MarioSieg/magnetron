@@ -17,6 +17,7 @@ from importlib.machinery import EXTENSION_SUFFIXES
 
 from magnetron._ffi_cdecl_generated import __MAG_CDECLS
 
+
 @lru_cache(maxsize=1)
 def _load_native_module() -> tuple[FFI, Any]:
     platform = sys.platform
@@ -41,6 +42,7 @@ def _load_native_module() -> tuple[FFI, Any]:
             for p in d.glob(f'magnetron*{ext}'):
                 return p
         return None
+
     lib_path = find_in_dir(pkg_dir)
     if lib_path is None:
         for entry in map(Path, sys.path):
@@ -55,12 +57,13 @@ def _load_native_module() -> tuple[FFI, Any]:
                 pass
 
     if lib_path is None:
-        searched = f"{pkg_dir!r}:{candidates} plus site-packages scan"
+        searched = f'{pkg_dir!r}:{candidates} plus site-packages scan'
         raise FileNotFoundError(f'magnetron shared library not found. Searched: {searched}')
 
     ffi = FFI()
     ffi.cdef(__MAG_CDECLS)
     lib = ffi.dlopen(str(lib_path))
     return ffi, lib
+
 
 FFI, C = _load_native_module()

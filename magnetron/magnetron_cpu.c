@@ -432,7 +432,7 @@ static uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t* cmd
             payload->mm_params = tuned;
         }
         if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) /* Special case for GEMV */
-            return mag_xmin(cpu_dvc->num_allocated_workers, 8)>>3;
+            return mag_xmax(cpu_dvc->num_allocated_workers, 4)>>1;
         int64_t flops = M*N*K;
         uint32_t tiles_total = (uint32_t)(((M + tuned.MC - 1)/tuned.MC)*((N + tuned.NC - 1)/tuned.NC));
         uint32_t nt = mag_mm_choose_workers(flops, tiles_total, cpu_dvc->num_allocated_workers);
@@ -553,12 +553,6 @@ static void mag_cpu_convert(mag_istorage_t* sto, mag_transfer_dir_t dir, size_t 
     if (dir == MAG_TRANSFER_DIR_H2D) (*kern)(size, host, hdt, device, ddt);
     else (*kern)(tnb, device, ddt, host, hdt);
 }
-
-/* Align CPU buffer to cache line size, which should also be satisfy alignment requirements for SSE, AVX and AVX512 on x86-64. */
-#define MAG_CPU_BUF_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
-mag_static_assert((MAG_CPU_BUF_ALIGN & 15)==0);
-mag_static_assert((MAG_CPU_BUF_ALIGN & 31)==0);
-mag_static_assert((MAG_CPU_BUF_ALIGN & 63)==0);
 
 static void mag_cpu_storage_dtor(void* self) {
     mag_istorage_t* buf = self;

@@ -77,12 +77,12 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
     mag_assert2((in && num_in) || (out && num_out));
     mag_assert2(op != MAG_OP_NOP);
     mag_context_t* ctx = in ? (*in)->ctx : (*out)->ctx;
-    bool is_recording_grads = !!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER);
     const mag_opparam_t* params = layout ? layout->slots : NULL;
     uint32_t num_params = layout ? layout->count : 0;
     mag_assert_correct_op_data(op, in, num_in, params, num_params);
     const mag_opmeta_t* meta = mag_op_meta_of(op);
     inplace &= !!(meta->flags & MAG_OP_FLAG_SUPPORTS_INPLACE);
+    bool rec_grads = !!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward;
     for (uint32_t i=0; i < num_out; ++i) { /* Populate autodiff state and handle gradient tracking */
         mag_tensor_t* r = out[i];
         mag_au_state_t* au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
@@ -90,7 +90,7 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
         for (uint32_t j=0; j < num_in; ++j) {
             mag_tensor_t* input = in[j];
             au->op_inputs[j] = input;
-            if (is_recording_grads) {
+            if (rec_grads) {
                 if (input->flags & MAG_TFLAG_REQUIRES_GRAD && !(r->flags & MAG_TFLAG_REQUIRES_GRAD)) /* If any input requires grad, the output must also require grad*/
                     mag_tensor_set_requires_grad(r, true);
                 mag_tensor_incref(input); /* Keep input alive for the backward pass. */
@@ -110,7 +110,7 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
     (*submit)(ctx->device, &cmd);
     for (uint32_t i=0; i < num_out; ++i) {
         if (inplace) mag_bump_version(out[i]);   /* Result aliases the modified storage */
-        if (!is_recording_grads) mag_tensor_detach_inplace(out[i]); /* If gradient are not recorded, detach the tensor's parents (clear parent and opcode). TODO: why are we doing this? */
+        if (!rec_grads) mag_tensor_detach_inplace(out[i]); /* If gradient are not recorded, detach the tensor's parents (clear parent and opcode). TODO: why are we doing this? */
     }
 }
 
