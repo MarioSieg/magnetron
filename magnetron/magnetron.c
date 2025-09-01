@@ -3019,13 +3019,11 @@ bool mag_map_file(mag_mapped_file_t* o, const char* filename, size_t size, mag_m
                 return false;
             }
         }
-
         o->hfile = hfile;
-        o->hmap  = hmap;
-        o->map   = view;
-        o->fs    = fs;
+        o->hmap = hmap;
+        o->map = view;
+        o->fs = fs;
         return true;
-
     #else
         int oflags = 0;
         int prot = 0;
@@ -3077,9 +3075,9 @@ bool mag_map_file(mag_mapped_file_t* o, const char* filename, size_t size, mag_m
             if (mag_unlikely(map == MAP_FAILED)) { close(fd); return false; }
             view = (uint8_t*)map;
         }
-        o->fd  = fd;
+        o->fd = fd;
         o->map = view;
-        o->fs  = fs;
+        o->fs = fs;
         return true;
     #endif
 }
@@ -3095,7 +3093,7 @@ bool mag_unmap_file(mag_mapped_file_t* f) {
             }
             if (!UnmapViewOfFile(f->map)) ok = false;
         }
-        if (f->hmap)  { if (!CloseHandle((HANDLE)f->hmap)) ok = false; }
+        if (f->hmap) { if (!CloseHandle((HANDLE)f->hmap)) ok = false; }
         if (f->hfile) { if (!CloseHandle((HANDLE)f->hfile)) ok = false; }
         memset(f, 0, sizeof(*f));
         return ok;
