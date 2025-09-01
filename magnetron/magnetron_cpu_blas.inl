@@ -3310,16 +3310,15 @@ static MAG_HOTPROC void mag_mm_block_e8m23(int64_t kc, int64_t mr, int64_t nr, c
         for (; i < mr; ++i) mag_mm_tile_1x8_e8m23 (kc, A + i*lda, B + j, ldb, C + i*ldc + j, acc);
     }
     int64_t rem = nr-j;
-    if (rem) {
-        for (int64_t i2=0; i2 < mr; ++i2) {
-            const mag_e8m23_t* ap = A + i2*lda;
-            mag_e8m23_t* cp = C + i2*ldc + j;
-            for (int64_t jj = 0; jj < rem; ++jj) {
-                mag_e8m23_t sum = acc ? cp[jj] : 0.f;
-                for (int64_t k=0; k < kc; ++k)
-                    sum += ap[k]*B[k*ldb + (j + jj)];
-                cp[jj] = sum;
-            }
+    if (!rem) return;
+    for (int64_t i2=0; i2 < mr; ++i2) {
+        const mag_e8m23_t* ap = A + i2*lda;
+        mag_e8m23_t* cp = C + i2*ldc + j;
+        for (int64_t jj = 0; jj < rem; ++jj) {
+            mag_e8m23_t sum = acc ? cp[jj] : 0.f;
+            for (int64_t k=0; k < kc; ++k)
+                sum += ap[k]*B[k*ldb + (j + jj)];
+            cp[jj] = sum;
         }
     }
 }
@@ -3402,7 +3401,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
         int64_t sKx = x->strides[x->rank-1];
         int64_t sKy = y_is_vec ? 0 : y->strides[y->rank-2];
         int64_t sNy = y_is_vec ? 0 : y->strides[y->rank-1];
-       for (int64_t pc = 0; pc < K; pc += KC) {
+        for (int64_t pc = 0; pc < K; pc += KC) {
             int64_t kc = mag_xmin(KC, K - pc);
             bool acc = pc != 0;
             if (y_is_vec) mag_mm_pack_B_vec_e8m23(kc, nc, py_base + pc, Bp);

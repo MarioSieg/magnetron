@@ -2387,9 +2387,26 @@ static void mag_machine_probe_memory(size_t* out_phys_mem_total, size_t* out_phy
 
     static void mag_probe_cpu_cache_topology(mag_arm64_cap_bitset_t caps, size_t* ol1, size_t* ol2, size_t* ol3) {
         #ifdef __APPLE__
-        *ol1 = 64<<10;
-        *ol2 = 512<<10;
-        *ol3 = 1024ull<<10;
+            size_t sz;
+            uint64_t v = 0;
+            uint32_t pcores = 0;
+            sz = sizeof(pcores);
+            if (sysctlbyname("hw.perflevel0.physicalcpu", &pcores, &sz, NULL, 0) != 0) {
+                sz = sizeof(pcores);
+                if (sysctlbyname("hw.physicalcpu", &pcores, &sz, NULL, 0) != 0) pcores = 1;
+            }
+            sz = sizeof(v);
+            if (sysctlbyname("hw.perflevel0.l1dcachesize", &v, &sz, NULL, 0) == 0) *ol1 = v;
+            else if (sysctlbyname("hw.l1dcachesize", &v, &sz, NULL, 0) == 0) *ol1 = v;
+            else *ol1 = 128ull<<10;
+            sz = sizeof(v);
+            if (sysctlbyname("hw.perflevel0.l2cachesize", &v, &sz, NULL, 0) == 0) *ol2 = v / (pcores*2);
+            else if (sysctlbyname("hw.l2cachesize", &v, &sz, NULL, 0) == 0) *ol2 = v / (pcores*2);
+            else *ol2 = 3ull<<20;
+            sz = sizeof(v);
+            if (sysctlbyname("hw.perflevel0.l3cachesize", &v, &sz, NULL, 0) == 0) *ol3 = v;
+            else if (sysctlbyname("hw.l3cachesize", &v, &sz, NULL, 0) == 0) *ol3 = v;
+            else *ol3 = 64ull<<20;
         #else
             *ol1 = 32ull<<10;
             *ol2 = 512ull<<10;
@@ -2825,6 +2842,8 @@ void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_
     int64_t NC = (int64_t)((1.0-info->split_a)*L2e / (nb*(mag_e11m52_t)KC));
     MC = mag_rd_down(MC, MR);
     NC = mag_rd_down(NC, NR);
+    MR = mag_xmax(8, MR);
+    NR = mag_xmax(8, NR);
     if (MC < MR) MC = MR;
     if (NC < NR) NC = NR;
     int64_t NC_cap = W == 64 ? 256 : 128;
