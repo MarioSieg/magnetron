@@ -2,7 +2,133 @@
 
 #include <prelude.hpp>
 
+#include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/uniform.hpp>
+#include <boost/math/distributions/binomial.hpp>
+#include <boost/math/distributions/kolmogorov_smirnov.hpp>
+
 using namespace magnetron;
+
+static constexpr std::size_t k_iter_samples = 100;
+
+[[nodiscard]] static auto bernoulli_two_sided_pvalue(std::uint64_t N, std::uint64_t k, double p) -> double {
+    boost::math::binomial_distribution<> binom{static_cast<double>(N), p};
+    double cdf_lo = boost::math::cdf(binom, static_cast<double>(k));
+    double cdf_hi = 1.0 - boost::math::cdf(binom, static_cast<double>(k - 1));
+    double p_two = 2.0*std::min(cdf_lo, cdf_hi);
+    return std::min(1.0, p_two);
+}
+
+template <typename T, typename Cdf>
+[[nodiscard]] static auto ks_test_p_value(const std::vector<T>& samples, const Cdf& cdf_theory) -> double {
+    std::vector<double> x(samples.begin(), samples.end());
+    std::sort(x.begin(), x.end());
+    double n = static_cast<double>(x.size());
+    double D = 0.0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        double F  = static_cast<double>(cdf_theory(x[i]));
+        double Fn_above = (i + 1) / n;
+        double Fn_below = i / n;
+        double d1 = std::fabs(Fn_above - F);
+        double d2 = std::fabs(F - Fn_below);
+        D = std::max(D, std::max(d1, d2));
+    }
+    boost::math::kolmogorov_smirnov_distribution<> ks(x.size());
+    return 1.0 - cdf(ks, D);
+}
+
+static int allowed_failures_3sigma(std::size_t trials, double alpha) {
+    double mu = trials*alpha;
+    double var = trials*alpha * (1.0 - alpha);
+    double ub = mu + 3.0*std::sqrt(std::max(0.0, var));
+    return static_cast<int>(std::ceil(ub));
+}
+
+TEST(prng, ks_test_normal_dist) {
+    std::mt19937_64 eng{0x9e3779b97f4a7c15ULL};
+    std::uniform_real_distribution<double> mean_d{-3.0, 3.0};
+    std::uniform_real_distribution<double> std_d{0.1, 3.0};
+    std::uniform_int_distribution<std::int64_t> shape_distr{512, 1024};
+    context ctx{compute_device::cpu};
+    constexpr double alpha = 0.01;
+    int failures = 0;
+    struct Hit { double p; double mu, sigma; std::size_t rows, cols; };
+    std::vector<Hit> worst;
+    for (std::size_t i = 0; i < k_iter_samples; ++i) {
+        double mean = mean_d(eng);
+        double stdv = std_d(eng);
+        std::size_t rows = shape_distr(eng);
+        std::size_t cols = shape_distr(eng);
+        tensor t{ctx, dtype::e8m23, rows, cols};
+        t.fill_rand_normal(static_cast<float>(mean), static_cast<float>(stdv));
+        std::vector<float> samples = t.to_vector<float>();
+        const boost::math::normal dist(mean, stdv);
+        auto cdf = [&](double x) { return boost::math::cdf(dist, x); };
+        const double p_value = ks_test_p_value(samples, cdf);
+        worst.push_back({p_value, mean, stdv, rows, cols});
+        if (p_value <= alpha) ++failures;
+    }
+    std::ranges::sort(worst, [](const Hit& a, const Hit& b){ return a.p < b.p; });
+    std::ostringstream msg;
+    const std::size_t show = std::min<std::size_t>(5, worst.size());
+    msg << "Worst p-values (alpha=" << alpha << "):\n";
+    for (std::size_t i = 0; i < show; ++i) {
+        msg << "  p=" << worst[i].p
+            << "  mu=" << worst[i].mu
+            << "  sigma=" << worst[i].sigma
+            << "  shape=" << worst[i].rows << "x" << worst[i].cols << "\n";
+    }
+    const int allowed = allowed_failures_3sigma(k_iter_samples, alpha);
+    EXPECT_LE(failures, allowed) << "KS: too many low p-values across sweeps.\n"
+                                 << "failures=" << failures
+                                 << " allowed≤" << allowed << "\n"
+                                 << msg.str();
+}
+
+TEST(prng, ks_test_uniform_dist) {
+    std::mt19937_64 eng{0x9e3779b97f4a7c15ULL};
+    std::uniform_real_distribution<double> a_d{-5.0, 0.0};
+    std::uniform_real_distribution<double> w_d{0.1, 5.0};
+    std::uniform_int_distribution<std::int64_t> shape_d{512, 1024};
+    context ctx{compute_device::cpu};
+    int failures = 0;
+    for (std::size_t it = 0; it < k_iter_samples; ++it) {
+        double a = a_d(eng);
+        double b = a + w_d(eng);
+        std::size_t rows = shape_d(eng);
+        std::size_t cols = shape_d(eng);
+        tensor t{ctx, dtype::e8m23, rows, cols};
+        t.fill_rand_uniform(static_cast<float>(a), static_cast<float>(b));
+        std::vector<float> samples = t.to_vector<float>();
+        boost::math::uniform_distribution<> dist(a, b);
+        auto cdf = [&](double x) { return boost::math::cdf(dist, x); };
+        double p = ks_test_p_value(samples, cdf);
+        if (p <= 0.001) ++failures;
+    }
+    EXPECT_LE(failures, 1) << "Too many KS failures for uniform sweeps";
+}
+
+TEST(prng, bernoulli_binomial_exact) {
+    std::mt19937_64 eng{0x9e3779b97f4a7c15ULL};
+    std::uniform_real_distribution<double> p_d{0.02, 0.98};
+    std::uniform_int_distribution<std::int64_t> shape_d{512, 1024};
+    context ctx{compute_device::cpu};
+    std::size_t failures = 0;
+    for (std::size_t it = 0; it < k_iter_samples; ++it) {
+        double p = p_d(eng);
+        std::size_t rows = shape_d(eng);
+        std::size_t cols = shape_d(eng);
+        std::uint64_t N = static_cast<std::uint64_t>(rows) * cols;
+        tensor t{ctx, dtype::boolean, rows, cols};
+        t.fill_rand_bernoulli(static_cast<float>(p));
+        std::vector<bool> v = t.to_vector<bool>();
+        std::uint64_t ones = 0;
+        for (bool x : v) ones += x ? 1 : 0;
+        const double pv = bernoulli_two_sided_pvalue(N, ones, p);
+        if (pv <= 0.001) ++failures;
+    }
+    EXPECT_LE(failures, 1) << "Too many Bernoulli (binomial) failures";
+}
 
 TEST(prng, automatic_seeding) {
     std::vector<float> a, b;

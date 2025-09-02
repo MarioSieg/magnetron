@@ -26,6 +26,7 @@ private:
 
 TEST(models, xor_e8m23) {
     context ctx {compute_device::cpu};
+    ctx.manual_seed(0x9032002);
     xor_model model{ctx, dtype::e8m23};
     nn::sgd optimizer{model.params(), 0.1f};
 
@@ -65,6 +66,7 @@ TEST(models, xor_e8m23) {
 
 TEST(models, xor_e5m10) {
     context ctx {compute_device::cpu};
+    ctx.manual_seed(0x9032002);
     xor_model model{ctx, dtype::e5m10};
     nn::sgd optimizer{model.params(), 0.1f};
 
