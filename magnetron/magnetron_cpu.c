@@ -22,8 +22,8 @@ static const mag_op_cpu_info_t mag_op_cpu_info_lut[MAG_OP__NUM] = {
     [MAG_OP_NOP] = {0.1, 250000},
     [MAG_OP_FILL] = {0.1, 250000},
     [MAG_OP_MASKED_FILL] = {0.1, 250000},
-    [MAG_OP_RAND_UNIFORM] = {0.1, 250000},
-    [MAG_OP_RAND_NORMAL] = {0.1, 250000},
+    [MAG_OP_RAND_UNIFORM] = {0.5, 10000},
+    [MAG_OP_RAND_NORMAL] = {0.8, 10000},
     [MAG_OP_RAND_BERNOULLI] = {0.1, 250000},
     [MAG_OP_ARANGE] = {0.1, 250000},
     [MAG_OP_CLONE] = {0.1, 250000},
@@ -244,20 +244,20 @@ typedef struct mag_thread_pool_t {
 } mag_thread_pool_t;
 
 struct mag_worker_t {
-    int32_t phase;                         /* Current compute phase */
-    mag_kernel_payload_t payload;          /* Compute op payload */
-    mag_prng_state_t prng;                  /* Thread local prng */
-    mag_thread_pool_t* pool;                 /* Host thread pool */
+    int32_t phase;                          /* Current compute phase */
+    mag_kernel_payload_t payload;           /* Compute op payload */
+    mag_philox4x32_stream_t prng;           /* Thread local prng */
+    mag_thread_pool_t* pool;                /* Host thread pool */
     bool is_async;                          /* True if worker is async (executed on a different thread)  */
     mag_thread_t thread;                    /* Thread handle */
 } mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE);
 
 typedef struct mag_cpu_device_t {
     mag_context_t* ctx;
-    mag_thread_pool_t* pool;               /* Thread pool. NULL if num_allocated_workers <= 1 */
-    uint32_t num_allocated_workers;     /* Amount of worker thread used. if == 1 then single threaded mode and thread pool is not created */
-    mag_kernel_registry_t kernels;      /* Compute kernels. Specialized by arch optimized version at boot (e.g. AVX, AVX512 etc..) */
-    mag_prng_state_t primary_prng;         /* Primary prng context. */
+    mag_thread_pool_t* pool;                /* Thread pool. NULL if num_allocated_workers <= 1 */
+    uint32_t num_allocated_workers;         /* Amount of worker thread used. if == 1 then single threaded mode and thread pool is not created */
+    mag_kernel_registry_t kernels;          /* Compute kernels. Specialized by arch optimized version at boot (e.g. AVX, AVX512 etc..) */
+    mag_philox4x32_stream_t primary_prng;   /* Primary prng context. */
 } mag_cpu_device_t;
 
 /* Await signal to start work */
@@ -291,7 +291,7 @@ static void mag_worker_exec_and_broadcast(mag_thread_pool_t* pool, const mag_ker
 }
 
 /* Worker thread entry point */
-static MAG_HOTPROC void* mag_worker_thread_exec_op(void* arg) {
+static MAG_HOTPROC void* mag_worker_thread_entry(void* arg) {
     mag_worker_t* worker = arg;
     mag_thread_pool_t* pool = worker->pool;
     mag_kernel_payload_t* payload = &worker->payload;
@@ -300,7 +300,9 @@ static MAG_HOTPROC void* mag_worker_thread_exec_op(void* arg) {
     snprintf(name, sizeof(name), "mag_worker_%" PRIx64, payload->thread_idx);
     mag_thread_set_name(name);
     /*mag_thread_set_prio(pool->sched_prio);*/
-    mag_prng_seed(&worker->prng, pool->host_ctx->prng_algo, rand()^mag_thread_id()^((uintptr_t)worker>>4)^((uintptr_t)kernels->vector_cast>>4));
+    memset(&worker->prng, 0, sizeof(worker->prng));
+    worker->prng.key.v[0] = mag_thread_id()^(uintptr_t)worker; /* TODO: Base seed */
+    worker->prng.key.v[1] = payload->thread_idx+1;
     mag_atomic32_fetch_add(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
     while (mag_likely(mag_worker_await_work(worker, pool)))  /* Main work loop: wait, work, signal status */
         mag_worker_exec_and_broadcast(pool, kernels, payload);
@@ -329,18 +331,19 @@ static mag_thread_pool_t* mag_threadpool_create(mag_context_t* host_ctx, uint32_
         mag_worker_t* worker = workers+ti;
         *worker = (mag_worker_t){
             .phase = 0,
+            .prng = {},
             .payload = (mag_kernel_payload_t){
                 .cmd = NULL, /* Will be set later */
                 .thread_num = num_workers,
                 .thread_idx = ti,
-                .local_prng = NULL
+                .prng = NULL
             },
             .pool = pool,
             .is_async = ti != 0 /* Main thread is worker but without thread */
         };
-        worker->payload.local_prng = &worker->prng;
+        worker->payload.prng = &worker->prng;
         if (worker->is_async)
-            mag_thread_create(&worker->thread, &mag_worker_thread_exec_op, workers+ti);
+            mag_thread_create(&worker->thread, &mag_worker_thread_entry, workers+ti);
     }
     while (mag_atomic32_load(&pool->num_workers_online, MAG_MO_SEQ_CST) != num_workers-1)  /* Wait for all workers to come online */
         mag_thread_yield();
@@ -455,7 +458,7 @@ static MAG_HOTPROC void mag_cpu_submit(mag_idevice_t* dvc, const mag_command_t* 
             .cmd = cmd,
             .thread_idx = 0,
             .thread_num = 1,
-            .local_prng = &cpu_dvc->primary_prng,
+            .prng = &cpu_dvc->primary_prng,
             .mm_next_tile = &next_tile,
             .mm_params = yy->mm_params
         };
@@ -595,7 +598,9 @@ static mag_cpu_device_t* mag_cpu_init_device(mag_context_t* ctx, uint32_t num_th
         .primary_prng = {}
     };
     mag_blas_detect_optimal_specialization(ctx, &dvc->kernels);
-    mag_prng_seed(&dvc->primary_prng, ctx->prng_algo, rand()^((uintptr_t)ctx>>4)^((uintptr_t)dvc>>4));
+    memset(&dvc->primary_prng, 0, sizeof(dvc->primary_prng));
+    dvc->primary_prng.key.v[0] = mag_thread_id()^(uintptr_t)ctx; /* Base seed, TODO */
+    dvc->primary_prng.key.v[1] = 0; /* Stream id: 0 */
     if (num_threads > 1) {
         dvc->pool = mag_threadpool_create(ctx, num_threads, &dvc->kernels, sched_prio);
         dvc->num_allocated_workers = num_threads;

@@ -14,6 +14,10 @@
 #include <float.h>
 #include <math.h>
 
+#define mag_cvt_nop(x) (x)
+#define mag_cvt_i642bool(x) (!!(x))
+#define mag_cvt_i642i32(x) ((int32_t)(x))
+
 #define mag_cmd_in(i) (payload->cmd->in[(i)])
 #define mag_cmd_out(i) (payload->cmd->out[(i)])
 #define mag_cmd_param(i) (payload->cmd->params[(i)])
@@ -559,218 +563,169 @@ static void MAG_HOTPROC mag_vcast_bool_e5m10(int64_t numel, void* restrict xo, c
         o[i] = x[i] ? MAG_E5M10_ONE : MAG_E5M10_ZERO;
 }
 
-static uint32_t mag_mt19937_step(uint32_t* rem, uint32_t* next, uint32_t* state) {
-    if (--*rem <= 0) {
-        *rem = 624;
-        *next = 0;
-        uint32_t y, i;
-        for (i = 0; i < 624-397; ++i) {
-            y = (state[i]&0x80000000u) | (state[i+1]&0x7fffffffu);
-            state[i] = state[i+397] ^ (y>>1) ^ ((y&1) ? 0x9908b0dfu : 0);
-        }
-        for (; i < 624-1; ++i) {
-            y = (state[i]&0x80000000u) | (state[i+1]&0x7fffffffu);
-            state[i] = state[i + (397-624)] ^ (y>>1) ^ ((y&1) ? 0x9908b0dfu : 0);
-        }
-        y = (state[624-1]&0x80000000u) | (*state&0x7fffffffu);
-        state[624-1] = state[397-1] ^ (y>>1) ^ ((y&1) ? 0x9908b0dfu : 0);
-    }
-    uint32_t y = state[(*next)++];
-    y ^= y>>11;
-    y ^= (y<<7) & 0x9d2c5680;
-    y ^= (y<<15) & 0xefc60000;
-    y ^= y>>18;
-    return y;
+static MAG_AINLINE uint32_t mag_mulhilo32(uint32_t a, uint32_t b, uint32_t* hip) {
+    uint64_t prod = (uint64_t)a*(uint64_t)b;
+    *hip = prod>>32;
+    return (uint32_t)prod;
 }
 
-static uint32_t mag_pcg_step(uint64_t* state, uint64_t inc) {
-    uint64_t prev = *state;
-    *state = prev*6364136223846793005ull + inc;
-    uint32_t mixed = ((prev>>18u) ^ prev) >> 27u;
-    uint32_t rot = prev >> 59u;
-    return (mixed>>rot) | (mixed << ((-rot)&31));
-}
-
-#define mag_e8m23_map_canonical(y) (1.f/0x1.0p23f*((mag_e8m23_t)((y)>>9) + 0.5f)) /* Map y ∈ {0, 1, ..., 0xffffffff} -> r ∈ [0, 1) */
-
-static mag_e8m23_t mag_prng_sample_canonical_e8m23(mag_prng_state_t* prng) { /* Sample a canonical e8m23 float from the current active PRNG. */
-    switch (prng->algo) {
-        case MAG_PRNG_MERSENNE_TWISTER: return mag_e8m23_map_canonical(mag_mt19937_step(&prng->mersenne.remaining, &prng->mersenne.next, prng->mersenne.state));
-        case MAG_PRNG_PCG: return mag_e8m23_map_canonical(mag_pcg_step(&prng->pcg.state, prng->pcg.inc));
-        default:
-            mag_panic("Invalid PRNG algorithm: %d", prng->algo);
-    }
-}
-
-/* Generate N uniform distributed e8m23 floats ∈ [min, max]. */
-static void MAG_AINLINE mag_vrand_uniform_e8m23(mag_prng_state_t* prng, int64_t numel, mag_e8m23_t* restrict o, mag_e8m23_t min, mag_e8m23_t max) {
-    mag_e8m23_t rescale_uniform = max - min;
-    switch (prng->algo) {
-        case MAG_PRNG_MERSENNE_TWISTER: { /* Use Mersenne Twister. */
-            uint32_t* rem = &prng->mersenne.remaining;
-            uint32_t* next = &prng->mersenne.next;
-            uint32_t* state = prng->mersenne.state;
-            for (int64_t i=0; i < numel; ++i) {
-                o[i] = min + rescale_uniform*mag_e8m23_map_canonical(mag_mt19937_step(rem, next, state)); /* Generate canonical and rescale. */
-            }
-        } break;
-        case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
-            uint64_t* state = &prng->pcg.state;
-            uint64_t inc = prng->pcg.inc;
-            for (int64_t i=0; i < numel; ++i) {
-                o[i] = min + rescale_uniform*mag_e8m23_map_canonical(mag_pcg_step(state, inc)); /* Generate canonical and rescale. */
-            }
-        } break;
-        default:
-            mag_panic("invalid PRNG algorithm: %d", prng->algo);
-    }
-}
-
-/* Generate N uniform distributed e5m10 floats ∈ [min, max]. */
-static void MAG_AINLINE mag_vrand_uniform_e5m10(mag_prng_state_t* prng, int64_t numel, mag_e5m10_t* restrict o, mag_e8m23_t min, mag_e8m23_t max) {
-    mag_e8m23_t rescale_uniform = max - min;
-    switch (prng->algo) {
-        case MAG_PRNG_MERSENNE_TWISTER: { /* Use Mersenne Twister. */
-            uint32_t* rem = &prng->mersenne.remaining;
-            uint32_t* next = &prng->mersenne.next;
-            uint32_t* state = prng->mersenne.state;
-            for (int64_t i=0; i < numel; ++i) {
-                o[i] = mag_e8m23_cvt_e5m10(min + rescale_uniform*mag_e8m23_map_canonical(mag_mt19937_step(rem, next, state))); /* Generate canonical and rescale. */
-            }
-        } break;
-        case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
-            uint64_t* state = &prng->pcg.state;
-            uint64_t inc = prng->pcg.inc;
-            for (int64_t i=0; i < numel; ++i) {
-                o[i] = mag_e8m23_cvt_e5m10(min + rescale_uniform*mag_e8m23_map_canonical(mag_pcg_step(state, inc))); /* Generate canonical and rescale. */
-            }
-        } break;
-        default:
-            mag_panic("invalid PRNG algorithm: %d", prng->algo);
-    }
-}
-
-static void MAG_AINLINE mag_box_mueller(mag_e8m23_t* u1, mag_e8m23_t* u2, mag_e8m23_t std, mag_e8m23_t mean) {
-    mag_e8m23_t mag = std*sqrtf(-2.0f*logf(*u1));
-    *u1 = mag*cosf(MAG_TAU**u2) + mean;
-    *u2 = mag*sinf(MAG_TAU**u2) + mean;
-}
-
-/* Generate N normal (Gauss) distributed e8m23 floats. */
-static void MAG_HOTPROC mag_vrand_normal_e8m23(mag_prng_state_t* prng, int64_t numel, mag_e8m23_t* restrict o, mag_e8m23_t mean, mag_e8m23_t std) {
-    mag_vrand_uniform_e8m23(prng, numel, o, 0.0f, 1.f); /* Generate uniform random numbers. */
-    int64_t i=0;
-    #if defined(__AVX2__) && defined(__FMA__) && !defined(__AVX512F__)
-        __m256 vstd = _mm256_set1_ps(std);
-        __m256 vmean = _mm256_set1_ps(mean);
-        __m256 m2 = _mm256_set1_ps(-2.f);
-        __m256 vtau = _mm256_set1_ps(MAG_TAU);
-        __m256 vmin = _mm256_set1_ps(FLT_MIN);
-        for (; i+15 < numel; i += 16) {
-            __m256 v0 = _mm256_loadu_ps(o+i);
-            __m256 v1 = _mm256_loadu_ps(o+i+8);
-            __m256 u1v = _mm256_shuffle_ps(v0, v1, 0x88);
-            __m256 u2v = _mm256_shuffle_ps(v0, v1, 0xDD);
-            u1v = _mm256_max_ps(u1v, vmin);
-            __m256 ln = mag_simd_log_e8m23(u1v);
-            __m256 r = _mm256_sqrt_ps(_mm256_mul_ps(m2, ln));
-            r = _mm256_mul_ps(vstd, r);
-            __m256 ang = _mm256_mul_ps(vtau, u2v);
-            __m256 s, c;
-            mag_simd_sincos_e8m23(ang, &s, &c);
-            __m256 z0 = _mm256_fmadd_ps(r, c, vmean);
-            __m256 z1 = _mm256_fmadd_ps(r, s, vmean);
-            __m256 inter0 = _mm256_unpacklo_ps(z0, z1);
-            __m256 inter1 = _mm256_unpackhi_ps(z0, z1);
-            __m256 out0 = _mm256_permute2f128_ps(inter0, inter1, 0x20);
-            __m256 out1 = _mm256_permute2f128_ps(inter0, inter1, 0x31);
-            _mm256_storeu_ps(o+i, out0);
-            _mm256_storeu_ps(o+i+8, out1);
-        }
+static inline void mag_ctr_inc_128(mag_philox4x32_ctr_t* c) {
+    #if defined(__SIZEOF_INT128__) && defined(MAG_LE)
+        unsigned __int128 x;
+        memcpy(&x, c->v, sizeof(x));
+        ++x;
+        memcpy(c->v, &x, sizeof(x));
+    #else /* Carry cascade */
+        if (++c->v[0] == 0u)
+            if (++c->v[1] == 0u)
+                if (++c->v[2] == 0u)
+                    ++c->v[3];
     #endif
-    for (; i + 1 < numel; i += 2) {
-        mag_box_mueller(o + i, o + i + 1, std, mean);
-    }
-    if (i < numel) {
-        mag_e8m23_t u[2];
-        mag_vrand_uniform_e8m23(prng, 2, u, 0.0f, 1.f);
-        o[numel-1] = std*sqrtf(-2.0f*logf(fmaxf(u[0], 1.17549435e-38f)))*cosf(MAG_TAU*u[1]) + mean;
-    }
 }
 
-/* Generate N normal (Gauss) distributed e5m10 floats. */
-static void MAG_HOTPROC mag_vrand_normal_e5m10(mag_prng_state_t* prng, int64_t numel, mag_e5m10_t* restrict o, mag_e8m23_t mean, mag_e8m23_t std) {
-    mag_vrand_uniform_e5m10(prng, numel, o, 0.0f, 1.f); /* Generate uniform random numbers. */
-    for (int64_t i=0; i < numel; i += 2) { /* Map uniform to normal dist with Box-Muller transform. TODO: Write SIMD sqrt and vectorize this. */
-        mag_e8m23_t u1 = mag_e5m10_cvt_e8m23(o[i]);
-        mag_e8m23_t u2 = mag_e5m10_cvt_e8m23(o[i+1]);
-        mag_box_mueller(&u1, &u2, std, mean);
-        o[i] = mag_e8m23_cvt_e5m10(u1);
-        o[i+1] = mag_e8m23_cvt_e5m10(u2);
+static MAG_AINLINE mag_philox4x32_ctr_t mag_prng_sample(mag_philox4x32_key_t key, mag_philox4x32_ctr_t ctr) {
+    #pragma GCC unroll 10
+    for (int i=0; i < MAG_PHILOX_ROUNDS; ++i) {
+        uint32_t hi0, hi1;
+        uint32_t lo0 = mag_mulhilo32(0xd2511f53u, ctr.v[0], &hi0);
+        uint32_t lo1 = mag_mulhilo32(0xcd9e8d57u, ctr.v[2], &hi1);
+        ctr.v[0] = hi1^ctr.v[1]^key.v[0];
+        ctr.v[1] = lo1;
+        ctr.v[2] = hi0^ctr.v[3]^key.v[1];
+        ctr.v[3] = lo0;
+        key.v[0] += 0x9e3779B9u;
+        key.v[1] += 0xbb67ae85u;
     }
-    if (numel & 1) {  /* Handle odd numel */
-        mag_e8m23_t u[2];
-        mag_vrand_uniform_e8m23(prng, sizeof(u)/sizeof(*u), u, 0.0f, 1.f);
-        o[numel-1] = mag_e8m23_cvt_e5m10(std*sqrtf(-2.0f*logf(u[0]))*cosf(MAG_TAU*u[1]) + mean);
-    }
+    return ctr;
 }
+
+static MAG_AINLINE void mag_prng_next_u32x4(mag_philox4x32_stream_t* prng, uint32_t(*o)[4]) {
+    mag_philox4x32_ctr_t ctr = mag_prng_sample(prng->key, prng->ctr);
+    mag_ctr_inc_128(&prng->ctr);
+    memcpy(o, &ctr, sizeof(ctr));
+}
+static MAG_AINLINE uint32_t mag_prng_next_u32(mag_philox4x32_stream_t* prng) {
+    uint32_t r[4];
+    mag_prng_next_u32x4(prng, &r);
+    return *r;
+}
+
+static MAG_AINLINE void mag_prng_next_e8m23x4(mag_philox4x32_stream_t* prng, mag_e8m23_t(*o)[4]) {
+    uint32_t r[4];
+    mag_prng_next_u32x4(prng, &r);
+    #pragma GCC unroll 4
+    for (int i=0; i < 4; ++i)
+        (*o)[i] = 1.f/0x1.0p23f*((mag_e8m23_t)(r[i]>>9) + 0.5f);
+}
+static MAG_AINLINE mag_e8m23_t mag_prng_next_e8m23(mag_philox4x32_stream_t* prng) {
+    return 1.f/0x1.0p23f*((mag_e8m23_t)(mag_prng_next_u32(prng)>>9) + 0.5f);
+}
+
+#define mag_gen_vrand_uniform_fp(T, CVT) \
+    static void MAG_AINLINE mag_vrand_uniform_##T(mag_philox4x32_stream_t* prng, int64_t numel, mag_##T##_t* restrict o, mag_e8m23_t min, mag_e8m23_t max) {  \
+        mag_e8m23_t scale = max - min;  \
+        int64_t i=0;  \
+        for (; i+3 < numel; i += 4) {  \
+            mag_e8m23_t r[4];  \
+            mag_prng_next_e8m23x4(prng, &r);  \
+            for (int j=0; j < 4; ++j)  \
+                o[i+j] = CVT(fmaf(r[j], scale, min));  \
+        }  \
+        if (i < numel) {  \
+            mag_e8m23_t r[4];  \
+            mag_prng_next_e8m23x4(prng, &r);  \
+            for (int64_t t=0; i < numel; ++i, ++t)  \
+                o[i] = CVT(fmaf(r[t], scale, min));  \
+        }  \
+    }
+
+mag_gen_vrand_uniform_fp(e8m23, mag_cvt_nop)
+mag_gen_vrand_uniform_fp(e5m10, mag_e8m23_cvt_e5m10)
+
+#undef mag_gen_vrand_uniform_fp
+
+#define mag_gen_vrand_normal_fp(T, CVT) \
+    static void MAG_AINLINE mag_vrand_normal_##T(mag_philox4x32_stream_t* prng, int64_t numel, mag_##T##_t* restrict o, mag_e8m23_t mean, mag_e8m23_t std) {  \
+        int64_t i=0; \
+        while (i+1 < numel) { \
+            mag_e8m23_t r[4];  \
+            mag_prng_next_e8m23x4(prng, &r);  \
+            mag_e8m23_t rho = sqrtf(-2.0f*logf(fmaxf(r[0], 1e-37f))); \
+            mag_e8m23_t theta = MAG_TAU*r[1]; \
+            mag_e8m23_t z0 = rho*cosf(theta); \
+            mag_e8m23_t z1 = rho*sinf(theta); \
+            o[i++] = CVT(fmaf(z0, std, mean)); \
+            if (i < numel) o[i++] = CVT(fmaf(z1, std, mean)); \
+        } \
+        if (i < numel) { \
+            mag_e8m23_t r[4];  \
+            mag_prng_next_e8m23x4(prng, &r);  \
+            mag_e8m23_t rho = sqrtf(-2.0f*logf(fmaxf(r[0], 1e-37f))); \
+            mag_e8m23_t theta = MAG_TAU*r[1]; \
+            mag_e8m23_t z0 = rho*cosf(theta); \
+            o[i] = CVT(fmaf(z0, std, mean)); \
+        } \
+    }
+
+mag_gen_vrand_normal_fp(e8m23, mag_cvt_nop)
+mag_gen_vrand_normal_fp(e5m10, mag_e8m23_cvt_e5m10)
+
+#undef mag_gen_vrand_normal_fp
 
 /* Generate N bernoulli distributed e5m10 floats. */
-static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_prng_state_t* prng, int64_t numel, mag_bool_t* restrict o, mag_e8m23_t p) {
+static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_philox4x32_stream_t* prng, int64_t numel, mag_bool_t* restrict o, mag_e8m23_t p) {
+    if (mag_unlikely(p <= 0.0f)) { memset(o, 0, sizeof(*o)*(size_t)numel); return; }
+    if (mag_unlikely(p >= 1.0f)) {
+        for (int64_t i=0; i < numel;++i) o[i] = 1;
+        return;
+    }
     uint32_t thresh = (uint32_t)(p*4294967296.f); /* 2^32 */
-    switch (prng->algo) {
-        case MAG_PRNG_MERSENNE_TWISTER: { /* Use Mersenne Twister. */
-            uint32_t* rem = &prng->mersenne.remaining;
-            uint32_t* next = &prng->mersenne.next;
-            uint32_t* state = prng->mersenne.state;
-            for (int64_t i=0; i < numel; ++i) {
-                o[i] = !!(mag_mt19937_step(rem, next, state) < thresh);
-            }
-        } break;
-        case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
-            uint64_t* state = &prng->pcg.state;
-            uint64_t inc = prng->pcg.inc;
-            for (int64_t ii=0; ii < numel; ++ii) {
-                o[ii] = !!(mag_pcg_step(state, inc) < thresh);
-            }
-        } break;
-        default:
-            mag_panic("invalid PRNG algorithm: %d", prng->algo);
+    int64_t i=0;
+    for (; i+3 < numel; i += 4) {
+        uint32_t r[4];
+        mag_prng_next_u32x4(prng, &r);
+        #pragma GCC unroll 4
+        for (int j=0; j < 4; ++j)
+            o[i+j] = r[j] < thresh;
+    }
+    if (i < numel) {
+        uint32_t r[4];
+        mag_prng_next_u32x4(prng, &r);
+        for (int64_t t=0; i < numel; ++i, ++t)
+            o[i] = r[t] < thresh;
     }
 }
 
 /* Generate N uniform distributed int32s ∈ [min, max]. */
-static void MAG_AINLINE mag_vrand_uniform_i32(mag_prng_state_t* prng, int64_t numel, int32_t* restrict o, int32_t min, int32_t max) {
-    /* Rejection-sampling constants:
-    ** we want r ∈ [0, 2³²) s.t. r < lim, where  lim = span*floor(2³²/span)
-    ** for a bias-free mapping r % span.
-    */
-    uint64_t span = (uint64_t)max-(uint64_t)min+1ull; /* Interval width */
-    uint64_t lim = 0x100000000ull - 0x100000000ull%span;
-    switch (prng->algo) {
-        case MAG_PRNG_MERSENNE_TWISTER: { /* Use Mersenne Twister. */
-            uint32_t* rem = &prng->mersenne.remaining;
-            uint32_t* next = &prng->mersenne.next;
-            uint32_t* state = prng->mersenne.state;
-            for (int64_t i=0; i < numel; ++i) {
-                uint64_t r;
-                do r = mag_mt19937_step(rem, next, state); /* Rejection sampling */
-                while (mag_unlikely(r >= lim));
-                o[i] = (int32_t)((int64_t)min + (int32_t)(r%span));
+static void MAG_AINLINE mag_vrand_uniform_i32(mag_philox4x32_stream_t* prng, int64_t numel, int32_t* restrict o, int32_t min, int32_t max) {
+    if (max < min) mag_swap(int32_t, min, max);
+    uint64_t spa64 = (uint64_t)(uint32_t)max - (uint64_t)(uint32_t)min+1ull;
+    if (!spa64) {
+        for (int64_t i=0; i < numel; ++i)
+            o[i] = (int32_t)mag_prng_next_u32(prng);
+        return;
+    }
+    uint32_t span = (uint32_t)spa64;
+    uint32_t thresh = (uint32_t)(-span) % span;
+    int64_t i=0;
+    while (i < numel) {
+        uint32_t r[4];
+        mag_prng_next_u32x4(prng, &r);
+        for (int64_t k=0; k < 4 && i < numel; ++k) {
+            uint32_t x = r[k];
+            uint64_t m = (uint64_t)x*(uint64_t)span;
+            uint32_t lo = (uint32_t)m;
+            uint32_t hi = (uint32_t)(m >> 32);
+            if (mag_unlikely(lo < thresh)) { /* Rejection sampling */
+                do {
+                    uint32_t x2 = mag_prng_next_u32(prng);
+                    m = (uint64_t)x2*(uint64_t)span;
+                    lo = (uint32_t)m;
+                    hi = (uint32_t)(m>>32);
+                } while (lo < thresh);
             }
-        } break;
-        case MAG_PRNG_PCG: { /* Use Permuted Congruential Generator. */
-            uint64_t* state = &prng->pcg.state;
-            uint64_t inc = prng->pcg.inc;
-            for (int64_t i=0; i < numel; ++i) {
-                uint64_t r;
-                do r = mag_pcg_step(state, inc); /* Rejection sampling */
-                while (mag_unlikely(r >= lim));
-                o[i] = (int32_t)((int64_t)min + (int32_t)(r%span));
-            }
-        } break;
-        default:
-            mag_panic("invalid PRNG algorithm: %d", prng->algo);
+            o[i++] = (int32_t)((uint32_t)min + hi);
+        }
     }
 }
 
@@ -1850,8 +1805,14 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* r, const m
         mag_tensor_t* r = mag_cmd_in(0); \
         mag_##TS##_t min = mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(0)); \
         mag_##TS##_t max = mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(1)); \
-        mag_##T##_t* b_r = mag_##T##p_mut(r); \
-        mag_vrand_##D##_##T(payload->local_prng, r->numel, b_r, min, max); \
+        mag_##T##_t* br = mag_##T##p_mut(r); \
+        int64_t total = r->numel; \
+        int64_t tc = payload->thread_num; \
+        int64_t ti = payload->thread_idx; \
+        int64_t chunk = (total + tc - 1)/tc; \
+        int64_t ra = ti*chunk; \
+        int64_t rb = mag_xmin(ra + chunk, total); \
+        mag_vrand_##D##_##T(payload->prng, rb-ra, br+ra, min, max); \
     }
 
 #define mag_gen_stub_fill_arange(T, CVT) \
@@ -1911,7 +1872,7 @@ static int mag_discrete_sample_pair_cmp(const void* a, const void* b) {
         mag_i32_t* br = mag_i32p_mut(r); \
         const mag_##T##_t* bx = mag_##T##p(x); \
         int64_t num_samples = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
-        mag_prng_state_t* rng = payload->local_prng; \
+        mag_philox4x32_stream_t* rng = payload->prng; \
         int64_t K = x->shape[x->rank-1]; \
         if (mag_unlikely(K <= 0)) return; \
         int64_t B = x->numel / K; \
@@ -1946,7 +1907,7 @@ static int mag_discrete_sample_pair_cmp(const void* a, const void* b) {
             for (int64_t i=0; i < K; ++i) { \
                 mag_e8m23_t wi = CVT(w[i]); \
                 if (mag_unlikely(!isfinite(wi) || wi <= .0f)) continue; \
-                mag_e8m23_t u = mag_prng_sample_canonical_e8m23(rng); \
+                mag_e8m23_t u = mag_prng_next_e8m23(rng); \
                 mag_e8m23_t g = -logf(-logf(u)); \
                 arr[m].score = logf(wi) + g; \
                 arr[m].idx = (mag_i32_t)i; \
@@ -2205,10 +2166,6 @@ mag_gen_stub_clone(e5m10)
 mag_gen_stub_clone(bool)
 mag_gen_stub_clone(i32)
 
-#define mag_cvt_nop(x) (x)
-#define mag_cvt_i642bool(x) (!!(x))
-#define mag_cvt_i642i32(x) ((int32_t)(x))
-
 #define mag_G(x) (x)                    /* Get scalar value */
 #define mag_G_underlying(x) (x.bits)    /* Get underlying storage scalar */
 
@@ -2237,7 +2194,7 @@ static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t*
     mag_e8m23_t p = mag_op_param_unpack_e8m23_or_panic(mag_cmd_param(0));
     mag_bool_t* b_r = mag_boolp_mut(r);
     int64_t numel = r->numel;
-    mag_vrand_bernoulli_bool(payload->local_prng, numel, b_r, p);
+    mag_vrand_bernoulli_bool(payload->prng, numel, b_r, p);
 }
 
 #undef mag_G

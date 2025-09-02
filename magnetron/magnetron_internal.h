@@ -795,8 +795,8 @@ typedef enum mag_opflags_t {
     _(NOP, 0, 0, NONE, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(FILL, 1, 0, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(MASKED_FILL, 1, 0, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(RAND_UNIFORM, 1, 0, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(RAND_NORMAL, 1, 0, FP, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(RAND_UNIFORM, 1, 0, NUMERIC, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+    _(RAND_NORMAL, 1, 0, FP, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
     _(RAND_BERNOULLI, 1, 0, BOOL, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(ARANGE, 1, 0, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
@@ -1148,7 +1148,6 @@ struct mag_context_t {
     mag_fixed_pool_t view_meta_pool;            /* View metadata header memory pool. */
     mag_fixed_pool_t au_state_pool;             /* Autodiff state memory pool. */
     mag_context_flags_t flags;                  /* Context flags. */
-    mag_prng_algo_t prng_algo;                   /* Active PRNG algorithm. */
     uintptr_t tr_id;                            /* Context thread ID. */
     size_t sh_len;                              /* Number of shutdown hooks. */
     size_t sh_cap;                              /* Maximum number of shutdown hooks. */
@@ -1215,25 +1214,6 @@ struct mag_tensor_t {
 #endif
 };
 
-/* PRNG state for random number generation. */
-typedef struct mag_prng_state_t {
-    union { /* PRNG state of active algo. */
-        struct {
-            uint64_t state;
-            uint64_t inc;
-        } pcg;
-        struct {
-            uint32_t remaining;
-            uint32_t next;
-            uint32_t state[624];
-        } mersenne;
-    };
-    mag_prng_algo_t algo; /* PRNG algorithm. */
-} mag_prng_state_t;
-
-/* Initialize and seed PRNG with specific algorithm. */
-void mag_prng_seed(mag_prng_state_t* prng, mag_prng_algo_t algo, uint64_t seed);
-
 typedef struct mag_matmul_block_tune_info_t {
     int64_t nthreads;
     int64_t elsize;
@@ -1261,12 +1241,20 @@ typedef struct mag_matmul_block_params_t {
 
 extern void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_matmul_block_params_t* params);
 
+#define MAG_PHILOX_ROUNDS 10
+typedef struct mag_philox4x32_ctr_t { uint32_t v[4]; } mag_philox4x32_ctr_t;
+typedef struct mag_philox4x32_key_t { uint32_t v[2]; } mag_philox4x32_key_t;
+typedef struct mag_philox4x32_stream_t {
+    mag_philox4x32_ctr_t ctr;
+    mag_philox4x32_key_t key;
+} mag_philox4x32_stream_t;
+
 /* CPU Compute kernel payload passed to each CPU thread. */
 typedef struct mag_kernel_payload_t {
     const mag_command_t* cmd;
     int64_t thread_num;
     int64_t thread_idx;
-    mag_prng_state_t* local_prng;
+    mag_philox4x32_stream_t* prng;
     volatile mag_atomic64_t* mm_next_tile;
     mag_matmul_block_params_t mm_params;
 } mag_kernel_payload_t;

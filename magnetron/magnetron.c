@@ -635,27 +635,6 @@ mag_au_state_t* mag_au_state_lazy_alloc(mag_au_state_t** au_state, mag_context_t
     return *au_state;
 }
 
-/* Initialize and seed PRNG state. */
-void mag_prng_seed(mag_prng_state_t* prng, mag_prng_algo_t algo, uint64_t seed) {
-    seed = seed ? seed : 0x853c49e6748fea9bull;
-    switch ((prng->algo = algo)) {
-        case MAG_PRNG_MERSENNE_TWISTER: { /* Mersenne Twister */
-            uint32_t* state = prng->mersenne.state;
-            *state = (uint32_t)seed;
-            for (size_t i=1; i < 624; ++i)
-                state[i] = ((state[i-1]^(state[i-1]>>30))*1812433253 + i)&~0u;
-            prng->mersenne.next = 0;
-            prng->mersenne.remaining = 1;
-        } break;
-        case MAG_PRNG_PCG: { /* PCG-XSH-RR */
-            prng->pcg.state = seed^0x853c49e6748fea9bull;
-            prng->pcg.inc = 0xda3e39cb94b95bdbull;
-        } break;
-        default:
-            mag_panic("invalid PRNG algorithm: %d", prng->algo);
-    }
-}
-
 static void mag_machine_probe(mag_context_t* ctx); /* Query host system information. */
 
 /* Print host system and machine information. */
@@ -788,7 +767,6 @@ mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info) {
 
     ctx->tr_id = mag_thread_id(); /* Get thread ID. */
     ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
-    ctx->prng_algo = MAG_PRNG_MERSENNE_TWISTER;
 
     /* Query and print host system information. */
     mag_machine_probe(ctx);
@@ -824,14 +802,6 @@ void mag_ctx_destroy(mag_context_t* ctx, bool suppress_leak_detection) { /* Dest
     (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
     ctx = NULL;
     mag_log_info("magnetron context destroyed");
-}
-
-mag_prng_algo_t mag_ctx_get_prng_algorithm(const mag_context_t* ctx) {
-    return ctx->prng_algo;
-}
-
-void mag_ctx_set_prng_algorithm(mag_context_t* ctx, mag_prng_algo_t algorithm, uint64_t seed) {
-    mag_log_warn("Setting the PRNG algorithm is not implemented at the moment");
 }
 
 mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t* ctx) { return ctx->device_type; }

@@ -53,21 +53,6 @@ namespace magnetron {
     }
 
     /**
-     * Pseudo-random number generator (PRNG) algorithm
-     */
-    enum class prng_algorithm : std::underlying_type_t<mag_prng_algo_t> {
-        /**
-         * Merseene Twister 64
-         */
-        mersenne_twister = MAG_PRNG_MERSENNE_TWISTER,
-
-        /**
-         * Permuted Congruential Generator
-         */
-        pcg = MAG_PRNG_PCG
-    };
-
-    /**
      * Thread scheduling priority for CPU compute, higher priority means more CPU time
      */
     enum class thread_sched_prio : std::underlying_type_t<mag_thread_prio_t> {
@@ -162,8 +147,6 @@ namespace magnetron {
 
         [[nodiscard]] auto operator *() noexcept -> mag_context_t& { return *m_ctx; }
         [[nodiscard]] auto operator *() const noexcept -> const mag_context_t& { return *m_ctx; }
-        [[nodiscard]] auto prng_algorithm() const noexcept -> prng_algorithm { return static_cast<enum prng_algorithm>(mag_ctx_get_prng_algorithm(m_ctx)); }
-        auto prng_algorithm(enum prng_algorithm algorithm, std::uint64_t seed) noexcept -> void { mag_ctx_set_prng_algorithm(m_ctx, static_cast<mag_prng_algo_t>(algorithm), seed); }
         [[nodiscard]] auto device_type() const noexcept -> compute_device { return static_cast<compute_device>(mag_ctx_get_compute_device_type(m_ctx)); }
         [[nodiscard]] auto device_name() const noexcept -> std::string_view { return mag_ctx_get_compute_device_name(m_ctx); }
         [[nodiscard]] auto os_name() const noexcept -> std::string_view { return mag_ctx_get_os_name(m_ctx); }
