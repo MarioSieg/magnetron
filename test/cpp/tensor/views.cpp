@@ -51,7 +51,7 @@ TEST(views, view_slice_positive_step) {
     ASSERT_EQ(view.strides()[0], base.strides()[0]);
     auto base_addr = std::bit_cast<std::uintptr_t>(base.data_ptr());
     auto view_addr = std::bit_cast<std::uintptr_t>(view.data_ptr());
-    std::uintptr_t expected = base_addr + 2*base.strides()[0] * sizeof(e8m23_t);
+    std::uintptr_t expected = base_addr + 2*base.strides()[0] * sizeof(float);
     ASSERT_EQ(view_addr, expected);
 }
 
@@ -73,7 +73,7 @@ TEST(views, view_slice_chain_accumulates_offset) {
     tensor v1 = base.view_slice(0, 2, 6, 1); // rows 2..7
     tensor v2 = v1.view_slice(0, 3, 2, 1); // rows 5..6 of base
     const auto expect = std::bit_cast<std::uintptr_t>(base.data_ptr()) +
-                        5*base.strides()[0]*sizeof(e8m23_t);
+                        5*base.strides()[0]*sizeof(float);
     ASSERT_EQ(std::bit_cast<std::uintptr_t>(v2.data_ptr()), expect);
     ASSERT_TRUE(v2.is_view());
 }
@@ -140,17 +140,17 @@ TEST(views, offset_accumulation) {
     tensor v2 = v1.view_slice(0, 3, 2, 1);      // rows 5..6
 
     auto expect = reinterpret_cast<std::uintptr_t>(base.data_ptr()) +
-                  5 * base.strides()[0] * sizeof(e8m23_t);
+                  5 * base.strides()[0] * sizeof(float);
     ASSERT_EQ(reinterpret_cast<std::uintptr_t>(v2.data_ptr()), expect);
 }
 
 TEST(views, to_float_vector_copies_view) {
     context ctx{compute_device::cpu};
     tensor base{ctx, dtype::e8m23, 8, 3, 4};
-    base.fill_rand_uniform_float(-1.f, 1.f);
+    base.fill_rand_uniform(-1.f, 1.f);
     tensor slice = base.view_slice(0,0,4,2);
-    auto ref = base.to_float_vector();
-    auto got = slice.to_float_vector();
+    auto ref = base.to_vector<float>();
+    auto got = slice.to_vector<float>();
     for (int64_t i = 0; i < slice.numel(); ++i) {
         int64_t row = i / (3*4);
         int64_t col = i % (3*4);

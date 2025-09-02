@@ -10,49 +10,49 @@ static constexpr std::int64_t broadcast_lim {lim-1};
 
 #define impl_unary_operator_test_group(eps, name, data_type, lambda) \
     TEST(cpu_tensor_unary_ops, name##_same_shape_##data_type) { \
-        test::test_unary_operator<false, false, false>(lim, eps != 0.f ? eps : test::dtype_traits<test::data_type##_t>::test_eps, dtype::data_type, \
+        test::test_unary_operator<false, false, false>(lim, eps ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
             [](float a) -> float { return lambda(a); } \
         ); \
     } \
     TEST(cpu_tensor_unary_ops, name##_broadcast_##data_type) { \
-        test::test_unary_operator<true, false, false>(broadcast_lim, eps != 0.f ? eps : test::dtype_traits<test::data_type##_t>::test_eps, dtype::data_type, \
+        test::test_unary_operator<true, false, false>(broadcast_lim, eps ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
             [](float a) -> float { return lambda(a); } \
         ); \
     } \
     TEST(cpu_tensor_unary_ops, name##_inplace_same_shape_##data_type) { \
-        test::test_unary_operator<false, true, false>(lim, eps != 0.f ? eps : test::dtype_traits<test::data_type##_t>::test_eps, dtype::data_type, \
+        test::test_unary_operator<false, true, false>(lim, eps ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
             [](float a) -> float { return lambda(a); } \
         ); \
     } \
     TEST(cpu_tensor_unary_ops, name##_inplace_broadcast_##data_type) { \
-        test::test_unary_operator<true, true, false>(broadcast_lim, eps != 0.f ? eps : test::dtype_traits<test::data_type##_t>::test_eps, dtype::data_type, \
+        test::test_unary_operator<true, true, false>(broadcast_lim, eps ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
             [](float a) -> float { return lambda(a); } \
         ); \
     } \
     TEST(cpu_tensor_unary_ops, name##_view_same_shape_##data_type) { \
-        test::test_unary_operator<false, false, true>(lim, eps != 0.f ? eps : test::dtype_traits<test::data_type##_t>::test_eps, dtype::data_type, \
+        test::test_unary_operator<false, false, true>(lim, eps ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
             [](float a) -> float { return lambda(a); } \
         ); \
     } \
     TEST(cpu_tensor_unary_ops, name##_view_broadcast_##data_type) { \
-        test::test_unary_operator<true, false, true>(broadcast_lim, eps != 0.f ? eps : test::dtype_traits<test::data_type##_t>::test_eps, dtype::data_type, \
+        test::test_unary_operator<true, false, true>(broadcast_lim, eps ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
             [](float a) -> float { return lambda(a); } \
         ); \
     } \
     TEST(cpu_tensor_unary_ops, name##_view_inplace_same_shape_##data_type) { \
-        test::test_unary_operator<false, true, true>(lim, eps != 0.f ? eps : test::dtype_traits<test::data_type##_t>::test_eps, dtype::data_type, \
+        test::test_unary_operator<false, true, true>(lim, eps ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
             [](float a) -> float { return lambda(a); } \
         ); \
     } \
     TEST(cpu_tensor_unary_ops, name##_view_inplace_broadcast_##data_type) { \
-        test::test_unary_operator<true, true, true>(broadcast_lim, eps != 0.f ? eps : test::dtype_traits<test::data_type##_t>::test_eps, dtype::data_type, \
+        test::test_unary_operator<true, true, true>(broadcast_lim, eps ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
             [](float a) -> float { return lambda(a); } \
         ); \

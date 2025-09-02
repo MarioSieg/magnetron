@@ -6,21 +6,21 @@ using namespace magnetron;
 using namespace test;
 
 TEST(op_param, pack_e8m23) {
-    e8m23_t val {3.1415f};
+    float val {3.1415f};
     mag_opparam_t p {mag_op_param_wrap_e8m23(val)};
     ASSERT_EQ(p.type, MAG_OPP_E8M23);
     ASSERT_EQ(p.i62, std::bit_cast<std::uint32_t>(val));
     ASSERT_EQ(mag_op_param_unpack_e8m23_or_panic(p), val);
     ASSERT_EQ(mag_op_param_unpack_e8m23_or(p, 0.0f), val);
 
-    val = std::numeric_limits<e8m23_t>::min();
+    val = std::numeric_limits<float>::min();
     p = mag_op_param_wrap_e8m23(val);
     ASSERT_EQ(p.type, MAG_OPP_E8M23);
     ASSERT_EQ(p.i62, std::bit_cast<std::uint32_t>(val));
     ASSERT_EQ(mag_op_param_unpack_e8m23_or_panic(p), val);
     ASSERT_EQ(mag_op_param_unpack_e8m23_or(p, 0.0f), val);
 
-    val = std::numeric_limits<e8m23_t>::max();
+    val = std::numeric_limits<float>::max();
     p = mag_op_param_wrap_e8m23(val);
     ASSERT_EQ(p.type, MAG_OPP_E8M23);
     ASSERT_EQ(p.i62, std::bit_cast<std::uint32_t>(val));

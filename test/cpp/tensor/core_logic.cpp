@@ -101,9 +101,9 @@ TEST(core_tensor_logic, init_1d) {
     ASSERT_EQ(t.shape()[0], 10);
     ASSERT_EQ(t.strides()[0], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10 * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), 10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
@@ -129,8 +129,8 @@ TEST(core_tensor_logic, init_2d) {
     ASSERT_EQ(t.strides()[1], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
     ASSERT_EQ(t.numel(), 10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(e8m23_t));
-    ASSERT_EQ(t.data_size(), 10*10 * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
+    ASSERT_EQ(t.data_size(), 10*10 * sizeof(float));
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
@@ -157,9 +157,9 @@ TEST(core_tensor_logic, init_3d) {
     ASSERT_EQ(t.strides()[1], 10);
     ASSERT_EQ(t.strides()[2], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10*10*10 * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), 10*10*10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
@@ -186,9 +186,9 @@ TEST(core_tensor_logic, init_4d) {
     ASSERT_EQ(t.strides()[1], 100);
     ASSERT_EQ(t.strides()[2], 10);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10*10*10*10 * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), 10*10*10*10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10*10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
@@ -219,9 +219,9 @@ TEST(core_tensor_logic, init_5d) {
     ASSERT_EQ(t.strides()[3], 10);
     ASSERT_EQ(t.strides()[4], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10*10*10*10*10 * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), 10*10*10*10*10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10*10*10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data
@@ -255,8 +255,8 @@ TEST(core_tensor_logic, init_6d) {
     ASSERT_EQ(t.strides()[5], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
     ASSERT_EQ(t.numel(), 10*10*10*10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(e8m23_t));
-    ASSERT_EQ(t.data_size(), 10*10*10*10*10*10 * sizeof(e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
+    ASSERT_EQ(t.data_size(), 10*10*10*10*10*10 * sizeof(float));
     ASSERT_EQ(t.refcount(), 1);
 
     // now check some internal data

@@ -9,14 +9,14 @@ TEST(prng, automatic_seeding) {
     {
         context ctx {compute_device::cpu};
         tensor ta {ctx, dtype::e8m23, 8192, 8192};
-        ta.fill_rand_uniform_float(-1.0f, 1.0f);
-        a = ta.to_float_vector();
+        ta.fill_rand_uniform(-1.0f, 1.0f);
+        a = ta.to_vector<float>();
     }
     {
         context ctx {compute_device::cpu};
         tensor tb {ctx, dtype::e8m23, 8192, 8192};
-        tb.fill_rand_uniform_float(-1.0f, 1.0f);
-        b = tb.to_float_vector();
+        tb.fill_rand_uniform(-1.0f, 1.0f);
+        b = tb.to_vector<float>();
     }
 
     ASSERT_EQ(a.size(), b.size());
@@ -40,16 +40,16 @@ TEST(prng, manual_seeding) {
         context ctx {compute_device::cpu};
         ctx.manual_seed(seed);
         tensor ta {ctx, dtype::e8m23, 8192, 8192};
-        ta.fill_rand_uniform_float(-1.0f, 1.0f);
-        a = ta.to_float_vector();
+        ta.fill_rand_uniform(-1.0f, 1.0f);
+        a = ta.to_vector<float>();
     }
 
     {
         context ctx {compute_device::cpu};
         ctx.manual_seed(seed);
         tensor tb {ctx, dtype::e8m23, 8192, 8192};
-        tb.fill_rand_uniform_float(-1.0f, 1.0f);
-        b = tb.to_float_vector();
+        tb.fill_rand_uniform(-1.0f, 1.0f);
+        b = tb.to_vector<float>();
     }
 
     ASSERT_EQ(a.size(), b.size());

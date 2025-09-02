@@ -29,10 +29,10 @@ TEST(models, xor_e8m23) {
     xor_model model{ctx, dtype::e8m23};
     nn::sgd optimizer{model.params(), 0.1f};
 
-    static constexpr std::array<mag_e8m23_t, 2*4> x_data {
+    static constexpr std::array<float, 2*4> x_data {
         0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f, 1.0f,1.0f
     };
-    static constexpr std::array<mag_e8m23_t, 4> y_data {
+    static constexpr std::array<float, 4> y_data {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 
@@ -56,7 +56,7 @@ TEST(models, xor_e8m23) {
 
     tensor y_hat {model(x)};
 
-    std::vector<e8m23_t> output {y_hat.round().to_float_vector()};
+    std::vector<float> output {y_hat.round().to_vector<float>()};
     ASSERT_EQ(y_data.size(), output.size());
     for (std::int64_t i = 0; i < output.size(); ++i) {
         ASSERT_EQ(y_data[i], output[i]);
@@ -68,10 +68,10 @@ TEST(models, xor_e5m10) {
     xor_model model{ctx, dtype::e5m10};
     nn::sgd optimizer{model.params(), 0.1f};
 
-    static constexpr std::array<mag_e8m23_t, 2*4> x_data {
+    static constexpr std::array<float, 2*4> x_data {
         0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f, 1.0f,1.0f
     };
-    static constexpr std::array<mag_e8m23_t, 4> y_data {
+    static constexpr std::array<float, 4> y_data {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 
@@ -95,7 +95,7 @@ TEST(models, xor_e5m10) {
 
     tensor y_hat {model(x)};
 
-    std::vector<e8m23_t> output {y_hat.round().to_float_vector()};
+    std::vector<float> output {y_hat.round().to_vector<float>()};
     ASSERT_EQ(y_data.size(), output.size());
     for (std::int64_t i = 0; i < output.size(); ++i) {
         ASSERT_EQ(y_data[i], output[i]);

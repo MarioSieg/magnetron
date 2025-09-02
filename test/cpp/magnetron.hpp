@@ -9,11 +9,12 @@
 ** +---------------------------------------------------------------------+
 */
 
-// Magnetron Machine Learning Framework, public C++ 20 API.
+// Modern C++ API of a subset of the Magnetron C APi
+// For easier testing and simpler C++ code
 
 #pragma once
 
-#include "magnetron.h"
+#include <magnetron/magnetron.h>
 
 #include <algorithm>
 #include <stdexcept>
@@ -409,21 +410,14 @@ namespace magnetron {
             mag_tensor_fill_from_raw_bytes(m_tensor, data.data(), data.size_bytes());
         }
 
-        auto fill_float(float val) -> void {
-            mag_tensor_fill_float(m_tensor, val);
-        }
+        template <typename T>
+        auto fill(T val) -> void;
 
-        auto fill_int(std::int32_t val) -> void {
-            mag_tensor_fill_int(m_tensor, val);
-        }
+        template <typename T>
+        auto masked_fill(tensor mask, T val) -> void;
 
-        auto fill_rand_uniform_float(float min, float max) -> void {
-            mag_tensor_fill_random_uniform_float(m_tensor, min, max);
-        }
-
-        auto fill_rand_uniform_int(std::int32_t min, std::int32_t max) -> void {
-            mag_tensor_fill_random_uniform_int(m_tensor, min, max);
-        }
+        template <typename T>
+        auto fill_rand_uniform(T min, T max) -> void;
 
         auto fill_rand_normal(float mean, float stddev) -> void {
             mag_tensor_fill_random_normal(m_tensor, mean, stddev);
@@ -431,6 +425,10 @@ namespace magnetron {
 
         auto fill_rand_bernoulli(float p = 0.5f) -> void {
             mag_tensor_fill_random_bernoulli(m_tensor, p);
+        }
+
+        auto fill_arange(float start, float step = 1.0f) -> void {
+            mag_tensor_fill_arange(m_tensor, start, step);
         }
 
         [[nodiscard]] auto refcount() const noexcept -> std::uint64_t { return mag_tensor_get_refcount(m_tensor); }
@@ -451,37 +449,9 @@ namespace magnetron {
         [[nodiscard]] auto dtype() const noexcept -> dtype { return static_cast<enum dtype>(mag_tensor_get_dtype(m_tensor)); }
         [[nodiscard]] auto data_ptr() const noexcept -> void* { return mag_tensor_get_data_ptr(m_tensor); }
         [[nodiscard]] auto storage_base_ptr() const noexcept -> void* { return mag_tensor_get_storage_base_ptr(m_tensor); }
-        [[nodiscard]] auto to_float_vector() const -> std::vector<float> {
-            if (!is_floating_point_typed())
-                throw std::runtime_error {"requires floating point dtype"};
-            auto* data {mag_tensor_get_data_as_floats(m_tensor)};
-            std::vector<float> result {};
-            result.resize(numel());
-            std::copy_n(data, numel(), result.begin());
-            mag_tensor_get_data_as_floats_free(data);
-            return result;
-        }
-        [[nodiscard]] auto to_bool_vector() const -> std::vector<bool> {
-            if (dtype() != dtype::boolean)
-                throw std::runtime_error {"requires boolean dtype"};
-            auto* data {static_cast<std::uint8_t*>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
-            std::vector<bool> result {};
-            result.resize(numel());
-            for (std::size_t i = 0; i < result.size(); ++i)
-                result[i] = static_cast<bool>(data[i]);
-            mag_tensor_get_raw_data_as_bytes_free(data);
-            return result;
-        }
-        [[nodiscard]] auto to_int_vector() const -> std::vector<std::int32_t> {
-            if (dtype() != dtype::i32)
-                throw std::runtime_error {"requires int32 dtype"};
-            auto* data {static_cast<std::int32_t*>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
-            std::vector<std::int32_t> result {};
-            result.resize(numel());
-            std::memcpy(result.data(), data, data_size());
-            mag_tensor_get_raw_data_as_bytes_free(data);
-            return result;
-        }
+
+        template <typename T>
+        [[nodiscard]] auto to_vector() const -> std::vector<T>;
         [[nodiscard]] auto data_size() const noexcept -> std::int64_t { return mag_tensor_get_data_size(m_tensor); }
         [[nodiscard]] auto numel() const noexcept -> std::int64_t { return mag_tensor_get_numel(m_tensor); }
         [[nodiscard]] auto is_shape_eq(tensor other) const noexcept -> bool { return mag_tensor_is_shape_eq(m_tensor, &*other); }
@@ -491,7 +461,9 @@ namespace magnetron {
         [[nodiscard]] auto is_contiguous() const noexcept -> bool { return mag_tensor_is_contiguous(m_tensor); }
         [[nodiscard]] auto is_view() const noexcept -> bool { return mag_tensor_is_view(m_tensor); }
         [[nodiscard]] auto is_floating_point_typed() const noexcept -> bool { return mag_tensor_is_floating_point_typed(m_tensor); }
-        [[nodiscard]] auto is_integral_point_typed() const noexcept -> bool { return mag_tensor_is_integral_typed(m_tensor); }
+        [[nodiscard]] auto is_integral_typed() const noexcept -> bool { return mag_tensor_is_integral_typed(m_tensor); }
+        [[nodiscard]] auto is_integer_typed() const noexcept -> bool { return mag_tensor_is_integer_typed(m_tensor); }
+        [[nodiscard]] auto is_numeric_typed() const noexcept -> bool { return mag_tensor_is_numeric_typed(m_tensor); }
 
         [[nodiscard]] auto grad() const noexcept -> std::optional<tensor> {
             auto* grad {mag_tensor_get_grad(m_tensor)};
@@ -502,6 +474,7 @@ namespace magnetron {
         auto requires_grad(bool yes) noexcept -> void { mag_tensor_set_requires_grad(m_tensor, yes); }
         auto backward() -> void { mag_tensor_backward(m_tensor); }
         auto zero_grad() -> void { mag_tensor_zero_grad(m_tensor); }
+
         auto export_graphviz_forward(const std::string& filename) const -> void {
             mag_tensor_export_forward_graph_graphviz(m_tensor, filename.c_str());
         }
@@ -529,4 +502,87 @@ namespace magnetron {
 
         mag_tensor_t* m_tensor {};
     };
+
+    template <>
+    inline auto tensor::fill(float val) -> void {
+        mag_tensor_fill_float(m_tensor, val);
+    }
+
+    template <>
+    inline auto tensor::fill(std::int32_t val) -> void {
+        mag_tensor_fill_int(m_tensor, val);
+    }
+
+    template <>
+    inline auto tensor::fill(bool val) -> void {
+        mag_tensor_fill_int(m_tensor, val ? 1 : 0);
+    }
+
+    template <>
+    inline auto tensor::masked_fill(tensor mask, float val) -> void {
+        if (mask.dtype() != dtype::boolean)
+            throw std::runtime_error {"mask must be bool tensor"};
+        mag_tensor_masked_fill_float(&*mask, m_tensor, val);
+    }
+
+    template <>
+    inline auto tensor::masked_fill(tensor mask, std::int32_t val) -> void {
+        if (mask.dtype() != dtype::boolean)
+            throw std::runtime_error {"mask must be bool tensor"};
+        mag_tensor_masked_fill_int(&*mask, m_tensor, val);
+    }
+
+    template <>
+    inline auto tensor::masked_fill(tensor mask, bool val) -> void {
+        if (mask.dtype() != dtype::boolean)
+            throw std::runtime_error {"mask must be bool tensor"};
+        mag_tensor_masked_fill_int(&*mask, m_tensor, val ? 1 : 0);
+    }
+
+    template <>
+    inline auto tensor::fill_rand_uniform(float min, float max) -> void {
+        mag_tensor_fill_random_uniform_float(m_tensor, min, max);
+    }
+
+    template <>
+    inline auto tensor::fill_rand_uniform(std::int32_t min, std::int32_t max) -> void {
+        mag_tensor_fill_random_uniform_int(m_tensor, min, max);
+    }
+
+    template <>
+    inline auto tensor::to_vector() const -> std::vector<float> {
+        if (!is_floating_point_typed())
+            throw std::runtime_error {"requires floating point dtype"};
+        auto* data {mag_tensor_get_data_as_floats(m_tensor)};
+        std::vector<float> result {};
+        result.resize(numel());
+        std::copy_n(data, numel(), result.begin());
+        mag_tensor_get_data_as_floats_free(data);
+        return result;
+    }
+
+    template <>
+    inline auto tensor::to_vector() const -> std::vector<bool> {
+        if (dtype() != dtype::boolean)
+            throw std::runtime_error {"requires boolean dtype"};
+        auto* data {static_cast<std::uint8_t*>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
+        std::vector<bool> result {};
+        result.resize(numel());
+        for (std::size_t i = 0; i < result.size(); ++i)
+            result[i] = static_cast<bool>(data[i]);
+        mag_tensor_get_raw_data_as_bytes_free(data);
+        return result;
+    }
+
+    template <>
+    inline auto tensor::to_vector() const -> std::vector<std::int32_t> {
+        if (dtype() != dtype::i32)
+            throw std::runtime_error {"requires int32 dtype"};
+        auto* data {static_cast<std::int32_t*>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
+        std::vector<std::int32_t> result {};
+        result.resize(numel());
+        std::copy_n(data, numel(), result.begin());
+        mag_tensor_get_raw_data_as_bytes_free(data);
+        return result;
+    }
 }
