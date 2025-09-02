@@ -1227,7 +1227,7 @@ extern char* mag_strdup(const char* s);
 extern bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t* osz, const int64_t* ost, int64_t ork, const int64_t* nsz, int64_t nrk);
 extern void mag_infer_missing_dim(int64_t (*out)[MAG_MAX_DIMS], const int64_t* dims, int64_t rank, int64_t numel);
 extern bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, int64_t* dims, int64_t* rank);
-extern bool mag_secure_crypto_entropy(void* buf, size_t len);
+extern bool mag_sec_crypto_entropy(void* buf, size_t len);
 
 #ifdef __cplusplus
 }
