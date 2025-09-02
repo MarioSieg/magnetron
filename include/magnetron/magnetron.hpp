@@ -161,6 +161,7 @@ namespace magnetron {
         auto start_grad_recorder() noexcept -> void { mag_ctx_grad_recorder_start(m_ctx); }
         auto stop_grad_recorder() noexcept -> void { mag_ctx_grad_recorder_stop(m_ctx); }
         [[nodiscard]] auto is_recording_gradients() const noexcept -> bool { return mag_ctx_grad_recorder_is_running(m_ctx); }
+        auto manual_seed(std::uint64_t seed) noexcept -> void { mag_ctx_manual_seed(m_ctx, seed); }
 
     private:
         mag_context_t* m_ctx {};

@@ -994,12 +994,13 @@ typedef struct mag_command_t {
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 struct mag_idevice_t {
     mag_context_t* ctx;
-    char name[128];                 /* Device name. */
-    void* impl;            /* Device specific implementation, if applicable. */
-    bool is_async;                  /* If device is async. */
-    mag_device_type_t type;         /* Device type enum. */
+    char name[128];                                                                                     /* Device name. */
+    void* impl;                                                                                         /* Device specific implementation, if applicable. */
+    bool is_async;                                                                                      /* If device is async. */
+    mag_device_type_t type;                                                                             /* Device type enum. */
     void (*submit)(mag_idevice_t* dvc, const mag_command_t* cmd);                                       /* Execute a single op. */
     void (*alloc_storage)(mag_idevice_t* dvc, mag_istorage_t** out, size_t size, mag_dtype_t dtype);    /* Allocate storage buffer in device memory */
+    void (*manual_seed)(mag_idevice_t* dvc, uint64_t seed);                                             /* Set manual rng seed for device. */
 };
 
 /* Device creation and destruction. */
@@ -1214,65 +1215,6 @@ struct mag_tensor_t {
 #endif
 };
 
-typedef struct mag_matmul_block_tune_info_t {
-    int64_t nthreads;
-    int64_t elsize;
-    int64_t vecreg_width;
-    int64_t M;
-    int64_t N;
-    int64_t K;
-    int64_t l1_size;
-    int64_t l2_size;
-    mag_e11m52_t l1_load_factor;
-    mag_e11m52_t l2_load_factor;
-    int64_t min_tile_flops;
-    mag_e11m52_t split_a;
-    int64_t min_n_factor;
-    int64_t min_m_factor;
-} mag_matmul_block_tune_info_t;
-
-typedef struct mag_matmul_block_params_t {
-    int64_t MR;
-    int64_t NR;
-    int64_t MC;
-    int64_t KC;
-    int64_t NC;
-} mag_matmul_block_params_t;
-
-extern void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_matmul_block_params_t* params);
-
-#define MAG_PHILOX_ROUNDS 10
-typedef struct mag_philox4x32_ctr_t { uint32_t v[4]; } mag_philox4x32_ctr_t;
-typedef struct mag_philox4x32_key_t { uint32_t v[2]; } mag_philox4x32_key_t;
-typedef struct mag_philox4x32_stream_t {
-    mag_philox4x32_ctr_t ctr;
-    mag_philox4x32_key_t key;
-} mag_philox4x32_stream_t;
-
-/* CPU Compute kernel payload passed to each CPU thread. */
-typedef struct mag_kernel_payload_t {
-    const mag_command_t* cmd;
-    int64_t thread_num;
-    int64_t thread_idx;
-    mag_philox4x32_stream_t* prng;
-    volatile mag_atomic64_t* mm_next_tile;
-    mag_matmul_block_params_t mm_params;
-} mag_kernel_payload_t;
-
-/*
-** Stores function-pointer lookup table for all compute kernels.
-** The lookup table is used to dispatch the correct kernel for each operation by indexing with the opcode.
-** The CPU runtime dynamically fills these arrays with the best fitting kernel depending on the detected CPU.
-** See magnetron_cpu.c for details.
-*/
-typedef struct mag_kernel_registry_t {
-    void (*init)(void);
-    void (*deinit)(void);
-    void (*operators[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t*);       /* Eval operator kernels. */
-    void (*vector_cast)(size_t nb, const void* src, mag_dtype_t src_t, void* dst, mag_dtype_t dst_t); /* Vector cast (dtype conversion) kernel. */
-    size_t (*vreg_width)(void);
-} mag_kernel_registry_t;
-
 /* Combine two hash values. */
 static inline void mag_hash_combine(uint32_t* seed, uint32_t value) {
     *seed ^= value + 0x9e3779b9 + (*seed<<6) + (*seed>>2);
@@ -1285,6 +1227,7 @@ extern char* mag_strdup(const char* s);
 extern bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t* osz, const int64_t* ost, int64_t ork, const int64_t* nsz, int64_t nrk);
 extern void mag_infer_missing_dim(int64_t (*out)[MAG_MAX_DIMS], const int64_t* dims, int64_t rank, int64_t numel);
 extern bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, int64_t* dims, int64_t* rank);
+extern bool mag_secure_crypto_entropy(void* buf, size_t len);
 
 #ifdef __cplusplus
 }

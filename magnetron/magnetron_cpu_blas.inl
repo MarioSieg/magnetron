@@ -9,7 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include "magnetron_internal.h"
+#include "magnetron_cpu.h"
 
 #include <float.h>
 #include <math.h>
@@ -569,17 +569,17 @@ static MAG_AINLINE uint32_t mag_mulhilo32(uint32_t a, uint32_t b, uint32_t* hip)
     return (uint32_t)prod;
 }
 
-static inline void mag_ctr_inc_128(mag_philox4x32_ctr_t* c) {
+static inline void mag_ctr_inc_128(mag_philox4x32_ctr_t* ctr) {
     #if defined(__SIZEOF_INT128__) && defined(MAG_LE)
         unsigned __int128 x;
-        memcpy(&x, c->v, sizeof(x));
+        memcpy(&x, ctr->v, sizeof(x));
         ++x;
-        memcpy(c->v, &x, sizeof(x));
+        memcpy(ctr->v, &x, sizeof(x));
     #else /* Carry cascade */
-        if (++c->v[0] == 0u)
-            if (++c->v[1] == 0u)
-                if (++c->v[2] == 0u)
-                    ++c->v[3];
+        if (!++ctr->v[0])
+            if (!++ctr->v[1])
+                if (!++ctr->v[2])
+                    ++ctr->v[3];
     #endif
 }
 

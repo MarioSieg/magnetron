@@ -124,6 +124,7 @@ extern MAG_EXPORT size_t mag_ctx_get_total_tensors_created(const mag_context_t* 
 extern MAG_EXPORT void mag_ctx_grad_recorder_start(mag_context_t* ctx);                                                 /* Start gradient recording */
 extern MAG_EXPORT void mag_ctx_grad_recorder_stop(mag_context_t* ctx);                                                  /* Stop gradient recording */
 extern MAG_EXPORT bool mag_ctx_grad_recorder_is_running(const mag_context_t* ctx);                                      /* Check if gradient recording is running */
+extern MAG_EXPORT void mag_ctx_manual_seed(mag_context_t* ctx, uint64_t seed);                                          /* Manually seed the PRNG. */
 extern MAG_EXPORT void mag_ctx_destroy(mag_context_t* ctx, bool suppress_leak_detection);                               /* Destroy context and free memory */
 
 /**

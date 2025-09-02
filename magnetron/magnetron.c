@@ -777,6 +777,12 @@ mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info) {
     ctx->device = mag_init_dynamic_device(ctx, device_info);
     mag_log_info("Compute device: %s", ctx->device->name);
 
+    /* Seed prng once with secure system entropy */
+    uint64_t global_seed = 0;
+    if (mag_unlikely(!mag_secure_crypto_entropy(&global_seed, sizeof(global_seed)))) /* Fallback to weak seeding */
+        global_seed = (uint64_t)time(NULL)^ctx->tr_id^((uintptr_t)ctx>>3)^mag_cycles()^((uintptr_t)&global_seed>>3);
+    mag_ctx_manual_seed(ctx, global_seed);
+
     /* Print context initialization time. */
     mag_log_info("magnetron context initialized in %.05f ms", mag_hpc_clock_elapsed_ms(time_stamp_start));
     return ctx;
@@ -1080,6 +1086,9 @@ uint32_t mag_pack_color_f32(mag_e8m23_t r, mag_e8m23_t g, mag_e8m23_t b) {
 void mag_ctx_grad_recorder_start(mag_context_t* ctx) { ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER; }
 void mag_ctx_grad_recorder_stop(mag_context_t* ctx) { ctx->flags &= ~MAG_CTX_FLAG_GRAD_RECORDER; }
 bool mag_ctx_grad_recorder_is_running(const mag_context_t* ctx) { return ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER; }
+void mag_ctx_manual_seed(mag_context_t* ctx, uint64_t seed) {
+    (*ctx->device->manual_seed)(ctx->device, seed);
+}
 
 const char* mag_device_type_get_name(mag_device_type_t op) {
     static const char* const names[MAG_DEVICE_TYPE__NUM] = {
@@ -2768,92 +2777,19 @@ bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, i
     return true;
 }
 
-void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_matmul_block_params_t* params) {
-    if (!info->l1_size || !info->l2_size || !info->elsize) {
-        *params = (mag_matmul_block_params_t){
-            .MR = 8,
-            .NR = 16,
-            .MC = 256,
-            .KC = 256,
-            .NC = 128
-        };
-        return;
-    }
-    int64_t nt = info->nthreads;
-    int64_t M = info->M;
-    int64_t N = info->N;
-    int64_t K = info->K;
-    int64_t MR;
-    int64_t NR;
-    int64_t KC;
-    int64_t VW = info->vecreg_width;
-    int64_t W = VW >= 64 ? 64 : VW >= 32 ? 32 : 16;
-    MR = VW / info->elsize;
-    int64_t NR_cap = W == 64 ? 32 : W == 32 ? 32 : 16;
-    NR = mag_clamp((MR)<<1, MR, NR_cap);
-    if (W == 64) MR = 16, NR = 32;
-    mag_e11m52_t aL1 = info->l1_load_factor ? info->l1_load_factor : W == 64 ? 0.55 : W == 32 ? 0.60 : 0.65;
-    mag_e11m52_t aL2 = info->l2_load_factor ? info->l2_load_factor : W == 64 ? 0.40 : W == 32 ? 0.45 : 0.50;
-    mag_e11m52_t L1e = aL1 * (mag_e11m52_t)info->l1_size;
-    mag_e11m52_t L2e = aL2 * (mag_e11m52_t)info->l2_size;
-    if (nt >= 2) {
-        L1e *= 0.85;
-        L2e *= 0.85;
-    }
-    mag_e11m52_t nb = (mag_e11m52_t)info->elsize;
-    int64_t kc = (int64_t)(L1e / (nb*(mag_e11m52_t)(MR + NR)));
-    kc = mag_rd_down(kc, 8);
-    int64_t KC_lo = W == 64 ? 384 : W == 32 ? 256 : 192;
-    int64_t KC_hi = W == 64 ? 1024 : W == 32 ? 768 : 512;
-    kc = mag_clamp(kc, KC_lo, KC_hi);
-    if (K >= 2048) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
-    KC = kc;
-    int64_t MC = (int64_t)(info->split_a*L2e / (nb*(mag_e11m52_t)KC));
-    int64_t NC = (int64_t)((1.0-info->split_a)*L2e / (nb*(mag_e11m52_t)KC));
-    MC = mag_rd_down(MC, MR);
-    NC = mag_rd_down(NC, NR);
-    MR = mag_xmax(8, MR);
-    NR = mag_xmax(8, NR);
-    if (MC < MR) MC = MR;
-    if (NC < NR) NC = NR;
-    int64_t NC_cap = W == 64 ? 256 : 128;
-    if (N < 8192) NC_cap = 128;
-    if (NC > NC_cap) NC = mag_rd_down(NC_cap, NR);
-    int64_t tic = (M + MC - 1)/MC;
-    int64_t tjc = (N + NC - 1)/NC;
-    int64_t tiles = tic * tjc;
-    int64_t flops_call = (M*N*K)<<1;
-    int64_t min_tiles_core = flops_call >= 0x10000000ll ? 1 : flops_call >= 0x2000000ll ? 2 : 4;
-    int64_t tiles_needed = min_tiles_core * nt;
-    if (tiles_needed < (nt<<1)+nt) tiles_needed = (nt<<1)+nt;
-    while (tiles < tiles_needed && (MC > MR<<4 || NC > NR<<4)) {
-        bool changed = false;
-        int64_t nMC = MC>>1;
-        if (!changed && nMC >= MR && (nMC*NC*KC)<<1 >= info->min_tile_flops) {
-            MC = mag_rd_down(nMC, MR);
-            changed = true;
-        }
-        int64_t nNC = NC>>1;
-        if (!changed && nNC >= NR && (MC*nNC*KC)<<1 >= info->min_tile_flops) {
-            NC = mag_rd_down(nNC, NR);
-            changed = true;
-        }
-        if (!changed) break;
-        tic = (M + MC - 1)/MC;
-        tjc = (N + NC - 1)/NC;
-        tiles = tic * tjc;
-    }
-    if (N >= 512 && NC < NR<<1) NC = NR<<1;
-    *params = (mag_matmul_block_params_t){
-        .MR = MR,
-        .NR = NR,
-        .MC = MC,
-        .KC = KC,
-        .NC = NC
-    };
+bool mag_secure_crypto_entropy(void* buf, size_t len) {
+    #if defined(__linux__)
+        #ifdef SYS_getrandom
+            return syscall(SYS_getrandom, buf, len, 0) == len;
+        #else
+            int fd = open("/dev/urandom", O_RDONLY|O_CLOEXEC);
+            if (mag_unlikely(fd == -1)) return false;
+            ssize_t n = read(fd, buf, len);
+            (void)close(fd);
+            return n == (ssize_t)len;
+        #endif
+    #endif
 }
-
-#undef mag_cdiv
 
 /* The file format is implemented after the spec in ../docs/mag-file-format.md */
 
