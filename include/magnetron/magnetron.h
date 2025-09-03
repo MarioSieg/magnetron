@@ -54,17 +54,6 @@ typedef enum mag_device_type_t {
 extern MAG_EXPORT const char* mag_device_type_get_name(mag_device_type_t op);
 
 /**
- * @brief Pseudo-random number generator (PRNG) algorithms used for number generation and random tensor initialization.
- *      The default PRNG is Mersenne Twister, switching to PCG can yield better performance in some cases.
- */
-typedef enum mag_prng_algo_t {
-    MAG_PRNG_MERSENNE_TWISTER = 0,  /* Mersenne Twister PRNG */
-    MAG_PRNG_PCG = 1,               /* Permuted Congruential Generator PRNG */
-
-    MAG_PRNG__NUM
-} mag_prng_algo_t;
-
-/**
  * @brief Thread scheduling priority for CPU compute.
  *      This set the OS scheduling priority of the thread that executes the compute operations.
  *      The priority is only used if the compute device is a CPU.
@@ -121,8 +110,6 @@ extern MAG_EXPORT mag_device_desc_t mag_compute_device_desc_cuda(uint32_t cuda_d
 
 extern MAG_EXPORT mag_context_t* mag_ctx_create(mag_device_type_t device);                                              /* Create context with default config, and only specify device type. */
 extern MAG_EXPORT mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info);                                 /* Create context with customized device config, and only specify device type. */
-extern MAG_EXPORT mag_prng_algo_t mag_ctx_get_prng_algorithm(const mag_context_t* ctx);                                 /* Get PRNG algorithm */
-extern MAG_EXPORT void mag_ctx_set_prng_algorithm(mag_context_t* ctx, mag_prng_algo_t algorithm, uint64_t seed);        /* Set PRNG algorithm */
 extern MAG_EXPORT mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t* ctx);                          /* Get compute device type */
 extern MAG_EXPORT const char* mag_ctx_get_compute_device_name(const mag_context_t* ctx);                                /* Get the name of the compute device */
 extern MAG_EXPORT const char* mag_ctx_get_os_name(const mag_context_t* ctx);                                            /* Get the name of the operating system */
@@ -137,6 +124,7 @@ extern MAG_EXPORT size_t mag_ctx_get_total_tensors_created(const mag_context_t* 
 extern MAG_EXPORT void mag_ctx_grad_recorder_start(mag_context_t* ctx);                                                 /* Start gradient recording */
 extern MAG_EXPORT void mag_ctx_grad_recorder_stop(mag_context_t* ctx);                                                  /* Stop gradient recording */
 extern MAG_EXPORT bool mag_ctx_grad_recorder_is_running(const mag_context_t* ctx);                                      /* Check if gradient recording is running */
+extern MAG_EXPORT void mag_ctx_manual_seed(mag_context_t* ctx, uint64_t seed);                                          /* Manually seed the PRNG. */
 extern MAG_EXPORT void mag_ctx_destroy(mag_context_t* ctx, bool suppress_leak_detection);                               /* Destroy context and free memory */
 
 /**

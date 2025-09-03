@@ -9,10 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include "magnetron_internal.h"
-
-extern mag_idevice_t* mag_init_device_cpu(mag_context_t* ctx, const mag_device_desc_t* desc);   /* Initialize CPU compute device. Implemented in magnetron_cpu.c */
-extern void mag_destroy_device_cpu(mag_idevice_t* dvc);      /* Destroy CPU compute device. Implemented in magnetron_cpu.c */
+#include "magnetron_cpu.h"
 
 #ifdef MAG_ENABLE_CUDA
 extern mag_idevice_t* mag_init_device_cuda(mag_context_t* ctx, const mag_device_desc_t* desc);  /* Initialize GPU compute device. Implemented in magnetron_cuda.cu */

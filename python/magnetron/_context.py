@@ -24,12 +24,6 @@ from ._dtype import DataType
 _MAIN_TID: int = threading.get_native_id()
 
 
-@unique
-class PRNGAlgorithm(Enum):
-    MERSENNE_TWISTER = C.MAG_PRNG_MERSENNE_TWISTER
-    PCG = C.MAG_PRNG_PCG
-
-
 @final
 class Context:
     """Manages the execution context and owns all tensors and active compute devices."""
@@ -52,17 +46,6 @@ class Context:
     @property
     def compute_device_name(self) -> str:
         return FFI.string(C.mag_ctx_get_compute_device_name(self._ptr)).decode('utf-8')
-
-    @property
-    def prng_algorithm(self) -> PRNGAlgorithm:
-        return PRNGAlgorithm(C.mag_ctx_get_prng_algorithm(self._ptr))
-
-    @prng_algorithm.setter
-    def prng_algorithm(self, algorithm: PRNGAlgorithm) -> None:
-        C.mag_ctx_set_prng_algorithm(self._ptr, algorithm.value, 0)
-
-    def seed(self, seed: int) -> None:
-        C.mag_ctx_set_prng_algorithm(self._ptr, self.prng_algorithm.value, seed)
 
     @property
     def os_name(self) -> str:
@@ -113,6 +96,12 @@ class Context:
     @property
     def is_grad_recording(self) -> bool:
         return C.mag_ctx_grad_recorder_is_running(self._ptr)
+
+    def manual_seed(self, seed: int) -> None:
+        if seed < 0:
+            seed += (1 << 64) - 1
+        seed &= (1 << 64) - 1
+        C.mag_ctx_manual_seed(self._ptr, seed)
 
 
 @lru_cache(maxsize=1)

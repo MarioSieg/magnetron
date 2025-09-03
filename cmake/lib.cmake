@@ -4,6 +4,7 @@ set(MAGNETRON_SOURCES
     include/magnetron/magnetron.h
     magnetron/magnetron.c
     magnetron/magnetron_aux.c
+    magnetron/magnetron_cpu.h
     magnetron/magnetron_cpu.c
     magnetron/magnetron_cpu_blas.inl
     magnetron/magnetron_cpu_blas_fallback.c
