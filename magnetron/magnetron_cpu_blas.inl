@@ -1855,7 +1855,7 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t* r, const m
     }
 
 typedef struct mag_discrete_sample_pair_t {
-    float score;
+    mag_e8m23_t score;
     mag_i32_t idx;
 } mag_discrete_sample_pair_t;
 
@@ -2538,15 +2538,19 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
         __m512 P23o = _mm512_setzero_ps();
         __m512 P45o = _mm512_setzero_ps();
         __m512 P67o = _mm512_setzero_ps();
-        int64_t k=0;
+        #define mag_plat_idx_pair(lo,hi) _mm512_set_epi32((hi),(hi),(hi),(hi),(hi),(hi),(hi),(hi),(lo),(lo),(lo),(lo),(lo),(lo),(lo),(lo))
+        __m512i i01 = mag_plat_idx_pair(0,1);
+        __m512i i23 = mag_plat_idx_pair(2,3);
+        __m512i i45 = mag_plat_idx_pair(4,5);
+        __m512i i67 = mag_plat_idx_pair(6,7);
+        #undef mag_plat_idx_pair
+        int64_t k = 0;
         for (; k+3 < kc; k += 4) {
-            if (!(k & (MAG_PF_GROUP-1))) {
-                mag_prefetcht0(b + (k + MAG_PFDIST_B_L1) * ldb);
-                mag_prefetcht1(b + (k + MAG_PFDIST_B_L2) * ldb);
-                mag_prefetcht0(a + 0*lda + (k + MAG_PFDIST_A_L1));
-                mag_prefetcht0(a + 4*lda + (k + MAG_PFDIST_A_L1));
-                mag_prefetcht1(a + 0*lda + (k + MAG_PFDIST_A_L2));
-                mag_prefetcht1(a + 4*lda + (k + MAG_PFDIST_A_L2));
+            if (!(k & (MAG_PF_GROUP - 1))) {
+                mag_prefetcht0(b + (k + MAG_PFDIST_B_L1)*ldb);
+                mag_prefetcht1(b + (k + MAG_PFDIST_B_L2)*ldb);
+                mag_prefetcht0(a + ((k + MAG_PFDIST_A_L1)<<3));
+                mag_prefetcht1(a + ((k + MAG_PFDIST_A_L2)<<3));
             }
             __m256 b0_256 = _mm256_loadu_ps(b + (k + 0) * ldb);
             #ifdef __AVX512DQ__
@@ -2554,18 +2558,12 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
             #else
             __m512 b0 = _mm512_insertf32x8(_mm512_castps256_ps512(b0_256), b0_256, 1);
             #endif
-            __m256 a00 = _mm256_set1_ps(a[0*lda + (k+0)]);
-            __m256 a10 = _mm256_set1_ps(a[1*lda + (k+0)]);
-            __m256 a20 = _mm256_set1_ps(a[2*lda + (k+0)]);
-            __m256 a30 = _mm256_set1_ps(a[3*lda + (k+0)]);
-            __m256 a40 = _mm256_set1_ps(a[4*lda + (k+0)]);
-            __m256 a50 = _mm256_set1_ps(a[5*lda + (k+0)]);
-            __m256 a60 = _mm256_set1_ps(a[6*lda + (k+0)]);
-            __m256 a70 = _mm256_set1_ps(a[7*lda + (k+0)]);
-            __m512 A01_0 = _mm512_insertf32x8(_mm512_castps256_ps512(a00), a10, 1);
-            __m512 A23_0 = _mm512_insertf32x8(_mm512_castps256_ps512(a20), a30, 1);
-            __m512 A45_0 = _mm512_insertf32x8(_mm512_castps256_ps512(a40), a50, 1);
-            __m512 A67_0 = _mm512_insertf32x8(_mm512_castps256_ps512(a60), a70, 1);
+            __m256 av0 = _mm256_loadu_ps(a + k*8);
+            __m512 Adup0 = _mm512_broadcast_f32x8(av0);
+            __m512 A01_0 = _mm512_permutexvar_ps(i01, Adup0);
+            __m512 A23_0 = _mm512_permutexvar_ps(i23, Adup0);
+            __m512 A45_0 = _mm512_permutexvar_ps(i45, Adup0);
+            __m512 A67_0 = _mm512_permutexvar_ps(i67, Adup0);
             P01e = _mm512_fmadd_ps(A01_0, b0, P01e);
             P23e = _mm512_fmadd_ps(A23_0, b0, P23e);
             P45e = _mm512_fmadd_ps(A45_0, b0, P45e);
@@ -2576,18 +2574,12 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
             #else
             __m512 b1 = _mm512_insertf32x8(_mm512_castps256_ps512(b1_256), b1_256, 1);
             #endif
-            __m256 a01 = _mm256_set1_ps(a[0*lda + (k+1)]);
-            __m256 a11 = _mm256_set1_ps(a[1*lda + (k+1)]);
-            __m256 a21 = _mm256_set1_ps(a[2*lda + (k+1)]);
-            __m256 a31 = _mm256_set1_ps(a[3*lda + (k+1)]);
-            __m256 a41 = _mm256_set1_ps(a[4*lda + (k+1)]);
-            __m256 a51 = _mm256_set1_ps(a[5*lda + (k+1)]);
-            __m256 a61 = _mm256_set1_ps(a[6*lda + (k+1)]);
-            __m256 a71 = _mm256_set1_ps(a[7*lda + (k+1)]);
-            __m512 A01_1 = _mm512_insertf32x8(_mm512_castps256_ps512(a01), a11, 1);
-            __m512 A23_1 = _mm512_insertf32x8(_mm512_castps256_ps512(a21), a31, 1);
-            __m512 A45_1 = _mm512_insertf32x8(_mm512_castps256_ps512(a41), a51, 1);
-            __m512 A67_1 = _mm512_insertf32x8(_mm512_castps256_ps512(a61), a71, 1);
+            __m256 av1 = _mm256_loadu_ps(a + (k + 1)*8);
+            __m512 Adup1 = _mm512_broadcast_f32x8(av1);
+            __m512 A01_1 = _mm512_permutexvar_ps(i01, Adup1);
+            __m512 A23_1 = _mm512_permutexvar_ps(i23, Adup1);
+            __m512 A45_1 = _mm512_permutexvar_ps(i45, Adup1);
+            __m512 A67_1 = _mm512_permutexvar_ps(i67, Adup1);
             P01o = _mm512_fmadd_ps(A01_1, b1, P01o);
             P23o = _mm512_fmadd_ps(A23_1, b1, P23o);
             P45o = _mm512_fmadd_ps(A45_1, b1, P45o);
@@ -2598,18 +2590,12 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
             #else
             __m512 b2 = _mm512_insertf32x8(_mm512_castps256_ps512(b2_256), b2_256, 1);
             #endif
-            __m256 a02 = _mm256_set1_ps(a[0*lda + (k+2)]);
-            __m256 a12 = _mm256_set1_ps(a[1*lda + (k+2)]);
-            __m256 a22 = _mm256_set1_ps(a[2*lda + (k+2)]);
-            __m256 a32 = _mm256_set1_ps(a[3*lda + (k+2)]);
-            __m256 a42 = _mm256_set1_ps(a[4*lda + (k+2)]);
-            __m256 a52 = _mm256_set1_ps(a[5*lda + (k+2)]);
-            __m256 a62 = _mm256_set1_ps(a[6*lda + (k+2)]);
-            __m256 a72 = _mm256_set1_ps(a[7*lda + (k+2)]);
-            __m512 A01_2 = _mm512_insertf32x8(_mm512_castps256_ps512(a02), a12, 1);
-            __m512 A23_2 = _mm512_insertf32x8(_mm512_castps256_ps512(a22), a32, 1);
-            __m512 A45_2 = _mm512_insertf32x8(_mm512_castps256_ps512(a42), a52, 1);
-            __m512 A67_2 = _mm512_insertf32x8(_mm512_castps256_ps512(a62), a72, 1);
+            __m256 av2 = _mm256_loadu_ps(a + (k + 2)*8);
+            __m512 Adup2 = _mm512_broadcast_f32x8(av2);
+            __m512 A01_2 = _mm512_permutexvar_ps(i01, Adup2);
+            __m512 A23_2 = _mm512_permutexvar_ps(i23, Adup2);
+            __m512 A45_2 = _mm512_permutexvar_ps(i45, Adup2);
+            __m512 A67_2 = _mm512_permutexvar_ps(i67, Adup2);
             P01e = _mm512_fmadd_ps(A01_2, b2, P01e);
             P23e = _mm512_fmadd_ps(A23_2, b2, P23e);
             P45e = _mm512_fmadd_ps(A45_2, b2, P45e);
@@ -2620,18 +2606,12 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
             #else
             __m512 b3 = _mm512_insertf32x8(_mm512_castps256_ps512(b3_256), b3_256, 1);
             #endif
-            __m256 a03 = _mm256_set1_ps(a[0*lda + (k+3)]);
-            __m256 a13 = _mm256_set1_ps(a[1*lda + (k+3)]);
-            __m256 a23 = _mm256_set1_ps(a[2*lda + (k+3)]);
-            __m256 a33 = _mm256_set1_ps(a[3*lda + (k+3)]);
-            __m256 a43 = _mm256_set1_ps(a[4*lda + (k+3)]);
-            __m256 a53 = _mm256_set1_ps(a[5*lda + (k+3)]);
-            __m256 a63 = _mm256_set1_ps(a[6*lda + (k+3)]);
-            __m256 a73 = _mm256_set1_ps(a[7*lda + (k+3)]);
-            __m512 A01_3 = _mm512_insertf32x8(_mm512_castps256_ps512(a03), a13, 1);
-            __m512 A23_3 = _mm512_insertf32x8(_mm512_castps256_ps512(a23), a33, 1);
-            __m512 A45_3 = _mm512_insertf32x8(_mm512_castps256_ps512(a43), a53, 1);
-            __m512 A67_3 = _mm512_insertf32x8(_mm512_castps256_ps512(a63), a73, 1);
+            __m256 av3 = _mm256_loadu_ps(a + (k + 3)*8);
+            __m512 Adup3 = _mm512_broadcast_f32x8(av3);
+            __m512 A01_3 = _mm512_permutexvar_ps(i01, Adup3);
+            __m512 A23_3 = _mm512_permutexvar_ps(i23, Adup3);
+            __m512 A45_3 = _mm512_permutexvar_ps(i45, Adup3);
+            __m512 A67_3 = _mm512_permutexvar_ps(i67, Adup3);
             P01o = _mm512_fmadd_ps(A01_3, b3, P01o);
             P23o = _mm512_fmadd_ps(A23_3, b3, P23o);
             P45o = _mm512_fmadd_ps(A45_3, b3, P45o);
@@ -2644,18 +2624,12 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
             #else
             __m512 bk = _mm512_insertf32x8(_mm512_castps256_ps512(bk_256), bk_256, 1);
             #endif
-            __m256 a0 = _mm256_set1_ps(a[0*lda + k]);
-            __m256 a1 = _mm256_set1_ps(a[1*lda + k]);
-            __m256 a2 = _mm256_set1_ps(a[2*lda + k]);
-            __m256 a3 = _mm256_set1_ps(a[3*lda + k]);
-            __m256 a4 = _mm256_set1_ps(a[4*lda + k]);
-            __m256 a5 = _mm256_set1_ps(a[5*lda + k]);
-            __m256 a6 = _mm256_set1_ps(a[6*lda + k]);
-            __m256 a7 = _mm256_set1_ps(a[7*lda + k]);
-            __m512 A01 = _mm512_insertf32x8(_mm512_castps256_ps512(a0), a1, 1);
-            __m512 A23 = _mm512_insertf32x8(_mm512_castps256_ps512(a2), a3, 1);
-            __m512 A45 = _mm512_insertf32x8(_mm512_castps256_ps512(a4), a5, 1);
-            __m512 A67 = _mm512_insertf32x8(_mm512_castps256_ps512(a6), a7, 1);
+            __m256 av = _mm256_loadu_ps(a + k * 8);
+            __m512 Adup = _mm512_broadcast_f32x8(av);
+            __m512 A01 = _mm512_permutexvar_ps(i01, Adup);
+            __m512 A23 = _mm512_permutexvar_ps(i23, Adup);
+            __m512 A45 = _mm512_permutexvar_ps(i45, Adup);
+            __m512 A67 = _mm512_permutexvar_ps(i67, Adup);
             if (k & 1) {
                 P01o = _mm512_fmadd_ps(A01, bk, P01o);
                 P23o = _mm512_fmadd_ps(A23, bk, P23o);
@@ -2684,34 +2658,123 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
         __m256 C[8];
         if (acc) {
             #pragma GCC unroll 8
-            for (int r=0; r < 8; ++r)
+            for (int r = 0; r < 8; ++r)
                 C[r] = _mm256_loadu_ps(c + r*ldc);
         } else {
             __m256 z = _mm256_setzero_ps();
             #pragma GCC unroll 8
-            for (int r=0; r < 8; ++r) C[r] = z;
+            for (int r=0; r < 8; ++r)
+                C[r] = z;
         }
-        for (int64_t k=0; k < kc; k += 2) {
-            __m256 B0 = _mm256_loadu_ps(b + (k+0)*ldb);
+        int64_t k=0;
+        for (; k+3 < kc; k += 4) {
+            if ((k & (MAG_PF_GROUP - 1)) == 0) {
+                mag_prefetcht0(b + (k + MAG_PFDIST_B_L1)*ldb);
+                mag_prefetcht1(b + (k + MAG_PFDIST_B_L2)*ldb);
+                mag_prefetcht0(a + (int64_t)((k + MAG_PFDIST_A_L1)<<3));
+                mag_prefetcht1(a + (int64_t)((k + MAG_PFDIST_A_L2)<<3));
+            }
+            __m256 B0 = _mm256_loadu_ps(b + (k + 0)*ldb);
+            __m256 B1 = _mm256_loadu_ps(b + (k + 1)*ldb);
+            __m256 B2 = _mm256_loadu_ps(b + (k + 2)*ldb);
+            __m256 B3 = _mm256_loadu_ps(b + (k + 3)*ldb);
+            const mag_e8m23_t* a0 = a + (k + 0)*8;
+            const mag_e8m23_t* a1 = a + (k + 1)*8;
+            const mag_e8m23_t* a2 = a + (k + 2)*8;
+            const mag_e8m23_t* a3 = a + (k + 3)*8;
             #pragma GCC unroll 8
             for (int r=0; r < 8; ++r) {
-                __m256 A0 = _mm256_broadcast_ss(a + r*lda + k + 0);
-                C[r] = _mm256_fmadd_ps(A0, B0, C[r]);
+                __m256 A;
+                A = _mm256_broadcast_ss(a0 + r);
+                C[r] = _mm256_fmadd_ps(A, B0, C[r]);
+                A = _mm256_broadcast_ss(a1 + r);
+                C[r] = _mm256_fmadd_ps(A, B1, C[r]);
+                A = _mm256_broadcast_ss(a2 + r);
+                C[r] = _mm256_fmadd_ps(A, B2, C[r]);
+                A = _mm256_broadcast_ss(a3 + r);
+                C[r] = _mm256_fmadd_ps(A, B3, C[r]);
             }
-            _mm_prefetch((const char*)(b + (k+MAG_PREFETCH_SPAN)*ldb), _MM_HINT_T0);
-            _mm_prefetch((const char*)(a + k+MAG_PREFETCH_SPAN), _MM_HINT_T0);
-            if (mag_likely(k+1 < kc)) {
-                __m256 B1 = _mm256_loadu_ps(b + (k+1)*ldb);
-                #pragma GCC unroll 8
-                for (int r=0; r < 8; ++r) {
-                    __m256 A1 = _mm256_broadcast_ss(a + r*lda + k + 1);
-                    C[r] = _mm256_fmadd_ps(A1, B1, C[r]);
-                }
+        }
+        for (; k < kc; ++k) {
+            __m256 Bk = _mm256_loadu_ps(b + k*ldb);
+            const mag_e8m23_t* ak = a + k*8;
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                __m256 A = _mm256_broadcast_ss(ak + r);
+                C[r] = _mm256_fmadd_ps(A, Bk, C[r]);
             }
         }
         #pragma GCC unroll 8
         for (int r=0; r < 8; ++r)
             _mm256_storeu_ps(c + r*ldc, C[r]);
+    #elif defined(__SSE2__)
+        #define mm_fmadd_ps(a,b,c) _mm_add_ps((c), _mm_mul_ps((a),(b)))
+        __m128 C[8][2];
+        if (acc) {
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                C[r][0] = _mm_loadu_ps(c + r*ldc + 0);
+                C[r][1] = _mm_loadu_ps(c + r*ldc + 4);
+            }
+        } else {
+            __m128 z = _mm_setzero_ps();
+            #pragma GCC unroll 8
+            for (int r = 0; r < 8; ++r) C[r][0] = C[r][1] = z;
+        }
+        int64_t k = 0;
+        for (; k+3 < kc; k += 4) {
+            if ((k & (MAG_PF_GROUP - 1)) == 0) {
+                _mm_prefetch((const char*)(b + (k + MAG_PFDIST_B_L1)*ldb), _MM_HINT_T0);
+                _mm_prefetch((const char*)(b + (k + MAG_PFDIST_B_L2)*ldb), _MM_HINT_T1);
+                _mm_prefetch((const char*)(a + (int64_t)((k + MAG_PFDIST_A_L1)*8)), _MM_HINT_T0);
+                _mm_prefetch((const char*)(a + (int64_t)((k + MAG_PFDIST_A_L2)*8)), _MM_HINT_T1);
+            }
+            __m128 B0_0 = _mm_loadu_ps(b + (k + 0)*ldb + 0);
+            __m128 B0_1 = _mm_loadu_ps(b + (k + 0)*ldb + 4);
+            __m128 B1_0 = _mm_loadu_ps(b + (k + 1)*ldb + 0);
+            __m128 B1_1 = _mm_loadu_ps(b + (k + 1)*ldb + 4);
+            __m128 B2_0 = _mm_loadu_ps(b + (k + 2)*ldb + 0);
+            __m128 B2_1 = _mm_loadu_ps(b + (k + 2)*ldb + 4);
+            __m128 B3_0 = _mm_loadu_ps(b + (k + 3)*ldb + 0);
+            __m128 B3_1 = _mm_loadu_ps(b + (k + 3)*ldb + 4);
+            const mag_e8m23_t* a0 = a + (k + 0)*8;
+            const mag_e8m23_t* a1 = a + (k + 1)*8;
+            const mag_e8m23_t* a2 = a + (k + 2)*8;
+            const mag_e8m23_t* a3 = a + (k + 3)*8;
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                __m128 A;
+                A = _mm_set1_ps(a0[r]);
+                C[r][0] = mm_fmadd_ps(A, B0_0, C[r][0]);
+                C[r][1] = mm_fmadd_ps(A, B0_1, C[r][1]);
+                A = _mm_set1_ps(a1[r]);
+                C[r][0] = mm_fmadd_ps(A, B1_0, C[r][0]);
+                C[r][1] = mm_fmadd_ps(A, B1_1, C[r][1]);
+                A = _mm_set1_ps(a2[r]);
+                C[r][0] = mm_fmadd_ps(A, B2_0, C[r][0]);
+                C[r][1] = mm_fmadd_ps(A, B2_1, C[r][1]);
+                A = _mm_set1_ps(a3[r]);
+                C[r][0] = mm_fmadd_ps(A, B3_0, C[r][0]);
+                C[r][1] = mm_fmadd_ps(A, B3_1, C[r][1]);
+            }
+        }
+        for (; k < kc; ++k) {
+            __m128 B0 = _mm_loadu_ps(b + k*ldb + 0);
+            __m128 B1 = _mm_loadu_ps(b + k*ldb + 4);
+            const mag_e8m23_t* ak = a + k*8;
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                __m128 A = _mm_set1_ps(ak[r]);
+                C[r][0] = mm_fmadd_ps(A, B0, C[r][0]);
+                C[r][1] = mm_fmadd_ps(A, B1, C[r][1]);
+            }
+        }
+        #pragma GCC unroll 8
+        for (int r = 0; r < 8; ++r) {
+            _mm_storeu_ps(c + r*ldc + 0, C[r][0]);
+            _mm_storeu_ps(c + r*ldc + 4, C[r][1]);
+        }
+        #undef mm_fmadd_ps
     #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
         float32x4_t C[8][2];
         if (acc) {
@@ -2725,12 +2788,50 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
             for (int r=0; r < 8; ++r)
                 C[r][0] = C[r][1] = vdupq_n_f32(0.f);
         }
-        for (int64_t k=0; k < kc; ++k) {
-            float32x4_t B0 = vld1q_f32(b + k*ldb + 0);
-            float32x4_t B1 = vld1q_f32(b + k*ldb + 4);
+        int64_t k=0;
+        for (; k+3 < kc; k += 4) {
+            if (!(k & (MAG_PF_GROUP - 1))) {
+                __builtin_prefetch(b + (k + MAG_PFDIST_B_L1)*ldb, 0, 3);
+                __builtin_prefetch(b + (k + MAG_PFDIST_B_L2)*ldb, 0, 2);
+                __builtin_prefetch(a + (int64_t)((k + MAG_PFDIST_A_L1)<<3), 0, 3);
+                __builtin_prefetch(a + (int64_t)((k + MAG_PFDIST_A_L2)<<3), 0, 2);
+            }
+            float32x4_t B0_0 = vld1q_f32(b + (k + 0)*ldb + 0);
+            float32x4_t B0_1 = vld1q_f32(b + (k + 0)*ldb + 4);
+            float32x4_t B1_0 = vld1q_f32(b + (k + 1)*ldb + 0);
+            float32x4_t B1_1 = vld1q_f32(b + (k + 1)*ldb + 4);
+            float32x4_t B2_0 = vld1q_f32(b + (k + 2)*ldb + 0);
+            float32x4_t B2_1 = vld1q_f32(b + (k + 2)*ldb + 4);
+            float32x4_t B3_0 = vld1q_f32(b + (k + 3)*ldb + 0);
+            float32x4_t B3_1 = vld1q_f32(b + (k + 3)*ldb + 4);
+            const mag_e8m23_t* a0 = a + (k + 0)*8;
+            const mag_e8m23_t* a1 = a + (k + 1)*8;
+            const mag_e8m23_t* a2 = a + (k + 2)*8;
+            const mag_e8m23_t* a3 = a + (k + 3)*8;
             #pragma GCC unroll 8
             for (int r=0; r < 8; ++r) {
-                float32x4_t A = vdupq_n_f32(a[r*lda + k]);
+                float32x4_t A;
+                A = vdupq_n_f32(a0[r]);
+                C[r][0] = vfmaq_f32(C[r][0], B0_0, A);
+                C[r][1] = vfmaq_f32(C[r][1], B0_1, A);
+                A = vdupq_n_f32(a1[r]);
+                C[r][0] = vfmaq_f32(C[r][0], B1_0, A);
+                C[r][1] = vfmaq_f32(C[r][1], B1_1, A);
+                A = vdupq_n_f32(a2[r]);
+                C[r][0] = vfmaq_f32(C[r][0], B2_0, A);
+                C[r][1] = vfmaq_f32(C[r][1], B2_1, A);
+                A = vdupq_n_f32(a3[r]);
+                C[r][0] = vfmaq_f32(C[r][0], B3_0, A);
+                C[r][1] = vfmaq_f32(C[r][1], B3_1, A);
+            }
+        }
+        for (; k < kc; ++k) {
+            float32x4_t B0 = vld1q_f32(b + k*ldb + 0);
+            float32x4_t B1 = vld1q_f32(b + k*ldb + 4);
+            const mag_e8m23_t* ak = a + k*8;
+            #pragma GCC unroll 8
+            for (int r=0; r < 8; ++r) {
+                float32x4_t A = vdupq_n_f32(ak[r]);
                 C[r][0] = vfmaq_f32(C[r][0], B0, A);
                 C[r][1] = vfmaq_f32(C[r][1], B1, A);
             }
@@ -2740,6 +2841,8 @@ static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* res
             vst1q_f32(c + r*ldc + 0, C[r][0]);
             vst1q_f32(c + r*ldc + 4, C[r][1]);
         }
+    #else
+    #error "Unsupported architecture"
     #endif
 }
 
@@ -3152,6 +3255,166 @@ static MAG_AINLINE void mag_mm_pack_B_vec_e8m23(int64_t kc, int64_t nc, const ma
     #endif
 }
 
+static MAG_AINLINE void mag_mm_pack_A_mc_kc_panel8_e8m23(int64_t kc, int64_t mr, const mag_e8m23_t* restrict ra, ptrdiff_t sMx, ptrdiff_t sKx, mag_e8m23_t* restrict pa) {
+    int64_t m8 = mr&~7;
+    for (int64_t i=0; i < m8; i += 8) {
+        const mag_e8m23_t* p0 = ra + (i+0)*sMx;
+        const mag_e8m23_t* p1 = ra + (i+1)*sMx;
+        const mag_e8m23_t* p2 = ra + (i+2)*sMx;
+        const mag_e8m23_t* p3 = ra + (i+3)*sMx;
+        const mag_e8m23_t* p4 = ra + (i+4)*sMx;
+        const mag_e8m23_t* p5 = ra + (i+5)*sMx;
+        const mag_e8m23_t* p6 = ra + (i+6)*sMx;
+        const mag_e8m23_t* p7 = ra + (i+7)*sMx;
+        mag_e8m23_t* dst = pa + i*kc;
+        int64_t k = 0;
+        for (; k+1 < kc; k += 2) {
+            if ((k & ((MAG_PF_GROUP<<1) - 1)) == 0) {
+                mag_prefetcht0(p0 + (int64_t)MAG_PFDIST_A_L1*sKx);
+                mag_prefetcht0(p4 + (int64_t)MAG_PFDIST_A_L1*sKx);
+                mag_prefetcht1(p0 + (int64_t)MAG_PFDIST_A_L2*sKx);
+                mag_prefetcht1(p4 + (int64_t)MAG_PFDIST_A_L2*sKx);
+            }
+            mag_e8m23_t s00 = p0[0]; mag_e8m23_t s10 = p1[0]; mag_e8m23_t s20 = p2[0]; mag_e8m23_t s30 = p3[0];
+            mag_e8m23_t s40 = p4[0]; mag_e8m23_t s50 = p5[0]; mag_e8m23_t s60 = p6[0]; mag_e8m23_t s70 = p7[0];
+            p0 += sKx; p1 += sKx; p2 += sKx; p3 += sKx;
+            p4 += sKx; p5 += sKx; p6 += sKx; p7 += sKx;
+            mag_e8m23_t s01 = p0[0]; mag_e8m23_t s11 = p1[0]; mag_e8m23_t s21 = p2[0]; mag_e8m23_t s31 = p3[0];
+            mag_e8m23_t s41 = p4[0]; mag_e8m23_t s51 = p5[0]; mag_e8m23_t s61 = p6[0]; mag_e8m23_t s71 = p7[0];
+            p0 += sKx; p1 += sKx; p2 += sKx; p3 += sKx;
+            p4 += sKx; p5 += sKx; p6 += sKx; p7 += sKx;
+        #if defined(__AVX512F__)
+            __m256 v0 = _mm256_setr_ps(s00,s10,s20,s30,s40,s50,s60,s70);
+            __m256 v1 = _mm256_setr_ps(s01,s11,s21,s31,s41,s51,s61,s71);
+            __m512 vv = _mm512_insertf32x8(_mm512_castps256_ps512(v0), v1, 1);
+            _mm512_storeu_ps(dst + k*8, vv);
+        #elif defined(__AVX2__)
+            __m256 v0 = _mm256_setr_ps(s00,s10,s20,s30,s40,s50,s60,s70);
+            __m256 v1 = _mm256_setr_ps(s01,s11,s21,s31,s41,s51,s61,s71);
+            _mm256_storeu_ps(dst + (k+0)*8, v0);
+            _mm256_storeu_ps(dst + (k+1)*8, v1);
+        #elif defined(__SSE4_1__) || defined(__SSE2__)
+            __m128 v00 = _mm_setr_ps(s00,s10,s20,s30);
+            __m128 v01 = _mm_setr_ps(s40,s50,s60,s70);
+            __m128 v10 = _mm_setr_ps(s01,s11,s21,s31);
+            __m128 v11 = _mm_setr_ps(s41,s51,s61,s71);
+            _mm_storeu_ps(dst + (k+0)*8 + 0, v00);
+            _mm_storeu_ps(dst + (k+0)*8 + 4, v01);
+            _mm_storeu_ps(dst + (k+1)*8 + 0, v10);
+            _mm_storeu_ps(dst + (k+1)*8 + 4, v11);
+        #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+            float32x4_t v00 = vdupq_n_f32(0.f);
+            v00 = vsetq_lane_f32(s00, v00, 0);
+            v00 = vsetq_lane_f32(s10, v00, 1);
+            v00 = vsetq_lane_f32(s20, v00, 2);
+            v00 = vsetq_lane_f32(s30, v00, 3);
+            float32x4_t v01 = vdupq_n_f32(0.f);
+            v01 = vsetq_lane_f32(s40, v01, 0);
+            v01 = vsetq_lane_f32(s50, v01, 1);
+            v01 = vsetq_lane_f32(s60, v01, 2);
+            v01 = vsetq_lane_f32(s70, v01, 3);
+            float32x4_t v10 = vdupq_n_f32(0.f);
+            v10 = vsetq_lane_f32(s01, v10, 0);
+            v10 = vsetq_lane_f32(s11, v10, 1);
+            v10 = vsetq_lane_f32(s21, v10, 2);
+            v10 = vsetq_lane_f32(s31, v10, 3);
+            float32x4_t v11 = vdupq_n_f32(0.f);
+            v11 = vsetq_lane_f32(s41, v11, 0);
+            v11 = vsetq_lane_f32(s51, v11, 1);
+            v11 = vsetq_lane_f32(s61, v11, 2);
+            v11 = vsetq_lane_f32(s71, v11, 3);
+            vst1q_f32(dst + (k+0)*8 + 0, v00);
+            vst1q_f32(dst + (k+0)*8 + 4, v01);
+            vst1q_f32(dst + (k+1)*8 + 0, v10);
+            vst1q_f32(dst + (k+1)*8 + 4, v11);
+
+        #else
+            mag_e8m23_t* d0 = dst + (k+0)*8;
+            mag_e8m23_t* d1 = dst + (k+1)*8;
+            d0[0]=s00; d0[1]=s10; d0[2]=s20; d0[3]=s30; d0[4]=s40; d0[5]=s50; d0[6]=s60; d0[7]=s70;
+            d1[0]=s01; d1[1]=s11; d1[2]=s21; d1[3]=s31; d1[4]=s41; d1[5]=s51; d1[6]=s61; d1[7]=s71;
+        #endif
+        }
+        if (k < kc) {
+            mag_e8m23_t s00 = p0[0]; mag_e8m23_t s10 = p1[0]; mag_e8m23_t s20 = p2[0]; mag_e8m23_t s30 = p3[0];
+            mag_e8m23_t s40 = p4[0]; mag_e8m23_t s50 = p5[0]; mag_e8m23_t s60 = p6[0]; mag_e8m23_t s70 = p7[0];
+        #if defined(__AVX512F__) || defined(__AVX2__)
+            __m256 v0 = _mm256_setr_ps(s00,s10,s20,s30,s40,s50,s60,s70);
+            _mm256_storeu_ps(dst + k*8, v0);
+        #elif defined(__SSE4_1__) || defined(__SSE2__)
+            __m128 v00 = _mm_setr_ps(s00,s10,s20,s30);
+            __m128 v01 = _mm_setr_ps(s40,s50,s60,s70);
+            _mm_storeu_ps(dst + k*8 + 0, v00);
+            _mm_storeu_ps(dst + k*8 + 4, v01);
+        #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+            float32x4_t v00 = vdupq_n_f32(0.f);
+            v00 = vsetq_lane_f32(s00, v00, 0);
+            v00 = vsetq_lane_f32(s10, v00, 1);
+            v00 = vsetq_lane_f32(s20, v00, 2);
+            v00 = vsetq_lane_f32(s30, v00, 3);
+            float32x4_t v01 = vdupq_n_f32(0.f);
+            v01 = vsetq_lane_f32(s40, v01, 0);
+            v01 = vsetq_lane_f32(s50, v01, 1);
+            v01 = vsetq_lane_f32(s60, v01, 2);
+            v01 = vsetq_lane_f32(s70, v01, 3);
+            vst1q_f32(dst + k*8 + 0, v00);
+            vst1q_f32(dst + k*8 + 4, v01);
+        #else
+            mag_e8m23_t* d0 = dst + k*8;
+            d0[0]=s00; d0[1]=s10; d0[2]=s20; d0[3]=s30; d0[4]=s40; d0[5]=s50; d0[6]=s60; d0[7]=s70;
+        #endif
+        }
+    }
+    for (int64_t i=m8; i < mr; ++i) {
+        const mag_e8m23_t* src = ra + i*sMx;
+        mag_e8m23_t* dst = pa + i*kc;
+    #if defined(__AVX512F__)
+        int64_t k = 0;
+        for (; k+15 < kc; k += 16) {
+            mag_prefetcht0(src + (k + MAG_PFDIST_A_L1)*sKx);
+            mag_prefetcht1(src + (k + MAG_PFDIST_A_L2)*sKx);
+            __m512 v = _mm512_set_ps(
+                src[(k+15)*sKx], src[(k+14)*sKx], src[(k+13)*sKx], src[(k+12)*sKx],
+                src[(k+11)*sKx], src[(k+10)*sKx], src[(k+9)*sKx], src[(k+8)*sKx],
+                src[(k+7)*sKx], src[(k+6)*sKx], src[(k+5)*sKx], src[(k+4)*sKx],
+                src[(k+3)*sKx], src[(k+2)*sKx], src[(k+1)*sKx], src[(k+0)*sKx]);
+            _mm512_storeu_ps(dst + k, v);
+        }
+        for (; k < kc; ++k) dst[k] = src[k*sKx];
+    #elif defined(__AVX2__)
+        int64_t k=0;
+        for (; k+7 < kc; k += 8) {
+            __m256 v = _mm256_set_ps(
+                src[(k+7)*sKx], src[(k+6)*sKx], src[(k+5)*sKx], src[(k+4)*sKx],
+                src[(k+3)*sKx], src[(k+2)*sKx], src[(k+1)*sKx], src[(k+0)*sKx]);
+            _mm256_storeu_ps(dst + k, v);
+        }
+        for (; k < kc; ++k) dst[k] = src[k*sKx];
+    #elif defined(__SSE4_1__) || defined(__SSE2__)
+        int64_t k = 0;
+        for (; k+3 < kc; k += 4) {
+            __m128 v = _mm_set_ps(
+                src[(k+3)*sKx], src[(k+2)*sKx], src[(k+1)*sKx], src[(k+0)*sKx]);
+            _mm_storeu_ps(dst + k, v);
+        }
+        for (; k < kc; ++k) dst[k] = src[k*sKx];
+    #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+        int64_t k=0;
+        for (; k+3 < kc; k += 4) {
+            float32x4_t v;
+            v = vsetq_lane_f32(src[(k+0)*sKx], vdupq_n_f32(0.f), 0);
+            v = vsetq_lane_f32(src[(k+1)*sKx], v, 1);
+            v = vsetq_lane_f32(src[(k+2)*sKx], v, 2);
+            v = vsetq_lane_f32(src[(k+3)*sKx], v, 3);
+            vst1q_f32(dst + k, v);
+        }
+        for (; k < kc; ++k) dst[k] = src[k*sKx];
+    #else
+        for (int64_t k=0; k < kc; ++k) dst[k] = src[k*sKx];
+    #endif
+    }
+}
+
 static MAG_AINLINE void mag_mv_e8m23(int64_t K, int64_t N, const mag_e8m23_t* restrict A, const mag_e8m23_t* restrict B, int64_t ldb, mag_e8m23_t* restrict C) {
     #ifdef __AVX512F__
         int64_t j=0;
@@ -3434,7 +3697,6 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
     mag_e8m23_t* scratch = mag_sb_acquire(sizeof(*scratch)*(KC*NC + MC*KC));
     mag_e8m23_t* Bp = scratch;
     mag_e8m23_t* Ap = Bp + KC*NC;
-    bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
     for (;;) {
         int64_t tile = mag_atomic64_fetch_add(payload->mm_next_tile, 1, MAG_MO_RELAXED);
         if (tile >= tt) break;
@@ -3457,6 +3719,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
             int64_t rd = bdr - bdy + d;
             yb_flat = yb_flat*y->shape[d] + (y->shape[d] == 1 ? 0 : idx_r[rd]);
         }
+        bool yv = y->rank == 1;
         const mag_e8m23_t* px_base = bx + mag_offset_rmn(x, xb_flat, 0, 0);
         const mag_e8m23_t* py_base = by + mag_offset_rmn(y, yb_flat, 0, 0);
         mag_e8m23_t* pr_base = br + mag_offset_rmn(r, batch_idx, 0, 0);
@@ -3464,30 +3727,28 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
         int64_t mc = i0+MC <= M ? MC : M-i0;
         int64_t j0 = jc*NC;
         int64_t nc = j0+NC <= N ? NC : N-j0;
-        bool y_is_vec = (y->rank == 1);
         int64_t sMx = x->strides[x->rank-2];
         int64_t sKx = x->strides[x->rank-1];
-        int64_t sKy = y_is_vec ? 0 : y->strides[y->rank-2];
-        int64_t sNy = y_is_vec ? 0 : y->strides[y->rank-1];
+        int64_t sKy = yv ? 0 : y->strides[y->rank-2];
+        int64_t sNy = yv ? 0 : y->strides[y->rank-1];
         for (int64_t pc = 0; pc < K; pc += KC) {
             int64_t kc = mag_xmin(KC, K - pc);
-            bool acc = pc != 0;
-            if (y_is_vec) mag_mm_pack_B_vec_e8m23(kc, nc, py_base + pc, Bp);
+            if (y->rank == 1) mag_mm_pack_B_vec_e8m23(kc, nc, py_base + pc, Bp);
             else mag_mm_pack_B_kc_nc_e8m23(kc, nc, py_base + pc*sKy +  j0*sNy, sKy, sNy, Bp);
-            if (x_row) {
-               for (int64_t i=0; i < mc; ++i)
-                   memcpy(Ap + i*kc, px_base + (i0 + i)*K + pc, kc*sizeof(*px_base));
-            } else {
-               for (int64_t i=0; i < mc; ++i) {
-                   const mag_e8m23_t* src = px_base + (i0 + i)*sMx + pc*sKx;
-                   mag_e8m23_t* dst = Ap + i*kc;
-                   for (int64_t k=0; k < kc; ++k)
-                       dst[k] = src[k*sKx];
-               }
-            }
+            mag_mm_pack_A_mc_kc_panel8_e8m23(kc, mc,  px_base + i0*sMx + pc*sKx, sMx, sKx, Ap);
             for (int64_t ir=0; ir < mc; ir += MR)
                 for (int64_t jr=0; jr < nc; jr += NR)
-                    mag_mm_block_e8m23(kc, mag_xmin(MR, mc - ir), mag_xmin(NR, nc - jr), Ap + ir*kc, kc, Bp + jr, nc, pr_base + (i0 + ir)*N + (j0 + jr), N, acc);
+                    mag_mm_block_e8m23(
+                        kc,
+                        mag_xmin(MR, mc - ir),
+                        mag_xmin(NR, nc - jr),
+                        Ap + ir*kc,
+                        kc,
+                        Bp + jr,
+                        nc,
+                        pr_base + (i0 + ir)*N + (j0 + jr),
+                        N,
+                        pc);
         }
     }
 }
