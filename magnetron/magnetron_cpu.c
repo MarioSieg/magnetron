@@ -289,7 +289,7 @@ static inline void mag_phase_fence_init(mag_phase_fence_t* f) {
 static inline void mag_phase_fence_kick(mag_phase_fence_t* f, int32_t workers_active) {
     mag_atomic32_store(&f->remaining, workers_active, MAG_MO_RELAXED);
     int32_t cur = mag_atomic32_load(&f->phase, MAG_MO_RELAXED);
-    mag_atomic32_store(&f->phase, cur + 1, MAG_MO_RELEASE);
+    mag_atomic32_store(&f->phase, cur+1, MAG_MO_RELEASE);
     mag_futex_wakeall(&f->phase);
 }
 static inline void mag_phase_fence_wait(mag_phase_fence_t* f, int32_t* pha) {
@@ -300,8 +300,7 @@ static inline void mag_phase_fence_wait(mag_phase_fence_t* f, int32_t* pha) {
     }
     while (mag_atomic32_load(&f->phase, MAG_MO_ACQUIRE) == p)
         mag_futex_wait(&f->phase, p);
-ready:
-    *pha = p+1;
+    ready: *pha = p+1;
 }
 static inline void mag_phase_fence_done(mag_phase_fence_t* f) {
     if (mag_atomic32_fetch_sub(&f->remaining, 1, MAG_MO_ACQ_REL) == 1)

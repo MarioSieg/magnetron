@@ -50,6 +50,7 @@ TEST(prng, ks_test_normal_dist) {
     std::uniform_real_distribution<double> std_d{0.1, 3.0};
     std::uniform_int_distribution<std::int64_t> shape_distr{512, 1024};
     context ctx{compute_device::cpu};
+    ctx.manual_seed(0x1234567890abcdefULL);
     constexpr double alpha = 0.01;
     std::int32_t failures = 0;
     struct Hit { double p; double mu, sigma; std::size_t rows, cols; };
@@ -91,6 +92,7 @@ TEST(prng, ks_test_uniform_dist) {
     std::uniform_real_distribution<double> w_d{0.1, 5.0};
     std::uniform_int_distribution<std::int64_t> shape_d{512, 1024};
     context ctx{compute_device::cpu};
+    ctx.manual_seed(0x1234567890abcdefULL);
     std::int32_t failures = 0;
     for (std::size_t it = 0; it < k_iter_samples; ++it) {
         double a = a_d(eng);
@@ -113,6 +115,7 @@ TEST(prng, bernoulli_binomial_exact) {
     std::uniform_real_distribution<double> p_d{0.02, 0.98};
     std::uniform_int_distribution<std::int64_t> shape_d{512, 1024};
     context ctx{compute_device::cpu};
+    ctx.manual_seed(0x1234567890abcdefULL);
     std::size_t failures = 0;
     for (std::size_t it = 0; it < k_iter_samples; ++it) {
         double p = p_d(eng);
@@ -132,6 +135,7 @@ TEST(prng, bernoulli_binomial_exact) {
 
 TEST(prng, normal_mean_std_match) {
     context ctx{compute_device::cpu};
+    ctx.manual_seed(0x1234567890abcdefULL);
     constexpr std::size_t N = 1'000'000;
     constexpr double mu_true  = 1.5;
     constexpr double sigma_true = 2.0;
