@@ -2499,8 +2499,6 @@ static MAG_HOTPROC mag_e5m10_t* mag_mm_pack_y_e5m10(mag_e5m10_t* ybuf, int64_t K
 #else
 #define mag_prefetchw(addr) ((void)0)
 #endif
-#define mag_prefetcht0(p) _mm_prefetch((const char*)(p), _MM_HINT_T0)
-#define mag_prefetcht1(p) _mm_prefetch((const char*)(p), _MM_HINT_T1)
 
 #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
 #ifdef __ARM_FEATURE_FMA
@@ -2508,6 +2506,11 @@ static MAG_HOTPROC mag_e5m10_t* mag_mm_pack_y_e5m10(mag_e5m10_t* ybuf, int64_t K
 #else
 #define mag_vfmadd_e8m23(acc, a, b) vmlaq_f32((acc), (a), (b))
 #endif
+#define mag_prefetcht0(p) __builtin_prefetch((const char*)(p), 0, 3)
+#define mag_prefetcht1(p) __builtin_prefetch((const char*)(p), 0, 2)
+#else
+#define mag_prefetcht0(p) _mm_prefetch((const char*)(p), _MM_HINT_T0)
+#define mag_prefetcht1(p) _mm_prefetch((const char*)(p), _MM_HINT_T1)
 #endif
 
 static MAG_AINLINE void mag_mm_tile_8x8_e8m23(int64_t kc, const mag_e8m23_t* restrict a, ptrdiff_t lda, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, ptrdiff_t ldc, bool acc) {
