@@ -2499,8 +2499,14 @@ static MAG_HOTPROC mag_e5m10_t* mag_mm_pack_y_e5m10(mag_e5m10_t* ybuf, int64_t K
 #else
 #define mag_prefetchw(addr) ((void)0)
 #endif
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
 #define mag_prefetcht0(p) _mm_prefetch((const char*)(p), _MM_HINT_T0)
 #define mag_prefetcht1(p) _mm_prefetch((const char*)(p), _MM_HINT_T1)
+#else
+#define mag_prefetcht0(p) __builtin_prefetch((p), 0, 3)
+#define mag_prefetcht1(p) __builtin_prefetch((p), 0, 2)
+#endif
 
 #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
 #ifdef __ARM_FEATURE_FMA
