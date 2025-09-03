@@ -3491,7 +3491,7 @@ static MAG_AINLINE void mag_transpose8x8_ps_avx2(__m256 r[8]) {
 }
 #endif
 
-static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23_kccontig(int64_t kc, int64_t nc, const mag_e8m23_t* restrict Bsrc,  ptrdiff_t strideN, mag_e8m23_t* restrict Bp) {
+static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23_kccontig(int64_t kc, int64_t nc, const mag_e8m23_t* restrict Bsrc, ptrdiff_t strideN, mag_e8m23_t* restrict Bp) {
     int64_t j = 0;
     #ifdef __AVX512F__
         for (; j + 7 < nc; j += 8) {
@@ -4323,9 +4323,11 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
     for (int64_t d=0; d < bdr; ++d)
         batch_total *= r->shape[d];
     if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2) {
-        int64_t sNy = y->strides[y->rank-1];
-        bool rowmaj = sNy;
-        if (rowmaj || y->strides[y->rank-2] == 1) {
+        ptrdiff_t sKy = y->strides[y->rank-2];
+        ptrdiff_t sNy = y->strides[y->rank-1];
+        bool rowmaj = sNy == 1;
+        bool kcontig = sKy == 1;
+        if (rowmaj || kcontig) {
             int64_t nth = payload->thread_num;
             int64_t tid = payload->thread_idx;
             int64_t j_per_thread = (N + nth - 1) / nth;
