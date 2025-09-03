@@ -4,7 +4,7 @@ import numpy as np
 from magnetron import Tensor, Context, active_context
 
 np.random.seed(932002)
-active_context().seed(932002)
+active_context().manual_seed(932002)
 
 LR: float = 0.1
 EPOCHS: int = 10000
