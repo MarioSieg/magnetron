@@ -1014,6 +1014,15 @@ class Tensor:
 
     def __matmul__(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        """
+        from .utils import OP_PROFILER
+        return OP_PROFILER.binary(
+            "matmul",
+            self,
+            rhs,
+            lambda: Tensor(C.mag_matmul(self._ptr, rhs._ptr)),
+        )
+        """
         return Tensor(C.mag_matmul(self._ptr, rhs._ptr))
 
     def __imatmul__(self, rhs: Tensor) -> Tensor:

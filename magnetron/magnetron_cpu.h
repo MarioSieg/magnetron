@@ -43,8 +43,6 @@ typedef struct mag_matmul_block_params_t {
     int64_t NC;
 } mag_matmul_block_params_t;
 
-extern void mag_matmul_tune_block_params(const mag_matmul_block_tune_info_t* info, mag_matmul_block_params_t* params);
-
 #define MAG_PHILOX_ROUNDS 10
 typedef struct mag_philox4x32_ctr_t { uint32_t v[4]; } mag_philox4x32_ctr_t;
 typedef struct mag_philox4x32_key_t { uint32_t v[2]; } mag_philox4x32_key_t;

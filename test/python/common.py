@@ -15,7 +15,8 @@ from collections import deque
 from enum import Enum, unique
 
 # Give torch 1/4 of the total cores to not overload the CPU with inner parallelism threads + parallel spawned pytests
-torch.set_num_threads(multiprocessing.cpu_count() // 4)
+torch.set_num_threads(max(8, multiprocessing.cpu_count()) // 8)
+torch.set_num_interop_threads(max(8, multiprocessing.cpu_count()) // 8)
 
 DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
     float16: torch.float16,

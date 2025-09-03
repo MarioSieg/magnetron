@@ -14,7 +14,9 @@ import threading
 import time
 
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Callable, Sequence, Any
+
+from magnetron import Tensor
 
 
 @dataclass
@@ -32,8 +34,9 @@ class Stat:
 
 Key = tuple[
     str,
-    tuple[tuple[int, ...], ...],
-    tuple[str | None, ...],
+    tuple[tuple[int, ...], ...],     # shapes
+    tuple[str | None, ...],          # dtypes
+    tuple[bool | None, ...],         # contiguous flags
 ]
 
 
@@ -64,21 +67,22 @@ class OpProfiler:
         return self.wrap(op, (x, y), fn)
 
     @staticmethod
-    def _shape_of(t: Any) -> tuple[int, ...]:
-        shp = getattr(t, 'shape', None)
-        if shp is None:
-            return ()
-        return tuple(int(d) for d in shp)
+    def _shape_of(x: Tensor) -> tuple[int, ...]:
+        return tuple(int(d) for d in x.shape)
 
     @staticmethod
-    def _dtype_of(t: Any) -> str | None:
-        dt = getattr(t, 'dtype', None)
-        return str(dt) if dt is not None else None
+    def _dtype_of(x: Tensor) -> str:
+        return str(x.dtype)
+
+    @staticmethod
+    def _contig_of(x: Tensor) -> bool:
+        return bool(x.is_contiguous)
 
     def _make_key(self, op: str, operands: Sequence[Any]) -> Key:
         shapes: tuple[tuple[int, ...], ...] = tuple(self._shape_of(o) for o in operands)
         dtypes: tuple[str | None, ...] = tuple(self._dtype_of(o) for o in operands)
-        return op, shapes, dtypes
+        contigs: tuple[bool | None, ...] = tuple(self._contig_of(o) for o in operands)
+        return op, shapes, dtypes, contigs
 
     def _report(self) -> None:
         if not self.enabled or not self._stats:
@@ -93,13 +97,14 @@ class OpProfiler:
             rows = rows[: self.top_k]
 
         print('\n=== Op Profiler (slowest average first) ===')
-        print(f'{"Avg ms":>10}  {"Max ms":>10}  {"Total ms":>10}  {"Count":>7}  Op / Shapes / Dtypes')
+        print(f'{"Avg ms":>10}  {"Max ms":>10}  {"Total ms":>10}  {"Count":>7}  Op / Shapes / Dtypes / Contig')
         for avg_ns, max_ns, tot_ns, cnt, key in rows:
-            op, shapes, dtypes = key
+            op, shapes, dtypes, contigs = key
             avg_ms = avg_ns / 1e6
             max_ms = max_ns / 1e6
             tot_ms = tot_ns / 1e6
-            print(f'{avg_ms:10.3f}  {max_ms:10.3f}  {tot_ms:10.3f}  {cnt:7d}  {op}  {shapes}  {dtypes}')
+            print(f'{avg_ms:10.3f}  {max_ms:10.3f}  {tot_ms:10.3f}  {cnt:7d}  '
+                  f'{op}  {shapes}  {dtypes}  {contigs}')
         print('===========================================\n')
 
 

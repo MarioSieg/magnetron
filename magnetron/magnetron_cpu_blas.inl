@@ -3421,6 +3421,262 @@ static MAG_AINLINE void mag_mm_pack_A_mc_kc_panel8_e8m23(int64_t kc, int64_t mr,
     }
 }
 
+#ifdef __AVX512F__
+
+static MAG_AINLINE void mag_transpose8x8_ps_avx512(__m512 v[8]) {
+    __m512 t0 = _mm512_unpacklo_ps(v[0], v[1]);
+    __m512 t1 = _mm512_unpackhi_ps(v[0], v[1]);
+    __m512 t2 = _mm512_unpacklo_ps(v[2], v[3]);
+    __m512 t3 = _mm512_unpackhi_ps(v[2], v[3]);
+    __m512 t4 = _mm512_unpacklo_ps(v[4], v[5]);
+    __m512 t5 = _mm512_unpackhi_ps(v[4], v[5]);
+    __m512 t6 = _mm512_unpacklo_ps(v[6], v[7]);
+    __m512 t7 = _mm512_unpackhi_ps(v[6], v[7]);
+    __m512 s0 = _mm512_shuffle_ps(t0, t2, 0x44);
+    __m512 s1 = _mm512_shuffle_ps(t0, t2, 0xEE);
+    __m512 s2 = _mm512_shuffle_ps(t1, t3, 0x44);
+    __m512 s3 = _mm512_shuffle_ps(t1, t3, 0xEE);
+    __m512 s4 = _mm512_shuffle_ps(t4, t6, 0x44);
+    __m512 s5 = _mm512_shuffle_ps(t4, t6, 0xEE);
+    __m512 s6 = _mm512_shuffle_ps(t5, t7, 0x44);
+    __m512 s7 = _mm512_shuffle_ps(t5, t7, 0xEE);
+    __m512 r0 = _mm512_shuffle_f32x4(s0, s4, 0x88);
+    __m512 r1 = _mm512_shuffle_f32x4(s1, s5, 0x88);
+    __m512 r2 = _mm512_shuffle_f32x4(s2, s6, 0x88);
+    __m512 r3 = _mm512_shuffle_f32x4(s3, s7, 0x88);
+    __m512 r4 = _mm512_shuffle_f32x4(s0, s4, 0xDD);
+    __m512 r5 = _mm512_shuffle_f32x4(s1, s5, 0xDD);
+    __m512 r6 = _mm512_shuffle_f32x4(s2, s6, 0xDD);
+    __m512 r7 = _mm512_shuffle_f32x4(s3, s7, 0xDD);
+    v[0] = r0; v[1] = r1; v[2] = r2; v[3] = r3;
+    v[4] = r4; v[5] = r5; v[6] = r6; v[7] = r7;
+}
+
+static MAG_AINLINE void mag_transpose16x8_ps_avx512(const __m512 col[8], __m512 row[16]) {
+    __m512 lo[8], hi[8];
+    #pragma GCC unroll 8
+    for (int t=0; t<8; ++t) {
+        lo[t] = col[t];
+        hi[t] = _mm512_shuffle_f32x4(col[t], col[t], 0xEE);
+    }
+    mag_transpose8x8_ps_avx512(lo);
+    mag_transpose8x8_ps_avx512(hi);
+    for (int r=0; r<8; ++r) {
+        row[r+0]  = lo[r];
+        row[r+8]  = hi[r];
+    }
+}
+#endif
+
+#ifdef __AVX2__
+static MAG_AINLINE void mag_transpose8x8_ps_avx2(__m256 r[8]) {
+    __m256 t0 = _mm256_unpacklo_ps(r[0], r[1]);
+    __m256 t1 = _mm256_unpackhi_ps(r[0], r[1]);
+    __m256 t2 = _mm256_unpacklo_ps(r[2], r[3]);
+    __m256 t3 = _mm256_unpackhi_ps(r[2], r[3]);
+    __m256 t4 = _mm256_unpacklo_ps(r[4], r[5]);
+    __m256 t5 = _mm256_unpackhi_ps(r[4], r[5]);
+    __m256 t6 = _mm256_unpacklo_ps(r[6], r[7]);
+    __m256 t7 = _mm256_unpackhi_ps(r[6], r[7]);
+    __m256 s0 = _mm256_shuffle_ps(t0, t2, 0x44);
+    __m256 s1 = _mm256_shuffle_ps(t0, t2, 0xEE);
+    __m256 s2 = _mm256_shuffle_ps(t1, t3, 0x44);
+    __m256 s3 = _mm256_shuffle_ps(t1, t3, 0xEE);
+    __m256 s4 = _mm256_shuffle_ps(t4, t6, 0x44);
+    __m256 s5 = _mm256_shuffle_ps(t4, t6, 0xEE);
+    __m256 s6 = _mm256_shuffle_ps(t5, t7, 0x44);
+    __m256 s7 = _mm256_shuffle_ps(t5, t7, 0xEE);
+    r[0] = _mm256_permute2f128_ps(s0, s4, 0x20);
+    r[1] = _mm256_permute2f128_ps(s1, s5, 0x20);
+    r[2] = _mm256_permute2f128_ps(s2, s6, 0x20);
+    r[3] = _mm256_permute2f128_ps(s3, s7, 0x20);
+    r[4] = _mm256_permute2f128_ps(s0, s4, 0x31);
+    r[5] = _mm256_permute2f128_ps(s1, s5, 0x31);
+    r[6] = _mm256_permute2f128_ps(s2, s6, 0x31);
+    r[7] = _mm256_permute2f128_ps(s3, s7, 0x31);
+}
+#endif
+
+static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23_kccontig(int64_t kc, int64_t nc, const mag_e8m23_t* restrict Bsrc,  ptrdiff_t strideN, mag_e8m23_t* restrict Bp) {
+    int64_t j = 0;
+    #ifdef __AVX512F__
+        for (; j + 7 < nc; j += 8) {
+            const mag_e8m23_t* base_col = Bsrc + j*strideN;
+            int64_t k = 0;
+            for (; k+15 < kc; k += 16) {
+                mag_prefetcht0(base_col + 2*strideN + k);
+                mag_prefetcht1(base_col + 8*strideN + k);
+                __m512 col[8], row[16];
+                for (; k+15 < kc; k += 16) {
+                    #pragma GCC unroll 8
+                    for (int t=0; t<8; ++t)
+                        col[t] = _mm512_loadu_ps(base_col + (ptrdiff_t)t*strideN + k);
+                    mag_transpose16x8_ps_avx512(col, row);
+                    __mmask16 m8 = 0x00ff;
+                    #pragma GCC unroll 16
+                    for (int r=0; r<16; ++r)
+                        _mm512_mask_storeu_ps(Bp + (k + r)*nc + j, m8, row[r]);
+                }
+            }
+            for (; k+7 < kc; k += 8) {
+                __m256 col[8];
+                #pragma GCC unroll 8
+                for (int t = 0; t < 8; ++t)
+                    col[t] = _mm256_loadu_ps(base_col + (ptrdiff_t)t*strideN + k);
+                mag_transpose8x8_ps_avx2(col);
+                #pragma GCC unroll 8
+                for (int r = 0; r < 8; ++r)
+                    _mm256_storeu_ps(Bp + (k + r)*nc + j, col[r]);
+            }
+            for (; k < kc; ++k) {
+                __m256 v = _mm256_setr_ps(
+                    base_col[0*strideN + k], base_col[1*strideN + k],
+                    base_col[2*strideN + k], base_col[3*strideN + k],
+                    base_col[4*strideN + k], base_col[5*strideN + k],
+                    base_col[6*strideN + k], base_col[7*strideN + k]);
+                _mm256_storeu_ps(Bp + k*nc + j, v);
+            }
+        }
+    #endif
+    #ifdef __AVX2__
+        for (; j + 7 < nc; j += 8) {
+            const mag_e8m23_t* base_col = Bsrc + j*strideN;
+            int64_t k = 0;
+            for (; k+7 < kc; k += 8) {
+                mag_prefetcht0(base_col + 2*strideN + k);
+                mag_prefetcht1(base_col + 8*strideN + k);
+                __m256 col[8];
+                #pragma GCC unroll 8
+                for (int t=0; t<8; ++t)
+                    col[t] = _mm256_loadu_ps(base_col + (ptrdiff_t)t*strideN + k);
+                mag_transpose8x8_ps_avx2(col);
+                #pragma GCC unroll 8
+                for (int r=0; r<8; ++r)
+                    _mm256_storeu_ps(Bp + (k + r)*nc + j, col[r]);
+            }
+            for (; k < kc; ++k) {
+                __m256 v = _mm256_setr_ps(
+                    base_col[0*strideN + k], base_col[1*strideN + k],
+                    base_col[2*strideN + k], base_col[3*strideN + k],
+                    base_col[4*strideN + k], base_col[5*strideN + k],
+                    base_col[6*strideN + k], base_col[7*strideN + k]);
+                _mm256_storeu_ps(Bp + k*nc + j, v);
+            }
+        }
+    #endif
+    #if defined(__SSE2__)
+        for (; j+3 < nc; j += 4) {
+            const mag_e8m23_t* c0 = Bsrc + (j+0)*strideN;
+            const mag_e8m23_t* c1 = Bsrc + (j+1)*strideN;
+            const mag_e8m23_t* c2 = Bsrc + (j+2)*strideN;
+            const mag_e8m23_t* c3 = Bsrc + (j+3)*strideN;
+            int64_t k = 0;
+            for (; k+3 < kc; k += 4) {
+                __m128 r0 = _mm_setr_ps(c0[k+0], c1[k+0], c2[k+0], c3[k+0]);
+                __m128 r1 = _mm_setr_ps(c0[k+1], c1[k+1], c2[k+1], c3[k+1]);
+                __m128 r2 = _mm_setr_ps(c0[k+2], c1[k+2], c2[k+2], c3[k+2]);
+                __m128 r3 = _mm_setr_ps(c0[k+3], c1[k+3], c2[k+3], c3[k+3]);
+                _mm_storeu_ps(Bp + (k+0)*nc + j, r0);
+                _mm_storeu_ps(Bp + (k+1)*nc + j, r1);
+                _mm_storeu_ps(Bp + (k+2)*nc + j, r2);
+                _mm_storeu_ps(Bp + (k+3)*nc + j, r3);
+            }
+            for (; k < kc; ++k) {
+                Bp[k*nc + (j+0)] = c0[k];
+                Bp[k*nc + (j+1)] = c1[k];
+                Bp[k*nc + (j+2)] = c2[k];
+                Bp[k*nc + (j+3)] = c3[k];
+            }
+        }
+    #endif
+    #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+        for (; j + 3 < nc; j += 4) {
+            const mag_e8m23_t* c0 = Bsrc + (j+0)*strideN;
+            const mag_e8m23_t* c1 = Bsrc + (j+1)*strideN;
+            const mag_e8m23_t* c2 = Bsrc + (j+2)*strideN;
+            const mag_e8m23_t* c3 = Bsrc + (j+3)*strideN;
+            int64_t k = 0;
+            for (; k+3 < kc; k += 4) {
+                float32x4_t r0 = {c0[k+0], c1[k+0], c2[k+0], c3[k+0]};
+                float32x4_t r1 = {c0[k+1], c1[k+1], c2[k+1], c3[k+1]};
+                float32x4_t r2 = {c0[k+2], c1[k+2], c2[k+2], c3[k+2]};
+                float32x4_t r3 = {c0[k+3], c1[k+3], c2[k+3], c3[k+3]};
+                vst1q_f32(Bp + (k+0)*nc + j, r0);
+                vst1q_f32(Bp + (k+1)*nc + j, r1);
+                vst1q_f32(Bp + (k+2)*nc + j, r2);
+                vst1q_f32(Bp + (k+3)*nc + j, r3);
+            }
+            for (; k < kc; ++k) {
+                Bp[k*nc + (j+0)] = c0[k];
+                Bp[k*nc + (j+1)] = c1[k];
+                Bp[k*nc + (j+2)] = c2[k];
+                Bp[k*nc + (j+3)] = c3[k];
+            }
+        }
+    #endif
+    for (; j < nc; ++j) {
+        const mag_e8m23_t* col = Bsrc + j*strideN;
+        for (int64_t k=0; k < kc; ++k)
+            Bp[k*nc + j] = col[k];
+    }
+}
+
+static MAG_AINLINE void mag_mm_pack_B_kc_nc_e8m23_strided(int64_t kc, int64_t nc, const mag_e8m23_t* restrict Bsrc, ptrdiff_t sK, ptrdiff_t sN, mag_e8m23_t* restrict Bp) {
+    #ifdef __AVX512F__
+        if (llabs(sN)*(nc-1) <= INT32_MAX) {
+            int64_t j=0;
+            for (; j+15 < nc; j += 16) {
+                __m512i idxCols = _mm512_setr_epi32(
+                    (int32_t)((j+0)*sN),(int32_t)((j+1)*sN),(int32_t)((j+2)*sN),(int32_t)((j+3)*sN),
+                    (int32_t)((j+4)*sN),(int32_t)((j+5)*sN),(int32_t)((j+6)*sN),(int32_t)((j+7)*sN),
+                    (int32_t)((j+8)*sN),(int32_t)((j+9)*sN),(int32_t)((j+10)*sN),(int32_t)((j+11)*sN),
+                    (int32_t)((j+12)*sN),(int32_t)((j+13)*sN),(int32_t)((j+14)*sN),(int32_t)((j+15)*sN));
+                int64_t k = 0;
+                for (; k < kc; ++k) {
+                    const mag_e8m23_t* base = Bsrc + k*sK;
+                    __m512 row = _mm512_i32gather_ps(idxCols, (const void*)base, 4);
+                    _mm512_storeu_ps(Bp + k*nc + j, row);
+                }
+            }
+            if (j < nc) {
+                __mmask16 m = (__mmask16)((1u<<(nc-j))-1);
+                __m512i idxCols = _mm512_setr_epi32(
+                    (int32_t)((j+0)*sN),(int32_t)((j+1)*sN),(int32_t)((j+2)*sN),(int32_t)((j+3)*sN),
+                    (int32_t)((j+4)*sN),(int32_t)((j+5)*sN),(int32_t)((j+6)*sN),(int32_t)((j+7)*sN),
+                    (int32_t)((j+8)*sN),(int32_t)((j+9)*sN),(int32_t)((j+10)*sN),(int32_t)((j+11)*sN),
+                    (int32_t)((j+12)*sN),(int32_t)((j+13)*sN),(int32_t)((j+14)*sN),(int32_t)((j+15)*sN));
+                for (int64_t k=0; k < kc; ++k) {
+                    const mag_e8m23_t* base = Bsrc + k*sK;
+                    __m512 row = _mm512_mask_i32gather_ps(_mm512_setzero_ps(), m, idxCols, (const void*)base, 4);
+                    _mm512_mask_storeu_ps(Bp + k*nc + j, m, row);
+                }
+            }
+            return;
+        }
+    #endif
+    #if defined(__AVX2__)
+        int64_t j=0;
+        for (; j+7 < nc; j += 8) {
+            __m256i idxCols = _mm256_setr_epi32(
+                (int32_t)((j+0)*sN),(int32_t)((j+1)*sN),(int32_t)((j+2)*sN),(int32_t)((j+3)*sN),
+                (int32_t)((j+4)*sN),(int32_t)((j+5)*sN),(int32_t)((j+6)*sN),(int32_t)((j+7)*sN));
+            for (int64_t k=0; k < kc; ++k) {
+                const mag_e8m23_t* base = Bsrc + k*sK;
+                __m256 row = _mm256_i32gather_ps(base, idxCols, 4);
+                _mm256_storeu_ps(Bp + k*nc + j, row);
+            }
+        }
+        for (; j < nc; ++j)
+            for (int64_t k=0; k < kc; ++k)
+                Bp[k*nc + j] = Bsrc[k*sK + j*sN];
+        return;
+    #endif
+    for (int64_t j=0; j < nc; ++j)
+        for (int64_t k=0; k < kc; ++k)
+            Bp[k*nc + j] = Bsrc[k*sK + j*sN];
+}
+
+
 static MAG_AINLINE void mag_mv_e8m23(int64_t K, int64_t N, const mag_e8m23_t* restrict A, const mag_e8m23_t* restrict B, int64_t ldb, mag_e8m23_t* restrict C) {
     #ifdef __AVX512F__
         int64_t j=0;
@@ -3618,6 +3874,378 @@ static MAG_AINLINE void mag_mv_e8m23(int64_t K, int64_t N, const mag_e8m23_t* re
     #endif
 }
 
+#if defined(__AVX2__) && defined(__FMA__)
+MAG_AINLINE static mag_e8m23_t mag_hsum256_ps(__m256 v) {
+    __m128 lo = _mm256_castps256_ps128(v);
+    __m128 hi = _mm256_extractf128_ps(v, 1);
+    __m128 s  = _mm_add_ps(lo, hi);
+    s = _mm_hadd_ps(s, s);
+    s = _mm_hadd_ps(s, s);
+    return _mm_cvtss_f32(s);
+}
+#endif
+
+static MAG_AINLINE void mag_mv_kcontig_e8m23(int64_t K, int64_t N, const mag_e8m23_t* restrict A, const mag_e8m23_t* restrict B, int64_t ldcol, mag_e8m23_t* restrict C) {
+    #ifdef __AVX512F__
+        int64_t j = 0;
+        for (; j + 15 < N; j += 16) {
+            __m512 s0  = _mm512_setzero_ps();
+            __m512 s1  = _mm512_setzero_ps();
+            __m512 s2  = _mm512_setzero_ps();
+            __m512 s3  = _mm512_setzero_ps();
+            __m512 s4  = _mm512_setzero_ps();
+            __m512 s5  = _mm512_setzero_ps();
+            __m512 s6  = _mm512_setzero_ps();
+            __m512 s7  = _mm512_setzero_ps();
+            __m512 s8  = _mm512_setzero_ps();
+            __m512 s9  = _mm512_setzero_ps();
+            __m512 s10 = _mm512_setzero_ps();
+            __m512 s11 = _mm512_setzero_ps();
+            __m512 s12 = _mm512_setzero_ps();
+            __m512 s13 = _mm512_setzero_ps();
+            __m512 s14 = _mm512_setzero_ps();
+            __m512 s15 = _mm512_setzero_ps();
+            const mag_e8m23_t* b0  = B + (j +  0)*ldcol;
+            const mag_e8m23_t* b1  = B + (j +  1)*ldcol;
+            const mag_e8m23_t* b2  = B + (j +  2)*ldcol;
+            const mag_e8m23_t* b3  = B + (j +  3)*ldcol;
+            const mag_e8m23_t* b4  = B + (j +  4)*ldcol;
+            const mag_e8m23_t* b5  = B + (j +  5)*ldcol;
+            const mag_e8m23_t* b6  = B + (j +  6)*ldcol;
+            const mag_e8m23_t* b7  = B + (j +  7)*ldcol;
+            const mag_e8m23_t* b8  = B + (j +  8)*ldcol;
+            const mag_e8m23_t* b9  = B + (j +  9)*ldcol;
+            const mag_e8m23_t* b10 = B + (j + 10)*ldcol;
+            const mag_e8m23_t* b11 = B + (j + 11)*ldcol;
+            const mag_e8m23_t* b12 = B + (j + 12)*ldcol;
+            const mag_e8m23_t* b13 = B + (j + 13)*ldcol;
+            const mag_e8m23_t* b14 = B + (j + 14)*ldcol;
+            const mag_e8m23_t* b15 = B + (j + 15)*ldcol;
+            int64_t k = 0;
+            for (; k+15 < K; k += 16) {
+                __m512 a  = _mm512_loadu_ps(A + k);
+                s0  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b0 + k), s0);
+                s1  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b1 + k), s1);
+                s2  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b2 + k), s2);
+                s3  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b3 + k), s3);
+                s4  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b4 + k), s4);
+                s5  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b5 + k), s5);
+                s6  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b6 + k), s6);
+                s7  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b7 + k), s7);
+                s8  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b8 + k), s8);
+                s9  = _mm512_fmadd_ps(a, _mm512_loadu_ps(b9 + k), s9);
+                s10 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b10 + k), s10);
+                s11 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b11 + k), s11);
+                s12 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b12 + k), s12);
+                s13 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b13 + k), s13);
+                s14 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b14 + k), s14);
+                s15 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b15 + k), s15);
+            }
+            if (k < K) {
+                int rem = (int)(K - k);
+                __mmask16 mk = (__mmask16)((rem >= 16) ? 0xffffu : ((1u << rem) - 1u));
+                __m512 a = _mm512_maskz_loadu_ps(mk, A + k);
+                s0  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b0  + k), s0);
+                s1  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b1  + k), s1);
+                s2  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b2  + k), s2);
+                s3  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b3  + k), s3);
+                s4  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b4  + k), s4);
+                s5  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b5  + k), s5);
+                s6  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b6  + k), s6);
+                s7  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b7  + k), s7);
+                s8  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b8  + k), s8);
+                s9  = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b9  + k), s9);
+                s10 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b10 + k), s10);
+                s11 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b11 + k), s11);
+                s12 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b12 + k), s12);
+                s13 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b13 + k), s13);
+                s14 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b14 + k), s14);
+                s15 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b15 + k), s15);
+            }
+            C[j + 0] = _mm512_reduce_add_ps(s0);
+            C[j + 1] = _mm512_reduce_add_ps(s1);
+            C[j + 2] = _mm512_reduce_add_ps(s2);
+            C[j + 3] = _mm512_reduce_add_ps(s3);
+            C[j + 4] = _mm512_reduce_add_ps(s4);
+            C[j + 5] = _mm512_reduce_add_ps(s5);
+            C[j + 6] = _mm512_reduce_add_ps(s6);
+            C[j + 7] = _mm512_reduce_add_ps(s7);
+            C[j + 8] = _mm512_reduce_add_ps(s8);
+            C[j + 9] = _mm512_reduce_add_ps(s9);
+            C[j + 10] = _mm512_reduce_add_ps(s10);
+            C[j + 11] = _mm512_reduce_add_ps(s11);
+            C[j + 12] = _mm512_reduce_add_ps(s12);
+            C[j + 13] = _mm512_reduce_add_ps(s13);
+            C[j + 14] = _mm512_reduce_add_ps(s14);
+            C[j + 15] = _mm512_reduce_add_ps(s15);
+        }
+        for (; j + 7 < N; j += 8) {
+            __m512 s0 = _mm512_setzero_ps();
+            __m512 s1 = _mm512_setzero_ps();
+            __m512 s2 = _mm512_setzero_ps();
+            __m512 s3 = _mm512_setzero_ps();
+            __m512 s4 = _mm512_setzero_ps();
+            __m512 s5 = _mm512_setzero_ps();
+            __m512 s6 = _mm512_setzero_ps();
+            __m512 s7 = _mm512_setzero_ps();
+            const mag_e8m23_t* b0 = B + (j + 0) * ldcol;
+            const mag_e8m23_t* b1 = B + (j + 1) * ldcol;
+            const mag_e8m23_t* b2 = B + (j + 2) * ldcol;
+            const mag_e8m23_t* b3 = B + (j + 3) * ldcol;
+            const mag_e8m23_t* b4 = B + (j + 4) * ldcol;
+            const mag_e8m23_t* b5 = B + (j + 5) * ldcol;
+            const mag_e8m23_t* b6 = B + (j + 6) * ldcol;
+            const mag_e8m23_t* b7 = B + (j + 7) * ldcol;
+            int64_t k = 0;
+            for (; k + 15 < K; k += 16) {
+                __m512 a  = _mm512_loadu_ps(A + k);
+                s0 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b0 + k), s0);
+                s1 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b1 + k), s1);
+                s2 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b2 + k), s2);
+                s3 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b3 + k), s3);
+                s4 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b4 + k), s4);
+                s5 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b5 + k), s5);
+                s6 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b6 + k), s6);
+                s7 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b7 + k), s7);
+            }
+            if (k < K) {
+                int rem = (int)(K - k);
+                __mmask16 mk = (__mmask16)((rem >= 16) ? 0xffffu : ((1u << rem) - 1u));
+                __m512 a  = _mm512_maskz_loadu_ps(mk, A + k);
+                s0 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b0 + k), s0);
+                s1 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b1 + k), s1);
+                s2 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b2 + k), s2);
+                s3 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b3 + k), s3);
+                s4 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b4 + k), s4);
+                s5 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b5 + k), s5);
+                s6 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b6 + k), s6);
+                s7 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b7 + k), s7);
+            }
+            C[j + 0] = (mag_e8m23_t)_mm512_reduce_add_ps(s0);
+            C[j + 1] = (mag_e8m23_t)_mm512_reduce_add_ps(s1);
+            C[j + 2] = (mag_e8m23_t)_mm512_reduce_add_ps(s2);
+            C[j + 3] = (mag_e8m23_t)_mm512_reduce_add_ps(s3);
+            C[j + 4] = (mag_e8m23_t)_mm512_reduce_add_ps(s4);
+            C[j + 5] = (mag_e8m23_t)_mm512_reduce_add_ps(s5);
+            C[j + 6] = (mag_e8m23_t)_mm512_reduce_add_ps(s6);
+            C[j + 7] = (mag_e8m23_t)_mm512_reduce_add_ps(s7);
+        }
+        for (; j + 3 < N; j += 4) {
+            __m512 s0 = _mm512_setzero_ps();
+            __m512 s1 = _mm512_setzero_ps();
+            __m512 s2 = _mm512_setzero_ps();
+            __m512 s3 = _mm512_setzero_ps();
+            const mag_e8m23_t* b0 = B + (j + 0) * ldcol;
+            const mag_e8m23_t* b1 = B + (j + 1) * ldcol;
+            const mag_e8m23_t* b2 = B + (j + 2) * ldcol;
+            const mag_e8m23_t* b3 = B + (j + 3) * ldcol;
+            int64_t k = 0;
+            for (; k + 15 < K; k += 16) {
+                __m512 a  = _mm512_loadu_ps(A + k);
+                s0 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b0 + k), s0);
+                s1 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b1 + k), s1);
+                s2 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b2 + k), s2);
+                s3 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b3 + k), s3);
+            }
+            if (k < K) {
+                int rem = (int)(K - k);
+                __mmask16 mk = (__mmask16)((rem >= 16) ? 0xffffu : ((1u << rem) - 1u));
+                __m512 a  = _mm512_maskz_loadu_ps(mk, A + k);
+                s0 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b0 + k), s0);
+                s1 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b1 + k), s1);
+                s2 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b2 + k), s2);
+                s3 = _mm512_fmadd_ps(a, _mm512_maskz_loadu_ps(mk, b3 + k), s3);
+            }
+            C[j + 0] = (mag_e8m23_t)_mm512_reduce_add_ps(s0);
+            C[j + 1] = (mag_e8m23_t)_mm512_reduce_add_ps(s1);
+            C[j + 2] = (mag_e8m23_t)_mm512_reduce_add_ps(s2);
+            C[j + 3] = (mag_e8m23_t)_mm512_reduce_add_ps(s3);
+        }
+        for (; j < N; ++j) {
+            __m512 s = _mm512_setzero_ps();
+            const mag_e8m23_t* bj = B + j * ldcol;
+            int64_t k = 0;
+            for (; k + 15 < K; k += 16) {
+                __m512 a = _mm512_loadu_ps(A + k);
+                __m512 b = _mm512_loadu_ps(bj + k);
+                s = _mm512_fmadd_ps(a, b, s);
+            }
+            if (k < K) {
+                int rem = (int)(K - k);
+                __mmask16 mk = (__mmask16)((rem >= 16) ? 0xffffu : ((1u << rem) - 1u));
+                __m512 a = _mm512_maskz_loadu_ps(mk, A + k);
+                __m512 b = _mm512_maskz_loadu_ps(mk, bj + k);
+                s = _mm512_fmadd_ps(a, b, s);
+            }
+            C[j] = _mm512_reduce_add_ps(s);
+        }
+    #elif defined(__AVX2__) && defined(__FMA__)
+        int64_t j = 0;
+        for (; j+7 < N; j += 8) {
+          __m256 s0 = _mm256_setzero_ps(), s1 = s0, s2 = s0, s3 = s0;
+          __m256 s4 = s0, s5 = s0, s6 = s0, s7 = s0;
+          const mag_e8m23_t* b0 = B + (j+0)*ldcol;
+          const mag_e8m23_t* b1 = B + (j+1)*ldcol;
+          const mag_e8m23_t* b2 = B + (j+2)*ldcol;
+          const mag_e8m23_t* b3 = B + (j+3)*ldcol;
+          const mag_e8m23_t* b4 = B + (j+4)*ldcol;
+          const mag_e8m23_t* b5 = B + (j+5)*ldcol;
+          const mag_e8m23_t* b6 = B + (j+6)*ldcol;
+          const mag_e8m23_t* b7 = B + (j+7)*ldcol;
+          int64_t k=0;
+          for (; k+7 < K; k += 8) {
+              __m256 a = _mm256_loadu_ps(A + k);
+              s0 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b0 + k), s0);
+              s1 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b1 + k), s1);
+              s2 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b2 + k), s2);
+              s3 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b3 + k), s3);
+              s4 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b4 + k), s4);
+              s5 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b5 + k), s5);
+              s6 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b6 + k), s6);
+              s7 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b7 + k), s7);
+          }
+          mag_e8m23_t r0 = mag_hsum256_ps(s0), r1 = mag_hsum256_ps(s1);
+          mag_e8m23_t r2 = mag_hsum256_ps(s2), r3 = mag_hsum256_ps(s3);
+          mag_e8m23_t r4 = mag_hsum256_ps(s4), r5 = mag_hsum256_ps(s5);
+          mag_e8m23_t r6 = mag_hsum256_ps(s6), r7 = mag_hsum256_ps(s7);
+          for (; k < K; ++k) {
+              mag_e8m23_t a = A[k];
+              r0 += a * b0[k]; r1 += a * b1[k];
+              r2 += a * b2[k]; r3 += a * b3[k];
+              r4 += a * b4[k]; r5 += a * b5[k];
+              r6 += a * b6[k]; r7 += a * b7[k];
+          }
+          C[j+0] = r0; C[j+1] = r1;
+          C[j+2] = r2; C[j+3] = r3;
+          C[j+4] = r4; C[j+5] = r5;
+          C[j+6] = r6; C[j+7] = r7;
+        }
+        for (; j + 3 < N; j += 4) {
+          __m256 s0 = _mm256_setzero_ps(), s1 = s0, s2 = s0, s3 = s0;
+          const mag_e8m23_t* b0 = B + (j+0)*ldcol;
+          const mag_e8m23_t* b1 = B + (j+1)*ldcol;
+          const mag_e8m23_t* b2 = B + (j+2)*ldcol;
+          const mag_e8m23_t* b3 = B + (j+3)*ldcol;
+          int64_t k = 0;
+          for (; k+7 < K; k += 8) {
+              __m256 a = _mm256_loadu_ps(A + k);
+              s0 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b0 + k), s0);
+              s1 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b1 + k), s1);
+              s2 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b2 + k), s2);
+              s3 = _mm256_fmadd_ps(a, _mm256_loadu_ps(b3 + k), s3);
+          }
+          mag_e8m23_t r0 = mag_hsum256_ps(s0), r1 = mag_hsum256_ps(s1);
+          mag_e8m23_t r2 = mag_hsum256_ps(s2), r3 = mag_hsum256_ps(s3);
+          for (; k < K; ++k) {
+              mag_e8m23_t a = A[k];
+              r0 += a * b0[k]; r1 += a * b1[k];
+              r2 += a * b2[k]; r3 += a * b3[k];
+          }
+          C[j+0] = r0; C[j+1] = r1;
+          C[j+2] = r2; C[j+3] = r3;
+        }
+        for (; j < N; ++j) {
+          const mag_e8m23_t* bj = B + j*ldcol;
+          __m256 s = _mm256_setzero_ps();
+          int64_t k = 0;
+          for (; k+7 < K; k += 8) {
+              __m256 a = _mm256_loadu_ps(A + k);
+              __m256 b = _mm256_loadu_ps(bj + k);
+              s = _mm256_fmadd_ps(a, b, s);
+          }
+          mag_e8m23_t r = mag_hsum256_ps(s);
+          for (; k < K; ++k) r += A[k] * bj[k];
+          C[j] = r;
+        }
+    #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+        int64_t j = 0;
+        for (; j+7 < N; j += 8) {
+          float32x4_t s0 = vdupq_n_f32(0), s1 = s0, s2 = s0, s3 = s0;
+          float32x4_t s4 = s0, s5 = s0, s6 = s0, s7 = s0;
+          const mag_e8m23_t* b0 = B + (j+0)*ldcol;
+          const mag_e8m23_t* b1 = B + (j+1)*ldcol;
+          const mag_e8m23_t* b2 = B + (j+2)*ldcol;
+          const mag_e8m23_t* b3 = B + (j+3)*ldcol;
+          const mag_e8m23_t* b4 = B + (j+4)*ldcol;
+          const mag_e8m23_t* b5 = B + (j+5)*ldcol;
+          const mag_e8m23_t* b6 = B + (j+6)*ldcol;
+          const mag_e8m23_t* b7 = B + (j+7)*ldcol;
+          int64_t k = 0;
+          for (; k+3 < K; k += 4) {
+              float32x4_t a = vld1q_f32(A + k);
+              s0 = MAG_VFMAQ(s0, a, vld1q_f32(b0 + k));
+              s1 = MAG_VFMAQ(s1, a, vld1q_f32(b1 + k));
+              s2 = MAG_VFMAQ(s2, a, vld1q_f32(b2 + k));
+              s3 = MAG_VFMAQ(s3, a, vld1q_f32(b3 + k));
+              s4 = MAG_VFMAQ(s4, a, vld1q_f32(b4 + k));
+              s5 = MAG_VFMAQ(s5, a, vld1q_f32(b5 + k));
+              s6 = MAG_VFMAQ(s6, a, vld1q_f32(b6 + k));
+              s7 = MAG_VFMAQ(s7, a, vld1q_f32(b7 + k));
+          }
+          mag_e8m23_t r0 = vaddvq_f32(s0), r1 = vaddvq_f32(s1);
+          mag_e8m23_t r2 = vaddvq_f32(s2), r3 = vaddvq_f32(s3);
+          mag_e8m23_t r4 = vaddvq_f32(s4), r5 = vaddvq_f32(s5);
+          mag_e8m23_t r6 = vaddvq_f32(s6), r7 = vaddvq_f32(s7);
+          for (; k < K; ++k) {
+              mag_e8m23_t a = A[k];
+              r0 += a * b0[k]; r1 += a * b1[k];
+              r2 += a * b2[k]; r3 += a * b3[k];
+              r4 += a * b4[k]; r5 += a * b5[k];
+              r6 += a * b6[k]; r7 += a * b7[k];
+          }
+          C[j+0] = (mag_e8m23_t)r0; C[j+1] = (mag_e8m23_t)r1;
+          C[j+2] = (mag_e8m23_t)r2; C[j+3] = (mag_e8m23_t)r3;
+          C[j+4] = (mag_e8m23_t)r4; C[j+5] = (mag_e8m23_t)r5;
+          C[j+6] = (mag_e8m23_t)r6; C[j+7] = (mag_e8m23_t)r7;
+        }
+        for (; j+3 < N; j += 4) {
+          float32x4_t s0 = vdupq_n_f32(0), s1 = s0, s2 = s0, s3 = s0;
+          const mag_e8m23_t* b0 = B + (j+0)*ldcol;
+          const mag_e8m23_t* b1 = B + (j+1)*ldcol;
+          const mag_e8m23_t* b2 = B + (j+2)*ldcol;
+          const mag_e8m23_t* b3 = B + (j+3)*ldcol;
+          int64_t k = 0;
+          for (; k+3 < K; k += 4) {
+              float32x4_t a = vld1q_f32(A + k);
+              s0 = MAG_VFMAQ(s0, a, vld1q_f32(b0 + k));
+              s1 = MAG_VFMAQ(s1, a, vld1q_f32(b1 + k));
+              s2 = MAG_VFMAQ(s2, a, vld1q_f32(b2 + k));
+              s3 = MAG_VFMAQ(s3, a, vld1q_f32(b3 + k));
+          }
+          mag_e8m23_t r0 = vaddvq_f32(s0), r1 = vaddvq_f32(s1);
+          mag_e8m23_t r2 = vaddvq_f32(s2), r3 = vaddvq_f32(s3);
+          for (; k < K; ++k) {
+              mag_e8m23_t a = A[k];
+              r0 += a * b0[k]; r1 += a * b1[k];
+              r2 += a * b2[k]; r3 += a * b3[k];
+          }
+          C[j+0] = (mag_e8m23_t)r0; C[j+1] = (mag_e8m23_t)r1;
+          C[j+2] = (mag_e8m23_t)r2; C[j+3] = (mag_e8m23_t)r3;
+        }
+        for (; j < N; ++j) {
+          const mag_e8m23_t* bj = B + j*ldcol;
+          float32x4_t s = vdupq_n_f32(0);
+          int64_t k = 0;
+          for (; k + 3 < K; k += 4) {
+              float32x4_t a = vld1q_f32(A + k);
+              float32x4_t b = vld1q_f32(bj + k);
+              s = MAG_VFMAQ(s, a, b);
+          }
+          mag_e8m23_t r = vaddvq_f32(s);
+          for (; k < K; ++k) r += A[k] * bj[k];
+          C[j] = (mag_e8m23_t)r;
+        }
+    #else
+        for (int64_t j0=0; j0 < N; ++j0) {
+            mag_e8m23_t s = 0.0f;
+            const mag_e8m23_t* bj = B + j0 * ldcol;
+            for (int64_t k=0; k < K; ++k)
+                s += A[k] * bj[k];
+            C[j0] = (mag_e8m23_t)s;
+        }
+    #endif
+}
+
 static MAG_AINLINE void mag_mm_tile_16x16_e8m23(int64_t kc, const mag_e8m23_t* restrict a, ptrdiff_t lda, const mag_e8m23_t* restrict b, ptrdiff_t ldb, mag_e8m23_t* restrict c, ptrdiff_t ldc, bool acc) {
     mag_mm_tile_8x16_e8m23(kc, a, lda, b, ldb, c, ldc, acc);
     mag_mm_tile_8x16_e8m23(kc, a + 8*lda, lda, b, ldb, c + 8*ldc, ldc, acc);
@@ -3660,6 +4288,24 @@ static MAG_HOTPROC void mag_mm_block_e8m23(int64_t kc, int64_t mr, int64_t nr, c
     }
 }
 
+typedef enum mag_mm_y_layout_t {
+    MAG_MM_Y_LAYOUT_ROWMAJ,
+    MAG_MM_Y_LAYOUT_COLMAJ,
+    MAG_MM_Y_LAYOUT_STRIDED,
+    MAG_MM_Y_LAYOUT_BROADCAST
+} mag_mm_y_layout_t;
+
+static mag_mm_y_layout_t mag_mm_classify_y_layout(const mag_tensor_t* y) {
+    if (y->rank == 1) return MAG_MM_Y_LAYOUT_ROWMAJ;
+    ptrdiff_t sK = y->strides[y->rank-2];
+    ptrdiff_t sN = y->strides[y->rank-1];
+    ptrdiff_t aK = sK >= 0 ? sK : -sK;
+    ptrdiff_t aN = sN >= 0 ? sN : -sN;
+    if (aN == 0 || aK == 0) return MAG_MM_Y_LAYOUT_BROADCAST;
+    if (aN == 1) return MAG_MM_Y_LAYOUT_ROWMAJ;
+    if (aK == 1) return MAG_MM_Y_LAYOUT_COLMAJ;
+    return MAG_MM_Y_LAYOUT_STRIDED;
+}
 
 MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
     mag_tensor_t* r = mag_cmd_out(0);
@@ -3677,22 +4323,29 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
     int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
     int64_t K = x->shape[x->rank-1];
     int64_t bdr = r->rank > 2 ? r->rank - 2 : 0;
+    bool y_isvec = y->rank == 1;
+    mag_mm_y_layout_t y_layout = y_isvec ? MAG_MM_Y_LAYOUT_ROWMAJ : mag_mm_classify_y_layout(y);
     int64_t batch_total = 1;
     for (int64_t d=0; d < bdr; ++d)
         batch_total *= r->shape[d];
-    if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) { /* Detect GEMV */
-        int64_t nth = payload->thread_num;
-        int64_t tid = payload->thread_idx;
-        int64_t j_per_thread = (N + nth - 1) / nth;
-        int64_t j0 = tid * j_per_thread;
-        int64_t j1 = mag_xmin(N, j0 + j_per_thread);
-        for (int64_t batch = 0; batch < batch_total; ++batch) {
-            const mag_e8m23_t* A = bx + mag_offset_rmn(x, batch, 0, 0);
-            const mag_e8m23_t* B = by + mag_offset_rmn(y, batch, 0, 0) + j0;
-            mag_e8m23_t* C = br + mag_offset_rmn(r, batch, 0, 0) + j0;
-            mag_mv_e8m23(K, j1 - j0, A, B, N, C);
+    if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2) {
+        int64_t sNy = y->strides[y->rank-1];
+        bool rowmaj = sNy;
+        if (rowmaj || y->strides[y->rank-2] == 1) {
+            int64_t nth = payload->thread_num;
+            int64_t tid = payload->thread_idx;
+            int64_t j_per_thread = (N + nth - 1) / nth;
+            int64_t j0 = tid * j_per_thread;
+            int64_t j1 = mag_xmin(N, j0 + j_per_thread);
+            for (int64_t batch=0; batch < batch_total; ++batch) {
+                const mag_e8m23_t* A = bx + mag_offset_rmn(x, batch, 0, 0);
+                const mag_e8m23_t* B = by + mag_offset_rmn(y, batch, 0, 0) + (rowmaj ? j0 : j0*sNy);
+                mag_e8m23_t* C = br + mag_offset_rmn(r, batch, 0, 0) + j0;
+                if (rowmaj) mag_mv_e8m23(K, j1 - j0, A, B, N, C);
+                else mag_mv_kcontig_e8m23(K, j1 - j0, A, B, sNy, C);
+            }
+            return;
         }
-        return;
     }
     int64_t bdx = x->rank > 2 ? x->rank-2 : 0;
     int64_t bdy = y->rank > 2 ? y->rank-2 : 0;
@@ -3700,7 +4353,7 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
     int64_t tjc = (N+NC-1)/NC;
     int64_t tpb = tic * tjc;
     int64_t tt = batch_total * tpb;
-    mag_e8m23_t* scratch = mag_sb_acquire(sizeof(*scratch)*(KC*NC + MC*KC));
+    mag_e8m23_t* scratch = mag_sb_acquire(sizeof(*scratch) * (KC*NC + mag_xmin(M, MC)*KC));
     mag_e8m23_t* Bp = scratch;
     mag_e8m23_t* Ap = Bp + KC*NC;
     for (;;) {
@@ -3725,7 +4378,6 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
             int64_t rd = bdr - bdy + d;
             yb_flat = yb_flat*y->shape[d] + (y->shape[d] == 1 ? 0 : idx_r[rd]);
         }
-        bool yv = y->rank == 1;
         const mag_e8m23_t* px_base = bx + mag_offset_rmn(x, xb_flat, 0, 0);
         const mag_e8m23_t* py_base = by + mag_offset_rmn(y, yb_flat, 0, 0);
         mag_e8m23_t* pr_base = br + mag_offset_rmn(r, batch_idx, 0, 0);
@@ -3735,12 +4387,24 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t* payload) {
         int64_t nc = j0+NC <= N ? NC : N-j0;
         int64_t sMx = x->strides[x->rank-2];
         int64_t sKx = x->strides[x->rank-1];
-        int64_t sKy = yv ? 0 : y->strides[y->rank-2];
-        int64_t sNy = yv ? 0 : y->strides[y->rank-1];
+        int64_t sKy = y_isvec ? 0 : y->strides[y->rank-2];
+        int64_t sNy = y_isvec ? 0 : y->strides[y->rank-1];
         for (int64_t pc = 0; pc < K; pc += KC) {
             int64_t kc = mag_xmin(KC, K - pc);
-            if (y->rank == 1) mag_mm_pack_B_vec_e8m23(kc, nc, py_base + pc, Bp);
-            else mag_mm_pack_B_kc_nc_e8m23(kc, nc, py_base + pc*sKy +  j0*sNy, sKy, sNy, Bp);
+            if (y_isvec) {
+                mag_mm_pack_B_vec_e8m23(kc, nc, py_base + pc, Bp);
+            } else {
+                switch (y_layout) {
+                    case MAG_MM_Y_LAYOUT_ROWMAJ: mag_mm_pack_B_kc_nc_e8m23(kc, nc, py_base + pc*sKy + j0*sNy, sKy, sNy, Bp); break;
+                    case MAG_MM_Y_LAYOUT_COLMAJ: mag_mm_pack_B_kc_nc_e8m23_kccontig(kc, nc, py_base + pc*sKy + j0*sNy, sNy, Bp); break;
+                    case MAG_MM_Y_LAYOUT_STRIDED: mag_mm_pack_B_kc_nc_e8m23_strided(kc, nc, py_base + pc*sKy + j0*sNy, sKy, sNy, Bp); break;
+                    default: {
+                        for (int64_t k=0; k<kc; ++k)
+                            for (int64_t j=0; j<nc; ++j)
+                                Bp[k*nc + j] = (py_base + pc*sKy + j0*sNy)[k*sKy + j*sNy];
+                    }
+                }
+            }
             mag_mm_pack_A_mc_kc_panel8_e8m23(kc, mc,  px_base + i0*sMx + pc*sKx, sMx, sKx, Ap);
             for (int64_t ir=0; ir < mc; ir += MR)
                 for (int64_t jr=0; jr < nc; jr += NR)
