@@ -27,8 +27,8 @@ template <typename T, typename Cdf>
     double D = 0.0;
     for (std::size_t i = 0; i < x.size(); ++i) {
         double F  = static_cast<double>(cdf_theory(x[i]));
-        double Fn_above = (i + 1) / n;
-        double Fn_below = i / n;
+        double Fn_above = static_cast<double>(i + 1) / n;
+        double Fn_below = static_cast<double>(i) / n;
         double d1 = std::fabs(Fn_above - F);
         double d2 = std::fabs(F - Fn_below);
         D = std::max(D, std::max(d1, d2));
@@ -37,11 +37,11 @@ template <typename T, typename Cdf>
     return 1.0 - cdf(ks, D);
 }
 
-static int allowed_failures_3sigma(std::size_t trials, double alpha) {
-    double mu = trials*alpha;
-    double var = trials*alpha * (1.0 - alpha);
+[[nodiscard]] static auto allowed_failures_3sigma(std::size_t trials, double alpha) -> std::int32_t {
+    double mu = static_cast<double>(trials)*alpha;
+    double var = static_cast<double>(trials)*alpha * (1.0 - alpha);
     double ub = mu + 3.0*std::sqrt(std::max(0.0, var));
-    return static_cast<int>(std::ceil(ub));
+    return static_cast<std::int32_t>(std::ceil(ub));
 }
 
 TEST(prng, ks_test_normal_dist) {
@@ -51,7 +51,7 @@ TEST(prng, ks_test_normal_dist) {
     std::uniform_int_distribution<std::int64_t> shape_distr{512, 1024};
     context ctx{compute_device::cpu};
     constexpr double alpha = 0.01;
-    int failures = 0;
+    std::int32_t failures = 0;
     struct Hit { double p; double mu, sigma; std::size_t rows, cols; };
     std::vector<Hit> worst;
     for (std::size_t i = 0; i < k_iter_samples; ++i) {
@@ -78,7 +78,7 @@ TEST(prng, ks_test_normal_dist) {
             << "  sigma=" << worst[i].sigma
             << "  shape=" << worst[i].rows << "x" << worst[i].cols << "\n";
     }
-    const int allowed = allowed_failures_3sigma(k_iter_samples, alpha);
+    const std::int32_t allowed = allowed_failures_3sigma(k_iter_samples, alpha);
     EXPECT_LE(failures, allowed) << "KS: too many low p-values across sweeps.\n"
                                  << "failures=" << failures
                                  << " allowed≤" << allowed << "\n"
@@ -91,7 +91,7 @@ TEST(prng, ks_test_uniform_dist) {
     std::uniform_real_distribution<double> w_d{0.1, 5.0};
     std::uniform_int_distribution<std::int64_t> shape_d{512, 1024};
     context ctx{compute_device::cpu};
-    int failures = 0;
+    std::int32_t failures = 0;
     for (std::size_t it = 0; it < k_iter_samples; ++it) {
         double a = a_d(eng);
         double b = a + w_d(eng);
@@ -124,10 +124,32 @@ TEST(prng, bernoulli_binomial_exact) {
         std::vector<bool> v = t.to_vector<bool>();
         std::uint64_t ones = 0;
         for (bool x : v) ones += x ? 1 : 0;
-        const double pv = bernoulli_two_sided_pvalue(N, ones, p);
+        double pv = bernoulli_two_sided_pvalue(N, ones, p);
         if (pv <= 0.001) ++failures;
     }
     EXPECT_LE(failures, 1) << "Too many Bernoulli (binomial) failures";
+}
+
+TEST(prng, normal_mean_std_match) {
+    context ctx{compute_device::cpu};
+    constexpr std::size_t N = 1'000'000;
+    constexpr double mu_true  = 1.5;
+    constexpr double sigma_true = 2.0;
+    tensor t{ctx, dtype::e8m23, N};
+    t.fill_rand_normal(mu_true, sigma_true);
+    std::vector<float> v = t.to_vector<float>();
+    double sum = std::accumulate(v.begin(), v.end(), 0.0);
+    double mu_hat = sum / N;
+    double sq_sum = 0.0;
+    for (float x : v) {
+        double d = x - mu_hat;
+        sq_sum += d * d;
+    }
+    double sigma_hat = std::sqrt(sq_sum / (N - 1));
+    double se_mean = sigma_true / std::sqrt(static_cast<double>(N));
+    double se_std  = sigma_true * std::sqrt(1.0 / (2.0 * (N - 1)));
+    EXPECT_NEAR(mu_hat, mu_true, 5.0 * se_mean) << "Mean deviates too much from target";
+    EXPECT_NEAR(sigma_hat, sigma_true, 5.0 * se_std) << "Std dev deviates too much from target";
 }
 
 TEST(prng, automatic_seeding) {
