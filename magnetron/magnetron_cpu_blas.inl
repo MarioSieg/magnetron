@@ -2499,8 +2499,14 @@ static MAG_HOTPROC mag_e5m10_t* mag_mm_pack_y_e5m10(mag_e5m10_t* ybuf, int64_t K
 #else
 #define mag_prefetchw(addr) ((void)0)
 #endif
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
 #define mag_prefetcht0(p) _mm_prefetch((const char*)(p), _MM_HINT_T0)
 #define mag_prefetcht1(p) _mm_prefetch((const char*)(p), _MM_HINT_T1)
+#else
+#define mag_prefetcht0(p) __builtin_prefetch((p), 0, 3)
+#define mag_prefetcht1(p) __builtin_prefetch((p), 0, 2)
+#endif
 
 #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
 #ifdef __ARM_FEATURE_FMA
@@ -4167,14 +4173,14 @@ static MAG_AINLINE void mag_mv_kcontig_e8m23(int64_t K, int64_t N, const mag_e8m
           int64_t k = 0;
           for (; k+3 < K; k += 4) {
               float32x4_t a = vld1q_f32(A + k);
-              s0 = MAG_VFMAQ(s0, a, vld1q_f32(b0 + k));
-              s1 = MAG_VFMAQ(s1, a, vld1q_f32(b1 + k));
-              s2 = MAG_VFMAQ(s2, a, vld1q_f32(b2 + k));
-              s3 = MAG_VFMAQ(s3, a, vld1q_f32(b3 + k));
-              s4 = MAG_VFMAQ(s4, a, vld1q_f32(b4 + k));
-              s5 = MAG_VFMAQ(s5, a, vld1q_f32(b5 + k));
-              s6 = MAG_VFMAQ(s6, a, vld1q_f32(b6 + k));
-              s7 = MAG_VFMAQ(s7, a, vld1q_f32(b7 + k));
+              s0 = vfmaq_f32(s0, a, vld1q_f32(b0 + k));
+              s1 = vfmaq_f32(s1, a, vld1q_f32(b1 + k));
+              s2 = vfmaq_f32(s2, a, vld1q_f32(b2 + k));
+              s3 = vfmaq_f32(s3, a, vld1q_f32(b3 + k));
+              s4 = vfmaq_f32(s4, a, vld1q_f32(b4 + k));
+              s5 = vfmaq_f32(s5, a, vld1q_f32(b5 + k));
+              s6 = vfmaq_f32(s6, a, vld1q_f32(b6 + k));
+              s7 = vfmaq_f32(s7, a, vld1q_f32(b7 + k));
           }
           mag_e8m23_t r0 = vaddvq_f32(s0), r1 = vaddvq_f32(s1);
           mag_e8m23_t r2 = vaddvq_f32(s2), r3 = vaddvq_f32(s3);
@@ -4182,15 +4188,15 @@ static MAG_AINLINE void mag_mv_kcontig_e8m23(int64_t K, int64_t N, const mag_e8m
           mag_e8m23_t r6 = vaddvq_f32(s6), r7 = vaddvq_f32(s7);
           for (; k < K; ++k) {
               mag_e8m23_t a = A[k];
-              r0 += a * b0[k]; r1 += a * b1[k];
-              r2 += a * b2[k]; r3 += a * b3[k];
-              r4 += a * b4[k]; r5 += a * b5[k];
-              r6 += a * b6[k]; r7 += a * b7[k];
+              r0 += a*b0[k]; r1 += a*b1[k];
+              r2 += a*b2[k]; r3 += a*b3[k];
+              r4 += a*b4[k]; r5 += a*b5[k];
+              r6 += a*b6[k]; r7 += a*b7[k];
           }
-          C[j+0] = (mag_e8m23_t)r0; C[j+1] = (mag_e8m23_t)r1;
-          C[j+2] = (mag_e8m23_t)r2; C[j+3] = (mag_e8m23_t)r3;
-          C[j+4] = (mag_e8m23_t)r4; C[j+5] = (mag_e8m23_t)r5;
-          C[j+6] = (mag_e8m23_t)r6; C[j+7] = (mag_e8m23_t)r7;
+          C[j+0] = r0; C[j+1] = r1;
+          C[j+2] = r2; C[j+3] = r3;
+          C[j+4] = r4; C[j+5] = r5;
+          C[j+6] = r6; C[j+7] = r7;
         }
         for (; j+3 < N; j += 4) {
           float32x4_t s0 = vdupq_n_f32(0), s1 = s0, s2 = s0, s3 = s0;
@@ -4201,10 +4207,10 @@ static MAG_AINLINE void mag_mv_kcontig_e8m23(int64_t K, int64_t N, const mag_e8m
           int64_t k = 0;
           for (; k+3 < K; k += 4) {
               float32x4_t a = vld1q_f32(A + k);
-              s0 = MAG_VFMAQ(s0, a, vld1q_f32(b0 + k));
-              s1 = MAG_VFMAQ(s1, a, vld1q_f32(b1 + k));
-              s2 = MAG_VFMAQ(s2, a, vld1q_f32(b2 + k));
-              s3 = MAG_VFMAQ(s3, a, vld1q_f32(b3 + k));
+              s0 = vfmaq_f32(s0, a, vld1q_f32(b0 + k));
+              s1 = vfmaq_f32(s1, a, vld1q_f32(b1 + k));
+              s2 = vfmaq_f32(s2, a, vld1q_f32(b2 + k));
+              s3 = vfmaq_f32(s3, a, vld1q_f32(b3 + k));
           }
           mag_e8m23_t r0 = vaddvq_f32(s0), r1 = vaddvq_f32(s1);
           mag_e8m23_t r2 = vaddvq_f32(s2), r3 = vaddvq_f32(s3);
@@ -4213,8 +4219,8 @@ static MAG_AINLINE void mag_mv_kcontig_e8m23(int64_t K, int64_t N, const mag_e8m
               r0 += a * b0[k]; r1 += a * b1[k];
               r2 += a * b2[k]; r3 += a * b3[k];
           }
-          C[j+0] = (mag_e8m23_t)r0; C[j+1] = (mag_e8m23_t)r1;
-          C[j+2] = (mag_e8m23_t)r2; C[j+3] = (mag_e8m23_t)r3;
+          C[j+0] = r0; C[j+1] = r1;
+          C[j+2] = r2; C[j+3] = r3;
         }
         for (; j < N; ++j) {
           const mag_e8m23_t* bj = B + j*ldcol;
@@ -4223,11 +4229,11 @@ static MAG_AINLINE void mag_mv_kcontig_e8m23(int64_t K, int64_t N, const mag_e8m
           for (; k + 3 < K; k += 4) {
               float32x4_t a = vld1q_f32(A + k);
               float32x4_t b = vld1q_f32(bj + k);
-              s = MAG_VFMAQ(s, a, b);
+              s = vfmaq_f32(s, a, b);
           }
           mag_e8m23_t r = vaddvq_f32(s);
           for (; k < K; ++k) r += A[k] * bj[k];
-          C[j] = (mag_e8m23_t)r;
+          C[j] = r;
         }
     #else
         for (int64_t j0=0; j0 < N; ++j0) {
