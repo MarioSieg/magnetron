@@ -18,19 +18,12 @@ auto main() -> int {
         .warmup(100)
         .performanceCounters(true);
         context ctx {compute_device::cpu};
-        tensor x {ctx, type, 1, 1, 768};
+        tensor x {ctx, type, 7, 768, 3072};
         x.fill(1.0f);
-        tensor yy {ctx, type, 50257, 768};
-        yy.fill(3.0f);
-        tensor y = yy.transpose();
-        std::cout << "x shape: ";
-        for (auto d : x.shape()) std::cout << d << " ";
-        std::cout << "\ny shape: ";
-        for (auto d : y.shape()) std::cout << d << " ";
-        std::cout << "\n";
-        std::cout << "x contigous: " << x.is_contiguous() << "\n";
-        std::cout << "y contigous: " << y.is_contiguous() << "\n";
-        bench.run("matmul (AB^T)", [&] {
+        tensor y {ctx, type, 7, 3072, 768};
+        y.fill(3.0f);
+
+        bench.run("matmul", [&] {
             tensor r {x % y};
             ankerl::nanobench::doNotOptimizeAway(r);
         });
