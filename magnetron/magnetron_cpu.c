@@ -474,14 +474,9 @@ static MAG_HOTPROC void mag_threadpool_parallel_compute(mag_thread_pool_t* pool,
 static uint32_t mag_cpu_dynamic_work_scaling(mag_cpu_device_t* dvc, mag_opcode_t op, int64_t numel);
 
 static uint32_t mag_mm_choose_workers(uint64_t flops, uint32_t tiles_total, uint32_t max_threads) {
-    if (flops < 0x800000) return 1;
-    uint32_t threads = mag_xmin(max_threads, tiles_total);
-    uint32_t ideal_threads = (uint32_t)(flops / 0x400000);
-    if (ideal_threads < 1) ideal_threads = 1;
-    threads = mag_xmin(threads, ideal_threads);
-    if (threads & (threads-1))
-        threads = 1u<<mag_fls(threads);
-    return threads ? threads : 1;
+    if (flops < 0x80000) return 1;
+    (void)tiles_total;
+    return max_threads;
 }
 
 static uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t* cmd, mag_idevice_t* dvc) {

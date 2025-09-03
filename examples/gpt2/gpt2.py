@@ -21,6 +21,7 @@ encode = lambda x: tok.encode(x, allowed_special={EOS})
 decode = lambda x: tok.decode(x)
 EOS_ID: int = encode(EOS)[0]
 
+mag.active_context().manual_seed(124)
 
 @dataclass
 class GPT2HyperParams:
