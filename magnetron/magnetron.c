@@ -32,6 +32,7 @@
 #include <io.h>
 #include <fcntl.h>
 #elif defined(__APPLE__)
+#include <Availability.h>
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
 #include <mach/mach_time.h>
@@ -55,6 +56,9 @@
 #define ULF_WAKE_ALLOW_NON_OWNER 0x00000400
 __attribute__((weak_import)) extern int __ulock_wait(uint32_t op, void* addr, uint64_t value, uint32_t timeout);
 __attribute__((weak_import)) extern int __ulock_wake(uint32_t op, void* addr, uint64_t value);
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 101200
+extern int getentropy(void *buf, size_t len);
+#endif
 #else
 #include <unistd.h>
 #ifdef __linux__
@@ -779,7 +783,7 @@ mag_context_t* mag_ctx_create2(const mag_device_desc_t* device_info) {
 
     /* Seed prng once with secure system entropy */
     uint64_t global_seed = 0;
-    if (mag_unlikely(!mag_secure_crypto_entropy(&global_seed, sizeof(global_seed)))) /* Fallback to weak seeding */
+    if (mag_unlikely(!mag_sec_crypto_entropy(&global_seed, sizeof(global_seed)))) /* Fallback to weak seeding */
         global_seed = (uint64_t)time(NULL)^ctx->tr_id^((uintptr_t)ctx>>3)^mag_cycles()^((uintptr_t)&global_seed>>3);
     mag_ctx_manual_seed(ctx, global_seed);
 
@@ -2777,17 +2781,17 @@ bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, i
     return true;
 }
 
-bool mag_secure_crypto_entropy(void* buf, size_t len) {
-    #if defined(__linux__)
-        #ifdef SYS_getrandom
-            return syscall(SYS_getrandom, buf, len, 0) == len;
-        #else
-            int fd = open("/dev/urandom", O_RDONLY|O_CLOEXEC);
-            if (mag_unlikely(fd == -1)) return false;
-            ssize_t n = read(fd, buf, len);
-            (void)close(fd);
-            return n == (ssize_t)len;
-        #endif
+bool mag_sec_crypto_entropy(void* buf, size_t len) {
+    #if defined(__linux__) && SYS_getrandom
+        return syscall(SYS_getrandom, buf, len, 0) == len;
+    #elif defined(__APPLE__) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101200
+        return getentropy(buf, len) == 0;
+    #else
+        int fd = open("/dev/urandom", O_RDONLY|O_CLOEXEC);
+        if (mag_unlikely(fd == -1)) return false;
+        ssize_t n = read(fd, buf, len);
+        (void)close(fd);
+        return n == (ssize_t)len;
     #endif
 }
 
