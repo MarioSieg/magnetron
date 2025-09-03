@@ -3964,7 +3964,7 @@ static void MAG_HOTPROC mag_vector_cast_stub(size_t nb, const void* src, mag_dty
 static size_t mag_vreg_width(void) { return MAG_VREG_WIDTH; }
 
 static void mag_impl_init(void) {
-    mag_sb_acquire(1ull<<20); /* preallocate 1MiB of scratch buffer */
+
 }
 
 static void mag_impl_deinit(void) {
