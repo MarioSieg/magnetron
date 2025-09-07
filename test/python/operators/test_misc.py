@@ -1,15 +1,22 @@
 # (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+
 import torch
 
 from ..common import *
 
+def _make_tensor(shape, dtype):
+    if dtype == boolean:
+        return Tensor.bernoulli(shape)
+    return Tensor.uniform(shape, dtype=dtype)
+
+def _rand_shape(max_rank=4, max_size=6):
+    rank = random.randint(1, max_rank)
+    return tuple(random.randint(1, max_size) for _ in range(rank))
+
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_clone(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype)
+        x = _make_tensor(shape, dtype)
         a = x
         b = a.clone()
         assert a.shape == b.shape
@@ -24,10 +31,7 @@ def test_tensor_clone(dtype: DataType) -> None:
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_gather(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype)
+        x = _make_tensor(shape, dtype)
         torch_x = totorch(x)
         rank = len(shape)
         for dim in range(rank):
@@ -40,12 +44,94 @@ def test_tensor_gather(dtype: DataType) -> None:
     square_shape_permutations(func, 4)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_cat_random(dtype):
+    base_shape = _rand_shape()
+    rank = len(base_shape)
+    dim = random.randint(0, rank - 1)
+    k = random.randint(2, 5)
+    others = list(base_shape)
+    sizes = [random.randint(1, 5) for _ in range(k)]
+    shapes = [tuple(others[:dim] + [s] + others[dim+1:]) for s in sizes]
+    xs = [_make_tensor(s, dtype) for s in shapes]
+    ts = [totorch(x) for x in xs]
+    y = Tensor.cat(xs, dim=dim)
+    yt = torch.cat(ts, dim=dim)
+    torch.testing.assert_close(totorch(y), yt)
+
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_cat_negative_dim(dtype):
+    base_shape = _rand_shape()
+    dim = -1
+    k = random.randint(2, 4)
+    others = list(base_shape)
+    sizes = [random.randint(1, 4) for _ in range(k)]
+    shapes = [tuple(others[:-1] + [s]) for s in sizes]
+    xs = [_make_tensor(s, dtype) for s in shapes]
+    ts = [totorch(x) for x in xs]
+
+    y = Tensor.cat(xs, dim=dim)
+    yt = torch.cat(ts, dim=dim)
+
+    torch.testing.assert_close(totorch(y), yt)
+
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_cat_single_tensor_noop(dtype):
+    shape = _rand_shape()
+    x = _make_tensor(shape, dtype)
+    y = Tensor.cat([x], dim=0)
+    torch.testing.assert_close(totorch(y), totorch(x))
+
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_cat_shape_mismatch_raises(dtype):
+    rank = random.randint(2, 4)
+    shape_a = [random.randint(2, 5) for _ in range(rank)]
+    shape_b = shape_a[:]
+    dim = random.randint(0, rank - 1)
+
+    other = (dim + 1) % rank
+    shape_b[other] = shape_a[other] + 1
+
+    a = _make_tensor(tuple(shape_a), dtype)
+    b = _make_tensor(tuple(shape_b), dtype)
+
+    with pytest.raises(AssertionError):
+        _ = Tensor.cat([a, b], dim=dim)
+
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_tensor_cat_matches_torch_many_chunks(dtype):
+    base_shape = _rand_shape()
+    rank = len(base_shape)
+    dim = random.randint(0, rank - 1)
+
+    others = list(base_shape)
+    k = 10
+    sizes = [random.randint(1, 3) for _ in range(k)]
+    shapes = [tuple(others[:dim] + [s] + others[dim+1:]) for s in sizes]
+
+    xs = [_make_tensor(s, dtype) for s in shapes]
+    ts = [totorch(x) for x in xs]
+
+    y = Tensor.cat(xs, dim=dim)
+    yt = torch.cat(ts, dim=dim)
+    torch.testing.assert_close(totorch(y), yt)
+
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
+def test_split_cat_roundtrip_random(dtype):
+    for _ in range(1000):
+        shape = _rand_shape()
+        x = _make_tensor(shape, dtype)
+        rank = len(shape)
+        dim = random.randint(0, rank - 1)
+        split_size = random.randint(1, shape[dim])
+        parts = x.split(split_size, dim)
+        assert len(parts) >= 1
+        y = Tensor.cat(parts, dim=dim)
+        assert x.tolist() == y.tolist()
+
+@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_split(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype)
+        x = _make_tensor(shape, dtype)
         if len(shape) <= 1:
             return
         dim = random.randint(0, len(shape)-1)
@@ -61,10 +147,7 @@ def test_tensor_split(dtype: DataType) -> None:
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_tolist(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype)
+        x = _make_tensor(shape, dtype)
         assert x.tolist() == totorch(x).tolist()
 
     square_shape_permutations(func, 4)
@@ -93,10 +176,7 @@ def test_tensor_transpose(dtype: DataType) -> None:
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_view(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype)
+        x = _make_tensor(shape, dtype)
         shape = list(shape)
         random.shuffle(shape) # Shuffle view shape
         shape = tuple(shape)
@@ -108,10 +188,7 @@ def test_tensor_view(dtype: DataType) -> None:
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_view_infer_axis(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype)
+        x = _make_tensor(shape, dtype)
         shape = list(shape)
         random.shuffle(shape) # Shuffle view shape
         shape[random.randint(0, len(shape)-1)] = -1 # Set inferred axis randomly
@@ -124,10 +201,7 @@ def test_tensor_view_infer_axis(dtype: DataType) -> None:
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_reshape(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype)
+        x = _make_tensor(shape, dtype)
         shape = list(shape)
         random.shuffle(shape) # Shuffle reshape shape
         shape = tuple(shape)
@@ -139,10 +213,7 @@ def test_tensor_reshape(dtype: DataType) -> None:
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_reshape_infer_axis(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype)
+        x = _make_tensor(shape, dtype)
         shape = list(shape)
         random.shuffle(shape) # Shuffle reshape shape
         shape[random.randint(0, len(shape)-1)] = -1 # Set inferred axis randomly

@@ -29,21 +29,27 @@ static bool mag_op_requires_op_params(mag_opcode_t op) { /* Returns true if the 
 
 static void mag_assert_correct_op_data(
     mag_opcode_t op,
-    mag_tensor_t** inputs,
-    uint32_t num_inputs,
+    mag_tensor_t** in,
+    uint32_t num_in,
+    mag_tensor_t** out,
+    uint32_t num_out,
     const mag_opparam_t* op_params,
     uint32_t num_op_params
 ) {
     mag_assert(op != MAG_OP_NOP, "invalid operation: %d", op);
     const mag_opmeta_t* meta = mag_op_meta_of(op);
 
-    /* Check input tensors */
-    mag_assert(inputs != NULL, "input tensors for operation '%s' are NULL", meta->mnemonic);
-    mag_assert(num_inputs <= MAG_MAX_OP_INPUTS, "too many input tensors for operation '%s': %u > %u", meta->mnemonic, num_inputs, MAG_MAX_OP_INPUTS);
-    mag_assert(meta->in == num_inputs, "invalid number of input tensors for operation '%s': %u != %u", meta->mnemonic, num_inputs, meta->in);
-    for (uint32_t i=0; i < meta->in; ++i) {
-        mag_assert(inputs[i] != NULL, "input tensor %u for operation '%s' is NULL", i, meta->mnemonic);
+    /* Check input/output tensors */
+    if (meta->in) mag_assert(in != NULL, "input tensors for operation '%s' are NULL", meta->mnemonic);
+    if (meta->out) mag_assert(out != NULL, "output tensors for operation '%s' are NULL", meta->mnemonic);
+    if (meta->in != MAG_OP_INOUT_DYN) {
+        mag_assert(meta->in == num_in, "invalid number of input tensors for operation '%s': %u != %u", meta->mnemonic, num_in, meta->in);
+        mag_assert(meta->out == num_out, "invalid number of output tensors for operation '%s': %u != %u", meta->mnemonic, num_out, meta->out);
     }
+    for (uint32_t i=0; i < num_in; ++i)
+        mag_assert(in[i] != NULL, "input tensor %u for operation '%s' is NULL", i, meta->mnemonic);
+    for (uint32_t i=0; i < num_out; ++i)
+        mag_assert(out[i] != NULL, "output tensor %u for operation '%s' is NULL", i, meta->mnemonic);
 
     /* Check op params if required */
     if (mag_op_requires_op_params(op)) {
@@ -73,14 +79,13 @@ static mag_tensor_t* mag_tensor_strided_view(mag_tensor_t* base) {
 
 /* Execute an operator on the active compute device and return result tensor. */
 static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op_param_layout_t* layout, mag_tensor_t** in, uint32_t num_in, mag_tensor_t** out, uint32_t num_out) {
-    mag_assert2(num_in <= MAG_MAX_OP_INPUTS && num_out <= MAG_MAX_OP_INPUTS);
+    const mag_opmeta_t* meta = mag_op_meta_of(op);
     mag_assert2((in && num_in) || (out && num_out));
     mag_assert2(op != MAG_OP_NOP);
     mag_context_t* ctx = in ? (*in)->ctx : (*out)->ctx;
     const mag_opparam_t* params = layout ? layout->slots : NULL;
     uint32_t num_params = layout ? layout->count : 0;
-    mag_assert_correct_op_data(op, in, num_in, params, num_params);
-    const mag_opmeta_t* meta = mag_op_meta_of(op);
+    mag_assert_correct_op_data(op, in, num_in, out, num_out, params, num_params);
     inplace &= !!(meta->flags & MAG_OP_FLAG_SUPPORTS_INPLACE);
     bool rec_grads = !!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward;
     for (uint32_t i=0; i < num_out; ++i) { /* Populate autodiff state and handle gradient tracking */
@@ -509,6 +514,45 @@ mag_tensor_t* mag_multinomial(mag_tensor_t* x, int64_t num_samples, bool replace
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(!!replacement));
 
     mag_dispatch(MAG_OP_MULTINOMIAL, false, &layout, &x, 1, &result, 1);
+    return result;
+}
+
+mag_tensor_t* mag_cat(mag_tensor_t** tensors, size_t count, int64_t dim){
+    mag_assert2(tensors != NULL);
+    mag_assert2(count > 0);
+    mag_assert2(dim >= 0 && dim < MAG_MAX_DIMS);
+    mag_tensor_t* t0 = tensors[0];
+    mag_assert2(t0 != NULL);
+    int64_t rank = t0->rank;
+    mag_assert2(rank > 0 && dim < rank);
+    mag_dtype_t dtype = t0->dtype;
+    mag_assert2(mag_tensor_is_contiguous(t0));
+    int64_t shape[MAG_MAX_DIMS];
+    for (int64_t d=0; d < rank; ++d)
+        shape[d] = t0->shape[d];
+    shape[dim] = 0;
+    for (size_t i = 0; i < count; ++i) {
+        mag_tensor_t* ti = tensors[i];
+        mag_assert2(ti != NULL);
+        mag_assert(ti->rank == rank, "All tensors must have the same rank");
+        mag_assert(ti->dtype == dtype, "All tensors must have same dtype");
+        mag_assert(mag_tensor_is_contiguous(ti), "Inputs must be contiguous row-major");
+        for (int64_t d=0; d < rank; ++d) {
+            if (d == dim) continue;
+            mag_assert(
+                ti->shape[d] == t0->shape[d],
+                "Shapes must match on non-concat dims (dim=%" PRIi64 " mismatch on axis %" PRIi64 ")", dim, d
+            );
+        }
+        shape[dim] += ti->shape[dim];
+    }
+
+    mag_op_param_layout_t layout;
+    mag_op_param_layout_init(&layout);
+    mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dim));
+
+    mag_tensor_t* result = mag_tensor_new(t0->ctx, dtype, rank, shape);
+    mag_dispatch(MAG_OP_CAT, false, &layout, tensors, count, &result, 1);
     return result;
 }
 

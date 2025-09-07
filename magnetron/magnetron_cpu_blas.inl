@@ -1893,13 +1893,13 @@ static int mag_discrete_sample_pair_cmp(const void* a, const void* b) {
                 if (wi > .0f) ++nnz; \
             } \
             if (!(sumw > .0f) || nnz == 0) { \
-                for (int64_t s = 0; s < num_samples; ++s) o[s] = -1; \
+                for (int64_t s=0; s < num_samples; ++s) o[s] = -1; \
                 continue; \
             } \
             int64_t k = num_samples; \
             if (k > nnz) k = nnz; \
             if (mag_unlikely(k <= 0)) { \
-                for (int64_t s = 0; s < num_samples; ++s) o[s] = -1; \
+                for (int64_t s=0; s < num_samples; ++s) o[s] = -1; \
                 continue; \
             } \
             mag_discrete_sample_pair_t* arr = (mag_discrete_sample_pair_t*)alloca(nnz*sizeof(*arr)); \
@@ -1916,6 +1916,69 @@ static int mag_discrete_sample_pair_cmp(const void* a, const void* b) {
             qsort(arr, (size_t)m, sizeof(*arr), mag_discrete_sample_pair_cmp); \
             for (int64_t s=0; s < k; ++s) o[s] = arr[s].idx; \
             for (int64_t s=k; s < num_samples; ++s) o[s] = -1; \
+        } \
+    }
+
+#define mag_gen_stub_cat(T) \
+    static MAG_HOTPROC void mag_cat_##T(const mag_kernel_payload_t* payload) { \
+        mag_tensor_t* r = mag_cmd_out(0); \
+        const int64_t dim = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
+        const int64_t n = payload->cmd->num_in; \
+        mag_assert2(r && n > 0); \
+        mag_assert2(dim >= 0 && dim < r->rank); \
+        \
+        int64_t R = r->rank; \
+        mag_##T##_t* br = mag_##T##p_mut(r); \
+        mag_assert2(mag_tensor_is_contiguous(r)); \
+        \
+        int64_t inner_block = 1; \
+        for (int64_t d = dim+1; d < R; ++d) inner_block *= r->shape[d]; \
+        int64_t outer_count = 1; \
+        for (int64_t d=0; d < dim; ++d) outer_count *= r->shape[d]; \
+        \
+        int64_t mult[MAG_MAX_DIMS]; \
+        for (int64_t d = 0; d < dim; ++d) { \
+            int64_t m = 1; \
+            for (int64_t k = d + 1; k < dim; ++k) m *= r->shape[k]; \
+            mult[d] = m; \
+        } \
+        \
+        int64_t tc = payload->thread_num; \
+        int64_t ti = payload->thread_idx; \
+        int64_t chunk = (outer_count + tc - 1) / tc; \
+        int64_t oa = ti * chunk; \
+        int64_t ob = mag_xmin(oa + chunk, outer_count); \
+        \
+        for (int64_t p=oa; p < ob; ++p) { \
+            int64_t idx_prefix[MAG_MAX_DIMS]; \
+            int64_t rtmp = p; \
+            for (int64_t d = 0; d < dim; ++d) { \
+                int64_t q = !mult[d] ? 0 : rtmp/mult[d]; \
+                if (mult[d] != 0) rtmp = rtmp%mult[d]; \
+                idx_prefix[d] = q; \
+            } \
+            \
+            int64_t moff = 0; \
+            for (int64_t d=0; d < dim; ++d) moff += idx_prefix[d] * r->strides[d]; \
+            int64_t cur = 0; \
+            \
+            for (int64_t i=0; i < n; ++i) { \
+                const mag_tensor_t* x = mag_cmd_in(i); \
+                int64_t smoff=0; \
+                for (int64_t d=0; d < dim; ++d) \
+                    smoff += idx_prefix[d]*x->strides[d]; \
+                int64_t cl = x->shape[dim]; \
+                int64_t numel = cl*inner_block; \
+                int64_t oel = moff + cur*r->strides[dim]; \
+                int64_t sel = smoff; \
+                const mag_##T##_t* restrict bx = mag_##T##p(x); \
+                const uint8_t* restrict src_ptr = (const uint8_t*)(bx+sel); \
+                uint8_t* restrict dst_ptr = (uint8_t*)(br+oel); \
+                mag_bnd_chk(bx + sel, bx, mag_tensor_get_data_size(x)); \
+                mag_bnd_chk(br + oel, br, mag_tensor_get_data_size(r)); \
+                memcpy(dst_ptr, src_ptr, (size_t)numel*sizeof(mag_##T##_t)); \
+                cur += cl; \
+            } \
         } \
     }
 
@@ -2304,6 +2367,11 @@ static void MAG_HOTPROC mag_softmax_e5m10(const mag_kernel_payload_t* payload) {
 
 mag_gen_stub_multinomial(e8m23, mag_cvt_nop)
 mag_gen_stub_multinomial(e5m10, mag_e5m10_cvt_e8m23)
+
+mag_gen_stub_cat(e8m23)
+mag_gen_stub_cat(e5m10)
+mag_gen_stub_cat(bool)
+mag_gen_stub_cat(i32)
 
 mag_gen_stub_unary(e8m23, softmax_dv)
 mag_gen_stub_unary(e5m10, softmax_dv)
@@ -4209,6 +4277,12 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_MULTINOMIAL] = {
         [MAG_DTYPE_E8M23] = &mag_multinomial_e8m23,
         [MAG_DTYPE_E5M10] = &mag_multinomial_e5m10,
+    },
+    [MAG_OP_CAT] = {
+        [MAG_DTYPE_E8M23] = &mag_cat_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_cat_e5m10,
+        [MAG_DTYPE_BOOL] = &mag_cat_bool,
+        [MAG_DTYPE_I32] = &mag_cat_i32,
     },
     [MAG_OP_ADD] = {
         [MAG_DTYPE_E8M23] = &mag_add_e8m23,

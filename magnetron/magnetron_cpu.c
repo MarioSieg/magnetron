@@ -64,6 +64,7 @@ static const mag_op_cpu_info_t mag_op_cpu_info_lut[MAG_OP__NUM] = {
     [MAG_OP_TRIL] = {0.1, 250000},
     [MAG_OP_TRIU] = {0.1, 250000},
     [MAG_OP_MULTINOMIAL] = {0.1, 250000},
+    [MAG_OP_CAT] = {0.1, 250000},
     [MAG_OP_ADD] = {3.5, 10000},
     [MAG_OP_SUB] = {3.5, 10000},
     [MAG_OP_MUL] = {3.5, 10000},

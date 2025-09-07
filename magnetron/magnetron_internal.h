@@ -788,6 +788,8 @@ typedef enum mag_opflags_t {
 } mag_opflags_t;
 
 #define MAG_OP_FLAGS_COMMON (MAG_OP_FLAG_SUPPORTS_INPLACE+MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING)
+#define MAG_OP_INOUT_MAX (UINT32_MAX-2) /* Maximum input/output count. */
+#define MAG_OP_INOUT_DYN (UINT32_MAX-1) /* Flags flexible input/output count. Used for operations that can have arbitrary number of inputs/outputs such as split or cat. */
 #define mag_params(...) { __VA_ARGS__ }
 
 /* Enumerator, Input Count, Output Count, DType Mask, Op Param Layout, Flags, Backward Function, cpu growth, cpu tresh */
@@ -837,6 +839,7 @@ typedef enum mag_opflags_t {
     _(TRIL, 1, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(TRIU, 1, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(MULTINOMIAL, 1, 1, FP, mag_params(MAG_OPP_I64, MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(CAT, MAG_OP_INOUT_DYN, 1, FP, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(ADD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, add)__\
     _(SUB, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, sub)__\
     _(MUL, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mul)__\
@@ -879,8 +882,6 @@ mag_static_assert(MAG_DTYPE__NUM <= 8); /* Must fit in 8 bits, if this fails inc
 #define MAG_DTYPE_MASK_INTEGER (MAG_DTYPE_MASK_INTEGRAL&~mag_dtype_mask(BOOL))  /* Integral (integer) data types without boolean */
 #define MAG_DTYPE_MASK_NUMERIC (MAG_DTYPE_MASK_ALL&~mag_dtype_mask(BOOL))       /* Numeric data types (all except boolean) */
 #define MAG_DTYPE_MASK_BOOL (mag_dtype_mask(BOOL))                              /* Boolean data type */
-
-#define MAG_OP_INOUT_DYN SIZE_MAX /* Dynamic input/output count. Used for operations that can have arbitrary number of inputs/outputs. */
 
 typedef struct mag_au_state_t mag_au_state_t;
 

@@ -276,6 +276,7 @@ extern MAG_EXPORT mag_tensor_t* mag_tril_(mag_tensor_t* x, int32_t diag);
 extern MAG_EXPORT mag_tensor_t* mag_triu(mag_tensor_t* x, int32_t diag);
 extern MAG_EXPORT mag_tensor_t* mag_triu_(mag_tensor_t* x, int32_t diag);
 extern MAG_EXPORT mag_tensor_t* mag_multinomial(mag_tensor_t* x, int64_t num_samples, bool replacement);
+extern MAG_EXPORT mag_tensor_t* mag_cat(mag_tensor_t** tensors, size_t count, int64_t dim);
 
 /* ============ Tensor Init Operators ============ */
 

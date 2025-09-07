@@ -4,6 +4,8 @@ import codecs
 import math
 import time
 import argparse
+
+from magnetron import Tensor, active_context, no_grad
 import magnetron as mag
 import magnetron.nn as nn
 import tiktoken
@@ -21,7 +23,7 @@ encode = lambda x: tok.encode(x, allowed_special={EOS})
 decode = lambda x: tok.decode(x)
 EOS_ID: int = encode(EOS)[0]
 
-mag.active_context().manual_seed(3407)
+active_context().manual_seed(3407)
 
 @dataclass
 class GPT2HyperParams:
@@ -43,22 +45,26 @@ class CausalSelfAttention(nn.Module):
         self.n_embd = config.n_embd
         self.register_buffer(
             'bias',
-            mag.Tensor.ones(config.block_size, config.block_size).tril().view(1, 1, config.block_size, config.block_size),
+            Tensor.ones(config.block_size, config.block_size).tril().view(1, 1, config.block_size, config.block_size),
         )
 
-    def forward(self, x: mag.Tensor) -> mag.Tensor:
+    def forward(self, x: Tensor, kv: tuple[Tensor, Tensor] | None = None) -> tuple[Tensor, tuple[Tensor, Tensor] | None]:
         B, T, C = x.shape
         q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.shape[-1]))
-        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
-        att = att.softmax(dim=-1)
-        y = att @ v
-        y = y.transpose(1, 2).reshape(B, T, C)
-        y = self.c_proj(y)
-        return y
+        if kv is None:
+            K, V = k, v
+            att = (q @ k.transpose(-2,-1)) * (1.0/math.sqrt(C//self.n_head))
+            att = att.masked_fill(self.bias[:,:,:T,:T]==0, float('-inf'))
+        else:
+            K, V = kv
+            K = Tensor.cat([K, k], dim=2)
+            V = Tensor.cat([V, v], dim=2)
+            att = (q @ K.transpose(-2,-1)) * (1.0/math.sqrt(C//self.n_head))
+        y = (att.softmax(dim=-1) @ V).transpose(1,2).reshape(B, T, C)
+        return self.c_proj(y), (K,V)
 
 
 class MLP(nn.Module):
@@ -68,7 +74,7 @@ class MLP(nn.Module):
         self.gelu = nn.GeLU()
         self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
 
-    def forward(self, x: mag.Tensor) -> mag.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         x = self.c_fc(x)
         x = self.gelu(x)
         x = self.c_proj(x)
@@ -83,10 +89,11 @@ class Block(nn.Module):
         self.ln_2 = nn.LayerNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
 
-    def forward(self, x: mag.Tensor) -> mag.Tensor:
-        x = x + self.attn(self.ln_1(x))
+    def forward(self, x: Tensor, kv: list[tuple[Tensor,Tensor]] | None = None) -> tuple[Tensor, tuple[Tensor, Tensor]]:
+        a, kv = self.attn(self.ln_1(x), kv)
+        x = x + a
         x = x + self.mlp(self.ln_2(x))
-        return x
+        return x, kv
 
 
 class GPT2(nn.Module):
@@ -108,7 +115,7 @@ class GPT2(nn.Module):
         console.print(f'Parameter count: {self.get_num_params(False) // 1e6}M', style='dim')
 
     @classmethod
-    @mag.no_grad()
+    @no_grad()
     def from_pretrained(cls, model_type: str = 'gpt2') -> GPT2:
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         from transformers import GPT2LMHeadModel
@@ -136,7 +143,7 @@ class GPT2(nn.Module):
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
         assert len(sd_keys_hf) == len(sd_keys), f'mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}'
 
-        def copy(r: mag.Tensor, x) -> None:  # TODO
+        def copy(r: Tensor, x) -> None:  # TODO
             assert x.is_contiguous and r.is_contiguous
             assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
             assert r.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
@@ -146,11 +153,11 @@ class GPT2(nn.Module):
         for k in sd_keys_hf:
             if any(k.endswith(w) for w in transposed):
                 assert sd_hf[k].shape[::-1] == sd[k].shape
-                with mag.no_grad():
+                with no_grad():
                     copy(sd[k], sd_hf[k].T.contiguous())
             else:
                 assert sd_hf[k].shape == sd[k].shape
-                with mag.no_grad():
+                with no_grad():
                     copy(sd[k], sd_hf[k].contiguous())
 
         return model
@@ -161,47 +168,57 @@ class GPT2(nn.Module):
             n_params -= self.transformer.wpe.weight.x.numel
         return n_params
 
-    def forward(self, idx: mag.Tensor) -> mag.Tensor:
-        b, t = idx.shape
-        assert t <= self.config.block_size, f'Block size {self.config.block_size} exceeded by input length {t}'
-        pos = mag.Tensor.arange(0, t, dtype=mag.int32)
-        tok_emb = self.transformer.wte(idx)
-        pos_emb = self.transformer.wpe(pos)
-        x = tok_emb + pos_emb
-        for block in self.transformer.h:
-            x = block(x)
-        x = self.transformer.ln_f(x)
-        logits = self.lm_head(x[:, [-1], :])
-        return logits
+    def forward(self, idx: Tensor, prev_kv: list[tuple[Tensor,Tensor]] | None = None) -> tuple[Tensor, list[tuple[Tensor,Tensor]] | None]:
+        b,t = idx.shape
+        past_len = 0 if prev_kv is None else prev_kv[0][0].shape[2]
+        pos = Tensor.arange(past_len, past_len+t, dtype=mag.int32)
+        x = self.transformer.wte(idx) + self.transformer.wpe(pos)
 
-    @mag.no_grad()
+        new_kv=[]
+        if prev_kv is None:
+            for blk in self.transformer.h:
+                x, kv = blk(x, None)
+                new_kv.append(kv)
+        else:
+            for blk,kv_in in zip(self.transformer.h, prev_kv):
+                x, kv = blk(x, kv_in)
+                new_kv.append(kv)
+
+        x = self.transformer.ln_f(x)
+        logits = self.lm_head(x[:,[-1],:])
+        return logits, new_kv
+
+    @no_grad()
     def generate(self, prompt: str, max_tokens: int, temp: float = 1.0) -> str:
         tokens = encode(prompt)
+        idx = Tensor.of(tokens[-self.config.block_size:] if len(tokens) > self.config.block_size else tokens, dtype=mag.int32)[None, ...]
+        logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
-            ctx = tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens
-            idx = mag.Tensor.of(ctx, dtype=mag.int32)[None, ...]
-            logits = self(idx)[:, -1, :] / temp
-            probs = logits.softmax(dim=-1)
-            tokens.append(probs.multinomial(num_samples=1).item())
+            probs = (logits[:, -1, :] / temp).softmax(dim=-1)
+            next_id = probs.multinomial(num_samples=1).item()
+            tokens.append(next_id)
+            idx = Tensor.of([next_id], dtype=mag.int32)[None, ...]
+            logits, kv = self(idx, prev_kv=kv)
         return decode(tokens)
 
-    @mag.no_grad()
+    @no_grad()
     def generate_stream(self, prompt: str, max_tokens: int, temp: float = 1.0) -> Iterator[str]:
         tokens = encode(prompt)
         dec = codecs.getincrementaldecoder('utf-8')()
         start = time.perf_counter()
         n = 0
+        idx = Tensor.of(tokens[-self.config.block_size:] if len(tokens) > self.config.block_size else tokens, dtype=mag.int32)[None, ...]
+        logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
-            ctx = tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens
-            idx = mag.Tensor.of(ctx, dtype=mag.int32)[None, ...]
-            logits = self(idx)[:, -1, :] / temp
-            probs = logits.softmax(dim=-1)
+            probs = (logits[:, -1, :] / temp).softmax(dim=-1)
             next_id = probs.multinomial(num_samples=1).item()
             tokens.append(next_id)
             n += 1
             delta = dec.decode(tok.decode_single_token_bytes(next_id))
             if delta:
                 yield delta
+            idx = Tensor.of([next_id], dtype=mag.int32)[None, ...]
+            logits, kv = self(idx, prev_kv=kv)
         tail = dec.decode(b'', final=True)
         if tail:
             yield tail
@@ -211,7 +228,7 @@ class GPT2(nn.Module):
 
 
 if __name__ == '__main__':
-    mag.active_context().stop_grad_recorder()
+    active_context().stop_grad_recorder()
 
     args = argparse.ArgumentParser(description='Run GPT-2 model inference')
     args.add_argument('prompt', type=str, help='Prompt to start generation')

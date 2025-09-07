@@ -39,17 +39,17 @@ class StorageArchive:
             self._ptr = FFI.NULL
 
     def tensor_keys(self) -> list[str]:
-        len = FFI.new('size_t[1]')
-        keys_ptr = C.mag_storage_get_all_tensor_keys(self._ptr, len)
-        keys = [FFI.string(keys_ptr[i]).decode('utf-8') for i in range(len[0])]
-        C.mag_storage_get_all_keys_free(keys_ptr, len[0])
+        count = FFI.new('size_t[1]')
+        keys_ptr = C.mag_storage_get_all_tensor_keys(self._ptr, count)
+        keys = [FFI.string(keys_ptr[i]).decode('utf-8') for i in range(count[0])]
+        C.mag_storage_get_all_keys_free(keys_ptr, count[0])
         return keys
 
     def metadata_keys(self) -> list[str]:
-        len = FFI.new('size_t[1]')
-        keys_ptr = C.mag_storage_get_all_metadata_keys(self._ptr, len)
-        keys = [FFI.string(keys_ptr[i]).decode('utf-8') for i in range(len[0])]
-        C.mag_storage_get_all_keys_free(keys_ptr, len[0])
+        count = FFI.new('size_t[1]')
+        keys_ptr = C.mag_storage_get_all_metadata_keys(self._ptr, count)
+        keys = [FFI.string(keys_ptr[i]).decode('utf-8') for i in range(count[0])]
+        C.mag_storage_get_all_keys_free(keys_ptr, count[0])
         return keys
 
     def get_tensor(self, key: str) -> Tensor | None:
@@ -63,13 +63,13 @@ class StorageArchive:
         return C.mag_storage_set_tensor(self._ptr, key.encode('utf-8'), tensor.native_ptr)
 
     def get_metadata(self, key: str) -> int | float | None:
-        type = C.mag_storage_get_metadata_type(self._ptr, key.encode('utf-8'))
-        if type == C.MAG_RECORD_TYPE_I64:
+        data_type = C.mag_storage_get_metadata_type(self._ptr, key.encode('utf-8'))
+        if data_type == C.MAG_RECORD_TYPE_I64:
             value = FFI.new('int64_t[1]')
             if not C.mag_storage_get_metadata_i64(self._ptr, key.encode('utf-8'), value):
                 return None
             return int(value[0])
-        elif type == C.MAG_RECORD_TYPE_F64:
+        elif data_type == C.MAG_RECORD_TYPE_F64:
             value = FFI.new('double[1]')
             if not C.mag_storage_get_metadata_f64(self._ptr, key.encode('utf-8'), value):
                 return None
