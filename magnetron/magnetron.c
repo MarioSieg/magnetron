@@ -2027,7 +2027,7 @@ static void mag_machine_probe_memory(size_t* out_phys_mem_total, size_t* out_phy
 #if defined(__x86_64__) || defined(_M_X64)
     static void mag_cpuid_ex(uint32_t (*o)[4], uint32_t eax, uint32_t ecx) {
         #ifdef _WIN32
-            __cpuidex((int*)(*o), eaxIn, ecxIn);
+            __cpuidex((int*)(*o), eax, ecx);
         #else
             __cpuid_count(eax, ecx, (*o)[0], (*o)[1], (*o)[2], (*o)[3]);
         #endif
@@ -2035,7 +2035,7 @@ static void mag_machine_probe_memory(size_t* out_phys_mem_total, size_t* out_phy
     static void mag_cpuid(uint32_t (*o)[4], uint32_t eax) {
         mag_cpuid_ex(o, eax, 0);
     }
-    static bool mag_cpuid_streq(uint32_t ebx, uint32_t ecx, uint32_t edx, const char str[static 12]) {
+    static bool mag_cpuid_streq(uint32_t ebx, uint32_t ecx, uint32_t edx, const char str[12]) {
         #define mag_strbe(x) ((x)[0] | ((x)[1]<<8) | ((x)[2]<<16) | ((x)[3]<<24))
         return ebx == mag_strbe(str) && edx == mag_strbe(str+4) && ecx == mag_strbe(str+8);
         #undef mag_strbe
@@ -2781,11 +2781,24 @@ bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, i
     return true;
 }
 
+#ifdef _WIN32
+typedef BOOLEAN (WINAPI* mag_win32_prgr_fn_t)(void* buf, ULONG len);
+static mag_win32_prgr_fn_t mag_win32_prgr_fn;
+#endif
+
 bool mag_sec_crypto_entropy(void* buf, size_t len) {
     #if defined(__linux__) && SYS_getrandom
         return syscall(SYS_getrandom, buf, len, 0) == len;
     #elif defined(__APPLE__) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101200
         return getentropy(buf, len) == 0;
+    #elif defined(_WIN32)
+      if (!mag_win32_prgr_fn) {
+        HMODULE lib = LoadLibraryExA("advapi32.dll", NULL, 0);
+        if (mag_unlikely(!lib)) return false;
+        mag_win32_prgr_fn = (mag_win32_prgr_fn_t)GetProcAddress(lib, "SystemFunction036");
+        if (mag_unlikely(!mag_win32_prgr_fn)) return false;
+      }
+      return (*mag_win32_prgr_fn)(buf, (ULONG)len);
     #else
         int fd = open("/dev/urandom", O_RDONLY|O_CLOEXEC);
         if (mag_unlikely(fd == -1)) return false;
