@@ -491,16 +491,12 @@ class Tensor:
         if stop is None:
             stop = start
             start = 0
-        tensor: Tensor = cls.empty((stop - start + step - 1) // step, dtype=dtype, requires_grad=requires_grad)
+        tensor: Tensor = cls.empty(int((stop - start + step - 1) // step), dtype=dtype, requires_grad=requires_grad)
         tensor.fill_arange_(start, step)
         return tensor
 
     @classmethod
-    def cat(
-        cls,
-        tensors: Sequence[Tensor],
-        dim: int = 0
-    ) -> Tensor:
+    def cat(cls, tensors: Sequence[Tensor], dim: int = 0) -> Tensor:
         num_tensors = len(tensors)
         assert num_tensors > 0, 'At least one tensor is required for concatenation'
         ref = tensors[0]
@@ -513,9 +509,7 @@ class Tensor:
             for d in range(rank):
                 if d == dim:
                     continue
-                assert t.shape[d] == ref.shape[d], (
-                    f'All tensors must match on dim {d}: {t.shape[d]} vs {ref.shape[d]}'
-                )
+                assert t.shape[d] == ref.shape[d], f'All tensors must match on dim {d}: {t.shape[d]} vs {ref.shape[d]}'
         tensor_ptrs = FFI.new(f'mag_tensor_t*[{num_tensors}]')
         tensors = [t.contiguous() for t in tensors]
         for i, t in enumerate(tensors):
@@ -553,6 +547,7 @@ class Tensor:
             chunks.append(view)
             start += chunk_size
         return tuple(chunks)
+
     def gather(self, dim: int, index: Tensor) -> Tensor:
         assert 0 <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
         assert index.dtype == int32, f'Index tensor must be of int32 dtype, but is {index.dtype}'

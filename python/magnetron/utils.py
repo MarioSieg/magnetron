@@ -34,9 +34,9 @@ class Stat:
 
 Key = tuple[
     str,
-    tuple[tuple[int, ...], ...],     # shapes
-    tuple[str | None, ...],          # dtypes
-    tuple[bool | None, ...],         # contiguous flags
+    tuple[tuple[int, ...], ...],  # shapes
+    tuple[str | None, ...],  # dtypes
+    tuple[bool | None, ...],  # contiguous flags
 ]
 
 
@@ -103,8 +103,7 @@ class OpProfiler:
             avg_ms = avg_ns / 1e6
             max_ms = max_ns / 1e6
             tot_ms = tot_ns / 1e6
-            print(f'{avg_ms:10.3f}  {max_ms:10.3f}  {tot_ms:10.3f}  {cnt:7d}  '
-                  f'{op}  {shapes}  {dtypes}  {contigs}')
+            print(f'{avg_ms:10.3f}  {max_ms:10.3f}  {tot_ms:10.3f}  {cnt:7d}  {op}  {shapes}  {dtypes}  {contigs}')
         print('===========================================\n')
 
 

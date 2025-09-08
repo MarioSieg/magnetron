@@ -25,6 +25,7 @@ EOS_ID: int = encode(EOS)[0]
 
 active_context().manual_seed(3407)
 
+
 @dataclass
 class GPT2HyperParams:
     block_size: int = 1024
@@ -56,15 +57,15 @@ class CausalSelfAttention(nn.Module):
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         if kv is None:
             K, V = k, v
-            att = (q @ k.transpose(-2,-1)) * (1.0/math.sqrt(C//self.n_head))
-            att = att.masked_fill(self.bias[:,:,:T,:T]==0, float('-inf'))
+            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(C // self.n_head))
+            att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
         else:
             K, V = kv
             K = Tensor.cat([K, k], dim=2)
             V = Tensor.cat([V, v], dim=2)
-            att = (q @ K.transpose(-2,-1)) * (1.0/math.sqrt(C//self.n_head))
-        y = (att.softmax(dim=-1) @ V).transpose(1,2).reshape(B, T, C)
-        return self.c_proj(y), (K,V)
+            att = (q @ K.transpose(-2, -1)) * (1.0 / math.sqrt(C // self.n_head))
+        y = (att.softmax(dim=-1) @ V).transpose(1, 2).reshape(B, T, C)
+        return self.c_proj(y), (K, V)
 
 
 class MLP(nn.Module):
@@ -89,7 +90,7 @@ class Block(nn.Module):
         self.ln_2 = nn.LayerNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
 
-    def forward(self, x: Tensor, kv: list[tuple[Tensor,Tensor]] | None = None) -> tuple[Tensor, tuple[Tensor, Tensor]]:
+    def forward(self, x: Tensor, kv: list[tuple[Tensor, Tensor]] | None = None) -> tuple[Tensor, tuple[Tensor, Tensor]]:
         a, kv = self.attn(self.ln_1(x), kv)
         x = x + a
         x = x + self.mlp(self.ln_2(x))
@@ -168,30 +169,30 @@ class GPT2(nn.Module):
             n_params -= self.transformer.wpe.weight.x.numel
         return n_params
 
-    def forward(self, idx: Tensor, prev_kv: list[tuple[Tensor,Tensor]] | None = None) -> tuple[Tensor, list[tuple[Tensor,Tensor]] | None]:
-        b,t = idx.shape
+    def forward(self, idx: Tensor, prev_kv: list[tuple[Tensor, Tensor]] | None = None) -> tuple[Tensor, list[tuple[Tensor, Tensor]] | None]:
+        b, t = idx.shape
         past_len = 0 if prev_kv is None else prev_kv[0][0].shape[2]
-        pos = Tensor.arange(past_len, past_len+t, dtype=mag.int32)
+        pos = Tensor.arange(past_len, past_len + t, dtype=mag.int32)
         x = self.transformer.wte(idx) + self.transformer.wpe(pos)
 
-        new_kv=[]
+        new_kv = []
         if prev_kv is None:
             for blk in self.transformer.h:
                 x, kv = blk(x, None)
                 new_kv.append(kv)
         else:
-            for blk,kv_in in zip(self.transformer.h, prev_kv):
+            for blk, kv_in in zip(self.transformer.h, prev_kv):
                 x, kv = blk(x, kv_in)
                 new_kv.append(kv)
 
         x = self.transformer.ln_f(x)
-        logits = self.lm_head(x[:,[-1],:])
+        logits = self.lm_head(x[:, [-1], :])
         return logits, new_kv
 
     @no_grad()
     def generate(self, prompt: str, max_tokens: int, temp: float = 1.0) -> str:
         tokens = encode(prompt)
-        idx = Tensor.of(tokens[-self.config.block_size:] if len(tokens) > self.config.block_size else tokens, dtype=mag.int32)[None, ...]
+        idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=mag.int32)[None, ...]
         logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
             probs = (logits[:, -1, :] / temp).softmax(dim=-1)
@@ -207,7 +208,7 @@ class GPT2(nn.Module):
         dec = codecs.getincrementaldecoder('utf-8')()
         start = time.perf_counter()
         n = 0
-        idx = Tensor.of(tokens[-self.config.block_size:] if len(tokens) > self.config.block_size else tokens, dtype=mag.int32)[None, ...]
+        idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=mag.int32)[None, ...]
         logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
             probs = (logits[:, -1, :] / temp).softmax(dim=-1)
