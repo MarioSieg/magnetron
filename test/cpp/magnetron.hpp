@@ -1,13 +1,11 @@
-/*
-** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
-** | Licensed under the Apache License, Version 2.0                      |
-** |                                                                     |
-** | Website : https://mariosieg.com                                     |
-** | GitHub  : https://github.com/MarioSieg                              |
-** | License : https://www.apache.org/licenses/LICENSE-2.0               |
-** +---------------------------------------------------------------------+
-*/
+// +---------------------------------------------------------------------+
+// | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+// | Licensed under the Apache License, Version 2.0                      |
+// |                                                                     |
+// | Website : https://mariosieg.com                                     |
+// | GitHub  : https://github.com/MarioSieg                              |
+// | License : https://www.apache.org/licenses/LICENSE-2.0               |
+// +---------------------------------------------------------------------+
 
 // Modern C++ API of a subset of the Magnetron C APi
 // For easier testing and simpler C++ code
@@ -39,7 +37,7 @@ namespace magnetron {
     /**
      * Enumerates compute device types.
      */
-    enum class compute_device : std::underlying_type_t<mag_device_type_t> {
+    enum class device_type : std::underlying_type_t<mag_device_type_t> {
         cpu = MAG_DEVICE_TYPE_CPU,
         gpu_cuda = MAG_DEVICE_TYPE_GPU_CUDA
     };
@@ -49,7 +47,7 @@ namespace magnetron {
      * @param device Compute device.
      * @return Enum name of the compute device.
      */
-    [[nodiscard]] inline auto compute_device_name(compute_device device) noexcept -> std::string_view {
+    [[nodiscard]] inline auto compute_device_name(device_type device) noexcept -> std::string_view {
         return mag_device_type_get_name(static_cast<mag_device_type_t>(device));
     }
 
@@ -117,7 +115,7 @@ namespace magnetron {
      */
     class context final {
     public:
-        explicit context(compute_device dvc) noexcept {
+        explicit context(device_type dvc) noexcept {
             m_ctx = mag_ctx_create(static_cast<mag_device_type_t>(dvc));
         }
 
@@ -148,7 +146,7 @@ namespace magnetron {
 
         [[nodiscard]] auto operator *() noexcept -> mag_context_t& { return *m_ctx; }
         [[nodiscard]] auto operator *() const noexcept -> const mag_context_t& { return *m_ctx; }
-        [[nodiscard]] auto device_type() const noexcept -> compute_device { return static_cast<compute_device>(mag_ctx_get_compute_device_type(m_ctx)); }
+        [[nodiscard]] auto device_type() const noexcept -> device_type { return static_cast<enum device_type>(mag_ctx_get_compute_device_type(m_ctx)); }
         [[nodiscard]] auto device_name() const noexcept -> std::string_view { return mag_ctx_get_compute_device_name(m_ctx); }
         [[nodiscard]] auto os_name() const noexcept -> std::string_view { return mag_ctx_get_os_name(m_ctx); }
         [[nodiscard]] auto cpu_name() const noexcept -> std::string_view { return mag_ctx_get_cpu_name(m_ctx); }

@@ -17,7 +17,7 @@ auto main() -> int {
         .unit("matmul " + std::string{dtype_name(type)})
         .warmup(100)
         .performanceCounters(true);
-        context ctx {compute_device::cpu};
+        context ctx {device_type::cpu};
         tensor x {ctx, type, 7, 768, 3072};
         x.fill(1.0f);
         tensor y {ctx, type, 7, 3072, 768};

@@ -13,7 +13,7 @@ TEST(misc, pack_color_u8) {
 }
 
 TEST(misc, compute_device_name) {
-    ASSERT_TRUE(!compute_device_name(compute_device::cpu).empty());
+    ASSERT_TRUE(!compute_device_name(device_type::cpu).empty());
 }
 
 TEST(misc, enable_disable_logging) {

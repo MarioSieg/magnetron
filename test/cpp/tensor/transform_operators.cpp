@@ -6,7 +6,7 @@ using namespace magnetron;
 using namespace test;
 
 TEST(cpu_tensor_transform_ops, view_no_axes) {
-  auto ctx = context{compute_device::cpu};
+  auto ctx = context{device_type::cpu};
   auto base = tensor{ctx, dtype::e8m23, 2, 2, 3, 1};
   auto v = base.view();
   ASSERT_FALSE(base.is_view());

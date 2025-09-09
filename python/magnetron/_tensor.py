@@ -638,7 +638,7 @@ class Tensor:
     def copy_(self, x: Tensor) -> None:
         assert self.rank == x.rank, f'Tensor ranks do not match: {self.rank} != {x.rank}'
         assert self.is_shape_eq(x), f'Tensor shapes do not match: {self.shape} != {x.shape}'
-        assert self.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
+        x = x.contiguous()
         C.mag_tensor_fill_from_raw_bytes(self._ptr, FFI.cast('void*', x.data_ptr), x.data_size)
 
     def zeros_(self) -> None:

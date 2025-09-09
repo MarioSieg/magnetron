@@ -5,7 +5,7 @@
 using namespace magnetron;
 
 TEST(cpu_autograd, simple) {
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor x {ctx, dtype::e8m23, 1};
     x.fill(3.0f);
     x.requires_grad(true);
@@ -51,7 +51,7 @@ TEST(cpu_autograd, simple) {
 }
 
 TEST(cpu_autograd, scalar_complex) {
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor two {ctx, dtype::e8m23, 1};
     two.fill(2.0f);
     two.requires_grad(true);
@@ -95,7 +95,7 @@ TEST(cpu_autograd, scalar_complex) {
 }
 
 TEST(cpu_autograd, broadcast) {
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor x {ctx, dtype::e8m23, 3, 3, 3, 3};
     x.fill(3.0f);
     x.requires_grad(true);

@@ -376,7 +376,7 @@ defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
 
 #ifdef __cpp_lib_hardware_interference_size
 /* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
-#define MAG_DESTRUCTIVE_INTERFERENCE_SIZE hardware_destructive_interference_size
+#define MAG_DESTRUCTIVE_INTERFERENCE_SIZE std::hardware_destructive_interference_size
 #else
 /* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
 #define MAG_DESTRUCTIVE_INTERFERENCE_SIZE 64
@@ -476,9 +476,8 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 #   define MAG_SRC_NAME __FILE__ ":" MAG_STRINGIZE(__LINE__)
 #endif
 #define mag_log_info(msg, ...) do { if (mag_unlikely(mag_log_enabled)) fprintf(stdout,   MAG_CC_CYAN "[magnetron] " MAG_CC_RESET msg "\n", ## __VA_ARGS__); } while (0)
-#define mag_log_info_force(msg, ...) do { fprintf(stdout,   MAG_CC_CYAN "[magnetron] " MAG_CC_RESET msg "\n", ## __VA_ARGS__); } while (0)
-#define mag_log_warn(msg, ...) do { fprintf(stdout,  MAG_CC_CYAN "[magnetron] " MAG_CC_RESET MAG_SRC_NAME " " MAG_CC_YELLOW msg MAG_CC_RESET "\n", ## __VA_ARGS__); fflush(stdout); } while (0)
-#define mag_log_error(msg, ...) do { fprintf(stdout,  MAG_CC_CYAN "[magnetron] " MAG_CC_RESET MAG_SRC_NAME " " MAG_CC_RED msg MAG_CC_RESET "\n", ## __VA_ARGS__); fflush(stdout); } while (0)
+#define mag_log_warn(msg, ...) do { if (mag_unlikely(mag_log_enabled)) fprintf(stdout,  MAG_CC_CYAN "[magnetron] " MAG_CC_RESET MAG_SRC_NAME " " MAG_CC_YELLOW msg MAG_CC_RESET "\n", ## __VA_ARGS__); fflush(stdout); } while (0)
+#define mag_log_error(msg, ...) do { if (mag_unlikely(mag_log_enabled)) fprintf(stdout,  MAG_CC_CYAN "[magnetron] " MAG_CC_RESET MAG_SRC_NAME " " MAG_CC_RED msg MAG_CC_RESET "\n", ## __VA_ARGS__); fflush(stdout); } while (0)
 
 /* Panic and print 'msg' if 'expr' is false. */
 #define mag_assert(expr, msg, ...) \
@@ -1229,6 +1228,17 @@ extern bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t* 
 extern void mag_infer_missing_dim(int64_t (*out)[MAG_MAX_DIMS], const int64_t* dims, int64_t rank, int64_t numel);
 extern bool mag_compute_broadcast_shape(const mag_tensor_t* a, const mag_tensor_t* b, int64_t* dims, int64_t* rank);
 extern bool mag_sec_crypto_entropy(void* buf, size_t len);
+
+#define mag_sto_magic4(a,b,c,d) ((((d)&255)<<24) + (((c)&255)<<16) + (((b)&255)<<8) + ((a)&255))
+#define MAG_STO_FILE_MAGIC mag_sto_magic4('M', 'A', 'G', '!')
+#define MAG_STO_MAX_STR_LEN 65535
+#define MAG_STO_STATIC_FILE_HEADER_SIZE (4*1 + 4 + 4 + 4 + 4 + 4) /* magic:u32, version:u32, checksum:u32, num_tensors:u32, num_meta_kv:u32, aux:u32 */
+#define MAG_STO_STATIC_META_HEADER_SIZE (4 + 8) /* aux:u32, payload:u64. Excluded: key_len:u32, key:uint8[key_len] */
+#define MAG_STO_STATIC_TENSOR_HEADER_SIZE (4 + 8 + 8) /* aux:u32, numel:u64, abs_offset: u64. Excluded: shape: u64[rank], key_len:u32, key: u8[key_len] */
+#define MAG_STO_BUF_ALIGN 64
+#define MAG_STO_BUF_MASK (MAG_STO_BUF_ALIGN-1)
+mag_static_assert(!(MAG_STO_BUF_ALIGN%MAG_CPU_BUF_ALIGN) && !(MAG_STO_BUF_ALIGN&(MAG_STO_BUF_MASK)));
+mag_static_assert(!(MAG_DESTRUCTIVE_INTERFERENCE_SIZE%MAG_STO_BUF_ALIGN));
 
 #ifdef __cplusplus
 }

@@ -7,7 +7,7 @@ using namespace magnetron::test;
 
 TEST(views, view) {
     constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
-    auto ctx = context{compute_device::cpu};
+    auto ctx = context{device_type::cpu};
     tensor base {ctx, dtype::e8m23, shape};
     tensor view = base.view();
     ASSERT_EQ(view.rank(), 3);
@@ -23,7 +23,7 @@ TEST(views, view) {
 
 TEST(views, view_of_view) {
     constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
-    auto ctx = context{compute_device::cpu};
+    auto ctx = context{device_type::cpu};
     tensor base {ctx, dtype::e8m23, shape};
     tensor view1 = base.view();
     tensor view2 = view1.view();
@@ -40,7 +40,7 @@ TEST(views, view_of_view) {
 
 TEST(views, view_slice_positive_step) {
     constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
-    auto ctx = context{compute_device::cpu};
+    auto ctx = context{device_type::cpu};
     tensor base {ctx, dtype::e8m23, shape};
     tensor view = base.view_slice(0, 2, 3, 1);
     ASSERT_EQ(view.rank(), 3);
@@ -57,7 +57,7 @@ TEST(views, view_slice_positive_step) {
 
 TEST(views, view_of_view_slice) {
     constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
-    auto ctx = context{compute_device::cpu};
+    auto ctx = context{device_type::cpu};
     tensor base {ctx, dtype::e8m23, shape};
     tensor view1 = base.view_slice(0, 2, 3, 1);
     tensor view2 = view1.view({9, 4}); // view of view
@@ -68,7 +68,7 @@ TEST(views, view_of_view_slice) {
 }
 
 TEST(views, view_slice_chain_accumulates_offset) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor base{ctx, dtype::e8m23, 10, 2};
     tensor v1 = base.view_slice(0, 2, 6, 1); // rows 2..7
     tensor v2 = v1.view_slice(0, 3, 2, 1); // rows 5..6 of base
@@ -79,7 +79,7 @@ TEST(views, view_slice_chain_accumulates_offset) {
 }
 
 TEST(views, flattened_write_uses_offset) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor base{ctx, dtype::e8m23, 4, 3}; // (rows, cols)
     tensor v = base.view_slice(0, 1, 2, 1); // rows 1 & 2
     v(0, 42.0f); // first elem of view
@@ -87,7 +87,7 @@ TEST(views, flattened_write_uses_offset) {
 }
 
 TEST(views, storage_alias_consistency) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor base{ctx, dtype::e8m23, 5};
     tensor v1 = base.view_slice(0,1,3,1);
     tensor v2 = base.view_slice(0,2,2,1);
@@ -96,7 +96,7 @@ TEST(views, storage_alias_consistency) {
 }
 
 TEST(views, tail_identity) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor t{ctx, dtype::e8m23, 2, 3};
     tensor v1 = t.view();                 // contiguous alias
     tensor v2 = t.view_slice(1, 0, 2, 2); // strided rows 0,2
@@ -109,7 +109,7 @@ TEST(views, tail_identity) {
 }
 
 TEST(views, view_keeps_strides) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor base  {ctx, dtype::e8m23, 4, 4};
     tensor slice = base.view_slice(1, 0, 2, 2);   // stride {8,1}
     tensor alias = slice.view();                  // same logical shape
@@ -118,14 +118,14 @@ TEST(views, view_keeps_strides) {
 }
 
 TEST(views, reshape_requires_contiguous) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor base{ctx, dtype::e8m23, 4, 4};
     tensor slice = base.view_slice(1, 0, 2, 2);   // non-contiguous
     auto view = slice.view({4, 2});;
 }
 
 TEST(views, reshape_requires_contiguous_wrong) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor base{ctx, dtype::e8m23, 4, 4};
     tensor slice = base.view_slice(1, 0, 2, 2);   // non-contiguous
     ASSERT_DEATH({
@@ -134,7 +134,7 @@ TEST(views, reshape_requires_contiguous_wrong) {
 }
 
 TEST(views, offset_accumulation) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor base{ctx, dtype::e8m23, 10, 2};      // row-major
     tensor v1 = base.view_slice(0, 2, 6, 1);    // rows 2..7
     tensor v2 = v1.view_slice(0, 3, 2, 1);      // rows 5..6
@@ -145,7 +145,7 @@ TEST(views, offset_accumulation) {
 }
 
 TEST(views, to_float_vector_copies_view) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor base{ctx, dtype::e8m23, 8, 3, 4};
     base.fill_rand_uniform(-1.f, 1.f);
     tensor slice = base.view_slice(0,0,4,2);
@@ -159,7 +159,7 @@ TEST(views, to_float_vector_copies_view) {
 }
 
 TEST(views, inplace_bumps_version_and_detaches) {
-    context ctx{compute_device::cpu};
+    context ctx{device_type::cpu};
     tensor x{ctx, dtype::e8m23, 2, 2};
     x.requires_grad(true);
     tensor v = x.view();

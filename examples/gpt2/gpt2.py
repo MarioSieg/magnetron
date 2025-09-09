@@ -5,14 +5,14 @@ import math
 import time
 import argparse
 
-from magnetron import Tensor, active_context, no_grad
+from magnetron import Tensor, active_context, no_grad, io
 import magnetron as mag
 import magnetron.nn as nn
-import tiktoken
 from collections.abc import Iterator
 from dataclasses import dataclass
-from magnetron import FFI, C
 from rich.console import Console
+
+import tiktoken
 
 console = Console()
 
@@ -22,9 +22,6 @@ EOS: str = '<|endoftext|>'
 encode = lambda x: tok.encode(x, allowed_special={EOS})
 decode = lambda x: tok.decode(x)
 EOS_ID: int = encode(EOS)[0]
-
-active_context().manual_seed(3407)
-
 
 @dataclass
 class GPT2HyperParams:
@@ -119,7 +116,6 @@ class GPT2(nn.Module):
     @no_grad()
     def from_pretrained(cls, model_type: str = 'gpt2') -> GPT2:
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
-        from transformers import GPT2LMHeadModel
 
         cfg = {
             'gpt2': dict(n_layer=12, n_head=12, n_embd=768),
@@ -136,30 +132,19 @@ class GPT2(nn.Module):
         sd = model.state_dict()
         sd_keys = sd.keys()
         sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')]
-        model_hf = GPT2LMHeadModel.from_pretrained(model_type)
-        sd_hf = model_hf.state_dict()
-        sd_keys_hf = sd_hf.keys()
-        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')]
-        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')]
-        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
-        assert len(sd_keys_hf) == len(sd_keys), f'mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}'
-
-        def copy(r: Tensor, x) -> None:  # TODO
-            assert x.is_contiguous and r.is_contiguous
-            assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
-            assert r.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
-            bytes = x.numel() * x.element_size()
-            C.mag_tensor_fill_from_raw_bytes(r._ptr, FFI.cast('void*', x.data_ptr()), bytes)
-
-        for k in sd_keys_hf:
-            if any(k.endswith(w) for w in transposed):
-                assert sd_hf[k].shape[::-1] == sd[k].shape
-                with no_grad():
-                    copy(sd[k], sd_hf[k].T.contiguous())
-            else:
-                assert sd_hf[k].shape == sd[k].shape
-                with no_grad():
-                    copy(sd[k], sd_hf[k].contiguous())
+        with io.StorageArchive(f'{model_type}-e8m23.mag', 'r') as dataset:
+            sd_keys_file = dataset.tensor_keys()
+            sd_keys_file = [k for k in sd_keys_file if not k.endswith('.attn.masked_bias')]
+            sd_keys_file = [k for k in sd_keys_file if not k.endswith('.attn.bias')]
+            transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+            assert len(sd_keys_file) == len(sd_keys), f'Mismatched keys: {len(sd_keys_file)} != {len(sd_keys)}'
+            for k in sd_keys_file:
+                if any(k.endswith(w) for w in transposed):
+                    assert dataset[k].shape[::-1] == sd[k].shape
+                    sd[k].copy_(dataset[k].T)
+                else:
+                    assert dataset[k].shape == sd[k].shape
+                    sd[k].copy_(dataset[k])
 
         return model
 

@@ -239,7 +239,7 @@ TEST(cpu_tensor_binary_ops, matmul_square_e8m23) {
         std::array<float, 2>{0.3717081f, 0.7322086f},
         std::array<float, 2>{-2.3101263f, -0.28030172f}
     };
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e8m23, A.size(), A[0].size()};
     tensor b {ctx, dtype::e8m23, B.size(), B[0].size()};
     a.fill_from(flatten(A));
@@ -270,7 +270,7 @@ TEST(cpu_tensor_binary_ops, matmul_square_e5m10) {
         std::array<float, 2>{0.3717081f, 0.7322086f},
         std::array<float, 2>{-2.3101263f, -0.28030172f}
     };
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e5m10, A.size(), A[0].size()};
     tensor b {ctx, dtype::e5m10, B.size(), B[0].size()};
     a.fill_from(flatten(A));
@@ -303,7 +303,7 @@ TEST(cpu_tensor_binary_ops, matmul_non_square_e8m23) {
         {{3.0f*7.0f + 4.0f*11, 3.0f*8 + 4.0f*12.0f, 3.0f*9.0f + 4.0f*13.0f, 3.0f*10.0f + 4.0f*14.0f}},
         {{5.0f*7.0f + 6.0f*11, 5.0f*8 + 6.0f*12.0f, 5.0f*9.0f + 6.0f*13.0f, 5.0f*10.0f + 6.0f*14.0f}}
     }};
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e8m23, A.size(), A[0].size()};
     tensor b {ctx, dtype::e8m23, B.size(), B[0].size()};
     a.fill_from(flatten(A));
@@ -334,7 +334,7 @@ TEST(cpu_tensor_binary_ops, matmul_non_square_e5m10) {
         {{3.0f*7.0f + 4.0f*11, 3.0f*8 + 4.0f*12.0f, 3.0f*9.0f + 4.0f*13.0f, 3.0f*10.0f + 4.0f*14.0f}},
         {{5.0f*7.0f + 6.0f*11, 5.0f*8 + 6.0f*12.0f, 5.0f*9.0f + 6.0f*13.0f, 5.0f*10.0f + 6.0f*14.0f}}
     }};
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e5m10, A.size(), A[0].size()};
     tensor b {ctx, dtype::e5m10, B.size(), B[0].size()};
     a.fill_from(flatten(A));
@@ -359,7 +359,7 @@ TEST(cpu_tensor_binary_ops, matmul_square_zero_e8m23) {
         std::array<float, 2>{0.0f, 0.0f},
         std::array<float, 2>{0.0f, 0.0f}
     };
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e8m23, A.size(), A[0].size()};
     tensor b {ctx, dtype::e8m23, B.size(), B[0].size()};
     a.fill_from(flatten(A));
@@ -386,7 +386,7 @@ TEST(cpu_tensor_binary_ops, matmul_square_zero_e5m10) {
         std::array<float, 2>{0.0f, 0.0f},
         std::array<float, 2>{0.0f, 0.0f}
     };
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e5m10, A.size(), A[0].size()};
     tensor b {ctx, dtype::e5m10, B.size(), B[0].size()};
     a.fill_from(flatten(A));
@@ -414,7 +414,7 @@ TEST(cpu_tensor_binary_ops, matmul_square_identity_e8m23) {
         std::array<float, 2>{0.0f, 1.0f}
     };
     static constexpr std::array<std::array<float, 2>, 2> C {A};
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e8m23, A.size(), A[0].size()};
     tensor b {ctx, dtype::e8m23, B.size(), B[0].size()};
     a.fill_from(flatten(A));
@@ -442,7 +442,7 @@ TEST(cpu_tensor_binary_ops, matmul_square_identity_e5m10) {
         std::array<float, 2>{0.0f, 1.0f}
     };
     static constexpr std::array<std::array<float, 2>, 2> C {A};
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e5m10, A.size(), A[0].size()};
     tensor b {ctx, dtype::e5m10, B.size(), B[0].size()};
     a.fill_from(flatten(A));
@@ -472,7 +472,7 @@ TEST(cpu_tensor_binary_ops, matmul_matrix_vector_e8m23) {
     static constexpr std::array<float, 3> C {
         {-1.5f, -2.5f, -3.5f}
     };
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e8m23, A.size(), A[0].size()};
     tensor b {ctx, dtype::e8m23, B.size()};
     a.fill_from(flatten(A));
@@ -500,7 +500,7 @@ TEST(cpu_tensor_binary_ops, matmul_matrix_vector_e5m10) {
     static constexpr std::array<float, 3> C {
         {-1.5f, -2.5f, -3.5f}
     };
-    context ctx {compute_device::cpu};
+    context ctx {device_type::cpu};
     tensor a {ctx, dtype::e5m10, A.size(), A[0].size()};
     tensor b {ctx, dtype::e5m10, B.size()};
     a.fill_from(flatten(A));

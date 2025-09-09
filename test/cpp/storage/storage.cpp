@@ -108,15 +108,65 @@ TEST(storage, read_write_disk_metadata_only) {
 }
 
 TEST(storage, write_read_tensor_to_disk) {
+  std::random_device rd {};
+  std::normal_distribution<float> dist {};
+  std::vector<float> data {};
+  data.resize(1*2*3*4*5*6);
+  for (auto& v : data) {
+    v = dist(rd);
+  }
   {
     context ctx {cpu_device{}};
-    tensor t {ctx, dtype::e8m23, 32, 32, 2};
-    t.fill(-2.5f);
+    tensor t {ctx, dtype::e8m23, 1, 2, 3, 4, 5, 6};
+    t.fill_from(data);
     mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test2.mag", 'w');
+    ASSERT_NE(archive, nullptr);
     ASSERT_TRUE(mag_storage_set_tensor(archive, "mat32x32x2", &*t));
     ASSERT_TRUE(mag_storage_close(archive));
     ASSERT_TRUE(std::filesystem::exists("test2.mag"));
   }
+  {
+    context ctx {cpu_device{}};
+    mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test2.mag", 'r');
+    ASSERT_NE(archive, nullptr);
+    mag_tensor_t* tensor_ptr = mag_storage_get_tensor(archive, "mat32x32x2");
+    ASSERT_NE(nullptr, tensor_ptr);
+    tensor tensor {tensor_ptr};
+    ASSERT_TRUE(tensor.is_contiguous());
+    ASSERT_EQ(tensor.shape().size(), 6);
+    for (std::size_t i=0; i < tensor.shape().size(); ++i) {
+      ASSERT_EQ(tensor.shape()[i], i+1);
+    }
+    auto out_data = tensor.to_vector<float>();
+    for (std::size_t i=0; i < data.size(); ++i) {
+      ASSERT_EQ(std::bit_cast<std::uint32_t>(data[i]), std::bit_cast<std::uint32_t>(out_data[i])); // Test for bit-exact equality
+    }
+    ASSERT_TRUE(mag_storage_close(archive));
+  }
 
   ASSERT_TRUE(std::filesystem::remove("test2.mag"));
+}
+
+TEST(storage, read_gpt2_weights) {
+  context ctx {cpu_device{}};
+  mag_storage_archive_t* archive = mag_storage_open(&*ctx, "gpt2-fp32.mag", 'r');
+  ASSERT_NE(archive, nullptr);
+  std::size_t num_keys = 0;
+  const char** keys = mag_storage_get_all_tensor_keys(archive, &num_keys);
+  for (std::size_t i=0; i < num_keys; ++i) {
+    const char* key = keys[i];
+    mag_tensor_t* tensor_ptr = mag_storage_get_tensor(archive, key);
+    ASSERT_NE(nullptr, tensor_ptr) << "Key: " << key;
+    tensor tensor {tensor_ptr};
+    ASSERT_TRUE(tensor.is_contiguous()) << "Key: " << key;
+    ASSERT_GT(tensor.shape().size(), 0) << "Key: " << key;
+    std::cout << "Key: " << key << ", shape: ";
+    for (std::size_t j=0; j < tensor.shape().size(); ++j) {
+      std::cout << tensor.shape()[j];
+      if (j + 1 < tensor.shape().size()) {
+        std::cout << " x ";
+      }
+    }
+    std::cout << std::endl;
+  }
 }

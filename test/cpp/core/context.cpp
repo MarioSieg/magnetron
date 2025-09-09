@@ -6,8 +6,8 @@ using namespace magnetron;
 
 TEST(context, create_cpu) {
     enable_logging(true);
-    context ctx {compute_device::cpu};
-    ASSERT_EQ(ctx.device_type(), compute_device::cpu);
+    context ctx {device_type::cpu};
+    ASSERT_EQ(ctx.device_type(), device_type::cpu);
     ASSERT_TRUE(!ctx.cpu_name().empty());
     ASSERT_TRUE(!ctx.device_name().empty());
     ASSERT_TRUE(!ctx.os_name().empty());
@@ -29,8 +29,8 @@ TEST(context, create_cpu) {
 
 TEST(context, create_cuda) {
     enable_logging(true);
-    context ctx {compute_device::gpu_cuda};
-    ASSERT_EQ(ctx.device_type(), compute_device::gpu_cuda);
+    context ctx {device_type::gpu_cuda};
+    ASSERT_EQ(ctx.device_type(), device_type::gpu_cuda);
     ASSERT_TRUE(!ctx.cpu_name().empty());
     ASSERT_TRUE(!ctx.device_name().empty());
     ASSERT_TRUE(!ctx.os_name().empty());

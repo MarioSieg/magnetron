@@ -373,6 +373,7 @@ typedef enum mag_record_type_t {
     MAG_RECORD_TYPE__COUNT
 } mag_record_type_t;
 
+extern MAG_EXPORT mag_storage_archive_t* mag_storage_new(mag_context_t* ctx, const char* filename, char mode);
 extern MAG_EXPORT mag_storage_archive_t* mag_storage_open(mag_context_t* ctx, const char* filename, char mode);
 extern MAG_EXPORT bool mag_storage_close(mag_storage_archive_t* archive);
 

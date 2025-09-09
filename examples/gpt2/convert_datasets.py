@@ -14,11 +14,6 @@ MODEL_LAYOUTS: dict[str, dict[str, object]] = {
     'gpt2-xl': dict(n_layer=48, n_head=25, n_embd=1600),
 }
 
-with io.StorageArchive('gpt2-fp32.mag', 'r') as sto:
-    print(sto.metadata())
-    exit(0)
-
-
 def convert_hf_to_mag_file(model_type: str) -> None:
     assert model_type in MODEL_TYPES
     print(f'Converting GPT-2 model variant {model_type}')
@@ -29,12 +24,12 @@ def convert_hf_to_mag_file(model_type: str) -> None:
     model = GPT2LMHeadModel.from_pretrained(model_type)
     model.eval()
     state_dict = model.state_dict()
-    with io.StorageArchive(f'{model_type}-fp32.mag', 'w') as out:
+    with io.StorageArchive(f'{model_type}-e8m23.mag', 'w') as dataset:
         for (
             k,
             v,
         ) in cfg.items():
-            out[k] = v
+            dataset[k] = v
         for k, v in state_dict.items():
             print(f'Converting tensor {k}, Shape: {v.shape}, DType: {v.dtype}, Size: {v.numel() * v.element_size() / 1024.0**2.0} MiB')
             assert v.is_contiguous()
@@ -42,13 +37,10 @@ def convert_hf_to_mag_file(model_type: str) -> None:
             mag_tensor = mag.Tensor.empty(v.shape)
             nb: int = v.numel() * v.element_size()
             C.mag_tensor_fill_from_raw_bytes(mag_tensor.native_ptr, FFI.cast('void*', v.data_ptr()), nb)
-            out[k] = mag_tensor
+            dataset[k] = mag_tensor
 
-        print(out.metadata())
-        print(out.tensor_keys())
+        print(dataset.summary())
 
 
-# for model in MODEL_LAYOUTS:
-# convert_hf_to_mag_file(model)
-
-convert_hf_to_mag_file('gpt2')
+for model in MODEL_LAYOUTS:
+    convert_hf_to_mag_file(model)

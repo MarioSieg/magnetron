@@ -108,3 +108,14 @@ class StorageArchive:
 
     def metadata(self) -> dict[str, int | float]:
         return {k: self.get_metadata(k) for k in self.metadata_keys()}
+
+    def summary(self) -> str:
+        meta = self.metadata()
+        tensors = self.tensor_keys()
+        out = f'=== Metadata ({len(meta)} Entries) ===\n'
+        for k, v in meta.items():
+            out += f'  {k} = {v}\n'
+        out += f'=== Tensors ({len(tensors)} Entries) ===\n'
+        for k in tensors:
+            out += f'  {k}\n'
+        return out
