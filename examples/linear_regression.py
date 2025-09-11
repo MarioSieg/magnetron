@@ -25,7 +25,7 @@ for epoch in range(EPOCHS):
         print(f'Epoch {epoch}, Loss: {loss.item()}')
     losses.append(loss.item())
 
-y_line = model(x) # Fitted line
+y_line = model(x)  # Fitted line
 
 # Plot results
 plt.subplot(1, 2, 1)
