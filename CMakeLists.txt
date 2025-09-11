@@ -15,7 +15,7 @@ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 option(MAGNETRON_BUILD_TESTS "Build tests" ON)                              # Build C++ unit tests
 option(MAGNETRON_BUILD_BENCHMARKS "Build benchmarks" ON)                    # Build C++ benchmarks
-option(MAGNETRON_BUILD_FUZZER "Build fuzzers" ON)                           # Build C++ fuzzer for the magnetron data format
+option(MAGNETRON_BUILD_FUZZER "Build fuzzers" OFF)                           # Build C++ fuzzer for the magnetron data format
 option(MAGNETRON_DEBUG "Enable debug mode" OFF)                             # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
 option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" OFF)                     # Enable CUDA backend support (requires CUDA toolkit)
 option(MAGNETRON_ENABLE_MIMALLOC "Use mimalloc as memory allocator" ON)     # Use mimalloc as memory allocator for faster memory allocation
