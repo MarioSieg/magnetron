@@ -13,17 +13,17 @@ set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}")
 set(EXECUTABLE_OUTPUT_PATH "${CMAKE_BINARY_DIR}")
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-option(MAGNETRON_BUILD_TESTS "Build tests" ON)                           # Build C++ unit tests
-option(MAGNETRON_BUILD_BENCHMARKS "Build benchmarks" ON)                 # Build C++ benchmarks
-option(MAGNETRON_BUILD_FUZZERS "Build fuzzers" OFF)                      # (Experimental) Build C++ data format fuzzer
-option(MAGNETRON_DEBUG "Enable debug mode" OFF)                          # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
-option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" OFF)                  # Enable CUDA backend support (requires CUDA toolkit)
-option(MAGNETRON_ENABLE_MIMALLOC "Use mimalloc as memory allocator" ON)  # Use mimalloc as memory allocator for faster memory allocation
+option(MAGNETRON_BUILD_TESTS "Build tests" ON)                              # Build C++ unit tests
+option(MAGNETRON_BUILD_BENCHMARKS "Build benchmarks" ON)                    # Build C++ benchmarks
+option(MAGNETRON_BUILD_FUZZER "Build fuzzers" ON)                           # Build C++ fuzzer for the magnetron data format
+option(MAGNETRON_DEBUG "Enable debug mode" OFF)                             # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
+option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" OFF)                     # Enable CUDA backend support (requires CUDA toolkit)
+option(MAGNETRON_ENABLE_MIMALLOC "Use mimalloc as memory allocator" ON)     # Use mimalloc as memory allocator for faster memory allocation
 
 set(MAGNETRON_CUDA_COMPILER "/usr/local/cuda-12.9/bin/nvcc" CACHE STRING "Path to the CUDA compiler") # Set to your CUDA compiler path, only used if CMAKE can't find the CUDA compiler on its own
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-if (${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS} OR ${MAGNETRON_BUILD_FUZZERS})
+if (${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS} OR ${MAGNETRON_BUILD_FUZZER})
     enable_language(CXX)
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -46,7 +46,7 @@ if (${MAGNETRON_BUILD_TESTS})
     add_subdirectory(test)
 endif()
 
-if (${MAGNETRON_BUILD_FUZZERS})
+if (${MAGNETRON_BUILD_FUZZER})
     add_subdirectory(fuzzer)
 endif()
 
