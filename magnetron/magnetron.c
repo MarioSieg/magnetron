@@ -431,21 +431,6 @@ uint64_t mag_cycles(void) {
         uint64_t lo, hi;
         __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
         return (hi<<32) | lo;
-    #elif defined(__aarch64__)
-        uint32_t cntrl;
-        uint32_t rwx;
-        uint32_t fset;
-        __asm__ __volatile__("mrc p15, 0, %0, c9, c14, 0" : "=r"(rwx)); /* Read perfmon access control register */
-        if (rwx & 1) {
-            __asm__ __volatile__("mrc p15, 0, %0, c9, c12, 1" : "=r"(fset));
-            if (fset & 0x80000000U) {
-                __asm__ __volatile__("mrc p15, 0, %0, c9, c13, 0" : "=r"(cntrl));
-                return (uint64_t)(cntrl)<<6;
-            }
-        }
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        return (uint64_t)(tv.tv_sec)*1000000 + tv.tv_usec;
     #else
         struct timeval tv;
         gettimeofday(&tv, NULL);
