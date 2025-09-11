@@ -1,12 +1,11 @@
-import magnetron as mag
-from magnetron import optim, nn
+from magnetron import nn, optim, Tensor
 from matplotlib import pyplot as plt
 
 EPOCHS: int = 2000
 
 # Define the XOR input and output data
-x = mag.Tensor.of([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
-y = mag.Tensor.of([[0.0], [1.0], [1.0], [0.0]])
+x = Tensor.of([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
+y = Tensor.of([[0.0], [1.0], [1.0], [0.0]])
 
 # Create the model, loss function, and optimizer
 model = nn.Sequential(nn.Linear(2, 2), nn.Tanh(), nn.Linear(2, 1), nn.Tanh())
