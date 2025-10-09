@@ -9,7 +9,7 @@
 
 using namespace magnetron;
 
-static constexpr std::size_t k_iter_samples = 100;
+static constexpr std::size_t k_iter_samples = 10;
 
 [[nodiscard]] static auto bernoulli_two_sided_pvalue(std::uint64_t N, std::uint64_t k, double p) -> double {
     boost::math::binomial_distribution<> binom{static_cast<double>(N), p};

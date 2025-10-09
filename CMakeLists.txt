@@ -4,24 +4,24 @@ cmake_minimum_required(VERSION 3.18)
 
 project(magnetron LANGUAGES C)
 
-message("Configuring magnetron for ${CMAKE_SYSTEM_PROCESSOR}...")
+message("Configuring magnetron SDK for ${CMAKE_SYSTEM_PROCESSOR}...")
 message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
 message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
 
 set(CMAKE_C_STANDARD 99) # Use C99 standard
-set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}")
-set(EXECUTABLE_OUTPUT_PATH "${CMAKE_BINARY_DIR}")
+set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}")      # Place all built libraries in the build directory
+set(EXECUTABLE_OUTPUT_PATH "${CMAKE_BINARY_DIR}")   # Place all built executables in the build directory
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-option(MAGNETRON_BUILD_TESTS "Build tests" ON)                           # Build C++ unit tests
-option(MAGNETRON_BUILD_BENCHMARKS "Build benchmarks" ON)                 # Build C++ benchmarks
-option(MAGNETRON_BUILD_FUZZERS "Build fuzzers" OFF)                      # (Experimental) Build C++ data format fuzzer
+# General build options
+option(MAGNETRON_BUILD_TESTS "Build tests" ON)                           # Build C++ unit tests (requires C++ toolchain)
+option(MAGNETRON_BUILD_BENCHMARKS "Build benchmaryks" ON)                 # Build C++ benchmarks (requires C++ toolchain)
+option(MAGNETRON_BUILD_FUZZERS "Build fuzzers" OFF)                      # (Experimental) Build C++ data format fuzzer (requires C++ toolchain)
 option(MAGNETRON_DEBUG "Enable debug mode" OFF)                          # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
-option(MAGNETRON_ENABLE_CUDA "Enable CUDA support" OFF)                  # Enable CUDA backend support (requires CUDA toolkit)
-option(MAGNETRON_ENABLE_MIMALLOC "Use mimalloc as memory allocator" ON)  # Use mimalloc as memory allocator for faster memory allocation
 
-set(MAGNETRON_CUDA_COMPILER "/usr/local/cuda-12.9/bin/nvcc" CACHE STRING "Path to the CUDA compiler") # Set to your CUDA compiler path, only used if CMAKE can't find the CUDA compiler on its own
-set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+# Backend build options
+option(MAGNETRON_ENABLE_BACKEND_CPU "Enable CPU backend" ON)                # Enable CPU backend
+option(MAGNETRON_ENABLE_BACKEND_CUDA "Enable CUDA backend" ON)              # Enable CUDA backend (requires CUDA toolkit)
 
 if (${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS} OR ${MAGNETRON_BUILD_FUZZERS})
     enable_language(CXX)
@@ -30,16 +30,7 @@ if (${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS} OR ${MAGNETRON_BUI
 endif()
 
 include(cmake/arch.cmake)
-include(cmake/lib.cmake)
-include(cmake/compiler_config.cmake)
-
-if (${MAGNETRON_ENABLE_CUDA})
-    include(cmake/cuda.cmake)
-endif()
-
-if (${MAGNETRON_ENABLE_MIMALLOC})
-    include(cmake/allocator.cmake)
-endif()
+include(cmake/target_config.cmake)
 
 if (${MAGNETRON_BUILD_TESTS})
     enable_testing()
@@ -54,17 +45,7 @@ if (${MAGNETRON_BUILD_BENCHMARKS})
     add_subdirectory(benchmark)
 endif()
 
-set_target_properties(magnetron PROPERTIES OUTPUT_NAME "magnetron")
-
-set_target_properties(magnetron PROPERTIES
-    BUILD_RPATH "\$ORIGIN"
-    INSTALL_RPATH "\$ORIGIN"
-)
-
-install(TARGETS magnetron
-    LIBRARY DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron
-    RUNTIME DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron
-    ARCHIVE DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron
-)
+add_subdirectory(magnetron)
+add_subdirectory(extern)
 
 message(STATUS "magnetron configuration complete!")

@@ -22,14 +22,15 @@ from magnetron._ffi_cdecl_generated import __MAG_CDECLS
 def _load_native_module() -> tuple[FFI, Any]:
     platform = sys.platform
     pkg_dir = Path(__file__).parent
+    lib_name = 'magnetron_core'
 
     candidates = []
     if platform.startswith('linux'):
-        candidates += ['libmagnetron.so'] + [f'magnetron{ext}' for ext in EXTENSION_SUFFIXES]
+        candidates += [f'lib{lib_name}.so'] + [f'{lib_name}{ext}' for ext in EXTENSION_SUFFIXES]
     elif platform.startswith('darwin'):
-        candidates += ['libmagnetron.dylib'] + [f'magnetron{ext}' for ext in EXTENSION_SUFFIXES]
+        candidates += [f'lib{lib_name}.dylib'] + [f'{lib_name}{ext}' for ext in EXTENSION_SUFFIXES]
     elif platform.startswith('win32'):
-        candidates += ['magnetron.pyd', 'magnetron.dll']
+        candidates += [f'{lib_name}.pyd', f'{lib_name}.dll']
     else:
         raise RuntimeError(f'Unsupported platform: {platform!r}')
 
