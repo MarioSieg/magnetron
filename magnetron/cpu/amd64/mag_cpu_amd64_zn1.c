@@ -9,8 +9,8 @@
 ** +---------------------------------------------------------------------+
 */
 
-#define MAG_BLAS_SPECIALIZATION mag_cpu_blas_specialization_amd64_diamondrapids
-#define MAG_BLAS_SPECIALIZATION_FEAT_REQUEST mag_cpu_blas_specialization_amd64_diamondrapids_features
+#define MAG_BLAS_SPECIALIZATION mag_cpu_blas_specialization_amd64_zn1
+#define MAG_BLAS_SPECIALIZATION_FEAT_REQUEST mag_cpu_blas_specialization_amd64_zn1_features
 
-#include "../magnetron_cpu_impl.inl"
+#include "../mag_cpu_impl.inl"
 

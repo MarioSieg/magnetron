@@ -357,20 +357,20 @@ static void mag_machine_probe_memory(size_t *out_phys_mem_total, size_t *out_phy
 #endif
 }
 
-void mag_machine_probe(mag_context_t *ctx) {
-    mag_machine_probe_os_name(&ctx->machine.os_name);
-    mag_machine_probe_cpu_name(&ctx->machine.cpu_name);
-    mag_machine_probe_cpu_cores(&ctx->machine.cpu_virtual_cores, &ctx->machine.cpu_physical_cores, &ctx->machine.cpu_sockets);
-    mag_machine_probe_memory(&ctx->machine.phys_mem_total, &ctx->machine.phys_mem_free);
+void mag_machine_info_probe(mag_machine_info_t *ma) {
+    mag_machine_probe_os_name(&ma->os_name);
+    mag_machine_probe_cpu_name(&ma->cpu_name);
+    mag_machine_probe_cpu_cores(&ma->cpu_virtual_cores, &ma->cpu_physical_cores, &ma->cpu_sockets);
+    mag_machine_probe_memory(&ma->phys_mem_total, &ma->phys_mem_free);
     uint64_t caps = 0;
 #if defined(__x86_64__) || defined(_M_X64)
-    mag_probe_cpu_amd64(&ctx->machine.amd64_cpu_caps, &ctx->machine.amd64_avx10_ver);
-    caps = ctx->machine.amd64_cpu_caps;
+    mag_probe_cpu_amd64(&ma->amd64_cpu_caps, &ma->amd64_avx10_ver);
+    caps = ma->amd64_cpu_caps;
 #elif defined(__aarch64__)
-    mag_probe_cpu_arm64(&ctx->machine.arm64_cpu_caps, &ctx->machine.arm64_cpu_sve_width);
-    caps = ctx->machine.arm64_cpu_caps;
+    mag_probe_cpu_arm64(&ma->arm64_cpu_caps, &ma->arm64_cpu_sve_width);
+    caps = ma->arm64_cpu_caps;
 #endif
-    mag_probe_cpu_cache_topology(caps, &ctx->machine.cpu_l1_size, &ctx->machine.cpu_l2_size, &ctx->machine.cpu_l3_size);
-    if (mag_unlikely(!*ctx->machine.os_name)) snprintf(ctx->machine.os_name, sizeof(ctx->machine.os_name), "Unknown");
-    if (mag_unlikely(!*ctx->machine.cpu_name)) snprintf(ctx->machine.cpu_name, sizeof(ctx->machine.cpu_name), "Unknown");
+    mag_probe_cpu_cache_topology(caps, &ma->cpu_l1_size, &ma->cpu_l2_size, &ma->cpu_l3_size);
+    if (mag_unlikely(!*ma->os_name)) snprintf(ma->os_name, sizeof(ma->os_name), "Unknown");
+    if (mag_unlikely(!*ma->cpu_name)) snprintf(ma->cpu_name, sizeof(ma->cpu_name), "Unknown");
 }

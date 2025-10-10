@@ -9,7 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include "magnetron_cpu.h"
+#include "mag_cpu.h"
 
 #include <mag_context.h>
 #include <mag_thread.h>

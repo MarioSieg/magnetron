@@ -117,7 +117,7 @@ mag_context_t *mag_ctx_create2(const mag_device_desc_t *device_info) {
     ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
 
     /* Query and print host system information. */
-    mag_machine_probe(ctx);
+    mag_machine_info_probe(&ctx->machine);
     mag_system_host_info_dump(ctx);
 
     /* Create selected compute device. */

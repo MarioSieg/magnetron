@@ -12,7 +12,7 @@ add_custom_target(magnetron_runtime ALL
 
 function(add_backend name)
     message(STATUS "Configuring magnetron backend module: ${name}")
-    add_subdirectory("magnetron_${name}")
+    add_subdirectory("${name}")
     if (TARGET "magnetron_${name}")
         add_dependencies(magnetron_runtime "magnetron_${name}")
     endif()

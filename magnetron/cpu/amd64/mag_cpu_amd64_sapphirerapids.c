@@ -9,8 +9,8 @@
 ** +---------------------------------------------------------------------+
 */
 
-#define MAG_BLAS_SPECIALIZATION mag_cpu_blas_specialization_amd64_skylake_avx512
-#define MAG_BLAS_SPECIALIZATION_FEAT_REQUEST mag_cpu_blas_specialization_amd64_skylake_avx512_features
+#define MAG_BLAS_SPECIALIZATION mag_cpu_blas_specialization_amd64_sapphirerapids
+#define MAG_BLAS_SPECIALIZATION_FEAT_REQUEST mag_cpu_blas_specialization_amd64_sapphirerapids_features
 
-#include "../magnetron_cpu_impl.inl"
+#include "../mag_cpu_impl.inl"
 

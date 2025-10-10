@@ -13,8 +13,8 @@
 #define MAG_CONTEXT_H
 
 #include "mag_def.h"
-#include "mag_cpuid.h"
 #include "mag_pool.h"
+#include "mag_machine.h"
 #include "mag_backend.h"
 
 #ifdef __cplusplus
@@ -28,25 +28,7 @@ typedef enum mag_context_flags_t {
 } mag_context_flags_t;
 
 struct mag_context_t {
-    struct {
-        char os_name[128];                      /* OS name. */
-        char cpu_name[128];                     /* CPU name. */
-        uint32_t cpu_virtual_cores;             /* Virtual CPUs. */
-        uint32_t cpu_physical_cores;            /* Physical CPU cores. */
-        uint32_t cpu_sockets;                   /* CPU sockets. */
-        size_t cpu_l1_size;                    /* L1 data cache size in bytes. */
-        size_t cpu_l2_size;                     /* L2 cache size in bytes. */
-        size_t cpu_l3_size;                     /* L3 cache size in bytes. */
-        size_t phys_mem_total;                  /* Total physical memory in bytes. */
-        size_t phys_mem_free;                   /* Free physical memory in bytes. */
-#if defined(__x86_64__) || defined(_M_X64)
-        mag_amd64_cap_bitset_t amd64_cpu_caps;  /* x86-64 CPU capability bits. */
-        uint32_t amd64_avx10_ver;               /* x86-64 AVX10 version. */
-#elif defined (__aarch64__) || defined(_M_ARM64)
-        mag_arm64_cap_bitset_t arm64_cpu_caps;  /* ARM64 CPU features. */
-        int64_t arm64_cpu_sve_width;            /* ARM64 SVE vector register width. */
-#endif
-    } machine;
+    mag_machine_info_t machine;                 /* Machine information. */
     size_t num_tensors;                         /* Total tensor instances allocated. */
     size_t num_storages;                        /* Total storage buffers allocated. */
     mag_fixed_pool_t tensor_pool;               /* Tensor header memory pool. */
