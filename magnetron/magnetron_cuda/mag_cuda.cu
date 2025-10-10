@@ -11,6 +11,9 @@
 
 #include "mag_cuda.cuh"
 
+#include <mag_context.h>
+#include <mag_tensor.h>
+
 #include <cuda.h>
 
 #include <array>

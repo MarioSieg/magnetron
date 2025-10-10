@@ -9,10 +9,30 @@
 ** +---------------------------------------------------------------------+
 */
 
-#pragma once
+#ifndef MAG_DYLIB_H
+#define MAG_DYLIB_H
 
-#include <mag_backend.h>
-
+#ifdef __cplusplus
 extern "C" {
-  mag_backend_decl_interface();
+#endif
+
+typedef void mag_dylib_t;
+extern mag_dylib_t *mag_dylib_open(const char *path);
+extern void *mag_dylib_sym(mag_dylib_t *lib, const char *sym);
+extern void mag_dylib_close(mag_dylib_t *lib);
+#ifdef _WIN32
+#define MAG_DYLIB_EXT "dll"
+#define MAG_DYLIB_PREFIX ""
+#elif defined(__APPLE__)
+#define MAG_DYLIB_EXT "dylib"
+#define MAG_DYLIB_PREFIX "lib"
+#else
+#define MAG_DYLIB_EXT "so"
+#define MAG_DYLIB_PREFIX "lib"
+#endif
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif

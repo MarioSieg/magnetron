@@ -9,7 +9,8 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include "magnetron_internal.h"
+#include "mag_tensor.h"
+#include "mag_alloc.h"
 
 #define MAG_USE_STB_IMAGE_RESIZE /* Use stb_image_resize for image resizing. */
 

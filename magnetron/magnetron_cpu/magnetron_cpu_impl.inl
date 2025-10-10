@@ -11,6 +11,22 @@
 
 #include "magnetron_cpu.h"
 
+#include <mag_tensor.h>
+#include <mag_cpuid.h>
+#include <mag_alloc.h>
+
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#ifdef __aarch64__
+#include <arm_neon.h>
+#include <arm_acle.h>
+#elif defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#include <cpuid.h>
+#endif
+#endif
+
 #include <float.h>
 #include <math.h>
 

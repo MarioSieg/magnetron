@@ -9,10 +9,28 @@
 ** +---------------------------------------------------------------------+
 */
 
-#pragma once
+#ifndef MAG_AUTODIFF_H
+#define MAG_AUTODIFF_H
 
-#include <mag_backend.h>
+#include "mag_tensor.h"
 
+#ifdef __cplusplus
 extern "C" {
-  mag_backend_decl_interface();
+#endif
+
+/* Autodiff state for parameters */
+struct mag_au_state_t {
+    mag_context_t *ctx;
+    mag_rccontrol_t rc;
+    mag_opcode_t op;
+    mag_tensor_t *op_inputs[MAG_MAX_OP_INPUTS];
+    mag_opparam_t op_params[MAG_MAX_OP_PARAMS];
+    mag_tensor_t *grad;
+};
+extern mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t *ctx);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif

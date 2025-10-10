@@ -9,10 +9,23 @@
 ** +---------------------------------------------------------------------+
 */
 
-#pragma once
+#ifndef MAG_OS_H
+#define MAG_OS_H
 
-#include <mag_backend.h>
+#include "mag_def.h"
 
+#ifdef __cplusplus
 extern "C" {
-  mag_backend_decl_interface();
+#endif
+
+extern char *mag_current_module_path(void);
+extern bool mag_sec_crypto_entropy(void *buf, size_t len);
+
+typedef void (*mag_dir_callback)(const char *dir, const char *file, void *ud);
+extern size_t mag_iter_dir(const char *dir, mag_dir_callback cb, void *ud);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif

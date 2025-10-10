@@ -78,11 +78,7 @@ typedef enum mag_color_channels_t {
     MAG_COLOR_CHANNELS__NUM
 } mag_color_channels_t;
 
-extern MAG_EXPORT void *(*mag_get_alloc_fn(void))(void *, size_t, size_t); /* Get global allocator. */
-extern MAG_EXPORT void mag_set_alloc_fn(void *(*alloc)(void *, size_t, size_t)); /* Set global allocator. */
 extern MAG_EXPORT void mag_set_log_mode(bool enabled); /* Enable/disable logging. */
-extern MAG_EXPORT uint32_t mag_pack_color_u8(uint8_t r, uint8_t g, uint8_t b);
-extern MAG_EXPORT uint32_t mag_pack_color_f32(float r, float g, float b);
 
 /**
 * @brief Context for the magnetron library.

@@ -11,7 +11,11 @@
 
 #include "magnetron_cpu.h"
 
-#include <math.h>
+#include <mag_context.h>
+#include <mag_thread.h>
+#include <mag_cpuid.h>
+#include <mag_tensor.h>
+#include <mag_alloc.h>
 
 typedef struct mag_op_thread_scaling_info {
     mag_e11m52_t growth;        /* Logarithmic growth factor for the number of threads */

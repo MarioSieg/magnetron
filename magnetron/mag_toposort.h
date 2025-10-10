@@ -9,10 +9,28 @@
 ** +---------------------------------------------------------------------+
 */
 
-#pragma once
+#ifndef MAG_TOPOSORT_H
+#define MAG_TOPOSORT_H
 
-#include <mag_backend.h>
+#include "mag_tensor.h"
 
+#ifdef __cplusplus
 extern "C" {
-  mag_backend_decl_interface();
+#endif
+
+typedef struct mag_tensor_array_t {
+    mag_tensor_t **data;
+    size_t size;
+    size_t capacity;
+} mag_tensor_array_t;
+
+extern void mag_tensor_array_init(mag_tensor_array_t *arr);
+extern void mag_tensor_array_free(mag_tensor_array_t *arr);
+extern void mag_tensor_array_push(mag_tensor_array_t *arr, mag_tensor_t *t);
+extern void mag_toposort(mag_tensor_t *root, mag_tensor_array_t *sorted);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif

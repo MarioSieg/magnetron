@@ -9,10 +9,19 @@
 ** +---------------------------------------------------------------------+
 */
 
-#pragma once
+#ifndef MAG_MACHINE_H
+#define MAG_MACHINE_H
 
-#include <mag_backend.h>
+#include "mag_context.h"
 
+#ifdef __cplusplus
 extern "C" {
-  mag_backend_decl_interface();
+#endif
+
+extern void mag_machine_probe(mag_context_t *ctx);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif

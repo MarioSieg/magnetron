@@ -9,10 +9,5 @@
 ** +---------------------------------------------------------------------+
 */
 
-#pragma once
+#include "mag_operator.h"
 
-#include <mag_backend.h>
-
-extern "C" {
-  mag_backend_decl_interface();
-}

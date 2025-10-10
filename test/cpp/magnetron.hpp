@@ -82,14 +82,6 @@ namespace magnetron {
         mag_set_log_mode(enable);
     }
 
-    [[nodiscard]] inline auto pack_color_u8(std::uint8_t r, std::uint8_t g, std::uint8_t b) noexcept -> std::uint32_t {
-        return mag_pack_color_u8(r, g, b);
-    }
-
-    [[nodiscard]] inline auto pack_color_f32(float r, float g, float b) noexcept -> std::uint32_t {
-        return mag_pack_color_f32(r, g, b);
-    }
-
     /**
      * CPU compute device creation info.
      */
