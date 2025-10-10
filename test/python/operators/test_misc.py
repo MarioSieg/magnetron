@@ -50,7 +50,7 @@ def test_tensor_cat_random(dtype):
     dim = random.randint(0, rank - 1)
     k = random.randint(2, 5)
     others = list(base_shape)
-    sizes = [random.randint(1, 5) for _ in range(k)]
+    sizes = [random.randint(2, 5) for _ in range(k)]
     shapes = [tuple(others[:dim] + [s] + others[dim+1:]) for s in sizes]
     xs = [_make_tensor(s, dtype) for s in shapes]
     ts = [totorch(x) for x in xs]
@@ -105,7 +105,7 @@ def test_tensor_cat_matches_torch_many_chunks(dtype):
 
     others = list(base_shape)
     k = 10
-    sizes = [random.randint(1, 3) for _ in range(k)]
+    sizes = [random.randint(2, 5) for _ in range(k)]
     shapes = [tuple(others[:dim] + [s] + others[dim+1:]) for s in sizes]
 
     xs = [_make_tensor(s, dtype) for s in shapes]

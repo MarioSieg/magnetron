@@ -27,8 +27,8 @@ def test_reduction_min(dtype: DataType, keepdim: bool):
     k = random.randint(0, nd)
     axes = sorted(random.sample(range(nd), k))
     axes = _maybe_negative_axes(axes, nd)
-    dim_arg = axes if len(axes) > 0 else None
-    unary_op(dtype, lambda x: x.min(dim=dim_arg, keepdim=keepdim), lambda x: x.min(dim=dim_arg, keepdim=keepdim))
+    dim_arg = tuple(set(axes)) if len(axes) > 0 else None
+    unary_op(dtype, lambda x: x.min(dim=dim_arg, keepdim=keepdim), lambda x: x.amin(dim_arg, keepdim))
 
 @pytest.mark.parametrize('dtype', [float16, float32])
 @pytest.mark.parametrize('keepdim', [False, True])
@@ -38,8 +38,8 @@ def test_reduction_max(dtype: DataType, keepdim: bool):
     k = random.randint(0, nd)
     axes = sorted(random.sample(range(nd), k))
     axes = _maybe_negative_axes(axes, nd)
-    dim_arg = axes if len(axes) > 0 else None
-    unary_op(dtype, lambda x: x.max(dim=dim_arg, keepdim=keepdim), lambda x: x.max(dim=dim_arg, keepdim=keepdim))
+    dim_arg = tuple(set(axes)) if len(axes) > 0 else None
+    unary_op(dtype, lambda x: x.max(dim=dim_arg, keepdim=keepdim), lambda x: x.amax(dim=dim_arg, keepdim=keepdim))
 
 @pytest.mark.parametrize('dtype', [float16, float32])
 @pytest.mark.parametrize('keepdim', [False, True])
