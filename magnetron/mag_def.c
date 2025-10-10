@@ -16,6 +16,10 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#endif
 #include <unistd.h>
 #include <time.h>
 #endif

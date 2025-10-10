@@ -305,12 +305,16 @@ void mag_probe_cpu_cache_topology(mag_amd64_cap_bitset_t caps, size_t *ol1, size
 
 #elif defined(__aarch64__)
 
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
+
 #define _(ident) #ident
 const char *const mag_arm64_cpu_cap_names[MAG_ARM64_CAP__NUM] = {
     mag_armd64_capdef(_, MAG_SEP)
 };
 
-static void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
+void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
     *o = MAG_ARM64_CAP_NONE;
 #ifdef __linux__
     unsigned long hwcap = getauxval(AT_HWCAP);
@@ -386,7 +390,7 @@ static void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
 #endif
 }
 
-static void mag_probe_cpu_cache_topology(mag_arm64_cap_bitset_t caps, size_t *ol1, size_t *ol2, size_t *ol3) {
+void mag_probe_cpu_cache_topology(mag_arm64_cap_bitset_t caps, size_t *ol1, size_t *ol2, size_t *ol3) {
 #ifdef __APPLE__
     size_t sz;
     uint64_t v = 0;

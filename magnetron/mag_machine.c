@@ -18,6 +18,10 @@
 
 #ifdef _WIN32
 #else
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#include <mach/mach.h>
+#endif
 #include <unistd.h>
 #endif
 
