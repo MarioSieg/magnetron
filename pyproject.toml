@@ -48,6 +48,7 @@ MAGNETRON_BUILD_BENCHMARKS = false
 [tool.scikit-build]
 wheel.packages = ["python/magnetron"]
 editable.mode = "redirect"
+install.components = ["python"]
 
 [tool.ruff]
 line-length = 150

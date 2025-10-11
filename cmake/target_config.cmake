@@ -107,9 +107,9 @@ function(apply_name_config_to_target target_name)
         set_target_properties(${target_name} PROPERTIES BUILD_RPATH "@loader_path" INSTALL_RPATH "@loader_path")
     endif()
     install(TARGETS ${target_name}
-        LIBRARY DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron
-        RUNTIME DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron
-        ARCHIVE DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron
+        LIBRARY DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron COMPONENT python
+        RUNTIME DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron COMPONENT python
+        ARCHIVE DESTINATION ${SKBUILD_PLATLIB_DIR}/magnetron COMPONENT python
     )
 endfunction()
 
