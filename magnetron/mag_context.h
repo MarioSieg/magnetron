@@ -30,8 +30,6 @@ typedef enum mag_context_flags_t {
 struct mag_context_t {
     mag_error_t error_status;                   /* Last error status. */
     mag_machine_info_t machine;                 /* Machine information. */
-    size_t num_tensors;                         /* Total tensor instances allocated. */
-    size_t num_storages;                        /* Total storage buffers allocated. */
     mag_fixed_pool_t tensor_pool;               /* Tensor header memory pool. */
     mag_fixed_pool_t storage_pool;              /* Storage header memory pool. */
     mag_fixed_pool_t view_meta_pool;            /* View metadata header memory pool. */
@@ -43,6 +41,10 @@ struct mag_context_t {
     mag_backend_t *backend;                     /* Active compute backend. */
     mag_device_t *device;                       /* Active compute device. */
     void *ud;                                   /* User data. */
+    size_t num_alive_tensors;                   /* Total tensor instances allocated. */
+    size_t num_alive_storages;                  /* Total storage buffers allocated. */
+    size_t num_created_tensors;                 /* Total tensor instances created. */
+    size_t storage_bytes_allocated;             /* Total bytes allocated for storage buffers. */
 #ifdef MAG_DEBUG
     mag_tensor_t *alive_head;                   /* List of alive tensors used for leak detection. */
 #endif

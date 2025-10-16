@@ -59,7 +59,7 @@ static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type
     hdr->alive_next = NULL;
     mag_leak_detector_enqueue(hdr);
 #endif
-    ++ctx->num_tensors; /* Increase tensor count in context. */
+    ++ctx->num_alive_tensors; /* Increase tensor count in context. */
     return hdr;
 }
 
@@ -88,6 +88,7 @@ mag_status_t mag_tensor_new(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t 
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
     mag_device_t *dvc = ctx->device;
     void (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;
+    ctx->storage_bytes_allocated += numbytes;
     (*allocator)(dvc, &tensor->storage, numbytes, type);
     for (int i=0; i < MAG_MAX_DIMS; ++i)  {
         tensor->shape[i] = i < rank ? shape[i] : 1;
@@ -98,6 +99,7 @@ mag_status_t mag_tensor_new(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t 
     for (int64_t i=rank-2; i >= 0; --i) {
         mag_contract(ctx, ERR_DIM_OVERFLOW, { mag_tensor_free_header(tensor); *out = NULL; }, !mag_mulov64(tensor->strides[i+1], tensor->shape[i+1], tensor->strides+i), "Stride overflowed at dim[%" PRIi64 "]", i);
     }
+    ++ctx->num_created_tensors;
     *out = tensor;
     return MAG_STATUS_OK;
 }
@@ -141,8 +143,8 @@ mag_status_t mag_tensor_as_strided(mag_tensor_t **out, mag_context_t *ctx, mag_t
 static void mag_tensor_dtor(void *self) {
     mag_tensor_t *t = self;
     mag_context_t *ctx = t->ctx;
-    mag_assert(ctx->num_tensors > 0, "Double free detected on tensor %p", t);
-    --ctx->num_tensors;
+    mag_assert(ctx->num_alive_tensors > 0, "Double free detected on tensor %p", t);
+    --ctx->num_alive_tensors;
     if (t->view_meta) {
         mag_rc_control_decref(&t->view_meta->rc);
         t->view_meta = NULL;

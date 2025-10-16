@@ -37,8 +37,9 @@ void mag_set_log_mode(bool enabled) {
 }
 
 const char *mag_status_get_name(mag_status_t op){
-    static const char *names[] ={
+    static const char *names[] = {
         "MAG_STATUS_OK",
+        "MAG_STATUS_ERR_PENDING",
         "MAG_STATUS_ERR_THREAD_MISMATCH",
         "MAG_STATUS_ERR_INVALID_RANK",
         "MAG_STATUS_ERR_INVALID_DIM",

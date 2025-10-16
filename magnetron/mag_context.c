@@ -154,10 +154,10 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
 #ifdef MAG_DEBUG
     mag_leak_detector_dump_results(ctx);  /* Provide detailed leak check info */
 #endif
-    bool leaks_detected = ctx->num_tensors || ctx->num_storages;
+    bool leaks_detected = ctx->num_alive_tensors || ctx->num_alive_storages;
     if (mag_unlikely(leaks_detected)) {
         char msg[256] = {0};
-        snprintf(msg, sizeof(msg), "magnetron context destroyed with %zu leaked tensors and %zu leaked storages", ctx->num_tensors, ctx->num_storages);
+        snprintf(msg, sizeof(msg), "magnetron context destroyed with %zu leaked tensors and %zu leaked storages", ctx->num_alive_tensors, ctx->num_alive_storages);
         if (suppress_leak_detection) mag_log_warn("%s", msg);
         else mag_panic("%s", msg);
     }
@@ -169,10 +169,12 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     ctx->device = NULL;
     ctx->backend = NULL;
     mag_backend_registry_free(ctx->backend_registry);
+    size_t num_created_tensors = ctx->num_created_tensors;
+    size_t storage_bytes = ctx->storage_bytes_allocated;
     memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
     (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
     ctx = NULL;
-    mag_log_info("magnetron context destroyed");
+    mag_log_info("magnetron context destroyed, %zu K tensors total, %.02f GiB storage allocation", num_created_tensors/1000, (mag_e11m52_t)storage_bytes/(mag_e11m52_t)(1<<30));
 }
 
 const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx) {
@@ -190,6 +192,15 @@ mag_status_t mag_ctx_get_last_error_code(const mag_context_t *ctx) {
 void mag_ctx_clear_last_error(mag_context_t *ctx) {
     memset(&ctx->error_status, 0, sizeof(ctx->error_status));
     ctx->error_status.code = MAG_STATUS_OK;
+}
+
+void mag_ctx_take_last_error(mag_context_t *ctx, mag_error_t *err){
+    *err = ctx->error_status;
+    mag_ctx_clear_last_error(ctx);
+}
+
+bool mag_ctx_has_error(const mag_context_t *ctx){
+    return ctx->error_status.code != MAG_STATUS_OK;
 }
 
 mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t *ctx) {

@@ -144,7 +144,7 @@ class GPT2(nn.Module):
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
         assert len(sd_keys_hf) == len(sd_keys), f'mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}'
 
-        def copy(r: Tensor, x) -> None:  # TODO
+        def copy(r: Tensor, x: 'torch.Tensor') -> None:  # TODO
             assert x.is_contiguous and r.is_contiguous
             assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
             assert r.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'

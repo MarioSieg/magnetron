@@ -12,6 +12,7 @@ from __future__ import annotations
 import threading
 import weakref
 from contextlib import ContextDecorator
+from dataclasses import dataclass
 from enum import unique, Enum
 from functools import lru_cache
 from types import TracebackType
@@ -22,6 +23,16 @@ from ._core import Config, ComputeDeviceInfo
 from ._dtype import DataType
 
 _MAIN_TID: int = threading.get_native_id()
+
+
+@dataclass
+class NativeErrorInfo:
+    status_code: int
+    message: str
+    file: str
+    line: int
+    col: int
+    func: str
 
 
 @final
@@ -42,6 +53,50 @@ class Context:
     @property
     def native_ptr(self) -> FFI.CData:
         return self._ptr
+
+    @property
+    def last_error_code(self) -> int:
+        return C.mag_ctx_get_last_error_code(self._ptr)
+
+    @property
+    def has_last_error(self) -> bool:
+        return C.mag_ctx_has_error(self._ptr)
+
+    def clear_last_error(self) -> None:
+        C.mag_ctx_clear_last_error(self._ptr)
+
+    @property
+    def last_error_str(self) -> str:
+        return C.mag_status_get_name(C.mag_ctx_get_last_error_code(self._ptr)).decode('utf-8')
+
+    def take_last_error(self) -> NativeErrorInfo | None:
+        if not self.has_last_error:
+            return None
+        native_err: FFI.CData = FFI.new('mag_error_t*')
+        C.mag_ctx_take_last_error(self._ptr, native_err)
+        status_code: int = native_err.code
+        message: str = FFI.string(native_err.message).decode('utf-8')
+        file: str = FFI.string(native_err.file).decode('utf-8')
+        line: int = native_err.line
+        col: int = native_err.col
+        func: str = FFI.string(native_err.func).decode('utf-8')
+        return NativeErrorInfo(status_code, message, file, line, col, func)
+
+    def start_grad_recorder(self) -> None:
+        C.mag_ctx_grad_recorder_start(self._ptr)
+
+    def stop_grad_recorder(self) -> None:
+        C.mag_ctx_grad_recorder_stop(self._ptr)
+
+    @property
+    def is_grad_recording(self) -> bool:
+        return C.mag_ctx_grad_recorder_is_running(self._ptr)
+
+    def manual_seed(self, seed: int) -> None:
+        if seed < 0:
+            seed += 0xFFFFFFFFFFFFFFFF
+        seed &= 0xFFFFFFFFFFFFFFFF
+        C.mag_ctx_manual_seed(self._ptr, seed)
 
     @property
     def compute_device_name(self) -> str:
@@ -83,29 +138,9 @@ class Context:
     def is_numa_system(self) -> bool:
         return C.mag_ctx_is_numa_system(self._ptr)
 
-    @property
-    def is_profiling(self) -> bool:
-        return C.mag_ctx_profiler_is_running(self._ptr)
-
-    def start_grad_recorder(self) -> None:
-        C.mag_ctx_grad_recorder_start(self._ptr)
-
-    def stop_grad_recorder(self) -> None:
-        C.mag_ctx_grad_recorder_stop(self._ptr)
-
-    @property
-    def is_grad_recording(self) -> bool:
-        return C.mag_ctx_grad_recorder_is_running(self._ptr)
-
-    def manual_seed(self, seed: int) -> None:
-        if seed < 0:
-            seed += (1 << 64) - 1
-        seed &= (1 << 64) - 1
-        C.mag_ctx_manual_seed(self._ptr, seed)
-
 
 @lru_cache(maxsize=1)
-def active_context() -> 'Context':
+def active_context() -> Context:
     """Get active global context"""
     C.mag_set_log_mode(Config.verbose)
     return Context()

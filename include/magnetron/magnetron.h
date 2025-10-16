@@ -82,6 +82,7 @@ extern MAG_EXPORT void mag_set_log_mode(bool enabled); /* Enable/disable logging
 
 typedef enum mag_status_t {
     MAG_STATUS_OK = 0,
+    MAG_STATUS_ERR_PENDING,
     MAG_STATUS_ERR_THREAD_MISMATCH,
     MAG_STATUS_ERR_INVALID_RANK,
     MAG_STATUS_ERR_INVALID_DIM,
@@ -134,10 +135,14 @@ extern MAG_EXPORT mag_device_desc_t mag_compute_device_desc_cuda(uint32_t cuda_d
 
 extern MAG_EXPORT mag_context_t *mag_ctx_create(mag_device_type_t device);                                              /* Create context with default config, and only specify device type. */
 extern MAG_EXPORT mag_context_t *mag_ctx_create2(const mag_device_desc_t *device_info);
+
 extern MAG_EXPORT const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx);                                  /* Get last error and clear it. */
 extern MAG_EXPORT void mag_ctx_set_last_error(mag_context_t *ctx, const mag_error_t *error);                            /* Set last error. */
 extern MAG_EXPORT mag_status_t mag_ctx_get_last_error_code(const mag_context_t *ctx);                                   /* Get last error code without clearing it. */
 extern MAG_EXPORT void mag_ctx_clear_last_error(mag_context_t *ctx);                                                    /* Clear last error. */
+extern MAG_EXPORT void mag_ctx_take_last_error(mag_context_t *ctx, mag_error_t *err);                             /* Take last error and clear it. */
+extern MAG_EXPORT bool mag_ctx_has_error(const mag_context_t *ctx);                                                     /* Check if there is an error. */
+
 extern MAG_EXPORT mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t *ctx);                          /* Get compute device type */
 extern MAG_EXPORT const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx);                                /* Get the name of the compute device */
 extern MAG_EXPORT const char *mag_ctx_get_os_name(const mag_context_t *ctx);                                            /* Get the name of the operating system */

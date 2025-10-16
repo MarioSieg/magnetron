@@ -783,8 +783,8 @@ static void mag_cpu_convert(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, s
 static void mag_cpu_storage_dtor(void *self) {
     mag_storage_buffer_t *buf = self;
     mag_context_t *ctx = buf->ctx;
-    mag_assert(ctx->num_storages > 0, "double freed storage");
-    --ctx->num_storages;
+    mag_assert(ctx->num_alive_storages > 0, "double freed storage");
+    --ctx->num_alive_storages;
     (*mag_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
     mag_fixed_pool_free_block(&ctx->storage_pool, buf);
 }
@@ -806,7 +806,7 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
         .transfer = &mag_cpu_transfer,
         .convert = &mag_cpu_convert
     };
-    ++host->ctx->num_storages;
+    ++host->ctx->num_alive_storages;
 }
 
 static void mag_cpu_manual_seed(mag_device_t *dvc, uint64_t seed) {

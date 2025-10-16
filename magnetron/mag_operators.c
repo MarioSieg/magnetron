@@ -601,7 +601,7 @@ mag_status_t mag_cat(mag_tensor_t **out, mag_tensor_t **tensors, size_t count, i
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(dim));
-    stat = mag_tensor_new(out, t0->ctx, dtype, rank, shape);
+    stat = mag_tensor_new(&result, t0->ctx, dtype, rank, shape);
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_dispatch(MAG_OP_CAT, false, &layout, tensors, count, &result, 1);
     *out = result;
@@ -780,7 +780,7 @@ mag_status_t mag_gather(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, mag_te
         for (int64_t d=dim+1; d < x->rank; ++d) ax[ork++] = x->shape[d];
     }
     mag_contract(ctx, ERR_INVALID_RANK, {}, ork >= 1 && ork <= MAG_MAX_DIMS, "Gather output rank must be in [1, %d], but got: %" PRIi64, MAG_MAX_DIMS, ork);
-    stat = mag_tensor_empty(out, x->ctx, x->dtype, ork, ax);
+    stat = mag_tensor_empty(&result, x->ctx, x->dtype, ork, ax);
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);

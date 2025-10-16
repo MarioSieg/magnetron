@@ -11,16 +11,24 @@ from __future__ import annotations
 
 import threading
 import weakref
-from typing import Any, Sequence
+from typing import Any, Sequence, Callable
 
-from ._context import active_context, default_dtype
+from ._context import active_context, default_dtype, Context
 from ._core import *
 from ._dtype import *
 from ._bootstrap import FFI, C
+from ._error import _handle_errc
 
 _MAIN_TID: int = threading.get_native_id()
 
 NestedList = float | bool | int | list['NestedData']
+
+
+def _wrap_out_alloc(callback: Callable[[Any], int]) -> FFI.CData:
+    instance: FFI.CData = FFI.new(f'mag_tensor_t*[1]')
+    status: int = callback(instance)
+    _handle_errc(status)
+    return instance[0]
 
 
 def _deduce_tensor_dtype(obj: bool | float | int) -> DataType:
@@ -264,7 +272,7 @@ class Tensor:
     def backward(self) -> None:
         assert self.requires_grad, 'Tensor must require gradient tracking'
         assert self.rank == 1 and self.numel == 1, 'Tensor must be scalar'
-        C.mag_tensor_backward(self._ptr)
+        _handle_errc(C.mag_tensor_backward(self._ptr))
 
     def zero_grad(self) -> None:
         assert self.requires_grad, 'Tensor must require gradient tracking'
@@ -377,7 +385,7 @@ class Tensor:
         assert 0 < len(shape) <= MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
         assert all(0 < dim <= DIM_MAX for dim in shape), 'Invalid dimension size'
         dims: FFI.CData = FFI.new(f'int64_t[{len(shape)}]', shape)
-        instance: FFI.CData = C.mag_tensor_empty(active_context().native_ptr, dtype.enum_value, len(shape), dims)
+        instance = _wrap_out_alloc(lambda out: C.mag_tensor_empty(out, active_context().native_ptr, dtype.enum_value, len(shape), dims))
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
         return tensor
@@ -514,16 +522,16 @@ class Tensor:
         tensors = [t.contiguous() for t in tensors]
         for i, t in enumerate(tensors):
             tensor_ptrs[i] = t.native_ptr
-        return Tensor(C.mag_cat(tensor_ptrs, num_tensors, dim))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_cat(out, tensor_ptrs, num_tensors, dim)))
 
     def clone(self) -> Tensor:
-        return Tensor(C.mag_clone(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_clone(out, self._ptr)))
 
     def view(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(dims)
         num_dims: int = len(dims)
         view_dims: FFI.CData = FFI.new(f'int64_t[{num_dims}]', dims)
-        return Tensor(C.mag_view(self._ptr, view_dims, num_dims))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_view(out, self._ptr, view_dims, num_dims)))
 
     def view_slice(self, dim: int, start: int, length: int, step: int = 1) -> Tensor:
         assert 0 <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
@@ -531,7 +539,7 @@ class Tensor:
         assert start + (length - 1) * step < self.shape[dim], (
             f'Slice out of bounds: start={start}, length={length}, step={step}, shape={self.shape[dim]}'
         )
-        return Tensor(C.mag_view_slice(self._ptr, dim, start, length, step))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_view_slice(out, self._ptr, dim, start, length, step)))
 
     def split(self, chunk_size: int, dim: int = 0) -> tuple[Tensor, ...]:
         assert chunk_size > 0, 'chunk_size must be greater than 0, got {chunk_size}'
@@ -551,21 +559,21 @@ class Tensor:
     def gather(self, dim: int, index: Tensor) -> Tensor:
         assert 0 <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
         assert index.dtype == int32, f'Index tensor must be of int32 dtype, but is {index.dtype}'
-        return Tensor(C.mag_gather(self._ptr, dim, index._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_gather(out, self._ptr, dim, index._ptr)))
 
     def reshape(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(dims)
         num_dims: int = len(dims)
         view_dims: FFI.CData = FFI.new(f'int64_t[{num_dims}]', dims)
-        return Tensor(C.mag_reshape(self._ptr, view_dims, num_dims))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_reshape(out, self._ptr, view_dims, num_dims)))
 
     def transpose(self, dim1: int = 0, dim2: int = 1) -> Tensor:
         assert dim1 != dim2, f'Transposition axes must be not equal, but {dim1} == {dim2}'
-        return Tensor(C.mag_transpose(self._ptr, dim1, dim2))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_transpose(out, self._ptr, dim1, dim2)))
 
     @property
     def T(self) -> Tensor:
-        return Tensor(C.mag_transpose(self._ptr, 0, 1))
+        return self.transpose(0, 1)
 
     def detach(self) -> Tensor:
         C.mag_tensor_detach(self._ptr)
@@ -582,12 +590,7 @@ class Tensor:
         if len(dims) != MAX_DIMS:
             dims = dims + tuple(range(self.rank, MAX_DIMS))
         assert len(dims) == MAX_DIMS
-        dims = FFI.new('int64_t[]', dims)
-        for i in range(MAX_DIMS):
-            assert 0 <= dims[i] < MAX_DIMS
-            for j in range(i + 1, MAX_DIMS):
-                assert dims[i] != dims[j], f'Duplicate axis: {dims[i]}'
-        return Tensor(C.mag_permute(self._ptr, dims, MAX_DIMS))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_permute(out, self._ptr, FFI.new('int64_t[]', dims), MAX_DIMS)))
 
     def fill_(self, value: float | int | bool) -> None:
         self._validate_inplace_op()
@@ -650,52 +653,46 @@ class Tensor:
     def mean(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
-        return Tensor(C.mag_mean(self._ptr, dims, num_dims, keepdim))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_mean(out, self._ptr, dims, num_dims, keepdim)))
 
     def min(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
-        return Tensor(C.mag_min(self._ptr, dims, num_dims, keepdim))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_min(out, self._ptr, dims, num_dims, keepdim)))
 
     def max(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
-        return Tensor(C.mag_max(self._ptr, dims, num_dims, keepdim))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_max(out, self._ptr, dims, num_dims, keepdim)))
 
     def sum(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
-        return Tensor(C.mag_sum(self._ptr, dims, num_dims, keepdim))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sum(out, self._ptr, dims, num_dims, keepdim)))
 
     def argmin(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         raise NotImplementedError('argmin is not implemented for complex tensors')
-        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        dims, num_dims = _get_reduction_axes(dim)
-        return Tensor(C.mag_argmin(self._ptr, dims, num_dims, keepdim))
 
     def argmax(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         raise NotImplementedError('argmin is not implemented for complex tensors')
-        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        dims, num_dims = _get_reduction_axes(dim)
-        return Tensor(C.mag_argmax(self._ptr, dims, num_dims, keepdim))
 
     def abs(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_abs(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_abs(out, self._ptr)))
 
     def abs_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_abs_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_abs_(out, self._ptr)))
 
     def neg(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_neg(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_neg(out, self._ptr)))
 
     def neg_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_neg_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_neg_(out, self._ptr)))
 
     def __neg__(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
@@ -707,227 +704,227 @@ class Tensor:
 
     def log(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_log(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_log(out, self._ptr)))
 
     def log_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_log_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_log_(out, self._ptr)))
 
     def sqr(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_sqr(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sqr(out, self._ptr)))
 
     def sqr_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_sqr_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sqr_(out, self._ptr)))
 
     def sqrt(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_sqrt(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sqrt(out, self._ptr)))
 
     def sqrt_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_sqrt_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sqrt_(out, self._ptr)))
 
     def sin(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_sin(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sin(out, self._ptr)))
 
     def sin_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_sin_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sin_(out, self._ptr)))
 
     def cos(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_cos(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_cos(out, self._ptr)))
 
     def cos_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_cos_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_cos_(out, self._ptr)))
 
     def step(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_step(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_step(out, self._ptr)))
 
     def step_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_step_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_step_(out, self._ptr)))
 
     def exp(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_exp(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_exp(out, self._ptr)))
 
     def exp_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_exp_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_exp_(out, self._ptr)))
 
     def floor(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_floor(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_floor(out, self._ptr)))
 
     def floor_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_floor_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_floor_(out, self._ptr)))
 
     def ceil(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_ceil(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_ceil(out, self._ptr)))
 
     def ceil_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_ceil_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_ceil_(out, self._ptr)))
 
     def round(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_round(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_round(out, self._ptr)))
 
     def round_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_round_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_round_(out, self._ptr)))
 
     def softmax(self, dim: int = -1) -> Tensor:
         if dim != -1:
             raise NotImplementedError('Softmax only supports the last dimension (-1) for now')
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_softmax(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_softmax(out, self._ptr)))
 
     def softmax_(self, dim: int = -1) -> Tensor:
         if dim != -1:
             raise NotImplementedError('Softmax only supports the last dimension (-1) for now')
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_softmax_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_softmax_(out, self._ptr)))
 
     def sigmoid(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_sigmoid(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sigmoid(out, self._ptr)))
 
     def sigmoid_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_sigmoid_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sigmoid_(out, self._ptr)))
 
     def hardsigmoid(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_hard_sigmoid(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_hard_sigmoid(out, self._ptr)))
 
     def hardsigmoid_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_hard_sigmoid_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_hard_sigmoid(out, self._ptr)))
 
     def silu(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_silu(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_silu(out, self._ptr)))
 
     def silu_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_silu_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_silu_(out, self._ptr)))
 
     def tanh(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_tanh(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_tanh(out, self._ptr)))
 
     def tanh_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_tanh_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_tanh_(out, self._ptr)))
 
     def relu(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_relu(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_relu(out, self._ptr)))
 
     def relu_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_relu_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_relu_(out, self._ptr)))
 
     def gelu(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_gelu(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_gelu(out, self._ptr)))
 
     def gelu_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_gelu_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_gelu_(out, self._ptr)))
 
     def gelu_approx(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_gelu_approx(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_gelu_approx(out, self._ptr)))
 
     def gelu_approx_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_gelu_approx_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_gelu_approx_(out, self._ptr)))
 
     def tril(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Tril requires a rank >= 2 but is {self.rank}'
-        return Tensor(C.mag_tril(self._ptr, diagonal))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_tril(out, self._ptr, diagonal)))
 
     def tril_(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Tril requires a rank >= 2 but is {self.rank}'
         self._validate_inplace_op()
-        return Tensor(C.mag_tril_(self._ptr, diagonal))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_tril_(out, self._ptr, diagonal)))
 
     def triu(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Triu requires a rank >= 2 but is {self.rank}'
-        return Tensor(C.mag_triu(self._ptr, diagonal))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_triu(out, self._ptr, diagonal)))
 
     def triu_(self, diagonal: int = 0) -> Tensor:
         assert self.rank >= 2, f'Triu requires a rank >= 2 but is {self.rank}'
         self._validate_inplace_op()
-        return Tensor(C.mag_triu_(self._ptr, diagonal))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_triu_(out, self._ptr, diagonal)))
 
     def multinomial(self, num_samples: int = 1, replacement: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         assert self.rank in (1, 2), f'Multinomial sampling requires a 1D or 2D tensor, but got rank {self.rank}'
         assert num_samples > 0
         assert not replacement, 'Multinomial sampling with replacement is not implemented yet'
-        return Tensor(C.mag_multinomial(self._ptr, num_samples, replacement))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_multinomial(out, self._ptr, num_samples, replacement)))
 
     def logical_and(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_and(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_and(out, self._ptr, rhs._ptr)))
 
     def logical_and_(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_and_(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_and_(out, self._ptr, rhs._ptr)))
 
     def logical_or(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_and(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_or(out, self._ptr, rhs._ptr)))
 
     def logical_or_(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_or_(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_or_(out, self._ptr, rhs._ptr)))
 
     def logical_xor(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_and(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_xor(out, self._ptr, rhs._ptr)))
 
     def logical_xor_(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_xor_(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_xor_(out, self._ptr, rhs._ptr)))
 
     def logical_not(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_not(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_not(out, self._ptr)))
 
     def logical_not_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=INTEGRAL_DTYPES)
         self._validate_inplace_op()
-        return Tensor(C.mag_not_(self._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_not_(out, self._ptr)))
 
     def bitwise_and(self, rhs: Tensor) -> Tensor:
         return self.logical_and(rhs)
@@ -956,7 +953,7 @@ class Tensor:
     def __add__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_add(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_add(out, self._ptr, rhs._ptr)))
 
     def __radd__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -967,12 +964,12 @@ class Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_add_(self._ptr, float(rhs)))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_add_(out, self._ptr, rhs._ptr)))
 
     def __sub__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_sub(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sub(out, self._ptr, rhs._ptr)))
 
     def __rsub__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -983,12 +980,12 @@ class Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_sub_(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_sub_(out, self._ptr, rhs._ptr)))
 
     def __mul__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_mul(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_mul(out, self._ptr, rhs._ptr)))
 
     def __rmul__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -999,12 +996,12 @@ class Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_mul_(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_mul_(out, self._ptr, rhs._ptr)))
 
     def __truediv__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_div(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_div(out, self._ptr, rhs._ptr)))
 
     def __rtruediv__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -1015,12 +1012,12 @@ class Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_div_(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_div_(out, self._ptr, rhs._ptr)))
 
     def __floordiv__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_div(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_div(out, self._ptr, rhs._ptr)))
 
     def __rfloordiv__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -1031,21 +1028,18 @@ class Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_div_(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_div_(out, self._ptr, rhs._ptr)))
 
     def __matmul__(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(C.mag_matmul(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_matmul(out, self._ptr, rhs._ptr)))
 
     def __imatmul__(self, rhs: Tensor) -> Tensor:
-        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        self._validate_inplace_op()
-        return Tensor(C.mag_matmul_(self._ptr, rhs._ptr))
+        raise NotImplementedError('In-place matrix multiplication is not supported')
 
     def __and__(self, rhs: Tensor | bool | int) -> Tensor:
         rhs = self._expand_rhs(rhs)
-        self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_and(self._ptr, rhs._ptr))
+        return self.logical_and(rhs)
 
     def __rand__(self, rhs: int | bool) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -1055,13 +1049,11 @@ class Tensor:
     def __iand__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
-        self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_and_(self._ptr, rhs._ptr))
+        return self.logical_and_(rhs)
 
     def __or__(self, rhs: Tensor | bool | int) -> Tensor:
         rhs = self._expand_rhs(rhs)
-        self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_or(self._ptr, rhs._ptr))
+        return self.logical_or(rhs)
 
     def __ror__(self, rhs: int | bool) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -1072,12 +1064,12 @@ class Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_or_(self._ptr, rhs._ptr))
+        return self.logical_or_(rhs)
 
     def __xor__(self, rhs: Tensor | bool | int) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_xor(self._ptr, rhs._ptr))
+        return self.logical_xor(rhs)
 
     def __rxor__(self, rhs: int | bool) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -1088,16 +1080,16 @@ class Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_xor_(self._ptr, rhs._ptr))
+        return self.logical_xor_(rhs)
 
     def __invert__(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_not(self._ptr))
+        return self.logical_not()
 
     def __lshift__(self, rhs: Tensor | int) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_shl(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_shl(out, self._ptr, rhs._ptr)))
 
     def __rlshift__(self, rhs: int) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -1108,12 +1100,12 @@ class Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_shl_(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_shl_(out, self._ptr, rhs._ptr)))
 
     def __rshift__(self, rhs: Tensor | int) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_shr(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_shr(out, self._ptr, rhs._ptr)))
 
     def __rrshift__(self, rhs: int) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
@@ -1124,32 +1116,32 @@ class Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=INTEGRAL_DTYPES)
-        return Tensor(C.mag_shr_(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_shr_(out, self._ptr, rhs._ptr)))
 
     def __eq__(self, rhs: Tensor | list[int | float | bool] | int | float | bool) -> Tensor:
         rhs = self._expand_rhs_list(rhs)
-        return Tensor(C.mag_eq(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_eq(out, self._ptr, rhs._ptr)))
 
     def __ne__(self, rhs: Tensor | list[int | float | bool] | int | float | bool) -> Tensor:
         rhs = self._expand_rhs_list(rhs)
-        return Tensor(C.mag_ne(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_ne(out, self._ptr, rhs._ptr)))
 
     def __le__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_le(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_le(out, self._ptr, rhs._ptr)))
 
     def __ge__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_ge(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_ge(out, self._ptr, rhs._ptr)))
 
     def __lt__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_lt(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_lt(out, self._ptr, rhs._ptr)))
 
     def __gt__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(C.mag_gt(self._ptr, rhs._ptr))
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_gt(out, self._ptr, rhs._ptr)))
