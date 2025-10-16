@@ -22,10 +22,9 @@ class MagnetronError(RuntimeError):
 def _handle_errc(status: int) -> None:
     if status == _C.MAG_STATUS_OK:
         return
-    ctx = context.native_ptr()
-    error_info: context.NativeErrorInfo | None = ctx.take_last_error()
+    info: context.NativeErrorInfo | None = context.take_last_error()
     ercc_name: str = _FFI.string(_C.mag_status_get_name(status)).decode('utf-8')
     msg = f'Magnetron C runtime error: #0x{status:08X} ({ercc_name})\n'
-    if error_info is not None:
-        msg += f'{error_info.message} (triggered at {error_info.file}:{error_info.line})'
-    raise MagnetronError(msg, error_info)
+    if info is not None:
+        msg += f'{info.message} (triggered at {info.file}:{info.line})'
+    raise MagnetronError(msg, info)
