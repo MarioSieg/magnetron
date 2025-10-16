@@ -93,7 +93,10 @@ mag_status_t mag_tensor_backward(mag_tensor_t *root) {
         mag_status_t (*backward)(mag_au_state_t *, mag_tensor_t **) = meta->backward;
         mag_contract(ctx, ERR_INVALID_STATE, { mag_tensor_array_free(&post_order); }, backward != NULL, "Backward function not implemented for op %s", meta->mnemonic);
         mag_status_t stat = (*backward)(child->au_state, grads);
-        mag_contract(ctx, ERR_INVALID_STATE, { mag_tensor_array_free(&post_order); }, mag_isok(stat), "Backward function failed for op %s", meta->mnemonic);
+        if (mag_unlikely(stat != MAG_STATUS_OK)) {
+            mag_tensor_array_free(&post_order);
+            return stat;
+        }
         uint32_t numin = meta->in;
         mag_assert2(numin <= MAG_MAX_OP_INPUTS);
         for (uint32_t i=0; i < numin; ++i) {

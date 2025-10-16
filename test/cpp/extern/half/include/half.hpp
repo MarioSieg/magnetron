@@ -442,7 +442,7 @@ namespace half_float
 	/// ~~~~
 	namespace literal
 	{
-		half operator "" _h(long double);
+		half operator ""_h(long double);
 	}
 #endif
 

@@ -608,14 +608,20 @@ mag_status_t mag_cat(mag_tensor_t **out, mag_tensor_t **tensors, size_t count, i
     return MAG_STATUS_OK;
 }
 
-static mag_status_t mag_op_stub_binary(mag_tensor_t **out, mag_opcode_t op, mag_tensor_t *x, mag_tensor_t *y, bool boolean_result, bool inplace) {
+enum {
+    MAG_BINOP_NONE = 0,
+    MAG_BINOP_LOGICAL = 1<<0,
+    MAG_BINOP_INPLACE = 1<<1
+};
+
+static mag_status_t mag_op_stub_binary(mag_tensor_t **out, mag_opcode_t op, mag_tensor_t *x, mag_tensor_t *y, int flags) {
     *out = NULL;
     mag_context_t *ctx = x->ctx;
     mag_tensor_t *result = NULL;
     mag_status_t stat;
     mag_assert_dtype_compat(op, (mag_tensor_t *[]) {x, y});
-    if (inplace) {
-        mag_assert2(!boolean_result);
+    if (flags & MAG_BINOP_INPLACE) {
+        mag_assert2(!(flags & MAG_BINOP_LOGICAL));
         mag_assert_inplace_and_grad_mode_off(x);
         stat = mag_tensor_strided_view(&result, x);
         if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
@@ -633,18 +639,18 @@ static mag_status_t mag_op_stub_binary(mag_tensor_t **out, mag_opcode_t op, mag_
                 sx, sy, mag_op_meta_of(op)->mnemonic
             );
         }
-        mag_dtype_t rtype = boolean_result ? MAG_DTYPE_BOOL : x->dtype;
+        mag_dtype_t rtype = flags & MAG_BINOP_LOGICAL ? MAG_DTYPE_BOOL : x->dtype;
         stat = rank ? mag_tensor_empty(&result, x->ctx, rtype, rank, dims) : mag_tensor_empty_scalar(&result, x->ctx, rtype);
         if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     }
-    mag_dispatch(op, inplace, NULL, (mag_tensor_t *[2]){x, y}, 2, &result, 1);
+    mag_dispatch(op, flags & MAG_BINOP_INPLACE, NULL, (mag_tensor_t *[2]){x, y}, 2, &result, 1);
     *out = result;
     return MAG_STATUS_OK;
 }
 
-#define mag_impl_binary_pair(name, op, boolean_result) \
-    mag_status_t mag_##name(mag_tensor_t **out, mag_tensor_t* x, mag_tensor_t* y) { return mag_op_stub_binary(out, MAG_OP_##op, x, y, boolean_result, false); } \
-    mag_status_t mag_##name##_(mag_tensor_t **out, mag_tensor_t* x, mag_tensor_t* y) { return mag_op_stub_binary(out, MAG_OP_##op, x, y, boolean_result, true); }
+#define mag_impl_binary_pair(name, op, logical) \
+    mag_status_t mag_##name(mag_tensor_t **out, mag_tensor_t* x, mag_tensor_t* y) { return mag_op_stub_binary(out, MAG_OP_##op, x, y, logical ? MAG_BINOP_LOGICAL : 0); } \
+    mag_status_t mag_##name##_(mag_tensor_t **out, mag_tensor_t* x, mag_tensor_t* y) { return mag_op_stub_binary(out, MAG_OP_##op, x, y, (logical ? MAG_BINOP_LOGICAL : 0)+MAG_BINOP_INPLACE); }
 
 mag_impl_binary_pair(add, ADD, false)
 mag_impl_binary_pair(sub, SUB, false)
