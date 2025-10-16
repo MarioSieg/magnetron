@@ -21,9 +21,7 @@
 extern "C" {
 #endif
 
-#define MAG_MAX_DIMS 6                      /* Maximum number of dimensions for a tensor */
-#define MAG_MAX_OP_INPUTS 2                 /* Maximum number of input tensors for an operation */
-#define MAG_MAX_OP_PARAMS 8                 /* Maximum number of parameters for an operation */
+#define MAG_MAX_DIMS 6 /* Maximum number of dimensions for a tensor */
 
 #ifndef MAG_EXPORT
 #ifdef _MSC_VER
@@ -37,11 +35,12 @@ extern "C" {
 #define mag_assert_name(line) mag_assert_name2(_assert_, line)
 #define mag_static_assert(expr) extern void mag_assert_name(__LINE__)(bool STATIC_ASSERTION_FAILED[((expr)?1:-1)])
 
-#define mag_version_pack(maj, mi) ((uint32_t)((((maj)&255)<<8)+((mi)&255)))
-#define mag_version_major(ver) (((ver)>>8)&255)
-#define mag_version_minor(ver) ((ver)&255)
-#define MAG_VERSION mag_version_pack(0, 1) /* magnetron library version. */
-#define MAG_STORAGE_VERSION 1 /* magnetron storage format version. */
+#define MAG_VERSION_ENCODE(maj, min, patch) ((maj)*10000 + (min)*100 + (patch))
+#define MAG_VERSION_MAJOR_PART(v) ((v)/10000)
+#define MAG_VERSION_MINOR_PART(v) (((v)/100)%100)
+#define MAG_VERSION_PATCH_PART(v) ((v)%100)
+#define MAG_VERSION MAG_VERSION_ENCODE(0, 1, 2)
+#define MAG_STORAGE_VERSION MAG_VERSION_ENCODE(0, 1, 0)
 
 /**
  * @brief Thread scheduling priority for CPU compute.

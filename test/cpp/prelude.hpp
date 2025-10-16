@@ -76,7 +76,7 @@ namespace magnetron::test {
         assert(lim > 0);
         ++lim;
         std::vector<std::int64_t> shape {};
-        shape.reserve(k_max_dims);
+        shape.reserve(MAG_MAX_DIMS);
         for (std::int64_t i0 = 1; i0 < lim; ++i0) {
             for (std::int64_t i1 = 0; i1 < lim; ++i1) {
                 for (std::int64_t i2 = 0; i2 < lim; ++i2) {
@@ -84,7 +84,7 @@ namespace magnetron::test {
                         for (std::int64_t i4 = 0; i4 < lim; ++i4) {
                             for (std::int64_t i5 = 0; i5 < lim; ++i5) {
                                 shape.clear();
-                                shape.reserve(k_max_dims);
+                                shape.reserve(MAG_MAX_DIMS);
                                 if (i0 > 0) shape.emplace_back(i0*fac);
                                 if (i1 > 0) shape.emplace_back(i1*fac);
                                 if (i2 > 0) shape.emplace_back(i2*fac);

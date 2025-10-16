@@ -29,13 +29,6 @@
 #include <vector>
 
 namespace magnetron {
-    constexpr std::size_t k_max_dims {MAG_MAX_DIMS};
-    constexpr std::size_t k_max_input_tensors {MAG_MAX_OP_INPUTS};
-    constexpr std::size_t k_max_op_params {MAG_MAX_OP_PARAMS};
-    constexpr std::uint16_t k_version {MAG_VERSION};
-    constexpr std::uint8_t k_version_major {mag_version_major(MAG_VERSION)};
-    constexpr std::uint8_t k_version_minor {mag_version_minor(MAG_VERSION)};
-
     /**
      * Thread scheduling priority for CPU compute, higher priority means more CPU time
      */
@@ -217,7 +210,7 @@ namespace magnetron {
             handle_error(mag_transpose(&out, m_tensor, dim1, dim2));
             return tensor{out};
         }
-        [[nodiscard]] auto permute(const std::array<std::int64_t, k_max_dims>& axes) const noexcept -> tensor {
+        [[nodiscard]] auto permute(const std::array<std::int64_t, MAG_MAX_DIMS>& axes) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_permute(&out, m_tensor, axes.data(), axes.size()));
             return tensor{out};
@@ -739,10 +732,10 @@ namespace magnetron {
             mag_tensor_export_backward_graph_graphviz(m_tensor, filename.c_str());
         }
 
-        [[nodiscard]] auto operator ()(const std::array<std::int64_t, k_max_dims>& idx) const noexcept -> float {
+        [[nodiscard]] auto operator ()(const std::array<std::int64_t, MAG_MAX_DIMS>& idx) const noexcept -> float {
             return mag_tensor_subscript_get_multi(m_tensor, idx[0], idx[1], idx[2], idx[3], idx[4], idx[5]);
         }
-        auto operator ()(const std::array<std::int64_t, k_max_dims>& idx, float x) const noexcept -> void {
+        auto operator ()(const std::array<std::int64_t, MAG_MAX_DIMS>& idx, float x) const noexcept -> void {
             mag_tensor_subscript_set_multi(m_tensor, idx[0], idx[1], idx[2], idx[3], idx[4], idx[5], x);
         }
         [[nodiscard]] auto operator ()(std::int64_t idx) const noexcept -> float {
