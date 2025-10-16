@@ -9,13 +9,12 @@
 
 from __future__ import annotations
 
-import threading
 import weakref
 from contextlib import ContextDecorator
 from dataclasses import dataclass
 from types import TracebackType
 
-from ._bootstrap import FFI, C
+from ._bootstrap import _FFI, _C
 
 
 @dataclass
@@ -28,93 +27,93 @@ class NativeErrorInfo:
     func: str
 
 
-_ctx = C.mag_ctx_create()
-_ctx_finalizer = weakref.finalize(_ctx, C.mag_ctx_destroy, _ctx, True)
+_ctx = _C.mag_ctx_create()
+_ctx_finalizer = weakref.finalize(_ctx, _C.mag_ctx_destroy, _ctx, True)
 
 
-def native_ptr() -> FFI.CData:
+def native_ptr() -> _FFI.CData:
     return _ctx
 
 
 def last_error_code() -> int:
-    return C.mag_ctx_get_last_error_code(_ctx)
+    return _C.mag_ctx_get_last_error_code(_ctx)
 
 
 def has_last_error() -> bool:
-    return C.mag_ctx_has_error(_ctx)
+    return _C.mag_ctx_has_error(_ctx)
 
 
 def clear_last_error() -> None:
-    C.mag_ctx_clear_last_error(_ctx)
+    _C.mag_ctx_clear_last_error(_ctx)
 
 
 def last_error_str() -> str:
-    return C.mag_status_get_name(C.mag_ctx_get_last_error_code(_ctx)).decode('utf-8')
+    return _C.mag_status_get_name(_C.mag_ctx_get_last_error_code(_ctx)).decode('utf-8')
 
 
 def take_last_error() -> NativeErrorInfo | None:
     if not has_last_error():
         return None
-    native_err: FFI.CData = FFI.new('mag_error_t*')
-    C.mag_ctx_take_last_error(_ctx, native_err)
+    native_err: _FFI.CData = _FFI.new('mag_error_t*')
+    _C.mag_ctx_take_last_error(_ctx, native_err)
     status_code: int = native_err.code
-    message: str = FFI.string(native_err.message).decode('utf-8')
-    file: str = FFI.string(native_err.file).decode('utf-8')
+    message: str = _FFI.string(native_err.message).decode('utf-8')
+    file: str = _FFI.string(native_err.file).decode('utf-8')
     line: int = native_err.line
     col: int = native_err.col
-    func: str = FFI.string(native_err.func).decode('utf-8')
+    func: str = _FFI.string(native_err.func).decode('utf-8')
     return NativeErrorInfo(status_code, message, file, line, col, func)
 
 
 def start_grad_recorder() -> None:
-    C.mag_ctx_grad_recorder_start(_ctx)
+    _C.mag_ctx_grad_recorder_start(_ctx)
 
 
 def stop_grad_recorder() -> None:
-    C.mag_ctx_grad_recorder_stop(_ctx)
+    _C.mag_ctx_grad_recorder_stop(_ctx)
 
 
 def is_grad_recording() -> bool:
-    return C.mag_ctx_grad_recorder_is_running(_ctx)
+    return _C.mag_ctx_grad_recorder_is_running(_ctx)
 
 
 def manual_seed(seed: int) -> None:
     if seed < 0:
         seed += 0xFFFFFFFFFFFFFFFF
     seed &= 0xFFFFFFFFFFFFFFFF
-    C.mag_ctx_manual_seed(_ctx, seed)
+    _C.mag_ctx_manual_seed(_ctx, seed)
 
 
 def compute_device_name() -> str:
-    return FFI.string(C.mag_ctx_get_compute_device_name(_ctx)).decode('utf-8')
+    return _FFI.string(_C.mag_ctx_get_compute_device_name(_ctx)).decode('utf-8')
 
 
 def os_name() -> str:
-    return FFI.string(C.mag_ctx_get_os_name(_ctx)).decode('utf-8')
+    return _FFI.string(_C.mag_ctx_get_os_name(_ctx)).decode('utf-8')
 
 
 def cpu_name() -> str:
-    return FFI.string(C.mag_ctx_get_cpu_name(_ctx)).decode('utf-8')
+    return _FFI.string(_C.mag_ctx_get_cpu_name(_ctx)).decode('utf-8')
 
 
 def cpu_virtual_cores() -> int:
-    return C.mag_ctx_get_cpu_virtual_cores(_ctx)
+    return _C.mag_ctx_get_cpu_virtual_cores(_ctx)
 
 
 def cpu_physical_cores() -> int:
-    return C.mag_ctx_get_cpu_physical_cores(_ctx)
+    return _C.mag_ctx_get_cpu_physical_cores(_ctx)
 
 
 def cpu_sockets() -> int:
-    return C.mag_ctx_get_cpu_sockets(_ctx)
+    return _C.mag_ctx_get_cpu_sockets(_ctx)
 
 
 def physical_memory_total() -> int:
-    return C.mag_ctx_get_physical_memory_total(_ctx)
+    return _C.mag_ctx_get_physical_memory_total(_ctx)
 
 
 def physical_memory_free() -> int:
-    return C.mag_ctx_get_physical_memory_free(_ctx)
+    return _C.mag_ctx_get_physical_memory_free(_ctx)
 
 
 def physical_memory_used() -> int:
@@ -122,7 +121,7 @@ def physical_memory_used() -> int:
 
 
 def is_numa_system() -> bool:
-    return C.mag_ctx_is_numa_system(_ctx)
+    return _C.mag_ctx_is_numa_system(_ctx)
 
 
 class no_grad(ContextDecorator):

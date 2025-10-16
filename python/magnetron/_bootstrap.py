@@ -8,13 +8,15 @@
 # +---------------------------------------------------------------------+
 
 from __future__ import annotations
+
+import sys
+
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from cffi import FFI
-import sys
-from importlib.machinery import EXTENSION_SUFFIXES
 
+from importlib.machinery import EXTENSION_SUFFIXES
 from magnetron._ffi_cdecl_generated import __MAG_CDECLS
 
 
@@ -67,4 +69,4 @@ def _load_native_module() -> tuple[FFI, Any]:
     return ffi, lib
 
 
-FFI, C = _load_native_module()
+_FFI, _C = _load_native_module()

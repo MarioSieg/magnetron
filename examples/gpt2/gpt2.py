@@ -11,7 +11,7 @@ import magnetron.nn as nn
 import tiktoken
 from collections.abc import Iterator
 from dataclasses import dataclass
-from magnetron import FFI, C
+from magnetron._bootstrap import _FFI, _C
 from rich.console import Console
 
 console = Console()
@@ -149,7 +149,7 @@ class GPT2(nn.Module):
             assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
             assert r.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
             bytes = x.numel() * x.element_size()
-            C.mag_tensor_fill_from_raw_bytes(r._ptr, FFI.cast('void*', x.data_ptr()), bytes)
+            _C.mag_tensor_fill_from_raw_bytes(r._ptr, _FFI.cast('void*', x.data_ptr()), bytes)
 
         for k in sd_keys_hf:
             if any(k.endswith(w) for w in transposed):

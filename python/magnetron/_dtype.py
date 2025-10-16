@@ -10,7 +10,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
-from ._bootstrap import FFI, C
+from ._bootstrap import _FFI, _C
 
 FLOATING_POINT_DTYPES: set[DataType] = set()  # Includes all floating-point types.
 INTEGRAL_DTYPES: set[DataType] = set()  # Includes all integral types (integers + boolean).
@@ -24,7 +24,7 @@ class DataType:
     size: int
     name: str
     native_type: str | None
-    fill_fn: FFI.CData
+    fill_fn: _FFI.CData
 
     @property
     def is_floating_point(self) -> bool:
@@ -49,10 +49,10 @@ class DataType:
         return self.name
 
 
-float32: DataType = DataType(C.MAG_DTYPE_E8M23, 4, 'float32', 'float', C.mag_tensor_fill_from_floats)
-float16: DataType = DataType(C.MAG_DTYPE_E5M10, 2, 'float16', None, C.mag_tensor_fill_from_floats)
-boolean: DataType = DataType(C.MAG_DTYPE_BOOL, 1, 'bool', 'bool', C.mag_tensor_fill_from_raw_bytes)
-int32: DataType = DataType(C.MAG_DTYPE_I32, 4, 'int32', 'int32_t', C.mag_tensor_fill_from_raw_bytes)
+float32: DataType = DataType(_C.MAG_DTYPE_E8M23, 4, 'float32', 'float', _C.mag_tensor_fill_from_floats)
+float16: DataType = DataType(_C.MAG_DTYPE_E5M10, 2, 'float16', None, _C.mag_tensor_fill_from_floats)
+boolean: DataType = DataType(_C.MAG_DTYPE_BOOL, 1, 'bool', 'bool', _C.mag_tensor_fill_from_raw_bytes)
+int32: DataType = DataType(_C.MAG_DTYPE_I32, 4, 'int32', 'int32_t', _C.mag_tensor_fill_from_raw_bytes)
 
 DTYPE_ENUM_MAP: dict[int, DataType] = {
     float32.enum_value: float32,

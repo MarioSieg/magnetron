@@ -3,7 +3,7 @@
 import magnetron as mag
 import magnetron.io as io
 import torch
-from magnetron import FFI, C
+from magnetron import _FFI, _C
 from transformers import GPT2LMHeadModel
 
 MODEL_TYPES: set[str] = {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
@@ -41,7 +41,7 @@ def convert_hf_to_mag_file(model_type: str) -> None:
             assert v.device == torch.device('cpu')
             mag_tensor = mag.Tensor.empty(v.shape)
             nb: int = v.numel() * v.element_size()
-            C.mag_tensor_fill_from_raw_bytes(mag_tensor.native_ptr, FFI.cast('void*', v.data_ptr()), nb)
+            _C.mag_tensor_fill_from_raw_bytes(mag_tensor.native_ptr, _FFI.cast('void*', v.data_ptr()), nb)
             out[k] = mag_tensor
 
         print(out.metadata())

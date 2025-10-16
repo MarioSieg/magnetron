@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from . import context
-from ._bootstrap import C, FFI
+from ._bootstrap import _C, _FFI
 
 
 class MagnetronError(RuntimeError):
@@ -20,11 +20,11 @@ class MagnetronError(RuntimeError):
 
 
 def _handle_errc(status: int) -> None:
-    if status == C.MAG_STATUS_OK:
+    if status == _C.MAG_STATUS_OK:
         return
     ctx = context.native_ptr()
     error_info: context.NativeErrorInfo | None = ctx.take_last_error()
-    ercc_name: str = FFI.string(C.mag_status_get_name(status)).decode('utf-8')
+    ercc_name: str = _FFI.string(_C.mag_status_get_name(status)).decode('utf-8')
     msg = f'Magnetron C runtime error: #0x{status:08X} ({ercc_name})\n'
     if error_info is not None:
         msg += f'{error_info.message} (triggered at {error_info.file}:{error_info.line})'
