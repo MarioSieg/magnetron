@@ -5,7 +5,7 @@ import math
 import time
 import argparse
 
-from magnetron import Tensor, active_context, no_grad
+from magnetron import Tensor, no_grad, context
 import magnetron as mag
 import magnetron.nn as nn
 import tiktoken
@@ -23,7 +23,7 @@ encode = lambda x: tok.encode(x, allowed_special={EOS})
 decode = lambda x: tok.decode(x)
 EOS_ID: int = encode(EOS)[0]
 
-active_context().manual_seed(3407)
+context.manual_seed(3407)
 
 
 @dataclass
@@ -229,7 +229,7 @@ class GPT2(nn.Module):
 
 
 if __name__ == '__main__':
-    active_context().stop_grad_recorder()
+    context.stop_grad_recorder()
 
     args = argparse.ArgumentParser(description='Run GPT-2 model inference')
     args.add_argument('prompt', type=str, help='Prompt to start generation')

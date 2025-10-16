@@ -58,7 +58,7 @@ TEST(prng, ks_test_normal_dist) {
     std::uniform_real_distribution<double> mean_d{-3.0, 3.0};
     std::uniform_real_distribution<double> std_d{0.1, 3.0};
     std::uniform_int_distribution<std::int64_t> shape_distr{512, 1024};
-    context ctx{compute_device::cpu};
+    context ctx{};
     ctx.manual_seed(0x1234567890abcdefULL);
     constexpr double alpha = 0.01;
     std::int32_t failures = 0;
@@ -100,7 +100,7 @@ TEST(prng, ks_test_uniform_dist) {
     std::uniform_real_distribution<double> a_d{-5.0, 0.0};
     std::uniform_real_distribution<double> w_d{0.1, 5.0};
     std::uniform_int_distribution<std::int64_t> shape_d{512, 1024};
-    context ctx{compute_device::cpu};
+    context ctx{};
     ctx.manual_seed(0x1234567890abcdefULL);
     std::int32_t failures = 0;
     for (std::size_t it = 0; it < k_iter_samples; ++it) {
@@ -123,7 +123,7 @@ TEST(prng, bernoulli_binomial_exact) {
     std::mt19937_64 eng{0x9e3779b97f4a7c15ULL};
     std::uniform_real_distribution<double> p_d{0.02, 0.98};
     std::uniform_int_distribution<std::int64_t> shape_d{512, 1024};
-    context ctx{compute_device::cpu};
+    context ctx{};
     ctx.manual_seed(0x1234567890abcdefULL);
     std::size_t failures = 0;
     for (std::size_t it = 0; it < k_iter_samples; ++it) {
@@ -143,7 +143,7 @@ TEST(prng, bernoulli_binomial_exact) {
 }
 
 TEST(prng, normal_mean_std_match) {
-    context ctx{compute_device::cpu};
+    context ctx{};
     ctx.manual_seed(0x1234567890abcdefULL);
     constexpr std::size_t N = 1'000'000;
     constexpr double mu_true  = 1.5;
@@ -168,13 +168,13 @@ TEST(prng, normal_mean_std_match) {
 TEST(prng, automatic_seeding) {
     std::vector<float> a, b;
     {
-        context ctx {compute_device::cpu};
+        context ctx {};
         tensor ta {ctx, dtype::e8m23, 8192, 8192};
         ta.fill_rand_uniform(-1.0f, 1.0f);
         a = ta.to_vector<float>();
     }
     {
-        context ctx {compute_device::cpu};
+        context ctx {};
         tensor tb {ctx, dtype::e8m23, 8192, 8192};
         tb.fill_rand_uniform(-1.0f, 1.0f);
         b = tb.to_vector<float>();
@@ -198,7 +198,7 @@ TEST(prng, manual_seeding) {
     std::uint64_t seed = distr(eng);
     std::vector<float> a {}, b {};
     {
-        context ctx {compute_device::cpu};
+        context ctx {};
         ctx.manual_seed(seed);
         tensor ta {ctx, dtype::e8m23, 8192, 8192};
         ta.fill_rand_uniform(-1.0f, 1.0f);
@@ -206,7 +206,7 @@ TEST(prng, manual_seeding) {
     }
 
     {
-        context ctx {compute_device::cpu};
+        context ctx {};
         ctx.manual_seed(seed);
         tensor tb {ctx, dtype::e8m23, 8192, 8192};
         tb.fill_rand_uniform(-1.0f, 1.0f);

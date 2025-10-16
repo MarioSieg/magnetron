@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from typing import Iterable
 
 from ._tensor import Tensor
-from ._context import no_grad
+from .context import no_grad
 from .nn import Parameter
 
 

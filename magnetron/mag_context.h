@@ -36,7 +36,6 @@ struct mag_context_t {
     mag_fixed_pool_t au_state_pool;             /* Autodiff state memory pool. */
     mag_context_flags_t flags;                  /* Context flags. */
     uintptr_t tr_id;                            /* Context thread ID. */
-    mag_device_type_t device_type;              /* Active compute device type. */
     mag_backend_registry_t *backend_registry;   /* Compute backend registry */
     mag_backend_t *backend;                     /* Active compute backend. */
     mag_device_t *device;                       /* Active compute device. */

@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import TracebackType
 
-from ._context import active_context
+from .context import active_context
 from ._tensor import Tensor
 from ._bootstrap import FFI, C
 

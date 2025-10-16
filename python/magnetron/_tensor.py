@@ -13,15 +13,20 @@ import threading
 import weakref
 from typing import Any, Sequence, Callable
 
-from ._context import active_context, default_dtype, Context
-from ._core import *
+from . import context
 from ._dtype import *
 from ._bootstrap import FFI, C
 from ._error import _handle_errc
 
 _MAIN_TID: int = threading.get_native_id()
+_MAX_DIMS: int = 6
+_DIM_MAX: int = 0x7FFFFFFFFFFFFFFF
 
 NestedList = float | bool | int | list['NestedData']
+
+
+def _default_dtype() -> DataType:
+    return float32
 
 
 def _wrap_out_alloc(callback: Callable[[Any], int]) -> FFI.CData:
@@ -82,7 +87,7 @@ def _ravel_nested_lists(flat: list[Any], shape: tuple[int], strides: tuple[int],
 def _unpack_shape(*shape: int | tuple[int, ...]) -> tuple[int, ...]:
     if len(shape) == 1 and isinstance(shape[0], tuple):
         shape = shape[0]
-    assert len(shape) <= MAX_DIMS, f'Invalid number of dimensions: {len(shape)}, maximum is {MAX_DIMS}'
+    assert len(shape) <= _MAX_DIMS, f'Invalid number of dimensions: {len(shape)}, maximum is {_MAX_DIMS}'
     return shape
 
 
@@ -305,7 +310,7 @@ class Tensor:
         axis: int = 0
         for idx in index:
             if idx is None:
-                if curr.rank == MAX_DIMS:
+                if curr.rank == _MAX_DIMS:
                     raise NotImplementedError('Rank > 6 not supported')
                 curr = curr.view(*curr.shape[:axis], 1, *curr.shape[axis:])
                 axis += 1
@@ -349,13 +354,13 @@ class Tensor:
         if isinstance(indices, int):
             C.mag_tensor_subscript_set_flattened(self._ptr, indices, float(value))
         elif isinstance(indices, tuple):
-            idx = indices + (0,) * (MAX_DIMS - len(indices))
+            idx = indices + (0,) * (_MAX_DIMS - len(indices))
             C.mag_tensor_subscript_set_multi(self._ptr, *idx, float(value))
         else:
             raise TypeError('Indices must be an int or a tuple of ints.')
 
     def _validate_inplace_op(self) -> None:
-        if active_context().is_grad_recording and self.requires_grad:
+        if context.is_grad_recording() and self.requires_grad:
             raise RuntimeError(
                 'In-place operations are not allowed when gradient recording is enabled. '
                 'Either disable gradient recording or use the `detach()` method to create a new tensor without gradient tracking.'
@@ -375,17 +380,17 @@ class Tensor:
 
     def __init__(self, native_object: FFI.CData | None) -> None:
         assert _MAIN_TID == threading.get_native_id(), 'Context must be created in the main thread'
-        self._ctx = active_context()
+        self._ctx = context.native_ptr()
         self._ptr = native_object
         self._finalizer = weakref.finalize(self, C.mag_tensor_decref, self._ptr)
 
     @classmethod
-    def empty(cls, *shape: int | tuple[int, ...], dtype: DataType = default_dtype(), requires_grad: bool = False) -> Tensor:
+    def empty(cls, *shape: int | tuple[int, ...], dtype: DataType = _default_dtype(), requires_grad: bool = False) -> Tensor:
         shape: tuple[int, ...] = _unpack_shape(*shape)
-        assert 0 < len(shape) <= MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
-        assert all(0 < dim <= DIM_MAX for dim in shape), 'Invalid dimension size'
+        assert 0 < len(shape) <= _MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
+        assert all(0 < dim <= _DIM_MAX for dim in shape), 'Invalid dimension size'
         dims: FFI.CData = FFI.new(f'int64_t[{len(shape)}]', shape)
-        instance = _wrap_out_alloc(lambda out: C.mag_tensor_empty(out, active_context().native_ptr, dtype.enum_value, len(shape), dims))
+        instance = _wrap_out_alloc(lambda out: C.mag_tensor_empty(out, context.native_ptr(), dtype.enum_value, len(shape), dims))
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
         return tensor
@@ -396,7 +401,7 @@ class Tensor:
 
     @classmethod
     def full(
-        cls, *shape: int | tuple[int, ...], fill_value: int | float | bool, dtype: DataType = default_dtype(), requires_grad: bool = False
+        cls, *shape: int | tuple[int, ...], fill_value: int | float | bool, dtype: DataType = _default_dtype(), requires_grad: bool = False
     ) -> Tensor:
         shape: tuple[int, ...] = _unpack_shape(*shape)
         tensor: Tensor = cls.empty(
@@ -419,7 +424,7 @@ class Tensor:
     @classmethod
     def of(cls, data: NestedList, *, dtype: DataType | None = None, requires_grad: bool = False) -> Tensor:
         if not data:
-            return cls.empty(0, dtype=dtype if dtype is not None else default_dtype())
+            return cls.empty(0, dtype=dtype if dtype is not None else _default_dtype())
         shape, flattened_data = _flatten_nested_lists(data)
         dtype: DataType = dtype if dtype is not None else _deduce_tensor_dtype(flattened_data[0])
         native_name: str = dtype.native_type
@@ -438,7 +443,7 @@ class Tensor:
     def zeros(
         cls,
         *shape: int | tuple[int, ...],
-        dtype: DataType = default_dtype(),
+        dtype: DataType = _default_dtype(),
         requires_grad: bool = False,
     ) -> Tensor:
         return cls.full(*shape, fill_value=0, dtype=dtype, requires_grad=requires_grad)
@@ -448,7 +453,7 @@ class Tensor:
         return cls.zeros(template.shape, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad)
 
     @classmethod
-    def ones(cls, *shape: int | tuple[int, ...], dtype: DataType = default_dtype(), requires_grad: bool = False) -> Tensor:
+    def ones(cls, *shape: int | tuple[int, ...], dtype: DataType = _default_dtype(), requires_grad: bool = False) -> Tensor:
         return cls.full(*shape, fill_value=1, dtype=dtype, requires_grad=requires_grad)
 
     @classmethod
@@ -461,7 +466,7 @@ class Tensor:
         *shape: int | tuple[int, ...],
         low: float | int | None = None,
         high: float | int | None = None,
-        dtype: DataType = default_dtype(),
+        dtype: DataType = _default_dtype(),
         requires_grad: bool = False,
     ) -> Tensor:
         tensor: Tensor = cls.empty(*_unpack_shape(*shape), dtype=dtype, requires_grad=requires_grad)
@@ -474,7 +479,7 @@ class Tensor:
         *shape: int | tuple[int, ...],
         mean: float = 0.0,
         std: float = 1.0,
-        dtype: DataType = default_dtype(),
+        dtype: DataType = _default_dtype(),
         requires_grad: bool = False,
     ) -> Tensor:
         tensor: Tensor = cls.empty(*_unpack_shape(*shape), dtype=dtype, requires_grad=requires_grad)
@@ -493,7 +498,7 @@ class Tensor:
         start: float | int = 0,
         stop: float | int | None = None,
         step: float | int = 1,
-        dtype: DataType = default_dtype(),
+        dtype: DataType = _default_dtype(),
         requires_grad: bool = False,
     ) -> Tensor:
         if stop is None:
@@ -587,10 +592,10 @@ class Tensor:
     def permute(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(*dims)
         assert len(dims) == self.rank, f'Invalid number of axes, require {self.rank}, got {len(dims)}'
-        if len(dims) != MAX_DIMS:
-            dims = dims + tuple(range(self.rank, MAX_DIMS))
-        assert len(dims) == MAX_DIMS
-        return Tensor(_wrap_out_alloc(lambda out: C.mag_permute(out, self._ptr, FFI.new('int64_t[]', dims), MAX_DIMS)))
+        if len(dims) != _MAX_DIMS:
+            dims = dims + tuple(range(self.rank, _MAX_DIMS))
+        assert len(dims) == _MAX_DIMS
+        return Tensor(_wrap_out_alloc(lambda out: C.mag_permute(out, self._ptr, FFI.new('int64_t[]', dims), _MAX_DIMS)))
 
     def fill_(self, value: float | int | bool) -> None:
         self._validate_inplace_op()

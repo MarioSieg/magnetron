@@ -18,7 +18,7 @@
 using namespace magnetron;
 
 TEST(storage, new_close) {
-  context ctx {cpu_device{}};
+  context ctx {};
 
   mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test.mag", 'w');
   ASSERT_NE(nullptr, archive);
@@ -26,7 +26,7 @@ TEST(storage, new_close) {
 }
 
 TEST(storage, write_inmemory_metadata_only) {
-  context ctx {cpu_device{}};
+  context ctx {};
 
   mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test.mag", 'r');
   ASSERT_NE(nullptr, archive);
@@ -67,7 +67,7 @@ TEST(storage, write_inmemory_metadata_only) {
 }
 
 TEST(storage, read_write_disk_metadata_only) {
-  context ctx {cpu_device{}};
+  context ctx {};
 
   std::mt19937_64 rng {std::random_device{}()};
   std::uniform_int_distribution<std::int64_t> i64 {std::numeric_limits<std::int64_t>::min(), std::numeric_limits<std::int64_t>::max()};
@@ -118,7 +118,7 @@ TEST(storage, read_write_disk_metadata_only) {
 
 TEST(storage, write_read_tensor_to_disk) {
   {
-    context ctx {cpu_device{}};
+    context ctx {};
     tensor t {ctx, dtype::e8m23, 32, 32, 2};
     t.fill(-2.5f);
     mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test2.mag", 'w');

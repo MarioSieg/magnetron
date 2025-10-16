@@ -90,14 +90,8 @@ static MAG_COLDPROC void mag_ctx_dump_compiler_info(void) {
     mag_log_info("magnetron v.%d.%d - " __DATE__ " " __TIME__ " - %s %d.%d", mag_version_major(MAG_VERSION), mag_version_minor(MAG_VERSION), compiler_name, compiler_version_major, compiler_version_minor);
 }
 
-/* Create a magnetron context with the selected compute device. */
-mag_context_t *mag_ctx_create(mag_device_type_t device) {
-    const mag_device_desc_t info = {device};
-    return mag_ctx_create2(&info);
-}
-
 /* Create context with compute device descriptor. */
-mag_context_t *mag_ctx_create2(const mag_device_desc_t *device_info) {
+mag_context_t *mag_ctx_create(void) {
     mag_log_info("Creating magnetron context...");
 
     uint64_t time_stamp_start = mag_hpc_clock_ns();
@@ -121,7 +115,6 @@ mag_context_t *mag_ctx_create2(const mag_device_desc_t *device_info) {
     mag_system_host_info_dump(ctx);
 
     /* Create selected compute device. */
-    ctx->device_type = device_info->type;
     ctx->backend_registry = mag_backend_registry_init(ctx);
     const char** backend_paths = NULL;
     size_t num_backend_paths = 0;
@@ -203,12 +196,8 @@ bool mag_ctx_has_error(const mag_context_t *ctx){
     return ctx->error_status.code != MAG_STATUS_OK;
 }
 
-mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t *ctx) {
-    return ctx->device_type;
-}
-
 const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx) {
-    return ctx->device->name;
+    return ctx->device->physical_device_name;
 }
 
 const char *mag_ctx_get_os_name(const mag_context_t *ctx) {

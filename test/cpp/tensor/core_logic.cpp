@@ -15,7 +15,7 @@ using namespace magnetron;
 using namespace magnetron::test;
 
 TEST(core_tensor_logic, ref_count_raii) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
     ASSERT_EQ(a.refcount(), 1);
     {
@@ -35,7 +35,7 @@ TEST(core_tensor_logic, ref_count_raii) {
 }
 
 TEST(core_tensor_logic, ref_count_assign) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
     ASSERT_EQ(a.refcount(), 1);
     {
@@ -55,7 +55,7 @@ TEST(core_tensor_logic, ref_count_assign) {
 }
 
 TEST(core_tensor_logic, ref_count_clone) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
     ASSERT_EQ(a.refcount(), 1);
     {
@@ -75,7 +75,7 @@ TEST(core_tensor_logic, ref_count_clone) {
 }
 
 TEST(core_tensor_logic, ref_count_move_constructor) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
     auto original_ref {a.refcount()};
     tensor b {std::move(a)};
@@ -83,7 +83,7 @@ TEST(core_tensor_logic, ref_count_move_constructor) {
 }
 
 TEST(core_tensor_logic, ref_count_self_assignment) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
     size_t original_ref = a.refcount();
     a = a;
@@ -91,7 +91,7 @@ TEST(core_tensor_logic, ref_count_self_assignment) {
 }
 
 TEST(core_tensor_logic, ref_count_reassign_tensor) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
     {
         tensor b = a;
@@ -103,7 +103,7 @@ TEST(core_tensor_logic, ref_count_reassign_tensor) {
 }
 
 TEST(core_tensor_logic, init_1d) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor t {ctx, dtype::e8m23, 10};
     ASSERT_EQ(t.dtype(), dtype::e8m23);
     ASSERT_EQ(t.rank(), 1);
@@ -128,7 +128,7 @@ TEST(core_tensor_logic, init_1d) {
 }
 
 TEST(core_tensor_logic, init_2d) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor t {ctx, dtype::e8m23, 10, 10};
     ASSERT_EQ(t.dtype(), dtype::e8m23);
     ASSERT_EQ(t.rank(), 2);
@@ -155,7 +155,7 @@ TEST(core_tensor_logic, init_2d) {
 }
 
 TEST(core_tensor_logic, init_3d) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor t {ctx, dtype::e8m23, 10, 10, 10};
     ASSERT_EQ(t.dtype(), dtype::e8m23);
     ASSERT_EQ(t.rank(), 3);
@@ -183,7 +183,7 @@ TEST(core_tensor_logic, init_3d) {
 }
 
 TEST(core_tensor_logic, init_4d) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor t {ctx, dtype::e8m23, 10, 10, 10, 10};
     ASSERT_EQ(t.dtype(), dtype::e8m23);
     ASSERT_EQ(t.rank(), 4);
@@ -213,7 +213,7 @@ TEST(core_tensor_logic, init_4d) {
 }
 
 TEST(core_tensor_logic, init_5d) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor t {ctx, dtype::e8m23, 10, 10, 10, 10, 10};
     ASSERT_EQ(t.dtype(), dtype::e8m23);
     ASSERT_EQ(t.rank(), 5);
@@ -246,7 +246,7 @@ TEST(core_tensor_logic, init_5d) {
 }
 
 TEST(core_tensor_logic, init_6d) {
-    context ctx {compute_device::cpu};
+    context ctx {};
     tensor t {ctx, dtype::e8m23, 10, 10, 10, 10, 10, 10};
     ASSERT_EQ(t.dtype(), dtype::e8m23);
     ASSERT_EQ(t.rank(), 6);

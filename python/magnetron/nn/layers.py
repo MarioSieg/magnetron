@@ -14,9 +14,11 @@ import math
 from magnetron import Tensor
 from magnetron.nn.module import Module, Parameter
 
+
 class Flatten(Module):
     def forward(self, x: Tensor) -> Tensor:
         return x.contiguous().reshape(x.shape[0], -1)
+
 
 class Linear(Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:

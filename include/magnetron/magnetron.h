@@ -44,16 +44,6 @@ extern "C" {
 #define MAG_STORAGE_VERSION 1 /* magnetron storage format version. */
 
 /**
- * @brief Compute device types. Determines the type of hardware used for computation.
- */
-typedef enum mag_device_type_t {
-    MAG_DEVICE_TYPE_CPU = 0,        /* CPU compute device */
-    MAG_DEVICE_TYPE_GPU_CUDA = 1,   /* CUDA GPU compute device */
-    MAG_DEVICE_TYPE__NUM
-} mag_device_type_t;
-extern MAG_EXPORT const char *mag_device_type_get_name(mag_device_type_t op);
-
-/**
  * @brief Thread scheduling priority for CPU compute.
  *      This set the OS scheduling priority of the thread that executes the compute operations.
  *      The priority is only used if the compute device is a CPU.
@@ -118,32 +108,15 @@ typedef struct mag_error_t {
 */
 typedef struct mag_context_t mag_context_t;
 
-/**
- * @brief Compute device descriptor.
- *      Used to specify the compute device type and configuration when creating a context.
- *      The device type must be one of the mag_device_type_t values.
- *      If the type is MAG_DEVICE_TYPE_CPU, thread_count can be set to 0 to detect hardware concurrency.
- *      If the type is MAG_DEVICE_TYPE_GPU_CUDA, cuda_device_id can be set to select a specific GPU.
- */
-typedef struct mag_device_desc_t {
-    mag_device_type_t type;  /* Device type */
-    uint32_t cpu_thread_count;   /* Number of threads if type == MAG_DEVICE_TYPE_CPU. If set to 0, hardware concurrency of host CPU is detected. */
-    uint32_t cuda_device_id;     /* CUDA device ID if type == MAG_DEVICE_TYPE_GPU_CUDA. Default: 0 (first GPU). */
-} mag_device_desc_t;
-extern MAG_EXPORT mag_device_desc_t mag_compute_device_desc_cpu(uint32_t thread_count);                                 /* Helper to fill device descriptor for CPU compute device. */
-extern MAG_EXPORT mag_device_desc_t mag_compute_device_desc_cuda(uint32_t cuda_device_id);                              /* Helper to fill device descriptor for CUDA GPU compute device. */
-
-extern MAG_EXPORT mag_context_t *mag_ctx_create(mag_device_type_t device);                                              /* Create context with default config, and only specify device type. */
-extern MAG_EXPORT mag_context_t *mag_ctx_create2(const mag_device_desc_t *device_info);
+extern MAG_EXPORT mag_context_t *mag_ctx_create(void);                                                                  /* Create context with default config, and only specify device type. */
 
 extern MAG_EXPORT const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx);                                  /* Get last error and clear it. */
 extern MAG_EXPORT void mag_ctx_set_last_error(mag_context_t *ctx, const mag_error_t *error);                            /* Set last error. */
 extern MAG_EXPORT mag_status_t mag_ctx_get_last_error_code(const mag_context_t *ctx);                                   /* Get last error code without clearing it. */
 extern MAG_EXPORT void mag_ctx_clear_last_error(mag_context_t *ctx);                                                    /* Clear last error. */
-extern MAG_EXPORT void mag_ctx_take_last_error(mag_context_t *ctx, mag_error_t *err);                             /* Take last error and clear it. */
+extern MAG_EXPORT void mag_ctx_take_last_error(mag_context_t *ctx, mag_error_t *err);                                   /* Take last error and clear it. */
 extern MAG_EXPORT bool mag_ctx_has_error(const mag_context_t *ctx);                                                     /* Check if there is an error. */
 
-extern MAG_EXPORT mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t *ctx);                          /* Get compute device type */
 extern MAG_EXPORT const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx);                                /* Get the name of the compute device */
 extern MAG_EXPORT const char *mag_ctx_get_os_name(const mag_context_t *ctx);                                            /* Get the name of the operating system */
 extern MAG_EXPORT const char *mag_ctx_get_cpu_name(const mag_context_t *ctx);                                           /* Get the name of the CPU */

@@ -155,7 +155,7 @@ static mag_record_tagged_payload_t *mag_record_map_find(mag_record_map_t *map, c
 } while (0)
 
 static size_t mag_sto_aligned_buf_size(const mag_tensor_t *t) {
-    mag_assert2(t->storage->host->type == MAG_DEVICE_TYPE_CPU);
+    mag_assert2(mag_device_is_typeof(t->storage->host, "cpu"));
     size_t sz = mag_tensor_get_data_size(t);
     mag_assert2(t->storage->alignment == MAG_CPU_BUF_ALIGN);
     mag_sto_san(sz <= SIZE_MAX-MAG_CPU_BUF_ALIGN-1);
@@ -319,7 +319,7 @@ static bool mag_sto_meta_hdr_deser(const uint8_t **p, const uint8_t *e, char **k
 
 static bool mag_sto_tensor_hdr_ser(uint8_t **p, uint8_t *e, const char *key, const mag_tensor_t *t, size_t data_base, size_t data_offs) {
     const uint8_t *b = *p;
-    mag_sto_san(t->storage->host->type == MAG_DEVICE_TYPE_CPU);
+    mag_sto_san(mag_device_is_typeof(t->storage->host, "cpu"));
     mag_sto_san(mag_tensor_is_contiguous(t));
     mag_sto_san(t->rank > 0 && t->rank <= MAG_MAX_DIMS);
     mag_sto_san(t->dtype < MAG_DTYPE__NUM);
@@ -362,7 +362,7 @@ static bool mag_sto_tensor_hdr_deser(const uint8_t **p, const uint8_t *e, char *
 }
 
 static bool mag_sto_tensor_buf_ser(uint8_t **p, uint8_t *e, const mag_tensor_t *t) {
-    mag_sto_san(t->storage->host->type == MAG_DEVICE_TYPE_CPU);
+    mag_sto_san(mag_device_is_typeof(t->storage->host, "cpu"));
     mag_sto_san(mag_tensor_is_contiguous(t));
     size_t al = MAG_CPU_BUF_ALIGN;
     size_t payload = mag_tensor_get_data_size(t);

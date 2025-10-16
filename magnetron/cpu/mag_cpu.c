@@ -866,19 +866,19 @@ static void mag_cpu_destroy_device(mag_cpu_device_t *dvc) {
 
 static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_threads) {
     mag_cpu_device_t *cpu_dvc = mag_cpu_init_device(ctx, num_threads);
-    mag_device_t *dvc = (*mag_alloc)(NULL, sizeof(*dvc), 0);
-    *dvc = (mag_device_t) { /* Initialize device interface */
+    mag_device_t *device = (*mag_alloc)(NULL, sizeof(*device), 0);
+    *device = (mag_device_t) { /* Initialize device interface */
         .ctx = ctx,
-        .name = "CPU",
+        .physical_device_name = "CPU",
         .impl = cpu_dvc,
         .is_async = false,
-        .type = MAG_DEVICE_TYPE_CPU,
         .submit = &mag_cpu_submit,
         .alloc_storage = &mag_cpu_alloc_storage,
         .manual_seed = &mag_cpu_manual_seed
     };
-    snprintf(dvc->name, sizeof(dvc->name), "%s", ctx->machine.cpu_name);
-    return dvc;
+    snprintf(device->id, sizeof(device->id), "cpu:0");
+    snprintf(device->physical_device_name, sizeof(device->physical_device_name), "%s", ctx->machine.cpu_name);
+    return device;
 }
 
 static void mag_cpu_release_interface(mag_device_t *ctx) {

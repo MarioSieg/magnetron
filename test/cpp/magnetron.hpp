@@ -37,23 +37,6 @@ namespace magnetron {
     constexpr std::uint8_t k_version_minor {mag_version_minor(MAG_VERSION)};
 
     /**
-     * Enumerates compute device types.
-     */
-    enum class compute_device : std::underlying_type_t<mag_device_type_t> {
-        cpu = MAG_DEVICE_TYPE_CPU,
-        gpu_cuda = MAG_DEVICE_TYPE_GPU_CUDA
-    };
-
-    /**
-     * Get enumerator name of compute device.
-     * @param device Compute device.
-     * @return Enum name of the compute device.
-     */
-    [[nodiscard]] inline auto compute_device_name(compute_device device) noexcept -> std::string_view {
-        return mag_device_type_get_name(static_cast<mag_device_type_t>(device));
-    }
-
-    /**
      * Thread scheduling priority for CPU compute, higher priority means more CPU time
      */
     enum class thread_sched_prio : std::underlying_type_t<mag_thread_prio_t> {
@@ -83,50 +66,12 @@ namespace magnetron {
     }
 
     /**
-     * CPU compute device creation info.
-     */
-    struct cpu_device final {
-        /**
-         * Amount of threads to use for CPU parallel processing.
-         */
-        std::uint32_t thread_count {std::max(1u, std::thread::hardware_concurrency())};
-    };
-
-    /**
-     * CUDA GPU device creation info.
-     */
-    struct cuda_device final {
-        /**
-         * GPU index to use. 0 = first GPU, 1 = second etc.
-         */
-        std::uint32_t device_index {};
-    };
-
-    using device_descriptor = std::variant<cpu_device, cuda_device>;
-
-    /**
      * The context owns all tensors and runtime data structures. It must kept alive as long as any tensor is used.
      */
     class context final {
     public:
-        explicit context(compute_device dvc) noexcept {
-            m_ctx = mag_ctx_create(static_cast<mag_device_type_t>(dvc));
-        }
-
-        explicit context(device_descriptor device) {
-            mag_device_desc_t desc {};
-            if (std::holds_alternative<cpu_device>(device)) {
-                const auto& cpu = std::get<cpu_device>(device);
-                desc.type = MAG_DEVICE_TYPE_CPU;
-                desc.cpu_thread_count = cpu.thread_count;
-            } else if (std::holds_alternative<cuda_device>(device)) {
-                const auto& cuda = std::get<cuda_device>(device);
-                desc.type = MAG_DEVICE_TYPE_GPU_CUDA;
-                desc.cuda_device_id = cuda.device_index;
-            } else {
-                throw std::invalid_argument("Invalid device type");
-            }
-            m_ctx = mag_ctx_create2(&desc);
+        explicit context() noexcept {
+            m_ctx = mag_ctx_create();
         }
 
         context(context&&) = default;
@@ -140,7 +85,6 @@ namespace magnetron {
 
         [[nodiscard]] auto operator *() noexcept -> mag_context_t& { return *m_ctx; }
         [[nodiscard]] auto operator *() const noexcept -> const mag_context_t& { return *m_ctx; }
-        [[nodiscard]] auto device_type() const noexcept -> compute_device { return static_cast<compute_device>(mag_ctx_get_compute_device_type(m_ctx)); }
         [[nodiscard]] auto device_name() const noexcept -> std::string_view { return mag_ctx_get_compute_device_name(m_ctx); }
         [[nodiscard]] auto os_name() const noexcept -> std::string_view { return mag_ctx_get_os_name(m_ctx); }
         [[nodiscard]] auto cpu_name() const noexcept -> std::string_view { return mag_ctx_get_cpu_name(m_ctx); }

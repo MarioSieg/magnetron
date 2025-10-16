@@ -188,6 +188,7 @@ mag_device_t *mag_cuda_backend_init_device(mag_backend_t *bck, mag_context_t *ct
         .alloc_storage = &alloc_storage_buffer,
         .manual_seed = &manual_seed
     };
+    std::snprintf(device->id, sizeof(device->id), "cuda:%u", idx);
     std::snprintf(device->name, sizeof(device->name), "%s", phys_device.name.data());
     return device;
 }

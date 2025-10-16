@@ -14,28 +14,6 @@
 #include "mag_os.h"
 #include "mag_alloc.h"
 
-mag_device_desc_t mag_compute_device_desc_cpu(uint32_t thread_count) {
-    return (mag_device_desc_t) {
-        .type = MAG_DEVICE_TYPE_CPU,
-        .cpu_thread_count = thread_count
-    };
-}
-
-mag_device_desc_t mag_compute_device_desc_cuda(uint32_t cuda_device_id) {
-    return (mag_device_desc_t) {
-        .type = MAG_DEVICE_TYPE_GPU_CUDA,
-        .cpu_thread_count = cuda_device_id
-    };
-}
-
-const char *mag_device_type_get_name(mag_device_type_t op) {
-    static const char *const names[MAG_DEVICE_TYPE__NUM] = {
-        [MAG_DEVICE_TYPE_CPU] = "CPU",
-        [MAG_DEVICE_TYPE_GPU_CUDA] = "GPU (CUDA)",
-    };
-    return names[op];
-}
-
 static bool mag_is_backend_module_file_candidate(const char *fname) { /* Checks if file is a valid backend library file name. (lib)magnetron_*name*.(so|dylib|dll) */
     if (!fname || !*fname) return false;
     for (const char *p = fname; *p; ++p)
@@ -155,6 +133,15 @@ static void mag_backend_module_shutdown(mag_backend_module_t *mod) {
         mod->handle = NULL;
     }
     (*mag_alloc)(mod, 0, 0);
+}
+
+bool mag_device_is_typeof(const mag_device_t *dvc, const char *type){
+    if (!dvc || !type || !*type) return false;
+    const char *id = dvc->id;
+    const char *sep = strchr(id, ':');
+    size_t id_type_len = sep ? (size_t)(sep-id) : strlen(id);
+    size_t type_len = strlen(type);
+    return id_type_len == type_len && memcmp(id, type, type_len) == 0;
 }
 
 struct mag_backend_registry_t {
