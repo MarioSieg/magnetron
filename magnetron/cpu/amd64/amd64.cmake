@@ -7,7 +7,6 @@ mag_register_cpu_backend("amd64/mag_cpu_amd64_cannonlake.c"      "-march=cannonl
 mag_register_cpu_backend("amd64/mag_cpu_amd64_cascadelake.c"     "-march=cascadelake -mtune=cascadelake"         "/arch:AVX512") # AVX-512 + VNNI
 mag_register_cpu_backend("amd64/mag_cpu_amd64_cooperlake.c"      "-march=cooperlake -mtune=cooperlake"           "/arch:AVX512") # AVX-512 + BF16
 mag_register_cpu_backend("amd64/mag_cpu_amd64_core2.c"           "-march=core2 -mtune=core2"                     "/arch:SSE2")   # SSSE3-era (MSVC has no /arch:SSE4.x)
-mag_register_cpu_backend("amd64/mag_cpu_amd64_diamondrapids.c"   "-march=diamondrapids -mtune=diamondrapids"     "/arch:AVX512") # AVX10/AVX-512 superset; AMX via intrinsics
 mag_register_cpu_backend("amd64/mag_cpu_amd64_haswell.c"         "-march=haswell -mtune=haswell"                 "/arch:AVX2")   # AVX2+FMA
 mag_register_cpu_backend("amd64/mag_cpu_amd64_icelake.c"         "-march=icelake-client -mtune=icelake-client"   "/arch:AVX512") # client/server AVX-512 superset
 mag_register_cpu_backend("amd64/mag_cpu_amd64_ivybridge.c"       "-march=ivybridge -mtune=ivybridge"             "/arch:AVX")    # AVX + F16C

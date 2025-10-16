@@ -129,9 +129,6 @@ mag_amd64_blas_spec_decl(cooperlake);
 #ifdef MAG_HAVE_CPU_CORE2
 mag_amd64_blas_spec_decl(core2);
 #endif
-#ifdef MAG_HAVE_CPU_DIAMONDRAPIDS
-mag_amd64_blas_spec_decl(diamondrapids);
-#endif
 #ifdef MAG_HAVE_CPU_HASWELL
 mag_amd64_blas_spec_decl(haswell);
 #endif
@@ -177,9 +174,6 @@ mag_amd64_blas_spec_decl(zn5);
 
 static bool mag_blas_detect_gen_optimal_spec(const mag_context_t *host_ctx, mag_kernel_registry_t *kernels) {
     static const mag_amd64_specialization_dispatch_t specializations_intel[] = {
-        #ifdef MAG_HAVE_CPU_DIAMONDRAPIDS
-                mag_amd64_blas_spec_permute(diamondrapids),
-        #endif
         #ifdef MAG_HAVE_CPU_SAPPHIRERAPIDS
                 mag_amd64_blas_spec_permute(sapphirerapids),
         #endif

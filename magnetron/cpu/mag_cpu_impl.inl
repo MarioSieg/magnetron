@@ -3971,205 +3971,6 @@ static MAG_HOTPROC void mag_matmul_e5m10(const mag_kernel_payload_t *payload) {
     }
 }
 
-#ifndef MAG_BLAS_SPECIALIZATION
-#error "BLAS specialization undefined"
-#endif
-#ifndef MAG_BLAS_SPECIALIZATION_FEAT_REQUEST
-#error "Feature request routine undefined"
-#endif
-
-#if defined(__x86_64__) || defined(_M_X64)
-mag_amd64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
-    mag_amd64_cap_bitset_t caps = 0;
-#ifdef __SSE__
-    caps|=mag_amd64_cap(SSE);
-#endif
-#ifdef __SSE2__
-    caps|=mag_amd64_cap(SSE2);
-#endif
-#ifdef __SSE3__
-    caps|=mag_amd64_cap(SSE3);
-#endif
-#ifdef __SSSE3__
-    caps|=mag_amd64_cap(SSSE3);
-#endif
-#ifdef __SSE4_1__
-    caps|=mag_amd64_cap(SSE41);
-#endif
-#ifdef __SSE4_2__
-    caps|=mag_amd64_cap(SSE42);
-#endif
-#ifdef __SSE4A__
-    caps|=mag_amd64_cap(SSE42);
-#endif
-
-#ifdef __AVX__
-    caps|=mag_amd64_cap(AVX);
-#endif
-#ifdef __FMA__
-    caps|=mag_amd64_cap(FMA);
-#endif
-#ifdef __AVX2__
-    caps|=mag_amd64_cap(AVX2);
-#endif
-#ifdef __F16C__
-    caps|=mag_amd64_cap(F16C);
-#endif
-#ifdef __AVXVNNI__
-    caps|=mag_amd64_cap(AVX_VNNI);
-#endif
-#ifdef __AVXVNNIINT8__
-    caps|=mag_amd64_cap(AVX_VNNI_INT8);
-#endif
-#ifdef __AVXNECONVERT__
-    caps|=mag_amd64_cap(AVX_NE_CONVERT);
-#endif
-#ifdef __AVXIFMA__
-    caps|=mag_amd64_cap(AVX_IFMA);
-#endif
-#ifdef __AVXVNNIINT16__
-    caps|=mag_amd64_cap(AVX_VNNI_INT16);
-#endif
-#ifdef __AVX10__
-    caps|=mag_amd64_cap(AVX10);
-#endif
-
-#ifdef __AVX512F__
-    caps|=mag_amd64_cap(AVX512_F);
-#endif
-#ifdef __AVX512DQ__
-    caps|=mag_amd64_cap(AVX512_DQ);
-#endif
-#ifdef __AVX512IFMA__
-    caps|=mag_amd64_cap(AVX512_IFMA);
-#endif
-#ifdef __AVX512PF__
-    caps|=mag_amd64_cap(AVX512_PF);
-#endif
-#ifdef __AVX512ER__
-    caps|=mag_amd64_cap(AVX512_EQ);
-#endif
-#ifdef __AVX512CD__
-    caps|=mag_amd64_cap(AVX512_CD);
-#endif
-#ifdef __AVX512BW__
-    caps|=mag_amd64_cap(AVX512_BW);
-#endif
-#ifdef __AVX512VL__
-    caps|=mag_amd64_cap(AVX512_VL);
-#endif
-#ifdef __AVX512VBMI__
-    caps|=mag_amd64_cap(AVX512_VBMI);
-#endif
-#ifdef __AVX5124VNNIW__
-    caps|=mag_amd64_cap(AVX512_4VNNIW);
-#endif
-#ifdef __AVX5124FMAPS__
-    caps|=mag_amd64_cap(AVX512_4FMAPS);
-#endif
-#ifdef __AVX512VBMI2__
-    caps|=mag_amd64_cap(AVX512_VBMI2);
-#endif
-#ifdef __AVX512VNNI__
-    caps|=mag_amd64_cap(AVX512_VNNI);
-#endif
-#ifdef __AVX512BITALG__
-    caps|=mag_amd64_cap(AVX512_BITALG);
-#endif
-#ifdef __AVX512VPOPCNTDQ__
-    caps|=mag_amd64_cap(AVX512_VPOPCNTDQ);
-#endif
-#ifdef __AVX512BF16__
-    caps|=mag_amd64_cap(AVX512_BF16);
-#endif
-#ifdef __AVX512VP2INTERSECT__
-    caps|=mag_amd64_cap(AVX512_VP2INTERSECT);
-#endif
-#ifdef __AVX512FP16__
-    caps|=mag_amd64_cap(AVX512_FP16);
-#endif
-
-#ifdef __AMX_TILE__
-    caps|=mag_amd64_cap(AMX_TILE);
-#endif
-#ifdef __AMX_INT8__
-    caps|=mag_amd64_cap(AMX_INT8);
-#endif
-#ifdef __AMX_BF16__
-    caps|=mag_amd64_cap(AMX_BF16);
-#endif
-#ifdef __AMX_FP16__
-    caps|=mag_amd64_cap(AMX_FP16);
-#endif
-#ifdef __AMX_TRANSPOSE__
-    caps|=mag_amd64_cap(AMX_TRANSPOSE);
-#endif
-#ifdef __AMX_TF32__
-    caps|=mag_amd64_cap(AMX_TF32);
-#endif
-#ifdef __AMX_AVX512__
-    caps|=mag_amd64_cap(AMX_AVX512);
-#endif
-#ifdef __AMX_MOVRS__
-    caps|=mag_amd64_cap(AMX_MOVRS);
-#endif
-#ifdef __AMX_FP8__
-    caps|=mag_amd64_cap(AMX_FP8);
-#endif
-
-
-#ifdef __BMI__
-    caps|=mag_amd64_cap(BMI1);
-#endif
-#ifdef __BMI2__
-    caps|=mag_amd64_cap(BMI2);
-#endif
-
-#ifdef __GFNI__
-    caps|=mag_amd64_cap(GFNI);
-#endif
-#ifdef __APXF__
-    caps|=mag_amd64_cap(APX_F);
-#endif
-
-    return caps;
-}
-
-#elif defined(__aarch64__) || defined(_M_ARM64)
-
-mag_arm64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(void) {
-    mag_arm64_cap_bitset_t caps = 0;
-#ifdef __ARM_NEON
-    caps|=mag_arm64_cap(NEON);
-#endif
-#ifdef __ARM_FEATURE_DOTPROD
-    caps|=mag_arm64_cap(DOTPROD);
-#endif
-#ifdef __ARM_FEATURE_MATMUL_INT8
-    caps|=mag_arm64_cap(I8MM);
-#endif
-#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
-    caps|=mag_arm64_cap(F16VECTOR);
-    caps|=mag_arm64_cap(F16SCALAR);
-    caps|=mag_arm64_cap(F16CVT);
-#elif defined(__ARM_FEATURE_FP16_SCALAR_ARITHMETIC)
-    caps|=mag_arm64_cap(F16SCALAR);
-    caps|=mag_arm64_cap(F16CVT);
-#endif
-#ifdef __ARM_FEATURE_BF16
-    caps|=mag_arm64_cap(BF16);
-#endif
-#ifdef __ARM_FEATURE_SVE
-    caps|=mag_arm64_cap(SVE);
-#endif
-#ifdef __ARM_FEATURE_SVE2
-    caps|=mag_arm64_cap(SVE2);
-#endif
-    return caps;
-}
-
-#endif
-
 static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag_kernel_payload_t *) = {
     [MAG_OP_NOP] = {
         [MAG_DTYPE_E8M23] = &mag_nop,
@@ -4525,3 +4326,211 @@ void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t *kernels) {
     kernels->vector_cast = &mag_vector_cast_stub;
     kernels->vreg_width = &mag_vreg_width;
 }
+
+#ifndef MAG_BLAS_SPECIALIZATION
+#error "BLAS specialization undefined"
+#endif
+#ifndef MAG_BLAS_SPECIALIZATION_FEAT_REQUEST
+#error "Feature request routine undefined"
+#endif
+
+#if defined(__x86_64__) || defined(_M_X64)
+/*
+** x86-64 specific feature detection.
+** This function is always called, so it must run down to SSE2 at least.
+** This means that there should be no fancy instructions or extensions.
+** There was a bug where the backend with Intel APX enabled used
+** the instruction: pushp  %rbp (d5 08 55) for function prologue, whis is Intel APX and crashes on older CPUs.
+** This is why this function should really only return one single integer scalar in the return register, according to the calling convention,
+** and NO other code or logic. The function is marked naked to supress the prologue/epilogue generation and associated extension instructions.
+*/
+mag_amd64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
+    mag_amd64_cap_bitset_t caps = 0;
+#ifdef __SSE__
+    caps|=mag_amd64_cap(SSE);
+#endif
+#ifdef __SSE2__
+    caps|=mag_amd64_cap(SSE2);
+#endif
+#ifdef __SSE3__
+    caps|=mag_amd64_cap(SSE3);
+#endif
+#ifdef __SSSE3__
+    caps|=mag_amd64_cap(SSSE3);
+#endif
+#ifdef __SSE4_1__
+    caps|=mag_amd64_cap(SSE41);
+#endif
+#ifdef __SSE4_2__
+    caps|=mag_amd64_cap(SSE42);
+#endif
+#ifdef __SSE4A__
+    caps|=mag_amd64_cap(SSE42);
+#endif
+
+#ifdef __AVX__
+    caps|=mag_amd64_cap(AVX);
+#endif
+#ifdef __FMA__
+    caps|=mag_amd64_cap(FMA);
+#endif
+#ifdef __AVX2__
+    caps|=mag_amd64_cap(AVX2);
+#endif
+#ifdef __F16C__
+    caps|=mag_amd64_cap(F16C);
+#endif
+#ifdef __AVXVNNI__
+    caps|=mag_amd64_cap(AVX_VNNI);
+#endif
+#ifdef __AVXVNNIINT8__
+    caps|=mag_amd64_cap(AVX_VNNI_INT8);
+#endif
+#ifdef __AVXNECONVERT__
+    caps|=mag_amd64_cap(AVX_NE_CONVERT);
+#endif
+#ifdef __AVXIFMA__
+    caps|=mag_amd64_cap(AVX_IFMA);
+#endif
+#ifdef __AVXVNNIINT16__
+    caps|=mag_amd64_cap(AVX_VNNI_INT16);
+#endif
+#ifdef __AVX10__
+    caps|=mag_amd64_cap(AVX10);
+#endif
+
+#ifdef __AVX512F__
+    caps|=mag_amd64_cap(AVX512_F);
+#endif
+#ifdef __AVX512DQ__
+    caps|=mag_amd64_cap(AVX512_DQ);
+#endif
+#ifdef __AVX512IFMA__
+    caps|=mag_amd64_cap(AVX512_IFMA);
+#endif
+#ifdef __AVX512PF__
+    caps|=mag_amd64_cap(AVX512_PF);
+#endif
+#ifdef __AVX512ER__
+    caps|=mag_amd64_cap(AVX512_EQ);
+#endif
+#ifdef __AVX512CD__
+    caps|=mag_amd64_cap(AVX512_CD);
+#endif
+#ifdef __AVX512BW__
+    caps|=mag_amd64_cap(AVX512_BW);
+#endif
+#ifdef __AVX512VL__
+    caps|=mag_amd64_cap(AVX512_VL);
+#endif
+#ifdef __AVX512VBMI__
+    caps|=mag_amd64_cap(AVX512_VBMI);
+#endif
+#ifdef __AVX5124VNNIW__
+    caps|=mag_amd64_cap(AVX512_4VNNIW);
+#endif
+#ifdef __AVX5124FMAPS__
+    caps|=mag_amd64_cap(AVX512_4FMAPS);
+#endif
+#ifdef __AVX512VBMI2__
+    caps|=mag_amd64_cap(AVX512_VBMI2);
+#endif
+#ifdef __AVX512VNNI__
+    caps|=mag_amd64_cap(AVX512_VNNI);
+#endif
+#ifdef __AVX512BITALG__
+    caps|=mag_amd64_cap(AVX512_BITALG);
+#endif
+#ifdef __AVX512VPOPCNTDQ__
+    caps|=mag_amd64_cap(AVX512_VPOPCNTDQ);
+#endif
+#ifdef __AVX512BF16__
+    caps|=mag_amd64_cap(AVX512_BF16);
+#endif
+#ifdef __AVX512VP2INTERSECT__
+    caps|=mag_amd64_cap(AVX512_VP2INTERSECT);
+#endif
+#ifdef __AVX512FP16__
+    caps|=mag_amd64_cap(AVX512_FP16);
+#endif
+
+#ifdef __AMX_TILE__
+    caps|=mag_amd64_cap(AMX_TILE);
+#endif
+#ifdef __AMX_INT8__
+    caps|=mag_amd64_cap(AMX_INT8);
+#endif
+#ifdef __AMX_BF16__
+    caps|=mag_amd64_cap(AMX_BF16);
+#endif
+#ifdef __AMX_FP16__
+    caps|=mag_amd64_cap(AMX_FP16);
+#endif
+#ifdef __AMX_TRANSPOSE__
+    caps|=mag_amd64_cap(AMX_TRANSPOSE);
+#endif
+#ifdef __AMX_TF32__
+    caps|=mag_amd64_cap(AMX_TF32);
+#endif
+#ifdef __AMX_AVX512__
+    caps|=mag_amd64_cap(AMX_AVX512);
+#endif
+#ifdef __AMX_MOVRS__
+    caps|=mag_amd64_cap(AMX_MOVRS);
+#endif
+#ifdef __AMX_FP8__
+    caps|=mag_amd64_cap(AMX_FP8);
+#endif
+
+
+#ifdef __BMI__
+    caps|=mag_amd64_cap(BMI1);
+#endif
+#ifdef __BMI2__
+    caps|=mag_amd64_cap(BMI2);
+#endif
+
+#ifdef __GFNI__
+    caps|=mag_amd64_cap(GFNI);
+#endif
+#ifdef __APXF__
+    caps|=mag_amd64_cap(APX_F);
+#endif
+
+    return caps;
+}
+
+#elif defined(__aarch64__) || defined(_M_ARM64)
+
+mag_arm64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(void) {
+    mag_arm64_cap_bitset_t caps = 0;
+#ifdef __ARM_NEON
+    caps|=mag_arm64_cap(NEON);
+#endif
+#ifdef __ARM_FEATURE_DOTPROD
+    caps|=mag_arm64_cap(DOTPROD);
+#endif
+#ifdef __ARM_FEATURE_MATMUL_INT8
+    caps|=mag_arm64_cap(I8MM);
+#endif
+#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+    caps|=mag_arm64_cap(F16VECTOR);
+    caps|=mag_arm64_cap(F16SCALAR);
+    caps|=mag_arm64_cap(F16CVT);
+#elif defined(__ARM_FEATURE_FP16_SCALAR_ARITHMETIC)
+    caps|=mag_arm64_cap(F16SCALAR);
+    caps|=mag_arm64_cap(F16CVT);
+#endif
+#ifdef __ARM_FEATURE_BF16
+    caps|=mag_arm64_cap(BF16);
+#endif
+#ifdef __ARM_FEATURE_SVE
+    caps|=mag_arm64_cap(SVE);
+#endif
+#ifdef __ARM_FEATURE_SVE2
+    caps|=mag_arm64_cap(SVE2);
+#endif
+    return caps;
+}
+
+#endif
