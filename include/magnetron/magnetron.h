@@ -163,8 +163,8 @@ mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fix in 1 byte */
  */
 typedef struct mag_dtype_meta_t {
     const char *name;   /* Name of the data type */
-    size_t size;                 /* Size of the data type in bytes. Must be a power of two. */
-    size_t align;                /* CPU Alignment of the data type in bytes. Must be a power of two. */
+    size_t size;        /* Size of the data type in bytes. Must be a power of two. */
+    size_t align;       /* CPU Alignment of the data type in bytes. Must be a power of two. */
 } mag_dtype_meta_t;
 extern MAG_EXPORT const mag_dtype_meta_t *mag_dtype_meta_of(mag_dtype_t type);
 
@@ -300,9 +300,6 @@ extern MAG_EXPORT void mag_tensor_fill_arange(mag_tensor_t *t, float start, floa
 
 /* ============ Tensor Property Accessors ============ */
 
-extern MAG_EXPORT uint64_t mag_tensor_get_refcount(const mag_tensor_t *t);                                         /* Return reference count of tensor itself. */
-extern MAG_EXPORT uint64_t mag_tensor_get_storage_refcount(const mag_tensor_t *t);                                 /* Return reference count of tensor itself. */
-extern MAG_EXPORT size_t mag_tensor_get_memory_usage(const mag_tensor_t *t);                                       /* Return memory used by this tensor in bytes. */
 extern MAG_EXPORT int64_t mag_tensor_get_rank(const mag_tensor_t *t);                                              /* Get the rank (number of dimensions) of the tensor */
 extern MAG_EXPORT const int64_t *mag_tensor_get_shape(const mag_tensor_t *t);                             /* Get the dimensions of the tensor */
 extern MAG_EXPORT const int64_t *mag_tensor_get_strides(const mag_tensor_t *t);                           /* Get the strides of the tensor */
@@ -313,9 +310,6 @@ extern MAG_EXPORT void *mag_tensor_get_storage_base_ptr(const mag_tensor_t *t); 
 extern MAG_EXPORT int64_t mag_tensor_get_data_size(const mag_tensor_t * );                                         /* Get the size of the tensor buffer in bytes. */
 extern MAG_EXPORT int64_t mag_tensor_get_numel(const mag_tensor_t *t);                                             /* Get the total amount of elements in the tensor. */
 extern MAG_EXPORT mag_context_t *mag_tensor_get_ctx(const mag_tensor_t *t);                                 /* Get the context of the tensor */
-extern MAG_EXPORT int64_t mag_tensor_get_width(const mag_tensor_t *t);
-extern MAG_EXPORT int64_t mag_tensor_get_height(const mag_tensor_t *t);
-extern MAG_EXPORT int64_t mag_tensor_get_channels(const mag_tensor_t *t);
 extern MAG_EXPORT bool mag_tensor_is_view(const mag_tensor_t *t);                                                /* Check if the tensor is a view of another tensor */
 extern MAG_EXPORT bool mag_tensor_is_floating_point_typed(const mag_tensor_t *t);
 extern MAG_EXPORT bool mag_tensor_is_integral_typed(const mag_tensor_t *t);
@@ -360,9 +354,7 @@ extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *t);
 extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *t);
 extern MAG_EXPORT mag_tensor_t *mag_tensor_detach(mag_tensor_t *t);
 extern MAG_EXPORT char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_count, size_t from_end_count);
-extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val);
-extern MAG_EXPORT mag_tensor_t *mag_tensor_load_image(mag_context_t *ctx, const char *file, mag_color_channels_t channels, uint32_t resize_w, uint32_t resize_h);    /* Create a tensor from an image file. */
-extern MAG_EXPORT void mag_tensor_save_image(const mag_tensor_t *t, const char *file);                                                                                    /* Save tensor data as an image */
+extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val);/* Save tensor data as an image */
 extern MAG_EXPORT void mag_tensor_export_forward_graph_graphviz(mag_tensor_t *t, const char *file);                                                                      /* Export tensor computation graph as Graphviz DOT file *//* Get image channels from tensor */
 extern MAG_EXPORT void mag_tensor_export_backward_graph_graphviz(mag_tensor_t *t, const char *file);
 

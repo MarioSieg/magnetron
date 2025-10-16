@@ -220,16 +220,6 @@ mag_tensor_t *mag_tensor_detach(mag_tensor_t *t) {
     return t;
 }
 
-uint64_t mag_tensor_get_refcount(const mag_tensor_t *t) {
-    return t->rc_control.rc;
-}
-uint64_t mag_tensor_get_storage_refcount(const mag_tensor_t *t) {
-    return t->storage->rc_control.rc;
-}
-size_t mag_tensor_get_memory_usage(const mag_tensor_t *t) {
-    return sizeof(*t) + mag_tensor_get_data_size(t);
-}
-
 int64_t mag_tensor_get_rank(const mag_tensor_t *t) {
     return t->rank;
 }
@@ -306,52 +296,6 @@ bool mag_tensor_get_item_bool(const mag_tensor_t *t) {
     uint8_t val;
     (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_BOOL);
     return !!val;
-}
-
-bool mag_tensor_is_shape_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
-    return memcmp(x->shape, y->shape, sizeof(x->shape)) == 0;
-}
-
-bool mag_tensor_are_strides_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
-    return memcmp(x->strides, y->strides, sizeof(x->strides)) == 0;
-}
-
-bool mag_tensor_can_broadcast(const mag_tensor_t *small, const mag_tensor_t *big) {
-    int64_t mr = mag_xmax(small->rank, big->rank);
-    for (int64_t d=0; d < mr; ++d) {
-        int64_t asz = d < small->rank ? small->shape[small->rank-1-d] : 1;
-        int64_t bsz = d < big->rank ? big->shape[big->rank-1-d] : 1;
-        if (asz != bsz && asz != 1 && bsz != 1)
-            return false;
-    }
-    return true;
-}
-
-bool mag_tensor_is_transposed(const mag_tensor_t *t) {
-    return t->strides[0] > t->strides[1];
-}
-
-bool mag_tensor_is_permuted(const mag_tensor_t *t) {
-    for (int i=0; i < MAG_MAX_DIMS-1; ++i)
-        if (t->strides[i] > t->strides[i+1])
-            return true;
-    return false;
-}
-
-bool mag_tensor_is_contiguous(const mag_tensor_t *t) {
-    int64_t str = 1;
-    for (int64_t d=t->rank-1; d >= 0; --d) {
-        int64_t size_d = t->shape[d];
-        if (size_d == 1) continue;
-        if (t->strides[d] != str) return false;
-        str *= size_d;
-    }
-    return true;
-}
-
-bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t *dims, int64_t rank) {
-    int64_t tmp[MAG_MAX_DIMS];
-    return mag_solve_view_strides(&tmp, t->shape, t->strides, t->rank, dims, rank);
 }
 
 /*
@@ -498,27 +442,23 @@ void mag_tensor_to_string_free_data(char *ret_val) {
 mag_context_t *mag_tensor_get_ctx(const mag_tensor_t *t) {
     return t->ctx;
 }
-int64_t mag_tensor_get_width(const mag_tensor_t *t) {
-    return t->shape[2];
-}
-int64_t mag_tensor_get_height(const mag_tensor_t *t) {
-    return t->shape[1];
-}
-int64_t mag_tensor_get_channels(const mag_tensor_t *t) {
-    return t->shape[0];
-}
+
 bool mag_tensor_is_view(const mag_tensor_t *t) {
     return t->flags & MAG_TFLAG_IS_VIEW;
 }
+
 bool mag_tensor_is_floating_point_typed(const mag_tensor_t *t) {
     return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_FP;
 }
+
 bool mag_tensor_is_integral_typed(const mag_tensor_t *t) {
     return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGRAL;
 }
+
 bool mag_tensor_is_integer_typed(const mag_tensor_t *t) {
     return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGER;
 }
+
 bool mag_tensor_is_numeric_typed(const mag_tensor_t *t) {
     return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC;
 }
