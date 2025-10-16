@@ -175,36 +175,63 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     mag_log_info("magnetron context destroyed");
 }
 
+const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx) {
+    return &ctx->error_status;
+}
+
+void mag_ctx_set_last_error(mag_context_t *ctx, const mag_error_t *error){
+    ctx->error_status = *error;
+}
+
+mag_status_t mag_ctx_get_last_error_code(const mag_context_t *ctx) {
+    return ctx->error_status.code;
+}
+
+void mag_ctx_clear_last_error(mag_context_t *ctx) {
+    memset(&ctx->error_status, 0, sizeof(ctx->error_status));
+    ctx->error_status.code = MAG_STATUS_OK;
+}
+
 mag_device_type_t mag_ctx_get_compute_device_type(const mag_context_t *ctx) {
     return ctx->device_type;
 }
+
 const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx) {
     return ctx->device->name;
 }
+
 const char *mag_ctx_get_os_name(const mag_context_t *ctx) {
     return ctx->machine.os_name;
 }
+
 const char *mag_ctx_get_cpu_name(const mag_context_t *ctx) {
     return ctx->machine.cpu_name;
 }
+
 uint32_t mag_ctx_get_cpu_virtual_cores(const mag_context_t *ctx) {
     return ctx->machine.cpu_virtual_cores;
 }
+
 uint32_t mag_ctx_get_cpu_physical_cores(const mag_context_t *ctx) {
     return ctx->machine.cpu_physical_cores;
 }
+
 uint32_t mag_ctx_get_cpu_sockets(const mag_context_t *ctx) {
     return ctx->machine.cpu_sockets;
 }
+
 uint64_t mag_ctx_get_physical_memory_total(const mag_context_t *ctx) {
     return ctx->machine.phys_mem_total;
 }
+
 uint64_t mag_ctx_get_physical_memory_free(const mag_context_t *ctx) {
     return ctx->machine.phys_mem_free;
 }
+
 bool mag_ctx_is_numa_system(const mag_context_t *ctx) {
     return false; /* TODO */
 }
+
 size_t mag_ctx_get_total_tensors_created(const mag_context_t *ctx) {
     return 0; /* TODO */
 }
@@ -212,12 +239,15 @@ size_t mag_ctx_get_total_tensors_created(const mag_context_t *ctx) {
 void mag_ctx_grad_recorder_start(mag_context_t *ctx) {
     ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER;
 }
+
 void mag_ctx_grad_recorder_stop(mag_context_t *ctx) {
     ctx->flags &= ~MAG_CTX_FLAG_GRAD_RECORDER;
 }
+
 bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx) {
     return ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER;
 }
+
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
     (*ctx->device->manual_seed)(ctx->device, seed);
 }

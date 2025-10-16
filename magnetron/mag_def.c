@@ -36,6 +36,27 @@ void mag_set_log_mode(bool enabled) {
   mag_log_enabled = enabled;
 }
 
+const char *mag_status_get_name(mag_status_t op){
+    static const char *names[] ={
+        "MAG_STATUS_OK",
+        "MAG_STATUS_ERR_THREAD_MISMATCH",
+        "MAG_STATUS_ERR_INVALID_RANK",
+        "MAG_STATUS_ERR_INVALID_DIM",
+        "MAG_STATUS_ERR_DIM_OVERFLOW",
+        "MAG_STATUS_ERR_INVALID_INDEX",
+        "MAG_STATUS_ERR_OUT_OF_BOUNDS",
+        "MAG_STATUS_ERR_INVALID_BACKPROP_ROOT",
+        "MAG_STATUS_ERR_AUTODIFF_STATE_MISSING",
+        "MAG_STATUS_ERR_INVALID_PARAM",
+        "MAG_STATUS_ERR_STRIDE_SOLVER_FAILED",
+        "MAG_STATUS_ERR_BROADCAST_IMPOSSIBLE",
+        "MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE",
+        "MAG_STATUS_ERR_INVALID_STATE",
+        "MAG_STATUS_ERR_UNKNOWN"
+    };
+    return names[op];
+}
+
 #if defined(__linux__) && defined(__GLIBC__)
 #include <sys/wait.h>
 #include <execinfo.h>

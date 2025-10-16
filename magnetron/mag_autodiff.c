@@ -66,29 +66,34 @@ static void mag_tensor_patch_grad(mag_tensor_t *dst, mag_tensor_t *grad) {
     dst->au_state->grad = grad;
 }
 
-void mag_tensor_backward(mag_tensor_t *root) {
-    mag_assert(root->flags & MAG_TFLAG_REQUIRES_GRAD, "Tensor must require grad to back-propagate");
-    mag_assert(root->rank == 1 && root->numel == 1, "Tensor must be a scalar to back-propagate");
+mag_status_t mag_tensor_backward(mag_tensor_t *root) {
+    mag_context_t *ctx = root->ctx;
+    mag_contract(ctx, ERR_INVALID_BACKPROP_ROOT, {}, root->flags & MAG_TFLAG_REQUIRES_GRAD, "Tensor does not require gradients");
+    mag_contract(ctx, ERR_INVALID_BACKPROP_ROOT, {}, root->rank == 1 && root->numel == 1, "Can only backpropagate from a scalar (rank 1, numel 1) tensor");
     mag_ctx_grad_recorder_stop(root->ctx);
     mag_tensor_array_t post_order;
     mag_tensor_array_init(&post_order);
     mag_toposort(root, &post_order);
     if (mag_unlikely(!post_order.size)) goto end;
-    for (size_t i=0, j = post_order.size-1; i < j; ++i, --j)
+    for (size_t i=0, j = post_order.size-1; i < j; ++i, --j) {
         mag_swap(mag_tensor_t *, post_order.data[i], post_order.data[j]);
+    }
     for (size_t id=0; id < post_order.size; ++id) {
         mag_tensor_t *child = post_order.data[id];
-        mag_assert(child && child->au_state, "Autodiff state not allocated for tensor that requires gradient");
+        mag_contract(ctx, ERR_AUTODIFF_STATE_MISSING, { mag_tensor_array_free(&post_order); }, child && child->au_state, "Autodiff state missing for tensor");
         const mag_opmeta_t *meta = mag_op_meta_of(child->au_state->op);
         if (!child->au_state->grad) {
-            mag_tensor_t *grad = mag_tensor_full_like(child, 1.0f);
+            mag_tensor_t *grad;
+            if (mag_iserr(mag_tensor_full_like(&grad, child, 1.0f)))
+                continue;
             mag_tensor_patch_grad(child, grad);
         }
         if (mag_unlikely(child->au_state->op == MAG_OP_NOP)) continue;
         mag_tensor_t *grads[MAG_MAX_OP_INPUTS] = {0};
-        void (*backward)(mag_au_state_t *, mag_tensor_t **) = meta->backward;
-        mag_assert2(backward);
-        (*backward)(child->au_state, grads);
+        mag_status_t (*backward)(mag_au_state_t *, mag_tensor_t **) = meta->backward;
+        mag_contract(ctx, ERR_INVALID_STATE, { mag_tensor_array_free(&post_order); }, backward != NULL, "Backward function not implemented for op %s", meta->mnemonic);
+        mag_status_t stat = (*backward)(child->au_state, grads);
+        mag_contract(ctx, ERR_INVALID_STATE, { mag_tensor_array_free(&post_order); }, mag_isok(stat), "Backward function failed for op %s", meta->mnemonic);
         uint32_t numin = meta->in;
         mag_assert2(numin <= MAG_MAX_OP_INPUTS);
         for (uint32_t i=0; i < numin; ++i) {
@@ -100,7 +105,11 @@ void mag_tensor_backward(mag_tensor_t *root) {
             if (!input->au_state->grad) {
                 mag_tensor_patch_grad(input, gri);
             } else {
-                mag_tensor_t *acc = mag_add(gri, input->au_state->grad);
+                mag_tensor_t *acc;
+                if (mag_iserr(mag_add(&acc, gri, input->au_state->grad))) {
+                    mag_tensor_decref(gri);
+                    continue;
+                }
                 mag_tensor_patch_grad(input, acc);
                 mag_tensor_decref(gri);
             }
@@ -109,6 +118,7 @@ void mag_tensor_backward(mag_tensor_t *root) {
     mag_tensor_array_free(&post_order);
 end:
     mag_ctx_grad_recorder_start(root->ctx);
+    return MAG_STATUS_OK;
 }
 
 void mag_tensor_zero_grad(mag_tensor_t *t) {

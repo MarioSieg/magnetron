@@ -28,6 +28,7 @@ typedef enum mag_context_flags_t {
 } mag_context_flags_t;
 
 struct mag_context_t {
+    mag_error_t error_status;                   /* Last error status. */
     mag_machine_info_t machine;                 /* Machine information. */
     size_t num_tensors;                         /* Total tensor instances allocated. */
     size_t num_storages;                        /* Total storage buffers allocated. */
@@ -37,8 +38,6 @@ struct mag_context_t {
     mag_fixed_pool_t au_state_pool;             /* Autodiff state memory pool. */
     mag_context_flags_t flags;                  /* Context flags. */
     uintptr_t tr_id;                            /* Context thread ID. */
-    size_t sh_len;                              /* Number of shutdown hooks. */
-    size_t sh_cap;                              /* Maximum number of shutdown hooks. */
     mag_device_type_t device_type;              /* Active compute device type. */
     mag_backend_registry_t *backend_registry;   /* Compute backend registry */
     mag_backend_t *backend;                     /* Active compute backend. */

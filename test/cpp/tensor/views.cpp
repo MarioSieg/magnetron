@@ -174,7 +174,9 @@ TEST(views, inplace_bumps_version_and_detaches) {
     tensor v = x.view();
     tensor y = v.abs();
     ctx.stop_grad_recorder();
-    x += tensor{mag_tensor_full_like(&*x, 1.f)};
+    mag_tensor_t *vv;
+    handle_error(mag_tensor_full_like(&vv, &*x, 1.f));
+    x += tensor{vv};
     ctx.start_grad_recorder();
     tensor loss = y.sum();
     loss.backward();

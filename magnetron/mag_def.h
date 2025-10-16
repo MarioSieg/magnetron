@@ -542,6 +542,29 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 #define mag_dassert2(...)
 #endif
 
+#define mag_iserr(stat) (mag_unlikely((stat) != MAG_STATUS_OK))
+#define mag_isok(stat) (!mag_iserr((stat)))
+
+/*
+'* If 'expr' is false, set the last error in the given context to 'status' and
+'* return 'status'. Optionally perform 'cleanup' code before returning.
+'* The 'msg' is a printf-style format string with optional arguments.
+*/
+#define mag_contract(ctx, status, cleanup, expr, msg, ...) \
+    if (mag_unlikely(!(expr))) { \
+        mag_error_t err = { \
+            .code = MAG_STATUS_##status, \
+            .message = "", \
+            .file = __FILE__, \
+            .line = __LINE__, \
+            .func = __FUNCTION__, \
+        }; \
+        snprintf(err.message, sizeof(err.message), msg, ## __VA_ARGS__); \
+        mag_ctx_set_last_error((ctx), &err); \
+        cleanup \
+        return MAG_STATUS_##status; \
+    }
+
 /* Increment pointer or size with correct type alignment. */
 static inline void *mag_pincr(void **p, size_t sz, size_t align) {
     void *pp = (void *)(((uintptr_t)*p+align-1)&-align);
@@ -559,7 +582,7 @@ return high != (*c>>63);
 #else
 int64_t high;
 int64_t low = _mul128(a, b, &high);
-int64_t sign = low >> 63;
+int64_t sign = low>>63;
 *c = low;
 return high != sign;
 #endif

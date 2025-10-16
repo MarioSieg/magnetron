@@ -130,7 +130,7 @@ typedef struct mag_opmeta_t {
     const mag_dtype_mask_t dtype_mask;
     const mag_opparam_type_t op_param_layout[MAG_MAX_OP_PARAMS];
     const mag_opflags_t flags;
-    void (*const backward)(mag_au_state_t *, mag_tensor_t **);
+    mag_status_t (*const backward)(mag_au_state_t *, mag_tensor_t **);
 } mag_opmeta_t;
 
 extern MAG_EXPORT const mag_opmeta_t *mag_op_meta_of(mag_opcode_t opc); /* Get operation metadata for a specific opcode. */
