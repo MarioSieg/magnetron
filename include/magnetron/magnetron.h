@@ -85,6 +85,8 @@ typedef enum mag_status_t {
     MAG_STATUS_ERR_BROADCAST_IMPOSSIBLE,
     MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE,
     MAG_STATUS_ERR_INVALID_STATE,
+    MAG_STATUS_ERR_FAILED_TO_LOAD_IMAGE,
+    MAG_STATUS_ERR_FAILED_TO_RESIZE_IMAGE,
     MAG_STATUS_ERR_UNKNOWN
 } mag_status_t;
 extern MAG_EXPORT const char *mag_status_get_name(mag_status_t op);
@@ -175,6 +177,7 @@ extern MAG_EXPORT mag_status_t mag_tensor_empty_scalar(mag_tensor_t **out, mag_c
 extern MAG_EXPORT mag_status_t mag_tensor_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, float value);
 extern MAG_EXPORT mag_status_t mag_tensor_full(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, float value);
 extern MAG_EXPORT mag_status_t mag_tensor_full_like(mag_tensor_t **out, mag_tensor_t *isomorph, float value);
+extern MAG_EXPORT mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height);
 
 /* ============ Tensor Operators ============ */
 

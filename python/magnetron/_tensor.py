@@ -529,6 +529,12 @@ class Tensor:
             tensor_ptrs[i] = t.native_ptr
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_cat(out, tensor_ptrs, num_tensors, dim)))
 
+    @classmethod
+    def load_image(cls, path: str, channels: str = 'RGB', resize_to: tuple[int, int] = (0, 0)):
+        assert channels in ('R', 'RG', 'RGB', 'RGBA'), f'Invalid channels specification: {channels}'
+        instance = _wrap_out_alloc(lambda out: _C.mag_tensor_load_image(out, context.native_ptr(), bytes(path, 'utf-8'), bytes(channels.upper(), 'utf-8'), resize_to[0], resize_to[1]))
+        return cls(instance)
+
     def clone(self) -> Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_clone(out, self._ptr)))
 

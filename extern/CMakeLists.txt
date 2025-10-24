@@ -18,3 +18,5 @@ endif()
 
 get_target_property(MAIN_CFLAGS mimalloc-static COMPILE_OPTIONS)
 message(STATUS "Compilation flags: ${MAIN_CFLAGS}")
+
+target_include_directories(magnetron_core PRIVATE stb)

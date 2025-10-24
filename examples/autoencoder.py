@@ -1,18 +1,14 @@
 from magnetron import nn, optim, context, Tensor, no_grad
-from PIL import Image
 import matplotlib.pyplot as plt
-import numpy as np
 
-context.manual_seed(128)
+context.manual_seed(42)
 
-EPOCHS: int = 500
-W, H = 128, 128
-arr = np.array(Image.open('media/xoxja.png').convert('RGB').resize((W, H)), dtype=np.float32) / 255.0
-image = Tensor.of(arr.tolist()).permute(2, 0, 1)[None, ...]
-
+EPOCHS: int = 100
+W, H = 64, 64
+image = Tensor.load_image('media/logo.png', channels='RGB', resize_to=(W, H))[None, ...]
 
 class AE(nn.Module):
-    def __init__(self, latent_dim: int = 8) -> None:
+    def __init__(self, latent_dim: int = 16) -> None:
         super().__init__()
         self.latent_dim = latent_dim
         self.encoder = nn.Sequential(
@@ -40,7 +36,7 @@ for step in range(EPOCHS):
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
-    if step % 100 == 0:
+    if step % 10 == 0:
         print(f'Epoch [{step}/{EPOCHS}] Loss: {loss.item():.6f}')
 
 print('Training complete, showing results...')
@@ -50,7 +46,7 @@ with no_grad():
 
 orig_hwc = image[0].permute(1, 2, 0).tolist()
 recon_hwc = reconstructed[0].permute((1, 2, 0)).tolist()
-plt.figure(figsize=(6, 3))
+plt.figure(dpi=300)
 plt.subplot(1, 2, 1)
 plt.title('Original')
 plt.imshow(orig_hwc)
@@ -60,4 +56,5 @@ plt.title('Reconstructed')
 plt.imshow(recon_hwc)
 plt.axis('off')
 plt.tight_layout()
+plt.savefig('autoencoder_result.png')
 plt.show()

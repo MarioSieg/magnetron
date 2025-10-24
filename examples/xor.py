@@ -30,7 +30,7 @@ for i in range(x.shape[0]):
     print(f'Expected: {y[i]}, Predicted: {y_hat[i]}')
 
 # Plot results
-plt.figure()
+plt.figure(dpi=300)
 plt.plot(losses)
 plt.xlabel('Epoch')
 plt.ylabel('MSE Loss')

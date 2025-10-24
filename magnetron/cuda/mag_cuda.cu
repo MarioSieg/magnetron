@@ -133,8 +133,6 @@ static void submit(mag_device_t *dvc, const mag_command_t *cmd) {
 static void dealloc_storage_buffer(void *self) {
     auto *buffer = static_cast<mag_storage_buffer_t *>(self);
     mag_context_t *ctx = buffer->ctx;
-    mag_assert(ctx->num_storages > 0, "double freed storage");
-    --ctx->num_storages;
     mag_cuda_check(cudaFree(reinterpret_cast<void *>(buffer->base)));
     mag_fixed_pool_free_block(&ctx->storage_pool, buffer);
 }
@@ -182,14 +180,14 @@ mag_device_t *mag_cuda_backend_init_device(mag_backend_t *bck, mag_context_t *ct
         .ctx = ctx,
         .impl = nullptr,
         .is_async = false,
-        .type = MAG_DEVICE_TYPE_GPU_CUDA,
-        .name = "",
+        .physical_device_name = "",
+        .id = "",
         .submit = &submit,
         .alloc_storage = &alloc_storage_buffer,
         .manual_seed = &manual_seed
     };
     std::snprintf(device->id, sizeof(device->id), "cuda:%u", idx);
-    std::snprintf(device->name, sizeof(device->name), "%s", phys_device.name.data());
+    std::snprintf(device->physical_device_name, sizeof(device->physical_device_name), "%s", phys_device.name.data());
     return device;
 }
 void mag_cuda_backend_destroy_device(mag_backend_t *bck, mag_device_t *dvc) {
