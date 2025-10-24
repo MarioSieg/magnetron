@@ -4365,7 +4365,7 @@ mag_amd64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
     caps|=mag_amd64_cap(SSE42);
 #endif
 #ifdef __SSE4A__
-    caps|=mag_amd64_cap(SSE42);
+    caps|=mag_amd64_cap(SSE4A);
 #endif
 
 #ifdef __AVX__
@@ -4412,7 +4412,7 @@ mag_amd64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
     caps|=mag_amd64_cap(AVX512_PF);
 #endif
 #ifdef __AVX512ER__
-    caps|=mag_amd64_cap(AVX512_EQ);
+    caps|=mag_amd64_cap(AVX512_ER);
 #endif
 #ifdef __AVX512CD__
     caps|=mag_amd64_cap(AVX512_CD);

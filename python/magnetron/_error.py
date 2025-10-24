@@ -24,7 +24,8 @@ def _handle_errc(status: int) -> None:
         return
     info: context.NativeErrorInfo | None = context.take_last_error()
     ercc_name: str = _FFI.string(_C.mag_status_get_name(status)).decode('utf-8')
-    msg = f'Magnetron C runtime error: #0x{status:08X} ({ercc_name})\n'
+    msg = f'Magnetron C runtime error: 0x{status:X} ({ercc_name})\n'
     if info is not None:
-        msg += f'{info.message} (triggered at {info.file}:{info.line})'
+        msg += f'Triggered at {info.file}:{info.line}\n\n'
+        msg += f'{info.message}\n'
     raise MagnetronError(msg, info)

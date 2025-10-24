@@ -207,7 +207,6 @@ bool mag_tensor_decref(mag_tensor_t *t) { /* Decrease reference count of the ten
 }
 
 void mag_tensor_detach_inplace(mag_tensor_t *target) {
-    target->flags &= ~MAG_TFLAG_REQUIRES_GRAD; /* Detach from gradient recording */
     if (target->au_state) {
         target->au_state->op = MAG_OP_NOP; /* Detach from operations */
         memset(target->au_state->op_inputs, 0, sizeof(target->au_state->op_inputs)); /* Clear op inputs */

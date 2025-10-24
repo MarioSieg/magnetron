@@ -62,8 +62,7 @@ class SGD(Optimizer):
     @no_grad()
     def step(self) -> None:
         for param in self.params:
-            param.x = param.x - param.x.grad * self.lr
-            param.x.requires_grad = True
+            param.x -= param.x.grad * self.lr
 
 
 class Adam(Optimizer):
