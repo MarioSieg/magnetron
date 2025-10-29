@@ -261,27 +261,19 @@ class Tensor:
         return _C.mag_tensor_requires_grad(self._ptr)
 
     @requires_grad.setter
-    def requires_grad(self, require: bool) -> None:
-        if require and not self.dtype.is_floating_point:
-            raise RuntimeError(f'Tensors requiring gradients must be of a floating point type, but is: {self.dtype}')
-        _C.mag_tensor_set_requires_grad(self._ptr, require)
+    def requires_grad(self, requires: bool) -> None:
+        _handle_errc(_C.mag_tensor_set_requires_grad(self._ptr, requires))
 
     @property
     def grad(self) -> Tensor | None:
         if not self.requires_grad:
             return None
-        ptr: _FFI.CData = _C.mag_tensor_get_grad(self._ptr)
-        if ptr is None or ptr == _FFI.NULL:
-            return None
-        return Tensor(ptr)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_tensor_get_grad(self._ptr, out)))
 
     def backward(self) -> None:
-        assert self.requires_grad, 'Tensor must require gradient tracking'
-        assert self.rank == 1 and self.numel == 1, 'Tensor must be scalar'
         _handle_errc(_C.mag_tensor_backward(self._ptr))
 
     def zero_grad(self) -> None:
-        assert self.requires_grad, 'Tensor must require gradient tracking'
         _C.mag_tensor_zero_grad(self._ptr)
 
     def dump_graph_dot(self, file_path: str, forward: bool) -> None:

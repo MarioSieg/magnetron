@@ -41,17 +41,16 @@ mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const
     stbi_uc *pixels = stbi_load(file, &w, &h, &cf, c);
     if (mag_unlikely(!pixels || w <= 0 || h <= 0 || c <= 0)) {
         if (pixels) stbi_image_free(pixels);
-        return MAG_STATUS_ERR_FAILED_TO_LOAD_IMAGE;
+        return MAG_STATUS_ERR_IMAGE_ERROR;
     }
-    uint32_t target_w = (resize_width  > 0)  ? resize_width  : (uint32_t)w;
-    uint32_t target_h = (resize_height > 0)  ? resize_height : (uint32_t)h;
-
+    uint32_t target_w = resize_width  > 0 ? resize_width  : (uint32_t)w;
+    uint32_t target_h = resize_height > 0 ? resize_height : (uint32_t)h;
     if ((uint32_t)w != target_w || (uint32_t)h != target_h) {
         stbir_pixel_layout layout = c == 1 ? STBIR_1CHANNEL : c == 2 ? STBIR_RA : c == 3 ? STBIR_RGB : STBIR_RGBA;
         stbi_uc *resized = stbir_resize_uint8_srgb(pixels, w, h, 0, NULL, (int)target_w, (int)target_h, 0, layout);
         if (mag_unlikely(!resized)) {
             stbi_image_free(pixels);
-            return MAG_STATUS_ERR_FAILED_TO_RESIZE_IMAGE;
+            return MAG_STATUS_ERR_IMAGE_ERROR;
         }
         stbi_image_free(pixels);
         pixels = resized;
@@ -69,7 +68,7 @@ mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const
     for (int64_t j=0; j < h; ++j)
     for (int64_t i=0; i < w; ++i)
         dst[i + w*j + w*h*k] = (mag_e8m23_t)pixels[k + c*i + c*w*j]/255.0f;  /* Normalize pixel values to [0, 1] */
-    mag_contract(ctx, ERR_FAILED_TO_LOAD_IMAGE, { stbi_image_free(pixels); }, w*h*c == mag_tensor_get_numel(tensor), "Buffer size mismatch: %d != %zu", w*h*c, (size_t)mag_tensor_get_numel(tensor));
+    mag_contract(ctx, ERR_IMAGE_ERROR, { stbi_image_free(pixels); }, w*h*c == mag_tensor_get_numel(tensor), "Buffer size mismatch: %d != %zu", w*h*c, (size_t)mag_tensor_get_numel(tensor));
     stbi_image_free(pixels);
     *out = tensor;
     return MAG_STATUS_OK;

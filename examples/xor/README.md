@@ -17,7 +17,7 @@ The model uses a minimal fully connected architecture and shows how to define te
 Run the example directly:
 
 ```bash
-python xor.py
+python main.py
 ```
 
 No arguments are required.

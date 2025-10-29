@@ -78,15 +78,12 @@ typedef enum mag_status_t {
     MAG_STATUS_ERR_DIM_OVERFLOW,
     MAG_STATUS_ERR_INVALID_INDEX,
     MAG_STATUS_ERR_OUT_OF_BOUNDS,
-    MAG_STATUS_ERR_INVALID_BACKPROP_ROOT,
-    MAG_STATUS_ERR_AUTODIFF_STATE_MISSING,
     MAG_STATUS_ERR_INVALID_PARAM,
     MAG_STATUS_ERR_STRIDE_SOLVER_FAILED,
     MAG_STATUS_ERR_BROADCAST_IMPOSSIBLE,
     MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE,
     MAG_STATUS_ERR_INVALID_STATE,
-    MAG_STATUS_ERR_FAILED_TO_LOAD_IMAGE,
-    MAG_STATUS_ERR_FAILED_TO_RESIZE_IMAGE,
+    MAG_STATUS_ERR_IMAGE_ERROR,
     MAG_STATUS_ERR_UNKNOWN
 } mag_status_t;
 extern MAG_EXPORT const char *mag_status_get_name(mag_status_t op);
@@ -320,19 +317,19 @@ extern MAG_EXPORT bool mag_tensor_is_numeric_typed(const mag_tensor_t *t);
 
 /* ============ Tensor Shape Utils ============ */
 
-extern MAG_EXPORT bool mag_tensor_is_shape_eq(const mag_tensor_t *x, const mag_tensor_t *y);              /* Checks if a and b have the same shape. */
-extern MAG_EXPORT bool mag_tensor_are_strides_eq(const mag_tensor_t *x, const mag_tensor_t *y);           /* Checks if a and b have the same strides. */
-extern MAG_EXPORT bool mag_tensor_can_broadcast(const mag_tensor_t *small, const mag_tensor_t *big);      /* Checks if b can be broadcasted into a. */
-extern MAG_EXPORT bool mag_tensor_is_transposed(const mag_tensor_t *t);                                          /* Check if the tensor is transposed */
-extern MAG_EXPORT bool mag_tensor_is_permuted(const mag_tensor_t *t);                                            /* Check if the tensor is permuted */
-extern MAG_EXPORT bool mag_tensor_is_contiguous(const mag_tensor_t *t);                                          /* Check if the tensor memory is contiguous */
+extern MAG_EXPORT bool mag_tensor_is_shape_eq(const mag_tensor_t *x, const mag_tensor_t *y);                /* Checks if a and b have the same shape. */
+extern MAG_EXPORT bool mag_tensor_are_strides_eq(const mag_tensor_t *x, const mag_tensor_t *y);             /* Checks if a and b have the same strides. */
+extern MAG_EXPORT bool mag_tensor_can_broadcast(const mag_tensor_t *small, const mag_tensor_t *big);        /* Checks if b can be broadcasted into a. */
+extern MAG_EXPORT bool mag_tensor_is_transposed(const mag_tensor_t *t);                                     /* Check if the tensor is transposed */
+extern MAG_EXPORT bool mag_tensor_is_permuted(const mag_tensor_t *t);                                       /* Check if the tensor is permuted */
+extern MAG_EXPORT bool mag_tensor_is_contiguous(const mag_tensor_t *t);                                     /* Check if the tensor memory is contiguous */
 extern MAG_EXPORT bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t *dims, int64_t rank); /* Check if the tensor can be viewed with the given dimensions */
 
 /* ============ Gradient & Backprop API ============ */
 
-extern MAG_EXPORT mag_tensor_t *mag_tensor_get_grad(const mag_tensor_t *t);                                 /* Get the gradient tensor of the tensor */
+extern MAG_EXPORT mag_status_t mag_tensor_get_grad(const mag_tensor_t *t, mag_tensor_t **out_grad);          /* Get the gradient tensor of the tensor */
 extern MAG_EXPORT bool mag_tensor_requires_grad(const mag_tensor_t *t);                                     /* Check if the tensor requires gradient computation */
-extern MAG_EXPORT void mag_tensor_set_requires_grad(mag_tensor_t *t, bool requires_grad);                   /* Set if the tensor requires gradient computation */
+extern MAG_EXPORT mag_status_t mag_tensor_set_requires_grad(mag_tensor_t *t, bool requires_grad);           /* Set if the tensor requires gradient computation */
 extern MAG_EXPORT mag_status_t mag_tensor_backward(mag_tensor_t *t);                                        /* Compute the gradient of the tensor */
 extern MAG_EXPORT void mag_tensor_zero_grad(mag_tensor_t *t);                                               /* Zero the gradient of the tensor */
 

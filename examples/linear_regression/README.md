@@ -16,7 +16,7 @@ The model learns a straight-line relationship between input `x` and target `y` u
 Run the example directly:
 
 ```bash
-python linear_regression.py
+python main.py
 ```
 
 No arguments are required.

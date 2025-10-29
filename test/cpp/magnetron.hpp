@@ -716,8 +716,9 @@ namespace magnetron {
         [[nodiscard]] auto is_numeric_typed() const noexcept -> bool { return mag_tensor_is_numeric_typed(m_tensor); }
 
         [[nodiscard]] auto grad() const noexcept -> std::optional<tensor> {
-            auto* grad {mag_tensor_get_grad(m_tensor)};
-            if (!grad) return std::nullopt;
+            mag_tensor_t *grad;
+            mag_status_t stat = mag_tensor_get_grad(m_tensor, &grad);
+            if (stat != MAG_STATUS_OK) return std::nullopt;
             return tensor{grad};
         }
         [[nodiscard]] auto requires_grad() const noexcept -> bool { return mag_tensor_requires_grad(m_tensor); }
