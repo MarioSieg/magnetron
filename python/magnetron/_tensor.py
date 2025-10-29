@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import threading
 import weakref
-from typing import Any, Sequence, Callable
+from typing import Any
+from collections.abc import Sequence, Callable
 
 from . import context
 from ._dtype import *
@@ -97,7 +98,7 @@ def _get_reduction_axes(dim: int | Sequence[int] | None) -> tuple[_FFI.CData, in
     if isinstance(dim, int):
         arr = _FFI.new('int64_t[1]', [dim])
         return arr, 1
-    if isinstance(dim, Sequence) and not isinstance(dim, (str, bytes)):
+    if isinstance(dim, Sequence) and not isinstance(dim, str | bytes):
         vals = [int(d) for d in dim]
         if len(vals) == 0:
             dummy = _FFI.new('int64_t[1]', [0])
@@ -474,6 +475,18 @@ class Tensor:
         return tensor
 
     @classmethod
+    def uniform_like(
+        cls,
+        template: Tensor,
+        *,
+        low: float | int | None = None,
+        high: float | int | None = None,
+        dtype: DataType | None = None,
+        requires_grad: bool = False,
+    ) -> Tensor:
+        return cls.uniform(template.shape, low=low, high=high, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad)
+
+    @classmethod
     def normal(
         cls,
         *shape: int | tuple[int, ...],
@@ -487,10 +500,20 @@ class Tensor:
         return tensor
 
     @classmethod
+    def normal_like(
+        cls, template: Tensor, *, mean: float = 0.0, std: float = 1.0, dtype: DataType | None = None, requires_grad: bool = False
+    ) -> Tensor:
+        return cls.normal(template.shape, mean=mean, std=std, dtype=dtype if dtype is not None else template.dtype, requires_grad=requires_grad)
+
+    @classmethod
     def bernoulli(cls, *shape: int | tuple[int, ...], p: float = 0.5) -> Tensor:
         tensor: Tensor = cls.empty(*_unpack_shape(*shape), dtype=boolean, requires_grad=False)
         tensor.fill_random_bernoulli_(p)
         return tensor
+
+    @classmethod
+    def bernoulli_like(cls, template: Tensor, *, p: float = 0.5) -> Tensor:
+        return cls.bernoulli(template.shape, p=p)
 
     @classmethod
     def arange(
@@ -530,9 +553,13 @@ class Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_cat(out, tensor_ptrs, num_tensors, dim)))
 
     @classmethod
-    def load_image(cls, path: str, channels: str = 'RGB', resize_to: tuple[int, int] = (0, 0)):
+    def load_image(cls, path: str, channels: str = 'RGB', resize_to: tuple[int, int] = (0, 0)) -> Tensor:
         assert channels in ('R', 'RG', 'RGB', 'RGBA'), f'Invalid channels specification: {channels}'
-        instance = _wrap_out_alloc(lambda out: _C.mag_tensor_load_image(out, context.native_ptr(), bytes(path, 'utf-8'), bytes(channels.upper(), 'utf-8'), resize_to[0], resize_to[1]))
+        instance = _wrap_out_alloc(
+            lambda out: _C.mag_tensor_load_image(
+                out, context.native_ptr(), bytes(path, 'utf-8'), bytes(channels.upper(), 'utf-8'), resize_to[0], resize_to[1]
+            )
+        )
         return cls(instance)
 
     def clone(self) -> Tensor:

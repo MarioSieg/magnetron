@@ -6,70 +6,89 @@
 <br />
 <div align="center">
   <a href="https://github.com/MarioSieg/magnetron">
-    <img src="media/magnetron-logo.svg" alt="Logo" width="200" height="200">
+    <img src="https://raw.githubusercontent.com/MarioSieg/magnetron/develop/media/logo.png" alt="Magnetron Logo" width="200" height="200">
   </a>
 
 <h3 align="center">magnetron</h3>
   <p align="center">
-    Super minimalistic machine-learning framework.
+    A compact, PyTorch-style machine learning framework written in pure C99.
     <br />
-    <a href="https://github.com/MarioSieg/magnetron/tree/master/docs"><strong>Explore the docs »</strong></a>
-    <br />
-    <br />
-    <a href="https://github.com/MarioSieg/magnetron/blob/master/examples/gpt2/gpt2.py">View GPT-2 Example</a>
-    |
+    Designed for speed, clarity, and portability - from desktop to embedded.
+    <br /><br />
+    <a href="https://github.com/MarioSieg/magnetron/tree/master/docs"><strong>Documentation »</strong></a>
+    <br /><br />
+    <a href="https://github.com/MarioSieg/magnetron/blob/master/examples/gpt2/gpt2.py">GPT-2 Example</a>
+    ·
     <a href="https://github.com/MarioSieg/magnetron/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
-    |
+    ·
     <a href="https://github.com/MarioSieg/magnetron/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 </div>
 
+---
+
 ## 📖 About
 
-Magnetron is a minimalistic, PyTorch-inspired machine-learning framework designed for IoT and other resource-limited environments.<br>
-The tiny C core - wrapped in a modern Python API - gives you dynamic graphs, automatic differentiation and network building blocks without the bloat.<br>
-A CUDA backend is also WIP.<br>
+**Magnetron** is a lightweight, research-grade machine learning framework that mirrors the usability of PyTorch - but built entirely from scratch.  
+Its C99 core, wrapped in a modern Python API, provides dynamic computation graphs, automatic differentiation, and high-performance operators with zero external dependencies.
 
-### Key features
-* **PyTorch-close** Python API  
-  - Seamless switch for PyTorch users with familiar syntax and behavior 
-* **Automatic differentiation** on dynamic computation graphs  
-  - Supports flexible model construction and training workflows  
-* High-level **neural-net building blocks**  
-  - Includes `nn.Module`, `Linear`, `Sequential`, and more out of the box
-* **Highly optimized CPU kernels**
-  - Runtime CPU detection, multithreading, and SIMD acceleration (SSE, AVX2, AVX512, NEON)
-* Multiple **datatypes**: **float32**, **float16**, **int32**, and **boolean**  
-  - Flexibility for both training and quantized inference  
-* Custom **compressed tensor file formats**  
-  - Fast serialization & model loading
-* Clear **validation** and **error messages**  
-  - Easier debugging and better developer experience
-* No external **C or Python dependencies** (except **CFFI** for the Python wrapper)  
-  - Lightweight and portable - great for embedded or restricted environments
+Originally designed for constrained or experimental environments, Magnetron scales from small embedded systems to full desktop inference and training.  
+A CUDA backend and mixed-precision support are currently in development.
 
+---
+
+### ⚡ Highlights
+
+- **PyTorch-like API**  
+  Familiar syntax for building and training models - easy to pick up, minimal to extend.
+
+- **Dynamic autograd engine**  
+  Eager execution with full gradient tracking on computation graphs.
+
+- **Optimized C99 backend**  
+  Custom tensor engine with SIMD acceleration (SSE, AVX2, AVX-512, NEON) and multithreaded execution.
+
+- **Minimal dependencies**  
+  No third-party math libraries; only **CFFI** is required for the Python interface.
+
+- **Lightweight neural modules**  
+  Includes `Linear`, `Sequential`, `ReLU`, `Tanh`, `Sigmoid`, `LayerNorm`, `Embedding`, and more.
+
+- **Flexible data types**  
+  Supports `float32`, `float16`, `int32`, and 'boolean' tensors. More to come.
+
+- **Custom serialization format**  
+  Fast, portable model saving and loading through Magnetron’s own binary tensor format.
+
+- **Clean diagnostics**  
+  Readable validation and error messages for faster debugging and experimentation.
+
+---
+
+## 🚀 Example Models
+
+| Example | Description |
+|----------|-------------|
+| [GPT-2 Inference](examples/gpt2/) | Transformer-based text generation using pretrained GPT-2 weights. |
+| [Autoencoder](examples/ae/) | Image reconstruction using a small dense encoder–decoder network. |
+| [Linear Regression](examples/linear/) | Fits a linear model to noisy synthetic data. |
+| [XOR](examples/xor/) | Trains a small neural network to learn the XOR logical function. |
+
+---
 
 ## 📦 Installation
 
 Make sure you are inside a **Python virtual environment** before installing.
 
-**With pip**
-```bash
-pip install magnetron
-```
-
 **With uv**
 ```bash
 uv pip install magnetron
 ```
-> ⚠️ Currently, prebuilt wheels are available for **macOS (Apple Silicon)** and **Linux x86-64**.  
-> On other platforms, the package must be built from source.
 
-## 🧪 Examples
-
-### GPT-2 inference
-
-### Training a simple feedforward network
+**With pip**
+```bash
+pip install magnetron
+```
 
 ## 🤝 Contributing
 Contributions are welcome!  
@@ -77,7 +96,7 @@ Please open issues for ideas, or submit pull requests for new **features**.
 PRs that only fix typos or minor formatting will not be accepted.
 
 ## 📜 License
-(c) 2025 Mario Sieg. mario.sieg.64@gmail.com<br>
+(c) 2025 Mario Sieg - mario.sieg.64@gmail.com<br>
 Distributed under the Apache 2 License.
 See `LICENSE` for more information.
 

@@ -23,8 +23,6 @@ encode = lambda x: tok.encode(x, allowed_special={EOS})
 decode = lambda x: tok.decode(x)
 EOS_ID: int = encode(EOS)[0]
 
-context.manual_seed(3407)
-
 
 @dataclass
 class GPT2HyperParams:
@@ -144,7 +142,7 @@ class GPT2(nn.Module):
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
         assert len(sd_keys_hf) == len(sd_keys), f'mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}'
 
-        def copy(r: Tensor, x: 'torch.Tensor') -> None:  # TODO
+        def copy(r: Tensor, x: torch.Tensor) -> None:  # TODO
             assert x.is_contiguous and r.is_contiguous
             assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
             assert r.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
@@ -228,16 +226,18 @@ class GPT2(nn.Module):
             console.print(f'\nTokens/s: {n / elapsed:.2f}, {n} tokens in {elapsed:.3f}s', style='dim')
 
 
-if __name__ == '__main__':
-    context.stop_grad_recorder()
-
+def _main() -> None:
     args = argparse.ArgumentParser(description='Run GPT-2 model inference')
     args.add_argument('prompt', type=str, help='Prompt to start generation')
     args.add_argument('--model', type=str, default='gpt2', help='Model type (gpt2, gpt2-medium, gpt2-large, gpt2-xl)')
     args.add_argument('--max_tokens', type=int, default=128, help='Maximum number of new tokens to generate')
     args.add_argument('--temp', type=float, default=0.6, help='Temperature for sampling')
     args.add_argument('--no-stream', action='store_true', help='Disable streaming output')
+    args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
     args = args.parse_args()
+
+    context.stop_grad_recorder()
+    context.manual_seed(args.seed)
 
     model = GPT2.from_pretrained(args.model)
     puts = lambda s: console.print(s, style='bold white', end='')
@@ -247,3 +247,7 @@ if __name__ == '__main__':
             puts(chunk)
     else:
         puts(model.generate(args.prompt, max_tokens=args.max_tokens, temp=args.temp))
+
+
+if __name__ == '__main__':
+    _main()

@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 from collections.abc import Iterator, Callable, MutableMapping
-from typing import Mapping, OrderedDict
+from collections import OrderedDict
+from collections.abc import Mapping
 
 from magnetron import Tensor
 
@@ -65,7 +66,7 @@ class Module:
         self._fwd_pre_hooks.append(hook)
         return hook
 
-    def parameters(self) -> Iterator['Parameter']:
+    def parameters(self) -> Iterator[Parameter]:
         """Yield all unique and nested parameters of the module."""
         visited: set[int] = set()
         yield from self._parameters(visited)
@@ -92,8 +93,7 @@ class Module:
             if isinstance(v, Module):
                 yield v
             elif isinstance(v, ModuleList):
-                for m in v:
-                    yield m
+                yield from v
 
     def modules(self) -> Iterator[Module]:
         """Yield self and all submodules in pre-order."""
@@ -147,13 +147,13 @@ class Module:
 
         for full_key, tensor in state_dict.items():
             parts = full_key.split('.')
-            target: 'Module | ModuleList' = self
+            target: Module | ModuleList = self
             ok = True
 
             for p in parts[:-1]:
                 if p.isdigit():
                     idx = int(p)
-                    if not isinstance(target, (list, ModuleList)) or idx >= len(target):
+                    if not isinstance(target, list | ModuleList) or idx >= len(target):
                         ok = False
                         break
                     target = target[idx]
@@ -168,7 +168,7 @@ class Module:
                 continue
 
             leaf_name = parts[-1]
-            leaf = target[int(leaf_name)] if leaf_name.isdigit() and isinstance(target, (list, ModuleList)) else getattr(target, leaf_name, None)
+            leaf = target[int(leaf_name)] if leaf_name.isdigit() and isinstance(target, list | ModuleList) else getattr(target, leaf_name, None)
 
             if leaf is None:
                 unexpected.append(full_key)
@@ -181,14 +181,14 @@ class Module:
             else:
                 unexpected.append(full_key)
 
-        def _find_missing(m: 'Module | ModuleList', prefix: str = '') -> None:
+        def _find_missing(m: Module | ModuleList, prefix: str = '') -> None:
             if isinstance(m, ModuleList):
                 for i, sub in enumerate(m):
                     _find_missing(sub, f'{prefix}{i}.')
                 return
             for name, attr in m.__dict__.items():
                 key = f'{prefix}{name}'
-                if isinstance(attr, (Parameter, Tensor)):
+                if isinstance(attr, Parameter | Tensor):
                     if key not in state_dict:
                         missing.append(key)
                 elif isinstance(attr, Module):
@@ -267,7 +267,7 @@ class ModuleList(Module, list):
         if mods is not None:
             self.extend(mods)
 
-    def __iadd__(self, other: list[Module]) -> 'ModuleList':
+    def __iadd__(self, other: list[Module]) -> ModuleList:
         self.extend(other)
         return self
 
@@ -331,13 +331,13 @@ class ModuleDict(Module, MutableMapping[str, Module]):
     def __len__(self) -> int:
         return len(self._modules)
 
-    def keys(self) -> 'dict_keys[str, Module]':
+    def keys(self) -> dict_keys[str, Module]:
         return self._modules.keys()
 
-    def items(self) -> 'dict_items[str, Module]':
+    def items(self) -> dict_items[str, Module]:
         return self._modules.items()
 
-    def values(self) -> 'dict_values[str, Module]':
+    def values(self) -> dict_values[str, Module]:
         return self._modules.values()
 
     def parameters(self) -> Iterator[Parameter]:
@@ -360,7 +360,7 @@ class Sequential(ModuleList):
     """
 
     def __init__(self, *modules: Module) -> None:
-        if len(modules) == 1 and isinstance(modules[0], (list, tuple)):
+        if len(modules) == 1 and isinstance(modules[0], list | tuple):
             modules = tuple(modules[0])
         super().__init__(list(modules))
 

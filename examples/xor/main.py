@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from magnetron import nn, optim, Tensor
 from matplotlib import pyplot as plt
 
 EPOCHS: int = 2000
+LR: float = 1e-1
 
 # Define the XOR input and output data
 x = Tensor.of([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
@@ -9,7 +12,7 @@ y = Tensor.of([[0.0], [1.0], [1.0], [0.0]])
 
 # Create the model, loss function, and optimizer
 model = nn.Sequential(nn.Linear(2, 2), nn.Tanh(), nn.Linear(2, 1), nn.Tanh())
-optimizer = optim.SGD(model.parameters(), lr=1e-1)
+optimizer = optim.SGD(model.parameters(), lr=LR)
 criterion = nn.MSELoss()
 
 # Train the model
@@ -30,7 +33,7 @@ for i in range(x.shape[0]):
     print(f'Expected: {y[i]}, Predicted: {y_hat[i]}')
 
 # Plot results
-plt.figure(dpi=300)
+plt.figure()
 plt.plot(losses)
 plt.xlabel('Epoch')
 plt.ylabel('MSE Loss')

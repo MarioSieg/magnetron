@@ -97,7 +97,7 @@ class StorageArchive:
         if isinstance(value, Tensor):
             if not self.set_tensor(key, value):
                 raise RuntimeError(f'Failed to set tensor for key "{key}" in storage archive at {self._path}')
-        elif isinstance(value, (int, float)):
+        elif isinstance(value, int | float):
             if not self.set_metadata(key, value):
                 raise RuntimeError(f'Failed to set metadata for key "{key}" in storage archive at {self._path}')
         else:

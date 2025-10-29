@@ -70,7 +70,10 @@ exclude = [
 
 [tool.ruff.lint]
 ignore = ["F403"]
-select = ["ANN"]
+select = [
+    "ANN",
+    "UP"
+]
 
 [tool.ruff.format]
 quote-style = "single"
