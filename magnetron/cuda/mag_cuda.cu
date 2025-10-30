@@ -207,14 +207,15 @@ try {
     }
 
     return new mag_backend_t {
-        .impl = new backend_impl{ngpus},
-        .score = +[](mag_backend_t *bck) -> uint32_t { return 0; }, // TODO: fix score to reflect actual performance
-        .id = +[](mag_backend_t *bck) -> const char* { return "cuda"; },
-        .num_devices = +[](mag_backend_t *bck) -> uint32_t { return static_cast<backend_impl *>(bck->impl)->devices().size(); },
-        .best_device_idx = +[](mag_backend_t *bck) -> uint32_t { return 0; },
+        .backend_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_CUDA_BACKEND_VERSION; },
+        .runtime_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_VERSION; },
+        .score = +[](mag_backend_t *bck) noexcept -> uint32_t { return 0; }, // TODO: fix score to reflect actual performance
+        .id = +[](mag_backend_t *bck) noexcept -> const char* { return "cuda"; },
+        .num_devices = +[](mag_backend_t *bck) noexcept -> uint32_t { return static_cast<backend_impl *>(bck->impl)->devices().size(); },
+        .best_device_idx = +[](mag_backend_t *bck) noexcept -> uint32_t { return 0; },
         .init_device = &mag_cuda_backend_init_device,
         .destroy_device = &mag_cuda_backend_destroy_device,
-        .reserved = {}
+        .impl = new backend_impl{ngpus},
     };
 } catch (const cuda_exception &e) {
     mag_log_error("CUDA error during backend initialization: %s", e.what());

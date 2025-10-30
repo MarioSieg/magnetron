@@ -92,6 +92,9 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     /* Check that all function pointers are provided */
     bool fn_ok = true;
     mag_assert2(MAG_BACKEND_MODULE_ABI_VER == 1); /* Ensure this code is updated if ABI changes */
+    mag_assert2(MAG_BACKEND_VTABLE_SIZE == 8); /* Ensure this code is updated if vtable size changes */
+    fn_ok &= !!backend->backend_version;
+    fn_ok &= !!backend->runtime_version;
     fn_ok &= !!backend->score;
     fn_ok &= !!backend->id;
     fn_ok &= !!backend->num_devices;
@@ -103,6 +106,16 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
         mag_dylib_close(handle);
         return NULL;
     }
+    /* Verify runtime versions match */
+    uint32_t backend_ver = (*backend->runtime_version)(backend);
+    if (mag_unlikely(backend_ver != MAG_VERSION)) {
+        uint32_t b_maj = mag_ver_major(backend_ver), b_min = mag_ver_minor(backend_ver), b_pat = mag_ver_patch(backend_ver);
+        uint32_t rt_maj = mag_ver_major(backend_ver), rt_min = mag_ver_minor(backend_ver), rt_pat = mag_ver_patch(backend_ver);
+        mag_log_error("Backend library file '%s' has incompatible runtime version (got %d.%d.%d, expected %d.%d.%d)", file, b_maj, b_min, b_pat, rt_maj, rt_min, rt_pat);
+        mag_dylib_close(handle);
+        return NULL;
+    }
+
     mag_backend_module_t *module = (*mag_alloc)(NULL, sizeof(*module), 0);
     memset(module, 0, sizeof(*module));
     *module = (mag_backend_module_t) {

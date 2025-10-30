@@ -13,6 +13,8 @@
 
 #include <mag_backend.h>
 
+constexpr uint32_t MAG_CUDA_BACKEND_VERSION = mag_ver_encode(0, 1, 0);
+
 extern "C" {
   mag_backend_decl_interface();
 }

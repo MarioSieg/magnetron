@@ -887,6 +887,8 @@ static void mag_cpu_release_interface(mag_device_t *ctx) {
     (*mag_alloc)(ctx, 0, 0); /* Free all memory */
 }
 
+static uint32_t mag_cpu_backend_version(mag_backend_t *bck) { return MAG_CPU_BACKEND_VERSION; }
+static uint32_t mag_cpu_backend_runtime_version(mag_backend_t *bck) { return MAG_VERSION; }
 static uint32_t mag_cpu_backend_score(mag_backend_t *bck) { return 10; }
 static const char* mag_cpu_backend_id(mag_backend_t *bck) { return "cpu"; }
 static uint32_t mag_cpu_backend_num_devices(mag_backend_t *bck) { return 1; }
@@ -911,6 +913,8 @@ mag_backend_t *MAG_BACKEND_SYM_INIT(mag_context_t *ctx) {
     mag_backend_t *backend = (*mag_alloc)(NULL, sizeof(*backend), 0);
     memset(backend, 0, sizeof(*backend));
     *backend = (mag_backend_t){
+        .backend_version = &mag_cpu_backend_version,
+        .runtime_version = &mag_cpu_backend_runtime_version,
         .score = &mag_cpu_backend_score,
         .id = &mag_cpu_backend_id,
         .num_devices = &mag_cpu_backend_num_devices,

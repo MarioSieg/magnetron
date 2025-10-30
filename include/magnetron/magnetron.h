@@ -35,12 +35,12 @@ extern "C" {
 #define mag_assert_name(line) mag_assert_name2(_assert_, line)
 #define mag_static_assert(expr) extern void mag_assert_name(__LINE__)(bool STATIC_ASSERTION_FAILED[((expr)?1:-1)])
 
-#define MAG_VERSION_ENCODE(maj, min, patch) ((maj)*10000 + (min)*100 + (patch))
-#define MAG_VERSION_MAJOR_PART(v) ((v)/10000)
-#define MAG_VERSION_MINOR_PART(v) (((v)/100)%100)
-#define MAG_VERSION_PATCH_PART(v) ((v)%100)
-#define MAG_VERSION MAG_VERSION_ENCODE(0, 1, 2)
-#define MAG_STORAGE_VERSION MAG_VERSION_ENCODE(0, 1, 0)
+#define mag_ver_encode(maj, min, patch) ((maj)*10000u + (min)*100u + (patch))
+#define mag_ver_major(v) ((v)/10000u)
+#define mag_ver_minor(v) (((v)/100u)%100u)
+#define mag_ver_patch(v) ((v)%100u)
+#define MAG_VERSION mag_ver_encode(0, 1, 2)
+#define MAG_STORAGE_VERSION mag_ver_encode(0, 1, 0)
 
 /**
  * @brief Thread scheduling priority for CPU compute.

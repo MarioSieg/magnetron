@@ -18,6 +18,8 @@
 extern "C" {
 #endif
 
+#define MAG_CPU_BACKEND_VERSION mag_ver_encode(0, 1, 0)
+
 mag_backend_decl_interface();
 
 typedef struct mag_matmul_block_tune_info_t {

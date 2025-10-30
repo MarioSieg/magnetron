@@ -69,15 +69,17 @@ extern MAG_EXPORT bool mag_device_is_typeof(const mag_device_t *dvc, const char 
 #define MAG_BACKEND_MODULE_ABI_VER 1 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */
 typedef struct mag_backend_t mag_backend_t;
 struct mag_backend_t {
-    void *impl;
+    uint32_t (*backend_version)(mag_backend_t *bck);
+    uint32_t (*runtime_version)(mag_backend_t *bck);
     uint32_t (*score)(mag_backend_t *bck);
     const char *(*id)(mag_backend_t *bck);
     uint32_t (*num_devices)(mag_backend_t *bck);
     uint32_t (*best_device_idx)(mag_backend_t *bck);
     mag_device_t *(*init_device)(mag_backend_t *bck, mag_context_t *ctx, uint32_t idx);
     void(*destroy_device)(mag_backend_t *bck, mag_device_t *dvc);
-    uint8_t reserved[32]; /* For future extension. */
+    void *impl;
 };
+#define MAG_BACKEND_VTABLE_SIZE 8 /* Number of function pointers in mag_backend_t struct. */
 
 #define mag_backend_cat_name(x,y) x##y
 #define mag_backend_sym_fn_name(x) mag_backend_cat_name(x, _t)

@@ -88,12 +88,12 @@ static MAG_COLDPROC void mag_ctx_dump_compiler_info(void) {
     compiler_version_minor = _MSC_VER % 100;
 #endif
     mag_log_info("magnetron v.%d.%d.%d, storage format v.%d.%d.%d - Built: " __DATE__ " " __TIME__ " - %s v.%d.%d",
-        MAG_VERSION_MAJOR_PART(MAG_VERSION),
-        MAG_VERSION_MINOR_PART(MAG_VERSION),
-        MAG_VERSION_PATCH_PART(MAG_VERSION),
-        MAG_VERSION_MAJOR_PART(MAG_STORAGE_VERSION),
-        MAG_VERSION_MINOR_PART(MAG_STORAGE_VERSION),
-        MAG_VERSION_PATCH_PART(MAG_STORAGE_VERSION),
+        mag_ver_major(MAG_VERSION),
+        mag_ver_minor(MAG_VERSION),
+        mag_ver_patch(MAG_VERSION),
+        mag_ver_major(MAG_STORAGE_VERSION),
+        mag_ver_minor(MAG_STORAGE_VERSION),
+        mag_ver_patch(MAG_STORAGE_VERSION),
         compiler_name,
         compiler_version_major,
         compiler_version_minor
