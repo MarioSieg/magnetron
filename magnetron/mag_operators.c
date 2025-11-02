@@ -178,7 +178,7 @@ mag_status_t mag_view(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, 
         int64_t new_dims[MAG_MAX_DIMS];
         for (int64_t i=0; i < rank; ++i) new_dims[i] = dims[i];
         int64_t shape[MAG_MAX_DIMS];
-        mag_infer_missing_dim(&shape, new_dims, rank, x->numel);
+        mag_contract(ctx, ERR_INVALID_DIM, {}, mag_infer_missing_dim(&shape, new_dims, rank, x->numel), "Cannot infer missing dimension for view");
         int64_t strides[MAG_MAX_DIMS];
         if (rank == x->rank && !memcmp(shape, x->shape, rank*sizeof(*shape))) { /* Stride strategy: same shape as base */
             memcpy(strides, x->strides, rank*sizeof(*shape));
@@ -219,7 +219,7 @@ mag_status_t mag_reshape(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dim
     mag_tensor_t *result = NULL;
     mag_status_t stat;
     int64_t shape[MAG_MAX_DIMS];
-    mag_infer_missing_dim(&shape, dims, rank, x->numel);
+    mag_contract(ctx, ERR_INVALID_DIM, {}, mag_infer_missing_dim(&shape, dims, rank, x->numel), "Cannot infer missing dimension for reshape");
     if (x->rank == rank && !memcmp(x->shape, shape, sizeof(*dims)*rank)) {
         mag_tensor_incref(x);
         *out = x;

@@ -54,6 +54,7 @@ const char *mag_status_get_name(mag_status_t op){
         "MAG_STATUS_ERR_IMAGE_ERROR",
         "MAG_STATUS_ERR_UNKNOWN",
     };
+    mag_static_assert(sizeof(names)/sizeof(*names)-1 == MAG_STATUS_ERR_UNKNOWN);
     return names[op];
 }
 

@@ -90,26 +90,28 @@ bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t *osz, co
     return oi < 0;
 }
 
-void mag_infer_missing_dim(int64_t(*out)[MAG_MAX_DIMS], const int64_t *dims, int64_t rank, int64_t numel) {
+bool mag_infer_missing_dim(int64_t(*out)[MAG_MAX_DIMS], const int64_t *dims, int64_t rank, int64_t numel) {
     int64_t prod = 1, infer = -1;
     for (int64_t i=0; i < rank; ++i) {
         int64_t ax = dims[i];
         if (ax == -1) {
-            mag_assert(infer == -1, "only one dimension can be -1");
+            if (mag_unlikely(infer != -1)) /* Only one dimension can be inferred */
+                return false;
             infer = i;
             (*out)[i] = 1;
         } else {
-            mag_assert(ax > 0, "dimension must be > 0 or -1");
+            if (mag_unlikely(ax <= 0)) /* Dim must be positive or -1 */
+                return false;
             (*out)[i] = ax;
             mag_assert2(!mag_mulov64(prod, ax, &prod));
         }
     }
     if (infer >= 0) {
-        mag_assert(numel % prod == 0, "cannot infer dimension size from %" PRIi64 " and known product %" PRIi64, numel, prod);
+        if (mag_unlikely(numel % prod != 0)) /* Inferred dimension does not divide numel */
+            return false;
         (*out)[infer] = numel / prod;
-    } else {
-        mag_assert(prod == numel, "total shape size mismatch: expected %" PRIi64 ", got %" PRIi64, numel, prod);
-    }
+    } else if (mag_unlikely(prod != numel)) return false; /* Product does not match numel */
+    return true;
 }
 
 bool mag_compute_broadcast_shape(const mag_tensor_t *a, const mag_tensor_t *b, int64_t *dims, int64_t *rank) {
@@ -118,7 +120,8 @@ bool mag_compute_broadcast_shape(const mag_tensor_t *a, const mag_tensor_t *b, i
     for (int64_t i=0; i < r; ++i) {
         int64_t ra = ar-1-i >= 0 ? a->shape[ar-1-i] : 1;
         int64_t rb = br-1-i >= 0 ? b->shape[br-1-i] : 1;
-        if (mag_unlikely(!(ra == rb || ra == 1 || rb == 1))) return false;
+        if (mag_unlikely(!(ra == rb || ra == 1 || rb == 1))) /* Incompatible shapes */
+            return false;
         dims[r-1-i] = ra == 1 ? rb : ra;
     }
     return true;
