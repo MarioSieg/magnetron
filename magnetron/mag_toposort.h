@@ -18,16 +18,18 @@
 extern "C" {
 #endif
 
-typedef struct mag_tensor_array_t {
+#define MAG_TOPOSORT_HASHSET_INIT_CAP 1024
+#define MAG_TOPOSORT_STACK_INIT_CAP 512
+
+typedef struct mag_topo_set_t {
     mag_tensor_t **data;
     size_t size;
     size_t capacity;
-} mag_tensor_array_t;
+} mag_topo_set_t;
 
-extern void mag_tensor_array_init(mag_tensor_array_t *arr);
-extern void mag_tensor_array_free(mag_tensor_array_t *arr);
-extern void mag_tensor_array_push(mag_tensor_array_t *arr, mag_tensor_t *t);
-extern void mag_toposort(mag_tensor_t *root, mag_tensor_array_t *sorted);
+extern void mag_topo_set_init(mag_topo_set_t *ts);
+extern void mag_topo_set_free(mag_topo_set_t *ts);
+extern void mag_topo_sort(mag_tensor_t *root, mag_topo_set_t *out_sorted);
 
 #ifdef __cplusplus
 }

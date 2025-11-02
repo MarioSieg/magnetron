@@ -32,13 +32,13 @@ typedef enum mag_transfer_dir_t {
 typedef struct mag_storage_buffer_t mag_storage_buffer_t;
 struct mag_storage_buffer_t {
     mag_context_t *ctx;
-    mag_rccontrol_t rc_control;      /* Reference count control block. */
-    uintptr_t base;                     /* Pointer to buffer on device. Might point to GPU or any other device memory. */
-    size_t size;                        /* Size of buffer in bytes. */
-    size_t alignment;                   /* Alignment of buffer. */
-    size_t granularity;                 /* Element size granularity. */
-    mag_dtype_t dtype;                    /* Data type of buffer. */
-    mag_device_t *host;  /* Host device. */
+    mag_rccontrol_t rc_control;             /* Reference count control block. */
+    uintptr_t base;                         /* Pointer to buffer on device. Might point to GPU or any other device memory. */
+    size_t size;                            /* Size of buffer in bytes. */
+    size_t alignment;                       /* Alignment of buffer. */
+    size_t granularity;                     /* Element size granularity. */
+    mag_dtype_t dtype;                      /* Data type of buffer. */
+    mag_device_t *host;                     /* Host device. */
     void (*broadcast)(mag_storage_buffer_t *sto, size_t offs, const void *src, size_t stride);
     void (*transfer)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size);
     void (*convert)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size, mag_dtype_t inout_type);

@@ -61,16 +61,14 @@ static void mag_hashset_rehash_grow_to(mag_hashset_t *set, size_t new_len) {
     set->cap = new_len;
 }
 
-mag_hashset_t mag_hashset_init(size_t cap) {
+void mag_hashset_init(mag_hashset_t *set, size_t cap) {
     cap = mag_hashset_compute_hash_size(cap ? cap : 2);
-    mag_hashset_t set = {
-        .cap = cap,
-        .len = 0,
-        .used = (*mag_alloc)(NULL, mag_bitset_size(cap)*sizeof(*set.used), 0),
-        .keys = (*mag_alloc)(NULL, cap*sizeof(*set.keys), 0),
-    };
-    memset(set.used, 0, mag_bitset_size(cap)*sizeof(*set.used));
-    return set;
+    memset(set, 0, sizeof(*set));
+    set->cap = cap;
+    set->len = 0;
+    set->used = (*mag_alloc)(NULL, mag_bitset_size(cap)*sizeof(*set->used), 0);
+    set->keys = (*mag_alloc)(NULL, cap*sizeof(*set->keys), 0);
+    memset(set->used, 0, mag_bitset_size(cap)*sizeof(*set->used));
 }
 
 bool mag_hashset_reserve(mag_hashset_t *set, size_t min_cap){

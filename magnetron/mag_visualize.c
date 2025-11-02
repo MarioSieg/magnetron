@@ -57,7 +57,8 @@ MAG_COLDPROC void mag_tensor_export_forward_graph_graphviz(mag_tensor_t *t, cons
     fprintf(f, "  rankdir=TD;\n");
     fprintf(f, "  node [fontname=\"Helvetica\", shape=box];\n");
     fprintf(f, "  edge [fontname=\"Helvetica\"];\n");
-    mag_hashset_t visited = mag_hashset_init(0xffff);
+    mag_hashset_t visited;
+    mag_hashset_init(&visited, MAG_TOPOSORT_HASHSET_INIT_CAP);
     mag_graphviz_dump(t, f, &visited);
     mag_hashset_free(&visited);
     fprintf(f, "}\n");
@@ -65,9 +66,9 @@ MAG_COLDPROC void mag_tensor_export_forward_graph_graphviz(mag_tensor_t *t, cons
 }
 
 MAG_COLDPROC void mag_tensor_export_backward_graph_graphviz(mag_tensor_t *t, const char *file) {
-    mag_tensor_array_t post_order;
-    mag_tensor_array_init(&post_order);
-    mag_toposort(t, &post_order);
+    mag_topo_set_t post_order;
+    mag_topo_set_init(&post_order);
+    mag_topo_sort(t, &post_order);
     for (size_t i=0, j=post_order.size - 1; i < j; ++i, --j) {
         mag_swap(mag_tensor_t *, post_order.data[i], post_order.data[j]);
     }
@@ -103,5 +104,5 @@ MAG_COLDPROC void mag_tensor_export_backward_graph_graphviz(mag_tensor_t *t, con
     }
     fprintf(fp, "}\n");
     fclose(fp);
-    mag_tensor_array_free(&post_order);
+    mag_topo_set_free(&post_order);
 }

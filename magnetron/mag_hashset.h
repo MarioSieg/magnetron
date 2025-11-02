@@ -39,7 +39,7 @@ typedef struct mag_hashset_t {
 #define MAG_HASHSET_DUPLICATE ((size_t)-2)
 #define mag_hashset_hash_fn(ptr) ((size_t)(uintptr_t)(ptr)>>3)
 
-extern mag_hashset_t mag_hashset_init(size_t cap);
+extern void mag_hashset_init(mag_hashset_t *set, size_t cap);
 extern bool mag_hashset_reserve(mag_hashset_t *set, size_t min_cap);
 extern size_t mag_hashset_lookup(mag_hashset_t *set, const mag_tensor_t *key);
 extern bool mag_hashset_contains_key(mag_hashset_t *set, const mag_tensor_t *key);

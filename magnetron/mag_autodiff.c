@@ -76,16 +76,16 @@ mag_status_t mag_tensor_backward(mag_tensor_t *root) {
     mag_contract(ctx, ERR_INVALID_PARAM, {}, root->flags & MAG_TFLAG_REQUIRES_GRAD, "Tensor must require gradient to perform backpropagation. Set requires_grad=True when creating the tensor");
     mag_contract(ctx, ERR_INVALID_PARAM, {}, root->rank == 1 && root->numel == 1, "Can only backpropagate from a scalar (rank 1, numel 1) tensor");
     mag_ctx_grad_recorder_stop(root->ctx);
-    mag_tensor_array_t post_order;
-    mag_tensor_array_init(&post_order);
-    mag_toposort(root, &post_order);
+    mag_topo_set_t post_order;
+    mag_topo_set_init(&post_order);
+    mag_topo_sort(root, &post_order);
     if (mag_unlikely(!post_order.size)) goto end;
     for (size_t i=0, j = post_order.size-1; i < j; ++i, --j) {
         mag_swap(mag_tensor_t *, post_order.data[i], post_order.data[j]);
     }
     for (size_t id=0; id < post_order.size; ++id) {
         mag_tensor_t *child = post_order.data[id];
-        mag_contract(ctx, ERR_INVALID_STATE, { mag_tensor_array_free(&post_order); }, child && child->au_state, "Autodiff state missing for tensor");
+        mag_contract(ctx, ERR_INVALID_STATE, { mag_topo_set_free(&post_order); }, child && child->au_state, "Autodiff state missing for tensor");
         const mag_opmeta_t *meta = mag_op_meta_of(child->au_state->op);
         if (!child->au_state->grad) {
             mag_tensor_t *grad;
@@ -96,10 +96,10 @@ mag_status_t mag_tensor_backward(mag_tensor_t *root) {
         if (mag_unlikely(child->au_state->op == MAG_OP_NOP)) continue;
         mag_tensor_t *grads[MAG_MAX_OP_INPUTS] = {0};
         mag_status_t (*backward)(mag_au_state_t *, mag_tensor_t **) = meta->backward;
-        mag_contract(ctx, ERR_INVALID_STATE, { mag_tensor_array_free(&post_order); }, backward != NULL, "Backward function not implemented for op %s", meta->mnemonic);
+        mag_contract(ctx, ERR_INVALID_STATE, { mag_topo_set_free(&post_order); }, backward != NULL, "Backward function not implemented for op %s", meta->mnemonic);
         mag_status_t stat = (*backward)(child->au_state, grads);
         if (mag_unlikely(stat != MAG_STATUS_OK)) {
-            mag_tensor_array_free(&post_order);
+            mag_topo_set_free(&post_order);
             return stat;
         }
         uint32_t numin = meta->in;
@@ -123,7 +123,7 @@ mag_status_t mag_tensor_backward(mag_tensor_t *root) {
             }
         }
     }
-    mag_tensor_array_free(&post_order);
+    mag_topo_set_free(&post_order);
 end:
     mag_ctx_grad_recorder_start(root->ctx);
     return MAG_STATUS_OK;
