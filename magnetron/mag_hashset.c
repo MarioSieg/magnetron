@@ -17,7 +17,6 @@
 #define MAG_HASHSET_GROW_THRESHOLD(n) (((n)*(size_t)MAG_HASHSET_LOAD_NUM)/(size_t)MAG_HASHSET_LOAD_DEN)
 
 static size_t mag_hashset_compute_hash_size(size_t sz) {
-    mag_assert2(sz > 0 && sz < MAG_HASHSET_MAX);
     static const size_t prime_lut[] = {
         2, 3, 5, 11, 17, 37, 67, 131, 257, 521, 1031,
         2053, 4099, 8209, 16411, 32771, 65537, 131101,
@@ -36,9 +35,9 @@ static size_t mag_hashset_compute_hash_size(size_t sz) {
 }
 
 static void mag_hashset_rehash_grow_to(mag_hashset_t *set, size_t new_len) {
-    mag_assert2(new_len > 1 && new_len < MAG_HASHSET_MAX);
+    mag_assert2(new_len > 1);
     size_t nb = mag_bitset_size(new_len)*sizeof(*set->used);
-    mag_bitset32_t *bt = (*mag_alloc)(NULL, nb, 0);
+    mag_bitset64_t *bt = (*mag_alloc)(NULL, nb, 0);
     const mag_tensor_t **keys = (*mag_alloc)(NULL, new_len*sizeof(*set->keys), 0);
     memset(bt, 0, nb);
     for (size_t i=0; i < set->cap; ++i) {

@@ -19,10 +19,10 @@ extern "C" {
 #endif
 
 /* Fixed bitset. */
-typedef uint32_t mag_bitset32_t;
-mag_static_assert(sizeof(mag_bitset32_t) == 4);
-#define MAG_BITSET_SHR 5 /* log2(sizeof(mag_bitset32_t)*8) */
-#define MAG_BITSET_MASK ((sizeof(mag_bitset32_t)<<3)-1)
+typedef uint64_t mag_bitset64_t;
+mag_static_assert(sizeof(mag_bitset64_t) == 8);
+#define MAG_BITSET_SHR 6 /* log2(sizeof(mag_bitset32_t)*8) */
+#define MAG_BITSET_MASK ((sizeof(mag_bitset64_t)<<3)-1)
 #define mag_bitset_size(n) (((n)+MAG_BITSET_MASK)>>MAG_BITSET_SHR)
 #define mag_bitset_get(bs, i) (!!((bs)[(i)>>MAG_BITSET_SHR]&(1u<<((i)&MAG_BITSET_MASK))))
 #define mag_bitset_set(bs, i) ((bs)[(i)>>MAG_BITSET_SHR]|=(1u<<((i)&MAG_BITSET_MASK)))
@@ -32,12 +32,11 @@ mag_static_assert(sizeof(mag_bitset32_t) == 4);
 typedef struct mag_hashset_t {
     size_t cap;
     size_t len;
-    mag_bitset32_t *used;
+    mag_bitset64_t *used;
     const mag_tensor_t **keys;
 } mag_hashset_t;
 #define MAG_HASHSET_FULL ((size_t)-1)
 #define MAG_HASHSET_DUPLICATE ((size_t)-2)
-#define MAG_HASHSET_MAX ((size_t)-3) /* Must be last. */
 #define mag_hashset_hash_fn(ptr) ((size_t)(uintptr_t)(ptr)>>3)
 
 extern mag_hashset_t mag_hashset_init(size_t cap);
