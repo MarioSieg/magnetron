@@ -24,9 +24,9 @@ mag_static_assert(sizeof(mag_bitset64_t) == 8);
 #define MAG_BITSET_SHR 6 /* log2(sizeof(mag_bitset32_t)*8) */
 #define MAG_BITSET_MASK ((sizeof(mag_bitset64_t)<<3)-1)
 #define mag_bitset_size(n) (((n)+MAG_BITSET_MASK)>>MAG_BITSET_SHR)
-#define mag_bitset_get(bs, i) (!!((bs)[(i)>>MAG_BITSET_SHR]&(1u<<((i)&MAG_BITSET_MASK))))
-#define mag_bitset_set(bs, i) ((bs)[(i)>>MAG_BITSET_SHR]|=(1u<<((i)&MAG_BITSET_MASK)))
-#define mag_bitset_clear(bs, i) ((bs)[(i)>>MAG_BITSET_SHR]&=~(1u<<((i)&MAG_BITSET_MASK)))
+#define mag_bitset_get(bs, i) (!!((bs)[(i)>>MAG_BITSET_SHR]&(1ull<<((i)&MAG_BITSET_MASK))))
+#define mag_bitset_set(bs, i) ((bs)[(i)>>MAG_BITSET_SHR]|=(1ull<<((i)&MAG_BITSET_MASK)))
+#define mag_bitset_clear(bs, i) ((bs)[(i)>>MAG_BITSET_SHR]&=~(1ull<<((i)&MAG_BITSET_MASK)))
 
 /* Tensor hashset with linear probing. */
 typedef struct mag_hashset_t {
