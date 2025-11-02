@@ -60,17 +60,17 @@ sta_len++; \
 #define mag_sta_pop() (stack[--sta_len])
 
     if (!(root->flags & MAG_TFLAG_REQUIRES_GRAD)) return;
-    mag_hashset_t visited = mag_hashset_init(8192); // todo dynamic
+    mag_hashset_t visited = mag_hashset_init(1024);
     mag_sta_push(root);
     while (sta_len) { /* Iterative DFS */
-        mag_topo_record_t *top = &stack[sta_len - 1];
+        mag_topo_record_t *top = &stack[sta_len-1];
         mag_tensor_t *cur_tensor = top->tensor;
         mag_assert(cur_tensor->au_state, "Autodiff state not allocated for tensor that requires gradient");
         if (top->next_child_idx < mag_op_meta_of(cur_tensor->au_state->op)->in) {
             mag_tensor_t *child = cur_tensor->au_state->op_inputs[top->next_child_idx++];
             if (child && (child->flags & MAG_TFLAG_REQUIRES_GRAD)) {
                 if (!mag_hashset_contains_key(&visited, child)) {
-                    mag_hashset_insert(&visited, child);
+                    mag_assert(mag_hashset_insert(&visited, child) != MAG_HASHSET_FULL, "Hashset full during toposort");
                     mag_sta_push(child);
                 }
             }
@@ -82,7 +82,6 @@ sta_len++; \
 
 #undef mag_sta_push
 #undef mag_sta_pop
-
     (*mag_alloc)(stack, 0, 0);
     mag_hashset_free(&visited);
 }

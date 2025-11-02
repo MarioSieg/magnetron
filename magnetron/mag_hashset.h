@@ -18,19 +18,21 @@
 extern "C" {
 #endif
 
-/* Bitset for 32-bit integers. */
-typedef uint32_t mag_bitset_t;
-mag_static_assert(sizeof(mag_bitset_t) == 4);
-#define mag_bitset_size(n) (((n)+((4<<3)-1))>>5)
-#define mag_bitset_get(sets, i) (!!(sets[(i)>>5]&(1u<<((i)&((4<<3)-1)))))
-#define mag_bitset_set(sets, i) (sets[(i)>>5]|=(1u<<((i)&((4<<3)-1))))
-#define mag_bitset_clear(sets, i) (sets[(i)>>5]&=~(1u<<((i)&((4<<3)-1))))
-#define mag_bitset_toggle(sets, i) (sets[(i)>>5]^=(1u<<((i)&((4<<3)-1))))
+/* Fixed bitset. */
+typedef uint32_t mag_bitset32_t;
+mag_static_assert(sizeof(mag_bitset32_t) == 4);
+#define MAG_BITSET_SHR 5 /* log2(sizeof(mag_bitset32_t)*8) */
+#define MAG_BITSET_MASK ((sizeof(mag_bitset32_t)<<3)-1)
+#define mag_bitset_size(n) (((n)+MAG_BITSET_MASK)>>MAG_BITSET_SHR)
+#define mag_bitset_get(bs, i) (!!((bs)[(i)>>MAG_BITSET_SHR]&(1u<<((i)&MAG_BITSET_MASK))))
+#define mag_bitset_set(bs, i) ((bs)[(i)>>MAG_BITSET_SHR]|=(1u<<((i)&MAG_BITSET_MASK)))
+#define mag_bitset_clear(bs, i) ((bs)[(i)>>MAG_BITSET_SHR]&=~(1u<<((i)&MAG_BITSET_MASK)))
 
 /* Tensor hashset with linear probing. */
 typedef struct mag_hashset_t {
+    size_t cap;
     size_t len;
-    mag_bitset_t *used;
+    mag_bitset32_t *used;
     const mag_tensor_t **keys;
 } mag_hashset_t;
 #define MAG_HASHSET_FULL ((size_t)-1)
@@ -38,7 +40,8 @@ typedef struct mag_hashset_t {
 #define MAG_HASHSET_MAX ((size_t)-3) /* Must be last. */
 #define mag_hashset_hash_fn(ptr) ((size_t)(uintptr_t)(ptr)>>3)
 
-extern mag_hashset_t mag_hashset_init(size_t size);
+extern mag_hashset_t mag_hashset_init(size_t cap);
+extern bool mag_hashset_reserve(mag_hashset_t *set, size_t min_cap);
 extern size_t mag_hashset_lookup(mag_hashset_t *set, const mag_tensor_t *key);
 extern bool mag_hashset_contains_key(mag_hashset_t *set, const mag_tensor_t *key);
 extern size_t mag_hashset_insert(mag_hashset_t *set, const mag_tensor_t *key);

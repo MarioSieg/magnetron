@@ -12,6 +12,10 @@
 #include "mag_hashset.h"
 #include "mag_alloc.h"
 
+#define MAG_HASHSET_LOAD_NUM 7 /* Load factor numerator */
+#define MAG_HASHSET_LOAD_DEN 10 /* Load factor denominator */
+#define MAG_HASHSET_GROW_THRESHOLD(n) (((n)*(size_t)MAG_HASHSET_LOAD_NUM)/(size_t)MAG_HASHSET_LOAD_DEN)
+
 static size_t mag_hashset_compute_hash_size(size_t sz) {
     mag_assert2(sz > 0 && sz < MAG_HASHSET_MAX);
     static const size_t prime_lut[] = {
@@ -31,21 +35,57 @@ static size_t mag_hashset_compute_hash_size(size_t sz) {
     return l < sizeof(prime_lut)/sizeof(*prime_lut) ? prime_lut[l] : sz|1;
 }
 
-mag_hashset_t mag_hashset_init(size_t size) {
-    size = mag_hashset_compute_hash_size(size);
+static void mag_hashset_rehash_grow_to(mag_hashset_t *set, size_t new_len) {
+    mag_assert2(new_len > 1 && new_len < MAG_HASHSET_MAX);
+    size_t nb = mag_bitset_size(new_len)*sizeof(*set->used);
+    mag_bitset32_t *bt = (*mag_alloc)(NULL, nb, 0);
+    const mag_tensor_t **keys = (*mag_alloc)(NULL, new_len*sizeof(*set->keys), 0);
+    memset(bt, 0, nb);
+    for (size_t i=0; i < set->cap; ++i) {
+        if (!mag_bitset_get(set->used, i)) continue;
+        const mag_tensor_t *key = set->keys[i];
+        size_t k = mag_hashset_hash_fn(key) % new_len;
+        size_t j = k;
+        do {
+            if (!mag_bitset_get(bt, j)) {
+                mag_bitset_set(bt, j);
+                keys[j] = key;
+                break;
+            }
+            j = (j+1) % new_len;
+        } while (j != k);
+    }
+    (*mag_alloc)(set->used, 0, 0);
+    (*mag_alloc)(set->keys, 0, 0);
+    set->used = bt;
+    set->keys = keys;
+    set->cap = new_len;
+}
+
+mag_hashset_t mag_hashset_init(size_t cap) {
+    cap = mag_hashset_compute_hash_size(cap ? cap : 2);
     mag_hashset_t set = {
-        .len = size,
-        .used = (*mag_alloc)(NULL, mag_bitset_size(size)*sizeof(*set.used), 0),
-        .keys = (*mag_alloc)(NULL, size*sizeof(*set.keys), 0),
+        .cap = cap,
+        .len = 0,
+        .used = (*mag_alloc)(NULL, mag_bitset_size(cap)*sizeof(*set.used), 0),
+        .keys = (*mag_alloc)(NULL, cap*sizeof(*set.keys), 0),
     };
-    memset(set.used, 0, mag_bitset_size(size)*sizeof(*set.used));
+    memset(set.used, 0, mag_bitset_size(cap)*sizeof(*set.used));
     return set;
 }
 
+bool mag_hashset_reserve(mag_hashset_t *set, size_t min_cap){
+    size_t mn = (min_cap*(size_t)MAG_HASHSET_LOAD_DEN + (MAG_HASHSET_LOAD_NUM-1)) / MAG_HASHSET_LOAD_NUM;
+    if (mn <= set->cap) return false;
+    size_t tn = mag_hashset_compute_hash_size(mn);
+    mag_hashset_rehash_grow_to(set, tn);
+    return true;
+}
+
 size_t mag_hashset_lookup(mag_hashset_t *set, const mag_tensor_t *key) {
-    size_t k = mag_hashset_hash_fn(key) % set->len, i = k;
+    size_t k = mag_hashset_hash_fn(key) % set->cap, i = k;
     while (mag_bitset_get(set->used, i) && set->keys[i] != key) { /* Simple linear probe. */
-        i = (i+1) % set->len;
+        i = (i+1) % set->cap;
         if (i == k) return MAG_HASHSET_FULL; /* Full */
     }
     return i;
@@ -53,28 +93,42 @@ size_t mag_hashset_lookup(mag_hashset_t *set, const mag_tensor_t *key) {
 
 bool mag_hashset_contains_key(mag_hashset_t *set, const mag_tensor_t *key) {
     size_t i = mag_hashset_lookup(set, key);
-    return mag_bitset_get(set->used, i) && i != MAG_HASHSET_FULL;
+    return i != MAG_HASHSET_FULL && mag_bitset_get(set->used, i);
 }
 
 size_t mag_hashset_insert(mag_hashset_t *set, const mag_tensor_t *key) {
-    size_t k = mag_hashset_hash_fn(key) % set->len, i = k;
-    do { /* Simple linear probing */
-        if (!mag_bitset_get(set->used, i)) { /* Insert key. */
-            mag_bitset_set(set->used, i);
-            set->keys[i] = key;
-            return i;
-        }
-        if (set->keys[i] == key) return MAG_HASHSET_DUPLICATE; /* Key already exists. */
-        i = (i+1) % set->len;
-    } while (i != k);
-    return MAG_HASHSET_FULL; /* Full */
+    if (set->len+1 > MAG_HASHSET_GROW_THRESHOLD(set->cap)) {
+        size_t t = mag_hashset_compute_hash_size(set->cap);
+        mag_hashset_rehash_grow_to(set, t);
+    }
+    size_t k = mag_hashset_hash_fn(key) % set->cap;
+    size_t i = k;
+    for (;;) {
+        do {
+            if (!mag_bitset_get(set->used, i)) {
+                mag_bitset_set(set->used, i);
+                set->keys[i] = key;
+                ++set->len;
+                return i;
+            }
+            if (set->keys[i] == key) return MAG_HASHSET_DUPLICATE;
+            i = (i+1) % set->cap;
+        } while (i != k);
+        /* We circled back, rehash and try again */
+        size_t t = mag_hashset_compute_hash_size(set->cap<<1);
+        mag_hashset_rehash_grow_to(set, t);
+        k = mag_hashset_hash_fn(key) % set->cap;
+        i = k;
+    }
 }
 
 void mag_hashset_reset(mag_hashset_t *set) {
-    memset(set->used, 0, mag_bitset_size(set->len)*sizeof(*set->used));
+    memset(set->used, 0, mag_bitset_size(set->cap)*sizeof(*set->used));
+    set->len = 0;
 }
 
 void mag_hashset_free(mag_hashset_t *set) {
     (*mag_alloc)(set->used, 0, 0);
     (*mag_alloc)(set->keys, 0, 0);
+    memset(set, 0, sizeof(*set));
 }
