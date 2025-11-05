@@ -726,13 +726,6 @@ namespace magnetron {
         auto backward() -> void { mag_tensor_backward(m_tensor); }
         auto zero_grad() -> void { mag_tensor_zero_grad(m_tensor); }
 
-        auto export_graphviz_forward(const std::string& filename) const -> void {
-            mag_tensor_export_forward_graph_graphviz(m_tensor, filename.c_str());
-        }
-        auto export_graphviz_backward(const std::string& filename) const -> void {
-            mag_tensor_export_backward_graph_graphviz(m_tensor, filename.c_str());
-        }
-
         [[nodiscard]] auto operator ()(const std::array<std::int64_t, MAG_MAX_DIMS>& idx) const noexcept -> float {
             return mag_tensor_subscript_get_multi(m_tensor, idx[0], idx[1], idx[2], idx[3], idx[4], idx[5]);
         }

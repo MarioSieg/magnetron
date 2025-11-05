@@ -276,12 +276,9 @@ class Tensor:
     def zero_grad(self) -> None:
         _C.mag_tensor_zero_grad(self._ptr)
 
-    def dump_graph_dot(self, file_path: str, forward: bool) -> None:
-        file_path = bytes(file_path, 'utf-8')
-        if forward:
-            _C.mag_tensor_export_forward_graph_graphviz(self._ptr, file_path)
-        else:
-            _C.mag_tensor_export_backward_graph_graphviz(self._ptr, file_path)
+    def visualize_backprop_graph(self, file_name: str = 'graph.dot') -> None:
+        file_name = bytes(file_name, 'utf-8')
+        _C.mag_tensor_visualize_backprop_graph(self._ptr, file_name)
 
     def __len__(self) -> int:
         return self.shape[0]

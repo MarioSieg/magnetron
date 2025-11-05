@@ -32,7 +32,8 @@ extern void mag_sstream_vappend(mag_sstream_t *ss, const char *fmt, va_list ap);
 extern void mag_sstream_append(mag_sstream_t *ss, const char *fmt, ...);
 extern void mag_sstream_append_strn(mag_sstream_t *ss, const char *str, size_t len);
 extern void mag_sstream_putc(mag_sstream_t *ss, char c);
-extern void mag_sstream_flush(mag_sstream_t *ss, FILE *f);
+extern void mag_sstream_flushf(mag_sstream_t *ss, FILE *f);
+extern bool mag_sstream_flush(mag_sstream_t *ss, const char *file);
 
 #ifdef __cplusplus
 }

@@ -70,6 +70,14 @@ void mag_sstream_putc(mag_sstream_t *ss, char c) {
     ss->buf[ss->len] = '\0';
 }
 
-void mag_sstream_flush(mag_sstream_t *ss, FILE *f) {
+void mag_sstream_flushf(mag_sstream_t *ss, FILE *f) {
     fputs(ss->buf, f);
+}
+
+bool mag_sstream_flush(mag_sstream_t *ss, const char *file){
+    FILE *f = mag_fopen(file, "wt");
+    if (mag_unlikely(!f)) return false;
+    mag_sstream_flushf(ss, f);
+    fclose(f);
+    return true;
 }

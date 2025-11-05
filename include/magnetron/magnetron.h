@@ -327,7 +327,7 @@ extern MAG_EXPORT bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t 
 
 /* ============ Gradient & Backprop API ============ */
 
-extern MAG_EXPORT mag_status_t mag_tensor_get_grad(const mag_tensor_t *t, mag_tensor_t **out_grad);          /* Get the gradient tensor of the tensor */
+extern MAG_EXPORT mag_status_t mag_tensor_get_grad(const mag_tensor_t *t, mag_tensor_t **out_grad);         /* Get the gradient tensor of the tensor */
 extern MAG_EXPORT bool mag_tensor_requires_grad(const mag_tensor_t *t);                                     /* Check if the tensor requires gradient computation */
 extern MAG_EXPORT mag_status_t mag_tensor_set_requires_grad(mag_tensor_t *t, bool requires_grad);           /* Set if the tensor requires gradient computation */
 extern MAG_EXPORT mag_status_t mag_tensor_backward(mag_tensor_t *t);                                        /* Compute the gradient of the tensor */
@@ -354,9 +354,7 @@ extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *t);
 extern MAG_EXPORT mag_tensor_t *mag_tensor_detach(mag_tensor_t *t);
 extern MAG_EXPORT char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_count, size_t from_end_count);
 extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val);/* Save tensor data as an image */
-extern MAG_EXPORT void mag_tensor_export_forward_graph_graphviz(mag_tensor_t *t, const char *file);                                                                      /* Export tensor computation graph as Graphviz DOT file *//* Get image channels from tensor */
-extern MAG_EXPORT void mag_tensor_export_backward_graph_graphviz(mag_tensor_t *t, const char *file);
-
+extern MAG_EXPORT void mag_tensor_visualize_backprop_graph(mag_tensor_t *t, const char *file);
 
 /* ============ Storage Archive API ============ */
 
