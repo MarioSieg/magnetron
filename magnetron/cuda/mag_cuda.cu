@@ -15,6 +15,7 @@
 #include <mag_tensor.h>
 
 #include <cuda.h>
+#include <cuda_fp16.h>
 
 #include <array>
 #include <cstdio>
@@ -22,24 +23,65 @@
 #include <stdexcept>
 #include <vector>
 
-namespace kernels {
-    template <typename T, typename F>
-    static __global__ void unary_op(int64_t numel, T* o, const T* x, F &&f) {
-        uint32_t idx = blockIdx.x*blockDim.x + threadIdx.x;
-        if (idx < numel)
-            o[idx] = f(x[idx]);
-    }
+constexpr int UNARY_BLOCK_SIZE = 256;
+constexpr mag_e8m23_t INVSQRT2 = 0.707106781186547524400844362104849039284835937f /* 1/√2 */;
+
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_abs(mag_e8m23_t x) { return fabsf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_sgn(mag_e8m23_t x) { return x > 0.f ? 1.f : x < 0.f ? -1.f : 0.f; }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_neg(mag_e8m23_t x) { return -x; }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_log(mag_e8m23_t x) { return logf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_sqr(mag_e8m23_t x) { return x*x; }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_sqrt(mag_e8m23_t x) { return sqrtf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_sin(mag_e8m23_t x) { return sinf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_cos(mag_e8m23_t x) { return cosf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_step(mag_e8m23_t x) { return x > 0.f; }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_exp(mag_e8m23_t x) { return expf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_floor(mag_e8m23_t x) { return floorf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_ceil(mag_e8m23_t x) { return ceilf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_round(mag_e8m23_t x) { return rintf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_softmax(mag_e8m23_t x) { return exp(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_softmax_dv(mag_e8m23_t x) { return exp(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_sigmoid(mag_e8m23_t x) { return 1.f/(1.f + expf(-x)); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_sigmoid_dv(mag_e8m23_t x) { mag_e8m23_t sig = 1.f/(1.f + expf(-x)); return sig*(1.f-sig); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_hard_sigmoid(mag_e8m23_t x) { return fminf(1.f, fmaxf(0.0f, (x + 3.0f)/6.0f)); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_silu(mag_e8m23_t x) { return x*(1.f/(1.f + expf(-x))); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_silu_dv(mag_e8m23_t x) { mag_e8m23_t sig = 1.f/(1.f + expf(-x)); return sig + x*sig; }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_tanh(mag_e8m23_t x) { return tanhf(x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_tanh_dv(mag_e8m23_t x) {  mag_e8m23_t th = tanhf(x); return 1.f - th*th; }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_relu(mag_e8m23_t x) { return fmax(0.f, x); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_relu_dv(mag_e8m23_t x) { return x > 0.f ? 1.f : 0.f; }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_gelu(mag_e8m23_t x) { return .5f*x*(1.f+erff(x*INVSQRT2)); }
+[[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_gelu_dv(mag_e8m23_t x) { mag_e8m23_t th = tanhf(x); return .5f*(1.f + th) + .5f*x*(1.f - th*th); }
+
+template <mag_e8m23_t (&op)(mag_e8m23_t), typename T>
+static __global__ void unary_op_kernel(int n, T *o, const T *x) {
+    int i = blockDim.x*blockIdx.x + threadIdx.x;
+    if (i >= n) return;
+    o[i] = static_cast<T>(op(static_cast<mag_e8m23_t>(x[i])));
 }
 
-namespace ops {
-    template <typename T, typename F>
-    static void unary_op_base(mag_tensor_t* r, mag_tensor_t* x, F &&f) {
-        auto *br = static_cast<T *>(mag_tensor_get_data_ptr(r));
-        auto *bx = static_cast<T *>(mag_tensor_get_data_ptr(x));
-        int64_t numel = r->numel;
-        int64_t threads = 256;
-        int64_t blocks = (numel + threads - 1)/threads;
-        kernels::unary_op<T, true><<<blocks, threads>>>(numel, br, bx, f);
+template <mag_e8m23_t (&op)(mag_e8m23_t)>
+static void impl_unary_op(mag_tensor_t *o, mag_tensor_t *x) {
+    mag_assert2(o->numel == x->numel);
+    mag_assert2(mag_tensor_is_contiguous(o));
+    mag_assert2(mag_tensor_is_contiguous(x));
+    mag_assert2(mag_tensor_is_floating_point_typed(o));
+    mag_assert2(mag_tensor_is_floating_point_typed(x));
+    mag_assert2(o->dtype == x->dtype);
+    int n = static_cast<int>(o->numel);
+    int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
+    switch (o->dtype) {
+        case MAG_DTYPE_E8M23: {
+            auto *xo = static_cast<mag_e8m23_t*>(mag_tensor_get_data_ptr(o));
+            const auto *xx = static_cast<const mag_e8m23_t*>(mag_tensor_get_data_ptr(x));
+            unary_op_kernel<op><<<blocks, UNARY_BLOCK_SIZE, 0>>>(n, xo, xx);
+        } break;
+        case MAG_DTYPE_E5M10: {
+            auto *xo = static_cast<__half*>(mag_tensor_get_data_ptr(o));
+            const auto *xx = static_cast<const half*>(mag_tensor_get_data_ptr(x));
+            unary_op_kernel<op><<<blocks, UNARY_BLOCK_SIZE, 0>>>(n, xo, xx);
+        } break;
+        default: mag_assert(false, "Unsupported dtype for unary op");
     }
 }
 
@@ -127,7 +169,35 @@ static void manual_seed(mag_device_t *dvc, uint64_t seed) {
 }
 
 static void submit(mag_device_t *dvc, const mag_command_t *cmd) {
-
+    switch (cmd->op) {
+        case MAG_OP_ABS: impl_unary_op<fn_op_abs>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SGN: impl_unary_op<fn_op_sgn>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_NEG: impl_unary_op<fn_op_neg>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_LOG: impl_unary_op<fn_op_log>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SQR: impl_unary_op<fn_op_sqr>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SQRT: impl_unary_op<fn_op_sqrt>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SIN: impl_unary_op<fn_op_sin>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_COS: impl_unary_op<fn_op_cos>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_STEP: impl_unary_op<fn_op_step>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_EXP: impl_unary_op<fn_op_exp>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_FLOOR: impl_unary_op<fn_op_floor>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_CEIL: impl_unary_op<fn_op_ceil>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_ROUND: impl_unary_op<fn_op_round>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SOFTMAX: impl_unary_op<fn_op_softmax>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SOFTMAX_DV: impl_unary_op<fn_op_softmax_dv>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SIGMOID: impl_unary_op<fn_op_sigmoid>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SIGMOID_DV: impl_unary_op<fn_op_sigmoid_dv>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_HARD_SIGMOID: impl_unary_op<fn_op_hard_sigmoid>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SILU: impl_unary_op<fn_op_silu>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_SILU_DV: impl_unary_op<fn_op_silu_dv>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_TANH: impl_unary_op<fn_op_tanh>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_TANH_DV: impl_unary_op<fn_op_tanh_dv>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_RELU: impl_unary_op<fn_op_relu>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_RELU_DV: impl_unary_op<fn_op_relu_dv>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_GELU: impl_unary_op<fn_op_gelu>(cmd->out[0], cmd->in[0]); break;
+        case MAG_OP_GELU_DV: impl_unary_op<fn_op_gelu_dv>(cmd->out[0], cmd->in[0]); break;
+        default: mag_assert(false, "Unsupported operation in CUDA backend: %s", mag_op_meta_of(cmd->op)->mnemonic); break;
+    }
 }
 
 static void dealloc_storage_buffer(void *self) {
