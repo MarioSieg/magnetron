@@ -27,7 +27,7 @@ class NativeErrorInfo:
     func: str
 
 
-_ctx = _C.mag_ctx_create()
+_ctx = _C.mag_ctx_create(bytes('cpu', 'utf-8'))
 _ctx_finalizer = weakref.finalize(_ctx, _C.mag_ctx_destroy, _ctx, True)
 
 

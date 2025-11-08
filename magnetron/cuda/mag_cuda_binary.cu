@@ -104,16 +104,16 @@ namespace mag {
             binary_op_kernel_contig<Op><<<blocks, BINARY_BLOCK_SIZE>>>(
                 Op {},
                 static_cast<int>(total),
-                static_cast<Op::scalar*>(mag_tensor_get_data_ptr(out)),
-                static_cast<Op::scalar*>(mag_tensor_get_data_ptr(x)),
-                static_cast<Op::scalar*>(mag_tensor_get_data_ptr(y))
+                static_cast<typename Op::scalar*>(mag_tensor_get_data_ptr(out)),
+                static_cast<typename Op::scalar*>(mag_tensor_get_data_ptr(x)),
+                static_cast<typename Op::scalar*>(mag_tensor_get_data_ptr(y))
             );
         } else {
             binary_op_kernel_strided<Op><<<blocks, BINARY_BLOCK_SIZE>>>(
                 Op {},
-                static_cast<Op::scalar*>(mag_tensor_get_data_ptr(out)),
-               static_cast<Op::scalar*>(mag_tensor_get_data_ptr(x)),
-               static_cast<Op::scalar*>(mag_tensor_get_data_ptr(y)),
+                static_cast<typename Op::scalar*>(mag_tensor_get_data_ptr(out)),
+               static_cast<typename Op::scalar*>(mag_tensor_get_data_ptr(x)),
+               static_cast<typename Op::scalar*>(mag_tensor_get_data_ptr(y)),
                 tensor_coords {out},
                 tensor_coords {x},
                 tensor_coords {y},

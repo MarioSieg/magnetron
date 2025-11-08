@@ -16,8 +16,8 @@ using namespace magnetron;
 TEST(context, create_cpu) {
     enable_logging(true);
     context ctx {};
-    ASSERT_TRUE(mag_device_is_typeof((*ctx).device, "cpu"));
-    ASSERT_FALSE(mag_device_is_typeof((*ctx).device, "cuda"));
+    ASSERT_TRUE(mag_device_is((*ctx).device, "cpu"));
+    ASSERT_FALSE(mag_device_is((*ctx).device, "cuda"));
     ASSERT_TRUE(!ctx.cpu_name().empty());
     ASSERT_TRUE(!ctx.device_name().empty());
     ASSERT_TRUE(!ctx.os_name().empty());
@@ -39,9 +39,9 @@ TEST(context, create_cpu) {
 
 TEST(context, create_cuda) {
     enable_logging(true);
-    context ctx {};
-    ASSERT_FALSE(mag_device_is_typeof((*ctx).device, "cpu"));
-    ASSERT_TRUE(mag_device_is_typeof((*ctx).device, "cuda"));
+    context ctx {"cuda"};
+    ASSERT_FALSE(mag_device_is((*ctx).device, "cpu"));
+    ASSERT_TRUE(mag_device_is((*ctx).device, "cuda"));
     ASSERT_TRUE(!ctx.cpu_name().empty());
     ASSERT_TRUE(!ctx.device_name().empty());
     ASSERT_TRUE(!ctx.os_name().empty());

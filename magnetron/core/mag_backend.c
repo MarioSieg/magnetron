@@ -14,6 +14,8 @@
 #include "mag_os.h"
 #include "mag_alloc.h"
 
+#include <ctype.h>
+
 static bool mag_is_backend_module_file_candidate(const char *fname) { /* Checks if file is a valid backend library file name. (lib)magnetron_*name*.(so|dylib|dll) */
     if (!fname || !*fname) return false;
     for (const char *p = fname; *p; ++p)
@@ -148,13 +150,33 @@ static void mag_backend_module_shutdown(mag_backend_module_t *mod) {
     (*mag_alloc)(mod, 0, 0);
 }
 
-bool mag_device_is_typeof(const mag_device_t *dvc, const char *type){
-    if (!dvc || !type || !*type) return false;
-    const char *id = dvc->id;
-    const char *sep = strchr(id, ':');
-    size_t id_type_len = sep ? (size_t)(sep-id) : strlen(id);
-    size_t type_len = strlen(type);
-    return id_type_len == type_len && memcmp(id, type, type_len) == 0;
+bool mag_device_is(const mag_device_t *dvc, const char *device_id) {
+    char wanted_id[MAG_DEVICEID_MAX];
+    int idx;
+    if (mag_unlikely(!mag_parse_device_id(device_id, &wanted_id, &idx))) return false;
+    char actual_id[MAG_DEVICEID_MAX];
+    int actual_idx;
+    if (mag_unlikely(!mag_parse_device_id(dvc->id, &actual_id, &actual_idx))) return false;
+    return strcmp(wanted_id, actual_id) == 0 && (idx != -1 && actual_idx != -1 ? idx == actual_idx : true); /* If both have index, compare it */
+}
+
+bool mag_parse_device_id(const char *device_id, char (*out_type)[MAG_DEVICEID_MAX], int *out_idx) {
+    if (mag_unlikely(!device_id || !out_type || !out_idx)) return false;
+    const char *sep = strchr(device_id, ':');
+    size_t name_len = sep ? (size_t)(sep - device_id) : strlen(device_id);
+    if (mag_unlikely(!name_len)) return false;
+    int n = snprintf(*out_type, MAG_DEVICEID_MAX, "%.*s", (int)name_len, device_id);
+    if (mag_unlikely(n < 0 || n >= MAG_DEVICEID_MAX)) return false;
+    if (!sep || !sep[1]) {
+        *out_idx = -1; /* No index specified */
+        return true;
+    }
+    *out_idx = 0;
+    for (const char *p = sep+1; *p; ++p) {
+        if (mag_unlikely(!isdigit((unsigned char)*p))) return false;
+        *out_idx = 10**out_idx + (*p-'0');
+    }
+    return true;
 }
 
 struct mag_backend_registry_t {
@@ -249,6 +271,26 @@ bool mag_backend_registry_scan(mag_backend_registry_t *reg) {
     if (reg->backends_num > 1) /* Sort backend modules by score */
         qsort(reg->backends, reg->backends_num, sizeof(*reg->backends), &mag_backend_registry_module_score_sort_callback);
     return reg->backends_num;
+}
+
+mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id) {
+    char type[MAG_DEVICEID_MAX];
+    int idx;
+    if (mag_unlikely(!mag_parse_device_id(device_id, &type, &idx))) return NULL;
+    for (size_t i=0; i < reg->backends_num; ++i) {
+        mag_backend_t *backend = reg->backends[i]->backend;
+        size_t num_devices = (*backend->num_devices)(backend);
+        for (size_t d=0; d < num_devices; ++d) {
+            mag_device_t *dev = (*backend->init_device)(backend, reg->ctx, d);
+            if (mag_unlikely(!dev)) continue;
+            if (mag_device_is(dev, device_id)) { /* Found matching device */
+                *device = dev;
+                return backend;
+            }
+            (*backend->destroy_device)(backend, dev);
+        }
+    }
+    return mag_backend_registry_best_backend(reg); /* Fallback to best backend */
 }
 
 mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg) {

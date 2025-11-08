@@ -101,7 +101,7 @@ static MAG_COLDPROC void mag_ctx_dump_compiler_info(void) {
 }
 
 /* Create context with compute device descriptor. */
-mag_context_t *mag_ctx_create(void) {
+mag_context_t *mag_ctx_create(const char *device_id) {
     mag_log_info("Creating magnetron context...");
 
     uint64_t time_stamp_start = mag_hpc_clock_ns();
@@ -137,10 +137,12 @@ mag_context_t *mag_ctx_create(void) {
         "\nCheck the searched path manually to see if any backends were found: %s",
         num_backend_paths && backend_paths && *backend_paths && **backend_paths ? *backend_paths : "(no paths)"
     );
-    ctx->backend = mag_backend_registry_best_backend(ctx->backend_registry);
-    mag_assert2(ctx->backend);
-    ctx->device = (*ctx->backend->init_device)(ctx->backend, ctx, (*ctx->backend->best_device_idx)(ctx->backend));
-    mag_assert2(ctx->device);
+    ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, device_id);
+    mag_assert(ctx->backend && ctx->device,
+        "\nNo suitable magnetron compute backend found for device id '%s'!"
+        "\nMake sure the specified device id is correct and that the corresponding backend is available.",
+        device_id ? device_id : "(null)"
+    );
 
     /* Seed prng once with secure system entropy */
     uint64_t global_seed = 0;

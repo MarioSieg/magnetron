@@ -1324,12 +1324,12 @@ static void MAG_HOTPROC mag_vceil_e5m10(int64_t numel, mag_e5m10_t *o, const mag
 
 static void MAG_HOTPROC mag_vround_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
     for (int64_t i=0; i < numel; ++i)
-        o[i] = roundf(x[i]);
+        o[i] = nearbyintf(x[i]);
 }
 
 static void MAG_HOTPROC mag_vround_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
     for (int64_t i=0; i < numel; ++i)
-        o[i] = mag_e8m23_cvt_e5m10(roundf(mag_e5m10_cvt_e8m23(x[i])));
+        o[i] = mag_e8m23_cvt_e5m10(nearbyintf(mag_e5m10_cvt_e8m23(x[i])));
 }
 
 static void MAG_HOTPROC mag_vsoftmax_dv_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {

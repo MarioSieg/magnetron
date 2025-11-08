@@ -106,7 +106,7 @@ typedef struct mag_error_t {
 */
 typedef struct mag_context_t mag_context_t;
 
-extern MAG_EXPORT mag_context_t *mag_ctx_create(void);                                                                  /* Create context with default config, and only specify device type. */
+extern MAG_EXPORT mag_context_t *mag_ctx_create(const char *device_id);                                                 /* Create context with default config, and only specify device type. */
 
 extern MAG_EXPORT const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx);                                  /* Get last error and clear it. */
 extern MAG_EXPORT void mag_ctx_set_last_error(mag_context_t *ctx, const mag_error_t *error);                            /* Set last error. */

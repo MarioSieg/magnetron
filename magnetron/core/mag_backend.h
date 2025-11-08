@@ -52,18 +52,22 @@ typedef struct mag_command_t {
     mag_opparam_t params[MAG_MAX_OP_PARAMS];
 } mag_command_t;
 
+#define MAG_DEVICEID_MAX 32
+
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 struct mag_device_t {
     mag_context_t *ctx;                                             /* Owning context */
     void *impl;                                                     /* Backend specific device implementation, if any. */
     bool is_async;                                                  /* True if the device executes commands asynchronously. */
     char physical_device_name[256];                                 /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
-    char id[32];                                                    /* Unique device ID, (e.g. "cpu:0", "cuda:0", "cuda:1", "tpu:0") */
+    char id[MAG_DEVICEID_MAX];                                      /* Unique device ID, (e.g. "cpu:0", "cuda:0", "cuda:1", "tpu:0") */
     void (*submit)(mag_device_t *dvc, const mag_command_t *cmd);    /* Submit a command to the device for execution. */
     void (*alloc_storage)(mag_device_t *dvc, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype);
     void (*manual_seed)(mag_device_t *dvc, uint64_t seed);
 };
-extern MAG_EXPORT bool mag_device_is_typeof(const mag_device_t *dvc, const char *type);
+
+extern MAG_EXPORT bool mag_device_is(const mag_device_t *dvc, const char *device_id);
+extern MAG_EXPORT bool mag_parse_device_id(const char *device_id, char (*out_type)[MAG_DEVICEID_MAX], int *out_idx);
 
 #define MAG_BACKEND_MODULE_ABI_VER 1 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */
 typedef struct mag_backend_t mag_backend_t;
@@ -111,6 +115,7 @@ extern mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
 extern void mag_backend_registry_add_search_path(mag_backend_registry_t *reg, const char *path);
 extern void mag_backend_registry_get_search_paths(mag_backend_registry_t *reg, const char ***out_paths, size_t *out_num_paths);
 extern bool mag_backend_registry_scan(mag_backend_registry_t *reg);
+extern mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id); /* Get corresponding backend for device ID like cuda:0 or cpu. */
 extern mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg);
 extern void mag_backend_registry_free(mag_backend_registry_t *reg);
 
