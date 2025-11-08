@@ -267,7 +267,8 @@ mag_e8m23_t *mag_tensor_get_data_as_floats(mag_tensor_t *t) {
     mag_assert2(size);
     mag_e8m23_t *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_storage_buffer_t *sto = cont->storage;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size, MAG_DTYPE_E8M23);
+    if (cont->dtype == MAG_DTYPE_E8M23) (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
+    else (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size, MAG_DTYPE_E8M23);
     mag_tensor_decref(cont);
     return dst;
 }

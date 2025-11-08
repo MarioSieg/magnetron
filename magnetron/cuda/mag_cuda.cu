@@ -11,6 +11,8 @@
 
 #include "mag_cuda.cuh"
 #include "mag_cuda_unary.cuh"
+#include "mag_cuda_binary.cuh"
+#include "mag_cuda_fill.cuh"
 
 #include <array>
 #include <cstdio>
@@ -104,32 +106,38 @@ namespace mag {
 
     static void submit(mag_device_t *dvc, const mag_command_t *cmd) {
         switch (cmd->op) {
-            case MAG_OP_ABS: impl_unary_op<fn_op_abs>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SGN: impl_unary_op<fn_op_sgn>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_NEG: impl_unary_op<fn_op_neg>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_LOG: impl_unary_op<fn_op_log>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SQR: impl_unary_op<fn_op_sqr>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SQRT: impl_unary_op<fn_op_sqrt>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SIN: impl_unary_op<fn_op_sin>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_COS: impl_unary_op<fn_op_cos>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_STEP: impl_unary_op<fn_op_step>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_EXP: impl_unary_op<fn_op_exp>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_FLOOR: impl_unary_op<fn_op_floor>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_CEIL: impl_unary_op<fn_op_ceil>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_ROUND: impl_unary_op<fn_op_round>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SOFTMAX: impl_unary_op<fn_op_softmax>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SOFTMAX_DV: impl_unary_op<fn_op_softmax_dv>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SIGMOID: impl_unary_op<fn_op_sigmoid>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SIGMOID_DV: impl_unary_op<fn_op_sigmoid_dv>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_HARD_SIGMOID: impl_unary_op<fn_op_hard_sigmoid>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SILU: impl_unary_op<fn_op_silu>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_SILU_DV: impl_unary_op<fn_op_silu_dv>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_TANH: impl_unary_op<fn_op_tanh>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_TANH_DV: impl_unary_op<fn_op_tanh_dv>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_RELU: impl_unary_op<fn_op_relu>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_RELU_DV: impl_unary_op<fn_op_relu_dv>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_GELU: impl_unary_op<fn_op_gelu>(cmd->out[0], cmd->in[0]); break;
-            case MAG_OP_GELU_DV: impl_unary_op<fn_op_gelu_dv>(cmd->out[0], cmd->in[0]); break;
+            case MAG_OP_NOP: break;
+            case MAG_OP_FILL: fill_op_fill(cmd); break;
+            case MAG_OP_ABS: unary_op_abs(cmd); break;
+            case MAG_OP_SGN: unary_op_sgn(cmd); break;
+            case MAG_OP_NEG: unary_op_neg(cmd); break;
+            case MAG_OP_LOG: unary_op_log(cmd); break;
+            case MAG_OP_SQR: unary_op_sqr(cmd); break;
+            case MAG_OP_SQRT: unary_op_sqrt(cmd); break;
+            case MAG_OP_SIN: unary_op_sin(cmd); break;
+            case MAG_OP_COS: unary_op_cos(cmd); break;
+            case MAG_OP_STEP: unary_op_step(cmd); break;
+            case MAG_OP_EXP: unary_op_exp(cmd); break;
+            case MAG_OP_FLOOR: unary_op_floor(cmd); break;
+            case MAG_OP_CEIL: unary_op_ceil(cmd); break;
+            case MAG_OP_ROUND: unary_op_round(cmd); break;
+            case MAG_OP_SOFTMAX: unary_op_softmax(cmd); break;
+            case MAG_OP_SOFTMAX_DV: unary_op_softmax_dv(cmd); break;
+            case MAG_OP_SIGMOID: unary_op_sigmoid(cmd); break;
+            case MAG_OP_SIGMOID_DV: unary_op_sigmoid_dv(cmd); break;
+            case MAG_OP_HARD_SIGMOID: unary_op_hard_sigmoid(cmd); break;
+            case MAG_OP_SILU: unary_op_silu(cmd); break;
+            case MAG_OP_SILU_DV: unary_op_silu_dv(cmd); break;
+            case MAG_OP_TANH: unary_op_tanh(cmd); break;
+            case MAG_OP_TANH_DV: unary_op_tanh_dv(cmd); break;
+            case MAG_OP_RELU: unary_op_relu(cmd); break;
+            case MAG_OP_RELU_DV: unary_op_relu_dv(cmd); break;
+            case MAG_OP_GELU: unary_op_gelu(cmd); break;
+            case MAG_OP_GELU_DV: unary_op_gelu_dv(cmd); break;
+            case MAG_OP_ADD: binary_op_add(cmd); break;
+            case MAG_OP_SUB: binary_op_sub(cmd); break;
+            case MAG_OP_MUL: binary_op_mul(cmd); break;
+            case MAG_OP_DIV: binary_op_div(cmd); break;
             default: mag_assert(false, "Unsupported operation in CUDA backend: %s", mag_op_meta_of(cmd->op)->mnemonic); break;
         }
     }
@@ -141,16 +149,29 @@ namespace mag {
         mag_fixed_pool_free_block(&ctx->storage_pool, buffer);
     }
 
-    static void broadcast(mag_storage_buffer_t *sto, size_t offs, const void *x, size_t stride) {
+    static __global__ void broadcast_kernel(void *dst, const void *src, size_t stride, size_t size) {
+        size_t idx = blockIdx.x*blockDim.x + threadIdx.x;
+        if (idx < size)
+            memcpy(static_cast<uint8_t *>(dst) + idx*stride, src, stride);
+    }
 
+    static void broadcast(mag_storage_buffer_t *sto, size_t offs, const void *x, size_t stride) {
+        mag_assert(offs + sto->size <= sto->size, "Broadcast out of bounds");
+        int blocks = static_cast<int>((sto->size+TRANSFER_BLOCK_SIZE-1)/TRANSFER_BLOCK_SIZE);
+        broadcast_kernel<<<blocks, TRANSFER_BLOCK_SIZE>>>(reinterpret_cast<void *>(sto->base+offs), x, stride, sto->size / stride);
     }
 
     static void transfer(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size) {
-
+        mag_assert(offs + size <= sto->size, "Transfer out of bounds");
+        if (dir == MAG_TRANSFER_DIR_H2D) {
+            mag_cuda_check(cudaMemcpy(reinterpret_cast<void *>(sto->base + offs), inout, size, cudaMemcpyHostToDevice));
+        } else {
+            mag_cuda_check(cudaMemcpy(inout, reinterpret_cast<void *>(sto->base + offs), size, cudaMemcpyDeviceToHost));
+        }
     }
 
     static void convert(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *host, size_t size, mag_dtype_t hdt) {
-
+        mag_panic("NYI");
     }
 
     static void alloc_storage_buffer(mag_device_t *device, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
@@ -202,7 +223,7 @@ namespace mag {
         return new mag_backend_t {
             .backend_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_CUDA_BACKEND_VERSION; },
             .runtime_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_VERSION; },
-            .score = +[](mag_backend_t *bck) noexcept -> uint32_t { return 0; }, // TODO: fix score to reflect actual performance
+            .score = +[](mag_backend_t *bck) noexcept -> uint32_t { return 1000; }, // TODO: fix score to reflect actual performance
             .id = +[](mag_backend_t *bck) noexcept -> const char* { return "cuda"; },
             .num_devices = +[](mag_backend_t *bck) noexcept -> uint32_t { return static_cast<backend_impl *>(bck->impl)->devices().size(); },
             .best_device_idx = +[](mag_backend_t *bck) noexcept -> uint32_t { return 0; },

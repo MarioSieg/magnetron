@@ -28,7 +28,7 @@ target_link_libraries(
 )
 add_test(NAME magnetron_test COMMAND magnetron_test)
 
-if (${MAGNETRON_ENABLE_CUDA})
+if (${MAGNETRON_ENABLE_BACKEND_CUDA})
     target_compile_definitions(magnetron_test PRIVATE MAG_ENABLE_CUDA)
 endif()
 

@@ -11,20 +11,11 @@
 
 #pragma once
 
-#include <core/mag_backend.h>
-#include <core/mag_context.h>
-#include <core/mag_tensor.h>
-
-#include <cuda.h>
-#include <cuda_fp16.h>
-
-extern "C" {
-  mag_backend_decl_interface();
-}
+#include "mag_cuda.cuh"
 
 namespace mag {
-  constexpr uint32_t MAG_CUDA_BACKEND_VERSION = mag_ver_encode(0, 1, 0);
-  constexpr int UNARY_BLOCK_SIZE = 256;
-  constexpr int TRANSFER_BLOCK_SIZE = 256;
-  constexpr int BINARY_BLOCK_SIZE = 256;
+    extern void binary_op_add(const mag_command_t *cmd);
+    extern void binary_op_sub(const mag_command_t *cmd);
+    extern void binary_op_mul(const mag_command_t *cmd);
+    extern void binary_op_div(const mag_command_t *cmd);
 }
