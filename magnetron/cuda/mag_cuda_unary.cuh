@@ -32,7 +32,7 @@ namespace mag {
     [[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_exp(mag_e8m23_t x) { return expf(x); }
     [[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_floor(mag_e8m23_t x) { return floorf(x); }
     [[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_ceil(mag_e8m23_t x) { return ceilf(x); }
-    [[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_round(mag_e8m23_t x) { return rintf(x); }
+    [[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_round(mag_e8m23_t x) { return roundf(x); }
     [[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_softmax(mag_e8m23_t x) { return exp(x); }
     [[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_softmax_dv(mag_e8m23_t x) { return exp(x); }
     [[nodiscard]] static __device__ __forceinline__ mag_e8m23_t fn_op_sigmoid(mag_e8m23_t x) { return 1.f/(1.f + expf(-x)); }
