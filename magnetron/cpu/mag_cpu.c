@@ -686,49 +686,6 @@ static MAG_HOTPROC void mag_cpu_submit(mag_device_t *dvc, const mag_command_t *c
     mag_threadpool_parallel_compute(cpu_dvc->pool, cmd, intraop_workers); /* Multithreaded exec + barrier */
 }
 
-static void mag_cpu_broadcast(mag_storage_buffer_t *sto, size_t offs, const void *x, size_t stride) {
-    mag_assert2(offs <= sto->size);
-    size_t len = sto->size-offs;
-    uint8_t *dst8 = (uint8_t *)sto->base+offs;
-    switch (stride) {
-    case 1:
-        memset(dst8, *(const uint8_t *)x, len);
-        return;
-    case 2: {
-        mag_assert2(!(offs & 1) && !(len & 1));     /* Offsets and len must be aligned to granularity */
-        uint16_t v = *(const uint16_t *)x;
-        uint16_t *restrict p = (uint16_t *)dst8;
-        uint16_t *restrict end = p + (len/sizeof(v));
-        for (; p < end; ++p) *p = v;
-    }
-    return;
-    case 4: {
-        mag_assert2(!(offs & 3) && !(len & 3));     /* Offsets and len must be aligned to granularity */
-        uint32_t v = *(const uint32_t *)x;
-        uint32_t *restrict p = (uint32_t *)dst8;
-        uint32_t *restrict end = p + (len/sizeof(v));
-        for (; p < end; ++p) *p = v;
-    }
-    return;
-    case 8: {
-        mag_assert2(!(offs & 7) && !(len & 7));     /* Offsets and len must be aligned to granularity */
-        uint64_t v = *(const uint64_t *)x;
-        uint64_t *restrict p = (uint64_t *)dst8;
-        uint64_t *restrict end = p + (len/sizeof(v));
-        for (; p < end; ++p) *p = v;
-    }
-    return;
-    default: {
-        while (len >= stride) {
-            memcpy(dst8, x, stride);
-            dst8 += stride;
-            len -= stride;
-        }
-        if (len) memcpy(dst8, x, len);  /* handle tail */
-    }
-    }
-}
-
 #define mag_ranges_overlap(a, asz, b, bsz) (((uintptr_t)(a)+(asz)) > (uintptr_t)(b) && ((uintptr_t)(b)+(bsz)) > (uintptr_t)(a))
 
 static void mag_cpu_transfer(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size) {
@@ -802,7 +759,6 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
         .dtype = dtype,
         .granularity = mag_dtype_meta_of(dtype)->size,
         .host = host,
-        .broadcast = &mag_cpu_broadcast,
         .transfer = &mag_cpu_transfer,
         .convert = &mag_cpu_convert
     };

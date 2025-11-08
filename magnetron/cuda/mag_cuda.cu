@@ -149,18 +149,6 @@ namespace mag {
         mag_fixed_pool_free_block(&ctx->storage_pool, buffer);
     }
 
-    static __global__ void broadcast_kernel(void *dst, const void *src, size_t stride, size_t size) {
-        size_t idx = blockIdx.x*blockDim.x + threadIdx.x;
-        if (idx < size)
-            memcpy(static_cast<uint8_t *>(dst) + idx*stride, src, stride);
-    }
-
-    static void broadcast(mag_storage_buffer_t *sto, size_t offs, const void *x, size_t stride) {
-        mag_assert(offs + sto->size <= sto->size, "Broadcast out of bounds");
-        int blocks = static_cast<int>((sto->size+TRANSFER_BLOCK_SIZE-1)/TRANSFER_BLOCK_SIZE);
-        broadcast_kernel<<<blocks, TRANSFER_BLOCK_SIZE>>>(reinterpret_cast<void *>(sto->base+offs), x, stride, sto->size / stride);
-    }
-
     static void transfer(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size) {
         mag_assert(offs + size <= sto->size, "Transfer out of bounds");
         if (dir == MAG_TRANSFER_DIR_H2D) {
@@ -188,7 +176,6 @@ namespace mag {
             .granularity = mag_dtype_meta_of(dtype)->size,
             .dtype = dtype,
             .host = device,
-            .broadcast = &broadcast,
             .transfer = &transfer,
             .convert = &convert
         };
@@ -223,7 +210,7 @@ namespace mag {
         return new mag_backend_t {
             .backend_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_CUDA_BACKEND_VERSION; },
             .runtime_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_VERSION; },
-            .score = +[](mag_backend_t *bck) noexcept -> uint32_t { return 1000; }, // TODO: fix score to reflect actual performance
+            .score = +[](mag_backend_t *bck) noexcept -> uint32_t { return 0; }, // TODO: fix score to reflect actual performance
             .id = +[](mag_backend_t *bck) noexcept -> const char* { return "cuda"; },
             .num_devices = +[](mag_backend_t *bck) noexcept -> uint32_t { return static_cast<backend_impl *>(bck->impl)->devices().size(); },
             .best_device_idx = +[](mag_backend_t *bck) noexcept -> uint32_t { return 0; },
