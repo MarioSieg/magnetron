@@ -7,8 +7,8 @@
 #include <random>
 
 #include <magnetron.hpp>
-#include <mag_context.h>
-#include <mag_tensor.h>
+#include <../../magnetron/core/mag_context.h>
+#include <../../magnetron/core/mag_tensor.h>
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>

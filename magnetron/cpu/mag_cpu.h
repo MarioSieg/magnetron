@@ -12,7 +12,7 @@
 #ifndef MAGNETRON_CPU_H
 #define MAGNETRON_CPU_H
 
-#include <mag_backend.h>
+#include <core/mag_backend.h>
 
 #ifdef __cplusplus
 extern "C" {

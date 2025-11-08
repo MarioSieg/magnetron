@@ -11,9 +11,9 @@
 
 #include "mag_cpu.h"
 
-#include <mag_tensor.h>
-#include <mag_cpuid.h>
-#include <mag_alloc.h>
+#include <core/mag_tensor.h>
+#include <core/mag_cpuid.h>
+#include <core/mag_alloc.h>
 
 #ifdef _MSC_VER
 #include <intrin.h>
