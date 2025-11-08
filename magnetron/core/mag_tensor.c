@@ -396,7 +396,8 @@ static void mag_tensor_fmt_recursive(
     const int64_t *strides,
     int64_t rank,
     int depth,
-    int64_t moff
+    int64_t moff,
+    size_t pad
 ) {
     if (depth == rank) { /* scalar leaf */
         mag_fmt_single_elem(ss, buf, moff, dtype);
@@ -404,11 +405,11 @@ static void mag_tensor_fmt_recursive(
     }
     mag_sstream_putc(ss, '[');
     for (int64_t i=0; i < shape[depth]; ++i) {
-        mag_tensor_fmt_recursive(ss, buf, dtype, shape, strides, rank, depth+1, moff + i*strides[depth]); /* Recurse down */
+        mag_tensor_fmt_recursive(ss, buf, dtype, shape, strides, rank, depth+1, moff + i*strides[depth], pad); /* Recurse down */
         if (i != shape[depth]-1) { /* separator */
             mag_sstream_putc(ss, ',');
             if (rank-depth > 1) { /* newline + indent for outer dims */
-                mag_sstream_putc(ss, '\n');
+                mag_sstream_append(ss, "\n%*s", pad, ""); /* indent */
                 for (int j=0; j <= depth; ++j)
                     mag_sstream_putc(ss, ' ');
             } else { /* simple space for last dim */
@@ -428,7 +429,11 @@ char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_
         buf = mag_tensor_get_raw_data_as_bytes(t);
     mag_sstream_t ss;
     mag_sstream_init(&ss);
-    mag_tensor_fmt_recursive(&ss, buf, t->dtype, t->shape, t->strides, t->rank, 0, 0); /* Recursive format */
+    const char *prefix = "Tensor(";
+    size_t pad = strlen(prefix);
+    mag_sstream_append(&ss, prefix);
+    mag_tensor_fmt_recursive(&ss, buf, t->dtype, t->shape, t->strides, t->rank, 0, 0, pad); /* Recursive format */
+    mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_dtype_meta_of(t->dtype)->name, t->ctx->device->id);
     /* Free allocated buffer */
     if (mag_tensor_is_floating_point_typed(t)) mag_tensor_get_data_as_floats_free(buf);
     else mag_tensor_get_raw_data_as_bytes_free(buf);

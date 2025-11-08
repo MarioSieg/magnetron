@@ -62,8 +62,8 @@ TEST(context, create_cuda) {
     a.fill(0.5f);
     b.fill(1.5f);
     tensor c = a+b;
-    std::cout << "a+b=" << c.to_string() << std::endl;
-    std::cout << "sin(exp(a+b))=" << c.exp().sin().to_string() << std::endl;
+    std::cout << c.to_string() << std::endl;
+    std::cout << c.exp().sin().to_string() << std::endl;
 
     enable_logging(false);
 }
