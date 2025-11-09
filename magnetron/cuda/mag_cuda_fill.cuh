@@ -14,5 +14,8 @@
 #include "mag_cuda.cuh"
 
 namespace mag {
+    constexpr int FILL_BLOCK_SIZE = 256;
+
     extern void fill_op_fill(const mag_command_t *cmd);
+    extern void fill_op_masked_fill(const mag_command_t *cmd);
 }

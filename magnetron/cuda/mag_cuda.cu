@@ -104,42 +104,82 @@ namespace mag {
 
     }
 
+    using kernel_fn = void (*)(const mag_command_t *);
+
+    static void op_nop(const mag_command_t *) { }
+
     static void submit(mag_device_t *dvc, const mag_command_t *cmd) {
-        switch (cmd->op) {
-            case MAG_OP_NOP: break;
-            case MAG_OP_FILL: fill_op_fill(cmd); break;
-            case MAG_OP_ABS: unary_op_abs(cmd); break;
-            case MAG_OP_SGN: unary_op_sgn(cmd); break;
-            case MAG_OP_NEG: unary_op_neg(cmd); break;
-            case MAG_OP_LOG: unary_op_log(cmd); break;
-            case MAG_OP_SQR: unary_op_sqr(cmd); break;
-            case MAG_OP_SQRT: unary_op_sqrt(cmd); break;
-            case MAG_OP_SIN: unary_op_sin(cmd); break;
-            case MAG_OP_COS: unary_op_cos(cmd); break;
-            case MAG_OP_STEP: unary_op_step(cmd); break;
-            case MAG_OP_EXP: unary_op_exp(cmd); break;
-            case MAG_OP_FLOOR: unary_op_floor(cmd); break;
-            case MAG_OP_CEIL: unary_op_ceil(cmd); break;
-            case MAG_OP_ROUND: unary_op_round(cmd); break;
-            case MAG_OP_SOFTMAX: unary_op_softmax(cmd); break;
-            case MAG_OP_SOFTMAX_DV: unary_op_softmax_dv(cmd); break;
-            case MAG_OP_SIGMOID: unary_op_sigmoid(cmd); break;
-            case MAG_OP_SIGMOID_DV: unary_op_sigmoid_dv(cmd); break;
-            case MAG_OP_HARD_SIGMOID: unary_op_hard_sigmoid(cmd); break;
-            case MAG_OP_SILU: unary_op_silu(cmd); break;
-            case MAG_OP_SILU_DV: unary_op_silu_dv(cmd); break;
-            case MAG_OP_TANH: unary_op_tanh(cmd); break;
-            case MAG_OP_TANH_DV: unary_op_tanh_dv(cmd); break;
-            case MAG_OP_RELU: unary_op_relu(cmd); break;
-            case MAG_OP_RELU_DV: unary_op_relu_dv(cmd); break;
-            case MAG_OP_GELU: unary_op_gelu(cmd); break;
-            case MAG_OP_GELU_DV: unary_op_gelu_dv(cmd); break;
-            case MAG_OP_ADD: binary_op_add(cmd); break;
-            case MAG_OP_SUB: binary_op_sub(cmd); break;
-            case MAG_OP_MUL: binary_op_mul(cmd); break;
-            case MAG_OP_DIV: binary_op_div(cmd); break;
-            default: mag_assert(false, "Unsupported operation in CUDA backend: %s", mag_op_meta_of(cmd->op)->mnemonic); break;
-        }
+        static constexpr kernel_fn dispatch_table[] = {
+            [MAG_OP_NOP] = &op_nop,
+            [MAG_OP_FILL] = &fill_op_fill,
+            [MAG_OP_MASKED_FILL] = nullptr,
+            [MAG_OP_RAND_UNIFORM] = nullptr,
+            [MAG_OP_RAND_NORMAL] = nullptr,
+            [MAG_OP_RAND_BERNOULLI] = nullptr,
+            [MAG_OP_ARANGE] = nullptr,
+            [MAG_OP_CLONE] = nullptr,
+            [MAG_OP_VIEW] = &op_nop,
+            [MAG_OP_TRANSPOSE] = &op_nop,
+            [MAG_OP_PERMUTE] = &op_nop,
+            [MAG_OP_MEAN] = nullptr,
+            [MAG_OP_MIN] = nullptr,
+            [MAG_OP_MAX] = nullptr,
+            [MAG_OP_SUM] = nullptr,
+            [MAG_OP_ABS] = &unary_op_abs,
+            [MAG_OP_SGN] = &unary_op_sgn,
+            [MAG_OP_NEG] = &unary_op_neg,
+            [MAG_OP_LOG] = &unary_op_log,
+            [MAG_OP_SQR] = &unary_op_sqr,
+            [MAG_OP_SQRT] = &unary_op_sqrt,
+            [MAG_OP_SIN] = &unary_op_sin,
+            [MAG_OP_COS] = &unary_op_cos,
+            [MAG_OP_STEP] = &unary_op_step,
+            [MAG_OP_EXP] = &unary_op_exp,
+            [MAG_OP_FLOOR] = &unary_op_floor,
+            [MAG_OP_CEIL] = &unary_op_ceil,
+            [MAG_OP_ROUND] = &unary_op_round,
+            [MAG_OP_SOFTMAX] = &unary_op_softmax,
+            [MAG_OP_SOFTMAX_DV] = &unary_op_softmax_dv,
+            [MAG_OP_SIGMOID] = &unary_op_sigmoid,
+            [MAG_OP_SIGMOID_DV] = &unary_op_sigmoid_dv,
+            [MAG_OP_HARD_SIGMOID] = &unary_op_hard_sigmoid,
+            [MAG_OP_SILU] = &unary_op_silu,
+            [MAG_OP_SILU_DV] = &unary_op_silu_dv,
+            [MAG_OP_TANH] = &unary_op_tanh,
+            [MAG_OP_TANH_DV] = &unary_op_tanh_dv,
+            [MAG_OP_RELU] = &unary_op_relu,
+            [MAG_OP_RELU_DV] = &unary_op_relu_dv,
+            [MAG_OP_GELU] = &unary_op_gelu,
+            [MAG_OP_GELU_APPROX] = &unary_op_gelu,
+            [MAG_OP_GELU_DV] = &unary_op_gelu_dv,
+            [MAG_OP_TRIL] = nullptr,
+            [MAG_OP_TRIU] = nullptr,
+            [MAG_OP_MULTINOMIAL] = nullptr,
+            [MAG_OP_CAT] = nullptr,
+            [MAG_OP_ADD] = &binary_op_add,
+            [MAG_OP_SUB] = &binary_op_sub,
+            [MAG_OP_MUL] = &binary_op_mul,
+            [MAG_OP_DIV] = &binary_op_div,
+            [MAG_OP_MATMUL] = nullptr,
+            [MAG_OP_REPEAT_BACK] = nullptr,
+            [MAG_OP_GATHER] = nullptr,
+            [MAG_OP_AND] = &binary_op_and,
+            [MAG_OP_OR] = &binary_op_or,
+            [MAG_OP_XOR] = &binary_op_xor,
+            [MAG_OP_NOT] = nullptr,
+            [MAG_OP_SHL] = &binary_op_shl,
+            [MAG_OP_SHR] = &binary_op_shr,
+            [MAG_OP_EQ] = &binary_op_eq,
+            [MAG_OP_NE] = &binary_op_ne,
+            [MAG_OP_LE] = &binary_op_le,
+            [MAG_OP_GE] = &binary_op_ge,
+            [MAG_OP_LT] = &binary_op_lt,
+            [MAG_OP_GT] = &binary_op_gt
+        };
+        static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
+        kernel_fn kern = dispatch_table[cmd->op];
+        mag_assert(kern != nullptr, "Operation %s not implemented in CUDA backend", mag_op_meta_of(cmd->op)->mnemonic);
+        (*kern)(cmd);
     }
 
     static void dealloc_storage_buffer(void *self) {
@@ -164,13 +204,13 @@ namespace mag {
 
     static void alloc_storage_buffer(mag_device_t *device, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
         mag_context_t *ctx = device->ctx;
-        void *block = nullptr;
-        mag_cuda_check(cudaMalloc(&block, size));
+        uintptr_t base;
+        mag_cuda_check(cudaMalloc(reinterpret_cast<void **>(&base), size));
         *out = static_cast<mag_storage_buffer_t*>(mag_fixed_pool_alloc_block(&ctx->storage_pool));
         new (*out) mag_storage_buffer_t {
             .ctx = ctx,
             .rc_control = mag_rc_control_init(*out, &dealloc_storage_buffer),
-            .base = reinterpret_cast<uintptr_t>(block),
+            .base = base,
             .size = size,
             .alignment = 256, // cudaMalloc guarantees this
             .granularity = mag_dtype_meta_of(dtype)->size,

@@ -24,7 +24,4 @@ extern "C" {
 
 namespace mag {
   constexpr uint32_t MAG_CUDA_BACKEND_VERSION = mag_ver_encode(0, 1, 0);
-  constexpr int UNARY_BLOCK_SIZE = 256;
-  constexpr int TRANSFER_BLOCK_SIZE = 256;
-  constexpr int BINARY_BLOCK_SIZE = 256;
 }
