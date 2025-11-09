@@ -14,6 +14,7 @@
 #include <core/mag_tensor.h>
 #include <core/mag_cpuid.h>
 #include <core/mag_alloc.h>
+#include <core/mag_shape.h>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -1863,8 +1864,7 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t *r, const m
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        bool full_cont = x->numel == r->numel && mag_tensor_is_contiguous(x) && mag_tensor_is_contiguous(r); \
-        if (full_cont) { \
+        if (mag_full_cont2(x, r)) { \
             mag_v##FUNC##_##T(rb-ra, br+ra, bx+ra); \
             return; \
         } \
@@ -2046,8 +2046,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        bool full_cont = x->numel == r->numel && x->numel == y->numel && mag_tensor_is_contiguous(x) && mag_tensor_is_contiguous(y) && mag_tensor_is_contiguous(r); \
-        if (full_cont) { \
+        if (mag_full_cont3(r, x, y)) { \
             mag_v##FUNC##_##T(rb-ra, br+ra, bx+ra, by+ra); \
             return; \
         } \
@@ -2162,8 +2161,7 @@ static int mag_cmp_i64(const void *a, const void *b) {
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        bool full_cont = x->numel == r->numel && x->numel == y->numel && mag_tensor_is_contiguous(x) && mag_tensor_is_contiguous(y) && mag_tensor_is_contiguous(r); \
-        if (full_cont) { \
+        if (mag_full_cont3(r, x, y)) { \
             mag_v##FUNC##_##T(rb-ra, br+ra, bx+ra, by+ra); \
             return; \
         } \

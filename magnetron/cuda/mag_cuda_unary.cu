@@ -50,9 +50,7 @@ namespace mag {
 
     template <mag_e8m23_t (&Op)(mag_e8m23_t)>
     static void impl_unary_op(mag_tensor_t *o, mag_tensor_t *x) {
-        mag_assert2(o->numel == x->numel);
-        mag_assert2(mag_tensor_is_contiguous(o));
-        mag_assert2(mag_tensor_is_contiguous(x));
+        mag_assert2(mag_full_cont2(o, x));
         mag_assert2(o->dtype == x->dtype);
         int n = static_cast<int>(o->numel);
         int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;

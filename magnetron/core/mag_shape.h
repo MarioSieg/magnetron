@@ -19,10 +19,12 @@ extern "C" {
 #endif
 
 #define MAG_FMT_DIM_BUF_SIZE ((21+4)*MAG_MAX_DIMS)
-extern void mag_fmt_shape(char (*buf)[MAG_FMT_DIM_BUF_SIZE], const int64_t (*dims)[MAG_MAX_DIMS], int64_t rank);
-extern bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t *osz, const int64_t *ost, int64_t ork, const int64_t *nsz, int64_t nrk);
-extern bool mag_infer_missing_dim(int64_t (*out)[MAG_MAX_DIMS], const int64_t *dims, int64_t rank, int64_t numel);
-extern bool mag_compute_broadcast_shape(const mag_tensor_t *a, const mag_tensor_t *b, int64_t *dims, int64_t *rank);
+extern MAG_EXPORT void mag_fmt_shape(char (*buf)[MAG_FMT_DIM_BUF_SIZE], const int64_t (*dims)[MAG_MAX_DIMS], int64_t rank);
+extern MAG_EXPORT bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t *osz, const int64_t *ost, int64_t ork, const int64_t *nsz, int64_t nrk);
+extern MAG_EXPORT bool mag_infer_missing_dim(int64_t (*out)[MAG_MAX_DIMS], const int64_t *dims, int64_t rank, int64_t numel);
+extern MAG_EXPORT bool mag_compute_broadcast_shape(const mag_tensor_t *a, const mag_tensor_t *b, int64_t *dims, int64_t *rank);
+extern MAG_EXPORT bool mag_full_cont2(const mag_tensor_t *a, const mag_tensor_t *b);
+extern MAG_EXPORT bool mag_full_cont3(const mag_tensor_t *a, const mag_tensor_t *b, const mag_tensor_t *c);
 
 #ifdef __cplusplus
 }

@@ -13,6 +13,7 @@
 
 #include <cuda/std/tuple>
 
+
 namespace mag {
     struct tensor_coords final {
         int rank = 0;
@@ -186,31 +187,25 @@ namespace mag {
 
     template <typename Op>
     static void launch_binary_op(
-        mag_tensor_t *out,
+        mag_tensor_t *r,
         const mag_tensor_t *x,
         const mag_tensor_t *y
     ) {
-        int total = static_cast<int>(mag_tensor_get_numel(out));
+        int total = static_cast<int>(mag_tensor_get_numel(r));
         int blocks = (total+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE;
-        bool contig =
-            mag_tensor_is_contiguous(out)
-            && mag_tensor_is_contiguous(x)
-            && mag_tensor_is_contiguous(y)
-            && x->numel == total
-            && y->numel == total;
-        if (contig) {
+        if (mag_full_cont3(r, x, y)) {
             binary_op_kernel_contig<Op><<<blocks, BINARY_BLOCK_SIZE>>>(
                 static_cast<int>(total),
-                static_cast<typename Op::TOut *>(mag_tensor_get_data_ptr(out)),
+                static_cast<typename Op::TOut *>(mag_tensor_get_data_ptr(r)),
                 static_cast<const typename Op::TIn *>(mag_tensor_get_data_ptr(x)),
                 static_cast<const typename Op::TIn *>(mag_tensor_get_data_ptr(y))
             );
         } else {
             binary_op_kernel_strided<Op><<<blocks, BINARY_BLOCK_SIZE>>>(
-                static_cast<typename Op::TOut *>(mag_tensor_get_data_ptr(out)),
+                static_cast<typename Op::TOut *>(mag_tensor_get_data_ptr(r)),
                static_cast<const typename Op::TIn *>(mag_tensor_get_data_ptr(x)),
                static_cast<const typename Op::TIn *>(mag_tensor_get_data_ptr(y)),
-                tensor_coords {out},
+                tensor_coords {r},
                 tensor_coords {x},
                 tensor_coords {y},
                 total
@@ -220,43 +215,43 @@ namespace mag {
 
     template <template <typename, typename> typename Op>
     static void impl_binary_op_numeric(const mag_command_t *cmd) {
-        mag_tensor_t *out = cmd->out[0];
+        mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
         const mag_tensor_t *y = cmd->in[1];
-        mag_assert2(out->dtype == x->dtype && out->dtype == y->dtype);
-        switch (out->dtype) {
-            case MAG_DTYPE_E8M23: launch_binary_op<Op<mag_e8m23_t, mag_e8m23_t>>(out, x, y); break;
-            case MAG_DTYPE_E5M10: launch_binary_op<Op<half, half>>(out, x, y); break;
-            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(out, x, y); break;
-            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(out->dtype));
+        mag_assert2(r->dtype == x->dtype && r->dtype == y->dtype);
+        switch (r->dtype) {
+            case MAG_DTYPE_E8M23: launch_binary_op<Op<mag_e8m23_t, mag_e8m23_t>>(r, x, y); break;
+            case MAG_DTYPE_E5M10: launch_binary_op<Op<half, half>>(r, x, y); break;
+            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
+            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
         }
     }
 
     template <template <typename, typename> typename Op>
     static void impl_binary_op_logical(const mag_command_t *cmd) {
-        mag_tensor_t *out = cmd->out[0];
+        mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
         const mag_tensor_t *y = cmd->in[1];
-        mag_assert2(out->dtype == x->dtype && out->dtype == y->dtype);
-        switch (out->dtype) {
-            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(out, x, y); break;
-            case MAG_DTYPE_BOOL: launch_binary_op<Op<uint8_t, uint8_t>>(out, x, y); break;
-            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(out->dtype));
+        mag_assert2(r->dtype == x->dtype && r->dtype == y->dtype);
+        switch (r->dtype) {
+            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
+            case MAG_DTYPE_BOOL: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
+            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
         }
     }
 
     template <template <typename, typename> typename Op>
     static void impl_binary_op_cmp(const mag_command_t *cmd) {
-        mag_tensor_t *out = cmd->out[0];
+        mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
         const mag_tensor_t *y = cmd->in[1];
-        mag_assert2(out->dtype == MAG_DTYPE_BOOL && x->dtype == y->dtype);
-        switch (out->dtype) {
-            case MAG_DTYPE_E8M23: launch_binary_op<Op<mag_e8m23_t, uint8_t>>(out, x, y); break;
-            case MAG_DTYPE_E5M10: launch_binary_op<Op<half, uint8_t>>(out, x, y); break;
-            case MAG_DTYPE_BOOL: launch_binary_op<Op<uint8_t, uint8_t>>(out, x, y); break;
-            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, uint8_t>>(out, x, y); break;
-            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(out->dtype));
+        mag_assert2(r->dtype == MAG_DTYPE_BOOL && x->dtype == y->dtype);
+        switch (r->dtype) {
+            case MAG_DTYPE_E8M23: launch_binary_op<Op<mag_e8m23_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_E5M10: launch_binary_op<Op<half, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_BOOL: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, uint8_t>>(r, x, y); break;
+            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
         }
     }
 

@@ -127,6 +127,17 @@ bool mag_compute_broadcast_shape(const mag_tensor_t *a, const mag_tensor_t *b, i
     return true;
 }
 
+bool mag_full_cont2(const mag_tensor_t *a, const mag_tensor_t *b) {
+    return a->numel == b->numel && mag_tensor_is_contiguous(a) && mag_tensor_is_contiguous(b);
+}
+
+bool mag_full_cont3(const mag_tensor_t *a, const mag_tensor_t *b, const mag_tensor_t *c) {
+    return a->numel == b->numel && a->numel == c->numel &&
+           mag_tensor_is_contiguous(a) &&
+           mag_tensor_is_contiguous(b) &&
+           mag_tensor_is_contiguous(c);
+}
+
 bool mag_tensor_is_shape_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
     return memcmp(x->shape, y->shape, sizeof(x->shape)) == 0;
 }
@@ -158,12 +169,13 @@ bool mag_tensor_is_permuted(const mag_tensor_t *t) {
 }
 
 bool mag_tensor_is_contiguous(const mag_tensor_t *t) {
-    int64_t str = 1;
-    for (int64_t d=t->rank-1; d >= 0; --d) {
-        int64_t size_d = t->shape[d];
-        if (size_d == 1) continue;
-        if (t->strides[d] != str) return false;
-        str *= size_d;
+    int64_t y=1;
+    int64_t i=t->rank-1, j;
+    for (; i >= 0; --i) {
+        j = t->shape[i];
+        if (j == 1) continue;
+        if (t->strides[i] != y) return false;
+        y *= j;
     }
     return true;
 }

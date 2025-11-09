@@ -14,6 +14,7 @@
 #include <core/mag_backend.h>
 #include <core/mag_context.h>
 #include <core/mag_tensor.h>
+#include <core/mag_shape.h>
 
 #include <cuda.h>
 #include <cuda_fp16.h>
