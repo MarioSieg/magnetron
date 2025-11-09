@@ -588,12 +588,10 @@ static MAG_AINLINE uint32_t mag_mulhilo32(uint32_t a, uint32_t b, uint32_t *hip)
     return (uint32_t)prod;
 }
 
-static inline void mag_ctr_inc_128(mag_philox4x32_ctr_t *ctr) {
+static MAG_AINLINE void mag_ctr_inc_128(mag_philox4x32_ctr_t *ctr) {
 #if defined(__SIZEOF_INT128__) && defined(MAG_LE)
     unsigned __int128 x;
-    memcpy(&x, ctr->v, sizeof(x));
-    ++x;
-    memcpy(ctr->v, &x, sizeof(x));
+    memcpy(&x, ctr->v, sizeof(x)); ++x; memcpy(ctr->v, &x, sizeof(x));
 #else /* Carry cascade */
     if (!++ctr->v[0])
         if (!++ctr->v[1])
@@ -619,13 +617,13 @@ static MAG_AINLINE mag_philox4x32_ctr_t mag_prng_sample(mag_philox4x32_key_t key
 }
 
 static MAG_AINLINE void mag_prng_next_u32x4(mag_philox4x32_stream_t *prng, uint32_t(*o)[4]) {
-    mag_philox4x32_ctr_t ctr = mag_prng_sample(prng->key, prng->ctr);
+    mag_philox4x32_ctr_t ctr = mag_prng_sample(prng->key, prng->ctr); /* TODO: use cache to avoid wasting 3/4 values */
     mag_ctr_inc_128(&prng->ctr);
     memcpy(o, &ctr, sizeof(ctr));
 }
 static MAG_AINLINE uint32_t mag_prng_next_u32(mag_philox4x32_stream_t *prng) {
     uint32_t r[4];
-    mag_prng_next_u32x4(prng, &r);
+    mag_prng_next_u32x4(prng, &r); /* TODO: use cache to avoid wasting 3/4 values */
     return *r;
 }
 

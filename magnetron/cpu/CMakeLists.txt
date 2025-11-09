@@ -1,11 +1,6 @@
 # (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
 
-set(MAGNETRON_CPU_SOURCES
-    mag_cpu.c
-    mag_cpu.h
-    mag_cpu_impl.inl
-    mag_cpu_fallback.c
-)
+file(GLOB MAGNETRON_CPU_SOURCES "*.h" "*.c" "*.inl")
 
 include(cmake/backend_specialization.cmake)
 include(cmake/backend_summary.cmake)
