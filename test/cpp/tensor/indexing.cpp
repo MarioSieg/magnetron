@@ -24,7 +24,7 @@ TEST(cpu_tensor_indexing, subscript_flattened_e8m23) {
         std::vector<float> data {t.to_vector<float>()};
         ASSERT_EQ(t.numel(), data.size());
         for (std::size_t i {0}; i < data.size(); ++i) {
-            ASSERT_FLOAT_EQ(t(i), data[i]);
+            ASSERT_FLOAT_EQ(t.to_vector<float>()[i], data[i]);
         }
     });
 }
@@ -37,7 +37,7 @@ TEST(cpu_tensor_indexing, subscript_flattened_e5m10) {
         std::vector<float> data {t.to_vector<float>()};
         ASSERT_EQ(t.numel(), data.size());
         for (std::size_t i {0}; i < data.size(); ++i) {
-            ASSERT_FLOAT_EQ(t(i), data[i]);
+            ASSERT_FLOAT_EQ(t.to_vector<float>()[i], data[i]);
         }
     });
 }

@@ -14,6 +14,7 @@
 
 #include "mag_def.h"
 #include "mag_rc.h"
+#include "mag_tensor_coords.h"
 #include "mag_operator.h"
 #include "mag_backend.h"
 
@@ -49,12 +50,10 @@ extern mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base);
 struct mag_tensor_t {
     mag_context_t  *ctx;                            /* Host context. */
     mag_rccontrol_t rc_control;                     /* Reference counting control block. */
-    int64_t rank;                                   /* Number of active dimensions. [1, MAX_DIMS] */
-    int64_t shape[MAG_MAX_DIMS];                    /* Shape of the tensor. */
-    int64_t strides[MAG_MAX_DIMS];                  /* Strides of the tensor. We store the strides in element counts and NOT in bytes. */
+    mag_tensor_coords_t coords;                     /* Coords */
     mag_dtype_t dtype : 8;                          /* Data type of the tensor. */
     mag_tensor_flags_t flags : 8;                   /* Tensor flags. */
-    mag_storage_buffer_t *storage;                        /* Storage buffer. */
+    mag_storage_buffer_t *storage;                  /* Storage buffer. */
     int64_t numel;                                  /* Number of elements in the tensor. */
     int64_t storage_offset;                         /* Offset in elements in the storage buffer for views. */
     mag_view_meta_t *view_meta;                     /* View metadata, if this is a view. */
@@ -64,6 +63,9 @@ struct mag_tensor_t {
     mag_tensor_t *alive_next;                       /* Next alive tensor used for leak detection. */
 #endif
 };
+
+extern MAG_EXPORT bool mag_full_cont2(const mag_tensor_t *a, const mag_tensor_t *b);
+extern MAG_EXPORT bool mag_full_cont3(const mag_tensor_t *a, const mag_tensor_t *b, const mag_tensor_t *c);
 
 #ifdef MAG_DEBUG
 extern void mag_leak_detector_enqueue(mag_tensor_t *t);

@@ -17,7 +17,7 @@ mag_status_t mag_op_backward_clone(mag_au_state_t *node, mag_tensor_t **grads) {
 
 mag_status_t mag_op_backward_view(mag_au_state_t *node, mag_tensor_t **grads) {
     mag_tensor_t *x = node->op_inputs[0];
-    return mag_reshape(grads, node->grad, x->shape, x->rank);
+    return mag_reshape(grads, node->grad, x->coords.shape, x->coords.rank);
 }
 
 mag_status_t mag_op_backward_transpose(mag_au_state_t *node, mag_tensor_t **grads) {

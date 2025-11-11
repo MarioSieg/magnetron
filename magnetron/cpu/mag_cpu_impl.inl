@@ -14,7 +14,7 @@
 #include <core/mag_tensor.h>
 #include <core/mag_cpuid.h>
 #include <core/mag_alloc.h>
-#include <core/mag_shape.h>
+#include <core/mag_tensor_coords.h>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -1729,47 +1729,6 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
     (void)payload;
 }
 
-static MAG_HOTPROC int64_t mag_offset_like(const mag_tensor_t *r, const mag_tensor_t *t, int64_t i) {
-    int64_t gap = r->rank - t->rank;
-    int64_t off = 0;
-    for (int64_t d = r->rank - 1; d >= 0; --d) {
-        int64_t c = i % r->shape[d];
-        i = i / r->shape[d];
-        if (t == r) off += c*r->strides[d];
-        else {
-            int64_t td = d - gap;
-            if (td >= 0 && t->shape[td] > 1)
-                off += c*t->strides[td];
-        }
-    }
-    return off;
-}
-
-static MAG_HOTPROC int64_t mag_offset_from_flat(const mag_tensor_t *t, int64_t i) {
-    int64_t off = 0;
-    for (int64_t d=t->rank-1; d >= 0; --d) {
-        int64_t coord = i % t->shape[d];
-        i /= t->shape[d];
-        off += coord*t->strides[d];
-    }
-    return off;
-}
-
-static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t *r, const mag_tensor_t *x, int64_t idx) {
-    int64_t rx = r->rank;
-    int64_t xx = x->rank;
-    int64_t shift = xx - rx;
-    int64_t roff = 0;
-    for (int64_t d=xx-1; d >= 0; --d) {
-        int64_t coord = idx % x->shape[d];
-        idx /= x->shape[d];
-        int64_t rd = d - shift;
-        if (rd >= 0)
-            roff += (coord % r->shape[rd])  *r->strides[rd];
-    }
-    return roff;
-}
-
 #define mag_gen_stub_clone(T) \
     static MAG_HOTPROC void mag_clone_##T(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
@@ -1781,8 +1740,8 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t *r, const m
             return; \
         } \
         for (int64_t i=0; i < r->numel; ++i) { \
-            int64_t ri = mag_offset_like(r, r, i); \
-            int64_t xi = mag_offset_like(r, x, i); \
+            int64_t ri = mag_coords_index_to_offset(&r->coords, i); \
+            int64_t xi = mag_coords_index_to_offset(&x->coords, i); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
             mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             br[ri] = bx[xi]; \
@@ -1815,7 +1774,7 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t *r, const m
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
         for (int64_t i=ra; i < rb; ++i) { \
-            int64_t mi = mag_offset_like(r, mask, i); \
+            int64_t mi = mag_coords_broadcast(&r->coords, &mask->coords, i); \
             mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
             mag_bnd_chk(bm+mi, bm, mag_tensor_get_data_size(mask)); \
             if (bm[mi]) br[i] = val; \
@@ -1867,8 +1826,8 @@ static MAG_HOTPROC int64_t mag_offset_repeat_like(const mag_tensor_t *r, const m
             return; \
         } \
         for (int64_t i=ra; i < rb; ++i) { \
-            int64_t ri = mag_offset_like(r, r, i); \
-            int64_t xi = mag_offset_like(r, x, i); \
+            int64_t ri = mag_coords_index_to_offset(&r->coords, i); \
+            int64_t xi = mag_coords_index_to_offset(&x->coords, i); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
             mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             mag_v##FUNC##_##T(1, br+ri, bx+xi); \
@@ -1894,7 +1853,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
         const mag_##T##_t *bx = mag_##T##p(x); \
         int64_t num_samples = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
         mag_philox4x32_stream_t *rng = payload->prng; \
-        int64_t K = x->shape[x->rank-1]; \
+        int64_t K = x->coords.shape[x->coords.rank-1]; \
         if (mag_unlikely(K <= 0)) return; \
         int64_t B = x->numel / K; \
         int64_t tc = payload->thread_num; \
@@ -1946,21 +1905,21 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
         const int64_t dim = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
         const int64_t n = payload->cmd->num_in; \
         mag_assert2(r && n > 0); \
-        mag_assert2(dim >= 0 && dim < r->rank); \
+        mag_assert2(dim >= 0 && dim < r->coords.rank); \
         \
-        int64_t R = r->rank; \
+        int64_t R = r->coords.rank; \
         mag_##T##_t *br = mag_##T##p_mut(r); \
         mag_assert2(mag_tensor_is_contiguous(r)); \
         \
         int64_t inner_block = 1; \
-        for (int64_t d = dim+1; d < R; ++d) inner_block *= r->shape[d]; \
+        for (int64_t d = dim+1; d < R; ++d) inner_block *= r->coords.shape[d]; \
         int64_t outer_count = 1; \
-        for (int64_t d=0; d < dim; ++d) outer_count *= r->shape[d]; \
+        for (int64_t d=0; d < dim; ++d) outer_count *= r->coords.shape[d]; \
         \
         int64_t mult[MAG_MAX_DIMS]; \
         for (int64_t d = 0; d < dim; ++d) { \
             int64_t m = 1; \
-            for (int64_t k = d + 1; k < dim; ++k) m *= r->shape[k]; \
+            for (int64_t k = d + 1; k < dim; ++k) m *= r->coords.shape[k]; \
             mult[d] = m; \
         } \
         \
@@ -1980,17 +1939,17 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
             } \
             \
             int64_t moff = 0; \
-            for (int64_t d=0; d < dim; ++d) moff += idx_prefix[d]  *r->strides[d]; \
+            for (int64_t d=0; d < dim; ++d) moff += idx_prefix[d]*r->coords.strides[d]; \
             int64_t cur = 0; \
             \
             for (int64_t i=0; i < n; ++i) { \
                 const mag_tensor_t *x = mag_cmd_in(i); \
                 int64_t smoff=0; \
                 for (int64_t d=0; d < dim; ++d) \
-                    smoff += idx_prefix[d]*x->strides[d]; \
-                int64_t cl = x->shape[dim]; \
+                    smoff += idx_prefix[d]*x->coords.strides[d]; \
+                int64_t cl = x->coords.shape[dim]; \
                 int64_t numel = cl*inner_block; \
-                int64_t oel = moff + cur*r->strides[dim]; \
+                int64_t oel = moff + cur*r->coords.strides[dim]; \
                 int64_t sel = smoff; \
                 const mag_##T##_t *restrict bx = mag_##T##p(x); \
                 const uint8_t *restrict src_ptr = (const uint8_t*)(bx+sel); \
@@ -2016,14 +1975,14 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        int64_t cols = r->shape[r->rank-1]; \
-        int64_t rows = r->shape[r->rank-2]; \
+        int64_t cols = r->coords.shape[r->coords.rank-1]; \
+        int64_t rows = r->coords.shape[r->coords.rank-2]; \
         int64_t mat = rows*cols; \
         for (int64_t ri=ra; ri < rb; ++ri) { \
             int64_t inner = ri % mat; \
             int64_t row = inner / cols; \
             int64_t col = inner - row*cols; \
-            int64_t xi = mag_offset_like(r, x, ri); \
+            int64_t xi = mag_coords_broadcast(&r->coords, &x->coords, ri); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
             mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             br[ri] = ((col-row) CMP diag) ? bx[xi] : (Z); \
@@ -2049,9 +2008,9 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
             return; \
         } \
         for (int64_t i=ra; i < rb; ++i) { \
-            int64_t ri = mag_offset_like(r, r, i); \
-            int64_t xi = mag_offset_like(r, x, i); \
-            int64_t yi = mag_offset_like(r, y, i); \
+            int64_t ri = mag_coords_index_to_offset(&r->coords, i); \
+            int64_t xi = mag_coords_broadcast(&r->coords, &x->coords, i); \
+            int64_t yi = mag_coords_broadcast(&r->coords, &y->coords, i); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
             mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y)); \
             mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
@@ -2071,7 +2030,7 @@ static int mag_cmp_i64(const void *a, const void *b) {
         const mag_tensor_t *x = mag_cmd_in(0); \
         const mag_##T##_t *bx = mag_##T##p(x); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
-        int64_t nd = x->rank; \
+        int64_t nd = x->coords.rank; \
         int64_t rank = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
         int64_t axes[MAG_MAX_DIMS]; \
         for (int64_t i=0; i<rank; ++i){ \
@@ -2093,15 +2052,15 @@ static int mag_cmp_i64(const void *a, const void *b) {
         int64_t out_numel = r->numel; \
         int64_t red_prod = 1; (void)red_prod; \
         for (int64_t k=0; k < rank; ++k) \
-            red_prod *= x->shape[axes[k]]; \
+            red_prod *= x->coords.shape[axes[k]]; \
         for (int64_t oi=0; oi<out_numel; ++oi) { \
             int64_t rem = oi, off = 0; \
             for (int64_t j=nk-1; j >= 0; --j) { \
                 int64_t ax = keep_axes[j]; \
-                int64_t sz = x->shape[ax]; \
+                int64_t sz = x->coords.shape[ax]; \
                 int64_t idx = (sz > 1) ? rem % sz : 0; \
                 if (sz > 1) rem /= sz; \
-                off += idx*x->strides[ax]; \
+                off += idx*x->coords.strides[ax]; \
             } \
             ACC_T acc = (INIT_EXPR); \
             int64_t ctr[MAG_MAX_DIMS] = {0}; \
@@ -2113,8 +2072,8 @@ static int mag_cmp_i64(const void *a, const void *b) {
                 int64_t k=0; \
                 for (; k < rank; ++k) { \
                     int64_t ax = axes[k]; \
-                    if (++ctr[k] < x->shape[ax]) { cur += x->strides[ax]; break; } \
-                    cur -= x->strides[ax]*(x->shape[ax]-1); \
+                    if (++ctr[k] < x->coords.shape[ax]) { cur += x->coords.strides[ax]; break; } \
+                    cur -= x->coords.strides[ax]*(x->coords.shape[ax]-1); \
                     ctr[k]=0; \
                 } \
                 if (k == rank) break; \
@@ -2134,11 +2093,11 @@ static int mag_cmp_i64(const void *a, const void *b) {
         const mag_##T##_t *bx = mag_##T##p(x); \
         for (int64_t i=0; i < r->numel; ++i) { \
             mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
-            br[mag_offset_like(r, r, i)] = (Z); \
+            br[mag_coords_index_to_offset(&r->coords, i)] = (Z); \
         } \
         for (int64_t i=0; i < x->numel; ++i) { \
-            int64_t xi = mag_offset_like(x, x, i); \
-            int64_t ri = mag_offset_repeat_like(r, x, i); \
+            int64_t xi = mag_coords_index_to_offset(&x->coords, i); \
+            int64_t ri = mag_coords_index_repeat(&r->coords, &x->coords, i); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
             mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             br[ri] = RCVT(CVT(br[ri]) + CVT(bx[xi])); \
@@ -2164,9 +2123,9 @@ static int mag_cmp_i64(const void *a, const void *b) {
             return; \
         } \
         for (int64_t i=ra; i < rb; ++i) { \
-            int64_t ri = mag_offset_like(r, r, i); \
-            int64_t xi = mag_offset_like(r, x, i); \
-            int64_t yi = mag_offset_like(r, y, i); \
+            int64_t ri = mag_coords_index_to_offset(&r->coords, i); \
+            int64_t xi = mag_coords_broadcast(&r->coords, &x->coords, i); \
+            int64_t yi = mag_coords_broadcast(&r->coords, &y->coords, i); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
             mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y)); \
             mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
@@ -2183,59 +2142,59 @@ static int mag_cmp_i64(const void *a, const void *b) {
         const mag_##T##_t *bx = mag_##T##p(src); \
         const mag_i32_t *bi = mag_i32p(index); \
         int64_t axis = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
-        if (axis < 0) axis += src->rank; \
-        mag_assert2(axis >= 0 && axis < src->rank); \
-        mag_assert2(index->rank >= 1); \
-        int64_t ax = src->shape[axis]; \
+        if (axis < 0) axis += src->coords.rank; \
+        mag_assert2(axis >= 0 && axis < src->coords.rank); \
+        mag_assert2(index->coords.rank >= 1); \
+        int64_t ax = src->coords.shape[axis]; \
         int64_t on = r->numel; \
         int64_t oc[MAG_MAX_DIMS]; \
         int64_t sc[MAG_MAX_DIMS]; \
         bool full = true; \
-        for (int64_t d = 0; d < src->rank; ++d) { \
+        for (int64_t d = 0; d < src->coords.rank; ++d) { \
             if (d == axis) continue; \
-            if (index->shape[d] != src->shape[d]) { \
+            if (index->coords.shape[d] != src->coords.shape[d]) { \
                 full = false; \
                 break; \
             } \
         } \
         for (int64_t flat=0; flat < on; ++flat) { \
             int64_t tmp = flat; \
-            for (int64_t d=r->rank-1; d >= 0; --d) { \
-                oc[d] = tmp % r->shape[d]; \
-                tmp /= r->shape[d]; \
+            for (int64_t d=r->coords.rank-1; d >= 0; --d) { \
+                oc[d] = tmp % r->coords.shape[d]; \
+                tmp /= r->coords.shape[d]; \
             } \
             int64_t gather_idx; \
             if (full) { \
-                int64_t index_offset = mag_offset_from_flat(index, flat); \
+                int64_t index_offset = mag_coords_index_to_offset(&index->coords, flat); \
                 gather_idx = bi[index_offset]; \
-            } else if (index->rank == 1) { \
+            } else if (index->coords.rank == 1) { \
                 int64_t idx_pos = oc[axis]; \
-                mag_assert2(idx_pos >= 0 && idx_pos < index->shape[0]); \
-                int64_t index_offset = idx_pos*index->strides[0]; \
+                mag_assert2(idx_pos >= 0 && idx_pos < index->coords.shape[0]); \
+                int64_t index_offset = idx_pos*index->coords.strides[0]; \
                 gather_idx = bi[index_offset]; \
             } else { \
                 int64_t idx_coords[MAG_MAX_DIMS]; \
-                for (int64_t i=0; i < index->rank; ++i) idx_coords[i] = oc[axis+i]; \
+                for (int64_t i=0; i < index->coords.rank; ++i) idx_coords[i] = oc[axis+i]; \
                 int64_t index_offset = 0; \
-                for (int64_t d=0; d < index->rank; ++d) index_offset += idx_coords[d]*index->strides[d]; \
+                for (int64_t d=0; d < index->coords.rank; ++d) index_offset += idx_coords[d]*index->coords.strides[d]; \
                 gather_idx = bi[index_offset]; \
             } \
             if (gather_idx < 0) gather_idx += ax; \
             mag_assert2(gather_idx >= 0 && gather_idx < ax); \
             if (full) { \
-                for (int64_t d=0; d < src->rank; ++d) sc[d] = oc[d]; \
+                for (int64_t d=0; d < src->coords.rank; ++d) sc[d] = oc[d]; \
                 sc[axis] = gather_idx; \
-            } else if (index->rank == 1) { \
-                for (int64_t d=0; d < src->rank; ++d) sc[d] = oc[d]; \
+            } else if (index->coords.rank == 1) { \
+                for (int64_t d=0; d < src->coords.rank; ++d) sc[d] = oc[d]; \
                 sc[axis] = gather_idx; \
             } else { \
                 for (int64_t d=0; d < axis; ++d) sc[d] = oc[d]; \
                 sc[axis] = gather_idx; \
-                for (int64_t d=axis+1; d < src->rank; ++d) sc[d] = oc[index->rank+d-1]; \
+                for (int64_t d=axis+1; d < src->coords.rank; ++d) sc[d] = oc[index->coords.rank+d-1]; \
             } \
             int64_t src_offset = 0, dest_offset = 0; \
-            for (int64_t d=0; d < src->rank; ++d) src_offset += sc[d]*src->strides[d]; \
-            for (int64_t d=0; d < r->rank; ++d) dest_offset += oc[d]*r->strides[d]; \
+            for (int64_t d=0; d < src->coords.rank; ++d) src_offset += sc[d]*src->coords.strides[d]; \
+            for (int64_t d=0; d < r->coords.rank; ++d) dest_offset += oc[d]*r->coords.strides[d]; \
             mag_bnd_chk(bx + src_offset, bx, mag_tensor_get_data_size(src)); \
             mag_bnd_chk(br + dest_offset, br, mag_tensor_get_data_size(r)); \
             br[dest_offset] = bx[src_offset]; \
@@ -2314,7 +2273,7 @@ static void MAG_HOTPROC mag_softmax_e8m23(const mag_kernel_payload_t *payload) {
     const mag_tensor_t *x = mag_cmd_in(0);
     mag_e8m23_t *br = mag_e8m23p_mut(r);
     const mag_e8m23_t *bx = mag_e8m23p(x);
-    int64_t last_dim = r->shape[r->rank-1];
+    int64_t last_dim = r->coords.shape[r->coords.rank-1];
     int64_t num_rows = r->numel / last_dim;
     int64_t tc = payload->thread_num;
     int64_t ti = payload->thread_idx;
@@ -2350,7 +2309,7 @@ static void MAG_HOTPROC mag_softmax_e5m10(const mag_kernel_payload_t *payload) {
     const mag_tensor_t *x = mag_cmd_in(0);
     mag_e5m10_t *br = mag_e5m10p_mut(r);
     const mag_e5m10_t *bx = mag_e5m10p(x);
-    int64_t last_dim = r->shape[r->rank-1];
+    int64_t last_dim = r->coords.shape[r->coords.rank-1];
     int64_t num_rows = r->numel / last_dim;
     int64_t tc = payload->thread_num;
     int64_t ti = payload->thread_idx;
@@ -2523,9 +2482,9 @@ mag_gen_stub_cmp(ge, e5m10, >=, mag_e5m10_cvt_e8m23)
 mag_gen_stub_cmp(ge, i32, >=, mag_cvt_nop)
 
 static int64_t mag_offset_rmn(const mag_tensor_t *t, int64_t flat, int64_t i, int64_t j) {
-    int64_t ra = t->rank;
-    const int64_t *restrict td = t->shape;
-    const int64_t *restrict ts = t->strides;
+    int64_t ra = t->coords.rank;
+    const int64_t *restrict td = t->coords.shape;
+    const int64_t *restrict ts = t->coords.strides;
     if (mag_likely(ra <= 3)) { /* Fast path */
         switch (ra) {
         case 1:
@@ -2562,7 +2521,7 @@ static MAG_HOTPROC mag_e5m10_t *mag_mm_pack_x_e5m10(mag_e5m10_t *xbuf, int64_t M
 }
 
 static MAG_HOTPROC mag_e5m10_t *mag_mm_pack_y_e5m10(mag_e5m10_t *ybuf, int64_t K, int64_t N, int64_t yb, const mag_tensor_t *y, const mag_e5m10_t *py) {
-    if (y->rank == 1) {
+    if (y->coords.rank == 1) {
         for (int64_t k=0; k < K; ++k) {
             for (int64_t n=0; n < N; ++n) {
                 ybuf[n*K + k] = py[k];
@@ -3824,18 +3783,18 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
     int64_t KC = payload->mm_params.KC;
     int64_t NC = payload->mm_params.NC;
     int64_t NR = payload->mm_params.NR;
-    int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
-    int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
-    int64_t K = x->shape[x->rank-1];
-    int64_t bdr = r->rank > 2 ? r->rank - 2 : 0;
+    int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank-2];
+    int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank-1];
+    int64_t K = x->coords.shape[x->coords.rank-1];
+    int64_t bdr = r->coords.rank > 2 ? r->coords.rank - 2 : 0;
     int64_t batch_total = 1;
     for (int64_t d=0; d < bdr; ++d)
-        batch_total *= r->shape[d];
-    if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) { /* Detect GEMV */
+        batch_total *= r->coords.shape[d];
+    if (M == 1 && K >= 128 && N >= 4096 && y->coords.rank == 2 && y->coords.strides[y->coords.rank-1] == 1) { /* Detect GEMV */
         int64_t nth = payload->thread_num;
         int64_t tid = payload->thread_idx;
         int64_t j_per_thread = (N + nth - 1) / nth;
-        int64_t j0 = tid  *j_per_thread;
+        int64_t j0 = tid*j_per_thread;
         int64_t j1 = mag_xmin(N, j0 + j_per_thread);
         for (int64_t batch = 0; batch < batch_total; ++batch) {
             const mag_e8m23_t *A = bx + mag_offset_rmn(x, batch, 0, 0);
@@ -3845,8 +3804,8 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
         }
         return;
     }
-    int64_t bdx = x->rank > 2 ? x->rank-2 : 0;
-    int64_t bdy = y->rank > 2 ? y->rank-2 : 0;
+    int64_t bdx = x->coords.rank > 2 ? x->coords.rank-2 : 0;
+    int64_t bdy = y->coords.rank > 2 ? y->coords.rank-2 : 0;
     int64_t tic = (M+MC-1)/MC;
     int64_t tjc = (N+NC-1)/NC;
     int64_t tpb = tic  *tjc;
@@ -3863,20 +3822,20 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
         int64_t ic = rem / tjc;
         int64_t idx_r[MAG_MAX_DIMS] = {0};
         for (int64_t d=bdr-1, t=batch_idx; d >= 0; --d) {
-            idx_r[d] = t % r->shape[d];
-            t /= r->shape[d];
+            idx_r[d] = t % r->coords.shape[d];
+            t /= r->coords.shape[d];
         }
         int64_t xb_flat = 0;
         for (int64_t d=0; d < bdx; ++d) {
             int64_t rd = bdr - bdx + d;
-            xb_flat = xb_flat*x->shape[d] + (x->shape[d] == 1 ? 0 : idx_r[rd]);
+            xb_flat = xb_flat*x->coords.shape[d] + (x->coords.shape[d] == 1 ? 0 : idx_r[rd]);
         }
         int64_t yb_flat = 0;
         for (int64_t d=0; d < bdy; ++d) {
             int64_t rd = bdr - bdy + d;
-            yb_flat = yb_flat*y->shape[d] + (y->shape[d] == 1 ? 0 : idx_r[rd]);
+            yb_flat = yb_flat*y->coords.shape[d] + (y->coords.shape[d] == 1 ? 0 : idx_r[rd]);
         }
-        bool yv = y->rank == 1;
+        bool yv = y->coords.rank == 1;
         const mag_e8m23_t *px_base = bx + mag_offset_rmn(x, xb_flat, 0, 0);
         const mag_e8m23_t *py_base = by + mag_offset_rmn(y, yb_flat, 0, 0);
         mag_e8m23_t *pr_base = br + mag_offset_rmn(r, batch_idx, 0, 0);
@@ -3884,13 +3843,13 @@ MAG_HOTPROC static void mag_matmul_e8m23(const mag_kernel_payload_t *payload) {
         int64_t mc = i0+MC <= M ? MC : M-i0;
         int64_t j0 = jc*NC;
         int64_t nc = j0+NC <= N ? NC : N-j0;
-        int64_t sMx = x->strides[x->rank-2];
-        int64_t sKx = x->strides[x->rank-1];
-        int64_t sKy = yv ? 0 : y->strides[y->rank-2];
-        int64_t sNy = yv ? 0 : y->strides[y->rank-1];
+        int64_t sMx = x->coords.strides[x->coords.rank-2];
+        int64_t sKx = x->coords.strides[x->coords.rank-1];
+        int64_t sKy = yv ? 0 : y->coords.strides[y->coords.rank-2];
+        int64_t sNy = yv ? 0 : y->coords.strides[y->coords.rank-1];
         for (int64_t pc = 0; pc < K; pc += KC) {
             int64_t kc = mag_xmin(KC, K - pc);
-            if (y->rank == 1) mag_mm_pack_B_vec_e8m23(kc, nc, py_base + pc, Bp);
+            if (y->coords.rank == 1) mag_mm_pack_B_vec_e8m23(kc, nc, py_base + pc, Bp);
             else mag_mm_pack_B_kc_nc_e8m23(kc, nc, py_base + pc*sKy +  j0*sNy, sKy, sNy, Bp);
             mag_mm_pack_A_mc_kc_panel8_e8m23(kc, mc,  px_base + i0*sMx + pc*sKx, sMx, sKx, Ap);
             for (int64_t ir=0; ir < mc; ir += MR)
@@ -3918,15 +3877,15 @@ static MAG_HOTPROC void mag_matmul_e5m10(const mag_kernel_payload_t *payload) {
     mag_e5m10_t *br = mag_e5m10p_mut(r);
     const mag_e5m10_t *bx = mag_e5m10p(x);
     const mag_e5m10_t *by = mag_e5m10p(y);
-    int64_t M = x->rank == 1 ? 1 : x->shape[x->rank - 2];
-    int64_t N = y->rank == 1 ? 1 : y->shape[y->rank - 1];
-    int64_t K = x->shape[x->rank - 1];
-    int64_t bdr = r->rank > 2 ? r->rank-2 : 0;
+    int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank - 2];
+    int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank - 1];
+    int64_t K = x->coords.shape[x->coords.rank - 1];
+    int64_t bdr = r->coords.rank > 2 ? r->coords.rank-2 : 0;
     int64_t batch_total = 1;
-    for (int64_t d=0; d < bdr; ++d) batch_total *= r->shape[d];
-    int64_t bdx = x->rank > 2 ? x->rank-2 : 0;
-    int64_t bdy = y->rank > 2 ? y->rank-2 : 0;
-    bool x_row = mag_tensor_is_contiguous(x) && x->strides[x->rank-1] == 1;
+    for (int64_t d=0; d < bdr; ++d) batch_total *= r->coords.shape[d];
+    int64_t bdx = x->coords.rank > 2 ? x->coords.rank-2 : 0;
+    int64_t bdy = y->coords.rank > 2 ? y->coords.rank-2 : 0;
+    bool x_row = mag_tensor_is_contiguous(x) && x->coords.strides[x->coords.rank-1] == 1;
     mag_e5m10_t *scratch = mag_sb_acquire(sizeof(mag_e5m10_t)*(K*N + (x_row ? 0 : M*K)));
     mag_e5m10_t *xbuf = x_row ? NULL : scratch;
     mag_e5m10_t *ybuf = scratch + (x_row ? 0 : M*K);
@@ -3934,22 +3893,22 @@ static MAG_HOTPROC void mag_matmul_e5m10(const mag_kernel_payload_t *payload) {
     for (int64_t b=0; b < batch_total; ++b) {
         int64_t rem = b;
         for (int64_t d = bdr-1; d >= 0; --d) {
-            idx_r[d] = rem % r->shape[d];
-            rem /= r->shape[d];
+            idx_r[d] = rem % r->coords.shape[d];
+            rem /= r->coords.shape[d];
         }
         int64_t xb_flat = 0, yb_flat = 0;
         if (bdx) {
             for (int64_t d=0; d < bdx; ++d) {
                 int64_t rd = bdr - bdx + d;
-                int64_t idx = x->shape[d] == 1 ? 0 : idx_r[rd];
-                xb_flat = xb_flat  *x->shape[d] + idx;
+                int64_t idx = x->coords.shape[d] == 1 ? 0 : idx_r[rd];
+                xb_flat = xb_flat  *x->coords.shape[d] + idx;
             }
         }
         if (bdy) {
             for (int64_t d=0; d < bdy; ++d) {
                 int64_t rd = bdr - bdy + d;
-                int64_t idx = y->shape[d] == 1 ? 0 : idx_r[rd];
-                yb_flat = yb_flat  *y->shape[d] + idx;
+                int64_t idx = y->coords.shape[d] == 1 ? 0 : idx_r[rd];
+                yb_flat = yb_flat  *y->coords.shape[d] + idx;
             }
         }
         const mag_e5m10_t *px = bx + mag_offset_rmn(x, xb_flat, 0, 0);

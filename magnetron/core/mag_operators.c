@@ -10,7 +10,6 @@
 */
 
 #include "mag_autodiff.h"
-#include "mag_shape.h"
 #include "mag_context.h"
 
 /*
@@ -76,7 +75,7 @@ static void mag_bump_version(mag_tensor_t *t) {
 }
 
 static mag_status_t mag_tensor_strided_view(mag_tensor_t **out, mag_tensor_t *base) {
-    return mag_tensor_as_strided(out, base->ctx, base, base->rank, base->shape, base->strides, base->storage_offset);
+    return mag_tensor_as_strided(out, base->ctx, base, base->coords.rank, base->coords.shape, base->coords.strides, base->storage_offset);
 }
 
 /* Execute an operator on the active compute device and return result tensor. */
@@ -171,7 +170,7 @@ mag_status_t mag_view(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, 
     mag_status_t stat;
     mag_contract(ctx, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Invalid dimensions rank, must be [0, %d], but is %" PRIi64, MAG_MAX_DIMS, rank);
     if (rank <= 0) {
-        stat = mag_tensor_as_strided(&result, x->ctx, x, x->rank, x->shape, x->strides, x->storage_offset);
+        stat = mag_tensor_as_strided(&result, x->ctx, x, x->coords.rank, x->coords.shape, x->coords.strides, x->storage_offset);
         if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     } else {
         mag_contract(ctx, ERR_INVALID_PARAM, {}, dims != NULL, "Dims cannot be NULL if rank > 0");
@@ -180,19 +179,19 @@ mag_status_t mag_view(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, 
         int64_t shape[MAG_MAX_DIMS];
         mag_contract(ctx, ERR_INVALID_DIM, {}, mag_infer_missing_dim(&shape, new_dims, rank, x->numel), "Cannot infer missing dimension for view");
         int64_t strides[MAG_MAX_DIMS];
-        if (rank == x->rank && !memcmp(shape, x->shape, rank*sizeof(*shape))) { /* Stride strategy: same shape as base */
-            memcpy(strides, x->strides, rank*sizeof(*shape));
-        } else if (rank == x->rank+1 && shape[rank-2]*shape[rank-1] == x->shape[x->rank-1]) { /* Stride strategy: last dim only */
-            memcpy(strides, x->strides, (rank-2)*sizeof(*strides));
-            strides[rank-2] = x->strides[x->rank-1]*shape[rank-1];
-            strides[rank-1] = x->strides[x->rank-1];
+        if (rank == x->coords.rank && !memcmp(shape, x->coords.shape, rank*sizeof(*shape))) { /* Stride strategy: same shape as base */
+            memcpy(strides, x->coords.strides, rank*sizeof(*shape));
+        } else if (rank == x->coords.rank+1 && shape[rank-2]*shape[rank-1] == x->coords.shape[x->coords.rank-1]) { /* Stride strategy: last dim only */
+            memcpy(strides, x->coords.strides, (rank-2)*sizeof(*strides));
+            strides[rank-2] = x->coords.strides[x->coords.rank-1]*shape[rank-1];
+            strides[rank-1] = x->coords.strides[x->coords.rank-1];
         } else if (mag_tensor_is_contiguous(x)) { /* Stride strategy: contiguous row-major */
             strides[rank-1] = 1;
             for (int64_t d = rank-2; d >= 0; --d) {
                 mag_contract(ctx, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[d+1], strides[d+1], strides+d), "Dimension overflow when calculating strides for view");
             }
         } else { /* Stride strategy: solve generic strides */
-            mag_contract(ctx, ERR_STRIDE_SOLVER_FAILED, {}, mag_solve_view_strides(&strides, x->shape, x->strides, x->rank, shape, rank),
+            mag_contract(ctx, ERR_STRIDE_SOLVER_FAILED, {}, mag_solve_view_strides(&strides, x->coords.shape, x->coords.strides, x->coords.rank, shape, rank),
                "Tensor is not contiguous enough to be viewed\n"
                "Consider calling contiguous() or reshape() instead"
             );
@@ -220,7 +219,7 @@ mag_status_t mag_reshape(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dim
     mag_status_t stat;
     int64_t shape[MAG_MAX_DIMS];
     mag_contract(ctx, ERR_INVALID_DIM, {}, mag_infer_missing_dim(&shape, dims, rank, x->numel), "Cannot infer missing dimension for reshape");
-    if (x->rank == rank && !memcmp(x->shape, shape, sizeof(*dims)*rank)) {
+    if (x->coords.rank == rank && !memcmp(x->coords.shape, shape, sizeof(*dims)*rank)) {
         mag_tensor_incref(x);
         *out = x;
         return MAG_STATUS_OK;
@@ -262,9 +261,9 @@ mag_status_t mag_reshape(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dim
 mag_status_t mag_view_slice(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, int64_t start, int64_t len, int64_t step) {
     *out = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_contract(ctx, ERR_INVALID_RANK, {}, dim >= 0 && dim < x->rank, "Dim %" PRIi64 " out of range for rank %" PRIi64, dim, x->rank);
+    mag_contract(ctx, ERR_INVALID_RANK, {}, dim >= 0 && dim < x->coords.rank, "Dim %" PRIi64 " out of range for rank %" PRIi64, dim, x->coords.rank);
     mag_contract(ctx, ERR_INVALID_PARAM, {}, step != 0, "Slice step must be != 0");
-    int64_t sz = x->shape[dim];
+    int64_t sz = x->coords.shape[dim];
     int64_t stop;
     if (step > 0) {
         if (start < 0) start += sz;
@@ -285,15 +284,15 @@ mag_status_t mag_view_slice(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, in
     mag_contract(ctx, ERR_INVALID_PARAM, {}, len > 0, "Slice length is 0");
     int64_t shape[MAG_MAX_DIMS];
     int64_t strides[MAG_MAX_DIMS];
-    memcpy(shape, x->shape, sizeof(shape));
-    memcpy(strides, x->strides, sizeof(strides));
+    memcpy(shape, x->coords.shape, sizeof(shape));
+    memcpy(strides, x->coords.strides, sizeof(strides));
     shape[dim] = len;
-    strides[dim] = x->strides[dim]*step;
+    strides[dim] = x->coords.strides[dim]*step;
     int64_t tmp[MAG_MAX_DIMS];
-    if (mag_solve_view_strides(&tmp, shape, strides, x->rank, shape, x->rank))
+    if (mag_solve_view_strides(&tmp, shape, strides, x->coords.rank, shape, x->coords.rank))
         memcpy(strides, tmp, sizeof(tmp));
-    int64_t offset = x->storage_offset + start*x->strides[dim];
-    return mag_tensor_as_strided(out, x->ctx, x, x->rank, shape, strides, offset);
+    int64_t offset = x->storage_offset + start*x->coords.strides[dim];
+    return mag_tensor_as_strided(out, x->ctx, x, x->coords.rank, shape, strides, offset);
 }
 
 mag_status_t mag_transpose(mag_tensor_t **out, mag_tensor_t *x, int64_t dim1, int64_t dim2) {
@@ -301,9 +300,9 @@ mag_status_t mag_transpose(mag_tensor_t **out, mag_tensor_t *x, int64_t dim1, in
     mag_context_t *ctx = x->ctx;
     mag_tensor_t *result = NULL;
     mag_status_t stat;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->rank >= 2, "Transpose requires rank >= 2, but got: %" PRIi64, x->rank);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 2, "Transpose requires rank >= 2, but got: %" PRIi64, x->coords.rank);
     mag_contract(ctx, ERR_INVALID_PARAM, {}, dim1 != dim2, "Transposition axes must be unequal, but: %" PRIi64 " = %" PRIi64, dim1, dim2);
-    int64_t ra = x->rank;
+    int64_t ra = x->coords.rank;
     int64_t ax0 = dim1;
     int64_t ax1 = dim2;
     if (ax0 < 0) ax0 += ra;
@@ -312,11 +311,11 @@ mag_status_t mag_transpose(mag_tensor_t **out, mag_tensor_t *x, int64_t dim1, in
     mag_contract(ctx, ERR_INVALID_PARAM, {}, ax1 >= 0 && ax1 < ra, "Invalid transposition axis: %" PRIi64, dim2);
     int64_t shape[MAG_MAX_DIMS];
     int64_t stride[MAG_MAX_DIMS];
-    memcpy(shape, x->shape, sizeof shape);
-    memcpy(stride, x->strides, sizeof stride);
+    memcpy(shape, x->coords.shape, sizeof shape);
+    memcpy(stride, x->coords.strides, sizeof stride);
     mag_swap(int64_t, shape[ax0], shape[ax1]);
     mag_swap(int64_t, stride[ax0], stride[ax1]);
-    stat = mag_tensor_as_strided(&result, x->ctx, x, x->rank, shape, stride, x->storage_offset);
+    stat = mag_tensor_as_strided(&result, x->ctx, x, x->coords.rank, shape, stride, x->storage_offset);
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
@@ -343,10 +342,10 @@ mag_status_t mag_permute(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dim
     int64_t shape[MAG_MAX_DIMS];
     int64_t stride[MAG_MAX_DIMS];
     for (int64_t i=0; i < rank; ++i) {
-        shape[i] = x->shape[axes[i]];
-        stride[i] = x->strides[axes[i]];
+        shape[i] = x->coords.shape[axes[i]];
+        stride[i] = x->coords.strides[axes[i]];
     }
-    stat = mag_tensor_as_strided(&result, x->ctx, x, x->rank, shape, stride, x->storage_offset);
+    stat = mag_tensor_as_strided(&result, x->ctx, x, x->coords.rank, shape, stride, x->storage_offset);
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_dispatch(MAG_OP_PERMUTE, false, NULL, &x, 1, &result, 1);
     *out = result;
@@ -375,17 +374,17 @@ static mag_status_t mag_op_stub_reduction(mag_tensor_t **out, mag_opcode_t op, m
     mag_status_t stat;
     mag_contract(ctx, ERR_INVALID_RANK, {}, dims != NULL || rank == 0, "Either dims must be non-NULL or rank must be 0");
     mag_contract(ctx, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Invalid dimensions rank, must be [0, %d], but is %" PRIi64, MAG_MAX_DIMS, rank);
-    mag_contract(ctx, ERR_INVALID_RANK, {}, x->rank >= rank, "Cannot reduce over more dimensions than tensor has: rank=%" PRIi64 ", dims=%" PRIi64, x->rank, rank);
+    mag_contract(ctx, ERR_INVALID_RANK, {}, x->coords.rank >= rank, "Cannot reduce over more dimensions than tensor has: rank=%" PRIi64 ", dims=%" PRIi64, x->coords.rank, rank);
     int64_t ax[MAG_MAX_DIMS];
     if (!dims && !rank) {
-        rank = x->rank;
+        rank = x->coords.rank;
         for (int64_t i=0; i < rank; ++i) ax[i] = i;
         dims = ax;
     } else if (dims) {
         for (int64_t i=0; i<rank; ++i) {
             int64_t a = dims[i];
-            if (a < 0) a += x->rank;
-            mag_contract(ctx, ERR_INVALID_DIM, {}, 0 <= a && a < x->rank, "Axis out of bounds: %" PRIi64 " for rank %" PRIi64, a, x->rank);
+            if (a < 0) a += x->coords.rank;
+            mag_contract(ctx, ERR_INVALID_DIM, {}, 0 <= a && a < x->coords.rank, "Axis out of bounds: %" PRIi64 " for rank %" PRIi64, a, x->coords.rank);
             ax[i] = a;
         }
         qsort(ax, (size_t)rank, sizeof(int64_t), &mag_cmp_axis);
@@ -396,7 +395,7 @@ static mag_status_t mag_op_stub_reduction(mag_tensor_t **out, mag_opcode_t op, m
         rank = r;
         dims = ax;
     }
-    int64_t xrank = x->rank;
+    int64_t xrank = x->coords.rank;
     int64_t prev = -1;
     for (int64_t i=0; i < rank; ++i) {
         int64_t a = dims[i];
@@ -411,7 +410,7 @@ static mag_status_t mag_op_stub_reduction(mag_tensor_t **out, mag_opcode_t op, m
             if (keepdim) shape[j++] = 1;
             ++k;
         }
-        else shape[j++] = x->shape[d];
+        else shape[j++] = x->coords.shape[d];
     }
     int64_t orank = keepdim ? xrank : xrank - rank;
     stat = !keepdim && !orank ? mag_tensor_empty_scalar(&result, x->ctx, x->dtype) : mag_tensor_empty(&result, x->ctx, x->dtype, orank, shape);
@@ -509,7 +508,7 @@ mag_impl_unary_pair(gelu_dv, GELU_DV)
 mag_status_t mag_tril(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
     *out = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->rank);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->coords.rank);
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(diag));
@@ -519,7 +518,7 @@ mag_status_t mag_tril(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
 mag_status_t mag_tril_(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
     *out = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->rank);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->coords.rank);
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(diag));
@@ -529,7 +528,7 @@ mag_status_t mag_tril_(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
 mag_status_t mag_triu(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
     *out = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->rank);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->coords.rank);
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(diag));
@@ -539,7 +538,7 @@ mag_status_t mag_triu(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
 mag_status_t mag_triu_(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
     *out = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->rank);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->coords.rank);
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
     mag_op_param_layout_insert(&layout, mag_op_param_wrap_i64(diag));
@@ -549,15 +548,15 @@ mag_status_t mag_triu_(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
 mag_status_t mag_multinomial(mag_tensor_t **out, mag_tensor_t *x, int64_t num_samples, bool replacement) {
     *out = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->rank == 1 || x->rank == 2, "Multinomial dist requires rank 1 or 2, but got: %" PRIi64, x->rank);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank == 1 || x->coords.rank == 2, "Multinomial dist requires rank 1 or 2, but got: %" PRIi64, x->coords.rank);
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(x), "Input tensor must be contiguous row-major");
     mag_contract(ctx, ERR_INVALID_PARAM, {}, num_samples > 0, "Number of samples must be > 0, but got: %" PRIi64, num_samples);
     mag_assert_dtype_compat(MAG_OP_MULTINOMIAL, &x);
     int64_t shape[MAG_MAX_DIMS] = {0};
-    if (x->rank > 1) memcpy(shape, x->shape, (x->rank - 1)*sizeof(*shape));
-    shape[x->rank-1] = num_samples;
+    if (x->coords.rank > 1) memcpy(shape, x->coords.shape, (x->coords.rank - 1)*sizeof(*shape));
+    shape[x->coords.rank-1] = num_samples;
     mag_tensor_t *result;
-    mag_status_t stat = mag_tensor_new(&result, x->ctx, MAG_DTYPE_I32, x->rank, shape);
+    mag_status_t stat = mag_tensor_new(&result, x->ctx, MAG_DTYPE_I32, x->coords.rank, shape);
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
@@ -578,25 +577,25 @@ mag_status_t mag_cat(mag_tensor_t **out, mag_tensor_t **tensors, size_t count, i
     mag_contract(ctx, ERR_INVALID_PARAM, {}, dim >= 0 && dim < MAG_MAX_DIMS, "Dim must be in [0, %d), but got: %" PRIi64, MAG_MAX_DIMS, dim);
     mag_tensor_t *t0 = tensors[0];
     mag_contract(ctx, ERR_INVALID_PARAM, {}, t0 != NULL, "First tensor cannot be NULL");
-    int64_t rank = t0->rank;
+    int64_t rank = t0->coords.rank;
     mag_contract(ctx, ERR_INVALID_DIM, {}, rank > 0 && dim < rank, "Concat dim must be in [0, %" PRIi64 "), but got: %" PRIi64, rank, dim);
     mag_dtype_t dtype = t0->dtype;
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(t0), "Inputs must be contiguous row-major");
     int64_t shape[MAG_MAX_DIMS];
     for (int64_t d=0; d < rank; ++d)
-        shape[d] = t0->shape[d];
+        shape[d] = t0->coords.shape[d];
     shape[dim] = 0;
     for (size_t i = 0; i < count; ++i) {
         mag_tensor_t *ti = tensors[i];
         mag_contract(ctx, ERR_INVALID_PARAM, {}, ti != NULL, "Tensor %" PRIu64 " cannot be NULL", (uint64_t)i);
-        mag_contract(ctx, ERR_INVALID_PARAM, {}, ti->rank == rank, "All tensors must have same rank (%" PRIi64 " != %" PRIi64 ")", ti->rank, rank);
+        mag_contract(ctx, ERR_INVALID_PARAM, {}, ti->coords.rank == rank, "All tensors must have same rank (%" PRIi64 " != %" PRIi64 ")", ti->coords.rank, rank);
         mag_contract(ctx, ERR_INVALID_PARAM, {}, ti->dtype == dtype, "All tensors must have same dtype (%d != %d)", ti->dtype, dtype);
         mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(ti), "All tensors must be contiguous row-major");
         for (int64_t d=0; d < rank; ++d) {
             if (d == dim) continue;
-            mag_contract(ctx, ERR_INVALID_PARAM, {}, ti->shape[d] == t0->shape[d], "Shapes must match on non-concat dims (dim=%" PRIi64 " mismatch on axis %" PRIi64 ")", dim, d);
+            mag_contract(ctx, ERR_INVALID_PARAM, {}, ti->coords.shape[d] == t0->coords.shape[d], "Shapes must match on non-concat dims (dim=%" PRIi64 " mismatch on axis %" PRIi64 ")", dim, d);
         }
-        shape[dim] += ti->shape[dim];
+        shape[dim] += ti->coords.shape[dim];
     }
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);
@@ -628,11 +627,11 @@ static mag_status_t mag_op_stub_binary(mag_tensor_t **out, mag_opcode_t op, mag_
     } else {
         int64_t dims[MAG_MAX_DIMS];
         int64_t rank;
-        if (mag_unlikely(!mag_compute_broadcast_shape(x, y, dims, &rank))) {
+        if (mag_unlikely(!mag_coords_broadcast_shape(&x->coords, &y->coords, dims, &rank))) {
             char sx[MAG_FMT_DIM_BUF_SIZE];
             char sy[MAG_FMT_DIM_BUF_SIZE];
-            mag_fmt_shape(&sx, &x->shape, x->rank);
-            mag_fmt_shape(&sy, &y->shape, y->rank);
+            mag_fmt_shape(&sx, &x->coords.shape, x->coords.rank);
+            mag_fmt_shape(&sy, &y->coords.shape, y->coords.rank);
             mag_contract(ctx, ERR_BROADCAST_IMPOSSIBLE, {}, 0,
                 "Cannot broadcast tensors with shapes %s and %s for operator '%s'.\n"
                 "    Hint: Ensure that the shapes are compatible for broadcasting.\n",
@@ -676,12 +675,12 @@ mag_status_t mag_matmul(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y) {
     mag_tensor_t *result = NULL;
     mag_status_t stat;
     mag_assert_dtype_compat(MAG_OP_MATMUL, (mag_tensor_t *[]) {x, y});
-    int64_t kx = x->shape[x->rank-1];
-    int64_t ky = y->rank == 1 ? *y->shape : y->rank == 2 && x->rank == 1 ? *y->shape : y->shape[y->rank-2];
+    int64_t kx = x->coords.shape[x->coords.rank-1];
+    int64_t ky = y->coords.rank == 1 ? *y->coords.shape : y->coords.rank == 2 && x->coords.rank == 1 ? *y->coords.shape : y->coords.shape[y->coords.rank-2];
     if (kx != ky) {
         char fmt_x[MAG_FMT_DIM_BUF_SIZE], fmt_y[MAG_FMT_DIM_BUF_SIZE];
-        mag_fmt_shape(&fmt_x, &x->shape, x->rank);
-        mag_fmt_shape(&fmt_y, &y->shape, y->rank);
+        mag_fmt_shape(&fmt_x, &x->coords.shape, x->coords.rank);
+        mag_fmt_shape(&fmt_y, &y->coords.shape, y->coords.rank);
         mag_contract(
             ctx, ERR_OPERATOR_IMPOSSIBLE, {}, 0,
             "Cannot perform matmul on tensors with shapes %s and %s: "
@@ -691,16 +690,16 @@ mag_status_t mag_matmul(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y) {
         );
     }
     /* verify broadcastability of batch dims */
-    int64_t x_bd = x->rank > 2 ? x->rank-2 : 0;
-    int64_t y_bd = y->rank > 2 ? y->rank-2 : 0;
+    int64_t x_bd = x->coords.rank > 2 ? x->coords.rank-2 : 0;
+    int64_t y_bd = y->coords.rank > 2 ? y->coords.rank-2 : 0;
     int64_t r_bd = x_bd > y_bd ? x_bd : y_bd;
     for (int64_t i=0; i < r_bd; ++i) {
-        int64_t x_dim = i < r_bd-x_bd ? 1 : x->shape[i-(r_bd-x_bd)];
-        int64_t y_dim = i < r_bd-y_bd ? 1 : y->shape[i-(r_bd-y_bd)];
+        int64_t x_dim = i < r_bd-x_bd ? 1 : x->coords.shape[i-(r_bd-x_bd)];
+        int64_t y_dim = i < r_bd-y_bd ? 1 : y->coords.shape[i-(r_bd-y_bd)];
         if (x_dim != y_dim && x_dim != 1 && y_dim != 1) {
             char fmt_x[MAG_FMT_DIM_BUF_SIZE], fmt_y[MAG_FMT_DIM_BUF_SIZE];
-            mag_fmt_shape(&fmt_x, &x->shape, x->rank);
-            mag_fmt_shape(&fmt_y, &y->shape, y->rank);
+            mag_fmt_shape(&fmt_x, &x->coords.shape, x->coords.rank);
+            mag_fmt_shape(&fmt_y, &y->coords.shape, y->coords.rank);
             mag_contract(
                 ctx, ERR_OPERATOR_IMPOSSIBLE, {}, 0,
                 "Cannot perform matmul on tensors with shapes %s and %s: "
@@ -710,26 +709,26 @@ mag_status_t mag_matmul(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y) {
             );
         }
     }
-    if (x->rank == 1 && y->rank == 1) { /* (K)x(K) -> () */
+    if (x->coords.rank == 1 && y->coords.rank == 1) { /* (K)x(K) -> () */
         int64_t shape[1] = {1};
         stat = mag_tensor_new(&result, x->ctx, x->dtype, 1, shape);
-    } else if (x->rank == 1 && y->rank == 2) { /* (K)x(K,N) -> (N) */
-        int64_t shape[1] = {y->shape[1]};
+    } else if (x->coords.rank == 1 && y->coords.rank == 2) { /* (K)x(K,N) -> (N) */
+        int64_t shape[1] = {y->coords.shape[1]};
         stat = mag_tensor_new(&result, x->ctx, x->dtype, 1, shape);
-    } else if (x->rank == 2 && y->rank == 1) { /* (M,K)x(K) -> (M) */
-        int64_t shape[1] = {x->shape[0]};
+    } else if (x->coords.rank == 2 && y->coords.rank == 1) { /* (M,K)x(K) -> (M) */
+        int64_t shape[1] = {x->coords.shape[0]};
         stat = mag_tensor_new(&result, x->ctx, x->dtype, 1, shape);
     } else { /* Batched ND version */
-        int64_t a_bd = x->rank-2;
-        int64_t b_bd = y->rank-2;
+        int64_t a_bd = x->coords.rank-2;
+        int64_t b_bd = y->coords.rank-2;
         int64_t shape[MAG_MAX_DIMS] = {0};
         for (int64_t i=0; i < r_bd; ++i) {
-            int64_t a_dim = i < r_bd-a_bd ? 1 : x->shape[i-(r_bd-a_bd)];
-            int64_t b_dim = i < r_bd-b_bd ? 1 : y->shape[i-(r_bd-b_bd)];
+            int64_t a_dim = i < r_bd-a_bd ? 1 : x->coords.shape[i-(r_bd-a_bd)];
+            int64_t b_dim = i < r_bd-b_bd ? 1 : y->coords.shape[i-(r_bd-b_bd)];
             shape[i] = a_dim > b_dim ? a_dim : b_dim;
         }
-        shape[r_bd] = x->shape[x->rank-2];
-        shape[r_bd+1] = y->shape[y->rank-1];
+        shape[r_bd] = x->coords.shape[x->coords.rank-2];
+        shape[r_bd+1] = y->coords.shape[y->coords.rank-1];
         stat = mag_tensor_new(&result,x->ctx, x->dtype, r_bd+2, shape);
     }
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
@@ -742,7 +741,7 @@ mag_status_t mag_repeat_back(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *
     *out = NULL;
     mag_tensor_t *result = NULL;
     mag_assert_dtype_compat(MAG_OP_REPEAT_BACK, (mag_tensor_t *[]) {x, y});
-    mag_status_t stat = mag_tensor_new(&result, x->ctx, x->dtype, y->rank, y->shape);
+    mag_status_t stat = mag_tensor_new(&result, x->ctx, x->dtype, y->coords.rank, y->coords.shape);
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     /* TODO: Check for broadcastability of x and y */
     mag_dispatch(MAG_OP_REPEAT_BACK, false, NULL, (mag_tensor_t *[2]) {x, y}, 2, &result, 1);
@@ -756,34 +755,34 @@ mag_status_t mag_gather(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, mag_te
     mag_tensor_t *result = NULL;
     mag_status_t stat;
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_integer_typed(idx), "Index tensor must be of integer type");
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, dim >= 0 && dim < x->rank, "Gather dim must be in [0, %" PRIi64 "), but got: %" PRIi64, x->rank, dim);
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, idx->rank <= x->rank, "Index tensor rank must be <= input tensor rank (%" PRIi64 " <= %" PRIi64")", idx->rank, x->rank);
-    if (dim < 0) dim += x->rank;
-    mag_assert2(dim >= 0 && dim < x->rank);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, dim >= 0 && dim < x->coords.rank, "Gather dim must be in [0, %" PRIi64 "), but got: %" PRIi64, x->coords.rank, dim);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, idx->coords.rank <= x->coords.rank, "Index tensor rank must be <= input tensor rank (%" PRIi64 " <= %" PRIi64")", idx->coords.rank, x->coords.rank);
+    if (dim < 0) dim += x->coords.rank;
+    mag_assert2(dim >= 0 && dim < x->coords.rank);
     int64_t ax[MAG_MAX_DIMS];
     int64_t ork = 0;
     bool full = false;
-    if (idx->rank == x->rank) {
+    if (idx->coords.rank == x->coords.rank) {
         full = true;
-        for (int64_t d=0; d < x->rank; ++d) {
+        for (int64_t d=0; d < x->coords.rank; ++d) {
             if (d == dim) continue;
-            if (idx->shape[d] != x->shape[d]) {
+            if (idx->coords.shape[d] != x->coords.shape[d]) {
                 full = false;
                 break;
             }
         }
     }
     if (full) {
-        for (int64_t d = 0; d < x->rank; ++d)
-            ax[ork++] = idx->shape[d];
-    } else if (idx->rank == 1) {
-        for (int64_t d=0; d < x->rank; ++d) {
-            ax[ork++] = d == dim ? idx->shape[0] : x->shape[d];
+        for (int64_t d = 0; d < x->coords.rank; ++d)
+            ax[ork++] = idx->coords.shape[d];
+    } else if (idx->coords.rank == 1) {
+        for (int64_t d=0; d < x->coords.rank; ++d) {
+            ax[ork++] = d == dim ? idx->coords.shape[0] : x->coords.shape[d];
         }
     } else {
-        for (int64_t d = 0; d < dim; ++d) ax[ork++] = x->shape[d];
-        for (int64_t i=0; i < idx->rank; ++i) ax[ork++] = idx->shape[i];
-        for (int64_t d=dim+1; d < x->rank; ++d) ax[ork++] = x->shape[d];
+        for (int64_t d = 0; d < dim; ++d) ax[ork++] = x->coords.shape[d];
+        for (int64_t i=0; i < idx->coords.rank; ++i) ax[ork++] = idx->coords.shape[i];
+        for (int64_t d=dim+1; d < x->coords.rank; ++d) ax[ork++] = x->coords.shape[d];
     }
     mag_contract(ctx, ERR_INVALID_RANK, {}, ork >= 1 && ork <= MAG_MAX_DIMS, "Gather output rank must be in [1, %d], but got: %" PRIi64, MAG_MAX_DIMS, ork);
     stat = mag_tensor_empty(&result, x->ctx, x->dtype, ork, ax);
@@ -896,7 +895,7 @@ void mag_tensor_fill_random_bernoulli(mag_tensor_t *t, mag_e8m23_t p) {
 }
 
 void mag_tensor_fill_arange(mag_tensor_t *t, float start, float step) {
-    mag_assert2(t->rank == 1 && (mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC));
+    mag_assert2(t->coords.rank == 1 && (mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC));
 
     mag_op_param_layout_t layout;
     mag_op_param_layout_init(&layout);

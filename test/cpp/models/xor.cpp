@@ -58,7 +58,7 @@ TEST(models, xor_e8m23) {
         tensor loss {nn::optimizer::mse(y_hat, y)};
         loss.backward();
         if (epoch % 100 == 0) {
-            std::cout << "Epoch: " << epoch << ", Loss: " << loss(0) << std::endl;
+            std::cout << "Epoch: " << epoch << ", Loss: " << loss.to_vector<float>()[0] << std::endl;
         }
         optimizer.step();
         optimizer.zero_grad();
@@ -98,7 +98,7 @@ TEST(models, xor_e5m10) {
         tensor loss {nn::optimizer::mse(y_hat, y)};
         loss.backward();
         if (epoch % 100 == 0) {
-            std::cout << "Epoch: " << epoch << ", Loss: " << loss(0) << std::endl;
+            std::cout << "Epoch: " << epoch << ", Loss: " << loss.to_vector<float>()[0] << std::endl;
         }
         optimizer.step();
         optimizer.zero_grad();

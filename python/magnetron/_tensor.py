@@ -340,15 +340,6 @@ class Tensor:
             raise RuntimeError(f'Invalid index component {idx!r}')
         return curr
 
-    def __setitem__(self, indices: int | tuple[int, ...], value: float) -> None:
-        if isinstance(indices, int):
-            _C.mag_tensor_subscript_set_flattened(self._ptr, indices, float(value))
-        elif isinstance(indices, tuple):
-            idx = indices + (0,) * (_MAX_DIMS - len(indices))
-            _C.mag_tensor_subscript_set_multi(self._ptr, *idx, float(value))
-        else:
-            raise TypeError('Indices must be an int or a tuple of ints.')
-
     def _validate_inplace_op(self) -> None:
         if context.is_grad_recording() and self.requires_grad:
             raise RuntimeError(

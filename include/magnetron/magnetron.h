@@ -21,7 +21,7 @@
 extern "C" {
 #endif
 
-#define MAG_MAX_DIMS 6 /* Maximum number of dimensions for a tensor */
+#define MAG_MAX_DIMS 8 /* Maximum number of dimensions for a tensor. Currently fixed. */
 
 #ifndef MAG_EXPORT
 #ifdef _MSC_VER
@@ -335,10 +335,6 @@ extern MAG_EXPORT void mag_tensor_zero_grad(mag_tensor_t *t);                   
 
 /* ============ Tensor Data Access API ============ */
 
-extern MAG_EXPORT float mag_tensor_subscript_get_multi(mag_tensor_t *t, int64_t i0, int64_t i1, int64_t i2, int64_t i3, int64_t i4, int64_t i5);
-extern MAG_EXPORT void mag_tensor_subscript_set_multi(mag_tensor_t *t, int64_t i0, int64_t i1, int64_t i2, int64_t i3, int64_t i4, int64_t i5, float val);
-extern MAG_EXPORT float mag_tensor_subscript_get_flattened(mag_tensor_t *t, int64_t idx);
-extern MAG_EXPORT void mag_tensor_subscript_set_flattened(mag_tensor_t *t, int64_t idx, float val);
 extern MAG_EXPORT void *mag_tensor_get_raw_data_as_bytes(mag_tensor_t *t);
 extern MAG_EXPORT void mag_tensor_get_raw_data_as_bytes_free(void *ret_val);
 extern MAG_EXPORT float *mag_tensor_get_data_as_floats(mag_tensor_t *t);

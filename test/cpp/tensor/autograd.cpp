@@ -42,20 +42,20 @@ TEST(cpu_autograd, simple) {
 
     // check forward pass
     for (std::int64_t i {}; i < x.numel(); ++i) {
-        ASSERT_FLOAT_EQ(x(0), 3.0f);
-        ASSERT_FLOAT_EQ(y(0), 2.0f);
-        ASSERT_FLOAT_EQ(z(0), 0.5f);
+        ASSERT_FLOAT_EQ(x.to_vector<float>()[0], 3.0f);
+        ASSERT_FLOAT_EQ(y.to_vector<float>()[0], 2.0f);
+        ASSERT_FLOAT_EQ(z.to_vector<float>()[0], 0.5f);
     }
 
     // check backward pass
     for (std::int64_t i {}; i < x.grad().value().numel(); ++i) { // ∂z/∂x = 0.6
-        ASSERT_FLOAT_EQ(x.grad().value()(i), 0.6f);
+        ASSERT_FLOAT_EQ(x.grad().value().to_vector<float>()[i], 0.6f);
     }
     for (std::int64_t i {}; i < y.grad().value().numel(); ++i) { // ∂z/∂x = -0.4
-        ASSERT_FLOAT_EQ(y.grad().value()(i), -0.4f);
+        ASSERT_FLOAT_EQ(y.grad().value().to_vector<float>()[i], -0.4f);
     }
     for (std::int64_t i {}; i < z.grad().value().numel(); ++i) { // ∂z/∂x = 1
-        ASSERT_FLOAT_EQ(z.grad().value()(i), 1.0f);
+        ASSERT_FLOAT_EQ(z.grad().value().to_vector<float>()[i], 1.0f);
     }
 }
 
@@ -90,16 +90,16 @@ TEST(cpu_autograd, scalar_complex) {
 
     // check forward pass
     for (std::int64_t i {}; i < x.numel(); ++i) {
-        ASSERT_FLOAT_EQ(x(i), -4.0f);
-        ASSERT_FLOAT_EQ(y(i), -20.0f);
+        ASSERT_FLOAT_EQ(x.to_vector<float>()[i], -4.0f);
+        ASSERT_FLOAT_EQ(y.to_vector<float>()[i], -20.0f);
     }
 
     // check backward pass
     for (std::int64_t i {}; i < x.grad().value().numel(); ++i) { // ∂z/∂x = 46.0
-        ASSERT_FLOAT_EQ(x.grad().value()(i), 46.0f);
+        ASSERT_FLOAT_EQ(x.grad().value().to_vector<float>()[i], 46.0f);
     }
     for (std::int64_t i {}; i < y.grad().value().numel(); ++i) { // ∂z/∂y = 1.0
-        ASSERT_FLOAT_EQ(y.grad().value()(i), 1.0f);
+        ASSERT_FLOAT_EQ(y.grad().value().to_vector<float>()[i], 1.0f);
     }
 }
 
@@ -129,26 +129,26 @@ TEST(cpu_autograd, broadcast) {
 
     // check forward pass
     for (std::int64_t i {}; i < x.numel(); ++i) {
-        ASSERT_FLOAT_EQ(x(0), 3.0f);
+        ASSERT_FLOAT_EQ(x.to_vector<float>()[i], 3.0f);
     }
     for (std::int64_t i {}; i < y.numel(); ++i) {
-        ASSERT_FLOAT_EQ(y(0), 2.0f);
+        ASSERT_FLOAT_EQ(y.to_vector<float>()[i], 2.0f);
     }
     for (std::int64_t i {}; i < z.numel(); ++i) {
-        ASSERT_FLOAT_EQ(z(0), 40.5f);
+        ASSERT_FLOAT_EQ(z.to_vector<float>()[i], 40.5f);
     }
 
     // check backward pass
     auto x_grad {x.grad().value()};
     for (std::int64_t i {}; i < x_grad.numel(); ++i) { // ∂z/∂x = 0.6
-        ASSERT_FLOAT_EQ(x_grad(i), 0.6f);
+        ASSERT_FLOAT_EQ(x_grad.to_vector<float>()[i], 0.6f);
     }
     auto y_grad {y.grad().value()};
     for (std::int64_t i {}; i < y_grad.numel(); ++i) { // ∂z/∂x = -3.6f
-        ASSERT_FLOAT_EQ(y_grad(i), -3.6f);
+        ASSERT_FLOAT_EQ(y_grad.to_vector<float>()[i], -3.6f);
     }
     auto z_grad {z.grad().value()};
     for (std::int64_t i {}; i < z_grad.numel(); ++i) { // ∂z/∂x = 1
-        ASSERT_FLOAT_EQ(z_grad(i), 1.0f);
+        ASSERT_FLOAT_EQ(z_grad.to_vector<float>()[i], 1.0f);
     }
 }

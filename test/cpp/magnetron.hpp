@@ -726,19 +726,6 @@ namespace magnetron {
         auto backward() -> void { mag_tensor_backward(m_tensor); }
         auto zero_grad() -> void { mag_tensor_zero_grad(m_tensor); }
 
-        [[nodiscard]] auto operator ()(const std::array<std::int64_t, MAG_MAX_DIMS>& idx) const noexcept -> float {
-            return mag_tensor_subscript_get_multi(m_tensor, idx[0], idx[1], idx[2], idx[3], idx[4], idx[5]);
-        }
-        auto operator ()(const std::array<std::int64_t, MAG_MAX_DIMS>& idx, float x) const noexcept -> void {
-            mag_tensor_subscript_set_multi(m_tensor, idx[0], idx[1], idx[2], idx[3], idx[4], idx[5], x);
-        }
-        [[nodiscard]] auto operator ()(std::int64_t idx) const noexcept -> float {
-            return mag_tensor_subscript_get_flattened(m_tensor, idx);
-        }
-        auto operator ()(std::int64_t idx, float x) const noexcept -> void {
-            mag_tensor_subscript_set_flattened(m_tensor, idx, x);
-        }
-
         explicit tensor(mag_tensor_t* ptr) noexcept : m_tensor{ptr} {}
 
     private:

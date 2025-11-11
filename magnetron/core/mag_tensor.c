@@ -15,7 +15,6 @@
 #include "mag_alloc.h"
 #include "mag_sstream.h"
 #include "mag_autodiff.h"
-#include "mag_shape.h"
 
 static void mag_view_meta_dtor(void *p) {
     mag_view_meta_t *vm = p;
@@ -43,9 +42,7 @@ static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type
     *hdr = (mag_tensor_t) { /* Initialize tensor header. */
         .ctx = ctx,
         .rc_control = mag_rc_control_init(hdr, &mag_tensor_dtor), /* Initialize reference counter. */
-        .rank = rank,
-        .shape = {0},
-        .strides = {0},
+        .coords = {.rank=rank},
         .dtype = type,
         .storage = NULL,
         .numel = numel,
@@ -91,13 +88,13 @@ mag_status_t mag_tensor_new(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t 
     ctx->storage_bytes_allocated += numbytes;
     (*allocator)(dvc, &tensor->storage, numbytes, type);
     for (int i=0; i < MAG_MAX_DIMS; ++i)  {
-        tensor->shape[i] = i < rank ? shape[i] : 1;
-        tensor->strides[i] = 1;
+        tensor->coords.shape[i] = i < rank ? shape[i] : 1;
+        tensor->coords.strides[i] = 1;
     }
     /* Compute contiguous row-major strides and check for overflow. */
-    tensor->strides[rank-1] = 1;
+    tensor->coords.strides[rank-1] = 1;
     for (int64_t i=rank-2; i >= 0; --i) {
-        mag_contract(ctx, ERR_DIM_OVERFLOW, { mag_tensor_free_header(tensor); *out = NULL; }, !mag_mulov64(tensor->strides[i+1], tensor->shape[i+1], tensor->strides+i), "Stride overflowed at dim[%" PRIi64 "]", i);
+        mag_contract(ctx, ERR_DIM_OVERFLOW, { mag_tensor_free_header(tensor); *out = NULL; }, !mag_mulov64(tensor->coords.strides[i+1], tensor->coords.shape[i+1], tensor->coords.strides+i), "Stride overflowed at dim[%" PRIi64 "]", i);
     }
     ++ctx->num_created_tensors;
     *out = tensor;
@@ -122,8 +119,8 @@ mag_status_t mag_tensor_as_strided(mag_tensor_t **out, mag_context_t *ctx, mag_t
     mag_contract(ctx, ERR_OUT_OF_BOUNDS, {}, last < numel_end, "View exceeds base tensor storage bounds: view end = %" PRIi64 ", base storage numel = %" PRIi64, last, numel_end);
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
     for (int i=0; i < MAG_MAX_DIMS; ++i) {
-        tensor->shape[i] = i < rank ? shape[i] : 1;
-        tensor->strides[i] = i < rank ? strides[i] : 1;
+        tensor->coords.shape[i] = i < rank ? shape[i] : 1;
+        tensor->coords.strides[i] = i < rank ? strides[i] : 1;
     }
     tensor->storage = base->storage;
     mag_rc_control_incref(&base->storage->rc_control); /* Retain base storage */
@@ -162,7 +159,7 @@ mag_status_t mag_tensor_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_
 }
 
 mag_status_t mag_tensor_empty_like(mag_tensor_t **out, mag_tensor_t *isomorph) {
-    return mag_tensor_new(out, isomorph->ctx, isomorph->dtype, isomorph->rank, isomorph->shape);
+    return mag_tensor_new(out, isomorph->ctx, isomorph->dtype, isomorph->coords.rank, isomorph->coords.shape);
 }
 
 mag_status_t mag_tensor_empty_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type) {
@@ -220,23 +217,29 @@ mag_tensor_t *mag_tensor_detach(mag_tensor_t *t) {
 }
 
 int64_t mag_tensor_get_rank(const mag_tensor_t *t) {
-    return t->rank;
+    return t->coords.rank;
 }
+
 const int64_t *mag_tensor_get_shape(const mag_tensor_t *t) {
-    return t->shape;
+    return t->coords.shape;
 }
+
 const int64_t *mag_tensor_get_strides(const mag_tensor_t *t) {
-    return t->strides;
+    return t->coords.strides;
 }
+
 mag_dtype_t mag_tensor_get_dtype(const mag_tensor_t *t) {
     return t->dtype;
 }
+
 size_t mag_tensor_get_data_offset(const mag_tensor_t *t) {
     return (size_t)t->storage_offset*t->storage->granularity; /* Return offset in bytes */
 }
+
 void *mag_tensor_get_data_ptr(const mag_tensor_t *t) {
     return (void *)(t->storage->base + mag_tensor_get_data_offset(t));
 }
+
 void *mag_tensor_get_storage_base_ptr(const mag_tensor_t *t) {
     return (void *)t->storage->base;
 }
@@ -296,79 +299,6 @@ bool mag_tensor_get_item_bool(const mag_tensor_t *t) {
     uint8_t val;
     (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_BOOL);
     return !!val;
-}
-
-/*
-** Load all 6 elements of a 6-element array into local storage.
-** Used for compute kernels to help the compiler to hold shape and stride values inside registers.
-*/
-#define mag_load_local_storage_group_arr(arr, prefix) \
-    const int64_t prefix##0 = (arr)[0]; \
-    const int64_t prefix##1 = (arr)[1]; \
-    const int64_t prefix##2 = (arr)[2]; \
-    const int64_t prefix##3 = (arr)[3]; \
-    const int64_t prefix##4 = (arr)[4]; \
-    const int64_t prefix##5 = (arr)[5]; \
-    (void)prefix##0; \
-    (void)prefix##1; \
-    (void)prefix##2; \
-    (void)prefix##3; \
-    (void)prefix##4; \
-    (void)prefix##5
-
-#define mag_load_local_storage_group(xk, prefix, var) mag_load_local_storage_group_arr((xk)->var, prefix)
-
-/* Compute dot product of 6 integers. Used to compute offsets in 6-dimensional index space. */
-#define mag_address_dotprod6(x,y) ((x##0*y##0)+(x##1*y##1)+(x##2*y##2)+(x##3*y##3)+(x##4*y##4)+(x##5*y##5))
-
-mag_e8m23_t mag_tensor_subscript_get_multi(mag_tensor_t *t, int64_t i0, int64_t i1, int64_t i2, int64_t i3, int64_t i4, int64_t i5) {
-    mag_static_assert(MAG_MAX_DIMS == 6);
-    mag_load_local_storage_group(t, s, strides);
-    mag_storage_buffer_t *sto = t->storage;
-    mag_e8m23_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t) + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val), MAG_DTYPE_E8M23);
-    return val;
-}
-
-void mag_tensor_subscript_set_multi(mag_tensor_t *t, int64_t i0, int64_t i1, int64_t i2, int64_t i3, int64_t i4, int64_t i5, mag_e8m23_t val) {
-    mag_static_assert(MAG_MAX_DIMS == 6);
-    mag_load_local_storage_group(t, s, strides);
-    mag_storage_buffer_t *sto = t->storage;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, mag_tensor_get_data_offset(t) + sto->granularity*mag_address_dotprod6(i, s), &val, sizeof(val), MAG_DTYPE_E8M23);
-}
-
-static MAG_AINLINE void mag_tensor_unravel_index(const mag_tensor_t *t, int64_t v_idx, int64_t(*p_idx)[MAG_MAX_DIMS]) {
-    mag_static_assert(MAG_MAX_DIMS == 6);
-    mag_load_local_storage_group(t, d, shape);
-    (*p_idx)[5] = v_idx / (d4*d3*d2*d1*d0);
-    (*p_idx)[4] = (v_idx - (*p_idx)[5]*d4*d3*d2*d1*d0) / (d3*d2*d1*d0);
-    (*p_idx)[3] = (v_idx - (*p_idx)[5]*d4*d3*d2*d1*d0 - (*p_idx)[4]*d3*d2*d1*d0) / (d2*d1*d0);
-    (*p_idx)[2] = (v_idx - (*p_idx)[5]*d4*d3*d2*d1*d0 - (*p_idx)[4]*d3*d2*d1*d0 - (*p_idx)[3]*d2*d1*d0) / (d1*d0);
-    (*p_idx)[1] = (v_idx - (*p_idx)[5]*d4*d3*d2*d1*d0 - (*p_idx)[4]*d3*d2*d1*d0 - (*p_idx)[3]*d2*d1*d0 - (*p_idx)[2]*d1*d0) / d0;
-    (*p_idx)[0] =  v_idx - (*p_idx)[5]*d4*d3*d2*d1*d0 - (*p_idx)[4]*d3*d2*d1*d0 - (*p_idx)[3]*d2*d1*d0 - (*p_idx)[2]*d1*d0 - (*p_idx)[1]*d0;
-}
-
-mag_e8m23_t mag_tensor_subscript_get_flattened(mag_tensor_t *t, int64_t idx) {
-    if (!mag_tensor_is_contiguous(t)) {
-        int64_t pidx[MAG_MAX_DIMS];
-        mag_tensor_unravel_index(t, idx, &pidx);
-        return mag_tensor_subscript_get_multi(t, pidx[0], pidx[1], pidx[2], pidx[3], pidx[4], pidx[5]);
-    }
-    mag_storage_buffer_t *sto = t->storage;
-    mag_e8m23_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t) + sto->granularity*(size_t)idx, &val, sizeof(val), MAG_DTYPE_E8M23);
-    return val;
-}
-
-void mag_tensor_subscript_set_flattened(mag_tensor_t *t, int64_t idx, mag_e8m23_t val) {
-    if (!mag_tensor_is_contiguous(t)) {
-        int64_t pidx[MAG_MAX_DIMS];
-        mag_tensor_unravel_index(t, idx, &pidx);
-        mag_tensor_subscript_set_multi(t, pidx[0], pidx[1], pidx[2], pidx[3], pidx[4], pidx[5], val);
-        return;
-    }
-    mag_storage_buffer_t *sto = t->storage;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, mag_tensor_get_data_offset(t) + sto->granularity*(size_t)idx, &val, sizeof(val), MAG_DTYPE_E8M23);
 }
 
 static void mag_fmt_single_elem(mag_sstream_t *ss, const void *buf, size_t i, mag_dtype_t dtype) {
@@ -432,7 +362,7 @@ char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_
     const char *prefix = "Tensor(";
     size_t pad = strlen(prefix);
     mag_sstream_append(&ss, prefix);
-    mag_tensor_fmt_recursive(&ss, buf, t->dtype, t->shape, t->strides, t->rank, 0, 0, pad); /* Recursive format */
+    mag_tensor_fmt_recursive(&ss, buf, t->dtype, t->coords.shape, t->coords.strides, t->coords.rank, 0, 0, pad); /* Recursive format */
     mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_dtype_meta_of(t->dtype)->name, t->ctx->device->id);
     /* Free allocated buffer */
     if (mag_tensor_is_floating_point_typed(t)) mag_tensor_get_data_as_floats_free(buf);
@@ -468,6 +398,46 @@ bool mag_tensor_is_numeric_typed(const mag_tensor_t *t) {
     return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC;
 }
 
+bool mag_full_cont2(const mag_tensor_t *a, const mag_tensor_t *b) {
+    return a->numel == b->numel && mag_tensor_is_contiguous(a) && mag_tensor_is_contiguous(b);
+}
+
+bool mag_full_cont3(const mag_tensor_t *a, const mag_tensor_t *b, const mag_tensor_t *c) {
+    return a->numel == b->numel && a->numel == c->numel &&
+           mag_tensor_is_contiguous(a) &&
+           mag_tensor_is_contiguous(b) &&
+           mag_tensor_is_contiguous(c);
+}
+
+bool mag_tensor_is_shape_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
+    return mag_coords_shape_cmp(&x->coords, &y->coords);
+}
+
+bool mag_tensor_are_strides_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
+    return mag_coords_strides_cmp(&x->coords, &y->coords);
+}
+
+bool mag_tensor_can_broadcast(const mag_tensor_t *small, const mag_tensor_t *big) {
+    return mag_coords_can_broadcast(&small->coords, &big->coords);
+}
+
+bool mag_tensor_is_transposed(const mag_tensor_t *t) {
+    return mag_coords_transposed(&t->coords);
+}
+
+bool mag_tensor_is_permuted(const mag_tensor_t *t) {
+    return mag_coords_permuted(&t->coords);
+}
+
+bool mag_tensor_is_contiguous(const mag_tensor_t *t) {
+    return mag_coords_contiguous(&t->coords);
+}
+
+bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t *dims, int64_t rank) {
+    int64_t tmp[MAG_MAX_DIMS];
+    return mag_solve_view_strides(&tmp, t->coords.shape, t->coords.strides, t->coords.rank, dims, rank);
+}
+
 #ifdef MAG_DEBUG
 
 void mag_leak_detector_enqueue(mag_tensor_t *t) {
@@ -489,7 +459,7 @@ void mag_leak_detector_dequeue(mag_tensor_t *t) {
 MAG_COLDPROC void mag_leak_detector_dump_results(mag_context_t *ctx) {
     for (mag_tensor_t *leaked = ctx->alive_head; leaked; leaked = leaked->alive_next) {
         char shape[MAG_FMT_DIM_BUF_SIZE];
-        mag_fmt_shape(&shape, &leaked->shape, leaked->rank);
+        mag_fmt_shape(&shape, &leaked->coords.shape, leaked->coords.rank);
         fprintf(
             stderr,
             MAG_CC_RED "[magnetron] " MAG_CC_RESET "Leaked tensor: %p, Shape: %s\n",

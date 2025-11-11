@@ -314,8 +314,9 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_e8m23) {
     ASSERT_EQ(c.numel(), 3);
     ASSERT_NE(c.numel(), a.numel());
     ASSERT_NE(c.numel(), b.numel());
+    std::vector<float> result = c.to_vector<float>();
     for (std::int64_t i {}; i < c.numel(); ++i) {
-        ASSERT_FLOAT_EQ(c(i), C[i]);
+        ASSERT_FLOAT_EQ(result[i], C[i]);
     }
 }
 
@@ -342,8 +343,9 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_e5m10) {
     ASSERT_EQ(c.numel(), 3);
     ASSERT_NE(c.numel(), a.numel());
     ASSERT_NE(c.numel(), b.numel());
+    std::vector<float> result = c.to_vector<float>();
     for (std::int64_t i {}; i < c.numel(); ++i) {
-        ASSERT_FLOAT_EQ(c(i), C[i]);
+        ASSERT_FLOAT_EQ(result[i], C[i]);
     }
 }
 

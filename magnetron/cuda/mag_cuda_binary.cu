@@ -22,10 +22,10 @@ namespace mag {
         int storage_offset = 0;
 
         explicit tensor_coords(const mag_tensor_t *base) {
-            rank = static_cast<int>(base->rank);
+            rank = static_cast<int>(base->coords.rank);
             for (int i=0; i < rank; i++) {
-                shape[i] = static_cast<int>(base->shape[i]);
-                strides[i] = static_cast<int>(base->strides[i]);
+                shape[i] = static_cast<int>(base->coords.shape[i]);
+                strides[i] = static_cast<int>(base->coords.strides[i]);
             }
             storage_offset = static_cast<int>(base->storage_offset);
         }

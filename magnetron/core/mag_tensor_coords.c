@@ -9,14 +9,11 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include "mag_shape.h"
 #include "mag_tensor.h"
 
 void mag_fmt_shape(char (*buf)[MAG_FMT_DIM_BUF_SIZE], const int64_t (*dims)[MAG_MAX_DIMS], int64_t rank) {
-    mag_static_assert(MAG_MAX_DIMS == 6);
     memset(*buf, 0, sizeof(*buf));
     char *p = *buf;
-    mag_assert2(p+rank*21+3 < *buf+MAG_FMT_DIM_BUF_SIZE);
     *p++ = '(';
     for (int64_t i=0; i < rank; ++i) {
         p += snprintf(p, 21, "%" PRIi64, (*dims)[i]);
@@ -112,75 +109,4 @@ bool mag_infer_missing_dim(int64_t(*out)[MAG_MAX_DIMS], const int64_t *dims, int
         (*out)[infer] = numel / prod;
     } else if (mag_unlikely(prod != numel)) return false; /* Product does not match numel */
     return true;
-}
-
-bool mag_compute_broadcast_shape(const mag_tensor_t *a, const mag_tensor_t *b, int64_t *dims, int64_t *rank) {
-    int64_t ar = a->rank, br = b->rank;
-    int64_t r = *rank = ar > br ? ar : br;
-    for (int64_t i=0; i < r; ++i) {
-        int64_t ra = ar-1-i >= 0 ? a->shape[ar-1-i] : 1;
-        int64_t rb = br-1-i >= 0 ? b->shape[br-1-i] : 1;
-        if (mag_unlikely(!(ra == rb || ra == 1 || rb == 1))) /* Incompatible shapes */
-            return false;
-        dims[r-1-i] = ra == 1 ? rb : ra;
-    }
-    return true;
-}
-
-bool mag_full_cont2(const mag_tensor_t *a, const mag_tensor_t *b) {
-    return a->numel == b->numel && mag_tensor_is_contiguous(a) && mag_tensor_is_contiguous(b);
-}
-
-bool mag_full_cont3(const mag_tensor_t *a, const mag_tensor_t *b, const mag_tensor_t *c) {
-    return a->numel == b->numel && a->numel == c->numel &&
-           mag_tensor_is_contiguous(a) &&
-           mag_tensor_is_contiguous(b) &&
-           mag_tensor_is_contiguous(c);
-}
-
-bool mag_tensor_is_shape_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
-    return memcmp(x->shape, y->shape, sizeof(x->shape)) == 0;
-}
-
-bool mag_tensor_are_strides_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
-    return memcmp(x->strides, y->strides, sizeof(x->strides)) == 0;
-}
-
-bool mag_tensor_can_broadcast(const mag_tensor_t *small, const mag_tensor_t *big) {
-    int64_t mr = mag_xmax(small->rank, big->rank);
-    for (int64_t d=0; d < mr; ++d) {
-        int64_t asz = d < small->rank ? small->shape[small->rank-1-d] : 1;
-        int64_t bsz = d < big->rank ? big->shape[big->rank-1-d] : 1;
-        if (asz != bsz && asz != 1 && bsz != 1)
-            return false;
-    }
-    return true;
-}
-
-bool mag_tensor_is_transposed(const mag_tensor_t *t) {
-    return t->strides[0] > t->strides[1];
-}
-
-bool mag_tensor_is_permuted(const mag_tensor_t *t) {
-    for (int i=0; i < MAG_MAX_DIMS-1; ++i)
-        if (t->strides[i] > t->strides[i+1])
-            return true;
-    return false;
-}
-
-bool mag_tensor_is_contiguous(const mag_tensor_t *t) {
-    int64_t y=1;
-    int64_t i=t->rank-1, j;
-    for (; i >= 0; --i) {
-        j = t->shape[i];
-        if (j == 1) continue;
-        if (t->strides[i] != y) return false;
-        y *= j;
-    }
-    return true;
-}
-
-bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t *dims, int64_t rank) {
-    int64_t tmp[MAG_MAX_DIMS];
-    return mag_solve_view_strides(&tmp, t->shape, t->strides, t->rank, dims, rank);
 }

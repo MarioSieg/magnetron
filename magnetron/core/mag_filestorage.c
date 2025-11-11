@@ -321,19 +321,19 @@ static bool mag_sto_tensor_hdr_ser(uint8_t **p, uint8_t *e, const char *key, con
     const uint8_t *b = *p;
     mag_sto_san(mag_device_is(t->storage->host, "cpu"));
     mag_sto_san(mag_tensor_is_contiguous(t));
-    mag_sto_san(t->rank > 0 && t->rank <= MAG_MAX_DIMS);
+    mag_sto_san(t->coords.rank > 0 && t->coords.rank <= MAG_MAX_DIMS);
     mag_sto_san(t->dtype < MAG_DTYPE__NUM);
-    mag_sto_san(mag_sto_wu32le(p, e, mag_sto_pack_aux(t->dtype, (uint8_t)t->rank, 0, 0)));
+    mag_sto_san(mag_sto_wu32le(p, e, mag_sto_pack_aux(t->dtype, (uint8_t)t->coords.rank, 0, 0)));
     mag_sto_san(mag_sto_wu64le(p, e, t->numel));
     mag_sto_san(mag_sto_wu64le(p, e, data_base+data_offs));
     mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE);
-    for (int64_t i=0; i<t->rank; ++i) {
-        mag_sto_san(t->shape[i] > 0);
-        mag_sto_san(mag_sto_wu64le(p, e, (uint64_t)t->shape[i]));
+    for (int64_t i=0; i<t->coords.rank; ++i) {
+        mag_sto_san(t->coords.shape[i] > 0);
+        mag_sto_san(mag_sto_wu64le(p, e, (uint64_t)t->coords.shape[i]));
     }
-    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + t->rank*8);
+    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + t->coords.rank*8);
     mag_sto_san(mag_sto_wstr(p, e, key));
-    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + t->rank*8 + 4+strlen(key));
+    mag_assert2(*p-b == MAG_STO_TENSOR_HEADER_SIZE + t->coords.rank*8 + 4+strlen(key));
     return true;
 }
 
@@ -427,7 +427,7 @@ static size_t mag_sto_estimate_file_size(const mag_record_map_t *tensors, const 
     for (size_t i=0; i < tensors->cap; ++i) {
         if (!tensors->arr[i].key) continue;
         size += MAG_STO_TENSOR_HEADER_SIZE;
-        size += 8*tensors->arr[i].payload.payload.tensor->rank; /* shape */
+        size += 8*tensors->arr[i].payload.payload.tensor->coords.rank; /* shape */
         size += 4+tensors->arr[i].key_len; /* key length + key */
         size = (size+(MAG_CPU_BUF_ALIGN-1))&~(MAG_CPU_BUF_ALIGN-1);
         size += mag_sto_aligned_buf_size(tensors->arr[i].payload.payload.tensor);
@@ -484,7 +484,7 @@ static bool mag_storage_write_to_disk(mag_storage_archive_t *archive, const char
         if (!archive->tensors.arr[i].key) continue;
         mag_tensor_t *t = archive->tensors.arr[i].payload.payload.tensor;
         dp += MAG_STO_TENSOR_HEADER_SIZE;
-        dp += 8*t->rank;
+        dp += 8*t->coords.rank;
         dp += 4+archive->tensors.arr[i].key_len;
     }
     size_t nbh = (size_t)(dp-b);

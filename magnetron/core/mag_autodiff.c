@@ -74,7 +74,7 @@ static void mag_tensor_patch_grad(mag_tensor_t *dst, mag_tensor_t *grad) {
 mag_status_t mag_tensor_backward(mag_tensor_t *root) {
     mag_context_t *ctx = root->ctx;
     mag_contract(ctx, ERR_INVALID_PARAM, {}, root->flags & MAG_TFLAG_REQUIRES_GRAD, "Tensor must require gradient to perform backpropagation. Set requires_grad=True when creating the tensor");
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, root->rank == 1 && root->numel == 1, "Can only backpropagate from a scalar (rank 1, numel 1) tensor");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, root->coords.rank == 1 && root->numel == 1, "Can only backpropagate from a scalar (rank 1, numel 1) tensor");
     mag_ctx_grad_recorder_stop(root->ctx);
     mag_topo_set_t post_order;
     mag_topo_set_init(&post_order);

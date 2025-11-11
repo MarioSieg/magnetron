@@ -198,9 +198,9 @@ uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t *cmd, mag_d
     if (cmd->op == MAG_OP_MATMUL) {
         const mag_tensor_t *x = cmd->in[0];
         const mag_tensor_t *y = cmd->in[1];
-        int64_t M = x->rank == 1 ? 1 : x->shape[x->rank-2];
-        int64_t N = y->rank == 1 ? 1 : y->shape[y->rank-1];
-        int64_t K = x->shape[x->rank-1];
+        int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank-2];
+        int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank-1];
+        int64_t K = x->coords.shape[x->coords.rank-1];
         int64_t L1 = dvc->ctx->machine.cpu_l1_size;
         int64_t L2 = dvc->ctx->machine.cpu_l2_size;
         const mag_matmul_block_tune_info_t tune_info = {
@@ -225,7 +225,7 @@ uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t *cmd, mag_d
             mag_kernel_payload_t *payload = &cpu_dvc->pool->workers[i].payload;
             payload->mm_params = tuned;
         }
-        if (M == 1 && K >= 128 && N >= 4096 && y->rank == 2 && y->strides[y->rank-1] == 1) /* Special case for GEMV */
+        if (M == 1 && K >= 128 && N >= 4096 && y->coords.rank == 2 && y->coords.strides[y->coords.rank-1] == 1) /* Special case for GEMV */
             return mag_xmax(cpu_dvc->num_allocated_workers, 4)>>1;
         int64_t flops = M*N*K;
         uint32_t tiles_total = (uint32_t)(((M + tuned.MC - 1)/tuned.MC)*((N + tuned.NC - 1)/tuned.NC));
