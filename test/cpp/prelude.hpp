@@ -83,15 +83,20 @@ namespace magnetron::test {
                     for (std::int64_t i3 = 0; i3 < lim; ++i3) {
                         for (std::int64_t i4 = 0; i4 < lim; ++i4) {
                             for (std::int64_t i5 = 0; i5 < lim; ++i5) {
-                                shape.clear();
-                                shape.reserve(MAG_MAX_DIMS);
-                                if (i0 > 0) shape.emplace_back(i0*fac);
-                                if (i1 > 0) shape.emplace_back(i1*fac);
-                                if (i2 > 0) shape.emplace_back(i2*fac);
-                                if (i3 > 0) shape.emplace_back(i3*fac);
-                                if (i4 > 0) shape.emplace_back(i4*fac);
-                                if (i5 > 0) shape.emplace_back(i5*fac);
-                                f(std::span{shape});
+                                for (std::int64_t i6 = 0; i6 < lim; ++i6) {
+                                    for (std::int64_t i7 = 0; i7 < lim; ++i7) {
+                                        shape.clear();
+                                        if (i0 > 0) shape.emplace_back(i0*fac);
+                                        if (i1 > 0) shape.emplace_back(i1*fac);
+                                        if (i2 > 0) shape.emplace_back(i2*fac);
+                                        if (i3 > 0) shape.emplace_back(i3*fac);
+                                        if (i4 > 0) shape.emplace_back(i4*fac);
+                                        if (i5 > 0) shape.emplace_back(i5*fac);
+                                        if (i6 > 0) shape.emplace_back(i6*fac);
+                                        if (i7 > 0) shape.emplace_back(i7*fac);
+                                        f(std::span{shape});
+                                    }
+                                }
                             }
                         }
                     }

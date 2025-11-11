@@ -15,7 +15,7 @@ using namespace magnetron;
 using namespace test;
 
 static constexpr std::int64_t lim {4};
-static constexpr std::int64_t broadcast_lim {lim-1};
+static constexpr std::int64_t broadcast_lim {lim};
 
 #define impl_unary_operator_test_group(eps, name, data_type, lambda) \
     TEST(cpu_tensor_unary_ops, name##_same_shape_##data_type) { \

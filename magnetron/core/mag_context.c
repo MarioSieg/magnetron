@@ -138,11 +138,19 @@ mag_context_t *mag_ctx_create(const char *device_id) {
         num_backend_paths && backend_paths && *backend_paths && **backend_paths ? *backend_paths : "(no paths)"
     );
     ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, device_id);
-    mag_assert(ctx->backend && ctx->device,
-        "\nNo suitable magnetron compute backend found for device id '%s'!"
-        "\nMake sure the specified device id is correct and that the corresponding backend is available.",
-        device_id ? device_id : "(null)"
-    );
+    if (mag_unlikely(!ctx->backend || !ctx->device)) {
+        mag_log_error(
+            "\nNo suitable magnetron compute backend found for device id '%s'!"
+           "\nMake sure the specified device id is correct and that the corresponding backend is available.",
+           device_id ? device_id : "(null)"
+        );
+        device_id = "cpu"; /* Fallback to CPU backend */
+        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, device_id);
+        mag_assert(ctx->backend && ctx->device,
+            "\nFailed to initialize fallback CPU compute backend!"
+            "\nMake sure the magnetron_cpu backend is available next to the magnetron_core library."
+        );
+    }
 
     /* Seed prng once with secure system entropy */
     uint64_t global_seed = 0;
