@@ -10,10 +10,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Iterable
+from collections.abc import Iterable
 
 from ._tensor import Tensor
-from ._context import no_grad
+from .context import no_grad
 from .nn import Parameter
 
 
@@ -62,8 +62,7 @@ class SGD(Optimizer):
     @no_grad()
     def step(self) -> None:
         for param in self.params:
-            param.x = param.x - param.x.grad * self.lr
-            param.x.requires_grad = True
+            param.x -= param.x.grad * self.lr
 
 
 class Adam(Optimizer):

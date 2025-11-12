@@ -46,7 +46,7 @@ def keep_line(line: str) -> bool:
 
 
 c_input: list[str] = []
-with open(C_HDR_FILE, 'rt') as f:
+with open(C_HDR_FILE) as f:
     full_src: str = f.read()
     pattern = re.compile(
         r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
@@ -67,7 +67,7 @@ if decls.endswith('}'):
     decls = decls[:-1]
 bin_decls: str = "b'" + ''.join(f'\\x{b:02x}' for b in decls.encode('utf-8')) + "'"
 out += f"__MAG_CDECLS: str = {bin_decls}.decode('utf-8')\n"
-with open(OUTPUT_FILE, 'wt') as f:
+with open(OUTPUT_FILE, 'w') as f:
     f.write(out)
 
 print(f'Generated {OUTPUT_FILE} with {len(c_input)} lines.')

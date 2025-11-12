@@ -15,17 +15,17 @@ from magnetron import Tensor
 from magnetron.nn.module import Module, Parameter
 
 
+class Flatten(Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return x.contiguous().reshape(x.shape[0], -1)
+
+
 class Linear(Module):
-    def __init__(self, in_features: int, out_features: int, bias: bool = True, init_weights: bool = True) -> None:
+    def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        if init_weights:
-            weight = Tensor.normal(out_features, in_features, mean=0.0, std=1.0)
-            weight = weight / math.sqrt(in_features + out_features)
-        else:
-            weight = Tensor.zeros(out_features, in_features)
-        self.weight = Parameter(weight)
+        self.weight = Parameter(Tensor.normal(out_features, in_features, mean=0.0, std=1.0) / math.sqrt(in_features + out_features))
         self.bias = None
         if bias:
             self.bias = Parameter(Tensor.zeros(out_features))

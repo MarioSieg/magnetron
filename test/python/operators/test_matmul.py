@@ -9,7 +9,7 @@ def test_matmul_squared(dtype: DataType) -> None:
 
 @pytest.mark.parametrize('dtype', [float16, float32])
 def test_matmul_full(dtype: DataType) -> None:
-    for A, B in matmul_shape_pairs(lim=3, max_total_rank=MAX_DIMS):
+    for A, B in matmul_shape_pairs(lim=3, max_total_rank=6):
         a = Tensor.uniform(A, dtype=dtype)
         b = Tensor.uniform(B, dtype=dtype)
         r = a @ b
