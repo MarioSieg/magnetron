@@ -24,39 +24,34 @@ typedef struct mag_tensor_coords_t {
     int64_t strides[MAG_MAX_DIMS];
 } mag_tensor_coords_t;
 
-static inline int64_t mag_coords_broadcast(mag_tensor_coords_t *r, const mag_tensor_coords_t *x, int64_t i) {
-    const int64_t *rd = r->shape;
-    const int64_t *rs = r->strides;
-    const int64_t *xd = x->shape;
-    const int64_t *xs = x->strides;
-    int64_t ra = r->rank;
-    int64_t delta = ra-- - x->rank;
-    int64_t o = 0;
-    for (int64_t k=ra; k >= 0; --k) {
-        int64_t dim = rd[k];
-        int64_t ax = i % dim;
-        i /= dim;
-        if (x == r) {
-            o += ax*rs[k];
-        } else {
-            int64_t kd = k-delta;
-            if (kd >= 0 && xd[kd] > 1)
-                o += ax*xs[kd];
-        }
-    }
-    return o;
-}
-
 static inline int64_t mag_coords_index_to_offset(const mag_tensor_coords_t *r, int64_t i) {
     const int64_t *rd = r->shape;
     const int64_t *rs = r->strides;
     int64_t ra = r->rank-1;
     int64_t o = 0;
     for (int64_t k=ra; k >= 0; --k) {
-        int64_t dim = rd[k];
-        int64_t ax = i % dim;
-        i /= dim;
+        int64_t di = rd[k];
+        int64_t ax = i % di;
+        i /= di;
         o += ax*rs[k];
+    }
+    return o;
+}
+
+static inline int64_t mag_coords_broadcast(mag_tensor_coords_t *r, const mag_tensor_coords_t *x, int64_t i) {
+    const int64_t *rd = r->shape;
+    const int64_t *xd = x->shape;
+    const int64_t *xs = x->strides;
+    int64_t ra = r->rank;
+    int64_t delta = ra-- - x->rank;
+    int64_t o = 0;
+    for (int64_t k=ra; k >= 0; --k) {
+        int64_t di = rd[k];
+        int64_t ax = i % di;
+        i /= di;
+        int64_t kd = k-delta;
+        if (kd >= 0 && xd[kd] > 1)
+            o += ax*xs[kd];
     }
     return o;
 }
@@ -70,9 +65,9 @@ static inline int64_t mag_coords_index_repeat(mag_tensor_coords_t *r, const mag_
     int64_t delta = rx-- - rr;
     int64_t o = 0;
     for (int64_t k=rx; k >= 0; --k) {
-        int64_t dim = xd[k];
-        int64_t ax = i % dim;
-        i /= dim;
+        int64_t di = xd[k];
+        int64_t ax = i % di;
+        i /= di;
         int64_t kd = k - delta;
         if (kd < 0) continue;
         o += ax % rd[kd] * rs[kd];

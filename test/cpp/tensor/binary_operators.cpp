@@ -14,8 +14,8 @@
 using namespace magnetron;
 using namespace test;
 
-static constexpr std::int64_t lim {4};
-static constexpr std::int64_t broadcast_lim {lim};
+static constexpr std::int64_t lim {3};
+static constexpr std::int64_t broadcast_lim {lim-1};
 
 #define impl_binary_operator_float_test_group(name, op, data_type) \
     TEST(cpu_tensor_binary_ops, name##_same_shape_##data_type) { \

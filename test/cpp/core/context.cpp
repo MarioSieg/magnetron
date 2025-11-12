@@ -61,7 +61,7 @@ TEST(context, create_cuda) {
     tensor b {ctx, dtype::e8m23, 4, 4};
     a.fill(0.5f);
     b.fill(1.5f);
-    tensor c = a+b;
+    tensor c = a+b*10;
     std::cout << c.to_string() << std::endl;
     std::cout << c.exp().sin().to_string() << std::endl;
 

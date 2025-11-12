@@ -10,59 +10,255 @@
 */
 
 #include "mag_cuda_unary.cuh"
+#include "mag_cuda_coords.cuh"
 
 namespace mag {
     constexpr mag_e8m23_t INVSQRT2 = 0.707106781186547524400844362104849039284835937f /* 1/√2 */;
 
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_abs(mag_e8m23_t x) { return fabs(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_sgn(mag_e8m23_t x) { return x > 0.f ? 1.f : x < 0.f ? -1.f : 0.f; }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_neg(mag_e8m23_t x) { return -x; }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_log(mag_e8m23_t x) { return __logf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_sqr(mag_e8m23_t x) { return x*x; }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_sqrt(mag_e8m23_t x) { return sqrtf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_sin(mag_e8m23_t x) { return __sinf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_cos(mag_e8m23_t x) { return __cosf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_step(mag_e8m23_t x) { return x > 0.f; }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_exp(mag_e8m23_t x) { return __expf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_floor(mag_e8m23_t x) { return floorf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_ceil(mag_e8m23_t x) { return ceilf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_round(mag_e8m23_t x) { return nearbyintf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_softmax(mag_e8m23_t x) { return __expf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_softmax_dv(mag_e8m23_t x) { return __expf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_sigmoid(mag_e8m23_t x) { return 1.f/(1.f + __expf(-x)); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_sigmoid_dv(mag_e8m23_t x) { mag_e8m23_t sig = 1.f/(1.f + __expf(-x)); return sig*(1.f-sig); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_hard_sigmoid(mag_e8m23_t x) { return fminf(1.f, fmaxf(0.0f, (x + 3.0f)/6.0f)); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_silu(mag_e8m23_t x) { return x*(1.f/(1.f + __expf(-x))); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_silu_dv(mag_e8m23_t x) { mag_e8m23_t sig = 1.f/(1.f + __expf(-x)); return sig + x*sig; }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_tanh(mag_e8m23_t x) { return __tanhf(x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_tanh_dv(mag_e8m23_t x) { mag_e8m23_t th = __tanhf(x); return 1.f - th*th; }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_relu(mag_e8m23_t x) { return fmax(0.f, x); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_relu_dv(mag_e8m23_t x) { return x > 0.f ? 1.f : 0.f; }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_gelu(mag_e8m23_t x) { return .5f*x*(1.f+erff(x*INVSQRT2)); }
-    [[nodiscard]] __device__ __forceinline__ static mag_e8m23_t op_gelu_dv(mag_e8m23_t x) { mag_e8m23_t th = __tanhf(x); return .5f*(1.f + th) + .5f*x*(1.f - th*th); }
+    template <typename T>
+    struct op_abs {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return fabs(x); }
+    };
 
-    template <mag_e8m23_t (&op)(mag_e8m23_t), typename T>
-    __global__ static void unary_op_kernel(int n, T *o, const T *x) {
+    template <typename T>
+    struct op_sgn {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x > 0.f ? 1.f : x < 0.f ? -1.f : 0.f; }
+    };
+
+    template <typename T>
+    struct op_neg {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return -x; }
+    };
+
+    template <typename T>
+    struct op_log {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __logf(x); }
+    };
+
+    template <typename T>
+    struct op_sqr {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x*x; }
+    };
+
+    template <typename T>
+    struct op_sqrt {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return sqrtf(x); }
+    };
+
+    template <typename T>
+    struct op_sin {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __sinf(x); }
+    };
+
+    template <typename T>
+    struct op_cos {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __cosf(x); }
+    };
+
+    template <typename T>
+    struct op_step {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x > .0f ? 1.f : .0f; }
+    };
+
+    template <typename T>
+    struct op_exp {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __expf(x); }
+    };
+
+    template <typename T>
+    struct op_floor {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return floorf(x); }
+    };
+
+    template <typename T>
+    struct op_ceil {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return ceilf(x); }
+    };
+
+    template <typename T>
+    struct op_round {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return roundf(x); }
+    };
+
+    template <typename T>
+    struct op_softmax {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __expf(x); }
+    };
+
+    template <typename T>
+    struct op_softmax_dv {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __expf(x); }
+    };
+
+    template <typename T>
+    struct op_sigmoid {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return 1.f/(1.f + __expf(-x)); }
+    };
+
+    template <typename T>
+    struct op_sigmoid_dv {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t sig = 1.f/(1.f + __expf(-x)); return sig*(1.f-sig); }
+    };
+
+    template <typename T>
+    struct op_hard_sigmoid {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return fminf(1.f, fmaxf(.0f, (x + 3.f)/6.f)); }
+    };
+
+    template <typename T>
+    struct op_silu {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x*(1.f/(1.f + __expf(-x))); }
+    };
+
+    template <typename T>
+    struct op_silu_dv {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t sig = 1.f/(1.f + __expf(-x)); return sig + x*sig; }
+    };
+
+    template <typename T>
+    struct op_tanh {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __tanhf(x); }
+    };
+
+    template <typename T>
+    struct op_tanh_dv {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t th = __tanhf(x); return 1.f - th*th; }
+    };
+
+    template <typename T>
+    struct op_relu {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return fmaxf(x,0.f); }
+    };
+
+    template <typename T>
+    struct op_relu_dv {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x > 0.f ? 1.f : 0.f; }
+    };
+
+    template <typename T>
+    struct op_gelu {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return .5f*x*(1.f+erff(x*INVSQRT2)); }
+    };
+
+    template <typename T>
+    struct op_gelu_dv {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t th = __tanhf(x); return .5f*(1.f + th) + .5f*x*(1.f - th*th); }
+    };
+
+    template <typename Op>
+    __global__ static void unary_op_kernel_contig(
+        Op op,
+        int n,
+        typename Op::Out *o,
+        const typename Op::In *x
+    ) {
         int i = blockDim.x*blockIdx.x + threadIdx.x;
         if (i >= n) return;
-        o[i] = static_cast<T>(op(static_cast<mag_e8m23_t>(x[i])));
+        o[i] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[i])));
     }
 
-    template <mag_e8m23_t (&Op)(mag_e8m23_t)>
-    static void impl_unary_op(mag_tensor_t *o, mag_tensor_t *x) {
-        mag_assert2(mag_full_cont2(o, x));
-        mag_assert2(o->dtype == x->dtype);
-        int n = static_cast<int>(o->numel);
+    template <typename Op>
+    __global__ static void unary_op_kernel_strided(
+        Op op,
+        int n,
+        typename Op::Out *o,
+        const typename Op::In *x,
+        tensor_coords rc,
+        tensor_coords xc
+    ) {
+        int i = blockIdx.x*blockDim.x + threadIdx.x;
+        int step = blockDim.x*gridDim.x;
+        for (; i < n; i += step) {
+            int ri = rc.to_offset(i);
+            int xi = rc.broadcast(xc, i);
+            o[ri] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[xi])));
+        }
+    }
+
+    template <typename Op>
+    static void launch_unary_op(
+        mag_tensor_t *r,
+        const mag_tensor_t *x
+    ) {
+        int n = static_cast<int>(mag_tensor_get_numel(r));
         int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
-        const auto launch = [=]<typename T>() {
-            mag_assert2(mag_dtype_meta_of(o->dtype)->size == sizeof(T));
-            auto *xo = static_cast<T *>(mag_tensor_get_data_ptr(o));
-            const auto *xx = static_cast<const T *>(mag_tensor_get_data_ptr(x));
-            unary_op_kernel<Op><<<blocks, UNARY_BLOCK_SIZE, 0>>>(n, xo, xx);
-        };
-        switch (o->dtype) {
-            case MAG_DTYPE_E8M23: launch.template operator()<mag_e8m23_t>(); break;
-            case MAG_DTYPE_E5M10: launch.template operator()<half>(); break;
+        if (mag_full_cont2(r, x)) {
+            unary_op_kernel_contig<Op><<<blocks, UNARY_BLOCK_SIZE>>>(
+                Op{},
+                n,
+                static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r)),
+                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x))
+            );
+        } else {
+            unary_op_kernel_strided<Op><<<blocks, UNARY_BLOCK_SIZE>>>(
+                Op{},
+                n,
+                static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r)),
+                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x)),
+                tensor_coords {r->coords},
+                tensor_coords {x->coords}
+            );
+        }
+    }
+
+    template <template <typename> typename Op>
+    static void impl_unary_op(mag_tensor_t *r, mag_tensor_t *x) {
+        mag_assert2(r->dtype == x->dtype);
+        switch (r->dtype) {
+            case MAG_DTYPE_E8M23: launch_unary_op<Op<mag_e8m23_t>>(r, x); break;
+            case MAG_DTYPE_E5M10: launch_unary_op<Op<half>>(r, x); break;
             default: mag_assert(false, "Unsupported dtype for unary op");
         }
     }

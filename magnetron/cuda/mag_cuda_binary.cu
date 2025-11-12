@@ -10,178 +10,149 @@
 */
 
 #include "mag_cuda_binary.cuh"
+#include "mag_cuda_coords.cuh"
 
 #include <cuda/std/tuple>
 
 
 namespace mag {
-    struct tensor_coords final {
-        int rank = 0;
-        int shape[MAG_MAX_DIMS] = {};
-        int strides[MAG_MAX_DIMS] = {};
-        int storage_offset = 0;
-
-        explicit tensor_coords(const mag_tensor_t *base) {
-            rank = static_cast<int>(base->coords.rank);
-            for (int i=0; i < rank; i++) {
-                shape[i] = static_cast<int>(base->coords.shape[i]);
-                strides[i] = static_cast<int>(base->coords.strides[i]);
-            }
-            storage_offset = static_cast<int>(base->storage_offset);
-        }
-
-        [[nodiscard]] __device__ static cuda::std::tuple<int, int, int> index_to_offsets(
-            int i,
-            const tensor_coords& r,
-            const tensor_coords& x,
-            const tensor_coords& y
-        ) {
-            int t = i;
-            int off_r = r.storage_offset;
-            int off_x = x.storage_offset;
-            int off_y = y.storage_offset;
-            for (int d=r.rank-1; d >= 0; --d) {
-                int size_d = r.shape[d];
-                int i_d = t % size_d;
-                t /= size_d;
-                off_r += i_d*r.strides[d];
-                int ix = x.shape[d] == 1 ? 0 : i_d;
-                int iy = y.shape[d] == 1 ? 0 : i_d;
-                off_x += ix*x.strides[d];
-                off_y += iy*y.strides[d];
-            }
-            return {off_r, off_x, off_y};
-        }
-    };
-
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_add {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a+b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x+y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_sub {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a-b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x-y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_mul {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a*b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x*y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_div {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a/b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x/y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_and {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a&b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x&y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_or {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a|b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x|y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_xor {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a^b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x^y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_shl {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a<<b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<<y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_shr {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a>>b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>>y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_eq {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a==b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x==y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_ne {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a!=b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x!=y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_le {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a<=b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<=y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_ge {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a>=b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>=y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_lt {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a<b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<y; }
     };
 
-    template <typename In, typename Out>
+    template <typename TIn, typename TOut>
     struct op_gt {
-        using TIn = In;
-        using TOut = Out;
-        [[nodiscard]] __device__ __forceinline__ static Out eval(In a, In b) { return a>b; }
+        using In = TIn;
+        using Out = TOut;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>y; }
     };
 
     template <typename Op>
-    __global__ static void binary_op_kernel_contig(int n, typename Op::TOut *o, const typename Op::TIn *x, const typename Op::TIn *y) {
+    __global__ static void binary_op_kernel_contig(
+        Op op,
+        int n,
+        typename Op::Out *o,
+        const typename Op::In *x,
+        const typename Op::In *y
+    ) {
         int i = blockDim.x*blockIdx.x + threadIdx.x;
         int step = blockDim.x*gridDim.x;
         for (; i < n; i += step)
-            o[i] = Op::eval(x[i], y[i]);
+            o[i] = op(x[i], y[i]);
     }
 
     template <typename Op>
     __global__ static void binary_op_kernel_strided(
-        typename Op::TOut *o,
-        const typename Op::TIn *x,
-        const typename Op::TIn *y,
-        const tensor_coords& rc,
-        const tensor_coords& xc,
-        const tensor_coords& yc,
-        int total
+        Op op,
+        int n,
+        typename Op::Out *o,
+        const typename Op::In *x,
+        const typename Op::In *y,
+        tensor_coords rc,
+        tensor_coords xc,
+        tensor_coords yc
     ) {
         int i = blockDim.x*blockIdx.x + threadIdx.x;
         int step = blockDim.x*gridDim.x;
-        for (; i < total; i += step) {
-            auto [off_r, off_x, off_y] = tensor_coords::index_to_offsets(i, rc, xc, yc);
-            o[off_r] = Op::eval(x[off_x], y[off_y]);
+        for (; i < n; i += step) {
+            int ri = rc.to_offset(i);
+            int xi = rc.broadcast(xc, i);
+            int yi = rc.broadcast(yc, i);
+            o[ri] = op(x[xi], y[yi]);
         }
     }
 
@@ -191,24 +162,26 @@ namespace mag {
         const mag_tensor_t *x,
         const mag_tensor_t *y
     ) {
-        int total = static_cast<int>(mag_tensor_get_numel(r));
-        int blocks = (total+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE;
+        int n = static_cast<int>(mag_tensor_get_numel(r));
+        int blocks = (n+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE;
         if (mag_full_cont3(r, x, y)) {
             binary_op_kernel_contig<Op><<<blocks, BINARY_BLOCK_SIZE>>>(
-                static_cast<int>(total),
-                static_cast<typename Op::TOut *>(mag_tensor_get_data_ptr(r)),
-                static_cast<const typename Op::TIn *>(mag_tensor_get_data_ptr(x)),
-                static_cast<const typename Op::TIn *>(mag_tensor_get_data_ptr(y))
+                Op{},
+                n,
+                static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r)),
+                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x)),
+                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(y))
             );
         } else {
             binary_op_kernel_strided<Op><<<blocks, BINARY_BLOCK_SIZE>>>(
-                static_cast<typename Op::TOut *>(mag_tensor_get_data_ptr(r)),
-               static_cast<const typename Op::TIn *>(mag_tensor_get_data_ptr(x)),
-               static_cast<const typename Op::TIn *>(mag_tensor_get_data_ptr(y)),
-                tensor_coords {r},
-                tensor_coords {x},
-                tensor_coords {y},
-                total
+                Op{},
+                n,
+                static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r)),
+                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x)),
+                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(y)),
+                tensor_coords {r->coords},
+                tensor_coords {x->coords},
+                tensor_coords {y->coords}
             );
         }
     }

@@ -1827,7 +1827,7 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
         } \
         for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri = mag_coords_index_to_offset(&r->coords, i); \
-            int64_t xi = mag_coords_index_to_offset(&x->coords, i); \
+            int64_t xi = mag_coords_broadcast(&r->coords, &x->coords, i); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
             mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             mag_v##FUNC##_##T(1, br+ri, bx+xi); \

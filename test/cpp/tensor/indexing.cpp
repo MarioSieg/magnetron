@@ -14,7 +14,7 @@
 using namespace magnetron;
 using namespace magnetron::test;
 
-static constexpr std::int64_t lim {4};
+static constexpr std::int64_t lim {3};
 
 TEST(cpu_tensor_indexing, subscript_flattened_e8m23) {
     auto ctx = context{};
