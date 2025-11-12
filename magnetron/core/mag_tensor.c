@@ -21,15 +21,15 @@ static void mag_view_meta_dtor(void *p) {
     mag_context_t *ctx = vm->base->ctx;
     if (vm->base->view_meta == vm)
         vm->base->view_meta = NULL;
-    mag_rc_control_decref(&vm->base->rc_control);
+    mag_rc_decref(vm->base);
     mag_fixed_pool_free_block(&ctx->view_meta_pool, vm);
 }
 
 mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
     mag_view_meta_t *vm = mag_fixed_pool_alloc_block(&base->ctx->view_meta_pool);
-    vm->rc = mag_rc_control_init(vm, &mag_view_meta_dtor);
+    mag_rc_init_object(vm, &mag_view_meta_dtor);
     vm->base = base;
-    mag_rc_control_incref(&base->rc_control);
+    mag_rc_incref(base);
     vm->version_snapshot = base->version;
     return vm;
 }
@@ -41,7 +41,6 @@ static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type
     memset(hdr, 0, sizeof(*hdr));
     *hdr = (mag_tensor_t) { /* Initialize tensor header. */
         .ctx = ctx,
-        .rc_control = mag_rc_control_init(hdr, &mag_tensor_dtor), /* Initialize reference counter. */
         .coords = {.rank=rank},
         .dtype = type,
         .storage = NULL,
@@ -52,6 +51,7 @@ static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type
         .au_state = NULL,
         .version = 0,
     };
+    mag_rc_init_object(hdr, &mag_tensor_dtor);
 #ifdef MAG_DEBUG
     hdr->alive_next = NULL;
     mag_leak_detector_enqueue(hdr);
@@ -123,14 +123,14 @@ mag_status_t mag_tensor_as_strided(mag_tensor_t **out, mag_context_t *ctx, mag_t
         tensor->coords.strides[i] = i < rank ? strides[i] : 1;
     }
     tensor->storage = base->storage;
-    mag_rc_control_incref(&base->storage->rc_control); /* Retain base storage */
+    mag_rc_incref(base->storage); /* Retain base storage */
     tensor->storage_offset = offset;
     tensor->version = base->version;
     if (!(base->flags & MAG_TFLAG_IS_VIEW)) /* first view */
         tensor->view_meta = mag_view_meta_alloc(base);
     else {
         tensor->view_meta = base->view_meta;
-        mag_rc_control_incref(&tensor->view_meta->rc); /* Retain view meta */
+        mag_rc_incref(tensor->view_meta); /* Retain view meta */
     }
     tensor->flags = base->flags | MAG_TFLAG_IS_VIEW; /* Set view flag */
     *out = tensor;
@@ -143,14 +143,14 @@ static void mag_tensor_dtor(void *self) {
     mag_assert(ctx->num_alive_tensors > 0, "Double free detected on tensor %p", t);
     --ctx->num_alive_tensors;
     if (t->view_meta) {
-        mag_rc_control_decref(&t->view_meta->rc);
+        mag_rc_decref(t->view_meta);
         t->view_meta = NULL;
     }
     if (t->au_state) {
-        mag_rc_control_decref(&t->au_state->rc);
+        mag_rc_decref(t->au_state);
         t->au_state = NULL;
     }
-    mag_rc_control_decref(&t->storage->rc_control);
+    mag_rc_decref(t->storage);
     mag_tensor_free_header(t);
 }
 
@@ -192,15 +192,6 @@ int64_t mag_tensor_get_data_size(const mag_tensor_t *t) {
 }
 int64_t mag_tensor_get_numel(const mag_tensor_t *t) {
     return t->numel;
-}
-
-void mag_tensor_incref(mag_tensor_t *t) { /* Increase reference count of the tensor. */
-    mag_rc_control_incref(&t->rc_control);
-}
-
-bool mag_tensor_decref(mag_tensor_t *t) { /* Decrease reference count of the tensor. */
-    if (mag_unlikely(!t)) return false;
-    return mag_rc_control_decref(&t->rc_control);
 }
 
 void mag_tensor_detach_inplace(mag_tensor_t *target) {
@@ -253,7 +244,7 @@ void *mag_tensor_get_raw_data_as_bytes(mag_tensor_t *t) {
     void *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_storage_buffer_t *sto = cont->storage;
     (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
-    mag_tensor_decref(cont);
+    mag_rc_decref(cont);
     return dst;
 }
 
@@ -272,7 +263,7 @@ mag_e8m23_t *mag_tensor_get_data_as_floats(mag_tensor_t *t) {
     mag_storage_buffer_t *sto = cont->storage;
     if (cont->dtype == MAG_DTYPE_E8M23) (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
     else (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size, MAG_DTYPE_E8M23);
-    mag_tensor_decref(cont);
+    mag_rc_decref(cont);
     return dst;
 }
 
@@ -436,6 +427,14 @@ bool mag_tensor_is_contiguous(const mag_tensor_t *t) {
 bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t *dims, int64_t rank) {
     int64_t tmp[MAG_MAX_DIMS];
     return mag_solve_view_strides(&tmp, t->coords.shape, t->coords.strides, t->coords.rank, dims, rank);
+}
+
+void mag_tensor_incref(mag_tensor_t *t) {
+    mag_rc_incref(t);
+}
+
+bool mag_tensor_decref(mag_tensor_t *t) {
+    return mag_rc_decref(t);
 }
 
 #ifdef MAG_DEBUG

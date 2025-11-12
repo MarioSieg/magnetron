@@ -18,34 +18,55 @@
 extern "C" {
 #endif
 
-typedef uint64_t mag_rcint_t;
-#define MAG_RCINTEGRAL_MAX UINT64_MAX
-#define MAG_RCINTEGRAL_PRI PRIu64
-
 /* Header for all objects that are reference counted. */
-typedef struct mag_rccontrol_t {
-    mag_rcint_t rc;                      /* Strong reference count. Object is deallocated if this reaches zero. */
-    void *self;                    /* Pointer to the self. */
-    void (*dtor)(void *); /* Destructor function (required). */
-} mag_rccontrol_t;
+typedef struct mag_rc_control_block_t {
+    #ifdef MAG_DEBUG
+        uint32_t __sentinel;
+    #endif
+    volatile mag_atomic32_t rc_strong; /* Strong atomic RC */
+    void (*dtor)(void *); /* Destructor (required). */
+} mag_rc_control_block_t;
 
-/* Initialize reference count header for a new object. Self-reference and destructor functon must be provided. */
-static MAG_AINLINE mag_rccontrol_t mag_rc_control_init(void *self, void (*dtor)(void *)) {
-    mag_assert2(self && dtor); /* Self and destructor must be set. */
-    mag_rccontrol_t control;
-    control.rc = 1;
-    control.self = self;
-    control.dtor = dtor;
-    return control;
+#ifdef MAG_DEBUG
+mag_static_assert(offsetof(mag_rc_control_block_t, __sentinel) == 0);
+#endif
+
+#define MAG_RC_OBJECT_HEADER() mag_rc_control_block_t __rcb
+#define MAG_RC_OBJECT_IS_VALID(T) mag_static_assert(offsetof(T, __rcb) == 0)
+
+/* Initialize reference count header for a new object. Object must have MAG_RC_OBJECT_HEADER() as first field. */
+static inline void mag_rc_init_object(void *obj, void (*dtor)(void *)) {
+    mag_rc_control_block_t *rc = (mag_rc_control_block_t *)obj;
+    mag_atomic32_store(&rc->rc_strong, 1, MAG_MO_RELAXED);
+    rc->dtor = dtor;
+    #ifdef MAG_DEBUG
+        rc->__sentinel = 0xDEADBEEF;
+    #endif
 }
 
-static MAG_AINLINE void mag_rc_control_incref(mag_rccontrol_t *rcb) { /* Increment reference count (retain). */
-    mag_assert(++rcb->rc < MAG_RCINTEGRAL_MAX, "reference count overflow, max RC: %" MAG_RCINTEGRAL_PRI, MAG_RCINTEGRAL_MAX);
+/* Increment reference count (retain). Object must have MAG_RC_OBJECT_HEADER() as first field. */
+static MAG_AINLINE void mag_rc_incref(void *obj) {
+    mag_rc_control_block_t *rc = (mag_rc_control_block_t *)obj;
+    #ifdef MAG_DEBUG /* Verify that object has a valid control block header using the sentinel */
+        mag_assert2(rc->__sentinel == 0xDEADBEEF);
+    #endif
+    mag_atomic32_t prev = mag_atomic32_fetch_add(&rc->rc_strong, 1, MAG_MO_RELAXED);
+    mag_assert2(prev < INT32_MAX); /* Catch overflow */
 }
-static MAG_AINLINE bool mag_rc_control_decref(mag_rccontrol_t *rcb) { /* Decrement reference count (release). */
-    mag_assert(rcb->rc, "reference count underflow (double free)");
-    if (!--rcb->rc) { /* Decref and invoke destructor. */
-        (*rcb->dtor)(rcb->self);
+
+/* Decrement reference count (release). Object must have MAG_RC_OBJECT_HEADER() as first field. */
+static MAG_AINLINE bool mag_rc_decref(void *obj) {
+    mag_rc_control_block_t *rc = (mag_rc_control_block_t *)obj;
+    #ifdef MAG_DEBUG /* Verify that object has a valid control block header using the sentinel */
+        mag_assert2(rc->__sentinel == 0xDEADBEEF);
+    #endif
+    mag_atomic32_t prev = mag_atomic32_fetch_sub(&rc->rc_strong, 1, MAG_MO_ACQ_REL);
+    mag_assert2(prev > 0); /* Catch underflow */
+    if (mag_unlikely(1 == prev)) { /* Decref and invoke destructor. */
+        (*rc->dtor)(obj);
+        #ifdef MAG_DEBUG /* Poison sentinel to catch UAF */
+            rc->__sentinel = 0xDEADDEAD;
+        #endif
         return true; /* Object was destroyed. */
     }
     return false;

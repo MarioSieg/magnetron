@@ -86,7 +86,7 @@ static void mag_record_map_free(mag_record_map_t *map) {
         if (!map->arr[i].key) continue;
         (*mag_alloc)((void *)map->arr[i].key, 0, 0);
         if (map->arr[i].payload.type == MAG_RECORD_TYPE_TENSOR && map->arr[i].payload.payload.tensor)
-            mag_tensor_decref(map->arr[i].payload.payload.tensor);
+            mag_rc_decref(map->arr[i].payload.payload.tensor);
     }
     (*mag_alloc)(map->arr, 0, 0);
     memset(map, 0, sizeof(*map));
@@ -113,7 +113,7 @@ static bool mag_record_map_insert(mag_record_map_t *map, const char *key, mag_re
             (*mag_alloc)(cloned_key, 0, 0);
             return false;
         }
-        mag_tensor_incref(val.payload.tensor);
+        mag_rc_incref(val.payload.tensor);
     }
     map->arr[i] = (mag_storage_record_t) {
         .key = cloned_key,

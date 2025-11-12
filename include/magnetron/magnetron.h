@@ -345,12 +345,12 @@ extern MAG_EXPORT bool mag_tensor_get_item_bool(const mag_tensor_t *t);
 
 /* ============ Tensor Misc API ============ */
 
-extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *t);
-extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *t);
 extern MAG_EXPORT mag_tensor_t *mag_tensor_detach(mag_tensor_t *t);
 extern MAG_EXPORT char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_count, size_t from_end_count);
 extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val);/* Save tensor data as an image */
 extern MAG_EXPORT void mag_tensor_visualize_backprop_graph(mag_tensor_t *t, const char *file);
+extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *t);
+extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *t);
 
 /* ============ Storage Archive API ============ */
 

@@ -39,7 +39,7 @@
 extern "C" {
 #endif
 
-  #if !defined(NDEBUG) || !NDEBUG
+#if !defined(NDEBUG) || !NDEBUG
 #define MAG_DEBUG
 #endif
 

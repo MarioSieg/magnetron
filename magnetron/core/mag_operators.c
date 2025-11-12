@@ -99,7 +99,7 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
             if (rec_grads) {
                 if (input->flags & MAG_TFLAG_REQUIRES_GRAD && !(r->flags & MAG_TFLAG_REQUIRES_GRAD)) /* If any input requires grad, the output must also require grad*/
                     mag_tensor_set_requires_grad(r, true);
-                mag_tensor_incref(input); /* Keep input alive for the backward pass. */
+                mag_rc_incref(input); /* Keep input alive for the backward pass. */
             }
         }
         if (params) memcpy(au->op_params, params, num_params*sizeof(*params));
@@ -220,7 +220,7 @@ mag_status_t mag_reshape(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dim
     int64_t shape[MAG_MAX_DIMS];
     mag_contract(ctx, ERR_INVALID_DIM, {}, mag_infer_missing_dim(&shape, dims, rank, x->numel), "Cannot infer missing dimension for reshape");
     if (x->coords.rank == rank && !memcmp(x->coords.shape, shape, sizeof(*dims)*rank)) {
-        mag_tensor_incref(x);
+        mag_rc_incref(x);
         *out = x;
         return MAG_STATUS_OK;
     }
@@ -250,10 +250,10 @@ mag_status_t mag_reshape(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dim
     mag_tensor_t *reshaped;
     stat = mag_tensor_as_strided(&reshaped, result->ctx, result, rank, shape, strides, result->storage_offset);
     if (mag_unlikely(stat != MAG_STATUS_OK)) {
-        mag_tensor_decref(result);
+        mag_rc_decref(result);
         return stat;
     }
-    mag_tensor_decref(result);
+    mag_rc_decref(result);
     *out = reshaped;
     return MAG_STATUS_OK;
 }
@@ -354,7 +354,7 @@ mag_status_t mag_permute(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dim
 
 mag_status_t mag_contiguous(mag_tensor_t **out, mag_tensor_t *x) {
     if (!x->storage_offset && mag_tensor_is_contiguous(x)) {
-        mag_tensor_incref(x); /* If already contiguous, just incref */
+        mag_rc_incref(x); /* If already contiguous, just incref */
         *out = x;
         return MAG_STATUS_OK;
     }

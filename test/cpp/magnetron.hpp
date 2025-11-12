@@ -16,6 +16,8 @@
 
 #include <magnetron/magnetron.h>
 
+#include <core/mag_rc.h>
+
 #include <algorithm>
 #include <stdexcept>
 #include <array>
@@ -139,7 +141,7 @@ namespace magnetron {
         }
 
         tensor(const tensor& other) {
-            mag_tensor_incref(other.m_tensor);
+            mag_rc_incref(other.m_tensor);
             m_tensor = other.m_tensor;
         }
 
@@ -152,8 +154,8 @@ namespace magnetron {
 
         auto operator = (const tensor& other) -> tensor& {
             if (this != &other) {
-                mag_tensor_incref(other.m_tensor);
-                mag_tensor_decref(m_tensor);
+                mag_rc_incref(other.m_tensor);
+                mag_rc_decref(m_tensor);
                 m_tensor = other.m_tensor;
             }
             return *this;
@@ -161,7 +163,7 @@ namespace magnetron {
 
         auto operator = (tensor&& other) -> tensor& {
             if (this != &other) {
-                mag_tensor_decref(m_tensor);
+                mag_rc_decref(m_tensor);
                 m_tensor = other.m_tensor;
                 other.m_tensor = nullptr;
             }
@@ -170,7 +172,7 @@ namespace magnetron {
 
         ~tensor() {
             if (m_tensor) {
-                mag_tensor_decref(m_tensor);
+                mag_rc_decref(m_tensor);
             }
         }
 

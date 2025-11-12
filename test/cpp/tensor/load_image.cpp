@@ -21,7 +21,7 @@ TEST(tensor, load_image_no_resize_planar) {
     ASSERT_EQ(mag_tensor_get_shape(img)[0], 3);
     ASSERT_EQ(mag_tensor_get_shape(img)[1], 512);
     ASSERT_EQ(mag_tensor_get_shape(img)[2], 512);
-    mag_tensor_decref(img);
+    mag_rc_decref(img);
 }
 
 TEST(tensor, load_image_resize_planar) {
@@ -32,5 +32,5 @@ TEST(tensor, load_image_resize_planar) {
     ASSERT_EQ(mag_tensor_get_shape(img)[0], 3);
     ASSERT_EQ(mag_tensor_get_shape(img)[1], 111);
     ASSERT_EQ(mag_tensor_get_shape(img)[2], 22);
-    mag_tensor_decref(img);
+    mag_rc_decref(img);
 }

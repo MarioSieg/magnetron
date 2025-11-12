@@ -18,77 +18,77 @@ TEST(core_tensor_logic, ref_count_raii) {
     context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
     
-    ASSERT_EQ((*a).rc_control.rc, 1);
+    ASSERT_EQ((*a).__rcb.rc_strong, 1);
     {
         tensor b {a};
-        ASSERT_EQ((*a).rc_control.rc, 2);
-        ASSERT_EQ((*b).rc_control.rc, 2);
+        ASSERT_EQ((*a).__rcb.rc_strong, 2);
+        ASSERT_EQ((*b).__rcb.rc_strong, 2);
         {
             tensor c {b};
-            ASSERT_EQ((*a).rc_control.rc, 3);
-            ASSERT_EQ((*b).rc_control.rc, 3);
-            ASSERT_EQ((*c).rc_control.rc, 3);
+            ASSERT_EQ((*a).__rcb.rc_strong, 3);
+            ASSERT_EQ((*b).__rcb.rc_strong, 3);
+            ASSERT_EQ((*c).__rcb.rc_strong, 3);
         }
-        ASSERT_EQ((*a).rc_control.rc, 2);
-        ASSERT_EQ((*b).rc_control.rc, 2);
+        ASSERT_EQ((*a).__rcb.rc_strong, 2);
+        ASSERT_EQ((*b).__rcb.rc_strong, 2);
     }
-    ASSERT_EQ((*a).rc_control.rc, 1);
+    ASSERT_EQ((*a).__rcb.rc_strong, 1);
 }
 
 TEST(core_tensor_logic, ref_count_assign) {
     context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
-    ASSERT_EQ((*a).rc_control.rc, 1);
+    ASSERT_EQ((*a).__rcb.rc_strong, 1);
     {
         tensor b = a;
-        ASSERT_EQ((*a).rc_control.rc, 2);
-        ASSERT_EQ((*b).rc_control.rc, 2);
+        ASSERT_EQ((*a).__rcb.rc_strong, 2);
+        ASSERT_EQ((*b).__rcb.rc_strong, 2);
         {
             tensor c = b;
-            ASSERT_EQ((*a).rc_control.rc, 3);
-            ASSERT_EQ((*b).rc_control.rc, 3);
-            ASSERT_EQ((*c).rc_control.rc, 3);
+            ASSERT_EQ((*a).__rcb.rc_strong, 3);
+            ASSERT_EQ((*b).__rcb.rc_strong, 3);
+            ASSERT_EQ((*c).__rcb.rc_strong, 3);
         }
-        ASSERT_EQ((*a).rc_control.rc, 2);
-        ASSERT_EQ((*b).rc_control.rc, 2);
+        ASSERT_EQ((*a).__rcb.rc_strong, 2);
+        ASSERT_EQ((*b).__rcb.rc_strong, 2);
     }
-    ASSERT_EQ((*a).rc_control.rc, 1);
+    ASSERT_EQ((*a).__rcb.rc_strong, 1);
 }
 
 TEST(core_tensor_logic, ref_count_clone) {
     context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
-    ASSERT_EQ((*a).rc_control.rc, 1);
+    ASSERT_EQ((*a).__rcb.rc_strong, 1);
     {
         tensor b = a.clone();
-        ASSERT_EQ((*a).rc_control.rc, 2);
-        ASSERT_EQ((*b).rc_control.rc, 1);
+        ASSERT_EQ((*a).__rcb.rc_strong, 2);
+        ASSERT_EQ((*b).__rcb.rc_strong, 1);
         {
             tensor c = b.clone();
-            ASSERT_EQ((*a).rc_control.rc, 2);
-            ASSERT_EQ((*b).rc_control.rc, 2);
-            ASSERT_EQ((*c).rc_control.rc, 1);
+            ASSERT_EQ((*a).__rcb.rc_strong, 2);
+            ASSERT_EQ((*b).__rcb.rc_strong, 2);
+            ASSERT_EQ((*c).__rcb.rc_strong, 1);
         }
-        ASSERT_EQ((*a).rc_control.rc, 2);
-        ASSERT_EQ((*b).rc_control.rc, 1);
+        ASSERT_EQ((*a).__rcb.rc_strong, 2);
+        ASSERT_EQ((*b).__rcb.rc_strong, 1);
     }
-    ASSERT_EQ((*a).rc_control.rc, 1);
+    ASSERT_EQ((*a).__rcb.rc_strong, 1);
 }
 
 TEST(core_tensor_logic, ref_count_move_constructor) {
     context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
-    auto original_ref {(*a).rc_control.rc};
+    auto original_ref {(*a).__rcb.rc_strong};
     tensor b {std::move(a)};
-    ASSERT_EQ((*b).rc_control.rc, original_ref);
+    ASSERT_EQ((*b).__rcb.rc_strong, original_ref);
 }
 
 TEST(core_tensor_logic, ref_count_self_assignment) {
     context ctx {};
     tensor a {ctx, dtype::e8m23, 10};
-    size_t original_ref = (*a).rc_control.rc;
+    size_t original_ref = (*a).__rcb.rc_strong;
     a = a;
-    ASSERT_EQ((*a).rc_control.rc, original_ref);
+    ASSERT_EQ((*a).__rcb.rc_strong, original_ref);
 }
 
 TEST(core_tensor_logic, ref_count_reassign_tensor) {
@@ -96,10 +96,10 @@ TEST(core_tensor_logic, ref_count_reassign_tensor) {
     tensor a {ctx, dtype::e8m23, 10};
     {
         tensor b = a;
-        ASSERT_EQ((*a).rc_control.rc, 2);
+        ASSERT_EQ((*a).__rcb.rc_strong, 2);
         a = tensor(ctx, dtype::e8m23, 30);
-        ASSERT_EQ((*a).rc_control.rc, 1);
-        ASSERT_EQ((*b).rc_control.rc, 1);
+        ASSERT_EQ((*a).__rcb.rc_strong, 1);
+        ASSERT_EQ((*b).__rcb.rc_strong, 1);
     }
 }
 
@@ -114,7 +114,7 @@ TEST(core_tensor_logic, init_1d) {
     ASSERT_EQ(t.data_size(), 10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10);
     ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
-    ASSERT_EQ((*t).rc_control.rc, 1);
+    ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
     mag_tensor_t* internal {&*t};
@@ -140,7 +140,7 @@ TEST(core_tensor_logic, init_2d) {
     ASSERT_EQ(t.numel(), 10*10);
     ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ(t.data_size(), 10*10 * sizeof(float));
-    ASSERT_EQ((*t).rc_control.rc, 1);
+    ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
     mag_tensor_t* internal {&*t};
@@ -168,7 +168,7 @@ TEST(core_tensor_logic, init_3d) {
     ASSERT_EQ(t.data_size(), 10*10*10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10*10*10);
     ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
-    ASSERT_EQ((*t).rc_control.rc, 1);
+    ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
     mag_tensor_t* internal {&*t};
@@ -196,7 +196,7 @@ TEST(core_tensor_logic, init_4d) {
     ASSERT_EQ(t.data_size(), 10*10*10*10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10*10*10*10);
     ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
-    ASSERT_EQ((*t).rc_control.rc, 1);
+    ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
     mag_tensor_t* internal {&*t};
@@ -228,7 +228,7 @@ TEST(core_tensor_logic, init_5d) {
     ASSERT_EQ(t.data_size(), 10*10*10*10*10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10*10*10*10*10);
     ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
-    ASSERT_EQ((*t).rc_control.rc, 1);
+    ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
     mag_tensor_t* internal {&*t};
@@ -262,7 +262,7 @@ TEST(core_tensor_logic, init_6d) {
     ASSERT_EQ(t.numel(), 10*10*10*10*10*10);
     ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ(t.data_size(), 10*10*10*10*10*10 * sizeof(float));
-    ASSERT_EQ((*t).rc_control.rc, 1);
+    ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
     mag_tensor_t* internal {&*t};

@@ -31,8 +31,9 @@ typedef enum mag_transfer_dir_t {
 /* Buffer interface on a compute device */
 typedef struct mag_storage_buffer_t mag_storage_buffer_t;
 struct mag_storage_buffer_t {
+    MAG_RC_OBJECT_HEADER();                 /* RC Control block must be first */
+
     mag_context_t *ctx;
-    mag_rccontrol_t rc_control;             /* Reference count control block. */
     uintptr_t base;                         /* Pointer to buffer on device. Might point to GPU or any other device memory. */
     size_t size;                            /* Size of buffer in bytes. */
     size_t alignment;                       /* Alignment of buffer. */
@@ -42,6 +43,7 @@ struct mag_storage_buffer_t {
     void (*transfer)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size);
     void (*convert)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size, mag_dtype_t inout_type);
 };
+MAG_RC_OBJECT_IS_VALID(mag_storage_buffer_t);
 
 typedef struct mag_command_t {
     mag_opcode_t op;

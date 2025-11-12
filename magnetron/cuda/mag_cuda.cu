@@ -208,8 +208,8 @@ namespace mag {
         mag_cuda_check(cudaMalloc(reinterpret_cast<void **>(&base), size));
         *out = static_cast<mag_storage_buffer_t*>(mag_fixed_pool_alloc_block(&ctx->storage_pool));
         new (*out) mag_storage_buffer_t {
+            .__rcb = {},
             .ctx = ctx,
-            .rc_control = mag_rc_control_init(*out, &dealloc_storage_buffer),
             .base = base,
             .size = size,
             .alignment = 256, // cudaMalloc guarantees this
@@ -219,6 +219,7 @@ namespace mag {
             .transfer = &transfer,
             .convert = &convert
         };
+        mag_rc_init_object(*out, &dealloc_storage_buffer);
     }
 
     mag_device_t *mag_cuda_backend_init_device(mag_backend_t *bck, mag_context_t *ctx, uint32_t idx) {

@@ -104,7 +104,6 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
     *out = mag_fixed_pool_alloc_block(&ctx->storage_pool);
     **out = (mag_storage_buffer_t) { /* Set up storage buffer. */
         .ctx = ctx,
-        .rc_control = mag_rc_control_init(*out, &mag_cpu_storage_dtor),
         .base = (uintptr_t)block,
         .size = size,
         .alignment = MAG_CPU_BUF_ALIGN,
@@ -114,6 +113,7 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
         .transfer = &mag_cpu_transfer,
         .convert = &mag_cpu_convert
     };
+    mag_rc_init_object(*out, &mag_cpu_storage_dtor);
     ++host->ctx->num_alive_storages;
 }
 
