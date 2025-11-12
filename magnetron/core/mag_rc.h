@@ -64,9 +64,6 @@ static MAG_AINLINE bool mag_rc_decref(void *obj) {
     mag_assert2(prev > 0); /* Catch underflow */
     if (mag_unlikely(1 == prev)) { /* Decref and invoke destructor. */
         (*rc->dtor)(obj);
-        #ifdef MAG_DEBUG /* Poison sentinel to catch UAF */
-            rc->__sentinel = 0xDEADDEAD;
-        #endif
         return true; /* Object was destroyed. */
     }
     return false;
