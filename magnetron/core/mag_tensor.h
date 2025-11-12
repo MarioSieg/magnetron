@@ -35,7 +35,7 @@ mag_static_assert(MAG_TFLAG_LEN <= 8); /* Must fit in one byte */
 
 /* Metadata for view tensors */
 typedef struct mag_view_meta_t {
-    MAG_RC_OBJECT_HEADER(); /* RC Control block must be first */
+    MAG_RC_INJECT_HEADER; /* RC Control block must be first */
 
     mag_tensor_t *base;
     uint32_t version_snapshot;
@@ -50,7 +50,7 @@ extern mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base);
 ** A tensor can be a view, which references the storage buffer of another tensor, but views have their own header too.
 */
 struct mag_tensor_t {
-    MAG_RC_OBJECT_HEADER();                         /* RC Control block must be first */
+    MAG_RC_INJECT_HEADER;                           /* RC Control block must be first */
 
     mag_context_t  *ctx;                            /* Host context. */
     mag_tensor_coords_t coords;                     /* Coords */

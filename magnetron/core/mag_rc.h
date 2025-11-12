@@ -31,10 +31,10 @@ typedef struct mag_rc_control_block_t {
 mag_static_assert(offsetof(mag_rc_control_block_t, __sentinel) == 0);
 #endif
 
-#define MAG_RC_OBJECT_HEADER() mag_rc_control_block_t __rcb
+#define MAG_RC_INJECT_HEADER mag_rc_control_block_t __rcb
 #define MAG_RC_OBJECT_IS_VALID(T) mag_static_assert(offsetof(T, __rcb) == 0)
 
-/* Initialize reference count header for a new object. Object must have MAG_RC_OBJECT_HEADER() as first field. */
+/* Initialize reference count header for a new object. Object must have MAG_RC_INJECT_HEADER as first field. */
 static inline void mag_rc_init_object(void *obj, void (*dtor)(void *)) {
     mag_rc_control_block_t *rc = (mag_rc_control_block_t *)obj;
     mag_atomic32_store(&rc->rc_strong, 1, MAG_MO_RELAXED);
@@ -44,7 +44,7 @@ static inline void mag_rc_init_object(void *obj, void (*dtor)(void *)) {
     #endif
 }
 
-/* Increment reference count (retain). Object must have MAG_RC_OBJECT_HEADER() as first field. */
+/* Increment reference count (retain). Object must have MAG_RC_INJECT_HEADER as first field. */
 static MAG_AINLINE void mag_rc_incref(void *obj) {
     mag_rc_control_block_t *rc = (mag_rc_control_block_t *)obj;
     #ifdef MAG_DEBUG /* Verify that object has a valid control block header using the sentinel */
@@ -54,7 +54,7 @@ static MAG_AINLINE void mag_rc_incref(void *obj) {
     mag_assert2(prev < INT32_MAX); /* Catch overflow */
 }
 
-/* Decrement reference count (release). Object must have MAG_RC_OBJECT_HEADER() as first field. */
+/* Decrement reference count (release). Object must have MAG_RC_INJECT_HEADER as first field. */
 static MAG_AINLINE bool mag_rc_decref(void *obj) {
     mag_rc_control_block_t *rc = (mag_rc_control_block_t *)obj;
     #ifdef MAG_DEBUG /* Verify that object has a valid control block header using the sentinel */

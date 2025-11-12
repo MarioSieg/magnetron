@@ -20,7 +20,7 @@ extern "C" {
 
 /* Autodiff state for parameters */
 struct mag_au_state_t {
-    MAG_RC_OBJECT_HEADER(); /* RC Control block must be first */
+    MAG_RC_INJECT_HEADER; /* RC Control block must be first */
 
     mag_context_t *ctx;
     mag_opcode_t op;
