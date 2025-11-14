@@ -108,7 +108,7 @@ namespace mag {
         static constexpr kernel_fn dispatch_table[] = {
             [MAG_OP_NOP] = &op_nop,
             [MAG_OP_FILL] = &fill_op_fill,
-            [MAG_OP_MASKED_FILL] = nullptr,
+            [MAG_OP_MASKED_FILL] = &fill_op_masked_fill,
             [MAG_OP_RAND_UNIFORM] = nullptr,
             [MAG_OP_RAND_NORMAL] = nullptr,
             [MAG_OP_RAND_BERNOULLI] = nullptr,

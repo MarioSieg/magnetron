@@ -1735,11 +1735,12 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
         const mag_tensor_t *x = mag_cmd_in(0); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
         const mag_##T##_t *bx = mag_##T##p(x); \
-        if (mag_likely(x->numel == r->numel && mag_tensor_is_contiguous(x) && mag_tensor_is_contiguous(r))) { \
+        if (mag_full_cont2(r, x)) { \
             memcpy(br, bx, mag_tensor_get_data_size(r)); \
             return; \
         } \
-        for (int64_t i=0; i < r->numel; ++i) { \
+        int64_t numel = r->numel; \
+        for (int64_t i=0; i < numel; ++i) { \
             int64_t ri = mag_coords_index_to_offset(&r->coords, i); \
             int64_t xi = mag_coords_index_to_offset(&x->coords, i); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
@@ -1754,7 +1755,15 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
         mag_##T##_t val = CVT(mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(0))); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
         int64_t numel = r->numel; \
-        for (int64_t ri=0; ri < numel; ++ri) { \
+        if (mag_tensor_is_contiguous(r)) { \
+            for (int64_t ri=0; ri < numel; ++ri) { \
+                mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
+                br[ri] = val; \
+            } \
+            return; \
+        } \
+        for (int64_t i=0; i < numel; ++i) { \
+            int64_t ri = mag_coords_index_to_offset(&r->coords, i); \
             mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             br[ri] = val; \
         } \
@@ -1767,17 +1776,27 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
         const mag_tensor_t *mask = (const mag_tensor_t*)(uintptr_t)mag_op_param_unpack_i64_or_panic(mag_cmd_param(1)); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
         const mag_bool_t *bm = mag_boolp(mask); \
-        int64_t total = r->numel; \
+        int64_t numel = r->numel; \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
-        int64_t chunk = (total + tc - 1)/tc; \
+        int64_t chunk = (numel+tc-1)/tc; \
         int64_t ra = ti*chunk; \
-        int64_t rb = mag_xmin(ra + chunk, total); \
+        int64_t rb = mag_xmin(ra+chunk, numel); \
+        if (mag_tensor_is_contiguous(r)) { \
+            for (int64_t ri=ra; ri < rb; ++ri) { \
+                int64_t mi = mag_coords_broadcast(&r->coords, &mask->coords, ri); \
+                mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
+                mag_bnd_chk(bm+mi, bm, mag_tensor_get_data_size(mask)); \
+                if (bm[mi]) br[ri] = val; \
+            } \
+            return; \
+        } \
         for (int64_t i=ra; i < rb; ++i) { \
+            int64_t ri = mag_coords_index_to_offset(&r->coords, i); \
             int64_t mi = mag_coords_broadcast(&r->coords, &mask->coords, i); \
-            mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
             mag_bnd_chk(bm+mi, bm, mag_tensor_get_data_size(mask)); \
-            if (bm[mi]) br[i] = val; \
+            if (bm[mi]) br[ri] = val; \
         } \
     }
 
@@ -1802,10 +1821,18 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
         mag_##T##_t *br = mag_##T##p_mut(r); \
         mag_e8m23_t start = mag_op_param_unpack_e8m23_or_panic(mag_cmd_param(0)); /* TODO: Use double precision as ACC */ \
         mag_e8m23_t step = mag_op_param_unpack_e8m23_or_panic(mag_cmd_param(1)); \
-        int64_t total = r->numel; \
-        for (int64_t i=0; i < total; ++i) { \
-            mag_bnd_chk(br+i, br, mag_tensor_get_data_size(r)); \
-            br[i] = CVT(start + (mag_e8m23_t)i*step); \
+        int64_t numel = r->numel; \
+        if (mag_tensor_is_contiguous(r)) { \
+            for (int64_t ri=0; ri < numel; ++ri) { \
+                mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
+                br[ri] = CVT(start + (mag_e8m23_t)ri*step); \
+            } \
+            return; \
+        } \
+        for (int64_t i=0; i < numel; ++i) { \
+            int64_t ri = mag_coords_index_to_offset(&r->coords, i); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
+            br[ri] = CVT(start + (mag_e8m23_t)i*step); \
         } \
     }
 
