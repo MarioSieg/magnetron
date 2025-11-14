@@ -124,13 +124,13 @@ namespace mag {
     template <typename Op>
     __global__ static void binary_op_kernel_contig(
         Op op,
-        int n,
+        int64_t n,
         typename Op::Out *o,
         const typename Op::In *x,
         const typename Op::In *y
     ) {
-        int i = blockDim.x*blockIdx.x + threadIdx.x;
-        int step = blockDim.x*gridDim.x;
+        int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
+        int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
         for (; i < n; i += step)
             o[i] = op(x[i], y[i]);
     }
@@ -138,7 +138,7 @@ namespace mag {
     template <typename Op>
     __global__ static void binary_op_kernel_strided(
         Op op,
-        int n,
+        int64_t n,
         typename Op::Out *o,
         const typename Op::In *x,
         const typename Op::In *y,
@@ -146,12 +146,12 @@ namespace mag {
         tensor_coords xc,
         tensor_coords yc
     ) {
-        int i = blockDim.x*blockIdx.x + threadIdx.x;
-        int step = blockDim.x*gridDim.x;
+        int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
+        int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
         for (; i < n; i += step) {
-            int ri = rc.to_offset(i);
-            int xi = rc.broadcast(xc, i);
-            int yi = rc.broadcast(yc, i);
+            int64_t ri = rc.to_offset(i);
+            int64_t xi = rc.broadcast(xc, i);
+            int64_t yi = rc.broadcast(yc, i);
             o[ri] = op(x[xi], y[yi]);
         }
     }
@@ -162,8 +162,8 @@ namespace mag {
         const mag_tensor_t *x,
         const mag_tensor_t *y
     ) {
-        int n = static_cast<int>(mag_tensor_get_numel(r));
-        int blocks = (n+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE;
+        int64_t n = mag_tensor_get_numel(r);
+        int64_t blocks = (n+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE;
         if (mag_full_cont3(r, x, y)) {
             binary_op_kernel_contig<Op><<<blocks, BINARY_BLOCK_SIZE>>>(
                 Op{},

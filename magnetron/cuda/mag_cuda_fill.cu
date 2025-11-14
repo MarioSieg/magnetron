@@ -13,20 +13,20 @@
 
 namespace mag {
     template <typename T>
-    __global__ static void fill_kernel(int n, T *__restrict__ o, T v) {
-        int i = blockIdx.x*blockDim.x + threadIdx.x;
+    __global__ static void fill_kernel(int64_t n, T *__restrict__ o, T v) {
+        int64_t i = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
         if (i < n) o[i] = v;
     }
 
     template <typename T>
-    static void launch_fill_kernel(int n, T *__restrict__ o, T v) {
-        int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
+    static void launch_fill_kernel(int64_t n, T *__restrict__ o, T v) {
+        int64_t blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
         fill_kernel<T><<<blocks, FILL_BLOCK_SIZE>>>(n, o, v);
     }
 
     void fill_op_fill(const mag_command_t *cmd) {
         mag_tensor_t *out = cmd->in[0];
-        int n = static_cast<int>(mag_tensor_get_numel(out));
+        int64_t n = mag_tensor_get_numel(out);
         switch (out->dtype) {
             case MAG_DTYPE_E8M23: launch_fill_kernel<mag_e8m23_t>(n, static_cast<mag_e8m23_t *>(mag_tensor_get_data_ptr(out)), mag_op_param_unpack_e8m23_or_panic(cmd->params[0])); break;
             case MAG_DTYPE_E5M10: launch_fill_kernel<half>(n, static_cast<half *>(mag_tensor_get_data_ptr(out)), mag_op_param_unpack_e8m23_or_panic(cmd->params[0])); break;
