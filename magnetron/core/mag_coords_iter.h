@@ -19,11 +19,15 @@
 extern "C" {
 #endif
 
-/*
-** Use fast integer divison and avoid a div/mod instruction, as there are very slow.
-** On all of my tested platforms (even Zen5) using fast div mod increase the index calculation performance, so this switch is ON by default.
-*/
+/* Fast div/mod:
+ * Enabled on x86-64 because mulhi-based division is faster there.
+ * Disabled on ARM64 for now — built-in u64 division is already fast
+ * and our fastpath was slower in benchmarks (M-series). */
+#if defined(__x86_64__) || defined(_M_X64)
 #define MAG_COORDS_ITER_USE_FASTDIV 1
+#else
+#define MAG_COORDS_ITER_USE_FASTDIV 0
+#endif
 
 typedef struct mag_coords_iter_t {
     int64_t rank;

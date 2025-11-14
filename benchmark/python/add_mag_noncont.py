@@ -3,14 +3,14 @@
 import magnetron as mag
 import time
 
-A = mag.Tensor.uniform(256, 256, 256)
-B = mag.Tensor.uniform(256, 256, 256).permute(2,1,0)
+A = mag.Tensor.uniform(1024, 1024)
+B = mag.Tensor.uniform(1024, 1024).permute(1,0)
 
 batch, M, K = 256,256,256
 N = 256
 flops = 2 * batch * M * N * K
 acc = 0
-I = 1000
+I = 100
 for _ in range(I):
     t0 = time.perf_counter()
     C = A + B
