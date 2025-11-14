@@ -212,9 +212,9 @@ namespace magnetron {
             handle_error(mag_transpose(&out, m_tensor, dim1, dim2));
             return tensor{out};
         }
-        [[nodiscard]] auto permute(const std::array<std::int64_t, MAG_MAX_DIMS>& axes) const noexcept -> tensor {
+        [[nodiscard]] auto permute(const std::initializer_list<std::int64_t>& axes) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
-            handle_error(mag_permute(&out, m_tensor, axes.data(), axes.size()));
+            handle_error(mag_permute(&out, m_tensor, axes.begin(), axes.size()));
             return tensor{out};
         }
         [[nodiscard]] auto mean() const noexcept -> tensor {

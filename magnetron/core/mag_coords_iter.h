@@ -13,24 +13,41 @@
 #define MAG_COORDS_ITER_H
 
 #include "mag_coords.h"
+#include "mag_fastdivmod.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/*
+** Use fast integer divison and avoid a div/mod instruction, as there are very slow.
+** On all of my tested platforms (even Zen5) using fast div mod increase the index calculation performance, so this switch is ON by default.
+*/
+#define MAG_COORDS_ITER_USE_FASTDIV 1
+
 typedef struct mag_coords_iter_t {
     int64_t rank;
     int64_t shape[MAG_MAX_DIMS];
     int64_t strides[MAG_MAX_DIMS];
+#if MAG_COORDS_ITER_USE_FASTDIV && defined(MAG_FASTDIVMOD_FAST)
+    mag_fastdiv_t factors[MAG_MAX_DIMS];
+#endif
 } mag_coords_iter_t;
 
 static inline void mag_coords_iter_init(mag_coords_iter_t *ci, const mag_coords_t *co) {
     ci->rank = co->rank;
-    for (uint32_t i=0; i < ci->rank; ++i) {
-        mag_assert(co->shape[i] >= 0 && co->shape[i] < UINT32_MAX, "Dim out of range for coord iterator: %, must be within [0, UINT32_MAX)" PRIi64, co->shape[i]);
-        mag_assert(co->strides[i] >= 0 && co->strides[i] < UINT32_MAX, "Dim out of range for coord iterator: %, must be within [0, UINT32_MAX)" PRIi64, co->shape[i]);
-        ci->shape[i] = co->shape[i];
-        ci->strides[i] = co->strides[i];
+    for (uint32_t k=0; k < ci->rank; ++k) {
+        int64_t dim = co->shape[k];
+        mag_assert(dim > 0, "dim must be > 0 in coords_iter_init");
+        ci->shape[k] = dim;
+        ci->strides[k] = co->strides[k];
+#if MAG_COORDS_ITER_USE_FASTDIV && defined(MAG_FASTDIVMOD_FAST)
+        if (dim > 1)ci->factors[k] = mag_fastdiv_init((uint64_t)dim);
+        else {
+            ci->factors[k].magic = 0;
+            ci->factors[k].flags = 0;
+        }
+#endif
     }
 }
 
@@ -39,10 +56,20 @@ static inline int64_t mag_coords_iter_to_offset(const mag_coords_iter_t *cr, int
     const int64_t *rs = cr->strides;
     int64_t ra = cr->rank-1;
     int64_t o = 0;
+    int64_t u = i; (void)u;
     for (int64_t k=ra; k >= 0; --k) {
-        int64_t di = rd[k];
-        int64_t ax = i % di;
-        i /= di;
+        int64_t dim = rd[k];
+        int64_t ax;
+#if MAG_COORDS_ITER_USE_FASTDIV && defined(MAG_FASTDIVMOD_FAST)
+        if (dim > 1) {
+            int64_t q = (int64_t)mag_fastdiv_eval((uint64_t)u, &cr->factors[k]);
+            ax = u - q*dim;
+            u = q;
+        } else ax = 0;
+#else
+        ax = i % dim;
+        i /= dim;
+#endif
         o += ax*rs[k];
     }
     return o;
@@ -54,11 +81,21 @@ static inline int64_t mag_coords_iter_broadcast(mag_coords_iter_t *cr, const mag
     const int64_t *xs = cx->strides;
     int64_t ra = cr->rank;
     int64_t delta = ra-- - cx->rank;
+    int64_t u = i; (void)u;
     int64_t o = 0;
     for (int64_t k=ra; k >= 0; --k) {
-        int64_t di = rd[k];
-        int64_t ax = i % di;
-        i /= di;
+        int64_t dim = rd[k];
+        int64_t ax;
+#if MAG_COORDS_ITER_USE_FASTDIV && defined(MAG_FASTDIVMOD_FAST)
+        if (dim > 1) {
+            int64_t q = (int64_t)mag_fastdiv_eval((uint64_t)u, &cr->factors[k]);
+            ax = u - q*dim;
+            u = q;
+        } else ax = 0;
+#else
+        ax = i % dim;
+        i /= dim;
+#endif
         int64_t kd = k-delta;
         if (kd >= 0 && xd[kd] > 1)
             o += ax*xs[kd];
@@ -73,11 +110,21 @@ static inline int64_t mag_coords_iter_repeat(mag_coords_iter_t *cr, const mag_co
     int64_t rr = cr->rank;
     int64_t rx = cx->rank;
     int64_t delta = rx-- - rr;
+    int64_t u = i; (void)u;
     int64_t o = 0;
     for (int64_t k=rx; k >= 0; --k) {
-        int64_t di = xd[k];
-        int64_t ax = i % di;
-        i /= di;
+        int64_t dim = xd[k];
+        int64_t ax;
+#if MAG_COORDS_ITER_USE_FASTDIV && defined(MAG_FASTDIVMOD_FAST)
+        if (dim > 1) {
+            int64_t q = (int64_t)mag_fastdiv_eval((uint64_t)u, &cx->factors[k]);
+            ax = u - q*dim;
+            u = q;
+        } else ax = 0;
+#else
+        ax = i % dim;
+        i /= dim;
+#endif
         int64_t kd = k - delta;
         if (kd < 0) continue;
         o += ax % rd[kd] * rs[kd];
@@ -101,10 +148,20 @@ static inline void mag_coords_iter_offset2(
     int64_t dx = rr-rx;
     int64_t ir = 0;
     int64_t ix = 0;
+    int64_t u = i; (void)u;
     for (int64_t k = rr-1; k >= 0; --k) {
         int64_t dim = rd[k];
-        int64_t ax = i % dim;
+        int64_t ax;
+#if MAG_COORDS_ITER_USE_FASTDIV && defined(MAG_FASTDIVMOD_FAST)
+        if (dim > 1) {
+            int64_t q = (int64_t)mag_fastdiv_eval((uint64_t)u, &cr->factors[k]);
+            ax = u - q*dim;
+            u  = q;
+        } else ax = 0;
+#else
+        ax = i % dim;
         i /= dim;
+#endif
         ir += ax*rs[k];
         int64_t kx = k-dx;
         if (kx >= 0 && xd[kx] > 1)
@@ -137,10 +194,20 @@ static inline void mag_coords_iter_offset3(
     int64_t ir = 0;
     int64_t ix = 0;
     int64_t iy = 0;
+    int64_t u = i; (void)u;
     for (int64_t k=rr-1; k >= 0; --k) {
         int64_t dim = rd[k];
-        int64_t ax = i % dim;
+        int64_t ax;
+#if MAG_COORDS_ITER_USE_FASTDIV && defined(MAG_FASTDIVMOD_FAST)
+        if (dim > 1) {
+            int64_t q = (int64_t)mag_fastdiv_eval((uint64_t)u, &cr->factors[k]);
+            ax = u - q*dim;
+            u = q;
+        } else ax = 0;
+#else
+        ax = i % dim;
         i /= dim;
+#endif
         ir += ax*rs[k];
         int64_t kx = k-dx;
         if (kx >= 0 && xd[kx] > 1)
