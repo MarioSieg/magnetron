@@ -19,7 +19,7 @@ namespace mag {
         int64_t shape[MAG_MAX_DIMS] = {};
         int64_t strides[MAG_MAX_DIMS] = {};
 
-        __host__ __device__ explicit tensor_coords(const mag_tensor_coords_t &co) noexcept {
+        __host__ __device__ explicit tensor_coords(const mag_coords_t &co) noexcept {
             rank = static_cast<int>(co.rank);
             for (int i=0; i < rank; i++) {
                 shape[i] = co.shape[i];
