@@ -20,17 +20,13 @@
 #include <stdexcept>
 #include <vector>
 
-#define mag_cuda_check(expr) \
-    do { \
-        if (auto rrr {(expr)}; rrr != cudaSuccess) { \
-            mag_panic(#expr, __func__, __FILE__, __LINE__, cudaGetErrorString(rrr)); \
-        } \
-    } while (0)
-
 namespace mag {
-    struct cuda_exception : std::runtime_error {
-        explicit cuda_exception(const char *msg) : std::runtime_error(msg) {}
-    };
+    #define mag_cuda_check(expr) \
+        do { \
+            if (auto result = (expr); mag_unlikely(result != cudaSuccess)) { \
+                mag_panic("%s:%d CUDA error: " #expr " <- %s", __FILE__, __LINE__, cudaGetErrorString(result)); \
+            } \
+        } while (0)
 
     struct physical_device final {
         int id = 0;
@@ -279,9 +275,6 @@ try {
         return nullptr;
     }
     return mag::backend_create(ngpus);
-} catch (const mag::cuda_exception &e) {
-    mag_log_error("CUDA error during backend initialization: %s", e.what());
-    return nullptr;
 } catch (const std::exception &e) {
     mag_log_error("Error during backend initialization: %s", e.what());
     return nullptr;

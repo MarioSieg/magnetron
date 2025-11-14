@@ -15,6 +15,7 @@
 #include "mag_alloc.h"
 #include "mag_sstream.h"
 #include "mag_autodiff.h"
+#include "mag_fmt.h"
 
 static void mag_view_meta_dtor(void *p) {
     mag_view_meta_t *vm = p;
@@ -293,20 +294,30 @@ bool mag_tensor_get_item_bool(const mag_tensor_t *t) {
 }
 
 static void mag_fmt_single_elem(mag_sstream_t *ss, const void *buf, size_t i, mag_dtype_t dtype) {
-    switch (dtype) {
-    case MAG_DTYPE_E8M23:
-    case MAG_DTYPE_E5M10:
-        mag_sstream_append(ss, "%g", (mag_e11m52_t)((const mag_e8m23_t *)buf)[i]);
-        return;
-    case MAG_DTYPE_BOOL:
+    if (dtype == MAG_DTYPE_BOOL) {
         mag_sstream_append(ss, "%s", ((const uint8_t *)buf)[i] ? "True" : "False");
         return;
-    case MAG_DTYPE_I32:
-        mag_sstream_append(ss, "%" PRIi32, ((const int32_t *)buf)[i]);
-        return;
-    default:
-        mag_panic("DType formatting not implemented: %d", dtype);
     }
+    mag_e11m52_t x = 0.0;
+    mag_format_flags_t flags = 0;
+    switch (dtype) {
+        case MAG_DTYPE_E8M23:
+        case MAG_DTYPE_E5M10:
+            x = ((const mag_e8m23_t *)buf)[i];
+            flags = MAG_FMT_G;
+        break;
+        case MAG_DTYPE_I32:
+            x = ((const int32_t *)buf)[i];
+            flags = MAG_FMT_I;
+        break;
+        default: mag_panic("Unknown dtype for formatting: %d", dtype); return;
+    }
+    char fmt[128];
+    char *e = mag_fmt_e11m52(fmt, x, flags);
+    *e = '\0';
+    ptrdiff_t n = e-fmt;
+    if (mag_likely(n > 0))
+        mag_sstream_append_strn(ss, fmt, e-fmt);
 }
 
 static void mag_tensor_fmt_recursive(
