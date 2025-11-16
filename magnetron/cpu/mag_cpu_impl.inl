@@ -1647,13 +1647,24 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
         mag_##TS##_t min = mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(0)); \
         mag_##TS##_t max = mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(1)); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
+        mag_philox4x32_stream_t *prng = payload->prng; \
+        mag_coords_iter_t cr; \
+        mag_coords_iter_init(&cr, &r->coords); \
         int64_t total = r->numel; \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        mag_vrand_##D##_##T(payload->prng, rb-ra, br+ra, min, max); \
+        if (mag_tensor_is_contiguous(r)) { \
+            mag_vrand_##D##_##T(prng, rb-ra, br+ra, min, max); \
+            return; \
+        } \
+        for (int64_t i=ra; i < rb; ++i) { \
+            int64_t ri = mag_coords_iter_to_offset(&cr, i); \
+            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
+            mag_vrand_##D##_##T(prng, 1, br+ri, min, max); \
+        } \
     }
 
 #define mag_gen_stub_fill_arange(T, CVT) \

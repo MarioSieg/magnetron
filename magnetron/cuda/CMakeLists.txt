@@ -7,6 +7,8 @@ find_package(CUDAToolkit)
 if (CUDAToolkit_FOUND)
     message(STATUS "CUDA Toolkit found")
     enable_language(CUDA)
+    set(CMAKE_CUDA_STANDARD 20)
+    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
     # ┌────────────────────────────┬──────────────────────────────────────────────────────────────┬──────────────────────────────┐
     # │ Compute Capability (SM)    │ GPU Architecture / Example                                   │ Key Features / Requirements   │
