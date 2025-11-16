@@ -17,121 +17,123 @@ using namespace test;
 static constexpr std::int64_t lim {3};
 static constexpr std::int64_t broadcast_lim {lim-1};
 
+class binary_operators : public ::testing::TestWithParam<device_kind> {};
+
 #define impl_binary_operator_float_test_group(name, op, data_type) \
-    TEST(cpu_tensor_binary_ops, name##_same_shape_##data_type) { \
-        test::test_binary_float_operator<false, false>(lim, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+    TEST_P(binary_operators, name##_same_shape_##data_type) { \
+        test::test_binary_float_operator<false, false>(GetParam(), lim, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](float a, float b) -> float { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_broadcast_##data_type) { \
-        test::test_binary_float_operator<true, false>(broadcast_lim, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+    TEST_P(binary_operators, name##_broadcast_##data_type) { \
+        test::test_binary_float_operator<true, false>(GetParam(), broadcast_lim, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](float a, float b) -> float { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_inplace_same_shape_##data_type) { \
-        test::test_binary_float_operator<false, true>(lim, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+    TEST_P(binary_operators, name##_inplace_same_shape_##data_type) { \
+        test::test_binary_float_operator<false, true>(GetParam(), lim, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op##= b; }, \
             [](float a, float b) -> float { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_inplace_broadcast_##data_type) { \
-        test::test_binary_float_operator<true, true>(broadcast_lim, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+    TEST_P(binary_operators, name##_inplace_broadcast_##data_type) { \
+        test::test_binary_float_operator<true, true>(GetParam(), broadcast_lim, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op##= b; }, \
             [](float a, float b) -> float { return a op b; } \
         ); \
     }
 
 #define impl_binary_operator_bool_test_group(name, op) \
-    TEST(cpu_tensor_binary_ops, name##_same_shape_bool) { \
-        test::test_binary_boolean_operator<false, false>(lim, \
+    TEST_P(binary_operators, name##_same_shape_bool) { \
+        test::test_binary_boolean_operator<false, false>(GetParam(), lim, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](bool a, bool b) -> bool { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_broadcast_bool) { \
-        test::test_binary_boolean_operator<true, false>(broadcast_lim, \
+    TEST_P(binary_operators, name##_broadcast_bool) { \
+        test::test_binary_boolean_operator<true, false>(GetParam(), broadcast_lim, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](bool a, bool b) -> bool { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_inplace_same_shape_bool) { \
-        test::test_binary_boolean_operator<false, true>(lim, \
+    TEST_P(binary_operators, name##_inplace_same_shape_bool) { \
+        test::test_binary_boolean_operator<false, true>(GetParam(), lim, \
             [](tensor a, tensor b) -> tensor { return a op##= b; }, \
             [](bool a, bool b) -> bool { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_inplace_broadcast_bool) { \
-        test::test_binary_boolean_operator<true, true>(broadcast_lim, \
+    TEST_P(binary_operators, name##_inplace_broadcast_bool) { \
+        test::test_binary_boolean_operator<true, true>(GetParam(), broadcast_lim, \
             [](tensor a, tensor b) -> tensor { return a op##= b; }, \
             [](bool a, bool b) -> bool { return a op b; } \
         ); \
     }
 
 #define impl_binary_operator_int_test_group(name, op, data_type, min, max) \
-    TEST(cpu_tensor_binary_ops, name##_same_shape_##data_type) { \
-        test::test_binary_int_operator<false, false>(lim, dtype::data_type, (min), (max), \
+    TEST_P(binary_operators, name##_same_shape_##data_type) { \
+        test::test_binary_int_operator<false, false>(GetParam(), lim, dtype::data_type, (min), (max), \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](std::int32_t a, std::int32_t b) -> std::int32_t { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_broadcast_##data_type) { \
-        test::test_binary_int_operator<true, false>(broadcast_lim, dtype::data_type, (min), (max), \
+    TEST_P(binary_operators, name##_broadcast_##data_type) { \
+        test::test_binary_int_operator<true, false>(GetParam(), broadcast_lim, dtype::data_type, (min), (max), \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](std::int32_t a, std::int32_t b) -> std::int32_t { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_inplace_same_shape_##data_type) { \
-        test::test_binary_int_operator<false, true>(lim, dtype::data_type, (min), (max), \
+    TEST_P(binary_operators, name##_inplace_same_shape_##data_type) { \
+        test::test_binary_int_operator<false, true>(GetParam(), lim, dtype::data_type, (min), (max), \
             [](tensor a, tensor b) -> tensor { return a op##= b; }, \
             [](std::int32_t a, std::int32_t b) -> std::int32_t { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_inplace_broadcast_##data_type) { \
-        test::test_binary_int_operator<true, true>(broadcast_lim, dtype::data_type, (min), (max), \
+    TEST_P(binary_operators, name##_inplace_broadcast_##data_type) { \
+        test::test_binary_int_operator<true, true>(GetParam(), broadcast_lim, dtype::data_type, (min), (max), \
             [](tensor a, tensor b) -> tensor { return a op##= b; }, \
             [](std::int32_t a, std::int32_t b) -> std::int32_t { return a op b; } \
         ); \
     }
 
 #define impl_binary_operator_cmp_float_test_group(name, op, data_type) \
-    TEST(cpu_tensor_binary_ops, name##_same_shape_##data_type) { \
-        test::test_binary_float_compare<false>(lim, dtype::data_type, \
+    TEST_P(binary_operators, name##_same_shape_##data_type) { \
+        test::test_binary_float_compare<false>(GetParam(), lim, dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](float a, float b) -> bool { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_broadcast_##data_type) { \
-        test::test_binary_float_compare<true>(broadcast_lim, dtype::data_type, \
+    TEST_P(binary_operators, name##_broadcast_##data_type) { \
+        test::test_binary_float_compare<true>(GetParam(), broadcast_lim, dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](float a, float b) -> bool { return a op b; } \
         ); \
     }
 
 #define impl_binary_operator_cmp_int_test_group(name, op, data_type) \
-    TEST(cpu_tensor_binary_ops, name##_same_shape_##data_type) { \
-        test::test_binary_int_compare<false>(lim, dtype::data_type, \
+    TEST_P(binary_operators, name##_same_shape_##data_type) { \
+        test::test_binary_int_compare<false>(GetParam(), lim, dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](std::int32_t a, std::int32_t b) -> bool { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_broadcast_##data_type) { \
-        test::test_binary_int_compare<true>(broadcast_lim, dtype::data_type, \
+    TEST_P(binary_operators, name##_broadcast_##data_type) { \
+        test::test_binary_int_compare<true>(GetParam(), broadcast_lim, dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](std::int32_t a, std::int32_t b) -> bool { return a op b; } \
         ); \
     }
 
 #define impl_binary_operator_cmp_bool_test_group(name, op) \
-    TEST(cpu_tensor_binary_ops, name##_same_shape_bool) { \
-        test::test_binary_bool_compare<false>(lim, \
+    TEST_P(binary_operators, name##_same_shape_bool) { \
+        test::test_binary_bool_compare<false>(GetParam(), lim, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](bool a, bool b) -> bool { return a op b; } \
         ); \
     } \
-    TEST(cpu_tensor_binary_ops, name##_broadcast_bool) { \
-        test::test_binary_bool_compare<true>(broadcast_lim, \
+    TEST_P(binary_operators, name##_broadcast_bool) { \
+        test::test_binary_bool_compare<true>(GetParam(), broadcast_lim, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
             [](bool a, bool b) -> bool { return a op b; } \
         ); \
@@ -193,3 +195,14 @@ impl_binary_operator_cmp_int_test_group(gt, >, i32)
 #undef impl_binary_operator_bool_test_group
 #undef impl_binary_operator_int_test_group
 #undef impl_binary_operator_cmp_float_test_group
+
+static std::string gtest_device_name(const TestParamInfo<device_kind>& info) {
+   return get_device_kind_id(info.param);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    binary_operators_multi_device,
+    binary_operators,
+    ValuesIn(get_supported_devices()),
+    gtest_device_name
+);

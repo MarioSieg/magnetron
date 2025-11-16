@@ -182,3 +182,12 @@ TEST(views, inplace_bumps_version_and_detaches) {
     loss.backward();
     ASSERT_TRUE(x.grad()->is_contiguous());
 }
+
+TEST(views, view_no_axes) {
+    auto ctx = context{};
+    auto base = tensor{ctx, dtype::e8m23, 2, 2, 3, 1};
+    auto v = base.view();
+    ASSERT_FALSE(base.is_view());
+    ASSERT_TRUE(v.is_view());
+    ASSERT_EQ(base.storage_base_ptr(), v.storage_base_ptr());
+}

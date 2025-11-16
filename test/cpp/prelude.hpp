@@ -7,11 +7,10 @@
 #include <random>
 
 #include <magnetron.hpp>
-#include <../../magnetron/core/mag_context.h>
-#include <../../magnetron/core/mag_tensor.h>
+#include <core/mag_context.h>
+#include <core/mag_tensor.h>
 
 #include <gtest/gtest.h>
-#include <gmock/gmock.h>
 
 #include "prelude.hpp"
 
@@ -20,6 +19,23 @@
 using namespace testing;
 
 namespace magnetron::test {
+    enum class device_kind {
+        cpu,
+        cuda,
+    };
+
+    [[nodiscard]] constexpr const char* get_device_kind_id(device_kind dvc) {
+        switch (dvc) {
+            case device_kind::cpu: return "cpu";
+            case device_kind::cuda: return "cuda";
+            default: return "";
+        }
+    }
+
+    [[nodiscard]] inline std::vector<device_kind> get_supported_devices() {
+        return {device_kind::cpu, device_kind::cuda};
+    }
+
     using float16 = half_float::half;
 
     template <typename T>
@@ -107,8 +123,8 @@ namespace magnetron::test {
 
     template <bool BROADCAST, bool INPLACE, typename A, typename B>
         requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, float, float>
-    auto test_binary_float_operator(std::int64_t lim, float eps, dtype ty, A&& a, B&& b, float min = -10.0, float max = 10.0) -> decltype(auto) {
-        auto ctx = context{};
+    auto test_binary_float_operator(device_kind dev, std::int64_t lim, float eps, dtype ty, A&& a, B&& b, float min = -10.0, float max = 10.0) -> decltype(auto) {
+        auto ctx = context{get_device_kind_id(dev)};
         ctx.stop_grad_recorder();
         for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape) {
             tensor t_a {ctx, ty, shape};
@@ -135,8 +151,8 @@ namespace magnetron::test {
 
   template <bool BROADCAST, bool INPLACE, typename A, typename B>
         requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, std::int32_t, std::int32_t>
-    auto test_binary_int_operator(std::int64_t lim, dtype ty, std::int32_t min, std::int32_t max, A&& a, B&& b) -> decltype(auto) {
-        auto ctx = context{};
+    auto test_binary_int_operator(device_kind dev, std::int64_t lim, dtype ty, std::int32_t min, std::int32_t max, A&& a, B&& b) -> decltype(auto) {
+        auto ctx = context{get_device_kind_id(dev)};
         ctx.stop_grad_recorder();
         for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape) {
             tensor t_a {ctx, ty, shape};
@@ -164,8 +180,8 @@ namespace magnetron::test {
 
     template <bool BROADCAST, bool INPLACE, typename A, typename B>
         requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, bool, bool>
-    auto test_binary_boolean_operator(std::int64_t lim, A&& a, B&& b) -> decltype(auto) {
-        auto ctx = context{};
+    auto test_binary_boolean_operator(device_kind dev, std::int64_t lim, A&& a, B&& b) -> decltype(auto) {
+        auto ctx = context{get_device_kind_id(dev)};
         ctx.stop_grad_recorder();
         for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape) {
             tensor t_a {ctx, dtype::boolean, shape};
@@ -193,8 +209,8 @@ namespace magnetron::test {
 
     template <bool BROADCAST, typename A, typename B>
         requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, float, float>
-    auto test_binary_float_compare(std::int64_t lim, dtype ty, A&& a, B&& b, float min = -10.0, float max = 10.0) -> decltype(auto) {
-        auto ctx = context{};
+    auto test_binary_float_compare(device_kind dev, std::int64_t lim, dtype ty, A&& a, B&& b, float min = -10.0, float max = 10.0) -> decltype(auto) {
+        auto ctx = context{get_device_kind_id(dev)};
         ctx.stop_grad_recorder();
         for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape){
             tensor t_a{ctx, ty, shape};
@@ -215,8 +231,8 @@ namespace magnetron::test {
 
     template <bool BROADCAST, typename A, typename B>
         requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, std::int32_t, std::int32_t>
-    auto test_binary_int_compare(std::int64_t lim, dtype ty, A&& a, B&& b, std::int32_t min = -10, std::int32_t max =  10) -> decltype(auto) {
-        auto ctx = context{};
+    auto test_binary_int_compare(device_kind dev, std::int64_t lim, dtype ty, A&& a, B&& b, std::int32_t min = -10, std::int32_t max =  10) -> decltype(auto) {
+        auto ctx = context{get_device_kind_id(dev)};
         ctx.stop_grad_recorder();
         std::uniform_int_distribution<std::int32_t> dist{min, max};
         for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape){
@@ -237,8 +253,8 @@ namespace magnetron::test {
 
     template <bool BROADCAST, typename A, typename B>
         requires std::is_invocable_r_v<tensor, A, tensor, tensor> && std::is_invocable_v<B, bool, bool>
-    auto test_binary_bool_compare(std::int64_t lim, A&& a, B&& b) -> decltype(auto) {
-        auto ctx = context{};
+    auto test_binary_bool_compare(device_kind dev, std::int64_t lim, A&& a, B&& b) -> decltype(auto) {
+        auto ctx = context{get_device_kind_id(dev)};
         ctx.stop_grad_recorder();
         for_all_shape_perms(lim, BROADCAST ? 2 : 1, [&](std::span<const std::int64_t> shape){
             tensor t_a{ctx, dtype::boolean, shape};  t_a.fill(true);

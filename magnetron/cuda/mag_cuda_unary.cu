@@ -13,6 +13,54 @@
 #include "mag_cuda_coords.cuh"
 
 namespace mag {
+    template <typename T>
+    __global__ static void clone_strided_kernel(
+        int64_t n,
+        T *o,
+        const T *x,
+        tensor_coords rc,
+        tensor_coords xc
+    ) {
+        int64_t i = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
+        int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
+        for (; i < n; i += step) {
+            int64_t ri = rc.to_offset(i);
+            int64_t xi = xc.to_offset(i);
+            o[ri] = x[xi];
+        }
+    }
+
+    template <typename T>
+    static void launch_clone(
+        mag_tensor_t *r,
+        const mag_tensor_t *x
+    ) {
+        int64_t n = mag_tensor_get_numel(r);
+        int64_t blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
+        auto *pr = static_cast<T *>(mag_tensor_get_data_ptr(r));
+        auto *px = static_cast<const T *>(mag_tensor_get_data_ptr(x));
+        if (mag_full_cont2(r, x)) {
+            cudaMemcpy(pr, px, n*sizeof(T), cudaMemcpyDeviceToDevice);
+            return;
+        }
+        tensor_coords rc {r->coords};
+        tensor_coords xc {x->coords};
+        clone_strided_kernel<T><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, rc, xc);
+    }
+
+    void unary_op_clone(const mag_command_t *cmd){
+        mag_tensor_t *r = cmd->out[0];
+        const mag_tensor_t *x = cmd->in[0];
+        mag_assert2(r->dtype == x->dtype);
+        switch (r->dtype) {
+            case MAG_DTYPE_E8M23: launch_clone<mag_e8m23_t>(r, x); break;
+            case MAG_DTYPE_E5M10: launch_clone<half>(r, x); break;
+            case MAG_DTYPE_I32: launch_clone<int32_t>(r, x); break;
+            case MAG_DTYPE_BOOL: launch_clone<uint8_t>(r, x); break;
+            default: mag_assert(false, "Unsupported dtype for unary op");
+        }
+    }
+
     constexpr mag_e8m23_t INVSQRT2 = 0.707106781186547524400844362104849039284835937f /* 1/√2 */;
 
     template <typename T>

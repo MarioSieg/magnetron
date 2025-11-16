@@ -113,7 +113,7 @@ namespace mag {
             [MAG_OP_RAND_NORMAL] = &fill_op_fill_rand_normal,
             [MAG_OP_RAND_BERNOULLI] = nullptr,
             [MAG_OP_ARANGE] = nullptr,
-            [MAG_OP_CLONE] = nullptr,
+            [MAG_OP_CLONE] = &unary_op_clone,
             [MAG_OP_VIEW] = &op_nop,
             [MAG_OP_TRANSPOSE] = &op_nop,
             [MAG_OP_PERMUTE] = &op_nop,
