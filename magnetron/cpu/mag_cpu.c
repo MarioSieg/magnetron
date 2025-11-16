@@ -119,13 +119,11 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
 
 static void mag_cpu_manual_seed(mag_device_t *dvc, uint64_t seed) {
     mag_cpu_device_t *cpu_dvc = dvc->impl;
-    cpu_dvc->primary_prng.key.v[0] = seed;
-    cpu_dvc->primary_prng.key.v[1] = 0;
+    mag_philox4x32_stream_seed(&cpu_dvc->primary_prng, seed, 0);
     if (cpu_dvc->pool) {
         for (uint32_t i=0; i < cpu_dvc->pool->num_allocated_workers; ++i) {
             mag_worker_t *worker = &cpu_dvc->pool->workers[i];
-            worker->prng.key.v[0] = seed;
-            worker->prng.key.v[1] = worker->payload.thread_idx+1;
+            mag_philox4x32_stream_seed(&worker->prng, seed, worker->payload.thread_idx+1);
         }
     }
 }

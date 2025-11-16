@@ -197,33 +197,26 @@ namespace mag {
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t th = __tanhf(x); return .5f*(1.f + th) + .5f*x*(1.f - th*th); }
     };
 
-    template <typename Op>
-    __global__ static void unary_op_kernel_contig(
+    template <typename Op, const bool contig>
+    __global__ static void unary_op_kernel(
         Op op,
         int64_t n,
-        typename Op::Out *o,
-        const typename Op::In *x
-    ) {
-        int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
-        if (i >= n) return;
-        o[i] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[i])));
-    }
-
-    template <typename Op>
-    __global__ static void unary_op_kernel_strided(
-        Op op,
-        int64_t n,
-        typename Op::Out *o,
+        typename Op::Out *r,
         const typename Op::In *x,
-        tensor_coords rc,
-        tensor_coords xc
+        [[maybe_unused]] tensor_coords rc,
+        [[maybe_unused]] tensor_coords xc
     ) {
         int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
-        int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
-        for (; i < n; i += step) {
-            int ri = rc.to_offset(i);
-            int xi = rc.broadcast(xc, i);
-            o[ri] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[xi])));
+        if constexpr (contig) {
+            if (i >= n) return;
+            r[i] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[i])));
+        } else {
+            int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+            for (; i < n; i += step) {
+                int64_t ri = rc.to_offset(i);
+                int64_t xi = rc.broadcast(xc, i);
+                r[ri] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[xi])));
+            }
         }
     }
 
@@ -234,23 +227,12 @@ namespace mag {
     ) {
         int64_t n = mag_tensor_get_numel(r);
         int64_t blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
-        if (mag_full_cont2(r, x)) {
-            unary_op_kernel_contig<Op><<<blocks, UNARY_BLOCK_SIZE>>>(
-                Op{},
-                n,
-                static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r)),
-                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x))
-            );
-        } else {
-            unary_op_kernel_strided<Op><<<blocks, UNARY_BLOCK_SIZE>>>(
-                Op{},
-                n,
-                static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r)),
-                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x)),
-                tensor_coords {r->coords},
-                tensor_coords {x->coords}
-            );
-        }
+        tensor_coords rc {r->coords};
+        tensor_coords xc {x->coords};
+        auto *pr = static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r));
+        auto *px = static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x));
+        if (mag_full_cont2(r, x)) unary_op_kernel<Op, true><<<blocks, UNARY_BLOCK_SIZE>>>(Op{}, n, pr, px, rc, xc);
+        else unary_op_kernel<Op, false><<<blocks, UNARY_BLOCK_SIZE>>>(Op{}, n, pr, px, rc, xc);
     }
 
     template <template <typename> typename Op>

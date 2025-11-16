@@ -121,38 +121,29 @@ namespace mag {
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>y; }
     };
 
-    template <typename Op>
-    __global__ static void binary_op_kernel_contig(
-        Op op,
-        int64_t n,
-        typename Op::Out *o,
-        const typename Op::In *x,
-        const typename Op::In *y
-    ) {
-        int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
-        int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
-        for (; i < n; i += step)
-            o[i] = op(x[i], y[i]);
-    }
-
-    template <typename Op>
-    __global__ static void binary_op_kernel_strided(
+    template <typename Op, const bool contig>
+    __global__ static void binary_op_kernel(
         Op op,
         int64_t n,
         typename Op::Out *o,
         const typename Op::In *x,
         const typename Op::In *y,
-        tensor_coords rc,
-        tensor_coords xc,
-        tensor_coords yc
+        [[maybe_unused]] tensor_coords rc,
+        [[maybe_unused]] tensor_coords xc,
+        [[maybe_unused]] tensor_coords yc
     ) {
         int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
         int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
-        for (; i < n; i += step) {
-            int64_t ri = rc.to_offset(i);
-            int64_t xi = rc.broadcast(xc, i);
-            int64_t yi = rc.broadcast(yc, i);
-            o[ri] = op(x[xi], y[yi]);
+        if constexpr (contig) {
+            for (; i < n; i += step)
+                o[i] = op(x[i], y[i]);
+        } else {
+            for (; i < n; i += step) {
+                int64_t ri = rc.to_offset(i);
+                int64_t xi = rc.broadcast(xc, i);
+                int64_t yi = rc.broadcast(yc, i);
+                o[ri] = op(x[xi], y[yi]);
+            }
         }
     }
 
@@ -164,26 +155,14 @@ namespace mag {
     ) {
         int64_t n = mag_tensor_get_numel(r);
         int64_t blocks = (n+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE;
-        if (mag_full_cont3(r, x, y)) {
-            binary_op_kernel_contig<Op><<<blocks, BINARY_BLOCK_SIZE>>>(
-                Op{},
-                n,
-                static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r)),
-                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x)),
-                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(y))
-            );
-        } else {
-            binary_op_kernel_strided<Op><<<blocks, BINARY_BLOCK_SIZE>>>(
-                Op{},
-                n,
-                static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r)),
-                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x)),
-                static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(y)),
-                tensor_coords {r->coords},
-                tensor_coords {x->coords},
-                tensor_coords {y->coords}
-            );
-        }
+        tensor_coords rc {r->coords};
+        tensor_coords xc {x->coords};
+        tensor_coords yc {y->coords};
+        auto *pr = static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r));
+        auto *px = static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x));
+        auto *py = static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(y));
+        if (mag_full_cont3(r, x, y)) binary_op_kernel<Op, true><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, n, pr, px, py, rc, xc, yc);
+        else binary_op_kernel<Op, false><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, n, pr, px, py, rc, xc, yc);
     }
 
     template <template <typename, typename> typename Op>

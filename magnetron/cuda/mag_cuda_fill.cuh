@@ -18,4 +18,6 @@ namespace mag {
 
     extern void fill_op_fill(const mag_command_t *cmd);
     extern void fill_op_masked_fill(const mag_command_t *cmd);
+    extern void fill_op_fill_rand_uniform(const mag_command_t *cmd);
+    extern void fill_op_fill_rand_normal(const mag_command_t *cmd);
 }

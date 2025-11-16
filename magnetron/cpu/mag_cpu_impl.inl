@@ -53,9 +53,6 @@ typedef uint8_t mag_bool_t;
 #define mag_i32p(t) ((const int32_t*)mag_tensor_get_data_ptr(t))
 #define mag_i32p_mut(t) ((int32_t*)mag_tensor_get_data_ptr(t))
 
-#define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
-#define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
-
 #define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 
 typedef struct mag_scratch_buf_t {
@@ -583,172 +580,7 @@ static void MAG_HOTPROC mag_vcast_bool_e5m10(int64_t numel, void *restrict xo, c
         o[i] = x[i] ? MAG_E5M10_ONE : MAG_E5M10_ZERO;
 }
 
-static MAG_AINLINE uint32_t mag_mulhilo32(uint32_t a, uint32_t b, uint32_t *hip) {
-    uint64_t prod = (uint64_t)a*(uint64_t)b;
-    *hip = prod>>32;
-    return (uint32_t)prod;
-}
-
-static MAG_AINLINE void mag_ctr_inc_128(mag_philox4x32_ctr_t *ctr) {
-#if defined(__SIZEOF_INT128__) && defined(MAG_LE)
-    unsigned __int128 x;
-    memcpy(&x, ctr->v, sizeof(x)); ++x; memcpy(ctr->v, &x, sizeof(x));
-#else /* Carry cascade */
-    if (!++ctr->v[0])
-        if (!++ctr->v[1])
-            if (!++ctr->v[2])
-                ++ctr->v[3];
-#endif
-}
-
-static MAG_AINLINE mag_philox4x32_ctr_t mag_prng_sample(mag_philox4x32_key_t key, mag_philox4x32_ctr_t ctr) {
-#pragma GCC unroll 10
-    for (int i=0; i < MAG_PHILOX_ROUNDS; ++i) {
-        uint32_t hi0, hi1;
-        uint32_t lo0 = mag_mulhilo32(0xd2511f53u, ctr.v[0], &hi0);
-        uint32_t lo1 = mag_mulhilo32(0xcd9e8d57u, ctr.v[2], &hi1);
-        ctr.v[0] = hi1^ctr.v[1]^key.v[0];
-        ctr.v[1] = lo1;
-        ctr.v[2] = hi0^ctr.v[3]^key.v[1];
-        ctr.v[3] = lo0;
-        key.v[0] += 0x9e3779B9u;
-        key.v[1] += 0xbb67ae85u;
-    }
-    return ctr;
-}
-
-static MAG_AINLINE void mag_prng_next_u32x4(mag_philox4x32_stream_t *prng, uint32_t(*o)[4]) {
-    mag_philox4x32_ctr_t ctr = mag_prng_sample(prng->key, prng->ctr); /* TODO: use cache to avoid wasting 3/4 values */
-    mag_ctr_inc_128(&prng->ctr);
-    memcpy(o, &ctr, sizeof(ctr));
-}
-static MAG_AINLINE uint32_t mag_prng_next_u32(mag_philox4x32_stream_t *prng) {
-    uint32_t r[4];
-    mag_prng_next_u32x4(prng, &r); /* TODO: use cache to avoid wasting 3/4 values */
-    return *r;
-}
-
-static MAG_AINLINE void mag_prng_next_e8m23x4(mag_philox4x32_stream_t *prng, mag_e8m23_t(*o)[4]) {
-    uint32_t r[4];
-    mag_prng_next_u32x4(prng, &r);
-#pragma GCC unroll 4
-    for (int i=0; i < 4; ++i)
-        (*o)[i] = 1.f/0x1.0p23f*((mag_e8m23_t)(r[i]>>9) + 0.5f);
-}
-static MAG_AINLINE mag_e8m23_t mag_prng_next_e8m23(mag_philox4x32_stream_t *prng) {
-    return 1.f/0x1.0p23f*((mag_e8m23_t)(mag_prng_next_u32(prng)>>9) + 0.5f);
-}
-
-#define mag_gen_vrand_uniform_fp(T, CVT) \
-    static void MAG_AINLINE mag_vrand_uniform_##T(mag_philox4x32_stream_t *prng, int64_t numel, mag_##T##_t *restrict o, mag_e8m23_t min, mag_e8m23_t max) {  \
-        mag_e8m23_t scale = max - min;  \
-        int64_t i=0;  \
-        for (; i+3 < numel; i += 4) {  \
-            mag_e8m23_t r[4];  \
-            mag_prng_next_e8m23x4(prng, &r);  \
-            for (int j=0; j < 4; ++j)  \
-                o[i+j] = CVT(fmaf(r[j], scale, min));  \
-        }  \
-        if (i < numel) {  \
-            mag_e8m23_t r[4];  \
-            mag_prng_next_e8m23x4(prng, &r);  \
-            for (int64_t t=0; i < numel; ++i, ++t)  \
-                o[i] = CVT(fmaf(r[t], scale, min));  \
-        }  \
-    }
-
-mag_gen_vrand_uniform_fp(e8m23, mag_cvt_nop)
-mag_gen_vrand_uniform_fp(e5m10, mag_e8m23_cvt_e5m10)
-
-#undef mag_gen_vrand_uniform_fp
-
-#define mag_gen_vrand_normal_fp(T, CVT) \
-    static void MAG_AINLINE mag_vrand_normal_##T(mag_philox4x32_stream_t *prng, int64_t numel, mag_##T##_t *restrict o, mag_e8m23_t mean, mag_e8m23_t std) {  \
-        int64_t i=0; \
-        while (i+1 < numel) { \
-            mag_e8m23_t r[4];  \
-            mag_prng_next_e8m23x4(prng, &r);  \
-            mag_e8m23_t rho = sqrtf(-2.0f*logf(fmaxf(r[0], 1e-37f))); \
-            mag_e8m23_t theta = MAG_TAU*r[1]; \
-            mag_e8m23_t z0 = rho*cosf(theta); \
-            mag_e8m23_t z1 = rho*sinf(theta); \
-            o[i++] = CVT(fmaf(z0, std, mean)); \
-            if (i < numel) o[i++] = CVT(fmaf(z1, std, mean)); \
-        } \
-        if (i < numel) { \
-            mag_e8m23_t r[4];  \
-            mag_prng_next_e8m23x4(prng, &r);  \
-            mag_e8m23_t rho = sqrtf(-2.0f*logf(fmaxf(r[0], 1e-37f))); \
-            mag_e8m23_t theta = MAG_TAU*r[1]; \
-            mag_e8m23_t z0 = rho*cosf(theta); \
-            o[i] = CVT(fmaf(z0, std, mean)); \
-        } \
-    }
-
-mag_gen_vrand_normal_fp(e8m23, mag_cvt_nop)
-mag_gen_vrand_normal_fp(e5m10, mag_e8m23_cvt_e5m10)
-
-#undef mag_gen_vrand_normal_fp
-
-/* Generate N bernoulli distributed e5m10 floats. */
-static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_philox4x32_stream_t *prng, int64_t numel, mag_bool_t *restrict o, mag_e8m23_t p) {
-    if (mag_unlikely(p <= 0.0f)) {
-        memset(o, 0, sizeof(*o)*(size_t)numel);
-        return;
-    }
-    if (mag_unlikely(p >= 1.0f)) {
-        for (int64_t i=0; i < numel; ++i) o[i] = 1;
-        return;
-    }
-    uint32_t thresh = (uint32_t)(p*4294967296.f); /* 2^32 */
-    int64_t i=0;
-    for (; i+3 < numel; i += 4) {
-        uint32_t r[4];
-        mag_prng_next_u32x4(prng, &r);
-#pragma GCC unroll 4
-        for (int j=0; j < 4; ++j)
-            o[i+j] = r[j] < thresh;
-    }
-    if (i < numel) {
-        uint32_t r[4];
-        mag_prng_next_u32x4(prng, &r);
-        for (int64_t t=0; i < numel; ++i, ++t)
-            o[i] = r[t] < thresh;
-    }
-}
-
-/* Generate N uniform distributed int32s ∈ [min, max]. */
-static void MAG_AINLINE mag_vrand_uniform_i32(mag_philox4x32_stream_t *prng, int64_t numel, int32_t *restrict o, int32_t min, int32_t max) {
-    if (max < min) mag_swap(int32_t, min, max);
-    uint64_t spa64 = (uint64_t)(uint32_t)max - (uint64_t)(uint32_t)min+1ull;
-    if (!spa64) {
-        for (int64_t i=0; i < numel; ++i)
-            o[i] = (int32_t)mag_prng_next_u32(prng);
-        return;
-    }
-    uint32_t span = (uint32_t)spa64;
-    uint32_t thresh = (uint32_t)(-span) % span;
-    int64_t i=0;
-    while (i < numel) {
-        uint32_t r[4];
-        mag_prng_next_u32x4(prng, &r);
-        for (int64_t k=0; k < 4 && i < numel; ++k) {
-            uint32_t x = r[k];
-            uint64_t m = (uint64_t)x*(uint64_t)span;
-            uint32_t lo = (uint32_t)m;
-            uint32_t hi = (uint32_t)(m >> 32);
-            if (mag_unlikely(lo < thresh)) { /* Rejection sampling */
-                do {
-                    uint32_t x2 = mag_prng_next_u32(prng);
-                    m = (uint64_t)x2*(uint64_t)span;
-                    lo = (uint32_t)m;
-                    hi = (uint32_t)(m>>32);
-                } while (lo < thresh);
-            }
-            o[i++] = (int32_t)((uint32_t)min + hi);
-        }
-    }
-}
+#include "mag_cpu_impl_rand.inl"
 
 static mag_e8m23_t MAG_HOTPROC mag_vdot_e8m23(int64_t numel, const mag_e8m23_t *restrict x, const mag_e8m23_t *restrict y) {
 #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
@@ -1928,7 +1760,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
             for (int64_t i=0; i < K; ++i) { \
                 mag_e8m23_t wi = CVT(w[i]); \
                 if (mag_unlikely(!isfinite(wi) || wi <= .0f)) continue; \
-                mag_e8m23_t u = mag_prng_next_e8m23(rng); \
+                mag_e8m23_t u = mag_philox4x32_next_e8m23(rng); \
                 mag_e8m23_t g = -logf(-logf(u)); \
                 arr[m].score = logf(wi) + g; \
                 arr[m].idx = (mag_i32_t)i; \

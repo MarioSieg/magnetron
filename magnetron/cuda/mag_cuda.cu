@@ -97,7 +97,7 @@ namespace mag {
     };
 
     static void manual_seed(mag_device_t *dvc, uint64_t seed) {
-
+        global_seed.store(seed, std::memory_order_relaxed);
     }
 
     using kernel_fn = void (*)(const mag_command_t *);
@@ -109,8 +109,8 @@ namespace mag {
             [MAG_OP_NOP] = &op_nop,
             [MAG_OP_FILL] = &fill_op_fill,
             [MAG_OP_MASKED_FILL] = &fill_op_masked_fill,
-            [MAG_OP_RAND_UNIFORM] = nullptr,
-            [MAG_OP_RAND_NORMAL] = nullptr,
+            [MAG_OP_RAND_UNIFORM] = &fill_op_fill_rand_uniform,
+            [MAG_OP_RAND_NORMAL] = &fill_op_fill_rand_normal,
             [MAG_OP_RAND_BERNOULLI] = nullptr,
             [MAG_OP_ARANGE] = nullptr,
             [MAG_OP_CLONE] = nullptr,

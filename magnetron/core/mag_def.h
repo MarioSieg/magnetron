@@ -54,6 +54,13 @@ extern "C" {
 #define MAG_MAX_CPU_CACHE_DEPTH 10
 #define MAG_MAX_CPU_NUMA_NODES 64
 
+/* Allows compiling code for host and cuda */
+#if defined(__CUDA_ARCH__) && !defined(MAG_CUDA_DEVICE)
+#define MAG_CUDA_DEVICE __device__
+#else
+#define MAG_CUDA_DEVICE
+#endif
+
 /* Compiler specific macros and utils for GCC, Clang and ICC. */
 #if defined(__GNUC__) || defined(__clang__) || defined(__INTEL_COMPILER)
 
@@ -472,6 +479,42 @@ static uint64_t MAG_AINLINE mag_bswap64(uint64_t x) {
     return x;
 }
 
+static MAG_CUDA_DEVICE MAG_AINLINE uint32_t mag_mulhilo32(uint32_t x, uint32_t y, uint32_t *hi) {
+    #ifdef __CUDA_ARCH__
+        *hi = __umulhi(x, y);
+        return x*y;
+    #else
+        uint64_t p = (uint64_t)x*(uint64_t)y;
+        *hi = p>>32;
+        return (uint32_t)p;
+    #endif
+}
+
+static MAG_AINLINE uint64_t mag_mulhilo64(uint64_t x, uint64_t y) {
+#if defined(_MSC_VER) && (!defined(__clang__) || _MSC_VER > 1930) && (defined(_M_X64) || defined(_M_ARM64))
+    return __umulh(x, y);
+#elif defined(__SIZEOF_INT128__)
+    unsigned __int128 xl = x, yl = y;
+    unsigned __int128 rl = xl*yl;
+    return (uint64_t)(rl>>64);
+#else
+    /* Fastdivmod is slow with this (IPC raise a lot), because we have NO fast compiler intrinsics */
+    uint32_t x0 = (uint32_t)(x&~0u);
+    uint32_t x1 = (uint32_t)(x>>32);
+    uint32_t y0 = (uint32_t)(y&~0u);
+    uint32_t y1 = (uint32_t)(y>>32);
+    uint32_t x0y0_hi;
+    mag_mulhilo32(x0, y0, &x0y0_hi);
+    uint64_t x0y1 = x0*(uint64_t)y1;
+    uint64_t x1y0 = x1*(uint64_t)y0;
+    uint64_t x1y1 = x1*(uint64_t)y1;
+    uint64_t temp = x1y0 + x0y0_hi;
+    uint64_t tlo = temp&~0u;
+    uint64_t thi = temp>>32;
+    return x1y1 + thi + ((tlo + x0y1)>>32);
+#endif
+}
+
 extern MAG_EXPORT MAG_NORET MAG_COLDPROC void mag_panic(const char *msg, ...); /* Print error message and abort. */
 extern MAG_EXPORT bool mag_log_enabled; /* Enable/disable logging to stdout/stderr. */
 
@@ -491,6 +534,9 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 #define mag_xmin(x, y) (((x) < (y)) ? (x) : (y))
 #define mag_rd_down(x,m) ((x)/(m) * (m))
 #define mag_clamp(v, lo, hi) ((v) < (lo) ? (lo) : (v) > (hi) ? (hi) : (v))
+
+#define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
+#define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
 
 /* Logging and debugging macros. */
 #define MAG_CC_RED "\x1b[31m"
