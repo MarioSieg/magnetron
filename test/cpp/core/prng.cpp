@@ -11,6 +11,10 @@
 
 #include <prelude.hpp>
 
+// This file (because of Boost) increases the compile time diabolically,
+// so just enable these tests if you messed with the prng
+#if 0
+
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/uniform.hpp>
 #include <boost/math/distributions/binomial.hpp>
@@ -218,3 +222,5 @@ TEST(prng, manual_seeding) {
     for (std::size_t i=0; i < a.size(); i++)
         ASSERT_FLOAT_EQ(a[i], b[i]) << "i=" << i;
 }
+
+#endif

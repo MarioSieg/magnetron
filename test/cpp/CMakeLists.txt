@@ -27,18 +27,10 @@ target_link_libraries(
     GTest::gmock
 )
 add_test(NAME magnetron_test COMMAND magnetron_test)
+target_precompile_headers(magnetron_test PRIVATE
+    "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/test/cpp/prelude.hpp>"
+)
 
 if (${MAGNETRON_ENABLE_BACKEND_CUDA})
     target_compile_definitions(magnetron_test PRIVATE MAG_ENABLE_CUDA)
-endif()
-
-if (NOT WIN32)
-    target_compile_options(magnetron_test PRIVATE -march=native)
-endif()
-
-if (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinSizeRel" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")     # Enable optimizations only for release builds
-    if (NOT WIN32)
-        target_compile_options(magnetron_test PRIVATE -flto)
-        target_link_options(magnetron_test PRIVATE -flto)
-    endif()
 endif()

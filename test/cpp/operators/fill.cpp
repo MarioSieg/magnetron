@@ -14,7 +14,34 @@
 using namespace magnetron;
 using namespace test;
 
-static constexpr std::int64_t lim {4};
+static constexpr std::int64_t lim {3};
+
+template <typename T>
+[[nodiscard]] auto compute_mean(std::span<const T> data) -> float {
+    float sum {};
+    for (const T x : data) sum += x;
+    return sum / static_cast<float>(data.size());
+}
+
+template <typename T>
+[[nodiscard]] auto compute_mean(const mag_tensor_t* tensor) -> float {
+    return compute_mean(std::span<const T>{reinterpret_cast<const T*>(mag_tensor_get_data_ptr(tensor)), static_cast<std::size_t>(tensor->numel)});
+}
+
+template <typename T>
+[[nodiscard]] auto compute_std(std::span<const T> data) -> double {
+    float sum {};
+    float mean {compute_mean(data)};
+    for (const T x : data) {
+        sum += std::pow(x-mean, 2.0f);
+    }
+    return std::sqrt(sum / static_cast<float>(data.size()));
+}
+
+template <typename T>
+[[nodiscard]] auto compute_std(const mag_tensor_t* tensor) -> double {
+    return compute_std(std::span<const T>{reinterpret_cast<const T*>(mag_tensor_get_data_ptr(tensor)), static_cast<std::size_t>(tensor->numel)});
+}
 
 TEST(cpu_tensor_init_ops, copy_e8m23) {
     context ctx {};

@@ -10,6 +10,7 @@
 */
 
 #include <prelude.hpp>
+#include <nn.hpp>
 
 using namespace magnetron;
 using namespace test;

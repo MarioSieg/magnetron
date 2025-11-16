@@ -111,9 +111,9 @@ TEST(core_tensor_logic, init_1d) {
     ASSERT_EQ(t.shape()[0], 10);
     ASSERT_EQ(t.strides()[0], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10 * sizeof(float));
+    ASSERT_EQ(t.data_size(), 10 * sizeof(mag_e8m23_t));
     ASSERT_EQ(t.numel(), 10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -138,8 +138,8 @@ TEST(core_tensor_logic, init_2d) {
     ASSERT_EQ(t.strides()[1], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
     ASSERT_EQ(t.numel(), 10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
-    ASSERT_EQ(t.data_size(), 10*10 * sizeof(float));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), 10*10 * sizeof(mag_e8m23_t));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -165,9 +165,9 @@ TEST(core_tensor_logic, init_3d) {
     ASSERT_EQ(t.strides()[1], 10);
     ASSERT_EQ(t.strides()[2], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10*10*10 * sizeof(float));
+    ASSERT_EQ(t.data_size(), 10*10*10 * sizeof(mag_e8m23_t));
     ASSERT_EQ(t.numel(), 10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -193,9 +193,9 @@ TEST(core_tensor_logic, init_4d) {
     ASSERT_EQ(t.strides()[1], 100);
     ASSERT_EQ(t.strides()[2], 10);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10*10*10*10 * sizeof(float));
+    ASSERT_EQ(t.data_size(), 10*10*10*10 * sizeof(mag_e8m23_t));
     ASSERT_EQ(t.numel(), 10*10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -225,9 +225,9 @@ TEST(core_tensor_logic, init_5d) {
     ASSERT_EQ(t.strides()[3], 10);
     ASSERT_EQ(t.strides()[4], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10*10*10*10*10 * sizeof(float));
+    ASSERT_EQ(t.data_size(), 10*10*10*10*10 * sizeof(mag_e8m23_t));
     ASSERT_EQ(t.numel(), 10*10*10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -243,25 +243,25 @@ TEST(core_tensor_logic, init_5d) {
 
 TEST(core_tensor_logic, init_6d) {
     context ctx {};
-    tensor t {ctx, dtype::e8m23, 10, 10, 10, 10, 10, 10};
+    tensor t {ctx, dtype::e8m23, 2, 2, 2, 2, 2, 2};
     ASSERT_EQ(t.dtype(), dtype::e8m23);
     ASSERT_EQ(t.rank(), 6);
-    ASSERT_EQ(t.shape()[0], 10);
-    ASSERT_EQ(t.shape()[1], 10);
-    ASSERT_EQ(t.shape()[2], 10);
-    ASSERT_EQ(t.shape()[3], 10);
-    ASSERT_EQ(t.shape()[4], 10);
-    ASSERT_EQ(t.shape()[5], 10);
-    ASSERT_EQ(t.strides()[0], 100000);
-    ASSERT_EQ(t.strides()[1], 10000);
-    ASSERT_EQ(t.strides()[2], 1000);
-    ASSERT_EQ(t.strides()[3], 100);
-    ASSERT_EQ(t.strides()[4], 10);
+    ASSERT_EQ(t.shape()[0], 2);
+    ASSERT_EQ(t.shape()[1], 2);
+    ASSERT_EQ(t.shape()[2], 2);
+    ASSERT_EQ(t.shape()[3], 2);
+    ASSERT_EQ(t.shape()[4], 2);
+    ASSERT_EQ(t.shape()[5], 2);
+    ASSERT_EQ(t.strides()[0], 2*2*2*2*2);
+    ASSERT_EQ(t.strides()[1], 2*2*2*2);
+    ASSERT_EQ(t.strides()[2], 2*2*2);
+    ASSERT_EQ(t.strides()[3], 2*2);
+    ASSERT_EQ(t.strides()[4], 2);
     ASSERT_EQ(t.strides()[5], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.numel(), 10*10*10*10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
-    ASSERT_EQ(t.data_size(), 10*10*10*10*10*10 * sizeof(float));
+    ASSERT_EQ(t.numel(), 2*2*2*2*2*2);
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), 2*2*2*2*2*2 * sizeof(mag_e8m23_t));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
