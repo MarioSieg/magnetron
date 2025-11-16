@@ -431,7 +431,7 @@ defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
 
 #ifdef __cpp_lib_hardware_interference_size
 /* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
-#define MAG_DESTRUCTIVE_INTERFERENCE_SIZE hardware_destructive_interference_size
+#define MAG_DESTRUCTIVE_INTERFERENCE_SIZE std::hardware_destructive_interference_size
 #else
 /* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
 #define MAG_DESTRUCTIVE_INTERFERENCE_SIZE 64

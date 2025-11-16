@@ -13,6 +13,9 @@
 #include "mag_cuda_unary.cuh"
 #include "mag_cuda_binary.cuh"
 #include "mag_cuda_fill.cuh"
+#include "cpu/mag_cpu.h"
+
+#include <core/mag_alloc.h>
 
 #include <array>
 #include <cstdio>
@@ -195,7 +198,52 @@ namespace mag {
     }
 
     static void convert(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *host, size_t size, mag_dtype_t hdt) {
-        mag_panic("NYI");
+        mag_assert2(host && size);
+        mag_dtype_t ddt = sto->dtype;
+        if (ddt == hdt) { /* identical dtype – delegate to raw copy */
+            (*sto->transfer)(sto, dir, offs, host, size);
+            return;
+        }
+        uintptr_t base = sto->base;
+        size_t hsz = mag_dtype_meta_of(hdt)->size;
+        size_t dsz = mag_dtype_meta_of(ddt)->size;
+        mag_assert2(!(hsz & (hsz-1)));              /* pow2 */
+        mag_assert2(!(size & (hsz-1)));             /* multiple of dtype size */
+        mag_assert2(!((uintptr_t)host & (hsz-1)));  /* aligned */
+        mag_assert2(!(dsz & (dsz-1)));              /* pow2 */
+        mag_assert2(!(offs & (dsz-1)));             /* multiple of dtype size */
+        size_t helem = size / hsz;                  /* host numel */
+        mag_assert2(helem > 0);
+        mag_assert2(!(sto->granularity & (dsz-1))); /* sane granularity */
+        size_t tnb = helem * sto->granularity;      /* device bytes */
+        mag_assert2(tnb <= sto->size-offs);
+        void *dvb = (void *)(base+offs);
+        mag_context_t *ctx = sto->ctx;
+        // TODO: very hacky, must be cuda native in the future!
+        static mag_device_t *cpu;
+        if (!cpu) // noooooo
+            mag_backend_registry_get_by_device_id(ctx->backend_registry, &cpu, "cpu"); // what the sigma
+        void (*kern)(size_t, const void *, mag_dtype_t, void *, mag_dtype_t) = static_cast<mag_cpu_device_t *>(cpu->impl)->kernels.vector_cast;
+        mag_assert2(kern);
+        void *tmp = (*mag_alloc)(nullptr, tnb, 0);
+        if (dir == MAG_TRANSFER_DIR_H2D) {
+            (*kern)(size, host, hdt, tmp, ddt);
+            mag_cuda_check(cudaMemcpy(
+                dvb,
+                tmp,
+                tnb,
+                cudaMemcpyHostToDevice
+            ));
+        } else {
+            mag_cuda_check(cudaMemcpy(
+                tmp,
+                dvb,
+                tnb,
+                cudaMemcpyDeviceToHost
+            ));
+            (*kern)(tnb, tmp, ddt, host, hdt);
+        }
+        (*mag_alloc)(tmp, 0, 0);
     }
 
     static void alloc_storage_buffer(mag_device_t *device, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {

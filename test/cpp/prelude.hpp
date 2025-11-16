@@ -24,7 +24,7 @@ namespace magnetron::test {
         cuda,
     };
 
-    [[nodiscard]] constexpr const char* get_device_kind_id(device_kind dvc) {
+    [[nodiscard]] constexpr const char* get_device_kind_name(device_kind dvc) {
         switch (dvc) {
             case device_kind::cpu: return "cpu";
             case device_kind::cuda: return "cuda";
@@ -33,6 +33,8 @@ namespace magnetron::test {
     }
 
     [[nodiscard]] extern std::vector<device_kind> get_supported_test_backends();
+    [[nodiscard]] extern context& get_cached_context(device_kind dev);
+
 
     using float16 = half_float::half;
 
@@ -64,5 +66,5 @@ namespace magnetron::test {
 
     extern const std::unordered_map<dtype, float> dtype_eps_map;
 
-    extern void for_all_shape_perms(std::int64_t lim, std::int64_t fac, std::function<void (std::span<const std::int64_t>)>&& f);
+    extern void for_all_test_shapes(std::function<void (std::span<const std::int64_t>)>&& f);
 }

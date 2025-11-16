@@ -113,13 +113,13 @@ typedef void (MAG_BACKEND_SYM_FN_SHUTDOWN)(mag_backend_t *bck);
 
 typedef struct mag_backend_registry_t mag_backend_registry_t;
 
-extern mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
-extern void mag_backend_registry_add_search_path(mag_backend_registry_t *reg, const char *path);
-extern void mag_backend_registry_get_search_paths(mag_backend_registry_t *reg, const char ***out_paths, size_t *out_num_paths);
-extern bool mag_backend_registry_scan(mag_backend_registry_t *reg);
-extern mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id); /* Get corresponding backend for device ID like cuda:0 or cpu. */
-extern mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg);
-extern void mag_backend_registry_free(mag_backend_registry_t *reg);
+extern MAG_EXPORT mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
+extern MAG_EXPORT void mag_backend_registry_add_search_path(mag_backend_registry_t *reg, const char *path);
+extern MAG_EXPORT void mag_backend_registry_get_search_paths(mag_backend_registry_t *reg, const char ***out_paths, size_t *out_num_paths);
+extern MAG_EXPORT bool mag_backend_registry_scan(mag_backend_registry_t *reg);
+extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id); /* Get corresponding backend for device ID like cuda:0 or cpu. */
+extern MAG_EXPORT mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg);
+extern MAG_EXPORT void mag_backend_registry_free(mag_backend_registry_t *reg);
 
 #ifdef __cplusplus
 }

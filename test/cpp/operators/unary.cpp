@@ -14,13 +14,10 @@
 using namespace magnetron;
 using namespace test;
 
-static constexpr std::int64_t lim {3};
-static constexpr std::int64_t broadcast_lim {lim-1};
-
 class unary_operators : public TestWithParam<device_kind> {};
 
 static auto test_unary_operator(
-    std::int64_t lim,
+    device_kind dev,
     bool broadcast,
     bool inplace,
     bool subview,
@@ -31,8 +28,8 @@ static auto test_unary_operator(
     mag_e8m23_t min = 0.0,
     mag_e8m23_t max = 2.0
 ) -> void {
-    auto ctx = context{};
-    for_all_shape_perms(lim, broadcast ? 2 : 1, [&](std::span<const std::int64_t> shape) {
+    auto& ctx = get_cached_context(dev);
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         tensor base{ctx, ty, shape};
         base.fill_rand_uniform(min, max);
         tensor t_a = subview ? make_random_view(base) : base;
@@ -55,49 +52,49 @@ static auto test_unary_operator(
 
 #define impl_unary_operator_test_group(eps, name, data_type, lambda) \
     TEST_P(unary_operators, name##_same_shape_##data_type) { \
-        test_unary_operator(lim, false, false, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_unary_operator(GetParam(), false, false, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
             [](mag_e8m23_t a) -> mag_e8m23_t { return lambda(a); } \
         ); \
     } \
     TEST_P(unary_operators, name##_broadcast_##data_type) { \
-        test_unary_operator(broadcast_lim, true, false, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_unary_operator(GetParam(), true, false, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
             [](mag_e8m23_t a) -> mag_e8m23_t { return lambda(a); } \
         ); \
     } \
     TEST_P(unary_operators, name##_inplace_same_shape_##data_type) { \
-        test_unary_operator(lim, false, true, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_unary_operator(GetParam(), false, true, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
             [](mag_e8m23_t a) -> mag_e8m23_t { return lambda(a); } \
         ); \
     } \
     TEST_P(unary_operators, name##_inplace_broadcast_##data_type) { \
-        test_unary_operator(broadcast_lim, true, true, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_unary_operator(GetParam(), true, true, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
             [](mag_e8m23_t a) -> mag_e8m23_t { return lambda(a); } \
         ); \
     } \
     TEST_P(unary_operators, name##_view_same_shape_##data_type) { \
-        test_unary_operator(lim, false, false, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_unary_operator(GetParam(), false, false, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
             [](mag_e8m23_t a) -> mag_e8m23_t { return lambda(a); } \
         ); \
     } \
     TEST_P(unary_operators, name##_view_broadcast_##data_type) { \
-        test_unary_operator(broadcast_lim, true, false, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_unary_operator(GetParam(), true, false, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
             [](mag_e8m23_t a) -> mag_e8m23_t { return lambda(a); } \
         ); \
     } \
     TEST_P(unary_operators, name##_view_inplace_same_shape_##data_type) { \
-        test_unary_operator(lim, false, true, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_unary_operator(GetParam(), false, true, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
             [](mag_e8m23_t a) -> mag_e8m23_t { return lambda(a); } \
         ); \
     } \
     TEST_P(unary_operators, name##_view_inplace_broadcast_##data_type) { \
-        test_unary_operator(broadcast_lim, true, true, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_unary_operator(GetParam(), true, true, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
             [](mag_e8m23_t a) -> mag_e8m23_t { return lambda(a); } \
         ); \

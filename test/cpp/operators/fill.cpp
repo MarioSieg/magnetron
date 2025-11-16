@@ -14,8 +14,6 @@
 using namespace magnetron;
 using namespace test;
 
-static constexpr std::int64_t lim {3};
-
 template <typename T>
 [[nodiscard]] auto compute_mean(std::span<const T> data) -> float {
     float sum {};
@@ -45,7 +43,7 @@ template <typename T>
 
 TEST(cpu_tensor_init_ops, copy_e8m23) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         tensor t {ctx, dtype::e8m23, shape};
         std::vector<float> fill_data {};
         fill_data.resize(t.numel());
@@ -62,7 +60,7 @@ TEST(cpu_tensor_init_ops, copy_e8m23) {
 
 TEST(cpu_tensor_init_ops, copy_e5m10) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         tensor t {ctx, dtype::e5m10, shape};
         std::vector<float> fill_data {};
         fill_data.resize(t.numel());
@@ -79,7 +77,7 @@ TEST(cpu_tensor_init_ops, copy_e5m10) {
 
 TEST(cpu_tensor_init_ops, copy_bool) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         tensor t {ctx, dtype::boolean, shape};
         std::vector<bool> fill_data {};
         fill_data.reserve(t.numel());
@@ -98,7 +96,7 @@ TEST(cpu_tensor_init_ops, copy_bool) {
 
 TEST(cpu_tensor_init_ops, fill_e8m23) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         std::uniform_real_distribution<float> dist {dtype_traits<float>::min, dtype_traits<float>::max};
         float fill_val {dist(gen)};
         tensor t {ctx, dtype::e8m23, shape};
@@ -113,7 +111,7 @@ TEST(cpu_tensor_init_ops, fill_e8m23) {
 
 TEST(cpu_tensor_init_ops, fill_e5m10) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         std::uniform_real_distribution<float> dist {-1.0f, 1.0f};
         float fill_val {dist(gen)};
         tensor t {ctx, dtype::e5m10, shape};
@@ -128,7 +126,7 @@ TEST(cpu_tensor_init_ops, fill_e5m10) {
 
 TEST(cpu_tensor_init_ops, fill_bool) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         std::bernoulli_distribution dist {};
         bool fill_val {dist(gen)};
         tensor t {ctx, dtype::boolean, shape};
@@ -143,7 +141,7 @@ TEST(cpu_tensor_init_ops, fill_bool) {
 
 TEST(cpu_tensor_init_ops, fill_random_uniform_e8m23) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         float min {dist(gen)};
         float max {std::uniform_real_distribution{min, dtype_traits<float>::max}(gen)};
@@ -161,7 +159,7 @@ TEST(cpu_tensor_init_ops, fill_random_uniform_e8m23) {
 #if 0 // TODO
 TEST(cpu_tensor_init_ops, fill_random_uniform_e5m10) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         std::uniform_real_distribution dist {-1.0f, 1.0f};
          float min {dist(gen)};
          float max {std::uniform_real_distribution{min, dtype_traits<float>::max}(gen)};
@@ -182,7 +180,7 @@ TEST(cpu_tensor_init_ops, fill_random_uniform_e5m10) {
 #if 0 // TODO
 TEST(cpu_tensor_init_ops, fill_random_normal_e8m23) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         float mean {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         float stddev {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         tensor t {ctx, dtype::e8m23, shape};
@@ -195,7 +193,7 @@ TEST(cpu_tensor_init_ops, fill_random_normal_e8m23) {
 
 TEST(cpu_tensor_init_ops, fill_random_normal_e5m10) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         float mean {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         float stddev {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         tensor t {ctx, dtype::e5m10, shape};
@@ -210,7 +208,7 @@ TEST(cpu_tensor_init_ops, fill_random_normal_e5m10) {
 #if 0
 TEST(cpu_tensor_init_ops, fill_random_bool) {
     context ctx {};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         std::uniform_real_distribution<float> dist {0.01f, 0.99f};
         float p {dist(gen)};
         tensor t {ctx, dtype::boolean, shape};

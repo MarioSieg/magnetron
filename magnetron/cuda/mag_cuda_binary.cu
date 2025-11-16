@@ -16,105 +16,107 @@
 
 
 namespace mag {
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_numeric<TIn> && is_numeric<TOut>
     struct op_add {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x+y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_numeric<TIn> && is_numeric<TOut>
     struct op_sub {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x-y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_numeric<TIn> && is_numeric<TOut>
     struct op_mul {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x*y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_numeric<TIn> && is_numeric<TOut>
     struct op_div {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x/y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_integral<TIn> && is_integral<TOut>
     struct op_and {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x&y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_integral<TIn> && is_integral<TOut>
     struct op_or {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x|y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_integral<TIn> && is_integral<TOut>
     struct op_xor {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x^y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
     struct op_shl {
         using In = TIn;
         using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<<y; }
+        static constexpr TIn mask = (8*sizeof(TIn))-1;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<<(y&mask); }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
     struct op_shr {
         using In = TIn;
         using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>>y; }
+        static constexpr TIn mask = (8*sizeof(TIn))-1;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>>(y&mask); }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
     struct op_eq {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x==y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
     struct op_ne {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x!=y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
     struct op_le {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<=y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
     struct op_ge {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>=y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
     struct op_lt {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<y; }
     };
 
-    template <typename TIn, typename TOut>
+    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
     struct op_gt {
         using In = TIn;
         using Out = TOut;

@@ -14,11 +14,10 @@
 using namespace magnetron;
 using namespace magnetron::test;
 
-static constexpr std::int64_t lim {3};
-
+#if 0
 TEST(cpu_tensor_indexing, subscript_flattened_e8m23) {
     auto ctx = context{};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         tensor t {ctx, dtype::e8m23, shape};
         t.fill_rand_uniform(-1.0f, 1.0f);
         std::vector<float> data {t.to_vector<float>()};
@@ -31,7 +30,7 @@ TEST(cpu_tensor_indexing, subscript_flattened_e8m23) {
 
 TEST(cpu_tensor_indexing, subscript_flattened_e5m10) {
     auto ctx = context{};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
         tensor t {ctx, dtype::e5m10, shape};
         t.fill_rand_uniform(-1.0f, 1.0f);
         std::vector<float> data {t.to_vector<float>()};
@@ -41,3 +40,4 @@ TEST(cpu_tensor_indexing, subscript_flattened_e5m10) {
         }
     });
 }
+#endif

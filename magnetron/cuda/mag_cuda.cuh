@@ -33,6 +33,9 @@ namespace mag {
   concept is_floating_point = std::is_same_v<T, mag_e8m23_t> || std::is_same_v<T, half>;
 
   template <typename T>
+  concept is_integer = std::is_same_v<T, int32_t> || std::is_same_v<T, uint8_t>; // TODO: own boolean type
+
+  template <typename T>
   concept is_integral = std::is_same_v<T, int32_t> || std::is_same_v<T, uint8_t>;
 
   template <typename T>
