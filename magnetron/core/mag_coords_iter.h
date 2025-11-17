@@ -35,7 +35,7 @@ static inline void mag_coords_iter_init(mag_coords_iter_t *ci, const mag_coords_
     }
 }
 
-static inline int64_t mag_coords_iter_to_offset(const mag_coords_iter_t *cr, int64_t i) {
+static MAG_CUDA_DEVICE inline int64_t mag_coords_iter_to_offset(const mag_coords_iter_t *cr, int64_t i) {
     const int64_t *restrict rd = cr->shape;
     const int64_t *restrict rs = cr->strides;
     int64_t ra = cr->rank-1;
@@ -50,7 +50,7 @@ static inline int64_t mag_coords_iter_to_offset(const mag_coords_iter_t *cr, int
     return o;
 }
 
-static inline int64_t mag_coords_iter_broadcast(mag_coords_iter_t *cr, const mag_coords_iter_t *cx, int64_t i) {
+static MAG_CUDA_DEVICE inline int64_t mag_coords_iter_broadcast(mag_coords_iter_t *cr, const mag_coords_iter_t *cx, int64_t i) {
     const int64_t *restrict rd = cr->shape;
     const int64_t *restrict xd = cx->shape;
     const int64_t *restrict xs = cx->strides;
@@ -69,7 +69,7 @@ static inline int64_t mag_coords_iter_broadcast(mag_coords_iter_t *cr, const mag
     return o;
 }
 
-static inline int64_t mag_coords_iter_repeat(mag_coords_iter_t *cr, const mag_coords_iter_t *cx, int64_t i) {
+static MAG_CUDA_DEVICE inline int64_t mag_coords_iter_repeat(mag_coords_iter_t *cr, const mag_coords_iter_t *cx, int64_t i) {
     const int64_t *restrict rd = cr->shape;
     const int64_t *restrict rs = cr->strides;
     const int64_t *restrict xd = cx->shape;
@@ -89,7 +89,7 @@ static inline int64_t mag_coords_iter_repeat(mag_coords_iter_t *cr, const mag_co
     return o;
 }
 
-static inline void mag_coords_iter_offset2(
+static MAG_CUDA_DEVICE inline void mag_coords_iter_offset2(
     const mag_coords_iter_t *cr,
     const mag_coords_iter_t *cx,
     int64_t i,
@@ -105,8 +105,7 @@ static inline void mag_coords_iter_offset2(
     int64_t dx = rr-rx;
     int64_t ir = 0;
     int64_t ix = 0;
-    int64_t u = i; (void)u;
-    for (int64_t k = rr-1; k >= 0; --k) {
+    for (int64_t k=rr-1; k >= 0; --k) {
         int64_t dim = rd[k];
         int64_t ax;
         ax = i % dim;
@@ -120,7 +119,7 @@ static inline void mag_coords_iter_offset2(
     *oix = ix;
 }
 
-static inline void mag_coords_iter_offset3(
+static MAG_CUDA_DEVICE inline void mag_coords_iter_offset3(
     mag_coords_iter_t *cr,
     const mag_coords_iter_t *cx,
     const mag_coords_iter_t *cy,
@@ -143,7 +142,6 @@ static inline void mag_coords_iter_offset3(
     int64_t ir = 0;
     int64_t ix = 0;
     int64_t iy = 0;
-    int64_t u = i; (void)u;
     for (int64_t k=rr-1; k >= 0; --k) {
         int64_t dim = rd[k];
         int64_t ax;

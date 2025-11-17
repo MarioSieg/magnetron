@@ -10,7 +10,6 @@
 */
 
 #include "mag_cuda_binary.cuh"
-#include "mag_cuda_coords.cuh"
 
 #include <cuda/std/tuple>
 
@@ -130,9 +129,9 @@ namespace mag {
         typename Op::Out *o,
         const typename Op::In *x,
         const typename Op::In *y,
-        [[maybe_unused]] tensor_coords rc,
-        [[maybe_unused]] tensor_coords xc,
-        [[maybe_unused]] tensor_coords yc
+        [[maybe_unused]] mag_coords_iter_t rc,
+        [[maybe_unused]] mag_coords_iter_t xc,
+        [[maybe_unused]] mag_coords_iter_t yc
     ) {
         int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
         int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
@@ -141,9 +140,9 @@ namespace mag {
                 o[i] = op(x[i], y[i]);
         } else {
             for (; i < n; i += step) {
-                int64_t ri = rc.to_offset(i);
-                int64_t xi = rc.broadcast(xc, i);
-                int64_t yi = rc.broadcast(yc, i);
+                int64_t ri = mag_coords_iter_to_offset(&rc, i);
+                int64_t xi = mag_coords_iter_broadcast(&rc, &xc, i);
+                int64_t yi = mag_coords_iter_broadcast(&rc, &yc, i);
                 o[ri] = op(x[xi], y[yi]);
             }
         }
@@ -157,9 +156,10 @@ namespace mag {
     ) {
         int64_t n = mag_tensor_get_numel(r);
         int64_t blocks = (n+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE;
-        tensor_coords rc {r->coords};
-        tensor_coords xc {x->coords};
-        tensor_coords yc {y->coords};
+        mag_coords_iter_t rc, xc, yc;
+        mag_coords_iter_init(&rc, &r->coords);
+        mag_coords_iter_init(&xc, &x->coords);
+        mag_coords_iter_init(&yc, &y->coords);
         auto *pr = static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r));
         auto *px = static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x));
         auto *py = static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(y));

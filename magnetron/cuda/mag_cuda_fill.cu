@@ -10,7 +10,6 @@
 */
 
 #include "mag_cuda_fill.cuh"
-#include "mag_cuda_coords.cuh"
 
 #include <core/mag_prng_philox4x32.h>
 
@@ -20,7 +19,7 @@ namespace mag {
         int64_t n,
         T *__restrict__ o,
         T v,
-        [[maybe_unused]] tensor_coords rc
+        [[maybe_unused]] mag_coords_iter_t rc
     ) {
         int64_t ti = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
         if constexpr (contig) {
@@ -29,7 +28,7 @@ namespace mag {
         } else {
             int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
             for (; ti < n; ti += step) {
-                int64_t ri = rc.to_offset(ti);
+                int64_t ri = mag_coords_iter_to_offset(&rc, ti);
                 o[ri] = v;
             }
         }
@@ -41,20 +40,20 @@ namespace mag {
         T *__restrict__ o,
         const uint8_t *__restrict__ mask,
         T v,
-        [[maybe_unused]] tensor_coords rc,
-        tensor_coords mc
+        [[maybe_unused]] mag_coords_iter_t rc,
+        mag_coords_iter_t mc
     ) {
         int64_t ti = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
         int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
         if constexpr (contig) {
             for (; ti < n; ti += step) {
-                int64_t mi = rc.broadcast(mc, ti);
+                int64_t mi = mag_coords_iter_broadcast(&rc, &mc, ti);
                 if (mask[mi]) o[ti] = v;
             }
         } else {
             for (; ti < n; ti += step) {
-                int64_t ri = rc.to_offset(ti);
-                int64_t mi = rc.broadcast(mc, ti);
+                int64_t ri = mag_coords_iter_to_offset(&rc, ti);
+                int64_t mi = mag_coords_iter_broadcast(&rc, &mc, ti);
                 if (mask[mi]) o[ri] = v;
             }
         }
@@ -64,14 +63,17 @@ namespace mag {
     static void launch_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd, const mag_tensor_t *mask = nullptr) {
         auto *o = static_cast<T *>(mag_tensor_get_data_ptr(r));
         auto v = unpack_param<T>(cmd->params, 0);
-        tensor_coords rc {r->coords};
+        mag_coords_iter_t rc;
+        mag_coords_iter_init(&rc, &r->coords);
         bool rc_cont = mag_tensor_is_contiguous(r);
         int64_t n = mag_tensor_get_numel(r);
         int64_t blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
         if (mask) {
             auto *pm = static_cast<const uint8_t *>(mag_tensor_get_data_ptr(mask));
-            if (rc_cont) masked_fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, o, pm, v, rc, tensor_coords{mask->coords});
-            else  masked_fill_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, o, pm, v, rc, tensor_coords{mask->coords});
+            mag_coords_iter_t mc;
+            mag_coords_iter_init(&mc, &mask->coords);
+            if (rc_cont) masked_fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, o, pm, v, rc, mc);
+            else  masked_fill_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, o, pm, v, rc, mc);
         } else {
             if (rc_cont) fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, o, v, rc);
             else fill_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, o, v, rc);
@@ -86,7 +88,7 @@ namespace mag {
         T p1,
         uint64_t seed,
         uint64_t subseq,
-        [[maybe_unused]] tensor_coords rc
+        [[maybe_unused]] mag_coords_iter_t rc
     ) {
         int64_t ti = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
         int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
@@ -108,7 +110,7 @@ namespace mag {
             } else {
                 #pragma unroll
                 for (int64_t k=0; k < mk; ++k) {
-                    int64_t ri = rc.to_offset(base+k);
+                    int64_t ri = mag_coords_iter_to_offset(&rc, base+k);
                     o[ri] = static_cast<T>(r.v[k]);
                 }
             }
@@ -122,7 +124,8 @@ namespace mag {
         auto p1 = unpack_param<T>(cmd->params, 1);
         int64_t n = mag_tensor_get_numel(r);
         int64_t blocks = (((n+3)>>2)+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
-        tensor_coords rc {r->coords};
+        mag_coords_iter_t rc;
+        mag_coords_iter_init(&rc, &r->coords);
         uint64_t seed = global_seed.load(std::memory_order_relaxed);
         uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
         if (mag_tensor_is_contiguous(r)) fill_random_kernel<T, true, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);

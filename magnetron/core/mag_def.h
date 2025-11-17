@@ -61,6 +61,10 @@ extern "C" {
 #define MAG_CUDA_DEVICE
 #endif
 
+#ifdef __cplusplus
+#define restrict __restrict__
+#endif
+
 /* Compiler specific macros and utils for GCC, Clang and ICC. */
 #if defined(__GNUC__) || defined(__clang__) || defined(__INTEL_COMPILER)
 
