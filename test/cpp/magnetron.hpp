@@ -18,10 +18,12 @@
 
 #include <core/mag_rc.h>
 
+#include <cstdint>
 #include <algorithm>
 #include <stdexcept>
 #include <array>
 #include <optional>
+#include <vector>
 #include <span>
 
 namespace magnetron {

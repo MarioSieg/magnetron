@@ -297,27 +297,14 @@ static void mag_fmt_single_elem(mag_sstream_t *ss, const void *buf, size_t i, ma
     if (dtype == MAG_DTYPE_BOOL) {
         mag_sstream_append(ss, "%s", ((const uint8_t *)buf)[i] ? "True" : "False");
         return;
+    } else if (dtype == MAG_DTYPE_I32) {
+        mag_sstream_append(ss, "%i", ((const int32_t *)buf)[i]);
+        return;
     }
-    mag_e11m52_t x = 0.0;
-    mag_format_flags_t flags = 0;
-    switch (dtype) {
-        case MAG_DTYPE_E8M23:
-        case MAG_DTYPE_E5M10:
-            x = ((const mag_e8m23_t *)buf)[i];
-            flags = MAG_FMT_G;
-        break;
-        case MAG_DTYPE_I32:
-            x = ((const int32_t *)buf)[i];
-            flags = MAG_FMT_I;
-        break;
-        default: mag_panic("Unknown dtype for formatting: %d", dtype); return;
-    }
-    char fmt[128];
-    char *e = mag_fmt_e11m52(fmt, x, flags);
-    *e = '\0';
-    ptrdiff_t n = e-fmt;
-    if (mag_likely(n > 0))
-        mag_sstream_append_strn(ss, fmt, e-fmt);
+    char fmt[MAG_E8M23_FMT_BUF_SIZE];
+    char *e = mag_fmt_e8m23(&fmt, ((const mag_e8m23_t *)buf)[i]);
+    ptrdiff_t len = e-fmt;
+    if (mag_likely(len > 0)) mag_sstream_append_strn(ss, fmt, e-fmt);
 }
 
 static void mag_tensor_fmt_recursive(
