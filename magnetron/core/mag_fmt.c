@@ -10,361 +10,601 @@
 */
 
 /*
-** Dragonbox floating-point to decimal conversion.
-** Original implementation by Junekey Jeon.
-** Paper: https://github.com/jk-jeon/dragonbox/blob/master/other_files/Dragonbox.pdf
+** This file contains code derived from LuaJIT's floating-point number formatting implementation.
+** LuaJIT Project Readme:
 **
-** Licensed under the Apache License Version 2.0 with LLVM Exceptions:
-**   https://llvm.org/foundation/relicensing/LICENSE.txt
-** or the Apache 2.0 license included with this project.
+**      README for LuaJIT 2.1
+**      ---------------------
 **
-** C 99 Port and modifications for Magnetron by Mario Sieg.
+**      LuaJIT is a Just-In-Time (JIT) compiler for the Lua programming language.
+**
+**      Project Homepage: https://luajit.org/
+**
+**      LuaJIT is Copyright (C) 2005-2025 Mike Pall.
+**      LuaJIT is free software, released under the MIT license.
+**      See full Copyright Notice in the COPYRIGHT file or in luajit.h.
+**
+**      Documentation for LuaJIT is available in HTML format.
+**      Please point your favorite browser to:
+**
+**     doc/luajit.html
+**
+** Original Source File Notice:
+**      String formatting for floating-point numbers.
+**      Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
+**      Contributed by Peter Cawley.
+**
+** Modifications:
+**   This file includes modifications by Mario Sieg for the
+**   Magnetron project. All modifications are licensed under the
+**   Apache License, Version 2.0.
 */
 
 #include "mag_fmt.h"
-#include "mag_u128.h"
 
-static uint32_t mag_rol32(uint32_t n, unsigned r) { r &= 31; return (n>>r) | (n<<((32-r) & 31)); }
+/* Rescale factors to push the exponent of a number towards zero. */
+#define rescale_exponents(P, N) \
+  P(308), P(289), P(270), P(250), P(231), P(212), P(193), P(173), P(154), \
+  P(135), P(115), P(96), P(77), P(58), P(38), P(0), P(0), P(0), N(39), N(58), \
+  N(77), N(96), N(116), N(135), N(154), N(174), N(193), N(212), N(231), \
+  N(251), N(270), N(289)
+#define one_e_p(X) 1e+0 ## X
+#define one_e_n(X) 1e-0 ## X
+static const int16_t mag_rescale_e[] = { rescale_exponents(-, +) };
+static const mag_e11m52_t mag_rescale_n[] = { rescale_exponents(one_e_p, one_e_n) };
+#undef one_e_n
+#undef one_e_p
 
-static uint64_t rotr64(uint64_t n, unsigned r) { r &= 63; return (n>>r) | (n<<((64-r) & 63)); }
-
-static int32_t mag_floorlog2(uint64_t n) {
-    int32_t c;
-    for (c=-1; n!=0; ++c, n >>= 1);
-    return c;
-}
-
-static int32_t mag_floor_log10_pow2(int32_t e) { mag_assert2(-2620 <= e && e <= 2620); return (e*315653)>>20; }
-
-static int32_t mag_floor_log2_pow10(int32_t e) { mag_assert2(-1233 <= e && e <= 1233); return (e*1741647)>>19; }
-
-static int32_t mag_floor_log10_pow2_minus_log10_4_over_3(int32_t e) { mag_assert2(-2985 <= e && e <= 2936); return (e*631305 - 261663)>>21; }
-
-static int32_t mag_floor_log5_pow2(int32_t e) { mag_assert2(-1831 <= e && e <= 1831); return (e*225799)>>19; }
-
-static int32_t mag_floor_log5_pow2_minus_log5_3(int32_t e) { mag_assert2(-3543 <= e && e <= 2427); return (e*451597 - 715764)>>20; }
-
-static int32_t mag_n_fact(int32_t a, uint32_t n) {
-    int32_t c=0;
-    for (c=0; n % a == 0; n /= a, ++c);
-    return c;
-}
-
-static const uint32_t mag_div_magic[2] = {6554, 656};
-
-static const uint64_t mag_fmt_cache[78] = {
-    UINT64_C(0x81ceb32c4b43fcf5), UINT64_C(0xa2425ff75e14fc32),
-    UINT64_C(0xcad2f7f5359a3b3f), UINT64_C(0xfd87b5f28300ca0e),
-    UINT64_C(0x9e74d1b791e07e49), UINT64_C(0xc612062576589ddb),
-    UINT64_C(0xf79687aed3eec552), UINT64_C(0x9abe14cd44753b53),
-    UINT64_C(0xc16d9a0095928a28), UINT64_C(0xf1c90080baf72cb2),
-    UINT64_C(0x971da05074da7bef), UINT64_C(0xbce5086492111aeb),
-    UINT64_C(0xec1e4a7db69561a6), UINT64_C(0x9392ee8e921d5d08),
-    UINT64_C(0xb877aa3236a4b44a), UINT64_C(0xe69594bec44de15c),
-    UINT64_C(0x901d7cf73ab0acda), UINT64_C(0xb424dc35095cd810),
-    UINT64_C(0xe12e13424bb40e14), UINT64_C(0x8cbccc096f5088cc),
-    UINT64_C(0xafebff0bcb24aaff), UINT64_C(0xdbe6fecebdedd5bf),
-    UINT64_C(0x89705f4136b4a598), UINT64_C(0xabcc77118461cefd),
-    UINT64_C(0xd6bf94d5e57a42bd), UINT64_C(0x8637bd05af6c69b6),
-    UINT64_C(0xa7c5ac471b478424), UINT64_C(0xd1b71758e219652c),
-    UINT64_C(0x83126e978d4fdf3c), UINT64_C(0xa3d70a3d70a3d70b),
-    UINT64_C(0xcccccccccccccccd), UINT64_C(0x8000000000000000),
-    UINT64_C(0xa000000000000000), UINT64_C(0xc800000000000000),
-    UINT64_C(0xfa00000000000000), UINT64_C(0x9c40000000000000),
-    UINT64_C(0xc350000000000000), UINT64_C(0xf424000000000000),
-    UINT64_C(0x9896800000000000), UINT64_C(0xbebc200000000000),
-    UINT64_C(0xee6b280000000000), UINT64_C(0x9502f90000000000),
-    UINT64_C(0xba43b74000000000), UINT64_C(0xe8d4a51000000000),
-    UINT64_C(0x9184e72a00000000), UINT64_C(0xb5e620f480000000),
-    UINT64_C(0xe35fa931a0000000), UINT64_C(0x8e1bc9bf04000000),
-    UINT64_C(0xb1a2bc2ec5000000), UINT64_C(0xde0b6b3a76400000),
-    UINT64_C(0x8ac7230489e80000), UINT64_C(0xad78ebc5ac620000),
-    UINT64_C(0xd8d726b7177a8000), UINT64_C(0x878678326eac9000),
-    UINT64_C(0xa968163f0a57b400), UINT64_C(0xd3c21bcecceda100),
-    UINT64_C(0x84595161401484a0), UINT64_C(0xa56fa5b99019a5c8),
-    UINT64_C(0xcecb8f27f4200f3a), UINT64_C(0x813f3978f8940985),
-    UINT64_C(0xa18f07d736b90be6), UINT64_C(0xc9f2c9cd04674edf),
-    UINT64_C(0xfc6f7c4045812297), UINT64_C(0x9dc5ada82b70b59e),
-    UINT64_C(0xc5371912364ce306), UINT64_C(0xf684df56c3e01bc7),
-    UINT64_C(0x9a130b963a6c115d), UINT64_C(0xc097ce7bc90715b4),
-    UINT64_C(0xf0bdc21abb48db21), UINT64_C(0x96769950b50d88f5),
-    UINT64_C(0xbc143fa4e250eb32), UINT64_C(0xeb194f8e1ae525fe),
-    UINT64_C(0x92efd1b8d0cf37bf), UINT64_C(0xb7abc627050305ae),
-    UINT64_C(0xe596b7b0c643c71a), UINT64_C(0x8f7e32ce7bea5c70),
-    UINT64_C(0xb35dbf821ae4f38c), UINT64_C(0xe0352f62a19e306f)
+/*
+** For p in range -70 through 57, this table encodes pairs (m, e) such that
+** 4*2^p <= (uint8_t)m*10^e, and is the smallest value for which this holds.
+*/
+static const int8_t mag_four_ulp_m_e[] = {
+    34, -21, 68, -21, 14, -20, 28, -20, 55, -20, 2, -19, 3, -19, 5, -19, 9, -19,
+    -82, -18, 35, -18, 7, -17, -117, -17, 28, -17, 56, -17, 112, -16, -33, -16,
+    45, -16, 89, -16, -78, -15, 36, -15, 72, -15, -113, -14, 29, -14, 57, -14,
+    114, -13, -28, -13, 46, -13, 91, -12, -74, -12, 37, -12, 73, -12, 15, -11, 3,
+    -11, 59, -11, 2, -10, 3, -10, 5, -10, 1, -9, -69, -9, 38, -9, 75, -9, 15, -7,
+    3, -7, 6, -7, 12, -6, -17, -7, 48, -7, 96, -7, -65, -6, 39, -6, 77, -6, -103,
+    -5, 31, -5, 62, -5, 123, -4, -11, -4, 49, -4, 98, -4, -60, -3, 4, -2, 79, -3,
+    16, -2, 32, -2, 63, -2, 2, -1, 25, 0, 5, 1, 1, 2, 2, 2, 4, 2, 8, 2, 16, 2,
+    32, 2, 64, 2, -128, 2, 26, 2, 52, 2, 103, 3, -51, 3, 41, 4, 82, 4, -92, 4,
+    33, 4, 66, 4, -124, 5, 27, 5, 53, 5, 105, 6, 21, 6, 42, 6, 84, 6, 17, 7, 34,
+    7, 68, 7, 2, 8, 3, 8, 6, 8, 108, 9, -41, 9, 43, 10, 86, 9, -84, 10, 35, 10,
+    69, 10, -118, 11, 28, 11, 55, 12, 11, 13, 22, 13, 44, 13, 88, 13, -80, 13,
+    36, 13, 71, 13, -115, 14, 29, 14, 57, 14, 113, 15, -30, 15, 46, 15, 91, 15,
+    19, 16, 37, 16, 73, 16, 2, 17, 3, 17, 6, 17
 };
 
-static void mag_trim_trailing_zeros(uint32_t *sig, int32_t *exp) {
-    uint32_t r = mag_rol32(*sig * UINT32_C(184254097), 4);
-    uint32_t b = r < UINT32_C(429497);
-    size_t s = b;
-    *sig = b ? r : *sig;
-    r = mag_rol32(*sig * UINT32_C(42949673), 2);
-    b = r < UINT32_C(42949673);
-    s = s * 2 + b;
-    *sig = b ? r : *sig;
-    r = mag_rol32(*sig * UINT32_C(1288490189), 1);
-    b = r < UINT32_C(429496730);
-    s = s * 2 + b;
-    *sig = b ? r : *sig;
-    *exp += (int32_t)(s);
+/* min(2^32-1, 10^e-1) for e in range 0 through 10 */
+static const uint32_t mag_ndigits_dec_threshold[] = {
+    0, 9U, 99U, 999U, 9999U, 99999U, 999999U,
+    9999999U, 99999999U, 999999999U, 0xffffffffU
+};
+
+/* Compute the number of digits in the decimal representation of x. */
+static size_t mag_ndigits_dec(uint32_t x) {
+    size_t t = ((mag_fls(x | 1) * 77) >> 8) + 1; /* 2^8/77 is roughly log2(10) */
+    return t + (x > mag_ndigits_dec_threshold[t]);
 }
 
-static uint32_t mag_ipow(int32_t k, uint32_t a) {
-    int32_t e = k;
-    uint32_t p=1;
-    while (e) {
-        if (e & 1) p *= a;
-        e >>= 1;
-        a *= a;
-    }
+#define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
+static char* mag_wuint9(char* p, uint32_t u) {
+    uint32_t v = u / 10000, w;
+    u -= v * 10000;
+    w = v / 10000;
+    v -= w * 10000;
+    *p++ = (char)('0'+w);
+    wint_r(v, 23, 1000)
+    wint_r(v, 12, 100)
+    wint_r(v, 10, 10)
+    *p++ = (char)('0'+v);
+    wint_r(u, 23, 1000)
+    wint_r(u, 12, 100)
+    wint_r(u, 10, 10)
+    *p++ = (char)('0'+u);
     return p;
 }
+#undef wint_r
 
-typedef struct mag_mul_t {
-    uint32_t integer_part;
-    bool is_integer;
-} mag_mul_t;
-
-typedef struct mag_parity_t {
-    bool parity;
-    bool is_integer;
-} mag_parity_t;
-
-static mag_mul_t mag_compute_mul(uint32_t u, uint64_t cache) {
-    uint64_t r = mag_uint128_mulhi96(u, cache);
-    return (mag_mul_t){(uint32_t)(r>>32), (uint32_t)r == 0};
-}
-
-static uint32_t mag_compute_delta(uint64_t cache, int32_t beta) {
-    return (uint32_t)(cache >> (64 - 1 - beta));
-}
-
-static mag_parity_t mag_compute_mul_parity(uint32_t two_f, uint64_t cache, int32_t beta) {
-    mag_assert2(beta >= 1);
-    mag_assert2(beta <= 32);
-    uint64_t r = mag_uint128_mullo96(two_f, cache);
-    return (mag_parity_t){((r >> (64 - beta)) & 1) != 0, (UINT32_C(0xffffffff) & (r >> (32 - beta))) == 0};
-}
-
-static uint32_t mag_left_lo(uint64_t cache, int32_t beta) {
-    return (uint32_t)((cache - (cache >> (23 + 2))) >> (64 - 23 - 1 - beta));
-}
-
-static uint32_t mag_right_hi(uint64_t cache, int32_t beta) {
-    return (uint32_t)((cache + (cache >> (23 + 1))) >> (64 - 23 - 1 - beta));
-}
-
-static uint32_t mag_rndup(uint64_t cache, int32_t beta) {
-    return ((uint32_t)(cache >> (64 - 23 - 2 - beta)) + 1) / 2;
-}
-
-static uint32_t mag_div_pow10(int32_t x, uint32_t n_max, uint32_t n) {
-    if (x == 1 && n_max <= UINT32_C(1073741828)) return (uint32_t)(mag_uint128_mul64(n, UINT32_C(429496730))>>32);
-    if (x == 2) return (uint32_t)(mag_uint128_mul64(n, UINT32_C(1374389535))>>37);
-    return n / mag_ipow(x, 10);
-}
-
-static bool check_divisibility_and_mag_div_pow10(int32_t N, uint32_t *n) {
-    mag_assert2(*n <= mag_ipow(N+1, 10));
-    uint32_t m = mag_div_magic[N - 1];
-    uint32_t prod = *n*m;
-    bool r = (prod & ((1u<<16)-1)) < m;
-    *n = prod>>16;
-    return r;
-}
-
-typedef struct mag_binfp_t {
-    uint32_t sig;
-    int32_t exp;
-    bool is_neg;
-} mag_binfp_t;
-
-static mag_binfp_t mag_binfp_decompose(mag_e8m23_t x) {
-    union castor {
-        uint32_t u;
-        mag_e8m23_t f;
-    } c = {.f=x};
-    return (mag_binfp_t){(c.u&((1u<<23)-1)), (int32_t)(c.u>>23&((1u<<8)-1)), (bool)(c.u>>(23+8))};
-}
-
-#define mag_is_fin(e) ((e) != (1u<<8)-1)
-
-typedef struct mag_decfp_t {
-    uint32_t sig;
-    int32_t exp;
-    bool is_neg;
-} mag_decfp_t;
-
-static mag_decfp_t mag_decfp_to_dec_dragonbox(uint32_t binmt, int32_t bexp, bool is_neg) {
-    int32_t kappa = mag_floor_log10_pow2(32 - 23 - 2) - 1;
-    bool is_even = (binmt & 1) == 0;
-    uint32_t two_fc = binmt<<1;
-    if (bexp) {
-        bexp += -127 - 23;
-        if (!two_fc) {
-            int32_t minus_k = mag_floor_log10_pow2_minus_log10_4_over_3(bexp);
-            int32_t beta = bexp + mag_floor_log2_pow10(-minus_k);
-            uint64_t cache = mag_fmt_cache[-minus_k - -31];
-            uint32_t xi = mag_left_lo(cache, beta);
-            uint32_t zi = mag_right_hi(cache, beta);
-            int32_t csi = 2 + mag_floorlog2(mag_ipow(mag_n_fact(5, (1u<<(23+2))-1)+1, 10/3));
-            if (!(bexp >= 2 && bexp <= csi)) ++xi;
-            uint32_t dsi = mag_div_pow10(1, (((2u<<23)+1)/3+1)*20, zi);
-            if (dsi * 10 >= xi) {
-                int32_t dexp = minus_k + 1;
-                mag_trim_trailing_zeros(&dsi, &dexp);
-                return (mag_decfp_t){dsi, dexp, is_neg};
-            }
-            dsi = mag_rndup(cache, beta);
-            int32_t lo = -mag_floor_log5_pow2_minus_log5_3(23+4)-2-23;
-            int32_t hi = -mag_floor_log5_pow2(23+2)-2-23;
-            if ((dsi & 1) != 0 &&
-                bexp >= lo &&
-                bexp <= hi) {
-                --dsi;
-            }
-            else if (dsi < xi) {
-                ++dsi;
-            }
-            return (mag_decfp_t){dsi, minus_k, is_neg};
+#define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
+static char* mag_wint(char* p, int32_t k) {
+    uint32_t u = (uint32_t)k;
+    if (k < 0) { u = ~u+1u; *p++ = '-'; }
+    if (u < 10000) {
+        if (u < 10) goto dig1;
+        if (u < 100) goto dig2;
+        if (u < 1000) goto dig3;
+    } else {
+        uint32_t v = u / 10000; u -= v * 10000;
+        if (v < 10000) {
+            if (v < 10) goto dig5;
+            if (v < 100) goto dig6;
+            if (v < 1000) goto dig7;
+        } else {
+            uint32_t w = v / 10000; v -= w * 10000;
+            if (w >= 10) wint_r(w, 10, 10)
+            *p++ = (char)('0'+w);
         }
-        two_fc |= 1u<<(23+1);
+        wint_r(v, 23, 1000)
+        dig7: wint_r(v, 12, 100)
+        dig6: wint_r(v, 10, 10)
+        dig5: *p++ = (char)('0'+v);
     }
-    else bexp = -126-23;
-    int32_t minus_k = mag_floor_log10_pow2(bexp) - kappa;
-    uint64_t cache = mag_fmt_cache[-minus_k - -31];
-    int32_t beta = bexp + mag_floor_log2_pow10(-minus_k);
-    uint32_t deltai = mag_compute_delta(cache, beta);
-    mag_mul_t zr = mag_compute_mul((two_fc | 1) << beta, cache);
-    uint32_t bd = mag_ipow(kappa + 1, 10);
-    uint32_t sd = mag_ipow(kappa, 10);
-    uint32_t dsi = mag_div_pow10(kappa + 1, (2u<<23)*bd - 1, zr.integer_part);
-    uint32_t r = zr.integer_part - bd * dsi;
-    do {
-        if (r < deltai) {
-            if ((r|(uint32_t)!zr.is_integer|(uint32_t)(is_even)) == 0) {
-                --dsi;
-                r = bd;
+    wint_r(u, 23, 1000)
+    dig3: wint_r(u, 12, 100)
+    dig2: wint_r(u, 10, 10)
+    dig1: *p++ = (char)('0'+u);
+    return p;
+}
+#undef wint_r
+
+/* -- Extended precision arithmetic --------------------------------------- */
+
+/*
+** The "nd" format is a fixed-precision decimal representation for numbers. It
+** consists of up to 64 uint32_t values, with each uint32_t storing a value
+** in the range [0, 1e9). A number in "nd" format consists of three variables:
+**
+**  uint32_t nd[64];
+**  uint32_t ndlo;
+**  uint32_t ndhi;
+**
+** The integral part of the number is stored in nd[0 ... ndhi], the value of
+** which is sum{i in [0, ndhi] | nd[i] * 10^(9*i)}. If the fractional part of
+** the number is zero, ndlo is zero. Otherwise, the fractional part is stored
+** in nd[ndlo ... 63], the value of which is taken to be
+** sum{i in [ndlo, 63] | nd[i] * 10^(9*(i-64))}.
+**
+** If the array part had 128 elements rather than 64, then every mag_e11m52_t would
+** have an exact representation in "nd" format. With 64 elements, all integral
+** doubles have an exact representation, and all non-integral doubles have
+** enough digits to make both %.99e and %.99f do the right thing.
+*/
+#define MAG_ND_MUL2K_MAX_SHIFT 29
+#define MAG_ND_MUL2K_DIV1E9(val) ((uint32_t)((val) / 1000000000))
+
+/* Multiply nd by 2^k and add carry_in (ndlo is assumed to be zero). */
+static uint32_t nd_mul2k(uint32_t* nd, uint32_t ndhi, uint32_t k, uint32_t carry_in, mag_format_flags_t sf) {
+    uint32_t i, ndlo = 0, start = 1;
+    /* Performance hacks. */
+    if (k > MAG_ND_MUL2K_MAX_SHIFT*2 && MAG_FMT_FP(sf) != MAG_FMT_FP(MAG_FMT_T_FP_F)) {
+        start = ndhi - (MAG_FMT_PREC(sf) + 17) / 8;
+    }
+    /* Real logic. */
+    while (k >= MAG_ND_MUL2K_MAX_SHIFT) {
+        for (i = ndlo; i <= ndhi; i++) {
+            uint64_t val = ((uint64_t)nd[i] << MAG_ND_MUL2K_MAX_SHIFT) | carry_in;
+            carry_in = MAG_ND_MUL2K_DIV1E9(val);
+            nd[i] = (uint32_t)val - carry_in * 1000000000;
+        }
+        if (carry_in) {
+            nd[++ndhi] = carry_in; carry_in = 0;
+            if (start++ == ndlo) ++ndlo;
+        }
+        k -= MAG_ND_MUL2K_MAX_SHIFT;
+    }
+    if (k) {
+        for (i = ndlo; i <= ndhi; i++) {
+            uint64_t val = ((uint64_t)nd[i] << k) | carry_in;
+            carry_in = MAG_ND_MUL2K_DIV1E9(val);
+            nd[i] = (uint32_t)val - carry_in * 1000000000;
+        }
+        if (carry_in) nd[++ndhi] = carry_in;
+    }
+    return ndhi;
+}
+
+/* Divide nd by 2^k (ndlo is assumed to be zero). */
+static uint32_t nd_div2k(uint32_t* nd, uint32_t ndhi, uint32_t k, mag_format_flags_t sf) {
+    uint32_t ndlo = 0, stop1 = ~0, stop2 = ~0;
+    /* Performance hacks. */
+    if (!ndhi) {
+        if (!nd[0]) {
+            return 0;
+        } else {
+            uint32_t s = mag_ffs(nd[0]);
+            if (s >= k) { nd[0] >>= k; return 0; }
+            nd[0] >>= s; k -= s;
+        }
+    }
+    if (k > 18) {
+        if (MAG_FMT_FP(sf) == MAG_FMT_FP(MAG_FMT_T_FP_F)) {
+            stop1 = 63 - (int32_t)MAG_FMT_PREC(sf) / 9;
+        } else {
+            int32_t floorlog2 = ndhi * 29 + mag_fls(nd[ndhi]) - k;
+            int32_t floorlog10 = (int32_t)(floorlog2 * 0.30102999566398114);
+            stop1 = 62 + (floorlog10 - (int32_t)MAG_FMT_PREC(sf)) / 9;
+            stop2 = 61 + ndhi - (int32_t)MAG_FMT_PREC(sf) / 8;
+        }
+    }
+    /* Real logic. */
+    while (k >= 9) {
+        uint32_t i = ndhi, carry = 0;
+        for (;;) {
+            uint32_t val = nd[i];
+            nd[i] = (val >> 9) + carry;
+            carry = (val & 0x1ff) * 1953125;
+            if (i == ndlo) break;
+            i = (i - 1) & 0x3f;
+        }
+        if (ndlo != stop1 && ndlo != stop2) {
+            if (carry) { ndlo = (ndlo - 1) & 0x3f; nd[ndlo] = carry; }
+            if (!nd[ndhi]) { ndhi = (ndhi - 1) & 0x3f; stop2--; }
+        } else if (!nd[ndhi]) {
+            if (ndhi != ndlo) { ndhi = (ndhi - 1) & 0x3f; stop2--; }
+            else return ndlo;
+        }
+        k -= 9;
+    }
+    if (k) {
+        uint32_t mask = (1U << k) - 1, mul = 1000000000 >> k, i = ndhi, carry = 0;
+        for (;;) {
+            uint32_t val = nd[i];
+            nd[i] = (val >> k) + carry;
+            carry = (val & mask) * mul;
+            if (i == ndlo) break;
+            i = (i - 1) & 0x3f;
+        }
+        if (carry) { ndlo = (ndlo - 1) & 0x3f; nd[ndlo] = carry; }
+    }
+    return ndlo;
+}
+
+/* Add m*10^e to nd (assumes ndlo <= e/9 <= ndhi and 0 <= m <= 9). */
+static uint32_t nd_add_m10e(uint32_t* nd, uint32_t ndhi, uint8_t m, int32_t e) {
+    uint32_t i, carry;
+    if (e >= 0) {
+        i = (uint32_t)e/9;
+        carry = m * (mag_ndigits_dec_threshold[e - (int32_t)i*9] + 1);
+    } else {
+        int32_t f = (e-8)/9;
+        i = (uint32_t)(64 + f);
+        carry = m * (mag_ndigits_dec_threshold[e - f*9] + 1);
+    }
+    for (;;) {
+        uint32_t val = nd[i] + carry;
+        if (mag_unlikely(val >= 1000000000)) {
+            val -= 1000000000;
+            nd[i] = val;
+            if (mag_unlikely(i == ndhi)) {
+                ndhi = (ndhi + 1) & 0x3f;
+                nd[ndhi] = 1;
                 break;
             }
+            carry = 1;
+            i = (i + 1) & 0x3f;
+        } else {
+            nd[i] = val;
+            break;
         }
-        else if (r > deltai) break;
-        else {
-            mag_parity_t x_result = mag_compute_mul_parity(two_fc - 1, cache, beta);
-            if (!(x_result.parity|(x_result.is_integer & is_even))) break;
-        }
-        int32_t dexp = minus_k + kappa + 1;
-        mag_trim_trailing_zeros(&dsi, &dexp);
-        return (mag_decfp_t){dsi, dexp, is_neg};
-    } while (0);
-    dsi *= 10;
-    uint32_t dist = r - (deltai>>1) + (sd>>1);
-    bool approx_y_parity = ((dist ^ (sd>>1))&1) != 0;
-    bool small_div = check_divisibility_and_mag_div_pow10(kappa, &dist);
-    dsi += dist;
-    if (small_div) {
-        mag_parity_t y_result = mag_compute_mul_parity(two_fc, cache, beta);
-        if (y_result.parity != approx_y_parity) --dsi;
-        else if ((dsi&1) & y_result.is_integer) --dsi;
     }
-    return (mag_decfp_t){dsi, minus_k + kappa, is_neg};
+    return ndhi;
 }
 
-static char *mag_fmt_dec(char *o, const char *d, int32_t nd, int32_t dec_exp) {
-    int32_t point = nd + dec_exp;
-    if (point >= nd) {
-        for (int32_t i=0; i < nd; ++i) *o++ = d[i];
-        for (int32_t i=nd; i < point; ++i)*o++ = '0';
-        return o;
-    }
-    if (point > 0) {
-        char *start = o;
-        for (int32_t i=0; i < point; ++i) *o++ = d[i];
-        *o++ = '.';
-        for (int32_t i=point; i < nd; ++i) *o++ = d[i];
-        char *end = o;
-        while (end > start && end[-1] == '0') --end;
-        if (end > start && end[-1] == '.') --end;
-        return end;
-    }
-    *o++ = '0';
-    *o++ = '.';
-    for (int32_t i=0; i < -point; ++i) *o++ = '0';
-    for (int32_t i=0; i < nd; ++i) *o++ = d[i];
-    return o;
-}
-
-static char *mag_fmt_scientific(char *o, const char *d, int32_t nd, int32_t dec_exp) {
-    int32_t sci_exp = dec_exp + (nd - 1);
-    char *mant_start = o;
-    *o++ = d[0];
-    if (nd > 1) {
-        *o++ = '.';
-        for (int32_t i = 1; i < nd; ++i) {
-            *o++ = d[i];
+static bool nd_similar(uint32_t* nd, uint32_t ndhi, uint32_t* ref, size_t hilen, size_t prec) {
+    char nd9[9], ref9[9];
+    if (hilen <= prec) {
+        if (mag_unlikely(nd[ndhi] != *ref)) return 0;
+        prec -= hilen; ref--; ndhi = (ndhi - 1) & 0x3f;
+        if (prec >= 9) {
+            if (mag_unlikely(nd[ndhi] != *ref)) return 0;
+            prec -= 9; ref--; ndhi = (ndhi - 1) & 0x3f;
         }
-        char *end = o;
-        while (end > mant_start && end[-1] == '0') --end;
-        if (end > mant_start && end[-1] == '.') --end;
-        o = end;
+    } else {
+        prec -= hilen - 9;
     }
-    *o++ = 'e';
-    if (sci_exp < 0) {
-        *o++ = '-';
-        sci_exp = -sci_exp;
-    } else *o++ = '+';
-    char tmp[8];
-    int32_t tlen = 0;
-    do {
-        tmp[tlen++] = (char)('0' + (sci_exp % 10));
-        sci_exp /= 10;
-    } while (sci_exp);
-    for (int32_t i=tlen - 1; i >= 0; --i) *o++ = tmp[i];
-    return o;
+    mag_assert(prec < 9, "bad precision %d", prec);
+    mag_wuint9(nd9, nd[ndhi]);
+    mag_wuint9(ref9, *ref);
+    return !memcmp(nd9, ref9, prec) && (nd9[prec] < '5') == (ref9[prec] < '5');
 }
 
-static char *mag_fmt_to_chars(mag_e8m23_t x, char *o, int32_t prec) {
-    if (prec <= 0) prec = 1;
-    mag_binfp_t const decomposed = mag_binfp_decompose(x);
-    if (!mag_is_fin(decomposed.exp)) {
-        if (!decomposed.sig) {
-            if (decomposed.is_neg) {
-                *o++ = '-';
+/* Format f64 according to format flags. */
+char *mag_fmt_e11m52(char *p, mag_e11m52_t n, mag_format_flags_t sf) {
+    size_t width = MAG_FMT_WIDTH(sf), prec = MAG_FMT_PREC(sf), len;
+    union {
+        uint64_t u64;
+        mag_e11m52_t n;
+        struct { /* TODO: make endian aware */
+            uint32_t lo, hi;
+        } u32;
+    } t = {.n = n};
+    if (mag_unlikely((t.u32.hi << 1) >= 0xffe00000)) {
+        /* Handle non-finite values uniformly for %a, %e, %f, %g. */
+        int32_t prefix = 0, ch = (sf & MAG_FMT_F_UPPER) ? 0x202020 : 0;
+        if (((t.u32.hi & 0x000fffff) | t.u32.lo) != 0) {
+            ch ^= ('n' << 16) | ('a' << 8) | 'n';
+            if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
+        } else {
+            ch ^= ('i' << 16) | ('n' << 8) | 'f';
+            if ((t.u32.hi & 0x80000000)) prefix = '-';
+            else if ((sf & MAG_FMT_F_PLUS)) prefix = '+';
+            else if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
+        }
+        len = 3 + (prefix != 0);
+        if (!(sf & MAG_FMT_F_LEFT)) while (width-- > len) *p++ = ' ';
+        if (prefix) *p++ = prefix;
+        *p++ = (char)(ch >> 16); *p++ = (char)(ch >> 8); *p++ = (char)ch;
+    } else if (MAG_FMT_FP(sf) == MAG_FMT_FP(MAG_FMT_T_FP_A)) {
+        /* %a */
+        const char* hexdig = (sf & MAG_FMT_F_UPPER) ? "0123456789ABCDEFPX" : "0123456789abcdefpx";
+        int32_t e = (t.u32.hi >> 20) & 0x7ff;
+        char prefix = 0, eprefix = '+';
+        if (t.u32.hi & 0x80000000) prefix = '-';
+        else if ((sf & MAG_FMT_F_PLUS)) prefix = '+';
+        else if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
+        t.u32.hi &= 0xfffff;
+        if (e) {
+            t.u32.hi |= 0x100000;
+            e -= 1023;
+        } else if (t.u32.lo | t.u32.hi) {
+            /* Non-zero denormal - normalise it. */
+            uint32_t shift = t.u32.hi ? 20-mag_fls(t.u32.hi) : 52-mag_fls(t.u32.lo);
+            e = -1022 - shift;
+            t.u64 <<= shift;
+        }
+        /* abs(n) == t.u64 * 2^(e - 52) */
+        /* If n != 0, bit 52 of t.u64 is set, and is the highest set bit. */
+        if ((int32_t)prec < 0) {
+            /* Default precision: use smallest precision giving exact result. */
+            prec = t.u32.lo ? 13-mag_ffs(t.u32.lo)/4 : 5-mag_ffs(t.u32.hi|0x100000)/4;
+        } else if (prec < 13) {
+            /* Precision is sufficiently low as to maybe require rounding. */
+            t.u64 += (((uint64_t)1) << (51 - prec*4));
+        }
+        if (e < 0) {
+            eprefix = '-';
+            e = -e;
+        }
+        len = 5 + mag_ndigits_dec((uint32_t)e) + prec + (prefix != 0)
+              + ((prec | (sf & MAG_FMT_F_ALT)) != 0);
+        if (!(sf & (MAG_FMT_F_LEFT | MAG_FMT_F_ZERO))) {
+            while (width-- > len) *p++ = ' ';
+        }
+        if (prefix) *p++ = prefix;
+        *p++ = '0';
+        *p++ = hexdig[17]; /* x or X */
+        if ((sf & (MAG_FMT_F_LEFT | MAG_FMT_F_ZERO)) == MAG_FMT_F_ZERO) {
+            while (width-- > len) *p++ = '0';
+        }
+        *p++ = '0' + (t.u32.hi >> 20); /* Usually '1', sometimes '0' or '2'. */
+        if ((prec | (sf & MAG_FMT_F_ALT))) {
+            /* Emit fractional part. */
+            char* q = p + 1 + prec;
+            *p = '.';
+            if (prec < 13) t.u64 >>= (52 - prec*4);
+            else while (prec > 13) p[prec--] = '0';
+            while (prec) { p[prec--] = hexdig[t.u64 & 15]; t.u64 >>= 4; }
+            p = q;
+        }
+        *p++ = hexdig[16]; /* p or P */
+        *p++ = eprefix; /* + or - */
+        p = mag_wint(p, e);
+    } else {
+        /* %e or %f or %g - begin by converting n to "nd" format. */
+        uint32_t nd[64];
+        uint32_t ndhi = 0, ndlo, i;
+        int32_t e = (int32_t)(t.u32.hi >> 20) & 0x7ff, ndebias = 0;
+        char prefix = 0, *q;
+        if (t.u32.hi & 0x80000000) prefix = '-';
+        else if ((sf & MAG_FMT_F_PLUS)) prefix = '+';
+        else if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
+        prec += ((int32_t)prec >> 31) & 7; /* Default precision is 6. */
+        if (MAG_FMT_FP(sf) == MAG_FMT_FP(MAG_FMT_T_FP_G)) {
+            /* %g - decrement precision if non-zero (to make it like %e). */
+            prec--;
+            prec ^= (uint32_t)((int32_t)prec >> 31);
+        }
+        if ((sf & MAG_FMT_T_FP_E) && prec < 14 && n != 0) {
+            /* Precision is sufficiently low that rescaling will probably work. */
+            if ((ndebias = mag_rescale_e[e >> 6])) {
+                t.n = n * mag_rescale_n[e >> 6];
+                if (mag_unlikely(!e)) t.n *= 1e10, ndebias -= 10;
+                t.u64 -= 2; /* Convert 2ulp below (later we convert 2ulp above). */
+                nd[0] = 0x100000 | (t.u32.hi & 0xfffff);
+                e = ((int32_t)(t.u32.hi >> 20) & 0x7ff) - 1075 - (MAG_ND_MUL2K_MAX_SHIFT < 29);
+                goto load_t_lo; rescale_failed:
+                t.n = n;
+                e = (int32_t)(t.u32.hi >> 20) & 0x7ff;
+                ndebias = 0;
+                ndhi = 0;
             }
-            memcpy(o, "Inf", 3);
-            return o+3;
         }
-        memcpy(o, "NaN", 3);
-        return o+3;
+        nd[0] = t.u32.hi & 0xfffff;
+        if (e == 0) e++; else nd[0] |= 0x100000;
+        e -= 1043;
+        if (t.u32.lo) {
+            e -= 32 + (MAG_ND_MUL2K_MAX_SHIFT < 29); load_t_lo:
+#if MAG_ND_MUL2K_MAX_SHIFT >= 29
+            nd[0] = (nd[0]<<3) | (t.u32.lo>>29);
+            ndhi = nd_mul2k(nd, ndhi, 29, t.u32.lo & 0x1fffffff, sf);
+#elif MAG_ND_MUL2K_MAX_SHIFT >= 11
+            ndhi = nd_mul2k(nd, ndhi, 11, t.u32.lo>>21, sf);
+            ndhi = nd_mul2k(nd, ndhi, 11, (t.u32.lo>>10) & 0x7ff, sf);
+            ndhi = nd_mul2k(nd, ndhi, 11, (t.u32.lo<<1) & 0x7ff, sf);
+#else
+#error "MAG_ND_MUL2K_MAX_SHIFT not big enough"
+#endif
+        }
+        if (e >= 0) {
+            ndhi = nd_mul2k(nd, ndhi, (uint32_t)e, 0, sf);
+            ndlo = 0;
+        } else {
+            ndlo = nd_div2k(nd, ndhi, (uint32_t)-e, sf);
+            if (ndhi && !nd[ndhi]) ndhi--;
+        }
+        /* |n| == nd * 10^ndebias (for slightly loose interpretation of ==) */
+        if ((sf & MAG_FMT_T_FP_E)) {
+            /* %e or %g - assume %e and start by calculating nd's exponent (nde). */
+            char eprefix = '+';
+            int32_t nde = -1;
+            size_t hilen;
+            if (ndlo && !nd[ndhi]) {
+                ndhi = 64; do {} while (!nd[--ndhi]);
+                nde -= 64 * 9;
+            }
+            hilen = mag_ndigits_dec(nd[ndhi]);
+            nde += (int32_t)(ndhi * 9 + hilen);
+            if (ndebias) {
+                /*
+                ** Rescaling was performed, but this introduced some error, and might
+                ** have pushed us across a rounding boundary. We check whether this
+                ** error affected the result by introducing even more error (2ulp in
+                ** either direction), and seeing whether a rounding boundary was
+                ** crossed. Having already converted the -2ulp case, we save off its
+                ** most significant digits, convert the +2ulp case, and compare them.
+                */
+                int32_t eidx = e + 70 + (MAG_ND_MUL2K_MAX_SHIFT < 29)
+                               + (t.u32.lo >= 0xfffffffe && !(~t.u32.hi << 12));
+                const int8_t *m_e = mag_four_ulp_m_e + eidx * 2;
+                mag_assert(0 <= eidx && eidx < 128, "bad eidx %d", eidx);
+                nd[33] = nd[ndhi];
+                nd[32] = nd[(ndhi - 1) & 0x3f];
+                nd[31] = nd[(ndhi - 2) & 0x3f];
+                nd_add_m10e(nd, ndhi, (uint8_t)*m_e, m_e[1]);
+                if (mag_unlikely(!nd_similar(nd, ndhi, nd + 33, hilen, prec + 1))) {
+                    goto rescale_failed;
+                }
+            }
+            if ((int32_t)(prec - nde) < (0x3f & -(int32_t)ndlo) * 9) {
+                /* Precision is sufficiently low as to maybe require rounding. */
+                ndhi = nd_add_m10e(nd, ndhi, 5, (int32_t)nde - prec - 1);
+                nde += (hilen != mag_ndigits_dec(nd[ndhi]));
+            }
+            nde += ndebias;
+            if ((sf & MAG_FMT_T_FP_F)) {
+                /* %g */
+                if ((int32_t)prec >= nde && nde >= -4) {
+                    if (nde < 0) ndhi = 0;
+                    prec -= nde;
+                    goto g_format_like_f;
+                } else if (!(sf & MAG_FMT_F_ALT) && prec && width > 5) {
+                    /* Decrease precision in order to strip trailing zeroes. */
+                    char tail[9];
+                    uint32_t maxprec = hilen - 1 + ((ndhi - ndlo) & 0x3f) * 9;
+                    if (prec >= maxprec) prec = maxprec;
+                    else ndlo = (ndhi - (((int32_t)(prec - hilen) + 9) / 9)) & 0x3f;
+                    i = prec - hilen - (((ndhi - ndlo) & 0x3f) * 9) + 10;
+                    mag_wuint9(tail, nd[ndlo]);
+                    while (prec && tail[--i] == '0') {
+                        prec--;
+                        if (!i) {
+                            if (ndlo == ndhi) { prec = 0; break; }
+                            ndlo = (ndlo + 1) & 0x3f;
+                            mag_wuint9(tail, nd[ndlo]);
+                            i = 9;
+                        }
+                    }
+                }
+            }
+            if (nde < 0) {
+                /* Make nde non-negative. */
+                eprefix = '-';
+                nde = -nde;
+            }
+            len = 3 + prec + (prefix != 0) + mag_ndigits_dec((uint32_t)nde) + (nde < 10)
+                  + ((prec | (sf & MAG_FMT_F_ALT)) != 0);
+            if (!(sf & (MAG_FMT_F_LEFT | MAG_FMT_F_ZERO))) {
+                while (width-- > len) *p++ = ' ';
+            }
+            if (prefix) *p++ = prefix;
+            if ((sf & (MAG_FMT_F_LEFT | MAG_FMT_F_ZERO)) == MAG_FMT_F_ZERO) {
+                while (width-- > len) *p++ = '0';
+            }
+            q = mag_wint(p + 1, nd[ndhi]);
+            p[0] = p[1]; /* Put leading digit in the correct place. */
+            if ((prec | (sf & MAG_FMT_F_ALT))) {
+                /* Emit fractional part. */
+                p[1] = '.'; p += 2;
+                prec -= (size_t)(q - p); p = q; /* Account for digits already emitted. */
+                /* Then emit chunks of 9 digits (this may emit 8 digits too many). */
+                for (i = ndhi; (int32_t)prec > 0 && i != ndlo; prec -= 9) {
+                    i = (i - 1) & 0x3f;
+                    p = mag_wuint9(p, nd[i]);
+                }
+                if ((sf & MAG_FMT_T_FP_F) && !(sf & MAG_FMT_F_ALT)) {
+                    /* %g (and not %#g) - strip trailing zeroes. */
+                    p += (int32_t)prec & ((int32_t)prec >> 31);
+                    while (p[-1] == '0') p--;
+                    if (p[-1] == '.') p--;
+                } else {
+                    /* %e (or %#g) - emit trailing zeroes. */
+                    while ((int32_t)prec > 0) { *p++ = '0'; prec--; }
+                    p += (int32_t)prec;
+                }
+            } else {
+                p++;
+            }
+            *p++ = (sf & MAG_FMT_F_UPPER) ? 'E' : 'e';
+            *p++ = eprefix; /* + or - */
+            if (nde < 10) *p++ = '0'; /* Always at least two digits of exponent. */
+            p = mag_wint(p, nde);
+        } else {
+            /* %f (or, shortly, %g in %f style) */
+            if (prec < (size_t)(0x3f & -(int32_t)ndlo) * 9) {
+                /* Precision is sufficiently low as to maybe require rounding. */
+                ndhi = nd_add_m10e(nd, ndhi, 5, 0 - prec - 1);
+            }
+            g_format_like_f:
+            if ((sf & MAG_FMT_T_FP_E) && !(sf & MAG_FMT_F_ALT) && prec && width) {
+                /* Decrease precision in order to strip trailing zeroes. */
+                if (ndlo) {
+                    /* nd has a fractional part; we need to look at its digits. */
+                    char tail[9];
+                    uint32_t maxprec = (64 - ndlo) * 9;
+                    if (prec >= maxprec) prec = maxprec;
+                    else ndlo = 64 - (prec + 8) / 9;
+                    i = prec - ((63 - ndlo) * 9);
+                    mag_wuint9(tail, nd[ndlo]);
+                    while (prec && tail[--i] == '0') {
+                        prec--;
+                        if (!i) {
+                            if (ndlo == 63) { prec = 0; break; }
+                            mag_wuint9(tail, nd[++ndlo]);
+                            i = 9;
+                        }
+                    }
+                } else {
+                    /* nd has no fractional part, so precision goes straight to zero. */
+                    prec = 0;
+                }
+            }
+            len = ndhi * 9 + mag_ndigits_dec(nd[ndhi]) + prec + (prefix != 0)
+                  + ((prec | (sf & MAG_FMT_F_ALT)) != 0);
+            if (!(sf & (MAG_FMT_F_LEFT | MAG_FMT_F_ZERO))) {
+                while (width-- > len) *p++ = ' ';
+            }
+            if (prefix) *p++ = prefix;
+            if ((sf & (MAG_FMT_F_LEFT | MAG_FMT_F_ZERO)) == MAG_FMT_F_ZERO) {
+                while (width-- > len) *p++ = '0';
+            }
+            /* Emit integer part. */
+            p = mag_wint(p, nd[ndhi]);
+            i = ndhi;
+            while (i) p = mag_wuint9(p, nd[--i]);
+            if ((prec | (sf & MAG_FMT_F_ALT))) {
+                /* Emit fractional part. */
+                *p++ = '.';
+                /* Emit chunks of 9 digits (this may emit 8 digits too many). */
+                while ((int32_t)prec > 0 && i != ndlo) {
+                    i = (i - 1) & 0x3f;
+                    p = mag_wuint9(p, nd[i]);
+                    prec -= 9;
+                }
+                if ((sf & MAG_FMT_T_FP_E) && !(sf & MAG_FMT_F_ALT)) {
+                    /* %g (and not %#g) - strip trailing zeroes. */
+                    p += (int32_t)prec & ((int32_t)prec >> 31);
+                    while (p[-1] == '0') p--;
+                    if (p[-1] == '.') p--;
+                } else {
+                    /* %f (or %#g) - emit trailing zeroes. */
+                    while ((int32_t)prec > 0) { *p++ = '0'; prec--; }
+                    p += (int32_t)prec;
+                }
+            }
+        }
     }
-    if (decomposed.is_neg) *o++ = '-';
-    if (decomposed.sig == 0 && decomposed.exp == 0) {
-        *o++ = '0';
-        return o;
-    }
-    mag_decfp_t fp = mag_decfp_to_dec_dragonbox(decomposed.sig, decomposed.exp, decomposed.is_neg);
-    uint32_t dec_sig = fp.sig;
-    char digits[16];
-    int32_t nd = 0;
-    do {
-        digits[nd++] = (char)('0' + (dec_sig % 10));
-        dec_sig /= 10;
-    } while (dec_sig != 0);
-    for (int32_t i = 0; i < nd>>1; ++i) {
-        char tmp = digits[i];
-        digits[i] = digits[nd-1-i];
-        digits[nd-1-i] = tmp;
-    }
-    int32_t dec_exp = fp.exp;
-    int32_t k = dec_exp+(nd-1);
-    if (k >= -4 && k < prec) return mag_fmt_dec(o, digits, nd, dec_exp);
-    return mag_fmt_scientific(o, digits, nd, dec_exp);
-}
-
-char *mag_fmt_e8m23(char (*p)[MAG_E8M23_FMT_BUF_SIZE], mag_e8m23_t n){
-    char *e = mag_fmt_to_chars(n, *p, 6);
-    *e = '\0';
-    mag_assert2(e - *p < MAG_E8M23_FMT_BUF_SIZE);
-    return e;
+    if ((sf & MAG_FMT_F_LEFT)) while (width-- > len) *p++ = ' ';
+    return p;
 }
