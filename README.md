@@ -71,7 +71,7 @@ A CUDA backend and mixed-precision support are currently in development.
 |----------|-------------|
 | [GPT-2 Inference](examples/gpt2/) | Transformer-based text generation using pretrained GPT-2 weights. |
 | [Autoencoder](examples/ae/) | Image reconstruction using a small dense encoder–decoder network. |
-| [Linear Regression](examples/linear/) | Fits a linear model to noisy synthetic data. |
+| [Linear Regression](examples/linear_regression/) | Fits a linear model to noisy synthetic data. |
 | [XOR](examples/xor/) | Trains a small neural network to learn the XOR logical function. |
 
 ---
