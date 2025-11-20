@@ -3,7 +3,6 @@
 #pragma once
 
 #include <bit>
-#include <cstdint>
 #include <random>
 #include <functional>
 #include <span>

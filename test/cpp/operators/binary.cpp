@@ -33,15 +33,15 @@ static void test_binary_float_operator(
         tensor t_a {ctx, ty, shape};
         t_a.fill_rand_uniform(min, max);
         tensor t_b {t_a.clone()};
-        auto d_a {t_a.to_vector<mag_e8m23_t>()};
-        auto d_b {t_b.to_vector<mag_e8m23_t>()};
+        data_accessor<mag_e8m23_t> d_a {t_a};
+        data_accessor<mag_e8m23_t> d_b {t_b};
         tensor t_r {std::invoke(a, t_a, t_b)};
         if (inplace) {
             ASSERT_EQ(t_a.data_ptr(), t_r.data_ptr());
         } else {
             ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
         }
-        auto d_r {t_r.to_vector<mag_e8m23_t>()};
+        data_accessor<mag_e8m23_t> d_r {t_r};
         ASSERT_EQ(d_a.size(), d_b.size());
         ASSERT_EQ(d_a.size(), d_r.size());
         ASSERT_EQ(t_a.dtype(), t_b.dtype());

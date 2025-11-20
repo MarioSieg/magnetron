@@ -17,6 +17,7 @@
 #include <magnetron/magnetron.h>
 
 #include <core/mag_rc.h>
+#include <core/mag_backend.h>
 
 #include <cstdint>
 #include <algorithm>
@@ -25,6 +26,8 @@
 #include <optional>
 #include <vector>
 #include <span>
+
+#include "core/mag_tensor.h"
 
 namespace magnetron {
     /**
@@ -115,6 +118,30 @@ namespace magnetron {
             throw std::runtime_error {ctx ? mag_ctx_get_last_error(ctx)->message : mag_status_get_name(status)};
         }
     }
+
+    class tensor;
+
+    template <typename T>
+    class data_accessor final {
+    public:
+        explicit data_accessor(tensor t);
+        data_accessor(const data_accessor&) = delete;
+        data_accessor(data_accessor&&) = delete;
+        data_accessor& operator=(const data_accessor&) = delete;
+        data_accessor& operator=(data_accessor&&)=delete;
+        ~data_accessor() = default;
+
+        T& operator [](size_t i);
+        T operator [](size_t i) const;
+        [[nodiscard]] size_t size() const noexcept { return numel; }
+
+    private:
+        size_t numel = 0;
+        [[no_unique_address]]
+        std::vector<T> m_owned = {};
+        [[no_unique_address]]
+        T *m_ref = {};
+    };
 
     /**
      * A 1-6 dimensional, reference counted tensor with a fixed size and data type.
@@ -983,5 +1010,39 @@ namespace magnetron {
         std::copy_n(data, numel(), result.begin());
         mag_tensor_get_raw_data_as_bytes_free(data);
         return result;
+    }
+
+    template <typename T>
+    [[nodiscard]] consteval std::optional<dtype> generic_to_dtype() {
+        if constexpr (std::is_same_v<T, int32_t>) return dtype::i32;
+        if constexpr (std::is_same_v<T, mag_e8m23_t>) return dtype::e8m23;
+        if constexpr (std::is_same_v<T, mag_e5m10_t>) return dtype::e5m10;
+        if constexpr (std::is_same_v<T, bool>) return dtype::boolean;
+        return std::nullopt;
+    }
+
+    template <typename T>
+    data_accessor<T>::data_accessor(tensor t) {
+        if constexpr (std::is_same_v<T, bool>) {
+            std::optional<dtype> type = generic_to_dtype<T>();
+            if (type && t.dtype() == type && mag_device_is((*t).storage->host, "cpu")) {
+                m_ref = static_cast<T *>(mag_tensor_get_data_ptr(&*t));
+                m_owned = {};
+                return;
+            }
+        }
+        numel = t.numel();
+        m_ref = nullptr;
+        m_owned = t.to_vector<T>();
+    }
+
+    template<typename T>
+    T &data_accessor<T>::operator[](size_t i) {
+        return m_ref ? m_ref[i] : m_owned[i];
+    }
+
+    template<typename T>
+    T data_accessor<T>::operator[](size_t i) const {
+        return m_ref ? m_ref[i] : m_owned[i];
     }
 }

@@ -35,7 +35,7 @@ static auto test_unary_operator(
         tensor t_a = subview ? make_random_view(base) : base;
         if (subview)
             ASSERT_TRUE(t_a.is_view());
-        std::vector<mag_e8m23_t> d_a{t_a.to_vector<mag_e8m23_t>()};
+        data_accessor<mag_e8m23_t> d_a {t_a};
         tensor t_r = std::invoke(a, t_a);
         if (inplace)
             ASSERT_EQ(t_a.data_ptr(), t_r.data_ptr());
@@ -43,7 +43,7 @@ static auto test_unary_operator(
             ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
         if (inplace)
             ASSERT_EQ(t_a.storage_base_ptr(), t_r.storage_base_ptr());
-        std::vector<mag_e8m23_t> d_r{t_r.to_vector<mag_e8m23_t>()};
+        data_accessor<mag_e8m23_t> d_r {t_r};
         ASSERT_EQ(d_a.size(), d_r.size());
         for (std::size_t i = 0; i < d_r.size(); ++i)
             ASSERT_NEAR(std::invoke(b, d_a[i]), d_r[i], eps);

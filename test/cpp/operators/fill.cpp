@@ -50,7 +50,7 @@ TEST(cpu_tensor_init_ops, copy_e8m23) {
         std::uniform_real_distribution<float> dist {dtype_traits<float>::min, dtype_traits<float>::max};
         std::ranges::generate(fill_data, [&] { return dist(gen); });
         t.fill_from(fill_data);
-        std::vector<float> data {t.to_vector<float>()};
+        data_accessor<mag_e8m23_t> data {t};
         ASSERT_EQ(data.size(), t.numel());
         for (std::size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], fill_data[i]);
@@ -67,7 +67,7 @@ TEST(cpu_tensor_init_ops, copy_e5m10) {
         std::uniform_real_distribution<float> dist {-1.0f, 1.0f};
         std::ranges::generate(fill_data, [&] { return dist(gen); });
         t.fill_from(fill_data);
-        std::vector<float> data {t.to_vector<float>()};
+        data_accessor<mag_e8m23_t> data {t};
         ASSERT_EQ(data.size(), t.numel());
         for (std::size_t i {}; i < data.size(); ++i) {
             ASSERT_NEAR(data[i], fill_data[i], dtype_traits<float16>::test_eps);
@@ -101,7 +101,7 @@ TEST(cpu_tensor_init_ops, fill_e8m23) {
         float fill_val {dist(gen)};
         tensor t {ctx, dtype::e8m23, shape};
         t.fill(fill_val);
-        std::vector<float> data {t.to_vector<float>()};
+        data_accessor<mag_e8m23_t> data {t};
         ASSERT_EQ(data.size(), t.numel());
         for (std::size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], fill_val);
@@ -116,7 +116,7 @@ TEST(cpu_tensor_init_ops, fill_e5m10) {
         float fill_val {dist(gen)};
         tensor t {ctx, dtype::e5m10, shape};
         t.fill(fill_val);
-        std::vector<float> data {t.to_vector<float>()};
+        data_accessor<mag_e8m23_t> data {t};
         ASSERT_EQ(data.size(), t.numel());
         for (std::size_t i {}; i < data.size(); ++i) {
             ASSERT_NEAR(data[i], fill_val, 1e-3f);
@@ -147,11 +147,11 @@ TEST(cpu_tensor_init_ops, fill_random_uniform_e8m23) {
         float max {std::uniform_real_distribution{min, dtype_traits<float>::max}(gen)};
         tensor t {ctx, dtype::e8m23, shape};
         t.fill_rand_uniform(min, max);
-        std::vector<float> data {t.to_vector<float>()};
+        data_accessor<mag_e8m23_t> data {t};
         ASSERT_EQ(data.size(), t.numel());
-        for (auto x : data) {
-           ASSERT_GE(x, min);
-           ASSERT_LE(x, max);
+        for (size_t i {}; i < data.size(); ++i) {
+           ASSERT_GE(data[i], min);
+           ASSERT_LE(data[i], max);
        }
     });
 }
