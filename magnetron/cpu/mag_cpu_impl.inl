@@ -976,6 +976,18 @@ static void MAG_HOTPROC mag_vdiv_e5m10(int64_t numel, mag_e5m10_t *o, const mag_
     }
 }
 
+static void MAG_HOTPROC mag_vmod_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x, const mag_e8m23_t *y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = fmodf(x[i], y[i]);
+}
+
+static void MAG_HOTPROC mag_vmod_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x, const mag_e5m10_t *y) {
+    int64_t i=0;
+    for (; i < numel; ++i) { /* Scalar drain loop */
+        o[i] = mag_e8m23_cvt_e5m10(fmodf(mag_e5m10_cvt_e8m23(x[i]), mag_e5m10_cvt_e8m23(y[i])));
+    }
+}
+
 static void MAG_HOTPROC mag_vpows_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x, mag_e8m23_t y) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = powf(x[i], y);
@@ -1070,6 +1082,36 @@ static void MAG_HOTPROC mag_vlog_e5m10(int64_t numel, mag_e5m10_t *o, const mag_
         o[i] = mag_e8m23_cvt_e5m10(logf(mag_e5m10_cvt_e8m23(x[i])));
 }
 
+static void MAG_HOTPROC mag_vlog10_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = log10f(x[i]);
+}
+
+static void MAG_HOTPROC mag_vlog10_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(log10f(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vlog1p_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = log1pf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vlog1p_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(log1pf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vlog2_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = log2f(x[i]);
+}
+
+static void MAG_HOTPROC mag_vlog2_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(log2f(mag_e5m10_cvt_e8m23(x[i])));
+}
+
 static void MAG_HOTPROC mag_vsqr_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
     for (int64_t i=0; i < numel; ++i) {
         mag_e8m23_t xi = x[i];
@@ -1114,6 +1156,106 @@ static void MAG_HOTPROC mag_vcos_e5m10(int64_t numel, mag_e5m10_t *o, const mag_
         o[i] = mag_e8m23_cvt_e5m10(cosf(mag_e5m10_cvt_e8m23(x[i])));
 }
 
+static void MAG_HOTPROC mag_vtan_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = tanf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vtan_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(tanf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vasin_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = asinf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vasin_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(asinf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vacos_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = acosf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vacos_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(acosf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vatan_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = atanf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vatan_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(atanf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vsinh_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = sinhf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vsinh_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(sinhf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vcosh_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = coshf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vcosh_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(coshf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vtanh_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = tanhf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vtanh_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(tanhf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vasinh_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = asinhf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vasinh_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(asinhf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vacosh_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = acoshf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vacosh_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(acoshf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vatanh_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = atanhf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vatanh_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(atanhf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
 static void MAG_HOTPROC mag_vstep_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i] > 0.0f ? 1.f : 0.0f;
@@ -1124,6 +1266,26 @@ static void MAG_HOTPROC mag_vstep_e5m10(int64_t numel, mag_e5m10_t *o, const mag
         o[i] = mag_e5m10_cvt_e8m23(x[i]) > 0.0f ? MAG_E5M10_ONE : MAG_E5M10_ZERO;
 }
 
+static void MAG_HOTPROC mag_verf_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = erff(x[i]);
+}
+
+static void MAG_HOTPROC mag_verf_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(erff(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_verfc_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = erfcf(x[i]);
+}
+
+static void MAG_HOTPROC mag_verfc_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(erfcf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
 static void MAG_HOTPROC mag_vexp_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = expf(x[i]);
@@ -1132,6 +1294,26 @@ static void MAG_HOTPROC mag_vexp_e8m23(int64_t numel, mag_e8m23_t *o, const mag_
 static void MAG_HOTPROC mag_vexp_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = mag_e8m23_cvt_e5m10(expf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vexp2_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = exp2f(x[i]);
+}
+
+static void MAG_HOTPROC mag_vexp2_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(exp2f(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vexpm1_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = expm1f(x[i]);
+}
+
+static void MAG_HOTPROC mag_vexpm1_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(expm1f(mag_e5m10_cvt_e8m23(x[i])));
 }
 
 static void MAG_HOTPROC mag_vfloor_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
@@ -1162,6 +1344,16 @@ static void MAG_HOTPROC mag_vround_e8m23(int64_t numel, mag_e8m23_t *o, const ma
 static void MAG_HOTPROC mag_vround_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = mag_e8m23_cvt_e5m10(nearbyintf(mag_e5m10_cvt_e8m23(x[i])));
+}
+
+static void MAG_HOTPROC mag_vtrunc_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = truncf(x[i]);
+}
+
+static void MAG_HOTPROC mag_vtrunc_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_e8m23_cvt_e5m10(truncf(mag_e5m10_cvt_e8m23(x[i])));
 }
 
 static void MAG_HOTPROC mag_vsoftmax_dv_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
@@ -1234,16 +1426,6 @@ static void MAG_HOTPROC mag_vsilu_dv_e5m10(int64_t numel, mag_e5m10_t *o, const 
         mag_e8m23_t sig = 1.f/(1.f + expf(-xi));
         o[i] = mag_e8m23_cvt_e5m10(sig + xi*sig);
     }
-}
-
-static void MAG_HOTPROC mag_vtanh_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = tanhf(x[i]);
-}
-
-static void MAG_HOTPROC mag_vtanh_e5m10(int64_t numel, mag_e5m10_t *o, const mag_e5m10_t *x) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = mag_e8m23_cvt_e5m10(tanhf(mag_e5m10_cvt_e8m23(x[i])));
 }
 
 static void MAG_HOTPROC mag_vtanh_dv_e8m23(int64_t numel, mag_e8m23_t *o, const mag_e8m23_t *x) {
@@ -1425,6 +1607,11 @@ static void mag_vmul_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const 
 static void mag_vdiv_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i] / y[i];
+}
+
+static void mag_vmod_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = x[i] % y[i];
 }
 
 static void mag_vand_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
@@ -2149,6 +2336,12 @@ mag_gen_stub_unary(e8m23, neg)
 mag_gen_stub_unary(e5m10, neg)
 mag_gen_stub_unary(e8m23, log)
 mag_gen_stub_unary(e5m10, log)
+mag_gen_stub_unary(e8m23, log10)
+mag_gen_stub_unary(e5m10, log10)
+mag_gen_stub_unary(e8m23, log1p)
+mag_gen_stub_unary(e5m10, log1p)
+mag_gen_stub_unary(e8m23, log2)
+mag_gen_stub_unary(e5m10, log2)
 mag_gen_stub_unary(e8m23, sqr)
 mag_gen_stub_unary(e5m10, sqr)
 mag_gen_stub_unary(e8m23, sqrt)
@@ -2157,16 +2350,46 @@ mag_gen_stub_unary(e8m23, sin)
 mag_gen_stub_unary(e5m10, sin)
 mag_gen_stub_unary(e8m23, cos)
 mag_gen_stub_unary(e5m10, cos)
+mag_gen_stub_unary(e8m23, tan)
+mag_gen_stub_unary(e5m10, tan)
+mag_gen_stub_unary(e8m23, asin)
+mag_gen_stub_unary(e5m10, asin)
+mag_gen_stub_unary(e8m23, acos)
+mag_gen_stub_unary(e5m10, acos)
+mag_gen_stub_unary(e8m23, atan)
+mag_gen_stub_unary(e5m10, atan)
+mag_gen_stub_unary(e8m23, sinh)
+mag_gen_stub_unary(e5m10, sinh)
+mag_gen_stub_unary(e8m23, cosh)
+mag_gen_stub_unary(e5m10, cosh)
+mag_gen_stub_unary(e8m23, tanh)
+mag_gen_stub_unary(e5m10, tanh)
+mag_gen_stub_unary(e8m23, asinh)
+mag_gen_stub_unary(e5m10, asinh)
+mag_gen_stub_unary(e8m23, acosh)
+mag_gen_stub_unary(e5m10, acosh)
+mag_gen_stub_unary(e8m23, atanh)
+mag_gen_stub_unary(e5m10, atanh)
 mag_gen_stub_unary(e8m23, step)
 mag_gen_stub_unary(e5m10, step)
+mag_gen_stub_unary(e8m23, erf)
+mag_gen_stub_unary(e5m10, erf)
+mag_gen_stub_unary(e8m23, erfc)
+mag_gen_stub_unary(e5m10, erfc)
 mag_gen_stub_unary(e8m23, exp)
 mag_gen_stub_unary(e5m10, exp)
+mag_gen_stub_unary(e8m23, exp2)
+mag_gen_stub_unary(e5m10, exp2)
+mag_gen_stub_unary(e8m23, expm1)
+mag_gen_stub_unary(e5m10, expm1)
 mag_gen_stub_unary(e8m23, floor)
 mag_gen_stub_unary(e5m10, floor)
 mag_gen_stub_unary(e8m23, ceil)
 mag_gen_stub_unary(e5m10, ceil)
 mag_gen_stub_unary(e8m23, round)
 mag_gen_stub_unary(e5m10, round)
+mag_gen_stub_unary(e8m23, trunc)
+mag_gen_stub_unary(e5m10, trunc)
 
 static void MAG_HOTPROC mag_softmax_e8m23(const mag_kernel_payload_t *payload) {
     mag_tensor_t *r = mag_cmd_out(0);
@@ -2263,8 +2486,6 @@ mag_gen_stub_unary(e8m23, silu)
 mag_gen_stub_unary(e5m10, silu)
 mag_gen_stub_unary(e8m23, silu_dv)
 mag_gen_stub_unary(e5m10, silu_dv)
-mag_gen_stub_unary(e8m23, tanh)
-mag_gen_stub_unary(e5m10, tanh)
 mag_gen_stub_unary(e8m23, tanh_dv)
 mag_gen_stub_unary(e5m10, tanh_dv)
 mag_gen_stub_unary(e8m23, relu)
@@ -3918,6 +4139,18 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_E8M23] = &mag_log_e8m23,
         [MAG_DTYPE_E5M10] = &mag_log_e5m10,
     },
+    [MAG_OP_LOG10] = {
+        [MAG_DTYPE_E8M23] = &mag_log10_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_log10_e5m10,
+    },
+    [MAG_OP_LOG1P] = {
+        [MAG_DTYPE_E8M23] = &mag_log1p_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_log1p_e5m10,
+    },
+    [MAG_OP_LOG2] = {
+        [MAG_DTYPE_E8M23] = &mag_log2_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_log2_e5m10,
+    },
     [MAG_OP_SQR] = {
         [MAG_DTYPE_E8M23] = &mag_sqr_e8m23,
         [MAG_DTYPE_E5M10] = &mag_sqr_e5m10,
@@ -3934,13 +4167,69 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_E8M23] = &mag_cos_e8m23,
         [MAG_DTYPE_E5M10] = &mag_cos_e5m10,
     },
+    [MAG_OP_TAN] = {
+        [MAG_DTYPE_E8M23] = &mag_tan_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_tan_e5m10,
+    },
+    [MAG_OP_SINH] = {
+        [MAG_DTYPE_E8M23] = &mag_sinh_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_sinh_e5m10,
+    },
+    [MAG_OP_COSH] = {
+        [MAG_DTYPE_E8M23] = &mag_cosh_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_cosh_e5m10,
+    },
+    [MAG_OP_TANH] = {
+        [MAG_DTYPE_E8M23] = &mag_tanh_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_tanh_e5m10,
+    },
+    [MAG_OP_ASIN] = {
+        [MAG_DTYPE_E8M23] = &mag_asin_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_asin_e5m10,
+    },
+    [MAG_OP_ACOS] = {
+        [MAG_DTYPE_E8M23] = &mag_acos_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_acos_e5m10,
+    },
+    [MAG_OP_ATAN] = {
+        [MAG_DTYPE_E8M23] = &mag_atan_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_atan_e5m10,
+    },
+    [MAG_OP_ASINH] = {
+        [MAG_DTYPE_E8M23] = &mag_asinh_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_asinh_e5m10,
+    },
+    [MAG_OP_ACOSH] = {
+        [MAG_DTYPE_E8M23] = &mag_acosh_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_acosh_e5m10,
+    },
+    [MAG_OP_ATANH] = {
+        [MAG_DTYPE_E8M23] = &mag_atanh_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_atanh_e5m10,
+    },
     [MAG_OP_STEP] = {
         [MAG_DTYPE_E8M23] = &mag_step_e8m23,
         [MAG_DTYPE_E5M10] = &mag_step_e5m10,
     },
+    [MAG_OP_ERF] = {
+        [MAG_DTYPE_E8M23] = &mag_erf_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_erf_e5m10,
+    },
+    [MAG_OP_ERFC] = {
+        [MAG_DTYPE_E8M23] = &mag_erfc_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_erfc_e5m10,
+    },
     [MAG_OP_EXP] = {
         [MAG_DTYPE_E8M23] = &mag_exp_e8m23,
         [MAG_DTYPE_E5M10] = &mag_exp_e5m10,
+    },
+    [MAG_OP_EXP2] = {
+        [MAG_DTYPE_E8M23] = &mag_exp2_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_exp2_e5m10,
+    },
+    [MAG_OP_EXPM1] = {
+        [MAG_DTYPE_E8M23] = &mag_expm1_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_expm1_e5m10,
     },
     [MAG_OP_FLOOR] = {
         [MAG_DTYPE_E8M23] = &mag_floor_e8m23,
@@ -3953,6 +4242,10 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_ROUND] = {
         [MAG_DTYPE_E8M23] = &mag_round_e8m23,
         [MAG_DTYPE_E5M10] = &mag_round_e5m10,
+    },
+    [MAG_OP_TRUNC] = {
+        [MAG_DTYPE_E8M23] = &mag_trunc_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_trunc_e5m10,
     },
     [MAG_OP_SOFTMAX] = {
         [MAG_DTYPE_E8M23] = &mag_softmax_e8m23,
@@ -3981,10 +4274,6 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_SILU_DV] = {
         [MAG_DTYPE_E8M23] = &mag_silu_dv_e8m23,
         [MAG_DTYPE_E5M10] = &mag_silu_dv_e5m10,
-    },
-    [MAG_OP_TANH] = {
-        [MAG_DTYPE_E8M23] = &mag_tanh_e8m23,
-        [MAG_DTYPE_E5M10] = &mag_tanh_e5m10,
     },
     [MAG_OP_TANH_DV] = {
         [MAG_DTYPE_E8M23] = &mag_tanh_dv_e8m23,

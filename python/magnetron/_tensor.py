@@ -20,7 +20,7 @@ from ._bootstrap import _FFI, _C
 from ._error import _handle_errc
 
 _MAIN_TID: int = threading.get_native_id()
-_MAX_DIMS: int = 6
+_MAX_DIMS: int = 8
 _DIM_MAX: int = 0x7FFFFFFFFFFFFFFF
 
 NestedList = float | bool | int | list['NestedData']
@@ -301,7 +301,7 @@ class Tensor:
         for idx in index:
             if idx is None:
                 if curr.rank == _MAX_DIMS:
-                    raise NotImplementedError('Rank > 6 not supported')
+                    raise NotImplementedError(f'Rank > {_MAX_DIMS} not supported')
                 curr = curr.view(*curr.shape[:axis], 1, *curr.shape[axis:])
                 axis += 1
                 continue
@@ -729,6 +729,33 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_log_(out, self._ptr)))
 
+    def log10(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_log10(out, self._ptr)))
+
+    def log10_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_log10_(out, self._ptr)))
+
+    def log1p(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_log1p(out, self._ptr)))
+
+    def log1p_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_log1p_(out, self._ptr)))
+
+    def log2(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_log2(out, self._ptr)))
+
+    def log2_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_log2_(out, self._ptr)))
+
     def sqr(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_sqr(out, self._ptr)))
@@ -765,6 +792,96 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_cos_(out, self._ptr)))
 
+    def tan(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_tan(out, self._ptr)))
+
+    def tan_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_tan_(out, self._ptr)))
+
+    def asin(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_asin(out, self._ptr)))
+
+    def asin_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_asin_(out, self._ptr)))
+
+    def acos(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_acos(out, self._ptr)))
+
+    def acos_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_acos_(out, self._ptr)))
+
+    def atan(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_atan(out, self._ptr)))
+
+    def atan_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_atan_(out, self._ptr)))
+
+    def sinh(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_sinh(out, self._ptr)))
+
+    def sinh_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_sinh_(out, self._ptr)))
+
+    def cosh(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_cosh(out, self._ptr)))
+
+    def cosh_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_cosh_(out, self._ptr)))
+
+    def tanh(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_tanh(out, self._ptr)))
+
+    def tanh_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_tanh_(out, self._ptr)))
+
+    def asinh(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_asinh(out, self._ptr)))
+
+    def asinh_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_asinh_(out, self._ptr)))
+
+    def acosh(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_acosh(out, self._ptr)))
+
+    def acosh_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_acosh_(out, self._ptr)))
+
+    def atanh(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_atanh(out, self._ptr)))
+
+    def atanh_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_atanh_(out, self._ptr)))
+
     def step(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_step(out, self._ptr)))
@@ -774,6 +891,24 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_step_(out, self._ptr)))
 
+    def erf(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_erf(out, self._ptr)))
+
+    def erf_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_erf_(out, self._ptr)))
+
+    def erfc(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_erfc(out, self._ptr)))
+
+    def erfc_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_erfc_(out, self._ptr)))
+
     def exp(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_exp(out, self._ptr)))
@@ -782,6 +917,24 @@ class Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_exp_(out, self._ptr)))
+
+    def exp2(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_exp2(out, self._ptr)))
+
+    def exp2_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_exp2_(out, self._ptr)))
+
+    def expm1(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_expm1(out, self._ptr)))
+
+    def expm1_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_expm1_(out, self._ptr)))
 
     def floor(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
@@ -809,6 +962,15 @@ class Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_round_(out, self._ptr)))
+
+    def trunc(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_trunc(out, self._ptr)))
+
+    def trunc_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_trunc_(out, self._ptr)))
 
     def softmax(self, dim: int = -1) -> Tensor:
         if dim != -1:
@@ -849,15 +1011,6 @@ class Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_silu_(out, self._ptr)))
-
-    def tanh(self) -> Tensor:
-        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_tanh(out, self._ptr)))
-
-    def tanh_(self) -> Tensor:
-        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
-        self._validate_inplace_op()
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_tanh_(out, self._ptr)))
 
     def relu(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)

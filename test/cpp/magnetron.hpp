@@ -281,6 +281,36 @@ namespace magnetron {
             handle_error(mag_log_(&out, m_tensor));
             return tensor{out};
         }
+        [[nodiscard]] auto log10() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_log10(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto log10_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_log10_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto log1p() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_log1p(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto log1p_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_log1p_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto log2() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_log2(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto log2_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_log2_(&out, m_tensor));
+            return tensor{out};
+        }
         [[nodiscard]] auto sqr() const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_sqr(&out, m_tensor));
@@ -321,6 +351,106 @@ namespace magnetron {
             handle_error(mag_cos_(&out, m_tensor));
             return tensor{out};
         }
+        [[nodiscard]] auto tan() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_tan(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto tan_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_tan_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto asin() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_asin(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto asin_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_sin_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto acos() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_acos(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto acos_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_acos_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto atan() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_atan(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto atan_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_atan_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto sinh() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_sinh(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto sinh_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_sinh_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto cosh() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_cosh(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto cosh_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_cosh_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto tanh() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_tanh(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto tanh_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_tanh_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto asinh() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_asinh(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto asinh_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_asinh_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto acosh() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_acosh(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto acosh_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_acosh_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto atanh() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_atanh(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto atanh_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_atanh_(&out, m_tensor));
+            return tensor{out};
+        }
         [[nodiscard]] auto step() const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_step(&out, m_tensor));
@@ -331,6 +461,26 @@ namespace magnetron {
             handle_error(mag_step_(&out, m_tensor));
             return tensor{out};
         }
+        [[nodiscard]] auto erf() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_erf(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto erf_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_erf_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto erfc() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_erfc(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto erfc_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_erfc_(&out, m_tensor));
+            return tensor{out};
+        }
         [[nodiscard]] auto exp() const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_exp(&out, m_tensor));
@@ -339,6 +489,26 @@ namespace magnetron {
         [[nodiscard]] auto exp_() const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_exp_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto exp2() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_exp2(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto exp2_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_exp2_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto expm1() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_expm1(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto expm1_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_expm1_(&out, m_tensor));
             return tensor{out};
         }
         [[nodiscard]] auto floor() const noexcept -> tensor {
@@ -369,6 +539,16 @@ namespace magnetron {
         [[nodiscard]] auto round_() const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_round_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto trunc() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_trunc(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto trunc_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_trunc_(&out, m_tensor));
             return tensor{out};
         }
         [[nodiscard]] auto softmax() const noexcept -> tensor {
@@ -409,16 +589,6 @@ namespace magnetron {
         [[nodiscard]] auto silu_() const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_silu_(&out, m_tensor));
-            return tensor{out};
-        }
-        [[nodiscard]] auto tanh() const noexcept -> tensor {
-            mag_tensor_t *out = nullptr;
-            handle_error(mag_tanh(&out, m_tensor));
-            return tensor{out};
-        }
-        [[nodiscard]] auto tanh_() const noexcept -> tensor {
-            mag_tensor_t *out = nullptr;
-            handle_error(mag_tanh_(&out, m_tensor));
             return tensor{out};
         }
         [[nodiscard]] auto relu() const noexcept -> tensor {

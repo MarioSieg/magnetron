@@ -50,15 +50,33 @@ typedef enum mag_opflags_t {
     _(SGN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(NEG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, neg)__\
     _(LOG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, log)__\
+    _(LOG10, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(LOG1P, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(LOG2, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(SQR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sqr)__\
     _(SQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sqrt)__\
     _(SIN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sin)__\
     _(COS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, cos)__\
+    _(TAN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(SINH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(COSH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(TANH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, tanh)__\
+    _(ASIN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(ACOS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(ATAN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(ASINH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(ACOSH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(ATANH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(STEP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(ERF, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(ERFC, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(EXP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, exp)__\
+    _(EXP2, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(EXPM1, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(FLOOR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(CEIL, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(ROUND, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(TRUNC, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(SOFTMAX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, softmax)__\
     _(SOFTMAX_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sigmoid)__\
@@ -66,7 +84,6 @@ typedef enum mag_opflags_t {
     _(HARD_SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(SILU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, silu)__\
     _(SILU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(TANH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, tanh)__\
     _(TANH_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(RELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, relu)__\
     _(RELU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\

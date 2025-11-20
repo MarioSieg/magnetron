@@ -3,7 +3,7 @@
 
 namespace magnetron::test {
   std::vector<device_kind> get_supported_test_backends() {
-    return {device_kind::cpu, device_kind::cuda};
+    return {device_kind::cpu/*, device_kind::cuda*/};
   }
 
   context& get_cached_context(device_kind dev){

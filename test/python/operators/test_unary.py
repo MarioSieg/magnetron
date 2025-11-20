@@ -48,6 +48,30 @@ def test_unary_op_cos(dtype: DataType) -> None:
     with no_grad():
         unary_op(dtype, lambda x: x.cos_(), lambda x: torch.cos(x))
 
+@pytest.mark.parametrize('dtype', [float16, float32])
+def test_unary_op_tan(dtype: DataType) -> None:
+    unary_op(dtype, lambda x: x.tan(), lambda x: torch.tan(x))
+    with no_grad():
+        unary_op(dtype, lambda x: x.tan_(), lambda x: torch.tan(x))
+
+@pytest.mark.parametrize('dtype', [float16, float32])
+def test_unary_op_sinh(dtype: DataType) -> None:
+    unary_op(dtype, lambda x: x.sinh(), lambda x: torch.sinh(x))
+    with no_grad():
+        unary_op(dtype, lambda x: x.sinh_(), lambda x: torch.sinh(x))
+
+
+@pytest.mark.parametrize('dtype', [float16, float32])
+def test_unary_op_cosh(dtype: DataType) -> None:
+    unary_op(dtype, lambda x: x.cosh(), lambda x: torch.cosh(x))
+    with no_grad():
+        unary_op(dtype, lambda x: x.cosh_(), lambda x: torch.cosh(x))
+
+@pytest.mark.parametrize('dtype', [float16, float32])
+def test_unary_op_tan(dtype: DataType) -> None:
+    unary_op(dtype, lambda x: x.tanh(), lambda x: torch.tanh(x))
+    with no_grad():
+        unary_op(dtype, lambda x: x.tanh_(), lambda x: torch.tanh(x))
 
 @pytest.mark.parametrize('dtype', [float32]) # Heaviside is not supported for fp16 in Torch, magnetron supports it tough
 def test_unary_op_step(dtype: DataType) -> None:
