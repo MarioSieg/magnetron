@@ -13,22 +13,22 @@ def test_binary_op_broadcast_shape_cmp() -> None:
     assert cm.shape == ct.shape, f"Expected shape {ct.shape}, got {cm.shape}"
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
-@pytest.mark.parametrize('dtype', [float16, float32, int32])
+@pytest.mark.parametrize('dtype', NUMERIC_DTYPES)
 def test_binary_op_add(dtype: DataType, kind: BinaryOpParamKind) -> None:
     binary_op_square(dtype, lambda x, y: x + y, kind=kind)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
-@pytest.mark.parametrize('dtype', [float16, float32, int32])
+@pytest.mark.parametrize('dtype', NUMERIC_DTYPES)
 def test_binary_op_sub(dtype: DataType, kind: BinaryOpParamKind) -> None:
     binary_op_square(dtype, lambda x, y: x + y, kind=kind)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
-@pytest.mark.parametrize('dtype', [float16, float32, int32])
+@pytest.mark.parametrize('dtype', NUMERIC_DTYPES)
 def test_binary_op_mul(dtype: DataType, kind: BinaryOpParamKind) -> None:
     binary_op_square(dtype, lambda x, y: x * y, kind=kind)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
-@pytest.mark.parametrize('dtype', [float16, float32])
+@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
 def test_binary_op_div_fp(dtype: DataType, kind: BinaryOpParamKind) -> None:
     binary_op_square(dtype, lambda x, y: x / y, kind=kind)
 
@@ -70,21 +70,21 @@ def test_binary_op_ne(dtype: DataType, kind: BinaryOpParamKind) -> None:
     binary_cmp_op(dtype, lambda x, y: x != y, kind=kind)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
-@pytest.mark.parametrize('dtype', [float16, float32, int32])
+@pytest.mark.parametrize('dtype', NUMERIC_DTYPES)
 def test_binary_op_le(dtype: DataType, kind: BinaryOpParamKind) -> None:
     binary_cmp_op(dtype, lambda x, y: x <= y, kind=kind)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
-@pytest.mark.parametrize('dtype', [float16, float32, int32])
+@pytest.mark.parametrize('dtype', NUMERIC_DTYPES)
 def test_binary_op_ge(dtype: DataType, kind: BinaryOpParamKind) -> None:
     binary_cmp_op(dtype, lambda x, y: x >= y, kind=kind)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
-@pytest.mark.parametrize('dtype', [float16, float32, int32])
+@pytest.mark.parametrize('dtype', NUMERIC_DTYPES)
 def test_binary_op_lt(dtype: DataType, kind: BinaryOpParamKind) -> None:
     binary_cmp_op(dtype, lambda x, y: x < y, kind=kind)
 
 @pytest.mark.parametrize('kind', [BinaryOpParamKind.TENSOR, BinaryOpParamKind.SCALAR])
-@pytest.mark.parametrize('dtype', [float16, float32, int32])
+@pytest.mark.parametrize('dtype', NUMERIC_DTYPES)
 def test_binary_op_gt(dtype: DataType, kind: BinaryOpParamKind) -> None:
     binary_cmp_op(dtype, lambda x, y: x > y, kind=kind)

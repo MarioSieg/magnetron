@@ -14,7 +14,7 @@ from magnetron import *
 from collections import deque
 from enum import Enum, unique
 
-# Give torch 1/4 of the total cores to not overload the CPU with inner parallelism threads + parallel spawned pytests
+# Give torch 1//4 of the total cores to not overload the CPU with inner parallelism threads + parallel spawned pytests
 torch.set_num_threads(max(4, multiprocessing.cpu_count() // 8))
 torch.set_num_interop_threads(max(4, multiprocessing.cpu_count() // 8))
 
@@ -87,16 +87,271 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             shape_B = (*batched, K, N)
                             yield shape_A, shape_B
 
-def square_shape_permutations(f: callable, lim: int) -> None:
-    lim += 1
-    for i0 in range(1, lim): # We don't use itertools.product as it is noticeable slower
-        for i1 in range(1, lim):
-            for i2 in range(1, lim):
-                for i3 in range(1, lim):
-                    for i4 in range(1, lim):
-                        for i5 in range(1, lim):
-                            f((i0, i1, i2, i3, i4, i5))
+TEST_SHAPES: set[tuple[int]] = {
+    (1,),
+    (1, 1),
+    (1, 1, 1),
+    (1, 1, 1, 1),
+    (1, 1, 1, 1, 1, 1, 1, 1),
+    (2,),
+    (3,),
+    (4,),
+    (1, 2),
+    (2, 1),
+    (1, 3),
+    (3, 1),
+    (1, 1, 2),
+    (1, 2, 1),
+    (2, 1, 1),
+    (2, 3),
+    (3, 2),
+    (1, 2, 3),
+    (3, 2, 1),
+    (1, 3, 1, 3),
+    (3, 5),
+    (4, 7),
+    (7, 4),
+    (5, 3, 4),
+    (4, 5, 3),
+    (3, 4, 5),
+    (1, 16),
+    (16, 1),
+    (1, 1, 16),
+    (8, 1, 16),
+    (1, 8, 16),
+    (2, 3, 1, 16),
+    (2, 1, 3, 16),
+    (1, 2, 3, 1),
+    (1, 2, 1, 3),
+    (2, 1, 1, 3),
+    (1, 32, 128),
+    (32, 1, 128),
+    (32, 128, 1),
+    (16,),
+    (32,),
+    (64,),
+    (128,),
+    (256,),
+    (512,),
+    (1024,),
+    (2048,),
+    (4096,),
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (512, 512),
+    (1024, 1024),
+    (1, 3, 224, 224),
+    (1, 3, 512, 512),
+    (8, 3, 32, 32),
+    (4, 3, 1024, 1024),
+    (64, 3, 7, 7),
+    (128, 64, 3, 3),
+    (256, 128, 1, 1),
+    (512, 256, 3, 3),
+    (1, 197, 768),
+    (1, 577, 768),
+    (1, 197, 1024),
+    (1, 4096),
+    (1, 5120),
+    (1, 8192),
+    (1, 12288),
+    (16, 4096),
+    (32, 4096),
+    (8, 8192),
+    (8, 12288),
+    (32, 128),
+    (40, 128),
+    (64, 128),
+    (32, 96),
+    (4096//4, 12288//4),
+    (8192//4, 8192//4),
+    (12288//4, 12288//4),
+    (11008//4, 4096//4),
+    (4096//4, 11008//4),
+    (8192//4, 22016//6),
+    (12288//4, 49152//8),
+    (1, 32, 2048//4, 128//4),
+    (4, 32, 2048//4, 128),
+    (1, 40, 4096//4, 96),
+    (8, 64, 1024//4, 128//4),
+    (2, 32, 4096//4, 128),
+    (16, 128),
+    (128, 128),
+    (2048, 128),
+    (3, 1, 7),
+    (1, 3, 7),
+    (7, 1, 3),
+    (3, 7, 1),
+    (1, 7, 3),
+    (7, 3, 1),
+    (2, 3, 5, 7),
+    (7, 5, 3, 2),
+    (17,),
+    (31,),
+    (67,),
+    (127,),
+    (257,),
+    (2, 3, 4, 5, 6),
+    (6, 5, 4, 3, 2),
+    (1, 2, 3, 4, 5, 6),
+    (1, 1, 4096, 4096),
+    (1024//2, 1024//2),
+    (2048//2, 2048//2),
+    (4096//2, 1024//2),
+    (1024//2, 4096//2),
+    (4096//2, 4096//2),
+    (8192//2, 2048//2),
+    (6, 66, 666),
+    (4, 4, 1024, 1024),
+    (2, 8, 512, 512),
+    (5,),
+    (7,),
+    (9,),
+    (11,),
+    (13,),
+    (2, 2),
+    (2, 2, 2),
+    (2, 2, 2, 2),
+    (3, 3),
+    (3, 3, 3),
+    (4, 1, 4),
+    (1, 4, 1, 4),
+    (1, 2, 2, 1),
+    (2, 1, 2, 1),
+    (1, 1, 2, 2),
+    (2, 2, 1, 1),
+    (1, 3, 5),
+    (5, 3, 1),
+    (1, 5, 3),
+    (3, 1, 5),
+    (1, 1, 8),
+    (8, 1, 1),
+    (1, 8, 1),
+    (1, 1, 1, 8),
+    (8, 1, 1, 1),
+    (1, 8, 1, 1),
+    (1, 1, 8, 1),
+    (1, 1, 16, 1),
+    (1, 16, 1, 1),
+    (1, 4, 1, 16),
+    (4, 1, 16, 1),
+    (1, 1, 4, 16),
+    (1, 7, 1, 1, 7),
+    (7, 1, 7, 1, 1),
+    (1, 1, 7, 1, 7),
+    (1, 3, 7, 7),
+    (1, 3, 9, 9),
+    (1, 3, 11, 11),
+    (2, 3, 17, 17),
+    (1, 1, 15, 15),
+    (4, 3, 13, 13),
+    (8, 3, 17, 17),
+    (1, 16, 64),
+    (2, 16, 64),
+    (4, 16, 64),
+    (1, 32, 64),
+    (2, 32, 64),
+    (4, 32, 64),
+    (1, 32, 128),
+    (2, 32, 128),
+    (4, 32, 128),
+    (1, 64, 64),
+    (2, 64, 64),
+    (4, 64, 64),
+    (1, 64, 128),
+    (2, 64, 128),
+    (4, 64, 128),
+    (1, 1, 16, 16),
+    (1, 2, 16, 32),
+    (2, 2, 16, 32),
+    (1, 4, 32, 32),
+    (2, 4, 32, 32),
+    (4, 4, 32, 32),
+    (1, 8, 64, 32),
+    (2, 8, 64, 32),
+    (1, 8, 32, 64),
+    (2, 8, 32, 64),
+    (7, 13),
+    (13, 7),
+    (15, 33),
+    (33, 15),
+    (31, 64),
+    (64, 31),
+    (63, 64),
+    (64, 63),
+    (127, 64),
+    (64, 127),
+    (255, 64),
+    (64, 255),
+    (16, 20),
+    (20, 16),
+    (8, 24),
+    (24, 8),
+    (7, 17),
+    (17, 7),
+    (5, 21),
+    (21, 5),
+    (4, 4, 16),
+    (4, 8, 16),
+    (8, 4, 16),
+    (2, 8, 32),
+    (2, 16, 32),
+    (4, 8, 32),
+    (2, 4, 8, 16),
+    (2, 4, 16, 8),
+    (4, 2, 8, 16),
+    (1, 4, 8, 16),
+    (1, 8, 4, 16),
+    (1, 2, 3, 4, 5),
+    (5, 4, 3, 2, 1),
+    (1, 1, 2, 3, 4),
+    (1, 2, 1, 3, 4),
+    (2, 1, 3, 1, 4),
+    (1, 2, 3, 1, 4),
+    (1, 2, 3, 4, 1),
+    (1, 2, 3, 4, 5, 1),
+    (1, 1, 2, 3, 4, 5),
+    (2, 3, 1, 4, 1, 5),
+    (1, 16, 8, 8),
+    (1, 8, 8, 16),
+    (2, 16, 8, 8),
+    (2, 8, 8, 16),
+    (4, 16, 4, 4),
+    (4, 4, 4, 16),
+    (1, 1, 32),
+    (32, 1, 1),
+    (1, 32, 1),
+    (2, 1, 32),
+    (2, 32, 1),
+    (1, 2, 32),
+    (1, 2, 1, 32),
+    (2, 1, 1, 32),
+    (1, 2, 32, 1),
+    (1, 15),
+    (1, 31),
+    (1, 63),
+    (2, 63),
+    (4, 63),
+    (3, 21),
+    (3, 63),
+    (5, 19),
+    (7, 8),
+    (8, 7),
+    (15, 16),
+    (16, 15),
+    (31, 32),
+    (32, 31),
+    (1, 2, 2, 2, 2, 2, 2),
+    (2, 1, 2, 2, 2, 2, 2),
+    (1, 3, 1, 3, 1, 3, 1),
+    (2, 3, 4, 1, 2, 3, 4),
+    (1, 2, 3, 4, 1, 2, 3, 4),
+}
 
+def for_all_shapes(f: Callable[tuple[int, ...]]) -> None:
+    for shape in TEST_SHAPES:
+        f(shape)
 
 @unique
 class BinaryOpParamKind(Enum):
@@ -134,7 +389,7 @@ def _allocate_binary_op_args(dtype: DataType, shape: tuple[int, ...], kind: Bina
             case _:
                 raise ValueError(f'Unknown BinaryOpParamKind: {kind}')
 
-def binary_op_square(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], lim: int = 4, kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, low: float | int = 0, high: float | int = 1) -> None:
+def binary_op_square(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, low: float | int = 0, high: float | int = 1) -> None:
     def func(shape: tuple[int, ...]) -> None:
         x, y = _allocate_binary_op_args(dtype, shape, kind, low, high)
         r = callback(x, y)
@@ -143,9 +398,9 @@ def binary_op_square(dtype: DataType, callback: Callable[[Tensor | torch.Tensor,
             callback(totorch(x), totorch(y))
         )
 
-    square_shape_permutations(func, lim)
+    for_all_shapes(func)
 
-def binary_cmp_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], lim: int = 4, kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, low: float | int = 0, high: float | int = 1) -> None:
+def binary_cmp_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, low: float | int = 0, high: float | int = 1) -> None:
     def func(shape: tuple[int, ...]) -> None:
         x, y = _allocate_binary_op_args(dtype, shape, kind, low, high)
         r = callback(x, y)
@@ -155,35 +410,17 @@ def binary_cmp_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Te
             callback(totorch(x), totorch(y))
         )
 
-    square_shape_permutations(func, lim)
-
-def unary_op(
-    dtype: DataType,
-    mag_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
-    torch_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
-    lim: int = 4,
-    low: float | int | None = None,
-    high: float | int | None = None
-) -> None:
-    def func(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, dtype=dtype, low=low, high=high)
-        r = mag_callback(x.clone())
-        torch.testing.assert_close(totorch(r), torch_callback(totorch(x)))
-
-    square_shape_permutations(func, lim)
+    for_all_shapes(func)
 
 
-def scalar_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, int | float | bool], Tensor | torch.Tensor], rhs: bool = True, lim: int = 4) -> None:
+def scalar_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, int | float | bool], Tensor | torch.Tensor], rhs: bool = True) -> None:
     def func(shape: tuple[int, ...]) -> None:  # x op scalar
         xi: float = random.uniform(-1.0, 1.0)
         x = Tensor.uniform(shape, dtype=dtype)
         r = callback(x, xi)
         torch.testing.assert_close(totorch(r), callback(totorch(x), xi))
 
-    square_shape_permutations(func, lim)
+    for_all_shapes(func)
 
     if not rhs:
         return
@@ -194,7 +431,7 @@ def scalar_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, int | 
         r = callback(xi, x)
         torch.testing.assert_close(totorch(r), callback(xi, totorch(x)))
 
-    square_shape_permutations(func, lim)
+    for_all_shapes(func)
 
 def nested_len(obj: list[Any]) -> int:
     total = 0

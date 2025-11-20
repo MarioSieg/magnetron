@@ -269,8 +269,6 @@ extern MAG_EXPORT mag_status_t mag_silu(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_silu_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_silu_dv(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_silu_dv_(mag_tensor_t **out, mag_tensor_t *x);
-extern MAG_EXPORT mag_status_t mag_tanh(mag_tensor_t **out, mag_tensor_t *x);
-extern MAG_EXPORT mag_status_t mag_tanh_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_tanh_dv(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_tanh_dv_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_relu(mag_tensor_t **out, mag_tensor_t *x);
