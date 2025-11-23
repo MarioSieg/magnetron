@@ -90,7 +90,7 @@ static void test_binary_cmp(
         ASSERT_EQ(t_r.dtype(), dtype::boolean);
         ASSERT_EQ(d_a.size(), d_b.size());
         ASSERT_EQ(d_a.size(), t_r.numel());
-        std::vector<T> d_r {t_r.to_vector<T>()};
+        std::vector<bool> d_r {t_r.to_vector<bool>()};
         for (int64_t i = 0; i < d_r.size(); ++i)
             ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
     });

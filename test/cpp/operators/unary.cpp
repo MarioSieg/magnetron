@@ -43,7 +43,7 @@ static auto test_unary_operator(
             ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
         if (inplace)
             ASSERT_EQ(t_a.storage_base_ptr(), t_r.storage_base_ptr());
-        std::vector<mag_e8m23_t> d_r {t_r.to_vector<mag_e8m23_t>()};
+        std::vector<T> d_r {t_r.to_vector<T>()};
         ASSERT_EQ(d_a.size(), d_r.size());
         for (size_t i=0; i < d_r.size(); ++i) {
             auto x = d_a[i];
