@@ -289,10 +289,45 @@ const mag_dtype_meta_t *mag_dtype_meta_of(mag_dtype_t type) {
             .size=sizeof(uint8_t),
             .align=__alignof(uint8_t),
         },
+        [MAG_DTYPE_U8] = {
+            .name="u8",
+            .size=sizeof(uint8_t),
+            .align=__alignof(uint8_t),
+        },
+        [MAG_DTYPE_I8] = {
+            .name="i8",
+            .size=sizeof(int8_t),
+            .align=__alignof(int8_t),
+        },
+        [MAG_DTYPE_U16] = {
+            .name="u16",
+            .size=sizeof(uint16_t),
+            .align=__alignof(uint16_t),
+        },
+        [MAG_DTYPE_I16] = {
+            .name="i16",
+            .size=sizeof(int16_t),
+            .align=__alignof(int16_t),
+        },
+        [MAG_DTYPE_U32] = {
+            .name="u32",
+            .size=sizeof(uint32_t),
+            .align=__alignof(uint32_t),
+        },
         [MAG_DTYPE_I32] = {
             .name="i32",
             .size=sizeof(int32_t),
             .align=__alignof(int32_t),
+        },
+        [MAG_DTYPE_U64] = {
+            .name="u64",
+            .size=sizeof(uint64_t),
+            .align=__alignof(uint64_t),
+        },
+        [MAG_DTYPE_I64] = {
+            .name="i64",
+            .size=sizeof(int64_t),
+            .align=__alignof(int64_t),
         },
     };
     return &infos[type];

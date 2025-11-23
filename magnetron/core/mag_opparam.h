@@ -28,21 +28,15 @@ typedef enum mag_opparam_type_t {
 } mag_opparam_type_t;
 mag_static_assert(((MAG_OPP__NUM-1) & ~3) == 0); /* Must fit in 2 bits */
 
-/*
-** The opp (Operation Parameter) is used to pass additional data to the operation. For example:
-**      The FILL init op uses the opp to pass the value to fill the tensor buffer with.
-**      The permute op receives all permutation axes in the operation parameters.
-** The opp is a tagged union (variant).
-*/
 typedef struct mag_opparam_t {
-    uint8_t type : 2;
-    int64_t i62 : 62;
+    uint8_t type;
+    int64_t i64;
 } mag_opparam_t;
 
 static MAG_AINLINE mag_opparam_t mag_op_param_none() {
     mag_opparam_t p;
     p.type = MAG_OPP_NONE;
-    p.i62 = 0;
+    p.i64 = 0;
     return p;
 }
 
@@ -51,15 +45,14 @@ static MAG_AINLINE mag_opparam_t mag_op_param_wrap_e8m23(mag_e8m23_t x) {
     memcpy(&u32, &x, sizeof(u32));
     mag_opparam_t p;
     p.type = MAG_OPP_E8M23;
-    p.i62 = u32;
+    p.i64 = u32;
     return p;
 }
 
 static MAG_AINLINE mag_opparam_t mag_op_param_wrap_i64(int64_t x) {
-    mag_assert(!((x < 0 ? ~x+1 : x) & ~((1ULL<<62)-1)), "op param int64 value must fit in 62 bit, but is: %" PRIi64, x);
     mag_opparam_t p;
     p.type = MAG_OPP_I64;
-    p.i62 = x;
+    p.i64 = x;
     return p;
 }
 
@@ -67,14 +60,14 @@ static MAG_AINLINE mag_opparam_t mag_op_param_wrap_i64(int64_t x) {
 static MAG_AINLINE mag_e8m23_t mag_op_param_unpack_e8m23_or_panic(mag_opparam_t pa) {
     mag_assert(pa.type == MAG_OPP_E8M23, "invalid op param type: %d", pa.type);
     mag_e8m23_t e8m23 = 0.f;
-    uint32_t u32 = (uint32_t)pa.i62;
+    uint32_t u32 = (uint32_t)pa.i64;
     memcpy(&e8m23, &u32, sizeof(e8m23));
     return e8m23;
 }
 
 static MAG_AINLINE int64_t mag_op_param_unpack_i64_or_panic(mag_opparam_t pa) {
     mag_assert(pa.type == MAG_OPP_I64, "invalid op param type: %d", pa.type);
-    return pa.i62;
+    return pa.i64;
 }
 
 static MAG_AINLINE mag_e8m23_t mag_op_param_unpack_e8m23_or(mag_opparam_t pa, mag_e8m23_t fallback) {

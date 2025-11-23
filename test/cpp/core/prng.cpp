@@ -22,9 +22,9 @@
 
 using namespace magnetron;
 
-static constexpr std::size_t k_iter_samples = 10;
+static constexpr size_t k_iter_samples = 10;
 
-[[nodiscard]] static auto bernoulli_two_sided_pvalue(std::uint64_t N, std::uint64_t k, double p) -> double {
+[[nodiscard]] static auto bernoulli_two_sided_pvalue(uint64_t N, uint64_t k, double p) -> double {
     boost::math::binomial_distribution<> binom{static_cast<double>(N), p};
     double cdf_lo = boost::math::cdf(binom, static_cast<double>(k));
     double cdf_hi = 1.0 - boost::math::cdf(binom, static_cast<double>(k - 1));
@@ -38,7 +38,7 @@ template <typename T, typename Cdf>
     std::sort(x.begin(), x.end());
     double n = static_cast<double>(x.size());
     double D = 0.0;
-    for (std::size_t i = 0; i < x.size(); ++i) {
+    for (size_t i = 0; i < x.size(); ++i) {
         double F  = static_cast<double>(cdf_theory(x[i]));
         double Fn_above = static_cast<double>(i + 1) / n;
         double Fn_below = static_cast<double>(i) / n;
@@ -50,29 +50,29 @@ template <typename T, typename Cdf>
     return 1.0 - cdf(ks, D);
 }
 
-[[nodiscard]] static auto allowed_failures_3sigma(std::size_t trials, double alpha) -> std::int32_t {
+[[nodiscard]] static auto allowed_failures_3sigma(size_t trials, double alpha) -> int32_t {
     double mu = static_cast<double>(trials)*alpha;
     double var = static_cast<double>(trials)*alpha * (1.0 - alpha);
     double ub = mu + 3.0*std::sqrt(std::max(0.0, var));
-    return static_cast<std::int32_t>(std::ceil(ub));
+    return static_cast<int32_t>(std::ceil(ub));
 }
 
 TEST(prng, ks_test_normal_dist) {
     std::mt19937_64 eng{0x9e3779b97f4a7c15ULL};
     std::uniform_real_distribution<double> mean_d{-3.0, 3.0};
     std::uniform_real_distribution<double> std_d{0.1, 3.0};
-    std::uniform_int_distribution<std::int64_t> shape_distr{512, 1024};
+    std::uniform_int_distribution<int64_t> shape_distr{512, 1024};
     context ctx{};
     ctx.manual_seed(0x1234567890abcdefULL);
     constexpr double alpha = 0.01;
-    std::int32_t failures = 0;
-    struct Hit { double p; double mu, sigma; std::size_t rows, cols; };
+    int32_t failures = 0;
+    struct Hit { double p; double mu, sigma; size_t rows, cols; };
     std::vector<Hit> worst;
-    for (std::size_t i = 0; i < k_iter_samples; ++i) {
+    for (size_t i = 0; i < k_iter_samples; ++i) {
         double mean = mean_d(eng);
         double stdv = std_d(eng);
-        std::size_t rows = shape_distr(eng);
-        std::size_t cols = shape_distr(eng);
+        size_t rows = shape_distr(eng);
+        size_t cols = shape_distr(eng);
         tensor t{ctx, dtype::e8m23, rows, cols};
         t.fill_rand_normal(static_cast<float>(mean), static_cast<float>(stdv));
         std::vector<float> samples = t.to_vector<float>();
@@ -84,15 +84,15 @@ TEST(prng, ks_test_normal_dist) {
     }
     std::ranges::sort(worst, [](const Hit& a, const Hit& b){ return a.p < b.p; });
     std::ostringstream msg;
-    const std::size_t show = std::min<std::size_t>(5, worst.size());
+    const size_t show = std::min<size_t>(5, worst.size());
     msg << "Worst p-values (alpha=" << alpha << "):\n";
-    for (std::size_t i = 0; i < show; ++i) {
+    for (size_t i = 0; i < show; ++i) {
         msg << "  p=" << worst[i].p
             << "  mu=" << worst[i].mu
             << "  sigma=" << worst[i].sigma
             << "  shape=" << worst[i].rows << "x" << worst[i].cols << "\n";
     }
-    const std::int32_t allowed = allowed_failures_3sigma(k_iter_samples, alpha);
+    const int32_t allowed = allowed_failures_3sigma(k_iter_samples, alpha);
     EXPECT_LE(failures, allowed) << "KS: too many low p-values across sweeps.\n"
                                  << "failures=" << failures
                                  << " allowed≤" << allowed << "\n"
@@ -103,15 +103,15 @@ TEST(prng, ks_test_uniform_dist) {
     std::mt19937_64 eng{0x9e3779b97f4a7c15ULL};
     std::uniform_real_distribution<double> a_d{-5.0, 0.0};
     std::uniform_real_distribution<double> w_d{0.1, 5.0};
-    std::uniform_int_distribution<std::int64_t> shape_d{512, 1024};
+    std::uniform_int_distribution<int64_t> shape_d{512, 1024};
     context ctx{};
     ctx.manual_seed(0x1234567890abcdefULL);
-    std::int32_t failures = 0;
-    for (std::size_t it = 0; it < k_iter_samples; ++it) {
+    int32_t failures = 0;
+    for (size_t it = 0; it < k_iter_samples; ++it) {
         double a = a_d(eng);
         double b = a + w_d(eng);
-        std::size_t rows = shape_d(eng);
-        std::size_t cols = shape_d(eng);
+        size_t rows = shape_d(eng);
+        size_t cols = shape_d(eng);
         tensor t{ctx, dtype::e8m23, rows, cols};
         t.fill_rand_uniform(static_cast<float>(a), static_cast<float>(b));
         std::vector<float> samples = t.to_vector<float>();
@@ -126,19 +126,19 @@ TEST(prng, ks_test_uniform_dist) {
 TEST(prng, bernoulli_binomial_exact) {
     std::mt19937_64 eng{0x9e3779b97f4a7c15ULL};
     std::uniform_real_distribution<double> p_d{0.02, 0.98};
-    std::uniform_int_distribution<std::int64_t> shape_d{512, 1024};
+    std::uniform_int_distribution<int64_t> shape_d{512, 1024};
     context ctx{};
     ctx.manual_seed(0x1234567890abcdefULL);
-    std::size_t failures = 0;
-    for (std::size_t it = 0; it < k_iter_samples; ++it) {
+    size_t failures = 0;
+    for (size_t it = 0; it < k_iter_samples; ++it) {
         double p = p_d(eng);
-        std::size_t rows = shape_d(eng);
-        std::size_t cols = shape_d(eng);
-        std::uint64_t N = static_cast<std::uint64_t>(rows) * cols;
+        size_t rows = shape_d(eng);
+        size_t cols = shape_d(eng);
+        uint64_t N = static_cast<uint64_t>(rows) * cols;
         tensor t{ctx, dtype::boolean, rows, cols};
         t.fill_rand_bernoulli(static_cast<float>(p));
         std::vector<bool> v = t.to_vector<bool>();
-        std::uint64_t ones = 0;
+        uint64_t ones = 0;
         for (bool x : v) ones += x ? 1 : 0;
         double pv = bernoulli_two_sided_pvalue(N, ones, p);
         if (pv <= 0.001) ++failures;
@@ -149,7 +149,7 @@ TEST(prng, bernoulli_binomial_exact) {
 TEST(prng, normal_mean_std_match) {
     context ctx{};
     ctx.manual_seed(0x1234567890abcdefULL);
-    constexpr std::size_t N = 1'000'000;
+    constexpr size_t N = 1'000'000;
     constexpr double mu_true  = 1.5;
     constexpr double sigma_true = 2.0;
     tensor t{ctx, dtype::e8m23, N};
@@ -188,8 +188,8 @@ TEST(prng, automatic_seeding) {
 
     ASSERT_NE(0, std::memcmp(a.data(), b.data(), a.size() * sizeof(float)));
 
-    std::size_t matches = 0;
-    for (std::size_t i = 0; i < a.size(); ++i) {
+    size_t matches = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
         if (a[i] == b[i]) ++matches;
     }
     EXPECT_LE(matches, 30u) << "Too many exact matches - suspicious seeding";
@@ -198,8 +198,8 @@ TEST(prng, automatic_seeding) {
 TEST(prng, manual_seeding) {
     std::random_device rd;
     std::mt19937_64 eng {rd()};
-    std::uniform_int_distribution<std::uint64_t> distr {};
-    std::uint64_t seed = distr(eng);
+    std::uniform_int_distribution<uint64_t> distr {};
+    uint64_t seed = distr(eng);
     std::vector<float> a {}, b {};
     {
         context ctx {};
@@ -219,7 +219,7 @@ TEST(prng, manual_seeding) {
 
     ASSERT_EQ(a.size(), b.size());
 
-    for (std::size_t i=0; i < a.size(); i++)
+    for (size_t i=0; i < a.size(); i++)
         ASSERT_FLOAT_EQ(a[i], b[i]) << "i=" << i;
 }
 

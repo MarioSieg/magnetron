@@ -87,7 +87,7 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             shape_B = (*batched, K, N)
                             yield shape_A, shape_B
 
-TEST_SHAPES: set[tuple[int]] = {
+TEST_SHAPES: tuple[tuple[int], ...] = (
     (1,),
     (1, 1),
     (1, 1, 1),
@@ -347,7 +347,7 @@ TEST_SHAPES: set[tuple[int]] = {
     (1, 3, 1, 3, 1, 3, 1),
     (2, 3, 4, 1, 2, 3, 4),
     (1, 2, 3, 4, 1, 2, 3, 4),
-}
+)
 
 def for_all_shapes(f: Callable[tuple[int, ...]]) -> None:
     for shape in TEST_SHAPES:

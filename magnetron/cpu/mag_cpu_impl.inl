@@ -41,7 +41,14 @@
 #define mag_cmd_param(i) (payload->cmd->params[(i)])
 
 /* Uniform names for macro expansion */
+typedef uint8_t mag_u8_t;
+typedef int8_t mag_i8_t;
+typedef uint16_t mag_u16_t;
+typedef int16_t mag_i16_t;
+typedef uint32_t mag_u32_t;
 typedef int32_t mag_i32_t;
+typedef uint64_t mag_u64_t;
+typedef int64_t mag_i64_t;
 typedef uint8_t mag_bool_t;
 
 #define mag_e8m23p(t) ((const mag_e8m23_t*)mag_tensor_get_data_ptr(t))
@@ -50,8 +57,22 @@ typedef uint8_t mag_bool_t;
 #define mag_e5m10p_mut(t) ((mag_e5m10_t*)mag_tensor_get_data_ptr(t))
 #define mag_boolp(t) ((const mag_bool_t*)mag_tensor_get_data_ptr(t))
 #define mag_boolp_mut(t) ((mag_bool_t*)mag_tensor_get_data_ptr(t))
+#define mag_u8p(t) ((const uint8_t*)mag_tensor_get_data_ptr(t))
+#define mag_u8p_mut(t) ((uint8_t*)mag_tensor_get_data_ptr(t))
+#define mag_i8p(t) ((const int8_t*)mag_tensor_get_data_ptr(t))
+#define mag_i8p_mut(t) ((int8_t*)mag_tensor_get_data_ptr(t))
+#define mag_u16p(t) ((const uint16_t*)mag_tensor_get_data_ptr(t))
+#define mag_u16p_mut(t) ((uint16_t*)mag_tensor_get_data_ptr(t))
+#define mag_i16p(t) ((const int16_t*)mag_tensor_get_data_ptr(t))
+#define mag_i16p_mut(t) ((int16_t*)mag_tensor_get_data_ptr(t))
+#define mag_u32p(t) ((const uint32_t*)mag_tensor_get_data_ptr(t))
+#define mag_u32p_mut(t) ((uint32_t*)mag_tensor_get_data_ptr(t))
 #define mag_i32p(t) ((const int32_t*)mag_tensor_get_data_ptr(t))
 #define mag_i32p_mut(t) ((int32_t*)mag_tensor_get_data_ptr(t))
+#define mag_u64p(t) ((const uint64_t*)mag_tensor_get_data_ptr(t))
+#define mag_u64p_mut(t) ((uint64_t*)mag_tensor_get_data_ptr(t))
+#define mag_i64p(t) ((const int64_t*)mag_tensor_get_data_ptr(t))
+#define mag_i64p_mut(t) ((int64_t*)mag_tensor_get_data_ptr(t))
 
 #define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 
@@ -1569,80 +1590,87 @@ static mag_e8m23_t MAG_HOTPROC mag_vmax_e5m10(int64_t numel, const mag_e5m10_t *
     return min;
 }
 
-static void mag_vand_bool(int64_t numel, mag_bool_t *o, const mag_bool_t *x, const mag_bool_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] & y[i];
-}
+#define mag_impl_vecop_int(T) \
+    static void mag_vadd_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]+y[i]; \
+    } \
+    static void mag_vsub_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]-y[i]; \
+    } \
+    static void mag_vmul_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]*y[i]; \
+    } \
+    static void mag_vdiv_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]/y[i]; \
+    } \
+    static void mag_vmod_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]%y[i]; \
+    } \
+    static void mag_vand_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]&y[i]; \
+    } \
+    static void mag_vor_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]|y[i]; \
+    } \
+    static void mag_vxor_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]^y[i]; \
+    } \
+    static void mag_vshl_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]<<(y[i]&((sizeof(mag_##T##_t)<<3)-1)); \
+    } \
+    static void mag_vshr_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]>>(y[i]&((sizeof(mag_##T##_t)<<3)-1)); \
+    } \
+    static void mag_vnot_##T(int64_t numel, mag_##T##_t *o, const mag_##T##_t *x) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = ~x[i]; \
+    } \
+    static void MAG_HOTPROC mag_veq_##T(int64_t numel, mag_bool_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]==y[i]; \
+    } \
+    static void MAG_HOTPROC mag_vne_##T(int64_t numel, mag_bool_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]!=y[i]; \
+    } \
+    static void MAG_HOTPROC mag_vlt_##T(int64_t numel, mag_bool_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]<y[i]; \
+    } \
+    static void MAG_HOTPROC mag_vgt_##T(int64_t numel, mag_bool_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]>y[i]; \
+    } \
+    static void MAG_HOTPROC mag_vle_##T(int64_t numel, mag_bool_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]<=y[i]; \
+    } \
+    static void MAG_HOTPROC mag_vge_##T(int64_t numel, mag_bool_t *o, const mag_##T##_t *x, const mag_##T##_t *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = x[i]>=y[i]; \
+    }
 
-static void mag_vor_bool(int64_t numel, mag_bool_t *o, const mag_bool_t *x, const mag_bool_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] | y[i];
-}
+mag_impl_vecop_int(bool)
+mag_impl_vecop_int(u8)
+mag_impl_vecop_int(i8)
+mag_impl_vecop_int(u16)
+mag_impl_vecop_int(i16)
+mag_impl_vecop_int(u32)
+mag_impl_vecop_int(i32)
+mag_impl_vecop_int(u64)
+mag_impl_vecop_int(i64)
 
-static void mag_vxor_bool(int64_t numel, mag_bool_t *o, const mag_bool_t *x, const mag_bool_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] ^ y[i];
-}
-
-static void mag_vnot_bool(int64_t numel, mag_bool_t *o, const mag_bool_t *x) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = !x[i];
-}
-
-static void mag_vadd_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] + y[i];
-}
-
-static void mag_vsub_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] - y[i];
-}
-
-static void mag_vmul_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i]*y[i];
-}
-
-static void mag_vdiv_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] / y[i];
-}
-
-static void mag_vmod_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] % y[i];
-}
-
-static void mag_vand_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] & y[i];
-}
-
-static void mag_vor_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] | y[i];
-}
-
-static void mag_vxor_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] ^ y[i];
-}
-
-static void mag_vshl_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] << (y[i]&31);
-}
-
-static void mag_vshr_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] >> (y[i]&31);
-}
-
-static void mag_vnot_i32(int64_t numel, mag_i32_t *o, const mag_i32_t *x) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = ~x[i];
-}
+#undef mag_impl_vecop_int
 
 static void MAG_HOTPROC mag_veq_e8m23(int64_t numel, mag_bool_t *o, const mag_e8m23_t *x, const mag_e8m23_t *y) {
     for (int64_t i=0; i < numel; ++i) {
@@ -1655,16 +1683,6 @@ static void MAG_HOTPROC mag_veq_e5m10(int64_t numel, mag_bool_t *o, const mag_e5
         o[i] = x[i].bits == y[i].bits;
 }
 
-static void MAG_HOTPROC mag_veq_bool(int64_t numel, mag_bool_t *o, const mag_bool_t *x, const mag_bool_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] == y[i];
-}
-
-static void MAG_HOTPROC mag_veq_i32(int64_t numel, mag_bool_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] == y[i];
-}
-
 static void MAG_HOTPROC mag_vne_e8m23(int64_t numel, mag_bool_t *o, const mag_e8m23_t *x, const mag_e8m23_t *y) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i] != y[i];
@@ -1673,16 +1691,6 @@ static void MAG_HOTPROC mag_vne_e8m23(int64_t numel, mag_bool_t *o, const mag_e8
 static void MAG_HOTPROC mag_vne_e5m10(int64_t numel, mag_bool_t *o, const mag_e5m10_t *x, const mag_e5m10_t *y) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i].bits != y[i].bits;
-}
-
-static void MAG_HOTPROC mag_vne_bool(int64_t numel, mag_bool_t *o, const mag_bool_t *x, const mag_bool_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] != y[i];
-}
-
-static void MAG_HOTPROC mag_vne_i32(int64_t numel, mag_bool_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] != y[i];
 }
 
 static void MAG_HOTPROC mag_vle_e8m23(int64_t numel, mag_bool_t *o, const mag_e8m23_t *x, const mag_e8m23_t *y) {
@@ -1695,11 +1703,6 @@ static void MAG_HOTPROC mag_vle_e5m10(int64_t numel, mag_bool_t *o, const mag_e5
         o[i] = mag_e5m10_cvt_e8m23(x[i]) <= mag_e5m10_cvt_e8m23(y[i]);
 }
 
-static void MAG_HOTPROC mag_vle_i32(int64_t numel, mag_bool_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] <= y[i];
-}
-
 static void MAG_HOTPROC mag_vge_e8m23(int64_t numel, mag_bool_t *o, const mag_e8m23_t *x, const mag_e8m23_t *y) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i] >= y[i];
@@ -1708,11 +1711,6 @@ static void MAG_HOTPROC mag_vge_e8m23(int64_t numel, mag_bool_t *o, const mag_e8
 static void MAG_HOTPROC mag_vge_e5m10(int64_t numel, mag_bool_t *o, const mag_e5m10_t *x, const mag_e5m10_t *y) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = mag_e5m10_cvt_e8m23(x[i]) >= mag_e5m10_cvt_e8m23(y[i]);
-}
-
-static void MAG_HOTPROC mag_vge_i32(int64_t numel, mag_bool_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] >= y[i];
 }
 
 static void MAG_HOTPROC mag_vlt_e8m23(int64_t numel, mag_bool_t *o, const mag_e8m23_t *x, const mag_e8m23_t *y) {
@@ -1725,11 +1723,6 @@ static void MAG_HOTPROC mag_vlt_e5m10(int64_t numel, mag_bool_t *o, const mag_e5
         o[i] = mag_e5m10_cvt_e8m23(x[i]) < mag_e5m10_cvt_e8m23(y[i]);
 }
 
-static void MAG_HOTPROC mag_vlt_i32(int64_t numel, mag_bool_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] < y[i];
-}
-
 static void MAG_HOTPROC mag_vgt_e8m23(int64_t numel, mag_bool_t *o, const mag_e8m23_t *x, const mag_e8m23_t *y) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i] > y[i];
@@ -1738,11 +1731,6 @@ static void MAG_HOTPROC mag_vgt_e8m23(int64_t numel, mag_bool_t *o, const mag_e8
 static void MAG_HOTPROC mag_vgt_e5m10(int64_t numel, mag_bool_t *o, const mag_e5m10_t *x, const mag_e5m10_t *y) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = mag_e5m10_cvt_e8m23(x[i]) > mag_e5m10_cvt_e8m23(y[i]);
-}
-
-static void MAG_HOTPROC mag_vgt_i32(int64_t numel, mag_bool_t *o, const mag_i32_t *x, const mag_i32_t *y) {
-    for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i] > y[i];
 }
 
 static void mag_nop(const mag_kernel_payload_t *payload) {
@@ -2292,7 +2280,14 @@ static int mag_cmp_i64(const void *a, const void *b) {
 mag_gen_stub_clone(e8m23)
 mag_gen_stub_clone(e5m10)
 mag_gen_stub_clone(bool)
+mag_gen_stub_clone(u8)
+mag_gen_stub_clone(i8)
+mag_gen_stub_clone(u16)
+mag_gen_stub_clone(i16)
+mag_gen_stub_clone(u32)
 mag_gen_stub_clone(i32)
+mag_gen_stub_clone(u64)
+mag_gen_stub_clone(i64)
 
 #define mag_G(x) (x)                    /* Get scalar value */
 #define mag_G_underlying(x) (x.bits)    /* Get underlying storage scalar */
@@ -2300,12 +2295,26 @@ mag_gen_stub_clone(i32)
 mag_gen_stub_fill(e8m23, mag_G, e8m23, mag_cvt_nop)
 mag_gen_stub_fill(e5m10, mag_G_underlying, e8m23, mag_e8m23_cvt_e5m10)
 mag_gen_stub_fill(bool, mag_G, i64, mag_cvt_i642bool)
+mag_gen_stub_fill(u8, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_fill(i8, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_fill(u16, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_fill(i16, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_fill(u32, mag_G, i64, mag_cvt_i642i32)
 mag_gen_stub_fill(i32, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_fill(u64, mag_G, i64, mag_cvt_nop)
+mag_gen_stub_fill(i64, mag_G, i64, mag_cvt_nop)
 
 mag_gen_stub_masked_fill(e8m23, mag_G, e8m23, mag_cvt_nop)
 mag_gen_stub_masked_fill(e5m10, mag_G_underlying, e8m23, mag_e8m23_cvt_e5m10)
 mag_gen_stub_masked_fill(bool, mag_G, i64, mag_cvt_i642bool)
+mag_gen_stub_masked_fill(u8, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_masked_fill(i8, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_masked_fill(u16, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_masked_fill(i16, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_masked_fill(u32, mag_G, i64, mag_cvt_i642i32)
 mag_gen_stub_masked_fill(i32, mag_G, i64, mag_cvt_i642i32)
+mag_gen_stub_masked_fill(u64, mag_G, i64, mag_cvt_nop)
+mag_gen_stub_masked_fill(i64, mag_G, i64, mag_cvt_nop)
 
 mag_gen_stub_fill_rand(uniform, e8m23, e8m23, e8m23)
 mag_gen_stub_fill_rand(uniform, e5m10, e8m23, e8m23)
@@ -2315,7 +2324,14 @@ mag_gen_stub_fill_rand(normal, e5m10, e8m23, e8m23)
 
 mag_gen_stub_fill_arange(e8m23, mag_cvt_nop)
 mag_gen_stub_fill_arange(e5m10, mag_e8m23_cvt_e5m10)
+mag_gen_stub_fill_arange(u8, mag_cvt_i642i32)
+mag_gen_stub_fill_arange(i8, mag_cvt_i642i32)
+mag_gen_stub_fill_arange(u16, mag_cvt_i642i32)
+mag_gen_stub_fill_arange(i16, mag_cvt_i642i32)
+mag_gen_stub_fill_arange(u32, mag_cvt_i642i32)
 mag_gen_stub_fill_arange(i32, mag_cvt_i642i32)
+mag_gen_stub_fill_arange(u64, mag_cvt_nop)
+mag_gen_stub_fill_arange(i64, mag_cvt_nop)
 
 static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t *payload) {
     mag_tensor_t *r = mag_cmd_in(0);
@@ -2472,7 +2488,14 @@ mag_gen_stub_multinomial(e5m10, mag_e5m10_cvt_e8m23)
 mag_gen_stub_cat(e8m23)
 mag_gen_stub_cat(e5m10)
 mag_gen_stub_cat(bool)
+mag_gen_stub_cat(u8)
+mag_gen_stub_cat(i8)
+mag_gen_stub_cat(u16)
+mag_gen_stub_cat(i16)
+mag_gen_stub_cat(u32)
 mag_gen_stub_cat(i32)
+mag_gen_stub_cat(u64)
+mag_gen_stub_cat(i64)
 
 mag_gen_stub_unary(e8m23, softmax_dv)
 mag_gen_stub_unary(e5m10, softmax_dv)
@@ -2500,37 +2523,121 @@ mag_gen_stub_unary(e8m23, gelu_dv)
 mag_gen_stub_unary(e5m10, gelu_dv)
 
 mag_gen_stub_unary(bool, not)
+mag_gen_stub_unary(u8, not)
+mag_gen_stub_unary(i8, not)
+mag_gen_stub_unary(u16, not)
+mag_gen_stub_unary(i16, not)
+mag_gen_stub_unary(u32, not)
 mag_gen_stub_unary(i32, not)
+mag_gen_stub_unary(u64, not)
+mag_gen_stub_unary(i64, not)
 
 mag_gen_stub_tri_mask(e8m23, l, 0.f, <=)
 mag_gen_stub_tri_mask(e5m10, l, MAG_E5M10_ZERO, <=)
 mag_gen_stub_tri_mask(bool, l, 0, <=)
+mag_gen_stub_tri_mask(u8, l, 0, <=)
+mag_gen_stub_tri_mask(i8, l, 0, <=)
+mag_gen_stub_tri_mask(u16, l, 0, <=)
+mag_gen_stub_tri_mask(i16, l, 0, <=)
+mag_gen_stub_tri_mask(u32, l, 0, <=)
 mag_gen_stub_tri_mask(i32, l, 0, <=)
+mag_gen_stub_tri_mask(u64, l, 0, <=)
+mag_gen_stub_tri_mask(i64, l, 0, <=)
 mag_gen_stub_tri_mask(e8m23, u, 0.f, >=)
 mag_gen_stub_tri_mask(e5m10, u, MAG_E5M10_ZERO, >=)
 mag_gen_stub_tri_mask(bool, u, 0, >=)
+mag_gen_stub_tri_mask(u8, u, 0, >=)
+mag_gen_stub_tri_mask(i8, u, 0, >=)
+mag_gen_stub_tri_mask(u16, u, 0, >=)
+mag_gen_stub_tri_mask(i16, u, 0, >=)
+mag_gen_stub_tri_mask(u32, u, 0, >=)
 mag_gen_stub_tri_mask(i32, u, 0, >=)
+mag_gen_stub_tri_mask(u64, u, 0, >=)
+mag_gen_stub_tri_mask(i64, u, 0, >=)
 
 #define mag_cvt_nop(x) (x)
 
 mag_gen_stub_binop(e8m23, add, +, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(e5m10, add, +, mag_e5m10_cvt_e8m23, mag_e8m23_cvt_e5m10)
+mag_gen_stub_binop(u8,  add, +, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i8,  add, +, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u16, add, +, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i16, add, +, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u32, add, +, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(i32, add, +, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u64, add, +, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i64, add, +, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(e8m23, sub, -, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(e5m10, sub, -, mag_e5m10_cvt_e8m23, mag_e8m23_cvt_e5m10)
+mag_gen_stub_binop(u8,  sub, -, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i8,  sub, -, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u16, sub, -, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i16, sub, -, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u32, sub, -, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(i32, sub, -, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u64, sub, -, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i64, sub, -, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(e8m23, mul, *, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(e5m10, mul, *, mag_e5m10_cvt_e8m23, mag_e8m23_cvt_e5m10)
+mag_gen_stub_binop(u8,  mul, *, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i8,  mul, *, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u16, mul, *, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i16, mul, *, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u32, mul, *, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(i32, mul, *, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u64, mul, *, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i64, mul, *, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(e8m23, div, /, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(e5m10, div, /, mag_e5m10_cvt_e8m23, mag_e8m23_cvt_e5m10)
+mag_gen_stub_binop(u8,  div, /, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i8,  div, /, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u16, div, /, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i16, div, /, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u32, div, /, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(i32, div, /, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u64, div, /, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i64, div, /, mag_cvt_nop, mag_cvt_nop)
 
+mag_gen_stub_binop(u8, and, &, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u8, or, |, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u8, xor, ^, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u8, shl, <<, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u8, shr, >>, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i8, and, &, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i8, or, |, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i8, xor, ^, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i8, shl, <<, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i8, shr, >>, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u16, and, &, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u16, or, |, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u16, xor, ^, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u16, shl, <<, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u16, shr, >>, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i16, and, &, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i16, or, |, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i16, xor, ^, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i16, shl, <<, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i16, shr, >>, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u32, and, &, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u32, or, |, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u32, xor, ^, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u32, shl, <<, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u32, shr, >>, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(i32, and, &, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(i32, or, |, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(i32, xor, ^, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(i32, shl, <<, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(i32, shr, >>, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u64, and, &, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u64, or, |, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u64, xor, ^, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u64, shl, <<, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(u64, shr, >>, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i64, and, &, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i64, or, |, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i64, xor, ^, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i64, shl, <<, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(i64, shr, >>, mag_cvt_nop, mag_cvt_nop)
 
 mag_gen_stub_binop(bool, and, &, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(bool, or, |, mag_cvt_nop, mag_cvt_nop)
@@ -2575,32 +2682,81 @@ mag_cpu_impl_reduce_axes( \
 mag_gen_stub_repeat_back(e8m23, .0f, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_repeat_back(e5m10, MAG_E5M10_ZERO, mag_e5m10_cvt_e8m23, mag_e8m23_cvt_e5m10)
 
+mag_gen_stub_gather(bool)
 mag_gen_stub_gather(e8m23)
 mag_gen_stub_gather(e5m10)
+mag_gen_stub_gather(u8)
+mag_gen_stub_gather(i8)
+mag_gen_stub_gather(u16)
+mag_gen_stub_gather(i16)
+mag_gen_stub_gather(u32)
 mag_gen_stub_gather(i32)
-mag_gen_stub_gather(bool)
+mag_gen_stub_gather(u64)
+mag_gen_stub_gather(i64)
 
 mag_gen_stub_cmp(eq, e8m23, ==, mag_cvt_nop)
 mag_gen_stub_cmp(eq, e5m10, ==, mag_e5m10_cvt_e8m23)
+mag_gen_stub_cmp(eq, u8,  ==, mag_cvt_nop)
+mag_gen_stub_cmp(eq, i8,  ==, mag_cvt_nop)
+mag_gen_stub_cmp(eq, u16, ==, mag_cvt_nop)
+mag_gen_stub_cmp(eq, i16, ==, mag_cvt_nop)
+mag_gen_stub_cmp(eq, u32, ==, mag_cvt_nop)
 mag_gen_stub_cmp(eq, i32, ==, mag_cvt_nop)
+mag_gen_stub_cmp(eq, u64, ==, mag_cvt_nop)
+mag_gen_stub_cmp(eq, i64, ==, mag_cvt_nop)
 mag_gen_stub_cmp(eq, bool, ==, mag_cvt_nop)
 mag_gen_stub_cmp(ne, e8m23, !=, mag_cvt_nop)
 mag_gen_stub_cmp(ne, e5m10, !=, mag_e5m10_cvt_e8m23)
+mag_gen_stub_cmp(ne, u8,  !=, mag_cvt_nop)
+mag_gen_stub_cmp(ne, i8,  !=, mag_cvt_nop)
+mag_gen_stub_cmp(ne, u16, !=, mag_cvt_nop)
+mag_gen_stub_cmp(ne, i16, !=, mag_cvt_nop)
+mag_gen_stub_cmp(ne, u32, !=, mag_cvt_nop)
 mag_gen_stub_cmp(ne, i32, !=, mag_cvt_nop)
+mag_gen_stub_cmp(ne, u64, !=, mag_cvt_nop)
+mag_gen_stub_cmp(ne, i64, !=, mag_cvt_nop)
 mag_gen_stub_cmp(ne, bool, !=, mag_cvt_nop)
 
 mag_gen_stub_cmp(lt, e8m23, <, mag_cvt_nop)
 mag_gen_stub_cmp(lt, e5m10, <, mag_e5m10_cvt_e8m23)
+mag_gen_stub_cmp(lt, u8,  <, mag_cvt_nop)
+mag_gen_stub_cmp(lt, i8,  <, mag_cvt_nop)
+mag_gen_stub_cmp(lt, u16, <, mag_cvt_nop)
+mag_gen_stub_cmp(lt, i16, <, mag_cvt_nop)
+mag_gen_stub_cmp(lt, u32, <, mag_cvt_nop)
 mag_gen_stub_cmp(lt, i32, <, mag_cvt_nop)
+mag_gen_stub_cmp(lt, u64, <, mag_cvt_nop)
+mag_gen_stub_cmp(lt, i64, <, mag_cvt_nop)
 mag_gen_stub_cmp(gt, e8m23, >, mag_cvt_nop)
 mag_gen_stub_cmp(gt, e5m10, >, mag_e5m10_cvt_e8m23)
+mag_gen_stub_cmp(gt, u8,  >, mag_cvt_nop)
+mag_gen_stub_cmp(gt, i8,  >, mag_cvt_nop)
+mag_gen_stub_cmp(gt, u16, >, mag_cvt_nop)
+mag_gen_stub_cmp(gt, i16, >, mag_cvt_nop)
+mag_gen_stub_cmp(gt, u32, >, mag_cvt_nop)
 mag_gen_stub_cmp(gt, i32, >, mag_cvt_nop)
+mag_gen_stub_cmp(gt, u64, >, mag_cvt_nop)
+mag_gen_stub_cmp(gt, i64, >, mag_cvt_nop)
 mag_gen_stub_cmp(le, e8m23, <=, mag_cvt_nop)
 mag_gen_stub_cmp(le, e5m10, <=, mag_e5m10_cvt_e8m23)
+mag_gen_stub_cmp(le, u8,  <=, mag_cvt_nop)
+mag_gen_stub_cmp(le, i8,  <=, mag_cvt_nop)
+mag_gen_stub_cmp(le, u16, <=, mag_cvt_nop)
+mag_gen_stub_cmp(le, i16, <=, mag_cvt_nop)
+mag_gen_stub_cmp(le, u32, <=, mag_cvt_nop)
 mag_gen_stub_cmp(le, i32, <=, mag_cvt_nop)
+mag_gen_stub_cmp(le, u64, <=, mag_cvt_nop)
+mag_gen_stub_cmp(le, i64, <=, mag_cvt_nop)
 mag_gen_stub_cmp(ge, e8m23, >=, mag_cvt_nop)
 mag_gen_stub_cmp(ge, e5m10, >=, mag_e5m10_cvt_e8m23)
+mag_gen_stub_cmp(ge, u8,  >=, mag_cvt_nop)
+mag_gen_stub_cmp(ge, i8,  >=, mag_cvt_nop)
+mag_gen_stub_cmp(ge, u16, >=, mag_cvt_nop)
+mag_gen_stub_cmp(ge, i16, >=, mag_cvt_nop)
+mag_gen_stub_cmp(ge, u32, >=, mag_cvt_nop)
 mag_gen_stub_cmp(ge, i32, >=, mag_cvt_nop)
+mag_gen_stub_cmp(ge, u64, >=, mag_cvt_nop)
+mag_gen_stub_cmp(ge, i64, >=, mag_cvt_nop)
 
 static int64_t mag_offset_rmn(const mag_tensor_t *t, int64_t flat, int64_t i, int64_t j) {
     int64_t ra = t->coords.rank;
@@ -4052,19 +4208,40 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_E8M23] = &mag_nop,
         [MAG_DTYPE_E5M10] = &mag_nop,
         [MAG_DTYPE_BOOL] = &mag_nop,
+        [MAG_DTYPE_U8] = &mag_nop,
+        [MAG_DTYPE_I8] = &mag_nop,
+        [MAG_DTYPE_U16] = &mag_nop,
+        [MAG_DTYPE_I16] = &mag_nop,
+        [MAG_DTYPE_U32] = &mag_nop,
         [MAG_DTYPE_I32] = &mag_nop,
+        [MAG_DTYPE_U64] = &mag_nop,
+        [MAG_DTYPE_I64] = &mag_nop,
     },
     [MAG_OP_FILL] = {
         [MAG_DTYPE_E8M23] = &mag_fill_e8m23,
         [MAG_DTYPE_E5M10] = &mag_fill_e5m10,
         [MAG_DTYPE_BOOL] = &mag_fill_bool,
+        [MAG_DTYPE_U8] = &mag_fill_u8,
+        [MAG_DTYPE_I8] = &mag_fill_i8,
+        [MAG_DTYPE_U16] = &mag_fill_u16,
+        [MAG_DTYPE_I16] = &mag_fill_i16,
+        [MAG_DTYPE_U32] = &mag_fill_u32,
         [MAG_DTYPE_I32] = &mag_fill_i32,
+        [MAG_DTYPE_U64] = &mag_fill_u64,
+        [MAG_DTYPE_I64] = &mag_fill_i64,
     },
     [MAG_OP_MASKED_FILL] = {
         [MAG_DTYPE_E8M23] = &mag_masked_fill_e8m23,
         [MAG_DTYPE_E5M10] = &mag_masked_fill_e5m10,
         [MAG_DTYPE_BOOL] = &mag_masked_fill_bool,
+        [MAG_DTYPE_U8]  = &mag_masked_fill_u8,
+        [MAG_DTYPE_I8]  = &mag_masked_fill_i8,
+        [MAG_DTYPE_U16] = &mag_masked_fill_u16,
+        [MAG_DTYPE_I16] = &mag_masked_fill_i16,
+        [MAG_DTYPE_U32] = &mag_masked_fill_u32,
         [MAG_DTYPE_I32] = &mag_masked_fill_i32,
+        [MAG_DTYPE_U64] = &mag_masked_fill_u64,
+        [MAG_DTYPE_I64] = &mag_masked_fill_i64,
     },
     [MAG_OP_RAND_UNIFORM] = {
         [MAG_DTYPE_E8M23] = &mag_fill_rand_uniform_e8m23,
@@ -4081,31 +4258,66 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_ARANGE] = {
         [MAG_DTYPE_E8M23] = &mag_fill_arange_e8m23,
         [MAG_DTYPE_E5M10] = &mag_fill_arange_e5m10,
-        [MAG_DTYPE_I32] = &mag_fill_arange_i32
+        [MAG_DTYPE_U8] = &mag_fill_arange_u8,
+        [MAG_DTYPE_I8] = &mag_fill_arange_i8,
+        [MAG_DTYPE_U16] = &mag_fill_arange_u16,
+        [MAG_DTYPE_I16] = &mag_fill_arange_i16,
+        [MAG_DTYPE_U32] = &mag_fill_arange_u32,
+        [MAG_DTYPE_I32] = &mag_fill_arange_i32,
+        [MAG_DTYPE_U64] = &mag_fill_arange_u64,
+        [MAG_DTYPE_I64] = &mag_fill_arange_i64,
     },
     [MAG_OP_CLONE] = {
         [MAG_DTYPE_E8M23] = &mag_clone_e8m23,
         [MAG_DTYPE_E5M10] = &mag_clone_e5m10,
         [MAG_DTYPE_BOOL] = &mag_clone_bool,
+        [MAG_DTYPE_U8] = &mag_clone_u8,
+        [MAG_DTYPE_I8] = &mag_clone_i8,
+        [MAG_DTYPE_U16] = &mag_clone_u16,
+        [MAG_DTYPE_I16] = &mag_clone_i16,
+        [MAG_DTYPE_U32] = &mag_clone_u32,
         [MAG_DTYPE_I32] = &mag_clone_i32,
+        [MAG_DTYPE_U64] = &mag_clone_u64,
+        [MAG_DTYPE_I64] = &mag_clone_i64,
     },
     [MAG_OP_VIEW] = {
         [MAG_DTYPE_E8M23] = &mag_nop,
         [MAG_DTYPE_E5M10] = &mag_nop,
         [MAG_DTYPE_BOOL] = &mag_nop,
+        [MAG_DTYPE_U8] = &mag_nop,
+        [MAG_DTYPE_I8] = &mag_nop,
+        [MAG_DTYPE_U16] = &mag_nop,
+        [MAG_DTYPE_I16] = &mag_nop,
+        [MAG_DTYPE_U32] = &mag_nop,
         [MAG_DTYPE_I32] = &mag_nop,
+        [MAG_DTYPE_U64] = &mag_nop,
+        [MAG_DTYPE_I64] = &mag_nop,
     },
     [MAG_OP_TRANSPOSE] = {
         [MAG_DTYPE_E8M23] = &mag_nop,
         [MAG_DTYPE_E5M10] = &mag_nop,
         [MAG_DTYPE_BOOL] = &mag_nop,
+        [MAG_DTYPE_U8] = &mag_nop,
+        [MAG_DTYPE_I8] = &mag_nop,
+        [MAG_DTYPE_U16] = &mag_nop,
+        [MAG_DTYPE_I16] = &mag_nop,
+        [MAG_DTYPE_U32] = &mag_nop,
         [MAG_DTYPE_I32] = &mag_nop,
+        [MAG_DTYPE_U64] = &mag_nop,
+        [MAG_DTYPE_I64] = &mag_nop,
     },
     [MAG_OP_PERMUTE] = {
         [MAG_DTYPE_E8M23] = &mag_nop,
         [MAG_DTYPE_E5M10] = &mag_nop,
         [MAG_DTYPE_BOOL] = &mag_nop,
+        [MAG_DTYPE_U8] = &mag_nop,
+        [MAG_DTYPE_I8] = &mag_nop,
+        [MAG_DTYPE_U16] = &mag_nop,
+        [MAG_DTYPE_I16] = &mag_nop,
+        [MAG_DTYPE_U32] = &mag_nop,
         [MAG_DTYPE_I32] = &mag_nop,
+        [MAG_DTYPE_U64] = &mag_nop,
+        [MAG_DTYPE_I64] = &mag_nop,
     },
     [MAG_OP_MEAN] = {
         [MAG_DTYPE_E8M23] = &mag_mean_e8m23,
@@ -4303,13 +4515,27 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_E8M23] = &mag_tril_e8m23,
         [MAG_DTYPE_E5M10] = &mag_tril_e5m10,
         [MAG_DTYPE_BOOL] = &mag_tril_bool,
+        [MAG_DTYPE_U8]  = &mag_tril_u8,
+        [MAG_DTYPE_I8]  = &mag_tril_i8,
+        [MAG_DTYPE_U16] = &mag_tril_u16,
+        [MAG_DTYPE_I16] = &mag_tril_i16,
+        [MAG_DTYPE_U32] = &mag_tril_u32,
         [MAG_DTYPE_I32] = &mag_tril_i32,
+        [MAG_DTYPE_U64] = &mag_tril_u64,
+        [MAG_DTYPE_I64] = &mag_tril_i64,
     },
     [MAG_OP_TRIU] = {
         [MAG_DTYPE_E8M23] = &mag_triu_e8m23,
         [MAG_DTYPE_E5M10] = &mag_triu_e5m10,
         [MAG_DTYPE_BOOL] = &mag_triu_bool,
+        [MAG_DTYPE_U8]  = &mag_triu_u8,
+        [MAG_DTYPE_I8]  = &mag_triu_i8,
+        [MAG_DTYPE_U16] = &mag_triu_u16,
+        [MAG_DTYPE_I16] = &mag_triu_i16,
+        [MAG_DTYPE_U32] = &mag_triu_u32,
         [MAG_DTYPE_I32] = &mag_triu_i32,
+        [MAG_DTYPE_U64] = &mag_triu_u64,
+        [MAG_DTYPE_I64] = &mag_triu_i64,
     },
     [MAG_OP_MULTINOMIAL] = {
         [MAG_DTYPE_E8M23] = &mag_multinomial_e8m23,
@@ -4319,27 +4545,62 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_E8M23] = &mag_cat_e8m23,
         [MAG_DTYPE_E5M10] = &mag_cat_e5m10,
         [MAG_DTYPE_BOOL] = &mag_cat_bool,
+        [MAG_DTYPE_U8]  = &mag_cat_u8,
+        [MAG_DTYPE_I8]  = &mag_cat_i8,
+        [MAG_DTYPE_U16] = &mag_cat_u16,
+        [MAG_DTYPE_I16] = &mag_cat_i16,
+        [MAG_DTYPE_U32] = &mag_cat_u32,
         [MAG_DTYPE_I32] = &mag_cat_i32,
+        [MAG_DTYPE_U64] = &mag_cat_u64,
+        [MAG_DTYPE_I64] = &mag_cat_i64,
     },
     [MAG_OP_ADD] = {
         [MAG_DTYPE_E8M23] = &mag_add_e8m23,
         [MAG_DTYPE_E5M10] = &mag_add_e5m10,
+        [MAG_DTYPE_U8]  = &mag_add_u8,
+        [MAG_DTYPE_I8]  = &mag_add_i8,
+        [MAG_DTYPE_U16] = &mag_add_u16,
+        [MAG_DTYPE_I16] = &mag_add_i16,
+        [MAG_DTYPE_U32] = &mag_add_u32,
         [MAG_DTYPE_I32] = &mag_add_i32,
+        [MAG_DTYPE_U64] = &mag_add_u64,
+        [MAG_DTYPE_I64] = &mag_add_i64,
     },
     [MAG_OP_SUB] = {
         [MAG_DTYPE_E8M23] = &mag_sub_e8m23,
         [MAG_DTYPE_E5M10] = &mag_sub_e5m10,
+        [MAG_DTYPE_U8]  = &mag_sub_u8,
+        [MAG_DTYPE_I8]  = &mag_sub_i8,
+        [MAG_DTYPE_U16] = &mag_sub_u16,
+        [MAG_DTYPE_I16] = &mag_sub_i16,
+        [MAG_DTYPE_U32] = &mag_sub_u32,
         [MAG_DTYPE_I32] = &mag_sub_i32,
+        [MAG_DTYPE_U64] = &mag_sub_u64,
+        [MAG_DTYPE_I64] = &mag_sub_i64,
     },
     [MAG_OP_MUL] = {
         [MAG_DTYPE_E8M23] = &mag_mul_e8m23,
         [MAG_DTYPE_E5M10] = &mag_mul_e5m10,
+        [MAG_DTYPE_U8]  = &mag_mul_u8,
+        [MAG_DTYPE_I8]  = &mag_mul_i8,
+        [MAG_DTYPE_U16] = &mag_mul_u16,
+        [MAG_DTYPE_I16] = &mag_mul_i16,
+        [MAG_DTYPE_U32] = &mag_mul_u32,
         [MAG_DTYPE_I32] = &mag_mul_i32,
+        [MAG_DTYPE_U64] = &mag_mul_u64,
+        [MAG_DTYPE_I64] = &mag_mul_i64,
     },
     [MAG_OP_DIV] = {
         [MAG_DTYPE_E8M23] = &mag_div_e8m23,
         [MAG_DTYPE_E5M10] = &mag_div_e5m10,
+        [MAG_DTYPE_U8]  = &mag_div_u8,
+        [MAG_DTYPE_I8]  = &mag_div_i8,
+        [MAG_DTYPE_U16] = &mag_div_u16,
+        [MAG_DTYPE_I16] = &mag_div_i16,
+        [MAG_DTYPE_U32] = &mag_div_u32,
         [MAG_DTYPE_I32] = &mag_div_i32,
+        [MAG_DTYPE_U64] = &mag_div_u64,
+        [MAG_DTYPE_I64] = &mag_div_i64,
     },
     [MAG_OP_MATMUL] = {
         [MAG_DTYPE_E8M23] = &mag_matmul_e8m23,
@@ -4353,61 +4614,152 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_E8M23] = &mag_gather_e8m23,
         [MAG_DTYPE_E5M10] = &mag_gather_e5m10,
         [MAG_DTYPE_BOOL] = &mag_gather_bool,
+        [MAG_DTYPE_U8]  = &mag_gather_u8,
+        [MAG_DTYPE_I8]  = &mag_gather_i8,
+        [MAG_DTYPE_U16] = &mag_gather_u16,
+        [MAG_DTYPE_I16] = &mag_gather_i16,
+        [MAG_DTYPE_U32] = &mag_gather_u32,
         [MAG_DTYPE_I32] = &mag_gather_i32,
+        [MAG_DTYPE_U64] = &mag_gather_u64,
+        [MAG_DTYPE_I64] = &mag_gather_i64,
     },
     [MAG_OP_AND] = {
         [MAG_DTYPE_BOOL] = &mag_and_bool,
+        [MAG_DTYPE_U8]  = &mag_and_u8,
+        [MAG_DTYPE_I8]  = &mag_and_i8,
+        [MAG_DTYPE_U16] = &mag_and_u16,
+        [MAG_DTYPE_I16] = &mag_and_i16,
+        [MAG_DTYPE_U32] = &mag_and_u32,
         [MAG_DTYPE_I32] = &mag_and_i32,
+        [MAG_DTYPE_U64] = &mag_and_u64,
+        [MAG_DTYPE_I64] = &mag_and_i64,
     },
     [MAG_OP_OR] = {
         [MAG_DTYPE_BOOL] = &mag_or_bool,
+        [MAG_DTYPE_U8]  = &mag_or_u8,
+        [MAG_DTYPE_I8]  = &mag_or_i8,
+        [MAG_DTYPE_U16] = &mag_or_u16,
+        [MAG_DTYPE_I16] = &mag_or_i16,
+        [MAG_DTYPE_U32] = &mag_or_u32,
         [MAG_DTYPE_I32] = &mag_or_i32,
+        [MAG_DTYPE_U64] = &mag_or_u64,
+        [MAG_DTYPE_I64] = &mag_or_i64,
     },
     [MAG_OP_XOR] = {
         [MAG_DTYPE_BOOL] = &mag_xor_bool,
+        [MAG_DTYPE_U8]  = &mag_xor_u8,
+        [MAG_DTYPE_I8]  = &mag_xor_i8,
+        [MAG_DTYPE_U16] = &mag_xor_u16,
+        [MAG_DTYPE_I16] = &mag_xor_i16,
+        [MAG_DTYPE_U32] = &mag_xor_u32,
         [MAG_DTYPE_I32] = &mag_xor_i32,
+        [MAG_DTYPE_U64] = &mag_xor_u64,
+        [MAG_DTYPE_I64] = &mag_xor_i64,
     },
     [MAG_OP_NOT] = {
         [MAG_DTYPE_BOOL] = &mag_not_bool,
+        [MAG_DTYPE_U8]  = &mag_not_u8,
+        [MAG_DTYPE_I8]  = &mag_not_i8,
+        [MAG_DTYPE_U16] = &mag_not_u16,
+        [MAG_DTYPE_I16] = &mag_not_i16,
+        [MAG_DTYPE_U32] = &mag_not_u32,
         [MAG_DTYPE_I32] = &mag_not_i32,
+        [MAG_DTYPE_U64] = &mag_not_u64,
+        [MAG_DTYPE_I64] = &mag_not_i64,
     },
     [MAG_OP_SHL] = {
+        [MAG_DTYPE_U8]  = &mag_shl_u8,
+        [MAG_DTYPE_I8]  = &mag_shl_i8,
+        [MAG_DTYPE_U16] = &mag_shl_u16,
+        [MAG_DTYPE_I16] = &mag_shl_i16,
+        [MAG_DTYPE_U32] = &mag_shl_u32,
         [MAG_DTYPE_I32] = &mag_shl_i32,
+        [MAG_DTYPE_U64] = &mag_shl_u64,
+        [MAG_DTYPE_I64] = &mag_shl_i64,
     },
     [MAG_OP_SHR] = {
+        [MAG_DTYPE_U8]  = &mag_shr_u8,
+        [MAG_DTYPE_I8]  = &mag_shr_i8,
+        [MAG_DTYPE_U16] = &mag_shr_u16,
+        [MAG_DTYPE_I16] = &mag_shr_i16,
+        [MAG_DTYPE_U32] = &mag_shr_u32,
         [MAG_DTYPE_I32] = &mag_shr_i32,
+        [MAG_DTYPE_U64] = &mag_shr_u64,
+        [MAG_DTYPE_I64] = &mag_shr_i64,
     },
     [MAG_OP_EQ] = {
         [MAG_DTYPE_E8M23] = &mag_eq_e8m23,
         [MAG_DTYPE_E5M10] = &mag_eq_e5m10,
         [MAG_DTYPE_BOOL] = &mag_eq_bool,
+        [MAG_DTYPE_U8]  = &mag_eq_u8,
+        [MAG_DTYPE_I8]  = &mag_eq_i8,
+        [MAG_DTYPE_U16] = &mag_eq_u16,
+        [MAG_DTYPE_I16] = &mag_eq_i16,
+        [MAG_DTYPE_U32] = &mag_eq_u32,
         [MAG_DTYPE_I32] = &mag_eq_i32,
+        [MAG_DTYPE_U64] = &mag_eq_u64,
+        [MAG_DTYPE_I64] = &mag_eq_i64,
     },
     [MAG_OP_NE] = {
         [MAG_DTYPE_E8M23] = &mag_ne_e8m23,
         [MAG_DTYPE_E5M10] = &mag_ne_e5m10,
         [MAG_DTYPE_BOOL] = &mag_ne_bool,
+        [MAG_DTYPE_U8]  = &mag_ne_u8,
+        [MAG_DTYPE_I8]  = &mag_ne_i8,
+        [MAG_DTYPE_U16] = &mag_ne_u16,
+        [MAG_DTYPE_I16] = &mag_ne_i16,
+        [MAG_DTYPE_U32] = &mag_ne_u32,
         [MAG_DTYPE_I32] = &mag_ne_i32,
+        [MAG_DTYPE_U64] = &mag_ne_u64,
+        [MAG_DTYPE_I64] = &mag_ne_i64,
     },
     [MAG_OP_LE] = {
         [MAG_DTYPE_E8M23] = &mag_le_e8m23,
         [MAG_DTYPE_E5M10] = &mag_le_e5m10,
+        [MAG_DTYPE_U8]  = &mag_le_u8,
+        [MAG_DTYPE_I8]  = &mag_le_i8,
+        [MAG_DTYPE_U16] = &mag_le_u16,
+        [MAG_DTYPE_I16] = &mag_le_i16,
+        [MAG_DTYPE_U32] = &mag_le_u32,
         [MAG_DTYPE_I32] = &mag_le_i32,
+        [MAG_DTYPE_U64] = &mag_le_u64,
+        [MAG_DTYPE_I64] = &mag_le_i64,
     },
     [MAG_OP_GE] = {
         [MAG_DTYPE_E8M23] = &mag_ge_e8m23,
         [MAG_DTYPE_E5M10] = &mag_ge_e5m10,
+        [MAG_DTYPE_U8]  = &mag_ge_u8,
+        [MAG_DTYPE_I8]  = &mag_ge_i8,
+        [MAG_DTYPE_U16] = &mag_ge_u16,
+        [MAG_DTYPE_I16] = &mag_ge_i16,
+        [MAG_DTYPE_U32] = &mag_ge_u32,
         [MAG_DTYPE_I32] = &mag_ge_i32,
+        [MAG_DTYPE_U64] = &mag_ge_u64,
+        [MAG_DTYPE_I64] = &mag_ge_i64,
     },
     [MAG_OP_LT] = {
         [MAG_DTYPE_E8M23] = &mag_lt_e8m23,
         [MAG_DTYPE_E5M10] = &mag_lt_e5m10,
+        [MAG_DTYPE_U8]  = &mag_lt_u8,
+        [MAG_DTYPE_I8]  = &mag_lt_i8,
+        [MAG_DTYPE_U16] = &mag_lt_u16,
+        [MAG_DTYPE_I16] = &mag_lt_i16,
+        [MAG_DTYPE_U32] = &mag_lt_u32,
         [MAG_DTYPE_I32] = &mag_lt_i32,
+        [MAG_DTYPE_U64] = &mag_lt_u64,
+        [MAG_DTYPE_I64] = &mag_lt_i64,
     },
     [MAG_OP_GT] = {
         [MAG_DTYPE_E8M23] = &mag_gt_e8m23,
         [MAG_DTYPE_E5M10] = &mag_gt_e5m10,
+        [MAG_DTYPE_U8]  = &mag_gt_u8,
+        [MAG_DTYPE_I8]  = &mag_gt_i8,
+        [MAG_DTYPE_U16] = &mag_gt_u16,
+        [MAG_DTYPE_I16] = &mag_gt_i16,
+        [MAG_DTYPE_U32] = &mag_gt_u32,
         [MAG_DTYPE_I32] = &mag_gt_i32,
+        [MAG_DTYPE_U64] = &mag_gt_u64,
+        [MAG_DTYPE_I64] = &mag_gt_i64,
     },
 };
 

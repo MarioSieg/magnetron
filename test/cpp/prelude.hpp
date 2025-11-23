@@ -34,7 +34,6 @@ namespace magnetron::test {
     [[nodiscard]] extern std::vector<device_kind> get_supported_test_backends();
     [[nodiscard]] extern context& get_cached_context(device_kind dev);
 
-
     using float16 = half_float::half;
 
     template <typename T>
@@ -55,9 +54,9 @@ namespace magnetron::test {
 
     [[nodiscard]] extern std::string get_gtest_backend_name(const TestParamInfo<device_kind>& info);
 
-    [[nodiscard]] extern std::vector<std::int64_t> shape_as_vec(tensor t);
-    [[nodiscard]] extern std::vector<std::int64_t> strides_as_vec(tensor t);
-    [[nodiscard]] extern std::string shape_to_string(std::span<const std::int64_t> shape);
+    [[nodiscard]] extern std::vector<int64_t> shape_as_vec(tensor t);
+    [[nodiscard]] extern std::vector<int64_t> strides_as_vec(tensor t);
+    [[nodiscard]] extern std::string shape_to_string(std::span<const int64_t> shape);
     [[nodiscard]] extern auto make_random_view(tensor base) -> tensor;
 
     extern thread_local std::random_device rd;
@@ -65,5 +64,5 @@ namespace magnetron::test {
 
     extern const std::unordered_map<dtype, float> dtype_eps_map;
 
-    extern void for_all_test_shapes(std::function<void (std::span<const std::int64_t>)>&& f);
+    extern void for_all_test_shapes(std::function<void (std::span<const int64_t>)>&& f);
 }

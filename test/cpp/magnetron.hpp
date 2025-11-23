@@ -18,8 +18,8 @@
 
 #include <core/mag_rc.h>
 #include <core/mag_backend.h>
+#include <core/mag_tensor.h>
 
-#include <cstdint>
 #include <algorithm>
 #include <stdexcept>
 #include <array>
@@ -27,7 +27,8 @@
 #include <vector>
 #include <span>
 
-#include "core/mag_tensor.h"
+#include <half.hpp>
+
 
 namespace magnetron {
     /**
@@ -82,17 +83,17 @@ namespace magnetron {
         [[nodiscard]] auto device_name() const noexcept -> std::string_view { return mag_ctx_get_compute_device_name(m_ctx); }
         [[nodiscard]] auto os_name() const noexcept -> std::string_view { return mag_ctx_get_os_name(m_ctx); }
         [[nodiscard]] auto cpu_name() const noexcept -> std::string_view { return mag_ctx_get_cpu_name(m_ctx); }
-        [[nodiscard]] auto cpu_virtual_cores() const noexcept -> std::uint32_t { return mag_ctx_get_cpu_virtual_cores(m_ctx); }
-        [[nodiscard]] auto cpu_physical_cores() const noexcept -> std::uint32_t { return mag_ctx_get_cpu_physical_cores(m_ctx); }
-        [[nodiscard]] auto cpu_sockets() const noexcept -> std::uint32_t { return mag_ctx_get_cpu_sockets(m_ctx); }
-        [[nodiscard]] auto physical_memory_total() const noexcept -> std::uint64_t { return mag_ctx_get_physical_memory_total(m_ctx); }
-        [[nodiscard]] auto physical_memory_free() const noexcept -> std::uint64_t { return mag_ctx_get_physical_memory_free(m_ctx); }
+        [[nodiscard]] auto cpu_virtual_cores() const noexcept -> uint32_t { return mag_ctx_get_cpu_virtual_cores(m_ctx); }
+        [[nodiscard]] auto cpu_physical_cores() const noexcept -> uint32_t { return mag_ctx_get_cpu_physical_cores(m_ctx); }
+        [[nodiscard]] auto cpu_sockets() const noexcept -> uint32_t { return mag_ctx_get_cpu_sockets(m_ctx); }
+        [[nodiscard]] auto physical_memory_total() const noexcept -> uint64_t { return mag_ctx_get_physical_memory_total(m_ctx); }
+        [[nodiscard]] auto physical_memory_free() const noexcept -> uint64_t { return mag_ctx_get_physical_memory_free(m_ctx); }
         [[nodiscard]] auto is_numa_system() const noexcept -> bool { return mag_ctx_is_numa_system(m_ctx); }
-        [[nodiscard]] auto total_tensors_created() const noexcept -> std::size_t { return mag_ctx_get_total_tensors_created(m_ctx); }
+        [[nodiscard]] auto total_tensors_created() const noexcept -> size_t { return mag_ctx_get_total_tensors_created(m_ctx); }
         auto start_grad_recorder() noexcept -> void { mag_ctx_grad_recorder_start(m_ctx); }
         auto stop_grad_recorder() noexcept -> void { mag_ctx_grad_recorder_stop(m_ctx); }
         [[nodiscard]] auto is_recording_gradients() const noexcept -> bool { return mag_ctx_grad_recorder_is_running(m_ctx); }
-        auto manual_seed(std::uint64_t seed) noexcept -> void { mag_ctx_manual_seed(m_ctx, seed); }
+        auto manual_seed(uint64_t seed) noexcept -> void { mag_ctx_manual_seed(m_ctx, seed); }
 
     private:
         mag_context_t* m_ctx {};
@@ -102,10 +103,17 @@ namespace magnetron {
         e8m23 = MAG_DTYPE_E8M23,
         e5m10 = MAG_DTYPE_E5M10,
         boolean = MAG_DTYPE_BOOL,
+        u8 = MAG_DTYPE_U8,
+        i8 = MAG_DTYPE_I8,
+        u16 = MAG_DTYPE_U16,
+        i16 = MAG_DTYPE_I16,
+        u32 = MAG_DTYPE_U32,
         i32 = MAG_DTYPE_I32,
+        u64 = MAG_DTYPE_U64,
+        i64 = MAG_DTYPE_I64,
     };
 
-    [[nodiscard]] inline auto dtype_size(dtype t) noexcept -> std::size_t {
+    [[nodiscard]] inline auto dtype_size(dtype t) noexcept -> size_t {
         return mag_dtype_meta_of(static_cast<mag_dtype_t>(t))->size;
     }
 
@@ -143,23 +151,39 @@ namespace magnetron {
         T *m_ref = {};
     };
 
+    template <typename T>
+    [[nodiscard]] consteval std::optional<dtype> generic_to_dtype() {
+        if constexpr (std::is_same_v<T, uint8_t>) return dtype::u8;
+        if constexpr (std::is_same_v<T, int8_t>) return dtype::i8;
+        if constexpr (std::is_same_v<T, uint16_t>) return dtype::u16;
+        if constexpr (std::is_same_v<T, int16_t>) return dtype::i16;
+        if constexpr (std::is_same_v<T, uint32_t>) return dtype::u32;
+        if constexpr (std::is_same_v<T, int32_t>) return dtype::i32;
+        if constexpr (std::is_same_v<T, uint64_t>) return dtype::u64;
+        if constexpr (std::is_same_v<T, int64_t>) return dtype::i64;
+        if constexpr (std::is_same_v<T, mag_e8m23_t>) return dtype::e8m23;
+        if constexpr (std::is_same_v<T, mag_e5m10_t>) return dtype::e5m10;
+        if constexpr (std::is_same_v<T, bool>) return dtype::boolean;
+        return std::nullopt;
+    }
+
     /**
      * A 1-6 dimensional, reference counted tensor with a fixed size and data type.
      */
     class tensor final {
     public:
-        tensor(context& ctx, dtype type, std::span<const std::int64_t> shape) {
+        tensor(context& ctx, dtype type, std::span<const int64_t> shape) {
             handle_error(mag_tensor_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.data()), &*ctx);
         }
 
         template <typename... S> requires std::is_integral_v<std::common_type_t<S...>>
-        tensor(context& ctx, dtype type, S&&... shape) : tensor{ctx, type, std::array{static_cast<std::int64_t>(shape)...}} {}
+        tensor(context& ctx, dtype type, S&&... shape) : tensor{ctx, type, std::array{static_cast<int64_t>(shape)...}} {}
 
-        tensor(context& ctx, std::span<const std::int64_t> shape, std::span<const float> data) : tensor{ctx, dtype::e8m23, shape} {
+        tensor(context& ctx, std::span<const int64_t> shape, std::span<const float> data) : tensor{ctx, dtype::e8m23, shape} {
             fill_from(data);
         }
 
-        tensor(context& ctx, std::span<const std::int64_t> shape, std::span<const std::int32_t> data) : tensor{ctx, dtype::i32, shape} {
+        tensor(context& ctx, std::span<const int64_t> shape, std::span<const int32_t> data) : tensor{ctx, dtype::i32, shape} {
             fill_from(data);
         }
 
@@ -208,34 +232,34 @@ namespace magnetron {
             return tensor{out};
         }
 
-        [[nodiscard]] auto view(std::initializer_list<std::int64_t> dims = {}) const noexcept -> tensor {
+        [[nodiscard]] auto view(std::initializer_list<int64_t> dims = {}) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_view(&out, m_tensor, std::empty(dims) ? nullptr : std::data(dims), std::size(dims)));
             return tensor{out};
         }
 
-        [[nodiscard]] auto reshape(std::initializer_list<std::int64_t> dims = {}) const noexcept -> tensor {
+        [[nodiscard]] auto reshape(std::initializer_list<int64_t> dims = {}) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_reshape(&out, m_tensor, std::data(dims), std::size(dims)));
             return tensor{out};
         }
 
-        [[nodiscard]] auto view_slice(std::int64_t dim, std::int64_t start, std::int64_t len, std::int64_t step) -> tensor {
+        [[nodiscard]] auto view_slice(int64_t dim, int64_t start, int64_t len, int64_t step) -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_view_slice(&out, m_tensor, dim, start, len, step));
             return tensor{out};
         }
-        [[nodiscard]] auto T(std::int64_t dim1 = 0, std::int64_t dim2 = 1) const noexcept -> tensor {
+        [[nodiscard]] auto T(int64_t dim1 = 0, int64_t dim2 = 1) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_transpose(&out, m_tensor, dim1, dim2));
             return tensor{out};
         }
-        [[nodiscard]] auto transpose(std::int64_t dim1 = 0, std::int64_t dim2 = 1) const noexcept -> tensor {
+        [[nodiscard]] auto transpose(int64_t dim1 = 0, int64_t dim2 = 1) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_transpose(&out, m_tensor, dim1, dim2));
             return tensor{out};
         }
-        [[nodiscard]] auto permute(const std::initializer_list<std::int64_t>& axes) const noexcept -> tensor {
+        [[nodiscard]] auto permute(const std::initializer_list<int64_t>& axes) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_permute(&out, m_tensor, axes.begin(), axes.size()));
             return tensor{out};
@@ -832,7 +856,7 @@ namespace magnetron {
             return tensor{out};
         }
 
-        auto fill_from(const void* buf, std::size_t nb) -> void {
+        auto fill_from(const void* buf, size_t nb) -> void {
             mag_tensor_fill_from_raw_bytes(m_tensor, buf, nb);
         }
 
@@ -841,19 +865,19 @@ namespace magnetron {
         }
 
         auto fill_from(std::span<const bool> data) -> void {
-            static_assert(sizeof(bool) == sizeof(std::uint8_t));
+            static_assert(sizeof(bool) == sizeof(uint8_t));
             mag_tensor_fill_from_raw_bytes(m_tensor, data.data(), data.size_bytes());
         }
 
         auto fill_from(const std::vector<bool>& data) -> void {
-            static_assert(sizeof(bool) == sizeof(std::uint8_t));
-            std::vector<std::uint8_t> unpacked {};
+            static_assert(sizeof(bool) == sizeof(uint8_t));
+            std::vector<uint8_t> unpacked {};
             unpacked.resize(data.size());
             std::ranges::copy(data, unpacked.begin());
             mag_tensor_fill_from_raw_bytes(m_tensor, unpacked.data(), unpacked.size());
         }
 
-        auto fill_from(std::span<const std::int32_t> data) -> void {
+        auto fill_from(std::span<const int32_t> data) -> void {
             mag_tensor_fill_from_raw_bytes(m_tensor, data.data(), data.size_bytes());
         }
 
@@ -878,18 +902,18 @@ namespace magnetron {
             mag_tensor_fill_arange(m_tensor, start, step);
         }
 
-        [[nodiscard]] auto to_string(bool with_data = true, std::size_t from_start = 0, std::size_t from_end = 0) const -> std::string {
+        [[nodiscard]] auto to_string(bool with_data = true, size_t from_start = 0, size_t from_end = 0) const -> std::string {
             char* fmt {mag_tensor_to_string(m_tensor, with_data, from_start, from_end)};
             std::string str {fmt};
             mag_tensor_to_string_free_data(fmt);
             return str;
         }
-        [[nodiscard]] auto rank() const noexcept -> std::int64_t { return mag_tensor_get_rank(m_tensor); }
-        [[nodiscard]] auto shape() const noexcept -> std::span<const std::int64_t> {
-            return {mag_tensor_get_shape(m_tensor), static_cast<std::size_t>(rank())};
+        [[nodiscard]] auto rank() const noexcept -> int64_t { return mag_tensor_get_rank(m_tensor); }
+        [[nodiscard]] auto shape() const noexcept -> std::span<const int64_t> {
+            return {mag_tensor_get_shape(m_tensor), static_cast<size_t>(rank())};
         }
-        [[nodiscard]] auto strides() const noexcept -> std::span<const std::int64_t> {
-            return {mag_tensor_get_strides(m_tensor), static_cast<std::size_t>(rank())};
+        [[nodiscard]] auto strides() const noexcept -> std::span<const int64_t> {
+            return {mag_tensor_get_strides(m_tensor), static_cast<size_t>(rank())};
         }
         [[nodiscard]] auto dtype() const noexcept -> dtype { return static_cast<enum dtype>(mag_tensor_get_dtype(m_tensor)); }
         [[nodiscard]] auto data_ptr() const noexcept -> void* { return mag_tensor_get_data_ptr(m_tensor); }
@@ -897,8 +921,8 @@ namespace magnetron {
 
         template <typename T>
         [[nodiscard]] auto to_vector() const -> std::vector<T>;
-        [[nodiscard]] auto data_size() const noexcept -> std::int64_t { return mag_tensor_get_data_size(m_tensor); }
-        [[nodiscard]] auto numel() const noexcept -> std::int64_t { return mag_tensor_get_numel(m_tensor); }
+        [[nodiscard]] auto data_size() const noexcept -> int64_t { return mag_tensor_get_data_size(m_tensor); }
+        [[nodiscard]] auto numel() const noexcept -> int64_t { return mag_tensor_get_numel(m_tensor); }
         [[nodiscard]] auto is_shape_eq(tensor other) const noexcept -> bool { return mag_tensor_is_shape_eq(m_tensor, &*other); }
         [[nodiscard]] auto can_broadcast(tensor other) const noexcept -> bool { return mag_tensor_can_broadcast(m_tensor, &*other); }
         [[nodiscard]] auto is_transposed() const noexcept -> bool { return mag_tensor_is_transposed(m_tensor); }
@@ -934,9 +958,9 @@ namespace magnetron {
         mag_tensor_fill_float(m_tensor, val);
     }
 
-    template <>
-    inline auto tensor::fill(std::int32_t val) -> void {
-        mag_tensor_fill_int(m_tensor, val);
+    template <typename T>
+    inline auto tensor::fill(T val) -> void {
+        mag_tensor_fill_int(m_tensor, static_cast<int64_t>(val));
     }
 
     template <>
@@ -952,7 +976,7 @@ namespace magnetron {
     }
 
     template <>
-    inline auto tensor::masked_fill(tensor mask, std::int32_t val) -> void {
+    inline auto tensor::masked_fill(tensor mask, int32_t val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
         mag_tensor_masked_fill_int(&*mask, m_tensor, val);
@@ -971,59 +995,37 @@ namespace magnetron {
     }
 
     template <>
-    inline auto tensor::fill_rand_uniform(std::int32_t min, std::int32_t max) -> void {
+    inline auto tensor::fill_rand_uniform(int32_t min, int32_t max) -> void {
         mag_tensor_fill_random_uniform_int(m_tensor, min, max);
     }
 
-    template <>
-    inline auto tensor::to_vector() const -> std::vector<float> {
-        if (!is_floating_point_typed())
-            throw std::runtime_error {"requires floating point dtype"};
-        auto* data {mag_tensor_get_data_as_floats(m_tensor)};
-        std::vector<float> result {};
-        result.resize(numel());
-        std::copy_n(data, numel(), result.begin());
-        mag_tensor_get_data_as_floats_free(data);
-        return result;
-    }
-
-    template <>
-    inline auto tensor::to_vector() const -> std::vector<bool> {
-        if (dtype() != dtype::boolean)
-            throw std::runtime_error {"requires boolean dtype"};
-        auto* data {static_cast<std::uint8_t*>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
-        std::vector<bool> result {};
-        result.resize(numel());
-        for (std::size_t i = 0; i < result.size(); ++i)
-            result[i] = static_cast<bool>(data[i]);
-        mag_tensor_get_raw_data_as_bytes_free(data);
-        return result;
-    }
-
-    template <>
-    inline auto tensor::to_vector() const -> std::vector<std::int32_t> {
-        if (dtype() != dtype::i32)
-            throw std::runtime_error {"requires int32 dtype"};
-        auto* data {static_cast<std::int32_t*>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
-        std::vector<std::int32_t> result {};
-        result.resize(numel());
-        std::copy_n(data, numel(), result.begin());
-        mag_tensor_get_raw_data_as_bytes_free(data);
-        return result;
-    }
-
     template <typename T>
-    [[nodiscard]] consteval std::optional<dtype> generic_to_dtype() {
-        if constexpr (std::is_same_v<T, int32_t>) return dtype::i32;
-        if constexpr (std::is_same_v<T, mag_e8m23_t>) return dtype::e8m23;
-        if constexpr (std::is_same_v<T, mag_e5m10_t>) return dtype::e5m10;
-        if constexpr (std::is_same_v<T, bool>) return dtype::boolean;
-        return std::nullopt;
+    auto tensor::to_vector() const -> std::vector<T> {
+       if constexpr (std::is_same_v<T, bool>) {
+            if (dtype() != dtype::boolean)
+                throw std::runtime_error {"requires boolean dtype"};
+            auto* data {static_cast<uint8_t *>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
+            std::vector<bool> result {};
+            result.resize(numel());
+            for (size_t i = 0; i < result.size(); ++i)
+                result[i] = static_cast<bool>(data[i]);
+            mag_tensor_get_raw_data_as_bytes_free(data);
+            return result;
+        } else {
+            if (dtype() != generic_to_dtype<T>())
+                throw std::runtime_error {"requires same dtype, but has: " + std::string(mag_dtype_meta_of(m_tensor->dtype)->name)};
+            auto* data {static_cast<T *>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
+            std::vector<T> result {};
+            result.resize(numel());
+            std::copy_n(data, numel(), result.begin());
+            mag_tensor_get_raw_data_as_bytes_free(data);
+            return result;
+        }
     }
 
     template <typename T>
     data_accessor<T>::data_accessor(tensor t) {
-        if constexpr (std::is_same_v<T, bool>) {
+        if constexpr (!std::is_same_v<T, bool>) {
             std::optional<dtype> type = generic_to_dtype<T>();
             if (type && t.dtype() == type && mag_device_is((*t).storage->host, "cpu")) {
                 m_ref = static_cast<T *>(mag_tensor_get_data_ptr(&*t));
@@ -1036,12 +1038,12 @@ namespace magnetron {
         m_owned = t.to_vector<T>();
     }
 
-    template<typename T>
+    template <typename T>
     T &data_accessor<T>::operator[](size_t i) {
         return m_ref ? m_ref[i] : m_owned[i];
     }
 
-    template<typename T>
+    template <typename T>
     T data_accessor<T>::operator[](size_t i) const {
         return m_ref ? m_ref[i] : m_owned[i];
     }

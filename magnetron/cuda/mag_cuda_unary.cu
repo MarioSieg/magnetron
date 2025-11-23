@@ -92,6 +92,27 @@ namespace mag {
     };
 
     template <typename T>
+    struct op_log10 {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __log10f(x); }
+    };
+
+    template <typename T>
+    struct op_log1p {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return log1pf(x); }
+    };
+
+    template <typename T>
+    struct op_log2 {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __log2f(x); }
+    };
+
+    template <typename T>
     struct op_sqr {
         using In = mag_e8m23_t;
         using Out = mag_e8m23_t;
@@ -120,6 +141,76 @@ namespace mag {
     };
 
     template <typename T>
+    struct op_tan {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __tanf(x); }
+    };
+
+    template <typename T>
+    struct op_asin {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return asinf(x); }
+    };
+
+    template <typename T>
+    struct op_acos {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return acosf(x); }
+    };
+
+    template <typename T>
+    struct op_atan {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return atanf(x); }
+    };
+
+    template <typename T>
+    struct op_sinh {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return sinhf(x); }
+    };
+
+    template <typename T>
+    struct op_cosh {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return coshf(x); }
+    };
+
+    template <typename T>
+    struct op_tanh {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __tanhf(x); }
+    };
+
+    template <typename T>
+    struct op_asinh {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return asinhf(x); }
+    };
+
+    template <typename T>
+    struct op_acosh {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return acoshf(x); }
+    };
+
+    template <typename T>
+    struct op_atanh {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return atanhf(x); }
+    };
+
+    template <typename T>
     struct op_step {
         using In = mag_e8m23_t;
         using Out = mag_e8m23_t;
@@ -127,10 +218,38 @@ namespace mag {
     };
 
     template <typename T>
+    struct op_erf {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return erff(x); }
+    };
+
+    template <typename T>
+    struct op_erfc {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return erfcf(x); }
+    };
+
+    template <typename T>
     struct op_exp {
         using In = mag_e8m23_t;
         using Out = mag_e8m23_t;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __expf(x); }
+    };
+
+    template <typename T>
+    struct op_exp2 {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return exp2f(x); }
+    };
+
+    template <typename T>
+    struct op_expm1 {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return expm1f(x); }
     };
 
     template <typename T>
@@ -152,6 +271,13 @@ namespace mag {
         using In = mag_e8m23_t;
         using Out = mag_e8m23_t;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return roundf(x); }
+    };
+
+    template <typename T>
+    struct op_trunc {
+        using In = mag_e8m23_t;
+        using Out = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return truncf(x); }
     };
 
     template <typename T>
@@ -201,13 +327,6 @@ namespace mag {
         using In = mag_e8m23_t;
         using Out = mag_e8m23_t;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t sig = 1.f/(1.f + __expf(-x)); return sig + x*sig; }
-    };
-
-    template <typename T>
-    struct op_tanh {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __tanhf(x); }
     };
 
     template <typename T>
@@ -298,15 +417,33 @@ namespace mag {
     void unary_op_sgn(const mag_command_t *cmd) { impl_unary_op<op_sgn>(cmd->out[0], cmd->in[0]); }
     void unary_op_neg(const mag_command_t *cmd) { impl_unary_op<op_neg>(cmd->out[0], cmd->in[0]); }
     void unary_op_log(const mag_command_t *cmd) { impl_unary_op<op_log>(cmd->out[0], cmd->in[0]); }
+    void unary_op_log10(const mag_command_t *cmd) { impl_unary_op<op_log10>(cmd->out[0], cmd->in[0]); }
+    void unary_op_log1p(const mag_command_t *cmd) { impl_unary_op<op_log1p>(cmd->out[0], cmd->in[0]); }
+    void unary_op_log2(const mag_command_t *cmd) { impl_unary_op<op_log2>(cmd->out[0], cmd->in[0]); }
     void unary_op_sqr(const mag_command_t *cmd) { impl_unary_op<op_sqr>(cmd->out[0], cmd->in[0]); }
     void unary_op_sqrt(const mag_command_t *cmd) { impl_unary_op<op_sqrt>(cmd->out[0], cmd->in[0]); }
     void unary_op_sin(const mag_command_t *cmd) { impl_unary_op<op_sin>(cmd->out[0], cmd->in[0]); }
     void unary_op_cos(const mag_command_t *cmd) { impl_unary_op<op_cos>(cmd->out[0], cmd->in[0]); }
+    void unary_op_tan(const mag_command_t *cmd) { impl_unary_op<op_tan>(cmd->out[0], cmd->in[0]); }
+    void unary_op_asin(const mag_command_t *cmd) { impl_unary_op<op_asin>(cmd->out[0], cmd->in[0]); }
+    void unary_op_acos(const mag_command_t *cmd) { impl_unary_op<op_acos>(cmd->out[0], cmd->in[0]); }
+    void unary_op_atan(const mag_command_t *cmd) { impl_unary_op<op_atan>(cmd->out[0], cmd->in[0]); }
+    void unary_op_sinh(const mag_command_t *cmd) { impl_unary_op<op_sinh>(cmd->out[0], cmd->in[0]); }
+    void unary_op_cosh(const mag_command_t *cmd) { impl_unary_op<op_cosh>(cmd->out[0], cmd->in[0]); }
+    void unary_op_tanh(const mag_command_t *cmd) { impl_unary_op<op_tanh>(cmd->out[0], cmd->in[0]); }
+    void unary_op_asinh(const mag_command_t *cmd) { impl_unary_op<op_asinh>(cmd->out[0], cmd->in[0]); }
+    void unary_op_acosh(const mag_command_t *cmd) { impl_unary_op<op_acosh>(cmd->out[0], cmd->in[0]); }
+    void unary_op_atanh(const mag_command_t *cmd) { impl_unary_op<op_atanh>(cmd->out[0], cmd->in[0]); }
     void unary_op_step(const mag_command_t *cmd) { impl_unary_op<op_step>(cmd->out[0], cmd->in[0]); }
+    void unary_op_erf(const mag_command_t *cmd) { impl_unary_op<op_erf>(cmd->out[0], cmd->in[0]); }
+    void unary_op_erfc(const mag_command_t *cmd) { impl_unary_op<op_erfc>(cmd->out[0], cmd->in[0]); }
     void unary_op_exp(const mag_command_t *cmd) { impl_unary_op<op_exp>(cmd->out[0], cmd->in[0]); }
+    void unary_op_exp2(const mag_command_t *cmd) { impl_unary_op<op_exp2>(cmd->out[0], cmd->in[0]); }
+    void unary_op_expm1(const mag_command_t *cmd) { impl_unary_op<op_expm1>(cmd->out[0], cmd->in[0]); }
     void unary_op_floor(const mag_command_t *cmd) { impl_unary_op<op_floor>(cmd->out[0], cmd->in[0]); }
     void unary_op_ceil(const mag_command_t *cmd) { impl_unary_op<op_ceil>(cmd->out[0], cmd->in[0]); }
     void unary_op_round(const mag_command_t *cmd) { impl_unary_op<op_round>(cmd->out[0], cmd->in[0]); }
+    void unary_op_trunc(const mag_command_t *cmd) { impl_unary_op<op_trunc>(cmd->out[0], cmd->in[0]); }
     void unary_op_softmax(const mag_command_t *cmd) { impl_unary_op<op_softmax>(cmd->out[0], cmd->in[0]); }
     void unary_op_softmax_dv(const mag_command_t *cmd) { impl_unary_op<op_softmax_dv>(cmd->out[0], cmd->in[0]); }
     void unary_op_sigmoid(const mag_command_t *cmd) { impl_unary_op<op_sigmoid>(cmd->out[0], cmd->in[0]); }
@@ -314,7 +451,6 @@ namespace mag {
     void unary_op_hard_sigmoid(const mag_command_t *cmd) { impl_unary_op<op_hard_sigmoid>(cmd->out[0], cmd->in[0]); }
     void unary_op_silu(const mag_command_t *cmd) { impl_unary_op<op_silu>(cmd->out[0], cmd->in[0]); }
     void unary_op_silu_dv(const mag_command_t *cmd) { impl_unary_op<op_silu_dv>(cmd->out[0], cmd->in[0]); }
-    void unary_op_tanh(const mag_command_t *cmd) { impl_unary_op<op_tanh>(cmd->out[0], cmd->in[0]); }
     void unary_op_tanh_dv(const mag_command_t *cmd) { impl_unary_op<op_tanh_dv>(cmd->out[0], cmd->in[0]); }
     void unary_op_relu(const mag_command_t *cmd) { impl_unary_op<op_relu>(cmd->out[0], cmd->in[0]); }
     void unary_op_relu_dv(const mag_command_t *cmd) { impl_unary_op<op_relu_dv>(cmd->out[0], cmd->in[0]); }

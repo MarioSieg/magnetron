@@ -14,21 +14,21 @@
 using namespace magnetron;
 using namespace test;
 
-static constexpr std::int64_t lim {4};
+static constexpr int64_t lim {4};
 
 static auto naive_matmul(
     const float* A,
     const float* B,
     float* C,
-    std::int64_t M,
-    std::int64_t N,
-    std::int64_t K
+    int64_t M,
+    int64_t N,
+    int64_t K
 ) -> void {
-    for (std::int64_t i {}; i < M*N; ++i) C[i] = 0.0f;
-    for (std::int64_t i {}; i < M; ++i) {
-        for (std::int64_t k {}; k < K; ++k) {
+    for (int64_t i {}; i < M*N; ++i) C[i] = 0.0f;
+    for (int64_t i {}; i < M; ++i) {
+        for (int64_t k {}; k < K; ++k) {
             float a_ik {A[i*K + k]};
-            for (std::int64_t j {}; j < N; ++j) {
+            for (int64_t j {}; j < N; ++j) {
                 C[i*N + j] += a_ik * B[k*N + j];
             }
         }
@@ -49,7 +49,7 @@ TEST(cpu_tensor_binary_ops, matmul_naive) {
     ASSERT_FLOAT_EQ(C[2], -3.5f);
 }
 
-template <const std::size_t M, const std::size_t N, typename T>
+template <const size_t M, const size_t N, typename T>
 [[nodiscard]] auto flatten(const std::array<std::array<T, N>, M>& array) -> std::span<const float> {
     return std::span<const T> {
         reinterpret_cast<const T*>(&array),
@@ -83,7 +83,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_e8m23) {
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
     std::vector<float> cr {c.to_vector<float>()};
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], reinterpret_cast<const float*>(&C)[i]);
     }
 }
@@ -114,7 +114,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_e5m10) {
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
     std::vector<float> cr {c.to_vector<float>()};
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_NEAR(cr[i], reinterpret_cast<const float*>(&C)[i], 1e-2);
     }
 }
@@ -145,7 +145,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_e8m23) {
     ASSERT_EQ(c.rank(), 2);
     ASSERT_EQ(c.numel(), 12);
     std::vector<float> cr {c.to_vector<float>()};
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], reinterpret_cast<const float*>(&C)[i]);
     }
 }
@@ -176,7 +176,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_e5m10) {
     ASSERT_EQ(c.rank(), 2);
     ASSERT_EQ(c.numel(), 12);
     std::vector<float> cr {c.to_vector<float>()};
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_NEAR(cr[i], reinterpret_cast<const float*>(&C)[i], 1e-2);
     }
 }
@@ -203,7 +203,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_e8m23) {
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
     std::vector<float> cr {c.to_vector<float>()};
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], 0.0f);
     }
 }
@@ -230,7 +230,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_e5m10) {
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
     std::vector<float> cr {c.to_vector<float>()};
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], 0.0f);
     }
 }
@@ -258,7 +258,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_e8m23) {
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
     std::vector<float> cr {c.to_vector<float>()};
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], reinterpret_cast<const float*>(&C)[i]);
     }
 }
@@ -286,7 +286,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_e5m10) {
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
     std::vector<float> cr {c.to_vector<float>()};
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_NEAR(cr[i], reinterpret_cast<const float*>(&C)[i], 1e-2);
     }
 }
@@ -315,7 +315,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_e8m23) {
     ASSERT_NE(c.numel(), a.numel());
     ASSERT_NE(c.numel(), b.numel());
     std::vector<float> result = c.to_vector<float>();
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(result[i], C[i]);
     }
 }
@@ -344,7 +344,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_e5m10) {
     ASSERT_NE(c.numel(), a.numel());
     ASSERT_NE(c.numel(), b.numel());
     std::vector<float> result = c.to_vector<float>();
-    for (std::int64_t i {}; i < c.numel(); ++i) {
+    for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(result[i], C[i]);
     }
 }

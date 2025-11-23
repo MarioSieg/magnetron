@@ -980,7 +980,7 @@ class UniversalPrinter<std::variant<T...>> {
       UniversalPrint(u, os);
     }
     ::std::ostream* os;
-    std::size_t index;
+    size_t index;
   };
 };
 

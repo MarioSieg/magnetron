@@ -15,7 +15,7 @@ using namespace magnetron;
 using namespace magnetron::test;
 
 TEST(views, view) {
-    constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
+    constexpr std::array<int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::e8m23, shape};
     tensor view = base.view();
@@ -31,7 +31,7 @@ TEST(views, view) {
 }
 
 TEST(views, view_of_view) {
-    constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
+    constexpr std::array<int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::e8m23, shape};
     tensor view1 = base.view();
@@ -48,7 +48,7 @@ TEST(views, view_of_view) {
 }
 
 TEST(views, view_slice_positive_step) {
-    constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
+    constexpr std::array<int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::e8m23, shape};
     tensor view = base.view_slice(0, 2, 3, 1);
@@ -65,7 +65,7 @@ TEST(views, view_slice_positive_step) {
 }
 
 TEST(views, view_of_view_slice) {
-    constexpr std::array<std::int64_t, 3> shape = {8, 3, 4};
+    constexpr std::array<int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::e8m23, shape};
     tensor view1 = base.view_slice(0, 2, 3, 1);

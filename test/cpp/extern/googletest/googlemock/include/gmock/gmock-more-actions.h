@@ -596,7 +596,7 @@ auto InvokeArgument(F &&f,
   return std::forward<F>(f)(args...);
 }
 
-template <std::size_t index, typename... Params>
+template <size_t index, typename... Params>
 struct InvokeArgumentAction {
   template <typename... Args,
             typename = typename std::enable_if<(index < sizeof...(Args))>::type>
@@ -645,7 +645,7 @@ struct InvokeArgumentAction {
 //   to the callable.  This makes it easy for a user to define an
 //   InvokeArgument action from temporary values and have it performed
 //   later.
-template <std::size_t index, typename... Params>
+template <size_t index, typename... Params>
 internal::InvokeArgumentAction<index, typename std::decay<Params>::type...>
 InvokeArgument(Params &&...params) {
   return {internal::FlatTuple<typename std::decay<Params>::type...>(

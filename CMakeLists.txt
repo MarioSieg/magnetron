@@ -20,7 +20,7 @@ option(MAGNETRON_DEBUG "Enable debug mode" OFF)                          # Enabl
 
 # Backend build options
 option(MAGNETRON_ENABLE_BACKEND_CPU "Enable CPU backend" ON)                # Enable CPU backend
-option(MAGNETRON_ENABLE_BACKEND_CUDA "Enable CUDA backend" ON)              # Enable CUDA backend (requires CUDA toolkit)
+option(MAGNETRON_ENABLE_BACKEND_CUDA "Enable CUDA backend" OFF)              # Enable CUDA backend (requires CUDA toolkit)
 
 if (${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS})
     enable_language(CXX)

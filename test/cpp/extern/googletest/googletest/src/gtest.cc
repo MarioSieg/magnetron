@@ -858,7 +858,7 @@ class PositiveAndNegativeUnitTestFilter {
       // For the moment to preserve old behavior we concatenate the rest of the
       // string parts with `-` as separator to generate the negative filter.
       auto negative_filter_string = positive_and_negative_filters[1];
-      for (std::size_t i = 2; i < positive_and_negative_filters.size(); i++)
+      for (size_t i = 2; i < positive_and_negative_filters.size(); i++)
         negative_filter_string =
             negative_filter_string + '-' + positive_and_negative_filters[i];
       negative_filter_ = UnitTestFilter(negative_filter_string);

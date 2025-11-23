@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..common import *
 
-_UNARY_OPS: set[str] = {
+_UNARY_OPS: tuple[str, ...] = (
     'not',
     'abs',
     'neg',
@@ -42,7 +42,7 @@ _UNARY_OPS: set[str] = {
     'gelu',
     'tril',
     'triu'
-}
+)
 
 def unary_op(
     dtype: DataType,

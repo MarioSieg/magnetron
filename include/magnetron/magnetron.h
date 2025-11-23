@@ -149,7 +149,14 @@ typedef enum mag_dtype_t {
     MAG_DTYPE_E8M23,        /* IEEE-754 32-bit floating point number. Commonly known as float32, f32. */
     MAG_DTYPE_E5M10,        /* IEEE-754 16-bit floating point number. Commonly known as float16, f16, half. */
     MAG_DTYPE_BOOL,         /* 1-byte boolean */
-    MAG_DTYPE_I32,          /* 32-bit signed integer */
+    MAG_DTYPE_U8,
+    MAG_DTYPE_I8,
+    MAG_DTYPE_U16,
+    MAG_DTYPE_I16,
+    MAG_DTYPE_U32,
+    MAG_DTYPE_I32,
+    MAG_DTYPE_U64,
+    MAG_DTYPE_I64,
 
     MAG_DTYPE__NUM
 } mag_dtype_t;
@@ -321,16 +328,16 @@ extern MAG_EXPORT mag_status_t mag_cat(mag_tensor_t **out, mag_tensor_t **tensor
 
 /* ============ Tensor Init Operators ============ */
 
-extern MAG_EXPORT void mag_tensor_fill_from_floats(mag_tensor_t *t, const float *data, size_t len);       /* Copy floats into tensor buffer. If the tensors datatype is not float, the values are converted to the tensors dtype. */
-extern MAG_EXPORT void mag_tensor_fill_from_raw_bytes(mag_tensor_t *t, const void *data, size_t len);     /* Copy raw bytes into tensor buffer */
-extern MAG_EXPORT void mag_tensor_fill_float(mag_tensor_t *t, float x);                                            /* Set all tensor elements to a specific value. */
-extern MAG_EXPORT void mag_tensor_fill_int(mag_tensor_t *t, int32_t x);                                            /* Set all tensor elements to a specific value. */
-extern MAG_EXPORT void mag_tensor_masked_fill_float(mag_tensor_t *t, mag_tensor_t *mask, float x);          /* Set all tensor elements to a specific value if the mask value at the same index is true. */
-extern MAG_EXPORT void mag_tensor_masked_fill_int(mag_tensor_t *t, mag_tensor_t *mask, int32_t x);          /* Set all tensor elements to a specific value if the mask value at the same index is true. */
-extern MAG_EXPORT void mag_tensor_fill_random_uniform_float(mag_tensor_t *t, float min, float max);                /* Fill tensor with random values from uniform distribution within [min, max] */
-extern MAG_EXPORT void mag_tensor_fill_random_uniform_int(mag_tensor_t *t, int32_t min, int32_t max);              /* Fill tensor with random values from uniform distribution within [min, max] */
-extern MAG_EXPORT void mag_tensor_fill_random_normal(mag_tensor_t *t, float mean, float stddev);                   /* Fill tensor with random values from the normal distribution. */
-extern MAG_EXPORT void mag_tensor_fill_random_bernoulli(mag_tensor_t *t, float p);                                 /* Fill bool tensor with random values from the bernoulli distribution. */
+extern MAG_EXPORT void mag_tensor_fill_from_floats(mag_tensor_t *t, const float *data, size_t len);                 /* Copy floats into tensor buffer. If the tensors datatype is not float, the values are converted to the tensors dtype. */
+extern MAG_EXPORT void mag_tensor_fill_from_raw_bytes(mag_tensor_t *t, const void *data, size_t len);               /* Copy raw bytes into tensor buffer */
+extern MAG_EXPORT void mag_tensor_fill_float(mag_tensor_t *t, float x);                                             /* Set all tensor elements to a specific value. */
+extern MAG_EXPORT void mag_tensor_fill_int(mag_tensor_t *t, int64_t x);                                             /* Set all tensor elements to a specific value. */
+extern MAG_EXPORT void mag_tensor_masked_fill_float(mag_tensor_t *t, mag_tensor_t *mask, float x);                  /* Set all tensor elements to a specific value if the mask value at the same index is true. */
+extern MAG_EXPORT void mag_tensor_masked_fill_int(mag_tensor_t *t, mag_tensor_t *mask, int64_t x);                  /* Set all tensor elements to a specific value if the mask value at the same index is true. */
+extern MAG_EXPORT void mag_tensor_fill_random_uniform_float(mag_tensor_t *t, float min, float max);                 /* Fill tensor with random values from uniform distribution within [min, max] */
+extern MAG_EXPORT void mag_tensor_fill_random_uniform_int(mag_tensor_t *t, int64_t min, int64_t max);               /* Fill tensor with random values from uniform distribution within [min, max] */
+extern MAG_EXPORT void mag_tensor_fill_random_normal(mag_tensor_t *t, float mean, float stddev);                    /* Fill tensor with random values from the normal distribution. */
+extern MAG_EXPORT void mag_tensor_fill_random_bernoulli(mag_tensor_t *t, float p);                                  /* Fill bool tensor with random values from the bernoulli distribution. */
 extern MAG_EXPORT void mag_tensor_fill_arange(mag_tensor_t *t, float start, float step);                            /* Fill tensor with values from start to end with step. */
 
 /* ============ Tensor Property Accessors ============ */

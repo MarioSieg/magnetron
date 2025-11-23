@@ -771,7 +771,7 @@ mag_status_t mag_gather(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, mag_te
     mag_context_t *ctx = x->ctx;
     mag_tensor_t *result = NULL;
     mag_status_t stat;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_integer_typed(idx), "Index tensor must be of integer type");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, idx->dtype == MAG_DTYPE_I64, "Index tensor must be of type: i64");
     mag_contract(ctx, ERR_INVALID_PARAM, {}, dim >= 0 && dim < x->coords.rank, "Gather dim must be in [0, %" PRIi64 "), but got: %" PRIi64, x->coords.rank, dim);
     mag_contract(ctx, ERR_INVALID_PARAM, {}, idx->coords.rank <= x->coords.rank, "Index tensor rank must be <= input tensor rank (%" PRIi64 " <= %" PRIi64")", idx->coords.rank, x->coords.rank);
     if (dim < 0) dim += x->coords.rank;
@@ -834,7 +834,7 @@ void mag_tensor_fill_float(mag_tensor_t *t, mag_e8m23_t x) {
     mag_dispatch(MAG_OP_FILL, false, &layout, &t, 1, NULL, 0);
 }
 
-void mag_tensor_fill_int(mag_tensor_t *t, int32_t x) {
+void mag_tensor_fill_int(mag_tensor_t *t, int64_t x) {
     mag_assert2(mag_tensor_is_integral_typed(t));
 
     mag_op_param_layout_t layout;
@@ -856,7 +856,7 @@ void mag_tensor_masked_fill_float(mag_tensor_t *t, mag_tensor_t *mask, mag_e8m23
     mag_dispatch(MAG_OP_MASKED_FILL, false, &layout, &t, 1, NULL, 0);
 }
 
-void mag_tensor_masked_fill_int(mag_tensor_t *t, mag_tensor_t *mask, int32_t x) {
+void mag_tensor_masked_fill_int(mag_tensor_t *t, mag_tensor_t *mask, int64_t x) {
     mag_assert2(mag_tensor_is_integral_typed(t));
     mag_assert2(mask->dtype == MAG_DTYPE_BOOL);
 
@@ -879,7 +879,7 @@ void mag_tensor_fill_random_uniform_float(mag_tensor_t *t, mag_e8m23_t min, mag_
     mag_dispatch(MAG_OP_RAND_UNIFORM, false, &layout, &t, 1, NULL, 0);
 }
 
-void mag_tensor_fill_random_uniform_int(mag_tensor_t *t, int32_t min, int32_t max) {
+void mag_tensor_fill_random_uniform_int(mag_tensor_t *t, int64_t min, int64_t max) {
     mag_assert2(mag_tensor_is_integral_typed(t));
 
     mag_op_param_layout_t layout;

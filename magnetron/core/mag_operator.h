@@ -125,17 +125,17 @@ mag_static_assert(MAG_OP_NOP == 0);
 mag_static_assert(MAG_OP_GT+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
-typedef uint8_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */
-mag_static_assert(MAG_DTYPE__NUM <= 8); /* Must fit in 8 bits, if this fails increase the type of dtpe_mask. */
+typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */
+mag_static_assert(MAG_DTYPE__NUM <= 16); /* Must fit in 8 bits, if this fails increase the type of dtpe_mask. */
 #define mag_dtype_bit(x) (((mag_dtype_mask_t)1)<<((x)&7))
 #define mag_dtype_mask(enume) mag_dtype_bit(MAG_DTYPE_##enume)
 #define MAG_DTYPE_MASK_NONE 0
-#define MAG_DTYPE_MASK_ALL (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10)|mag_dtype_mask(BOOL)|mag_dtype_mask(I32)) /* All data types */
-#define MAG_DTYPE_MASK_FP (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))         /* Floating-point data types */
-#define MAG_DTYPE_MASK_INTEGRAL (mag_dtype_mask(BOOL)|mag_dtype_mask(I32))      /* Integral data types with boolean */
-#define MAG_DTYPE_MASK_INTEGER (MAG_DTYPE_MASK_INTEGRAL&~mag_dtype_mask(BOOL))  /* Integral (integer) data types without boolean */
-#define MAG_DTYPE_MASK_NUMERIC (MAG_DTYPE_MASK_ALL&~mag_dtype_mask(BOOL))       /* Numeric data types (all except boolean) */
-#define MAG_DTYPE_MASK_BOOL (mag_dtype_mask(BOOL))                              /* Boolean data type */
+#define MAG_DTYPE_MASK_FP (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))
+#define MAG_DTYPE_MASK_INTEGER (mag_dtype_mask(U8)|mag_dtype_mask(I8)|mag_dtype_mask(U16)|mag_dtype_mask(I16)|mag_dtype_mask(U32)|mag_dtype_mask(I32)|mag_dtype_mask(U64)|mag_dtype_mask(I64))
+#define MAG_DTYPE_MASK_INTEGRAL (mag_dtype_mask(BOOL)|MAG_DTYPE_MASK_INTEGER)
+#define MAG_DTYPE_MASK_NUMERIC (MAG_DTYPE_MASK_INTEGER|MAG_DTYPE_MASK_FP)
+#define MAG_DTYPE_MASK_BOOL (mag_dtype_mask(BOOL))
+#define MAG_DTYPE_MASK_ALL (MAG_DTYPE_MASK_NUMERIC|MAG_DTYPE_MASK_BOOL)
 
 typedef struct mag_au_state_t mag_au_state_t;
 

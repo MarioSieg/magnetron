@@ -16,368 +16,261 @@ using namespace test;
 
 class binary_operators : public TestWithParam<device_kind> {};
 
-static void test_binary_float_operator(
-    device_kind dev,
-    bool broadcast,
-    bool inplace,
-    mag_e8m23_t eps,
-    dtype ty,
-    std::function<tensor (tensor, tensor)>&& a,
-    std::function<mag_e8m23_t (mag_e8m23_t, mag_e8m23_t)>&& b,
-    mag_e8m23_t min = -10.0,
-    mag_e8m23_t max = 10.0
-) {
-    auto& ctx = get_cached_context(dev);
-    ctx.stop_grad_recorder();
-    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
-        tensor t_a {ctx, ty, shape};
-        t_a.fill_rand_uniform(min, max);
-        tensor t_b {t_a.clone()};
-        data_accessor<mag_e8m23_t> d_a {t_a};
-        data_accessor<mag_e8m23_t> d_b {t_b};
-        tensor t_r {std::invoke(a, t_a, t_b)};
-        if (inplace) {
-            ASSERT_EQ(t_a.data_ptr(), t_r.data_ptr());
-        } else {
-            ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
-        }
-        data_accessor<mag_e8m23_t> d_r {t_r};
-        ASSERT_EQ(d_a.size(), d_b.size());
-        ASSERT_EQ(d_a.size(), d_r.size());
-        ASSERT_EQ(t_a.dtype(), t_b.dtype());
-        ASSERT_EQ(t_a.dtype(), t_r.dtype());
-        for (std::int64_t i = 0; i < d_r.size(); ++i) {
-            ASSERT_NEAR(std::invoke(b, d_a[i], d_b[i]), d_r[i], eps) << d_a[i] << " op " << d_b[i] << " = " << d_r[i];
-        }
-    });
+template <typename T>
+[[nodiscard]] static constexpr std::pair<T, T> get_sample_interval() noexcept {
+    if constexpr (std::is_floating_point_v<T> || std::is_same_v<T, half_float::half>)
+        return {static_cast<T>(-10.0f), static_cast<T>(10.0f)};
+    else if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+        return {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()};
+    else return {0, 1};
 }
 
-static void test_binary_int_operator(
+template <typename T>
+static void test_binary_operator(
     device_kind dev,
-    bool broadcast,
     bool inplace,
     dtype ty,
-    int32_t min,
-    int32_t max,
     std::function<tensor (tensor, tensor)>&& a,
-    std::function<int32_t (int32_t, int32_t)>&& b
+    std::function<T (T, T)>&& b,
+    std::pair<T, T> random_interval = get_sample_interval<T>()
 ) {
     auto& ctx = get_cached_context(dev);
     ctx.stop_grad_recorder();
-    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
+    for_all_test_shapes([&](std::span<const int64_t> shape) {
         tensor t_a {ctx, ty, shape};
-        std::uniform_int_distribution<int32_t> fill_val {min, max};
-        t_a.fill(fill_val(gen));
+        if constexpr (std::is_same_v<T, bool>)
+            t_a.fill(std::bernoulli_distribution{}(gen));
+        else if constexpr (std::is_integral_v<T>)
+             t_a.fill(std::uniform_int_distribution<T>{random_interval.first, random_interval.second}(gen));
+        else
+             t_a.fill(std::uniform_real_distribution<float>{random_interval.first, random_interval.second}(gen));
         tensor t_b {t_a.clone()};
-        std::vector<int32_t> d_a {t_a.to_vector<int32_t>()};
-        std::vector<int32_t> d_b {t_b.to_vector<int32_t>()};
+        const data_accessor<T> d_a {t_a};
+        const data_accessor<T> d_b {t_b};
         tensor t_r {std::invoke(a, t_a, t_b)};
         if (inplace) {
             ASSERT_EQ(t_a.data_ptr(), t_r.data_ptr());
         } else {
             ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
         }
-        std::vector<int32_t> d_r {t_r.to_vector<int32_t>()};
+        const data_accessor<T> d_r {t_r};
         ASSERT_EQ(d_a.size(), d_b.size());
         ASSERT_EQ(d_a.size(), d_r.size());
         ASSERT_EQ(t_a.dtype(), t_b.dtype());
         ASSERT_EQ(t_a.dtype(), t_r.dtype());
-        for (std::int64_t i = 0; i < d_r.size(); ++i) {
+        for (int64_t i=0; i < d_r.size(); ++i) {
             ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " op " << d_b[i] << " = " << d_r[i];
         }
     });
 }
 
-static void test_binary_boolean_operator(
+template <typename T>
+static void test_binary_cmp(
     device_kind dev,
-    bool broadcast,
-    bool inplace,
-    std::function<tensor (tensor, tensor)>&& a,
-    std::function<bool (bool, bool)>&& b
-) {
-    auto& ctx = get_cached_context(dev);
-    ctx.stop_grad_recorder();
-    for_all_test_shapes([&](std::span<const std::int64_t> shape) {
-        tensor t_a {ctx, dtype::boolean, shape};
-        t_a.fill(true);
-        tensor t_b {t_a.clone()};
-        t_b.fill(false);
-        std::vector<bool> d_a {t_a.to_vector<bool>()};
-        std::vector<bool> d_b {t_b.to_vector<bool>()};
-        tensor t_r {std::invoke(a, t_a, t_b)};
-        if (inplace) {
-            ASSERT_EQ(t_a.data_ptr(), t_r.data_ptr());
-        } else {
-            ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
-        }
-        std::vector<bool> d_r {t_r.to_vector<bool>()};
-        ASSERT_EQ(d_a.size(), d_b.size());
-        ASSERT_EQ(d_a.size(), d_r.size());
-        ASSERT_EQ(t_a.dtype(), t_b.dtype());
-        ASSERT_EQ(t_a.dtype(), t_r.dtype());
-        for (std::int64_t i = 0; i < d_r.size(); ++i) {
-            ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " op " << d_b[i] << " = " << d_r[i];
-        }
-    });
-}
-
-static void test_binary_float_compare(
-    device_kind dev,
-    bool broadcast,
     dtype ty,
     std::function<tensor (tensor, tensor)>&& a,
-    std::function<mag_e8m23_t (mag_e8m23_t, mag_e8m23_t)>&& b,
-    mag_e8m23_t min = -10.0,
-    mag_e8m23_t max = 10.0
+    std::function<bool (T, T)>&& b,
+    std::pair<T, T> random_interval = get_sample_interval<T>()
 ) {
     auto& ctx = get_cached_context(dev);
     ctx.stop_grad_recorder();
-    for_all_test_shapes([&](std::span<const std::int64_t> shape){
+    for_all_test_shapes([&](std::span<const int64_t> shape){
         tensor t_a{ctx, ty, shape};
-        t_a.fill_rand_uniform(min, max);
+        if constexpr (std::is_same_v<T, bool>)
+            t_a.fill(std::bernoulli_distribution{}(gen));
+        else if constexpr (std::is_integral_v<T>)
+            t_a.fill(std::uniform_int_distribution<T>{random_interval.first, random_interval.second}(gen));
+        else
+           t_a.fill(std::uniform_real_distribution<float>{random_interval.first, random_interval.second}(gen));
         tensor t_b{t_a.clone()};
-        std::vector<mag_e8m23_t> d_a {t_a.to_vector<mag_e8m23_t>()};
-        std::vector<mag_e8m23_t> d_b {t_b.to_vector<mag_e8m23_t>()};
-        tensor t_r {std::invoke(a, t_a, t_b)};
-        ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
-        ASSERT_EQ(t_r.dtype(), dtype::boolean);
-        ASSERT_EQ(d_a.size(), d_b.size());
-        ASSERT_EQ(d_a.size(), t_r.numel());
-        std::vector<bool> d_r {t_r.to_vector<bool>()};
-        for (std::int64_t i = 0; i < d_r.size(); ++i)
-            ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
-    });
-}
-
-static void test_binary_int_compare(
-    device_kind dev,
-    bool broadcast,
-    dtype ty,
-    std::function<tensor (tensor, tensor)>&& a,
-    std::function<int32_t (int32_t, int32_t)>&& b,
-    int32_t min = -10,
-    int32_t max = 10
-) {
-    auto& ctx = get_cached_context(dev);
-    ctx.stop_grad_recorder();
-    std::uniform_int_distribution<int32_t> dist{min, max};
-    for_all_test_shapes([&](std::span<const std::int64_t> shape){
-        tensor t_a{ctx, ty, shape};  t_a.fill(dist(gen));
-        tensor t_b{t_a.clone()};
-        std::vector<int32_t> d_a{t_a.to_vector<int32_t>()};
-        std::vector<int32_t> d_b{t_b.to_vector<int32_t>()};
+        const data_accessor<T> d_a {t_a};
+        const data_accessor<T> d_b {t_b};
         tensor t_r{std::invoke(a, t_a, t_b)};
         ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
         ASSERT_EQ(t_r.dtype(), dtype::boolean);
         ASSERT_EQ(d_a.size(), d_b.size());
         ASSERT_EQ(d_a.size(), t_r.numel());
-        std::vector<bool> d_r{t_r.to_vector<bool>()};
-        for (std::int64_t i = 0; i < d_r.size(); ++i)
+        const data_accessor<T> d_r {t_r};
+        for (int64_t i = 0; i < d_r.size(); ++i)
             ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
     });
 }
 
-static void test_binary_bool_compare(
-    device_kind dev,
-    bool broadcast,
-    std::function<tensor (tensor, tensor)>&& a,
-    std::function<bool (bool, bool)>&& b
-) {
-    auto& ctx = get_cached_context(dev);
-    ctx.stop_grad_recorder();
-    for_all_test_shapes([&](std::span<const std::int64_t> shape){
-        tensor t_a{ctx, dtype::boolean, shape};  t_a.fill(true);
-        tensor t_b{t_a.clone()};
-        t_b.fill(false);
-        std::vector<bool> d_a{t_a.to_vector<bool>()};
-        std::vector<bool> d_b{t_b.to_vector<bool>()};
-        tensor t_r{std::invoke(a, t_a, t_b)};
-        ASSERT_NE(t_a.data_ptr(), t_r.data_ptr());
-        ASSERT_EQ(t_r.dtype(), dtype::boolean);
-        ASSERT_EQ(d_a.size(), d_b.size());
-        ASSERT_EQ(d_a.size(), t_r.numel());
-        std::vector<bool> d_r{t_r.to_vector<bool>()};
-        for (std::int64_t i = 0; i < d_r.size(); ++i)
-            ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
-    });
-}
-
-#define impl_binary_operator_float_test_group(name, op, data_type) \
+#define impl_binary_operator_test_group(name, op, data_type, T) \
     TEST_P(binary_operators, name##_same_shape_##data_type) { \
-        test_binary_float_operator(GetParam(), false, false, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_binary_operator<T>(GetParam(), false, dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](mag_e8m23_t a, mag_e8m23_t b) -> mag_e8m23_t { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_broadcast_##data_type) { \
-        test_binary_float_operator(GetParam(), true, false, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
-            [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](mag_e8m23_t a, mag_e8m23_t b) -> mag_e8m23_t { return a op b; } \
+            [](T a, T b) -> T { return a op b; } \
         ); \
     } \
     TEST_P(binary_operators, name##_inplace_same_shape_##data_type) { \
-        test_binary_float_operator(GetParam(), false, true, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
+        test_binary_operator<T>(GetParam(), true, dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op##= b; }, \
-            [](mag_e8m23_t a, mag_e8m23_t b) -> mag_e8m23_t { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_inplace_broadcast_##data_type) { \
-        test_binary_float_operator(GetParam(), true, true, dtype_eps_map.at(dtype::data_type), dtype::data_type, \
-            [](tensor a, tensor b) -> tensor { return a op##= b; }, \
-            [](mag_e8m23_t a, mag_e8m23_t b) -> mag_e8m23_t { return a op b; } \
+            [](T a, T b) -> T { return a op b; } \
         ); \
     }
 
-#define impl_binary_operator_bool_test_group(name, op) \
-    TEST_P(binary_operators, name##_same_shape_bool) { \
-        test_binary_boolean_operator(GetParam(), false, false, \
-            [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](bool a, bool b) -> bool { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_broadcast_bool) { \
-        test_binary_boolean_operator(GetParam(), true, false, \
-            [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](bool a, bool b) -> bool { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_inplace_same_shape_bool) { \
-        test_binary_boolean_operator(GetParam(), false, true, \
-            [](tensor a, tensor b) -> tensor { return a op##= b; }, \
-            [](bool a, bool b) -> bool { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_inplace_broadcast_bool) { \
-        test_binary_boolean_operator(GetParam(), true, true, \
-            [](tensor a, tensor b) -> tensor { return a op##= b; }, \
-            [](bool a, bool b) -> bool { return a op b; } \
-        ); \
-    }
-
-#define impl_binary_operator_int_test_group(name, op, data_type, min, max) \
+#define impl_binary_operator_cmp_test_group(name, op, data_type, T) \
     TEST_P(binary_operators, name##_same_shape_##data_type) { \
-        test_binary_int_operator(GetParam(), false, false, dtype::data_type, (min), (max), \
+        test_binary_cmp<T>(GetParam(), dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](int32_t a, int32_t b) -> int32_t { return a op b; } \
+            [](T a, T b) -> bool { return a op b; } \
         ); \
     } \
     TEST_P(binary_operators, name##_broadcast_##data_type) { \
-        test_binary_int_operator(GetParam(), true, false, dtype::data_type, (min), (max), \
+        test_binary_cmp<T>(GetParam(), dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](int32_t a, int32_t b) -> int32_t { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_inplace_same_shape_##data_type) { \
-        test_binary_int_operator(GetParam(), false, true, dtype::data_type, (min), (max), \
-            [](tensor a, tensor b) -> tensor { return a op##= b; }, \
-            [](int32_t a, int32_t b) -> int32_t { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_inplace_broadcast_##data_type) { \
-        test_binary_int_operator(GetParam(), true, true, dtype::data_type, (min), (max), \
-            [](tensor a, tensor b) -> tensor { return a op##= b; }, \
-            [](int32_t a, int32_t b) -> int32_t { return a op b; } \
+            [](T a, T b) -> bool { return a op b; } \
         ); \
     }
 
-#define impl_binary_operator_cmp_float_test_group(name, op, data_type) \
-    TEST_P(binary_operators, name##_same_shape_##data_type) { \
-        test_binary_float_compare(GetParam(), false, dtype::data_type, \
-            [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](mag_e8m23_t a, mag_e8m23_t b) -> bool { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_broadcast_##data_type) { \
-        test_binary_float_compare(GetParam(), true, dtype::data_type, \
-            [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](mag_e8m23_t a, mag_e8m23_t b) -> bool { return a op b; } \
-        ); \
-    }
+impl_binary_operator_test_group(add, +, e8m23, float)
+impl_binary_operator_test_group(add, +, e5m10, float16)
+impl_binary_operator_test_group(add, +, u8, uint8_t)
+impl_binary_operator_test_group(add, +, i8, int8_t)
+impl_binary_operator_test_group(add, +, u16, uint16_t)
+impl_binary_operator_test_group(add, +, i16, int16_t)
+impl_binary_operator_test_group(add, +, u32, uint32_t)
+impl_binary_operator_test_group(add, +, i32, int32_t)
+impl_binary_operator_test_group(add, +, u64, uint64_t)
+impl_binary_operator_test_group(add, +, i64, int64_t)
 
-#define impl_binary_operator_cmp_int_test_group(name, op, data_type) \
-    TEST_P(binary_operators, name##_same_shape_##data_type) { \
-        test_binary_int_compare(GetParam(), false, dtype::data_type, \
-            [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](int32_t a, int32_t b) -> bool { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_broadcast_##data_type) { \
-        test_binary_int_compare(GetParam(), true, dtype::data_type, \
-            [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](int32_t a, int32_t b) -> bool { return a op b; } \
-        ); \
-    }
 
-#define impl_binary_operator_cmp_bool_test_group(name, op) \
-    TEST_P(binary_operators, name##_same_shape_bool) { \
-        test_binary_bool_compare(GetParam(), false, \
-            [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](bool a, bool b) -> bool { return a op b; } \
-        ); \
-    } \
-    TEST_P(binary_operators, name##_broadcast_bool) { \
-        test_binary_bool_compare(GetParam(), true, \
-            [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](bool a, bool b) -> bool { return a op b; } \
-        ); \
-    }
+impl_binary_operator_test_group(sub, -, e8m23, float)
+impl_binary_operator_test_group(sub, -, e5m10, float16)
+impl_binary_operator_test_group(sub, -, u8, uint8_t)
+impl_binary_operator_test_group(sub, -, i8, int8_t)
+impl_binary_operator_test_group(sub, -, u16, uint16_t)
+impl_binary_operator_test_group(sub, -, i16, int16_t)
+impl_binary_operator_test_group(sub, -, u32, uint32_t)
+impl_binary_operator_test_group(sub, -, i32, int32_t)
+impl_binary_operator_test_group(sub, -, u64, uint64_t)
+impl_binary_operator_test_group(sub, -, i64, int64_t)
 
-impl_binary_operator_float_test_group(add, +, e8m23)
-impl_binary_operator_float_test_group(add, +, e5m10)
+impl_binary_operator_test_group(mul, *, e8m23, float)
+impl_binary_operator_test_group(mul, *, e5m10, float16)
+impl_binary_operator_test_group(mul, *, u8, uint8_t)
+impl_binary_operator_test_group(mul, *, i8, int8_t)
+impl_binary_operator_test_group(mul, *, u16, uint16_t)
+impl_binary_operator_test_group(mul, *, i16, int16_t)
+impl_binary_operator_test_group(mul, *, u32, uint32_t)
+impl_binary_operator_test_group(mul, *, i32, int32_t)
+impl_binary_operator_test_group(mul, *, u64, uint64_t)
+impl_binary_operator_test_group(mul, *, i64, int64_t)
 
-impl_binary_operator_float_test_group(sub, -, e8m23)
-impl_binary_operator_float_test_group(sub, -, e5m10)
+impl_binary_operator_test_group(div, /, e8m23, float)
+impl_binary_operator_test_group(div, /, e5m10, float16)
+impl_binary_operator_test_group(div, /, u8, uint8_t)
+impl_binary_operator_test_group(div, /, i8, int8_t)
+impl_binary_operator_test_group(div, /, u16, uint16_t)
+impl_binary_operator_test_group(div, /, i16, int16_t)
+impl_binary_operator_test_group(div, /, u32, uint32_t)
+impl_binary_operator_test_group(div, /, i32, int32_t)
+impl_binary_operator_test_group(div, /, u64, uint64_t)
+impl_binary_operator_test_group(div, /, i64, int64_t)
 
-impl_binary_operator_float_test_group(mul, *, e8m23)
-impl_binary_operator_float_test_group(mul, *, e5m10)
+impl_binary_operator_test_group(and, &, boolean, bool)
+impl_binary_operator_test_group(and, &, u8, uint8_t)
+impl_binary_operator_test_group(and, &, i8, int8_t)
+impl_binary_operator_test_group(and, &, u16, uint16_t)
+impl_binary_operator_test_group(and, &, i16, int16_t)
+impl_binary_operator_test_group(and, &, u32, uint32_t)
+impl_binary_operator_test_group(and, &, i32, int32_t)
+impl_binary_operator_test_group(and, &, u64, uint64_t)
+impl_binary_operator_test_group(or, |, boolean, bool)
+impl_binary_operator_test_group(or, |, u8, uint8_t)
+impl_binary_operator_test_group(or, |, i8, int8_t)
+impl_binary_operator_test_group(or, |, u16, uint16_t)
+impl_binary_operator_test_group(or, |, i16, int16_t)
+impl_binary_operator_test_group(or, |, u32, uint32_t)
+impl_binary_operator_test_group(or, |, i32, int32_t)
+impl_binary_operator_test_group(or, |, u64, uint64_t)
+impl_binary_operator_test_group(xor, ^, boolean, bool)
+impl_binary_operator_test_group(xor, ^, u8, uint8_t)
+impl_binary_operator_test_group(xor, ^, i8, int8_t)
+impl_binary_operator_test_group(xor, ^, u16, uint16_t)
+impl_binary_operator_test_group(xor, ^, i16, int16_t)
+impl_binary_operator_test_group(xor, ^, u32, uint32_t)
+impl_binary_operator_test_group(xor, ^, i32, int32_t)
+impl_binary_operator_test_group(xor, ^, u64, uint64_t)
 
-impl_binary_operator_float_test_group(div, /, e8m23)
-impl_binary_operator_float_test_group(div, /, e5m10)
+impl_binary_operator_test_group(shl, <<, u8, uint8_t)
+impl_binary_operator_test_group(shl, <<, i8, int8_t)
+impl_binary_operator_test_group(shl, <<, u16, uint16_t)
+impl_binary_operator_test_group(shl, <<, i16, int16_t)
+impl_binary_operator_test_group(shl, <<, u32, uint32_t)
+impl_binary_operator_test_group(shl, <<, i32, int32_t)
+impl_binary_operator_test_group(shl, <<, u64, uint64_t)
 
-impl_binary_operator_bool_test_group(and, &)
-impl_binary_operator_bool_test_group(or, |)
-impl_binary_operator_bool_test_group(xor, ^)
+impl_binary_operator_test_group(shr, >>, u8, uint8_t)
+impl_binary_operator_test_group(shr, >>, i8, int8_t)
+impl_binary_operator_test_group(shr, >>, u16, uint16_t)
+impl_binary_operator_test_group(shr, >>, i16, int16_t)
+impl_binary_operator_test_group(shr, >>, u32, uint32_t)
+impl_binary_operator_test_group(shr, >>, i32, int32_t)
+impl_binary_operator_test_group(shr, >>, u64, uint64_t)
 
-impl_binary_operator_int_test_group(add, +, i32, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
-impl_binary_operator_int_test_group(sub, -, i32, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
-impl_binary_operator_int_test_group(mul, *, i32, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
-impl_binary_operator_int_test_group(div, /, i32, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
-impl_binary_operator_int_test_group(and, &, i32, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
-impl_binary_operator_int_test_group(or, |, i32, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
-impl_binary_operator_int_test_group(xor, ^, i32, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
-impl_binary_operator_int_test_group(shl, <<, i32, 0, 32)
-impl_binary_operator_int_test_group(shr, >>, i32, 0, 32)
+impl_binary_operator_cmp_test_group(eq, ==, e8m23, float)
+impl_binary_operator_cmp_test_group(eq, ==, e5m10, float16)
+impl_binary_operator_cmp_test_group(eq, ==, boolean, bool)
+impl_binary_operator_cmp_test_group(eq, ==, u8, uint8_t)
+impl_binary_operator_cmp_test_group(eq, ==, i8, int8_t)
+impl_binary_operator_cmp_test_group(eq, ==, u16, uint16_t)
+impl_binary_operator_cmp_test_group(eq, ==, i16, int16_t)
+impl_binary_operator_cmp_test_group(eq, ==, u32, uint32_t)
+impl_binary_operator_cmp_test_group(eq, ==, i32, int32_t)
+impl_binary_operator_cmp_test_group(eq, ==, u64, uint64_t)
 
-impl_binary_operator_cmp_float_test_group(eq, ==, e8m23)
-impl_binary_operator_cmp_float_test_group(eq, ==, e5m10)
-impl_binary_operator_cmp_int_test_group(eq, ==, i32)
-impl_binary_operator_cmp_bool_test_group(eq, ==)
+impl_binary_operator_cmp_test_group(ne, !=, e8m23, float)
+impl_binary_operator_cmp_test_group(ne, !=, e5m10, float16)
+impl_binary_operator_cmp_test_group(ne, !=, boolean, bool)
+impl_binary_operator_cmp_test_group(ne, !=, u8, uint8_t)
+impl_binary_operator_cmp_test_group(ne, !=, i8, int8_t)
+impl_binary_operator_cmp_test_group(ne, !=, u16, uint16_t)
+impl_binary_operator_cmp_test_group(ne, !=, i16, int16_t)
+impl_binary_operator_cmp_test_group(ne, !=, u32, uint32_t)
+impl_binary_operator_cmp_test_group(ne, !=, i32, int32_t)
+impl_binary_operator_cmp_test_group(ne, !=, u64, uint64_t)
 
-impl_binary_operator_cmp_float_test_group(ne, !=, e8m23)
-impl_binary_operator_cmp_float_test_group(ne, !=, e5m10)
-impl_binary_operator_cmp_int_test_group(ne, !=, i32)
-impl_binary_operator_cmp_bool_test_group(ne, !=)
+impl_binary_operator_cmp_test_group(lt, <, e8m23, float)
+impl_binary_operator_cmp_test_group(lt, <, e5m10, float16)
+impl_binary_operator_cmp_test_group(lt, <, u8, uint8_t)
+impl_binary_operator_cmp_test_group(lt, <, i8, int8_t)
+impl_binary_operator_cmp_test_group(lt, <, u16, uint16_t)
+impl_binary_operator_cmp_test_group(lt, <, i16, int16_t)
+impl_binary_operator_cmp_test_group(lt, <, u32, uint32_t)
+impl_binary_operator_cmp_test_group(lt, <, i32, int32_t)
+impl_binary_operator_cmp_test_group(lt, <, u64, uint64_t)
 
-impl_binary_operator_cmp_float_test_group(le, <=, e8m23)
-impl_binary_operator_cmp_float_test_group(le, <=, e5m10)
-impl_binary_operator_cmp_int_test_group(le, <=, i32)
+impl_binary_operator_cmp_test_group(gt, >, e8m23, float)
+impl_binary_operator_cmp_test_group(gt, >, e5m10, float16)
+impl_binary_operator_cmp_test_group(gt, >, u8, uint8_t)
+impl_binary_operator_cmp_test_group(gt, >, i8, int8_t)
+impl_binary_operator_cmp_test_group(gt, >, u16, uint16_t)
+impl_binary_operator_cmp_test_group(gt, >, i16, int16_t)
+impl_binary_operator_cmp_test_group(gt, >, u32, uint32_t)
+impl_binary_operator_cmp_test_group(gt, >, i32, int32_t)
+impl_binary_operator_cmp_test_group(gt, >, u64, uint64_t)
 
-impl_binary_operator_cmp_float_test_group(ge, >=, e8m23)
-impl_binary_operator_cmp_float_test_group(ge, >=, e5m10)
-impl_binary_operator_cmp_int_test_group(ge, >=, i32)
+impl_binary_operator_cmp_test_group(le, <=, e8m23, float)
+impl_binary_operator_cmp_test_group(le, <=, e5m10, float16)
+impl_binary_operator_cmp_test_group(le, <=, u8, uint8_t)
+impl_binary_operator_cmp_test_group(le, <=, i8, int8_t)
+impl_binary_operator_cmp_test_group(le, <=, u16, uint16_t)
+impl_binary_operator_cmp_test_group(le, <=, i16, int16_t)
+impl_binary_operator_cmp_test_group(le, <=, u32, uint32_t)
+impl_binary_operator_cmp_test_group(le, <=, i32, int32_t)
+impl_binary_operator_cmp_test_group(le, <=, u64, uint64_t)
 
-impl_binary_operator_cmp_float_test_group(lt, <, e8m23)
-impl_binary_operator_cmp_float_test_group(lt, <, e5m10)
-impl_binary_operator_cmp_int_test_group(lt, <, i32)
-
-impl_binary_operator_cmp_float_test_group(gt, >, e8m23)
-impl_binary_operator_cmp_float_test_group(gt, >, e5m10)
-impl_binary_operator_cmp_int_test_group(gt, >, i32)
-
-#undef impl_binary_operator_float_test_group
-#undef impl_binary_operator_bool_test_group
-#undef impl_binary_operator_int_test_group
-#undef impl_binary_operator_cmp_float_test_group
+impl_binary_operator_cmp_test_group(ge, >=, e8m23, float)
+impl_binary_operator_cmp_test_group(ge, >=, e5m10, float16)
+impl_binary_operator_cmp_test_group(ge, >=, u8, uint8_t)
+impl_binary_operator_cmp_test_group(ge, >=, i8, int8_t)
+impl_binary_operator_cmp_test_group(ge, >=, u16, uint16_t)
+impl_binary_operator_cmp_test_group(ge, >=, i16, int16_t)
+impl_binary_operator_cmp_test_group(ge, >=, u32, uint32_t)
+impl_binary_operator_cmp_test_group(ge, >=, i32, int32_t)
+impl_binary_operator_cmp_test_group(ge, >=, u64, uint64_t)
 
 INSTANTIATE_TEST_SUITE_P(
     binary_operators_multi_backend,
