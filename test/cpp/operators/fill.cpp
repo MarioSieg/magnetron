@@ -47,10 +47,10 @@ TEST(cpu_tensor_init_ops, copy_e8m23) {
         tensor t {ctx, dtype::e8m23, shape};
         std::vector<float> fill_data {};
         fill_data.resize(t.numel());
-        std::uniform_real_distribution<float> dist {dtype_traits<float>::min, dtype_traits<float>::max};
+        std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         std::ranges::generate(fill_data, [&] { return dist(gen); });
         t.fill_from(fill_data);
-        data_accessor<mag_e8m23_t> data {t};
+        std::vector data {t.to_vector<mag_e8m23_t>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], fill_data[i]);
@@ -64,10 +64,10 @@ TEST(cpu_tensor_init_ops, copy_e5m10) {
         tensor t {ctx, dtype::e5m10, shape};
         std::vector<float> fill_data {};
         fill_data.resize(t.numel());
-        std::uniform_real_distribution<float> dist {-1.0f, 1.0f};
+        std::uniform_real_distribution dist {-1.0f, 1.0f};
         std::ranges::generate(fill_data, [&] { return dist(gen); });
         t.fill_from(fill_data);
-        data_accessor<mag_e8m23_t> data {t};
+        std::vector data {t.to_vector<float16>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_NEAR(data[i], fill_data[i], dtype_traits<float16>::test_eps);
@@ -86,7 +86,7 @@ TEST(cpu_tensor_init_ops, copy_bool) {
             fill_data.emplace_back(dist(gen));
         }
         t.fill_from(fill_data);
-        std::vector<bool> data {t.to_vector<bool>()};
+        std::vector data {t.to_vector<bool>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], fill_data[i]);
@@ -97,11 +97,11 @@ TEST(cpu_tensor_init_ops, copy_bool) {
 TEST(cpu_tensor_init_ops, fill_e8m23) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
-        std::uniform_real_distribution<float> dist {dtype_traits<float>::min, dtype_traits<float>::max};
+        std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         float fill_val {dist(gen)};
         tensor t {ctx, dtype::e8m23, shape};
         t.fill(fill_val);
-        data_accessor<mag_e8m23_t> data {t};
+        std::vector data {t.to_vector<mag_e8m23_t>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], fill_val);
@@ -112,11 +112,11 @@ TEST(cpu_tensor_init_ops, fill_e8m23) {
 TEST(cpu_tensor_init_ops, fill_e5m10) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
-        std::uniform_real_distribution<float> dist {-1.0f, 1.0f};
+        std::uniform_real_distribution dist {-1.0f, 1.0f};
         float fill_val {dist(gen)};
         tensor t {ctx, dtype::e5m10, shape};
         t.fill(fill_val);
-        data_accessor<mag_e8m23_t> data {t};
+        std::vector data {t.to_vector<float16>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_NEAR(data[i], fill_val, 1e-3f);
@@ -131,7 +131,7 @@ TEST(cpu_tensor_init_ops, fill_bool) {
         bool fill_val {dist(gen)};
         tensor t {ctx, dtype::boolean, shape};
         t.fill(fill_val);
-        std::vector<bool> data {t.to_vector<bool>()};
+        std::vector data {t.to_vector<bool>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], !!fill_val);
@@ -147,7 +147,7 @@ TEST(cpu_tensor_init_ops, fill_random_uniform_e8m23) {
         float max {std::uniform_real_distribution{min, dtype_traits<float>::max}(gen)};
         tensor t {ctx, dtype::e8m23, shape};
         t.fill_rand_uniform(min, max);
-        data_accessor<mag_e8m23_t> data {t};
+        std::vector data {t.to_vector<mag_e8m23_t>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
            ASSERT_GE(data[i], min);

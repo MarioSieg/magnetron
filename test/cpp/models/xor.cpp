@@ -107,7 +107,7 @@ TEST(models, xor_e5m10) {
 
     tensor y_hat {model(x)};
 
-    std::vector<float> output {y_hat.round().to_vector<float>()};
+    std::vector output {y_hat.round().to_vector<float16>()};
     ASSERT_EQ(y_data.size(), output.size());
     for (int64_t i = 0; i < output.size(); ++i) {
         ASSERT_EQ(y_data[i], output[i]);

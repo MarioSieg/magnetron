@@ -36,12 +36,12 @@ static auto naive_matmul(
 }
 
 TEST(cpu_tensor_binary_ops, matmul_naive) {
-    static constexpr std::array<float, 6> A {
+    static constexpr std::array A {
         1.0f, 2.0f,
         3.0f, 4.0f,
         5.0f, 6.0f
     };
-    static constexpr std::array<float, 2> B {0.5f, -1.0f};
+    static constexpr std::array B {0.5f, -1.0f};
     std::array<float, 3> C {};
     naive_matmul(A.data(), B.data(), C.data(), 3, 1, 2);
     ASSERT_FLOAT_EQ(C[0], -1.5f);
@@ -58,17 +58,17 @@ template <const size_t M, const size_t N, typename T>
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_e8m23) {
-    static constexpr std::array<std::array<float, 2>, 2> A {
-        std::array<float, 2>{1.6354027f, -1.3607267f},
-        std::array<float, 2>{1.8556793f, 1.1689897f}
+    static constexpr std::array A {
+        std::array{1.6354027f, -1.3607267f},
+        std::array{1.8556793f, 1.1689897f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> B {
-        std::array<float, 2>{-0.6105532f, 0.10695228f},
-        std::array<float, 2>{-1.0069681f, -0.40955952f}
+    static constexpr std::array B {
+        std::array{-0.6105532f, 0.10695228f},
+        std::array{-1.0069681f, -0.40955952f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> C {
-        std::array<float, 2>{0.3717081f, 0.7322086f},
-        std::array<float, 2>{-2.3101263f, -0.28030172f}
+    static constexpr std::array C {
+        std::array{0.3717081f, 0.7322086f},
+        std::array{-2.3101263f, -0.28030172f}
     };
     context ctx {};
     tensor a {ctx, dtype::e8m23, A.size(), A[0].size()};
@@ -82,24 +82,24 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_e8m23) {
     ASSERT_EQ(c.numel(), 4);
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
-    std::vector<float> cr {c.to_vector<float>()};
+    std::vector cr {c.to_vector<float>()};
     for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], reinterpret_cast<const float*>(&C)[i]);
     }
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_e5m10) {
-    static constexpr std::array<std::array<float, 2>, 2> A {
-        std::array<float, 2>{1.6354027f, -1.3607267f},
-        std::array<float, 2>{1.8556793f, 1.1689897f}
+    static constexpr std::array A {
+        std::array{1.6354027f, -1.3607267f},
+        std::array{1.8556793f, 1.1689897f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> B {
-        std::array<float, 2>{-0.6105532f, 0.10695228f},
-        std::array<float, 2>{-1.0069681f, -0.40955952f}
+    static constexpr std::array B {
+        std::array{-0.6105532f, 0.10695228f},
+        std::array{-1.0069681f, -0.40955952f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> C {
-        std::array<float, 2>{0.3717081f, 0.7322086f},
-        std::array<float, 2>{-2.3101263f, -0.28030172f}
+    static constexpr std::array C {
+        std::array{0.3717081f, 0.7322086f},
+        std::array{-2.3101263f, -0.28030172f}
     };
     context ctx {};
     tensor a {ctx, dtype::e5m10, A.size(), A[0].size()};
@@ -113,21 +113,21 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_e5m10) {
     ASSERT_EQ(c.numel(), 4);
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
-    std::vector<float> cr {c.to_vector<float>()};
+    std::vector cr {c.to_vector<float16>()};
     for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_NEAR(cr[i], reinterpret_cast<const float*>(&C)[i], 1e-2);
     }
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_e8m23) {
-    static constexpr std::array<std::array<float, 2>, 3> A {
-        std::array<float, 2>{1.0f, 2.0f},
-        std::array<float, 2>{3.0f, 4.0f},
-        std::array<float, 2>{5.0f, 6.0f}
+    static constexpr std::array A {
+        std::array{1.0f, 2.0f},
+        std::array{3.0f, 4.0f},
+        std::array{5.0f, 6.0f}
     };
-    static constexpr std::array<std::array<float, 4>, 2> B {
-        std::array<float, 4>{7.0f, 8.0f, 9.0f, 10.0f},
-        std::array<float, 4>{11.0f, 12.0f, 13.0f, 14.0f}
+    static constexpr std::array B {
+        std::array{7.0f, 8.0f, 9.0f, 10.0f},
+        std::array{11.0f, 12.0f, 13.0f, 14.0f}
     };
     static constexpr std::array<std::array<float, 4>, 3> C{{
         {{1.0f*7.0f + 2.0f*11, 1.0f*8 + 2.0f*12.0f, 1.0f*9.0f + 2.0f*13.0f, 1.0f*10.0f + 2.0f*14.0f}},
@@ -144,21 +144,21 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_e8m23) {
     ASSERT_EQ(c.shape()[1], 4);
     ASSERT_EQ(c.rank(), 2);
     ASSERT_EQ(c.numel(), 12);
-    std::vector<float> cr {c.to_vector<float>()};
+    std::vector cr {c.to_vector<float>()};
     for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], reinterpret_cast<const float*>(&C)[i]);
     }
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_e5m10) {
-    static constexpr std::array<std::array<float, 2>, 3> A {
-        std::array<float, 2>{1.0f, 2.0f},
-        std::array<float, 2>{3.0f, 4.0f},
-        std::array<float, 2>{5.0f, 6.0f}
+    static constexpr std::array A {
+        std::array{1.0f, 2.0f},
+        std::array{3.0f, 4.0f},
+        std::array{5.0f, 6.0f}
     };
-    static constexpr std::array<std::array<float, 4>, 2> B {
-        std::array<float, 4>{7.0f, 8.0f, 9.0f, 10.0f},
-        std::array<float, 4>{11.0f, 12.0f, 13.0f, 14.0f}
+    static constexpr std::array B {
+        std::array{7.0f, 8.0f, 9.0f, 10.0f},
+        std::array{11.0f, 12.0f, 13.0f, 14.0f}
     };
     static constexpr std::array<std::array<float, 4>, 3> C{{
         {{1.0f*7.0f + 2.0f*11, 1.0f*8 + 2.0f*12.0f, 1.0f*9.0f + 2.0f*13.0f, 1.0f*10.0f + 2.0f*14.0f}},
@@ -175,20 +175,20 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_e5m10) {
     ASSERT_EQ(c.shape()[1], 4);
     ASSERT_EQ(c.rank(), 2);
     ASSERT_EQ(c.numel(), 12);
-    std::vector<float> cr {c.to_vector<float>()};
+    std::vector cr {c.to_vector<float16>()};
     for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_NEAR(cr[i], reinterpret_cast<const float*>(&C)[i], 1e-2);
     }
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_e8m23) {
-    static constexpr std::array<std::array<float, 2>, 2> A {
-        std::array<float, 2>{1.6354027f, -1.3607267f},
-        std::array<float, 2>{1.8556793f, 1.1689897f}
+    static constexpr std::array A {
+        std::array{1.6354027f, -1.3607267f},
+        std::array{1.8556793f, 1.1689897f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> B {
-        std::array<float, 2>{0.0f, 0.0f},
-        std::array<float, 2>{0.0f, 0.0f}
+    static constexpr std::array B {
+        std::array{0.0f, 0.0f},
+        std::array{0.0f, 0.0f}
     };
     context ctx {};
     tensor a {ctx, dtype::e8m23, A.size(), A[0].size()};
@@ -202,20 +202,20 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_e8m23) {
     ASSERT_EQ(c.numel(), 4);
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
-    std::vector<float> cr {c.to_vector<float>()};
+    std::vector cr {c.to_vector<float>()};
     for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], 0.0f);
     }
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_e5m10) {
-    static constexpr std::array<std::array<float, 2>, 2> A {
-        std::array<float, 2>{1.6354027f, -1.3607267f},
-        std::array<float, 2>{1.8556793f, 1.1689897f}
+    static constexpr std::array A {
+        std::array{1.6354027f, -1.3607267f},
+        std::array{1.8556793f, 1.1689897f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> B {
-        std::array<float, 2>{0.0f, 0.0f},
-        std::array<float, 2>{0.0f, 0.0f}
+    static constexpr std::array B {
+        std::array{0.0f, 0.0f},
+        std::array{0.0f, 0.0f}
     };
     context ctx {};
     tensor a {ctx, dtype::e5m10, A.size(), A[0].size()};
@@ -229,22 +229,22 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_e5m10) {
     ASSERT_EQ(c.numel(), 4);
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
-    std::vector<float> cr {c.to_vector<float>()};
+    std::vector cr {c.to_vector<float16>()};
     for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], 0.0f);
     }
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_e8m23) {
-    static constexpr std::array<std::array<float, 2>, 2> A {
-        std::array<float, 2>{1.6354027f, -1.3607267f},
-        std::array<float, 2>{1.8556793f, 1.1689897f}
+    static constexpr std::array A {
+        std::array{1.6354027f, -1.3607267f},
+        std::array{1.8556793f, 1.1689897f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> B {
-        std::array<float, 2>{1.0f, 0.0f},
-        std::array<float, 2>{0.0f, 1.0f}
+    static constexpr std::array B {
+        std::array{1.0f, 0.0f},
+        std::array{0.0f, 1.0f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> C {A};
+    static constexpr std::array C {A};
     context ctx {};
     tensor a {ctx, dtype::e8m23, A.size(), A[0].size()};
     tensor b {ctx, dtype::e8m23, B.size(), B[0].size()};
@@ -257,22 +257,22 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_e8m23) {
     ASSERT_EQ(c.numel(), 4);
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
-    std::vector<float> cr {c.to_vector<float>()};
+    std::vector cr {c.to_vector<float>()};
     for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(cr[i], reinterpret_cast<const float*>(&C)[i]);
     }
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_e5m10) {
-    static constexpr std::array<std::array<float, 2>, 2> A {
-        std::array<float, 2>{1.6354027f, -1.3607267f},
-        std::array<float, 2>{1.8556793f, 1.1689897f}
+    static constexpr std::array A {
+        std::array{1.6354027f, -1.3607267f},
+        std::array{1.8556793f, 1.1689897f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> B {
-        std::array<float, 2>{1.0f, 0.0f},
-        std::array<float, 2>{0.0f, 1.0f}
+    static constexpr std::array B {
+        std::array{1.0f, 0.0f},
+        std::array{0.0f, 1.0f}
     };
-    static constexpr std::array<std::array<float, 2>, 2> C {A};
+    static constexpr std::array C {A};
     context ctx {};
     tensor a {ctx, dtype::e5m10, A.size(), A[0].size()};
     tensor b {ctx, dtype::e5m10, B.size(), B[0].size()};
@@ -285,17 +285,17 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_e5m10) {
     ASSERT_EQ(c.numel(), 4);
     ASSERT_EQ(c.numel(), a.numel());
     ASSERT_EQ(c.numel(), b.numel());
-    std::vector<float> cr {c.to_vector<float>()};
+    std::vector cr {c.to_vector<float16>()};
     for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_NEAR(cr[i], reinterpret_cast<const float*>(&C)[i], 1e-2);
     }
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_e8m23) {
-    static constexpr std::array<std::array<float, 2>, 3> A {
-        std::array<float, 2>{1.0f, 2.0f},
-        std::array<float, 2>{3.0f, 4.0f},
-        std::array<float, 2>{5.0f, 6.0f},
+    static constexpr std::array A {
+        std::array{1.0f, 2.0f},
+        std::array{3.0f, 4.0f},
+        std::array{5.0f, 6.0f},
     };
     static constexpr std::array<float, 2> B {
         0.5f, -1.0f
@@ -321,10 +321,10 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_e8m23) {
 }
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_e5m10) {
-    static constexpr std::array<std::array<float, 2>, 3> A {
-        std::array<float, 2>{1.0f, 2.0f},
-        std::array<float, 2>{3.0f, 4.0f},
-        std::array<float, 2>{5.0f, 6.0f},
+    static constexpr std::array A {
+        std::array{1.0f, 2.0f},
+        std::array{3.0f, 4.0f},
+        std::array{5.0f, 6.0f},
     };
     static constexpr std::array<float, 2> B {
         0.5f, -1.0f
@@ -343,7 +343,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_e5m10) {
     ASSERT_EQ(c.numel(), 3);
     ASSERT_NE(c.numel(), a.numel());
     ASSERT_NE(c.numel(), b.numel());
-    std::vector<float> result = c.to_vector<float>();
+    std::vector result = c.to_vector<float16>();
     for (int64_t i {}; i < c.numel(); ++i) {
         ASSERT_FLOAT_EQ(result[i], C[i]);
     }

@@ -29,6 +29,8 @@
 
 #include <half.hpp>
 
+#include "extern/half/include/half.hpp"
+
 
 namespace magnetron {
     /**
@@ -127,30 +129,6 @@ namespace magnetron {
         }
     }
 
-    class tensor;
-
-    template <typename T>
-    class data_accessor final {
-    public:
-        explicit data_accessor(tensor t);
-        data_accessor(const data_accessor&) = delete;
-        data_accessor(data_accessor&&) = delete;
-        data_accessor& operator=(const data_accessor&) = delete;
-        data_accessor& operator=(data_accessor&&)=delete;
-        ~data_accessor() = default;
-
-        T& operator [](size_t i);
-        T operator [](size_t i) const;
-        [[nodiscard]] size_t size() const noexcept { return numel; }
-
-    private:
-        size_t numel = 0;
-        [[no_unique_address]]
-        std::vector<T> m_owned = {};
-        [[no_unique_address]]
-        T *m_ref = {};
-    };
-
     template <typename T>
     [[nodiscard]] consteval std::optional<dtype> generic_to_dtype() {
         if constexpr (std::is_same_v<T, uint8_t>) return dtype::u8;
@@ -163,6 +141,7 @@ namespace magnetron {
         if constexpr (std::is_same_v<T, int64_t>) return dtype::i64;
         if constexpr (std::is_same_v<T, mag_e8m23_t>) return dtype::e8m23;
         if constexpr (std::is_same_v<T, mag_e5m10_t>) return dtype::e5m10;
+        if constexpr (std::is_same_v<T, half_float::half>) return dtype::e5m10;
         if constexpr (std::is_same_v<T, bool>) return dtype::boolean;
         return std::nullopt;
     }
@@ -1001,9 +980,9 @@ namespace magnetron {
 
     template <typename T>
     auto tensor::to_vector() const -> std::vector<T> {
+        if (dtype() != generic_to_dtype<T>())
+            throw std::runtime_error {"T must be same type as tenor's dtype: " + std::string(mag_dtype_meta_of(m_tensor->dtype)->name)};
        if constexpr (std::is_same_v<T, bool>) {
-            if (dtype() != dtype::boolean)
-                throw std::runtime_error {"requires boolean dtype"};
             auto* data {static_cast<uint8_t *>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
             std::vector<bool> result {};
             result.resize(numel());
@@ -1012,8 +991,6 @@ namespace magnetron {
             mag_tensor_get_raw_data_as_bytes_free(data);
             return result;
         } else {
-            if (dtype() != generic_to_dtype<T>())
-                throw std::runtime_error {"requires same dtype, but has: " + std::string(mag_dtype_meta_of(m_tensor->dtype)->name)};
             auto* data {static_cast<T *>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
             std::vector<T> result {};
             result.resize(numel());
@@ -1021,30 +998,5 @@ namespace magnetron {
             mag_tensor_get_raw_data_as_bytes_free(data);
             return result;
         }
-    }
-
-    template <typename T>
-    data_accessor<T>::data_accessor(tensor t) {
-        if constexpr (!std::is_same_v<T, bool>) {
-            std::optional<dtype> type = generic_to_dtype<T>();
-            if (type && t.dtype() == type && mag_device_is((*t).storage->host, "cpu")) {
-                m_ref = static_cast<T *>(mag_tensor_get_data_ptr(&*t));
-                m_owned = {};
-                return;
-            }
-        }
-        numel = t.numel();
-        m_ref = nullptr;
-        m_owned = t.to_vector<T>();
-    }
-
-    template <typename T>
-    T &data_accessor<T>::operator[](size_t i) {
-        return m_ref ? m_ref[i] : m_owned[i];
-    }
-
-    template <typename T>
-    T data_accessor<T>::operator[](size_t i) const {
-        return m_ref ? m_ref[i] : m_owned[i];
     }
 }
