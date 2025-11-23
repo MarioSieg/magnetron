@@ -21,8 +21,8 @@ mag_status_t mag_op_backward_view(mag_au_state_t *node, mag_tensor_t **grads) {
 }
 
 mag_status_t mag_op_backward_transpose(mag_au_state_t *node, mag_tensor_t **grads) {
-    int64_t ax0 = mag_op_param_unpack_i64_or_panic(node->op_params[0]);
-    int64_t ax1 = mag_op_param_unpack_i64_or_panic(node->op_params[1]);
+    int64_t ax0 = mag_op_attr_unwrap_i64(node->op_attrs[0]);
+    int64_t ax1 = mag_op_attr_unwrap_i64(node->op_attrs[1]);
     return mag_transpose(grads, node->grad, ax0, ax1);
 }
 

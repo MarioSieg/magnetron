@@ -145,7 +145,7 @@ namespace mag {
 
     void fill_op_masked_fill(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->in[0];
-        mag_tensor_t *mask = reinterpret_cast<mag_tensor_t *>(static_cast<uintptr_t>(mag_op_param_unpack_i64_or_panic(cmd->params[0]))); // TODO: pass in cmd in why the fuck are these here
+        mag_tensor_t *mask = reinterpret_cast<mag_tensor_t *>(static_cast<uintptr_t>(mag_op_attr_unpack_i64_or_panic(cmd->params[0]))); // TODO: pass in cmd in why the fuck are these here
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_fill_kernel<mag_e8m23_t>(r, cmd, mask); break;
             case MAG_DTYPE_E5M10: launch_fill_kernel<half>(r, cmd, mask); break;

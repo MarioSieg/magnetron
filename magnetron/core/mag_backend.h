@@ -51,7 +51,7 @@ typedef struct mag_command_t {
     mag_tensor_t **out;
     uint32_t num_in;
     uint32_t num_out;
-    mag_opparam_t params[MAG_MAX_OP_PARAMS];
+    mag_op_attr_t attrs[MAG_MAX_OP_PARAMS];
 } mag_command_t;
 
 #define MAG_DEVICEID_MAX 32

@@ -47,8 +47,8 @@ namespace mag {
   concept is_dtype = is_floating_point<T> || is_integral<T>;
 
   template <typename T>
-  [[nodiscard]] T unpack_param(const mag_opparam_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
-    if constexpr (is_floating_point<T>) return static_cast<T>(mag_op_param_unpack_e8m23_or_panic(params[i]));
-    else return static_cast<T>(mag_op_param_unpack_i64_or_panic(params[i]));
+  [[nodiscard]] T unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
+    if constexpr (is_floating_point<T>) return static_cast<T>(mag_op_attr_unpack_e8m23_or_panic(params[i]));
+    else return static_cast<T>(mag_op_attr_unpack_i64_or_panic(params[i]));
   }
 }

@@ -41,7 +41,7 @@ def _deduce_tensor_dtype(obj: bool | float | int) -> DataType:
     if isinstance(obj, bool):
         return boolean
     elif isinstance(obj, int):
-        return int32
+        return int64
     elif isinstance(obj, float):
         return float32
     else:
@@ -179,7 +179,7 @@ class Tensor:
             raise ValueError('Tensor must have exactly one element to retrieve an item')
         if self.dtype.is_floating_point:
             return float(_C.mag_tensor_get_item_float(self._ptr))
-        elif self.dtype == int32:
+        elif self.dtype.is_integer:
             return int(_C.mag_tensor_get_item_int(self._ptr))
         elif self.dtype == boolean:
             return bool(_C.mag_tensor_get_item_bool(self._ptr))
@@ -329,11 +329,8 @@ class Tensor:
                 axis += 1
                 continue
             elif isinstance(idx, Sequence) and not isinstance(idx, Tensor):
-                idx = Tensor.of(list(idx), dtype=int32)
-
+                idx = Tensor.of(list(idx), dtype=int64)
             if isinstance(idx, Tensor):
-                if idx.dtype != int32:
-                    raise RuntimeError(f'Tensor index must be int32, got {idx.dtype}')
                 curr = curr.gather(axis, idx)
                 axis += 1
                 continue
@@ -576,7 +573,7 @@ class Tensor:
 
     def gather(self, dim: int, index: Tensor) -> Tensor:
         assert 0 <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
-        assert index.dtype == int32, f'Index tensor must be of int32 dtype, but is {index.dtype}'
+        assert index.dtype == int64, f'Index tensor must be of int64 dtype, but is {index.dtype}'
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_gather(out, self._ptr, dim, index._ptr)))
 
     def reshape(self, *dims: int | tuple[int, ...]) -> Tensor:

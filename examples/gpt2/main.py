@@ -170,7 +170,7 @@ class GPT2(nn.Module):
     def forward(self, idx: Tensor, prev_kv: list[tuple[Tensor, Tensor]] | None = None) -> tuple[Tensor, list[tuple[Tensor, Tensor]] | None]:
         b, t = idx.shape
         past_len = 0 if prev_kv is None else prev_kv[0][0].shape[2]
-        pos = Tensor.arange(past_len, past_len + t, dtype=mag.int32)
+        pos = Tensor.arange(past_len, past_len + t, dtype=mag.int64)
         x = self.transformer.wte(idx) + self.transformer.wpe(pos)
 
         new_kv = []
@@ -190,13 +190,13 @@ class GPT2(nn.Module):
     @no_grad()
     def generate(self, prompt: str, max_tokens: int, temp: float = 1.0) -> str:
         tokens = encode(prompt)
-        idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=mag.int32)[None, ...]
+        idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=mag.int64)[None, ...]
         logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
             probs = (logits[:, -1, :] / temp).softmax(dim=-1)
             next_id = probs.multinomial(num_samples=1).item()
             tokens.append(next_id)
-            idx = Tensor.of([next_id], dtype=mag.int32)[None, ...]
+            idx = Tensor.of([next_id], dtype=mag.int64)[None, ...]
             logits, kv = self(idx, prev_kv=kv)
         return decode(tokens)
 
@@ -206,7 +206,7 @@ class GPT2(nn.Module):
         dec = codecs.getincrementaldecoder('utf-8')()
         start = time.perf_counter()
         n = 0
-        idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=mag.int32)[None, ...]
+        idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=mag.int64)[None, ...]
         logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
             probs = (logits[:, -1, :] / temp).softmax(dim=-1)
@@ -216,7 +216,7 @@ class GPT2(nn.Module):
             delta = dec.decode(tok.decode_single_token_bytes(next_id))
             if delta:
                 yield delta
-            idx = Tensor.of([next_id], dtype=mag.int32)[None, ...]
+            idx = Tensor.of([next_id], dtype=mag.int64)[None, ...]
             logits, kv = self(idx, prev_kv=kv)
         tail = dec.decode(b'', final=True)
         if tail:

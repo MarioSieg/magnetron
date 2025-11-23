@@ -34,7 +34,7 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t
         .ctx = ctx,
         .op = MAG_OP_NOP,
         .op_inputs = {},
-        .op_params = {},
+        .op_attrs = {},
         .grad = NULL,
     };
     mag_rc_init_object(*au_state, &mag_au_state_dtor);

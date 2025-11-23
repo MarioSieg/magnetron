@@ -12,7 +12,7 @@
 #ifndef MAG_OPERATOR_H
 #define MAG_OPERATOR_H
 
-#include "mag_opparam.h"
+#include "mag_op_attr.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -90,17 +90,17 @@ typedef enum mag_opflags_t {
     _(GELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, gelu)__\
     _(GELU_APPROX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, gelu)__\
     _(GELU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(TRIL, 1, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
-    _(TRIU, 1, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
-    _(MULTINOMIAL, 1, 1, FP, mag_params(MAG_OPP_I64, MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
-    _(CAT, MAG_OP_INOUT_DYN, 1, FP, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(TRIL, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(TRIU, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(MULTINOMIAL, 1, 1, FP, mag_params(MAG_OP_ATTR_TYPE_I64, MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(CAT, MAG_OP_INOUT_DYN, 1, FP, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(ADD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, add)__\
     _(SUB, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, sub)__\
     _(MUL, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mul)__\
     _(DIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, div)__\
     _(MATMUL, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, matmul)__\
     _(REPEAT_BACK, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(GATHER, 2, 1, ALL, mag_params(MAG_OPP_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(GATHER, 2, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(AND, 2, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(OR, 2, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(XOR, 2, 1, INTEGRAL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
@@ -145,7 +145,7 @@ typedef struct mag_opmeta_t {
     const uint32_t in;
     const uint32_t out;
     const mag_dtype_mask_t dtype_mask;
-    const mag_opparam_type_t op_param_layout[MAG_MAX_OP_PARAMS];
+    const mag_op_attr_type_tag_t op_attr_types[MAG_MAX_OP_PARAMS];
     const mag_opflags_t flags;
     mag_status_t (*const backward)(mag_au_state_t *, mag_tensor_t **);
 } mag_opmeta_t;

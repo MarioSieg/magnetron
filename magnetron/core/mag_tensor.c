@@ -199,7 +199,7 @@ void mag_tensor_detach_inplace(mag_tensor_t *target) {
     if (target->au_state) {
         target->au_state->op = MAG_OP_NOP; /* Detach from operations */
         memset(target->au_state->op_inputs, 0, sizeof(target->au_state->op_inputs)); /* Clear op inputs */
-        memset(target->au_state->op_params, 0, sizeof(target->au_state->op_params));
+        memset(target->au_state->op_attrs, 0, sizeof(target->au_state->op_attrs));
     }
 }
 
@@ -279,10 +279,10 @@ mag_e8m23_t mag_tensor_get_item_float(const mag_tensor_t *t) {
     return val;
 }
 
-int32_t mag_tensor_get_item_int(const mag_tensor_t *t) {
+int64_t mag_tensor_get_item_int(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
-    int32_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_I32);
+    int64_t val;
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_I64);
     return val;
 }
 
@@ -294,22 +294,20 @@ bool mag_tensor_get_item_bool(const mag_tensor_t *t) {
 }
 
 static void mag_fmt_single_elem(mag_sstream_t *ss, const void *buf, size_t i, mag_dtype_t dtype) {
-    if (dtype == MAG_DTYPE_BOOL) {
-        mag_sstream_append(ss, "%s", ((const uint8_t *)buf)[i] ? "True" : "False");
-        return;
-    }
     mag_e11m52_t x = 0.0;
     mag_format_flags_t flags = 0;
     switch (dtype) {
     case MAG_DTYPE_E8M23:
-    case MAG_DTYPE_E5M10:
-        x = ((const mag_e8m23_t *)buf)[i];
-        flags = MAG_FMT_G;
-        break;
-    case MAG_DTYPE_I32:
-        x = ((const int32_t *)buf)[i];
-        flags = MAG_FMT_I;
-        break;
+    case MAG_DTYPE_E5M10: x = ((const mag_e8m23_t *)buf)[i]; flags = MAG_FMT_G; break;
+    case MAG_DTYPE_BOOL: mag_sstream_append(ss, "%s", ((const uint8_t *)buf)[i] ? "True" : "False"); return;
+    case MAG_DTYPE_U8: x = (mag_e11m52_t)((const uint8_t *)buf)[i]; flags = MAG_FMT_G; break;
+    case MAG_DTYPE_I8: x = (mag_e11m52_t)((const int8_t *)buf)[i]; flags = MAG_FMT_G; break;
+    case MAG_DTYPE_U16: x = (mag_e11m52_t)((const uint16_t *)buf)[i]; flags = MAG_FMT_G; break;
+    case MAG_DTYPE_I16: x = (mag_e11m52_t)((const int16_t *)buf)[i]; flags = MAG_FMT_G; break;
+    case MAG_DTYPE_U32: x = (mag_e11m52_t)((const uint32_t *)buf)[i]; flags = MAG_FMT_G; break;
+    case MAG_DTYPE_I32: x = (mag_e11m52_t)((const int32_t *)buf)[i]; flags = MAG_FMT_G; break;
+    case MAG_DTYPE_U64: x = (mag_e11m52_t)((const uint64_t *)buf)[i]; flags = MAG_FMT_G; break;
+    case MAG_DTYPE_I64: x = (mag_e11m52_t)((const int64_t *)buf)[i]; flags = MAG_FMT_G; break;
     default: mag_panic("Unknown dtype for formatting: %d", dtype); return;
     }
     char fmt[128];

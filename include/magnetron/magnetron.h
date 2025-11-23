@@ -296,8 +296,6 @@ extern MAG_EXPORT mag_status_t mag_mul(mag_tensor_t **out, mag_tensor_t *x, mag_
 extern MAG_EXPORT mag_status_t mag_mul_(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_div(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_div_(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
-extern MAG_EXPORT mag_status_t mag_mod(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
-extern MAG_EXPORT mag_status_t mag_mod_(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_matmul(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_repeat_back(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_gather(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, mag_tensor_t *idx);
@@ -383,7 +381,7 @@ extern MAG_EXPORT void mag_tensor_get_raw_data_as_bytes_free(void *ret_val);
 extern MAG_EXPORT float *mag_tensor_get_data_as_floats(mag_tensor_t *t);
 extern MAG_EXPORT void mag_tensor_get_data_as_floats_free(float *ret_val);
 extern MAG_EXPORT float mag_tensor_get_item_float(const mag_tensor_t *t);
-extern MAG_EXPORT int32_t mag_tensor_get_item_int(const mag_tensor_t *t);
+extern MAG_EXPORT int64_t mag_tensor_get_item_int(const mag_tensor_t *t);
 extern MAG_EXPORT bool mag_tensor_get_item_bool(const mag_tensor_t *t);
 
 /* ============ Tensor Misc API ============ */

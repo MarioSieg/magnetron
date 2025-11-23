@@ -38,7 +38,7 @@
 
 #define mag_cmd_in(i) (payload->cmd->in[(i)])
 #define mag_cmd_out(i) (payload->cmd->out[(i)])
-#define mag_cmd_param(i) (payload->cmd->params[(i)])
+#define mag_cmd_attr(i) (payload->cmd->attrs[(i)])
 
 /* Uniform names for macro expansion */
 typedef uint8_t mag_u8_t;
@@ -1763,7 +1763,7 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
 #define mag_gen_stub_fill(T, G, UT, CVT) \
     static MAG_HOTPROC void mag_fill_##T(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_in(0); \
-        mag_##T##_t val = CVT(mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(0))); \
+        mag_##T##_t val = CVT(mag_op_attr_unwrap_##UT(mag_cmd_attr(0))); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
         int64_t numel = r->numel; \
         if (mag_tensor_is_contiguous(r)) { \
@@ -1785,8 +1785,8 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
 #define mag_gen_stub_masked_fill(T, G, UT, CVT) \
     static MAG_HOTPROC void mag_masked_fill_##T(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_in(0); \
-        mag_##T##_t val = CVT(mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(0))); \
-        const mag_tensor_t *mask = (const mag_tensor_t*)(uintptr_t)mag_op_param_unpack_i64_or_panic(mag_cmd_param(1)); \
+        mag_##T##_t val = CVT(mag_op_attr_unwrap_##UT(mag_cmd_attr(0))); \
+        const mag_tensor_t *mask = mag_op_attr_unwrap_ptr(mag_cmd_attr(1)); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
         const mag_bool_t *bm = mag_boolp(mask); \
         mag_coords_iter_t cr, cm; \
@@ -1819,8 +1819,8 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
 #define mag_gen_stub_fill_rand(D, T, TS, UT) \
     static MAG_HOTPROC void mag_fill_rand_##D##_##T(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_in(0); \
-        mag_##TS##_t min = mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(0)); \
-        mag_##TS##_t max = mag_op_param_unpack_##UT##_or_panic(mag_cmd_param(1)); \
+        mag_##TS##_t min = mag_op_attr_unwrap_##UT(mag_cmd_attr(0)); \
+        mag_##TS##_t max = mag_op_attr_unwrap_##UT(mag_cmd_attr(1)); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
         mag_philox4x32_stream_t *prng = payload->prng; \
         mag_coords_iter_t cr; \
@@ -1846,8 +1846,8 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
     static MAG_HOTPROC void mag_fill_arange_##T(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_in(0); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
-        mag_e8m23_t start = mag_op_param_unpack_e8m23_or_panic(mag_cmd_param(0)); /* TODO: Use double precision as ACC */ \
-        mag_e8m23_t step = mag_op_param_unpack_e8m23_or_panic(mag_cmd_param(1)); \
+        mag_e8m23_t start = mag_op_attr_unwrap_e8m23(mag_cmd_attr(0)); /* TODO: Use double precision as ACC */ \
+        mag_e8m23_t step = mag_op_attr_unwrap_e8m23(mag_cmd_attr(1)); \
         int64_t numel = r->numel; \
         if (mag_tensor_is_contiguous(r)) { \
             for (int64_t ri=0; ri < numel; ++ri) { \
@@ -1895,7 +1895,7 @@ static void mag_nop(const mag_kernel_payload_t *payload) {
 
 typedef struct mag_discrete_sample_pair_t {
     mag_e8m23_t score;
-    mag_i32_t idx;
+    int64_t idx;
 } mag_discrete_sample_pair_t;
 
 static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
@@ -1908,9 +1908,10 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
     static void MAG_HOTPROC mag_multinomial_##T(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
-        mag_i32_t *br = mag_i32p_mut(r); \
+        mag_assert2(r->dtype == MAG_DTYPE_I64); \
+        mag_i64_t *br = mag_i64p_mut(r); \
         const mag_##T##_t *bx = mag_##T##p(x); \
-        int64_t num_samples = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
+        int64_t num_samples = mag_op_attr_unwrap_i64(mag_cmd_attr(0)); \
         mag_philox4x32_stream_t *rng = payload->prng; \
         int64_t K = x->coords.shape[x->coords.rank-1]; \
         if (mag_unlikely(K <= 0)) return; \
@@ -1922,7 +1923,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
         int64_t rb = mag_xmin(ra + chunk, B); \
         for (int64_t b=ra; b < rb; ++b) { \
             const mag_##T##_t *w = bx + b*K; \
-            mag_i32_t *o = br + b*num_samples; \
+            mag_i64_t *o = br + b*num_samples; \
             mag_e8m23_t sumw = .0f; \
             int64_t nnz = 0; \
             for (int64_t i=0; i < K; ++i) { \
@@ -1949,7 +1950,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
                 mag_e8m23_t u = mag_philox4x32_next_e8m23(rng); \
                 mag_e8m23_t g = -logf(-logf(u)); \
                 arr[m].score = logf(wi) + g; \
-                arr[m].idx = (mag_i32_t)i; \
+                arr[m].idx = i; \
                 ++m; \
             } \
             qsort(arr, (size_t)m, sizeof(*arr), mag_discrete_sample_pair_cmp); \
@@ -1961,7 +1962,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
 #define mag_gen_stub_cat(T) \
     static MAG_HOTPROC void mag_cat_##T(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
-        const int64_t dim = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
+        const int64_t dim = mag_op_attr_unwrap_i64(mag_cmd_attr(0)); \
         const int64_t n = payload->cmd->num_in; \
         mag_assert2(r && n > 0); \
         mag_assert2(dim >= 0 && dim < r->coords.rank); \
@@ -1984,8 +1985,8 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
         \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
-        int64_t chunk = (outer_count + tc - 1) / tc; \
-        int64_t oa = ti  *chunk; \
+        int64_t chunk = (outer_count + tc - 1)/tc; \
+        int64_t oa = ti*chunk; \
         int64_t ob = mag_xmin(oa + chunk, outer_count); \
         \
         for (int64_t p=oa; p < ob; ++p) { \
@@ -2030,7 +2031,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
         mag_coords_iter_t cr, cx; \
         mag_coords_iter_init(&cr, &r->coords); \
         mag_coords_iter_init(&cx, &x->coords); \
-        int64_t diag = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
+        int64_t diag = mag_op_attr_unwrap_i64(mag_cmd_attr(0)); \
         int64_t total = r->numel; \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
@@ -2097,10 +2098,10 @@ static int mag_cmp_i64(const void *a, const void *b) {
         const mag_##T##_t *bx = mag_##T##p(x); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
         int64_t nd = x->coords.rank; \
-        int64_t rank = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
+        int64_t rank = mag_op_attr_unwrap_i64(mag_cmd_attr(0)); \
         int64_t axes[MAG_MAX_DIMS]; \
         for (int64_t i=0; i<rank; ++i){ \
-            int64_t a =mag_op_param_unpack_i64_or_panic(mag_cmd_param(2+i)); \
+            int64_t a=mag_op_attr_unwrap_i64(mag_cmd_attr(2+i)); \
             if (a<0) a += nd; \
             axes[i]=a; \
         } \
@@ -2211,10 +2212,11 @@ static int mag_cmp_i64(const void *a, const void *b) {
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *src = mag_cmd_in(0); \
         const mag_tensor_t *index = mag_cmd_in(1); \
+        mag_assert2(index->dtype == MAG_DTYPE_I64); \
         mag_##T##_t *br = mag_##T##p_mut(r); \
         const mag_##T##_t *bx = mag_##T##p(src); \
-        const mag_i32_t *bi = mag_i32p(index); \
-        int64_t axis = mag_op_param_unpack_i64_or_panic(mag_cmd_param(0)); \
+        const mag_i64_t *bi = mag_i64p(index); \
+        int64_t axis = mag_op_attr_unwrap_i64(mag_cmd_attr(0)); \
         if (axis < 0) axis += src->coords.rank; \
         mag_assert2(axis >= 0 && axis < src->coords.rank); \
         mag_assert2(index->coords.rank >= 1); \
@@ -2335,7 +2337,7 @@ mag_gen_stub_fill_arange(i64, mag_cvt_nop)
 
 static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t *payload) {
     mag_tensor_t *r = mag_cmd_in(0);
-    mag_e8m23_t p = mag_op_param_unpack_e8m23_or_panic(mag_cmd_param(0));
+    mag_e8m23_t p = mag_op_attr_unwrap_e8m23(mag_cmd_attr(0));
     mag_bool_t *b_r = mag_boolp_mut(r);
     int64_t numel = r->numel;
     mag_vrand_bernoulli_bool(payload->prng, numel, b_r, p);
