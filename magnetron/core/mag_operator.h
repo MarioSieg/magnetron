@@ -39,6 +39,7 @@ typedef enum mag_opflags_t {
     _(RAND_BERNOULLI, 1, 0, BOOL, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(ARANGE, 1, 0, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
+    _(CAST, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
     _(VIEW, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, view)__\
     _(TRANSPOSE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, transpose)__\
     _(PERMUTE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
@@ -127,7 +128,7 @@ mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */
 mag_static_assert(MAG_DTYPE__NUM <= 16); /* Must fit in 8 bits, if this fails increase the type of dtpe_mask. */
-#define mag_dtype_bit(x) (((mag_dtype_mask_t)1)<<((x)&7))
+#define mag_dtype_bit(x) (((mag_dtype_mask_t)1)<<((x)&((sizeof(mag_dtype_mask_t)<<3)-1)))
 #define mag_dtype_mask(enume) mag_dtype_bit(MAG_DTYPE_##enume)
 #define MAG_DTYPE_MASK_NONE 0
 #define MAG_DTYPE_MASK_FP (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))

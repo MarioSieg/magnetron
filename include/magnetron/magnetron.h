@@ -186,6 +186,7 @@ extern MAG_EXPORT mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_con
 /* ============ Tensor Operators ============ */
 
 extern MAG_EXPORT mag_status_t mag_clone(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_cast(mag_tensor_t **out, mag_tensor_t *x, mag_dtype_t dst_type);
 extern MAG_EXPORT mag_status_t mag_view(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank);
 extern MAG_EXPORT mag_status_t mag_view_slice(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, int64_t start, int64_t len, int64_t step);
 extern MAG_EXPORT mag_status_t mag_reshape(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank);

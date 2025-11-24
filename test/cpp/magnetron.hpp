@@ -211,6 +211,12 @@ namespace magnetron {
             return tensor{out};
         }
 
+        [[nodiscard]] auto cast(dtype dst_dtype) const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_cast(&out, m_tensor, static_cast<mag_dtype_t>(dst_dtype)));
+            return tensor{out};
+        }
+
         [[nodiscard]] auto view(std::initializer_list<int64_t> dims = {}) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_view(&out, m_tensor, std::empty(dims) ? nullptr : std::data(dims), std::size(dims)));

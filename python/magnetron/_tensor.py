@@ -542,6 +542,9 @@ class Tensor:
     def clone(self) -> Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_clone(out, self._ptr)))
 
+    def cast(self, dst_type: DataType) -> Tensor:
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_cast(out, self._ptr, dst_type.enum_value)))
+
     def view(self, *dims: int | tuple[int, ...]) -> Tensor:
         dims = _unpack_shape(dims)
         num_dims: int = len(dims)

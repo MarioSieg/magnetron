@@ -58,16 +58,16 @@ mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const
         h = (int)target_h;
     }
     mag_tensor_t *tensor;
-    mag_status_t stat = mag_tensor_empty(&tensor, ctx, MAG_DTYPE_E8M23, 3, (int64_t[3]){c, h, w});
+    mag_status_t stat = mag_tensor_empty(&tensor, ctx, MAG_DTYPE_U8, 3, (int64_t[3]){c, h, w});
     if (mag_unlikely(stat != MAG_STATUS_OK)) {
         stbi_image_free(pixels);
         return stat;
     }
-    mag_e8m23_t *restrict dst = mag_tensor_get_data_ptr(tensor);
+    uint8_t *restrict dst = mag_tensor_get_data_ptr(tensor);
     for (int64_t k=0; k < c; ++k) /* (W,H,C) -> (C,H,W) interleaved to planar */
     for (int64_t j=0; j < h; ++j)
     for (int64_t i=0; i < w; ++i)
-        dst[i + w*j + w*h*k] = (mag_e8m23_t)pixels[k + c*i + c*w*j]/255.0f;  /* Normalize pixel values to [0, 1] */
+        dst[i + w*j + w*h*k] = pixels[k + c*i + c*w*j];
     mag_contract(ctx, ERR_IMAGE_ERROR, { stbi_image_free(pixels); }, w*h*c == mag_tensor_get_numel(tensor), "Buffer size mismatch: %d != %zu", w*h*c, (size_t)mag_tensor_get_numel(tensor));
     stbi_image_free(pixels);
     *out = tensor;

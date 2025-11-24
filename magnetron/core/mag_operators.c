@@ -160,6 +160,17 @@ mag_status_t mag_clone(mag_tensor_t **out, mag_tensor_t *x) {
     return MAG_STATUS_OK;
 }
 
+mag_status_t mag_cast(mag_tensor_t **out, mag_tensor_t *x, mag_dtype_t dst_type) {
+    if (x->dtype == dst_type) return mag_clone(out, x); /* If dtypes match, we just clone */
+    *out = NULL;
+    mag_tensor_t *result;
+    mag_status_t stat = mag_tensor_empty(&result, x->ctx, dst_type, x->coords.rank, x->coords.shape);
+    if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
+        mag_dispatch(MAG_OP_CAST, false, NULL, &x, 1, &result, 1);
+    *out = result;
+    return MAG_STATUS_OK;
+}
+
 mag_status_t mag_view(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank) {
     *out = NULL;
     mag_context_t *ctx = x->ctx;
