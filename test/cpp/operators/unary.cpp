@@ -21,7 +21,7 @@ static auto test_unary_operator(
     device_kind dev,
     bool inplace,
     bool subview,
-    mag_e8m23_t eps,
+    float eps,
     dtype ty,
     std::function<tensor (tensor)>&& a,
     std::function<T (T)>&& b,
@@ -149,7 +149,7 @@ impl_unary_operator_test_group(0.f, hard_sigmoid, e5m10, float16, [](auto x) { r
 impl_unary_operator_test_group(0.f, silu, e8m23, float, [](auto x) { return x * (1.0f / (1.0f + std::exp(-(x)))); })
 impl_unary_operator_test_group(0.f, silu, e5m10, float16, [](auto x) { return x * (1.0f / (1.0f + std::exp(-(x)))); })
 impl_unary_operator_test_group(0.f, relu, e8m23, float, [](auto x) { return std::max(0.0f, x); })
-impl_unary_operator_test_group(0.f, relu, e5m10, float16, [](auto x) { return std::max(0.0f, static_cast<mag_e8m23_t>(x)); })
+impl_unary_operator_test_group(0.f, relu, e5m10, float16, [](auto x) { return std::max(0.0f, static_cast<float>(x)); })
 impl_unary_operator_test_group(0.f, gelu, e8m23, float, [](auto x) { return .5f*x*(1.f + std::erf(x*(1.0f / std::sqrt(2.0f)))); })
 impl_unary_operator_test_group(0.f, gelu, e5m10, float16, [](auto x) { return .5f*x*(1.f + std::erf(x*(1.0f / std::sqrt(2.0f)))); })
 impl_unary_operator_test_group(1e-3f, gelu_approx, e8m23, float, [](auto x) { return .5f*x*(1.f+std::tanh((1.f/std::sqrt(2.f))*(x+MAG_GELU_COEFF*std::pow(x, 3.f)))); })
