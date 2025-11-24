@@ -161,7 +161,7 @@ typedef enum mag_dtype_t {
     MAG_DTYPE__NUM
 } mag_dtype_t;
 
-mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fix in 1 byte */
+mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fit in 1 byte */
 
 /**
  * @brief Stores various information about a data type such as size, name, etc.

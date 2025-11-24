@@ -43,21 +43,21 @@ namespace mag {
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x/y; }
     };
 
-    template <typename TIn, typename TOut> requires is_integral<TIn> && is_integral<TOut>
+    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
     struct op_and {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x&y; }
     };
 
-    template <typename TIn, typename TOut> requires is_integral<TIn> && is_integral<TOut>
+    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
     struct op_or {
         using In = TIn;
         using Out = TOut;
         [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x|y; }
     };
 
-    template <typename TIn, typename TOut> requires is_integral<TIn> && is_integral<TOut>
+    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
     struct op_xor {
         using In = TIn;
         using Out = TOut;
@@ -176,7 +176,14 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_binary_op<Op<mag_e8m23_t, mag_e8m23_t>>(r, x, y); break;
             case MAG_DTYPE_E5M10: launch_binary_op<Op<half, half>>(r, x, y); break;
+            case MAG_DTYPE_U8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_I8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y); break;
+            case MAG_DTYPE_U16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y); break;
+            case MAG_DTYPE_I16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y); break;
+            case MAG_DTYPE_U32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y); break;
             case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
+            case MAG_DTYPE_U64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
+            case MAG_DTYPE_I64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
             default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
         }
     }
@@ -188,8 +195,15 @@ namespace mag {
         const mag_tensor_t *y = cmd->in[1];
         mag_assert2(r->dtype == x->dtype && r->dtype == y->dtype);
         switch (r->dtype) {
+            case MAG_DTYPE_BOOL:
+            case MAG_DTYPE_U8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_I8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y); break;
+            case MAG_DTYPE_U16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y); break;
+            case MAG_DTYPE_I16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y); break;
+            case MAG_DTYPE_U32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y); break;
             case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
-            case MAG_DTYPE_BOOL: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_U64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
+            case MAG_DTYPE_I64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
             default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
         }
     }
@@ -203,8 +217,15 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_binary_op<Op<mag_e8m23_t, uint8_t>>(r, x, y); break;
             case MAG_DTYPE_E5M10: launch_binary_op<Op<half, uint8_t>>(r, x, y); break;
-            case MAG_DTYPE_BOOL: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
-            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_BOOL:
+            case MAG_DTYPE_U8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_I8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y); break;
+            case MAG_DTYPE_U16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y); break;
+            case MAG_DTYPE_I16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y); break;
+            case MAG_DTYPE_U32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y); break;
+            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
+            case MAG_DTYPE_U64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
+            case MAG_DTYPE_I64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
             default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
         }
     }

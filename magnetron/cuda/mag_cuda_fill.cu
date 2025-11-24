@@ -62,7 +62,7 @@ namespace mag {
     template <typename T> requires is_dtype<T>
     static void launch_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd, const mag_tensor_t *mask = nullptr) {
         auto *o = static_cast<T *>(mag_tensor_get_data_ptr(r));
-        auto v = unpack_param<T>(cmd->params, 0);
+        auto v = unpack_param<T>(cmd->attrs, 0);
         mag_coords_iter_t rc;
         mag_coords_iter_init(&rc, &r->coords);
         bool rc_cont = mag_tensor_is_contiguous(r);
@@ -120,8 +120,8 @@ namespace mag {
     template <typename T, const bool normal> requires is_dtype<T>
     static void launch_rand_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd) {
         auto *o = static_cast<T *>(mag_tensor_get_data_ptr(r));
-        auto p0 = unpack_param<T>(cmd->params, 0);
-        auto p1 = unpack_param<T>(cmd->params, 1);
+        auto p0 = unpack_param<T>(cmd->attrs, 0);
+        auto p1 = unpack_param<T>(cmd->attrs, 1);
         int64_t n = mag_tensor_get_numel(r);
         int64_t blocks = (((n+3)>>2)+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
         mag_coords_iter_t rc;
@@ -137,20 +137,34 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_fill_kernel<mag_e8m23_t>(r, cmd); break;
             case MAG_DTYPE_E5M10: launch_fill_kernel<half>(r, cmd); break;
+            case MAG_DTYPE_BOOL:
+            case MAG_DTYPE_U8: launch_fill_kernel<uint8_t>(r, cmd); break;
+            case MAG_DTYPE_I8: launch_fill_kernel<int8_t>(r, cmd); break;
+            case MAG_DTYPE_U16: launch_fill_kernel<uint16_t>(r, cmd); break;
+            case MAG_DTYPE_I16: launch_fill_kernel<int16_t>(r, cmd); break;
+            case MAG_DTYPE_U32: launch_fill_kernel<uint32_t>(r, cmd); break;
             case MAG_DTYPE_I32: launch_fill_kernel<int32_t>(r, cmd); break;
-            case MAG_DTYPE_BOOL: launch_fill_kernel<uint8_t>(r, cmd); break;
+            case MAG_DTYPE_U64: launch_fill_kernel<uint64_t>(r, cmd); break;
+            case MAG_DTYPE_I64: launch_fill_kernel<int64_t>(r, cmd); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
         }
     }
 
     void fill_op_masked_fill(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->in[0];
-        mag_tensor_t *mask = reinterpret_cast<mag_tensor_t *>(static_cast<uintptr_t>(mag_op_attr_unpack_i64_or_panic(cmd->params[0]))); // TODO: pass in cmd in why the fuck are these here
+        mag_tensor_t *mask = static_cast<mag_tensor_t *>(mag_op_attr_unwrap_ptr(cmd->attrs[0])); // TODO: pass in cmd in why the fuck are these here
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_fill_kernel<mag_e8m23_t>(r, cmd, mask); break;
             case MAG_DTYPE_E5M10: launch_fill_kernel<half>(r, cmd, mask); break;
+            case MAG_DTYPE_BOOL:
+            case MAG_DTYPE_U8: launch_fill_kernel<uint8_t>(r, cmd, mask); break;
+            case MAG_DTYPE_I8: launch_fill_kernel<int8_t>(r, cmd, mask); break;
+            case MAG_DTYPE_U16: launch_fill_kernel<uint16_t>(r, cmd, mask); break;
+            case MAG_DTYPE_I16: launch_fill_kernel<int16_t>(r, cmd, mask); break;
+            case MAG_DTYPE_U32: launch_fill_kernel<uint32_t>(r, cmd, mask); break;
             case MAG_DTYPE_I32: launch_fill_kernel<int32_t>(r, cmd, mask); break;
-            case MAG_DTYPE_BOOL: launch_fill_kernel<uint8_t>(r, cmd, mask); break;
+            case MAG_DTYPE_U64: launch_fill_kernel<uint64_t>(r, cmd, mask); break;
+            case MAG_DTYPE_I64: launch_fill_kernel<int64_t>(r, cmd, mask); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
         }
     }
@@ -160,7 +174,6 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_rand_fill_kernel<mag_e8m23_t, false>(r, cmd); break;
             case MAG_DTYPE_E5M10: launch_rand_fill_kernel<half, false>(r, cmd); break;
-            case MAG_DTYPE_I32: launch_rand_fill_kernel<int32_t, false>(r, cmd); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
         }
     }

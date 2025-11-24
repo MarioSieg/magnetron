@@ -1,13 +1,12 @@
 // (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
 
-
 namespace magnetron::test {
     std::vector<device_kind> get_supported_test_backends() {
         static std::optional<std::vector<device_kind> > backends = std::nullopt;
         if (!backends) {
             backends.emplace({device_kind::cpu});
             #ifdef MAG_ENABLE_CUDA
-                //backends->emplace_back(device_kind::cuda);
+                backends->emplace_back(device_kind::cuda);
             #endif
         }
         return *backends;

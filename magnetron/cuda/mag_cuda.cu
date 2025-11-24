@@ -103,12 +103,12 @@ namespace mag {
         global_seed.store(seed, std::memory_order_relaxed);
     }
 
-    using kernel_fn = void (*)(const mag_command_t *);
+    using kernel_fn = void (const mag_command_t *);
 
     static void op_nop(const mag_command_t *) { }
 
     static void submit(mag_device_t *dvc, const mag_command_t *cmd) {
-        static constexpr kernel_fn dispatch_table[] = {
+        static constexpr kernel_fn *dispatch_table[] = {
             [MAG_OP_NOP] = &op_nop,
             [MAG_OP_FILL] = &fill_op_fill,
             [MAG_OP_MASKED_FILL] = &fill_op_masked_fill,
@@ -193,8 +193,8 @@ namespace mag {
             [MAG_OP_GT] = &binary_op_gt
         };
         static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
-        kernel_fn kern = dispatch_table[cmd->op];
-        mag_assert(kern != nullptr, "Operation %s not implemented in CUDA backend", mag_op_meta_of(cmd->op)->mnemonic);
+        kernel_fn *kern = dispatch_table[cmd->op];
+        mag_assert(kern != nullptr, "Operator %s not implemented in CUDA backend", mag_op_meta_of(cmd->op)->mnemonic);
         (*kern)(cmd);
     }
 

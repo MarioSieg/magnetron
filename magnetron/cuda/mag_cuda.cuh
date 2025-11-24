@@ -35,20 +35,17 @@ namespace mag {
   concept is_floating_point = std::is_same_v<T, mag_e8m23_t> || std::is_same_v<T, half>;
 
   template <typename T>
-  concept is_integer = std::is_same_v<T, int32_t> || std::is_same_v<T, uint8_t>; // TODO: own boolean type
+  concept is_integer = std::is_integral_v<T> && !std::is_same_v<T, bool>;
 
   template <typename T>
-  concept is_integral = std::is_same_v<T, int32_t> || std::is_same_v<T, uint8_t>;
+  concept is_numeric = is_floating_point<T> || is_integer<T>;
 
   template <typename T>
-  concept is_numeric = is_floating_point<T> || is_integral<T>;
-
-  template <typename T>
-  concept is_dtype = is_floating_point<T> || is_integral<T>;
+  concept is_dtype = is_floating_point<T> || is_integer<T>;
 
   template <typename T>
   [[nodiscard]] T unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
-    if constexpr (is_floating_point<T>) return static_cast<T>(mag_op_attr_unpack_e8m23_or_panic(params[i]));
-    else return static_cast<T>(mag_op_attr_unpack_i64_or_panic(params[i]));
+    if constexpr (is_floating_point<T>) return static_cast<T>(mag_op_attr_unwrap_e8m23(params[i]));
+    else return static_cast<T>(mag_op_attr_unwrap_i64(params[i]));
   }
 }

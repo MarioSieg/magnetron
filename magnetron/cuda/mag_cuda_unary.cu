@@ -35,7 +35,6 @@ namespace mag {
         const mag_tensor_t *x
     ) {
         int64_t n = mag_tensor_get_numel(r);
-        int64_t blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
         auto *pr = static_cast<T *>(mag_tensor_get_data_ptr(r));
         auto *px = static_cast<const T *>(mag_tensor_get_data_ptr(x));
         if (mag_full_cont2(r, x)) {
@@ -45,6 +44,7 @@ namespace mag {
         mag_coords_iter_t rc, xc;
         mag_coords_iter_init(&rc, &r->coords);
         mag_coords_iter_init(&xc, &x->coords);
+        int64_t blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
         clone_strided_kernel<T><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, rc, xc);
     }
 
@@ -55,8 +55,15 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_clone<mag_e8m23_t>(r, x); break;
             case MAG_DTYPE_E5M10: launch_clone<half>(r, x); break;
+            case MAG_DTYPE_BOOL:
+            case MAG_DTYPE_U8: launch_clone<uint8_t>(r, x); break;
+            case MAG_DTYPE_I8: launch_clone<int8_t>(r, x); break;
+            case MAG_DTYPE_U16: launch_clone<uint16_t>(r, x); break;
+            case MAG_DTYPE_I16: launch_clone<int16_t>(r, x); break;
+            case MAG_DTYPE_U32: launch_clone<uint32_t>(r, x); break;
             case MAG_DTYPE_I32: launch_clone<int32_t>(r, x); break;
-            case MAG_DTYPE_BOOL: launch_clone<uint8_t>(r, x); break;
+            case MAG_DTYPE_U64: launch_clone<uint64_t>(r, x); break;
+            case MAG_DTYPE_I64: launch_clone<int64_t>(r, x); break;
             default: mag_assert(false, "Unsupported dtype for unary op");
         }
     }
