@@ -329,13 +329,14 @@ namespace magnetron::test {
         std::mt19937_64 &rng{gen};
         if (base.rank() == 0) return base.view();
         bool all_one = true;
-        for (auto s: base.shape())
+        for (auto s: base.shape()) {
             if (s > 1) {
                 all_one = false;
                 break;
             }
+        }
         if (all_one) return base.view();
-        std::vector<int64_t> slicable;
+        std::vector<int64_t> slicable = {};
         for (int64_t d{}; d < base.rank(); ++d)
             if (base.shape()[d] > 1) slicable.push_back(d);
         std::uniform_int_distribution<size_t> dim_dis(0, slicable.size() - 1);

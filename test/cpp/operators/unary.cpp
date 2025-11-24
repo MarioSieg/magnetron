@@ -31,7 +31,7 @@ static auto test_unary_operator(
     auto& ctx = get_cached_context(dev);
     for_all_test_shapes([&](std::span<const int64_t> shape) {
         tensor base{ctx, ty, shape};
-        base.fill_rand_uniform(min, max);
+        base.fill_rand_uniform(static_cast<float>(min), static_cast<float>(max));
         tensor t_a = subview ? make_random_view(base) : base;
         if (subview)
             ASSERT_TRUE(t_a.is_view());
@@ -58,102 +58,102 @@ static auto test_unary_operator(
     TEST_P(unary_operators, name##_same_shape_##data_type) { \
         test_unary_operator<T>(GetParam(), false, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
-            [](T a) -> T { return lambda(a); } \
+            [](T a) -> T { return static_cast<T>(lambda(a)); } \
         ); \
     } \
     TEST_P(unary_operators, name##_inplace_same_shape_##data_type) { \
         test_unary_operator<T>(GetParam(), true, false, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
-            [](T a) -> T { return lambda(a); } \
+            [](T a) -> T { return static_cast<T>(lambda(a)); } \
         ); \
     } \
     TEST_P(unary_operators, name##_view_same_shape_##data_type) { \
         test_unary_operator<T>(GetParam(), false, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name(); }, \
-            [](T a) -> T { return lambda(a); } \
+            [](T a) -> T { return static_cast<T>(lambda(a)); } \
         ); \
     } \
     TEST_P(unary_operators, name##_view_inplace_same_shape_##data_type) { \
         test_unary_operator<T>(GetParam(), true, true, eps != 0.0f ? eps : dtype_eps_map.at(dtype::data_type), dtype::data_type, \
             [](tensor a) -> tensor { return a.name##_(); }, \
-            [](T a) -> T { return lambda(a); } \
+            [](T a) -> T { return static_cast<T>(lambda(a)); } \
         ); \
     } \
 
 impl_unary_operator_test_group(0.f, abs, e8m23, float, [](auto x) { return std::abs(x); })
-impl_unary_operator_test_group(0.f, abs, e5m10, float, [](auto x) { return std::abs(x); })
+impl_unary_operator_test_group(0.f, abs, e5m10, float16, [](auto x) { return std::abs(x); })
 impl_unary_operator_test_group(0.f, sgn, e8m23, float, [](auto x) { return std::copysign(1.0f, x); })
-impl_unary_operator_test_group(0.f, sgn, e5m10, float, [](auto x) { return std::copysign(1.0f, x); })
+impl_unary_operator_test_group(0.f, sgn, e5m10, float16, [](auto x) { return std::copysign(1.0f, x); })
 impl_unary_operator_test_group(0.f, neg, e8m23, float, [](auto x) { return -x; })
-impl_unary_operator_test_group(0.f, neg, e5m10, float, [](auto x) { return -x; })
+impl_unary_operator_test_group(0.f, neg, e5m10, float16, [](auto x) { return -x; })
 impl_unary_operator_test_group(0.f, log, e8m23, float, [](auto x) { return std::log(x); })
-impl_unary_operator_test_group(0.f, log, e5m10, float, [](auto x) { return std::log(x); })
+impl_unary_operator_test_group(0.f, log, e5m10, float16, [](auto x) { return std::log(x); })
 impl_unary_operator_test_group(0.f, log10, e8m23, float, [](auto x) { return std::log10(x); })
-impl_unary_operator_test_group(0.f, log10, e5m10, float, [](auto x) { return std::log10(x); })
+impl_unary_operator_test_group(0.f, log10, e5m10, float16, [](auto x) { return std::log10(x); })
 impl_unary_operator_test_group(0.f, log1p, e8m23, float, [](auto x) { return std::log1p(x); })
-impl_unary_operator_test_group(0.f, log1p, e5m10, float, [](auto x) { return std::log1p(x); })
+impl_unary_operator_test_group(0.f, log1p, e5m10, float16, [](auto x) { return std::log1p(x); })
 impl_unary_operator_test_group(0.f, log2, e8m23, float, [](auto x) { return std::log2(x); })
-impl_unary_operator_test_group(0.f, log2, e5m10, float, [](auto x) { return std::log2(x); })
+impl_unary_operator_test_group(0.f, log2, e5m10, float16, [](auto x) { return std::log2(x); })
 impl_unary_operator_test_group(0.f, sqr, e8m23, float, [](auto x) { return x*x; })
-impl_unary_operator_test_group(0.f, sqr, e5m10, float, [](auto x) { return x*x; })
+impl_unary_operator_test_group(0.f, sqr, e5m10, float16, [](auto x) { return x*x; })
 impl_unary_operator_test_group(0.f, sqrt, e8m23, float, [](auto x) { return std::sqrt(x); })
-impl_unary_operator_test_group(0.f, sqrt, e5m10, float, [](auto x) { return std::sqrt(x); })
+impl_unary_operator_test_group(0.f, sqrt, e5m10, float16, [](auto x) { return std::sqrt(x); })
 impl_unary_operator_test_group(0.f, sin, e8m23, float, [](auto x) { return std::sin(x); })
-impl_unary_operator_test_group(0.f, sin, e5m10, float, [](auto x) { return std::sin(x); })
+impl_unary_operator_test_group(0.f, sin, e5m10, float16, [](auto x) { return std::sin(x); })
 impl_unary_operator_test_group(0.f, cos, e8m23, float, [](auto x) { return std::cos(x); })
-impl_unary_operator_test_group(0.f, cos, e5m10, float, [](auto x) { return std::cos(x); })
+impl_unary_operator_test_group(0.f, cos, e5m10, float16, [](auto x) { return std::cos(x); })
 impl_unary_operator_test_group(0.f, tan, e8m23, float, [](auto x) { return std::tan(x); })
-impl_unary_operator_test_group(0.f, tan, e5m10, float, [](auto x) { return std::tan(x); })
+impl_unary_operator_test_group(0.f, tan, e5m10, float16, [](auto x) { return std::tan(x); })
 impl_unary_operator_test_group(0.f, sinh, e8m23, float, [](auto x) { return std::sinh(x); })
-impl_unary_operator_test_group(0.f, sinh, e5m10, float, [](auto x) { return std::sinh(x); })
+impl_unary_operator_test_group(0.f, sinh, e5m10, float16, [](auto x) { return std::sinh(x); })
 impl_unary_operator_test_group(0.f, cosh, e8m23, float, [](auto x) { return std::cosh(x); })
-impl_unary_operator_test_group(0.f, cosh, e5m10, float, [](auto x) { return std::cosh(x); })
+impl_unary_operator_test_group(0.f, cosh, e5m10, float16, [](auto x) { return std::cosh(x); })
 impl_unary_operator_test_group(0.f, tanh, e8m23, float, [](auto x) { return std::tanh(x); })
-impl_unary_operator_test_group(0.f, tanh, e5m10, float, [](auto x) { return std::tanh(x); })
+impl_unary_operator_test_group(0.f, tanh, e5m10, float16, [](auto x) { return std::tanh(x); })
 impl_unary_operator_test_group(0.f, asin, e8m23, float, [](auto x) { return std::asin(x); })
-impl_unary_operator_test_group(0.f, asin, e5m10, float, [](auto x) { return std::asin(x); })
+impl_unary_operator_test_group(0.f, asin, e5m10, float16, [](auto x) { return std::asin(x); })
 impl_unary_operator_test_group(0.f, acos, e8m23, float, [](auto x) { return std::acos(x); })
-impl_unary_operator_test_group(0.f, acos, e5m10, float, [](auto x) { return std::acos(x); })
+impl_unary_operator_test_group(0.f, acos, e5m10, float16, [](auto x) { return std::acos(x); })
 impl_unary_operator_test_group(0.f, atan, e8m23, float, [](auto x) { return std::atan(x); })
-impl_unary_operator_test_group(0.f, atan, e5m10, float, [](auto x) { return std::atan(x); })
+impl_unary_operator_test_group(0.f, atan, e5m10, float16, [](auto x) { return std::atan(x); })
 impl_unary_operator_test_group(0.f, asinh, e8m23, float, [](auto x) { return std::asinh(x); })
-impl_unary_operator_test_group(0.f, asinh, e5m10, float, [](auto x) { return std::asinh(x); })
+impl_unary_operator_test_group(0.f, asinh, e5m10, float16, [](auto x) { return std::asinh(x); })
 impl_unary_operator_test_group(0.f, acosh, e8m23, float, [](auto x) { return std::acosh(x); })
-impl_unary_operator_test_group(0.f, acosh, e5m10, float, [](auto x) { return std::acosh(x); })
+impl_unary_operator_test_group(0.f, acosh, e5m10, float16, [](auto x) { return std::acosh(x); })
 impl_unary_operator_test_group(0.f, atanh, e8m23, float, [](auto x) { return std::atanh(x); })
-impl_unary_operator_test_group(0.f, atanh, e5m10, float, [](auto x) { return std::atanh(x); })
+impl_unary_operator_test_group(0.f, atanh, e5m10, float16, [](auto x) { return std::atanh(x); })
 impl_unary_operator_test_group(0.f, step, e8m23, float, [](auto x) { return x > 0.0f ? 1.0f : 0.0f; })
-impl_unary_operator_test_group(0.f, step, e5m10, float, [](auto x) { return x > 0.0f ? 1.0f : 0.0f; })
+impl_unary_operator_test_group(0.f, step, e5m10, float16, [](auto x) { return x > 0.0f ? 1.0f : 0.0f; })
 impl_unary_operator_test_group(0.f, erf, e8m23, float, [](auto x) { return std::erf(x); })
-impl_unary_operator_test_group(0.f, erf, e5m10, float, [](auto x) { return std::erf(x); })
+impl_unary_operator_test_group(0.f, erf, e5m10, float16, [](auto x) { return std::erf(x); })
 impl_unary_operator_test_group(0.f, erfc, e8m23, float, [](auto x) { return std::erfc(x); })
-impl_unary_operator_test_group(0.f, erfc, e5m10, float, [](auto x) { return std::erfc(x); })
+impl_unary_operator_test_group(0.f, erfc, e5m10, float16, [](auto x) { return std::erfc(x); })
 impl_unary_operator_test_group(0.f, exp, e8m23, float, [](auto x) { return std::exp(x); })
-impl_unary_operator_test_group(0.f, exp, e5m10, float, [](auto x) { return std::exp(x); })
+impl_unary_operator_test_group(0.f, exp, e5m10, float16, [](auto x) { return std::exp(x); })
 impl_unary_operator_test_group(0.f, exp2, e8m23, float, [](auto x) { return std::exp2(x); })
-impl_unary_operator_test_group(0.f, exp2, e5m10, float, [](auto x) { return std::exp2(x); })
+impl_unary_operator_test_group(0.f, exp2, e5m10, float16, [](auto x) { return std::exp2(x); })
 impl_unary_operator_test_group(0.f, expm1, e8m23, float, [](auto x) { return std::expm1(x); })
-impl_unary_operator_test_group(0.f, expm1, e5m10, float, [](auto x) { return std::expm1(x); })
+impl_unary_operator_test_group(0.f, expm1, e5m10, float16, [](auto x) { return std::expm1(x); })
 impl_unary_operator_test_group(0.f, floor, e8m23, float, [](auto x) { return std::floor(x); })
-impl_unary_operator_test_group(0.f, floor, e5m10, float, [](auto x) { return std::floor(x); })
+impl_unary_operator_test_group(0.f, floor, e5m10, float16, [](auto x) { return std::floor(x); })
 impl_unary_operator_test_group(0.f, ceil, e8m23, float, [](auto x) { return std::ceil(x); })
-impl_unary_operator_test_group(0.f, ceil, e5m10, float, [](auto x) { return std::ceil(x); })
+impl_unary_operator_test_group(0.f, ceil, e5m10, float16, [](auto x) { return std::ceil(x); })
 impl_unary_operator_test_group(0.f, round, e8m23, float, [](auto x) { return std::nearbyint(x); })
-impl_unary_operator_test_group(0.f, round, e5m10, float, [](auto x) { return std::nearbyint(x); })
+impl_unary_operator_test_group(0.f, round, e5m10, float16, [](auto x) { return std::nearbyint(x); })
 impl_unary_operator_test_group(0.f, trunc, e8m23, float, [](auto x) { return std::trunc(x); })
-impl_unary_operator_test_group(0.f, trunc, e5m10, float, [](auto x) { return std::trunc(x); })
+impl_unary_operator_test_group(0.f, trunc, e5m10, float16, [](auto x) { return std::trunc(x); })
 impl_unary_operator_test_group(0.f, sigmoid, e8m23, float, [](auto x) { return 1.0f / (1.0f + std::exp(-(x))); })
-impl_unary_operator_test_group(0.f, sigmoid, e5m10, float, [](auto x) { return 1.0f / (1.0f + std::exp(-(x))); })
+impl_unary_operator_test_group(0.f, sigmoid, e5m10, float16, [](auto x) { return 1.0f / (1.0f + std::exp(-(x))); })
 impl_unary_operator_test_group(0.f, hard_sigmoid, e8m23, float, [](auto x) { return std::min(1.0f, std::max(0.0f, (x + 3.0f)/6.0f)); })
-impl_unary_operator_test_group(0.f, hard_sigmoid, e5m10, float, [](auto x) { return std::min(1.0f, std::max(0.0f, (x + 3.0f)/6.0f)); })
+impl_unary_operator_test_group(0.f, hard_sigmoid, e5m10, float16, [](auto x) { return std::min(1.0f, std::max(0.0f, (x + 3.0f)/6.0f)); })
 impl_unary_operator_test_group(0.f, silu, e8m23, float, [](auto x) { return x * (1.0f / (1.0f + std::exp(-(x)))); })
-impl_unary_operator_test_group(0.f, silu, e5m10, float, [](auto x) { return x * (1.0f / (1.0f + std::exp(-(x)))); })
+impl_unary_operator_test_group(0.f, silu, e5m10, float16, [](auto x) { return x * (1.0f / (1.0f + std::exp(-(x)))); })
 impl_unary_operator_test_group(0.f, relu, e8m23, float, [](auto x) { return std::max(0.0f, x); })
-impl_unary_operator_test_group(0.f, relu, e5m10, float, [](auto x) { return std::max(0.0f, x); })
+impl_unary_operator_test_group(0.f, relu, e5m10, float16, [](auto x) { return std::max(0.0f, static_cast<mag_e8m23_t>(x)); })
 impl_unary_operator_test_group(0.f, gelu, e8m23, float, [](auto x) { return .5f*x*(1.f + std::erf(x*(1.0f / std::sqrt(2.0f)))); })
-impl_unary_operator_test_group(0.f, gelu, e5m10, float, [](auto x) { return .5f*x*(1.f + std::erf(x*(1.0f / std::sqrt(2.0f)))); })
+impl_unary_operator_test_group(0.f, gelu, e5m10, float16, [](auto x) { return .5f*x*(1.f + std::erf(x*(1.0f / std::sqrt(2.0f)))); })
 impl_unary_operator_test_group(1e-3f, gelu_approx, e8m23, float, [](auto x) { return .5f*x*(1.f+std::tanh((1.f/std::sqrt(2.f))*(x+MAG_GELU_COEFF*std::pow(x, 3.f)))); })
-impl_unary_operator_test_group(0.f, gelu_approx, e5m10, float, [](auto x) { return .5f*x*(1.f+std::tanh((1.f/std::sqrt(2.f))*(x+MAG_GELU_COEFF*std::pow(x, 3.f)))); })
+impl_unary_operator_test_group(0.f, gelu_approx, e5m10, float16, [](auto x) { return .5f*x*(1.f+std::tanh((1.f/std::sqrt(2.f))*(x+MAG_GELU_COEFF*std::pow(x, 3.f)))); })
 
 INSTANTIATE_TEST_SUITE_P(
     unary_operators_multi_backend,

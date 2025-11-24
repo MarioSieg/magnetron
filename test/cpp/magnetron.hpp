@@ -981,8 +981,8 @@ namespace magnetron {
     template <typename T>
     auto tensor::to_vector() const -> std::vector<T> {
         if (dtype() != generic_to_dtype<T>())
-            throw std::runtime_error {"T must be same type as tenor's dtype: " + std::string(mag_dtype_meta_of(m_tensor->dtype)->name)};
-       if constexpr (std::is_same_v<T, bool>) {
+            throw std::runtime_error {"T and tensor dtype must match: " + std::string{typeid(std::decay_t<T>).name()} + " != " + std::string{mag_dtype_meta_of(m_tensor->dtype)->name}};
+       if constexpr (std::is_same_v<T, bool>) { // Because std::vector<bool> is ✨ special ✨
             auto* data {static_cast<uint8_t *>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
             std::vector<bool> result {};
             result.resize(numel());
