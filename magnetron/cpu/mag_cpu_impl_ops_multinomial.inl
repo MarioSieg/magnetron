@@ -76,4 +76,4 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
     }
 
 mag_gen_stub_multinomial(e8m23, mag_cvt_nop)
-mag_gen_stub_multinomial(e5m10, mag_e5m10_cvt_e8m23)
+mag_gen_stub_multinomial(e5m10, mag_e5m10_to_e8m23)

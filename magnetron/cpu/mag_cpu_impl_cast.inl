@@ -9,7 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-static MAG_AINLINE mag_e5m10_t mag_e8m23_cvt_e5m10(mag_e8m23_t x) {
+static MAG_AINLINE mag_e5m10_t mag_e8m23_to_e5m10(mag_e8m23_t x) {
     uint16_t r;
 #ifdef __F16C__
 #ifdef _MSC_VER
@@ -44,7 +44,7 @@ static MAG_AINLINE mag_e5m10_t mag_e8m23_cvt_e5m10(mag_e8m23_t x) {
     };
 }
 
-static MAG_AINLINE mag_e8m23_t mag_e5m10_cvt_e8m23(mag_e5m10_t x) {
+static MAG_AINLINE mag_e8m23_t mag_e5m10_to_e8m23(mag_e5m10_t x) {
 #ifdef __F16C__
 #ifdef _MSC_VER
     return _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(x.bits)));
@@ -84,9 +84,8 @@ static MAG_AINLINE mag_e8m23_t mag_e5m10_cvt_e8m23(mag_e5m10_t x) {
 typedef void (mag_vcast_fn_t)(int64_t numel, void *restrict dst, const void *restrict src);
 
 #define mag_cast_fn_builtin(TDst, x) ((mag_##TDst##_t)x)
-#define mag_cast_fn_e5m102e8m23(TDst, x) (mag_e5m10_cvt_e8m23(x))
-#define mag_cast_fn_e8m232e5m10(TDst, x) (mag_e8m23_cvt_e5m10(x))
-#define mag_cast_fn_e5m102e8m23_upcast(TDst, x) ((mag_##TDst##_t)mag_e5m10_cvt_e8m23(x))
+#define mag_cast_fn_e8m232e5m10(TDst, x) (mag_e8m23_to_e5m10(x))
+#define mag_cast_fn_e5m102e8m23_upcast(TDst, x) ((mag_##TDst##_t)mag_e5m10_to_e8m23(x))
 
 #define mag_gen_vcast(TSrc, TDst, F) \
     static void MAG_HOTPROC mag_vcast_##TSrc##_##TDst(int64_t numel, void *restrict dst, const void *restrict src) { \
@@ -237,7 +236,7 @@ static void MAG_HOTPROC mag_vcast_e8m23_e5m10(int64_t numel, void *restrict xo, 
     }
 #endif
     for (; i < numel; ++i) /* Scalar drain loop */
-        o[i] = mag_e8m23_cvt_e5m10(x[i]);
+        o[i] = mag_e8m23_to_e5m10(x[i]);
 }
 
 static void MAG_HOTPROC mag_vcast_e5m10_e8m23(int64_t numel, void *restrict xo, const void *restrict xx) {
@@ -269,7 +268,7 @@ static void MAG_HOTPROC mag_vcast_e5m10_e8m23(int64_t numel, void *restrict xo, 
     }
 #endif
     for (; i < numel; ++i) /* Scalar drain loop */
-        o[i] = mag_e5m10_cvt_e8m23(x[i]);
+        o[i] = mag_e5m10_to_e8m23(x[i]);
 }
 
 /* Src -> Dst */

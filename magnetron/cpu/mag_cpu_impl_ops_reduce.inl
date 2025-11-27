@@ -79,8 +79,8 @@ mag_cpu_impl_reduce_axes( \
                           *outp = (mag_e8m23_t)acc; )
 mag_cpu_impl_reduce_axes( \
                           e5m10, sum, mag_e8m23_t, 0.0f, \
-                          acc += mag_e5m10_cvt_e8m23(bx[roff]);, \
-                          *outp = mag_e8m23_cvt_e5m10(acc); )
+                          acc += mag_e5m10_to_e8m23(bx[roff]);, \
+                          *outp = mag_e8m23_to_e5m10(acc); )
 
 mag_cpu_impl_reduce_axes( \
                           e8m23, mean, mag_e11m52_t, 0.0, \
@@ -88,8 +88,8 @@ mag_cpu_impl_reduce_axes( \
                           acc /= (mag_e11m52_t)red_prod; *outp = (mag_e8m23_t)acc; )
 mag_cpu_impl_reduce_axes( \
                           e5m10, mean, mag_e8m23_t, 0.0f, \
-                          acc += mag_e5m10_cvt_e8m23(bx[roff]);, \
-                          acc /= (mag_e8m23_t)red_prod; *outp = mag_e8m23_cvt_e5m10(acc); )
+                          acc += mag_e5m10_to_e8m23(bx[roff]);, \
+                          acc /= (mag_e8m23_t)red_prod; *outp = mag_e8m23_to_e5m10(acc); )
 
 mag_cpu_impl_reduce_axes( \
                           e8m23, min, mag_e8m23_t, INFINITY, \
@@ -97,8 +97,8 @@ mag_cpu_impl_reduce_axes( \
                           *outp = acc; )
 mag_cpu_impl_reduce_axes( \
                           e5m10, min, mag_e8m23_t, INFINITY, \
-                          acc = fminf(acc, mag_e5m10_cvt_e8m23(bx[roff]));, \
-                          *outp = mag_e8m23_cvt_e5m10(acc); )
+                          acc = fminf(acc, mag_e5m10_to_e8m23(bx[roff]));, \
+                          *outp = mag_e8m23_to_e5m10(acc); )
 
 mag_cpu_impl_reduce_axes( \
                           e8m23, max, mag_e8m23_t, -INFINITY, \
@@ -106,7 +106,7 @@ mag_cpu_impl_reduce_axes( \
                           *outp = acc; )
 mag_cpu_impl_reduce_axes( \
                           e5m10, max, mag_e8m23_t, -INFINITY, \
-                          acc = fmaxf(acc, mag_e5m10_cvt_e8m23(bx[roff]));, \
-                          *outp = mag_e8m23_cvt_e5m10(acc); )
+                          acc = fmaxf(acc, mag_e5m10_to_e8m23(bx[roff]));, \
+                          *outp = mag_e8m23_to_e5m10(acc); )
 
 #undef mag_cpu_impl_reduce_axes

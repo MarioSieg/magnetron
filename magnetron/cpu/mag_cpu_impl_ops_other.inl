@@ -111,7 +111,7 @@ mag_gen_stub_cat(i64)
     }
 
 mag_gen_stub_repeat_back(e8m23, .0f, mag_cvt_nop, mag_cvt_nop)
-mag_gen_stub_repeat_back(e5m10, MAG_E5M10_ZERO, mag_e5m10_cvt_e8m23, mag_e8m23_cvt_e5m10)
+mag_gen_stub_repeat_back(e5m10, MAG_E5M10_ZERO, mag_e5m10_to_e8m23, mag_e8m23_to_e5m10)
 
 #undef mag_gen_stub_repeat_back
 

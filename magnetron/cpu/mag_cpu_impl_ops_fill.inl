@@ -35,7 +35,7 @@
     }
 
 mag_gen_stub_fill(e8m23, mag_G, e8m23, mag_cvt_nop)
-mag_gen_stub_fill(e5m10, mag_G_underlying, e8m23, mag_e8m23_cvt_e5m10)
+mag_gen_stub_fill(e5m10, mag_G_underlying, e8m23, mag_e8m23_to_e5m10)
 mag_gen_stub_fill(bool, mag_G, i64, mag_cvt_i642bool)
 mag_gen_stub_fill(u8, mag_G, i64, mag_cvt_i642i32)
 mag_gen_stub_fill(i8, mag_G, i64, mag_cvt_i642i32)
@@ -83,7 +83,7 @@ mag_gen_stub_fill(i64, mag_G, i64, mag_cvt_nop)
     }
 
 mag_gen_stub_masked_fill(e8m23, mag_G, e8m23, mag_cvt_nop)
-mag_gen_stub_masked_fill(e5m10, mag_G_underlying, e8m23, mag_e8m23_cvt_e5m10)
+mag_gen_stub_masked_fill(e5m10, mag_G_underlying, e8m23, mag_e8m23_to_e5m10)
 mag_gen_stub_masked_fill(bool, mag_G, i64, mag_cvt_i642bool)
 mag_gen_stub_masked_fill(u8, mag_G, i64, mag_cvt_i642i32)
 mag_gen_stub_masked_fill(i8, mag_G, i64, mag_cvt_i642i32)
@@ -154,7 +154,7 @@ mag_gen_stub_fill_rand(normal, e5m10, e8m23, e8m23)
     }
 
 mag_gen_stub_fill_arange(e8m23, mag_cvt_nop)
-mag_gen_stub_fill_arange(e5m10, mag_e8m23_cvt_e5m10)
+mag_gen_stub_fill_arange(e5m10, mag_e8m23_to_e5m10)
 mag_gen_stub_fill_arange(u8, mag_cvt_i642i32)
 mag_gen_stub_fill_arange(i8, mag_cvt_i642i32)
 mag_gen_stub_fill_arange(u16, mag_cvt_i642i32)
