@@ -1,3 +1,4 @@
+# === mimalloc ===
 option(MI_BUILD_SHARED "" OFF)
 option(MI_BUILD_STATIC "" ON)
 option(MI_BUILD_TESTS "" OFF)
@@ -18,5 +19,7 @@ endif()
 
 get_target_property(MAIN_CFLAGS mimalloc-static COMPILE_OPTIONS)
 message(STATUS "Compilation flags: ${MAIN_CFLAGS}")
+
+# === STB ===
 
 target_include_directories(magnetron_core PRIVATE stb)
