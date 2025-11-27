@@ -9,6 +9,78 @@
 ** +---------------------------------------------------------------------+
 */
 
+static MAG_AINLINE mag_e5m10_t mag_e8m23_cvt_e5m10(mag_e8m23_t x) {
+    uint16_t r;
+#ifdef __F16C__
+#ifdef _MSC_VER
+    r = (uint16_t)_mm_extract_epi16(_mm_cvtps_ph(_mm_set_ss(x), 0), 0);
+#else
+    r = _cvtss_sh(x, 0);
+#endif
+#elif defined(__ARM_NEON) && !defined(_MSC_VER)
+    union {
+        __fp16 f;
+        uint16_t u;
+    } castor = {.f=(__fp16)x};
+    r = castor.u;
+#else
+    union {
+        uint32_t u;
+        mag_e8m23_t f;
+    } castor;
+    mag_e8m23_t base = fabs(x)*0x1.0p+112f*0x1.0p-110f;
+    castor.f = x;
+    uint32_t shl1_w = castor.u+castor.u;
+    uint32_t sign = castor.u & 0x80000000u;
+    castor.u = 0x07800000u+(mag_xmax(0x71000000u, shl1_w&0xff000000u)>>1);
+    castor.f = base + castor.f;
+    uint32_t exp_bits = (castor.u>>13) & 0x00007c00u;
+    uint32_t mant_bits = castor.u & 0x00000fffu;
+    uint32_t nonsign = exp_bits + mant_bits;
+    r = (sign>>16)|(shl1_w > 0xff000000 ? 0x7e00 : nonsign);
+#endif
+    return (mag_e5m10_t) {
+        .bits=r
+    };
+}
+
+static MAG_AINLINE mag_e8m23_t mag_e5m10_cvt_e8m23(mag_e5m10_t x) {
+#ifdef __F16C__
+#ifdef _MSC_VER
+    return _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(x.bits)));
+#else
+    return _cvtsh_ss(x.bits);
+#endif
+#elif defined(__ARM_NEON) && !defined(_MSC_VER)
+    union {
+        __fp16 f;
+        uint16_t u;
+    } castor = {.u=x.bits};
+    return castor.f;
+#else
+    union {
+        uint32_t u;
+        mag_e8m23_t f;
+    } castor;
+    uint32_t w = (uint32_t)x.bits<<16;
+    uint32_t sign = w & 0x80000000u;
+    uint32_t two_w = w+w;
+    uint32_t offs = 0xe0u<<23;
+    uint32_t t1 = (two_w>>4) + offs;
+    uint32_t t2 = (two_w>>17) | (126u<<23);
+    castor.u = t1;
+    mag_e8m23_t norm_x = castor.f*0x1.0p-112f;
+    castor.u = t2;
+    mag_e8m23_t denorm_x = castor.f-0.5f;
+    uint32_t denorm_cutoff = 1u<<27;
+    uint32_t r = sign | (two_w < denorm_cutoff
+                         ? (castor.f = denorm_x, castor.u)
+                         : (castor.f = norm_x, castor.u));
+    castor.u = r;
+    return castor.f;
+#endif
+}
+
 typedef void (mag_vcast_fn_t)(int64_t numel, void *restrict dst, const void *restrict src);
 
 #define mag_cast_fn_builtin(TDst, x) ((mag_##TDst##_t)x)
