@@ -1,7 +1,7 @@
 [build-system]
 requires = [
     "scikit-build-core",
-    "cffi",
+    "nanobind",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -13,7 +13,7 @@ requires-python = ">=3.10"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Mario Sieg", email = "mario.sieg.64@gmail.com" }]
-dependencies = ["cffi"]
+dependencies = ["nanobind"]
 keywords = [
     "machine-learning",
     "deep-learning",
@@ -41,6 +41,9 @@ dev = [
 ]
 
 [tool.scikit-build.cmake.define]
+# We need to build the bindings layer
+MAGNETRON_BUILD_PYTHON_BINDING_LAYER = true
+
 # Enable / disable backends
 MAGNETRON_ENABLE_BACKEND_CPU = true
 MAGNETRON_ENABLE_BACKEND_CUDA = true

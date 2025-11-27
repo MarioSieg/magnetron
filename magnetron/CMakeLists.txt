@@ -23,6 +23,6 @@ if (${MAGNETRON_ENABLE_BACKEND_CUDA})
 endif()
 
 # Build Python bindings library if enabled
-if (${MAGNETRON_BUILD_PYTHON_BINDINGS})
-    add_subdirectory(bindings)
+if (${MAGNETRON_BUILD_PYTHON_BINDING_LAYER})
+    add_subdirectory(binding_layer)
 endif()

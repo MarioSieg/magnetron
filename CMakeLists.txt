@@ -14,17 +14,17 @@ set(EXECUTABLE_OUTPUT_PATH "${CMAKE_BINARY_DIR}")   # Place all built executable
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 # General build options
-option(MAGNETRON_BUILD_PYTHON_BINDINGS "Build Python bindings" ON)     # Build Python bindings (requires C++ toolchain)
-option(MAGNETRON_BUILD_TESTS "Build tests" ON)                      # Build C++ unit tests (requires C++ toolchain)
-option(MAGNETRON_BUILD_BENCHMARKS "Build benchmaryks" ON)           # Build C++ benchmarks (requires C++ toolchain)
-option(MAGNETRON_DEBUG "Enable debug mode" OFF)                     # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
+option(MAGNETRON_BUILD_PYTHON_BINDING_LAYER "Build Python bindings" ON)     # Build Python bindings (requires C++ toolchain)
+option(MAGNETRON_BUILD_TESTS "Build tests" ON)                              # Build C++ unit tests (requires C++ toolchain)
+option(MAGNETRON_BUILD_BENCHMARKS "Build benchmaryks" ON)                   # Build C++ benchmarks (requires C++ toolchain)
+option(MAGNETRON_DEBUG "Enable debug mode" OFF)                             # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
 
 # Backend build options
 option(MAGNETRON_ENABLE_BACKEND_CPU "Enable CPU backend" ON)                # Enable CPU backend
 option(MAGNETRON_ENABLE_BACKEND_CUDA "Enable CUDA backend" OFF)              # Enable CUDA backend (requires CUDA toolkit)
 
 # Magnetron's core and CPU backend is C99 but Python bindings, unit tests or benchmarks require C++ 20.
-if (${MAGNETRON_BUILD_PYTHON_BINDINGS} OR ${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS})
+if (${MAGNETRON_BUILD_PYTHON_BINDING_LAYER} OR ${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS})
     enable_language(CXX)
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -42,7 +42,7 @@ if (${MAGNETRON_BUILD_BENCHMARKS})
     add_subdirectory(benchmark)
 endif()
 
-if (${MAGNETRON_BUILD_PYTHON_BINDINGS})
+if (${MAGNETRON_BUILD_PYTHON_BINDING_LAYER})
     if (CMAKE_VERSION VERSION_LESS 3.18)
         set(DEV_MODULE Development)
     else()
