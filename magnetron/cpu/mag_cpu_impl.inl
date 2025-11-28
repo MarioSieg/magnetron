@@ -177,7 +177,14 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_RAND_UNIFORM] = {
         [MAG_DTYPE_E8M23] = &mag_fill_rand_uniform_e8m23,
         [MAG_DTYPE_E5M10] = &mag_fill_rand_uniform_e5m10,
-        [MAG_DTYPE_I32] = &mag_fill_rand_uniform_i32
+        [MAG_DTYPE_U8] = &mag_fill_rand_uniform_u8,
+        [MAG_DTYPE_I8] = &mag_fill_rand_uniform_i8,
+        [MAG_DTYPE_U16] = &mag_fill_rand_uniform_u16,
+        [MAG_DTYPE_I16] = &mag_fill_rand_uniform_i16,
+        [MAG_DTYPE_U32] = &mag_fill_rand_uniform_u32,
+        [MAG_DTYPE_I32] = &mag_fill_rand_uniform_i32,
+        [MAG_DTYPE_U64] = &mag_fill_rand_uniform_u64,
+        [MAG_DTYPE_I64] = &mag_fill_rand_uniform_i64,
     },
     [MAG_OP_RAND_NORMAL] = {
         [MAG_DTYPE_E8M23] = &mag_fill_rand_normal_e8m23,
@@ -185,6 +192,16 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     },
     [MAG_OP_RAND_BERNOULLI] = {
         [MAG_DTYPE_BOOL] = &mag_fill_rand_bernoulli_bool,
+    },
+    [MAG_OP_RAND_PERM] = {
+        [MAG_DTYPE_U8] = &mag_rand_perm_u8,
+        [MAG_DTYPE_I8] = &mag_rand_perm_i8,
+        [MAG_DTYPE_U16] = &mag_rand_perm_u16,
+        [MAG_DTYPE_I16] = &mag_rand_perm_i16,
+        [MAG_DTYPE_U32] = &mag_rand_perm_u32,
+        [MAG_DTYPE_I32] = &mag_rand_perm_i32,
+        [MAG_DTYPE_U64] = &mag_rand_perm_u64,
+        [MAG_DTYPE_I64] = &mag_rand_perm_i64,
     },
     [MAG_OP_ARANGE] = {
         [MAG_DTYPE_E8M23] = &mag_fill_arange_e8m23,

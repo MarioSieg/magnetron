@@ -108,12 +108,22 @@ def _get_reduction_axes(dim: int | Sequence[int] | None) -> tuple[_FFI.CData, in
 
     raise TypeError('Dimension must be an int, a sequence of ints, or None.')
 
+_SAMPLE_RANGE_DICT: dict[DataType, int | float] = {
+    float32: (0.0, 1.0),
+    float16: (0.0, 1.0),
+    uint8: (0, 2**8 - 1),
+    int8: (-2**7, 2**7 - 1),
+    uint16: (0, 2**16 - 1),
+    int16: (-2**15, 2**15 - 1),
+    uint32: (0, 2**32 - 1),
+    int32: (-2**31, 2**31 - 1),
+    uint64: (0, 2**64 - 1),
+    int64: (-2**63, 2**63 - 1),
+}
 
-def _get_uniform_sample_range(is_int: bool, low: float | int | None = None, high: float | int | None = None) -> tuple[int | float, int | float]:
-    if low is None:
-        low = -0x80000000 if is_int else 0.0
-    if high is None:
-        high = 0x7FFFFFFF if is_int else 1.0
+def _get_uniform_sample_range(dtype: DataType, low: float | int | None = None, high: float | int | None = None) -> tuple[int | float, int | float]:
+    if low is None: low = _SAMPLE_RANGE_DICT[dtype][0]
+    if high is None: high = _SAMPLE_RANGE_DICT[dtype][1]
     assert high > low, f'Invalid uniform sample range {high} must be > {low}'
     return low, high
 
@@ -504,8 +514,21 @@ class Tensor:
         if stop is None:
             stop = start
             start = 0
-        tensor: Tensor = cls.empty(int((stop - start + step - 1) // step), dtype=dtype, requires_grad=requires_grad)
-        tensor.fill_arange_(start, step)
+        instance = _wrap_out_alloc(lambda out: _C.mag_tensor_arange(out, context.native_ptr(), dtype.enum_value, float(start), float(stop), float(step)))
+        tensor: Tensor = cls(instance)
+        tensor.requires_grad = requires_grad
+        return tensor
+
+    @classmethod
+    def rand_perm(
+        cls,
+        n: int,
+        dtype: DataType = _default_dtype(),
+        requires_grad: bool = False,
+    ) -> Tensor:
+        instance = _wrap_out_alloc(lambda out: _C.mag_tensor_rand_perm(out, context.native_ptr(), dtype.enum_value, n))
+        tensor: Tensor = cls(instance)
+        tensor.requires_grad = requires_grad
         return tensor
 
     @classmethod
@@ -634,7 +657,7 @@ class Tensor:
     def fill_random_uniform_(self, low: float | int | None = None, high: float | int | None = None) -> None:
         self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         self._validate_inplace_op()
-        low, high = _get_uniform_sample_range(self.dtype.is_integer, low, high)
+        low, high = _get_uniform_sample_range(self.dtype, low, high)
         if self.dtype.is_floating_point:
             _C.mag_tensor_fill_random_uniform_float(self._ptr, low, high)
         else:
@@ -649,12 +672,6 @@ class Tensor:
         self._validate_dtypes(self, allowed_types={boolean})
         self._validate_inplace_op()
         _C.mag_tensor_fill_random_bernoulli(self._ptr, p)
-
-    def fill_arange_(self, start: float | int = 0, step: float | int = 1) -> None:
-        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
-        self._validate_inplace_op()
-        assert self.rank == 1, f'Tensor must be 1-dimensional for arange fill, but is {self.rank}-dimensional'
-        _C.mag_tensor_fill_arange(self._ptr, float(start), float(step))
 
     def copy_(self, x: Tensor) -> None:
         assert self.rank == x.rank, f'Tensor ranks do not match: {self.rank} != {x.rank}'

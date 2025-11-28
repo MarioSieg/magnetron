@@ -73,11 +73,16 @@ static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_u32x4_t mag_philox4x32_next_u3
 }
 
 static MAG_CUDA_DEVICE MAG_AINLINE uint32_t mag_philox4x32_next_u32(mag_philox4x32_stream_t *stream) {
-    if (stream->idx >= 4) {
+    int *i = &stream->idx;
+    if (*i >= 4) {
         stream->cache = mag_philox4x32_next_u32x4(stream);
-        stream->idx = 0;
+        *i = 0;
     }
-    return stream->cache.v[stream->idx++];
+    return stream->cache.v[(*i)++];
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE uint64_t mag_philox4x32_next_u64(mag_philox4x32_stream_t *stream) {
+    return (uint64_t)mag_philox4x32_next_u32(stream)<<32 | mag_philox4x32_next_u32(stream);
 }
 
 static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_e8m23x4_t mag_philox4x32_next_e8m23x4(mag_philox4x32_stream_t *stream) {

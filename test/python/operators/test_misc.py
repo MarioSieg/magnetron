@@ -26,7 +26,7 @@ def test_tensor_clone(dtype: DataType) -> None:
         assert a.is_contiguous == b.is_contiguous
         assert a.tolist() == b.tolist()
 
-    square_shape_permutations(func, 4)
+    for_all_shapes(func)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_gather(dtype: DataType) -> None:
@@ -41,7 +41,7 @@ def test_tensor_gather(dtype: DataType) -> None:
             out_torch = torch.gather(torch_x, dim, index_torch)
             torch.testing.assert_close(totorch(out_own), out_torch)
 
-    square_shape_permutations(func, 4)
+    for_all_shapes(func)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_cat_random(dtype):
@@ -142,7 +142,7 @@ def test_tensor_split(dtype: DataType) -> None:
         for i in range(len(a)):
             torch.testing.assert_close(totorch(a[i]), b[i])
 
-    square_shape_permutations(func, 4)
+    for_all_shapes(func)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_tolist(dtype: DataType) -> None:
@@ -150,7 +150,7 @@ def test_tensor_tolist(dtype: DataType) -> None:
         x = _make_tensor(shape, dtype)
         assert x.tolist() == totorch(x).tolist()
 
-    square_shape_permutations(func, 4)
+    for_all_shapes(func)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_transpose(dtype: DataType) -> None:
@@ -171,7 +171,7 @@ def test_tensor_transpose(dtype: DataType) -> None:
             print(f'axes: {dim1} {dim2}')
         torch.testing.assert_close(a, b)
 
-    square_shape_permutations(func, 4)
+    for_all_shapes(func)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_view(dtype: DataType) -> None:
@@ -183,7 +183,7 @@ def test_tensor_view(dtype: DataType) -> None:
         y = x.view(*shape)
         torch.testing.assert_close(totorch(y), totorch(x).view(shape))
 
-    square_shape_permutations(func, 4)
+    for_all_shapes(func)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_view_infer_axis(dtype: DataType) -> None:
@@ -196,7 +196,7 @@ def test_tensor_view_infer_axis(dtype: DataType) -> None:
         y = x.view(*shape)
         torch.testing.assert_close(totorch(y), totorch(x).view(shape))
 
-    square_shape_permutations(func, 4)
+    for_all_shapes(func)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_reshape(dtype: DataType) -> None:
@@ -208,7 +208,7 @@ def test_tensor_reshape(dtype: DataType) -> None:
         y = x.T.reshape(*shape)
         torch.testing.assert_close(totorch(y), totorch(y).reshape(shape))
 
-    square_shape_permutations(func, 4)
+    for_all_shapes(func)
 
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_reshape_infer_axis(dtype: DataType) -> None:
@@ -221,7 +221,7 @@ def test_tensor_reshape_infer_axis(dtype: DataType) -> None:
         y = x.T.reshape(*shape)
         torch.testing.assert_close(totorch(y), totorch(y).reshape(shape))
 
-    square_shape_permutations(func, 4)
+    for_all_shapes(func)
 
 def test_tensor_permute() -> None:
     a = Tensor.full(2, 3, fill_value=1)

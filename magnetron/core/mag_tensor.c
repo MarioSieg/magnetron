@@ -155,39 +155,6 @@ static void mag_tensor_dtor(void *self) {
     mag_tensor_free_header(t);
 }
 
-mag_status_t mag_tensor_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
-    return mag_tensor_new(out, ctx, type, rank, shape);
-}
-
-mag_status_t mag_tensor_empty_like(mag_tensor_t **out, mag_tensor_t *isomorph) {
-    return mag_tensor_new(out, isomorph->ctx, isomorph->dtype, isomorph->coords.rank, isomorph->coords.shape);
-}
-
-mag_status_t mag_tensor_empty_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type) {
-    return mag_tensor_empty(out, ctx, type, 1, (int64_t[1]){1});
-}
-
-mag_status_t mag_tensor_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, mag_e8m23_t value) {
-    mag_status_t stat = mag_tensor_empty_scalar(out, ctx, type);
-    if (mag_iserr(stat)) return stat;
-    mag_tensor_fill_float(*out, value);
-    return MAG_STATUS_OK;
-}
-
-mag_status_t mag_tensor_full(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_e8m23_t value) {
-    mag_status_t stat = mag_tensor_empty(out, ctx, type, rank, shape);
-    if (mag_iserr(stat)) return stat;
-    mag_tensor_fill_float(*out, value);
-    return MAG_STATUS_OK;
-}
-
-mag_status_t mag_tensor_full_like(mag_tensor_t **out, mag_tensor_t *isomorph, mag_e8m23_t value) {
-    mag_status_t stat = mag_tensor_empty_like(out, isomorph);
-    if (mag_iserr(stat)) return stat;
-    mag_tensor_fill_float(*out, value);
-    return MAG_STATUS_OK;
-}
-
 int64_t mag_tensor_get_data_size(const mag_tensor_t *t) {
     return t->storage->size;
 }

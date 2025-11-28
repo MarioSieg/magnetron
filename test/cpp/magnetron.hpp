@@ -883,10 +883,6 @@ namespace magnetron {
             mag_tensor_fill_random_bernoulli(m_tensor, p);
         }
 
-        auto fill_arange(float start, float step = 1.0f) -> void {
-            mag_tensor_fill_arange(m_tensor, start, step);
-        }
-
         [[nodiscard]] auto to_string(bool with_data = true, size_t from_start = 0, size_t from_end = 0) const -> std::string {
             char* fmt {mag_tensor_to_string(m_tensor, with_data, from_start, from_end)};
             std::string str {fmt};

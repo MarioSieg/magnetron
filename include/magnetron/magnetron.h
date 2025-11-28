@@ -181,6 +181,8 @@ extern MAG_EXPORT mag_status_t mag_tensor_empty_scalar(mag_tensor_t **out, mag_c
 extern MAG_EXPORT mag_status_t mag_tensor_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, float value);
 extern MAG_EXPORT mag_status_t mag_tensor_full(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, float value);
 extern MAG_EXPORT mag_status_t mag_tensor_full_like(mag_tensor_t **out, mag_tensor_t *isomorph, float value);
+extern MAG_EXPORT mag_status_t mag_tensor_arange(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, float start, float end, float step);
+extern MAG_EXPORT mag_status_t mag_tensor_rand_perm(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t n);
 extern MAG_EXPORT mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height);
 
 /* ============ Tensor Operators ============ */
@@ -337,7 +339,6 @@ extern MAG_EXPORT void mag_tensor_fill_random_uniform_float(mag_tensor_t *t, flo
 extern MAG_EXPORT void mag_tensor_fill_random_uniform_int(mag_tensor_t *t, int64_t min, int64_t max);               /* Fill tensor with random values from uniform distribution within [min, max] */
 extern MAG_EXPORT void mag_tensor_fill_random_normal(mag_tensor_t *t, float mean, float stddev);                    /* Fill tensor with random values from the normal distribution. */
 extern MAG_EXPORT void mag_tensor_fill_random_bernoulli(mag_tensor_t *t, float p);                                  /* Fill bool tensor with random values from the bernoulli distribution. */
-extern MAG_EXPORT void mag_tensor_fill_arange(mag_tensor_t *t, float start, float step);                            /* Fill tensor with values from start to end with step. */
 
 /* ============ Tensor Property Accessors ============ */
 

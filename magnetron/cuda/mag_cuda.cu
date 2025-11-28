@@ -115,6 +115,7 @@ namespace mag {
             [MAG_OP_RAND_UNIFORM] = &fill_op_fill_rand_uniform,
             [MAG_OP_RAND_NORMAL] = &fill_op_fill_rand_normal,
             [MAG_OP_RAND_BERNOULLI] = nullptr,
+            [MAG_OP_RAND_PERM] = nullptr,
             [MAG_OP_ARANGE] = nullptr,
             [MAG_OP_CLONE] = &unary_op_clone,
             [MAG_OP_CAST] = &unary_op_clone, // todo

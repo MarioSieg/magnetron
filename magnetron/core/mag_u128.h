@@ -18,10 +18,7 @@
 extern "C" {
 #endif
 
-typedef struct mag_uint128_t {
-    uint64_t hi;
-    uint64_t lo;
-} mag_uint128_t;
+typedef struct mag_uint128_t { uint64_t hi; uint64_t lo; } mag_uint128_t;
 
 static inline mag_uint128_t *mag_uint128_add(mag_uint128_t *lhs, uint64_t rhs) {
     uint64_t sum = (lhs->lo + rhs)&(~(uint64_t)0);

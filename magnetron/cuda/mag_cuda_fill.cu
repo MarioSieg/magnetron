@@ -133,7 +133,7 @@ namespace mag {
     }
 
     void fill_op_fill(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->in[0];
+        mag_tensor_t *r = cmd->out[0];
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_fill_kernel<mag_e8m23_t>(r, cmd); break;
             case MAG_DTYPE_E5M10: launch_fill_kernel<half>(r, cmd); break;
@@ -151,7 +151,7 @@ namespace mag {
     }
 
     void fill_op_masked_fill(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->in[0];
+        mag_tensor_t *r = cmd->out[0];
         mag_tensor_t *mask = static_cast<mag_tensor_t *>(mag_op_attr_unwrap_ptr(cmd->attrs[0])); // TODO: pass in cmd in why the fuck are these here
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_fill_kernel<mag_e8m23_t>(r, cmd, mask); break;
@@ -170,7 +170,7 @@ namespace mag {
     }
 
     void fill_op_fill_rand_uniform(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->in[0];
+        mag_tensor_t *r = cmd->out[0];
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_rand_fill_kernel<mag_e8m23_t, false>(r, cmd); break;
             case MAG_DTYPE_E5M10: launch_rand_fill_kernel<half, false>(r, cmd); break;
@@ -179,7 +179,7 @@ namespace mag {
     }
 
     void fill_op_fill_rand_normal(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->in[0];
+        mag_tensor_t *r = cmd->out[0];
         switch (r->dtype) {
             case MAG_DTYPE_E8M23: launch_rand_fill_kernel<mag_e8m23_t, true>(r, cmd); break;
             case MAG_DTYPE_E5M10: launch_rand_fill_kernel<half, true>(r, cmd); break;

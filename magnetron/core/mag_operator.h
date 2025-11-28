@@ -32,12 +32,13 @@ typedef enum mag_opflags_t {
 /* Enumerator, Input Count, Output Count, DType Mask, Op Param Layout, Flags, Backward Function, cpu growth, cpu tresh */
 #define mag_opdef(_, __)\
     _(NOP, 0, 0, NONE, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(FILL, 1, 0, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(MASKED_FILL, 1, 0, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(RAND_UNIFORM, 1, 0, NUMERIC, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-    _(RAND_NORMAL, 1, 0, FP, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-    _(RAND_BERNOULLI, 1, 0, BOOL, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(ARANGE, 1, 0, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(FILL, 0, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(MASKED_FILL, 0, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(RAND_UNIFORM, 0, 1, NUMERIC, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+    _(RAND_NORMAL, 0, 1, FP, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+    _(RAND_BERNOULLI, 0, 1, BOOL, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(RAND_PERM, 0, 1, INTEGER, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(ARANGE, 0, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
     _(CAST, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
     _(VIEW, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, view)__\
