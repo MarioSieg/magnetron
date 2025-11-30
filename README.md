@@ -54,8 +54,8 @@ A CUDA backend and mixed-precision support are currently in development.
 - **Lightweight neural modules**  
   Includes `Linear`, `Sequential`, `ReLU`, `Tanh`, `Sigmoid`, `LayerNorm`, `Embedding`, and more.
 
-- **Flexible data types**  
-  Supports `float32`, `float16`, `int32`, and 'boolean' tensors. More to come.
+- **Rich data types with many operators**  
+  Supports `float16`, `float32`, `int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32`, `int64`, `uint64`, and `boolean`.
 
 - **Custom serialization format**  
   Fast, portable model saving and loading through Magnetron’s own binary tensor format.
@@ -67,12 +67,12 @@ A CUDA backend and mixed-precision support are currently in development.
 
 ## 🚀 Example Models
 
-| Example | Description |
-|----------|-------------|
-| [GPT-2 Inference](examples/gpt2/) | Transformer-based text generation using pretrained GPT-2 weights. |
-| [Autoencoder](examples/ae/) | Image reconstruction using a small dense encoder–decoder network. |
-| [Linear Regression](examples/linear/) | Fits a linear model to noisy synthetic data. |
-| [XOR](examples/xor/) | Trains a small neural network to learn the XOR logical function. |
+| Example                                          | Description |
+|--------------------------------------------------|-------------|
+| [GPT-2 Inference](examples/gpt2/)                | Transformer-based text generation using pretrained GPT-2 weights. |
+| [Autoencoder](examples/ae/)                      | Image reconstruction using a small dense encoder–decoder network. |
+| [Linear Regression](examples/linear_regression/) | Fits a linear model to noisy synthetic data. |
+| [XOR](examples/xor/)                             | Trains a small neural network to learn the XOR logical function. |
 
 ---
 
