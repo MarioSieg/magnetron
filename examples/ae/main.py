@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from magnetron import nn, optim, context, Tensor, no_grad, float32
+from magnetron import nn, optim, context, Tensor, no_grad, dtype
 import matplotlib.pyplot as plt
 
 
@@ -44,7 +44,7 @@ def _main() -> None:
 
     # Load and preprocess image
     image = Tensor.load_image(args.image, channels='RGB', resize_to=(args.width, args.height)) # Load image into uint8 CxHxW tensor
-    image = (image.cast(float32) / 255)[None, ...] # Convert uint8 -> float tensor and normalize [0, 255) to [0, 1) and insert batch dim
+    image = (image.cast(dtype.float32) / 255)[None, ...] # Convert uint8 -> float tensor and normalize [0, 255) to [0, 1) and insert batch dim
 
     # Initialize model, loss function, and optimizer
     model = AE(w=args.width, h=args.height, latent_dim=args.latent)

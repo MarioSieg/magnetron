@@ -30,7 +30,7 @@ for epoch in range(EPOCHS):
 # Print predictions
 y_hat = model(x)
 for i in range(x.shape[0]):
-    print(f'Expected: {y[i]}, Predicted: {y_hat[i]}')
+    print(f'Expected: {y[i].item()}, Predicted: {y_hat[i].item()}')
 
 # Plot results
 plt.figure()

@@ -15,7 +15,7 @@ from typing import Any
 from collections.abc import Sequence, Callable
 
 from . import context
-from ._dtype import *
+from .dtype import *
 from ._bootstrap import _FFI, _C
 from ._error import _handle_errc
 
