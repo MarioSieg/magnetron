@@ -262,7 +262,7 @@ bool mag_tensor_get_item_bool(const mag_tensor_t *t) {
 
 static void mag_fmt_single_elem(mag_sstream_t *ss, const void *buf, size_t i, mag_dtype_t dtype) {
     char fmt[MAG_FMT_BUF_MAX] = {0};
-    char *e;
+    char *e = NULL;
     switch (dtype) {
         case MAG_DTYPE_FLOAT32:
         case MAG_DTYPE_FLOAT16: e = mag_fmt_e11m52(fmt, ((const float *)buf)[i], MAG_FMT_G5); break;
