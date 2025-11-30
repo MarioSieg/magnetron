@@ -11,12 +11,206 @@
 
 #include "mag_cuda_unary.cuh"
 
+#include <array>
+
 namespace mag {
-    template <typename T>
+    template <typename src_t, typename dst_t, const bool contig>
+    __global__ static void cast_kernel(
+        int64_t n,
+        dst_t *__restrict__ o,
+        const src_t *__restrict__ x,
+        mag_coords_iter_t xc
+    ) {
+        int64_t i = static_cast<int64_t>(blockDim.x) * static_cast<int64_t>(blockIdx.x) + threadIdx.x;
+        if constexpr (contig) {
+            if (i >= n) return;
+            o[i] = static_cast<dst_t>(x[i]);
+        } else {
+            int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+            for (; i < n; i += step) {
+                int64_t xi = mag_coords_iter_to_offset(&xc, i);
+                o[i] = static_cast<dst_t>(x[xi]);
+            }
+        }
+    }
+
+    template <typename src_t, typename dst_t>
+    static void mag_cast_launcher(
+        mag_tensor_t *r,
+        const mag_tensor_t *x
+    ) {
+        int64_t n = mag_tensor_get_numel(r);
+        auto *pr = static_cast<dst_t *>(mag_tensor_get_data_ptr(r));
+        auto *px = static_cast<const src_t *>(mag_tensor_get_data_ptr(x));
+        int64_t blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
+        mag_coords_iter_t xc;
+        mag_coords_iter_init(&xc, &x->coords);
+        if (mag_tensor_is_contiguous(x)) cast_kernel<src_t, dst_t, true><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, xc);
+        else cast_kernel<src_t, dst_t, false><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, xc);
+    }
+
+    void unary_op_cast(const mag_command_t *cmd) {
+        mag_tensor_t *r = cmd->out[0];
+        const mag_tensor_t *x = cmd->in[0];
+        using cast_fn = void (mag_tensor_t *, const mag_tensor_t *);
+        static constexpr cast_fn *const cast_table_2d[][MAG_DTYPE__NUM] = {
+            [MAG_DTYPE_E8M23] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<mag_e8m23_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<mag_e8m23_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<mag_e8m23_t, uint8_t>,   // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<mag_e8m23_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<mag_e8m23_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<mag_e8m23_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<mag_e8m23_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<mag_e8m23_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<mag_e8m23_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<mag_e8m23_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<mag_e8m23_t, int64_t>,
+            },
+            [MAG_DTYPE_E5M10] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<half, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<half, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<half, uint8_t>,   // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<half, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<half, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<half, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<half, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<half, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<half, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<half, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<half, int64_t>,
+            },
+            [MAG_DTYPE_BOOL] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<uint8_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<uint8_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<uint8_t, uint8_t>,     // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<uint8_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<uint8_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<uint8_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<uint8_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<uint8_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<uint8_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<uint8_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<uint8_t, int64_t>,
+            },
+            [MAG_DTYPE_U8] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<uint8_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<uint8_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<uint8_t, uint8_t>,     // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<uint8_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<uint8_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<uint8_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<uint8_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<uint8_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<uint8_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<uint8_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<uint8_t, int64_t>,
+            },
+            [MAG_DTYPE_I8] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<int8_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<int8_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<int8_t, uint8_t>,      // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<int8_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<int8_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<int8_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<int8_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<int8_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<int8_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<int8_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<int8_t, int64_t>,
+            },
+            [MAG_DTYPE_U16] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<uint16_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<uint16_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<uint16_t, uint8_t>,    // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<uint16_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<uint16_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<uint16_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<uint16_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<uint16_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<uint16_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<uint16_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<uint16_t, int64_t>,
+            },
+            [MAG_DTYPE_I16] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<int16_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<int16_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<int16_t, uint8_t>,     // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<int16_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<int16_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<int16_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<int16_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<int16_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<int16_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<int16_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<int16_t, int64_t>,
+            },
+            [MAG_DTYPE_U32] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<uint32_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<uint32_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<uint32_t, uint8_t>,    // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<uint32_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<uint32_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<uint32_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<uint32_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<uint32_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<uint32_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<uint32_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<uint32_t, int64_t>,
+            },
+            [MAG_DTYPE_I32] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<int32_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<int32_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<int32_t, uint8_t>,     // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<int32_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<int32_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<int32_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<int32_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<int32_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<int32_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<int32_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<int32_t, int64_t>,
+            },
+            [MAG_DTYPE_U64] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<uint64_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<uint64_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<uint64_t, uint8_t>,    // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<uint64_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<uint64_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<uint64_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<uint64_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<uint64_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<uint64_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<uint64_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<uint64_t, int64_t>,
+            },
+            [MAG_DTYPE_I64] = {
+                [MAG_DTYPE_E8M23] = &mag_cast_launcher<int64_t, mag_e8m23_t>,
+                [MAG_DTYPE_E5M10] = &mag_cast_launcher<int64_t, half>,
+                [MAG_DTYPE_BOOL]  = &mag_cast_launcher<int64_t, uint8_t>,     // bool uses u8 kernels
+                [MAG_DTYPE_U8]    = &mag_cast_launcher<int64_t, uint8_t>,
+                [MAG_DTYPE_I8]    = &mag_cast_launcher<int64_t, int8_t>,
+                [MAG_DTYPE_U16]   = &mag_cast_launcher<int64_t, uint16_t>,
+                [MAG_DTYPE_I16]   = &mag_cast_launcher<int64_t, int16_t>,
+                [MAG_DTYPE_U32]   = &mag_cast_launcher<int64_t, uint32_t>,
+                [MAG_DTYPE_I32]   = &mag_cast_launcher<int64_t, int32_t>,
+                [MAG_DTYPE_U64]   = &mag_cast_launcher<int64_t, uint64_t>,
+                [MAG_DTYPE_I64]   = &mag_cast_launcher<int64_t, int64_t>,
+            },
+        };
+        static_assert(std::size(cast_table_2d) == static_cast<size_t>(MAG_DTYPE__NUM));
+        mag_dtype_t src = x->dtype;
+        mag_dtype_t dst = r->dtype;
+        cast_fn *kernel = cast_table_2d[src][dst];
+        mag_assert(kernel, "No kernel found for type cast: %s -> %s", mag_dtype_meta_of(src)->name, mag_dtype_meta_of(dst)->name);
+        (*kernel)(r, x);
+    }
+
+    template <typename scalar_t>
     __global__ static void clone_strided_kernel(
         int64_t n,
-        T *o,
-        const T *x,
+        scalar_t *o,
+        const scalar_t *x,
         mag_coords_iter_t rc,
         mag_coords_iter_t xc
     ) {
@@ -29,26 +223,26 @@ namespace mag {
         }
     }
 
-    template <typename T>
+    template <typename scalar_t>
     static void launch_clone(
         mag_tensor_t *r,
         const mag_tensor_t *x
     ) {
         int64_t n = mag_tensor_get_numel(r);
-        auto *pr = static_cast<T *>(mag_tensor_get_data_ptr(r));
-        auto *px = static_cast<const T *>(mag_tensor_get_data_ptr(x));
+        auto *pr = static_cast<scalar_t *>(mag_tensor_get_data_ptr(r));
+        auto *px = static_cast<const scalar_t *>(mag_tensor_get_data_ptr(x));
         if (mag_full_cont2(r, x)) {
-            cudaMemcpy(pr, px, n*sizeof(T), cudaMemcpyDeviceToDevice);
+            cudaMemcpy(pr, px, n*sizeof(scalar_t), cudaMemcpyDeviceToDevice);
             return;
         }
         mag_coords_iter_t rc, xc;
         mag_coords_iter_init(&rc, &r->coords);
         mag_coords_iter_init(&xc, &x->coords);
         int64_t blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
-        clone_strided_kernel<T><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, rc, xc);
+        clone_strided_kernel<scalar_t><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, rc, xc);
     }
 
-    void unary_op_clone(const mag_command_t *cmd){
+    void unary_op_clone(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
         mag_assert2(r->dtype == x->dtype);
@@ -70,331 +264,331 @@ namespace mag {
 
     constexpr mag_e8m23_t INVSQRT2 = 0.707106781186547524400844362104849039284835937f /* 1/√2 */;
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_abs {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return fabs(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return fabs(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_sgn {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x > 0.f ? 1.f : x < 0.f ? -1.f : 0.f; }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return x > 0.f ? 1.f : x < 0.f ? -1.f : 0.f; }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_neg {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return -x; }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return -x; }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_log {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __logf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __logf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_log10 {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __log10f(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __log10f(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_log1p {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return log1pf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return log1pf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_log2 {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __log2f(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __log2f(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_sqr {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x*x; }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return x*x; }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_sqrt {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return sqrtf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return sqrtf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_sin {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __sinf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __sinf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_cos {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __cosf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __cosf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_tan {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __tanf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __tanf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_asin {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return asinf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return asinf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_acos {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return acosf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return acosf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_atan {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return atanf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return atanf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_sinh {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return sinhf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return sinhf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_cosh {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return coshf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return coshf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_tanh {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __tanhf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __tanhf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_asinh {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return asinhf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return asinhf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_acosh {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return acoshf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return acoshf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_atanh {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return atanhf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return atanhf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_step {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x > .0f ? 1.f : .0f; }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return x > .0f ? 1.f : .0f; }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_erf {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return erff(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return erff(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_erfc {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return erfcf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return erfcf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_exp {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __expf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __expf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_exp2 {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return exp2f(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return exp2f(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_expm1 {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return expm1f(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return expm1f(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_floor {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return floorf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return floorf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_ceil {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return ceilf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return ceilf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_round {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return roundf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return roundf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_trunc {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return truncf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return truncf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_softmax {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __expf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __expf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_softmax_dv {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return __expf(x); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return __expf(x); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_sigmoid {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return 1.f/(1.f + __expf(-x)); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return 1.f/(1.f + __expf(-x)); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_sigmoid_dv {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t sig = 1.f/(1.f + __expf(-x)); return sig*(1.f-sig); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { mag_e8m23_t sig = 1.f/(1.f + __expf(-x)); return sig*(1.f-sig); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_hard_sigmoid {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return fminf(1.f, fmaxf(.0f, (x + 3.f)/6.f)); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return fminf(1.f, fmaxf(.0f, (x + 3.f)/6.f)); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_silu {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x*(1.f/(1.f + __expf(-x))); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return x*(1.f/(1.f + __expf(-x))); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_silu_dv {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t sig = 1.f/(1.f + __expf(-x)); return sig + x*sig; }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { mag_e8m23_t sig = 1.f/(1.f + __expf(-x)); return sig + x*sig; }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_tanh_dv {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t th = __tanhf(x); return 1.f - th*th; }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { mag_e8m23_t th = __tanhf(x); return 1.f - th*th; }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_relu {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return fmaxf(x,0.f); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return fmaxf(x,0.f); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_relu_dv {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return x > 0.f ? 1.f : 0.f; }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return x > 0.f ? 1.f : 0.f; }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_gelu {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { return .5f*x*(1.f+erff(x*INVSQRT2)); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return .5f*x*(1.f+erff(x*INVSQRT2)); }
     };
 
-    template <typename T>
+    template <typename scalar_t>
     struct op_gelu_dv {
-        using In = mag_e8m23_t;
-        using Out = mag_e8m23_t;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const { mag_e8m23_t th = __tanhf(x); return .5f*(1.f + th) + .5f*x*(1.f - th*th); }
+        using in_t = mag_e8m23_t;
+        using out_t = mag_e8m23_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { mag_e8m23_t th = __tanhf(x); return .5f*(1.f + th) + .5f*x*(1.f - th*th); }
     };
 
-    template <typename Op, const bool contig>
+    template <typename op_t, const bool contig>
     __global__ static void unary_op_kernel(
-        Op op,
+        op_t op,
         int64_t n,
-        typename Op::Out *r,
-        const typename Op::In *x,
+        typename op_t::out_t *o,
+        const typename op_t::in_t *x,
         [[maybe_unused]] mag_coords_iter_t rc,
         [[maybe_unused]] mag_coords_iter_t xc
     ) {
         int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
         if constexpr (contig) {
             if (i >= n) return;
-            r[i] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[i])));
+            o[i] = static_cast<typename op_t::out_t>(op(static_cast<typename op_t::in_t>(x[i])));
         } else {
             int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
             for (; i < n; i += step) {
                 int64_t ri = mag_coords_iter_to_offset(&rc, i);
                 int64_t xi = mag_coords_iter_broadcast(&rc, &xc, i);
-                r[ri] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[xi])));
+                o[ri] = static_cast<typename op_t::out_t>(op(static_cast<typename op_t::in_t>(x[xi])));
             }
         }
     }
 
-    template <typename Op>
+    template <typename op_t>
     static void launch_unary_op(
         mag_tensor_t *r,
         const mag_tensor_t *x
@@ -404,18 +598,18 @@ namespace mag {
         mag_coords_iter_t rc, xc;
         mag_coords_iter_init(&rc, &r->coords);
         mag_coords_iter_init(&xc, &x->coords);
-        auto *pr = static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r));
-        auto *px = static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x));
-        if (mag_full_cont2(r, x)) unary_op_kernel<Op, true><<<blocks, UNARY_BLOCK_SIZE>>>(Op{}, n, pr, px, rc, xc);
-        else unary_op_kernel<Op, false><<<blocks, UNARY_BLOCK_SIZE>>>(Op{}, n, pr, px, rc, xc);
+        auto *pr = static_cast<typename op_t::out_t *>(mag_tensor_get_data_ptr(r));
+        auto *px = static_cast<const typename op_t::in_t *>(mag_tensor_get_data_ptr(x));
+        if (mag_full_cont2(r, x)) unary_op_kernel<op_t, true><<<blocks, UNARY_BLOCK_SIZE>>>(op_t{}, n, pr, px, rc, xc);
+        else unary_op_kernel<op_t, false><<<blocks, UNARY_BLOCK_SIZE>>>(op_t{}, n, pr, px, rc, xc);
     }
 
-    template <template <typename> typename Op>
+    template <template <typename> typename op_t>
     static void impl_unary_op(mag_tensor_t *r, mag_tensor_t *x) {
         mag_assert2(r->dtype == x->dtype);
         switch (r->dtype) {
-            case MAG_DTYPE_E8M23: launch_unary_op<Op<mag_e8m23_t>>(r, x); break;
-            case MAG_DTYPE_E5M10: launch_unary_op<Op<half>>(r, x); break;
+            case MAG_DTYPE_E8M23: launch_unary_op<op_t<mag_e8m23_t>>(r, x); break;
+            case MAG_DTYPE_E5M10: launch_unary_op<op_t<half>>(r, x); break;
             default: mag_assert(false, "Unsupported dtype for unary op");
         }
     }

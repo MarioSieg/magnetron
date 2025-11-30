@@ -15,120 +15,120 @@
 
 
 namespace mag {
-    template <typename TIn, typename TOut> requires is_numeric<TIn> && is_numeric<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_numeric<scalar_in_t> && is_numeric<scalar_out_t>
     struct op_add {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x+y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x+y; }
     };
 
-    template <typename TIn, typename TOut> requires is_numeric<TIn> && is_numeric<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_numeric<scalar_in_t> && is_numeric<scalar_out_t>
     struct op_sub {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x-y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x-y; }
     };
 
-    template <typename TIn, typename TOut> requires is_numeric<TIn> && is_numeric<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_numeric<scalar_in_t> && is_numeric<scalar_out_t>
     struct op_mul {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x*y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x*y; }
     };
 
-    template <typename TIn, typename TOut> requires is_numeric<TIn> && is_numeric<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_numeric<scalar_in_t> && is_numeric<scalar_out_t>
     struct op_div {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x/y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x/y; }
     };
 
-    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
     struct op_and {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x&y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x&y; }
     };
 
-    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
     struct op_or {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x|y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x|y; }
     };
 
-    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
     struct op_xor {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x^y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x^y; }
     };
 
-    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
     struct op_shl {
-        using In = TIn;
-        using Out = TOut;
-        static constexpr TIn mask = (8*sizeof(TIn))-1;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<<(y&mask); }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        static constexpr scalar_in_t mask = (8*sizeof(scalar_in_t))-1;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x<<(y&mask); }
     };
 
-    template <typename TIn, typename TOut> requires is_integer<TIn> && is_integer<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
     struct op_shr {
-        using In = TIn;
-        using Out = TOut;
-        static constexpr TIn mask = (8*sizeof(TIn))-1;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>>(y&mask); }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        static constexpr scalar_in_t mask = (8*sizeof(scalar_in_t))-1;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x>>(y&mask); }
     };
 
-    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
     struct op_eq {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x==y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x==y; }
     };
 
-    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
     struct op_ne {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x!=y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x!=y; }
     };
 
-    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
     struct op_le {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<=y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x<=y; }
     };
 
-    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
     struct op_ge {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>=y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x>=y; }
     };
 
-    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
     struct op_lt {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x<y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x<y; }
     };
 
-    template <typename TIn, typename TOut> requires is_dtype<TIn> && is_dtype<TOut>
+    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
     struct op_gt {
-        using In = TIn;
-        using Out = TOut;
-        [[nodiscard]] __device__ __forceinline__ Out operator()(In x, In y) const { return x>y; }
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x>y; }
     };
 
-    template <typename Op, const bool contig>
+    template <typename op_t, const bool contig>
     __global__ static void binary_op_kernel(
-        Op op,
+        op_t op,
         int64_t n,
-        typename Op::Out *o,
-        const typename Op::In *x,
-        const typename Op::In *y,
+        typename op_t::out_t *o,
+        const typename op_t::in_t *x,
+        const typename op_t::in_t *y,
         [[maybe_unused]] mag_coords_iter_t rc,
         [[maybe_unused]] mag_coords_iter_t xc,
         [[maybe_unused]] mag_coords_iter_t yc
@@ -148,7 +148,7 @@ namespace mag {
         }
     }
 
-    template <typename Op>
+    template <typename op_t>
     static void launch_binary_op(
         mag_tensor_t *r,
         const mag_tensor_t *x,
@@ -160,35 +160,35 @@ namespace mag {
         mag_coords_iter_init(&rc, &r->coords);
         mag_coords_iter_init(&xc, &x->coords);
         mag_coords_iter_init(&yc, &y->coords);
-        auto *pr = static_cast<typename Op::Out *>(mag_tensor_get_data_ptr(r));
-        auto *px = static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(x));
-        auto *py = static_cast<const typename Op::In *>(mag_tensor_get_data_ptr(y));
-        if (mag_full_cont3(r, x, y)) binary_op_kernel<Op, true><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, n, pr, px, py, rc, xc, yc);
-        else binary_op_kernel<Op, false><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, n, pr, px, py, rc, xc, yc);
+        auto *pr = static_cast<typename op_t::out_t *>(mag_tensor_get_data_ptr(r));
+        auto *px = static_cast<const typename op_t::in_t *>(mag_tensor_get_data_ptr(x));
+        auto *py = static_cast<const typename op_t::in_t *>(mag_tensor_get_data_ptr(y));
+        if (mag_full_cont3(r, x, y)) binary_op_kernel<op_t, true><<<blocks, BINARY_BLOCK_SIZE>>>(op_t {}, n, pr, px, py, rc, xc, yc);
+        else binary_op_kernel<op_t, false><<<blocks, BINARY_BLOCK_SIZE>>>(op_t {}, n, pr, px, py, rc, xc, yc);
     }
 
-    template <template <typename, typename> typename Op>
+    template <template <typename, typename> typename op_t>
     static void impl_binary_op_numeric(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
         const mag_tensor_t *y = cmd->in[1];
         mag_assert2(r->dtype == x->dtype && r->dtype == y->dtype);
         switch (r->dtype) {
-            case MAG_DTYPE_E8M23: launch_binary_op<Op<mag_e8m23_t, mag_e8m23_t>>(r, x, y); break;
-            case MAG_DTYPE_E5M10: launch_binary_op<Op<half, half>>(r, x, y); break;
-            case MAG_DTYPE_U8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
-            case MAG_DTYPE_I8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y); break;
-            case MAG_DTYPE_U16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y); break;
-            case MAG_DTYPE_I16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y); break;
-            case MAG_DTYPE_U32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y); break;
-            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
-            case MAG_DTYPE_U64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
-            case MAG_DTYPE_I64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
+            case MAG_DTYPE_E8M23: launch_binary_op<op_t<mag_e8m23_t, mag_e8m23_t>>(r, x, y); break;
+            case MAG_DTYPE_E5M10: launch_binary_op<op_t<half, half>>(r, x, y); break;
+            case MAG_DTYPE_U8: launch_binary_op<op_t<uint8_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_I8: launch_binary_op<op_t<int8_t, int8_t>>(r, x, y); break;
+            case MAG_DTYPE_U16: launch_binary_op<op_t<uint16_t, uint16_t>>(r, x, y); break;
+            case MAG_DTYPE_I16: launch_binary_op<op_t<int16_t, int16_t>>(r, x, y); break;
+            case MAG_DTYPE_U32: launch_binary_op<op_t<uint32_t, uint32_t>>(r, x, y); break;
+            case MAG_DTYPE_I32: launch_binary_op<op_t<int32_t, int32_t>>(r, x, y); break;
+            case MAG_DTYPE_U64: launch_binary_op<op_t<uint64_t, uint64_t>>(r, x, y); break;
+            case MAG_DTYPE_I64: launch_binary_op<op_t<int64_t, int64_t>>(r, x, y); break;
             default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
         }
     }
 
-    template <template <typename, typename> typename Op>
+    template <template <typename, typename> typename op_t>
     static void impl_binary_op_logical(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
@@ -196,36 +196,36 @@ namespace mag {
         mag_assert2(r->dtype == x->dtype && r->dtype == y->dtype);
         switch (r->dtype) {
             case MAG_DTYPE_BOOL:
-            case MAG_DTYPE_U8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
-            case MAG_DTYPE_I8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y); break;
-            case MAG_DTYPE_U16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y); break;
-            case MAG_DTYPE_I16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y); break;
-            case MAG_DTYPE_U32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y); break;
-            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
-            case MAG_DTYPE_U64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
-            case MAG_DTYPE_I64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
+            case MAG_DTYPE_U8: launch_binary_op<op_t<uint8_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_I8: launch_binary_op<op_t<int8_t, int8_t>>(r, x, y); break;
+            case MAG_DTYPE_U16: launch_binary_op<op_t<uint16_t, uint16_t>>(r, x, y); break;
+            case MAG_DTYPE_I16: launch_binary_op<op_t<int16_t, int16_t>>(r, x, y); break;
+            case MAG_DTYPE_U32: launch_binary_op<op_t<uint32_t, uint32_t>>(r, x, y); break;
+            case MAG_DTYPE_I32: launch_binary_op<op_t<int32_t, int32_t>>(r, x, y); break;
+            case MAG_DTYPE_U64: launch_binary_op<op_t<uint64_t, uint64_t>>(r, x, y); break;
+            case MAG_DTYPE_I64: launch_binary_op<op_t<int64_t, int64_t>>(r, x, y); break;
             default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
         }
     }
 
-    template <template <typename, typename> typename Op>
+    template <template <typename, typename> typename op_t>
     static void impl_binary_op_cmp(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
         const mag_tensor_t *y = cmd->in[1];
         mag_assert2(r->dtype == MAG_DTYPE_BOOL && x->dtype == y->dtype);
         switch (r->dtype) {
-            case MAG_DTYPE_E8M23: launch_binary_op<Op<mag_e8m23_t, uint8_t>>(r, x, y); break;
-            case MAG_DTYPE_E5M10: launch_binary_op<Op<half, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_E8M23: launch_binary_op<op_t<mag_e8m23_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_E5M10: launch_binary_op<op_t<half, uint8_t>>(r, x, y); break;
             case MAG_DTYPE_BOOL:
-            case MAG_DTYPE_U8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
-            case MAG_DTYPE_I8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y); break;
-            case MAG_DTYPE_U16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y); break;
-            case MAG_DTYPE_I16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y); break;
-            case MAG_DTYPE_U32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y); break;
-            case MAG_DTYPE_I32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
-            case MAG_DTYPE_U64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
-            case MAG_DTYPE_I64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
+            case MAG_DTYPE_U8: launch_binary_op<op_t<uint8_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_I8: launch_binary_op<op_t<int8_t, int8_t>>(r, x, y); break;
+            case MAG_DTYPE_U16: launch_binary_op<op_t<uint16_t, uint16_t>>(r, x, y); break;
+            case MAG_DTYPE_I16: launch_binary_op<op_t<int16_t, int16_t>>(r, x, y); break;
+            case MAG_DTYPE_U32: launch_binary_op<op_t<uint32_t, uint32_t>>(r, x, y); break;
+            case MAG_DTYPE_I32: launch_binary_op<op_t<int32_t, int32_t>>(r, x, y); break;
+            case MAG_DTYPE_U64: launch_binary_op<op_t<uint64_t, uint64_t>>(r, x, y); break;
+            case MAG_DTYPE_I64: launch_binary_op<op_t<int64_t, int64_t>>(r, x, y); break;
             default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
         }
     }

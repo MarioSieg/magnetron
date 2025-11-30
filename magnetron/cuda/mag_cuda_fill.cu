@@ -14,11 +14,11 @@
 #include <core/mag_prng_philox4x32.h>
 
 namespace mag {
-    template <typename T, const bool contig> requires is_dtype<T>
+    template <typename scalar_t, const bool contig> requires is_dtype<scalar_t>
     __global__ static void fill_kernel(
         int64_t n,
-        T *__restrict__ o,
-        T v,
+        scalar_t *__restrict__ o,
+        scalar_t v,
         [[maybe_unused]] mag_coords_iter_t rc
     ) {
         int64_t ti = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
@@ -34,12 +34,12 @@ namespace mag {
         }
     }
 
-    template <typename T, const bool contig> requires is_dtype<T>
+    template <typename scalar_t, const bool contig> requires is_dtype<scalar_t>
     __global__ static void masked_fill_kernel(
         int64_t n,
-        T *__restrict__ o,
+        scalar_t *__restrict__ o,
         const uint8_t *__restrict__ mask,
-        T v,
+        scalar_t v,
         [[maybe_unused]] mag_coords_iter_t rc,
         mag_coords_iter_t mc
     ) {
@@ -59,10 +59,10 @@ namespace mag {
         }
     }
 
-    template <typename T> requires is_dtype<T>
+    template <typename scalar_t> requires is_dtype<scalar_t>
     static void launch_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd, const mag_tensor_t *mask = nullptr) {
-        auto *o = static_cast<T *>(mag_tensor_get_data_ptr(r));
-        auto v = unpack_param<T>(cmd->attrs, 0);
+        auto *o = static_cast<scalar_t *>(mag_tensor_get_data_ptr(r));
+        auto v = unpack_param<scalar_t>(cmd->attrs, 0);
         mag_coords_iter_t rc;
         mag_coords_iter_init(&rc, &r->coords);
         bool rc_cont = mag_tensor_is_contiguous(r);
@@ -72,20 +72,20 @@ namespace mag {
             auto *pm = static_cast<const uint8_t *>(mag_tensor_get_data_ptr(mask));
             mag_coords_iter_t mc;
             mag_coords_iter_init(&mc, &mask->coords);
-            if (rc_cont) masked_fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, o, pm, v, rc, mc);
-            else  masked_fill_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, o, pm, v, rc, mc);
+            if (rc_cont) masked_fill_kernel<scalar_t, true><<<blocks, FILL_BLOCK_SIZE>>>(n, o, pm, v, rc, mc);
+            else  masked_fill_kernel<scalar_t, false><<<blocks, FILL_BLOCK_SIZE>>>(n, o, pm, v, rc, mc);
         } else {
-            if (rc_cont) fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, o, v, rc);
-            else fill_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, o, v, rc);
+            if (rc_cont) fill_kernel<scalar_t, true><<<blocks, FILL_BLOCK_SIZE>>>(n, o, v, rc);
+            else fill_kernel<scalar_t, false><<<blocks, FILL_BLOCK_SIZE>>>(n, o, v, rc);
         }
     }
 
-    template <typename T, const bool is_cont, const bool normal>  requires is_numeric<T>
+    template <typename scalar_t, const bool is_cont, const bool normal> requires is_numeric<scalar_t>
     __global__ static void fill_random_kernel(
         int64_t n,
-        T *__restrict__ o,
-        T p0,
-        T p1,
+        scalar_t *__restrict__ o,
+        scalar_t p0,
+        scalar_t p1,
         uint64_t seed,
         uint64_t subseq,
         [[maybe_unused]] mag_coords_iter_t rc
@@ -106,30 +106,30 @@ namespace mag {
             if constexpr (is_cont) {
                 #pragma unroll
                 for (int64_t k=0; k < mk; ++k)
-                    o[base+k] = static_cast<T>(r.v[k]);
+                    o[base+k] = static_cast<scalar_t>(r.v[k]);
             } else {
                 #pragma unroll
                 for (int64_t k=0; k < mk; ++k) {
                     int64_t ri = mag_coords_iter_to_offset(&rc, base+k);
-                    o[ri] = static_cast<T>(r.v[k]);
+                    o[ri] = static_cast<scalar_t>(r.v[k]);
                 }
             }
         }
     }
 
-    template <typename T, const bool normal> requires is_dtype<T>
+    template <typename scalar_t, const bool normal> requires is_dtype<scalar_t>
     static void launch_rand_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd) {
-        auto *o = static_cast<T *>(mag_tensor_get_data_ptr(r));
-        auto p0 = unpack_param<T>(cmd->attrs, 0);
-        auto p1 = unpack_param<T>(cmd->attrs, 1);
+        auto *o = static_cast<scalar_t *>(mag_tensor_get_data_ptr(r));
+        auto p0 = unpack_param<scalar_t>(cmd->attrs, 0);
+        auto p1 = unpack_param<scalar_t>(cmd->attrs, 1);
         int64_t n = mag_tensor_get_numel(r);
         int64_t blocks = (((n+3)>>2)+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
         mag_coords_iter_t rc;
         mag_coords_iter_init(&rc, &r->coords);
         uint64_t seed = global_seed.load(std::memory_order_relaxed);
         uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
-        if (mag_tensor_is_contiguous(r)) fill_random_kernel<T, true, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);
-        else fill_random_kernel<T, false, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);
+        if (mag_tensor_is_contiguous(r)) fill_random_kernel<scalar_t, true, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);
+        else fill_random_kernel<scalar_t, false, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);
     }
 
     void fill_op_fill(const mag_command_t *cmd) {

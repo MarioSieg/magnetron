@@ -17,6 +17,7 @@ namespace mag {
     constexpr int UNARY_BLOCK_SIZE = 256;
 
     extern void unary_op_clone(const mag_command_t *cmd);
+    extern void unary_op_cast(const mag_command_t *cmd);
     extern void unary_op_abs(const mag_command_t *cmd);
     extern void unary_op_sgn(const mag_command_t *cmd);
     extern void unary_op_neg(const mag_command_t *cmd);

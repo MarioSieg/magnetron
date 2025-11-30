@@ -41,15 +41,10 @@ TEST(context, create_cuda) {
     enable_logging(true);
 
     context ctx {"cuda:0"};
-    tensor a {ctx, dtype::e8m23, 1024, 1024};
-    a.fill_rand_uniform(-1.f, 3.0f);
+    tensor a {ctx, dtype::e8m23, 4, 4};
+    a.fill_rand_uniform(0.f, 1.f);
     std::cout << a.to_string() << std::endl;
-    tensor b {ctx, dtype::e8m23, 1024, 1024};
-    a.fill(0.5f);
-    b.fill(1.5f);
-    tensor c = a + b*0.5;
-    //std::cout << c.to_string() << std::endl;
-    //std::cout << c.exp().sin().to_string() << std::endl;
+    std::cout << (a*255.f).cast(dtype::u8).to_string() << std::endl;
 
     enable_logging(false);
 }
