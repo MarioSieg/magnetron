@@ -13,6 +13,8 @@
 #include "mag_cuda_unary.cuh"
 #include "mag_cuda_binary.cuh"
 #include "mag_cuda_fill.cuh"
+#include "mag_cuda_reduction.cuh"
+
 #include "cpu/mag_cpu.h"
 
 #include <core/mag_alloc.h>
@@ -122,10 +124,10 @@ namespace mag {
             [MAG_OP_VIEW] = &op_nop,
             [MAG_OP_TRANSPOSE] = &op_nop,
             [MAG_OP_PERMUTE] = &op_nop,
-            [MAG_OP_MEAN] = nullptr,
-            [MAG_OP_MIN] = nullptr,
-            [MAG_OP_MAX] = nullptr,
-            [MAG_OP_SUM] = nullptr,
+            [MAG_OP_MEAN] = &reduce_op_mean,
+            [MAG_OP_MIN] = &reduce_op_min,
+            [MAG_OP_MAX] = &reduce_op_max,
+            [MAG_OP_SUM] = &reduce_op_sum,
             [MAG_OP_ABS] = &unary_op_abs,
             [MAG_OP_SGN] = &unary_op_sgn,
             [MAG_OP_NEG] = &unary_op_neg,

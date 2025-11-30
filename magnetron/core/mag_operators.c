@@ -11,6 +11,7 @@
 
 #include "mag_autodiff.h"
 #include "mag_context.h"
+#include "mag_reduce_plan.h"
 
 /*
 ** ###################################################################################################################
@@ -437,57 +438,17 @@ static int mag_cmp_axis(const void *a, const void *b) {
 static mag_status_t mag_op_stub_reduction(mag_tensor_t **out, mag_opcode_t op, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
     *out = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_tensor_t *result = NULL;
     mag_status_t stat;
-    mag_contract(ctx, ERR_INVALID_RANK, {}, dims != NULL || rank == 0, "Either dims must be non-NULL or rank must be 0");
-    mag_contract(ctx, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Invalid dimensions rank, must be [0, %d], but is %" PRIi64, MAG_MAX_DIMS, rank);
-    mag_contract(ctx, ERR_INVALID_RANK, {}, x->coords.rank >= rank, "Cannot reduce over more dimensions than tensor has: rank=%" PRIi64 ", dims=%" PRIi64, x->coords.rank, rank);
-    int64_t ax[MAG_MAX_DIMS];
-    if (!dims && !rank) {
-        rank = x->coords.rank;
-        for (int64_t i=0; i < rank; ++i) ax[i] = i;
-        dims = ax;
-    } else if (dims) {
-        for (int64_t i=0; i<rank; ++i) {
-            int64_t a = dims[i];
-            if (a < 0) a += x->coords.rank;
-            mag_contract(ctx, ERR_INVALID_DIM, {}, 0 <= a && a < x->coords.rank, "Axis out of bounds: %" PRIi64 " for rank %" PRIi64, a, x->coords.rank);
-            ax[i] = a;
-        }
-        qsort(ax, (size_t)rank, sizeof(int64_t), &mag_cmp_axis);
-        int64_t r=0;
-        for (int64_t i=0; i < rank; ++i)
-            if (!i || ax[i] != ax[i-1])
-                ax[r++] = ax[i];
-        rank = r;
-        dims = ax;
-    }
-    int64_t xrank = x->coords.rank;
-    int64_t prev = -1;
-    for (int64_t i=0; i < rank; ++i) {
-        int64_t a = dims[i];
-        mag_contract(ctx, ERR_INVALID_DIM, {}, 0 <= a && a < xrank, "Axis out of bounds: %" PRIi64 " for rank %" PRIi64, a, xrank);
-        mag_contract(ctx, ERR_INVALID_DIM, {}, a > prev, "Axes must be strictly increasing and unique");
-        prev = a;
-    }
-    int64_t shape[MAG_MAX_DIMS] = {0};
-    int64_t j=0, k=0;
-    for (int64_t d=0; d < xrank; ++d) {
-        if (k < rank && dims[k] == d) {
-            if (keepdim) shape[j++] = 1;
-            ++k;
-        }
-        else shape[j++] = x->coords.shape[d];
-    }
-    int64_t orank = keepdim ? xrank : xrank - rank;
-    stat = !keepdim && !orank ? mag_tensor_empty_scalar(&result, x->ctx, x->dtype) : mag_tensor_empty(&result, x->ctx, x->dtype, orank, shape);
+    mag_reduce_plan_t plan;
+    stat = mag_reduce_plan_init(ctx, &plan, &x->coords, dims, rank, keepdim);
+    if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
+    mag_tensor_t *result = NULL;
+    if (!keepdim && !plan.out_rank) stat = mag_tensor_empty_scalar(&result, x->ctx, x->dtype);
+    else stat = mag_tensor_empty(&result, x->ctx, x->dtype, plan.out_rank, plan.out_shape);
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(rank));
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(!!keepdim));
-    for (int64_t i=0; i<rank; ++i)
-        mag_op_attr_registry_insert(&layout, mag_op_attr_i64(dims[i]));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_ptr(&plan));
     mag_dispatch(op, false, &layout, &x, 1, &result, 1);
     *out = result;
     return MAG_STATUS_OK;

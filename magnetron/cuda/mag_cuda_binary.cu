@@ -13,7 +13,6 @@
 
 #include <cuda/std/tuple>
 
-
 namespace mag {
     template <typename scalar_in_t, typename scalar_out_t> requires is_numeric<scalar_in_t> && is_numeric<scalar_out_t>
     struct op_add {
