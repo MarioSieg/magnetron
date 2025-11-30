@@ -96,7 +96,11 @@ typedef uint32_t mag_format_flags_t; /* Flags for formatting output */
 #define MAG_FMT_U (MAG_FMT_UINT) /* 'u' format */
 #define MAG_FMT_X (MAG_FMT_UINT|MAG_FMT_T_HEX) /* 'x' format */
 #define MAG_FMT_G14 (MAG_FMT_G | ((14+1) << MAG_FMT_SH_PREC)) /* 'g' format with precision 14 */
+#define MAG_FMT_G5 (MAG_FMT_G | ((5+1) << MAG_FMT_SH_PREC)) /* 'g' format with precision 5 */
 
+#define MAG_FMT_BUF_MAX 64
+extern char *mag_fmt_i64(char *p, int64_t n);
+extern char *mag_fmt_u64(char *p, uint64_t n);
 extern char *mag_fmt_e11m52(char *p, mag_e11m52_t n, mag_format_flags_t sf);
 
 #ifdef __cplusplus

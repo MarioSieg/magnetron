@@ -523,7 +523,7 @@ class Tensor:
     def rand_perm(
         cls,
         n: int,
-        dtype: DataType = _default_dtype(),
+        dtype: DataType = int64,
         requires_grad: bool = False,
     ) -> Tensor:
         instance = _wrap_out_alloc(lambda out: _C.mag_tensor_rand_perm(out, context.native_ptr(), dtype.enum_value, n))
@@ -704,6 +704,11 @@ class Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_sum(out, self._ptr, dims, num_dims, keepdim)))
+
+    def prod(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        dims, num_dims = _get_reduction_axes(dim)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_prod(out, self._ptr, dims, num_dims, keepdim)))
 
     def argmin(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         raise NotImplementedError('argmin is not implemented for complex tensors')

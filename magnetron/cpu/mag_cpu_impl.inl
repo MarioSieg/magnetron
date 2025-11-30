@@ -296,6 +296,10 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_E8M23] = &mag_sum_e8m23,
         [MAG_DTYPE_E5M10] = &mag_sum_e5m10,
     },
+    [MAG_OP_PROD] = {
+        [MAG_DTYPE_E8M23] = &mag_prod_e8m23,
+        [MAG_DTYPE_E5M10] = &mag_prod_e5m10,
+    },
     [MAG_OP_ABS] = {
         [MAG_DTYPE_E8M23] = &mag_abs_e8m23,
         [MAG_DTYPE_E5M10] = &mag_abs_e5m10,

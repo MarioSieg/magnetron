@@ -50,6 +50,15 @@ mag_cpu_impl_reduce_axes( \
                           *outp = mag_e8m23_to_e5m10(acc); )
 
 mag_cpu_impl_reduce_axes( \
+                          e8m23, prod, mag_e11m52_t, 1.0, \
+                          acc *= (mag_e11m52_t)bx[roff];, \
+                          *outp = (mag_e8m23_t)acc; )
+mag_cpu_impl_reduce_axes( \
+                          e5m10, prod, mag_e8m23_t, 1.0f, \
+                          acc *= mag_e5m10_to_e8m23(bx[roff]);, \
+                          *outp = mag_e8m23_to_e5m10(acc); )
+
+mag_cpu_impl_reduce_axes( \
                           e8m23, mean, mag_e11m52_t, 0.0, \
                           acc += (mag_e11m52_t)bx[roff];, \
                           acc /= (mag_e11m52_t)red_prod; *outp = (mag_e8m23_t)acc; )

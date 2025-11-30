@@ -42,6 +42,95 @@
 
 #include "mag_fmt.h"
 
+#define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
+static char* mag_wuint9(char *p, uint32_t u) {
+    uint32_t v = u / 10000, w;
+    u -= v * 10000;
+    w = v / 10000;
+    v -= w * 10000;
+    *p++ = (char)('0'+w);
+    wint_r(v, 23, 1000)
+    wint_r(v, 12, 100)
+    wint_r(v, 10, 10)
+    *p++ = (char)('0'+v);
+    wint_r(u, 23, 1000)
+    wint_r(u, 12, 100)
+    wint_r(u, 10, 10)
+    *p++ = (char)('0'+u);
+    return p;
+}
+#undef wint_r
+
+#define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
+static char* mag_wint(char *p, int32_t k) {
+    uint32_t u = (uint32_t)k;
+    if (k < 0) { u = ~u+1u; *p++ = '-'; }
+    if (u < 10000) {
+        if (u < 10) goto dig1;
+        if (u < 100) goto dig2;
+        if (u < 1000) goto dig3;
+    } else {
+        uint32_t v = u / 10000; u -= v * 10000;
+        if (v < 10000) {
+            if (v < 10) goto dig5;
+            if (v < 100) goto dig6;
+            if (v < 1000) goto dig7;
+        } else {
+            uint32_t w = v / 10000; v -= w * 10000;
+            if (w >= 10) wint_r(w, 10, 10)
+            *p++ = (char)('0'+w);
+        }
+        wint_r(v, 23, 1000)
+        dig7: wint_r(v, 12, 100)
+        dig6: wint_r(v, 10, 10)
+        dig5: *p++ = (char)('0'+v);
+    }
+    wint_r(u, 23, 1000)
+    dig3: wint_r(u, 12, 100)
+    dig2: wint_r(u, 10, 10)
+    dig1: *p++ = (char)('0'+u);
+    return p;
+}
+#undef wint_r
+
+static char *mag_u64_to_str(char *p, uint64_t v) {
+    char tmp[32];
+    int n = 0;
+    if (v == 0) {
+        *p++ = '0';
+        return p;
+    }
+    while (v) {
+        uint64_t q = v / 10;
+        tmp[n++] = (char)('0' + (uint32_t)(v - q*10));
+        v = q;
+    }
+    while (n--) *p++ = tmp[n];
+    return p;
+}
+
+static char *mag_i64_to_str(char *p, int64_t v) {
+    if (v < 0) {
+        *p++ = '-';
+        // safe for INT64_MIN
+        uint64_t uv = (uint64_t)(-(v + 1)) + 1u;
+        return mag_u64_to_str(p, uv);
+    }
+    return mag_u64_to_str(p, (uint64_t)v);
+}
+
+char *mag_fmt_i64(char *p, int64_t n) {
+    if (n >= INT32_MIN && n <= INT32_MAX)
+        return mag_wint(p, (int32_t)n);
+    return mag_i64_to_str(p, n);
+}
+
+char *mag_fmt_u64(char *p, uint64_t n) {
+    if (n <= UINT32_MAX)
+        return mag_wint(p, (int32_t)n);
+    return mag_u64_to_str(p, n);
+}
+
 /* Rescale factors to push the exponent of a number towards zero. */
 #define rescale_exponents(P, N) \
   P(308), P(289), P(270), P(250), P(231), P(212), P(193), P(173), P(154), \
@@ -88,57 +177,6 @@ static size_t mag_ndigits_dec(uint32_t x) {
     return t + (x > mag_ndigits_dec_threshold[t]);
 }
 
-#define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
-static char* mag_wuint9(char* p, uint32_t u) {
-    uint32_t v = u / 10000, w;
-    u -= v * 10000;
-    w = v / 10000;
-    v -= w * 10000;
-    *p++ = (char)('0'+w);
-    wint_r(v, 23, 1000)
-    wint_r(v, 12, 100)
-    wint_r(v, 10, 10)
-    *p++ = (char)('0'+v);
-    wint_r(u, 23, 1000)
-    wint_r(u, 12, 100)
-    wint_r(u, 10, 10)
-    *p++ = (char)('0'+u);
-    return p;
-}
-#undef wint_r
-
-#define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
-static char* mag_wint(char* p, int32_t k) {
-    uint32_t u = (uint32_t)k;
-    if (k < 0) { u = ~u+1u; *p++ = '-'; }
-    if (u < 10000) {
-        if (u < 10) goto dig1;
-        if (u < 100) goto dig2;
-        if (u < 1000) goto dig3;
-    } else {
-        uint32_t v = u / 10000; u -= v * 10000;
-        if (v < 10000) {
-            if (v < 10) goto dig5;
-            if (v < 100) goto dig6;
-            if (v < 1000) goto dig7;
-        } else {
-            uint32_t w = v / 10000; v -= w * 10000;
-            if (w >= 10) wint_r(w, 10, 10)
-            *p++ = (char)('0'+w);
-        }
-        wint_r(v, 23, 1000)
-        dig7: wint_r(v, 12, 100)
-        dig6: wint_r(v, 10, 10)
-        dig5: *p++ = (char)('0'+v);
-    }
-    wint_r(u, 23, 1000)
-    dig3: wint_r(u, 12, 100)
-    dig2: wint_r(u, 10, 10)
-    dig1: *p++ = (char)('0'+u);
-    return p;
-}
-#undef wint_r
-
 /* -- Extended precision arithmetic --------------------------------------- */
 
 /*
@@ -165,7 +203,7 @@ static char* mag_wint(char* p, int32_t k) {
 #define MAG_ND_MUL2K_DIV1E9(val) ((uint32_t)((val) / 1000000000))
 
 /* Multiply nd by 2^k and add carry_in (ndlo is assumed to be zero). */
-static uint32_t nd_mul2k(uint32_t* nd, uint32_t ndhi, uint32_t k, uint32_t carry_in, mag_format_flags_t sf) {
+static uint32_t nd_mul2k(uint32_t *nd, uint32_t ndhi, uint32_t k, uint32_t carry_in, mag_format_flags_t sf) {
     uint32_t i, ndlo = 0, start = 1;
     /* Performance hacks. */
     if (k > MAG_ND_MUL2K_MAX_SHIFT*2 && MAG_FMT_FP(sf) != MAG_FMT_FP(MAG_FMT_T_FP_F)) {
@@ -196,7 +234,7 @@ static uint32_t nd_mul2k(uint32_t* nd, uint32_t ndhi, uint32_t k, uint32_t carry
 }
 
 /* Divide nd by 2^k (ndlo is assumed to be zero). */
-static uint32_t nd_div2k(uint32_t* nd, uint32_t ndhi, uint32_t k, mag_format_flags_t sf) {
+static uint32_t nd_div2k(uint32_t *nd, uint32_t ndhi, uint32_t k, mag_format_flags_t sf) {
     uint32_t ndlo = 0, stop1 = ~0, stop2 = ~0;
     /* Performance hacks. */
     if (!ndhi) {
@@ -252,7 +290,7 @@ static uint32_t nd_div2k(uint32_t* nd, uint32_t ndhi, uint32_t k, mag_format_fla
 }
 
 /* Add m*10^e to nd (assumes ndlo <= e/9 <= ndhi and 0 <= m <= 9). */
-static uint32_t nd_add_m10e(uint32_t* nd, uint32_t ndhi, uint8_t m, int32_t e) {
+static uint32_t nd_add_m10e(uint32_t *nd, uint32_t ndhi, uint8_t m, int32_t e) {
     uint32_t i, carry;
     if (e >= 0) {
         i = (uint32_t)e/9;
@@ -282,7 +320,7 @@ static uint32_t nd_add_m10e(uint32_t* nd, uint32_t ndhi, uint8_t m, int32_t e) {
     return ndhi;
 }
 
-static bool nd_similar(uint32_t* nd, uint32_t ndhi, uint32_t* ref, size_t hilen, size_t prec) {
+static bool nd_similar(uint32_t *nd, uint32_t ndhi, uint32_t* ref, size_t hilen, size_t prec) {
     char nd9[9], ref9[9];
     if (hilen <= prec) {
         if (mag_unlikely(nd[ndhi] != *ref)) return 0;
@@ -300,7 +338,6 @@ static bool nd_similar(uint32_t* nd, uint32_t ndhi, uint32_t* ref, size_t hilen,
     return !memcmp(nd9, ref9, prec) && (nd9[prec] < '5') == (ref9[prec] < '5');
 }
 
-/* Format f64 according to format flags. */
 char *mag_fmt_e11m52(char *p, mag_e11m52_t n, mag_format_flags_t sf) {
     size_t width = MAG_FMT_WIDTH(sf), prec = MAG_FMT_PREC(sf), len;
     union {

@@ -470,6 +470,10 @@ mag_status_t mag_sum(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, i
     return mag_op_stub_reduction(out, MAG_OP_SUM, x, dims, rank, keepdim);
 }
 
+mag_status_t mag_prod(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
+    return mag_op_stub_reduction(out, MAG_OP_PROD, x, dims, rank, keepdim);
+}
+
 mag_status_t mag_argmin(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
     mag_panic("Not implemented yet");
     return mag_tensor_empty_like(out, x);
