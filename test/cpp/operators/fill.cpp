@@ -41,16 +41,16 @@ template <typename T>
     return compute_std(std::span<const T>{reinterpret_cast<const T*>(mag_tensor_get_data_ptr(tensor)), static_cast<size_t>(tensor->numel)});
 }
 
-TEST(cpu_tensor_init_ops, copy_e8m23) {
+TEST(cpu_tensor_init_ops, copy_float32) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
-        tensor t {ctx, dtype::e8m23, shape};
+        tensor t {ctx, dtype::float32, shape};
         std::vector<float> fill_data {};
         fill_data.resize(t.numel());
         std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         std::ranges::generate(fill_data, [&] { return dist(gen); });
         t.fill_from(fill_data);
-        std::vector data {t.to_vector<mag_e8m23_t>()};
+        std::vector data {t.to_vector<float>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], fill_data[i]);
@@ -58,10 +58,10 @@ TEST(cpu_tensor_init_ops, copy_e8m23) {
     });
 }
 
-TEST(cpu_tensor_init_ops, copy_e5m10) {
+TEST(cpu_tensor_init_ops, copy_float16) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
-        tensor t {ctx, dtype::e5m10, shape};
+        tensor t {ctx, dtype::float16, shape};
         std::vector<float> fill_data {};
         fill_data.resize(t.numel());
         std::uniform_real_distribution dist {-1.0f, 1.0f};
@@ -94,14 +94,14 @@ TEST(cpu_tensor_init_ops, copy_bool) {
     });
 }
 
-TEST(cpu_tensor_init_ops, fill_e8m23) {
+TEST(cpu_tensor_init_ops, fill_float32) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
         std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         float fill_val {dist(gen)};
-        tensor t {ctx, dtype::e8m23, shape};
+        tensor t {ctx, dtype::float32, shape};
         t.fill(fill_val);
-        std::vector data {t.to_vector<mag_e8m23_t>()};
+        std::vector data {t.to_vector<float>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], fill_val);
@@ -109,12 +109,12 @@ TEST(cpu_tensor_init_ops, fill_e8m23) {
     });
 }
 
-TEST(cpu_tensor_init_ops, fill_e5m10) {
+TEST(cpu_tensor_init_ops, fill_float16) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
         std::uniform_real_distribution dist {-1.0f, 1.0f};
         float fill_val {dist(gen)};
-        tensor t {ctx, dtype::e5m10, shape};
+        tensor t {ctx, dtype::float16, shape};
         t.fill(fill_val);
         std::vector data {t.to_vector<float16>()};
         ASSERT_EQ(data.size(), t.numel());
@@ -139,15 +139,15 @@ TEST(cpu_tensor_init_ops, fill_bool) {
     });
 }
 
-TEST(cpu_tensor_init_ops, fill_random_uniform_e8m23) {
+TEST(cpu_tensor_init_ops, fill_random_uniform_float32) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
         std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         float min {dist(gen)};
         float max {std::uniform_real_distribution{min, dtype_traits<float>::max}(gen)};
-        tensor t {ctx, dtype::e8m23, shape};
+        tensor t {ctx, dtype::float32, shape};
         t.fill_rand_uniform(min, max);
-        std::vector data {t.to_vector<mag_e8m23_t>()};
+        std::vector data {t.to_vector<float>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
            ASSERT_GE(data[i], min);
@@ -157,7 +157,7 @@ TEST(cpu_tensor_init_ops, fill_random_uniform_e8m23) {
 }
 
 #if 0 // TODO
-TEST(cpu_tensor_init_ops, fill_random_uniform_e5m10) {
+TEST(cpu_tensor_init_ops, fill_random_uniform_float16) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
         std::uniform_real_distribution dist {-1.0f, 1.0f};
@@ -165,7 +165,7 @@ TEST(cpu_tensor_init_ops, fill_random_uniform_e5m10) {
          float max {std::uniform_real_distribution{min, dtype_traits<float>::max}(gen)};
          float qmin {static_cast<float>(float16{min})};
          float qmax {static_cast<float>(float16{max})};
-         tensor t {ctx, dtype::e5m10, shape};
+         tensor t {ctx, dtype::float16, shape};
          t.fill_rand_uniform(qmin, qmax);
          std::vector<float> data {t.to_vector()};
          ASSERT_EQ(data.size(), t.numel());
@@ -178,12 +178,12 @@ TEST(cpu_tensor_init_ops, fill_random_uniform_e5m10) {
 #endif
 
 #if 0 // TODO
-TEST(cpu_tensor_init_ops, fill_random_normal_e8m23) {
+TEST(cpu_tensor_init_ops, fill_random_normal_float32) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
         float mean {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         float stddev {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
-        tensor t {ctx, dtype::e8m23, shape};
+        tensor t {ctx, dtype::float32, shape};
         t.fill_rand_normal(mean, stddev);
         std::vector<float> data {t.to_vector()};
         ASSERT_FLOAT_EQ(mean, compute_mean<float>(data));
@@ -191,12 +191,12 @@ TEST(cpu_tensor_init_ops, fill_random_normal_e8m23) {
     });
 }
 
-TEST(cpu_tensor_init_ops, fill_random_normal_e5m10) {
+TEST(cpu_tensor_init_ops, fill_random_normal_float16) {
     context ctx {};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
         float mean {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         float stddev {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
-        tensor t {ctx, dtype::e5m10, shape};
+        tensor t {ctx, dtype::float16, shape};
         t.fill_rand_normal(mean, stddev);
         std::vector<float> data {t.to_vector()};
         ASSERT_FLOAT_EQ(mean, compute_mean<float>(data));

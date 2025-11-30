@@ -42,31 +42,6 @@ extern "C" {
 #define MAG_VERSION mag_ver_encode(0, 1, 2)
 #define MAG_STORAGE_VERSION mag_ver_encode(0, 1, 0)
 
-/**
- * @brief Thread scheduling priority for CPU compute.
- *      This set the OS scheduling priority of the thread that executes the compute operations.
- *      The priority is only used if the compute device is a CPU.
- */
-typedef enum mag_thread_prio_t {       /* Thread scheduling priority for CPU compute */
-    MAG_THREAD_PRIO_NORMAL = 0,     /* Normal thread priority */
-    MAG_THREAD_PRIO_MEDIUM = 1,     /* Medium thread priority */
-    MAG_THREAD_PRIO_HIGH = 2,       /* High thread priority */
-    MAG_THREAD_PRIO_REALTIME = 3,   /* Real-time thread priority */
-} mag_thread_prio_t;
-
-/**
- * @brief Desired Color channels for loading image tensors.
- */
-typedef enum mag_color_channels_t {
-    MAG_COLOR_CHANNELS_AUTO,        /* Automatically detect number of color channels */
-    MAG_COLOR_CHANNELS_GRAY,        /* Grayscale F32 */
-    MAG_COLOR_CHANNELS_GRAY_A,      /* Grayscale F32 + Alpha F32 */
-    MAG_COLOR_CHANNELS_RGB,         /* R32G32B32 */
-    MAG_COLOR_CHANNELS_RGBA,        /* R32G32B32A32 */
-
-    MAG_COLOR_CHANNELS__NUM
-} mag_color_channels_t;
-
 extern MAG_EXPORT void mag_set_log_mode(bool enabled); /* Enable/disable logging. */
 
 typedef enum mag_status_t {
@@ -146,17 +121,17 @@ typedef struct mag_tensor_t mag_tensor_t;
  * @brief Data types for tensors.
  */
 typedef enum mag_dtype_t {
-    MAG_DTYPE_E8M23,        /* IEEE-754 32-bit floating point number. Commonly known as float32, f32. */
-    MAG_DTYPE_E5M10,        /* IEEE-754 16-bit floating point number. Commonly known as float16, f16, half. */
-    MAG_DTYPE_BOOL,         /* 1-byte boolean */
-    MAG_DTYPE_U8,
-    MAG_DTYPE_I8,
-    MAG_DTYPE_U16,
-    MAG_DTYPE_I16,
-    MAG_DTYPE_U32,
-    MAG_DTYPE_I32,
-    MAG_DTYPE_U64,
-    MAG_DTYPE_I64,
+    MAG_DTYPE_FLOAT32,          /* IEEE-754 32-bit floating point number. Commonly known as float32, f32. */
+    MAG_DTYPE_FLOAT16,          /* IEEE-754 16-bit floating point number. Commonly known as float16, f16, half. */
+    MAG_DTYPE_BOOLEAN,             /* 1-byte boolean */
+    MAG_DTYPE_UINT8,
+    MAG_DTYPE_INT8,
+    MAG_DTYPE_UINT16,
+    MAG_DTYPE_INT16,
+    MAG_DTYPE_UINT32,
+    MAG_DTYPE_INT32,
+    MAG_DTYPE_UINT64,
+    MAG_DTYPE_INT64,
 
     MAG_DTYPE__NUM
 } mag_dtype_t;

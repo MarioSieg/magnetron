@@ -97,6 +97,13 @@ typedef pthread_cond_t mag_condvar_t;
 #error "Unsupported architecture for mag_cpu_pause()"
 #endif
 
+typedef enum mag_thread_prio_t {       /* Thread scheduling priority for CPU compute */
+    MAG_THREAD_PRIO_NORMAL = 0,     /* Normal thread priority */
+    MAG_THREAD_PRIO_MEDIUM = 1,     /* Medium thread priority */
+    MAG_THREAD_PRIO_HIGH = 2,       /* High thread priority */
+    MAG_THREAD_PRIO_REALTIME = 3,   /* Real-time thread priority */
+} mag_thread_prio_t;
+
 extern MAG_EXPORT void mag_thread_set_prio(mag_thread_prio_t prio); /* Set thread scheduling priority of current thread. */
 extern MAG_EXPORT void mag_thread_set_name(const char *name); /* Set thread name. */
 extern MAG_EXPORT void mag_thread_yield(void); /* Yield current thread. */

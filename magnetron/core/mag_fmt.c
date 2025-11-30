@@ -93,7 +93,7 @@ static char* mag_wint(char *p, int32_t k) {
 }
 #undef wint_r
 
-static char *mag_u64_to_str(char *p, uint64_t v) {
+static char *mag_uint64_to_str(char *p, uint64_t v) {
     char tmp[32];
     int n = 0;
     if (v == 0) {
@@ -109,26 +109,26 @@ static char *mag_u64_to_str(char *p, uint64_t v) {
     return p;
 }
 
-static char *mag_i64_to_str(char *p, int64_t v) {
+static char *mag_int64_to_str(char *p, int64_t v) {
     if (v < 0) {
         *p++ = '-';
         // safe for INT64_MIN
         uint64_t uv = (uint64_t)(-(v + 1)) + 1u;
-        return mag_u64_to_str(p, uv);
+        return mag_uint64_to_str(p, uv);
     }
-    return mag_u64_to_str(p, (uint64_t)v);
+    return mag_uint64_to_str(p, (uint64_t)v);
 }
 
-char *mag_fmt_i64(char *p, int64_t n) {
+char *mag_fmt_int64(char *p, int64_t n) {
     if (n >= INT32_MIN && n <= INT32_MAX)
         return mag_wint(p, (int32_t)n);
-    return mag_i64_to_str(p, n);
+    return mag_int64_to_str(p, n);
 }
 
-char *mag_fmt_u64(char *p, uint64_t n) {
+char *mag_fmt_uint64(char *p, uint64_t n) {
     if (n <= UINT32_MAX)
         return mag_wint(p, (int32_t)n);
-    return mag_u64_to_str(p, n);
+    return mag_uint64_to_str(p, n);
 }
 
 /* Rescale factors to push the exponent of a number towards zero. */
@@ -140,7 +140,7 @@ char *mag_fmt_u64(char *p, uint64_t n) {
 #define one_e_p(X) 1e+0 ## X
 #define one_e_n(X) 1e-0 ## X
 static const int16_t mag_rescale_e[] = { rescale_exponents(-, +) };
-static const mag_e11m52_t mag_rescale_n[] = { rescale_exponents(one_e_p, one_e_n) };
+static const double mag_rescale_n[] = { rescale_exponents(one_e_p, one_e_n) };
 #undef one_e_n
 #undef one_e_p
 
@@ -194,7 +194,7 @@ static size_t mag_ndigits_dec(uint32_t x) {
 ** in nd[ndlo ... 63], the value of which is taken to be
 ** sum{i in [ndlo, 63] | nd[i] * 10^(9*(i-64))}.
 **
-** If the array part had 128 elements rather than 64, then every mag_e11m52_t would
+** If the array part had 128 elements rather than 64, then every double would
 ** have an exact representation in "nd" format. With 64 elements, all integral
 ** doubles have an exact representation, and all non-integral doubles have
 ** enough digits to make both %.99e and %.99f do the right thing.
@@ -338,24 +338,24 @@ static bool nd_similar(uint32_t *nd, uint32_t ndhi, uint32_t* ref, size_t hilen,
     return !memcmp(nd9, ref9, prec) && (nd9[prec] < '5') == (ref9[prec] < '5');
 }
 
-char *mag_fmt_e11m52(char *p, mag_e11m52_t n, mag_format_flags_t sf) {
+char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
     size_t width = MAG_FMT_WIDTH(sf), prec = MAG_FMT_PREC(sf), len;
     union {
-        uint64_t u64;
-        mag_e11m52_t n;
+        uint64_t uint64_t;
+        double n;
         struct { /* TODO: make endian aware */
             uint32_t lo, hi;
-        } u32;
+        } uint32_t;
     } t = {.n = n};
-    if (mag_unlikely((t.u32.hi << 1) >= 0xffe00000)) {
+    if (mag_unlikely((t.uint32_t.hi << 1) >= 0xffe00000)) {
         /* Handle non-finite values uniformly for %a, %e, %f, %g. */
         int32_t prefix = 0, ch = (sf & MAG_FMT_F_UPPER) ? 0x202020 : 0;
-        if (((t.u32.hi & 0x000fffff) | t.u32.lo) != 0) {
+        if (((t.uint32_t.hi & 0x000fffff) | t.uint32_t.lo) != 0) {
             ch ^= ('n' << 16) | ('a' << 8) | 'n';
             if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
         } else {
             ch ^= ('i' << 16) | ('n' << 8) | 'f';
-            if ((t.u32.hi & 0x80000000)) prefix = '-';
+            if ((t.uint32_t.hi & 0x80000000)) prefix = '-';
             else if ((sf & MAG_FMT_F_PLUS)) prefix = '+';
             else if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
         }
@@ -366,29 +366,29 @@ char *mag_fmt_e11m52(char *p, mag_e11m52_t n, mag_format_flags_t sf) {
     } else if (MAG_FMT_FP(sf) == MAG_FMT_FP(MAG_FMT_T_FP_A)) {
         /* %a */
         const char* hexdig = (sf & MAG_FMT_F_UPPER) ? "0123456789ABCDEFPX" : "0123456789abcdefpx";
-        int32_t e = (t.u32.hi >> 20) & 0x7ff;
+        int32_t e = (t.uint32_t.hi >> 20) & 0x7ff;
         char prefix = 0, eprefix = '+';
-        if (t.u32.hi & 0x80000000) prefix = '-';
+        if (t.uint32_t.hi & 0x80000000) prefix = '-';
         else if ((sf & MAG_FMT_F_PLUS)) prefix = '+';
         else if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
-        t.u32.hi &= 0xfffff;
+        t.uint32_t.hi &= 0xfffff;
         if (e) {
-            t.u32.hi |= 0x100000;
+            t.uint32_t.hi |= 0x100000;
             e -= 1023;
-        } else if (t.u32.lo | t.u32.hi) {
+        } else if (t.uint32_t.lo | t.uint32_t.hi) {
             /* Non-zero denormal - normalise it. */
-            uint32_t shift = t.u32.hi ? 20-mag_fls(t.u32.hi) : 52-mag_fls(t.u32.lo);
+            uint32_t shift = t.uint32_t.hi ? 20-mag_fls(t.uint32_t.hi) : 52-mag_fls(t.uint32_t.lo);
             e = -1022 - shift;
-            t.u64 <<= shift;
+            t.uint64_t <<= shift;
         }
-        /* abs(n) == t.u64 * 2^(e - 52) */
-        /* If n != 0, bit 52 of t.u64 is set, and is the highest set bit. */
+        /* abs(n) == t.uint64_t * 2^(e - 52) */
+        /* If n != 0, bit 52 of t.uint64_t is set, and is the highest set bit. */
         if ((int32_t)prec < 0) {
             /* Default precision: use smallest precision giving exact result. */
-            prec = t.u32.lo ? 13-mag_ffs(t.u32.lo)/4 : 5-mag_ffs(t.u32.hi|0x100000)/4;
+            prec = t.uint32_t.lo ? 13-mag_ffs(t.uint32_t.lo)/4 : 5-mag_ffs(t.uint32_t.hi|0x100000)/4;
         } else if (prec < 13) {
             /* Precision is sufficiently low as to maybe require rounding. */
-            t.u64 += (((uint64_t)1) << (51 - prec*4));
+            t.uint64_t += (((uint64_t)1) << (51 - prec*4));
         }
         if (e < 0) {
             eprefix = '-';
@@ -405,14 +405,14 @@ char *mag_fmt_e11m52(char *p, mag_e11m52_t n, mag_format_flags_t sf) {
         if ((sf & (MAG_FMT_F_LEFT | MAG_FMT_F_ZERO)) == MAG_FMT_F_ZERO) {
             while (width-- > len) *p++ = '0';
         }
-        *p++ = '0' + (t.u32.hi >> 20); /* Usually '1', sometimes '0' or '2'. */
+        *p++ = '0' + (t.uint32_t.hi >> 20); /* Usually '1', sometimes '0' or '2'. */
         if ((prec | (sf & MAG_FMT_F_ALT))) {
             /* Emit fractional part. */
             char* q = p + 1 + prec;
             *p = '.';
-            if (prec < 13) t.u64 >>= (52 - prec*4);
+            if (prec < 13) t.uint64_t >>= (52 - prec*4);
             else while (prec > 13) p[prec--] = '0';
-            while (prec) { p[prec--] = hexdig[t.u64 & 15]; t.u64 >>= 4; }
+            while (prec) { p[prec--] = hexdig[t.uint64_t & 15]; t.uint64_t >>= 4; }
             p = q;
         }
         *p++ = hexdig[16]; /* p or P */
@@ -422,9 +422,9 @@ char *mag_fmt_e11m52(char *p, mag_e11m52_t n, mag_format_flags_t sf) {
         /* %e or %f or %g - begin by converting n to "nd" format. */
         uint32_t nd[64];
         uint32_t ndhi = 0, ndlo, i;
-        int32_t e = (int32_t)(t.u32.hi >> 20) & 0x7ff, ndebias = 0;
+        int32_t e = (int32_t)(t.uint32_t.hi >> 20) & 0x7ff, ndebias = 0;
         char prefix = 0, *q;
-        if (t.u32.hi & 0x80000000) prefix = '-';
+        if (t.uint32_t.hi & 0x80000000) prefix = '-';
         else if ((sf & MAG_FMT_F_PLUS)) prefix = '+';
         else if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
         prec += ((int32_t)prec >> 31) & 7; /* Default precision is 6. */
@@ -438,28 +438,28 @@ char *mag_fmt_e11m52(char *p, mag_e11m52_t n, mag_format_flags_t sf) {
             if ((ndebias = mag_rescale_e[e >> 6])) {
                 t.n = n * mag_rescale_n[e >> 6];
                 if (mag_unlikely(!e)) t.n *= 1e10, ndebias -= 10;
-                t.u64 -= 2; /* Convert 2ulp below (later we convert 2ulp above). */
-                nd[0] = 0x100000 | (t.u32.hi & 0xfffff);
-                e = ((int32_t)(t.u32.hi >> 20) & 0x7ff) - 1075 - (MAG_ND_MUL2K_MAX_SHIFT < 29);
+                t.uint64_t -= 2; /* Convert 2ulp below (later we convert 2ulp above). */
+                nd[0] = 0x100000 | (t.uint32_t.hi & 0xfffff);
+                e = ((int32_t)(t.uint32_t.hi >> 20) & 0x7ff) - 1075 - (MAG_ND_MUL2K_MAX_SHIFT < 29);
                 goto load_t_lo; rescale_failed:
                 t.n = n;
-                e = (int32_t)(t.u32.hi >> 20) & 0x7ff;
+                e = (int32_t)(t.uint32_t.hi >> 20) & 0x7ff;
                 ndebias = 0;
                 ndhi = 0;
             }
         }
-        nd[0] = t.u32.hi & 0xfffff;
+        nd[0] = t.uint32_t.hi & 0xfffff;
         if (e == 0) e++; else nd[0] |= 0x100000;
         e -= 1043;
-        if (t.u32.lo) {
+        if (t.uint32_t.lo) {
             e -= 32 + (MAG_ND_MUL2K_MAX_SHIFT < 29); load_t_lo:
 #if MAG_ND_MUL2K_MAX_SHIFT >= 29
-            nd[0] = (nd[0]<<3) | (t.u32.lo>>29);
-            ndhi = nd_mul2k(nd, ndhi, 29, t.u32.lo & 0x1fffffff, sf);
+            nd[0] = (nd[0]<<3) | (t.uint32_t.lo>>29);
+            ndhi = nd_mul2k(nd, ndhi, 29, t.uint32_t.lo & 0x1fffffff, sf);
 #elif MAG_ND_MUL2K_MAX_SHIFT >= 11
-            ndhi = nd_mul2k(nd, ndhi, 11, t.u32.lo>>21, sf);
-            ndhi = nd_mul2k(nd, ndhi, 11, (t.u32.lo>>10) & 0x7ff, sf);
-            ndhi = nd_mul2k(nd, ndhi, 11, (t.u32.lo<<1) & 0x7ff, sf);
+            ndhi = nd_mul2k(nd, ndhi, 11, t.uint32_t.lo>>21, sf);
+            ndhi = nd_mul2k(nd, ndhi, 11, (t.uint32_t.lo>>10) & 0x7ff, sf);
+            ndhi = nd_mul2k(nd, ndhi, 11, (t.uint32_t.lo<<1) & 0x7ff, sf);
 #else
 #error "MAG_ND_MUL2K_MAX_SHIFT not big enough"
 #endif
@@ -493,7 +493,7 @@ char *mag_fmt_e11m52(char *p, mag_e11m52_t n, mag_format_flags_t sf) {
                 ** most significant digits, convert the +2ulp case, and compare them.
                 */
                 int32_t eidx = e + 70 + (MAG_ND_MUL2K_MAX_SHIFT < 29)
-                               + (t.u32.lo >= 0xfffffffe && !(~t.u32.hi << 12));
+                               + (t.uint32_t.lo >= 0xfffffffe && !(~t.uint32_t.hi << 12));
                 const int8_t *m_e = mag_four_ulp_m_e + eidx * 2;
                 mag_assert(0 <= eidx && eidx < 128, "bad eidx %d", eidx);
                 nd[33] = nd[ndhi];

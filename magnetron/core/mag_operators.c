@@ -163,28 +163,28 @@ mag_status_t mag_tensor_empty_scalar(mag_tensor_t **out, mag_context_t *ctx, mag
     return mag_tensor_empty(out, ctx, type, 1, (int64_t[1]){1});
 }
 
-mag_status_t mag_tensor_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, mag_e8m23_t value) {
+mag_status_t mag_tensor_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, float value) {
     mag_status_t stat = mag_tensor_empty_scalar(out, ctx, type);
     if (mag_iserr(stat)) return stat;
     mag_tensor_fill_float(*out, value);
     return MAG_STATUS_OK;
 }
 
-mag_status_t mag_tensor_full(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_e8m23_t value) {
+mag_status_t mag_tensor_full(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, float value) {
     mag_status_t stat = mag_tensor_empty(out, ctx, type, rank, shape);
     if (mag_iserr(stat)) return stat;
     mag_tensor_fill_float(*out, value);
     return MAG_STATUS_OK;
 }
 
-mag_status_t mag_tensor_full_like(mag_tensor_t **out, mag_tensor_t *isomorph, mag_e8m23_t value) {
+mag_status_t mag_tensor_full_like(mag_tensor_t **out, mag_tensor_t *isomorph, float value) {
     mag_status_t stat = mag_tensor_empty_like(out, isomorph);
     if (mag_iserr(stat)) return stat;
     mag_tensor_fill_float(*out, value);
     return MAG_STATUS_OK;
 }
 
-mag_status_t mag_tensor_arange(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, mag_e8m23_t start, mag_e8m23_t end, mag_e8m23_t step) {
+mag_status_t mag_tensor_arange(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, float start, float end, float step) {
     *out = NULL;
     mag_tensor_t *result;
     int64_t numel = (int64_t)((end - start + step - 1)/step);
@@ -192,8 +192,8 @@ mag_status_t mag_tensor_arange(mag_tensor_t **out, mag_context_t *ctx, mag_dtype
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_e8m23(start));
-    mag_op_attr_registry_insert(&layout, mag_op_attr_e8m23(step));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float32(start));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float32(step));
     mag_dispatch(MAG_OP_ARANGE, false, &layout, NULL, 0, &result, 1);
     *out = result;
     return MAG_STATUS_OK;
@@ -270,10 +270,10 @@ mag_status_t mag_view(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, 
 
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(rank));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(rank));
     if (dims)
         for (int64_t i=0; i < rank; ++i)
-            mag_op_attr_registry_insert(&layout, mag_op_attr_i64(dims[i]));
+            mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dims[i]));
 
     mag_dispatch(MAG_OP_VIEW, false, &layout, &x, 1, &result, 1);
     *out = result;
@@ -387,8 +387,8 @@ mag_status_t mag_transpose(mag_tensor_t **out, mag_tensor_t *x, int64_t dim1, in
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(ax0));
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(ax1));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(ax0));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(ax1));
     mag_dispatch(MAG_OP_TRANSPOSE, false, &layout, &x, 1, &result, 1);
     *out = result;
     return MAG_STATUS_OK;
@@ -560,7 +560,7 @@ mag_status_t mag_tril(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
     mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->coords.rank);
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(diag));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(diag));
     return mag_op_stub_unary(out, MAG_OP_TRIL, x, &layout, false);
 }
 
@@ -570,7 +570,7 @@ mag_status_t mag_tril_(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
     mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->coords.rank);
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(diag));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(diag));
     return mag_op_stub_unary(out, MAG_OP_TRIL, x, &layout, true);
 }
 
@@ -580,7 +580,7 @@ mag_status_t mag_triu(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
     mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->coords.rank);
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(diag));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(diag));
     return mag_op_stub_unary(out, MAG_OP_TRIU, x, &layout, false);
 }
 
@@ -590,7 +590,7 @@ mag_status_t mag_triu_(mag_tensor_t **out, mag_tensor_t *x, int32_t diag) {
     mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 2, "Diagonal matrix operator requires rank >= 2, but got: %" PRIi64, x->coords.rank);
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(diag));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(diag));
     return mag_op_stub_unary(out, MAG_OP_TRIU, x, &layout, true);
 }
 
@@ -605,12 +605,12 @@ mag_status_t mag_multinomial(mag_tensor_t **out, mag_tensor_t *x, int64_t num_sa
     if (x->coords.rank > 1) memcpy(shape, x->coords.shape, (x->coords.rank - 1)*sizeof(*shape));
     shape[x->coords.rank-1] = num_samples;
     mag_tensor_t *result;
-    mag_status_t stat = mag_tensor_new(&result, x->ctx, MAG_DTYPE_I64, x->coords.rank, shape);
+    mag_status_t stat = mag_tensor_new(&result, x->ctx, MAG_DTYPE_INT64, x->coords.rank, shape);
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(num_samples));
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(!!replacement));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(num_samples));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(!!replacement));
     mag_dispatch(MAG_OP_MULTINOMIAL, false, &layout, &x, 1, &result, 1);
     *out = result;
     return MAG_STATUS_OK;
@@ -648,7 +648,7 @@ mag_status_t mag_cat(mag_tensor_t **out, mag_tensor_t **tensors, size_t count, i
     }
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(dim));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dim));
     stat = mag_tensor_new(&result, t0->ctx, dtype, rank, shape);
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_dispatch(MAG_OP_CAT, false, &layout, tensors, count, &result, 1);
@@ -687,7 +687,7 @@ static mag_status_t mag_op_stub_binary(mag_tensor_t **out, mag_opcode_t op, mag_
                 sx, sy, mag_op_meta_of(op)->mnemonic
             );
         }
-        mag_dtype_t rtype = flags & MAG_BINOP_LOGICAL ? MAG_DTYPE_BOOL : x->dtype;
+        mag_dtype_t rtype = flags & MAG_BINOP_LOGICAL ? MAG_DTYPE_BOOLEAN : x->dtype;
         stat = rank ? mag_tensor_empty(&result, x->ctx, rtype, rank, dims) : mag_tensor_empty_scalar(&result, x->ctx, rtype);
         if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     }
@@ -803,7 +803,7 @@ mag_status_t mag_gather(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, mag_te
     mag_context_t *ctx = x->ctx;
     mag_tensor_t *result = NULL;
     mag_status_t stat;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, idx->dtype == MAG_DTYPE_I64, "Index tensor must be of type: i64");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, idx->dtype == MAG_DTYPE_INT64, "Index tensor must be of type: int64_t");
     mag_contract(ctx, ERR_INVALID_PARAM, {}, dim >= 0 && dim < x->coords.rank, "Gather dim must be in [0, %" PRIi64 "), but got: %" PRIi64, x->coords.rank, dim);
     mag_contract(ctx, ERR_INVALID_PARAM, {}, idx->coords.rank <= x->coords.rank, "Index tensor rank must be <= input tensor rank (%" PRIi64 " <= %" PRIi64")", idx->coords.rank, x->coords.rank);
     if (dim < 0) dim += x->coords.rank;
@@ -838,16 +838,16 @@ mag_status_t mag_gather(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, mag_te
     if (mag_unlikely(stat != MAG_STATUS_OK)) return stat;
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(dim)); /* Store dimension in op_params[0] */
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dim)); /* Store dimension in op_params[0] */
     mag_dispatch(MAG_OP_GATHER, false, &layout, (mag_tensor_t *[2]) {x, idx}, 2, &result, 1);
     *out = result;
     return MAG_STATUS_OK;
 }
 
-void mag_tensor_fill_from_floats(mag_tensor_t *t, const mag_e8m23_t *data, size_t len) {
+void mag_tensor_fill_from_floats(mag_tensor_t *t, const float *data, size_t len) {
     mag_assert(data && len, "invalid data pointer or length");
     mag_storage_buffer_t *sto = t->storage;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, 0, (void *)data, len*sizeof(*data), MAG_DTYPE_E8M23);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, 0, (void *)data, len*sizeof(*data), MAG_DTYPE_FLOAT32);
 }
 
 void mag_tensor_fill_from_raw_bytes(mag_tensor_t *t, const void *data, size_t len) {
@@ -856,12 +856,12 @@ void mag_tensor_fill_from_raw_bytes(mag_tensor_t *t, const void *data, size_t le
     (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, 0, (void *)data, len);
 }
 
-void mag_tensor_fill_float(mag_tensor_t *t, mag_e8m23_t x) {
+void mag_tensor_fill_float(mag_tensor_t *t, float x) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
 
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_e8m23(x));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float32(x));
 
     mag_dispatch(MAG_OP_FILL, false, &layout, NULL, 0, &t, 1);
 }
@@ -871,18 +871,18 @@ void mag_tensor_fill_int(mag_tensor_t *t, int64_t x) {
 
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(x));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(x));
 
     mag_dispatch(MAG_OP_FILL, false, &layout, NULL, 0, &t, 1);
 }
 
-void mag_tensor_masked_fill_float(mag_tensor_t *t, mag_tensor_t *mask, mag_e8m23_t x) {
+void mag_tensor_masked_fill_float(mag_tensor_t *t, mag_tensor_t *mask, float x) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
-    mag_assert2(mask->dtype == MAG_DTYPE_BOOL);
+    mag_assert2(mask->dtype == MAG_DTYPE_BOOLEAN);
 
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_e8m23(x));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float32(x));
     mag_op_attr_registry_insert(&layout, mag_op_attr_ptr(mask));
 
     mag_dispatch(MAG_OP_MASKED_FILL, false, &layout, NULL, 0, &t, 1);
@@ -890,23 +890,23 @@ void mag_tensor_masked_fill_float(mag_tensor_t *t, mag_tensor_t *mask, mag_e8m23
 
 void mag_tensor_masked_fill_int(mag_tensor_t *t, mag_tensor_t *mask, int64_t x) {
     mag_assert2(mag_tensor_is_integral_typed(t));
-    mag_assert2(mask->dtype == MAG_DTYPE_BOOL);
+    mag_assert2(mask->dtype == MAG_DTYPE_BOOLEAN);
 
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(x));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(x));
     mag_op_attr_registry_insert(&layout, mag_op_attr_ptr(mask));
 
     mag_dispatch(MAG_OP_MASKED_FILL, false, &layout, NULL, 0, &t, 1);
 }
 
-void mag_tensor_fill_random_uniform_float(mag_tensor_t *t, mag_e8m23_t min, mag_e8m23_t max) {
+void mag_tensor_fill_random_uniform_float(mag_tensor_t *t, float min, float max) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
 
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_e8m23(min));
-    mag_op_attr_registry_insert(&layout, mag_op_attr_e8m23(max));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float32(min));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float32(max));
 
     mag_dispatch(MAG_OP_RAND_UNIFORM, false, &layout, NULL, 0, &t, 1);
 }
@@ -916,29 +916,29 @@ void mag_tensor_fill_random_uniform_int(mag_tensor_t *t, int64_t min, int64_t ma
 
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(min));
-    mag_op_attr_registry_insert(&layout, mag_op_attr_i64(max));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(min));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(max));
 
     mag_dispatch(MAG_OP_RAND_UNIFORM, false, &layout, NULL, 0, &t, 1);
 }
 
-void mag_tensor_fill_random_normal(mag_tensor_t *t, mag_e8m23_t mean, mag_e8m23_t stddev) {
+void mag_tensor_fill_random_normal(mag_tensor_t *t, float mean, float stddev) {
     mag_assert2(mag_tensor_is_floating_point_typed(t));
 
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_e8m23(mean));
-    mag_op_attr_registry_insert(&layout, mag_op_attr_e8m23(stddev));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float32(mean));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float32(stddev));
 
     mag_dispatch(MAG_OP_RAND_NORMAL, false, &layout, NULL, 0, &t, 1);
 }
 
-void mag_tensor_fill_random_bernoulli(mag_tensor_t *t, mag_e8m23_t p) {
-    mag_assert2(t->dtype == MAG_DTYPE_BOOL);
+void mag_tensor_fill_random_bernoulli(mag_tensor_t *t, float p) {
+    mag_assert2(t->dtype == MAG_DTYPE_BOOLEAN);
 
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_e8m23(p));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float32(p));
 
     mag_dispatch(MAG_OP_RAND_BERNOULLI, false, &layout, NULL, 0, &t, 1);
 }

@@ -15,10 +15,10 @@ using namespace magnetron;
 using namespace magnetron::test;
 
 #if 0
-TEST(cpu_tensor_indexing, subscript_flattened_e8m23) {
+TEST(cpu_tensor_indexing, subscript_flattened_float32) {
     auto ctx = context{};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
-        tensor t {ctx, dtype::e8m23, shape};
+        tensor t {ctx, dtype::float32, shape};
         t.fill_rand_uniform(-1.0f, 1.0f);
         std::vector<float> data {t.to_vector<float>()};
         ASSERT_EQ(t.numel(), data.size());
@@ -28,10 +28,10 @@ TEST(cpu_tensor_indexing, subscript_flattened_e8m23) {
     });
 }
 
-TEST(cpu_tensor_indexing, subscript_flattened_e5m10) {
+TEST(cpu_tensor_indexing, subscript_flattened_float16) {
     auto ctx = context{};
     for_all_test_shapes([&](std::span<const int64_t> shape) {
-        tensor t {ctx, dtype::e5m10, shape};
+        tensor t {ctx, dtype::float16, shape};
         t.fill_rand_uniform(-1.0f, 1.0f);
         std::vector<float> data {t.to_vector<float>()};
         ASSERT_EQ(t.numel(), data.size());

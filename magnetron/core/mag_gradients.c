@@ -21,8 +21,8 @@ mag_status_t mag_op_backward_view(mag_au_state_t *node, mag_tensor_t **grads) {
 }
 
 mag_status_t mag_op_backward_transpose(mag_au_state_t *node, mag_tensor_t **grads) {
-    int64_t ax0 = mag_op_attr_unwrap_i64(node->op_attrs[0]);
-    int64_t ax1 = mag_op_attr_unwrap_i64(node->op_attrs[1]);
+    int64_t ax0 = mag_op_attr_unwrap_int64(node->op_attrs[0]);
+    int64_t ax1 = mag_op_attr_unwrap_int64(node->op_attrs[1]);
     return mag_transpose(grads, node->grad, ax0, ax1);
 }
 
@@ -30,7 +30,7 @@ mag_status_t mag_op_backward_mean(mag_au_state_t *node, mag_tensor_t **grads) {
     mag_status_t stat;
     mag_tensor_t *x = node->op_inputs[0];
     mag_tensor_t *scale;
-    stat = mag_tensor_full_like(&scale, x, (mag_e8m23_t)(1.0/(mag_e11m52_t)x->numel));
+    stat = mag_tensor_full_like(&scale, x, (float)(1.0/(double)x->numel));
     if (mag_iserr(stat)) return stat;
     stat = mag_mul(grads, scale, node->grad);
     mag_rc_decref(scale);

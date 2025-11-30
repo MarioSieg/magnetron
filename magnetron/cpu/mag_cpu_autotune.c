@@ -110,24 +110,24 @@ void mag_mm_autotune_block_params(const mag_matmul_block_tune_info_t *info, mag_
     int64_t NR_cap = W == 64 ? 32 : W == 32 ? 32 : 16;
     NR = mag_clamp((MR)<<1, MR, NR_cap);
     if (W == 64) MR = 16, NR = 32;
-    mag_e11m52_t aL1 = info->l1_load_factor ? info->l1_load_factor : W == 64 ? 0.55 : W == 32 ? 0.60 : 0.65;
-    mag_e11m52_t aL2 = info->l2_load_factor ? info->l2_load_factor : W == 64 ? 0.40 : W == 32 ? 0.45 : 0.50;
-    mag_e11m52_t L1e = aL1 * (mag_e11m52_t)info->l1_size;
-    mag_e11m52_t L2e = aL2 * (mag_e11m52_t)info->l2_size;
+    double aL1 = info->l1_load_factor ? info->l1_load_factor : W == 64 ? 0.55 : W == 32 ? 0.60 : 0.65;
+    double aL2 = info->l2_load_factor ? info->l2_load_factor : W == 64 ? 0.40 : W == 32 ? 0.45 : 0.50;
+    double L1e = aL1 * (double)info->l1_size;
+    double L2e = aL2 * (double)info->l2_size;
     if (nt >= 2) {
         L1e *= 0.85;
         L2e *= 0.85;
     }
-    mag_e11m52_t nb = (mag_e11m52_t)info->elsize;
-    int64_t kc = (int64_t)(L1e / (nb*(mag_e11m52_t)(MR + NR)));
+    double nb = (double)info->elsize;
+    int64_t kc = (int64_t)(L1e / (nb*(double)(MR + NR)));
     kc = mag_rd_down(kc, 8);
     int64_t KC_lo = W == 64 ? 384 : W == 32 ? 256 : 192;
     int64_t KC_hi = W == 64 ? 1024 : W == 32 ? 768 : 512;
     kc = mag_clamp(kc, KC_lo, KC_hi);
     if (K >= 2048) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
     KC = kc;
-    int64_t MC = (int64_t)(info->split_a*L2e / (nb*(mag_e11m52_t)KC));
-    int64_t NC = (int64_t)((1.0-info->split_a)*L2e / (nb*(mag_e11m52_t)KC));
+    int64_t MC = (int64_t)(info->split_a*L2e / (nb*(double)KC));
+    int64_t NC = (int64_t)((1.0-info->split_a)*L2e / (nb*(double)KC));
     MC = mag_rd_down(MC, MR);
     NC = mag_rd_down(NC, NR);
     MR = mag_xmax(8, MR);
@@ -182,7 +182,7 @@ uint32_t mag_cpu_dynamic_work_scaling(uint32_t allocated_workers, mag_opcode_t o
     if (allocated_workers <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel < info.thread_treshold)  /* Use a single worker (main thread). */
         return 1;
     numel -= info.thread_treshold;                                                             /* Saturate threshold */
-    uint32_t workers = (uint32_t)ceil(info.growth * log2((mag_e11m52_t)numel));         /* Logarithmic scaling */
+    uint32_t workers = (uint32_t)ceil(info.growth * log2((double)numel));         /* Logarithmic scaling */
     workers = mag_xmin(allocated_workers, mag_xmax(1, workers));
     return workers;
 }

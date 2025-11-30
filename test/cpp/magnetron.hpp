@@ -34,27 +34,6 @@
 
 namespace magnetron {
     /**
-     * Thread scheduling priority for CPU compute, higher priority means more CPU time
-     */
-    enum class thread_sched_prio : std::underlying_type_t<mag_thread_prio_t> {
-        normal = MAG_THREAD_PRIO_NORMAL,
-        medium = MAG_THREAD_PRIO_MEDIUM,
-        high = MAG_THREAD_PRIO_HIGH,
-        realtime = MAG_THREAD_PRIO_REALTIME
-    };
-
-    /**
-     * Desired color channels to load from image tensor
-     */
-    enum class color_channel : std::underlying_type_t<mag_color_channels_t> {
-        automatic = MAG_COLOR_CHANNELS_AUTO,
-        grayscale = MAG_COLOR_CHANNELS_GRAY,
-        grayscale_alpha = MAG_COLOR_CHANNELS_GRAY_A,
-        rgb = MAG_COLOR_CHANNELS_RGB,
-        rgba = MAG_COLOR_CHANNELS_RGBA
-    };
-
-    /**
      * Enable or disable internal magnetron logging to stdout.
      * @param enable
      */
@@ -102,17 +81,17 @@ namespace magnetron {
     };
 
     enum class dtype : std::underlying_type_t<mag_dtype_t> {
-        e8m23 = MAG_DTYPE_E8M23,
-        e5m10 = MAG_DTYPE_E5M10,
-        boolean = MAG_DTYPE_BOOL,
-        u8 = MAG_DTYPE_U8,
-        i8 = MAG_DTYPE_I8,
-        u16 = MAG_DTYPE_U16,
-        i16 = MAG_DTYPE_I16,
-        u32 = MAG_DTYPE_U32,
-        i32 = MAG_DTYPE_I32,
-        u64 = MAG_DTYPE_U64,
-        i64 = MAG_DTYPE_I64,
+        float32 = MAG_DTYPE_FLOAT32,
+        float16 = MAG_DTYPE_FLOAT16,
+        boolean = MAG_DTYPE_BOOLEAN,
+        u8 = MAG_DTYPE_UINT8,
+        i8 = MAG_DTYPE_INT8,
+        u16 = MAG_DTYPE_UINT16,
+        i16 = MAG_DTYPE_INT16,
+        u32 = MAG_DTYPE_UINT32,
+        i32 = MAG_DTYPE_INT32,
+        u64 = MAG_DTYPE_UINT64,
+        i64 = MAG_DTYPE_INT64,
     };
 
     [[nodiscard]] inline auto dtype_size(dtype t) noexcept -> size_t {
@@ -139,9 +118,9 @@ namespace magnetron {
         if constexpr (std::is_same_v<T, int32_t>) return dtype::i32;
         if constexpr (std::is_same_v<T, uint64_t>) return dtype::u64;
         if constexpr (std::is_same_v<T, int64_t>) return dtype::i64;
-        if constexpr (std::is_same_v<T, mag_e8m23_t>) return dtype::e8m23;
-        if constexpr (std::is_same_v<T, mag_e5m10_t>) return dtype::e5m10;
-        if constexpr (std::is_same_v<T, half_float::half>) return dtype::e5m10;
+        if constexpr (std::is_same_v<T, float>) return dtype::float32;
+        if constexpr (std::is_same_v<T, mag_float16_t>) return dtype::float16;
+        if constexpr (std::is_same_v<T, half_float::half>) return dtype::float16;
         if constexpr (std::is_same_v<T, bool>) return dtype::boolean;
         return std::nullopt;
     }
@@ -158,7 +137,7 @@ namespace magnetron {
         template <typename... S> requires std::is_integral_v<std::common_type_t<S...>>
         tensor(context& ctx, dtype type, S&&... shape) : tensor{ctx, type, std::array{static_cast<int64_t>(shape)...}} {}
 
-        tensor(context& ctx, std::span<const int64_t> shape, std::span<const float> data) : tensor{ctx, dtype::e8m23, shape} {
+        tensor(context& ctx, std::span<const int64_t> shape, std::span<const float> data) : tensor{ctx, dtype::float32, shape} {
             fill_from(data);
         }
 

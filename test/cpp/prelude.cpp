@@ -52,8 +52,8 @@ namespace magnetron::test {
     thread_local std::mt19937_64 gen{rd()};
 
     const std::unordered_map<dtype, float> dtype_eps_map{
-        {dtype::e8m23, dtype_traits<float>::test_eps},
-        {dtype::e5m10, dtype_traits<float16>::test_eps},
+        {dtype::float32, dtype_traits<float>::test_eps},
+        {dtype::float16, dtype_traits<float16>::test_eps},
     };
 
     static const std::vector<std::vector<int64_t> > TEST_SHAPES = {

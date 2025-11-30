@@ -11,12 +11,12 @@
 
 #include <core/mag_reduce_plan.h>
 
-#define mag_cpu_impl_reduce_axes(T, FUNC, ACC_T, INIT_EXPR, UPDATE_STMT, FINAL_STMT) \
-    static void MAG_HOTPROC mag_##FUNC##_##T(const mag_kernel_payload_t *payload) { \
+#define mag_cpu_impl_reduce_axes(T, TF, FUNC, ACC_T, INIT_EXPR, UPDATE_STMT, FINAL_STMT) \
+    static void MAG_HOTPROC mag_##FUNC##_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
-        const mag_##T##_t *bx = mag_##T##p(x); \
-        mag_##T##_t *br = mag_##T##p_mut(r); \
+        const T *bx = mag_tensor_get_data_ptr(x); \
+        T *br =  mag_tensor_get_data_ptr(r); \
         mag_reduce_plan_t *plan = mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
         int64_t out_numel = r->numel; \
         int64_t red_prod = plan->red_prod; \
@@ -35,54 +35,54 @@
                 mag_bnd_chk(bx + roff, bx, mag_tensor_get_data_size(x)); \
                 { UPDATE_STMT } \
             } \
-            mag_##T##_t *outp = br + oi; \
+            T *outp = br + oi; \
             { FINAL_STMT } \
         } \
     }
 
 mag_cpu_impl_reduce_axes( \
-                          e8m23, sum, mag_e11m52_t, 0.0, \
-                          acc += (mag_e11m52_t)bx[roff];, \
-                          *outp = (mag_e8m23_t)acc; )
+                          float, float32, sum, double, 0.0, \
+                          acc += (double)bx[roff];, \
+                          *outp = (float)acc; )
 mag_cpu_impl_reduce_axes( \
-                          e5m10, sum, mag_e8m23_t, 0.0f, \
-                          acc += mag_e5m10_to_e8m23(bx[roff]);, \
-                          *outp = mag_e8m23_to_e5m10(acc); )
+                          mag_float16_t, float16, sum, float, 0.0f, \
+                          acc += mag_float16_to_float32(bx[roff]);, \
+                          *outp = mag_float32_to_float16(acc); )
 
 mag_cpu_impl_reduce_axes( \
-                          e8m23, prod, mag_e11m52_t, 1.0, \
-                          acc *= (mag_e11m52_t)bx[roff];, \
-                          *outp = (mag_e8m23_t)acc; )
+                          float, float32, prod, double, 1.0, \
+                          acc *= (double)bx[roff];, \
+                          *outp = (float)acc; )
 mag_cpu_impl_reduce_axes( \
-                          e5m10, prod, mag_e8m23_t, 1.0f, \
-                          acc *= mag_e5m10_to_e8m23(bx[roff]);, \
-                          *outp = mag_e8m23_to_e5m10(acc); )
+                          mag_float16_t, float16, prod, float, 1.0f, \
+                          acc *= mag_float16_to_float32(bx[roff]);, \
+                          *outp = mag_float32_to_float16(acc); )
 
 mag_cpu_impl_reduce_axes( \
-                          e8m23, mean, mag_e11m52_t, 0.0, \
-                          acc += (mag_e11m52_t)bx[roff];, \
-                          acc /= (mag_e11m52_t)red_prod; *outp = (mag_e8m23_t)acc; )
+                          float, float32, mean, double, 0.0, \
+                          acc += (double)bx[roff];, \
+                          acc /= (double)red_prod; *outp = (float)acc; )
 mag_cpu_impl_reduce_axes( \
-                          e5m10, mean, mag_e8m23_t, 0.0f, \
-                          acc += mag_e5m10_to_e8m23(bx[roff]);, \
-                          acc /= (mag_e8m23_t)red_prod; *outp = mag_e8m23_to_e5m10(acc); )
+                          mag_float16_t, float16, mean, float, 0.0f, \
+                          acc += mag_float16_to_float32(bx[roff]);, \
+                          acc /= (float)red_prod; *outp = mag_float32_to_float16(acc); )
 
 mag_cpu_impl_reduce_axes( \
-                          e8m23, min, mag_e8m23_t, INFINITY, \
+                          float, float32, min, float, INFINITY, \
                           acc = fminf(acc, bx[roff]);, \
                           *outp = acc; )
 mag_cpu_impl_reduce_axes( \
-                          e5m10, min, mag_e8m23_t, INFINITY, \
-                          acc = fminf(acc, mag_e5m10_to_e8m23(bx[roff]));, \
-                          *outp = mag_e8m23_to_e5m10(acc); )
+                          mag_float16_t, float16, min, float, INFINITY, \
+                          acc = fminf(acc, mag_float16_to_float32(bx[roff]));, \
+                          *outp = mag_float32_to_float16(acc); )
 
 mag_cpu_impl_reduce_axes( \
-                          e8m23, max, mag_e8m23_t, -INFINITY, \
+                          float, float32, max, float, -INFINITY, \
                           acc = fmaxf(acc, bx[roff]);, \
                           *outp = acc; )
 mag_cpu_impl_reduce_axes( \
-                          e5m10, max, mag_e8m23_t, -INFINITY, \
-                          acc = fmaxf(acc, mag_e5m10_to_e8m23(bx[roff]));, \
-                          *outp = mag_e8m23_to_e5m10(acc); )
+                          mag_float16_t, float16, max, float, -INFINITY, \
+                          acc = fmaxf(acc, mag_float16_to_float32(bx[roff]));, \
+                          *outp = mag_float32_to_float16(acc); )
 
 #undef mag_cpu_impl_reduce_axes

@@ -34,10 +34,10 @@ private:
     nn::linear_layer l2;
 };
 
-TEST(models, xor_e8m23) {
+TEST(models, xor_float32) {
     context ctx {};
     ctx.manual_seed(0x9032002);
-    xor_model model{ctx, dtype::e8m23};
+    xor_model model{ctx, dtype::float32};
     nn::sgd optimizer{model.params(), 0.1f};
 
     static constexpr std::array<float, 2*4> x_data {
@@ -47,10 +47,10 @@ TEST(models, xor_e8m23) {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 
-    tensor x {ctx, dtype::e8m23, 4, 2};
+    tensor x {ctx, dtype::float32, 4, 2};
     x.fill_from(x_data);
 
-    tensor y {ctx, dtype::e8m23, 4, 1};
+    tensor y {ctx, dtype::float32, 4, 1};
     y.fill_from(y_data);
 
     constexpr int64_t epochs {2000};
@@ -74,10 +74,10 @@ TEST(models, xor_e8m23) {
     }
 }
 
-TEST(models, xor_e5m10) {
+TEST(models, xor_float16) {
     context ctx {};
     ctx.manual_seed(0x9032002);
-    xor_model model{ctx, dtype::e5m10};
+    xor_model model{ctx, dtype::float16};
     nn::sgd optimizer{model.params(), 0.1f};
 
     static constexpr std::array<float, 2*4> x_data {
@@ -87,10 +87,10 @@ TEST(models, xor_e5m10) {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 
-    tensor x {ctx, dtype::e5m10, 4, 2};
+    tensor x {ctx, dtype::float16, 4, 2};
     x.fill_from(x_data);
 
-    tensor y {ctx, dtype::e5m10, 4, 1};
+    tensor y {ctx, dtype::float16, 4, 1};
     y.fill_from(y_data);
 
     constexpr int64_t epochs {2000};

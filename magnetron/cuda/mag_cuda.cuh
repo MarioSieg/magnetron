@@ -32,7 +32,7 @@ namespace mag {
   static inline std::atomic_uint64_t global_subseq = 0;
 
   template <typename T>
-  concept is_floating_point = std::is_same_v<T, mag_e8m23_t> || std::is_same_v<T, half>;
+  concept is_floating_point = std::is_same_v<T, float> || std::is_same_v<T, half>;
 
   template <typename T>
   concept is_integer = std::is_integral_v<T> && !std::is_same_v<T, bool>;
@@ -45,7 +45,7 @@ namespace mag {
 
   template <typename T>
   [[nodiscard]] T unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
-    if constexpr (is_floating_point<T>) return static_cast<T>(mag_op_attr_unwrap_e8m23(params[i]));
-    else return static_cast<T>(mag_op_attr_unwrap_i64(params[i]));
+    if constexpr (is_floating_point<T>) return static_cast<T>(mag_op_attr_unwrap_float32(params[i]));
+    else return static_cast<T>(mag_op_attr_unwrap_int64(params[i]));
   }
 }

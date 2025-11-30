@@ -125,8 +125,8 @@ namespace mag {
         const mag_tensor_t *x = cmd->in[0];
         mag_assert2(r->dtype == x->dtype);
         switch (r->dtype) {
-            case MAG_DTYPE_E8M23: launch_reduce_op<op_t<mag_e8m23_t, mag_e11m52_t>>(cmd); break;
-            case MAG_DTYPE_E5M10: launch_reduce_op<op_t<half, mag_e8m23_t>>(cmd); break;
+            case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, double>>(cmd); break;
+            case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, float>>(cmd); break;
             default: mag_assert(false, "Unsupported dtype for unary op");
         }
     }

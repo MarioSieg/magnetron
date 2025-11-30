@@ -41,7 +41,7 @@ TEST(context, create_cuda) {
     enable_logging(true);
 
     context ctx {"cuda:0"};
-    tensor a {ctx, dtype::e8m23, 8};
+    tensor a {ctx, dtype::float32, 8};
     a.fill_rand_uniform(0.f, 1.f);
     std::cout << a.to_string() << std::endl;
     std::cout << a.min().to_string() << std::endl;

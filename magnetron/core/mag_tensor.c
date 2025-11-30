@@ -220,43 +220,43 @@ void mag_tensor_get_raw_data_as_bytes_free(void *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
-mag_e8m23_t *mag_tensor_get_data_as_floats(mag_tensor_t *t) {
+float *mag_tensor_get_data_as_floats(mag_tensor_t *t) {
     mag_tensor_t *cont;
     mag_status_t stat = mag_contiguous(&cont, t);
     if (mag_iserr(stat)) return NULL;
     mag_assert(mag_tensor_is_floating_point_typed(cont), "Tensor must be a floating point tensor, but has dtype: %s", mag_dtype_meta_of(t->dtype)->name);
-    size_t size = cont->numel*sizeof(mag_e8m23_t);
+    size_t size = cont->numel*sizeof(float);
     mag_assert2(size);
-    mag_e8m23_t *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
+    float *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_storage_buffer_t *sto = cont->storage;
-    if (cont->dtype == MAG_DTYPE_E8M23) (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
-    else (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size, MAG_DTYPE_E8M23);
+    if (cont->dtype == MAG_DTYPE_FLOAT32) (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
+    else (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size, MAG_DTYPE_FLOAT32);
     mag_rc_decref(cont);
     return dst;
 }
 
-void mag_tensor_get_data_as_floats_free(mag_e8m23_t *ret_val) {
+void mag_tensor_get_data_as_floats_free(float *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
-mag_e8m23_t mag_tensor_get_item_float(const mag_tensor_t *t) {
+float mag_tensor_get_item_float(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
-    mag_e8m23_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_E8M23);
+    float val;
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_FLOAT32);
     return val;
 }
 
 int64_t mag_tensor_get_item_int(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
     int64_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_I64);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_INT64);
     return val;
 }
 
 bool mag_tensor_get_item_bool(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
     uint8_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_BOOL);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_BOOLEAN);
     return !!val;
 }
 
@@ -264,17 +264,17 @@ static void mag_fmt_single_elem(mag_sstream_t *ss, const void *buf, size_t i, ma
     char fmt[MAG_FMT_BUF_MAX] = {0};
     char *e;
     switch (dtype) {
-        case MAG_DTYPE_E8M23:
-        case MAG_DTYPE_E5M10: e = mag_fmt_e11m52(fmt, ((const mag_e8m23_t *)buf)[i], MAG_FMT_G5); break;
-        case MAG_DTYPE_BOOL: mag_sstream_append(ss, "%s", ((const uint8_t *)buf)[i] ? "True" : "False"); return;
-        case MAG_DTYPE_U8:  e = mag_fmt_u64(fmt, ((const uint8_t *)buf)[i]); break;
-        case MAG_DTYPE_I8:  e = mag_fmt_i64(fmt, ((const int8_t *)buf)[i]); break;
-        case MAG_DTYPE_U16: e = mag_fmt_u64(fmt, ((const uint16_t *)buf)[i]); break;
-        case MAG_DTYPE_I16: e = mag_fmt_i64(fmt, ((const int16_t *)buf)[i]); break;
-        case MAG_DTYPE_U32: e = mag_fmt_u64(fmt, ((const uint32_t *)buf)[i]); break;
-        case MAG_DTYPE_I32: e = mag_fmt_i64(fmt, ((const int32_t *)buf)[i]); break;
-        case MAG_DTYPE_U64: e = mag_fmt_u64(fmt, ((const uint64_t *)buf)[i]); break;
-        case MAG_DTYPE_I64: e = mag_fmt_i64(fmt, ((const int64_t *)buf)[i]); break;
+        case MAG_DTYPE_FLOAT32:
+        case MAG_DTYPE_FLOAT16: e = mag_fmt_e11m52(fmt, ((const float *)buf)[i], MAG_FMT_G5); break;
+        case MAG_DTYPE_BOOLEAN: mag_sstream_append(ss, "%s", ((const uint8_t *)buf)[i] ? "True" : "False"); return;
+        case MAG_DTYPE_UINT8:  e = mag_fmt_uint64(fmt, ((const uint8_t *)buf)[i]); break;
+        case MAG_DTYPE_INT8:  e = mag_fmt_int64(fmt, ((const int8_t *)buf)[i]); break;
+        case MAG_DTYPE_UINT16: e = mag_fmt_uint64(fmt, ((const uint16_t *)buf)[i]); break;
+        case MAG_DTYPE_INT16: e = mag_fmt_int64(fmt, ((const int16_t *)buf)[i]); break;
+        case MAG_DTYPE_UINT32: e = mag_fmt_uint64(fmt, ((const uint32_t *)buf)[i]); break;
+        case MAG_DTYPE_INT32: e = mag_fmt_int64(fmt, ((const int32_t *)buf)[i]); break;
+        case MAG_DTYPE_UINT64: e = mag_fmt_uint64(fmt, ((const uint64_t *)buf)[i]); break;
+        case MAG_DTYPE_INT64: e = mag_fmt_int64(fmt, ((const int64_t *)buf)[i]); break;
         default: mag_panic("Unknown dtype for formatting: %d", dtype); return;
     }
     mag_assert2(e);

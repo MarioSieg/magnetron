@@ -73,7 +73,7 @@ TEST(prng, ks_test_normal_dist) {
         double stdv = std_d(eng);
         size_t rows = shape_distr(eng);
         size_t cols = shape_distr(eng);
-        tensor t{ctx, dtype::e8m23, rows, cols};
+        tensor t{ctx, dtype::float32, rows, cols};
         t.fill_rand_normal(static_cast<float>(mean), static_cast<float>(stdv));
         std::vector<float> samples = t.to_vector<float>();
         const boost::math::normal dist(mean, stdv);
@@ -112,7 +112,7 @@ TEST(prng, ks_test_uniform_dist) {
         double b = a + w_d(eng);
         size_t rows = shape_d(eng);
         size_t cols = shape_d(eng);
-        tensor t{ctx, dtype::e8m23, rows, cols};
+        tensor t{ctx, dtype::float32, rows, cols};
         t.fill_rand_uniform(static_cast<float>(a), static_cast<float>(b));
         std::vector<float> samples = t.to_vector<float>();
         boost::math::uniform_distribution<> dist(a, b);
@@ -152,7 +152,7 @@ TEST(prng, normal_mean_std_match) {
     constexpr size_t N = 1'000'000;
     constexpr double mu_true  = 1.5;
     constexpr double sigma_true = 2.0;
-    tensor t{ctx, dtype::e8m23, N};
+    tensor t{ctx, dtype::float32, N};
     t.fill_rand_normal(mu_true, sigma_true);
     std::vector<float> v = t.to_vector<float>();
     double sum = std::accumulate(v.begin(), v.end(), 0.0);
@@ -173,13 +173,13 @@ TEST(prng, automatic_seeding) {
     std::vector<float> a, b;
     {
         context ctx {};
-        tensor ta {ctx, dtype::e8m23, 8192, 8192};
+        tensor ta {ctx, dtype::float32, 8192, 8192};
         ta.fill_rand_uniform(-1.0f, 1.0f);
         a = ta.to_vector<float>();
     }
     {
         context ctx {};
-        tensor tb {ctx, dtype::e8m23, 8192, 8192};
+        tensor tb {ctx, dtype::float32, 8192, 8192};
         tb.fill_rand_uniform(-1.0f, 1.0f);
         b = tb.to_vector<float>();
     }
@@ -204,7 +204,7 @@ TEST(prng, manual_seeding) {
     {
         context ctx {};
         ctx.manual_seed(seed);
-        tensor ta {ctx, dtype::e8m23, 8192, 8192};
+        tensor ta {ctx, dtype::float32, 8192, 8192};
         ta.fill_rand_uniform(-1.0f, 1.0f);
         a = ta.to_vector<float>();
     }
@@ -212,7 +212,7 @@ TEST(prng, manual_seeding) {
     {
         context ctx {};
         ctx.manual_seed(seed);
-        tensor tb {ctx, dtype::e8m23, 8192, 8192};
+        tensor tb {ctx, dtype::float32, 8192, 8192};
         tb.fill_rand_uniform(-1.0f, 1.0f);
         b = tb.to_vector<float>();
     }

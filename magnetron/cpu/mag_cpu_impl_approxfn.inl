@@ -11,7 +11,7 @@
 
 #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
 
-static float32x4_t mag_simd_exp_e8m23(float32x4_t x) {
+static float32x4_t mag_simd_exp_float32(float32x4_t x) {
     float32x4_t r = vdupq_n_f32(0x1.8p23f);
     float32x4_t z = vfmaq_f32(r, x, vdupq_n_f32(0x1.715476p+0f));
     float32x4_t n = vsubq_f32(z, r);
@@ -32,13 +32,13 @@ static float32x4_t mag_simd_exp_e8m23(float32x4_t x) {
                      vbslq_f32(c, vmulq_f32(vfmaq_f32(s2, s2, j), s1), vfmaq_f32(k, k, j)));
 }
 
-static float32x4_t mag_simd_tanh_e8m23(float32x4_t x) {
+static float32x4_t mag_simd_tanh_float32(float32x4_t x) {
     float32x4_t one = vdupq_n_f32(1.f);
     float32x4_t m1 = vdupq_n_f32(-1.f);
     float32x4_t two = vdupq_n_f32(2.0f);
     float32x4_t m2 = vdupq_n_f32(-2.0f);
     float32x4_t a = vmulq_f32(m2, x);
-    float32x4_t b = mag_simd_exp_e8m23(a);
+    float32x4_t b = mag_simd_exp_float32(a);
     float32x4_t c = vaddq_f32(one, b);
     float32x4_t inv = vrecpeq_f32(c);
     inv = vmulq_f32(vrecpsq_f32(c, inv), inv);
@@ -48,7 +48,7 @@ static float32x4_t mag_simd_tanh_e8m23(float32x4_t x) {
 
 #elif defined(__AVX512F__) && defined(__AVX512DQ__)
 
-static __m512 mag_simd_exp_e8m23(__m512 x) {
+static __m512 mag_simd_exp_float32(__m512 x) {
     __m512 r = _mm512_set1_ps(0x1.8p23f);
     __m512 z = _mm512_fmadd_ps(x, _mm512_set1_ps(0x1.715476p+0f), r);
     __m512 n = _mm512_sub_ps(z, r);
@@ -66,13 +66,13 @@ static __m512 mag_simd_exp_e8m23(__m512 x) {
     return _mm512_mask_blend_ps(d, res, alt);
 }
 
-static __m512 mag_simd_tanh_e8m23(__m512 x) {
+static __m512 mag_simd_tanh_float32(__m512 x) {
     __m512 one = _mm512_set1_ps(1.f);
     __m512 neg_one = _mm512_set1_ps(-1.f);
     __m512 two = _mm512_set1_ps(2.0f);
     __m512 neg_two = _mm512_set1_ps(-2.0f);
     __m512 a = _mm512_mul_ps(neg_two, x);
-    __m512 b = mag_simd_exp_e8m23(a);
+    __m512 b = mag_simd_exp_float32(a);
     __m512 c = _mm512_add_ps(one, b);
     __m512 inv = _mm512_rcp14_ps(c);
     inv = _mm512_mul_ps(_mm512_rcp14_ps(_mm512_mul_ps(c, inv)), inv);
@@ -84,8 +84,8 @@ static __m512 mag_simd_tanh_e8m23(__m512 x) {
 
 #define mag_m256ps_K(T, name, x) static const mag_alignas(32) T mag_m256_##name[8] = {(x),(x),(x),(x),(x),(x),(x),(x)}
 
-mag_m256ps_K(mag_e8m23_t, 1, 1.0f);
-mag_m256ps_K(mag_e8m23_t, 0p5, 0.5f);
+mag_m256ps_K(float, 1, 1.0f);
+mag_m256ps_K(float, 0p5, 0.5f);
 mag_m256ps_K(int32_t, min_norm_pos, 0x00800000);
 mag_m256ps_K(int32_t, mant_mask, 0x7f800000);
 mag_m256ps_K(int32_t, inv_mant_mask, ~0x7f800000);
@@ -93,7 +93,7 @@ mag_m256ps_K(int32_t, sign_mask, 0x80000000);
 mag_m256ps_K(int32_t, inv_sign_mask, ~0x80000000);
 mag_m256ps_K(int32_t, 0x7f, 0x7f);
 
-static __m256 mag_simd_exp_e8m23(__m256 x) {
+static __m256 mag_simd_exp_float32(__m256 x) {
     __m256 r = _mm256_set1_ps(0x1.8p23f);
     __m256 z = _mm256_fmadd_ps(x, _mm256_set1_ps(0x1.715476p+0f), r);
     __m256 n = _mm256_sub_ps(z, r);
@@ -119,13 +119,13 @@ static __m256 mag_simd_exp_e8m23(__m256 x) {
            );
 }
 
-static __m256 mag_simd_tanh_e8m23(__m256 x) {
+static __m256 mag_simd_tanh_float32(__m256 x) {
     __m256 one = _mm256_set1_ps(1.f);
     __m256 neg_one = _mm256_set1_ps(-1.f);
     __m256 two = _mm256_set1_ps(2.0f);
     __m256 neg_two = _mm256_set1_ps(-2.0f);
     __m256 a = _mm256_mul_ps(neg_two, x);
-    __m256 b = mag_simd_exp_e8m23(a);
+    __m256 b = mag_simd_exp_float32(a);
     __m256 c = _mm256_add_ps(one, b);
     __m256 inv = _mm256_rcp_ps(c);
     inv = _mm256_mul_ps(_mm256_rcp_ps(_mm256_mul_ps(c, inv)), inv);
@@ -133,19 +133,19 @@ static __m256 mag_simd_tanh_e8m23(__m256 x) {
     return _mm256_fmadd_ps(two, inv, neg_one);
 }
 
-static __m256 mag_simd_log_e8m23(__m256 x) {
-    mag_m256ps_K(mag_e8m23_t, poly_SQRTHF, 0.707106781186547524);
-    mag_m256ps_K(mag_e8m23_t, poly_log_p0, 7.0376836292e-2);
-    mag_m256ps_K(mag_e8m23_t, poly_log_p1, -1.1514610310e-1);
-    mag_m256ps_K(mag_e8m23_t, poly_log_p2, 1.1676998740e-1);
-    mag_m256ps_K(mag_e8m23_t, poly_log_p3, -1.2420140846e-1);
-    mag_m256ps_K(mag_e8m23_t, poly_log_p4, +1.4249322787e-1);
-    mag_m256ps_K(mag_e8m23_t, poly_log_p5, -1.6668057665e-1);
-    mag_m256ps_K(mag_e8m23_t, poly_log_p6, +2.0000714765e-1);
-    mag_m256ps_K(mag_e8m23_t, poly_log_p7, -2.4999993993e-1);
-    mag_m256ps_K(mag_e8m23_t, poly_log_p8, +3.3333331174e-1);
-    mag_m256ps_K(mag_e8m23_t, poly_log_q1, -2.12194440e-4);
-    mag_m256ps_K(mag_e8m23_t, poly_log_q2, 0.693359375);
+static __m256 mag_simd_log_float32(__m256 x) {
+    mag_m256ps_K(float, poly_SQRTHF, 0.707106781186547524);
+    mag_m256ps_K(float, poly_log_p0, 7.0376836292e-2);
+    mag_m256ps_K(float, poly_log_p1, -1.1514610310e-1);
+    mag_m256ps_K(float, poly_log_p2, 1.1676998740e-1);
+    mag_m256ps_K(float, poly_log_p3, -1.2420140846e-1);
+    mag_m256ps_K(float, poly_log_p4, +1.4249322787e-1);
+    mag_m256ps_K(float, poly_log_p5, -1.6668057665e-1);
+    mag_m256ps_K(float, poly_log_p6, +2.0000714765e-1);
+    mag_m256ps_K(float, poly_log_p7, -2.4999993993e-1);
+    mag_m256ps_K(float, poly_log_p8, +3.3333331174e-1);
+    mag_m256ps_K(float, poly_log_q1, -2.12194440e-4);
+    mag_m256ps_K(float, poly_log_q2, 0.693359375);
     __m256i imm0;
     __m256 one = *(__m256 *)mag_m256_1;
     __m256 invalid_mask = _mm256_cmp_ps(x, _mm256_setzero_ps(), _CMP_LE_OS);
@@ -184,17 +184,17 @@ static __m256 mag_simd_log_e8m23(__m256 x) {
     return x;
 }
 
-static void mag_simd_sincos_e8m23(__m256 x, __m256 *s, __m256 *c) {
-    mag_m256ps_K(mag_e8m23_t, minus_cephes_DP1, -0.78515625);
-    mag_m256ps_K(mag_e8m23_t, minus_cephes_DP2, -2.4187564849853515625e-4);
-    mag_m256ps_K(mag_e8m23_t, minus_cephes_DP3, -3.77489497744594108e-8);
-    mag_m256ps_K(mag_e8m23_t, sincof_p0, -1.9515295891e-4);
-    mag_m256ps_K(mag_e8m23_t, sincof_p1,  8.3321608736e-3);
-    mag_m256ps_K(mag_e8m23_t, sincof_p2, -1.6666654611e-1);
-    mag_m256ps_K(mag_e8m23_t, coscof_p0,  2.443315711809948e-005);
-    mag_m256ps_K(mag_e8m23_t, coscof_p1, -1.388731625493765e-003);
-    mag_m256ps_K(mag_e8m23_t, coscof_p2,  4.166664568298827e-002);
-    mag_m256ps_K(mag_e8m23_t, cephes_FOPI, 1.27323954473516);
+static void mag_simd_sincos_float32(__m256 x, __m256 *s, __m256 *c) {
+    mag_m256ps_K(float, minus_cephes_DP1, -0.78515625);
+    mag_m256ps_K(float, minus_cephes_DP2, -2.4187564849853515625e-4);
+    mag_m256ps_K(float, minus_cephes_DP3, -3.77489497744594108e-8);
+    mag_m256ps_K(float, sincof_p0, -1.9515295891e-4);
+    mag_m256ps_K(float, sincof_p1,  8.3321608736e-3);
+    mag_m256ps_K(float, sincof_p2, -1.6666654611e-1);
+    mag_m256ps_K(float, coscof_p0,  2.443315711809948e-005);
+    mag_m256ps_K(float, coscof_p1, -1.388731625493765e-003);
+    mag_m256ps_K(float, coscof_p2,  4.166664568298827e-002);
+    mag_m256ps_K(float, cephes_FOPI, 1.27323954473516);
     __m256i v2 = _mm256_set1_epi32(2);
     __m256i v4 = _mm256_set1_epi32(4);
     __m256 xmm1, xmm2, xmm3 = _mm256_setzero_ps(), sign_bit_sin, y;
@@ -247,7 +247,7 @@ static void mag_simd_sincos_e8m23(__m256 x, __m256 *s, __m256 *c) {
 
 #elif defined(__SSE2__)
 
-static __m128 mag_simd_exp_e8m23(__m128 x) {
+static __m128 mag_simd_exp_float32(__m128 x) {
     __m128 r = _mm_set1_ps(0x1.8p23f);
     __m128 z = _mm_add_ps(_mm_mul_ps(x, _mm_set1_ps(0x1.715476p+0f)), r);
     __m128 n = _mm_sub_ps(z, r);
@@ -272,13 +272,13 @@ static __m128 mag_simd_exp_e8m23(__m128 x) {
            );
 }
 
-static __m128 mag_simd_tanh_e8m23(__m128 x) {
+static __m128 mag_simd_tanh_float32(__m128 x) {
     __m128 one = _mm_set1_ps(1.f);
     __m128 neg_one = _mm_set1_ps(-1.f);
     __m128 two = _mm_set1_ps(2.0f);
     __m128 neg_two = _mm_set1_ps(-2.0f);
     __m128 a = _mm_mul_ps(neg_two, x);
-    __m128 b = mag_simd_exp_e8m23(a);
+    __m128 b = mag_simd_exp_float32(a);
     __m128 c = _mm_add_ps(one, b);
     __m128 inv = _mm_rcp_ps(c);
     inv = _mm_mul_ps(_mm_rcp_ps(_mm_mul_ps(c, inv)), inv); /* Newton–Raphson method */

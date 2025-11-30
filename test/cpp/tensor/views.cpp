@@ -17,7 +17,7 @@ using namespace magnetron::test;
 TEST(views, view) {
     constexpr std::array<int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{};
-    tensor base {ctx, dtype::e8m23, shape};
+    tensor base {ctx, dtype::float32, shape};
     tensor view = base.view();
     ASSERT_EQ(view.rank(), 3);
     ASSERT_EQ(view.shape()[0], 8);
@@ -33,7 +33,7 @@ TEST(views, view) {
 TEST(views, view_of_view) {
     constexpr std::array<int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{};
-    tensor base {ctx, dtype::e8m23, shape};
+    tensor base {ctx, dtype::float32, shape};
     tensor view1 = base.view();
     tensor view2 = view1.view();
     ASSERT_EQ(view2.rank(), 3);
@@ -50,7 +50,7 @@ TEST(views, view_of_view) {
 TEST(views, view_slice_positive_step) {
     constexpr std::array<int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{};
-    tensor base {ctx, dtype::e8m23, shape};
+    tensor base {ctx, dtype::float32, shape};
     tensor view = base.view_slice(0, 2, 3, 1);
     ASSERT_EQ(view.rank(), 3);
     ASSERT_EQ(view.shape()[0], 3);
@@ -67,7 +67,7 @@ TEST(views, view_slice_positive_step) {
 TEST(views, view_of_view_slice) {
     constexpr std::array<int64_t, 3> shape = {8, 3, 4};
     auto ctx = context{};
-    tensor base {ctx, dtype::e8m23, shape};
+    tensor base {ctx, dtype::float32, shape};
     tensor view1 = base.view_slice(0, 2, 3, 1);
     tensor view2 = view1.view({9, 4}); // view of view
     ASSERT_EQ(view2.rank(), 2);
@@ -78,7 +78,7 @@ TEST(views, view_of_view_slice) {
 
 TEST(views, view_slice_chain_accumulates_offset) {
     context ctx{};
-    tensor base{ctx, dtype::e8m23, 10, 2};
+    tensor base{ctx, dtype::float32, 10, 2};
     tensor v1 = base.view_slice(0, 2, 6, 1); // rows 2..7
     tensor v2 = v1.view_slice(0, 3, 2, 1); // rows 5..6 of base
     const auto expect = std::bit_cast<std::uintptr_t>(base.data_ptr()) +
@@ -89,7 +89,7 @@ TEST(views, view_slice_chain_accumulates_offset) {
 
 TEST(views, flattened_write_uses_offset) {
     context ctx{};
-    tensor base{ctx, dtype::e8m23, 4, 3}; // (rows, cols)
+    tensor base{ctx, dtype::float32, 4, 3}; // (rows, cols)
     tensor v = base.view_slice(0, 1, 2, 1); // rows 1 & 2
     //v(0, 42.0f); // first elem of view TODO
     //ASSERT_FLOAT_EQ(base(1*3 + 0), 42.0f);
@@ -97,7 +97,7 @@ TEST(views, flattened_write_uses_offset) {
 
 TEST(views, storage_alias_consistency) {
     context ctx{};
-    tensor base{ctx, dtype::e8m23, 5};
+    tensor base{ctx, dtype::float32, 5};
     tensor v1 = base.view_slice(0,1,3,1);
     tensor v2 = base.view_slice(0,2,2,1);
     ASSERT_EQ(base.storage_base_ptr(), v1.storage_base_ptr());
@@ -106,7 +106,7 @@ TEST(views, storage_alias_consistency) {
 
 TEST(views, tail_identity) {
     context ctx{};
-    tensor t{ctx, dtype::e8m23, 2, 3};
+    tensor t{ctx, dtype::float32, 2, 3};
     tensor v1 = t.view();                 // contiguous alias
     tensor v2 = t.view_slice(1, 0, 2, 2); // strided rows 0,2
     for (auto* p : {&t, &v1, &v2}) {
@@ -119,7 +119,7 @@ TEST(views, tail_identity) {
 
 TEST(views, view_keeps_strides) {
     context ctx{};
-    tensor base  {ctx, dtype::e8m23, 4, 4};
+    tensor base  {ctx, dtype::float32, 4, 4};
     tensor slice = base.view_slice(1, 0, 2, 2);   // stride {8,1}
     tensor alias = slice.view();                  // same logical shape
     ASSERT_EQ(alias.strides()[0], slice.strides()[0]);
@@ -128,14 +128,14 @@ TEST(views, view_keeps_strides) {
 
 TEST(views, reshape_requires_contiguous) {
     context ctx{};
-    tensor base{ctx, dtype::e8m23, 4, 4};
+    tensor base{ctx, dtype::float32, 4, 4};
     tensor slice = base.view_slice(1, 0, 2, 2);   // non-contiguous
     auto view = slice.view({4, 2});;
 }
 
 TEST(views, reshape_requires_contiguous_wrong) {
     context ctx{};
-    tensor base{ctx, dtype::e8m23, 4, 4};
+    tensor base{ctx, dtype::float32, 4, 4};
     tensor slice = base.view_slice(1, 0, 2, 2);   // non-contiguous
     ASSERT_DEATH({
         auto view = slice.view({8, 2});;
@@ -144,7 +144,7 @@ TEST(views, reshape_requires_contiguous_wrong) {
 
 TEST(views, offset_accumulation) {
     context ctx{};
-    tensor base{ctx, dtype::e8m23, 10, 2};      // row-major
+    tensor base{ctx, dtype::float32, 10, 2};      // row-major
     tensor v1 = base.view_slice(0, 2, 6, 1);    // rows 2..7
     tensor v2 = v1.view_slice(0, 3, 2, 1);      // rows 5..6
 
@@ -155,7 +155,7 @@ TEST(views, offset_accumulation) {
 
 TEST(views, to_float_vector_copies_view) {
     context ctx{};
-    tensor base{ctx, dtype::e8m23, 8, 3, 4};
+    tensor base{ctx, dtype::float32, 8, 3, 4};
     base.fill_rand_uniform(-1.f, 1.f);
     tensor slice = base.view_slice(0,0,4,2);
     auto ref = base.to_vector<float>();
@@ -169,7 +169,7 @@ TEST(views, to_float_vector_copies_view) {
 
 TEST(views, inplace_bumps_version_and_detaches) {
     context ctx{};
-    tensor x{ctx, dtype::e8m23, 2, 2};
+    tensor x{ctx, dtype::float32, 2, 2};
     x.requires_grad(true);
     tensor v = x.view();
     tensor y = v.abs();
@@ -185,7 +185,7 @@ TEST(views, inplace_bumps_version_and_detaches) {
 
 TEST(views, view_no_axes) {
     auto ctx = context{};
-    auto base = tensor{ctx, dtype::e8m23, 2, 2, 3, 1};
+    auto base = tensor{ctx, dtype::float32, 2, 2, 3, 1};
     auto v = base.view();
     ASSERT_FALSE(base.is_view());
     ASSERT_TRUE(v.is_view());

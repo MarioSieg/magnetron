@@ -58,7 +58,7 @@ mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const
         h = (int)target_h;
     }
     mag_tensor_t *tensor;
-    mag_status_t stat = mag_tensor_empty(&tensor, ctx, MAG_DTYPE_U8, 3, (int64_t[3]){c, h, w});
+    mag_status_t stat = mag_tensor_empty(&tensor, ctx, MAG_DTYPE_UINT8, 3, (int64_t[3]){c, h, w});
     if (mag_unlikely(stat != MAG_STATUS_OK)) {
         stbi_image_free(pixels);
         return stat;

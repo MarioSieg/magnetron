@@ -133,11 +133,11 @@ mag_static_assert(MAG_DTYPE__NUM <= 16); /* Must fit in 8 bits, if this fails in
 #define mag_dtype_bit(x) (((mag_dtype_mask_t)1)<<((x)&((sizeof(mag_dtype_mask_t)<<3)-1)))
 #define mag_dtype_mask(enume) mag_dtype_bit(MAG_DTYPE_##enume)
 #define MAG_DTYPE_MASK_NONE 0
-#define MAG_DTYPE_MASK_FP (mag_dtype_mask(E8M23)|mag_dtype_mask(E5M10))
-#define MAG_DTYPE_MASK_INTEGER (mag_dtype_mask(U8)|mag_dtype_mask(I8)|mag_dtype_mask(U16)|mag_dtype_mask(I16)|mag_dtype_mask(U32)|mag_dtype_mask(I32)|mag_dtype_mask(U64)|mag_dtype_mask(I64))
-#define MAG_DTYPE_MASK_INTEGRAL (mag_dtype_mask(BOOL)|MAG_DTYPE_MASK_INTEGER)
+#define MAG_DTYPE_MASK_FP (mag_dtype_mask(FLOAT32)|mag_dtype_mask(FLOAT16))
+#define MAG_DTYPE_MASK_INTEGER (mag_dtype_mask(UINT8)|mag_dtype_mask(INT8)|mag_dtype_mask(INT16)|mag_dtype_mask(INT16)|mag_dtype_mask(INT32)|mag_dtype_mask(INT32)|mag_dtype_mask(INT64)|mag_dtype_mask(INT64))
+#define MAG_DTYPE_MASK_INTEGRAL (mag_dtype_mask(BOOLEAN)|MAG_DTYPE_MASK_INTEGER)
 #define MAG_DTYPE_MASK_NUMERIC (MAG_DTYPE_MASK_INTEGER|MAG_DTYPE_MASK_FP)
-#define MAG_DTYPE_MASK_BOOL (mag_dtype_mask(BOOL))
+#define MAG_DTYPE_MASK_BOOL (mag_dtype_mask(BOOLEAN))
 #define MAG_DTYPE_MASK_ALL (MAG_DTYPE_MASK_NUMERIC|MAG_DTYPE_MASK_BOOL)
 
 typedef struct mag_au_state_t mag_au_state_t;

@@ -49,17 +49,17 @@ class DataType:
         return self.name
 
 
-float32: DataType = DataType(_C.MAG_DTYPE_E8M23, 4, 'float32', 'float', _C.mag_tensor_fill_from_floats)
-float16: DataType = DataType(_C.MAG_DTYPE_E5M10, 2, 'float16', None, _C.mag_tensor_fill_from_floats)
-boolean: DataType = DataType(_C.MAG_DTYPE_BOOL, 1, 'bool', 'bool', _C.mag_tensor_fill_from_raw_bytes)
-uint8: DataType = DataType(_C.MAG_DTYPE_U8, 1, 'uint8', 'uint8_t', _C.mag_tensor_fill_from_raw_bytes)
-int8: DataType = DataType(_C.MAG_DTYPE_I8, 1, 'int8', 'int8_t', _C.mag_tensor_fill_from_raw_bytes)
-uint16: DataType = DataType(_C.MAG_DTYPE_U16, 2, 'uint16', 'uint16_t', _C.mag_tensor_fill_from_raw_bytes)
-int16: DataType = DataType(_C.MAG_DTYPE_I16, 2, 'int16', 'int16_t', _C.mag_tensor_fill_from_raw_bytes)
-uint32: DataType = DataType(_C.MAG_DTYPE_U32, 4, 'uint32', 'uint32_t', _C.mag_tensor_fill_from_raw_bytes)
-int32: DataType = DataType(_C.MAG_DTYPE_I32, 4, 'int32', 'int32_t', _C.mag_tensor_fill_from_raw_bytes)
-uint64: DataType = DataType(_C.MAG_DTYPE_U64, 8, 'uint64', 'uint64_t', _C.mag_tensor_fill_from_raw_bytes)
-int64: DataType = DataType(_C.MAG_DTYPE_I64, 8, 'int64', 'int64_t', _C.mag_tensor_fill_from_raw_bytes)
+float32: DataType = DataType(_C.MAG_DTYPE_FLOAT32, 4, 'float32', 'float', _C.mag_tensor_fill_from_floats)
+float16: DataType = DataType(_C.MAG_DTYPE_FLOAT16, 2, 'float16', None, _C.mag_tensor_fill_from_floats)
+boolean: DataType = DataType(_C.MAG_DTYPE_BOOLEAN, 1, 'uint8', 'uint8', _C.mag_tensor_fill_from_raw_bytes)
+uint8: DataType = DataType(_C.MAG_DTYPE_UINT8, 1, 'uint8', 'uint8_t', _C.mag_tensor_fill_from_raw_bytes)
+int8: DataType = DataType(_C.MAG_DTYPE_INT8, 1, 'int8', 'int8_t', _C.mag_tensor_fill_from_raw_bytes)
+uint16: DataType = DataType(_C.MAG_DTYPE_UINT16, 2, 'uint16', 'uint16_t', _C.mag_tensor_fill_from_raw_bytes)
+int16: DataType = DataType(_C.MAG_DTYPE_INT16, 2, 'int16', 'int16_t', _C.mag_tensor_fill_from_raw_bytes)
+uint32: DataType = DataType(_C.MAG_DTYPE_UINT32, 4, 'uint32', 'uint32_t', _C.mag_tensor_fill_from_raw_bytes)
+int32: DataType = DataType(_C.MAG_DTYPE_INT32, 4, 'int32', 'int32_t', _C.mag_tensor_fill_from_raw_bytes)
+uint64: DataType = DataType(_C.MAG_DTYPE_UINT64, 8, 'uint64', 'uint64_t', _C.mag_tensor_fill_from_raw_bytes)
+int64: DataType = DataType(_C.MAG_DTYPE_INT64, 8, 'int64', 'int64_t', _C.mag_tensor_fill_from_raw_bytes)
 
 DTYPE_ENUM_MAP: dict[int, DataType] = {
     float32.enum_value: float32,

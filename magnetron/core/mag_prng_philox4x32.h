@@ -22,12 +22,12 @@ extern "C" {
 
 typedef struct mag_philox4x32_ctr_t { uint32_t v[4]; } mag_philox4x32_ctr_t;
 typedef struct mag_philox4x32_key_t { uint32_t v[2]; } mag_philox4x32_key_t;
-typedef struct mag_philox4x32_u32x4_t { uint32_t v[4]; } mag_philox4x32_u32x4_t;
-typedef struct mag_philox4x32_e8m23x4_t { mag_e8m23_t v[4]; } mag_philox4x32_e8m23x4_t;
+typedef struct mag_philox4x32_uint32x4_t { uint32_t v[4]; } mag_philox4x32_uint32x4_t;
+typedef struct mag_philox4x32_float32x4_t { float v[4]; } mag_philox4x32_float32x4_t;
 typedef struct mag_philox4x32_stream_t {
     mag_philox4x32_key_t key;
     mag_philox4x32_ctr_t ctr;
-    mag_philox4x32_u32x4_t cache;
+    mag_philox4x32_uint32x4_t cache;
     int idx;
 } mag_philox4x32_stream_t;
 
@@ -41,7 +41,7 @@ static MAG_CUDA_DEVICE MAG_AINLINE void mag_philox4x32_stream_seed(mag_philox4x3
     stream->idx = 4; /* Cache is empty */
 }
 
-static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_u32x4_t mag_philox4x32_next_u32x4(mag_philox4x32_stream_t *stream) {
+static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_uint32x4_t mag_philox4x32_next_uint32x4(mag_philox4x32_stream_t *stream) {
     mag_philox4x32_key_t key = stream->key;
     mag_philox4x32_ctr_t ctr = stream->ctr;
     for (int i=0; i < MAG_PHILOX_ROUNDS; ++i) {
@@ -67,70 +67,70 @@ static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_u32x4_t mag_philox4x32_next_u3
                 if (!++stream->ctr.v[2])
                     ++stream->ctr.v[3];
     #endif
-    mag_philox4x32_u32x4_t r;
+    mag_philox4x32_uint32x4_t r;
     memcpy(&r, &ctr, sizeof(r));
     return r;
 }
 
-static MAG_CUDA_DEVICE MAG_AINLINE uint32_t mag_philox4x32_next_u32(mag_philox4x32_stream_t *stream) {
+static MAG_CUDA_DEVICE MAG_AINLINE uint32_t mag_philox4x32_next_uint32(mag_philox4x32_stream_t *stream) {
     int *i = &stream->idx;
     if (*i >= 4) {
-        stream->cache = mag_philox4x32_next_u32x4(stream);
+        stream->cache = mag_philox4x32_next_uint32x4(stream);
         *i = 0;
     }
     return stream->cache.v[(*i)++];
 }
 
-static MAG_CUDA_DEVICE MAG_AINLINE uint64_t mag_philox4x32_next_u64(mag_philox4x32_stream_t *stream) {
-    return (uint64_t)mag_philox4x32_next_u32(stream)<<32 | mag_philox4x32_next_u32(stream);
+static MAG_CUDA_DEVICE MAG_AINLINE uint64_t mag_philox4x32_next_uint64(mag_philox4x32_stream_t *stream) {
+    return (uint64_t)mag_philox4x32_next_uint32(stream)<<32 | mag_philox4x32_next_uint32(stream);
 }
 
-static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_e8m23x4_t mag_philox4x32_next_e8m23x4(mag_philox4x32_stream_t *stream) {
-    mag_philox4x32_u32x4_t u32x4 = mag_philox4x32_next_u32x4(stream);
-    mag_philox4x32_e8m23x4_t r;
-    r.v[0] = 1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[0]>>9) + 0.5f);
-    r.v[1] = 1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[1]>>9) + 0.5f);
-    r.v[2] = 1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[2]>>9) + 0.5f);
-    r.v[3] = 1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[3]>>9) + 0.5f);
+static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_float32x4_t mag_philox4x32_next_float32x4(mag_philox4x32_stream_t *stream) {
+    mag_philox4x32_uint32x4_t u32x4 = mag_philox4x32_next_uint32x4(stream);
+    mag_philox4x32_float32x4_t r;
+    r.v[0] = 1.f/0x1.0p23f*((float)(u32x4.v[0]>>9) + 0.5f);
+    r.v[1] = 1.f/0x1.0p23f*((float)(u32x4.v[1]>>9) + 0.5f);
+    r.v[2] = 1.f/0x1.0p23f*((float)(u32x4.v[2]>>9) + 0.5f);
+    r.v[3] = 1.f/0x1.0p23f*((float)(u32x4.v[3]>>9) + 0.5f);
     return r;
 }
 
-static MAG_CUDA_DEVICE MAG_AINLINE mag_e8m23_t mag_philox4x32_next_e8m23(mag_philox4x32_stream_t *stream) {
-    return 1.f/0x1.0p23f*((mag_e8m23_t)(mag_philox4x32_next_u32(stream)>>9) + 0.5f);
+static MAG_CUDA_DEVICE MAG_AINLINE float mag_philox4x32_next_float32(mag_philox4x32_stream_t *stream) {
+    return 1.f/0x1.0p23f*((float)(mag_philox4x32_next_uint32(stream)>>9) + 0.5f);
 }
 
-static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_e8m23x4_t mag_philox4x32_next_e8m23x4_uniform(mag_philox4x32_stream_t *stream, mag_e8m23_t min, mag_e8m23_t max) {
-    mag_e8m23_t scale = max-min;
-    mag_philox4x32_u32x4_t u32x4 = mag_philox4x32_next_u32x4(stream);
-    mag_philox4x32_e8m23x4_t r;
-    r.v[0] = fmaf(1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[0]>>9) + 0.5f), scale, min);
-    r.v[1] = fmaf(1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[1]>>9) + 0.5f), scale, min);
-    r.v[2] = fmaf(1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[2]>>9) + 0.5f), scale, min);
-    r.v[3] = fmaf(1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[3]>>9) + 0.5f), scale, min);
+static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_float32x4_t mag_philox4x32_next_float32x4_uniform(mag_philox4x32_stream_t *stream, float min, float max) {
+    float scale = max-min;
+    mag_philox4x32_uint32x4_t u32x4 = mag_philox4x32_next_uint32x4(stream);
+    mag_philox4x32_float32x4_t r;
+    r.v[0] = fmaf(1.f/0x1.0p23f*((float)(u32x4.v[0]>>9) + 0.5f), scale, min);
+    r.v[1] = fmaf(1.f/0x1.0p23f*((float)(u32x4.v[1]>>9) + 0.5f), scale, min);
+    r.v[2] = fmaf(1.f/0x1.0p23f*((float)(u32x4.v[2]>>9) + 0.5f), scale, min);
+    r.v[3] = fmaf(1.f/0x1.0p23f*((float)(u32x4.v[3]>>9) + 0.5f), scale, min);
     return r;
 }
 
-static MAG_CUDA_DEVICE MAG_AINLINE mag_e8m23_t mag_philox4x32_next_e8m23_uniform(mag_philox4x32_stream_t *stream, mag_e8m23_t min, mag_e8m23_t max) {
-    return fmaf(1.f/0x1.0p23f*((mag_e8m23_t)(mag_philox4x32_next_u32(stream)>>9) + 0.5f), max-min, min);
+static MAG_CUDA_DEVICE MAG_AINLINE float mag_philox4x32_next_float32_uniform(mag_philox4x32_stream_t *stream, float min, float max) {
+    return fmaf(1.f/0x1.0p23f*((float)(mag_philox4x32_next_uint32(stream)>>9) + 0.5f), max-min, min);
 }
 
-static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_e8m23x4_t mag_philox4x32_next_e8m23x4_normal(mag_philox4x32_stream_t *stream, mag_e8m23_t mean, mag_e8m23_t std) {
-    mag_philox4x32_u32x4_t u32x4 = mag_philox4x32_next_u32x4(stream);
-    mag_philox4x32_e8m23x4_t r;
-    r.v[0] = 1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[0]>>9) + 0.5f);
-    r.v[1] = 1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[1]>>9) + 0.5f);
-    r.v[2] = 1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[2]>>9) + 0.5f);
-    r.v[3] = 1.f/0x1.0p23f*((mag_e8m23_t)(u32x4.v[3]>>9) + 0.5f);
+static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_float32x4_t mag_philox4x32_next_float32x4_normal(mag_philox4x32_stream_t *stream, float mean, float std) {
+    mag_philox4x32_uint32x4_t u32x4 = mag_philox4x32_next_uint32x4(stream);
+    mag_philox4x32_float32x4_t r;
+    r.v[0] = 1.f/0x1.0p23f*((float)(u32x4.v[0]>>9) + 0.5f);
+    r.v[1] = 1.f/0x1.0p23f*((float)(u32x4.v[1]>>9) + 0.5f);
+    r.v[2] = 1.f/0x1.0p23f*((float)(u32x4.v[2]>>9) + 0.5f);
+    r.v[3] = 1.f/0x1.0p23f*((float)(u32x4.v[3]>>9) + 0.5f);
     r.v[0] = fmaxf(r.v[0], 1e-37f);
     r.v[2] = fmaxf(r.v[2], 1e-37f);
-    mag_e8m23_t rho0 = sqrtf(-2.f*logf(r.v[0]));
-    mag_e8m23_t theta0 = MAG_TAU*r.v[1];
-    mag_e8m23_t z0 = rho0*cosf(theta0);
-    mag_e8m23_t z1 = rho0*sinf(theta0);
-    mag_e8m23_t rho1 = sqrtf(-2.f*logf(r.v[2]));
-    mag_e8m23_t theta1 = MAG_TAU*r.v[3];
-    mag_e8m23_t z2 = rho1*cosf(theta1);
-    mag_e8m23_t z3 = rho1*sinf(theta1);
+    float rho0 = sqrtf(-2.f*logf(r.v[0]));
+    float theta0 = MAG_TAU*r.v[1];
+    float z0 = rho0*cosf(theta0);
+    float z1 = rho0*sinf(theta0);
+    float rho1 = sqrtf(-2.f*logf(r.v[2]));
+    float theta1 = MAG_TAU*r.v[3];
+    float z2 = rho1*cosf(theta1);
+    float z3 = rho1*sinf(theta1);
     r.v[0] = fmaf(z0, std, mean);
     r.v[1] = fmaf(z1, std, mean);
     r.v[2] = fmaf(z2, std, mean);
@@ -138,9 +138,9 @@ static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_e8m23x4_t mag_philox4x32_next_
     return r;
 }
 
-static MAG_CUDA_DEVICE MAG_AINLINE mag_e8m23_t mag_philox4x32_next_e8m23_normal(mag_philox4x32_stream_t *stream, mag_e8m23_t mean, mag_e8m23_t std) {
-    mag_e8m23_t u0 = 1.f/0x1.0p23f*((mag_e8m23_t)(mag_philox4x32_next_u32(stream)>>9) + 0.5f);
-    mag_e8m23_t u1 = 1.f/0x1.0p23f*((mag_e8m23_t)(mag_philox4x32_next_u32(stream)>>9) + 0.5f);
+static MAG_CUDA_DEVICE MAG_AINLINE float mag_philox4x32_next_float32_normal(mag_philox4x32_stream_t *stream, float mean, float std) {
+    float u0 = 1.f/0x1.0p23f*((float)(mag_philox4x32_next_uint32(stream)>>9) + 0.5f);
+    float u1 = 1.f/0x1.0p23f*((float)(mag_philox4x32_next_uint32(stream)>>9) + 0.5f);
     return fmaf(sqrtf(-2.0f*logf(fmaxf(u0, 1e-37f)))*cosf(MAG_TAU*u1), std, mean);
 }
 

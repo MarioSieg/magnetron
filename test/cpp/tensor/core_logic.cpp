@@ -16,7 +16,7 @@ using namespace magnetron::test;
 
 TEST(core_tensor_logic, ref_count_raii) {
     context ctx {};
-    tensor a {ctx, dtype::e8m23, 10};
+    tensor a {ctx, dtype::float32, 10};
     
     ASSERT_EQ((*a).__rcb.rc_strong, 1);
     {
@@ -37,7 +37,7 @@ TEST(core_tensor_logic, ref_count_raii) {
 
 TEST(core_tensor_logic, ref_count_assign) {
     context ctx {};
-    tensor a {ctx, dtype::e8m23, 10};
+    tensor a {ctx, dtype::float32, 10};
     ASSERT_EQ((*a).__rcb.rc_strong, 1);
     {
         tensor b = a;
@@ -57,7 +57,7 @@ TEST(core_tensor_logic, ref_count_assign) {
 
 TEST(core_tensor_logic, ref_count_clone) {
     context ctx {};
-    tensor a {ctx, dtype::e8m23, 10};
+    tensor a {ctx, dtype::float32, 10};
     ASSERT_EQ((*a).__rcb.rc_strong, 1);
     {
         tensor b = a.clone();
@@ -77,7 +77,7 @@ TEST(core_tensor_logic, ref_count_clone) {
 
 TEST(core_tensor_logic, ref_count_move_constructor) {
     context ctx {};
-    tensor a {ctx, dtype::e8m23, 10};
+    tensor a {ctx, dtype::float32, 10};
     auto original_ref {(*a).__rcb.rc_strong};
     tensor b {std::move(a)};
     ASSERT_EQ((*b).__rcb.rc_strong, original_ref);
@@ -85,7 +85,7 @@ TEST(core_tensor_logic, ref_count_move_constructor) {
 
 TEST(core_tensor_logic, ref_count_self_assignment) {
     context ctx {};
-    tensor a {ctx, dtype::e8m23, 10};
+    tensor a {ctx, dtype::float32, 10};
     size_t original_ref = (*a).__rcb.rc_strong;
     a = a;
     ASSERT_EQ((*a).__rcb.rc_strong, original_ref);
@@ -93,11 +93,11 @@ TEST(core_tensor_logic, ref_count_self_assignment) {
 
 TEST(core_tensor_logic, ref_count_reassign_tensor) {
     context ctx {};
-    tensor a {ctx, dtype::e8m23, 10};
+    tensor a {ctx, dtype::float32, 10};
     {
         tensor b = a;
         ASSERT_EQ((*a).__rcb.rc_strong, 2);
-        a = tensor(ctx, dtype::e8m23, 30);
+        a = tensor(ctx, dtype::float32, 30);
         ASSERT_EQ((*a).__rcb.rc_strong, 1);
         ASSERT_EQ((*b).__rcb.rc_strong, 1);
     }
@@ -105,15 +105,15 @@ TEST(core_tensor_logic, ref_count_reassign_tensor) {
 
 TEST(core_tensor_logic, init_1d) {
     context ctx {};
-    tensor t {ctx, dtype::e8m23, 10};
-    ASSERT_EQ(t.dtype(), dtype::e8m23);
+    tensor t {ctx, dtype::float32, 10};
+    ASSERT_EQ(t.dtype(), dtype::float32);
     ASSERT_EQ(t.rank(), 1);
     ASSERT_EQ(t.shape()[0], 10);
     ASSERT_EQ(t.strides()[0], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10 * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), 10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -129,8 +129,8 @@ TEST(core_tensor_logic, init_1d) {
 
 TEST(core_tensor_logic, init_2d) {
     context ctx {};
-    tensor t {ctx, dtype::e8m23, 10, 10};
-    ASSERT_EQ(t.dtype(), dtype::e8m23);
+    tensor t {ctx, dtype::float32, 10, 10};
+    ASSERT_EQ(t.dtype(), dtype::float32);
     ASSERT_EQ(t.rank(), 2);
     ASSERT_EQ(t.shape()[0], 10);
     ASSERT_EQ(t.shape()[1], 10);
@@ -138,8 +138,8 @@ TEST(core_tensor_logic, init_2d) {
     ASSERT_EQ(t.strides()[1], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
     ASSERT_EQ(t.numel(), 10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
-    ASSERT_EQ(t.data_size(), 10*10 * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
+    ASSERT_EQ(t.data_size(), 10*10 * sizeof(float));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -155,8 +155,8 @@ TEST(core_tensor_logic, init_2d) {
 
 TEST(core_tensor_logic, init_3d) {
     context ctx {};
-    tensor t {ctx, dtype::e8m23, 10, 10, 10};
-    ASSERT_EQ(t.dtype(), dtype::e8m23);
+    tensor t {ctx, dtype::float32, 10, 10, 10};
+    ASSERT_EQ(t.dtype(), dtype::float32);
     ASSERT_EQ(t.rank(), 3);
     ASSERT_EQ(t.shape()[0], 10);
     ASSERT_EQ(t.shape()[1], 10);
@@ -165,9 +165,9 @@ TEST(core_tensor_logic, init_3d) {
     ASSERT_EQ(t.strides()[1], 10);
     ASSERT_EQ(t.strides()[2], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10*10*10 * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), 10*10*10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -182,8 +182,8 @@ TEST(core_tensor_logic, init_3d) {
 
 TEST(core_tensor_logic, init_4d) {
     context ctx {};
-    tensor t {ctx, dtype::e8m23, 10, 10, 10, 10};
-    ASSERT_EQ(t.dtype(), dtype::e8m23);
+    tensor t {ctx, dtype::float32, 10, 10, 10, 10};
+    ASSERT_EQ(t.dtype(), dtype::float32);
     ASSERT_EQ(t.rank(), 4);
     ASSERT_EQ(t.shape()[0], 10);
     ASSERT_EQ(t.shape()[1], 10);
@@ -193,9 +193,9 @@ TEST(core_tensor_logic, init_4d) {
     ASSERT_EQ(t.strides()[1], 100);
     ASSERT_EQ(t.strides()[2], 10);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10*10*10*10 * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), 10*10*10*10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10*10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -211,8 +211,8 @@ TEST(core_tensor_logic, init_4d) {
 
 TEST(core_tensor_logic, init_5d) {
     context ctx {};
-    tensor t {ctx, dtype::e8m23, 10, 10, 10, 10, 10};
-    ASSERT_EQ(t.dtype(), dtype::e8m23);
+    tensor t {ctx, dtype::float32, 10, 10, 10, 10, 10};
+    ASSERT_EQ(t.dtype(), dtype::float32);
     ASSERT_EQ(t.rank(), 5);
     ASSERT_EQ(t.shape()[0], 10);
     ASSERT_EQ(t.shape()[1], 10);
@@ -225,9 +225,9 @@ TEST(core_tensor_logic, init_5d) {
     ASSERT_EQ(t.strides()[3], 10);
     ASSERT_EQ(t.strides()[4], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
-    ASSERT_EQ(t.data_size(), 10*10*10*10*10 * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), 10*10*10*10*10 * sizeof(float));
     ASSERT_EQ(t.numel(), 10*10*10*10*10);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data
@@ -243,8 +243,8 @@ TEST(core_tensor_logic, init_5d) {
 
 TEST(core_tensor_logic, init_6d) {
     context ctx {};
-    tensor t {ctx, dtype::e8m23, 2, 2, 2, 2, 2, 2};
-    ASSERT_EQ(t.dtype(), dtype::e8m23);
+    tensor t {ctx, dtype::float32, 2, 2, 2, 2, 2, 2};
+    ASSERT_EQ(t.dtype(), dtype::float32);
     ASSERT_EQ(t.rank(), 6);
     ASSERT_EQ(t.shape()[0], 2);
     ASSERT_EQ(t.shape()[1], 2);
@@ -260,8 +260,8 @@ TEST(core_tensor_logic, init_6d) {
     ASSERT_EQ(t.strides()[5], 1);
     ASSERT_NE(t.data_ptr(), nullptr);
     ASSERT_EQ(t.numel(), 2*2*2*2*2*2);
-    ASSERT_EQ(t.data_size(), t.numel() * sizeof(mag_e8m23_t));
-    ASSERT_EQ(t.data_size(), 2*2*2*2*2*2 * sizeof(mag_e8m23_t));
+    ASSERT_EQ(t.data_size(), t.numel() * sizeof(float));
+    ASSERT_EQ(t.data_size(), 2*2*2*2*2*2 * sizeof(float));
     ASSERT_EQ((*t).__rcb.rc_strong, 1);
 
     // now check some internal data

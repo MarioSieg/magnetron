@@ -98,9 +98,9 @@ namespace mag {
         mag_philox4x32_stream_seed(&stream, seed, subseq + static_cast<uint64_t>(ti));
         for (int64_t b=ti; b < nb; b += step) {
             int64_t base = b<<2;
-            mag_philox4x32_e8m23x4_t r;
-            if constexpr (normal) r = mag_philox4x32_next_e8m23x4_normal(&stream, p0, p1);
-            else r = mag_philox4x32_next_e8m23x4_uniform(&stream, p0, p1);
+            mag_philox4x32_float32x4_t r;
+            if constexpr (normal) r = mag_philox4x32_next_float32x4_normal(&stream, p0, p1);
+            else r = mag_philox4x32_next_float32x4_uniform(&stream, p0, p1);
             int64_t mk = n-base;
             if (mk > 4) mk = 4;
             if constexpr (is_cont) {
@@ -135,17 +135,17 @@ namespace mag {
     void fill_op_fill(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->out[0];
         switch (r->dtype) {
-            case MAG_DTYPE_E8M23: launch_fill_kernel<mag_e8m23_t>(r, cmd); break;
-            case MAG_DTYPE_E5M10: launch_fill_kernel<half>(r, cmd); break;
-            case MAG_DTYPE_BOOL:
-            case MAG_DTYPE_U8: launch_fill_kernel<uint8_t>(r, cmd); break;
-            case MAG_DTYPE_I8: launch_fill_kernel<int8_t>(r, cmd); break;
-            case MAG_DTYPE_U16: launch_fill_kernel<uint16_t>(r, cmd); break;
-            case MAG_DTYPE_I16: launch_fill_kernel<int16_t>(r, cmd); break;
-            case MAG_DTYPE_U32: launch_fill_kernel<uint32_t>(r, cmd); break;
-            case MAG_DTYPE_I32: launch_fill_kernel<int32_t>(r, cmd); break;
-            case MAG_DTYPE_U64: launch_fill_kernel<uint64_t>(r, cmd); break;
-            case MAG_DTYPE_I64: launch_fill_kernel<int64_t>(r, cmd); break;
+            case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd); break;
+            case MAG_DTYPE_FLOAT16: launch_fill_kernel<half>(r, cmd); break;
+            case MAG_DTYPE_BOOLEAN:
+            case MAG_DTYPE_UINT8: launch_fill_kernel<uint8_t>(r, cmd); break;
+            case MAG_DTYPE_INT8: launch_fill_kernel<int8_t>(r, cmd); break;
+            case MAG_DTYPE_UINT16: launch_fill_kernel<uint16_t>(r, cmd); break;
+            case MAG_DTYPE_INT16: launch_fill_kernel<int16_t>(r, cmd); break;
+            case MAG_DTYPE_UINT32: launch_fill_kernel<uint32_t>(r, cmd); break;
+            case MAG_DTYPE_INT32: launch_fill_kernel<int32_t>(r, cmd); break;
+            case MAG_DTYPE_UINT64: launch_fill_kernel<uint64_t>(r, cmd); break;
+            case MAG_DTYPE_INT64: launch_fill_kernel<int64_t>(r, cmd); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
         }
     }
@@ -154,17 +154,17 @@ namespace mag {
         mag_tensor_t *r = cmd->out[0];
         mag_tensor_t *mask = static_cast<mag_tensor_t *>(mag_op_attr_unwrap_ptr(cmd->attrs[0])); // TODO: pass in cmd in why the fuck are these here
         switch (r->dtype) {
-            case MAG_DTYPE_E8M23: launch_fill_kernel<mag_e8m23_t>(r, cmd, mask); break;
-            case MAG_DTYPE_E5M10: launch_fill_kernel<half>(r, cmd, mask); break;
-            case MAG_DTYPE_BOOL:
-            case MAG_DTYPE_U8: launch_fill_kernel<uint8_t>(r, cmd, mask); break;
-            case MAG_DTYPE_I8: launch_fill_kernel<int8_t>(r, cmd, mask); break;
-            case MAG_DTYPE_U16: launch_fill_kernel<uint16_t>(r, cmd, mask); break;
-            case MAG_DTYPE_I16: launch_fill_kernel<int16_t>(r, cmd, mask); break;
-            case MAG_DTYPE_U32: launch_fill_kernel<uint32_t>(r, cmd, mask); break;
-            case MAG_DTYPE_I32: launch_fill_kernel<int32_t>(r, cmd, mask); break;
-            case MAG_DTYPE_U64: launch_fill_kernel<uint64_t>(r, cmd, mask); break;
-            case MAG_DTYPE_I64: launch_fill_kernel<int64_t>(r, cmd, mask); break;
+            case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd, mask); break;
+            case MAG_DTYPE_FLOAT16: launch_fill_kernel<half>(r, cmd, mask); break;
+            case MAG_DTYPE_BOOLEAN:
+            case MAG_DTYPE_UINT8: launch_fill_kernel<uint8_t>(r, cmd, mask); break;
+            case MAG_DTYPE_INT8: launch_fill_kernel<int8_t>(r, cmd, mask); break;
+            case MAG_DTYPE_UINT16: launch_fill_kernel<uint16_t>(r, cmd, mask); break;
+            case MAG_DTYPE_INT16: launch_fill_kernel<int16_t>(r, cmd, mask); break;
+            case MAG_DTYPE_UINT32: launch_fill_kernel<uint32_t>(r, cmd, mask); break;
+            case MAG_DTYPE_INT32: launch_fill_kernel<int32_t>(r, cmd, mask); break;
+            case MAG_DTYPE_UINT64: launch_fill_kernel<uint64_t>(r, cmd, mask); break;
+            case MAG_DTYPE_INT64: launch_fill_kernel<int64_t>(r, cmd, mask); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
         }
     }
@@ -172,8 +172,8 @@ namespace mag {
     void fill_op_fill_rand_uniform(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->out[0];
         switch (r->dtype) {
-            case MAG_DTYPE_E8M23: launch_rand_fill_kernel<mag_e8m23_t, false>(r, cmd); break;
-            case MAG_DTYPE_E5M10: launch_rand_fill_kernel<half, false>(r, cmd); break;
+            case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, false>(r, cmd); break;
+            case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, false>(r, cmd); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
         }
     }
@@ -181,8 +181,8 @@ namespace mag {
     void fill_op_fill_rand_normal(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->out[0];
         switch (r->dtype) {
-            case MAG_DTYPE_E8M23: launch_rand_fill_kernel<mag_e8m23_t, true>(r, cmd); break;
-            case MAG_DTYPE_E5M10: launch_rand_fill_kernel<half, true>(r, cmd); break;
+            case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, true>(r, cmd); break;
+            case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, true>(r, cmd); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
         }
     }

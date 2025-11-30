@@ -12,7 +12,7 @@ using namespace magnetron;
 
 auto main() -> int {
     ankerl::nanobench::Bench bench {};
-    auto type = dtype::e8m23;
+    auto type = dtype::float32;
     bench.title("add " + std::string{dtype_name(type)})
         .unit("add " + std::string{dtype_name(type)})
         .warmup(100)
