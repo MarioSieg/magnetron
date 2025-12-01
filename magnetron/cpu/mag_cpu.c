@@ -81,7 +81,7 @@ static void mag_cpu_convert(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, s
     mag_assert2(tnb <= sto->size-offs);
     void *dvb = (void *)(base+offs);
     void (*kern)(size_t, const void *, mag_dtype_t, void *, mag_dtype_t)
-        = ((mag_cpu_device_t *)sto->host->impl)->kernels.vector_cast;
+        = ((mag_cpu_device_t *)sto->device->impl)->kernels.vector_cast;
     mag_assert2(kern);
     mag_assert2(!mag_ranges_overlap(host, size, dvb, tnb));
     void *restrict device = dvb;
@@ -94,27 +94,35 @@ static void mag_cpu_storage_dtor(void *self) {
     mag_context_t *ctx = buf->ctx;
     mag_assert(ctx->num_alive_storages > 0, "double freed storage");
     --ctx->num_alive_storages;
-    (*mag_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
+    if (!(buf->flags & MAG_STORAGE_FLAG_INTRUSIVE))
+        (*mag_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
     mag_fixed_pool_free_block(&ctx->storage_pool, buf);
 }
 
 static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
     mag_context_t *ctx = host->ctx;
-    void *block = (*mag_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
-    *out = mag_fixed_pool_alloc_block(&ctx->storage_pool);
-    **out = (mag_storage_buffer_t) { /* Set up storage buffer. */
+    mag_storage_buffer_t *buf = mag_fixed_pool_alloc_block(&ctx->storage_pool);
+    *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
         .ctx = ctx,
-        .base = (uintptr_t)block,
+        .impl = NULL, /* Must be NULL for intrusive storage */
+        .base = 0,
         .size = size,
-        .alignment = MAG_CPU_BUF_ALIGN,
+        .alignment = size <= sizeof(void *) ? MAG_CPU_BUF_ALIGN : 1,
         .dtype = dtype,
         .granularity = mag_dtype_meta_of(dtype)->size,
-        .host = host,
+        .device = host,
         .transfer = &mag_cpu_transfer,
         .convert = &mag_cpu_convert
     };
-    mag_rc_init_object(*out, &mag_cpu_storage_dtor);
+    if (size <= sizeof(void *)) { /* Store value intrusive (scalar storage optimization) */
+        buf->base = (uintptr_t)&buf->impl; /* Use 8-byte impl pointer for storage. TODO: this does NOT guarantee MAG_CPU_BUF_ALIGN alignment. */
+        buf->flags |= MAG_STORAGE_FLAG_INTRUSIVE;
+    } else {
+        buf->base = (uintptr_t)(*mag_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
+    }
+    mag_rc_init_object(buf, &mag_cpu_storage_dtor);
     ++host->ctx->num_alive_storages;
+    *out = buf;
 }
 
 static void mag_cpu_manual_seed(mag_device_t *dvc, uint64_t seed) {

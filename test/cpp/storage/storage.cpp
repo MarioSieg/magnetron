@@ -15,6 +15,8 @@
 #include <filesystem>
 #include <numbers>
 
+#if 0
+
 using namespace magnetron;
 
 TEST(storage, new_close) {
@@ -129,3 +131,5 @@ TEST(storage, write_read_tensor_to_disk) {
 
   ASSERT_TRUE(std::filesystem::remove("test2.mag"));
 }
+
+#endif

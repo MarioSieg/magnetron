@@ -28,18 +28,25 @@ typedef enum mag_transfer_dir_t {
     MAG_TRANSFER_DIR_D2H,   /* Device -> Host. */
 } mag_transfer_dir_t;
 
+typedef enum mag_storage_flags_t {
+    MAG_STORAGE_FLAG_NONE = 0,
+    MAG_STORAGE_FLAG_INTRUSIVE = 1<<0, /* Storage is intrusive (e.g. scalar optimization). */
+} mag_storage_flags_t;
+
 /* Buffer interface on a compute device */
 typedef struct mag_storage_buffer_t mag_storage_buffer_t;
 struct mag_storage_buffer_t {
     MAG_RC_INJECT_HEADER;                   /* RC Control block must be first */
 
     mag_context_t *ctx;
+    void *impl;                             /* Backend specific storage implementation, if any. */
+    mag_storage_flags_t flags;              /* Storage buffer flags. */
     uintptr_t base;                         /* Pointer to buffer on device. Might point to GPU or any other device memory. */
     size_t size;                            /* Size of buffer in bytes. */
     size_t alignment;                       /* Alignment of buffer. */
     size_t granularity;                     /* Element size granularity. */
     mag_dtype_t dtype;                      /* Data type of buffer. */
-    mag_device_t *host;                     /* Host device. */
+    mag_device_t *device;                   /* Host device. */
     void (*transfer)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size);
     void (*convert)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size, mag_dtype_t inout_type);
 };
