@@ -40,6 +40,16 @@ namespace mag {
     };
 
     template <typename scalar_in_t, typename acc_in_t> requires is_dtype<scalar_in_t> && std::is_arithmetic_v<acc_in_t>
+    struct op_prod {
+        using scalar_t = scalar_in_t;
+        using acc_t = acc_in_t;
+        [[nodiscard]] __device__ __forceinline__ acc_t init() const { return acc_t{1.0}; }
+        [[nodiscard]] __device__ __forceinline__ acc_t transform(scalar_t x) const { return static_cast<acc_t>(x); }
+        [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return a * b; }
+        [[nodiscard]] __device__ __forceinline__ scalar_t finalize(acc_t acc, int64_t red_prod) const { return static_cast<scalar_t>(acc); }
+    };
+
+    template <typename scalar_in_t, typename acc_in_t> requires is_dtype<scalar_in_t> && std::is_arithmetic_v<acc_in_t>
     struct op_min {
         using scalar_t = scalar_in_t;
         using acc_t = acc_in_t;
@@ -134,4 +144,5 @@ namespace mag {
     void reduce_op_min(const mag_command_t *cmd) { impl_reduce_op<op_min>(cmd); }
     void reduce_op_max(const mag_command_t *cmd) { impl_reduce_op<op_max>(cmd); }
     void reduce_op_sum(const mag_command_t *cmd) { impl_reduce_op<op_sum>(cmd); }
+    void reduce_op_prod(const mag_command_t *cmd) { impl_reduce_op<op_prod>(cmd); }
 }

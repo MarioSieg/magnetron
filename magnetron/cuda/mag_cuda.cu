@@ -128,6 +128,7 @@ namespace mag {
             [MAG_OP_MIN] = &reduce_op_min,
             [MAG_OP_MAX] = &reduce_op_max,
             [MAG_OP_SUM] = &reduce_op_sum,
+            [MAG_OP_PROD] = &reduce_op_prod,
             [MAG_OP_ABS] = &unary_op_abs,
             [MAG_OP_SGN] = &unary_op_sgn,
             [MAG_OP_NEG] = &unary_op_neg,
@@ -275,12 +276,14 @@ namespace mag {
         new (*out) mag_storage_buffer_t {
             .__rcb = {},
             .ctx = ctx,
+            .impl = nullptr,
+            .flags = MAG_STORAGE_FLAG_NONE,
             .base = base,
             .size = size,
             .alignment = 256, // cudaMalloc guarantees this
             .granularity = mag_dtype_meta_of(dtype)->size,
             .dtype = dtype,
-            .host = device,
+            .device = device,
             .transfer = &transfer,
             .convert = &convert
         };
