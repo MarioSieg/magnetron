@@ -14,56 +14,56 @@
 #include <cuda/std/tuple>
 
 namespace mag {
-    template <typename scalar_in_t, typename scalar_out_t> requires is_numeric<scalar_in_t> && is_numeric<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_add {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x+y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_numeric<scalar_in_t> && is_numeric<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_sub {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x-y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_numeric<scalar_in_t> && is_numeric<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_mul {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x*y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_numeric<scalar_in_t> && is_numeric<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_div {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x/y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_and {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x&y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_or {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x|y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_xor {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x^y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_shl {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
@@ -71,7 +71,7 @@ namespace mag {
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x<<(y&mask); }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_integer<scalar_in_t> && is_integer<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_shr {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
@@ -79,42 +79,42 @@ namespace mag {
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x>>(y&mask); }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_eq {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x==y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_ne {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x!=y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_le {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x<=y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_ge {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x>=y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_lt {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x<y; }
     };
 
-    template <typename scalar_in_t, typename scalar_out_t> requires is_dtype<scalar_in_t> && is_dtype<scalar_out_t>
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_gt {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;

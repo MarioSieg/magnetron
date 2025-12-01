@@ -14,7 +14,7 @@ namespace magnetron::test {
 
     context &get_cached_context(device_kind dev) {
         static std::unordered_map<device_kind, std::unique_ptr<context> > cached;
-        if (!cached.contains(dev)) {
+        if (cached.find(dev) == cached.end()) {
             cached[dev] = std::make_unique<context>(get_device_kind_name(dev));
             cached[dev]->stop_grad_recorder();
         }
@@ -35,7 +35,7 @@ namespace magnetron::test {
         return {std::begin(internal->coords.strides), std::end(internal->coords.strides)};
     }
 
-    auto shape_to_string(std::span<const int64_t> shape) -> std::string {
+    auto shape_to_string(const std::vector<int64_t>& shape) -> std::string {
         std::stringstream ss{};
         ss << "(";
         for (size_t i{}; i < shape.size(); ++i) {
@@ -318,7 +318,7 @@ namespace magnetron::test {
         {1, 2, 3, 4, 1, 2, 3, 4},
     };
 
-    void for_all_test_shapes(std::function<void (std::span<const int64_t>)> &&f) {
+    void for_all_test_shapes(std::function<void (const std::vector<int64_t>&)> &&f) {
         for (const auto &shape: TEST_SHAPES) {
             std::invoke(f, shape);
         }

@@ -16,7 +16,7 @@
 #include <cuda/std/limits>
 
 namespace mag {
-    template <typename scalar_in_t, typename acc_in_t> requires is_dtype<scalar_in_t> && std::is_arithmetic_v<acc_in_t>
+    template <typename scalar_in_t, typename acc_in_t>
     struct op_mean {
         using scalar_t = scalar_in_t;
         using acc_t = acc_in_t;
@@ -29,7 +29,7 @@ namespace mag {
         }
     };
 
-    template <typename scalar_in_t, typename acc_in_t> requires is_dtype<scalar_in_t> && std::is_arithmetic_v<acc_in_t>
+    template <typename scalar_in_t, typename acc_in_t>
     struct op_sum {
         using scalar_t = scalar_in_t;
         using acc_t = acc_in_t;
@@ -39,7 +39,7 @@ namespace mag {
         [[nodiscard]] __device__ __forceinline__ scalar_t finalize(acc_t acc, int64_t red_prod) const { return static_cast<scalar_t>(acc); }
     };
 
-    template <typename scalar_in_t, typename acc_in_t> requires is_dtype<scalar_in_t> && std::is_arithmetic_v<acc_in_t>
+    template <typename scalar_in_t, typename acc_in_t>
     struct op_prod {
         using scalar_t = scalar_in_t;
         using acc_t = acc_in_t;
@@ -49,7 +49,7 @@ namespace mag {
         [[nodiscard]] __device__ __forceinline__ scalar_t finalize(acc_t acc, int64_t red_prod) const { return static_cast<scalar_t>(acc); }
     };
 
-    template <typename scalar_in_t, typename acc_in_t> requires is_dtype<scalar_in_t> && std::is_arithmetic_v<acc_in_t>
+    template <typename scalar_in_t, typename acc_in_t>
     struct op_min {
         using scalar_t = scalar_in_t;
         using acc_t = acc_in_t;
@@ -62,7 +62,7 @@ namespace mag {
         [[nodiscard]] __device__ __forceinline__ scalar_t finalize(acc_t acc, [[maybe_unused]] int64_t red_prod) const { return static_cast<scalar_t>(acc); }
     };
 
-    template <typename scalar_in_t, typename acc_in_t> requires is_dtype<scalar_in_t> && std::is_arithmetic_v<acc_in_t>
+    template <typename scalar_in_t, typename acc_in_t>
     struct op_max {
         using scalar_t = scalar_in_t;
         using acc_t = acc_in_t;

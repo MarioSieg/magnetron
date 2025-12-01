@@ -15,7 +15,7 @@ using namespace magnetron;
 using namespace magnetron::test;
 
 TEST(views, view) {
-    constexpr std::array<int64_t, 3> shape = {8, 3, 4};
+    std::vector<int64_t> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::float32, shape};
     tensor view = base.view();
@@ -25,13 +25,13 @@ TEST(views, view) {
     ASSERT_EQ(view.shape()[2], 4);
     ASSERT_TRUE(view.is_view());
     ASSERT_EQ(view.strides()[0], base.strides()[0]);
-    auto base_addr = std::bit_cast<std::uintptr_t>(base.data_ptr());
-    auto view_addr = std::bit_cast<std::uintptr_t>(view.data_ptr());
+    auto base_addr = reinterpret_cast<std::uintptr_t>(base.data_ptr());
+    auto view_addr = reinterpret_cast<std::uintptr_t>(view.data_ptr());
     ASSERT_EQ(view_addr, base_addr);
 }
 
 TEST(views, view_of_view) {
-    constexpr std::array<int64_t, 3> shape = {8, 3, 4};
+    std::vector<int64_t> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::float32, shape};
     tensor view1 = base.view();
@@ -42,13 +42,13 @@ TEST(views, view_of_view) {
     ASSERT_EQ(view2.shape()[2], 4);
     ASSERT_TRUE(view2.is_view());
     ASSERT_EQ(view2.strides()[0], base.strides()[0]);
-    auto base_addr = std::bit_cast<std::uintptr_t>(base.data_ptr());
-    auto view_addr = std::bit_cast<std::uintptr_t>(view2.data_ptr());
+    auto base_addr = reinterpret_cast<std::uintptr_t>(base.data_ptr());
+    auto view_addr = reinterpret_cast<std::uintptr_t>(view2.data_ptr());
     ASSERT_EQ(view_addr, base_addr);
 }
 
 TEST(views, view_slice_positive_step) {
-    constexpr std::array<int64_t, 3> shape = {8, 3, 4};
+    std::vector<int64_t> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::float32, shape};
     tensor view = base.view_slice(0, 2, 3, 1);
@@ -58,14 +58,14 @@ TEST(views, view_slice_positive_step) {
     ASSERT_EQ(view.shape()[2], 4);
     ASSERT_TRUE(view.is_view());
     ASSERT_EQ(view.strides()[0], base.strides()[0]);
-    auto base_addr = std::bit_cast<std::uintptr_t>(base.data_ptr());
-    auto view_addr = std::bit_cast<std::uintptr_t>(view.data_ptr());
+    auto base_addr = reinterpret_cast<std::uintptr_t>(base.data_ptr());
+    auto view_addr = reinterpret_cast<std::uintptr_t>(view.data_ptr());
     std::uintptr_t expected = base_addr + 2*base.strides()[0] * sizeof(float);
     ASSERT_EQ(view_addr, expected);
 }
 
 TEST(views, view_of_view_slice) {
-    constexpr std::array<int64_t, 3> shape = {8, 3, 4};
+    std::vector<int64_t> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::float32, shape};
     tensor view1 = base.view_slice(0, 2, 3, 1);
@@ -81,9 +81,8 @@ TEST(views, view_slice_chain_accumulates_offset) {
     tensor base{ctx, dtype::float32, 10, 2};
     tensor v1 = base.view_slice(0, 2, 6, 1); // rows 2..7
     tensor v2 = v1.view_slice(0, 3, 2, 1); // rows 5..6 of base
-    const auto expect = std::bit_cast<std::uintptr_t>(base.data_ptr()) +
-                        5*base.strides()[0]*sizeof(float);
-    ASSERT_EQ(std::bit_cast<std::uintptr_t>(v2.data_ptr()), expect);
+    const auto expect = reinterpret_cast<std::uintptr_t>(base.data_ptr()) + 5*base.strides()[0]*sizeof(float);
+    ASSERT_EQ(reinterpret_cast<std::uintptr_t>(v2.data_ptr()), expect);
     ASSERT_TRUE(v2.is_view());
 }
 

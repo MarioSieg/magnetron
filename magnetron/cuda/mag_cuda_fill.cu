@@ -14,7 +14,7 @@
 #include <core/mag_prng_philox4x32.h>
 
 namespace mag {
-    template <typename scalar_t, const bool contig> requires is_dtype<scalar_t>
+    template <typename scalar_t, const bool contig>
     __global__ static void fill_kernel(
         int64_t n,
         scalar_t *__restrict__ o,
@@ -34,7 +34,7 @@ namespace mag {
         }
     }
 
-    template <typename scalar_t, const bool contig> requires is_dtype<scalar_t>
+    template <typename scalar_t, const bool contig>
     __global__ static void masked_fill_kernel(
         int64_t n,
         scalar_t *__restrict__ o,
@@ -59,7 +59,7 @@ namespace mag {
         }
     }
 
-    template <typename scalar_t> requires is_dtype<scalar_t>
+    template <typename scalar_t>
     static void launch_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd, const mag_tensor_t *mask = nullptr) {
         auto *o = static_cast<scalar_t *>(mag_tensor_get_data_ptr(r));
         auto v = unpack_param<scalar_t>(cmd->attrs, 0);
@@ -80,7 +80,7 @@ namespace mag {
         }
     }
 
-    template <typename scalar_t, const bool is_cont, const bool normal> requires is_numeric<scalar_t>
+    template <typename scalar_t, const bool is_cont, const bool normal>
     __global__ static void fill_random_kernel(
         int64_t n,
         scalar_t *__restrict__ o,
@@ -117,7 +117,7 @@ namespace mag {
         }
     }
 
-    template <typename scalar_t, const bool normal> requires is_dtype<scalar_t>
+    template <typename scalar_t, const bool normal>
     static void launch_rand_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd) {
         auto *o = static_cast<scalar_t *>(mag_tensor_get_data_ptr(r));
         auto p0 = unpack_param<scalar_t>(cmd->attrs, 0);

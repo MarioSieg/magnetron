@@ -40,10 +40,10 @@ TEST(models, xor_float32) {
     xor_model model{ctx, dtype::float32};
     nn::sgd optimizer{model.params(), 0.1f};
 
-    static constexpr std::array<float, 2*4> x_data {
+    std::vector<float> x_data {
         0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f, 1.0f,1.0f
     };
-    static constexpr std::array<float, 4> y_data {
+    std::vector<float> y_data {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 
@@ -80,10 +80,10 @@ TEST(models, xor_float16) {
     xor_model model{ctx, dtype::float16};
     nn::sgd optimizer{model.params(), 0.1f};
 
-    static constexpr std::array<float, 2*4> x_data {
+    std::vector<float> x_data {
         0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f, 1.0f,1.0f
     };
-    static constexpr std::array<float, 4> y_data {
+    std::vector<float> y_data {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 

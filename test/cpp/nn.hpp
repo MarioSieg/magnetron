@@ -18,7 +18,7 @@ namespace magnetron::test::nn {
         auto operator=(module&&) -> module& = delete;
         virtual ~module() = default;
 
-        [[nodiscard]] auto params() noexcept -> std::span<tensor> { return m_params; }
+        [[nodiscard]] auto params() noexcept -> std::vector<tensor>& { return m_params; }
 
     protected:
         module() = default;
@@ -28,7 +28,7 @@ namespace magnetron::test::nn {
             m_params.emplace_back(param);
         }
 
-        auto register_params(std::span<tensor> params) -> void {
+        auto register_params(const std::vector<tensor>& params) -> void {
             for (auto param : params)
                 register_param(param);
         }
@@ -48,8 +48,8 @@ namespace magnetron::test::nn {
 
         virtual auto step() -> void = 0;
 
-        [[nodiscard]] auto params() noexcept -> std::span<tensor> { return m_params; }
-        auto set_params(std::span<tensor> params) -> void {
+        [[nodiscard]] auto params() noexcept -> std::vector<tensor>& { return m_params; }
+        auto set_params(const std::vector<tensor>& params) -> void {
             m_params = params;
         }
 
@@ -65,16 +65,16 @@ namespace magnetron::test::nn {
         }
 
     protected:
-        explicit optimizer(std::span<tensor> params) : m_params{params} {}
+        explicit optimizer(const std::vector<tensor>& params) : m_params{params} {}
 
     private:
-        std::span<tensor> m_params{};
+        std::vector<tensor> m_params{};
     };
 
     // Stochastic Gradient Descent optimizer
     class sgd final : public optimizer {
     public:
-        explicit sgd(std::span<tensor> params, float lr) : optimizer{params}, lr{lr} {}
+        explicit sgd(const std::vector<tensor>& params, float lr) : optimizer{params}, lr{lr} {}
 
         auto step() -> void override {
             for (auto& param : params()) {

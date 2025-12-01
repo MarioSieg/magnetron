@@ -50,10 +50,11 @@ TEST(cpu_tensor_binary_ops, matmul_naive) {
 }
 
 template <const size_t M, const size_t N, typename T>
-[[nodiscard]] auto flatten(const std::array<std::array<T, N>, M>& array) -> std::span<const float> {
-    return std::span<const T> {
-        reinterpret_cast<const T*>(&array),
-        M*N
+[[nodiscard]] auto flatten(const std::array<std::array<T, N>, M>& array) -> std::vector<T> {
+    auto* p = reinterpret_cast<const T*>(&array);
+    return std::vector<T> {
+        p,
+        p+M*N
     };
 }
 
@@ -297,7 +298,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_float32) {
         std::array{3.0f, 4.0f},
         std::array{5.0f, 6.0f},
     };
-    static constexpr std::array<float, 2> B {
+    std::vector<float> B {
         0.5f, -1.0f
     };
     static constexpr std::array<float, 3> C {
@@ -326,7 +327,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_float16) {
         std::array{3.0f, 4.0f},
         std::array{5.0f, 6.0f},
     };
-    static constexpr std::array<float, 2> B {
+    std::vector<float> B {
         0.5f, -1.0f
     };
     static constexpr std::array<float, 3> C {

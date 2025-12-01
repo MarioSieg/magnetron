@@ -14,7 +14,7 @@
 #include <array>
 
 namespace mag {
-    template <typename src_t, typename dst_t, const bool contig> requires is_dtype<src_t> && is_dtype<dst_t>
+    template <typename src_t, typename dst_t, const bool contig>
     __global__ static void cast_kernel(
         int64_t n,
         dst_t *__restrict__ o,
@@ -34,7 +34,7 @@ namespace mag {
         }
     }
 
-    template <typename src_t, typename dst_t> requires is_dtype<src_t> && is_dtype<dst_t>
+    template <typename src_t, typename dst_t>
     static void mag_cast_launcher(
         mag_tensor_t *r,
         const mag_tensor_t *x
@@ -53,7 +53,7 @@ namespace mag {
         mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
         using cast_fn = void (mag_tensor_t *, const mag_tensor_t *);
-        static constexpr cast_fn *const cast_table_2d[][MAG_DTYPE__NUM] = {
+        static constexpr cast_fn *const cast_table_2d[MAG_DTYPE__NUM][MAG_DTYPE__NUM] = {
             [MAG_DTYPE_FLOAT32] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<float, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<float, half>,

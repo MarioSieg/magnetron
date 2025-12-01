@@ -109,7 +109,7 @@ namespace magnetron {
     }
 
     template <typename T>
-    [[nodiscard]] consteval std::optional<dtype> generic_to_dtype() {
+    [[nodiscard]] constexpr std::optional<dtype> generic_to_dtype() {
         if constexpr (std::is_same_v<T, uint8_t>) return dtype::u8;
         if constexpr (std::is_same_v<T, int8_t>) return dtype::i8;
         if constexpr (std::is_same_v<T, uint16_t>) return dtype::u16;
@@ -130,18 +130,22 @@ namespace magnetron {
      */
     class tensor final {
     public:
-        tensor(context& ctx, dtype type, std::span<const int64_t> shape) {
+        tensor(context& ctx, dtype type, std::initializer_list<int64_t> shape) {
+            handle_error(mag_tensor_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.begin()), &*ctx);
+        }
+
+        tensor(context& ctx, dtype type, const std::vector<int64_t>& shape) {
             handle_error(mag_tensor_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.data()), &*ctx);
         }
 
-        template <typename... S> requires std::is_integral_v<std::common_type_t<S...>>
-        tensor(context& ctx, dtype type, S&&... shape) : tensor{ctx, type, std::array{static_cast<int64_t>(shape)...}} {}
+        template <typename... S, typename = std::enable_if_t<std::conjunction_v<std::is_integral<std::decay_t<S>>...>>>
+        tensor(context& ctx, dtype type, S&&... shape) : tensor{ctx, type, {static_cast<int64_t>(shape)...}} {}
 
-        tensor(context& ctx, std::span<const int64_t> shape, std::span<const float> data) : tensor{ctx, dtype::float32, shape} {
+        tensor(context& ctx, std::initializer_list<int64_t> shape, const std::vector<float>& data) : tensor{ctx, dtype::float32, shape} {
             fill_from(data);
         }
 
-        tensor(context& ctx, std::span<const int64_t> shape, std::span<const int32_t> data) : tensor{ctx, dtype::i32, shape} {
+        tensor(context& ctx, std::initializer_list<int64_t> shape, const std::vector<int32_t>& data) : tensor{ctx, dtype::i32, shape} {
             fill_from(data);
         }
 
@@ -824,25 +828,20 @@ namespace magnetron {
             mag_tensor_fill_from_raw_bytes(m_tensor, buf, nb);
         }
 
-        auto fill_from(std::span<const float> data) -> void {
+        auto fill_from(const std::vector<float>& data) -> void {
             mag_tensor_fill_from_floats(m_tensor, data.data(), data.size());
-        }
-
-        auto fill_from(std::span<const bool> data) -> void {
-            static_assert(sizeof(bool) == sizeof(uint8_t));
-            mag_tensor_fill_from_raw_bytes(m_tensor, data.data(), data.size_bytes());
         }
 
         auto fill_from(const std::vector<bool>& data) -> void {
             static_assert(sizeof(bool) == sizeof(uint8_t));
             std::vector<uint8_t> unpacked {};
             unpacked.resize(data.size());
-            std::ranges::copy(data, unpacked.begin());
-            mag_tensor_fill_from_raw_bytes(m_tensor, unpacked.data(), unpacked.size());
+            for (size_t i=0; i < unpacked.size(); ++i) unpacked[i] = data[i];
+            mag_tensor_fill_from_raw_bytes(m_tensor, unpacked.data(), unpacked.size()*sizeof(data[0]));
         }
 
-        auto fill_from(std::span<const int32_t> data) -> void {
-            mag_tensor_fill_from_raw_bytes(m_tensor, data.data(), data.size_bytes());
+        auto fill_from(const std::vector<int32_t>& data) -> void {
+            mag_tensor_fill_from_raw_bytes(m_tensor, data.data(), data.size()*sizeof(data[0]));
         }
 
         template <typename T>
@@ -869,11 +868,13 @@ namespace magnetron {
             return str;
         }
         [[nodiscard]] auto rank() const noexcept -> int64_t { return mag_tensor_get_rank(m_tensor); }
-        [[nodiscard]] auto shape() const noexcept -> std::span<const int64_t> {
-            return {mag_tensor_get_shape(m_tensor), static_cast<size_t>(rank())};
+        [[nodiscard]] auto shape() const noexcept -> std::vector<int64_t> {
+            const int64_t *p = mag_tensor_get_shape(m_tensor);
+            return std::vector<int64_t>{p, p+rank()};
         }
-        [[nodiscard]] auto strides() const noexcept -> std::span<const int64_t> {
-            return {mag_tensor_get_strides(m_tensor), static_cast<size_t>(rank())};
+        [[nodiscard]] auto strides() const noexcept -> std::vector<int64_t> {
+            const int64_t *p = mag_tensor_get_strides(m_tensor);
+            return std::vector<int64_t>{p, p+rank()};
         }
         [[nodiscard]] auto dtype() const noexcept -> dtype { return static_cast<enum dtype>(mag_tensor_get_dtype(m_tensor)); }
         [[nodiscard]] auto data_ptr() const noexcept -> void* { return mag_tensor_get_data_ptr(m_tensor); }

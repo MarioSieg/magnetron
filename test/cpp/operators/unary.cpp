@@ -29,7 +29,7 @@ static auto test_unary_operator(
     T max = static_cast<T>(2.0)
 ) -> void {
     auto& ctx = get_cached_context(dev);
-    for_all_test_shapes([&](std::span<const int64_t> shape) {
+    for_all_test_shapes([&](const std::vector<int64_t>& shape) {
         tensor base{ctx, ty, shape};
         base.fill_rand_uniform(static_cast<float>(min), static_cast<float>(max));
         tensor t_a = subview ? make_random_view(base) : base;

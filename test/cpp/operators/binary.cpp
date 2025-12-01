@@ -36,7 +36,7 @@ static void test_binary_operator(
 ) {
     auto& ctx = get_cached_context(dev);
     ctx.stop_grad_recorder();
-    for_all_test_shapes([&](std::span<const int64_t> shape) {
+    for_all_test_shapes([&](const std::vector<int64_t>& shape) {
         tensor t_a {ctx, ty, shape};
         if constexpr (std::is_same_v<T, bool>)
             t_a.fill(std::bernoulli_distribution{}(gen));
@@ -74,7 +74,7 @@ static void test_binary_cmp(
 ) {
     auto& ctx = get_cached_context(dev);
     ctx.stop_grad_recorder();
-    for_all_test_shapes([&](std::span<const int64_t> shape){
+    for_all_test_shapes([&](const std::vector<int64_t>& shape){
         tensor t_a{ctx, ty, shape};
         if constexpr (std::is_same_v<T, bool>)
             t_a.fill(std::bernoulli_distribution{}(gen));
