@@ -36,7 +36,7 @@ def test_tensor_gather(dtype: DataType) -> None:
         rank = len(shape)
         for dim in range(rank):
             index_torch = torch.randint(0, shape[dim], size=shape, dtype=torch.int64)
-            index_own = Tensor.of(index_torch.tolist(), dtype=int32)
+            index_own = Tensor.of(index_torch.tolist(), dtype=int64)
             out_own = x.gather(dim, index_own)
             out_torch = torch.gather(torch_x, dim, index_torch)
             torch.testing.assert_close(totorch(out_own), out_torch)

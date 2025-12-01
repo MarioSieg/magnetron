@@ -633,6 +633,31 @@ class Tensor:
         assert len(dims) == _MAX_DIMS
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_permute(out, self._ptr, _FFI.new('int64_t[]', dims), _MAX_DIMS)))
 
+    def squeeze(self, dim: int | None = None) -> Tensor:
+        if dim is None:
+            return Tensor(_wrap_out_alloc(lambda out: _C.mag_squeeze_all(out, self._ptr)))
+        else:
+            return Tensor(_wrap_out_alloc(lambda out: _C.mag_squeeze_dim(out, self._ptr, dim)))
+
+    def unsqueeze(self, dim: int) -> Tensor:
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_unsqueeze(out, self._ptr, dim)))
+
+    def flatten(self, start_dim: int = 0, end_dim: int = -1) -> Tensor:
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_flatten(out, self._ptr, start_dim, end_dim)))
+
+    def unflatten(self, shape: tuple[int, ...]) -> Tensor:
+        shape_dims: _FFI.CData = _FFI.new(f'int64_t[{len(shape)}]', shape)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_unflatten(out, self._ptr, shape_dims, len(shape))))
+
+    def narrow(self, dim: int, start: int, length: int) -> Tensor:
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_narrow(out, self._ptr, dim, start, length)))
+
+    def movedim(self, source: int, destination: int) -> Tensor:
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_movedim(out, self._ptr, source, destination)))
+
+    def select(self, dim: int, index: int) -> Tensor:
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_select(out, self._ptr, dim, index)))
+
     def fill_(self, value: float | int | bool) -> None:
         self._validate_inplace_op()
         if self.dtype.is_floating_point:
