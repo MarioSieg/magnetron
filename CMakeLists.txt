@@ -22,6 +22,14 @@ option(MAGNETRON_DEBUG "Enable debug mode" OFF)                          # Enabl
 option(MAGNETRON_ENABLE_BACKEND_CPU "Enable CPU backend" ON)                # Enable CPU backend
 option(MAGNETRON_ENABLE_BACKEND_CUDA "Enable CUDA backend" ON)              # Enable CUDA backend (requires CUDA toolkit)
 
+# Use ccache if available
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    message(STATUS "ccache found: ${CCACHE_PROGRAM}")
+    set(CMAKE_C_COMPILER_LAUNCHER   ${CCACHE_PROGRAM})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+endif()
+
 if (${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS})
     enable_language(CXX)
     set(CMAKE_CXX_STANDARD 17)

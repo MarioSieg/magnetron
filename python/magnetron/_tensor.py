@@ -508,12 +508,14 @@ class Tensor:
         start: float | int = 0,
         stop: float | int | None = None,
         step: float | int = 1,
-        dtype: DataType = _default_dtype(),
+        dtype: DataType | None = None,
         requires_grad: bool = False,
     ) -> Tensor:
         if stop is None:
             stop = start
             start = 0
+        if dtype is None:
+            dtype = _deduce_tensor_dtype(start)
         instance = _wrap_out_alloc(lambda out: _C.mag_tensor_arange(out, context.native_ptr(), dtype.enum_value, float(start), float(stop), float(step)))
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
