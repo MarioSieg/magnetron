@@ -11,18 +11,24 @@
 
 #include <core/mag_reduce_plan.h>
 
+typedef struct mag_var_acc_t { /* Variance accumulation state */
+    double mean;
+    double M2;
+    int64_t n;
+} mag_var_acc_t;
+
 #define mag_cpu_impl_reduce_axes(T, OT, TF, FUNC, ACC_T, INIT_EXPR, UPDATE_STMT, FINAL_STMT) \
     static void MAG_HOTPROC mag_##FUNC##_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
         const T *bx = mag_tensor_get_data_ptr(x); \
-        OT *br =  mag_tensor_get_data_ptr(r); \
+        OT *br = mag_tensor_get_data_ptr(r); \
         mag_reduce_plan_t *plan = mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
-        int64_t out_numel = r->numel; \
+        int64_t numel = r->numel; \
         int64_t red_prod = plan->red_prod; \
-        for (int64_t oi=0; oi < out_numel; ++oi) { \
+        for (int64_t oi=0; oi < numel; ++oi) { \
             int64_t base = mag_reduce_plan_to_offset(plan, oi); \
-            ACC_T acc = (INIT_EXPR); \
+            ACC_T acc = INIT_EXPR; \
             for (int64_t ri=0; ri < red_prod; ++ri) { \
                 int64_t tmp = ri; \
                 int64_t roff = base; \
@@ -88,3 +94,70 @@ mag_cpu_impl_reduce_axes(uint64_t, uint64_t, uint64, max, uint64_t, 0, acc = mag
 mag_cpu_impl_reduce_axes(int64_t, int64_t, int64, max, int64_t, INT64_MIN, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
 
 #undef mag_cpu_impl_reduce_axes
+
+#define mag_cpu_impl_reduce_axes_logical(T, TF, FUNC, IDENTITY, UPDATE_STMT, BREAK_COND) \
+    static void MAG_HOTPROC mag_##FUNC##_##TF(const mag_kernel_payload_t *payload) { \
+        mag_tensor_t *r = mag_cmd_out(0); \
+        const mag_tensor_t *x = mag_cmd_in(0); \
+        const T *bx = mag_tensor_get_data_ptr(x); \
+        uint8_t *br = mag_tensor_get_data_ptr(r); \
+        mag_reduce_plan_t *plan = mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
+        int64_t numel = r->numel; \
+        int64_t red_prod = plan->red_prod; \
+        for (int64_t oi=0; oi < numel; ++oi) { \
+            uint8_t acc = (IDENTITY); \
+            if (red_prod == 0) { \
+                br[oi] = acc; \
+                continue; \
+            } \
+            int64_t base = mag_reduce_plan_to_offset(plan, oi); \
+            for (int64_t ri=0; ri < red_prod; ++ri) { \
+                int64_t tmp = ri; \
+                int64_t roff = base; \
+                for (int64_t k=plan->rank-1; k >= 0; --k) { \
+                    int64_t sz = plan->red_sizes[k]; \
+                    int64_t idx = tmp % sz; \
+                    tmp /= sz; \
+                    roff += idx*plan->red_strides[k]; \
+                } \
+                mag_bnd_chk(bx + roff, bx, mag_tensor_get_data_size(x)); \
+                { UPDATE_STMT } \
+                if (BREAK_COND) break; \
+            } \
+            br[oi] = acc; \
+        } \
+    }
+
+
+#define mag_impl_logical_reduce_pair(T, TF, unpack) \
+    mag_cpu_impl_reduce_axes_logical( \
+        T, TF, any, \
+        0, \
+        { if (unpack(bx[roff]) != 0) acc = 1; }, \
+        acc == 1 \
+    ); \
+    mag_cpu_impl_reduce_axes_logical( \
+        T, TF, all, \
+        1, \
+        { if (unpack(bx[roff]) == 0) acc = 0; }, \
+        acc == 0 \
+    )
+
+#define mag_unpack_nop(x) (x)
+#define mag_unpack_packed(x) ((x).bits)
+
+mag_impl_logical_reduce_pair(float, float32, mag_unpack_nop);
+mag_impl_logical_reduce_pair(mag_float16_t, float16, mag_unpack_packed);
+mag_impl_logical_reduce_pair(uint8_t, uint8, mag_unpack_nop);
+mag_impl_logical_reduce_pair(int8_t, int8, mag_unpack_nop);
+mag_impl_logical_reduce_pair(uint16_t, uint16, mag_unpack_nop);
+mag_impl_logical_reduce_pair(int16_t, int16, mag_unpack_nop);
+mag_impl_logical_reduce_pair(uint32_t, uint32, mag_unpack_nop);
+mag_impl_logical_reduce_pair(int32_t, int32, mag_unpack_nop);
+mag_impl_logical_reduce_pair(uint64_t, uint64, mag_unpack_nop);
+mag_impl_logical_reduce_pair(int64_t, int64, mag_unpack_nop);
+
+#undef mag_unpack_nop
+#undef mag_unpack_packed
+
+#undef mag_impl_logical_reduce_pair

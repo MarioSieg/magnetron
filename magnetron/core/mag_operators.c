@@ -625,9 +625,14 @@ static mag_status_t mag_op_stub_reduction(mag_tensor_t **out, mag_opcode_t op, m
     if (mag_iserr(stat)) return stat;
     mag_tensor_t *result = NULL;
     mag_dtype_t otype;
-    if ((op == MAG_OP_SUM || op == MAG_OP_PROD) && mag_tensor_is_integer_typed(x)) /* For sum/prod use large int64/uint64 as result dtype to store big accumulators */
+    if ((op == MAG_OP_SUM || op == MAG_OP_PROD) && mag_tensor_is_integer_typed(x)) {
+        /* For sum/prod use large int64/uint64 as result dtype to store big accumulators */
         otype = mag_dtype_bit(x->dtype) & MAG_DTYPE_MASK_UINT ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64;
-    else otype = x->dtype; /* For other reductions, use same dtype as input */
+    } else if (op == MAG_OP_ANY || op == MAG_OP_ALL) { /* For logical reductions, use boolean dtype */
+        otype = MAG_DTYPE_BOOLEAN;
+    } else { /* For other reductions, use same dtype as input */
+        otype = x->dtype;
+    }
     if (!keepdim && !plan.out_rank) stat = mag_tensor_empty_scalar(&result, x->ctx,otype);
     else stat = mag_tensor_empty(&result, x->ctx,otype, plan.out_rank, plan.out_shape);
     if (mag_iserr(stat)) return stat;
@@ -657,6 +662,14 @@ mag_status_t mag_sum(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, i
 
 mag_status_t mag_prod(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
     return mag_op_stub_reduction(out, MAG_OP_PROD, x, dims, rank, keepdim);
+}
+
+mag_status_t mag_all(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
+    return mag_op_stub_reduction(out, MAG_OP_ALL, x, dims, rank, keepdim);
+}
+
+mag_status_t mag_any(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
+    return mag_op_stub_reduction(out, MAG_OP_ANY, x, dims, rank, keepdim);
 }
 
 mag_status_t mag_argmin(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {

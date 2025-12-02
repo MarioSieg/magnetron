@@ -130,6 +130,8 @@ namespace mag {
             [MAG_OP_MAX] = &reduce_op_max,
             [MAG_OP_SUM] = &reduce_op_sum,
             [MAG_OP_PROD] = &reduce_op_prod,
+            [MAG_OP_ALL] = nullptr,
+            [MAG_OP_ANY] = nullptr,
             [MAG_OP_ABS] = &unary_op_abs,
             [MAG_OP_SGN] = &unary_op_sgn,
             [MAG_OP_NEG] = &unary_op_neg,

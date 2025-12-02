@@ -50,6 +50,8 @@ typedef enum mag_opflags_t {
     _(MAX, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(SUM, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, sum)__\
     _(PROD, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(ALL, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(ANY, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(ABS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, abs)__\
     _(SGN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(NEG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, neg)__\

@@ -748,6 +748,14 @@ class Tensor:
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_prod(out, self._ptr, dims, num_dims, keepdim)))
 
+    def any(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
+        dims, num_dims = _get_reduction_axes(dim)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_any(out, self._ptr, dims, num_dims, keepdim)))
+
+    def all(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
+        dims, num_dims = _get_reduction_axes(dim)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_all(out, self._ptr, dims, num_dims, keepdim)))
+
     def argmin(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
         raise NotImplementedError('argmin is not implemented for complex tensors')
 
