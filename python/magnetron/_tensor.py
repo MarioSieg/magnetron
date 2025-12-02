@@ -738,6 +738,14 @@ class Tensor:
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_max(out, self._ptr, dims, num_dims, keepdim)))
 
+    def argmin(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
+        dims, num_dims = _get_reduction_axes(dim)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_argmin(out, self._ptr, dims, num_dims, keepdim)))
+
+    def argmax(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
+        dims, num_dims = _get_reduction_axes(dim)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_argmax(out, self._ptr, dims, num_dims, keepdim)))
+
     def sum(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
@@ -755,12 +763,6 @@ class Tensor:
     def all(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_all(out, self._ptr, dims, num_dims, keepdim)))
-
-    def argmin(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
-        raise NotImplementedError('argmin is not implemented for complex tensors')
-
-    def argmax(self, dim: int | tuple[int] | None = None, keepdim: bool = False) -> Tensor:
-        raise NotImplementedError('argmin is not implemented for complex tensors')
 
     def abs(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)

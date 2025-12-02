@@ -630,7 +630,9 @@ static mag_status_t mag_op_stub_reduction(mag_tensor_t **out, mag_opcode_t op, m
         otype = mag_dtype_bit(x->dtype) & MAG_DTYPE_MASK_UINT ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64;
     } else if (op == MAG_OP_ANY || op == MAG_OP_ALL) { /* For logical reductions, use boolean dtype */
         otype = MAG_DTYPE_BOOLEAN;
-    } else { /* For other reductions, use same dtype as input */
+    } else if (op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX) { /* For argmin/argmax, use int64 dtype */
+        otype = MAG_DTYPE_INT64;
+    }else { /* For other reductions, use same dtype as input */
         otype = x->dtype;
     }
     if (!keepdim && !plan.out_rank) stat = mag_tensor_empty_scalar(&result, x->ctx,otype);
@@ -656,6 +658,14 @@ mag_status_t mag_max(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, i
     return mag_op_stub_reduction(out, MAG_OP_MAX, x, dims, rank, keepdim);
 }
 
+mag_status_t mag_argmin(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
+    return mag_op_stub_reduction(out, MAG_OP_ARGMIN, x, dims, rank, keepdim);
+}
+
+mag_status_t mag_argmax(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
+    return mag_op_stub_reduction(out, MAG_OP_ARGMAX, x, dims, rank, keepdim);
+}
+
 mag_status_t mag_sum(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
     return mag_op_stub_reduction(out, MAG_OP_SUM, x, dims, rank, keepdim);
 }
@@ -670,16 +680,6 @@ mag_status_t mag_all(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, i
 
 mag_status_t mag_any(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
     return mag_op_stub_reduction(out, MAG_OP_ANY, x, dims, rank, keepdim);
-}
-
-mag_status_t mag_argmin(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
-    mag_panic("Not implemented yet");
-    return mag_tensor_empty_like(out, x);
-}
-
-mag_status_t mag_argmax(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
-    mag_panic("Not implemented yet");
-    return mag_tensor_empty_like(out, x);
 }
 
 static mag_status_t mag_op_stub_unary(mag_tensor_t **out, mag_opcode_t op, mag_tensor_t *x, const mag_op_attr_registry_t *layout, bool inplace) {

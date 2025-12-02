@@ -48,6 +48,8 @@ typedef enum mag_opflags_t {
     _(MEAN, 1, 1, FP, {}, MAG_OP_FLAG_NONE, mean)__\
     _(MIN, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(MAX, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(ARGMIN, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(ARGMAX, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(SUM, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, sum)__\
     _(PROD, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(ALL, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\

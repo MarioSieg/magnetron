@@ -128,6 +128,8 @@ namespace mag {
             [MAG_OP_MEAN] = &reduce_op_mean,
             [MAG_OP_MIN] = &reduce_op_min,
             [MAG_OP_MAX] = &reduce_op_max,
+            [MAG_OP_ARGMIN] = nullptr,
+            [MAG_OP_ARGMAX] = nullptr,
             [MAG_OP_SUM] = &reduce_op_sum,
             [MAG_OP_PROD] = &reduce_op_prod,
             [MAG_OP_ALL] = nullptr,

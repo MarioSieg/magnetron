@@ -93,6 +93,137 @@ mag_cpu_impl_reduce_axes(int32_t, int32_t, int32, max, int32_t, INT32_MIN, acc =
 mag_cpu_impl_reduce_axes(uint64_t, uint64_t, uint64, max, uint64_t, 0, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
 mag_cpu_impl_reduce_axes(int64_t, int64_t, int64, max, int64_t, INT64_MIN, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
 
+typedef struct mag_argmax_acc_f32_t {
+    float val;
+    int64_t idx;
+    bool set;
+} mag_argmax_acc_f32_t;
+
+typedef struct mag_argmax_acc_i64_t {
+    int64_t val;
+    int64_t idx;
+    bool set;
+} mag_argmax_acc_i64_t;
+
+mag_cpu_impl_reduce_axes(
+    float,
+    int64_t,
+    float32,
+    argmax,
+    mag_argmax_acc_f32_t,
+    {0},
+    {
+        float xv = bx[roff];
+        if (!acc.set || xv > acc.val) {
+            acc.val = xv;
+            acc.idx = ri;
+            acc.set = true;
+        }
+    },
+    {
+        *o = acc.idx;
+    }
+);
+
+mag_cpu_impl_reduce_axes(
+    float,
+    int64_t,
+    float32,
+    argmin,
+    mag_argmax_acc_f32_t,
+    {0},
+    {
+        float xv = bx[roff];
+        if (!acc.set || xv < acc.val) {
+            acc.val = xv;
+            acc.idx = ri;
+            acc.set = true;
+        }
+    },
+    {
+        *o = acc.idx;
+    }
+);
+
+mag_cpu_impl_reduce_axes(
+    mag_float16_t,
+    int64_t,
+    float16,
+    argmax,
+    mag_argmax_acc_f32_t,
+    {0},
+    {
+        float xv = mag_float16_to_float32(bx[roff]);
+        if (!acc.set || xv > acc.val) {
+            acc.val = xv;
+            acc.idx = ri;
+            acc.set = true;
+        }
+    },
+    {
+        *o = acc.idx;
+    }
+);
+
+mag_cpu_impl_reduce_axes(
+    mag_float16_t,
+    int64_t,
+    float16,
+    argmin,
+    mag_argmax_acc_f32_t,
+    {0},
+    {
+        float xv = mag_float16_to_float32(bx[roff]);
+        if (!acc.set || xv < acc.val) {
+            acc.val = xv;
+            acc.idx = ri;
+            acc.set = true;
+        }
+    },
+    {
+        *o = acc.idx;
+    }
+);
+
+#define mag_cpu_impl_argminmax_int(T, TF) \
+    mag_cpu_impl_reduce_axes( \
+        T, int64_t, TF, argmax, mag_argmax_acc_i64_t, \
+        {0}, \
+        { \
+            int64_t xv = (int64_t)bx[roff]; \
+            if (!acc.set || xv > acc.val) { \
+                acc.val = xv; \
+                acc.idx = ri; \
+                acc.set = true; \
+            } \
+        }, \
+        { *o = acc.idx; } \
+    ); \
+    mag_cpu_impl_reduce_axes( \
+        T, int64_t, TF, argmin, mag_argmax_acc_i64_t, \
+        {0}, \
+        { \
+            int64_t xv = (int64_t)bx[roff]; \
+            if (!acc.set || xv < acc.val) { \
+                acc.val = xv; \
+                acc.idx = ri; \
+                acc.set = true; \
+            } \
+        }, \
+        { *o = acc.idx; } \
+    )
+
+mag_cpu_impl_argminmax_int(uint8_t,  uint8);
+mag_cpu_impl_argminmax_int(int8_t,   int8);
+mag_cpu_impl_argminmax_int(uint16_t, uint16);
+mag_cpu_impl_argminmax_int(int16_t,  int16);
+mag_cpu_impl_argminmax_int(uint32_t, uint32);
+mag_cpu_impl_argminmax_int(int32_t,  int32);
+mag_cpu_impl_argminmax_int(uint64_t, uint64);
+mag_cpu_impl_argminmax_int(int64_t,  int64);
+
+#undef mag_cpu_impl_argminmax_int
+
 #undef mag_cpu_impl_reduce_axes
 
 #define mag_cpu_impl_reduce_axes_logical(T, TF, FUNC, IDENTITY, UPDATE_STMT, BREAK_COND) \

@@ -180,12 +180,12 @@ extern MAG_EXPORT mag_status_t mag_split(mag_tensor_t **outs, int64_t num_splits
 extern MAG_EXPORT mag_status_t mag_mean(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_min(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_max(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_status_t mag_argmin(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_status_t mag_argmax(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_sum(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_prod(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_all(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_any(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
-extern MAG_EXPORT mag_status_t mag_argmin(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
-extern MAG_EXPORT mag_status_t mag_argmax(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_abs(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_abs_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sgn(mag_tensor_t **out, mag_tensor_t *x);
