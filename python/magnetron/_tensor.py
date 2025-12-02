@@ -721,22 +721,22 @@ class Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_mean(out, self._ptr, dims, num_dims, keepdim)))
 
     def min(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
-        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_min(out, self._ptr, dims, num_dims, keepdim)))
 
     def max(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
-        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_max(out, self._ptr, dims, num_dims, keepdim)))
 
     def sum(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
-        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_sum(out, self._ptr, dims, num_dims, keepdim)))
 
     def prod(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
-        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_prod(out, self._ptr, dims, num_dims, keepdim)))
 

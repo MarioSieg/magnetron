@@ -627,8 +627,12 @@ static mag_status_t mag_op_stub_reduction(mag_tensor_t **out, mag_opcode_t op, m
     stat = mag_reduce_plan_init(ctx, &plan, &x->coords, dims, rank, keepdim);
     if (mag_iserr(stat)) return stat;
     mag_tensor_t *result = NULL;
-    if (!keepdim && !plan.out_rank) stat = mag_tensor_empty_scalar(&result, x->ctx, x->dtype);
-    else stat = mag_tensor_empty(&result, x->ctx, x->dtype, plan.out_rank, plan.out_shape);
+    mag_dtype_t otype;
+    if ((op == MAG_OP_SUM || op == MAG_OP_PROD) && mag_tensor_is_integer_typed(x)) /* For sum/prod use large int64/uint64 as result dtype to store big accumulators */
+        otype = mag_dtype_bit(x->dtype) & MAG_DTYPE_MASK_UINT ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64;
+    else otype = x->dtype; /* For other reductions, use same dtype as input */
+    if (!keepdim && !plan.out_rank) stat = mag_tensor_empty_scalar(&result, x->ctx,otype);
+    else stat = mag_tensor_empty(&result, x->ctx,otype, plan.out_rank, plan.out_shape);
     if (mag_iserr(stat)) return stat;
     mag_op_attr_registry_t layout;
     mag_op_attr_registry_init(&layout);

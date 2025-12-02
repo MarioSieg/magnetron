@@ -123,7 +123,7 @@ typedef struct mag_tensor_t mag_tensor_t;
 typedef enum mag_dtype_t {
     MAG_DTYPE_FLOAT32,          /* IEEE-754 32-bit floating point number. Commonly known as float32, f32. */
     MAG_DTYPE_FLOAT16,          /* IEEE-754 16-bit floating point number. Commonly known as float16, f16, half. */
-    MAG_DTYPE_BOOLEAN,             /* 1-byte boolean */
+    MAG_DTYPE_BOOLEAN,          /* 1-byte boolean */
     MAG_DTYPE_UINT8,
     MAG_DTYPE_INT8,
     MAG_DTYPE_UINT16,
