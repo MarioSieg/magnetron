@@ -29,13 +29,15 @@ DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
     uint32: torch.uint32,
     int32: torch.int32,
     uint64: torch.uint64,
-    int64: torch.int64
+    int64: torch.int64,
 }
+
 
 def totorch_dtype(dtype: DataType) -> torch.dtype:
     if dtype not in DTYPE_TORCH_MAP:
         raise ValueError(f'Unsupported dtype: {dtype}')
     return DTYPE_TORCH_MAP[dtype]
+
 
 def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) -> torch.Tensor:
     if isinstance(obj, torch.Tensor):
@@ -49,19 +51,22 @@ def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) 
         return t.reshape(())
     return t.reshape(obj.shape)
 
-def broadcastable(a: tuple[int,...], b: tuple[int,...]) -> bool:
+
+def broadcastable(a: tuple[int, ...], b: tuple[int, ...]) -> bool:
     for x, y in zip(a[::-1], b[::-1]):
         if not (x == y or x == 1 or y == 1):
             return False
     return True
 
-def broadcast_shape(a: tuple[int,...], b: tuple[int,...]) -> tuple[int,...]:
+
+def broadcast_shape(a: tuple[int, ...], b: tuple[int, ...]) -> tuple[int, ...]:
     rev = []
     for x, y in zip(a[::-1], b[::-1]):
         rev.append(max(x, y))
     longer = a if len(a) > len(b) else b
-    rev.extend(longer[:abs(len(a)-len(b))][::-1])
+    rev.extend(longer[: abs(len(a) - len(b))][::-1])
     return tuple(rev[::-1])
+
 
 def iter_shapes(rank: int, lim: int) -> Iterator[tuple[int, ...]]:
     if rank == 0:
@@ -78,8 +83,9 @@ def iter_shapes(rank: int, lim: int) -> Iterator[tuple[int, ...]]:
             break
         tup[i] += 1
 
+
 def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tuple[int, ...], tuple[int, ...]]]:
-    max_batch_rank = max_total_rank-2
+    max_batch_rank = max_total_rank - 2
     rng = range(1, lim + 1)
     for batch_rank in range(max_batch_rank + 1):
         for batch_a in iter_shapes(batch_rank, lim):
@@ -93,6 +99,7 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             shape_A = (*batched, M, K)
                             shape_B = (*batched, K, N)
                             yield shape_A, shape_B
+
 
 TEST_SHAPES: tuple[tuple[int], ...] = (
     (1,),
@@ -171,18 +178,18 @@ TEST_SHAPES: tuple[tuple[int], ...] = (
     (40, 128),
     (64, 128),
     (32, 96),
-    (4096//4, 12288//4),
-    (8192//4, 8192//4),
-    (12288//4, 12288//4),
-    (11008//4, 4096//4),
-    (4096//4, 11008//4),
-    (8192//4, 22016//6),
-    (12288//4, 49152//8),
-    (1, 32, 2048//4, 128//4),
-    (4, 32, 2048//4, 128),
-    (1, 40, 4096//4, 96),
-    (8, 64, 1024//4, 128//4),
-    (2, 32, 4096//4, 128),
+    (4096 // 4, 12288 // 4),
+    (8192 // 4, 8192 // 4),
+    (12288 // 4, 12288 // 4),
+    (11008 // 4, 4096 // 4),
+    (4096 // 4, 11008 // 4),
+    (8192 // 4, 22016 // 6),
+    (12288 // 4, 49152 // 8),
+    (1, 32, 2048 // 4, 128 // 4),
+    (4, 32, 2048 // 4, 128),
+    (1, 40, 4096 // 4, 96),
+    (8, 64, 1024 // 4, 128 // 4),
+    (2, 32, 4096 // 4, 128),
     (16, 128),
     (128, 128),
     (2048, 128),
@@ -203,12 +210,12 @@ TEST_SHAPES: tuple[tuple[int], ...] = (
     (6, 5, 4, 3, 2),
     (1, 2, 3, 4, 5, 6),
     (1, 1, 4096, 4096),
-    (1024//2, 1024//2),
-    (2048//2, 2048//2),
-    (4096//2, 1024//2),
-    (1024//2, 4096//2),
-    (4096//2, 4096//2),
-    (8192//2, 2048//2),
+    (1024 // 2, 1024 // 2),
+    (2048 // 2, 2048 // 2),
+    (4096 // 2, 1024 // 2),
+    (1024 // 2, 4096 // 2),
+    (4096 // 2, 4096 // 2),
+    (8192 // 2, 2048 // 2),
     (6, 66, 666),
     (4, 4, 1024, 1024),
     (2, 8, 512, 512),
@@ -356,9 +363,11 @@ TEST_SHAPES: tuple[tuple[int], ...] = (
     (1, 2, 3, 4, 1, 2, 3, 4),
 )
 
+
 def for_all_shapes(f: Callable[tuple[int, ...]]) -> None:
     for shape in TEST_SHAPES:
         f(shape)
+
 
 @unique
 class BinaryOpParamKind(Enum):
@@ -366,7 +375,10 @@ class BinaryOpParamKind(Enum):
     SCALAR = 'scalar'
     LIST = 'list'
 
-def _allocate_binary_op_args(dtype: DataType, shape: tuple[int, ...], kind: BinaryOpParamKind, low: float | int = 0, high: float | int = 1) -> tuple[Tensor, Tensor | list[Any] | float | int]:
+
+def _allocate_binary_op_args(
+    dtype: DataType, shape: tuple[int, ...], kind: BinaryOpParamKind, low: float | int = 0, high: float | int = 1
+) -> tuple[Tensor, Tensor | list[Any] | float | int]:
     if dtype == boolean:
         x = Tensor.bernoulli(shape)
         match kind:
@@ -396,26 +408,34 @@ def _allocate_binary_op_args(dtype: DataType, shape: tuple[int, ...], kind: Bina
             case _:
                 raise ValueError(f'Unknown BinaryOpParamKind: {kind}')
 
-def binary_op_square(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, low: float | int = 0, high: float | int = 1) -> None:
+
+def binary_op_square(
+    dtype: DataType,
+    callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor],
+    kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR,
+    low: float | int = 0,
+    high: float | int = 1,
+) -> None:
     def func(shape: tuple[int, ...]) -> None:
         x, y = _allocate_binary_op_args(dtype, shape, kind, low, high)
         r = callback(x, y)
-        torch.testing.assert_close(
-            totorch(r),
-            callback(totorch(x), totorch(y))
-        )
+        torch.testing.assert_close(totorch(r), callback(totorch(x), totorch(y)))
 
     for_all_shapes(func)
 
-def binary_cmp_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor], kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR, low: float | int = 0, high: float | int = 1) -> None:
+
+def binary_cmp_op(
+    dtype: DataType,
+    callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor],
+    kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR,
+    low: float | int = 0,
+    high: float | int = 1,
+) -> None:
     def func(shape: tuple[int, ...]) -> None:
         x, y = _allocate_binary_op_args(dtype, shape, kind, low, high)
         r = callback(x, y)
         assert r.dtype == boolean
-        torch.testing.assert_close(
-            totorch(r, torch.bool),
-            callback(totorch(x), totorch(y))
-        )
+        torch.testing.assert_close(totorch(r, torch.bool), callback(totorch(x), totorch(y)))
 
     for_all_shapes(func)
 
@@ -440,6 +460,7 @@ def scalar_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, int | 
 
     for_all_shapes(func)
 
+
 def nested_len(obj: list[Any]) -> int:
     total = 0
     stack = deque([obj])
@@ -456,6 +477,7 @@ def nested_len(obj: list[Any]) -> int:
             else:
                 total += 1
     return total
+
 
 def flatten(nested: Any) -> list[Any]:
     out: list[Any] = []

@@ -41,13 +41,14 @@ _UNARY_OPS: tuple[str, ...] = (
     'tanh',
     'gelu',
     'tril',
-    'triu'
+    'triu',
 )
+
 
 def unary_op(
     dtype: DataType,
     mag_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
-    torch_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor]
+    torch_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
 ) -> None:
     def test(shape: tuple[int, ...]) -> None:
         x = Tensor.bernoulli(shape) if dtype == boolean else Tensor.uniform(shape, dtype=dtype)
@@ -56,9 +57,9 @@ def unary_op(
 
     for_all_shapes(test)
 
+
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
 @pytest.mark.parametrize('op', _UNARY_OPS)
 def test_unary_operators(op: str, dtype: DataType) -> None:
-
     unary_op(dtype, lambda x: getattr(x, op)(), lambda x: getattr(torch, op)(x) if hasattr(torch, op) else getattr(torch.functional.F, op)(x))
-    unary_op(dtype, lambda x: getattr(x,  op + '_')(), lambda x: getattr(torch, op)(x) if hasattr(torch, op) else getattr(torch.functional.F, op)(x))
+    unary_op(dtype, lambda x: getattr(x, op + '_')(), lambda x: getattr(torch, op)(x) if hasattr(torch, op) else getattr(torch.functional.F, op)(x))

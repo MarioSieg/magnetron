@@ -3,6 +3,7 @@
 import magnetron as mag
 from magnetron import optim, nn
 
+
 def test_xor_network():
     # Create the model, optimizer, and loss function
     model = nn.Sequential(nn.Linear(2, 2), nn.Tanh(), nn.Linear(2, 1), nn.Tanh())

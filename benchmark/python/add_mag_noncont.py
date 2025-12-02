@@ -4,9 +4,9 @@ import magnetron as mag
 import time
 
 A = mag.Tensor.uniform(1024, 1024)
-B = mag.Tensor.uniform(1024, 1024).permute(1,0)
+B = mag.Tensor.uniform(1024, 1024).permute(1, 0)
 
-batch, M, K = 256,256,256
+batch, M, K = 256, 256, 256
 N = 256
 flops = 2 * batch * M * N * K
 acc = 0

@@ -2,5 +2,3 @@
 
 from magnetron import *
 import magnetron.io as io
-
-

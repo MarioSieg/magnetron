@@ -108,22 +108,26 @@ def _get_reduction_axes(dim: int | Sequence[int] | None) -> tuple[_FFI.CData, in
 
     raise TypeError('Dimension must be an int, a sequence of ints, or None.')
 
+
 _SAMPLE_RANGE_DICT: dict[DataType, int | float] = {
     float32: (0.0, 1.0),
     float16: (0.0, 1.0),
     uint8: (0, 2**8 - 1),
-    int8: (-2**7, 2**7 - 1),
+    int8: (-(2**7), 2**7 - 1),
     uint16: (0, 2**16 - 1),
-    int16: (-2**15, 2**15 - 1),
+    int16: (-(2**15), 2**15 - 1),
     uint32: (0, 2**32 - 1),
-    int32: (-2**31, 2**31 - 1),
+    int32: (-(2**31), 2**31 - 1),
     uint64: (0, 2**64 - 1),
-    int64: (-2**63, 2**63 - 1),
+    int64: (-(2**63), 2**63 - 1),
 }
 
+
 def _get_uniform_sample_range(dtype: DataType, low: float | int | None = None, high: float | int | None = None) -> tuple[int | float, int | float]:
-    if low is None: low = _SAMPLE_RANGE_DICT[dtype][0]
-    if high is None: high = _SAMPLE_RANGE_DICT[dtype][1]
+    if low is None:
+        low = _SAMPLE_RANGE_DICT[dtype][0]
+    if high is None:
+        high = _SAMPLE_RANGE_DICT[dtype][1]
     assert high > low, f'Invalid uniform sample range {high} must be > {low}'
     return low, high
 
@@ -516,7 +520,9 @@ class Tensor:
             start = 0
         if dtype is None:
             dtype = _deduce_tensor_dtype(start)
-        instance = _wrap_out_alloc(lambda out: _C.mag_tensor_arange(out, context.native_ptr(), dtype.enum_value, float(start), float(stop), float(step)))
+        instance = _wrap_out_alloc(
+            lambda out: _C.mag_tensor_arange(out, context.native_ptr(), dtype.enum_value, float(start), float(stop), float(step))
+        )
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
         return tensor
@@ -691,8 +697,8 @@ class Tensor:
         if self.dtype.is_floating_point:
             _C.mag_tensor_fill_random_uniform_float(self._ptr, low, high)
         else:
-            low &= (2**63 - 2)
-            high &= (2**63 - 2) # TODO fix for unsigned types
+            low &= 2**63 - 2
+            high &= 2**63 - 2  # TODO fix for unsigned types
             _C.mag_tensor_fill_random_uniform_int(self._ptr, low, high)
 
     def fill_random_normal_(self, mean: float, std: float) -> None:

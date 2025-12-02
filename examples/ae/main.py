@@ -43,8 +43,8 @@ def _main() -> None:
     context.manual_seed(args.seed)
 
     # Load and preprocess image
-    image = Tensor.load_image(args.image, channels='RGB', resize_to=(args.width, args.height)) # Load image into uint8 CxHxW tensor
-    image = (image.cast(dtype.float32) / 255)[None, ...] # Convert uint8 -> float tensor and normalize [0, 255) to [0, 1) and insert batch dim
+    image = Tensor.load_image(args.image, channels='RGB', resize_to=(args.width, args.height))  # Load image into uint8 CxHxW tensor
+    image = (image.cast(dtype.float32) / 255)[None, ...]  # Convert uint8 -> float tensor and normalize [0, 255) to [0, 1) and insert batch dim
 
     # Initialize model, loss function, and optimizer
     model = AE(w=args.width, h=args.height, latent_dim=args.latent)
@@ -85,7 +85,7 @@ def _main() -> None:
     plt.imshow(reconstructed)
     plt.axis('off')
     plt.tight_layout()
-    #plt.savefig('autoencoder_result.png', dpi=300)
+    # plt.savefig('autoencoder_result.png', dpi=300)
 
     plt.figure()
     plt.plot(losses)
@@ -94,7 +94,7 @@ def _main() -> None:
     plt.title('Training Loss over Time')
     plt.grid(True)
     plt.tight_layout()
-    #plt.savefig('autoencoder_loss.png', dpi=300)
+    # plt.savefig('autoencoder_loss.png', dpi=300)
     plt.show()
 
 
