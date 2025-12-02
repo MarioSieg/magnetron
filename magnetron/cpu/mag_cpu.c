@@ -104,7 +104,7 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
     mag_storage_buffer_t *buf = mag_fixed_pool_alloc_block(&ctx->storage_pool);
     *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
         .ctx = ctx,
-        .impl = NULL, /* Must be NULL for intrusive storage */
+        .aux = {},
         .base = 0,
         .size = size,
         .alignment = size <= sizeof(void *) ? MAG_CPU_BUF_ALIGN : 1,
@@ -115,7 +115,7 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
         .convert = &mag_cpu_convert
     };
     if (size <= sizeof(void *)) { /* Store value intrusive (scalar storage optimization) */
-        buf->base = (uintptr_t)&buf->impl; /* Use 8-byte impl pointer for storage. TODO: this does NOT guarantee MAG_CPU_BUF_ALIGN alignment. */
+        buf->base = (uintptr_t)&buf->aux.inline_buf[0]; /* Use 8-byte impl pointer for storage. TODO: this does NOT guarantee MAG_CPU_BUF_ALIGN alignment. */
         buf->flags |= MAG_STORAGE_FLAG_INTRUSIVE;
     } else {
         buf->base = (uintptr_t)(*mag_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);

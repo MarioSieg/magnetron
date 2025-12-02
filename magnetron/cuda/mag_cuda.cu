@@ -278,7 +278,7 @@ namespace mag {
         new (*out) mag_storage_buffer_t {
             .__rcb = {},
             .ctx = ctx,
-            .impl = nullptr,
+            .aux = {},
             .flags = MAG_STORAGE_FLAG_NONE,
             .base = base,
             .size = size,

@@ -39,7 +39,10 @@ struct mag_storage_buffer_t {
     MAG_RC_INJECT_HEADER;                   /* RC Control block must be first */
 
     mag_context_t *ctx;
-    void *impl;                             /* Backend specific storage implementation, if any. */
+    union {
+        void *impl;                         /* Backend specific storage buffer implementation, if any. */
+        uint8_t inline_buf[sizeof(void *)]; /* Inline buffer for small storage optimizations. */
+    } aux;                                  /* Auxiliary storage for backend specific data. */
     mag_storage_flags_t flags;              /* Storage buffer flags. */
     uintptr_t base;                         /* Pointer to buffer on device. Might point to GPU or any other device memory. */
     size_t size;                            /* Size of buffer in bytes. */

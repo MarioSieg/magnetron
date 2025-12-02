@@ -46,7 +46,7 @@ namespace mag {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         using acc_t = acc_in_t;
-        [[nodiscard]] __device__ __forceinline__ acc_t init() const { return acc_t{1.0}; }
+        [[nodiscard]] __device__ __forceinline__ acc_t init() const { return static_cast<acc_t>(1); }
         [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const { return static_cast<acc_t>(x); }
         [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return a * b; }
         [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, int64_t red_prod) const { return static_cast<out_t>(acc); }
@@ -148,7 +148,6 @@ namespace mag {
 
     template <template <typename, typename, typename> typename op_t>
        static void impl_reduce_op(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
         switch (x->dtype) {
             case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
