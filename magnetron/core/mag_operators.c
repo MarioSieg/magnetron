@@ -840,6 +840,47 @@ mag_status_t mag_cat(mag_tensor_t **out, mag_tensor_t **tensors, size_t count, i
     return MAG_STATUS_OK;
 }
 
+mag_status_t mag_one_hot(mag_tensor_t **out, mag_tensor_t *indices, int64_t num_classes) {
+    *out = NULL;
+    mag_context_t *ctx = indices->ctx;
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, indices->dtype == MAG_DTYPE_INT64, "one_hot: indices dtype must be int64, got %s", mag_dtype_meta_of(indices->dtype)->name);
+    mag_contract(ctx, ERR_INVALID_PARAM, {},  num_classes >= -1, "one_hot: num_classes must be >= -1, got %" PRIi64,  num_classes);
+    mag_status_t stat;
+    if (num_classes == -1) {
+        mag_tensor_t *f32_idx;
+        stat = mag_cast(&f32_idx, indices, MAG_DTYPE_FLOAT32); /* TODO: Remove this cast as soon max is defined on integral types */
+        if (mag_iserr(stat)) return stat;
+        mag_tensor_t *maxv = NULL;
+        stat = mag_max(&maxv, f32_idx, NULL, 0, false);
+        if (mag_iserr(stat)) return stat;
+        int64_t max_class = (int64_t)mag_tensor_get_item_float(maxv);
+        mag_tensor_decref(maxv);
+        num_classes = max_class >= 0 ? 1+max_class : 0;
+    }
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, num_classes > 0, "one_hot: inferred num_classes must be > 0, got %" PRIi64, num_classes);
+    int64_t rank = indices->coords.rank;
+    mag_contract(ctx, ERR_INVALID_RANK, {}, rank + 1 <= MAG_MAX_DIMS, "one_hot: rank(indices)+1 must be <= MAG_MAX_DIMS");
+    int64_t orank = rank+1;
+    int64_t oshape[MAG_MAX_DIMS];
+    for (int64_t j=0; j < rank; ++j)
+        oshape[j] = indices->coords.shape[j];
+    oshape[rank] = num_classes;
+    mag_tensor_t *result;
+    stat = mag_tensor_empty(&result, ctx, MAG_DTYPE_INT64, orank, oshape);
+    if (mag_iserr(stat)) return stat;
+    mag_tensor_fill_int(result, 0);
+    mag_op_attr_registry_t layout;
+    mag_op_attr_registry_init(&layout);
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(num_classes));
+    mag_dispatch(MAG_OP_ONE_HOT, false, &layout, &indices, 1, &result, 1);
+    if (mag_iserr(stat)) {
+        mag_tensor_decref(result);
+        return stat;
+    }
+    *out = result;
+    return MAG_STATUS_OK;
+}
+
 enum {
     MAG_BINOP_NONE = 0,
     MAG_BINOP_LOGICAL = 1<<0,
@@ -888,6 +929,7 @@ mag_impl_binary_pair(add, ADD, false)
 mag_impl_binary_pair(sub, SUB, false)
 mag_impl_binary_pair(mul, MUL, false)
 mag_impl_binary_pair(div, DIV, false)
+mag_impl_binary_pair(mod, MOD, false)
 mag_impl_binary_pair(and, AND, false)
 mag_impl_binary_pair(or, OR, false)
 mag_impl_binary_pair(xor, XOR, false)

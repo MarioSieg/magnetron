@@ -329,7 +329,7 @@ char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_
     size_t pad = strlen(prefix);
     mag_sstream_append(&ss, prefix);
     mag_tensor_fmt_recursive(&ss, buf, t->dtype, t->coords.shape, t->coords.strides, t->coords.rank, 0, 0, pad); /* Recursive format */
-    mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_dtype_meta_of(t->dtype)->name, t->ctx->device->id);
+    mag_sstream_putc(&ss, ')');
     /* Free allocated buffer */
     if (mag_tensor_is_floating_point_typed(t)) mag_tensor_get_data_as_floats_free(buf);
     else mag_tensor_get_raw_data_as_bytes_free(buf);

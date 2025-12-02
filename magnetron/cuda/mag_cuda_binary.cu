@@ -43,6 +43,16 @@ namespace mag {
     };
 
     template <typename scalar_in_t, typename scalar_out_t>
+    struct op_mod {
+        using in_t = scalar_in_t;
+        using out_t = scalar_out_t;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const {
+            if constexpr (std::is_integral_v<in_t>) return x%y;
+            else return fmodf(x, y);
+        }
+    };
+
+    template <typename scalar_in_t, typename scalar_out_t>
     struct op_and {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
@@ -233,6 +243,7 @@ namespace mag {
     void binary_op_sub(const mag_command_t *cmd) { impl_binary_op_numeric<op_sub>(cmd); }
     void binary_op_mul(const mag_command_t *cmd) { impl_binary_op_numeric<op_mul>(cmd); }
     void binary_op_div(const mag_command_t *cmd) { impl_binary_op_numeric<op_div>(cmd); }
+    void binary_op_mod(const mag_command_t *cmd) { impl_binary_op_numeric<op_mod>(cmd); }
     void binary_op_and(const mag_command_t *cmd) { impl_binary_op_logical<op_and>(cmd); }
     void binary_op_or(const mag_command_t *cmd)  { impl_binary_op_logical<op_or>(cmd); }
     void binary_op_xor(const mag_command_t *cmd) { impl_binary_op_logical<op_xor>(cmd); }

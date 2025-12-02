@@ -136,8 +136,8 @@ mag_gen_stub_fill_rand(normal, mag_float16_t, float, float32, float16)
 
 #undef mag_gen_stub_fill_rand
 
-#define mag_gen_stub_fill_arange(T, TF, CVT) \
-    static MAG_HOTPROC void mag_fill_arange_##TF(const mag_kernel_payload_t *payload) { \
+#define mag_gen_stub_arange(T, TF, CVT) \
+    static MAG_HOTPROC void mag_arange_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         T *br =  mag_tensor_get_data_ptr(r); \
         float start = mag_op_attr_unwrap_float32(mag_cmd_attr(0)); /* TODO: Use double precision as ACC */ \
@@ -159,18 +159,50 @@ mag_gen_stub_fill_rand(normal, mag_float16_t, float, float32, float16)
         } \
     }
 
-mag_gen_stub_fill_arange(float, float32, mag_cvt_nop)
-mag_gen_stub_fill_arange(mag_float16_t, float16, mag_float32_to_float16)
-mag_gen_stub_fill_arange(uint8_t, uint8, mag_cvt_int32_to_int64)
-mag_gen_stub_fill_arange(int8_t, int8, mag_cvt_int32_to_int64)
-mag_gen_stub_fill_arange(uint16_t, uint16, mag_cvt_int32_to_int64)
-mag_gen_stub_fill_arange(int16_t, int16, mag_cvt_int32_to_int64)
-mag_gen_stub_fill_arange(uint32_t, uint32, mag_cvt_int32_to_int64)
-mag_gen_stub_fill_arange(int32_t, int32, mag_cvt_int32_to_int64)
-mag_gen_stub_fill_arange(uint64_t, uint64, mag_cvt_nop)
-mag_gen_stub_fill_arange(int64_t, int64, mag_cvt_nop)
+mag_gen_stub_arange(float, float32, mag_cvt_nop)
+mag_gen_stub_arange(mag_float16_t, float16, mag_float32_to_float16)
+mag_gen_stub_arange(uint8_t, uint8, mag_cvt_int32_to_int64)
+mag_gen_stub_arange(int8_t, int8, mag_cvt_int32_to_int64)
+mag_gen_stub_arange(uint16_t, uint16, mag_cvt_int32_to_int64)
+mag_gen_stub_arange(int16_t, int16, mag_cvt_int32_to_int64)
+mag_gen_stub_arange(uint32_t, uint32, mag_cvt_int32_to_int64)
+mag_gen_stub_arange(int32_t, int32, mag_cvt_int32_to_int64)
+mag_gen_stub_arange(uint64_t, uint64, mag_cvt_nop)
+mag_gen_stub_arange(int64_t, int64, mag_cvt_nop)
 
-#undef mag_gen_stub_fill_arange
+#undef mag_gen_stub_arange
+
+static MAG_HOTPROC void mag_one_hot_int64(const mag_kernel_payload_t *payload) {
+    mag_tensor_t *r = mag_cmd_out(0);
+    mag_tensor_t *idx = mag_cmd_in(0);
+    int64_t *restrict pr = mag_tensor_get_data_ptr(r);
+    const int64_t *restrict pidx = mag_tensor_get_data_ptr(idx);
+    int64_t nc = mag_op_attr_unwrap_int64(mag_cmd_attr(0)); /* number of classes */
+    int64_t n = idx->numel;
+    if (mag_full_cont2(r, idx)) {
+        for (int64_t i=0; i < n; ++i) {
+            int64_t cls = pidx[i];
+            if ((uint64_t)cls < (uint64_t)nc) {
+                int64_t off = i*nc + cls;
+                mag_bnd_chk(pr+off, pr, mag_tensor_get_data_size(r));
+                pr[off] = 1;
+            }
+        }
+        return;
+    }
+    mag_coords_iter_t it;
+    mag_coords_iter_init(&it, &idx->coords);
+    for (int64_t i=0; i < n; ++i) {
+        int64_t idx_off = mag_coords_iter_to_offset(&it, i);
+        mag_bnd_chk(pidx + idx_off, pidx, mag_tensor_get_data_size(idx));
+        int64_t cls = pidx[idx_off];
+        if ((uint64_t)cls < (uint64_t)nc) {
+            int64_t off = i*nc + cls;
+            mag_bnd_chk(pr+off, pr, mag_tensor_get_data_size(r));
+            pr[off] = 1;
+        }
+    }
+}
 
 #undef mag_G
 #undef mag_G_underlying

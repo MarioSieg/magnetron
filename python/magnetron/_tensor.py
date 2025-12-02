@@ -614,6 +614,9 @@ class Tensor:
         assert dim1 != dim2, f'Transposition axes must be not equal, but {dim1} == {dim2}'
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_transpose(out, self._ptr, dim1, dim2)))
 
+    def one_hot(self, num_classes: int = -1) -> Tensor:
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_one_hot(out, self._ptr, num_classes)))
+
     @property
     def T(self) -> Tensor:
         return self.transpose(0, 1)
@@ -1249,6 +1252,22 @@ class Tensor:
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_div_(out, self._ptr, rhs._ptr)))
+
+    def __mod__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_mod(out, self._ptr, rhs._ptr)))
+
+    def __rmod__(self, rhs: int | float) -> Tensor:
+        rhs = Tensor.full_like(self, rhs)
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
+        return rhs % self
+
+    def __imod__(self, rhs: Tensor | int | float) -> Tensor:
+        rhs = self._expand_rhs(rhs)
+        self._validate_inplace_op()
+        self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_mod_(out, self._ptr, rhs._ptr)))
 
     def __matmul__(self, rhs: Tensor) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)

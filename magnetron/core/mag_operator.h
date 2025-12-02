@@ -39,6 +39,7 @@ typedef enum mag_opflags_t {
     _(RAND_BERNOULLI, 0, 1, BOOL, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(RAND_PERM, 0, 1, INTEGER, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(ARANGE, 0, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(ONE_HOT, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
     _(CAST, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
     _(VIEW, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, view)__\
@@ -101,6 +102,7 @@ typedef enum mag_opflags_t {
     _(SUB, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, sub)__\
     _(MUL, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mul)__\
     _(DIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, div)__\
+    _(MOD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(MATMUL, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, matmul)__\
     _(REPEAT_BACK, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(GATHER, 2, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
