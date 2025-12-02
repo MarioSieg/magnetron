@@ -848,13 +848,10 @@ mag_status_t mag_one_hot(mag_tensor_t **out, mag_tensor_t *indices, int64_t num_
     mag_contract(ctx, ERR_INVALID_PARAM, {},  num_classes >= -1, "one_hot: num_classes must be >= -1, got %" PRIi64,  num_classes);
     mag_status_t stat;
     if (num_classes == -1) {
-        mag_tensor_t *f32_idx;
-        stat = mag_cast(&f32_idx, indices, MAG_DTYPE_FLOAT32); /* TODO: Remove this cast as soon max is defined on integral types */
-        if (mag_iserr(stat)) return stat;
         mag_tensor_t *maxv = NULL;
-        stat = mag_max(&maxv, f32_idx, NULL, 0, false);
+        stat = mag_max(&maxv, indices, NULL, 0, false);
         if (mag_iserr(stat)) return stat;
-        int64_t max_class = (int64_t)mag_tensor_get_item_float(maxv);
+        int64_t max_class = mag_tensor_get_item_int(maxv);
         mag_tensor_decref(maxv);
         num_classes = max_class >= 0 ? 1+max_class : 0;
     }
