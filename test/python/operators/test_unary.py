@@ -52,7 +52,7 @@ def unary_op(
     def test(shape: tuple[int, ...]) -> None:
         x = Tensor.bernoulli(shape) if dtype == boolean else Tensor.uniform(shape, dtype=dtype)
         r = mag_callback(x.clone())
-        torch.testing.assert_close(totorch(r), torch_callback(totorch(x)))
+        torch.testing.assert_close(totorch(r), torch_callback(totorch(x)).squeeze())
 
     for_all_shapes(test)
 

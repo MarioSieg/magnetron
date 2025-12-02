@@ -691,6 +691,8 @@ class Tensor:
         if self.dtype.is_floating_point:
             _C.mag_tensor_fill_random_uniform_float(self._ptr, low, high)
         else:
+            low &= (2**63 - 2)
+            high &= (2**63 - 2) # TODO fix for unsigned types
             _C.mag_tensor_fill_random_uniform_int(self._ptr, low, high)
 
     def fill_random_normal_(self, mean: float, std: float) -> None:
