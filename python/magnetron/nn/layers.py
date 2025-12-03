@@ -82,10 +82,11 @@ class LayerNorm(Module):
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
-        xm = x - x.mean(dim=-1, keepdim=True)
-        var = (xm * xm).mean(dim=-1, keepdim=True)
-        x_hat = xm / (var + self.eps).sqrt()
-        y = self.weight.x * x_hat
+        mean = x.mean(dim=-1, keepdim=True)
+        xm = x - mean
+        var = xm.sqr().mean(dim=-1, keepdim=True)
+        x_hat = xm*(var + self.eps).rsqrt()
+        y = self.weight.x*x_hat
         if self.bias is not None:
             y = y + self.bias.x
         return y
