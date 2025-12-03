@@ -164,39 +164,39 @@ class Tensor:
 
     @property
     def rank(self) -> int:
-        return _C.mag_tensor_get_rank(self._ptr)
+        return _C.mag_tensor_rank(self._ptr)
 
     @property
     def shape(self) -> tuple[int, ...]:
-        return tuple(_FFI.unpack(_C.mag_tensor_get_shape(self._ptr), self.rank))
+        return tuple(_FFI.unpack(_C.mag_tensor_shape_ptr(self._ptr), self.rank))
 
     @property
     def strides(self) -> tuple[int, ...]:
-        return tuple(_FFI.unpack(_C.mag_tensor_get_strides(self._ptr), self.rank))
+        return tuple(_FFI.unpack(_C.mag_tensor_strides_ptr(self._ptr), self.rank))
 
     @property
     def dtype(self) -> DataType:
-        dtype_value: int = _C.mag_tensor_get_dtype(self._ptr)
+        dtype_value: int = _C.mag_tensor_type(self._ptr)
         assert dtype_value in DTYPE_ENUM_MAP, f'Unsupported tensor dtype: {dtype_value}'
         return DTYPE_ENUM_MAP[dtype_value]
 
     @property
     def data_ptr(self) -> int:
-        return int(_FFI.cast('uintptr_t', _C.mag_tensor_get_data_ptr(self._ptr)))
+        return int(_FFI.cast('uintptr_t', _C.mag_tensor_data_ptr(self._ptr)))
 
     @property
     def storage_base_ptr(self) -> int:
-        return int(_FFI.cast('uintptr_t', _C.mag_tensor_get_storage_base_ptr(self._ptr)))
+        return int(_FFI.cast('uintptr_t', _C.mag_tensor_data_storage_ptr(self._ptr)))
 
     def item(self) -> float | int | bool:
         if self.numel != 1:
             raise ValueError('Tensor must have exactly one element to retrieve an item')
         if self.dtype.is_floating_point:
-            return float(_C.mag_tensor_get_item_float(self._ptr))
+            return float(_C.mag_tensor_item_float(self._ptr))
         elif self.dtype.is_integer:
-            return int(_C.mag_tensor_get_item_int(self._ptr))
+            return int(_C.mag_tensor_item_int(self._ptr))
         elif self.dtype == boolean:
-            return bool(_C.mag_tensor_get_item_bool(self._ptr))
+            return bool(_C.mag_tensor_item_bool(self._ptr))
         else:
             raise TypeError(f'Unsupported tensor dtype for item retrieval: {self.dtype}')
 
@@ -209,8 +209,8 @@ class Tensor:
         if self.numel == 0:
             return []
         is_fp: bool = self.dtype.is_floating_point
-        unpack_fn = _C.mag_tensor_get_data_as_floats if is_fp else _C.mag_tensor_get_raw_data_as_bytes
-        free_fn = _C.mag_tensor_get_data_as_floats_free if is_fp else _C.mag_tensor_get_raw_data_as_bytes_free
+        unpack_fn = _C.mag_tensor_copy_float_data if is_fp else _C.mag_tensor_copy_data
+        free_fn = _C.mag_tensor_copy_float_data_free if is_fp else _C.mag_tensor_copy_data_free
         ptr = unpack_fn(self._ptr)
         if not is_fp:
             native: str | None = self.dtype.native_type
@@ -223,11 +223,11 @@ class Tensor:
 
     @property
     def data_size(self) -> int:
-        return _C.mag_tensor_get_data_size(self._ptr)
+        return _C.mag_tensor_numbytes(self._ptr)
 
     @property
     def numel(self) -> int:
-        return _C.mag_tensor_get_numel(self._ptr)
+        return _C.mag_tensor_numel(self._ptr)
 
     @property
     def is_transposed(self) -> bool:
@@ -282,7 +282,7 @@ class Tensor:
     def grad(self) -> Tensor | None:
         if not self.requires_grad:
             return None
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_tensor_get_grad(self._ptr, out)))
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_tensor_grad(self._ptr, out)))
 
     def backward(self) -> None:
         _handle_errc(_C.mag_tensor_backward(self._ptr))

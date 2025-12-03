@@ -63,12 +63,12 @@ mag_status_t mag_load_image(mag_tensor_t **out, mag_context_t *ctx, const char *
         stbi_image_free(pixels);
         return stat;
     }
-    uint8_t *restrict dst = mag_tensor_get_data_ptr(tensor);
+    uint8_t *restrict dst = mag_tensor_data_ptr(tensor);
     for (int64_t k=0; k < c; ++k) /* (W,H,C) -> (C,H,W) interleaved to planar */
     for (int64_t j=0; j < h; ++j)
     for (int64_t i=0; i < w; ++i)
         dst[i + w*j + w*h*k] = pixels[k + c*i + c*w*j];
-    mag_contract(ctx, ERR_IMAGE_ERROR, { stbi_image_free(pixels); }, w*h*c == mag_tensor_get_numel(tensor), "Buffer size mismatch: %d != %zu", w*h*c, (size_t)mag_tensor_get_numel(tensor));
+    mag_contract(ctx, ERR_IMAGE_ERROR, { stbi_image_free(pixels); }, w*h*c == mag_tensor_numel(tensor), "Buffer size mismatch: %d != %zu", w*h*c, (size_t)mag_tensor_numel(tensor));
     stbi_image_free(pixels);
     *out = tensor;
     return MAG_STATUS_OK;

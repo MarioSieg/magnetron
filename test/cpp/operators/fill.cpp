@@ -23,7 +23,7 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] auto compute_mean(const mag_tensor_t* tensor) -> float {
-    return compute_mean(std::vector<T>{reinterpret_cast<const T*>(mag_tensor_get_data_ptr(tensor)), static_cast<size_t>(tensor->numel)});
+    return compute_mean(std::vector<T>{reinterpret_cast<const T*>(mag_tensor_data_ptr(tensor)), static_cast<size_t>(tensor->numel)});
 }
 
 template <typename T>
@@ -38,7 +38,7 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] auto compute_std(const mag_tensor_t* tensor) -> double {
-    return compute_std(std::vector<T>{reinterpret_cast<const T*>(mag_tensor_get_data_ptr(tensor)), static_cast<size_t>(tensor->numel)});
+    return compute_std(std::vector<T>{reinterpret_cast<const T*>(mag_tensor_data_ptr(tensor)), static_cast<size_t>(tensor->numel)});
 }
 
 TEST(cpu_tensor_init_ops, copy_float32) {

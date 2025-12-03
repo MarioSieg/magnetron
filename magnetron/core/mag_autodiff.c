@@ -41,7 +41,7 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t
     return *au_state;
 }
 
-mag_status_t mag_tensor_get_grad(const mag_tensor_t *t, mag_tensor_t **out_grad) {
+mag_status_t mag_tensor_grad(const mag_tensor_t *t, mag_tensor_t **out_grad) {
     mag_contract(t->ctx, ERR_INVALID_PARAM, {}, t->flags & MAG_TFLAG_REQUIRES_GRAD, "Tensor does not require gradient");
     mag_contract(t->ctx, ERR_INVALID_STATE, {}, t->au_state, "Autodiff state missing for tensor");
     if (t->au_state->grad) mag_rc_incref(t->au_state->grad);
@@ -55,7 +55,7 @@ bool mag_tensor_requires_grad(const mag_tensor_t *t) {
 
 mag_status_t mag_tensor_set_requires_grad(mag_tensor_t *t, bool requires_grad) {
     if (requires_grad) {
-        mag_contract(t->ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(t), "Gradient tracking tensors must be floating-point typed, but tensor has dtype: %s", mag_dtype_meta_of(t->dtype)->name);
+        mag_contract(t->ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(t), "Gradient tracking tensors must be floating-point typed, but tensor has dtype: %s", mag_type_trait(t->dtype)->name);
         t->flags |= MAG_TFLAG_REQUIRES_GRAD;
         mag_au_state_lazy_alloc(&t->au_state, t->ctx);
         return MAG_STATUS_OK;
@@ -86,7 +86,7 @@ mag_status_t mag_tensor_backward(mag_tensor_t *root) {
     for (size_t id=0; id < post_order.size; ++id) {
         mag_tensor_t *child = post_order.data[id];
         mag_contract(ctx, ERR_INVALID_STATE, { mag_topo_set_free(&post_order); }, child && child->au_state, "Autodiff state missing for tensor");
-        const mag_opmeta_t *meta = mag_op_meta_of(child->au_state->op);
+        const mag_op_traits_t *meta = mag_op_traits(child->au_state->op);
         if (!child->au_state->grad) {
             mag_tensor_t *grad;
             if (mag_iserr(mag_full_like(&grad, child, mag_scalar_float(1.0))))

@@ -163,15 +163,15 @@ namespace mag {
         const mag_tensor_t *x,
         const mag_tensor_t *y
     ) {
-        int64_t n = mag_tensor_get_numel(r);
+        int64_t n = mag_tensor_numel(r);
         int64_t blocks = (n+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE;
         mag_coords_iter_t rc, xc, yc;
         mag_coords_iter_init(&rc, &r->coords);
         mag_coords_iter_init(&xc, &x->coords);
         mag_coords_iter_init(&yc, &y->coords);
-        auto *pr = static_cast<typename op_t::out_t *>(mag_tensor_get_data_ptr(r));
-        auto *px = static_cast<const typename op_t::in_t *>(mag_tensor_get_data_ptr(x));
-        auto *py = static_cast<const typename op_t::in_t *>(mag_tensor_get_data_ptr(y));
+        auto *pr = static_cast<typename op_t::out_t *>(mag_tensor_data_ptr(r));
+        auto *px = static_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
+        auto *py = static_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(y));
         if (mag_full_cont3(r, x, y)) binary_op_kernel<op_t, true><<<blocks, BINARY_BLOCK_SIZE>>>(op_t {}, n, pr, px, py, rc, xc, yc);
         else binary_op_kernel<op_t, false><<<blocks, BINARY_BLOCK_SIZE>>>(op_t {}, n, pr, px, py, rc, xc, yc);
     }
@@ -193,7 +193,7 @@ namespace mag {
             case MAG_DTYPE_INT32: launch_binary_op<op_t<int32_t, int32_t>>(r, x, y); break;
             case MAG_DTYPE_UINT64: launch_binary_op<op_t<uint64_t, uint64_t>>(r, x, y); break;
             case MAG_DTYPE_INT64: launch_binary_op<op_t<int64_t, int64_t>>(r, x, y); break;
-            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
+            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_type_trait(r->dtype));
         }
     }
 
@@ -213,7 +213,7 @@ namespace mag {
             case MAG_DTYPE_INT32: launch_binary_op<op_t<int32_t, int32_t>>(r, x, y); break;
             case MAG_DTYPE_UINT64: launch_binary_op<op_t<uint64_t, uint64_t>>(r, x, y); break;
             case MAG_DTYPE_INT64: launch_binary_op<op_t<int64_t, int64_t>>(r, x, y); break;
-            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
+            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_type_trait(r->dtype));
         }
     }
 
@@ -235,7 +235,7 @@ namespace mag {
             case MAG_DTYPE_INT32: launch_binary_op<op_t<int32_t, int32_t>>(r, x, y); break;
             case MAG_DTYPE_UINT64: launch_binary_op<op_t<uint64_t, uint64_t>>(r, x, y); break;
             case MAG_DTYPE_INT64: launch_binary_op<op_t<int64_t, int64_t>>(r, x, y); break;
-            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_dtype_meta_of(r->dtype));
+            default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_type_trait(r->dtype));
         }
     }
 

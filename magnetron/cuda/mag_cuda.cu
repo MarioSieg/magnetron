@@ -207,7 +207,7 @@ namespace mag {
         };
         static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
         kernel_fn *kern = dispatch_table[cmd->op];
-        mag_assert(kern != nullptr, "Operator %s not implemented in CUDA backend", mag_op_meta_of(cmd->op)->mnemonic);
+        mag_assert(kern != nullptr, "Operator %s not implemented in CUDA backend", mag_op_traits(cmd->op)->mnemonic);
         (*kern)(cmd);
     }
 
@@ -235,8 +235,8 @@ namespace mag {
             return;
         }
         uintptr_t base = sto->base;
-        size_t hsz = mag_dtype_meta_of(hdt)->size;
-        size_t dsz = mag_dtype_meta_of(ddt)->size;
+        size_t hsz = mag_type_trait(hdt)->size;
+        size_t dsz = mag_type_trait(ddt)->size;
         mag_assert2(!(hsz & (hsz-1)));              /* pow2 */
         mag_assert2(!(size & (hsz-1)));             /* multiple of dtype size */
         mag_assert2(!((uintptr_t)host & (hsz-1)));  /* aligned */
@@ -289,7 +289,7 @@ namespace mag {
             .base = base,
             .size = size,
             .alignment = 256, // cudaMalloc guarantees this
-            .granularity = mag_dtype_meta_of(dtype)->size,
+            .granularity = mag_type_trait(dtype)->size,
             .dtype = dtype,
             .device = device,
             .transfer = &transfer,

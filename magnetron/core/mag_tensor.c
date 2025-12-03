@@ -75,7 +75,7 @@ mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type,
     *out = NULL;
     mag_contract(ctx, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", (uint64_t)mag_thread_id(), (uint64_t)ctx->tr_id);
     mag_contract(ctx, ERR_INVALID_RANK, {}, rank > 0 && rank <= MAG_MAX_DIMS, "Rank must be within (0, %d]", MAG_MAX_DIMS);
-    int64_t dts = (int64_t)mag_dtype_meta_of(type)->size;
+    int64_t dts = (int64_t)mag_type_trait(type)->size;
     int64_t numel = 1;
     for (int64_t i=0; i < rank; ++i) {
         mag_contract(ctx, ERR_INVALID_DIM, {}, shape[i] > 0, "All shape dimensions must be > 0, but shape[% " PRIi64 "] = %" PRIi64, i, shape[i]);
@@ -155,10 +155,10 @@ static void mag_tensor_dtor(void *self) {
     mag_tensor_free_header(t);
 }
 
-int64_t mag_tensor_get_data_size(const mag_tensor_t *t) {
+int64_t mag_tensor_numbytes(const mag_tensor_t *t) {
     return t->storage->size;
 }
-int64_t mag_tensor_get_numel(const mag_tensor_t *t) {
+int64_t mag_tensor_numel(const mag_tensor_t *t) {
     return t->numel;
 }
 
@@ -175,88 +175,88 @@ mag_tensor_t *mag_tensor_detach(mag_tensor_t *t) {
     return t;
 }
 
-int64_t mag_tensor_get_rank(const mag_tensor_t *t) {
+int64_t mag_tensor_rank(const mag_tensor_t *t) {
     return t->coords.rank;
 }
 
-const int64_t *mag_tensor_get_shape(const mag_tensor_t *t) {
+const int64_t *mag_tensor_shape_ptr(const mag_tensor_t *t) {
     return t->coords.shape;
 }
 
-const int64_t *mag_tensor_get_strides(const mag_tensor_t *t) {
+const int64_t *mag_tensor_strides_ptr(const mag_tensor_t *t) {
     return t->coords.strides;
 }
 
-mag_dtype_t mag_tensor_get_dtype(const mag_tensor_t *t) {
+mag_dtype_t mag_tensor_type(const mag_tensor_t *t) {
     return t->dtype;
 }
 
-size_t mag_tensor_get_data_offset(const mag_tensor_t *t) {
+size_t mag_tensor_data_offset(const mag_tensor_t *t) {
     return (size_t)t->storage_offset*t->storage->granularity; /* Return offset in bytes */
 }
 
-void *mag_tensor_get_data_ptr(const mag_tensor_t *t) {
-    return (void *)(t->storage->base + mag_tensor_get_data_offset(t));
+void *mag_tensor_data_ptr(const mag_tensor_t *t) {
+    return (void *)(t->storage->base + mag_tensor_data_offset(t));
 }
 
-void *mag_tensor_get_storage_base_ptr(const mag_tensor_t *t) {
+void *mag_tensor_data_storage_ptr(const mag_tensor_t *t) {
     return (void *)t->storage->base;
 }
 
-void *mag_tensor_get_raw_data_as_bytes(mag_tensor_t *t) {
+void *mag_tensor_copy_data(mag_tensor_t *t) {
     mag_tensor_t *cont;
     mag_status_t stat = mag_contiguous(&cont, t);
     if (mag_iserr(stat)) return NULL;
-    size_t size = mag_tensor_get_data_size(cont);
+    size_t size = mag_tensor_numbytes(cont);
     mag_assert2(size);
     void *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_storage_buffer_t *sto = cont->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
+    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(cont), dst, size);
     mag_rc_decref(cont);
     return dst;
 }
 
-void mag_tensor_get_raw_data_as_bytes_free(void *ret_val) {
+void mag_tensor_copy_data_free(void *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
-float *mag_tensor_get_data_as_floats(mag_tensor_t *t) {
+float *mag_tensor_copy_float_data(mag_tensor_t *t) {
     mag_tensor_t *cont;
     mag_status_t stat = mag_contiguous(&cont, t);
     if (mag_iserr(stat)) return NULL;
-    mag_assert(mag_tensor_is_floating_point_typed(cont), "Tensor must be a floating point tensor, but has dtype: %s", mag_dtype_meta_of(t->dtype)->name);
+    mag_assert(mag_tensor_is_floating_point_typed(cont), "Tensor must be a floating point tensor, but has dtype: %s", mag_type_trait(t->dtype)->name);
     size_t size = cont->numel*sizeof(float);
     mag_assert2(size);
     float *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_storage_buffer_t *sto = cont->storage;
-    if (cont->dtype == MAG_DTYPE_FLOAT32) (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
-    else (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size, MAG_DTYPE_FLOAT32);
+    if (cont->dtype == MAG_DTYPE_FLOAT32) (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(cont), dst, size);
+    else (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(cont), dst, size, MAG_DTYPE_FLOAT32);
     mag_rc_decref(cont);
     return dst;
 }
 
-void mag_tensor_get_data_as_floats_free(float *ret_val) {
+void mag_tensor_copy_float_data_free(float *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
-float mag_tensor_get_item_float(const mag_tensor_t *t) {
+float mag_tensor_item_float(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
     float val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_FLOAT32);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(t), &val, sizeof(val), MAG_DTYPE_FLOAT32);
     return val;
 }
 
-int64_t mag_tensor_get_item_int(const mag_tensor_t *t) {
+int64_t mag_tensor_item_int(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
     int64_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_INT64);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(t), &val, sizeof(val), MAG_DTYPE_INT64);
     return val;
 }
 
-bool mag_tensor_get_item_bool(const mag_tensor_t *t) {
+bool mag_tensor_item_bool(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
     uint8_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_BOOLEAN);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(t), &val, sizeof(val), MAG_DTYPE_BOOLEAN);
     return !!val;
 }
 
@@ -320,9 +320,9 @@ char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_
     if (!from_end_count) from_end_count = UINT64_MAX;
     void *buf = NULL;
     if (mag_tensor_is_floating_point_typed(t)) /* For all float types we want a (maybe converted) fp32 buffer for easy formatting. */
-        buf = mag_tensor_get_data_as_floats(t);
+        buf = mag_tensor_copy_float_data(t);
     else /* Integral types can be formated easily */
-        buf = mag_tensor_get_raw_data_as_bytes(t);
+        buf = mag_tensor_copy_data(t);
     mag_sstream_t ss;
     mag_sstream_init(&ss);
     const char *prefix = "Tensor(";
@@ -331,8 +331,8 @@ char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_
     mag_tensor_fmt_recursive(&ss, buf, t->dtype, t->coords.shape, t->coords.strides, t->coords.rank, 0, 0, pad); /* Recursive format */
     mag_sstream_putc(&ss, ')');
     /* Free allocated buffer */
-    if (mag_tensor_is_floating_point_typed(t)) mag_tensor_get_data_as_floats_free(buf);
-    else mag_tensor_get_raw_data_as_bytes_free(buf);
+    if (mag_tensor_is_floating_point_typed(t)) mag_tensor_copy_float_data_free(buf);
+    else mag_tensor_copy_data_free(buf);
     return ss.buf; /* Return the string, must be freed with mag_tensor_to_string_free_data. */
 }
 
@@ -340,7 +340,7 @@ void mag_tensor_to_string_free_data(char *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
-mag_context_t *mag_tensor_get_ctx(const mag_tensor_t *t) {
+mag_context_t *mag_tensor_context(const mag_tensor_t *t) {
     return t->ctx;
 }
 

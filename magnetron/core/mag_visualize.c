@@ -29,7 +29,7 @@ MAG_COLDPROC void mag_tensor_visualize_backprop_graph(mag_tensor_t *t, const cha
     for (size_t i=0; i < post_order.size; ++i) {
         mag_tensor_t *node = post_order.data[i];
         if (!node->au_state) continue;
-        const mag_opmeta_t *meta = mag_op_meta_of(node->au_state->op);
+        const mag_op_traits_t *meta = mag_op_traits(node->au_state->op);
         mag_sstream_append(&out, "    \"%p\" [label=\"%s\\nShape: (", node, meta->mnemonic);
         for (int64_t r=0; r < node->coords.rank; ++r) {
             mag_sstream_append(&out, "%zu", (size_t)node->coords.shape[r]);
@@ -40,7 +40,7 @@ MAG_COLDPROC void mag_tensor_visualize_backprop_graph(mag_tensor_t *t, const cha
     }
     for (size_t i=0; i < post_order.size; ++i) {
         mag_tensor_t *node = post_order.data[i];
-        const mag_opmeta_t *meta = mag_op_meta_of(node->au_state->op);
+        const mag_op_traits_t *meta = mag_op_traits(node->au_state->op);
         for (uint32_t j = 0; j < meta->in; ++j) {
             mag_tensor_t *input = node->au_state->op_inputs[j];
             if (input) {

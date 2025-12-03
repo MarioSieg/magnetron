@@ -25,8 +25,8 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
         mag_assert2(r->dtype == MAG_DTYPE_INT64); \
-        int64_t *br = mag_tensor_get_data_ptr(r); \
-        const T *bx = mag_tensor_get_data_ptr(x); \
+        int64_t *br = mag_tensor_data_ptr(r); \
+        const T *bx = mag_tensor_data_ptr(x); \
         int64_t num_samples = mag_op_attr_unwrap_int64(mag_cmd_attr(0)); \
         mag_philox4x32_stream_t *rng = payload->prng; \
         int64_t K = x->coords.shape[x->coords.rank-1]; \

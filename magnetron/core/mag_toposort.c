@@ -86,7 +86,7 @@ void mag_topo_sort(mag_tensor_t *root, mag_topo_set_t *out_sorted) {
         mag_topo_stack_record_t *top = mag_topo_stack_peek(&stack);
         mag_tensor_t *top_t = top->tensor;
         mag_assert(top_t->au_state, "Autodiff state not allocated for tensor that requires gradient");
-        uint32_t num_children = mag_op_meta_of(top_t->au_state->op)->in;
+        uint32_t num_children = mag_op_traits(top_t->au_state->op)->in;
         if (top->next_child_idx >= num_children) { /* All children processed */
             mag_topo_stack_pop(&stack);
             mag_topo_set_push(out_sorted, top_t);

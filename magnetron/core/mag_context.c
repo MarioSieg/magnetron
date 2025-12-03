@@ -284,8 +284,8 @@ mag_scalar_t mag_scalar_uint(uint64_t value) {
     return (mag_scalar_t){.type = MAG_SCALAR_TYPE_U64, .value.u64 = value};
 }
 
-const mag_dtype_meta_t *mag_dtype_meta_of(mag_dtype_t type) {
-    static const mag_dtype_meta_t infos[MAG_DTYPE__NUM] = {
+const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
+    static const mag_type_traits_t infos[MAG_DTYPE__NUM] = {
         [MAG_DTYPE_FLOAT32] = {
             .name="float32",
             .size=sizeof(float),

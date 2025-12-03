@@ -14,9 +14,9 @@
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
         const mag_tensor_t *y = mag_cmd_in(1); \
-        T *br = mag_tensor_get_data_ptr(r); \
-        const T *bx = mag_tensor_get_data_ptr(x); \
-        const T *by = mag_tensor_get_data_ptr(y); \
+        T *br = mag_tensor_data_ptr(r); \
+        const T *bx = mag_tensor_data_ptr(x); \
+        const T *by = mag_tensor_data_ptr(y); \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
         int64_t total = r->numel; \
@@ -34,9 +34,9 @@
         for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri, xi, yi; \
             mag_coords_iter_offset3(&cr, &cx, &cy, i, &ri, &xi, &yi); \
-            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
-            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y)); \
-            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_numbytes(x)); \
+            mag_bnd_chk(by+yi, by, mag_tensor_numbytes(y)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
             br[ri] = RCVT(OPF(T, CVT(bx[xi]), CVT(by[yi]))); \
         } \
     }
@@ -174,9 +174,9 @@ mag_gen_stub_binop(int64_t, int64, shr, mag_opf_shr, mag_cvt_nop, mag_cvt_nop)
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
         const mag_tensor_t *y = mag_cmd_in(1); \
-        uint8_t *br = mag_tensor_get_data_ptr(r); \
-        const T *bx = mag_tensor_get_data_ptr(x); \
-        const T *by = mag_tensor_get_data_ptr(y); \
+        uint8_t *br = mag_tensor_data_ptr(r); \
+        const T *bx = mag_tensor_data_ptr(x); \
+        const T *by = mag_tensor_data_ptr(y); \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
         int64_t total = r->numel; \
@@ -194,9 +194,9 @@ mag_gen_stub_binop(int64_t, int64, shr, mag_opf_shr, mag_cvt_nop, mag_cvt_nop)
         for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri, xi, yi; \
             mag_coords_iter_offset3(&cr, &cx, &cy, i, &ri, &xi, &yi); \
-            mag_bnd_chk(bx+xi, bx, mag_tensor_get_data_size(x)); \
-            mag_bnd_chk(by+yi, by, mag_tensor_get_data_size(y)); \
-            mag_bnd_chk(br+ri, br, mag_tensor_get_data_size(r)); \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_numbytes(x)); \
+            mag_bnd_chk(by+yi, by, mag_tensor_numbytes(y)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
             br[ri] = CVT(bx[xi]) OP CVT(by[yi]); \
         } \
     }

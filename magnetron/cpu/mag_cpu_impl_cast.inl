@@ -423,13 +423,13 @@ static MAG_HOTPROC void mag_cast_generic(const mag_kernel_payload_t *payload) {
     const mag_tensor_t *x = mag_cmd_in(0);
     mag_dtype_t src = x->dtype;
     mag_dtype_t dst = r->dtype;
-    const mag_dtype_meta_t *msrc = mag_dtype_meta_of(src);
-    const mag_dtype_meta_t *mdst = mag_dtype_meta_of(dst);
+    const mag_type_traits_t *msrc = mag_type_trait(src);
+    const mag_type_traits_t *mdst = mag_type_trait(dst);
     mag_vcast_fn_t *kernel = mag_cast_table_2D[src][dst];
     mag_assert(kernel, "No kernel found for type cast: %s -> %s", msrc->name, mdst->name);
     int64_t numel = r->numel;
-    uint8_t *br = mag_tensor_get_data_ptr(r);
-    const uint8_t *bx = mag_tensor_get_data_ptr(x);
+    uint8_t *br = mag_tensor_data_ptr(r);
+    const uint8_t *bx = mag_tensor_data_ptr(x);
     if (mag_full_cont2(r, x)) {
         (*kernel)(r->numel, br, bx);
         return;
@@ -445,8 +445,8 @@ static MAG_HOTPROC void mag_cast_generic(const mag_kernel_payload_t *payload) {
         mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi);
         void *pr = br + ri*sdst;
         const void *px = bx + xi*ssrc;
-        mag_bnd_chk(px, bx, mag_tensor_get_data_size(x));
-        mag_bnd_chk(pr, br, mag_tensor_get_data_size(r));
+        mag_bnd_chk(px, bx, mag_tensor_numbytes(x));
+        mag_bnd_chk(pr, br, mag_tensor_numbytes(r));
         (*kernel)(1, pr, px);
     }
 }
