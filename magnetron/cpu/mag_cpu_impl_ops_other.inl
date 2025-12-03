@@ -18,7 +18,7 @@
         mag_assert2(dim >= 0 && dim < r->coords.rank); \
         \
         int64_t R = r->coords.rank; \
-        T *br =  mag_tensor_data_ptr(r); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
         mag_assert2(mag_tensor_is_contiguous(r)); \
         \
         int64_t inner_block = 1; \
@@ -61,9 +61,9 @@
                 int64_t numel = cl*inner_block; \
                 int64_t oel = moff + cur*r->coords.strides[dim]; \
                 int64_t sel = smoff; \
-                const T *restrict bx = mag_tensor_data_ptr(x); \
-                const uint8_t *restrict src_ptr = (const uint8_t*)(bx+sel); \
-                uint8_t *restrict dst_ptr = (uint8_t*)(br+oel); \
+                const T *restrict bx = (const T *)mag_tensor_data_ptr(x); \
+                const uint8_t *restrict src_ptr = (const uint8_t *)(bx+sel); \
+                uint8_t *restrict dst_ptr = (uint8_t *)(br+oel); \
                 mag_bnd_chk(bx + sel, bx, mag_tensor_numbytes(x)); \
                 mag_bnd_chk(br + oel, br, mag_tensor_numbytes(r)); \
                 memcpy(dst_ptr, src_ptr, (size_t)numel*sizeof(T)); \
@@ -90,8 +90,8 @@ mag_gen_stub_cat(int64_t, int64)
         if (payload->thread_idx != 0) return; \
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
-        T *br =  mag_tensor_data_ptr(r); \
-        const T *bx = mag_tensor_data_ptr(x); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
         mag_coords_iter_t cr, cx; \
         mag_coords_iter_init(&cr, &r->coords); \
         mag_coords_iter_init(&cx, &x->coords); \
@@ -120,9 +120,9 @@ mag_gen_stub_repeat_back(mag_float16_t, float16, MAG_FLOAT16_ZERO, mag_float16_t
         const mag_tensor_t *src = mag_cmd_in(0); \
         const mag_tensor_t *index = mag_cmd_in(1); \
         mag_assert2(index->dtype == MAG_DTYPE_INT64); \
-        T *br = mag_tensor_data_ptr(r); \
-        const T *bx = mag_tensor_data_ptr(src); \
-        const int64_t *bi = mag_tensor_data_ptr(index); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
+        const T *bx = (const T *)mag_tensor_data_ptr(src); \
+        const int64_t *bi = (const int64_t *)mag_tensor_data_ptr(index); \
         int64_t axis = mag_op_attr_unwrap_int64(mag_cmd_attr(0)); \
         if (axis < 0) axis += src->coords.rank; \
         mag_assert2(axis >= 0 && axis < src->coords.rank); \
@@ -202,8 +202,8 @@ mag_gen_stub_gather(int64_t, int64)
     static void MAG_HOTPROC mag_tri##S##_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
-        T *br =  mag_tensor_data_ptr(r); \
-        const T *bx = mag_tensor_data_ptr(x); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
         mag_coords_iter_t cr, cx; \
         mag_coords_iter_init(&cr, &r->coords); \
         mag_coords_iter_init(&cx, &x->coords); \

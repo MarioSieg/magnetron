@@ -41,26 +41,26 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t
     return *au_state;
 }
 
-mag_status_t mag_tensor_grad(const mag_tensor_t *t, mag_tensor_t **out_grad) {
-    mag_contract(t->ctx, ERR_INVALID_PARAM, {}, t->flags & MAG_TFLAG_REQUIRES_GRAD, "Tensor does not require gradient");
-    mag_contract(t->ctx, ERR_INVALID_STATE, {}, t->au_state, "Autodiff state missing for tensor");
-    if (t->au_state->grad) mag_rc_incref(t->au_state->grad);
-    *out_grad = t->au_state->grad;
+mag_status_t mag_tensor_grad(const mag_tensor_t *tensor, mag_tensor_t **out_grad) {
+    mag_contract(tensor->ctx, ERR_INVALID_PARAM, {}, tensor->flags & MAG_TFLAG_REQUIRES_GRAD, "Tensor does not require gradient");
+    mag_contract(tensor->ctx, ERR_INVALID_STATE, {}, tensor->au_state, "Autodiff state missing for tensor");
+    if (tensor->au_state->grad) mag_rc_incref(tensor->au_state->grad);
+    *out_grad = tensor->au_state->grad;
     return MAG_STATUS_OK;
 }
 
-bool mag_tensor_requires_grad(const mag_tensor_t *t) {
-    return t->flags & MAG_TFLAG_REQUIRES_GRAD;
+bool mag_tensor_requires_grad(const mag_tensor_t *tensor) {
+    return tensor->flags & MAG_TFLAG_REQUIRES_GRAD;
 }
 
-mag_status_t mag_tensor_set_requires_grad(mag_tensor_t *t, bool requires_grad) {
+mag_status_t mag_tensor_set_requires_grad(mag_tensor_t *tensor, bool requires_grad) {
     if (requires_grad) {
-        mag_contract(t->ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(t), "Gradient tracking tensors must be floating-point typed, but tensor has dtype: %s", mag_type_trait(t->dtype)->name);
-        t->flags |= MAG_TFLAG_REQUIRES_GRAD;
-        mag_au_state_lazy_alloc(&t->au_state, t->ctx);
+        mag_contract(tensor->ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(tensor), "Gradient tracking tensors must be floating-point typed, but tensor has dtype: %s", mag_type_trait(tensor->dtype)->name);
+        tensor->flags |= MAG_TFLAG_REQUIRES_GRAD;
+        mag_au_state_lazy_alloc(&tensor->au_state, tensor->ctx);
         return MAG_STATUS_OK;
     }
-    t->flags &= ~MAG_TFLAG_REQUIRES_GRAD;
+    tensor->flags &= ~MAG_TFLAG_REQUIRES_GRAD;
     return MAG_STATUS_OK;
 }
 
@@ -129,7 +129,7 @@ end:
     return MAG_STATUS_OK;
 }
 
-void mag_tensor_zero_grad(mag_tensor_t *t) {
-    if (t->flags & MAG_TFLAG_REQUIRES_GRAD && t->au_state && t->au_state->grad)
-        mag_zero_(t->au_state->grad);
+void mag_tensor_zero_grad(mag_tensor_t *tensor) {
+    if (tensor->flags & MAG_TFLAG_REQUIRES_GRAD && tensor->au_state && tensor->au_state->grad)
+        mag_zero_(tensor->au_state->grad);
 }

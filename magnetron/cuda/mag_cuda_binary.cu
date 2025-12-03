@@ -169,9 +169,9 @@ namespace mag {
         mag_coords_iter_init(&rc, &r->coords);
         mag_coords_iter_init(&xc, &x->coords);
         mag_coords_iter_init(&yc, &y->coords);
-        auto *pr = static_cast<typename op_t::out_t *>(mag_tensor_data_ptr(r));
-        auto *px = static_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
-        auto *py = static_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(y));
+        auto *pr = reinterpret_cast<typename op_t::out_t *>(mag_tensor_data_ptr_mut(r));
+        const auto *px = reinterpret_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
+        const auto *py = reinterpret_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(y));
         if (mag_full_cont3(r, x, y)) binary_op_kernel<op_t, true><<<blocks, BINARY_BLOCK_SIZE>>>(op_t {}, n, pr, px, py, rc, xc, yc);
         else binary_op_kernel<op_t, false><<<blocks, BINARY_BLOCK_SIZE>>>(op_t {}, n, pr, px, py, rc, xc, yc);
     }

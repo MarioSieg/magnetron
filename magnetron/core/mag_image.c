@@ -63,7 +63,7 @@ mag_status_t mag_load_image(mag_tensor_t **out, mag_context_t *ctx, const char *
         stbi_image_free(pixels);
         return stat;
     }
-    uint8_t *restrict dst = mag_tensor_data_ptr(tensor);
+    uint8_t *restrict dst = (uint8_t *)mag_tensor_data_ptr_mut(tensor);
     for (int64_t k=0; k < c; ++k) /* (W,H,C) -> (C,H,W) interleaved to planar */
     for (int64_t j=0; j < h; ++j)
     for (int64_t i=0; i < w; ++i)

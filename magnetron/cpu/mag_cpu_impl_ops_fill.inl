@@ -16,7 +16,7 @@
     static MAG_HOTPROC void mag_fill_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         T val = (T)CVT(mag_op_attr_unwrap_##UT(mag_cmd_attr(0))); \
-        T *br =  mag_tensor_data_ptr(r); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
         int64_t numel = r->numel; \
         if (mag_tensor_is_contiguous(r)) { \
             for (int64_t ri=0; ri < numel; ++ri) { \
@@ -52,8 +52,8 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
         mag_tensor_t *r = mag_cmd_out(0); \
         T val = (T)CVT(mag_op_attr_unwrap_##UT(mag_cmd_attr(0))); \
         const mag_tensor_t *mask = mag_op_attr_unwrap_ptr(mag_cmd_attr(1)); \
-        T *br =  mag_tensor_data_ptr(r); \
-        const uint8_t *bm = mag_tensor_data_ptr(mask); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
+        const uint8_t *bm = (const uint8_t *)mag_tensor_data_ptr(mask); \
         mag_coords_iter_t cr, cm; \
         mag_coords_iter_init(&cr, &r->coords); \
         mag_coords_iter_init(&cm, &mask->coords); \
@@ -99,7 +99,7 @@ mag_gen_stub_masked_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
         mag_tensor_t *r = mag_cmd_out(0); \
         TS min = (TS)mag_op_attr_unwrap_##UT(mag_cmd_attr(0)); \
         TS max = (TS)mag_op_attr_unwrap_##UT(mag_cmd_attr(1)); \
-        T *br = mag_tensor_data_ptr(r); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
         mag_philox4x32_stream_t *prng = payload->prng; \
         mag_coords_iter_t cr; \
         mag_coords_iter_init(&cr, &r->coords); \
@@ -139,7 +139,7 @@ mag_gen_stub_fill_rand(normal, mag_float16_t, float, float64, float16)
 #define mag_gen_stub_arange(T, TF, CVT) \
     static MAG_HOTPROC void mag_arange_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
-        T *br =  mag_tensor_data_ptr(r); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
         double start = mag_op_attr_unwrap_float64(mag_cmd_attr(0));  /* TODO: this looses information for int64/uint64 ranges that exceed f64 precision */\
         double step = mag_op_attr_unwrap_float64(mag_cmd_attr(1)); \
         int64_t numel = r->numel; \
@@ -175,8 +175,8 @@ mag_gen_stub_arange(int64_t, int64, mag_cvt_nop)
 static MAG_HOTPROC void mag_one_hot_int64(const mag_kernel_payload_t *payload) {
     mag_tensor_t *r = mag_cmd_out(0);
     mag_tensor_t *idx = mag_cmd_in(0);
-    int64_t *restrict pr = mag_tensor_data_ptr(r);
-    const int64_t *restrict pidx = mag_tensor_data_ptr(idx);
+    int64_t *restrict pr = (int64_t *)mag_tensor_data_ptr_mut(r);
+    const int64_t *restrict pidx = (const int64_t *)mag_tensor_data_ptr(idx);
     int64_t nc = mag_op_attr_unwrap_int64(mag_cmd_attr(0)); /* number of classes */
     int64_t n = idx->numel;
     if (mag_full_cont2(r, idx)) {
@@ -210,7 +210,7 @@ static MAG_HOTPROC void mag_one_hot_int64(const mag_kernel_payload_t *payload) {
 static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t *payload) {
     mag_tensor_t *r = mag_cmd_out(0);
     float p = (float)mag_op_attr_unwrap_float64(mag_cmd_attr(0));
-    uint8_t *b_r = mag_tensor_data_ptr(r);
+    uint8_t *b_r = (uint8_t *)mag_tensor_data_ptr_mut(r);
     int64_t numel = r->numel;
     mag_vrand_bernoulli_bool(payload->prng, numel, b_r, p);
 }
@@ -218,7 +218,7 @@ static MAG_HOTPROC void mag_fill_rand_bernoulli_bool(const mag_kernel_payload_t 
 #define mag_gen_stub_rand_perm(T, TF, CVT) \
     static MAG_HOTPROC void mag_rand_perm_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
-        T *br =  mag_tensor_data_ptr(r); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
         int64_t numel = r->numel; \
         mag_philox4x32_stream_t *prng = payload->prng; \
         if (mag_tensor_is_contiguous(r)) { \

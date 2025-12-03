@@ -13,8 +13,8 @@
     static MAG_HOTPROC void mag_clone_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
-        T *br = mag_tensor_data_ptr(r); \
-        const T *bx = mag_tensor_data_ptr(x); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
         if (mag_full_cont2(r, x)) { \
             memcpy(br, bx, mag_tensor_numbytes(r)); \
             return; \
@@ -49,8 +49,8 @@ mag_gen_stub_clone(int64_t, int64)
     static void MAG_HOTPROC mag_##FUNC##_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
-        T *br = mag_tensor_data_ptr(r); \
-        const T *bx = mag_tensor_data_ptr(x); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
         int64_t total = r->numel; \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
@@ -225,8 +225,8 @@ mag_gen_stub_unary(int64_t, int64, not)
 static void MAG_HOTPROC mag_softmax_float32(const mag_kernel_payload_t *payload) {
     mag_tensor_t *r = mag_cmd_out(0);
     const mag_tensor_t *x = mag_cmd_in(0);
-    float *br = mag_tensor_data_ptr(r);
-    const float *bx = mag_tensor_data_ptr(x);
+    float *br = (float *)mag_tensor_data_ptr_mut(r);
+    const float *bx = (const float *)mag_tensor_data_ptr(x);
     int64_t last_dim = r->coords.shape[r->coords.rank-1];
     int64_t num_rows = r->numel / last_dim;
     int64_t tc = payload->thread_num;
@@ -261,8 +261,8 @@ static void MAG_HOTPROC mag_softmax_float32(const mag_kernel_payload_t *payload)
 static void MAG_HOTPROC mag_softmax_float16(const mag_kernel_payload_t *payload) {
     mag_tensor_t *r = mag_cmd_out(0);
     const mag_tensor_t *x = mag_cmd_in(0);
-    mag_float16_t *br = mag_tensor_data_ptr(r);
-    const mag_float16_t *bx = mag_tensor_data_ptr(x);
+    mag_float16_t *br = (mag_float16_t *)mag_tensor_data_ptr_mut(r);
+    const mag_float16_t *bx = (const mag_float16_t *)mag_tensor_data_ptr(x);
     int64_t last_dim = r->coords.shape[r->coords.rank-1];
     int64_t num_rows = r->numel / last_dim;
     int64_t tc = payload->thread_num;

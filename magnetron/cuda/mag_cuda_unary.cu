@@ -40,8 +40,8 @@ namespace mag {
         const mag_tensor_t *x
     ) {
         int64_t n = mag_tensor_numel(r);
-        auto *pr = static_cast<dst_t *>(mag_tensor_data_ptr(r));
-        auto *px = static_cast<const src_t *>(mag_tensor_data_ptr(x));
+        auto *pr = reinterpret_cast<dst_t *>(mag_tensor_data_ptr_mut(r));
+        const auto *px = reinterpret_cast<const src_t *>(mag_tensor_data_ptr(x));
         int64_t blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
         mag_coords_iter_t xc;
         mag_coords_iter_init(&xc, &x->coords);
@@ -229,8 +229,8 @@ namespace mag {
         const mag_tensor_t *x
     ) {
         int64_t n = mag_tensor_numel(r);
-        auto *pr = static_cast<scalar_t *>(mag_tensor_data_ptr(r));
-        auto *px = static_cast<const scalar_t *>(mag_tensor_data_ptr(x));
+        auto *pr = reinterpret_cast<scalar_t *>(mag_tensor_data_ptr_mut(r));
+        const auto *px = reinterpret_cast<const scalar_t *>(mag_tensor_data_ptr(x));
         if (mag_full_cont2(r, x)) {
             cudaMemcpy(pr, px, n*sizeof(scalar_t), cudaMemcpyDeviceToDevice);
             return;
@@ -612,8 +612,8 @@ namespace mag {
         mag_coords_iter_t rc, xc;
         mag_coords_iter_init(&rc, &r->coords);
         mag_coords_iter_init(&xc, &x->coords);
-        auto *pr = static_cast<typename op_t::out_t *>(mag_tensor_data_ptr(r));
-        auto *px = static_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
+        auto *pr = reinterpret_cast<typename op_t::out_t *>(mag_tensor_data_ptr_mut(r));
+        const auto *px = reinterpret_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
         if (mag_full_cont2(r, x)) unary_op_kernel<op_t, true><<<blocks, UNARY_BLOCK_SIZE>>>(op_t{}, n, pr, px, rc, xc);
         else unary_op_kernel<op_t, false><<<blocks, UNARY_BLOCK_SIZE>>>(op_t{}, n, pr, px, rc, xc);
     }

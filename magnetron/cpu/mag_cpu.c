@@ -105,6 +105,7 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
     *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
         .ctx = ctx,
         .aux = {},
+        .flags = MAG_STORAGE_FLAG_ACCESS_W,
         .base = 0,
         .size = size,
         .alignment = size <= sizeof(void *) ? MAG_CPU_BUF_ALIGN : 1,

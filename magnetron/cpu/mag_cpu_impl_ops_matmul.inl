@@ -1303,9 +1303,9 @@ MAG_HOTPROC static void mag_matmul_float32(const mag_kernel_payload_t *payload) 
     mag_tensor_t *r = mag_cmd_out(0);
     const mag_tensor_t *x = mag_cmd_in(0);
     const mag_tensor_t *y = mag_cmd_in(1);
-    const float *bx = mag_tensor_data_ptr(x);
-    const float *by = mag_tensor_data_ptr(y);
-    float *br = mag_tensor_data_ptr(r);
+    const float *bx = (const float *)mag_tensor_data_ptr(x);
+    const float *by = (const float *)mag_tensor_data_ptr(y);
+    float *br = (float *)mag_tensor_data_ptr_mut(r);
     int64_t MR = payload->mm_params.MR;
     int64_t MC = payload->mm_params.MC;
     int64_t KC = payload->mm_params.KC;
@@ -1402,9 +1402,9 @@ static MAG_HOTPROC void mag_matmul_float16(const mag_kernel_payload_t *payload) 
     mag_tensor_t *r  = mag_cmd_out(0);
     const mag_tensor_t *x  = mag_cmd_in(0);
     const mag_tensor_t *y  = mag_cmd_in(1);
-    mag_float16_t *br = mag_tensor_data_ptr(r);
-    const mag_float16_t *bx = mag_tensor_data_ptr(x);
-    const mag_float16_t *by = mag_tensor_data_ptr(y);
+    mag_float16_t *br = (mag_float16_t *)mag_tensor_data_ptr_mut(r);
+    const mag_float16_t *bx = (const mag_float16_t *)mag_tensor_data_ptr(x);
+    const mag_float16_t *by = (const mag_float16_t *)mag_tensor_data_ptr(y);
     int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank - 2];
     int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank - 1];
     int64_t K = x->coords.shape[x->coords.rank - 1];

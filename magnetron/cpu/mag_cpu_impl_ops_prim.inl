@@ -14,9 +14,9 @@
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
         const mag_tensor_t *y = mag_cmd_in(1); \
-        T *br = mag_tensor_data_ptr(r); \
-        const T *bx = mag_tensor_data_ptr(x); \
-        const T *by = mag_tensor_data_ptr(y); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
+        const T *by = (const T *)mag_tensor_data_ptr(y); \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
         int64_t total = r->numel; \
@@ -174,9 +174,9 @@ mag_gen_stub_binop(int64_t, int64, shr, mag_opf_shr, mag_cvt_nop, mag_cvt_nop)
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
         const mag_tensor_t *y = mag_cmd_in(1); \
-        uint8_t *br = mag_tensor_data_ptr(r); \
-        const T *bx = mag_tensor_data_ptr(x); \
-        const T *by = mag_tensor_data_ptr(y); \
+        uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r); \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
+        const T *by = (const T *)mag_tensor_data_ptr(y); \
         int64_t tc = payload->thread_num; \
         int64_t ti = payload->thread_idx; \
         int64_t total = r->numel; \

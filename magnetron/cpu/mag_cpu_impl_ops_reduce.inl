@@ -21,8 +21,8 @@ typedef struct mag_var_acc_t { /* Variance accumulation state */
     static void MAG_HOTPROC mag_##FUNC##_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
-        const T *bx = mag_tensor_data_ptr(x); \
-        OT *br = mag_tensor_data_ptr(r); \
+        OT *br = (OT *)mag_tensor_data_ptr_mut(r); \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
         mag_reduce_plan_t *plan = mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
         int64_t numel = r->numel; \
         int64_t red_prod = plan->red_prod; \
@@ -230,8 +230,8 @@ mag_cpu_impl_argminmax_int(int64_t,  int64);
     static void MAG_HOTPROC mag_##FUNC##_##TF(const mag_kernel_payload_t *payload) { \
         mag_tensor_t *r = mag_cmd_out(0); \
         const mag_tensor_t *x = mag_cmd_in(0); \
-        const T *bx = mag_tensor_data_ptr(x); \
-        uint8_t *br = mag_tensor_data_ptr(r); \
+        uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r); \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
         mag_reduce_plan_t *plan = mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
         int64_t numel = r->numel; \
         int64_t red_prod = plan->red_prod; \

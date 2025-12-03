@@ -428,8 +428,8 @@ static MAG_HOTPROC void mag_cast_generic(const mag_kernel_payload_t *payload) {
     mag_vcast_fn_t *kernel = mag_cast_table_2D[src][dst];
     mag_assert(kernel, "No kernel found for type cast: %s -> %s", msrc->name, mdst->name);
     int64_t numel = r->numel;
-    uint8_t *br = mag_tensor_data_ptr(r);
-    const uint8_t *bx = mag_tensor_data_ptr(x);
+    uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r);
+    const uint8_t *bx = (const uint8_t *)mag_tensor_data_ptr(x);
     if (mag_full_cont2(r, x)) {
         (*kernel)(r->numel, br, bx);
         return;

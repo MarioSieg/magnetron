@@ -211,13 +211,6 @@ namespace mag {
         (*kern)(cmd);
     }
 
-    static void dealloc_storage_buffer(void *self) {
-        auto *buffer = static_cast<mag_storage_buffer_t *>(self);
-        mag_context_t *ctx = buffer->ctx;
-        mag_cuda_check(cudaFree(reinterpret_cast<void *>(buffer->base)));
-        mag_fixed_pool_free_block(&ctx->storage_pool, buffer);
-    }
-
     static void transfer(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size) {
         mag_assert(offs + size <= sto->size, "Transfer out of bounds");
         if (dir == MAG_TRANSFER_DIR_H2D) {
@@ -285,7 +278,7 @@ namespace mag {
             .__rcb = {},
             .ctx = ctx,
             .aux = {},
-            .flags = MAG_STORAGE_FLAG_NONE,
+            .flags = MAG_STORAGE_FLAG_ACCESS_W,
             .base = base,
             .size = size,
             .alignment = 256, // cudaMalloc guarantees this
@@ -295,7 +288,13 @@ namespace mag {
             .transfer = &transfer,
             .convert = &convert
         };
-        mag_rc_init_object(*out, &dealloc_storage_buffer);
+        static constexpr auto *dealloc_callback = +[](void *self) {
+            auto *buffer = static_cast<mag_storage_buffer_t *>(self);
+            mag_context_t *ctx = buffer->ctx;
+            mag_cuda_check(cudaFree(reinterpret_cast<void *>(buffer->base)));
+            mag_fixed_pool_free_block(&ctx->storage_pool, buffer);
+        };
+        mag_rc_init_object(*out, dealloc_callback);
     }
 
     mag_device_t *mag_cuda_backend_init_device(mag_backend_t *bck, mag_context_t *ctx, uint32_t idx) {

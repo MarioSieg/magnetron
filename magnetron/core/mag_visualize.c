@@ -14,10 +14,10 @@
 #include "mag_toposort.h"
 #include "mag_sstream.h"
 
-MAG_COLDPROC void mag_tensor_visualize_backprop_graph(mag_tensor_t *t, const char *file) {
+MAG_COLDPROC void mag_tensor_visualize_backprop_graph(mag_tensor_t *tensor, const char *file) {
     mag_topo_set_t post_order;
     mag_topo_set_init(&post_order);
-    mag_topo_sort(t, &post_order);
+    mag_topo_sort(tensor, &post_order);
     for (size_t i=0, j=post_order.size-1; i < j; ++i, --j) {
         mag_swap(mag_tensor_t *, post_order.data[i], post_order.data[j]);
     }

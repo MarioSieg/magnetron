@@ -129,8 +129,8 @@ namespace mag {
         if (threads > plan->red_prod) threads = plan->red_prod;
         if (threads < 1) threads = 1;
         size_t shmem = sizeof(typename op_t::acc_t)*threads;
-        auto *pr = static_cast<typename op_t::out_t *>(mag_tensor_data_ptr(r));
-        auto *px = static_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
+        auto *pr = reinterpret_cast<typename op_t::out_t *>(mag_tensor_data_ptr_mut(r));
+        const auto *px = reinterpret_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
         reduce_op_kernel<op_t><<<blocks, threads, shmem>>>(op_t{}, n, pr, px, *plan);
     }
 

@@ -897,8 +897,8 @@ namespace magnetron {
             return std::vector<int64_t>{p, p+rank()};
         }
         [[nodiscard]] auto dtype() const noexcept -> dtype { return static_cast<enum dtype>(mag_tensor_type(m_tensor)); }
-        [[nodiscard]] auto data_ptr() const noexcept -> void* { return mag_tensor_data_ptr(m_tensor); }
-        [[nodiscard]] auto storage_base_ptr() const noexcept -> void* { return mag_tensor_data_storage_ptr(m_tensor); }
+        [[nodiscard]] auto data_ptr() const noexcept -> void* { return reinterpret_cast<void *>(mag_tensor_data_ptr_mut(m_tensor)); }
+        [[nodiscard]] auto storage_base_ptr() const noexcept -> void* { return reinterpret_cast<void *>(mag_tensor_data_storage_ptr_mut(m_tensor)); }
 
         template <typename T>
         [[nodiscard]] auto to_vector() const -> std::vector<T>;
