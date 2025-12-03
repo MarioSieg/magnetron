@@ -42,7 +42,7 @@ TEST(context, create_cuda) {
 
     context ctx {"cuda:0"};
     tensor y {ctx, dtype::float32, 8};
-    y.fill_rand_uniform(-128.f, 127.f);
+    y.uniform_(-128.f, 127.f);
     tensor a {y.cast(dtype::i8)};
     std::cout << a.to_string() << std::endl;
     std::cout << a.min().to_string() << std::endl;

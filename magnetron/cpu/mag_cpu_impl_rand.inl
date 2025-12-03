@@ -77,7 +77,6 @@ static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_philox4x32_stream_t *prng, 
 
 #define mag_gen_vrand_uniform_int(T, UT) \
     static MAG_HOTPROC void mag_vrand_uniform_##T(mag_philox4x32_stream_t *prng, int64_t numel, T *restrict o, T min, T max) {                                                                  \
-        if (mag_unlikely(max < min)) mag_swap(T, min, max); \
         UT umin = (UT)min; \
         UT umax = (UT)max; \
         uint64_t span64 = (uint64_t)((UT)(umax - umin))+1ull; \

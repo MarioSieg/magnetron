@@ -360,6 +360,14 @@ bool mag_tensor_is_integer_typed(const mag_tensor_t *t) {
     return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_INTEGER;
 }
 
+bool mag_tensor_is_unsigned_integer_typed(const mag_tensor_t *t) {
+    return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_UINT;
+}
+
+bool mag_tensor_is_signed_integer_typed(const mag_tensor_t *t) {
+    return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_SINT;
+}
+
 bool mag_tensor_is_numeric_typed(const mag_tensor_t *t) {
     return mag_dtype_bit(t->dtype) & MAG_DTYPE_MASK_NUMERIC;
 }

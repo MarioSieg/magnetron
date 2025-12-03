@@ -100,7 +100,7 @@ TEST(cpu_tensor_init_ops, fill_float32) {
         std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         float fill_val {dist(gen)};
         tensor t {ctx, dtype::float32, shape};
-        t.fill(fill_val);
+        t.fill_(fill_val);
         std::vector data {t.to_vector<float>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
@@ -115,7 +115,7 @@ TEST(cpu_tensor_init_ops, fill_float16) {
         std::uniform_real_distribution dist {-1.0f, 1.0f};
         float fill_val {dist(gen)};
         tensor t {ctx, dtype::float16, shape};
-        t.fill(fill_val);
+        t.fill_(fill_val);
         std::vector data {t.to_vector<float16>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
@@ -130,7 +130,7 @@ TEST(cpu_tensor_init_ops, fill_bool) {
         std::bernoulli_distribution dist {};
         bool fill_val {dist(gen)};
         tensor t {ctx, dtype::boolean, shape};
-        t.fill(fill_val);
+        t.fill_(fill_val);
         std::vector data {t.to_vector<bool>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
@@ -144,9 +144,9 @@ TEST(cpu_tensor_init_ops, fill_random_uniform_float32) {
     for_all_test_shapes([&](const std::vector<int64_t>& shape) {
         std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         float min {dist(gen)};
-        float max {std::uniform_real_distribution{min, dtype_traits<float>::max}(gen)};
+        float max {std::uniform_real_distribution{min+0.1f, dtype_traits<float>::max}(gen)};
         tensor t {ctx, dtype::float32, shape};
-        t.fill_rand_uniform(min, max);
+        t.uniform_(min, max);
         std::vector data {t.to_vector<float>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
@@ -166,7 +166,7 @@ TEST(cpu_tensor_init_ops, fill_random_uniform_float16) {
          float qmin {static_cast<float>(float16{min})};
          float qmax {static_cast<float>(float16{max})};
          tensor t {ctx, dtype::float16, shape};
-         t.fill_rand_uniform(qmin, qmax);
+         t.uniform_(qmin, qmax);
          std::vector<float> data {t.to_vector()};
          ASSERT_EQ(data.size(), t.numel());
          for (auto x : data) {
@@ -184,7 +184,7 @@ TEST(cpu_tensor_init_ops, fill_random_normal_float32) {
         float mean {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         float stddev {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         tensor t {ctx, dtype::float32, shape};
-        t.fill_rand_normal(mean, stddev);
+        t.normal_(mean, stddev);
         std::vector<float> data {t.to_vector()};
         ASSERT_FLOAT_EQ(mean, compute_mean<float>(data));
         ASSERT_FLOAT_EQ(stddev, compute_std<float>(data));
@@ -197,7 +197,7 @@ TEST(cpu_tensor_init_ops, fill_random_normal_float16) {
         float mean {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         float stddev {std::uniform_real_distribution{0.0f, 5.0f}(gen)};
         tensor t {ctx, dtype::float16, shape};
-        t.fill_rand_normal(mean, stddev);
+        t.normal_(mean, stddev);
         std::vector<float> data {t.to_vector()};
         ASSERT_FLOAT_EQ(mean, compute_mean<float>(data));
         ASSERT_FLOAT_EQ(stddev, compute_std<float>(data));
@@ -212,7 +212,7 @@ TEST(cpu_tensor_init_ops, fill_random_bool) {
         std::uniform_real_distribution<float> dist {0.01f, 0.99f};
         float p {dist(gen)};
         tensor t {ctx, dtype::boolean, shape};
-        t.fill_rand_bernoulli(p);
+        t.bernoulli_(p);
         std::vector<bool> data {t.to_vector<bool>()};
         int64_t samples {};
         for (bool k : data)

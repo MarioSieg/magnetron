@@ -272,6 +272,18 @@ void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
     (*ctx->device->manual_seed)(ctx->device, seed);
 }
 
+mag_scalar_t mag_scalar_float(double value) {
+    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.f64 = value};
+}
+
+mag_scalar_t mag_scalar_int(int64_t value) {
+    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_I64, .value.i64 = value};
+}
+
+mag_scalar_t mag_scalar_uint(uint64_t value) {
+    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_U64, .value.u64 = value};
+}
+
 const mag_dtype_meta_t *mag_dtype_meta_of(mag_dtype_t type) {
     static const mag_dtype_meta_t infos[MAG_DTYPE__NUM] = {
         [MAG_DTYPE_FLOAT32] = {

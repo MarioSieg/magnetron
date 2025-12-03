@@ -31,7 +31,7 @@ static auto test_unary_operator(
     auto& ctx = get_cached_context(dev);
     for_all_test_shapes([&](const std::vector<int64_t>& shape) {
         tensor base{ctx, ty, shape};
-        base.fill_rand_uniform(static_cast<float>(min), static_cast<float>(max));
+        base.uniform_(static_cast<float>(min), static_cast<float>(max));
         tensor t_a = subview ? make_random_view(base) : base;
         if (subview)
             ASSERT_TRUE(t_a.is_view());

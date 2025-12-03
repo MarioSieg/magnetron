@@ -89,7 +89,7 @@ mag_status_t mag_tensor_backward(mag_tensor_t *root) {
         const mag_opmeta_t *meta = mag_op_meta_of(child->au_state->op);
         if (!child->au_state->grad) {
             mag_tensor_t *grad;
-            if (mag_iserr(mag_tensor_full_like(&grad, child, 1.0f)))
+            if (mag_iserr(mag_tensor_full_like(&grad, child, mag_scalar_float(1.0))))
                 continue;
             mag_tensor_patch_grad(child, grad);
         }
@@ -131,5 +131,5 @@ end:
 
 void mag_tensor_zero_grad(mag_tensor_t *t) {
     if (t->flags & MAG_TFLAG_REQUIRES_GRAD && t->au_state && t->au_state->grad)
-        mag_fill_float_(t->au_state->grad, 0.0f);
+        mag_zero_(t->au_state->grad);
 }

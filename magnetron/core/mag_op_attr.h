@@ -25,8 +25,7 @@ typedef enum mag_op_attr_type_tag_t {
     MAG_OP_ATTR_TYPE_BOOL,
     MAG_OP_ATTR_TYPE_U64,
     MAG_OP_ATTR_TYPE_I64,
-    MAG_OP_ATTR_TYPE_FLOAT32,
-    MAG_OP_ATTR_TYPE_FLOAT16,
+    MAG_OP_ATTR_TYPE_FLOAT64,
     MAG_OP_ATTR_TYPE_PTR,
 } mag_op_attr_type_tag_t;
 
@@ -36,6 +35,7 @@ typedef struct mag_op_attr_t {
         bool b;
         uint64_t uint64_t;
         int64_t int64_t;
+        double float64;
         float float32;
         mag_float16_t float16;
         void *ptr;
@@ -50,16 +50,14 @@ static inline mag_op_attr_t mag_op_attr_empty(void) { return (mag_op_attr_t){.ta
 static inline mag_op_attr_t mag_op_attr_bool(bool v) { return (mag_op_attr_t){.tag=MAG_OP_ATTR_TYPE_BOOL, .value={.b=v}}; }
 static inline mag_op_attr_t mag_op_attr_uint64(uint64_t v) { return (mag_op_attr_t){.tag=MAG_OP_ATTR_TYPE_U64, .value={.uint64_t=v}}; }
 static inline mag_op_attr_t mag_op_attr_int64(int64_t v) { return (mag_op_attr_t){.tag=MAG_OP_ATTR_TYPE_I64, .value={.int64_t=v}}; }
-static inline mag_op_attr_t mag_op_attr_float32(float v) { return (mag_op_attr_t){.tag=MAG_OP_ATTR_TYPE_FLOAT32, .value={.float32=v}}; }
-static inline mag_op_attr_t mag_op_attr_float16(mag_float16_t v) { return (mag_op_attr_t){.tag=MAG_OP_ATTR_TYPE_FLOAT16, .value={.float16=v}}; }
+static inline mag_op_attr_t mag_op_attr_float64(double v) { return (mag_op_attr_t){.tag=MAG_OP_ATTR_TYPE_FLOAT64, .value={.float64=v}}; }
 static inline mag_op_attr_t mag_op_attr_ptr(void *v) { return (mag_op_attr_t){.tag=MAG_OP_ATTR_TYPE_PTR, .value={.ptr=v}}; }
 
 #define mag_check_tag(T) mag_assert(opt.tag==MAG_OP_ATTR_TYPE_##T, "Op attribute stores wrong type code: %d", opt.tag);
 static inline bool mag_op_attr_unwrap_bool(mag_op_attr_t opt) { mag_check_tag(BOOL);  return opt.value.b; }
-static inline uint64_t mag_op_attr_unwrap_uint64(mag_op_attr_t opt) { mag_check_tag(U64);return opt.value.uint64_t; }
+static inline uint64_t mag_op_attr_unwrap_uint64(mag_op_attr_t opt) { mag_check_tag(U64) ;return opt.value.uint64_t; }
 static inline int64_t mag_op_attr_unwrap_int64(mag_op_attr_t opt) { mag_check_tag(I64); return opt.value.int64_t; }
-static inline float mag_op_attr_unwrap_float32(mag_op_attr_t opt) { mag_check_tag(FLOAT32); return opt.value.float32; }
-static inline mag_float16_t mag_op_attr_unwrap_float16(mag_op_attr_t opt) { mag_check_tag(FLOAT16); return opt.value.float16; }
+static inline double mag_op_attr_unwrap_float64(mag_op_attr_t opt) { mag_check_tag(FLOAT64); return opt.value.float64; }
 static inline void *mag_op_attr_unwrap_ptr(mag_op_attr_t opt) { mag_check_tag(PTR); return opt.value.ptr; }
 #undef mag_check_tag
 

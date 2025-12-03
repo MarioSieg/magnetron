@@ -31,9 +31,10 @@ namespace mag {
   static inline std::atomic_uint64_t global_seed = 0;
   static inline std::atomic_uint64_t global_subseq = 0;
 
-  template <typename T>
-  [[nodiscard]] T unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
-    if constexpr (std::is_same_v<T, float> || std::is_same_v<T, half>) return static_cast<T>(mag_op_attr_unwrap_float32(params[i]));
-    else return static_cast<T>(mag_op_attr_unwrap_int64(params[i]));
+  template <typename scalar_t>
+  [[nodiscard]] scalar_t unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
+    if constexpr (std::is_same_v<scalar_t, float> || std::is_same_v<scalar_t, half>) return static_cast<scalar_t>(mag_op_attr_unwrap_float64(params[i]));
+    else if constexpr (std::is_signed_v<scalar_t>) return static_cast<scalar_t>(mag_op_attr_unwrap_int64(params[i]));
+    else return static_cast<scalar_t>(mag_op_attr_unwrap_uint64(params[i]));
   }
 }

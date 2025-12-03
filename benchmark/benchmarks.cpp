@@ -19,9 +19,9 @@ auto main() -> int {
         .performanceCounters(true);
         context ctx {};
         tensor x {ctx, type, 2048, 2048};
-        x.fill(1.0f);
+        x.fill_(1.0f);
         tensor y {ctx, type, 2048, 2048};
-        y.fill(3.0f);
+        y.fill_(3.0f);
 
         tensor yT = y.permute({3, 2, 1});
         bench.run("add (non-cont)", [&] {

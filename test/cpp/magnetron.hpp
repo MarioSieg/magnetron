@@ -22,10 +22,8 @@
 
 #include <algorithm>
 #include <stdexcept>
-#include <array>
 #include <optional>
 #include <vector>
-#include <span>
 
 #include <half.hpp>
 
@@ -104,7 +102,9 @@ namespace magnetron {
 
     inline auto handle_error(mag_status_t status, mag_context_t *ctx = nullptr) -> void {
         if (status != MAG_STATUS_OK) [[unlikely]] {
-            throw std::runtime_error {ctx ? mag_ctx_get_last_error(ctx)->message : mag_status_get_name(status)};
+            std::printf("%s", ctx ? mag_ctx_get_last_error(ctx)->message : mag_status_get_name(status));
+            std::fflush(stdout);
+            std::abort();
         }
     }
 
@@ -705,24 +705,24 @@ namespace magnetron {
             handle_error(mag_matmul(&out, m_tensor, &*other));
             return tensor{out};
         }
-        [[nodiscard]] auto add(float other) const noexcept -> tensor {
+        [[nodiscard]] auto add(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), other));
+            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), mag_scalar_float(other)));
             return add(tensor{sca});
         }
-        [[nodiscard]] auto sub(float other) const noexcept -> tensor {
+        [[nodiscard]] auto sub(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), other));
+            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), mag_scalar_float(other)));
             return sub(tensor{sca});
         }
-        [[nodiscard]] auto mul(float other) const noexcept -> tensor {
+        [[nodiscard]] auto mul(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), other));
+            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), mag_scalar_float(other)));
             return mul(tensor{sca});
         }
-        [[nodiscard]] auto div(float other) const noexcept -> tensor {
+        [[nodiscard]] auto div(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), other));
+            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), mag_scalar_float(other)));
             return div(tensor{sca});
         }
         [[nodiscard]] auto band(tensor other) const noexcept -> tensor {
@@ -865,20 +865,20 @@ namespace magnetron {
         }
 
         template <typename T>
-        auto fill(T val) -> void;
+        auto fill_(T val) -> void;
 
         template <typename T>
-        auto masked_fill(tensor mask, T val) -> void;
+        auto masked_fill_(tensor mask, T val) -> void;
 
         template <typename T>
-        auto fill_rand_uniform(T min, T max) -> void;
+        auto uniform_(T min, T max) -> void;
 
-        auto fill_rand_normal(float mean, float stddev) -> void {
-            mag_normal_(m_tensor, mean, stddev);
+        auto normal_(float mean, float stddev) -> void {
+            mag_normal_(m_tensor, mag_scalar_float(mean), mag_scalar_float(stddev));
         }
 
-        auto fill_rand_bernoulli(float p = 0.5f) -> void {
-            mag_bernoulli_(m_tensor, p);
+        auto bernoulli_(float p = 0.5f) -> void {
+            mag_bernoulli_(m_tensor, mag_scalar_float(p));
         }
 
         [[nodiscard]] auto to_string(bool with_data = true, size_t from_start = 0, size_t from_end = 0) const -> std::string {
@@ -935,49 +935,49 @@ namespace magnetron {
     };
 
     template <>
-    inline auto tensor::fill(float val) -> void {
-        mag_fill_float_(m_tensor, val);
+    inline auto tensor::fill_(float val) -> void {
+        handle_error(mag_fill_(m_tensor, mag_scalar_float(val)));
     }
 
     template <typename T>
-    inline auto tensor::fill(T val) -> void {
-        mag_fill_int_(m_tensor, static_cast<int64_t>(val));
+    inline auto tensor::fill_(T val) -> void {
+        handle_error(mag_fill_(m_tensor, mag_scalar_int(static_cast<int64_t>(val))));
     }
 
     template <>
-    inline auto tensor::fill(bool val) -> void {
-        mag_fill_int_(m_tensor, val ? 1 : 0);
+    inline auto tensor::fill_(bool val) -> void {
+        handle_error(mag_fill_(m_tensor, mag_scalar_int(val)));
     }
 
     template <>
-    inline auto tensor::masked_fill(tensor mask, float val) -> void {
+    inline auto tensor::masked_fill_(tensor mask, float val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        mag_masked_fill_float_(&*mask, m_tensor, val);
+        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_float(val)));
     }
 
     template <>
-    inline auto tensor::masked_fill(tensor mask, int32_t val) -> void {
+    inline auto tensor::masked_fill_(tensor mask, int64_t val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        mag_masked_fill_int_(&*mask, m_tensor, val);
+        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_int(val)));
     }
 
     template <>
-    inline auto tensor::masked_fill(tensor mask, bool val) -> void {
+    inline auto tensor::masked_fill_(tensor mask, bool val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        mag_masked_fill_int_(&*mask, m_tensor, val ? 1 : 0);
+        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_int(val)));
     }
 
     template <>
-    inline auto tensor::fill_rand_uniform(float min, float max) -> void {
-        mag_uniform_float_(m_tensor, min, max);
+    inline auto tensor::uniform_(float min, float max) -> void {
+        handle_error(mag_uniform_(m_tensor, mag_scalar_float(min), mag_scalar_float(max)));
     }
 
     template <>
-    inline auto tensor::fill_rand_uniform(int32_t min, int32_t max) -> void {
-        mag_uniform_int_(m_tensor, min, max);
+    inline auto tensor::uniform_(int64_t min, int64_t max) -> void {
+        handle_error(mag_uniform_(m_tensor, mag_scalar_int(min), mag_scalar_int(max)));
     }
 
     template <typename T>

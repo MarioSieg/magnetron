@@ -520,8 +520,13 @@ class Tensor:
             start = 0
         if dtype is None:
             dtype = _deduce_tensor_dtype(start)
+        # Ensure that start, stop, and step are the same type
+        assert type(start) == type(stop) == type(step), 'start, stop, and step must be of the same type'
+        start = _C.mag_scalar_int(start) if isinstance(start, int) else _C.mag_scalar_float(start)
+        stop = _C.mag_scalar_int(stop) if isinstance(stop, int) else _C.mag_scalar_float(stop)
+        step = _C.mag_scalar_int(step) if isinstance(step, int) else _C.mag_scalar_float(step)
         instance = _wrap_out_alloc(
-            lambda out: _C.mag_tensor_arange(out, context.native_ptr(), dtype.enum_value, float(start), float(stop), float(step))
+            lambda out: _C.mag_tensor_arange(out, context.native_ptr(), dtype.enum_value, start, stop, step)
         )
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
@@ -672,17 +677,17 @@ class Tensor:
     def fill_(self, value: float | int | bool) -> None:
         self._validate_inplace_op()
         if self.dtype.is_floating_point:
-            _handle_errc(_C.mag_fill_float_(self._ptr, float(value)))
+            _handle_errc(_C.mag_fill_(self._ptr, _C.mag_scalar_float(value)))
         else:
-            _handle_errc(_C.mag_fill_int_(self._ptr, int(value)))
+            _handle_errc(_C.mag_fill_(self._ptr, _C.mag_scalar_int(value)))
 
     def masked_fill_(self, mask: Tensor, value: float | int | bool) -> None:
         assert mask.dtype == boolean, f'Mask tensor must be of boolean dtype, but is {mask.dtype}'
         self._validate_inplace_op()
         if self.dtype.is_floating_point:
-            _handle_errc(_C.mag_masked_fill_float_(self._ptr, mask._ptr, float(value)))
+            _handle_errc(_C.mag_masked_fill_(self._ptr, mask._ptr, _C.mag_scalar_float(value)))
         else:
-            _handle_errc(_C.mag_masked_fill_int_(self._ptr, mask._ptr, int(value)))
+            _handle_errc(_C.mag_masked_fill_(self._ptr, mask._ptr, _C.mag_scalar_int(value)))
 
     def masked_fill(self, mask: Tensor, value: float | int | bool) -> Tensor:
         filled = self.clone()
@@ -695,21 +700,21 @@ class Tensor:
         self._validate_inplace_op()
         low, high = _get_uniform_sample_range(self.dtype, low, high)
         if self.dtype.is_floating_point:
-            _handle_errc(_C.mag_uniform_float_(self._ptr, low, high))
+            _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_float(low), _C.mag_scalar_float(high)))
         else:
             low &= 2**63 - 2
             high &= 2**63 - 2  # TODO fix for unsigned types
-            _handle_errc(_C.mag_uniform_int_(self._ptr, low, high))
+            _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_int(low), _C.mag_scalar_int(high)))
 
     def normal_(self, mean: float, std: float) -> None:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        _handle_errc(_C.mag_normal_(self._ptr, mean, std))
+        _handle_errc(_C.mag_normal_(self._ptr, _C.mag_scalar_float(mean), _C.mag_scalar_float(std)))
 
     def bernoulli_(self, p: float) -> None:
         self._validate_dtypes(self, allowed_types={boolean})
         self._validate_inplace_op()
-        _handle_errc(_C.mag_bernoulli_(self._ptr, p))
+        _handle_errc(_C.mag_bernoulli_(self._ptr, _C.mag_scalar_float(p)))
 
     def copy_(self, x: Tensor) -> None:
         assert self.rank == x.rank, f'Tensor ranks do not match: {self.rank} != {x.rank}'

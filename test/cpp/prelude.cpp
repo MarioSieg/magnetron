@@ -6,7 +6,7 @@ namespace magnetron::test {
         if (!backends) {
             backends.emplace({device_kind::cpu});
             #ifdef MAG_ENABLE_CUDA
-                //backends->emplace_back(device_kind::cuda);
+                backends->emplace_back(device_kind::cuda);
             #endif
         }
         return *backends;

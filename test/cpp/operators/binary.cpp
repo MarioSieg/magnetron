@@ -39,11 +39,11 @@ static void test_binary_operator(
     for_all_test_shapes([&](const std::vector<int64_t>& shape) {
         tensor t_a {ctx, ty, shape};
         if constexpr (std::is_same_v<T, bool>)
-            t_a.fill(std::bernoulli_distribution{}(gen));
+            t_a.fill_(std::bernoulli_distribution{}(gen));
         else if constexpr (std::is_integral_v<T>)
-             t_a.fill(std::uniform_int_distribution<T>{random_interval.first, random_interval.second}(gen));
+             t_a.fill_(std::uniform_int_distribution<T>{random_interval.first, random_interval.second}(gen));
         else
-             t_a.fill(std::uniform_real_distribution<float>{random_interval.first, random_interval.second}(gen));
+             t_a.fill_(std::uniform_real_distribution<float>{random_interval.first, random_interval.second}(gen));
         tensor t_b {t_a.clone()};
         std::vector<T> d_a {t_a.to_vector<T>()}; // must be cloned here as inplace op modified buffer
         std::vector<T> d_b {t_b.to_vector<T>()};
@@ -77,11 +77,11 @@ static void test_binary_cmp(
     for_all_test_shapes([&](const std::vector<int64_t>& shape){
         tensor t_a{ctx, ty, shape};
         if constexpr (std::is_same_v<T, bool>)
-            t_a.fill(std::bernoulli_distribution{}(gen));
+            t_a.fill_(std::bernoulli_distribution{}(gen));
         else if constexpr (std::is_integral_v<T>)
-            t_a.fill(std::uniform_int_distribution<T>{random_interval.first, random_interval.second}(gen));
+            t_a.fill_(std::uniform_int_distribution<T>{random_interval.first, random_interval.second}(gen));
         else
-           t_a.fill(std::uniform_real_distribution<float>{random_interval.first, random_interval.second}(gen));
+           t_a.fill_(std::uniform_real_distribution<float>{random_interval.first, random_interval.second}(gen));
         tensor t_b{t_a.clone()};
         std::vector<T> d_a {t_a.to_vector<T>()}; // must be cloned here as inplace op modifies buffer
         std::vector<T> d_b {t_b.to_vector<T>()};
