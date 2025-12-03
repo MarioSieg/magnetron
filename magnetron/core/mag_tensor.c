@@ -15,21 +15,22 @@
 #include "mag_alloc.h"
 #include "mag_sstream.h"
 #include "mag_autodiff.h"
+#include "mag_fmt.h"
 
 static void mag_view_meta_dtor(void *p) {
     mag_view_meta_t *vm = p;
     mag_context_t *ctx = vm->base->ctx;
     if (vm->base->view_meta == vm)
         vm->base->view_meta = NULL;
-    mag_rc_control_decref(&vm->base->rc_control);
+    mag_rc_decref(vm->base);
     mag_fixed_pool_free_block(&ctx->view_meta_pool, vm);
 }
 
 mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
     mag_view_meta_t *vm = mag_fixed_pool_alloc_block(&base->ctx->view_meta_pool);
-    vm->rc = mag_rc_control_init(vm, &mag_view_meta_dtor);
+    mag_rc_init_object(vm, &mag_view_meta_dtor);
     vm->base = base;
-    mag_rc_control_incref(&base->rc_control);
+    mag_rc_incref(base);
     vm->version_snapshot = base->version;
     return vm;
 }
@@ -41,7 +42,6 @@ static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type
     memset(hdr, 0, sizeof(*hdr));
     *hdr = (mag_tensor_t) { /* Initialize tensor header. */
         .ctx = ctx,
-        .rc_control = mag_rc_control_init(hdr, &mag_tensor_dtor), /* Initialize reference counter. */
         .coords = {.rank=rank},
         .dtype = type,
         .storage = NULL,
@@ -52,6 +52,7 @@ static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type
         .au_state = NULL,
         .version = 0,
     };
+    mag_rc_init_object(hdr, &mag_tensor_dtor);
 #ifdef MAG_DEBUG
     hdr->alive_next = NULL;
     mag_leak_detector_enqueue(hdr);
@@ -123,14 +124,14 @@ mag_status_t mag_tensor_as_strided(mag_tensor_t **out, mag_context_t *ctx, mag_t
         tensor->coords.strides[i] = i < rank ? strides[i] : 1;
     }
     tensor->storage = base->storage;
-    mag_rc_control_incref(&base->storage->rc_control); /* Retain base storage */
+    mag_rc_incref(base->storage); /* Retain base storage */
     tensor->storage_offset = offset;
     tensor->version = base->version;
     if (!(base->flags & MAG_TFLAG_IS_VIEW)) /* first view */
         tensor->view_meta = mag_view_meta_alloc(base);
     else {
         tensor->view_meta = base->view_meta;
-        mag_rc_control_incref(&tensor->view_meta->rc); /* Retain view meta */
+        mag_rc_incref(tensor->view_meta); /* Retain view meta */
     }
     tensor->flags = base->flags | MAG_TFLAG_IS_VIEW; /* Set view flag */
     *out = tensor;
@@ -143,48 +144,15 @@ static void mag_tensor_dtor(void *self) {
     mag_assert(ctx->num_alive_tensors > 0, "Double free detected on tensor %p", t);
     --ctx->num_alive_tensors;
     if (t->view_meta) {
-        mag_rc_control_decref(&t->view_meta->rc);
+        mag_rc_decref(t->view_meta);
         t->view_meta = NULL;
     }
     if (t->au_state) {
-        mag_rc_control_decref(&t->au_state->rc);
+        mag_rc_decref(t->au_state);
         t->au_state = NULL;
     }
-    mag_rc_control_decref(&t->storage->rc_control);
+    mag_rc_decref(t->storage);
     mag_tensor_free_header(t);
-}
-
-mag_status_t mag_tensor_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
-    return mag_tensor_new(out, ctx, type, rank, shape);
-}
-
-mag_status_t mag_tensor_empty_like(mag_tensor_t **out, mag_tensor_t *isomorph) {
-    return mag_tensor_new(out, isomorph->ctx, isomorph->dtype, isomorph->coords.rank, isomorph->coords.shape);
-}
-
-mag_status_t mag_tensor_empty_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type) {
-    return mag_tensor_empty(out, ctx, type, 1, (int64_t[1]){1});
-}
-
-mag_status_t mag_tensor_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, mag_e8m23_t value) {
-    mag_status_t stat = mag_tensor_empty_scalar(out, ctx, type);
-    if (mag_iserr(stat)) return stat;
-    mag_tensor_fill_float(*out, value);
-    return MAG_STATUS_OK;
-}
-
-mag_status_t mag_tensor_full(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_e8m23_t value) {
-    mag_status_t stat = mag_tensor_empty(out, ctx, type, rank, shape);
-    if (mag_iserr(stat)) return stat;
-    mag_tensor_fill_float(*out, value);
-    return MAG_STATUS_OK;
-}
-
-mag_status_t mag_tensor_full_like(mag_tensor_t **out, mag_tensor_t *isomorph, mag_e8m23_t value) {
-    mag_status_t stat = mag_tensor_empty_like(out, isomorph);
-    if (mag_iserr(stat)) return stat;
-    mag_tensor_fill_float(*out, value);
-    return MAG_STATUS_OK;
 }
 
 int64_t mag_tensor_get_data_size(const mag_tensor_t *t) {
@@ -194,20 +162,11 @@ int64_t mag_tensor_get_numel(const mag_tensor_t *t) {
     return t->numel;
 }
 
-void mag_tensor_incref(mag_tensor_t *t) { /* Increase reference count of the tensor. */
-    mag_rc_control_incref(&t->rc_control);
-}
-
-bool mag_tensor_decref(mag_tensor_t *t) { /* Decrease reference count of the tensor. */
-    if (mag_unlikely(!t)) return false;
-    return mag_rc_control_decref(&t->rc_control);
-}
-
 void mag_tensor_detach_inplace(mag_tensor_t *target) {
     if (target->au_state) {
         target->au_state->op = MAG_OP_NOP; /* Detach from operations */
         memset(target->au_state->op_inputs, 0, sizeof(target->au_state->op_inputs)); /* Clear op inputs */
-        memset(target->au_state->op_params, 0, sizeof(target->au_state->op_params));
+        memset(target->au_state->op_attrs, 0, sizeof(target->au_state->op_attrs));
     }
 }
 
@@ -253,7 +212,7 @@ void *mag_tensor_get_raw_data_as_bytes(mag_tensor_t *t) {
     void *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_storage_buffer_t *sto = cont->storage;
     (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
-    mag_tensor_decref(cont);
+    mag_rc_decref(cont);
     return dst;
 }
 
@@ -261,61 +220,68 @@ void mag_tensor_get_raw_data_as_bytes_free(void *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
-mag_e8m23_t *mag_tensor_get_data_as_floats(mag_tensor_t *t) {
+float *mag_tensor_get_data_as_floats(mag_tensor_t *t) {
     mag_tensor_t *cont;
     mag_status_t stat = mag_contiguous(&cont, t);
     if (mag_iserr(stat)) return NULL;
     mag_assert(mag_tensor_is_floating_point_typed(cont), "Tensor must be a floating point tensor, but has dtype: %s", mag_dtype_meta_of(t->dtype)->name);
-    size_t size = cont->numel*sizeof(mag_e8m23_t);
+    size_t size = cont->numel*sizeof(float);
     mag_assert2(size);
-    mag_e8m23_t *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
+    float *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     mag_storage_buffer_t *sto = cont->storage;
-    if (cont->dtype == MAG_DTYPE_E8M23) (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
-    else (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size, MAG_DTYPE_E8M23);
-    mag_tensor_decref(cont);
+    if (cont->dtype == MAG_DTYPE_FLOAT32) (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size);
+    else (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(cont), dst, size, MAG_DTYPE_FLOAT32);
+    mag_rc_decref(cont);
     return dst;
 }
 
-void mag_tensor_get_data_as_floats_free(mag_e8m23_t *ret_val) {
+void mag_tensor_get_data_as_floats_free(float *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
-mag_e8m23_t mag_tensor_get_item_float(const mag_tensor_t *t) {
+float mag_tensor_get_item_float(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
-    mag_e8m23_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_E8M23);
+    float val;
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_FLOAT32);
     return val;
 }
 
-int32_t mag_tensor_get_item_int(const mag_tensor_t *t) {
+int64_t mag_tensor_get_item_int(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
-    int32_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_I32);
+    int64_t val;
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_INT64);
     return val;
 }
 
 bool mag_tensor_get_item_bool(const mag_tensor_t *t) {
     mag_storage_buffer_t *sto = t->storage;
     uint8_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_BOOL);
+    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_get_data_offset(t), &val, sizeof(val), MAG_DTYPE_BOOLEAN);
     return !!val;
 }
 
 static void mag_fmt_single_elem(mag_sstream_t *ss, const void *buf, size_t i, mag_dtype_t dtype) {
+    char fmt[MAG_FMT_BUF_MAX] = {0};
+    char *e = NULL;
     switch (dtype) {
-    case MAG_DTYPE_E8M23:
-    case MAG_DTYPE_E5M10:
-        mag_sstream_append(ss, "%g", (mag_e11m52_t)((const mag_e8m23_t *)buf)[i]);
-        return;
-    case MAG_DTYPE_BOOL:
-        mag_sstream_append(ss, "%s", ((const uint8_t *)buf)[i] ? "True" : "False");
-        return;
-    case MAG_DTYPE_I32:
-        mag_sstream_append(ss, "%" PRIi32, ((const int32_t *)buf)[i]);
-        return;
-    default:
-        mag_panic("DType formatting not implemented: %d", dtype);
+        case MAG_DTYPE_FLOAT32:
+        case MAG_DTYPE_FLOAT16: e = mag_fmt_e11m52(fmt, ((const float *)buf)[i], MAG_FMT_G5); break;
+        case MAG_DTYPE_BOOLEAN: mag_sstream_append(ss, "%s", ((const uint8_t *)buf)[i] ? "True" : "False"); return;
+        case MAG_DTYPE_UINT8:  e = mag_fmt_uint64(fmt, ((const uint8_t *)buf)[i]); break;
+        case MAG_DTYPE_INT8:  e = mag_fmt_int64(fmt, ((const int8_t *)buf)[i]); break;
+        case MAG_DTYPE_UINT16: e = mag_fmt_uint64(fmt, ((const uint16_t *)buf)[i]); break;
+        case MAG_DTYPE_INT16: e = mag_fmt_int64(fmt, ((const int16_t *)buf)[i]); break;
+        case MAG_DTYPE_UINT32: e = mag_fmt_uint64(fmt, ((const uint32_t *)buf)[i]); break;
+        case MAG_DTYPE_INT32: e = mag_fmt_int64(fmt, ((const int32_t *)buf)[i]); break;
+        case MAG_DTYPE_UINT64: e = mag_fmt_uint64(fmt, ((const uint64_t *)buf)[i]); break;
+        case MAG_DTYPE_INT64: e = mag_fmt_int64(fmt, ((const int64_t *)buf)[i]); break;
+        default: mag_panic("Unknown dtype for formatting: %d", dtype); return;
     }
+    mag_assert2(e);
+    *e = '\0';
+    ptrdiff_t n = e-fmt;
+    if (mag_likely(n > 0))
+        mag_sstream_append_strn(ss, fmt, e-fmt);
 }
 
 static void mag_tensor_fmt_recursive(
@@ -363,7 +329,7 @@ char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_
     size_t pad = strlen(prefix);
     mag_sstream_append(&ss, prefix);
     mag_tensor_fmt_recursive(&ss, buf, t->dtype, t->coords.shape, t->coords.strides, t->coords.rank, 0, 0, pad); /* Recursive format */
-    mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_dtype_meta_of(t->dtype)->name, t->ctx->device->id);
+    mag_sstream_putc(&ss, ')');
     /* Free allocated buffer */
     if (mag_tensor_is_floating_point_typed(t)) mag_tensor_get_data_as_floats_free(buf);
     else mag_tensor_get_raw_data_as_bytes_free(buf);
@@ -436,6 +402,14 @@ bool mag_tensor_is_contiguous(const mag_tensor_t *t) {
 bool mag_tensor_can_view(const mag_tensor_t *t, const int64_t *dims, int64_t rank) {
     int64_t tmp[MAG_MAX_DIMS];
     return mag_solve_view_strides(&tmp, t->coords.shape, t->coords.strides, t->coords.rank, dims, rank);
+}
+
+void mag_tensor_incref(mag_tensor_t *t) {
+    mag_rc_incref(t);
+}
+
+bool mag_tensor_decref(mag_tensor_t *t) {
+    return mag_rc_decref(t);
 }
 
 #ifdef MAG_DEBUG

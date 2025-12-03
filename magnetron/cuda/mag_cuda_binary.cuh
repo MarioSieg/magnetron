@@ -20,6 +20,7 @@ namespace mag {
     extern void binary_op_sub(const mag_command_t *cmd);
     extern void binary_op_mul(const mag_command_t *cmd);
     extern void binary_op_div(const mag_command_t *cmd);
+    extern void binary_op_mod(const mag_command_t *cmd);
     extern void binary_op_and(const mag_command_t *cmd);
     extern void binary_op_or(const mag_command_t *cmd);
     extern void binary_op_xor(const mag_command_t *cmd);

@@ -2231,7 +2231,7 @@ struct ActionImpl<R(Args...), Impl> : ImplBase<Impl>::type {
                  args_type{std::forward<Args>(arg)...});
   }
 
-  template <std::size_t... arg_id, std::size_t... excess_id>
+  template <size_t... arg_id, size_t... excess_id>
   R Apply(std::index_sequence<arg_id...>, std::index_sequence<excess_id...>,
           const args_type& args) const {
     // Impl need not be specific to the signature of action being implemented;

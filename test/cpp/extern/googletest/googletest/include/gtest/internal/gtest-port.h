@@ -2206,16 +2206,16 @@ class TypeWithSize {
 template <>
 class TypeWithSize<4> {
  public:
-  using Int = std::int32_t;
-  using UInt = std::uint32_t;
+  using Int = int32_t;
+  using UInt = uint32_t;
 };
 
 // The specialization for size 8.
 template <>
 class TypeWithSize<8> {
  public:
-  using Int = std::int64_t;
-  using UInt = std::uint64_t;
+  using Int = int64_t;
+  using UInt = uint64_t;
 };
 
 // Integer types of known sizes.
@@ -2266,7 +2266,7 @@ using TimeInMillis = int64_t;  // Represents time in milliseconds.
   static_assert(true, "no-op to require trailing semicolon")
 #define GTEST_DEFINE_int32_(name, default_val, doc)         \
   namespace testing {                                       \
-  GTEST_API_ std::int32_t GTEST_FLAG(name) = (default_val); \
+  GTEST_API_ int32_t GTEST_FLAG(name) = (default_val); \
   }                                                         \
   static_assert(true, "no-op to require trailing semicolon")
 #define GTEST_DEFINE_string_(name, default_val, doc)         \
@@ -2283,7 +2283,7 @@ using TimeInMillis = int64_t;  // Represents time in milliseconds.
   static_assert(true, "no-op to require trailing semicolon")
 #define GTEST_DECLARE_int32_(name)                 \
   namespace testing {                              \
-  GTEST_API_ extern std::int32_t GTEST_FLAG(name); \
+  GTEST_API_ extern int32_t GTEST_FLAG(name); \
   }                                                \
   static_assert(true, "no-op to require trailing semicolon")
 #define GTEST_DECLARE_string_(name)                 \

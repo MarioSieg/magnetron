@@ -28,11 +28,11 @@ static bool mag_worker_await_work(mag_worker_t *worker, mag_thread_pool_t *pool)
 void mag_worker_exec_thread_local(const mag_kernel_registry_t *kernels, mag_kernel_payload_t *payload) {
     if (mag_unlikely(!payload->cmd)) return;
     mag_opcode_t op = payload->cmd->op;
-    mag_dtype_t dtype = *payload->cmd->in ? (*payload->cmd->in)->dtype : (*payload->cmd->out)->dtype;
+    mag_dtype_t dtype = payload->cmd->in && *payload->cmd->in ? (*payload->cmd->in)->dtype : (*payload->cmd->out)->dtype;
     mag_assert2(op >= 0 && op < MAG_OP__NUM);
     mag_assert2(dtype >= 0 && dtype < MAG_DTYPE__NUM);
     void (*kernel)(const mag_kernel_payload_t *) = kernels->operators[op][dtype];
-    mag_assert(kernel, "no kernel found for op '%s'  with dtype %s", mag_op_meta_of(op)->mnemonic, mag_dtype_meta_of(dtype)->name);
+    mag_assert(kernel, "No kernel found for op '%s' with dtype %s", mag_op_meta_of(op)->mnemonic, mag_dtype_meta_of(dtype)->name);
     (*kernel)(payload);
     payload->cmd = NULL;
 }

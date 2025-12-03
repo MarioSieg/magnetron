@@ -35,9 +35,9 @@ static void mag_system_host_info_dump(mag_context_t *ctx) {
         ctx->machine.cpu_virtual_cores,
         ctx->machine.cpu_physical_cores,
         ctx->machine.cpu_sockets,
-        (mag_e11m52_t)ctx->machine.cpu_l1_size/1024.0,
-        (mag_e11m52_t) ctx->machine.cpu_l2_size/1024.0,
-        (mag_e11m52_t)ctx->machine.cpu_l3_size/1024.0/1024.0
+        (double)ctx->machine.cpu_l1_size/1024.0,
+        (double) ctx->machine.cpu_l2_size/1024.0,
+        (double)ctx->machine.cpu_l3_size/1024.0/1024.0
     );
 #if defined(__x86_64__) || defined(_M_X64) /* Print detected CPU features for x86-64 platforms. */
     if (mag_log_enabled) {
@@ -61,12 +61,12 @@ static void mag_system_host_info_dump(mag_context_t *ctx) {
     }
 #endif
     /* Now print memory information. */
-    mag_e11m52_t mem_total, mem_free, mem_used;
+    double mem_total, mem_free, mem_used;
     const char *mem_unit_total, *mem_unit_free, *mem_unit_used;
     mag_humanize_memory_size(ctx->machine.phys_mem_total, &mem_total, &mem_unit_total);
     mag_humanize_memory_size(ctx->machine.phys_mem_free, &mem_free, &mem_unit_free);
     mag_humanize_memory_size((size_t)llabs((int64_t)ctx->machine.phys_mem_total-(int64_t)ctx->machine.phys_mem_free), &mem_used, &mem_unit_used);
-    mag_e11m52_t mem_used_percent = fabs((mag_e11m52_t)(ctx->machine.phys_mem_total-ctx->machine.phys_mem_free))/(mag_e11m52_t)ctx->machine.phys_mem_total*100.0;
+    double mem_used_percent = fabs((double)(ctx->machine.phys_mem_total-ctx->machine.phys_mem_free))/(double)ctx->machine.phys_mem_total*100.0;
     mag_log_info("Physical Machine Memory: %.03f %s, Free: %.03f %s, Used: %.03f %s (%.02f%%)", mem_total, mem_unit_total, mem_free, mem_unit_free, mem_used, mem_unit_used, mem_used_percent);
 }
 
@@ -187,7 +187,7 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
     (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
     ctx = NULL;
-    mag_log_info("magnetron context destroyed, %zu K tensors total, %.02f GiB storage allocation", num_created_tensors/1000, (mag_e11m52_t)storage_bytes/(mag_e11m52_t)(1<<30));
+    mag_log_info("magnetron context destroyed, %zu K tensors total, %.02f GiB storage allocation", num_created_tensors/1000, (double)storage_bytes/(double)(1<<30));
 }
 
 const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx) {
@@ -274,25 +274,60 @@ void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
 
 const mag_dtype_meta_t *mag_dtype_meta_of(mag_dtype_t type) {
     static const mag_dtype_meta_t infos[MAG_DTYPE__NUM] = {
-        [MAG_DTYPE_E8M23] = {
-            .name="e8m23",
-            .size=sizeof(mag_e8m23_t),
-            .align=__alignof(mag_e8m23_t),
+        [MAG_DTYPE_FLOAT32] = {
+            .name="float32",
+            .size=sizeof(float),
+            .align=__alignof(float),
         },
-        [MAG_DTYPE_E5M10] = {
-            .name="e5m10",
-            .size=sizeof(mag_e5m10_t),
-            .align=__alignof(mag_e5m10_t),
+        [MAG_DTYPE_FLOAT16] = {
+            .name="float16",
+            .size=sizeof(mag_float16_t),
+            .align=__alignof(mag_float16_t),
         },
-        [MAG_DTYPE_BOOL] = {
-            .name="bool",
+        [MAG_DTYPE_BOOLEAN] = {
+            .name="boolean",
             .size=sizeof(uint8_t),
             .align=__alignof(uint8_t),
         },
-        [MAG_DTYPE_I32] = {
-            .name="i32",
+        [MAG_DTYPE_UINT8] = {
+            .name="uint8",
+            .size=sizeof(uint8_t),
+            .align=__alignof(uint8_t),
+        },
+        [MAG_DTYPE_INT8] = {
+            .name="int8",
+            .size=sizeof(int8_t),
+            .align=__alignof(int8_t),
+        },
+        [MAG_DTYPE_UINT16] = {
+            .name="uint16",
+            .size=sizeof(uint16_t),
+            .align=__alignof(uint16_t),
+        },
+        [MAG_DTYPE_INT16] = {
+            .name="int16",
+            .size=sizeof(int16_t),
+            .align=__alignof(int16_t),
+        },
+        [MAG_DTYPE_UINT32] = {
+            .name="uint32",
+            .size=sizeof(uint32_t),
+            .align=__alignof(uint32_t),
+        },
+        [MAG_DTYPE_INT32] = {
+            .name="int32",
             .size=sizeof(int32_t),
             .align=__alignof(int32_t),
+        },
+        [MAG_DTYPE_UINT64] = {
+            .name="int64",
+            .size=sizeof(uint64_t),
+            .align=__alignof(uint64_t),
+        },
+        [MAG_DTYPE_INT64] = {
+            .name="int64",
+            .size=sizeof(int64_t),
+            .align=__alignof(int64_t),
         },
     };
     return &infos[type];

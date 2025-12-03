@@ -9,16 +9,16 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include <prelude.hpp>
+#pragma once
 
-using namespace magnetron;
-using namespace test;
+#include "mag_cuda.cuh"
 
-TEST(cpu_tensor_transform_ops, view_no_axes) {
-  auto ctx = context{};
-  auto base = tensor{ctx, dtype::e8m23, 2, 2, 3, 1};
-  auto v = base.view();
-  ASSERT_FALSE(base.is_view());
-  ASSERT_TRUE(v.is_view());
-  ASSERT_EQ(base.storage_base_ptr(), v.storage_base_ptr());
+namespace mag {
+    constexpr int REDUCTION_BLOCK_SIZE = 256;
+
+    extern void reduce_op_mean(const mag_command_t *cmd);
+    extern void reduce_op_min(const mag_command_t *cmd);
+    extern void reduce_op_max(const mag_command_t *cmd);
+    extern void reduce_op_sum(const mag_command_t *cmd);
+    extern void reduce_op_prod(const mag_command_t *cmd);
 }

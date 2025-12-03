@@ -10,6 +10,7 @@
 */
 
 #include <prelude.hpp>
+#include <nn.hpp>
 
 using namespace magnetron;
 using namespace test;
@@ -33,27 +34,27 @@ private:
     nn::linear_layer l2;
 };
 
-TEST(models, xor_e8m23) {
+TEST(models, xor_float32) {
     context ctx {};
     ctx.manual_seed(0x9032002);
-    xor_model model{ctx, dtype::e8m23};
+    xor_model model{ctx, dtype::float32};
     nn::sgd optimizer{model.params(), 0.1f};
 
-    static constexpr std::array<float, 2*4> x_data {
+    std::vector<float> x_data {
         0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f, 1.0f,1.0f
     };
-    static constexpr std::array<float, 4> y_data {
+    std::vector<float> y_data {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 
-    tensor x {ctx, dtype::e8m23, 4, 2};
+    tensor x {ctx, dtype::float32, 4, 2};
     x.fill_from(x_data);
 
-    tensor y {ctx, dtype::e8m23, 4, 1};
+    tensor y {ctx, dtype::float32, 4, 1};
     y.fill_from(y_data);
 
-    constexpr std::int64_t epochs {2000};
-    for (std::int64_t epoch = 0; epoch < epochs; ++epoch) {
+    constexpr int64_t epochs {2000};
+    for (int64_t epoch = 0; epoch < epochs; ++epoch) {
         tensor y_hat {model(x)};
         tensor loss {nn::optimizer::mse(y_hat, y)};
         loss.backward();
@@ -68,37 +69,37 @@ TEST(models, xor_e8m23) {
 
     std::vector<float> output {y_hat.round().to_vector<float>()};
     ASSERT_EQ(y_data.size(), output.size());
-    for (std::int64_t i = 0; i < output.size(); ++i) {
+    for (int64_t i = 0; i < output.size(); ++i) {
         ASSERT_EQ(y_data[i], output[i]);
     }
 }
 
-TEST(models, xor_e5m10) {
+TEST(models, xor_float16) {
     context ctx {};
     ctx.manual_seed(0x9032002);
-    xor_model model{ctx, dtype::e5m10};
+    xor_model model{ctx, dtype::float16};
     nn::sgd optimizer{model.params(), 0.1f};
 
-    static constexpr std::array<float, 2*4> x_data {
+    std::vector<float> x_data {
         0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f, 1.0f,1.0f
     };
-    static constexpr std::array<float, 4> y_data {
+    std::vector<float> y_data {
         0.0f, 1.0f, 1.0f, 0.0f
     };
 
-    tensor x {ctx, dtype::e5m10, 4, 2};
+    tensor x {ctx, dtype::float16, 4, 2};
     x.fill_from(x_data);
 
-    tensor y {ctx, dtype::e5m10, 4, 1};
+    tensor y {ctx, dtype::float16, 4, 1};
     y.fill_from(y_data);
 
-    constexpr std::int64_t epochs {2000};
-    for (std::int64_t epoch = 0; epoch < epochs; ++epoch) {
+    constexpr int64_t epochs {2000};
+    for (int64_t epoch = 0; epoch < epochs; ++epoch) {
         tensor y_hat {model(x)};
         tensor loss {nn::optimizer::mse(y_hat, y)};
         loss.backward();
         if (epoch % 100 == 0) {
-            std::cout << "Epoch: " << epoch << ", Loss: " << loss.to_vector<float>()[0] << std::endl;
+            std::cout << "Epoch: " << epoch << ", Loss: " << static_cast<float>(loss.to_vector<float16>()[0]) << std::endl;
         }
         optimizer.step();
         optimizer.zero_grad();
@@ -106,9 +107,9 @@ TEST(models, xor_e5m10) {
 
     tensor y_hat {model(x)};
 
-    std::vector<float> output {y_hat.round().to_vector<float>()};
+    std::vector output {y_hat.round().to_vector<float16>()};
     ASSERT_EQ(y_data.size(), output.size());
-    for (std::int64_t i = 0; i < output.size(); ++i) {
+    for (int64_t i = 0; i < output.size(); ++i) {
         ASSERT_EQ(y_data[i], output[i]);
     }
 }

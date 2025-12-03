@@ -14,6 +14,5 @@ __author_email__ = 'mario.sieg.64@gmail.com'
 __license__ = 'Apache 2.0'
 __url__ = 'https://github.com/MarioSieg/magnetron'
 
-from ._dtype import *
 from .context import *
 from ._tensor import *

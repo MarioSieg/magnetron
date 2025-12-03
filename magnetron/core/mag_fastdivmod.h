@@ -9,28 +9,26 @@
 ** +---------------------------------------------------------------------+
 */
 
-#ifndef MAG_CPU_PRNG_PHILOX_H
-#define MAG_CPU_PRNG_PHILOX_H
+#ifndef MAG_FASTDIVMOD_H
+#define MAG_FASTDIVMOD_H
 
-#include <core/mag_def.h>
+#include "mag_def.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define MAG_PHILOX_ROUNDS 10
-typedef struct mag_philox4x32_ctr_t {
-    uint32_t v[4];
-} mag_philox4x32_ctr_t;
+typedef struct mag_fastdiv_t {
+    uint64_t magic;
+    uint8_t flags;
+} mag_fastdiv_t;
 
-typedef struct mag_philox4x32_key_t {
-    uint32_t v[2];
-} mag_philox4x32_key_t;
+extern MAG_EXPORT mag_fastdiv_t mag_fastdiv_init(uint64_t d);
 
-typedef struct mag_philox4x32_stream_t {
-    mag_philox4x32_ctr_t ctr;
-    mag_philox4x32_key_t key;
-} mag_philox4x32_stream_t;
+static MAG_AINLINE uint64_t mag_fastdiv_eval(uint64_t numer, const mag_fastdiv_t *denom) {
+    uint64_t q = mag_mulhilo64(numer, denom->magic);
+    return (((numer-q)>>1)+q)>>denom->flags;
+}
 
 #ifdef __cplusplus
 }

@@ -42,31 +42,6 @@ extern "C" {
 #define MAG_VERSION mag_ver_encode(0, 1, 2)
 #define MAG_STORAGE_VERSION mag_ver_encode(0, 1, 0)
 
-/**
- * @brief Thread scheduling priority for CPU compute.
- *      This set the OS scheduling priority of the thread that executes the compute operations.
- *      The priority is only used if the compute device is a CPU.
- */
-typedef enum mag_thread_prio_t {       /* Thread scheduling priority for CPU compute */
-    MAG_THREAD_PRIO_NORMAL = 0,     /* Normal thread priority */
-    MAG_THREAD_PRIO_MEDIUM = 1,     /* Medium thread priority */
-    MAG_THREAD_PRIO_HIGH = 2,       /* High thread priority */
-    MAG_THREAD_PRIO_REALTIME = 3,   /* Real-time thread priority */
-} mag_thread_prio_t;
-
-/**
- * @brief Desired Color channels for loading image tensors.
- */
-typedef enum mag_color_channels_t {
-    MAG_COLOR_CHANNELS_AUTO,        /* Automatically detect number of color channels */
-    MAG_COLOR_CHANNELS_GRAY,        /* Grayscale F32 */
-    MAG_COLOR_CHANNELS_GRAY_A,      /* Grayscale F32 + Alpha F32 */
-    MAG_COLOR_CHANNELS_RGB,         /* R32G32B32 */
-    MAG_COLOR_CHANNELS_RGBA,        /* R32G32B32A32 */
-
-    MAG_COLOR_CHANNELS__NUM
-} mag_color_channels_t;
-
 extern MAG_EXPORT void mag_set_log_mode(bool enabled); /* Enable/disable logging. */
 
 typedef enum mag_status_t {
@@ -146,15 +121,22 @@ typedef struct mag_tensor_t mag_tensor_t;
  * @brief Data types for tensors.
  */
 typedef enum mag_dtype_t {
-    MAG_DTYPE_E8M23,        /* IEEE-754 32-bit floating point number. Commonly known as float32, f32. */
-    MAG_DTYPE_E5M10,        /* IEEE-754 16-bit floating point number. Commonly known as float16, f16, half. */
-    MAG_DTYPE_BOOL,         /* 1-byte boolean */
-    MAG_DTYPE_I32,          /* 32-bit signed integer */
+    MAG_DTYPE_FLOAT32,          /* IEEE-754 32-bit floating point number. Commonly known as float32, f32. */
+    MAG_DTYPE_FLOAT16,          /* IEEE-754 16-bit floating point number. Commonly known as float16, f16, half. */
+    MAG_DTYPE_BOOLEAN,          /* 1-byte boolean */
+    MAG_DTYPE_UINT8,
+    MAG_DTYPE_INT8,
+    MAG_DTYPE_UINT16,
+    MAG_DTYPE_INT16,
+    MAG_DTYPE_UINT32,
+    MAG_DTYPE_INT32,
+    MAG_DTYPE_UINT64,
+    MAG_DTYPE_INT64,
 
     MAG_DTYPE__NUM
 } mag_dtype_t;
 
-mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fix in 1 byte */
+mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fit in 1 byte */
 
 /**
  * @brief Stores various information about a data type such as size, name, etc.
@@ -174,25 +156,36 @@ extern MAG_EXPORT mag_status_t mag_tensor_empty_scalar(mag_tensor_t **out, mag_c
 extern MAG_EXPORT mag_status_t mag_tensor_scalar(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, float value);
 extern MAG_EXPORT mag_status_t mag_tensor_full(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, float value);
 extern MAG_EXPORT mag_status_t mag_tensor_full_like(mag_tensor_t **out, mag_tensor_t *isomorph, float value);
+extern MAG_EXPORT mag_status_t mag_tensor_arange(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, float start, float end, float step);
+extern MAG_EXPORT mag_status_t mag_one_hot(mag_tensor_t **out, mag_tensor_t *indices, int64_t num_classes);
+extern MAG_EXPORT mag_status_t mag_tensor_rand_perm(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t n);
 extern MAG_EXPORT mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height);
-
-/* ============ Tensor Operators ============ */
-
 extern MAG_EXPORT mag_status_t mag_clone(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_cast(mag_tensor_t **out, mag_tensor_t *x, mag_dtype_t dst_type);
 extern MAG_EXPORT mag_status_t mag_view(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank);
 extern MAG_EXPORT mag_status_t mag_view_slice(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, int64_t start, int64_t len, int64_t step);
 extern MAG_EXPORT mag_status_t mag_reshape(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank);
 extern MAG_EXPORT mag_status_t mag_transpose(mag_tensor_t **out, mag_tensor_t *x, int64_t dim1, int64_t dim2);
 extern MAG_EXPORT mag_status_t mag_permute(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank);
 extern MAG_EXPORT mag_status_t mag_contiguous(mag_tensor_t **out, mag_tensor_t *x);
-
+extern MAG_EXPORT mag_status_t mag_squeeze_all(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_squeeze_dim(mag_tensor_t **out, mag_tensor_t *x, int64_t dim);
+extern MAG_EXPORT mag_status_t mag_unsqueeze(mag_tensor_t **out, mag_tensor_t *x, int64_t dim) ;
+extern MAG_EXPORT mag_status_t mag_flatten(mag_tensor_t **out, mag_tensor_t *x, int64_t start_dim, int64_t end_dim);
+extern MAG_EXPORT mag_status_t mag_unflatten(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, const int64_t *sizes, int64_t sizes_rank);
+extern MAG_EXPORT mag_status_t mag_narrow(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, int64_t start, int64_t length);
+extern MAG_EXPORT mag_status_t mag_movedim(mag_tensor_t **out, mag_tensor_t *x, int64_t src, int64_t dst);
+extern MAG_EXPORT mag_status_t mag_select(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, int64_t index);
+extern MAG_EXPORT mag_status_t mag_split(mag_tensor_t **outs, int64_t num_splits, mag_tensor_t *x, int64_t split_size, int64_t dim);
 extern MAG_EXPORT mag_status_t mag_mean(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_min(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_max(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
-extern MAG_EXPORT mag_status_t mag_sum(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_argmin(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_argmax(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
-
+extern MAG_EXPORT mag_status_t mag_sum(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_status_t mag_prod(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_status_t mag_all(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_status_t mag_any(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_abs(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_abs_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sgn(mag_tensor_t **out, mag_tensor_t *x);
@@ -201,24 +194,64 @@ extern MAG_EXPORT mag_status_t mag_neg(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_neg_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_log(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_log_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_log10(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_log10_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_log1p(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_log1p_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_log2(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_log2_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sqr(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sqr_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_rcp(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_rcp_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sqrt(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sqrt_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_rsqrt(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_rsqrt_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sin(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sin_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_cos(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_cos_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_tan(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_tan_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_sinh(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_sinh_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_cosh(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_cosh_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_tanh(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_tanh_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_asin(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_asin_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_acos(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_acos_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_atan(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_atan_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_asinh(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_asinh_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_acosh(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_acosh_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_atanh(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_atanh_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_step(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_step_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_erf(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_erf_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_erfc(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_erfc_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_exp(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_exp_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_exp2(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_exp2_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_expm1(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_expm1_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_floor(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_floor_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_ceil(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_ceil_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_round(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_round_(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_trunc(mag_tensor_t **out, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_trunc_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_softmax(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_softmax_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_softmax_dv(mag_tensor_t **out, mag_tensor_t *x);
@@ -233,8 +266,6 @@ extern MAG_EXPORT mag_status_t mag_silu(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_silu_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_silu_dv(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_silu_dv_(mag_tensor_t **out, mag_tensor_t *x);
-extern MAG_EXPORT mag_status_t mag_tanh(mag_tensor_t **out, mag_tensor_t *x);
-extern MAG_EXPORT mag_status_t mag_tanh_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_tanh_dv(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_tanh_dv_(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_relu(mag_tensor_t **out, mag_tensor_t *x);
@@ -255,6 +286,8 @@ extern MAG_EXPORT mag_status_t mag_mul(mag_tensor_t **out, mag_tensor_t *x, mag_
 extern MAG_EXPORT mag_status_t mag_mul_(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_div(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_div_(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
+extern MAG_EXPORT mag_status_t mag_mod(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
+extern MAG_EXPORT mag_status_t mag_mod_(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_matmul(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_repeat_back(mag_tensor_t **out, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_gather(mag_tensor_t **out, mag_tensor_t *x, int64_t dim, mag_tensor_t *idx);
@@ -285,17 +318,16 @@ extern MAG_EXPORT mag_status_t mag_cat(mag_tensor_t **out, mag_tensor_t **tensor
 
 /* ============ Tensor Init Operators ============ */
 
-extern MAG_EXPORT void mag_tensor_fill_from_floats(mag_tensor_t *t, const float *data, size_t len);       /* Copy floats into tensor buffer. If the tensors datatype is not float, the values are converted to the tensors dtype. */
-extern MAG_EXPORT void mag_tensor_fill_from_raw_bytes(mag_tensor_t *t, const void *data, size_t len);     /* Copy raw bytes into tensor buffer */
-extern MAG_EXPORT void mag_tensor_fill_float(mag_tensor_t *t, float x);                                            /* Set all tensor elements to a specific value. */
-extern MAG_EXPORT void mag_tensor_fill_int(mag_tensor_t *t, int32_t x);                                            /* Set all tensor elements to a specific value. */
-extern MAG_EXPORT void mag_tensor_masked_fill_float(mag_tensor_t *t, mag_tensor_t *mask, float x);          /* Set all tensor elements to a specific value if the mask value at the same index is true. */
-extern MAG_EXPORT void mag_tensor_masked_fill_int(mag_tensor_t *t, mag_tensor_t *mask, int32_t x);          /* Set all tensor elements to a specific value if the mask value at the same index is true. */
-extern MAG_EXPORT void mag_tensor_fill_random_uniform_float(mag_tensor_t *t, float min, float max);                /* Fill tensor with random values from uniform distribution within [min, max] */
-extern MAG_EXPORT void mag_tensor_fill_random_uniform_int(mag_tensor_t *t, int32_t min, int32_t max);              /* Fill tensor with random values from uniform distribution within [min, max] */
-extern MAG_EXPORT void mag_tensor_fill_random_normal(mag_tensor_t *t, float mean, float stddev);                   /* Fill tensor with random values from the normal distribution. */
-extern MAG_EXPORT void mag_tensor_fill_random_bernoulli(mag_tensor_t *t, float p);                                 /* Fill bool tensor with random values from the bernoulli distribution. */
-extern MAG_EXPORT void mag_tensor_fill_arange(mag_tensor_t *t, float start, float step);                            /* Fill tensor with values from start to end with step. */
+extern MAG_EXPORT void mag_tensor_fill_from_floats(mag_tensor_t *t, const float *data, size_t len);                 /* Copy floats into tensor buffer. If the tensors datatype is not float, the values are converted to the tensors dtype. */
+extern MAG_EXPORT void mag_tensor_fill_from_raw_bytes(mag_tensor_t *t, const void *data, size_t len);               /* Copy raw bytes into tensor buffer */
+extern MAG_EXPORT void mag_tensor_fill_float(mag_tensor_t *t, float x);                                             /* Set all tensor elements to a specific value. */
+extern MAG_EXPORT void mag_tensor_fill_int(mag_tensor_t *t, int64_t x);                                             /* Set all tensor elements to a specific value. */
+extern MAG_EXPORT void mag_tensor_masked_fill_float(mag_tensor_t *t, mag_tensor_t *mask, float x);                  /* Set all tensor elements to a specific value if the mask value at the same index is true. */
+extern MAG_EXPORT void mag_tensor_masked_fill_int(mag_tensor_t *t, mag_tensor_t *mask, int64_t x);                  /* Set all tensor elements to a specific value if the mask value at the same index is true. */
+extern MAG_EXPORT void mag_tensor_fill_random_uniform_float(mag_tensor_t *t, float min, float max);                 /* Fill tensor with random values from uniform distribution within [min, max] */
+extern MAG_EXPORT void mag_tensor_fill_random_uniform_int(mag_tensor_t *t, int64_t min, int64_t max);               /* Fill tensor with random values from uniform distribution within [min, max] */
+extern MAG_EXPORT void mag_tensor_fill_random_normal(mag_tensor_t *t, float mean, float stddev);                    /* Fill tensor with random values from the normal distribution. */
+extern MAG_EXPORT void mag_tensor_fill_random_bernoulli(mag_tensor_t *t, float p);                                  /* Fill bool tensor with random values from the bernoulli distribution. */
 
 /* ============ Tensor Property Accessors ============ */
 
@@ -340,17 +372,17 @@ extern MAG_EXPORT void mag_tensor_get_raw_data_as_bytes_free(void *ret_val);
 extern MAG_EXPORT float *mag_tensor_get_data_as_floats(mag_tensor_t *t);
 extern MAG_EXPORT void mag_tensor_get_data_as_floats_free(float *ret_val);
 extern MAG_EXPORT float mag_tensor_get_item_float(const mag_tensor_t *t);
-extern MAG_EXPORT int32_t mag_tensor_get_item_int(const mag_tensor_t *t);
+extern MAG_EXPORT int64_t mag_tensor_get_item_int(const mag_tensor_t *t);
 extern MAG_EXPORT bool mag_tensor_get_item_bool(const mag_tensor_t *t);
 
 /* ============ Tensor Misc API ============ */
 
-extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *t);
-extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *t);
 extern MAG_EXPORT mag_tensor_t *mag_tensor_detach(mag_tensor_t *t);
 extern MAG_EXPORT char *mag_tensor_to_string(mag_tensor_t *t, bool with_header, size_t from_start_count, size_t from_end_count);
-extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val);/* Save tensor data as an image */
+extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val); /* Save tensor data as an image */
 extern MAG_EXPORT void mag_tensor_visualize_backprop_graph(mag_tensor_t *t, const char *file);
+extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *t);
+extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *t);
 
 /* ============ Storage Archive API ============ */
 

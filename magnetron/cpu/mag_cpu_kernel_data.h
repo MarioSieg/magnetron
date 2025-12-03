@@ -13,9 +13,9 @@
 #define MAG_CPU_KERNEL_DATA_H
 
 #include <core/mag_backend.h>
+#include <core/mag_prng_philox4x32.h>
 
 #include "mag_cpu_autotune.h"
-#include "mag_cpu_prng_philox.h"
 
 #ifdef __cplusplus
 extern "C" {

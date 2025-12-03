@@ -107,7 +107,7 @@ MAG_COLDPROC void mag_fixed_pool_print_info(mag_fixed_pool_t *pool, const char *
         (size_t)pool->num_freelist_hits,
         (size_t)pool->num_pool_hits
     );
-    mag_e11m52_t mem_alloced, pool_mem;
+    double mem_alloced, pool_mem;
     const char *mem_unit_alloced, *mem_unit_pool;
     mag_humanize_memory_size(pool->num_chunks*pool->blocks_per_chunk*pool->block_size, &mem_alloced, &mem_unit_alloced);
     mag_humanize_memory_size(pool->num_allocs*pool->block_size, &pool_mem, &mem_unit_pool);

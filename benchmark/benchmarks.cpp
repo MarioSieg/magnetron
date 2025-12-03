@@ -12,19 +12,20 @@ using namespace magnetron;
 
 auto main() -> int {
     ankerl::nanobench::Bench bench {};
-    auto type = dtype::e8m23;
-    bench.title("matmul " + std::string{dtype_name(type)})
-        .unit("matmul " + std::string{dtype_name(type)})
+    auto type = dtype::float32;
+    bench.title("add " + std::string{dtype_name(type)})
+        .unit("add " + std::string{dtype_name(type)})
         .warmup(100)
         .performanceCounters(true);
         context ctx {};
-        tensor x {ctx, type, 7, 768, 3072};
+        tensor x {ctx, type, 2048, 2048};
         x.fill(1.0f);
-        tensor y {ctx, type, 7, 3072, 768};
+        tensor y {ctx, type, 2048, 2048};
         y.fill(3.0f);
 
-        bench.run("matmul", [&] {
-            tensor r {x % y};
+        tensor yT = y.permute({3, 2, 1});
+        bench.run("add (non-cont)", [&] {
+            tensor r {x + yT};
             ankerl::nanobench::doNotOptimizeAway(r);
         });
     return 0;

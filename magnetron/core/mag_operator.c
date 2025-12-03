@@ -24,7 +24,7 @@ const mag_opmeta_t *mag_op_meta_of(mag_opcode_t opc) {
         flags, \
         mag_op_backward_##diff \
         }
-            mag_opdef(_, MAG_SEP)
+        mag_opdef(_, MAG_SEP)
     #undef _
     #undef mag_op_backward_NULL
     };

@@ -19,11 +19,11 @@
 static void mag_au_state_dtor(void *p) {
     mag_au_state_t *au = p;
     if (au->grad) {
-        mag_tensor_decref(au->grad);
+        mag_rc_decref(au->grad);
         au->grad = NULL;
     }
     for (size_t i=0; i < sizeof(au->op_inputs)/sizeof(*au->op_inputs); ++i)
-        if (au->op_inputs[i]) mag_tensor_decref(au->op_inputs[i]);
+        if (au->op_inputs[i]) mag_rc_decref(au->op_inputs[i]);
     mag_fixed_pool_free_block(&au->ctx->view_meta_pool, au);
 }
 
@@ -32,19 +32,19 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t
     *au_state = mag_fixed_pool_alloc_block(&ctx->au_state_pool);
     **au_state = (mag_au_state_t) {
         .ctx = ctx,
-        .rc = mag_rc_control_init(*au_state, &mag_au_state_dtor),
         .op = MAG_OP_NOP,
         .op_inputs = {},
-        .op_params = {},
+        .op_attrs = {},
         .grad = NULL,
     };
+    mag_rc_init_object(*au_state, &mag_au_state_dtor);
     return *au_state;
 }
 
 mag_status_t mag_tensor_get_grad(const mag_tensor_t *t, mag_tensor_t **out_grad) {
     mag_contract(t->ctx, ERR_INVALID_PARAM, {}, t->flags & MAG_TFLAG_REQUIRES_GRAD, "Tensor does not require gradient");
     mag_contract(t->ctx, ERR_INVALID_STATE, {}, t->au_state, "Autodiff state missing for tensor");
-    if (t->au_state->grad) mag_tensor_incref(t->au_state->grad);
+    if (t->au_state->grad) mag_rc_incref(t->au_state->grad);
     *out_grad = t->au_state->grad;
     return MAG_STATUS_OK;
 }
@@ -66,7 +66,7 @@ mag_status_t mag_tensor_set_requires_grad(mag_tensor_t *t, bool requires_grad) {
 
 static void mag_tensor_patch_grad(mag_tensor_t *dst, mag_tensor_t *grad) {
     if (dst->au_state->grad)
-        mag_tensor_decref(dst->au_state->grad);
+        mag_rc_decref(dst->au_state->grad);
     grad->flags = (grad->flags|MAG_TFLAG_IS_GRAD)&~MAG_TFLAG_REQUIRES_GRAD;
     dst->au_state->grad = grad;
 }
@@ -115,11 +115,11 @@ mag_status_t mag_tensor_backward(mag_tensor_t *root) {
             } else {
                 mag_tensor_t *acc;
                 if (mag_iserr(mag_add(&acc, gri, input->au_state->grad))) {
-                    mag_tensor_decref(gri);
+                    mag_rc_decref(gri);
                     continue;
                 }
                 mag_tensor_patch_grad(input, acc);
-                mag_tensor_decref(gri);
+                mag_rc_decref(gri);
             }
         }
     }

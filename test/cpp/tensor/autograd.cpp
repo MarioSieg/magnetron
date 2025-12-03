@@ -15,13 +15,13 @@ using namespace magnetron;
 
 TEST(cpu_autograd, simple) {
     context ctx {};
-    tensor x {ctx, dtype::e8m23, 1};
+    tensor x {ctx, dtype::float32, 1};
     x.fill(3.0f);
     x.requires_grad(true);
-    tensor y {ctx, dtype::e8m23, 1};
+    tensor y {ctx, dtype::float32, 1};
     y.fill(2.0f);
     y.requires_grad(true);
-    tensor k {ctx, dtype::e8m23, 1};
+    tensor k {ctx, dtype::float32, 1};
     k.fill(10.0f);
     k.requires_grad(true);
 
@@ -41,30 +41,30 @@ TEST(cpu_autograd, simple) {
     ASSERT_EQ(x.numel(), z.numel());
 
     // check forward pass
-    for (std::int64_t i {}; i < x.numel(); ++i) {
+    for (int64_t i {}; i < x.numel(); ++i) {
         ASSERT_FLOAT_EQ(x.to_vector<float>()[0], 3.0f);
         ASSERT_FLOAT_EQ(y.to_vector<float>()[0], 2.0f);
         ASSERT_FLOAT_EQ(z.to_vector<float>()[0], 0.5f);
     }
 
     // check backward pass
-    for (std::int64_t i {}; i < x.grad().value().numel(); ++i) { // ∂z/∂x = 0.6
+    for (int64_t i {}; i < x.grad().value().numel(); ++i) { // ∂z/∂x = 0.6
         ASSERT_FLOAT_EQ(x.grad().value().to_vector<float>()[i], 0.6f);
     }
-    for (std::int64_t i {}; i < y.grad().value().numel(); ++i) { // ∂z/∂x = -0.4
+    for (int64_t i {}; i < y.grad().value().numel(); ++i) { // ∂z/∂x = -0.4
         ASSERT_FLOAT_EQ(y.grad().value().to_vector<float>()[i], -0.4f);
     }
-    for (std::int64_t i {}; i < z.grad().value().numel(); ++i) { // ∂z/∂x = 1
+    for (int64_t i {}; i < z.grad().value().numel(); ++i) { // ∂z/∂x = 1
         ASSERT_FLOAT_EQ(z.grad().value().to_vector<float>()[i], 1.0f);
     }
 }
 
 TEST(cpu_autograd, scalar_complex) {
     context ctx {};
-    tensor two {ctx, dtype::e8m23, 1};
+    tensor two {ctx, dtype::float32, 1};
     two.fill(2.0f);
     two.requires_grad(true);
-    tensor x {ctx, dtype::e8m23, 1};
+    tensor x {ctx, dtype::float32, 1};
     x.fill(-4.0f);
     x.requires_grad(true);
     tensor z {two*x+two+x};
@@ -89,29 +89,29 @@ TEST(cpu_autograd, scalar_complex) {
     ASSERT_EQ(x.numel(), y.numel());
 
     // check forward pass
-    for (std::int64_t i {}; i < x.numel(); ++i) {
+    for (int64_t i {}; i < x.numel(); ++i) {
         ASSERT_FLOAT_EQ(x.to_vector<float>()[i], -4.0f);
         ASSERT_FLOAT_EQ(y.to_vector<float>()[i], -20.0f);
     }
 
     // check backward pass
-    for (std::int64_t i {}; i < x.grad().value().numel(); ++i) { // ∂z/∂x = 46.0
+    for (int64_t i {}; i < x.grad().value().numel(); ++i) { // ∂z/∂x = 46.0
         ASSERT_FLOAT_EQ(x.grad().value().to_vector<float>()[i], 46.0f);
     }
-    for (std::int64_t i {}; i < y.grad().value().numel(); ++i) { // ∂z/∂y = 1.0
+    for (int64_t i {}; i < y.grad().value().numel(); ++i) { // ∂z/∂y = 1.0
         ASSERT_FLOAT_EQ(y.grad().value().to_vector<float>()[i], 1.0f);
     }
 }
 
 TEST(cpu_autograd, broadcast) {
     context ctx {};
-    tensor x {ctx, dtype::e8m23, 3, 3, 3, 3};
+    tensor x {ctx, dtype::float32, 3, 3, 3, 3};
     x.fill(3.0f);
     x.requires_grad(true);
-    tensor y {ctx, dtype::e8m23, 3, 3, };
+    tensor y {ctx, dtype::float32, 3, 3, };
     y.fill(2.0f);
     y.requires_grad(true);
-    tensor k {ctx, dtype::e8m23, 1};
+    tensor k {ctx, dtype::float32, 1};
     k.fill(10.0f);
     k.requires_grad(true);
 
@@ -128,27 +128,27 @@ TEST(cpu_autograd, broadcast) {
     ASSERT_TRUE(z.grad().has_value());
 
     // check forward pass
-    for (std::int64_t i {}; i < x.numel(); ++i) {
+    for (int64_t i {}; i < x.numel(); ++i) {
         ASSERT_FLOAT_EQ(x.to_vector<float>()[i], 3.0f);
     }
-    for (std::int64_t i {}; i < y.numel(); ++i) {
+    for (int64_t i {}; i < y.numel(); ++i) {
         ASSERT_FLOAT_EQ(y.to_vector<float>()[i], 2.0f);
     }
-    for (std::int64_t i {}; i < z.numel(); ++i) {
+    for (int64_t i {}; i < z.numel(); ++i) {
         ASSERT_FLOAT_EQ(z.to_vector<float>()[i], 40.5f);
     }
 
     // check backward pass
     auto x_grad {x.grad().value()};
-    for (std::int64_t i {}; i < x_grad.numel(); ++i) { // ∂z/∂x = 0.6
+    for (int64_t i {}; i < x_grad.numel(); ++i) { // ∂z/∂x = 0.6
         ASSERT_FLOAT_EQ(x_grad.to_vector<float>()[i], 0.6f);
     }
     auto y_grad {y.grad().value()};
-    for (std::int64_t i {}; i < y_grad.numel(); ++i) { // ∂z/∂x = -3.6f
+    for (int64_t i {}; i < y_grad.numel(); ++i) { // ∂z/∂x = -3.6f
         ASSERT_FLOAT_EQ(y_grad.to_vector<float>()[i], -3.6f);
     }
     auto z_grad {z.grad().value()};
-    for (std::int64_t i {}; i < z_grad.numel(); ++i) { // ∂z/∂x = 1
+    for (int64_t i {}; i < z_grad.numel(); ++i) { // ∂z/∂x = 1
         ASSERT_FLOAT_EQ(z_grad.to_vector<float>()[i], 1.0f);
     }
 }

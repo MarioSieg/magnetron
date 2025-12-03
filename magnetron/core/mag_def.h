@@ -39,12 +39,11 @@
 extern "C" {
 #endif
 
-  #if !defined(NDEBUG) || !NDEBUG
+#if !defined(NDEBUG) || !NDEBUG
 #define MAG_DEBUG
 #endif
 
 #define MAG_MAX_OP_INPUTS 2 /* Maximum number of input tensors for an operation */
-#define MAG_MAX_OP_PARAMS 8 /* Maximum number of parameters for an operation */
 
 #define MAG_SEP ,
 #define MAG_GELU_COEFF 0.044715f /* Coefficient for GELU approximation. */
@@ -53,6 +52,17 @@ extern "C" {
 #define MAG_MAX_CPU_TOPO_DEPTH 2
 #define MAG_MAX_CPU_CACHE_DEPTH 10
 #define MAG_MAX_CPU_NUMA_NODES 64
+
+/* Allows compiling code for host and cuda */
+#if defined(__CUDA_ARCH__) && !defined(MAG_CUDA_DEVICE)
+#define MAG_CUDA_DEVICE __device__
+#else
+#define MAG_CUDA_DEVICE
+#endif
+
+#ifdef __cplusplus
+#define restrict __restrict__
+#endif
 
 /* Compiler specific macros and utils for GCC, Clang and ICC. */
 #if defined(__GNUC__) || defined(__clang__) || defined(__INTEL_COMPILER)
@@ -321,9 +331,9 @@ mag_static_assert(sizeof(0ull) == 8);   /* ull literal suffix must infer to uint
 ** All floating-point types are described by their exponent (E) and mantissa (M) bits. The sign bit is always present and not added.
 **
 ** For example:
-**      float is an IEEE 754 32-bit float with 8 exponent bits and 23 mantissa bits. So float = e8m23.
+**      float is an IEEE 754 32-bit float with 8 exponent bits and 23 mantissa bits. So float = float32.
 **          8 exponent bits + 23 mantissa bits + 1 sign bit = 32 bits.
-**      half/f16 is an IEEE 754 16-bit float with 5 exponent bits and 10 mantissa bits. So half = e5m10.
+**      half/f16 is an IEEE 754 16-bit float with 5 exponent bits and 10 mantissa bits. So half = float16.
 **          5 exponent bits + 10 mantissa bits + 1 sign bit = 16 bits.
 **
 ** The builtin float keyword is only used for the public API in magnetron.h.
@@ -332,51 +342,38 @@ mag_static_assert(sizeof(0ull) == 8);   /* ull literal suffix must infer to uint
 
 /* Floating-point types. */
 
-typedef double mag_e11m52_t;  /* f32 = IEEE 754 64-bit double precision float. */
-typedef float mag_e8m23_t;    /* f64 = IEEE 754 32-bit single precision float. */
-typedef struct mag_e5m10_t {
+typedef struct mag_float16_t {
     uint16_t bits;
-} mag_e5m10_t; /* f16 = IEEE 754 16-bit half precision float. */
+} mag_float16_t; /* f16 = IEEE 754 16-bit half precision float. */
 
 
-#define mag_u64x(hi, lo) (((uint64_t)0x##hi<<32)+(uint64_t)0x##lo)
-#define mag_e11m52_sgn(x) (((x)>>63)&0x1ull)
-#define mag_e11m52_exp(x) (((x)>>52)&0x7ffull)
-#define mag_e11m52_mant(x) ((x)&0xfffffffffffffull)
-#define mag_e11m52_pack(S, E, M) (((uint64_t)((S)&0x1ull)<<63)|((uint64_t)((E)&0x7ffull)<<52)|((uint64_t)((M)&0xfffffffffffffull)) )
-#define mag_e8m23_sgn(x) (((x)>>31)&0x1u)
-#define mag_e8m23_exp(x) (((x)>>23)&0xffu)
-#define mag_e8m23_mant(x) ((x)&0x7fffffu)
-#define mag_e8m23_pack(S, E, M) (((uint32_t)((S)&0x1u)<<31)|((uint32_t)((E)&0xffu)<<23)|((uint32_t)((M)&0x7fffffu)) )
-#define mag_e5m10_sgn(x) (((x)>>15)&0x1u)
-#define mag_e5m10_exp(x) (((x)>>10)&0x1fu)
-#define mag_e5m10_mant(x) ((x)&0x3ffu)
-#define mag_e5m10_pack(S, E, M) ((uint16_t)(((uint16_t)((S)&0x1u)<<15)|((uint16_t)((E)&0x1fu)<<10)|((uint16_t)((M)&0x3ffu))))
-#define mag_e5m10_pack2(x) (mag_e5m10_t){(x)&0xffffu}
+#define mag_uint64x(hi, lo) (((uint64_t)0x##hi<<32)+(uint64_t)0x##lo)
+
+#define msg_float16_pack2(x) (mag_float16_t){(x)&0xffffu}
 
 /* Some fp16 constants. */
-#define MAG_E5M10_E mag_e5m10_pack2(0x4170)
-#define MAG_E5M10_EPS mag_e5m10_pack2(0x1400)
-#define MAG_E5M10_INF mag_e5m10_pack2(0x7c00)
-#define MAG_E5M10_LN10 mag_e5m10_pack2(0x409b)
-#define MAG_E5M10_LN2 mag_e5m10_pack2(0x398c)
-#define MAG_E5M10_LOG10_2 mag_e5m10_pack2(0x34d1)
-#define MAG_E5M10_LOG10_E mag_e5m10_pack2(0x36f3)
-#define MAG_E5M10_LOG2_10 mag_e5m10_pack2(0x42a5)
-#define MAG_E5M10_LOG2_E mag_e5m10_pack2(0x3dc5)
-#define MAG_E5M10_MAX mag_e5m10_pack2(0x7bff)
-#define MAG_E5M10_MAX_SUBNORMAL mag_e5m10_pack2(0x03ff)
-#define MAG_E5M10_MIN mag_e5m10_pack2(0xfbff)
-#define MAG_E5M10_MIN_POS mag_e5m10_pack2(0x0400)
-#define MAG_E5M10_MIN_POS_SUBNORMAL mag_e5m10_pack2(0x0001)
-#define MAG_E5M10_NAN mag_e5m10_pack2(0x7e00)
-#define MAG_E5M10_NEG_INF mag_e5m10_pack2(0xfc00)
-#define MAG_E5M10_NEG_ONE mag_e5m10_pack2(0xbc00)
-#define MAG_E5M10_NEG_ZERO mag_e5m10_pack2(0x8000)
-#define MAG_E5M10_ONE mag_e5m10_pack2(0x3c00)
-#define MAG_E5M10_PI mag_e5m10_pack2(0x4248)
-#define MAG_E5M10_SQRT2 mag_e5m10_pack2(0x3da8)
-#define MAG_E5M10_ZERO mag_e5m10_pack2(0x0000)
+#define MAG_FLOAT16_E msg_float16_pack2(0x4170)
+#define MAG_FLOAT16_EPS msg_float16_pack2(0x1400)
+#define MAG_FLOAT16_INF msg_float16_pack2(0x7c00)
+#define MAG_FLOAT16_LN10 msg_float16_pack2(0x409b)
+#define MAG_FLOAT16_LN2 msg_float16_pack2(0x398c)
+#define MAG_FLOAT16_LOG10_2 msg_float16_pack2(0x34d1)
+#define MAG_FLOAT16_LOG10_E msg_float16_pack2(0x36f3)
+#define MAG_FLOAT16_LOG2_10 msg_float16_pack2(0x42a5)
+#define MAG_FLOAT16_LOG2_E msg_float16_pack2(0x3dc5)
+#define MAG_FLOAT16_MAX msg_float16_pack2(0x7bff)
+#define MAG_FLOAT16_MAX_SUBNORMAL msg_float16_pack2(0x03ff)
+#define MAG_FLOAT16_MIN msg_float16_pack2(0xfbff)
+#define MAG_FLOAT16_MIN_POS msg_float16_pack2(0x0400)
+#define MAG_FLOAT16_MIN_POS_SUBNORMAL msg_float16_pack2(0x0001)
+#define MAG_FLOAT16_NAN msg_float16_pack2(0x7e00)
+#define MAG_FLOAT16_NEG_INF msg_float16_pack2(0xfc00)
+#define MAG_FLOAT16_NEG_ONE msg_float16_pack2(0xbc00)
+#define MAG_FLOAT16_NEG_ZERO msg_float16_pack2(0x8000)
+#define MAG_FLOAT16_ONE msg_float16_pack2(0x3c00)
+#define MAG_FLOAT16_PI msg_float16_pack2(0x4248)
+#define MAG_FLOAT16_SQRT2 msg_float16_pack2(0x3da8)
+#define MAG_FLOAT16_ZERO msg_float16_pack2(0x0000)
 
 /* Endianness detection. */
 #ifdef __BYTE_ORDER
@@ -424,7 +421,7 @@ defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
 
 #ifdef __cpp_lib_hardware_interference_size
 /* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
-#define MAG_DESTRUCTIVE_INTERFERENCE_SIZE hardware_destructive_interference_size
+#define MAG_DESTRUCTIVE_INTERFERENCE_SIZE std::hardware_destructive_interference_size
 #else
 /* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
 #define MAG_DESTRUCTIVE_INTERFERENCE_SIZE 64
@@ -472,18 +469,54 @@ static uint64_t MAG_AINLINE mag_bswap64(uint64_t x) {
     return x;
 }
 
+static MAG_CUDA_DEVICE MAG_AINLINE uint32_t mag_mulhilo32(uint32_t x, uint32_t y, uint32_t *hi) {
+    #ifdef __CUDA_ARCH__
+        *hi = __umulhi(x, y);
+        return x*y;
+    #else
+        uint64_t p = (uint64_t)x*(uint64_t)y;
+        *hi = p>>32;
+        return (uint32_t)p;
+    #endif
+}
+
+static MAG_AINLINE uint64_t mag_mulhilo64(uint64_t x, uint64_t y) {
+#if defined(_MSC_VER) && (!defined(__clang__) || _MSC_VER > 1930) && (defined(_M_X64) || defined(_M_ARM64))
+    return __umulh(x, y);
+#elif defined(__SIZEOF_INT128__)
+    unsigned __int128 xl = x, yl = y;
+    unsigned __int128 rl = xl*yl;
+    return (uint64_t)(rl>>64);
+#else
+    /* Fastdivmod is slow with this (IPC raise a lot), because we have NO fast compiler intrinsics */
+    uint32_t x0 = (uint32_t)(x&~0u);
+    uint32_t x1 = (uint32_t)(x>>32);
+    uint32_t y0 = (uint32_t)(y&~0u);
+    uint32_t y1 = (uint32_t)(y>>32);
+    uint32_t x0y0_hi;
+    mag_mulhilo32(x0, y0, &x0y0_hi);
+    uint64_t x0y1 = x0*(uint64_t)y1;
+    uint64_t x1y0 = x1*(uint64_t)y0;
+    uint64_t x1y1 = x1*(uint64_t)y1;
+    uint64_t temp = x1y0 + x0y0_hi;
+    uint64_t tlo = temp&~0u;
+    uint64_t thi = temp>>32;
+    return x1y1 + thi + ((tlo + x0y1)>>32);
+#endif
+}
+
 extern MAG_EXPORT MAG_NORET MAG_COLDPROC void mag_panic(const char *msg, ...); /* Print error message and abort. */
 extern MAG_EXPORT bool mag_log_enabled; /* Enable/disable logging to stdout/stderr. */
 
 extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
 
 /* Humanize memory size. Format and convert a memory size to the appropriate unit. For example. 1024 => 1 KiB */
-extern void mag_humanize_memory_size(size_t n, mag_e11m52_t *out, const char **unit);
+extern void mag_humanize_memory_size(size_t n, double *out, const char **unit);
 extern uintptr_t mag_thread_id(void); /* Get current native thread ID. */
 extern FILE *mag_fopen(const char *file, const char *mode);
 extern uint64_t mag_hpc_clock_ns(void); /* Get high precision clock in nanoseconds. */
 extern uint64_t mag_hpc_clock_elapsed_ns(uint64_t start);
-extern mag_e11m52_t mag_hpc_clock_elapsed_ms(uint64_t start);
+extern double mag_hpc_clock_elapsed_ms(uint64_t start);
 extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 
 #define mag_swap(T, a, b) do { T tmp = (a); (a) = (b); (b) = tmp; } while (0)
@@ -491,6 +524,9 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 #define mag_xmin(x, y) (((x) < (y)) ? (x) : (y))
 #define mag_rd_down(x,m) ((x)/(m) * (m))
 #define mag_clamp(v, lo, hi) ((v) < (lo) ? (lo) : (v) > (hi) ? (hi) : (v))
+
+#define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
+#define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
 
 /* Logging and debugging macros. */
 #define MAG_CC_RED "\x1b[31m"

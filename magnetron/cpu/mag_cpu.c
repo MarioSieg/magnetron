@@ -42,13 +42,13 @@ static MAG_HOTPROC void mag_cpu_submit(mag_device_t *dvc, const mag_command_t *c
 
 static void mag_cpu_transfer(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size) {
     mag_assert2(inout && size);
-    mag_assert2(!(size & (sto->granularity-1)));
+    mag_assert(!(size % sto->granularity), "(%zu) mod (%zu) != 0", size, sto->granularity);
     uintptr_t base = sto->base;
     uintptr_t dp = base+offs;
     uintptr_t dpe = dp+size;
     mag_assert2(dpe > dp);
     mag_assert2(dpe <= base+sto->size);
-    mag_assert2(!(offs & (sto->granularity-1)));
+    mag_assert2(!(offs % sto->granularity));
     uintptr_t hp = (uintptr_t)inout;
     uintptr_t hpe = hp+size;
     mag_assert2(hpe > hp);
@@ -81,7 +81,7 @@ static void mag_cpu_convert(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, s
     mag_assert2(tnb <= sto->size-offs);
     void *dvb = (void *)(base+offs);
     void (*kern)(size_t, const void *, mag_dtype_t, void *, mag_dtype_t)
-        = ((mag_cpu_device_t *)sto->host->impl)->kernels.vector_cast;
+        = ((mag_cpu_device_t *)sto->device->impl)->kernels.vector_cast;
     mag_assert2(kern);
     mag_assert2(!mag_ranges_overlap(host, size, dvb, tnb));
     void *restrict device = dvb;
@@ -94,38 +94,44 @@ static void mag_cpu_storage_dtor(void *self) {
     mag_context_t *ctx = buf->ctx;
     mag_assert(ctx->num_alive_storages > 0, "double freed storage");
     --ctx->num_alive_storages;
-    (*mag_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
+    if (!(buf->flags & MAG_STORAGE_FLAG_INTRUSIVE))
+        (*mag_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
     mag_fixed_pool_free_block(&ctx->storage_pool, buf);
 }
 
 static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
     mag_context_t *ctx = host->ctx;
-    void *block = (*mag_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
-    *out = mag_fixed_pool_alloc_block(&ctx->storage_pool);
-    **out = (mag_storage_buffer_t) { /* Set up storage buffer. */
+    mag_storage_buffer_t *buf = mag_fixed_pool_alloc_block(&ctx->storage_pool);
+    *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
         .ctx = ctx,
-        .rc_control = mag_rc_control_init(*out, &mag_cpu_storage_dtor),
-        .base = (uintptr_t)block,
+        .aux = {},
+        .base = 0,
         .size = size,
-        .alignment = MAG_CPU_BUF_ALIGN,
+        .alignment = size <= sizeof(void *) ? MAG_CPU_BUF_ALIGN : 1,
         .dtype = dtype,
         .granularity = mag_dtype_meta_of(dtype)->size,
-        .host = host,
+        .device = host,
         .transfer = &mag_cpu_transfer,
         .convert = &mag_cpu_convert
     };
+    if (size <= sizeof(void *)) { /* Store value intrusive (scalar storage optimization) */
+        buf->base = (uintptr_t)&buf->aux.inline_buf[0]; /* Use 8-byte impl pointer for storage. TODO: this does NOT guarantee MAG_CPU_BUF_ALIGN alignment. */
+        buf->flags |= MAG_STORAGE_FLAG_INTRUSIVE;
+    } else {
+        buf->base = (uintptr_t)(*mag_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
+    }
+    mag_rc_init_object(buf, &mag_cpu_storage_dtor);
     ++host->ctx->num_alive_storages;
+    *out = buf;
 }
 
 static void mag_cpu_manual_seed(mag_device_t *dvc, uint64_t seed) {
     mag_cpu_device_t *cpu_dvc = dvc->impl;
-    cpu_dvc->primary_prng.key.v[0] = seed;
-    cpu_dvc->primary_prng.key.v[1] = 0;
+    mag_philox4x32_stream_seed(&cpu_dvc->primary_prng, seed, 0);
     if (cpu_dvc->pool) {
         for (uint32_t i=0; i < cpu_dvc->pool->num_allocated_workers; ++i) {
             mag_worker_t *worker = &cpu_dvc->pool->workers[i];
-            worker->prng.key.v[0] = seed;
-            worker->prng.key.v[1] = worker->payload.thread_idx+1;
+            mag_philox4x32_stream_seed(&worker->prng, seed, worker->payload.thread_idx+1);
         }
     }
 }

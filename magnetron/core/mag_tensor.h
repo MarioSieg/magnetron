@@ -14,7 +14,7 @@
 
 #include "mag_def.h"
 #include "mag_rc.h"
-#include "mag_tensor_coords.h"
+#include "mag_coords.h"
 #include "mag_operator.h"
 #include "mag_backend.h"
 
@@ -35,10 +35,12 @@ mag_static_assert(MAG_TFLAG_LEN <= 8); /* Must fit in one byte */
 
 /* Metadata for view tensors */
 typedef struct mag_view_meta_t {
-    mag_rccontrol_t rc;
+    MAG_RC_INJECT_HEADER; /* RC Control block must be first */
+
     mag_tensor_t *base;
     uint32_t version_snapshot;
 } mag_view_meta_t;
+MAG_RC_OBJECT_IS_VALID(mag_view_meta_t);
 
 extern mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base);
 
@@ -48,9 +50,10 @@ extern mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base);
 ** A tensor can be a view, which references the storage buffer of another tensor, but views have their own header too.
 */
 struct mag_tensor_t {
+    MAG_RC_INJECT_HEADER;                           /* RC Control block must be first */
+
     mag_context_t  *ctx;                            /* Host context. */
-    mag_rccontrol_t rc_control;                     /* Reference counting control block. */
-    mag_tensor_coords_t coords;                     /* Coords */
+    mag_coords_t coords;                     /* Coords */
     mag_dtype_t dtype : 8;                          /* Data type of the tensor. */
     mag_tensor_flags_t flags : 8;                   /* Tensor flags. */
     mag_storage_buffer_t *storage;                  /* Storage buffer. */
@@ -63,6 +66,7 @@ struct mag_tensor_t {
     mag_tensor_t *alive_next;                       /* Next alive tensor used for leak detection. */
 #endif
 };
+MAG_RC_OBJECT_IS_VALID(mag_tensor_t);
 
 extern MAG_EXPORT bool mag_full_cont2(const mag_tensor_t *a, const mag_tensor_t *b);
 extern MAG_EXPORT bool mag_full_cont3(const mag_tensor_t *a, const mag_tensor_t *b, const mag_tensor_t *c);

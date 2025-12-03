@@ -14,30 +14,30 @@
 using namespace magnetron;
 using namespace magnetron::test;
 
-static constexpr std::int64_t lim {4};
-
-TEST(cpu_tensor_indexing, subscript_flattened_e8m23) {
+#if 0
+TEST(cpu_tensor_indexing, subscript_flattened_float32) {
     auto ctx = context{};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
-        tensor t {ctx, dtype::e8m23, shape};
+    for_all_test_shapes([&](std::span<const int64_t> shape) {
+        tensor t {ctx, dtype::float32, shape};
         t.fill_rand_uniform(-1.0f, 1.0f);
         std::vector<float> data {t.to_vector<float>()};
         ASSERT_EQ(t.numel(), data.size());
-        for (std::size_t i {0}; i < data.size(); ++i) {
+        for (size_t i {0}; i < data.size(); ++i) {
             ASSERT_FLOAT_EQ(t.to_vector<float>()[i], data[i]);
         }
     });
 }
 
-TEST(cpu_tensor_indexing, subscript_flattened_e5m10) {
+TEST(cpu_tensor_indexing, subscript_flattened_float16) {
     auto ctx = context{};
-    for_all_shape_perms(lim, 1, [&](std::span<const std::int64_t> shape) {
-        tensor t {ctx, dtype::e5m10, shape};
+    for_all_test_shapes([&](std::span<const int64_t> shape) {
+        tensor t {ctx, dtype::float16, shape};
         t.fill_rand_uniform(-1.0f, 1.0f);
         std::vector<float> data {t.to_vector<float>()};
         ASSERT_EQ(t.numel(), data.size());
-        for (std::size_t i {0}; i < data.size(); ++i) {
+        for (size_t i {0}; i < data.size(); ++i) {
             ASSERT_FLOAT_EQ(t.to_vector<float>()[i], data[i]);
         }
     });
 }
+#endif

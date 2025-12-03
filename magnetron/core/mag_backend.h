@@ -28,20 +28,32 @@ typedef enum mag_transfer_dir_t {
     MAG_TRANSFER_DIR_D2H,   /* Device -> Host. */
 } mag_transfer_dir_t;
 
+typedef enum mag_storage_flags_t {
+    MAG_STORAGE_FLAG_NONE = 0,
+    MAG_STORAGE_FLAG_INTRUSIVE = 1<<0, /* Storage is intrusive (e.g. scalar optimization). */
+} mag_storage_flags_t;
+
 /* Buffer interface on a compute device */
 typedef struct mag_storage_buffer_t mag_storage_buffer_t;
 struct mag_storage_buffer_t {
+    MAG_RC_INJECT_HEADER;                   /* RC Control block must be first */
+
     mag_context_t *ctx;
-    mag_rccontrol_t rc_control;             /* Reference count control block. */
+    union {
+        void *impl;                         /* Backend specific storage buffer implementation, if any. */
+        uint8_t inline_buf[sizeof(void *)]; /* Inline buffer for small storage optimizations. */
+    } aux;                                  /* Auxiliary storage for backend specific data. */
+    mag_storage_flags_t flags;              /* Storage buffer flags. */
     uintptr_t base;                         /* Pointer to buffer on device. Might point to GPU or any other device memory. */
     size_t size;                            /* Size of buffer in bytes. */
     size_t alignment;                       /* Alignment of buffer. */
     size_t granularity;                     /* Element size granularity. */
     mag_dtype_t dtype;                      /* Data type of buffer. */
-    mag_device_t *host;                     /* Host device. */
+    mag_device_t *device;                   /* Host device. */
     void (*transfer)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size);
     void (*convert)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size, mag_dtype_t inout_type);
 };
+MAG_RC_OBJECT_IS_VALID(mag_storage_buffer_t);
 
 typedef struct mag_command_t {
     mag_opcode_t op;
@@ -49,7 +61,7 @@ typedef struct mag_command_t {
     mag_tensor_t **out;
     uint32_t num_in;
     uint32_t num_out;
-    mag_opparam_t params[MAG_MAX_OP_PARAMS];
+    mag_op_attr_t attrs[MAG_MAX_OP_PARAMS];
 } mag_command_t;
 
 #define MAG_DEVICEID_MAX 32
@@ -111,13 +123,13 @@ typedef void (MAG_BACKEND_SYM_FN_SHUTDOWN)(mag_backend_t *bck);
 
 typedef struct mag_backend_registry_t mag_backend_registry_t;
 
-extern mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
-extern void mag_backend_registry_add_search_path(mag_backend_registry_t *reg, const char *path);
-extern void mag_backend_registry_get_search_paths(mag_backend_registry_t *reg, const char ***out_paths, size_t *out_num_paths);
-extern bool mag_backend_registry_scan(mag_backend_registry_t *reg);
-extern mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id); /* Get corresponding backend for device ID like cuda:0 or cpu. */
-extern mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg);
-extern void mag_backend_registry_free(mag_backend_registry_t *reg);
+extern MAG_EXPORT mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
+extern MAG_EXPORT void mag_backend_registry_add_search_path(mag_backend_registry_t *reg, const char *path);
+extern MAG_EXPORT void mag_backend_registry_get_search_paths(mag_backend_registry_t *reg, const char ***out_paths, size_t *out_num_paths);
+extern MAG_EXPORT bool mag_backend_registry_scan(mag_backend_registry_t *reg);
+extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id); /* Get corresponding backend for device ID like cuda:0 or cpu. */
+extern MAG_EXPORT mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg);
+extern MAG_EXPORT void mag_backend_registry_free(mag_backend_registry_t *reg);
 
 #ifdef __cplusplus
 }

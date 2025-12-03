@@ -507,7 +507,7 @@ class MatcherBaseImpl<Derived<Ts...>> {
   }
 
  private:
-  template <typename F, std::size_t... tuple_ids>
+  template <typename F, size_t... tuple_ids>
   ::testing::Matcher<F> Apply(std::index_sequence<tuple_ids...>) const {
     return ::testing::Matcher<F>(
         new typename Derived<Ts...>::template gmock_Impl<F>(

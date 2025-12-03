@@ -3,9 +3,11 @@ import torch
 
 from ..common import *
 
+
 @pytest.mark.parametrize('dtype', [float16, float32])
 def test_matmul_squared(dtype: DataType) -> None:
     binary_op_square(dtype, lambda x, y: x + y, kind=BinaryOpParamKind.TENSOR)
+
 
 @pytest.mark.parametrize('dtype', [float16, float32])
 def test_matmul_full(dtype: DataType) -> None:
@@ -14,9 +16,10 @@ def test_matmul_full(dtype: DataType) -> None:
         b = Tensor.uniform(B, dtype=dtype)
         r = a @ b
         rt = torch.matmul(totorch(a), totorch(b))
-        assert r.rank == rt.dim(), f"Expected rank {rt.dim()}, got {r.rank}"
-        assert r.shape == rt.shape, f"Expected shape {rt.shape}, got {r.shape}"
+        assert r.rank == rt.dim(), f'Expected rank {rt.dim()}, got {r.rank}'
+        assert r.shape == rt.shape, f'Expected shape {rt.shape}, got {r.shape}'
         assert torch.allclose(totorch(r), rt, atol=1e-4, rtol=1e-4)
+
 
 def test_matmul_simple_mlp() -> None:
     truth_table = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]

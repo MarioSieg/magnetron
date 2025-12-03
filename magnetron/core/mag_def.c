@@ -116,18 +116,18 @@ void MAG_COLDPROC mag_print_separator(FILE *f) {
   fprintf(f, "%s\n", sep);
 }
 
-void mag_humanize_memory_size(size_t n, mag_e11m52_t *out, const char **unit) {
+void mag_humanize_memory_size(size_t n, double *out, const char **unit) {
     if (n < (1<<10)) {
-        *out = (mag_e11m52_t)n;
+        *out = (double)n;
         *unit = "B";
     } else if (n < (1<<20)) {
-        *out = (mag_e11m52_t)n/(mag_e11m52_t)(1<<10);
+        *out = (double)n/(double)(1<<10);
         *unit = "KiB";
     } else if (n < (1<<30)) {
-        *out = (mag_e11m52_t)n/(mag_e11m52_t)(1<<20);
+        *out = (double)n/(double)(1<<20);
         *unit = "MiB";
     } else {
-        *out = (mag_e11m52_t)n/(mag_e11m52_t)(1<<30);
+        *out = (double)n/(double)(1<<30);
         *unit = "GiB";
     }
 }
@@ -252,8 +252,8 @@ uint64_t mag_hpc_clock_ns(void) { /* High precision clock in nanoseconds. */
 uint64_t mag_hpc_clock_elapsed_ns(uint64_t start) { /* High precision clock elapsed time in microseconds. */
     return (uint64_t)llabs((long long)mag_hpc_clock_ns() - (long long)start);
 }
-mag_e11m52_t mag_hpc_clock_elapsed_ms(uint64_t start) { /* High precision clock elapsed time in milliseconds. */
-    return (mag_e11m52_t)mag_hpc_clock_elapsed_ns(start) / 1e6;
+double mag_hpc_clock_elapsed_ms(uint64_t start) { /* High precision clock elapsed time in milliseconds. */
+    return (double)mag_hpc_clock_elapsed_ns(start) / 1e6;
 }
 
 #ifdef _MSC_VER
