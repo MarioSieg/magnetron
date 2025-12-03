@@ -97,8 +97,14 @@ mag_gen_stub_unary(mag_float16_t, float16, log2)
 mag_gen_stub_unary(float, float32, sqr)
 mag_gen_stub_unary(mag_float16_t, float16, sqr)
 
+mag_gen_stub_unary(float, float32, rcp)
+mag_gen_stub_unary(mag_float16_t, float16, rcp)
+
 mag_gen_stub_unary(float, float32, sqrt)
 mag_gen_stub_unary(mag_float16_t, float16, sqrt)
+
+mag_gen_stub_unary(float, float32, rsqrt)
+mag_gen_stub_unary(mag_float16_t, float16, rsqrt)
 
 mag_gen_stub_unary(float, float32, sin)
 mag_gen_stub_unary(mag_float16_t, float16, sin)

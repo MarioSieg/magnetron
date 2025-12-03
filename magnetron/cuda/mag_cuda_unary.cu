@@ -321,10 +321,24 @@ namespace mag {
     };
 
     template <typename scalar_t>
+    struct op_rcp {
+        using in_t = float;
+        using out_t = float;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return 1.f/x; }
+    };
+
+    template <typename scalar_t>
     struct op_sqrt {
         using in_t = float;
         using out_t = float;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return sqrtf(x); }
+    };
+
+    template <typename scalar_t>
+    struct op_rsqrt {
+        using in_t = float;
+        using out_t = float;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const { return 1.f/sqrtf(x); }
     };
 
     template <typename scalar_t>
@@ -622,7 +636,9 @@ namespace mag {
     void unary_op_log1p(const mag_command_t *cmd) { impl_unary_op<op_log1p>(cmd->out[0], cmd->in[0]); }
     void unary_op_log2(const mag_command_t *cmd) { impl_unary_op<op_log2>(cmd->out[0], cmd->in[0]); }
     void unary_op_sqr(const mag_command_t *cmd) { impl_unary_op<op_sqr>(cmd->out[0], cmd->in[0]); }
+    void unary_op_rcp(const mag_command_t *cmd) { impl_unary_op<op_rcp>(cmd->out[0], cmd->in[0]); }
     void unary_op_sqrt(const mag_command_t *cmd) { impl_unary_op<op_sqrt>(cmd->out[0], cmd->in[0]); }
+    void unary_op_rsqrt(const mag_command_t *cmd) { impl_unary_op<op_rsqrt>(cmd->out[0], cmd->in[0]); }
     void unary_op_sin(const mag_command_t *cmd) { impl_unary_op<op_sin>(cmd->out[0], cmd->in[0]); }
     void unary_op_cos(const mag_command_t *cmd) { impl_unary_op<op_cos>(cmd->out[0], cmd->in[0]); }
     void unary_op_tan(const mag_command_t *cmd) { impl_unary_op<op_tan>(cmd->out[0], cmd->in[0]); }

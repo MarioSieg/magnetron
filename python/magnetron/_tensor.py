@@ -835,6 +835,15 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_sqr_(out, self._ptr)))
 
+    def rcp(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_rcp(out, self._ptr)))
+
+    def rcp_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_rcp_(out, self._ptr)))
+
     def sqrt(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_sqrt(out, self._ptr)))
@@ -843,6 +852,15 @@ class Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_sqrt_(out, self._ptr)))
+
+    def rsqrt(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_rsqrt(out, self._ptr)))
+
+    def rsqrt_(self) -> Tensor:
+        self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
+        self._validate_inplace_op()
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_rsqrt_(out, self._ptr)))
 
     def sin(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)

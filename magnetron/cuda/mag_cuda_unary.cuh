@@ -26,7 +26,9 @@ namespace mag {
     extern void unary_op_log1p(const mag_command_t *cmd);
     extern void unary_op_log2(const mag_command_t *cmd);
     extern void unary_op_sqr(const mag_command_t *cmd);
+    extern void unary_op_rcp(const mag_command_t *cmd);
     extern void unary_op_sqrt(const mag_command_t *cmd);
+    extern void unary_op_rsqrt(const mag_command_t *cmd);
     extern void unary_op_sin(const mag_command_t *cmd);
     extern void unary_op_cos(const mag_command_t *cmd);
     extern void unary_op_tan(const mag_command_t *cmd);

@@ -340,6 +340,16 @@ namespace magnetron {
             handle_error(mag_sqr_(&out, m_tensor));
             return tensor{out};
         }
+        [[nodiscard]] auto rcp() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_rcp(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto rcp_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_rcp_(&out, m_tensor));
+            return tensor{out};
+        }
         [[nodiscard]] auto sqrt() const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_sqrt(&out, m_tensor));
@@ -348,6 +358,16 @@ namespace magnetron {
         [[nodiscard]] auto sqrt_() const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
             handle_error(mag_sqrt_(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto rsqrt() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_rsqrt(&out, m_tensor));
+            return tensor{out};
+        }
+        [[nodiscard]] auto rsqrt_() const noexcept -> tensor {
+            mag_tensor_t *out = nullptr;
+            handle_error(mag_rsqrt_(&out, m_tensor));
             return tensor{out};
         }
         [[nodiscard]] auto sin() const noexcept -> tensor {

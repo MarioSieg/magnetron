@@ -383,9 +383,17 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_FLOAT32] = &mag_sqr_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sqr_float16,
     },
+    [MAG_OP_RCP] = {
+        [MAG_DTYPE_FLOAT32] = &mag_rcp_float32,
+        [MAG_DTYPE_FLOAT16] = &mag_rcp_float16,
+    },
     [MAG_OP_SQRT] = {
         [MAG_DTYPE_FLOAT32] = &mag_sqrt_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sqrt_float16,
+    },
+    [MAG_OP_RSQRT] = {
+        [MAG_DTYPE_FLOAT32] = &mag_rsqrt_float32,
+        [MAG_DTYPE_FLOAT16] = &mag_rsqrt_float16,
     },
     [MAG_OP_SIN] = {
         [MAG_DTYPE_FLOAT32] = &mag_sin_float32,

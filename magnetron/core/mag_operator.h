@@ -62,7 +62,9 @@ typedef enum mag_opflags_t {
     _(LOG1P, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(LOG2, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(SQR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sqr)__\
+    _(RCP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(SQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sqrt)__\
+    _(RSQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(SIN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sin)__\
     _(COS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, cos)__\
     _(TAN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
