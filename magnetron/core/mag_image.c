@@ -31,7 +31,7 @@
 #include <stb/stb_image.h>
 #include <stb/stb_image_resize2.h>
 
-mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height) {
+mag_status_t mag_load_image(mag_tensor_t **out, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height) {
     int c = strcmp(channels, "GRAY")==0 ? 1 :
            strcmp(channels, "GRAY_ALPHA")==0 ? 2 :
            strcmp(channels, "RGB")==0 ? 3 :
@@ -58,7 +58,7 @@ mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const
         h = (int)target_h;
     }
     mag_tensor_t *tensor;
-    mag_status_t stat = mag_tensor_empty(&tensor, ctx, MAG_DTYPE_UINT8, 3, (int64_t[3]){c, h, w});
+    mag_status_t stat = mag_empty(&tensor, ctx, MAG_DTYPE_UINT8, 3, (int64_t[3]){c, h, w});
     if (mag_unlikely(stat != MAG_STATUS_OK)) {
         stbi_image_free(pixels);
         return stat;

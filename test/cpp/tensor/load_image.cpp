@@ -16,7 +16,7 @@ using namespace magnetron;
 TEST(tensor, load_image_no_resize_planar) {
     context ctx {};
     mag_tensor_t *img;
-    mag_status_t stat = mag_tensor_load_image(&img, &*ctx, "media/xoxja.png", "RGB", 0, 0);
+    mag_status_t stat = mag_load_image(&img, &*ctx, "media/xoxja.png", "RGB", 0, 0);
     ASSERT_EQ(stat, MAG_STATUS_OK);
     ASSERT_EQ(mag_tensor_get_shape(img)[0], 3);
     ASSERT_EQ(mag_tensor_get_shape(img)[1], 512);
@@ -27,7 +27,7 @@ TEST(tensor, load_image_no_resize_planar) {
 TEST(tensor, load_image_resize_planar) {
     context ctx {};
     mag_tensor_t *img;
-    mag_status_t stat = mag_tensor_load_image(&img, &*ctx, "media/xoxja.png", "RGB", 22, 111);
+    mag_status_t stat = mag_load_image(&img, &*ctx, "media/xoxja.png", "RGB", 22, 111);
     ASSERT_EQ(stat, MAG_STATUS_OK);
     ASSERT_EQ(mag_tensor_get_shape(img)[0], 3);
     ASSERT_EQ(mag_tensor_get_shape(img)[1], 111);

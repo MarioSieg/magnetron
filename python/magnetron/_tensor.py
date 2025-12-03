@@ -382,7 +382,7 @@ class Tensor:
         assert 0 < len(shape) <= _MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
         assert all(0 < dim <= _DIM_MAX for dim in shape), 'Invalid dimension size'
         dims: _FFI.CData = _FFI.new(f'int64_t[{len(shape)}]', shape)
-        instance = _wrap_out_alloc(lambda out: _C.mag_tensor_empty(out, context.native_ptr(), dtype.enum_value, len(shape), dims))
+        instance = _wrap_out_alloc(lambda out: _C.mag_empty(out, context.native_ptr(), dtype.enum_value, len(shape), dims))
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
         return tensor
@@ -526,7 +526,7 @@ class Tensor:
         stop = _C.mag_scalar_int(stop) if isinstance(stop, int) else _C.mag_scalar_float(stop)
         step = _C.mag_scalar_int(step) if isinstance(step, int) else _C.mag_scalar_float(step)
         instance = _wrap_out_alloc(
-            lambda out: _C.mag_tensor_arange(out, context.native_ptr(), dtype.enum_value, start, stop, step)
+            lambda out: _C.mag_arange(out, context.native_ptr(), dtype.enum_value, start, stop, step)
         )
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
@@ -539,7 +539,7 @@ class Tensor:
         dtype: DataType = int64,
         requires_grad: bool = False,
     ) -> Tensor:
-        instance = _wrap_out_alloc(lambda out: _C.mag_tensor_rand_perm(out, context.native_ptr(), dtype.enum_value, n))
+        instance = _wrap_out_alloc(lambda out: _C.mag_rand_perm(out, context.native_ptr(), dtype.enum_value, n))
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
         return tensor
@@ -569,7 +569,7 @@ class Tensor:
     def load_image(cls, path: str, channels: str = 'RGB', resize_to: tuple[int, int] = (0, 0)) -> Tensor:
         assert channels in ('R', 'RG', 'RGB', 'RGBA'), f'Invalid channels specification: {channels}'
         instance = _wrap_out_alloc(
-            lambda out: _C.mag_tensor_load_image(
+            lambda out: _C.mag_load_image(
                 out, context.native_ptr(), bytes(path, 'utf-8'), bytes(channels.upper(), 'utf-8'), resize_to[0], resize_to[1]
             )
         )

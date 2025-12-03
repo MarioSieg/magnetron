@@ -51,7 +51,7 @@ class DataType:
 
 float32: DataType = DataType(_C.MAG_DTYPE_FLOAT32, 4, 'float32', 'float', _C.mag_copy_float_)
 float16: DataType = DataType(_C.MAG_DTYPE_FLOAT16, 2, 'float16', None, _C.mag_copy_float_)
-boolean: DataType = DataType(_C.MAG_DTYPE_BOOLEAN, 1, 'uint8', 'uint8', _C.mag_copy_raw_)
+boolean: DataType = DataType(_C.MAG_DTYPE_BOOLEAN, 1, 'uint8', 'uint8_t', _C.mag_copy_raw_)
 uint8: DataType = DataType(_C.MAG_DTYPE_UINT8, 1, 'uint8', 'uint8_t', _C.mag_copy_raw_)
 int8: DataType = DataType(_C.MAG_DTYPE_INT8, 1, 'int8', 'int8_t', _C.mag_copy_raw_)
 uint16: DataType = DataType(_C.MAG_DTYPE_UINT16, 2, 'uint16', 'uint16_t', _C.mag_copy_raw_)
