@@ -1082,11 +1082,11 @@ class Tensor:
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_sigmoid_(out, self._ptr)))
 
-    def hardsigmoid(self) -> Tensor:
+    def hard_sigmoid(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_hard_sigmoid(out, self._ptr)))
 
-    def hardsigmoid_(self) -> Tensor:
+    def hard_sigmoid_(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_hard_sigmoid(out, self._ptr)))
