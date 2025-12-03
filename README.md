@@ -15,7 +15,7 @@
     <br />
     Designed for speed, clarity, and portability - from desktop to embedded.
     <br /><br />
-    <a href="https://github.com/MarioSieg/magnetron/tree/master/docs"><strong>Documentation »</strong></a>
+    <a href="https://github.com/MarioSieg/magnetron/blob/develop/docs/4.%20Operator%20Cheatsheet.md"><strong>Documentation »</strong></a>
     <br /><br />
     <a href="https://github.com/MarioSieg/magnetron/blob/master/examples/gpt2/gpt2.py">GPT-2 Example</a>
     ·
