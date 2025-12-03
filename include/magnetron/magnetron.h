@@ -160,6 +160,16 @@ extern MAG_EXPORT mag_status_t mag_tensor_arange(mag_tensor_t **out, mag_context
 extern MAG_EXPORT mag_status_t mag_one_hot(mag_tensor_t **out, mag_tensor_t *indices, int64_t num_classes);
 extern MAG_EXPORT mag_status_t mag_tensor_rand_perm(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t n);
 extern MAG_EXPORT mag_status_t mag_tensor_load_image(mag_tensor_t **out, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height);
+extern MAG_EXPORT mag_status_t mag_copy_float_(mag_tensor_t *t, const float *data, size_t len);
+extern MAG_EXPORT mag_status_t mag_copy_raw_(mag_tensor_t *t, const void *data, size_t len);
+extern MAG_EXPORT mag_status_t mag_fill_float_(mag_tensor_t *t, float x);
+extern MAG_EXPORT mag_status_t mag_fill_int_(mag_tensor_t *t, int64_t x);
+extern MAG_EXPORT mag_status_t mag_masked_fill_float_(mag_tensor_t *t, mag_tensor_t *mask, float x);
+extern MAG_EXPORT mag_status_t mag_masked_fill_int_(mag_tensor_t *t, mag_tensor_t *mask, int64_t x);
+extern MAG_EXPORT mag_status_t mag_uniform_float_(mag_tensor_t *t, float min, float max);
+extern MAG_EXPORT mag_status_t mag_uniform_int_(mag_tensor_t *t, int64_t min, int64_t max);
+extern MAG_EXPORT mag_status_t mag_normal_(mag_tensor_t *t, float mean, float stddev);
+extern MAG_EXPORT mag_status_t mag_bernoulli_(mag_tensor_t *t, float p);
 extern MAG_EXPORT mag_status_t mag_clone(mag_tensor_t **out, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_cast(mag_tensor_t **out, mag_tensor_t *x, mag_dtype_t dst_type);
 extern MAG_EXPORT mag_status_t mag_view(mag_tensor_t **out, mag_tensor_t *x, const int64_t *dims, int64_t rank);
@@ -315,19 +325,6 @@ extern MAG_EXPORT mag_status_t mag_triu(mag_tensor_t **out, mag_tensor_t *x, int
 extern MAG_EXPORT mag_status_t mag_triu_(mag_tensor_t **out, mag_tensor_t *x, int32_t diag);
 extern MAG_EXPORT mag_status_t mag_multinomial(mag_tensor_t **out, mag_tensor_t *x, int64_t num_samples, bool replacement);
 extern MAG_EXPORT mag_status_t mag_cat(mag_tensor_t **out, mag_tensor_t **tensors, size_t count, int64_t dim);
-
-/* ============ Tensor Init Operators ============ */
-
-extern MAG_EXPORT void mag_tensor_fill_from_floats(mag_tensor_t *t, const float *data, size_t len);                 /* Copy floats into tensor buffer. If the tensors datatype is not float, the values are converted to the tensors dtype. */
-extern MAG_EXPORT void mag_tensor_fill_from_raw_bytes(mag_tensor_t *t, const void *data, size_t len);               /* Copy raw bytes into tensor buffer */
-extern MAG_EXPORT void mag_tensor_fill_float(mag_tensor_t *t, float x);                                             /* Set all tensor elements to a specific value. */
-extern MAG_EXPORT void mag_tensor_fill_int(mag_tensor_t *t, int64_t x);                                             /* Set all tensor elements to a specific value. */
-extern MAG_EXPORT void mag_tensor_masked_fill_float(mag_tensor_t *t, mag_tensor_t *mask, float x);                  /* Set all tensor elements to a specific value if the mask value at the same index is true. */
-extern MAG_EXPORT void mag_tensor_masked_fill_int(mag_tensor_t *t, mag_tensor_t *mask, int64_t x);                  /* Set all tensor elements to a specific value if the mask value at the same index is true. */
-extern MAG_EXPORT void mag_tensor_fill_random_uniform_float(mag_tensor_t *t, float min, float max);                 /* Fill tensor with random values from uniform distribution within [min, max] */
-extern MAG_EXPORT void mag_tensor_fill_random_uniform_int(mag_tensor_t *t, int64_t min, int64_t max);               /* Fill tensor with random values from uniform distribution within [min, max] */
-extern MAG_EXPORT void mag_tensor_fill_random_normal(mag_tensor_t *t, float mean, float stddev);                    /* Fill tensor with random values from the normal distribution. */
-extern MAG_EXPORT void mag_tensor_fill_random_bernoulli(mag_tensor_t *t, float p);                                  /* Fill bool tensor with random values from the bernoulli distribution. */
 
 /* ============ Tensor Property Accessors ============ */
 

@@ -131,5 +131,5 @@ end:
 
 void mag_tensor_zero_grad(mag_tensor_t *t) {
     if (t->flags & MAG_TFLAG_REQUIRES_GRAD && t->au_state && t->au_state->grad)
-        mag_tensor_fill_float(t->au_state->grad, 0.0f);
+        mag_fill_float_(t->au_state->grad, 0.0f);
 }

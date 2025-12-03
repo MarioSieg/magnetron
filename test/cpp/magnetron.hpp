@@ -845,11 +845,11 @@ namespace magnetron {
         }
 
         auto fill_from(const void* buf, size_t nb) -> void {
-            mag_tensor_fill_from_raw_bytes(m_tensor, buf, nb);
+            mag_copy_raw_(m_tensor, buf, nb);
         }
 
         auto fill_from(const std::vector<float>& data) -> void {
-            mag_tensor_fill_from_floats(m_tensor, data.data(), data.size());
+            mag_copy_float_(m_tensor, data.data(), data.size());
         }
 
         auto fill_from(const std::vector<bool>& data) -> void {
@@ -857,11 +857,11 @@ namespace magnetron {
             std::vector<uint8_t> unpacked {};
             unpacked.resize(data.size());
             for (size_t i=0; i < unpacked.size(); ++i) unpacked[i] = data[i];
-            mag_tensor_fill_from_raw_bytes(m_tensor, unpacked.data(), unpacked.size()*sizeof(data[0]));
+            mag_copy_raw_(m_tensor, unpacked.data(), unpacked.size()*sizeof(data[0]));
         }
 
         auto fill_from(const std::vector<int32_t>& data) -> void {
-            mag_tensor_fill_from_raw_bytes(m_tensor, data.data(), data.size()*sizeof(data[0]));
+            mag_copy_raw_(m_tensor, data.data(), data.size()*sizeof(data[0]));
         }
 
         template <typename T>
@@ -874,11 +874,11 @@ namespace magnetron {
         auto fill_rand_uniform(T min, T max) -> void;
 
         auto fill_rand_normal(float mean, float stddev) -> void {
-            mag_tensor_fill_random_normal(m_tensor, mean, stddev);
+            mag_normal_(m_tensor, mean, stddev);
         }
 
         auto fill_rand_bernoulli(float p = 0.5f) -> void {
-            mag_tensor_fill_random_bernoulli(m_tensor, p);
+            mag_bernoulli_(m_tensor, p);
         }
 
         [[nodiscard]] auto to_string(bool with_data = true, size_t from_start = 0, size_t from_end = 0) const -> std::string {
@@ -936,48 +936,48 @@ namespace magnetron {
 
     template <>
     inline auto tensor::fill(float val) -> void {
-        mag_tensor_fill_float(m_tensor, val);
+        mag_fill_float_(m_tensor, val);
     }
 
     template <typename T>
     inline auto tensor::fill(T val) -> void {
-        mag_tensor_fill_int(m_tensor, static_cast<int64_t>(val));
+        mag_fill_int_(m_tensor, static_cast<int64_t>(val));
     }
 
     template <>
     inline auto tensor::fill(bool val) -> void {
-        mag_tensor_fill_int(m_tensor, val ? 1 : 0);
+        mag_fill_int_(m_tensor, val ? 1 : 0);
     }
 
     template <>
     inline auto tensor::masked_fill(tensor mask, float val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        mag_tensor_masked_fill_float(&*mask, m_tensor, val);
+        mag_masked_fill_float_(&*mask, m_tensor, val);
     }
 
     template <>
     inline auto tensor::masked_fill(tensor mask, int32_t val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        mag_tensor_masked_fill_int(&*mask, m_tensor, val);
+        mag_masked_fill_int_(&*mask, m_tensor, val);
     }
 
     template <>
     inline auto tensor::masked_fill(tensor mask, bool val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        mag_tensor_masked_fill_int(&*mask, m_tensor, val ? 1 : 0);
+        mag_masked_fill_int_(&*mask, m_tensor, val ? 1 : 0);
     }
 
     template <>
     inline auto tensor::fill_rand_uniform(float min, float max) -> void {
-        mag_tensor_fill_random_uniform_float(m_tensor, min, max);
+        mag_uniform_float_(m_tensor, min, max);
     }
 
     template <>
     inline auto tensor::fill_rand_uniform(int32_t min, int32_t max) -> void {
-        mag_tensor_fill_random_uniform_int(m_tensor, min, max);
+        mag_uniform_int_(m_tensor, min, max);
     }
 
     template <typename T>

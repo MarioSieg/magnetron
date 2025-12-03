@@ -425,7 +425,7 @@ class Tensor:
         staging_buffer: _FFI.CData = _FFI.new(f'{native_name}[{len(flattened_data)}]', flattened_data)
         copy_bytes_numel: int = len(flattened_data)
         if (
-            alloc_fn == _C.mag_tensor_fill_from_raw_bytes
+            alloc_fn == _C.mag_copy_raw_
         ):  # If the dtype is not a floating point type, we need to multiply by the size of the dtype for the raw bytes initializer.
             copy_bytes_numel *= dtype.size
         alloc_fn(tensor._ptr, staging_buffer, copy_bytes_numel)
@@ -462,7 +462,7 @@ class Tensor:
         requires_grad: bool = False,
     ) -> Tensor:
         tensor: Tensor = cls.empty(*_unpack_shape(*shape), dtype=dtype, requires_grad=requires_grad)
-        tensor.fill_random_uniform_(low, high)
+        tensor.uniform_(low, high)
         return tensor
 
     @classmethod
@@ -487,7 +487,7 @@ class Tensor:
         requires_grad: bool = False,
     ) -> Tensor:
         tensor: Tensor = cls.empty(*_unpack_shape(*shape), dtype=dtype, requires_grad=requires_grad)
-        tensor.fill_random_normal_(mean, std)
+        tensor.normal_(mean, std)
         return tensor
 
     @classmethod
@@ -499,7 +499,7 @@ class Tensor:
     @classmethod
     def bernoulli(cls, *shape: int | tuple[int, ...], p: float = 0.5) -> Tensor:
         tensor: Tensor = cls.empty(*_unpack_shape(*shape), dtype=boolean, requires_grad=False)
-        tensor.fill_random_bernoulli_(p)
+        tensor.bernoulli_(p)
         return tensor
 
     @classmethod
@@ -672,17 +672,17 @@ class Tensor:
     def fill_(self, value: float | int | bool) -> None:
         self._validate_inplace_op()
         if self.dtype.is_floating_point:
-            _C.mag_tensor_fill_float(self._ptr, float(value))
+            _handle_errc(_C.mag_fill_float_(self._ptr, float(value)))
         else:
-            _C.mag_tensor_fill_int(self._ptr, int(value))
+            _handle_errc(_C.mag_fill_int_(self._ptr, int(value)))
 
     def masked_fill_(self, mask: Tensor, value: float | int | bool) -> None:
         assert mask.dtype == boolean, f'Mask tensor must be of boolean dtype, but is {mask.dtype}'
         self._validate_inplace_op()
         if self.dtype.is_floating_point:
-            _C.mag_tensor_masked_fill_float(self._ptr, mask._ptr, float(value))
+            _handle_errc(_C.mag_masked_fill_float_(self._ptr, mask._ptr, float(value)))
         else:
-            _C.mag_tensor_masked_fill_int(self._ptr, mask._ptr, int(value))
+            _handle_errc(_C.mag_masked_fill_int_(self._ptr, mask._ptr, int(value)))
 
     def masked_fill(self, mask: Tensor, value: float | int | bool) -> Tensor:
         filled = self.clone()
@@ -690,32 +690,32 @@ class Tensor:
         filled.masked_fill_(mask, value)
         return filled
 
-    def fill_random_uniform_(self, low: float | int | None = None, high: float | int | None = None) -> None:
+    def uniform_(self, low: float | int | None = None, high: float | int | None = None) -> None:
         self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
         self._validate_inplace_op()
         low, high = _get_uniform_sample_range(self.dtype, low, high)
         if self.dtype.is_floating_point:
-            _C.mag_tensor_fill_random_uniform_float(self._ptr, low, high)
+            _handle_errc(_C.mag_uniform_float_(self._ptr, low, high))
         else:
             low &= 2**63 - 2
             high &= 2**63 - 2  # TODO fix for unsigned types
-            _C.mag_tensor_fill_random_uniform_int(self._ptr, low, high)
+            _handle_errc(_C.mag_uniform_int_(self._ptr, low, high))
 
-    def fill_random_normal_(self, mean: float, std: float) -> None:
+    def normal_(self, mean: float, std: float) -> None:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         self._validate_inplace_op()
-        _C.mag_tensor_fill_random_normal(self._ptr, mean, std)
+        _handle_errc(_C.mag_normal_(self._ptr, mean, std))
 
-    def fill_random_bernoulli_(self, p: float) -> None:
+    def bernoulli_(self, p: float) -> None:
         self._validate_dtypes(self, allowed_types={boolean})
         self._validate_inplace_op()
-        _C.mag_tensor_fill_random_bernoulli(self._ptr, p)
+        _handle_errc(_C.mag_bernoulli_(self._ptr, p))
 
     def copy_(self, x: Tensor) -> None:
         assert self.rank == x.rank, f'Tensor ranks do not match: {self.rank} != {x.rank}'
         assert self.is_shape_eq(x), f'Tensor shapes do not match: {self.shape} != {x.shape}'
         assert self.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
-        _C.mag_tensor_fill_from_raw_bytes(self._ptr, _FFI.cast('void*', x.data_ptr), x.data_size)
+        _handle_errc(_C.mag_copy_raw_(self._ptr, _FFI.cast('void*', x.data_ptr), x.data_size))
 
     def zeros_(self) -> None:
         self.fill_(0)
