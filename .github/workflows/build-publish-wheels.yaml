@@ -31,14 +31,6 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Update version in __init__.py
-        shell: bash
-        run: |
-          tmp=python/magnetron/__init__.py.tmp
-          sed '/^__version__\s*=.*/d' python/magnetron/__init__.py > "$tmp"
-          mv "$tmp" python/magnetron/__init__.py
-          echo "__version__ = \"$VERSION\"" >> python/magnetron/__init__.py
-
       - name: Build wheels (Linux x86_64, Python ≥3.11)
         env:
           CIBW_ARCHS_LINUX: "x86_64"
@@ -77,14 +69,6 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-
-      - name: Update version in __init__.py
-        shell: bash
-        run: |
-          tmp=python/magnetron/__init__.py.tmp
-          sed '/^__version__\s*=.*/d' python/magnetron/__init__.py > "$tmp"
-          mv "$tmp" python/magnetron/__init__.py
-          echo "__version__ = \"$VERSION\"" >> python/magnetron/__init__.py
 
       - name: Build wheels (macOS arm64, Python ≥3.11)
         env:
@@ -128,14 +112,6 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-
-      - name: Update version in __init__.py (for sdist)
-        shell: bash
-        run: |
-          tmp=python/magnetron/__init__.py.tmp
-          sed '/^__version__\s*=.*/d' python/magnetron/__init__.py > "$tmp"
-          mv "$tmp" python/magnetron/__init__.py
-          echo "__version__ = \"$VERSION\"" >> python/magnetron/__init__.py
 
       - name: Build sdist
         run: |

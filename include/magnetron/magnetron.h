@@ -38,7 +38,7 @@ extern "C" {
 #define mag_ver_major(v) ((v)/10000u)
 #define mag_ver_minor(v) (((v)/100u)%100u)
 #define mag_ver_patch(v) ((v)%100u)
-#define MAG_VERSION mag_ver_encode(0, 1, 2)
+#define MAG_VERSION mag_ver_encode(0, 1, 3)
 #define MAG_STORAGE_VERSION mag_ver_encode(0, 1, 0)
 
 extern MAG_EXPORT void mag_set_log_mode(bool enabled); /* Enable/disable logging. */
