@@ -128,8 +128,7 @@ mag_context_t *mag_ctx_create(const char *device_id) {
     ctx->backend_registry = mag_backend_registry_init(ctx);
     const char** backend_paths = NULL;
     size_t num_backend_paths = 0;
-    mag_backend_registry_get_search_paths(ctx->backend_registry, &backend_paths, &num_backend_paths);
-    mag_assert(mag_backend_registry_scan(ctx->backend_registry),
+    mag_assert(mag_backend_registry_load_all_available(ctx->backend_registry),
         "\nNo magnetron compute backends found!"
         "\nBackends are loaded dynamically as shared libraries in the directory containing the magnetron_core library, but none were found."
         "\nMake sure you have at least one backend (e.g. magnetron_cpu) next to the magnetron_core library within the venv or installation path."

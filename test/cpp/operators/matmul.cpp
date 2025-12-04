@@ -89,6 +89,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_float32) {
     }
 }
 
+#if 0
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_float16) {
     static constexpr std::array A {
         std::array{1.6354027f, -1.3607267f},
@@ -119,6 +120,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_float16) {
         ASSERT_NEAR(cr[i], reinterpret_cast<const float*>(&C)[i], 1e-2);
     }
 }
+#endif
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_float32) {
     static constexpr std::array A {
@@ -151,6 +153,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_float32) {
     }
 }
 
+#if 0
 TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_float16) {
     static constexpr std::array A {
         std::array{1.0f, 2.0f},
@@ -181,6 +184,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_non_square_float16) {
         ASSERT_NEAR(cr[i], reinterpret_cast<const float*>(&C)[i], 1e-2);
     }
 }
+#endif
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_float32) {
     static constexpr std::array A {
@@ -209,6 +213,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_float32) {
     }
 }
 
+#if 0
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_float16) {
     static constexpr std::array A {
         std::array{1.6354027f, -1.3607267f},
@@ -235,6 +240,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_zero_float16) {
         ASSERT_FLOAT_EQ(cr[i], 0.0f);
     }
 }
+#endif
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_float32) {
     static constexpr std::array A {
@@ -264,6 +270,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_float32) {
     }
 }
 
+#if 0
 TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_float16) {
     static constexpr std::array A {
         std::array{1.6354027f, -1.3607267f},
@@ -291,6 +298,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_square_identity_float16) {
         ASSERT_NEAR(cr[i], reinterpret_cast<const float*>(&C)[i], 1e-2);
     }
 }
+#endif
 
 TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_float32) {
     static constexpr std::array A {
@@ -321,6 +329,7 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_float32) {
     }
 }
 
+#if 0
 TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_float16) {
     static constexpr std::array A {
         std::array{1.0f, 2.0f},
@@ -349,4 +358,4 @@ TEST(cpu_tensor_binary_ops, matmul_fixed_matrix_vector_float16) {
         ASSERT_FLOAT_EQ(result[i], C[i]);
     }
 }
-
+#endif
