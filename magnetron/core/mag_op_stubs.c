@@ -624,6 +624,7 @@ mag_status_t mag_unflatten(mag_tensor_t **out_result, mag_tensor_t *x, int64_t d
 mag_status_t mag_narrow(mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t start, int64_t length) {
     *out_result = NULL;
     mag_context_t *ctx = x->ctx;
+    mag_contract(ctx, ERR_INVALID_RANK, {}, 0, "NYI: narrow is currently disabled due to a bug"); /* TODO: fix */
     int64_t rank = x->coords.rank;
     mag_contract(ctx, ERR_INVALID_RANK, {}, rank > 0, "Cannot narrow a scalar tensor");
     mag_norm_axis(&dim, rank);
@@ -1053,6 +1054,7 @@ mag_impl_binary_pair(gt, GT, true)
 mag_status_t mag_matmul(mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
     *out_result = NULL;
     mag_context_t *ctx = x->ctx;
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->dtype == MAG_DTYPE_FLOAT32, "matmul: only float32 dtype is supported currently");
     mag_tensor_t *result = NULL;
     mag_status_t stat;
     mag_assert_dtype_compat(MAG_OP_MATMUL, (mag_tensor_t *[]) {x, y});
