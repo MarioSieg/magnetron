@@ -110,7 +110,7 @@ TEST(views, tail_identity) {
     tensor v2 = t.view_slice(1, 0, 2, 2); // strided rows 0,2
     for (auto* p : {&t, &v1, &v2}) {
         for (auto i = p->rank(); i < MAG_MAX_DIMS; ++i) {
-            ASSERT_EQ(p->shape()[i],   1);
+            ASSERT_EQ(p->shape()[i], 1);
             ASSERT_EQ(p->strides()[i], 1);
         }
     }
