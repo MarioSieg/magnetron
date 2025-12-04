@@ -890,11 +890,11 @@ namespace magnetron {
         [[nodiscard]] auto rank() const noexcept -> int64_t { return mag_tensor_rank(m_tensor); }
         [[nodiscard]] auto shape() const noexcept -> std::vector<int64_t> {
             const int64_t *p = mag_tensor_shape_ptr(m_tensor);
-            return std::vector<int64_t>{p, p+rank()};
+            return std::vector<int64_t>{p, p+MAG_MAX_DIMS}; /* We also copy unused dims as they are checked in some tests */
         }
         [[nodiscard]] auto strides() const noexcept -> std::vector<int64_t> {
             const int64_t *p = mag_tensor_strides_ptr(m_tensor);
-            return std::vector<int64_t>{p, p+rank()};
+            return std::vector<int64_t>{p, p+MAG_MAX_DIMS}; /* We also copy unused dims as they are checked in some tests */
         }
         [[nodiscard]] auto dtype() const noexcept -> dtype { return static_cast<enum dtype>(mag_tensor_type(m_tensor)); }
         [[nodiscard]] auto data_ptr() const noexcept -> void* { return reinterpret_cast<void *>(mag_tensor_data_ptr_mut(m_tensor)); }
