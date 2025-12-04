@@ -24,7 +24,6 @@ mag_dylib_t *mag_dylib_open(const char *path) {
 #else
     void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
     if (mag_unlikely(!handle)) {
-        mag_log_warn("Failed to open dynamic library '%s': %s", path, dlerror());
         return NULL;
     }
     return handle;

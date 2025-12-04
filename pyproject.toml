@@ -43,7 +43,7 @@ dev = [
 [tool.scikit-build.cmake.define]
 # Enable / disable backends
 MAGNETRON_ENABLE_BACKEND_CPU = true
-MAGNETRON_ENABLE_BACKEND_CUDA = true
+MAGNETRON_ENABLE_BACKEND_CUDA = false
 
 # Enable / disable features
 MAGNETRON_DEBUG = false

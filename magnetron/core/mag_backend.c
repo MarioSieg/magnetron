@@ -40,7 +40,6 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     mag_assert(mag_utf8_validate(file, strlen(file)), "Path is not valid UTF-8");
     mag_dylib_t* handle = mag_dylib_open(file); /* Open the dynamic library */
     if (mag_unlikely(!handle)) {
-        mag_log_error("Failed to open backend library file: %s", file);
         return NULL;
     }
     /* Try to get function pointers to the required symbols */
@@ -201,7 +200,6 @@ static bool mag_backend_registry_try_backend_load(mag_backend_registry_t *reg, c
     if (mag_backend_registry_is_backend_loaded(reg, mag_hash(file_path, strlen(file_path), 0))) return false; /* Already loaded (file name hash exists) */
     mag_backend_module_t *mod = mag_backend_module_load(file_path, reg->ctx);
     if (mag_unlikely(!mod)) { /* Attempt to load module */
-        mag_log_error("Failed to load backend from file: %s\n", file_path);
         return false; /* Failed to load, skip */
     }
     mag_backend_registry_register(reg, mod); /* Register the loaded module */

@@ -24,7 +24,7 @@ static void mag_au_state_dtor(void *p) {
     }
     for (size_t i=0; i < sizeof(au->op_inputs)/sizeof(*au->op_inputs); ++i)
         if (au->op_inputs[i]) mag_rc_decref(au->op_inputs[i]);
-    mag_fixed_pool_free_block(&au->ctx->view_meta_pool, au);
+    mag_fixed_pool_free_block(&au->ctx->au_state_pool, au);
 }
 
 mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t *ctx) {
