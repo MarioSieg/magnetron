@@ -16,13 +16,13 @@ using namespace magnetron;
 TEST(cpu_autograd, simple) {
     context ctx {};
     tensor x {ctx, dtype::float32, 1};
-    x.fill(3.0f);
+    x.fill_(3.0f);
     x.requires_grad(true);
     tensor y {ctx, dtype::float32, 1};
-    y.fill(2.0f);
+    y.fill_(2.0f);
     y.requires_grad(true);
     tensor k {ctx, dtype::float32, 1};
-    k.fill(10.0f);
+    k.fill_(10.0f);
     k.requires_grad(true);
 
     tensor z {(x + y)*(x - y)/k};
@@ -62,10 +62,10 @@ TEST(cpu_autograd, simple) {
 TEST(cpu_autograd, scalar_complex) {
     context ctx {};
     tensor two {ctx, dtype::float32, 1};
-    two.fill(2.0f);
+    two.fill_(2.0f);
     two.requires_grad(true);
     tensor x {ctx, dtype::float32, 1};
-    x.fill(-4.0f);
+    x.fill_(-4.0f);
     x.requires_grad(true);
     tensor z {two*x+two+x};
     tensor q {z.relu()+z*x};
@@ -106,13 +106,13 @@ TEST(cpu_autograd, scalar_complex) {
 TEST(cpu_autograd, broadcast) {
     context ctx {};
     tensor x {ctx, dtype::float32, 3, 3, 3, 3};
-    x.fill(3.0f);
+    x.fill_(3.0f);
     x.requires_grad(true);
     tensor y {ctx, dtype::float32, 3, 3, };
-    y.fill(2.0f);
+    y.fill_(2.0f);
     y.requires_grad(true);
     tensor k {ctx, dtype::float32, 1};
-    k.fill(10.0f);
+    k.fill_(10.0f);
     k.requires_grad(true);
 
     tensor z {((x + y)*(x - y)/k).sum()};

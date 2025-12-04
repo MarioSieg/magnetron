@@ -110,7 +110,7 @@ TEST(views, tail_identity) {
     tensor v2 = t.view_slice(1, 0, 2, 2); // strided rows 0,2
     for (auto* p : {&t, &v1, &v2}) {
         for (auto i = p->rank(); i < MAG_MAX_DIMS; ++i) {
-            ASSERT_EQ(p->shape()[i],   1);
+            ASSERT_EQ(p->shape()[i], 1);
             ASSERT_EQ(p->strides()[i], 1);
         }
     }
@@ -155,7 +155,7 @@ TEST(views, offset_accumulation) {
 TEST(views, to_float_vector_copies_view) {
     context ctx{};
     tensor base{ctx, dtype::float32, 8, 3, 4};
-    base.fill_rand_uniform(-1.f, 1.f);
+    base.uniform_(-1.f, 1.f);
     tensor slice = base.view_slice(0,0,4,2);
     auto ref = base.to_vector<float>();
     auto got = slice.to_vector<float>();
@@ -174,7 +174,7 @@ TEST(views, inplace_bumps_version_and_detaches) {
     tensor y = v.abs();
     ctx.stop_grad_recorder();
     mag_tensor_t *vv;
-    handle_error(mag_tensor_full_like(&vv, &*x, 1.f));
+    handle_error(mag_full_like(&vv, &*x, mag_scalar_float(1.0)));
     x += tensor{vv};
     ctx.start_grad_recorder();
     tensor loss = y.sum();

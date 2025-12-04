@@ -30,7 +30,7 @@ mag_status_t mag_op_backward_mean(mag_au_state_t *node, mag_tensor_t **grads) {
     mag_status_t stat;
     mag_tensor_t *x = node->op_inputs[0];
     mag_tensor_t *scale;
-    stat = mag_tensor_full_like(&scale, x, (float)(1.0/(double)x->numel));
+    stat = mag_full_like(&scale, x, mag_scalar_float(1.0 / (double)x->numel));
     if (mag_iserr(stat)) return stat;
     stat = mag_mul(grads, scale, node->grad);
     mag_rc_decref(scale);
@@ -41,7 +41,7 @@ mag_status_t mag_op_backward_sum(mag_au_state_t *node, mag_tensor_t **grads) {
     mag_status_t stat;
     mag_tensor_t *x = node->op_inputs[0];
     mag_tensor_t *ones;
-    stat = mag_tensor_full_like(&ones, x, 1.0f);
+    stat = mag_full_like(&ones, x, mag_scalar_float(1.0));
     if (mag_iserr(stat)) return stat;
     stat = mag_mul(grads, ones, node->grad);
     mag_rc_decref(ones);
@@ -58,9 +58,9 @@ mag_status_t mag_op_backward_abs(mag_au_state_t *node, mag_tensor_t **grads) {
     mag_tensor_t *sign = NULL;
     stat = mag_step(&step, x);
     if (mag_iserr(stat)) return stat;
-    stat = mag_tensor_scalar(&one, x->ctx, x->dtype, 1.0f);
+    stat = mag_scalar(&one, x->ctx, x->dtype, mag_scalar_float(1.0));
     if (mag_iserr(stat)) goto error;
-    stat = mag_tensor_scalar(&two, x->ctx, x->dtype, 2.0f);
+    stat = mag_scalar(&two, x->ctx, x->dtype, mag_scalar_float(2.0));
     if (mag_iserr(stat)) goto error;
     stat = mag_mul(&step2, step, two);
     if (mag_iserr(stat)) goto error;
@@ -78,7 +78,7 @@ error:
 
 mag_status_t mag_op_backward_neg(mag_au_state_t *node, mag_tensor_t **grads) {
     mag_tensor_t *m1 = NULL;
-    mag_status_t stat = mag_tensor_scalar(&m1, node->grad->ctx, node->grad->dtype, -1.f);
+    mag_status_t stat = mag_scalar(&m1, node->grad->ctx, node->grad->dtype, mag_scalar_float(-1.0));
     if (mag_iserr(stat)) return stat;
     stat = mag_mul(grads, node->grad, m1);
     mag_rc_decref(m1);
@@ -93,7 +93,7 @@ mag_status_t mag_op_backward_log(mag_au_state_t *node, mag_tensor_t **grads) {
 mag_status_t mag_op_backward_sqr(mag_au_state_t *node, mag_tensor_t **grads) {
     mag_tensor_t *x = node->op_inputs[0];
     mag_tensor_t *two;
-    mag_status_t stat = mag_tensor_scalar(&two, x->ctx, x->dtype, 2.0f);
+    mag_status_t stat = mag_scalar(&two, x->ctx, x->dtype, mag_scalar_float(2.0));
     if (mag_iserr(stat)) return stat;
     mag_tensor_t *two_x;
     stat = mag_mul(&two_x, x, two);
@@ -113,7 +113,7 @@ mag_status_t mag_op_backward_sqrt(mag_au_state_t *node, mag_tensor_t **grads) {
     mag_status_t stat = mag_sqrt(&sqrt_x, x);
     if (mag_iserr(stat)) return stat;
     mag_tensor_t *two;
-    stat = mag_tensor_scalar(&two, x->ctx, x->dtype, 2.0f);
+    stat = mag_scalar(&two, x->ctx, x->dtype, mag_scalar_float(2.0));
     if (mag_iserr(stat)) {
         mag_rc_decref(sqrt_x);
         return stat;

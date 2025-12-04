@@ -95,13 +95,13 @@ namespace magnetron::test::nn {
     public:
         linear_layer(context& ctx, int64_t in_features, int64_t out_features, dtype type = dtype::float32, bool has_bias = true) {
             tensor weight {ctx, type, out_features, in_features};
-            weight.fill_rand_normal(0.0f, 1.0f);
+            weight.normal_(0.0f, 1.0f);
             weight = weight / static_cast<float>(std::sqrt(in_features + out_features));
             register_param(weight);
             this->weight = weight;
             if (has_bias) {
                 tensor bias {ctx, type, out_features};
-                bias.fill(0.f);
+                bias.fill_(0.f);
                 register_param(bias);
                 this->bias = bias;
             }

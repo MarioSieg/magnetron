@@ -22,10 +22,8 @@
 
 #include <algorithm>
 #include <stdexcept>
-#include <array>
 #include <optional>
 #include <vector>
-#include <span>
 
 #include <half.hpp>
 
@@ -95,16 +93,18 @@ namespace magnetron {
     };
 
     [[nodiscard]] inline auto dtype_size(dtype t) noexcept -> size_t {
-        return mag_dtype_meta_of(static_cast<mag_dtype_t>(t))->size;
+        return mag_type_trait(static_cast<mag_dtype_t>(t))->size;
     }
 
     [[nodiscard]] inline auto dtype_name(dtype t) noexcept -> std::string_view {
-        return mag_dtype_meta_of(static_cast<mag_dtype_t>(t))->name;
+        return mag_type_trait(static_cast<mag_dtype_t>(t))->name;
     }
 
     inline auto handle_error(mag_status_t status, mag_context_t *ctx = nullptr) -> void {
         if (status != MAG_STATUS_OK) [[unlikely]] {
-            throw std::runtime_error {ctx ? mag_ctx_get_last_error(ctx)->message : mag_status_get_name(status)};
+            std::printf("%s", ctx ? mag_ctx_get_last_error(ctx)->message : mag_status_get_name(status));
+            std::fflush(stdout);
+            std::abort();
         }
     }
 
@@ -131,11 +131,11 @@ namespace magnetron {
     class tensor final {
     public:
         tensor(context& ctx, dtype type, std::initializer_list<int64_t> shape) {
-            handle_error(mag_tensor_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.begin()), &*ctx);
+            handle_error(mag_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.begin()), &*ctx);
         }
 
         tensor(context& ctx, dtype type, const std::vector<int64_t>& shape) {
-            handle_error(mag_tensor_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.data()), &*ctx);
+            handle_error(mag_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.data()), &*ctx);
         }
 
         template <typename... S, typename = std::enable_if_t<std::conjunction_v<std::is_integral<std::decay_t<S>>...>>>
@@ -705,24 +705,24 @@ namespace magnetron {
             handle_error(mag_matmul(&out, m_tensor, &*other));
             return tensor{out};
         }
-        [[nodiscard]] auto add(float other) const noexcept -> tensor {
+        [[nodiscard]] auto add(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), other));
+            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_float(other)));
             return add(tensor{sca});
         }
-        [[nodiscard]] auto sub(float other) const noexcept -> tensor {
+        [[nodiscard]] auto sub(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), other));
+            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_float(other)));
             return sub(tensor{sca});
         }
-        [[nodiscard]] auto mul(float other) const noexcept -> tensor {
+        [[nodiscard]] auto mul(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), other));
+            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_float(other)));
             return mul(tensor{sca});
         }
-        [[nodiscard]] auto div(float other) const noexcept -> tensor {
+        [[nodiscard]] auto div(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_tensor_scalar(&sca, mag_tensor_get_ctx(m_tensor), mag_tensor_get_dtype(m_tensor), other));
+            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_float(other)));
             return div(tensor{sca});
         }
         [[nodiscard]] auto band(tensor other) const noexcept -> tensor {
@@ -845,11 +845,11 @@ namespace magnetron {
         }
 
         auto fill_from(const void* buf, size_t nb) -> void {
-            mag_tensor_fill_from_raw_bytes(m_tensor, buf, nb);
+            mag_copy_raw_(m_tensor, buf, nb);
         }
 
         auto fill_from(const std::vector<float>& data) -> void {
-            mag_tensor_fill_from_floats(m_tensor, data.data(), data.size());
+            mag_copy_float_(m_tensor, data.data(), data.size());
         }
 
         auto fill_from(const std::vector<bool>& data) -> void {
@@ -857,28 +857,28 @@ namespace magnetron {
             std::vector<uint8_t> unpacked {};
             unpacked.resize(data.size());
             for (size_t i=0; i < unpacked.size(); ++i) unpacked[i] = data[i];
-            mag_tensor_fill_from_raw_bytes(m_tensor, unpacked.data(), unpacked.size()*sizeof(data[0]));
+            mag_copy_raw_(m_tensor, unpacked.data(), unpacked.size()*sizeof(data[0]));
         }
 
         auto fill_from(const std::vector<int32_t>& data) -> void {
-            mag_tensor_fill_from_raw_bytes(m_tensor, data.data(), data.size()*sizeof(data[0]));
+            mag_copy_raw_(m_tensor, data.data(), data.size()*sizeof(data[0]));
         }
 
         template <typename T>
-        auto fill(T val) -> void;
+        auto fill_(T val) -> void;
 
         template <typename T>
-        auto masked_fill(tensor mask, T val) -> void;
+        auto masked_fill_(tensor mask, T val) -> void;
 
         template <typename T>
-        auto fill_rand_uniform(T min, T max) -> void;
+        auto uniform_(T min, T max) -> void;
 
-        auto fill_rand_normal(float mean, float stddev) -> void {
-            mag_tensor_fill_random_normal(m_tensor, mean, stddev);
+        auto normal_(float mean, float stddev) -> void {
+            mag_normal_(m_tensor, mag_scalar_float(mean), mag_scalar_float(stddev));
         }
 
-        auto fill_rand_bernoulli(float p = 0.5f) -> void {
-            mag_tensor_fill_random_bernoulli(m_tensor, p);
+        auto bernoulli_(float p = 0.5f) -> void {
+            mag_bernoulli_(m_tensor, mag_scalar_float(p));
         }
 
         [[nodiscard]] auto to_string(bool with_data = true, size_t from_start = 0, size_t from_end = 0) const -> std::string {
@@ -887,23 +887,23 @@ namespace magnetron {
             mag_tensor_to_string_free_data(fmt);
             return str;
         }
-        [[nodiscard]] auto rank() const noexcept -> int64_t { return mag_tensor_get_rank(m_tensor); }
+        [[nodiscard]] auto rank() const noexcept -> int64_t { return mag_tensor_rank(m_tensor); }
         [[nodiscard]] auto shape() const noexcept -> std::vector<int64_t> {
-            const int64_t *p = mag_tensor_get_shape(m_tensor);
-            return std::vector<int64_t>{p, p+rank()};
+            const int64_t *p = mag_tensor_shape_ptr(m_tensor);
+            return std::vector<int64_t>{p, p+MAG_MAX_DIMS}; /* We also copy unused dims as they are checked in some tests */
         }
         [[nodiscard]] auto strides() const noexcept -> std::vector<int64_t> {
-            const int64_t *p = mag_tensor_get_strides(m_tensor);
-            return std::vector<int64_t>{p, p+rank()};
+            const int64_t *p = mag_tensor_strides_ptr(m_tensor);
+            return std::vector<int64_t>{p, p+MAG_MAX_DIMS}; /* We also copy unused dims as they are checked in some tests */
         }
-        [[nodiscard]] auto dtype() const noexcept -> dtype { return static_cast<enum dtype>(mag_tensor_get_dtype(m_tensor)); }
-        [[nodiscard]] auto data_ptr() const noexcept -> void* { return mag_tensor_get_data_ptr(m_tensor); }
-        [[nodiscard]] auto storage_base_ptr() const noexcept -> void* { return mag_tensor_get_storage_base_ptr(m_tensor); }
+        [[nodiscard]] auto dtype() const noexcept -> dtype { return static_cast<enum dtype>(mag_tensor_type(m_tensor)); }
+        [[nodiscard]] auto data_ptr() const noexcept -> void* { return reinterpret_cast<void *>(mag_tensor_data_ptr_mut(m_tensor)); }
+        [[nodiscard]] auto storage_base_ptr() const noexcept -> void* { return reinterpret_cast<void *>(mag_tensor_data_storage_ptr_mut(m_tensor)); }
 
         template <typename T>
         [[nodiscard]] auto to_vector() const -> std::vector<T>;
-        [[nodiscard]] auto data_size() const noexcept -> int64_t { return mag_tensor_get_data_size(m_tensor); }
-        [[nodiscard]] auto numel() const noexcept -> int64_t { return mag_tensor_get_numel(m_tensor); }
+        [[nodiscard]] auto data_size() const noexcept -> int64_t { return mag_tensor_numbytes(m_tensor); }
+        [[nodiscard]] auto numel() const noexcept -> int64_t { return mag_tensor_numel(m_tensor); }
         [[nodiscard]] auto is_shape_eq(tensor other) const noexcept -> bool { return mag_tensor_is_shape_eq(m_tensor, &*other); }
         [[nodiscard]] auto can_broadcast(tensor other) const noexcept -> bool { return mag_tensor_can_broadcast(m_tensor, &*other); }
         [[nodiscard]] auto is_transposed() const noexcept -> bool { return mag_tensor_is_transposed(m_tensor); }
@@ -917,7 +917,7 @@ namespace magnetron {
 
         [[nodiscard]] auto grad() const noexcept -> std::optional<tensor> {
             mag_tensor_t *grad;
-            mag_status_t stat = mag_tensor_get_grad(m_tensor, &grad);
+            mag_status_t stat = mag_tensor_grad(m_tensor, &grad);
             if (stat != MAG_STATUS_OK) return std::nullopt;
             return tensor{grad};
         }
@@ -935,69 +935,69 @@ namespace magnetron {
     };
 
     template <>
-    inline auto tensor::fill(float val) -> void {
-        mag_tensor_fill_float(m_tensor, val);
+    inline auto tensor::fill_(float val) -> void {
+        handle_error(mag_fill_(m_tensor, mag_scalar_float(val)));
     }
 
     template <typename T>
-    inline auto tensor::fill(T val) -> void {
-        mag_tensor_fill_int(m_tensor, static_cast<int64_t>(val));
+    inline auto tensor::fill_(T val) -> void {
+        handle_error(mag_fill_(m_tensor, mag_scalar_int(static_cast<int64_t>(val))));
     }
 
     template <>
-    inline auto tensor::fill(bool val) -> void {
-        mag_tensor_fill_int(m_tensor, val ? 1 : 0);
+    inline auto tensor::fill_(bool val) -> void {
+        handle_error(mag_fill_(m_tensor, mag_scalar_int(val)));
     }
 
     template <>
-    inline auto tensor::masked_fill(tensor mask, float val) -> void {
+    inline auto tensor::masked_fill_(tensor mask, float val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        mag_tensor_masked_fill_float(&*mask, m_tensor, val);
+        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_float(val)));
     }
 
     template <>
-    inline auto tensor::masked_fill(tensor mask, int32_t val) -> void {
+    inline auto tensor::masked_fill_(tensor mask, int64_t val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        mag_tensor_masked_fill_int(&*mask, m_tensor, val);
+        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_int(val)));
     }
 
     template <>
-    inline auto tensor::masked_fill(tensor mask, bool val) -> void {
+    inline auto tensor::masked_fill_(tensor mask, bool val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        mag_tensor_masked_fill_int(&*mask, m_tensor, val ? 1 : 0);
+        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_int(val)));
     }
 
     template <>
-    inline auto tensor::fill_rand_uniform(float min, float max) -> void {
-        mag_tensor_fill_random_uniform_float(m_tensor, min, max);
+    inline auto tensor::uniform_(float min, float max) -> void {
+        handle_error(mag_uniform_(m_tensor, mag_scalar_float(min), mag_scalar_float(max)));
     }
 
     template <>
-    inline auto tensor::fill_rand_uniform(int32_t min, int32_t max) -> void {
-        mag_tensor_fill_random_uniform_int(m_tensor, min, max);
+    inline auto tensor::uniform_(int64_t min, int64_t max) -> void {
+        handle_error(mag_uniform_(m_tensor, mag_scalar_int(min), mag_scalar_int(max)));
     }
 
     template <typename T>
     auto tensor::to_vector() const -> std::vector<T> {
         if (dtype() != generic_to_dtype<T>())
-            throw std::runtime_error {"T and tensor dtype must match: " + std::string{typeid(std::decay_t<T>).name()} + " != " + std::string{mag_dtype_meta_of(m_tensor->dtype)->name}};
+            throw std::runtime_error {"T and tensor dtype must match: " + std::string{typeid(std::decay_t<T>).name()} + " != " + std::string{mag_type_trait(m_tensor->dtype)->name}};
        if constexpr (std::is_same_v<T, bool>) { // Because std::vector<bool> is ✨ special ✨
-            auto* data {static_cast<uint8_t *>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
+            auto* data {static_cast<uint8_t *>(mag_tensor_copy_data(m_tensor))};
             std::vector<bool> result {};
             result.resize(numel());
             for (size_t i = 0; i < result.size(); ++i)
                 result[i] = static_cast<bool>(data[i]);
-            mag_tensor_get_raw_data_as_bytes_free(data);
+            mag_tensor_copy_data_free(data);
             return result;
         } else {
-            auto* data {static_cast<T *>(mag_tensor_get_raw_data_as_bytes(m_tensor))};
+            auto* data {static_cast<T *>(mag_tensor_copy_data(m_tensor))};
             std::vector<T> result {};
             result.resize(numel());
             std::copy_n(data, numel(), result.begin());
-            mag_tensor_get_raw_data_as_bytes_free(data);
+            mag_tensor_copy_data_free(data);
             return result;
         }
     }

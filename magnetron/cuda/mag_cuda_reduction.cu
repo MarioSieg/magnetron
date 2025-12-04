@@ -122,15 +122,15 @@ namespace mag {
     static void launch_reduce_op(const mag_command_t *cmd) {
         mag_tensor_t *r = cmd->out[0];
         const mag_tensor_t *x = cmd->in[0];
-        int64_t n = mag_tensor_get_numel(r);
+        int64_t n = mag_tensor_numel(r);
         int64_t blocks = n;
         int64_t threads = REDUCTION_BLOCK_SIZE;
         auto *plan = static_cast<mag_reduce_plan_t *>(mag_op_attr_unwrap_ptr(cmd->attrs[0]));
         if (threads > plan->red_prod) threads = plan->red_prod;
         if (threads < 1) threads = 1;
         size_t shmem = sizeof(typename op_t::acc_t)*threads;
-        auto *pr = static_cast<typename op_t::out_t *>(mag_tensor_get_data_ptr(r));
-        auto *px = static_cast<const typename op_t::in_t *>(mag_tensor_get_data_ptr(x));
+        auto *pr = reinterpret_cast<typename op_t::out_t *>(mag_tensor_data_ptr_mut(r));
+        const auto *px = reinterpret_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
         reduce_op_kernel<op_t><<<blocks, threads, shmem>>>(op_t{}, n, pr, px, *plan);
     }
 

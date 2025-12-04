@@ -816,14 +816,14 @@ static void (*const mag_lut_cast_kernels[MAG_DTYPE__NUM][MAG_DTYPE__NUM])(int64_
 
 static void MAG_HOTPROC mag_vector_cast_stub(size_t nb, const void *src, mag_dtype_t src_t, void *dst, mag_dtype_t dst_t) {
     mag_assert2(dst_t != src_t); /* src and dst types must differ */
-    size_t nbs = mag_dtype_meta_of(src_t)->size;
-    size_t nbd = mag_dtype_meta_of(dst_t)->size;
+    size_t nbs = mag_type_trait(src_t)->size;
+    size_t nbd = mag_type_trait(dst_t)->size;
     mag_assert2(!((uintptr_t)src&(nbs-1)));     /* src must be aligned */
     mag_assert2(!((uintptr_t)dst&(nbd-1)));     /* dst must be aligned */
     mag_assert2(!(nb&(nbs-1)));                 /* size must be aligned */
     int64_t numel = (int64_t)(nb/nbs);          /* byte -> elems */
     void (*kern)(int64_t, void *, const void *) = mag_lut_cast_kernels[src_t][dst_t];
-    mag_assert(kern, "invalid cast dtypes %s -> %s", mag_dtype_meta_of(src_t)->name, mag_dtype_meta_of(dst_t)->name);
+    mag_assert(kern, "invalid cast dtypes %s -> %s", mag_type_trait(src_t)->name, mag_type_trait(dst_t)->name);
     (*kern)(numel, dst, src);
 }
 

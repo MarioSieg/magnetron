@@ -128,8 +128,7 @@ mag_context_t *mag_ctx_create(const char *device_id) {
     ctx->backend_registry = mag_backend_registry_init(ctx);
     const char** backend_paths = NULL;
     size_t num_backend_paths = 0;
-    mag_backend_registry_get_search_paths(ctx->backend_registry, &backend_paths, &num_backend_paths);
-    mag_assert(mag_backend_registry_scan(ctx->backend_registry),
+    mag_assert(mag_backend_registry_load_all_available(ctx->backend_registry),
         "\nNo magnetron compute backends found!"
         "\nBackends are loaded dynamically as shared libraries in the directory containing the magnetron_core library, but none were found."
         "\nMake sure you have at least one backend (e.g. magnetron_cpu) next to the magnetron_core library within the venv or installation path."
@@ -272,8 +271,20 @@ void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
     (*ctx->device->manual_seed)(ctx->device, seed);
 }
 
-const mag_dtype_meta_t *mag_dtype_meta_of(mag_dtype_t type) {
-    static const mag_dtype_meta_t infos[MAG_DTYPE__NUM] = {
+mag_scalar_t mag_scalar_float(double value) {
+    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.f64 = value};
+}
+
+mag_scalar_t mag_scalar_int(int64_t value) {
+    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_I64, .value.i64 = value};
+}
+
+mag_scalar_t mag_scalar_uint(uint64_t value) {
+    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_U64, .value.u64 = value};
+}
+
+const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
+    static const mag_type_traits_t infos[MAG_DTYPE__NUM] = {
         [MAG_DTYPE_FLOAT32] = {
             .name="float32",
             .size=sizeof(float),

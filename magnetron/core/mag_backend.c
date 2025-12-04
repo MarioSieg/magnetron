@@ -16,29 +16,6 @@
 
 #include <ctype.h>
 
-static bool mag_is_backend_module_file_candidate(const char *fname) { /* Checks if file is a valid backend library file name. (lib)magnetron_*name*.(so|dylib|dll) */
-    if (!fname || !*fname) return false;
-    for (const char *p = fname; *p; ++p)
-        if (*p == '/' || *p == '\\')
-            return false;
-    const char *prefix = MAG_DYLIB_PREFIX "magnetron_";
-    size_t prefix_len = strlen(prefix);
-    size_t fname_len = strlen(fname);
-    if (fname_len <= prefix_len) return false;
-    const char *dot = strrchr(fname, '.');
-    if (!dot) return false;
-    if (dot <= fname+prefix_len) return false;
-    const char *ext = dot+1;
-    if (strcmp(ext, MAG_DYLIB_EXT) != 0) return false;
-    if (strncmp(fname, prefix, prefix_len) != 0) return false;
-    size_t base_len = (size_t)(dot - fname);
-    const char *core_name = MAG_DYLIB_PREFIX "magnetron_core";
-    size_t core_len = strlen(core_name);
-    if (base_len == core_len && strncmp(fname, core_name, core_len) == 0)
-        return false;
-    return true;
-}
-
 typedef struct mag_backend_module_t {
     mag_dylib_t* handle;
     mag_backend_t* backend;
@@ -63,16 +40,15 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     mag_assert(mag_utf8_validate(file, strlen(file)), "Path is not valid UTF-8");
     mag_dylib_t* handle = mag_dylib_open(file); /* Open the dynamic library */
     if (mag_unlikely(!handle)) {
-        mag_log_error("Failed to open backend library file: %s", file);
         return NULL;
     }
     /* Try to get function pointers to the required symbols */
     void *fn_abi_cookie = NULL;
     void *fn_init = NULL;
     void *fn_shutdown = NULL;
-    if (mag_unlikely(!mag_backend_module_dlym(handle, MAG_BACKEND_SYM_NAME_ABI_COOKIE, file, &fn_abi_cookie))) return false;
-    if (mag_unlikely(!mag_backend_module_dlym(handle, MAG_BACKEND_SYM_NAME_INIT, file, &fn_init))) return false;
-    if (mag_unlikely(!mag_backend_module_dlym(handle, MAG_BACKEND_SYM_NAME_SHUTDOWN, file, &fn_shutdown))) return false;
+    if (mag_unlikely(!mag_backend_module_dlym(handle, MAG_BACKEND_SYM_NAME_ABI_COOKIE, file, &fn_abi_cookie))) return NULL;
+    if (mag_unlikely(!mag_backend_module_dlym(handle, MAG_BACKEND_SYM_NAME_INIT, file, &fn_init))) return NULL;
+    if (mag_unlikely(!mag_backend_module_dlym(handle, MAG_BACKEND_SYM_NAME_SHUTDOWN, file, &fn_shutdown))) return NULL;
 
     /* Check ABI cookie, then init backend */
     uint32_t abi_cookie = (*(MAG_BACKEND_SYM_FN_ABI_COOKIE*)fn_abi_cookie)(); /* Call the function to get the ABI version */
@@ -181,9 +157,7 @@ bool mag_parse_device_id(const char *device_id, char (*out_type)[MAG_DEVICEID_MA
 
 struct mag_backend_registry_t {
     mag_context_t *ctx;
-    char **paths;
-    size_t paths_num;
-    size_t paths_cap;
+    char *module_path;
     mag_backend_module_t **backends;
     size_t backends_num;
     size_t backends_cap;
@@ -194,33 +168,12 @@ mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx) {
     memset(reg, 0, sizeof(*reg));
     reg->ctx = ctx;
     char *modpath = mag_current_module_path();
-    if (mag_likely(modpath && *modpath)) {
-        char *dir, *file;
-        mag_path_split_dir_inplace(modpath, &dir, &file);
-        mag_backend_registry_add_search_path(reg, dir);
-        (*mag_alloc)(modpath, 0, 0);
-    } else {
-        mag_log_warn("Failed to get current module path, using backend from env: MAG_BACKEND_PATH\n");
-        char *env_path = getenv("MAG_BACKEND_PATH");
-        if (env_path && *env_path) mag_backend_registry_add_search_path(reg, env_path);
-        else mag_log_warn("Environment variable MAG_BACKEND_PATH is not set, no backend search paths available\n");
-    }
+    mag_assert(modpath && *modpath, "Failed to query current library module path, cannot load backends!");
+    char *dir, *file;
+    mag_path_split_dir_inplace(modpath, &dir, &file);
+    reg->module_path = mag_strdup(dir);
+    (*mag_alloc)(modpath, 0, 0);
     return reg;
-}
-
-void mag_backend_registry_add_search_path(mag_backend_registry_t *reg, const char *path) {
-    mag_assert(mag_utf8_validate(path, strlen(path)), "Path is not valid UTF-8");
-    size_t *len = &reg->paths_num, *cap = &reg->paths_cap;
-    if (*len == *cap) {
-        *cap = *cap ? *cap<<1 : 2;
-        reg->paths = (*mag_alloc)(reg->paths, sizeof(*reg->paths)**cap, 0);
-    }
-    reg->paths[(*len)++] = mag_strdup(path);
-}
-
-void mag_backend_registry_get_search_paths(mag_backend_registry_t *reg, const char ***out_paths, size_t *out_num_paths){
-    *out_paths = (const  char **)reg->paths;
-    *out_num_paths = reg->paths_num;
 }
 
 static bool mag_backend_registry_is_backend_loaded(mag_backend_registry_t *reg, size_t fname_hash) {
@@ -239,16 +192,18 @@ static void mag_backend_registry_register(mag_backend_registry_t *reg, mag_backe
     reg->backends[(*len)++] = mod;
 }
 
-static void mag_backend_registry_iter_fs_callback(const char *dir, const char *file, void *ud) {
-    mag_backend_registry_t *reg = ud;
-    if (!mag_is_backend_module_file_candidate(file)) return; /* Name mask check */
-    if (mag_backend_registry_is_backend_loaded(reg, mag_hash(file, strlen(file), 0))) return; /* Already loaded (file name hash exists) */
-    mag_backend_module_t *mod = mag_backend_module_load(file, reg->ctx);
+static void mag_format_dylib_name(char (*o)[1024], const char *basedir, const char *backend_name) {
+    snprintf(*o, sizeof(*o), "%s/%smagnetron_%s.%s", basedir, MAG_DYLIB_PREFIX, backend_name, MAG_DYLIB_EXT);
+}
+
+static bool mag_backend_registry_try_backend_load(mag_backend_registry_t *reg, const char *file_path) {
+    if (mag_backend_registry_is_backend_loaded(reg, mag_hash(file_path, strlen(file_path), 0))) return false; /* Already loaded (file name hash exists) */
+    mag_backend_module_t *mod = mag_backend_module_load(file_path, reg->ctx);
     if (mag_unlikely(!mod)) { /* Attempt to load module */
-        mag_log_error("Failed to load backend from file: %s\n", file);
-        return; /* Failed to load, skip */
+        return false; /* Failed to load, skip */
     }
     mag_backend_registry_register(reg, mod); /* Register the loaded module */
+    return true;
 }
 
 static int mag_backend_registry_module_score_sort_callback(const void *pa, const void *pb) {
@@ -262,15 +217,27 @@ static int mag_backend_registry_module_score_sort_callback(const void *pa, const
     return namea ? (nameb ? strcmp(namea, nameb) : -1) : nameb ? 1 : 0; /* Ascending order by name if scores are equal */
 }
 
-bool mag_backend_registry_scan(mag_backend_registry_t *reg) {
-    mag_assert2(reg->backends_num == 0);
-    for (size_t i=0; i < reg->paths_num; ++i) {
-        const char *path = reg->paths[i];
-        mag_iter_dir(path, &mag_backend_registry_iter_fs_callback, reg);
+static const char *mag_additional_backend_names[] = { /* Additional backends without CPU, as CPU is always included */
+    "cuda"
+};
+
+bool mag_backend_registry_load_all_available(mag_backend_registry_t *reg) {
+    const char *basedir = reg->module_path;
+    char pathbuf[1024] = {0};
+    /* Always try to load required CPU backend first */
+    mag_format_dylib_name(&pathbuf, basedir, "cpu"); /* TODO: maybe statically link the CPU backend? */
+    if (mag_unlikely(!mag_backend_registry_try_backend_load(reg, pathbuf))) {
+        mag_log_error("Failed to load required CPU backend module, aborting backend loading.\n");
+        return false;
+    }
+    /* Try to load additional backends */
+    for (size_t i=0; i < sizeof(mag_additional_backend_names)/sizeof(mag_additional_backend_names[0]); ++i) {
+        mag_format_dylib_name(&pathbuf, basedir, mag_additional_backend_names[i]);
+        mag_backend_registry_try_backend_load(reg, pathbuf); /* Ignore failure, as these are optional */
     }
     if (reg->backends_num > 1) /* Sort backend modules by score */
         qsort(reg->backends, reg->backends_num, sizeof(*reg->backends), &mag_backend_registry_module_score_sort_callback);
-    return reg->backends_num;
+    return reg->backends_num > 0;
 }
 
 mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id) {
@@ -302,8 +269,6 @@ void mag_backend_registry_free(mag_backend_registry_t *reg) {
     for (size_t i=0; i < reg->backends_num; ++i)
         mag_backend_module_shutdown(reg->backends[i]);
     (*mag_alloc)(reg->backends, 0, 0);
-    for (size_t i=0; i < reg->paths_num; ++i)
-        (*mag_alloc)(reg->paths[i], 0, 0);
-    (*mag_alloc)(reg->paths, 0, 0);
+    (*mag_alloc)(reg->module_path, 0, 0);
     (*mag_alloc)(reg, 0, 0);
 }

@@ -30,7 +30,8 @@ typedef enum mag_transfer_dir_t {
 
 typedef enum mag_storage_flags_t {
     MAG_STORAGE_FLAG_NONE = 0,
-    MAG_STORAGE_FLAG_INTRUSIVE = 1<<0, /* Storage is intrusive (e.g. scalar optimization). */
+    MAG_STORAGE_FLAG_INTRUSIVE = 1<<0,      /* Storage is intrusive (e.g. scalar optimization). */
+    MAG_STORAGE_FLAG_ACCESS_W = 1<<1,       /* Write access. */
 } mag_storage_flags_t;
 
 /* Buffer interface on a compute device */
@@ -124,9 +125,7 @@ typedef void (MAG_BACKEND_SYM_FN_SHUTDOWN)(mag_backend_t *bck);
 typedef struct mag_backend_registry_t mag_backend_registry_t;
 
 extern MAG_EXPORT mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
-extern MAG_EXPORT void mag_backend_registry_add_search_path(mag_backend_registry_t *reg, const char *path);
-extern MAG_EXPORT void mag_backend_registry_get_search_paths(mag_backend_registry_t *reg, const char ***out_paths, size_t *out_num_paths);
-extern MAG_EXPORT bool mag_backend_registry_scan(mag_backend_registry_t *reg);
+extern MAG_EXPORT bool mag_backend_registry_load_all_available(mag_backend_registry_t *reg);
 extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id); /* Get corresponding backend for device ID like cuda:0 or cpu. */
 extern MAG_EXPORT mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg);
 extern MAG_EXPORT void mag_backend_registry_free(mag_backend_registry_t *reg);

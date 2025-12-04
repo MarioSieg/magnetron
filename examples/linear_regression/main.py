@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from magnetron import nn, optim, Tensor
+from magnetron import Tensor, nn, optim, dtype
 from matplotlib import pyplot as plt
 
 EPOCHS: int = 100
 LR: float = 1e-1
 
 N = 100
-x = -1.0 + Tensor.arange(0, N, 1).reshape(N, 1) * (2.0 / (N - 1))
+x = -1.0 + Tensor.arange(0, N, 1, dtype=dtype.float32).reshape(N, 1) * (2.0 / (N - 1))
 noise = Tensor.normal((N, 1), mean=0.0, std=0.2)
 y = 3.0 * x + 0.5 + noise
 

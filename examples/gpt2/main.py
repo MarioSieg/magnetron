@@ -146,7 +146,7 @@ class GPT2(nn.Module):
             assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
             assert r.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
             bytes = x.numel() * x.element_size()
-            _C.mag_tensor_fill_from_raw_bytes(r._ptr, _FFI.cast('void*', x.data_ptr()), bytes)
+            _C.mag_copy_raw_(r._ptr, _FFI.cast('void*', x.data_ptr()), bytes)
 
         for k in sd_keys_hf:
             if any(k.endswith(w) for w in transposed):

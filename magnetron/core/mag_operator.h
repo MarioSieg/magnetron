@@ -153,7 +153,7 @@ mag_static_assert(MAG_DTYPE__NUM <= 16); /* Must fit in 8 bits, if this fails in
 typedef struct mag_au_state_t mag_au_state_t;
 
 /* Stores operator metadata such as operation type, number of inputs and parameters, and the types of the parameters. */
-typedef struct mag_opmeta_t {
+typedef struct mag_op_traits_t {
     const char *const mnemonic;
     const uint32_t in;
     const uint32_t out;
@@ -161,9 +161,9 @@ typedef struct mag_opmeta_t {
     const mag_op_attr_type_tag_t op_attr_types[MAG_MAX_OP_PARAMS];
     const mag_opflags_t flags;
     mag_status_t (*const backward)(mag_au_state_t *, mag_tensor_t **);
-} mag_opmeta_t;
+} mag_op_traits_t;
 
-extern MAG_EXPORT const mag_opmeta_t *mag_op_meta_of(mag_opcode_t opc); /* Get operation metadata for a specific opcode. */
+extern MAG_EXPORT const mag_op_traits_t *mag_op_traits(mag_opcode_t op); /* Get operation metadata for a specific opcode. */
 
 #ifdef __cplusplus
 }

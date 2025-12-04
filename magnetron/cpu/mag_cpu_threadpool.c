@@ -32,7 +32,7 @@ void mag_worker_exec_thread_local(const mag_kernel_registry_t *kernels, mag_kern
     mag_assert2(op >= 0 && op < MAG_OP__NUM);
     mag_assert2(dtype >= 0 && dtype < MAG_DTYPE__NUM);
     void (*kernel)(const mag_kernel_payload_t *) = kernels->operators[op][dtype];
-    mag_assert(kernel, "No kernel found for op '%s' with dtype %s", mag_op_meta_of(op)->mnemonic, mag_dtype_meta_of(dtype)->name);
+    mag_assert(kernel, "No kernel found for op '%s' with dtype %s", mag_op_traits(op)->mnemonic, mag_type_trait(dtype)->name);
     (*kernel)(payload);
     payload->cmd = NULL;
 }

@@ -122,7 +122,7 @@ TEST(storage, write_read_tensor_to_disk) {
   {
     context ctx {};
     tensor t {ctx, dtype::float32, 32, 32, 2};
-    t.fill(-2.5f);
+    t.fill_(-2.5f);
     mag_storage_archive_t* archive = mag_storage_open(&*ctx, "test2.mag", 'w');
     ASSERT_TRUE(mag_storage_set_tensor(archive, "mat32x32x2", &*t));
     ASSERT_TRUE(mag_storage_close(archive));

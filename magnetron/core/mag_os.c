@@ -17,10 +17,8 @@
 #include <io.h>
 #include <fcntl.h>
 #else
-#include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <dirent.h>
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <sys/syscall.h>
@@ -80,40 +78,4 @@ bool mag_sec_crypto_entropy(void *buf, size_t len) {
     (void)close(fd);
     return n == (ssize_t)len;
 #endif
-}
-
-
-size_t mag_iter_dir(const char *dir, mag_dir_callback cb, void *ud){
-    size_t count = 0;
-#if defined(_WIN32)
-    char pattern[MAX_PATH];
-    snprintf(pattern, sizeof pattern, "%s\\*", dir);
-    WIN32_FIND_DATAA ffd;
-    HANDLE h = FindFirstFileA(pattern, &ffd);
-    if (mag_unlikely(h == INVALID_HANDLE_VALUE)) return 0;
-    do {
-        const char *name = ffd.cFileName;
-        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
-        if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            (*cb)(dir, name, ud);
-            ++count;
-        }
-    } while (FindNextFileA(h, &ffd));
-    FindClose(h);
-#else
-    DIR *d = opendir(dir);
-    if (mag_unlikely(!d)) return 0;
-    for (struct dirent *ent; (ent = readdir(d)) != NULL;) {
-        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-        char pb[4096];
-        snprintf(pb, sizeof(pb), "%s/%s", dir, ent->d_name);
-        struct stat st;
-        if (stat(pb, &st) == 0 && S_ISREG(st.st_mode)) {
-            (*cb)(dir, ent->d_name, ud);
-            ++count;
-        }
-    }
-    closedir(d);
-#endif
-    return count;
 }

@@ -12,10 +12,10 @@
 #include "mag_operator.h"
 #include "mag_gradients.h"
 
-const mag_opmeta_t *mag_op_meta_of(mag_opcode_t opc) {
-    static const mag_opmeta_t infos[MAG_OP__NUM] = {
+const mag_op_traits_t *mag_op_traits(mag_opcode_t op) {
+    static const mag_op_traits_t infos[MAG_OP__NUM] = {
     #define mag_op_backward_NULL NULL
-    #define _(enu, in, out, dtm, opp, flags, diff) [MAG_OP_##enu] = (mag_opmeta_t){ \
+    #define _(enu, in, out, dtm, opp, flags, diff) [MAG_OP_##enu] = (mag_op_traits_t){ \
         #enu, \
         in, \
         out, \
@@ -28,5 +28,5 @@ const mag_opmeta_t *mag_op_meta_of(mag_opcode_t opc) {
     #undef _
     #undef mag_op_backward_NULL
     };
-    return infos+opc;
+    return infos+op;
 }

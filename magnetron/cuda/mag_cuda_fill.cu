@@ -61,15 +61,15 @@ namespace mag {
 
     template <typename scalar_t>
     static void launch_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd, const mag_tensor_t *mask = nullptr) {
-        auto *o = static_cast<scalar_t *>(mag_tensor_get_data_ptr(r));
+        auto *o = reinterpret_cast<scalar_t *>(mag_tensor_data_ptr_mut(r));
         auto v = unpack_param<scalar_t>(cmd->attrs, 0);
         mag_coords_iter_t rc;
         mag_coords_iter_init(&rc, &r->coords);
         bool rc_cont = mag_tensor_is_contiguous(r);
-        int64_t n = mag_tensor_get_numel(r);
+        int64_t n = mag_tensor_numel(r);
         int64_t blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
         if (mask) {
-            auto *pm = static_cast<const uint8_t *>(mag_tensor_get_data_ptr(mask));
+            const auto *pm = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(mask));
             mag_coords_iter_t mc;
             mag_coords_iter_init(&mc, &mask->coords);
             if (rc_cont) masked_fill_kernel<scalar_t, true><<<blocks, FILL_BLOCK_SIZE>>>(n, o, pm, v, rc, mc);
@@ -119,10 +119,10 @@ namespace mag {
 
     template <typename scalar_t, const bool normal>
     static void launch_rand_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd) {
-        auto *o = static_cast<scalar_t *>(mag_tensor_get_data_ptr(r));
+        auto *o = reinterpret_cast<scalar_t *>(mag_tensor_data_ptr_mut(r));
         auto p0 = unpack_param<scalar_t>(cmd->attrs, 0);
         auto p1 = unpack_param<scalar_t>(cmd->attrs, 1);
-        int64_t n = mag_tensor_get_numel(r);
+        int64_t n = mag_tensor_numel(r);
         int64_t blocks = (((n+3)>>2)+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
         mag_coords_iter_t rc;
         mag_coords_iter_init(&rc, &r->coords);

@@ -67,8 +67,8 @@ static void mag_cpu_convert(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, s
         return;
     }
     uintptr_t base = sto->base;
-    size_t hsz = mag_dtype_meta_of(hdt)->size;
-    size_t dsz = mag_dtype_meta_of(ddt)->size;
+    size_t hsz = mag_type_trait(hdt)->size;
+    size_t dsz = mag_type_trait(ddt)->size;
     mag_assert2(!(hsz & (hsz-1)));              /* pow2 */
     mag_assert2(!(size & (hsz-1)));             /* multiple of dtype size */
     mag_assert2(!((uintptr_t)host & (hsz-1)));  /* aligned */
@@ -105,11 +105,12 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
     *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
         .ctx = ctx,
         .aux = {},
+        .flags = MAG_STORAGE_FLAG_ACCESS_W,
         .base = 0,
         .size = size,
         .alignment = size <= sizeof(void *) ? MAG_CPU_BUF_ALIGN : 1,
         .dtype = dtype,
-        .granularity = mag_dtype_meta_of(dtype)->size,
+        .granularity = mag_type_trait(dtype)->size,
         .device = host,
         .transfer = &mag_cpu_transfer,
         .convert = &mag_cpu_convert
