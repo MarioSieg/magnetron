@@ -38,14 +38,37 @@ mag_status_t mag_op_backward_mean(mag_au_state_t *node, mag_tensor_t **grads) {
 }
 
 mag_status_t mag_op_backward_sum(mag_au_state_t *node, mag_tensor_t **grads) {
-    mag_status_t stat;
+    *grads = NULL;
     mag_tensor_t *x = node->op_inputs[0];
-    mag_tensor_t *ones;
-    stat = mag_full_like(&ones, x, mag_scalar_float(1.0));
-    if (mag_iserr(stat)) return stat;
-    stat = mag_mul(grads, ones, node->grad);
+    mag_tensor_t *gy = node->grad;
+    mag_status_t stat;
+    mag_tensor_t *gview = gy;
+    if (!node->sum.keepdim) {
+        for (int i = 0; i < node->sum.num_axes; ++i) {
+            int64_t axis = node->sum.axes[i];
+            mag_tensor_t *tmp = NULL;
+            stat = mag_unsqueeze(&tmp, gview, axis);
+            if (mag_iserr(stat)) {
+                if (gview != gy) mag_rc_decref(gview);
+                return stat;
+            }
+            if (gview != gy) mag_rc_decref(gview);
+            gview = tmp;
+        }
+    }
+    mag_tensor_t *ones = NULL;
+    stat = mag_full_like(&ones, x, mag_scalar_float(1.0f));
+    if (mag_iserr(stat)) {
+        if (gview != gy) mag_rc_decref(gview);
+        return stat;
+    }
+    mag_tensor_t *gx = NULL;
+    stat = mag_mul(&gx, gview, ones);
     mag_rc_decref(ones);
-    return stat;
+    if (gview != gy) mag_rc_decref(gview);
+    if (mag_iserr(stat)) return stat;
+    *grads = gx;
+    return MAG_STATUS_OK;
 }
 
 mag_status_t mag_op_backward_abs(mag_au_state_t *node, mag_tensor_t **grads) {

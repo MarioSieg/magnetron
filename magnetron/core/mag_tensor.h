@@ -44,6 +44,7 @@ MAG_RC_OBJECT_IS_VALID(mag_view_meta_t);
 
 extern mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base);
 
+
 /*
 ** Reference counted tensor header. Stores shape, strides, gradient and other metadata.
 ** The actual data buffer is compute-device specific and can be only accessed via the storage buffer.

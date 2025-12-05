@@ -557,7 +557,7 @@ mag_status_t mag_unsqueeze(mag_tensor_t **out_result, mag_tensor_t *x, int64_t d
     int64_t rank = x->coords.rank;
     int64_t nrank = rank+1;
     mag_contract(ctx, ERR_INVALID_RANK, {}, nrank <= MAG_MAX_DIMS, "Unsqueeze would exceed MAG_MAX_DIMS (%d)", MAG_MAX_DIMS);
-    mag_norm_axis(&dim, rank);
+    mag_norm_axis(&dim, nrank);
     mag_contract(ctx, ERR_INVALID_RANK, {}, 0 <= dim && dim < nrank, "Unsqueeze dim %" PRIi64 " out_result of range for new rank %" PRIi64, dim, nrank);
     int64_t shape[MAG_MAX_DIMS];
     for (int64_t i=0, j=0; i < nrank; ++i)
@@ -762,7 +762,18 @@ mag_status_t mag_argmax(mag_tensor_t **out_result, mag_tensor_t *x, const int64_
 }
 
 mag_status_t mag_sum(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
-    return mag_op_stub_reduction(out_result, MAG_OP_SUM, x, dims, rank, keepdim);
+    mag_status_t stat = mag_op_stub_reduction(out_result, MAG_OP_SUM, x, dims, rank, keepdim);
+    if (MAG_STATUS_OK == stat) {
+        mag_tensor_t *ten = *out_result;
+        if (ten->au_state) {
+            ten->au_state->sum.num_axes = rank;
+            ten->au_state->sum.keepdim = keepdim;
+            for (int64_t i = 0; i < rank; ++i) {
+                ten->au_state->sum.axes[i] = dims[i];
+            }
+        }
+    }
+    return stat;
 }
 
 mag_status_t mag_prod(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {

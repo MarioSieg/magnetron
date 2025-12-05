@@ -18,10 +18,17 @@
 extern "C" {
 #endif
 
+typedef struct {
+    int64_t axes[MAG_MAX_DIMS];
+    int32_t num_axes;
+    bool    keepdim;
+} mag_sum_attrs_t;
+
 /* Autodiff state for parameters */
 struct mag_au_state_t {
     MAG_RC_INJECT_HEADER; /* RC Control block must be first */
 
+    mag_sum_attrs_t sum;
     mag_context_t *ctx;
     mag_opcode_t op;
     mag_tensor_t *op_inputs[MAG_MAX_OP_INPUTS];

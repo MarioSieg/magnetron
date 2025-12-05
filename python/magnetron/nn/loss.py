@@ -11,7 +11,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from magnetron import Tensor
-
+from magnetron import dtype
 
 class Loss(ABC):
     """Base class for all loss functions."""
@@ -32,6 +32,11 @@ class MSELoss(Loss):
 class CrossEntropyLoss(Loss):
     """Cross Entropy Loss."""
 
-    def __call__(self, y_hat: Tensor, y: Tensor) -> Tensor:
-        y_hat = y_hat.softmax()
-        return -(y * y_hat.log()).sum(dim=-1).mean()
+    def __call__(self, logits: Tensor, target: Tensor) -> Tensor:
+        m = logits.max(dim=-1, keepdim=True)
+        shifted = logits - m
+        logsumexp = shifted.exp().sum(dim=-1, keepdim=True).log()
+        log_probs = shifted - logsumexp
+        rows = Tensor.arange(target.shape[0], dtype=dtype.int64)
+        log_p_true = log_probs[rows, target]
+        return -log_p_true.mean()
