@@ -41,7 +41,7 @@ for epoch in range(EPOCHS):
         batch_y = y_train[batch_idx]
 
         output = model(batch_X)
-        loss = criterion(output, batch_y)
+        loss = criterion(output, batch_y.one_hot(10).cast(dtype.float32))
 
         loss.backward()
         losses.append(loss.item())
