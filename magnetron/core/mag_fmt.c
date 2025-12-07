@@ -347,21 +347,21 @@ static bool nd_similar(uint32_t *nd, uint32_t ndhi, uint32_t* ref, size_t hilen,
 char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
     size_t width = MAG_FMT_WIDTH(sf), prec = MAG_FMT_PREC(sf), len;
     union {
-        uint64_t uint64_t;
+        uint64_t u64;
         double n;
         struct { /* TODO: make endian aware */
             uint32_t lo, hi;
-        } uint32_t;
+        } u32;
     } t = {.n = n};
-    if (mag_unlikely((t.uint32_t.hi << 1) >= 0xffe00000)) {
+    if (mag_unlikely((t.u32.hi << 1) >= 0xffe00000)) {
         /* Handle non-finite values uniformly for %a, %e, %f, %g. */
         int32_t prefix = 0, ch = (sf & MAG_FMT_F_UPPER) ? 0x202020 : 0;
-        if (((t.uint32_t.hi & 0x000fffff) | t.uint32_t.lo) != 0) {
+        if (((t.u32.hi & 0x000fffff) | t.u32.lo) != 0) {
             ch ^= ('n' << 16) | ('a' << 8) | 'n';
             if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
         } else {
             ch ^= ('i' << 16) | ('n' << 8) | 'f';
-            if ((t.uint32_t.hi & 0x80000000)) prefix = '-';
+            if ((t.u32.hi & 0x80000000)) prefix = '-';
             else if ((sf & MAG_FMT_F_PLUS)) prefix = '+';
             else if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
         }
@@ -372,29 +372,29 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
     } else if (MAG_FMT_FP(sf) == MAG_FMT_FP(MAG_FMT_T_FP_A)) {
         /* %a */
         const char* hexdig = (sf & MAG_FMT_F_UPPER) ? "0123456789ABCDEFPX" : "0123456789abcdefpx";
-        int32_t e = (t.uint32_t.hi >> 20) & 0x7ff;
+        int32_t e = (t.u32.hi >> 20) & 0x7ff;
         char prefix = 0, eprefix = '+';
-        if (t.uint32_t.hi & 0x80000000) prefix = '-';
+        if (t.u32.hi & 0x80000000) prefix = '-';
         else if ((sf & MAG_FMT_F_PLUS)) prefix = '+';
         else if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
-        t.uint32_t.hi &= 0xfffff;
+        t.u32.hi &= 0xfffff;
         if (e) {
-            t.uint32_t.hi |= 0x100000;
+            t.u32.hi |= 0x100000;
             e -= 1023;
-        } else if (t.uint32_t.lo | t.uint32_t.hi) {
+        } else if (t.u32.lo | t.u32.hi) {
             /* Non-zero denormal - normalise it. */
-            uint32_t shift = t.uint32_t.hi ? 20-mag_fls(t.uint32_t.hi) : 52-mag_fls(t.uint32_t.lo);
+            uint32_t shift = t.u32.hi ? 20-mag_fls(t.u32.hi) : 52-mag_fls(t.u32.lo);
             e = -1022 - shift;
-            t.uint64_t <<= shift;
+            t.u64 <<= shift;
         }
         /* abs(n) == t.uint64_t * 2^(e - 52) */
         /* If n != 0, bit 52 of t.uint64_t is set, and is the highest set bit. */
         if ((int32_t)prec < 0) {
             /* Default precision: use smallest precision giving exact result. */
-            prec = t.uint32_t.lo ? 13-mag_ffs(t.uint32_t.lo)/4 : 5-mag_ffs(t.uint32_t.hi|0x100000)/4;
+            prec = t.u32.lo ? 13-mag_ffs(t.u32.lo)/4 : 5-mag_ffs(t.u32.hi|0x100000)/4;
         } else if (prec < 13) {
             /* Precision is sufficiently low as to maybe require rounding. */
-            t.uint64_t += (((uint64_t)1) << (51 - prec*4));
+            t.u64 += (((uint64_t)1) << (51 - prec*4));
         }
         if (e < 0) {
             eprefix = '-';
@@ -411,14 +411,14 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
         if ((sf & (MAG_FMT_F_LEFT | MAG_FMT_F_ZERO)) == MAG_FMT_F_ZERO) {
             while (width-- > len) *p++ = '0';
         }
-        *p++ = '0' + (t.uint32_t.hi >> 20); /* Usually '1', sometimes '0' or '2'. */
+        *p++ = '0' + (t.u32.hi >> 20); /* Usually '1', sometimes '0' or '2'. */
         if ((prec | (sf & MAG_FMT_F_ALT))) {
             /* Emit fractional part. */
             char* q = p + 1 + prec;
             *p = '.';
-            if (prec < 13) t.uint64_t >>= (52 - prec*4);
+            if (prec < 13) t.u64 >>= (52 - prec*4);
             else while (prec > 13) p[prec--] = '0';
-            while (prec) { p[prec--] = hexdig[t.uint64_t & 15]; t.uint64_t >>= 4; }
+            while (prec) { p[prec--] = hexdig[t.u64 & 15]; t.u64 >>= 4; }
             p = q;
         }
         *p++ = hexdig[16]; /* p or P */
@@ -428,9 +428,9 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
         /* %e or %f or %g - begin by converting n to "nd" format. */
         uint32_t nd[64];
         uint32_t ndhi = 0, ndlo, i;
-        int32_t e = (int32_t)(t.uint32_t.hi >> 20) & 0x7ff, ndebias = 0;
+        int32_t e = (int32_t)(t.u32.hi >> 20) & 0x7ff, ndebias = 0;
         char prefix = 0, *q;
-        if (t.uint32_t.hi & 0x80000000) prefix = '-';
+        if (t.u32.hi & 0x80000000) prefix = '-';
         else if ((sf & MAG_FMT_F_PLUS)) prefix = '+';
         else if ((sf & MAG_FMT_F_SPACE)) prefix = ' ';
         prec += ((int32_t)prec >> 31) & 7; /* Default precision is 6. */
@@ -444,28 +444,28 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
             if ((ndebias = mag_rescale_e[e >> 6])) {
                 t.n = n * mag_rescale_n[e >> 6];
                 if (mag_unlikely(!e)) t.n *= 1e10, ndebias -= 10;
-                t.uint64_t -= 2; /* Convert 2ulp below (later we convert 2ulp above). */
-                nd[0] = 0x100000 | (t.uint32_t.hi & 0xfffff);
-                e = ((int32_t)(t.uint32_t.hi >> 20) & 0x7ff) - 1075 - (MAG_ND_MUL2K_MAX_SHIFT < 29);
+                t.u64 -= 2; /* Convert 2ulp below (later we convert 2ulp above). */
+                nd[0] = 0x100000 | (t.u32.hi & 0xfffff);
+                e = ((int32_t)(t.u32.hi >> 20) & 0x7ff) - 1075 - (MAG_ND_MUL2K_MAX_SHIFT < 29);
                 goto load_t_lo; rescale_failed:
                 t.n = n;
-                e = (int32_t)(t.uint32_t.hi >> 20) & 0x7ff;
+                e = (int32_t)(t.u32.hi >> 20) & 0x7ff;
                 ndebias = 0;
                 ndhi = 0;
             }
         }
-        nd[0] = t.uint32_t.hi & 0xfffff;
+        nd[0] = t.u32.hi & 0xfffff;
         if (e == 0) e++; else nd[0] |= 0x100000;
         e -= 1043;
-        if (t.uint32_t.lo) {
+        if (t.u32.lo) {
             e -= 32 + (MAG_ND_MUL2K_MAX_SHIFT < 29); load_t_lo:
 #if MAG_ND_MUL2K_MAX_SHIFT >= 29
-            nd[0] = (nd[0]<<3) | (t.uint32_t.lo>>29);
-            ndhi = nd_mul2k(nd, ndhi, 29, t.uint32_t.lo & 0x1fffffff, sf);
+            nd[0] = (nd[0]<<3) | (t.u32.lo>>29);
+            ndhi = nd_mul2k(nd, ndhi, 29, t.u32.lo & 0x1fffffff, sf);
 #elif MAG_ND_MUL2K_MAX_SHIFT >= 11
-            ndhi = nd_mul2k(nd, ndhi, 11, t.uint32_t.lo>>21, sf);
-            ndhi = nd_mul2k(nd, ndhi, 11, (t.uint32_t.lo>>10) & 0x7ff, sf);
-            ndhi = nd_mul2k(nd, ndhi, 11, (t.uint32_t.lo<<1) & 0x7ff, sf);
+            ndhi = nd_mul2k(nd, ndhi, 11, t.u32.lo>>21, sf);
+            ndhi = nd_mul2k(nd, ndhi, 11, (t.u32.lo>>10) & 0x7ff, sf);
+            ndhi = nd_mul2k(nd, ndhi, 11, (t.u32.lo<<1) & 0x7ff, sf);
 #else
 #error "MAG_ND_MUL2K_MAX_SHIFT not big enough"
 #endif
@@ -499,7 +499,7 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
                 ** most significant digits, convert the +2ulp case, and compare them.
                 */
                 int32_t eidx = e + 70 + (MAG_ND_MUL2K_MAX_SHIFT < 29)
-                               + (t.uint32_t.lo >= 0xfffffffe && !(~t.uint32_t.hi << 12));
+                               + (t.u32.lo >= 0xfffffffe && !(~t.u32.hi << 12));
                 const int8_t *m_e = mag_four_ulp_m_e + eidx * 2;
                 mag_assert(0 <= eidx && eidx < 128, "bad eidx %d", eidx);
                 nd[33] = nd[ndhi];
@@ -652,38 +652,7 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
     return p;
 }
 
-static void mag_fmt_scalar(mag_sstream_t *ss, int64_t numel, const void *buf, int64_t i, mag_dtype_t type) {
-    int64_t nb = (int64_t)mag_type_trait(type)->size;
-    const void *val = (const uint8_t *)buf + i*nb; /* Pointer to the value */
-    if (mag_unlikely(!((uintptr_t)val >= (uintptr_t)buf && (uintptr_t)val < (uintptr_t)buf + nb*numel))) { /* Quick bounds check just in case */
-        mag_sstream_append(ss, "Index out of bounds when formatting scalar: index %" PRIi64 " for type %d", i, type);
-        return;
-    }
-    if (type == MAG_DTYPE_BOOLEAN) {
-        mag_sstream_append(ss, "%s", *(const uint8_t *)val ? "True" : "False");
-        return;
-    }
-    char fmt[MAG_FMT_BUF_MAX] = {0};
-    char *e = fmt;
-    switch (type) {
-        case MAG_DTYPE_FLOAT32: *(e = mag_fmt_e11m52(fmt, *(const float *)val, MAG_FMT_G5)) = '\0'; break;
-        case MAG_DTYPE_FLOAT16: *(e = mag_fmt_e11m52(fmt, mag_float16_to_float32_soft_fp(*(const mag_float16_t *)val), MAG_FMT_G5)) = '\0'; break;
-        case MAG_DTYPE_UINT8: *(e = mag_fmt_uint64(fmt, *(const uint8_t *)val)) = '\0'; break;
-        case MAG_DTYPE_INT8: *(e = mag_fmt_int64(fmt, *(const int8_t *)val)) = '\0'; break;
-        case MAG_DTYPE_UINT16: *(e = mag_fmt_uint64(fmt, *(const uint16_t *)val)) = '\0'; break;
-        case MAG_DTYPE_INT16: *(e = mag_fmt_int64(fmt, *(const int16_t *)val)) = '\0'; break;
-        case MAG_DTYPE_UINT32: *(e = mag_fmt_uint64(fmt, *(const uint32_t *)val)) = '\0'; break;
-        case MAG_DTYPE_INT32: *(e = mag_fmt_int64(fmt, *(const int32_t *)val)) = '\0'; break;
-        case MAG_DTYPE_UINT64: *(e = mag_fmt_uint64(fmt, *(const uint64_t *)val)) = '\0'; break;
-        case MAG_DTYPE_INT64: *(e = mag_fmt_int64(fmt, *(const int64_t *)val)) = '\0'; break;
-        default: mag_panic("Unknown dtype for formatting: %d", type); return;
-    }
-    ptrdiff_t n = e-fmt;
-    if (mag_likely(n > 0))
-        mag_sstream_append_strn(ss, fmt, e-fmt);
-}
-
-typedef struct mag_tensor_fmt_info_t {
+typedef struct mag_tensor_format_context_t {
     mag_sstream_t *ss;
     const void *buf;
     mag_dtype_t dtype;
@@ -694,56 +663,162 @@ typedef struct mag_tensor_fmt_info_t {
     int64_t tail;
     bool trunc;
     size_t pad;
-} mag_tensor_fmt_info_t;
+    size_t linewidth;
+    size_t col;
+} mag_tensor_format_context_t;
 
-static void mag_tensor_fmt_recursive(mag_tensor_fmt_info_t *fmt, int depth) {
-    if (depth == fmt->iter->rank) { /* Scalar leaf */
-        int64_t off = mag_coords_iter_offset_at(fmt->iter, fmt->idx);
-        mag_fmt_scalar(fmt->ss, fmt->numel, fmt->buf, off, fmt->dtype);
+static void mag_fmt_putc(mag_tensor_format_context_t *fmt, char c) {
+    mag_sstream_putc(fmt->ss, c);
+    if (c == '\n') fmt->col = 0;
+    else ++fmt->col;
+}
+
+static void mag_fmt_indent(mag_tensor_format_context_t *fmt, int depth) {
+    for (size_t i=0; i < fmt->pad; ++i) mag_fmt_putc(fmt, ' ');
+    for (int i=0; i <= depth; ++i) mag_fmt_putc(fmt, ' ');
+}
+
+static char *mag_fmt_scalar(char (*fmt)[MAG_FMT_BUF_MAX], int64_t numel, const void *buf, int64_t i, mag_dtype_t type) {
+    int64_t nb = (int64_t)mag_type_trait(type)->size;
+    const void *val = (const uint8_t *)buf + i*nb; /* Pointer to the value */
+    if (mag_unlikely(!((uintptr_t)val >= (uintptr_t)buf && (uintptr_t)val < (uintptr_t)buf + nb*numel))) { /* Quick bounds check just in case */
+        mag_log_error("Index out of bounds when formatting scalar: index %" PRIi64 " for type %d", i, type);
+        return NULL;
+    }
+    if (type == MAG_DTYPE_BOOLEAN) {
+        int n = snprintf(*fmt, sizeof(*fmt), "%s", *(const uint8_t *)val ? "True" : "False");
+        return *fmt + n;
+    }
+    switch (type) {
+        case MAG_DTYPE_FLOAT32: return mag_fmt_e11m52(*fmt, *(const float *)val, MAG_FMT_G5);
+        case MAG_DTYPE_FLOAT16: return mag_fmt_e11m52(*fmt, mag_float16_to_float32_soft_fp(*(const mag_float16_t *)val), MAG_FMT_G5);
+        case MAG_DTYPE_UINT8: return mag_fmt_uint64(*fmt, *(const uint8_t *)val);
+        case MAG_DTYPE_INT8: return mag_fmt_int64(*fmt, *(const int8_t *)val);
+        case MAG_DTYPE_UINT16: return mag_fmt_uint64(*fmt, *(const uint16_t *)val);
+        case MAG_DTYPE_INT16: return mag_fmt_int64(*fmt, *(const int16_t *)val);
+        case MAG_DTYPE_UINT32: return mag_fmt_uint64(*fmt, *(const uint32_t *)val);
+        case MAG_DTYPE_INT32: return mag_fmt_int64(*fmt, *(const int32_t *)val);
+        case MAG_DTYPE_UINT64: return mag_fmt_uint64(*fmt, *(const uint64_t *)val);
+        case MAG_DTYPE_INT64: return mag_fmt_int64(*fmt, *(const int64_t *)val);
+        default: mag_panic("Unknown dtype for formatting: %d", type);
+    }
+}
+
+static bool mag_fmt_lastdim_elem(
+    mag_tensor_format_context_t *fmt,
+    int depth,
+    int64_t k,
+    int64_t heads,
+    int64_t tails,
+    int64_t dim_size,
+    bool use_ellipsis,
+    char (*tmp)[MAG_FMT_BUF_MAX],
+    bool *out_ellipsis,
+    size_t *out_elen
+) {
+    const mag_coords_iter_t *iter = fmt->iter;
+    bool ellipsis = use_ellipsis && (k == heads);
+    *out_ellipsis = ellipsis;
+    if (ellipsis) {
+        *out_elen = 3; /* "..." */
+        return true;
+    }
+    fmt->idx[depth] = k < heads ? k : dim_size - tails + (k - heads - (use_ellipsis ? 1 : 0));
+    int64_t off = mag_coords_iter_offset_at(iter, fmt->idx);
+    char *e = mag_fmt_scalar(tmp, fmt->numel, fmt->buf, off, fmt->dtype);
+    if (mag_unlikely(!e)) return false;
+    ptrdiff_t len = e-*tmp;
+    if (mag_unlikely(len <= 0)) {
+        *out_elen = 0;
+        return false;
+    }
+    *out_elen = (size_t)len;
+    return true;
+}
+
+static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth) {
+    const mag_coords_iter_t *iter = fmt->iter;
+    char tmp[MAG_FMT_BUF_MAX];
+    if (depth == iter->rank) { /* scalar leaf */
+        int64_t off = mag_coords_iter_offset_at(iter, fmt->idx);
+        char *e = mag_fmt_scalar(&tmp, fmt->numel, fmt->buf, off, fmt->dtype);
+        if (mag_unlikely(!e)) return;
+        ptrdiff_t len = e - tmp;
+        if (mag_likely(len > 0)) mag_sstream_append_strn(fmt->ss, tmp, (size_t)len);
         return;
     }
-    int64_t dim = fmt->iter->shape[depth];
-    bool last_dim = fmt->iter->rank-depth == 1;
+    int64_t dim = iter->shape[depth];
+    bool last_dim = iter->rank - depth == 1;
     int64_t head = fmt->head;
     int64_t tail = fmt->tail;
-    if (!fmt->trunc || head+tail >= dim) { /* If no truncation or head + tail covers the whole dim, print everything, no ellipsis */
+    if (!fmt->trunc || head + tail >= dim) {
         head = dim;
         tail = 0;
     }
-    bool ellipsis = head + tail < dim;
-    int64_t heads = head;
-    int64_t tails = ellipsis ? tail : 0;
-    int64_t total = heads + tails + (ellipsis ? 1 : 0);
-    mag_sstream_putc(fmt->ss, '[');
-    for (int64_t k = 0; k < total; ++k) {
-        if (k < heads) { /* Head front indices 0...head_cnt-1 */
-            fmt->idx[depth] = k;
-            mag_tensor_fmt_recursive(fmt, depth + 1);
-        } else if (ellipsis && k == heads) { /* Ellipsis */
-            mag_sstream_append(fmt->ss, "...");
-        } else { /* Tail part: ...tail_cnt indices */
-            fmt->idx[depth] = dim - tails + (k - heads - (ellipsis ? 1 : 0));
-            mag_tensor_fmt_recursive(fmt, depth + 1);
+    bool use_ellipsis = head + tail < dim;
+    int64_t tails = use_ellipsis ? tail : 0;
+    int64_t total = head + tails + (use_ellipsis ? 1 : 0);
+    mag_fmt_putc(fmt, '[');
+    if (last_dim) {  /* Pass 1: compute max element width (including numbers and "...") */
+        size_t max_width = 0;
+        for (int64_t k=0; k < total; ++k) {
+            bool ellipsis;
+            size_t elen = 0;
+            if (mag_unlikely(!mag_fmt_lastdim_elem(fmt, depth, k, head, tails, dim, use_ellipsis, &tmp, &ellipsis, &elen)))
+                continue;
+            max_width = mag_xmax(max_width, elen);
         }
-        if (k != total-1) {
-            mag_sstream_putc(fmt->ss, ',');
-            if (!last_dim) { /* New line and indent for non-last dim */
-                mag_sstream_append(fmt->ss, "\n%*s", (int)fmt->pad, "");
-                for (int j = 0; j <= depth; ++j)
-                    mag_sstream_putc(fmt->ss, ' ');
-            } else { /* Space after comma for last dim */
-                mag_sstream_putc(fmt->ss, ' ');
+        for (int64_t k=0; k < total; ++k) { /* Pass 2: actually print, with linewidth + right alignment */
+            bool ellipsis;
+            size_t elen = 0;
+            if (mag_unlikely(!mag_fmt_lastdim_elem(fmt, depth, k, head, tails, dim, use_ellipsis, &tmp, &ellipsis, &elen)))
+                continue;
+            if (k > 0) {
+                if (fmt->linewidth > 0 && fmt->col+2 + max_width > fmt->linewidth) {
+                    mag_fmt_putc(fmt, ',');
+                    mag_fmt_putc(fmt, '\n');
+                    mag_fmt_indent(fmt, depth);
+                } else {
+                    mag_fmt_putc(fmt, ',');
+                    mag_fmt_putc(fmt, ' ');
+                }
+            }
+            size_t pad = max_width > elen ? max_width - elen : 0;
+            for (size_t i=0; i < pad; ++i)
+                mag_fmt_putc(fmt, ' ');
+            if (ellipsis) {
+                mag_fmt_putc(fmt, '.');
+                mag_fmt_putc(fmt, '.');
+                mag_fmt_putc(fmt, '.');
+            } else {
+                for (size_t i=0; i < elen; ++i)
+                    mag_fmt_putc(fmt, tmp[i]);
+            }
+        }
+    } else {
+        for (int64_t k=0; k < total; ++k) {
+            if (use_ellipsis && k == head) mag_sstream_append(fmt->ss, "...");
+            else {
+                fmt->idx[depth] = k < head ? k : dim - tails + (k - head - (use_ellipsis ? 1 : 0));
+                mag_tensor_fmt_recursive(fmt, depth + 1);
+            }
+            if (k != total - 1) {
+                mag_fmt_putc(fmt, ',');
+                if (iter->rank - depth > 1) {
+                    mag_fmt_putc(fmt, '\n');
+                    mag_fmt_indent(fmt, depth);
+                } else mag_fmt_putc(fmt, ' ');
             }
         }
     }
-    mag_sstream_putc(fmt->ss, ']');
+    mag_fmt_putc(fmt, ']');
 }
 
 char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold) {
     mag_assert(mag_device_is(tensor->storage->device, "cpu"), "Tensor must be on CPU to convert to string.");
-    head = head < 0 ? 3 : head;
-    tail = tail < 0 ? 3 : tail;
-    threshold = threshold < 0 ? 1000 : threshold;
+    head = head < 0 ? MAG_FMT_TENSOR_DEFAULT_HEAD_ELEMS : head;
+    tail = tail < 0 ? MAG_FMT_TENSOR_DEFAULT_TAIL_ELEMS : tail;
+    threshold = threshold < 0 ? MAG_FMT_TENSOR_DEFAULT_THRESHOLD : threshold;
     mag_sstream_t ss;
     mag_sstream_init(&ss);
     const char *prefix = "Tensor(";
@@ -751,7 +826,7 @@ char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int
     mag_sstream_append(&ss, prefix);
     mag_coords_iter_t iter;
     mag_coords_iter_init(&iter, &tensor->coords);
-    mag_tensor_fmt_info_t info = {
+    mag_tensor_format_context_t fmt = {
         .ss = &ss,
         .buf = (const void *)mag_tensor_data_ptr(tensor),
         .dtype = tensor->dtype,
@@ -762,9 +837,11 @@ char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int
         .tail = tail,
         .trunc = tensor->numel > threshold,
         .pad = pad,
+        .linewidth = MAG_FMT_TENSOR_DEFAULT_LINE_WIDTH,
+        .col = pad
     };
-    memset(info.idx, 0, sizeof(info.idx));
-    mag_tensor_fmt_recursive(&info, 0); /* Recursive format */
+    memset(fmt.idx, 0, sizeof(fmt.idx));
+    mag_tensor_fmt_recursive(&fmt, 0); /* Recursive format */
     mag_sstream_putc(&ss, ')');
     return ss.buf; /* Return the string, must be freed with mag_tensor_to_string_free_data. */
 }

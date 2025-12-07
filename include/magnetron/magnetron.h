@@ -359,7 +359,6 @@ extern MAG_EXPORT mag_status_t mag_triu_(mag_tensor_t **out_result, mag_tensor_t
 extern MAG_EXPORT mag_status_t mag_multinomial(mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t num_samples, bool replacement);
 extern MAG_EXPORT mag_status_t mag_cat(mag_tensor_t **out_result, mag_tensor_t **tensors, size_t count, int64_t dim);
 
-
 extern MAG_EXPORT int64_t mag_tensor_rank(const mag_tensor_t *tensor);
 extern MAG_EXPORT const int64_t *mag_tensor_shape_ptr(const mag_tensor_t *tensor);
 extern MAG_EXPORT const int64_t *mag_tensor_strides_ptr(const mag_tensor_t *tensor);
