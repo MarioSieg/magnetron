@@ -41,7 +41,7 @@ typedef enum mag_opflags_t {
     _(ARANGE, 0, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(ONE_HOT, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
-    _(CAST, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
+    _(CAST, 1, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, clone)__\
     _(VIEW, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, view)__\
     _(TRANSPOSE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, transpose)__\
     _(PERMUTE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
@@ -103,7 +103,7 @@ typedef enum mag_opflags_t {
     _(TRIL, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(TRIU, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(MULTINOMIAL, 1, 1, FP, mag_params(MAG_OP_ATTR_TYPE_I64, MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
-    _(CAT, MAG_OP_INOUT_DYN, 1, FP, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(CAT, MAG_OP_INOUT_DYN, 1, FP, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAGS_COMMON, NULL)__\
     _(ADD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, add)__\
     _(SUB, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, sub)__\
     _(MUL, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mul)__\

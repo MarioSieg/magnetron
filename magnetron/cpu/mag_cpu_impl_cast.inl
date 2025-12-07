@@ -395,11 +395,16 @@ static MAG_HOTPROC void mag_cast_generic(const mag_kernel_payload_t *payload) {
     const mag_type_traits_t *mdst = mag_type_trait(dst);
     mag_vcast_fn_t *kernel = mag_cast_table_2D[src][dst];
     mag_assert(kernel, "No kernel found for type cast: %s -> %s", msrc->name, mdst->name);
-    int64_t numel = r->numel;
     uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r);
     const uint8_t *bx = (const uint8_t *)mag_tensor_data_ptr(x);
+    int64_t total = r->numel;
+    int64_t tc = payload->thread_num;
+    int64_t ti = payload->thread_idx;
+    int64_t chunk = (total + tc - 1)/tc;
+    int64_t ra = ti*chunk;
+    int64_t rb = mag_xmin(ra + chunk, total);
     if (mag_full_cont2(r, x)) {
-        (*kernel)(r->numel, br, bx);
+        (*kernel)(rb-ra, br+ra, bx+ra);
         return;
     }
     /* We work in byte granularity and compute pointer offsets manually to avoid a generic for this stub function */
@@ -408,7 +413,7 @@ static MAG_HOTPROC void mag_cast_generic(const mag_kernel_payload_t *payload) {
     mag_coords_iter_init(&cx, &x->coords);
     int64_t ssrc = (int64_t)msrc->size;
     int64_t sdst = (int64_t)mdst->size;
-    for (int64_t i=0; i < numel; ++i) { /* TODO: Optimize - Slow with the single indirect call for each element */
+    for (int64_t i=ra; i < rb; ++i) { /* TODO: Optimize - Slow with the single indirect call for each element */
         int64_t ri, xi;
         mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi);
         void *pr = br + ri*sdst;
