@@ -41,6 +41,12 @@
 */
 
 #include "mag_fmt.h"
+#include "mag_sstream.h"
+#include "mag_float16.h"
+#include "mag_coords_iter.h"
+#include "mag_tensor.h"
+#include "mag_backend.h"
+#include "mag_alloc.h"
 
 #define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
 static char* mag_wuint9(char *p, uint32_t u) {
@@ -644,4 +650,125 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
     }
     if ((sf & MAG_FMT_F_LEFT)) while (width-- > len) *p++ = ' ';
     return p;
+}
+
+static void mag_fmt_scalar(mag_sstream_t *ss, int64_t numel, const void *buf, int64_t i, mag_dtype_t type) {
+    int64_t nb = (int64_t)mag_type_trait(type)->size;
+    const void *val = (const uint8_t *)buf + i*nb; /* Pointer to the value */
+    if (mag_unlikely(!((uintptr_t)val >= (uintptr_t)buf && (uintptr_t)val < (uintptr_t)buf + nb*numel))) { /* Quick bounds check just in case */
+        mag_sstream_append(ss, "Index out of bounds when formatting scalar: index %" PRIi64 " for type %d", i, type);
+        return;
+    }
+    if (type == MAG_DTYPE_BOOLEAN) {
+        mag_sstream_append(ss, "%s", *(const uint8_t *)val ? "True" : "False");
+        return;
+    }
+    char fmt[MAG_FMT_BUF_MAX] = {0};
+    char *e = fmt;
+    switch (type) {
+        case MAG_DTYPE_FLOAT32: *(e = mag_fmt_e11m52(fmt, *(const float *)val, MAG_FMT_G5)) = '\0'; break;
+        case MAG_DTYPE_FLOAT16: *(e = mag_fmt_e11m52(fmt, mag_float16_to_float32_soft_fp(*(const mag_float16_t *)val), MAG_FMT_G5)) = '\0'; break;
+        case MAG_DTYPE_UINT8: *(e = mag_fmt_uint64(fmt, *(const uint8_t *)val)) = '\0'; break;
+        case MAG_DTYPE_INT8: *(e = mag_fmt_int64(fmt, *(const int8_t *)val)) = '\0'; break;
+        case MAG_DTYPE_UINT16: *(e = mag_fmt_uint64(fmt, *(const uint16_t *)val)) = '\0'; break;
+        case MAG_DTYPE_INT16: *(e = mag_fmt_int64(fmt, *(const int16_t *)val)) = '\0'; break;
+        case MAG_DTYPE_UINT32: *(e = mag_fmt_uint64(fmt, *(const uint32_t *)val)) = '\0'; break;
+        case MAG_DTYPE_INT32: *(e = mag_fmt_int64(fmt, *(const int32_t *)val)) = '\0'; break;
+        case MAG_DTYPE_UINT64: *(e = mag_fmt_uint64(fmt, *(const uint64_t *)val)) = '\0'; break;
+        case MAG_DTYPE_INT64: *(e = mag_fmt_int64(fmt, *(const int64_t *)val)) = '\0'; break;
+        default: mag_panic("Unknown dtype for formatting: %d", type); return;
+    }
+    ptrdiff_t n = e-fmt;
+    if (mag_likely(n > 0))
+        mag_sstream_append_strn(ss, fmt, e-fmt);
+}
+
+typedef struct mag_tensor_fmt_info_t {
+    mag_sstream_t *ss;
+    const void *buf;
+    mag_dtype_t dtype;
+    const mag_coords_iter_t *iter;
+    int64_t idx[MAG_MAX_DIMS];
+    int64_t numel;
+    int64_t head;
+    int64_t tail;
+    bool trunc;
+    size_t pad;
+} mag_tensor_fmt_info_t;
+
+static void mag_tensor_fmt_recursive(mag_tensor_fmt_info_t *fmt, int depth) {
+    if (depth == fmt->iter->rank) { /* Scalar leaf */
+        int64_t off = mag_coords_iter_offset_at(fmt->iter, fmt->idx);
+        mag_fmt_scalar(fmt->ss, fmt->numel, fmt->buf, off, fmt->dtype);
+        return;
+    }
+    int64_t dim = fmt->iter->shape[depth];
+    bool last_dim = fmt->iter->rank-depth == 1;
+    int64_t head = fmt->head;
+    int64_t tail = fmt->tail;
+    if (!fmt->trunc || head+tail >= dim) { /* If no truncation or head + tail covers the whole dim, print everything, no ellipsis */
+        head = dim;
+        tail = 0;
+    }
+    bool ellipsis = head + tail < dim;
+    int64_t heads = head;
+    int64_t tails = ellipsis ? tail : 0;
+    int64_t total = heads + tails + (ellipsis ? 1 : 0);
+    mag_sstream_putc(fmt->ss, '[');
+    for (int64_t k = 0; k < total; ++k) {
+        if (k < heads) { /* Head front indices 0...head_cnt-1 */
+            fmt->idx[depth] = k;
+            mag_tensor_fmt_recursive(fmt, depth + 1);
+        } else if (ellipsis && k == heads) { /* Ellipsis */
+            mag_sstream_append(fmt->ss, "...");
+        } else { /* Tail part: ...tail_cnt indices */
+            fmt->idx[depth] = dim - tails + (k - heads - (ellipsis ? 1 : 0));
+            mag_tensor_fmt_recursive(fmt, depth + 1);
+        }
+        if (k != total-1) {
+            mag_sstream_putc(fmt->ss, ',');
+            if (!last_dim) { /* New line and indent for non-last dim */
+                mag_sstream_append(fmt->ss, "\n%*s", (int)fmt->pad, "");
+                for (int j = 0; j <= depth; ++j)
+                    mag_sstream_putc(fmt->ss, ' ');
+            } else { /* Space after comma for last dim */
+                mag_sstream_putc(fmt->ss, ' ');
+            }
+        }
+    }
+    mag_sstream_putc(fmt->ss, ']');
+}
+
+char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold) {
+    mag_assert(mag_device_is(tensor->storage->device, "cpu"), "Tensor must be on CPU to convert to string.");
+    head = head < 0 ? 3 : head;
+    tail = tail < 0 ? 3 : tail;
+    threshold = threshold < 0 ? 1000 : threshold;
+    mag_sstream_t ss;
+    mag_sstream_init(&ss);
+    const char *prefix = "Tensor(";
+    size_t pad = strlen(prefix);
+    mag_sstream_append(&ss, prefix);
+    mag_coords_iter_t iter;
+    mag_coords_iter_init(&iter, &tensor->coords);
+    mag_tensor_fmt_info_t info = {
+        .ss = &ss,
+        .buf = (const void *)mag_tensor_data_ptr(tensor),
+        .dtype = tensor->dtype,
+        .iter = &iter,
+        .idx = {0},
+        .numel = tensor->numel,
+        .head = head,
+        .tail = tail,
+        .trunc = tensor->numel > threshold,
+        .pad = pad,
+    };
+    memset(info.idx, 0, sizeof(info.idx));
+    mag_tensor_fmt_recursive(&info, 0); /* Recursive format */
+    mag_sstream_putc(&ss, ')');
+    return ss.buf; /* Return the string, must be freed with mag_tensor_to_string_free_data. */
+}
+
+void mag_tensor_to_string_free_data(char *ret_val) {
+    (*mag_alloc)(ret_val, 0, 0);
 }

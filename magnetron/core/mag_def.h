@@ -326,55 +326,6 @@ static MAG_AINLINE bool mag_atomic32_compare_exchange_strong(volatile mag_atomic
 mag_static_assert(sizeof(0u) == 4);     /* u literal suffix must infer to uint32. */
 mag_static_assert(sizeof(0ull) == 8);   /* ull literal suffix must infer to uint64. */
 
-/*
-** Because multiple floating-point formats with the same bit width exist (e.g. f16, bf16), a bit-width specific naming scheme is used:
-** All floating-point types are described by their exponent (E) and mantissa (M) bits. The sign bit is always present and not added.
-**
-** For example:
-**      float is an IEEE 754 32-bit float with 8 exponent bits and 23 mantissa bits. So float = float32.
-**          8 exponent bits + 23 mantissa bits + 1 sign bit = 32 bits.
-**      half/f16 is an IEEE 754 16-bit float with 5 exponent bits and 10 mantissa bits. So half = float16.
-**          5 exponent bits + 10 mantissa bits + 1 sign bit = 16 bits.
-**
-** The builtin float keyword is only used for the public API in magnetron.h.
-** The internal code uses the types below.
-*/
-
-/* Floating-point types. */
-
-typedef struct mag_float16_t {
-    uint16_t bits;
-} mag_float16_t; /* f16 = IEEE 754 16-bit half precision float. */
-
-
-#define mag_uint64x(hi, lo) (((uint64_t)0x##hi<<32)+(uint64_t)0x##lo)
-
-#define msg_float16_pack2(x) (mag_float16_t){(x)&0xffffu}
-
-/* Some fp16 constants. */
-#define MAG_FLOAT16_E msg_float16_pack2(0x4170)
-#define MAG_FLOAT16_EPS msg_float16_pack2(0x1400)
-#define MAG_FLOAT16_INF msg_float16_pack2(0x7c00)
-#define MAG_FLOAT16_LN10 msg_float16_pack2(0x409b)
-#define MAG_FLOAT16_LN2 msg_float16_pack2(0x398c)
-#define MAG_FLOAT16_LOG10_2 msg_float16_pack2(0x34d1)
-#define MAG_FLOAT16_LOG10_E msg_float16_pack2(0x36f3)
-#define MAG_FLOAT16_LOG2_10 msg_float16_pack2(0x42a5)
-#define MAG_FLOAT16_LOG2_E msg_float16_pack2(0x3dc5)
-#define MAG_FLOAT16_MAX msg_float16_pack2(0x7bff)
-#define MAG_FLOAT16_MAX_SUBNORMAL msg_float16_pack2(0x03ff)
-#define MAG_FLOAT16_MIN msg_float16_pack2(0xfbff)
-#define MAG_FLOAT16_MIN_POS msg_float16_pack2(0x0400)
-#define MAG_FLOAT16_MIN_POS_SUBNORMAL msg_float16_pack2(0x0001)
-#define MAG_FLOAT16_NAN msg_float16_pack2(0x7e00)
-#define MAG_FLOAT16_NEG_INF msg_float16_pack2(0xfc00)
-#define MAG_FLOAT16_NEG_ONE msg_float16_pack2(0xbc00)
-#define MAG_FLOAT16_NEG_ZERO msg_float16_pack2(0x8000)
-#define MAG_FLOAT16_ONE msg_float16_pack2(0x3c00)
-#define MAG_FLOAT16_PI msg_float16_pack2(0x4248)
-#define MAG_FLOAT16_SQRT2 msg_float16_pack2(0x3da8)
-#define MAG_FLOAT16_ZERO msg_float16_pack2(0x0000)
-
 /* Endianness detection. */
 #ifdef __BYTE_ORDER
 #if defined(__BIG_ENDIAN) && (__BYTE_ORDER == __BIG_ENDIAN)

@@ -881,8 +881,8 @@ namespace magnetron {
             mag_bernoulli_(m_tensor, mag_scalar_float(p));
         }
 
-        [[nodiscard]] auto to_string(bool with_data = true, size_t from_start = 0, size_t from_end = 0) const -> std::string {
-            char* fmt {mag_tensor_to_string(m_tensor, with_data, from_start, from_end)};
+        [[nodiscard]] auto to_string(int64_t head = 3, int64_t tail = 3) const -> std::string {
+            char* fmt {mag_tensor_to_string(m_tensor, head, tail)};
             std::string str {fmt};
             mag_tensor_to_string_free_data(fmt);
             return str;

@@ -13,6 +13,7 @@
 #define MAG_OP_ATTR_H
 
 #include "mag_def.h"
+#include "mag_float16.h"
 
 #ifdef __cplusplus
 extern "C" {

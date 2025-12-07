@@ -13,9 +13,8 @@
 #include "mag_context.h"
 #include "mag_pool.h"
 #include "mag_alloc.h"
-#include "mag_sstream.h"
 #include "mag_autodiff.h"
-#include "mag_fmt.h"
+#include "mag_coords_iter.h"
 
 static void mag_view_meta_dtor(void *p) {
     mag_view_meta_t *vm = p;
@@ -268,86 +267,6 @@ bool mag_tensor_item_bool(const mag_tensor_t *tensor) {
     uint8_t val;
     (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(tensor), &val, sizeof(val), MAG_DTYPE_BOOLEAN);
     return !!val;
-}
-
-static void mag_fmt_single_elem(mag_sstream_t *ss, const void *buf, size_t i, mag_dtype_t dtype) {
-    char fmt[MAG_FMT_BUF_MAX] = {0};
-    char *e = NULL;
-    switch (dtype) {
-        case MAG_DTYPE_FLOAT32:
-        case MAG_DTYPE_FLOAT16: e = mag_fmt_e11m52(fmt, ((const float *)buf)[i], MAG_FMT_G5); break;
-        case MAG_DTYPE_BOOLEAN: mag_sstream_append(ss, "%s", ((const uint8_t *)buf)[i] ? "True" : "False"); return;
-        case MAG_DTYPE_UINT8:  e = mag_fmt_uint64(fmt, ((const uint8_t *)buf)[i]); break;
-        case MAG_DTYPE_INT8:  e = mag_fmt_int64(fmt, ((const int8_t *)buf)[i]); break;
-        case MAG_DTYPE_UINT16: e = mag_fmt_uint64(fmt, ((const uint16_t *)buf)[i]); break;
-        case MAG_DTYPE_INT16: e = mag_fmt_int64(fmt, ((const int16_t *)buf)[i]); break;
-        case MAG_DTYPE_UINT32: e = mag_fmt_uint64(fmt, ((const uint32_t *)buf)[i]); break;
-        case MAG_DTYPE_INT32: e = mag_fmt_int64(fmt, ((const int32_t *)buf)[i]); break;
-        case MAG_DTYPE_UINT64: e = mag_fmt_uint64(fmt, ((const uint64_t *)buf)[i]); break;
-        case MAG_DTYPE_INT64: e = mag_fmt_int64(fmt, ((const int64_t *)buf)[i]); break;
-        default: mag_panic("Unknown dtype for formatting: %d", dtype); return;
-    }
-    mag_assert2(e);
-    *e = '\0';
-    ptrdiff_t n = e-fmt;
-    if (mag_likely(n > 0))
-        mag_sstream_append_strn(ss, fmt, e-fmt);
-}
-
-static void mag_tensor_fmt_recursive(
-    mag_sstream_t *ss,
-    const void *buf,
-    mag_dtype_t dtype,
-    const int64_t *shape,
-    const int64_t *strides,
-    int64_t rank,
-    int depth,
-    int64_t moff,
-    size_t pad
-) {
-    if (depth == rank) { /* scalar leaf */
-        mag_fmt_single_elem(ss, buf, moff, dtype);
-        return;
-    }
-    mag_sstream_putc(ss, '[');
-    for (int64_t i=0; i < shape[depth]; ++i) {
-        mag_tensor_fmt_recursive(ss, buf, dtype, shape, strides, rank, depth+1, moff + i*strides[depth], pad); /* Recurse down */
-        if (i != shape[depth]-1) { /* separator */
-            mag_sstream_putc(ss, ',');
-            if (rank-depth > 1) { /* newline + indent for outer dims */
-                mag_sstream_append(ss, "\n%*s", pad, ""); /* indent */
-                for (int j=0; j <= depth; ++j)
-                    mag_sstream_putc(ss, ' ');
-            } else { /* simple space for last dim */
-                mag_sstream_putc(ss, ' ');
-            }
-        }
-    }
-    mag_sstream_putc(ss, ']');
-}
-
-char *mag_tensor_to_string(mag_tensor_t *tensor, bool with_header, size_t from_start_count, size_t from_end_count) {
-    if (!from_end_count) from_end_count = UINT64_MAX;
-    void *buf = NULL;
-    if (mag_tensor_is_floating_point_typed(tensor)) /* For all float types we want a (maybe converted) fp32 buffer for easy formatting. */
-        buf = mag_tensor_copy_float_data(tensor);
-    else /* Integral types can be formated easily */
-        buf = mag_tensor_copy_data(tensor);
-    mag_sstream_t ss;
-    mag_sstream_init(&ss);
-    const char *prefix = "Tensor(";
-    size_t pad = strlen(prefix);
-    mag_sstream_append(&ss, prefix);
-    mag_tensor_fmt_recursive(&ss, buf, tensor->dtype, tensor->coords.shape, tensor->coords.strides, tensor->coords.rank, 0, 0, pad); /* Recursive format */
-    mag_sstream_putc(&ss, ')');
-    /* Free allocated buffer */
-    if (mag_tensor_is_floating_point_typed(tensor)) mag_tensor_copy_float_data_free(buf);
-    else mag_tensor_copy_data_free(buf);
-    return ss.buf; /* Return the string, must be freed with mag_tensor_to_string_free_data. */
-}
-
-void mag_tensor_to_string_free_data(char *ret_val) {
-    (*mag_alloc)(ret_val, 0, 0);
 }
 
 mag_context_t *mag_tensor_context(const mag_tensor_t *tensor) {

@@ -399,7 +399,7 @@ extern MAG_EXPORT float mag_tensor_item_float(const mag_tensor_t *tensor);
 extern MAG_EXPORT int64_t mag_tensor_item_int(const mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_item_bool(const mag_tensor_t *tensor);
 extern MAG_EXPORT mag_tensor_t *mag_tensor_detach(mag_tensor_t *tensor);
-extern MAG_EXPORT char *mag_tensor_to_string(mag_tensor_t *tensor, bool with_header, size_t from_start_count, size_t from_end_count);
+extern MAG_EXPORT char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold);
 extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val);
 extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *tensor);

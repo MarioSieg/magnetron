@@ -14,6 +14,7 @@
 #include <core/mag_tensor.h>
 #include <core/mag_cpuid.h>
 #include <core/mag_alloc.h>
+#include <core/mag_float16.h>
 #include <core/mag_coords.h>
 #include <core/mag_coords_iter.h>
 

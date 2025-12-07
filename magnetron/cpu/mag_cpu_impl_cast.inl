@@ -24,20 +24,7 @@ static MAG_AINLINE mag_float16_t mag_float32_to_float16(float x) {
     } castor = {.f=(__fp16)x};
     r = castor.u;
 #else
-    union {
-        uint32_t u;
-        float f;
-    } castor;
-    float base = fabs(x)*0x1.0p+112f*0x1.0p-110f;
-    castor.f = x;
-    uint32_t shl1_w = castor.u+castor.u;
-    uint32_t sign = castor.u & 0x80000000u;
-    castor.u = 0x07800000u+(mag_xmax(0x71000000u, shl1_w&0xff000000u)>>1);
-    castor.f = base + castor.f;
-    uint32_t exp_bits = (castor.u>>13) & 0x00007c00u;
-    uint32_t mant_bits = castor.u & 0x00000fffu;
-    uint32_t nonsign = exp_bits + mant_bits;
-    r = (sign>>16)|(shl1_w > 0xff000000 ? 0x7e00 : nonsign);
+    r = mag_float16_from_float32_soft_fp(x).bits;
 #endif
     return (mag_float16_t) {
         .bits=r
@@ -58,26 +45,7 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
     } castor = {.u=x.bits};
     return castor.f;
 #else
-    union {
-        uint32_t u;
-        float f;
-    } castor;
-    uint32_t w = (uint32_t)x.bits<<16;
-    uint32_t sign = w & 0x80000000u;
-    uint32_t two_w = w+w;
-    uint32_t offs = 0xe0u<<23;
-    uint32_t t1 = (two_w>>4) + offs;
-    uint32_t t2 = (two_w>>17) | (126u<<23);
-    castor.u = t1;
-    float norm_x = castor.f*0x1.0p-112f;
-    castor.u = t2;
-    float denorm_x = castor.f-0.5f;
-    uint32_t denorm_cutoff = 1u<<27;
-    uint32_t r = sign | (two_w < denorm_cutoff
-                         ? (castor.f = denorm_x, castor.u)
-                         : (castor.f = norm_x, castor.u));
-    castor.u = r;
-    return castor.f;
+    return mag_float16_to_float32_soft_fp(x);
 #endif
 }
 

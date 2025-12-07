@@ -298,7 +298,9 @@ class Tensor:
         return self.shape[0]
 
     def __str__(self) -> str:
-        cstr: _FFI.CData = _C.mag_tensor_to_string(self._ptr, False, 0, 0)
+        head, tail = 3, 3
+        threshold = 1000 # todo make tose configureable
+        cstr: _FFI.CData = _C.mag_tensor_to_string(self._ptr, head, tail, threshold)
         data_str: str = _FFI.string(cstr).decode('utf-8')
         _C.mag_tensor_to_string_free_data(cstr)
         return data_str
