@@ -175,7 +175,7 @@ static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_thr
         .alloc_storage = &mag_cpu_alloc_storage,
         .manual_seed = &mag_cpu_manual_seed
     };
-    snprintf(device->id, sizeof(device->id), "cpu:0");
+    snprintf(device->id, sizeof(device->id), "cpu");
     snprintf(device->physical_device_name, sizeof(device->physical_device_name), "%s", ctx->machine.cpu_name);
     return device;
 }
