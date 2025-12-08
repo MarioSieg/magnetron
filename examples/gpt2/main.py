@@ -187,12 +187,16 @@ class GPT2(nn.Module):
         return logits, new_kv
 
     @no_grad()
-    def generate(self, prompt: str, max_tokens: int, temp: float = 1.0) -> str:
+    def generate(self, prompt: str, max_tokens: int, temp: float = 1.0, top_k: int | None = None) -> str:
         tokens = encode(prompt)
         idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=dtype.int64)[None, ...]
         logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
-            probs = (logits[:, -1, :] / temp).softmax(dim=-1)
+            logits = logits[:, -1, :] / temp
+            if top_k is not None:
+                v, _ = logits.topk(top_k)
+                logits.masked_fill_(logits < v[:, [-1]], float('-inf'))
+            probs = logits.softmax(dim=-1)
             next_id = probs.multinomial(num_samples=1).item()
             tokens.append(next_id)
             idx = Tensor.of([next_id], dtype=dtype.int64)[None, ...]
@@ -200,7 +204,7 @@ class GPT2(nn.Module):
         return decode(tokens)
 
     @no_grad()
-    def generate_stream(self, prompt: str, max_tokens: int, temp: float = 1.0) -> Iterator[str]:
+    def generate_stream(self, prompt: str, max_tokens: int, temp: float = 1.0, top_k: int | None = None) -> Iterator[str]:
         tokens = encode(prompt)
         dec = codecs.getincrementaldecoder('utf-8')()
         start = time.perf_counter()
@@ -208,7 +212,11 @@ class GPT2(nn.Module):
         idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=dtype.int64)[None, ...]
         logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
-            probs = (logits[:, -1, :] / temp).softmax(dim=-1)
+            logits = logits[:, -1, :] / temp
+            if top_k is not None:
+                v, _ = logits.topk(top_k)
+                logits = logits.masked_fill(logits < v[:, [-1]], float('-inf'))
+            probs = logits.softmax(dim=-1)
             next_id = probs.multinomial(num_samples=1).item()
             tokens.append(next_id)
             n += 1
@@ -230,8 +238,9 @@ def _main() -> None:
     args.add_argument('prompt', type=str, help='Prompt to start generation')
     args.add_argument('--model', type=str, default='gpt2', help='Model type (gpt2, gpt2-medium, gpt2-large, gpt2-xl)')
     args.add_argument('--max_tokens', type=int, default=128, help='Maximum number of new tokens to generate')
-    args.add_argument('--temp', type=float, default=0.6, help='Temperature for sampling')
+    args.add_argument('--temp', type=float, default=0.8, help='Temperature for sampling')
     args.add_argument('--no-stream', action='store_true', help='Disable streaming output')
+    args.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
     args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
     args = args.parse_args()
 
@@ -242,7 +251,7 @@ def _main() -> None:
     puts = lambda s: console.print(s, style='bold white', end='')
     puts(args.prompt)
     if not args.no_stream:
-        for chunk in model.generate_stream(args.prompt, max_tokens=args.max_tokens, temp=args.temp):
+        for chunk in model.generate_stream(args.prompt, max_tokens=args.max_tokens, temp=args.temp, top_k=args.top_k):
             puts(chunk)
     else:
         puts(model.generate(args.prompt, max_tokens=args.max_tokens, temp=args.temp))

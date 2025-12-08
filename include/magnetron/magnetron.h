@@ -229,6 +229,7 @@ extern MAG_EXPORT mag_status_t mag_sum(mag_tensor_t **out_result, mag_tensor_t *
 extern MAG_EXPORT mag_status_t mag_prod(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_all(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern MAG_EXPORT mag_status_t mag_any(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
+extern MAG_EXPORT mag_status_t mag_topk(mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t k, int64_t dim, bool largest, bool sorted);
 extern MAG_EXPORT mag_status_t mag_abs(mag_tensor_t **out_result, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_abs_(mag_tensor_t **out_result, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sgn(mag_tensor_t **out_result, mag_tensor_t *x);

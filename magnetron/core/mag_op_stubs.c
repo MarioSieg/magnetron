@@ -777,6 +777,43 @@ mag_status_t mag_any(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *
     return mag_op_stub_reduction(out_result, MAG_OP_ANY, x, dims, rank, keepdim);
 }
 
+mag_status_t mag_topk(mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t k, int64_t dim, bool largest, bool sorted) {
+    *out_values  = NULL;
+    *out_indices = NULL;
+    mag_contract(NULL, ERR_INVALID_PARAM, {}, x != NULL, "Input tensor cannot be NULL");
+    mag_context_t *ctx = x->ctx;
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, k > 0, "k must be > 0, got: %" PRIi64, k);
+    int64_t rank = x->coords.rank;
+    mag_contract(ctx, ERR_INVALID_RANK, {}, rank > 0, "topk requires rank > 0");
+    if (dim < 0) dim += rank;
+    mag_contract(ctx, ERR_INVALID_DIM, {}, 0 <= dim && dim < rank, "topk dim %" PRIi64 " out of range for rank %" PRIi64, dim, rank);
+    int64_t dim_size = x->coords.shape[dim];
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, k <= dim_size, "topk k=%" PRIi64 " must be <= size of dim (%" PRIi64 ")", k, dim_size);
+    int64_t shape[MAG_MAX_DIMS];
+    memcpy(shape, x->coords.shape, sizeof(*shape)*rank);
+    shape[dim] = k;
+    mag_tensor_t *values  = NULL;
+    mag_tensor_t *indices = NULL;
+    mag_status_t stat;
+    stat = mag_empty(&values, ctx, x->dtype, rank, shape);
+    if (mag_iserr(stat)) return stat;
+    stat = mag_empty(&indices, ctx, MAG_DTYPE_INT64,  rank, shape);
+    if (mag_iserr(stat)) {
+        mag_tensor_decref(values);
+        return stat;
+    }
+    mag_op_attr_registry_t layout;
+    mag_op_attr_registry_init(&layout);
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(k));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dim));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_bool(largest));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_bool(sorted));
+    mag_dispatch(MAG_OP_TOPK, false, &layout, &x, 1, (mag_tensor_t*[2]){values, indices}, 2);
+    *out_values = values;
+    *out_indices = indices;
+    return MAG_STATUS_OK;
+}
+
 static mag_status_t mag_op_stub_unary(mag_tensor_t **out_result, mag_opcode_t op, mag_tensor_t *x, const mag_op_attr_registry_t *layout, bool inplace) {
     *out_result = NULL;
     mag_assert_dtype_compat(op, &x);

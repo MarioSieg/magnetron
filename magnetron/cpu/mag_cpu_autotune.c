@@ -73,7 +73,7 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
         [MAG_OP_CEIL] = {0.5, 25000},
         [MAG_OP_ROUND] = {0.5, 25000},
         [MAG_OP_TRUNC] = {0.5, 25000},
-        [MAG_OP_SOFTMAX] = {0.5, 25000},
+        [MAG_OP_SOFTMAX] = {0.9, 25000},
         [MAG_OP_SOFTMAX_DV] = {0.5, 25000},
         [MAG_OP_SIGMOID] = {0.5, 25000},
         [MAG_OP_SIGMOID_DV] = {0.5, 25000},

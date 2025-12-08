@@ -352,6 +352,18 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_UINT64] = &mag_any_uint64,
         [MAG_DTYPE_INT64] = &mag_any_int64,
     },
+    [MAG_OP_TOPK] = {
+        [MAG_DTYPE_FLOAT32] = &mag_topk_float32,
+        [MAG_DTYPE_FLOAT16] = &mag_topk_float16,
+        [MAG_DTYPE_UINT8] = &mag_topk_uint8,
+        [MAG_DTYPE_INT8] = &mag_topk_int8,
+        [MAG_DTYPE_UINT16] = &mag_topk_uint16,
+        [MAG_DTYPE_INT16] = &mag_topk_int16,
+        [MAG_DTYPE_UINT32] = &mag_topk_uint32,
+        [MAG_DTYPE_INT32] = &mag_topk_int32,
+        [MAG_DTYPE_UINT64] = &mag_topk_uint64,
+        [MAG_DTYPE_INT64] = &mag_topk_int64,
+    },
     [MAG_OP_ABS] = {
         [MAG_DTYPE_FLOAT32] = &mag_abs_float32,
         [MAG_DTYPE_FLOAT16] = &mag_abs_float16,

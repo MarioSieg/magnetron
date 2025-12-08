@@ -771,6 +771,13 @@ class Tensor:
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_all(out, self._ptr, dims, num_dims, keepdim)))
 
+    def topk(self, k: int, dim: int = -1, largest: bool = True, sorted: bool = True) -> tuple[Tensor, Tensor]:
+        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        values: _FFI.CData = _FFI.new(f'mag_tensor_t*[1]')
+        indices: _FFI.CData = _FFI.new(f'mag_tensor_t*[1]')
+        _handle_errc(_C.mag_topk(values, indices, self._ptr, k, dim, largest, sorted))
+        return Tensor(values[0]), Tensor(indices[0])
+
     def abs(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_abs(out, self._ptr)))
