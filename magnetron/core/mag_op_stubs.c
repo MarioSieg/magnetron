@@ -60,6 +60,158 @@ static void mag_norm_axis(int64_t *ax, int64_t ra) {
     if (*ax < 0) *ax += ra;
 }
 
+static const mag_dtype_t mag_type_promotion_rules[MAG_DTYPE__NUM][MAG_DTYPE__NUM] = {
+    [MAG_DTYPE_FLOAT32] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_FLOAT32,
+    },
+    [MAG_DTYPE_FLOAT16] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_FLOAT32,
+    },
+    [MAG_DTYPE_BOOLEAN] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_BOOLEAN,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT8,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT8,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT16,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT16,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT32,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
+    },
+    [MAG_DTYPE_UINT8] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_UINT8,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT8,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT16,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT16,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT16,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT32,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
+    },
+    [MAG_DTYPE_INT8] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_INT8,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_INT16,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT8,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_INT32,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT16,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
+    },
+    [MAG_DTYPE_UINT16] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_UINT16,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT16,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT16,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT16,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT32,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
+    },
+    [MAG_DTYPE_INT16] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_INT16,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_INT16,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT16,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_INT32,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT16,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
+    },
+    [MAG_DTYPE_UINT32] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_UINT32,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT32,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT32,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT32,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT64,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
+    },
+    [MAG_DTYPE_INT32] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_INT32,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
+    },
+    [MAG_DTYPE_UINT64] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_UINT64,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT64,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT64,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT64,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT64,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT64,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT64,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
+    },
+    [MAG_DTYPE_INT64] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_INT64,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT64,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT64,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT64,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_INT64,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
+    },
+};
+
+static bool mag_promote_type(mag_dtype_t *out, mag_dtype_t lhs, mag_dtype_t rhs) {
+    if (mag_unlikely(lhs >= MAG_DTYPE__NUM || rhs >= MAG_DTYPE__NUM)) return false;
+    *out = mag_type_promotion_rules[lhs][rhs];
+    return *out < MAG_DTYPE__NUM;
+}
+
 static bool mag_op_requires_op_params(mag_opcode_t op) { /* Returns true if the op requires any op params and thus requires validation of them. */
     const mag_op_traits_t *meta = mag_op_traits(op);
     for (int i=0; i < MAG_MAX_OP_PARAMS; ++i) {
@@ -1062,18 +1214,40 @@ mag_status_t mag_one_hot(mag_tensor_t **out_result, mag_tensor_t *indices, int64
     return MAG_STATUS_OK;
 }
 
-enum {
+typedef enum mag_binop_flags_t {
     MAG_BINOP_NONE = 0,
     MAG_BINOP_LOGICAL = 1<<0,
     MAG_BINOP_INPLACE = 1<<1
-};
+} mag_binop_flags_t;
 
-static mag_status_t mag_op_stub_binary(mag_tensor_t **out_result, mag_opcode_t op, mag_tensor_t *x, mag_tensor_t *y, int flags) {
+static mag_status_t mag_op_stub_binary(mag_tensor_t **out_result, mag_opcode_t op, mag_tensor_t *x, mag_tensor_t *y, mag_binop_flags_t flags) {
     *out_result = NULL;
     mag_context_t *ctx = x->ctx;
     mag_tensor_t *result = NULL;
     mag_status_t stat;
-    mag_assert_dtype_compat(op, (mag_tensor_t *[]) {x, y});
+    mag_dtype_t prom_type; /* common compute dtype for x,y */
+    mag_dtype_t res_type;  /* dtype of 'result' tensor */
+    if (flags & MAG_BINOP_LOGICAL) {
+        bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
+        mag_contract(ctx, ERR_INVALID_PARAM, {}, prom_ok, "Logical binary operator '%s' not supported for dtypes %s and %s",
+            mag_op_traits(op)->mnemonic,
+            mag_type_trait(x->dtype)->name,
+            mag_type_trait(y->dtype)->name
+        );
+        res_type = MAG_DTYPE_BOOLEAN; /* logical ops always yield boolean result */
+        mag_assert2(!(flags & MAG_BINOP_INPLACE));
+    } else if (flags & MAG_BINOP_INPLACE) { /* Inplace keeps x's dtype, but cast y to x's dtype if needed */
+        prom_type = x->dtype;
+        res_type = x->dtype;
+    } else { /* Pure out of place -> full promotion */
+        bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
+        mag_contract(ctx, ERR_INVALID_PARAM, {}, prom_ok, "Binary operator '%s' not supported for dtypes %s and %s",
+            mag_op_traits(op)->mnemonic,
+            mag_type_trait(x->dtype)->name,
+            mag_type_trait(y->dtype)->name
+        );
+        res_type = prom_type;
+    }
     if (flags & MAG_BINOP_INPLACE) {
         mag_assert2(!(flags & MAG_BINOP_LOGICAL));
         mag_assert_inplace_and_grad_mode_off(x);
@@ -1093,11 +1267,37 @@ static mag_status_t mag_op_stub_binary(mag_tensor_t **out_result, mag_opcode_t o
                 sx, sy, mag_op_traits(op)->mnemonic
             );
         }
-        mag_dtype_t rtype = flags & MAG_BINOP_LOGICAL ? MAG_DTYPE_BOOLEAN : x->dtype;
-        stat = rank ? mag_empty(&result, x->ctx, rtype, rank, dims) : mag_empty_scalar(&result, x->ctx, rtype);
+        stat = rank ? mag_empty(&result, x->ctx, res_type, rank, dims) : mag_empty_scalar(&result, x->ctx, res_type);
         if (mag_iserr(stat)) return stat;
     }
-    mag_dispatch(op, flags & MAG_BINOP_INPLACE, NULL, (mag_tensor_t *[2]){x, y}, 2, &result, 1);
+    mag_tensor_t *prom_x = x;
+    mag_tensor_t *prom_y = y;
+    mag_tensor_t *tmp_x = NULL;
+    mag_tensor_t *tmp_y = NULL;
+    if (x->dtype != prom_type) { /* Cast x only if its dtype != promote_dtype and the op semantics say so */
+        stat = mag_cast(&tmp_x, x, prom_type); /* For inplace, x->dtype == promote_dtype, so this is skipped */
+        if (mag_iserr(stat)) {
+            if (!(flags & MAG_BINOP_INPLACE) && result)
+                mag_tensor_decref(result);
+            return stat;
+        }
+        prom_x = tmp_x;
+    }
+    if (y->dtype != prom_type) { /* Cast y if needed */
+        stat = mag_cast(&tmp_y, y, prom_type);
+        if (mag_iserr(stat)) {
+            if (tmp_x) mag_tensor_decref(tmp_x);
+            if (!(flags & MAG_BINOP_INPLACE) && result)
+                mag_tensor_decref(result);
+            return stat;
+        }
+        prom_y = tmp_y;
+    }
+    mag_tensor_t *in[2] = {prom_x, prom_y};
+    mag_assert_dtype_compat(op, in);
+    mag_dispatch(op, flags & MAG_BINOP_INPLACE, NULL, in, sizeof(in)/sizeof(*in), &result, 1);
+    if (tmp_x) mag_tensor_decref(tmp_x);
+    if (tmp_y) mag_tensor_decref(tmp_y);
     *out_result = result;
     return MAG_STATUS_OK;
 }

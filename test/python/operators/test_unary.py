@@ -23,7 +23,7 @@ _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
     UnaryOpTestCase('log1p', None),
     UnaryOpTestCase('log2', None),
     UnaryOpTestCase('sqr', lambda x: x*x),
-    UnaryOpTestCase('rcp', lambda x: 1/x),
+    UnaryOpTestCase('rcp', lambda x: torch.reciprocal(x)),
     UnaryOpTestCase('sqrt', None),
     UnaryOpTestCase('rsqrt', None),
     UnaryOpTestCase('sin', None),

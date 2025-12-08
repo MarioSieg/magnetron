@@ -110,7 +110,7 @@ namespace magnetron {
 
     template <typename T>
     [[nodiscard]] constexpr std::optional<dtype> generic_to_dtype() {
-        if constexpr (std::is_same_v<T, uint8_t>) return dtype::u8;
+        if constexpr (std::is_same_v<T, uint8_t> || std::is_same_v<T, bool>) return dtype::u8;
         if constexpr (std::is_same_v<T, int8_t>) return dtype::i8;
         if constexpr (std::is_same_v<T, uint16_t>) return dtype::u16;
         if constexpr (std::is_same_v<T, int16_t>) return dtype::i16;
@@ -121,7 +121,6 @@ namespace magnetron {
         if constexpr (std::is_same_v<T, float>) return dtype::float32;
         if constexpr (std::is_same_v<T, mag_float16_t>) return dtype::float16;
         if constexpr (std::is_same_v<T, half_float::half>) return dtype::float16;
-        if constexpr (std::is_same_v<T, bool>) return dtype::boolean;
         return std::nullopt;
     }
 
@@ -144,11 +143,11 @@ namespace magnetron {
         tensor(context& ctx, dtype type, S&&... shape) : tensor{ctx, type, {static_cast<int64_t>(shape)...}} {}
 
         tensor(context& ctx, std::initializer_list<int64_t> shape, const std::vector<float>& data) : tensor{ctx, dtype::float32, shape} {
-            fill_from(data);
+            fill_(data);
         }
 
         tensor(context& ctx, std::initializer_list<int64_t> shape, const std::vector<int32_t>& data) : tensor{ctx, dtype::i32, shape} {
-            fill_from(data);
+            fill_(data);
         }
 
         tensor(const tensor& other) {
@@ -846,23 +845,22 @@ namespace magnetron {
             return tensor{out};
         }
 
-        auto fill_from(const void* buf, size_t nb) -> void {
+        auto fill_(const void* buf, size_t nb) -> void {
             mag_copy_raw_(m_tensor, buf, nb);
         }
 
-        auto fill_from(const std::vector<float>& data) -> void {
+        auto fill_(const std::vector<float>& data) -> void {
             mag_copy_float_(m_tensor, data.data(), data.size());
         }
 
-        auto fill_from(const std::vector<bool>& data) -> void {
-            static_assert(sizeof(bool) == sizeof(uint8_t));
+        auto fill_(const std::vector<uint8_t>& data) -> void {
             std::vector<uint8_t> unpacked {};
             unpacked.resize(data.size());
             for (size_t i=0; i < unpacked.size(); ++i) unpacked[i] = data[i];
             mag_copy_raw_(m_tensor, unpacked.data(), unpacked.size()*sizeof(data[0]));
         }
 
-        auto fill_from(const std::vector<int32_t>& data) -> void {
+        auto fill_(const std::vector<int32_t>& data) -> void {
             mag_copy_raw_(m_tensor, data.data(), data.size()*sizeof(data[0]));
         }
 
@@ -984,23 +982,14 @@ namespace magnetron {
 
     template <typename T>
     auto tensor::to_vector() const -> std::vector<T> {
+        static_assert(!std::is_same_v<T, bool>); // use uint8_t for bool
         if (dtype() != generic_to_dtype<T>())
             throw std::runtime_error {"T and tensor dtype must match: " + std::string{typeid(std::decay_t<T>).name()} + " != " + std::string{mag_type_trait(m_tensor->dtype)->name}};
-       if constexpr (std::is_same_v<T, bool>) { // Because std::vector<bool> is ✨ special ✨
-            auto* data {static_cast<uint8_t *>(mag_tensor_copy_data(m_tensor))};
-            std::vector<bool> result {};
-            result.resize(numel());
-            for (size_t i = 0; i < result.size(); ++i)
-                result[i] = static_cast<bool>(data[i]);
-            mag_tensor_copy_data_free(data);
-            return result;
-        } else {
-            auto* data {static_cast<T *>(mag_tensor_copy_data(m_tensor))};
-            std::vector<T> result {};
-            result.resize(numel());
-            std::copy_n(data, numel(), result.begin());
-            mag_tensor_copy_data_free(data);
-            return result;
-        }
+        auto* data {static_cast<T *>(mag_tensor_copy_data(m_tensor))};
+        std::vector<T> result {};
+        result.resize(numel());
+        std::copy_n(data, numel(), result.begin());
+        mag_tensor_copy_data_free(data);
+        return result;
     }
 }

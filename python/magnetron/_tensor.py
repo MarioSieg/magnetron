@@ -536,7 +536,7 @@ class Tensor:
             start = 0
         if dtype is None:
             dtype = _deduce_tensor_dtype(start)
-        # Ensure that start, stop, and step are the same type
+
         assert type(start) == type(stop) == type(step), 'start, stop, and step must be of the same type'
         start = _C.mag_scalar_int(start) if isinstance(start, int) else _C.mag_scalar_float(start)
         stop = _C.mag_scalar_int(stop) if isinstance(stop, int) else _C.mag_scalar_float(stop)

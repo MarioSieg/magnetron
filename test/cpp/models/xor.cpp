@@ -48,10 +48,10 @@ TEST(models, xor_float32) {
     };
 
     tensor x {ctx, dtype::float32, 4, 2};
-    x.fill_from(x_data);
+    x.fill_(x_data);
 
     tensor y {ctx, dtype::float32, 4, 1};
-    y.fill_from(y_data);
+    y.fill_(y_data);
 
     constexpr int64_t epochs {2000};
     for (int64_t epoch = 0; epoch < epochs; ++epoch) {
@@ -89,10 +89,10 @@ TEST(models, xor_float16) {
     };
 
     tensor x {ctx, dtype::float16, 4, 2};
-    x.fill_from(x_data);
+    x.fill_(x_data);
 
     tensor y {ctx, dtype::float16, 4, 1};
-    y.fill_from(y_data);
+    y.fill_(y_data);
 
     constexpr int64_t epochs {2000};
     for (int64_t epoch = 0; epoch < epochs; ++epoch) {

@@ -49,7 +49,7 @@ TEST(cpu_tensor_init_ops, copy_float32) {
         fill_data.resize(t.numel());
         std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         std::generate(fill_data.begin(), fill_data.end(), [&] { return dist(gen); });
-        t.fill_from(fill_data);
+        t.fill_(fill_data);
         std::vector data {t.to_vector<float>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
@@ -66,7 +66,7 @@ TEST(cpu_tensor_init_ops, copy_float16) {
         fill_data.resize(t.numel());
         std::uniform_real_distribution dist {-1.0f, 1.0f};
         std::generate(fill_data.begin(), fill_data.end(), [&] { return dist(gen); });
-        t.fill_from(fill_data);
+        t.fill_(fill_data);
         std::vector data {t.to_vector<float16>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
@@ -79,14 +79,14 @@ TEST(cpu_tensor_init_ops, copy_bool) {
     context ctx {};
     for_all_test_shapes([&](const std::vector<int64_t>& shape) {
         tensor t {ctx, dtype::boolean, shape};
-        std::vector<bool> fill_data {};
+        std::vector<uint8_t> fill_data {};
         fill_data.reserve(t.numel());
         std::bernoulli_distribution dist {0.5f};
         for (size_t i {}; i < t.numel(); ++i) {
             fill_data.emplace_back(dist(gen));
         }
-        t.fill_from(fill_data);
-        std::vector data {t.to_vector<bool>()};
+        t.fill_(fill_data);
+        std::vector data {t.to_vector<uint8_t>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], fill_data[i]);
@@ -131,7 +131,7 @@ TEST(cpu_tensor_init_ops, fill_bool) {
         bool fill_val {dist(gen)};
         tensor t {ctx, dtype::boolean, shape};
         t.fill_(fill_val);
-        std::vector data {t.to_vector<bool>()};
+        std::vector data {t.to_vector<uint8_t>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
             ASSERT_EQ(data[i], !!fill_val);
@@ -213,7 +213,7 @@ TEST(cpu_tensor_init_ops, fill_random_bool) {
         float p {dist(gen)};
         tensor t {ctx, dtype::boolean, shape};
         t.bernoulli_(p);
-        std::vector<bool> data {t.to_vector<bool>()};
+        std::vector<uint8_t> data {t.to_vector<uint8_t>()};
         int64_t samples {};
         for (bool k : data)
             samples += k ? 1 : 0;
