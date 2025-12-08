@@ -32,15 +32,15 @@ typedef enum mag_opflags_t {
 /* Enumerator, Input Count, Output Count, DType Mask, Op Param Layout, Flags, Backward Function, cpu growth, cpu tresh */
 #define mag_opdef(_, __)\
     _(NOP, 0, 0, NONE, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(FILL, 0, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(MASKED_FILL, 0, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
+    _(FILL, 0, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+    _(MASKED_FILL, 0, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
     _(RAND_UNIFORM, 0, 1, NUMERIC, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
     _(RAND_NORMAL, 0, 1, FP, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
     _(RAND_BERNOULLI, 0, 1, BOOL, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(RAND_PERM, 0, 1, INTEGER, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(ARANGE, 0, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(ONE_HOT, 1, 1, NUMERIC, {}, MAG_OP_FLAG_NONE, NULL)__\
-    _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, clone)__\
+    _(ARANGE, 0, 1, NUMERIC, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+    _(ONE_HOT, 1, 1, NUMERIC, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+    _(CLONE, 1, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, clone)__\
     _(CAST, 1, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, clone)__\
     _(VIEW, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, view)__\
     _(TRANSPOSE, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, transpose)__\
@@ -100,8 +100,8 @@ typedef enum mag_opflags_t {
     _(GELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, gelu)__\
     _(GELU_APPROX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, gelu)__\
     _(GELU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(TRIL, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
-    _(TRIU, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
+    _(TRIL, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+    _(TRIU, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
     _(MULTINOMIAL, 1, 1, FP, mag_params(MAG_OP_ATTR_TYPE_I64, MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
     _(CAT, MAG_OP_INOUT_DYN, 1, FP, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAGS_COMMON, NULL)__\
     _(ADD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, add)__\

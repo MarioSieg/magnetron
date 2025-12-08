@@ -15,15 +15,21 @@
         const mag_tensor_t *x = mag_cmd_in(0); \
         T *br = (T *)mag_tensor_data_ptr_mut(r); \
         const T *bx = (const T *)mag_tensor_data_ptr(x); \
+        int64_t total = r->numel; \
+        int64_t tc = payload->thread_num; \
+        int64_t ti = payload->thread_idx; \
+        int64_t chunk = (total+tc-1)/tc; \
+        int64_t ra = ti*chunk; \
+        int64_t rb = mag_xmin(ra+chunk, total); \
+        if (mag_unlikely(rb <= ra)) return; \
         if (mag_full_cont2(r, x)) { \
-            memcpy(br, bx, mag_tensor_numbytes(r)); \
+            memcpy(br+ra, bx+ra, (rb-ra)*sizeof(T)); \
             return; \
         } \
         mag_coords_iter_t cr, cx; \
         mag_coords_iter_init(&cr, &r->coords); \
         mag_coords_iter_init(&cx, &x->coords); \
-        int64_t numel = r->numel; \
-        for (int64_t i=0; i < numel; ++i) { \
+        for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri, xi; \
             mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_numbytes(x)); \
