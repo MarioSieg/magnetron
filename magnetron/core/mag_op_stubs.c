@@ -1054,7 +1054,7 @@ mag_impl_binary_pair(gt, GT, true)
 mag_status_t mag_matmul(mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
     *out_result = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->dtype == MAG_DTYPE_FLOAT32, "matmul: only float32 dtype is supported currently");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(x) && mag_tensor_is_floating_point_typed(y), "matmul: both tensors must be floating point typed");
     mag_tensor_t *result = NULL;
     mag_status_t stat;
     mag_assert_dtype_compat(MAG_OP_MATMUL, (mag_tensor_t *[]) {x, y});
