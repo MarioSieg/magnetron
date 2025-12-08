@@ -54,6 +54,7 @@ MAGNETRON_BUILD_BENCHMARKS = false
 wheel.packages = ["python/magnetron"]
 editable.mode = "redirect"
 install.components = ["python"]
+build-dir = "build/{wheel_tag}"
 
 [tool.ruff]
 line-length = 150

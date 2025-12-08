@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..common import *
 
 _UNARY_OPS: tuple[str, ...] = (
+    'clone',
     'not',
     'abs',
     'neg',
@@ -13,7 +14,9 @@ _UNARY_OPS: tuple[str, ...] = (
     'log1p',
     'log2',
     'sqr',
+    'rcp',
     'sqrt',
+    'rsqrt',
     'sin',
     'asin',
     'sinh',
@@ -43,7 +46,6 @@ _UNARY_OPS: tuple[str, ...] = (
     'tril',
     'triu',
 )
-
 
 def unary_op(
     dtype: DataType,
