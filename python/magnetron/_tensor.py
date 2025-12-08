@@ -381,12 +381,22 @@ class Tensor:
     @classmethod
     def empty(cls, *shape: int | tuple[int, ...], dtype: DataType = _default_dtype(), requires_grad: bool = False) -> Tensor:
         shape: tuple[int, ...] = _unpack_shape(*shape)
-        assert 0 < len(shape) <= _MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
+        assert 0 <= len(shape) <= _MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
         assert all(0 < dim <= _DIM_MAX for dim in shape), 'Invalid dimension size'
         dims: _FFI.CData = _FFI.new(f'int64_t[{len(shape)}]', shape)
         instance = _wrap_out_alloc(lambda out: _C.mag_empty(out, context.native_ptr(), dtype.enum_value, len(shape), dims))
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
+        return tensor
+
+    @classmethod
+    def scalar(
+        cls, value: int | float | bool, *, dtype: DataType | None = None, requires_grad: bool = False
+    ) -> Tensor:
+        instance = _wrap_out_alloc(lambda out: _C.mag_scalar(out, context.native_ptr(), dtype.enum_value, _C.mag_scalar_float(value) if isinstance(value, float) else _C.mag_scalar_int(value)))
+        tensor: Tensor = cls(instance)
+        tensor.requires_grad = requires_grad
+        tensor.fill_(value)
         return tensor
 
     @classmethod
@@ -419,6 +429,10 @@ class Tensor:
     def of(cls, data: NestedList, *, dtype: DataType | None = None, requires_grad: bool = False) -> Tensor:
         if not data:
             return cls.empty(0, dtype=dtype if dtype is not None else _default_dtype())
+        if isinstance(data, int | float | bool):
+            if dtype is None:
+                dtype = _deduce_tensor_dtype(data)
+            return cls.scalar(value=data, dtype=dtype, requires_grad=requires_grad)
         shape, flattened_data = _flatten_nested_lists(data)
         dtype: DataType = dtype if dtype is not None else _deduce_tensor_dtype(flattened_data[0])
         native_name: str = dtype.native_type
@@ -677,7 +691,7 @@ class Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_select(out, self._ptr, dim, index)))
 
     def fill_(self, value: float | int | bool) -> None:
-        self._validate_inplace_op()
+        #self._validate_inplace_op()
         if self.dtype.is_floating_point:
             _handle_errc(_C.mag_fill_(self._ptr, _C.mag_scalar_float(value)))
         else:
@@ -704,9 +718,10 @@ class Tensor:
         if self.dtype.is_floating_point:
             _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_float(low), _C.mag_scalar_float(high)))
         else:
-            low &= 2**63 - 2
-            high &= 2**63 - 2  # TODO fix for unsigned types
-            _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_int(low), _C.mag_scalar_int(high)))
+            if low >= 0 and high > 0x7fffffffffffffff:
+                _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_uint(low), _C.mag_scalar_uint(high)))
+            else:
+                _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_int(low), _C.mag_scalar_int(high)))
 
     def normal_(self, mean: float, std: float) -> None:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)

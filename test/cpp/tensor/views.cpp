@@ -18,7 +18,7 @@ TEST(views, view) {
     std::vector<int64_t> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::float32, shape};
-    tensor view = base.view();
+    tensor view = base.view(base.shape());
     ASSERT_EQ(view.rank(), 3);
     ASSERT_EQ(view.shape()[0], 8);
     ASSERT_EQ(view.shape()[1], 3);
@@ -34,8 +34,8 @@ TEST(views, view_of_view) {
     std::vector<int64_t> shape = {8, 3, 4};
     auto ctx = context{};
     tensor base {ctx, dtype::float32, shape};
-    tensor view1 = base.view();
-    tensor view2 = view1.view();
+    tensor view1 = base.view(base.shape());
+    tensor view2 = view1.view(view1.shape());
     ASSERT_EQ(view2.rank(), 3);
     ASSERT_EQ(view2.shape()[0], 8);
     ASSERT_EQ(view2.shape()[1], 3);
@@ -106,12 +106,12 @@ TEST(views, storage_alias_consistency) {
 TEST(views, tail_identity) {
     context ctx{};
     tensor t{ctx, dtype::float32, 2, 3};
-    tensor v1 = t.view();                 // contiguous alias
+    tensor v1 = t.view(t.shape());                 // contiguous alias
     tensor v2 = t.view_slice(1, 0, 2, 2); // strided rows 0,2
     for (auto* p : {&t, &v1, &v2}) {
         for (auto i = p->rank(); i < MAG_MAX_DIMS; ++i) {
-            ASSERT_EQ(p->shape()[i], 1);
-            ASSERT_EQ(p->strides()[i], 1);
+            ASSERT_EQ(mag_tensor_shape_ptr(&**p)[i], 1); // Use C ptr to not access vector out of bounds because shape() closes until 0..rank elements
+            ASSERT_EQ(mag_tensor_strides_ptr(&**p)[i], 1);
         }
     }
 }
@@ -120,7 +120,7 @@ TEST(views, view_keeps_strides) {
     context ctx{};
     tensor base  {ctx, dtype::float32, 4, 4};
     tensor slice = base.view_slice(1, 0, 2, 2);   // stride {8,1}
-    tensor alias = slice.view();                  // same logical shape
+    tensor alias = slice.view(slice.shape());                  // same logical shape
     ASSERT_EQ(alias.strides()[0], slice.strides()[0]);
     ASSERT_EQ(alias.strides()[1], slice.strides()[1]);
 }
@@ -170,7 +170,7 @@ TEST(views, inplace_bumps_version_and_detaches) {
     context ctx{};
     tensor x{ctx, dtype::float32, 2, 2};
     x.requires_grad(true);
-    tensor v = x.view();
+    tensor v = x.view(x.shape());
     tensor y = v.abs();
     ctx.stop_grad_recorder();
     mag_tensor_t *vv;
@@ -185,7 +185,7 @@ TEST(views, inplace_bumps_version_and_detaches) {
 TEST(views, view_no_axes) {
     auto ctx = context{};
     auto base = tensor{ctx, dtype::float32, 2, 2, 3, 1};
-    auto v = base.view();
+    auto v = base.view(base.shape());
     ASSERT_FALSE(base.is_view());
     ASSERT_TRUE(v.is_view());
     ASSERT_EQ(base.storage_base_ptr(), v.storage_base_ptr());

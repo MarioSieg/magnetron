@@ -234,7 +234,14 @@ static void MAG_HOTPROC mag_softmax_float32(const mag_kernel_payload_t *payload)
     mag_assert(mag_tensor_is_contiguous(x), "Softmax input tensor must be contiguous");
     float *br = (float *)mag_tensor_data_ptr_mut(r);
     const float *bx = (const float *)mag_tensor_data_ptr(x);
-    int64_t last_dim = r->coords.shape[r->coords.rank-1];
+    int64_t rank  = r->coords.rank;
+    int64_t numel = r->numel;
+    if (mag_unlikely(!numel)) return;
+    if (rank == 0) {
+        if (payload->thread_idx == 0) *br = 1.0f;
+        return;
+    }
+    int64_t last_dim = r->coords.shape[rank-1];
     int64_t rows = r->numel / last_dim;
     int64_t tc = payload->thread_num;
     int64_t ti = payload->thread_idx;
@@ -275,6 +282,13 @@ static void MAG_HOTPROC mag_softmax_float16(const mag_kernel_payload_t *payload)
     mag_assert(mag_tensor_is_contiguous(x), "Softmax input tensor must be contiguous");
     mag_float16_t *br = (mag_float16_t *)mag_tensor_data_ptr_mut(r);
     const mag_float16_t *bx = (const mag_float16_t *)mag_tensor_data_ptr(x);
+    int64_t rank  = r->coords.rank;
+    int64_t numel = r->numel;
+    if (mag_unlikely(!numel)) return;
+    if (rank == 0) {
+        if (payload->thread_idx == 0) *br = MAG_FLOAT16_ONE;
+        return;
+    }
     int64_t last_dim = r->coords.shape[r->coords.rank-1];
     int64_t rows = r->numel / last_dim;
     int64_t tc = payload->thread_num;

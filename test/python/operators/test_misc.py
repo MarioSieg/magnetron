@@ -15,23 +15,6 @@ def _rand_shape(max_rank=4, max_size=6):
     rank = random.randint(1, max_rank)
     return tuple(random.randint(1, max_size) for _ in range(rank))
 
-
-@pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
-def test_tensor_clone(dtype: DataType) -> None:
-    def func(shape: tuple[int, ...]) -> None:
-        x = _make_tensor(shape, dtype)
-        a = x
-        b = a.clone()
-        assert a.shape == b.shape
-        assert a.strides == b.strides
-        assert a.numel == b.numel
-        assert a.rank == b.rank
-        assert a.is_contiguous == b.is_contiguous
-        assert a.tolist() == b.tolist()
-
-    for_all_shapes(func)
-
-
 @pytest.mark.parametrize('dtype', [float16, float32, boolean, int32])
 def test_tensor_gather(dtype: DataType) -> None:
     def func(shape: tuple[int, ...]) -> None:

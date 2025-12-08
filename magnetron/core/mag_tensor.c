@@ -73,7 +73,8 @@ static void mag_tensor_free_header(mag_tensor_t *t) {
 mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
     *out = NULL;
     mag_contract(ctx, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", (uint64_t)mag_thread_id(), (uint64_t)ctx->tr_id);
-    mag_contract(ctx, ERR_INVALID_RANK, {}, rank > 0 && rank <= MAG_MAX_DIMS, "Rank must be within (0, %d]", MAG_MAX_DIMS);
+    mag_contract(ctx, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within [0, %d]", MAG_MAX_DIMS);
+    if (rank > 0) mag_contract(ctx, ERR_INVALID_PARAM, {}, shape != NULL, "Shape must not be NULL if rank > 0");
     int64_t dts = (int64_t)mag_type_trait(type)->size;
     int64_t numel = 1;
     for (int64_t i=0; i < rank; ++i) {
@@ -88,13 +89,14 @@ mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type,
     ctx->storage_bytes_allocated += numbytes;
     (*allocator)(dvc, &tensor->storage, numbytes, type);
     for (int i=0; i < MAG_MAX_DIMS; ++i)  {
-        tensor->coords.shape[i] = i < rank ? shape[i] : 1;
+        tensor->coords.shape[i] = shape && i < rank ? shape[i] : 1;
         tensor->coords.strides[i] = 1;
     }
-    /* Compute contiguous row-major strides and check for overflow. */
-    tensor->coords.strides[rank-1] = 1;
-    for (int64_t i=rank-2; i >= 0; --i) {
-        mag_contract(ctx, ERR_DIM_OVERFLOW, { mag_tensor_free_header(tensor); *out = NULL; }, !mag_mulov64(tensor->coords.strides[i+1], tensor->coords.shape[i+1], tensor->coords.strides+i), "Stride overflowed at dim[%" PRIi64 "]", i);
+    if (rank > 0) {
+        tensor->coords.strides[rank-1] = 1;
+        for (int64_t i=rank-2; i >= 0; --i) {
+            mag_contract(ctx, ERR_DIM_OVERFLOW, { mag_tensor_free_header(tensor); *out = NULL; }, !mag_mulov64(tensor->coords.strides[i+1], tensor->coords.shape[i+1], tensor->coords.strides+i), "Stride overflowed at dim[%" PRIi64 "]", i);
+        }
     }
     ++ctx->num_created_tensors;
     *out = tensor;
@@ -104,8 +106,9 @@ mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type,
 mag_status_t mag_as_strided(mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
     *out = NULL;
     mag_contract(ctx, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", (uint64_t)mag_thread_id(), (uint64_t)ctx->tr_id);
-    mag_contract(ctx, ERR_INVALID_RANK, {}, shape && rank > 0 && rank <= MAG_MAX_DIMS, "Rank must be within (0, %d]", MAG_MAX_DIMS);
+    mag_contract(ctx, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within [0, %d]", MAG_MAX_DIMS);
     mag_contract(ctx, ERR_INVALID_INDEX, {}, offset >= 0, "Offset must be non-negative, but is: %" PRIi64, offset);
+    if (rank > 0) mag_contract(ctx, ERR_INVALID_PARAM, {}, shape && strides, "shape/strides cannot be NULL if rank > 0");
     int64_t last = offset;
     int64_t numel = 1;
     for (int64_t i=0; i < rank; ++i) {
@@ -119,8 +122,8 @@ mag_status_t mag_as_strided(mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t
     mag_contract(ctx, ERR_OUT_OF_BOUNDS, {}, last < numel_end, "View exceeds base tensor storage bounds: view end = %" PRIi64 ", base storage numel = %" PRIi64, last, numel_end);
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
     for (int i=0; i < MAG_MAX_DIMS; ++i) {
-        tensor->coords.shape[i] = i < rank ? shape[i] : 1;
-        tensor->coords.strides[i] = i < rank ? strides[i] : 1;
+        tensor->coords.shape[i] = i < rank && shape ? shape[i] : 1;
+        tensor->coords.strides[i] = i < rank && strides ? strides[i] : 1;
     }
     tensor->storage = base->storage;
     mag_rc_incref(base->storage); /* Retain base storage */

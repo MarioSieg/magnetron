@@ -214,7 +214,7 @@ static MAG_HOTPROC void mag_one_hot_int64(const mag_kernel_payload_t *payload) {
     mag_coords_iter_init(&it, &idx->coords);
     for (int64_t i=ra; i < rb; ++i) {
         int64_t ridx = mag_coords_iter_to_offset(&it, i);
-        mag_bnd_chk(pidx + idx_off, pidx, mag_tensor_numbytes(idx));
+        mag_bnd_chk(pidx+ridx, pidx, mag_tensor_numbytes(idx));
         int64_t cls = pidx[ridx];
         if ((uint64_t)cls < (uint64_t)nc) {
             int64_t off = i*nc + cls;

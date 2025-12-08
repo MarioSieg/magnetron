@@ -25,11 +25,19 @@ bool mag_coords_broadcast_shape(const mag_coords_t *x, const mag_coords_t *y, in
 }
 
 bool mag_coords_shape_cmp(const mag_coords_t *x, const mag_coords_t *y) {
-    return memcmp(x->shape, y->shape, sizeof(x->shape)) == 0;
+    if (x->rank != y->rank) return false;
+    for (int64_t i=0; i < x->rank; ++i)
+        if (x->shape[i] != y->shape[i])
+            return false;
+    return true;
 }
 
 bool mag_coords_strides_cmp(const mag_coords_t *x, const mag_coords_t *y) {
-    return memcmp(x->strides, y->strides, sizeof(x->strides)) == 0;
+    if (x->rank != y->rank) return false;
+    for (int64_t i=0; i < x->rank; ++i)
+        if (x->strides[i] != y->strides[i])
+            return false;
+    return true;
 }
 
 bool mag_coords_can_broadcast(const mag_coords_t *x, const mag_coords_t *y) {
@@ -43,10 +51,14 @@ bool mag_coords_can_broadcast(const mag_coords_t *x, const mag_coords_t *y) {
     return true;
 }
 
-bool mag_coords_transposed(const mag_coords_t *x) { return x->strides[0] > x->strides[1]; }
+bool mag_coords_transposed(const mag_coords_t *x) {
+    if (x->rank < 2) return false;
+    return x->strides[0] > x->strides[1];
+}
 
 bool mag_coords_permuted(const mag_coords_t *x) {
-    for (int i=0; i < MAG_MAX_DIMS-1; ++i)
+    if (x->rank < 2) return false;
+    for (int64_t i=0; i < x->rank-1; ++i)
         if (x->strides[i] > x->strides[i+1])
             return true;
     return false;

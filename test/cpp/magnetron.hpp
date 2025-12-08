@@ -131,11 +131,13 @@ namespace magnetron {
     class tensor final {
     public:
         tensor(context& ctx, dtype type, std::initializer_list<int64_t> shape) {
-            handle_error(mag_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.begin()), &*ctx);
+            if (shape.size() == 1 && *shape.begin() == 1) handle_error(mag_empty_scalar(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type)), &*ctx);
+            else handle_error(mag_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.begin()), &*ctx);
         }
 
         tensor(context& ctx, dtype type, const std::vector<int64_t>& shape) {
-            handle_error(mag_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.data()), &*ctx);
+            if (shape.size() == 1 && *shape.begin() == 1) handle_error(mag_empty_scalar(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type)), &*ctx);
+            else handle_error(mag_empty(&m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.data()), &*ctx);
         }
 
         template <typename... S, typename = std::enable_if_t<std::conjunction_v<std::is_integral<std::decay_t<S>>...>>>
@@ -200,15 +202,15 @@ namespace magnetron {
             return tensor{out};
         }
 
-        [[nodiscard]] auto view(std::initializer_list<int64_t> dims = {}) const noexcept -> tensor {
+        [[nodiscard]] auto view(const std::vector<int64_t>& dims = {}) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
-            handle_error(mag_view(&out, m_tensor, std::empty(dims) ? nullptr : std::data(dims), std::size(dims)));
+            handle_error(mag_view(&out, m_tensor, dims.empty() ? nullptr : dims.data(), dims.size()));
             return tensor{out};
         }
 
-        [[nodiscard]] auto reshape(std::initializer_list<int64_t> dims = {}) const noexcept -> tensor {
+        [[nodiscard]] auto reshape(const std::vector<int64_t>& dims = {}) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
-            handle_error(mag_reshape(&out, m_tensor, std::data(dims), std::size(dims)));
+            handle_error(mag_reshape(&out, m_tensor, dims.data(), dims.size()));
             return tensor{out};
         }
 
@@ -227,9 +229,9 @@ namespace magnetron {
             handle_error(mag_transpose(&out, m_tensor, dim1, dim2));
             return tensor{out};
         }
-        [[nodiscard]] auto permute(const std::initializer_list<int64_t>& axes) const noexcept -> tensor {
+        [[nodiscard]] auto permute(const std::vector<int64_t>& axes) const noexcept -> tensor {
             mag_tensor_t *out = nullptr;
-            handle_error(mag_permute(&out, m_tensor, axes.begin(), axes.size()));
+            handle_error(mag_permute(&out, m_tensor, axes.data(), axes.size()));
             return tensor{out};
         }
         [[nodiscard]] auto mean() const noexcept -> tensor {
@@ -890,11 +892,11 @@ namespace magnetron {
         [[nodiscard]] auto rank() const noexcept -> int64_t { return mag_tensor_rank(m_tensor); }
         [[nodiscard]] auto shape() const noexcept -> std::vector<int64_t> {
             const int64_t *p = mag_tensor_shape_ptr(m_tensor);
-            return std::vector<int64_t>{p, p+MAG_MAX_DIMS}; /* We also copy unused dims as they are checked in some tests */
+            return std::vector<int64_t>{p, p+rank()}; /* We also copy unused dims as they are checked in some tests */
         }
         [[nodiscard]] auto strides() const noexcept -> std::vector<int64_t> {
             const int64_t *p = mag_tensor_strides_ptr(m_tensor);
-            return std::vector<int64_t>{p, p+MAG_MAX_DIMS}; /* We also copy unused dims as they are checked in some tests */
+            return std::vector<int64_t>{p, p+rank()}; /* We also copy unused dims as they are checked in some tests */
         }
         [[nodiscard]] auto dtype() const noexcept -> dtype { return static_cast<enum dtype>(mag_tensor_type(m_tensor)); }
         [[nodiscard]] auto data_ptr() const noexcept -> void* { return reinterpret_cast<void *>(mag_tensor_data_ptr_mut(m_tensor)); }

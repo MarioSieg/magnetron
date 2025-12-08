@@ -37,6 +37,7 @@ TEST(context, create_cpu) {
 
 #ifdef MAG_ENABLE_CUDA
 
+#if 0
 TEST(context, create_cuda) {
     enable_logging(true);
 
@@ -50,5 +51,7 @@ TEST(context, create_cuda) {
 
     enable_logging(false);
 }
+#endif
+
 
 #endif

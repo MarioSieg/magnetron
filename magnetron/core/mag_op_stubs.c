@@ -197,7 +197,7 @@ mag_status_t mag_empty_like(mag_tensor_t **out_result, mag_tensor_t *like) {
 }
 
 mag_status_t mag_empty_scalar(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type) {
-    return mag_empty(out_result, ctx, type, 1, (int64_t[1]){1});
+    return mag_empty(out_result, ctx, type, 0, NULL);
 }
 
 mag_status_t mag_scalar(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t value) {
@@ -329,8 +329,9 @@ mag_status_t mag_view(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t 
     mag_tensor_t *result = NULL;
     mag_status_t stat;
     mag_contract(ctx, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Invalid dimensions rank, must be [0, %d], but is %" PRIi64, MAG_MAX_DIMS, rank);
-    if (rank <= 0) {
-        stat = mag_as_strided(&result, x->ctx, x, x->coords.rank, x->coords.shape, x->coords.strides, x->storage_offset);
+    if (rank == 0) {
+        mag_contract(ctx, ERR_INVALID_PARAM, {}, x->numel == 1, "view([]) only allowed for tensors with numel == 1, got %" PRIi64, x->numel);
+        stat = mag_as_strided(&result, x->ctx, x, 0, NULL, NULL, x->storage_offset);
         if (mag_iserr(stat)) return stat;
     } else {
         mag_contract(ctx, ERR_INVALID_PARAM, {}, dims != NULL, "Dims cannot be NULL if rank > 0");
@@ -1092,6 +1093,7 @@ mag_status_t mag_matmul(mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t
     *out_result = NULL;
     mag_context_t *ctx = x->ctx;
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(x) && mag_tensor_is_floating_point_typed(y), "matmul: both tensors must be floating point typed");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, x->coords.rank >= 1 && y->coords.rank >= 1, "matmul: both tensors must be at least rank 1");
     mag_tensor_t *result = NULL;
     mag_status_t stat;
     mag_assert_dtype_compat(MAG_OP_MATMUL, (mag_tensor_t *[]) {x, y});
@@ -1130,8 +1132,7 @@ mag_status_t mag_matmul(mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t
         }
     }
     if (x->coords.rank == 1 && y->coords.rank == 1) { /* (K)x(K) -> () */
-        int64_t shape[1] = {1};
-        stat = mag_empty(&result, x->ctx, x->dtype, 1, shape);
+        stat = mag_empty_scalar(&result, x->ctx, x->dtype);
     } else if (x->coords.rank == 1 && y->coords.rank == 2) { /* (K)x(K,N) -> (N) */
         int64_t shape[1] = {y->coords.shape[1]};
         stat = mag_empty(&result, x->ctx, x->dtype, 1, shape);

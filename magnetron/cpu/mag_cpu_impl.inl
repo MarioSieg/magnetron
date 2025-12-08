@@ -41,6 +41,21 @@
 #define mag_cmd_out(i) (payload->cmd->out[(i)])
 #define mag_cmd_attr(i) (payload->cmd->attrs[(i)])
 
+/* Remainder functions that adjust for sign, as in Python and MATLAB. C's % operator does not do this 😿 */
+static inline float mag_remf(float x, float y) {
+    float r = fmodf(x, y);
+    if (r != 0.0f && (r < 0.0f) != (y < 0.0f)) r += y;
+    return r;
+}
+
+static inline int64_t mag_remi(int64_t x, int64_t y) {
+    int64_t r = x % y;
+    if (r != 0 && (r < 0) != (y < 0)) r += y;
+    return r;
+}
+
+#define mag_remu(x, y) ((x) % (y)) /* Unsigned remainder is the same as in C */
+
 #define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 
 typedef struct mag_scratch_buf_t {
