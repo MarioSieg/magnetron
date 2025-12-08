@@ -117,11 +117,46 @@ static mag_status_t mag_tensor_strided_view(mag_tensor_t **out_result, mag_tenso
     return mag_as_strided(out_result, base->ctx, base, base->coords.rank, base->coords.shape, base->coords.strides, base->storage_offset);
 }
 
+static void MAG_COLDPROC mag_dbg_trace_op_ir(mag_opcode_t op, bool inplace, mag_tensor_t **in, uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
+    const mag_op_traits_t *meta = mag_op_traits(op);
+    const char *dvc = in ? (*in)->ctx->device->id : (*out)->ctx->device->id;
+    bool cont = true;
+    for (uint32_t i=0; i < num_in; ++i) cont &= mag_tensor_is_contiguous(in[i]);
+    for (uint32_t i=0; i < num_out; ++i) cont &= mag_tensor_is_contiguous(out[i]);
+    char opcode[64];
+    snprintf(opcode, sizeof(opcode), "%s", meta->mnemonic);
+    for (char *p=opcode; *p; ++p) if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')) *p = (char)(*p|0x20);
+    printf("%02X %s.%s%s%s ", op, opcode, cont ? "cont." : "", inplace ? "inplace." : "", dvc);
+    for (uint32_t i=0; i < num_in; ++i) {
+        mag_tensor_t *tensor = in[i];
+        printf("in[%u](%s,", i, mag_type_trait(tensor->dtype)->name);
+        for (int64_t d=0; d < tensor->coords.rank; ++d) {
+            printf("%" PRIi64, tensor->coords.shape[d]);
+            if (d+1 < tensor->coords.rank) printf("x");
+        }
+        printf(") ");
+    }
+    printf("-> ");
+    for (uint32_t i=0; i < num_out; ++i) {
+        mag_tensor_t *tensor = out[i];
+        printf("out[%u](%s,", i, mag_type_trait(tensor->dtype)->name);
+        for (int64_t d=0; d < tensor->coords.rank; ++d) {
+            printf("%" PRIi64, tensor->coords.shape[d]);
+            if (d+1 < tensor->coords.rank) printf("x");
+        }
+        printf(") ");
+    }
+    printf("\n");
+}
+
 /* Execute an operator on the active compute device and return result tensor. */
 static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op_attr_registry_t *layout, mag_tensor_t **in, uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
     const mag_op_traits_t *meta = mag_op_traits(op);
     mag_assert2((in && num_in) || (out && num_out));
     mag_assert2(op != MAG_OP_NOP);
+#if 0 /* Debug: print dispatched ops */
+    mag_dbg_trace_op_ir(op, inplace, in, num_in, out, num_out);
+#endif
     mag_context_t *ctx = in ? (*in)->ctx : (*out)->ctx;
     const mag_op_attr_t *params = layout ? layout->slots : NULL;
     uint32_t num_params = layout ? layout->count : 0;
@@ -157,6 +192,7 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
         if (inplace) mag_bump_version(out[i]);   /* Result aliases the modified storage */
         if (!rec_grads) mag_tensor_detach_inplace(out[i]); /* If gradient are not recorded, detach the tensor's parents (clear parent and opcode). TODO: why are we doing this? */
     }
+    ++ctx->ops_dispatched;
 }
 
 static void mag_assert_dtype_compat(mag_opcode_t op, mag_tensor_t **inputs) {
