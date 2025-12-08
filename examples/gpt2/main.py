@@ -238,7 +238,7 @@ def _main() -> None:
     args.add_argument('prompt', type=str, help='Prompt to start generation')
     args.add_argument('--model', type=str, default='gpt2', help='Model type (gpt2, gpt2-medium, gpt2-large, gpt2-xl)')
     args.add_argument('--max_tokens', type=int, default=128, help='Maximum number of new tokens to generate')
-    args.add_argument('--temp', type=float, default=0.8, help='Temperature for sampling')
+    args.add_argument('--temp', type=float, default=0.9, help='Temperature for sampling')
     args.add_argument('--no-stream', action='store_true', help='Disable streaming output')
     args.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
     args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
