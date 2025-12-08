@@ -1128,11 +1128,11 @@ static float MAG_HOTPROC mag_vmax_float16(int64_t numel, const mag_float16_t *x)
     } \
     static void mag_vshl_##TF(int64_t numel, T *o, const T *x, const T *y) { \
         for (int64_t i=0; i < numel; ++i) \
-            o[i] = x[i]<<(y[i]); \
+            o[i] = mag_shl##SIGNESS(x[i], y[i], sizeof(T)<<3); \
     } \
     static void mag_vshr_##TF(int64_t numel, T *o, const T *x, const T *y) { \
         for (int64_t i=0; i < numel; ++i) \
-            o[i] = x[i]>>(y[i]); \
+            o[i] = mag_shr##SIGNESS(x[i], y[i], sizeof(T)<<3); \
     } \
     static void mag_vnot_##TF(int64_t numel, T *o, const T *x) { \
         for (int64_t i=0; i < numel; ++i) \
@@ -1170,7 +1170,7 @@ mag_impl_vecop_int(int16_t, int16, i)
 mag_impl_vecop_int(uint32_t, uint32, u)
 mag_impl_vecop_int(int32_t, int32, i)
 mag_impl_vecop_int(uint64_t, uint64, u)
-mag_impl_vecop_int(int64_t, int64, u)
+mag_impl_vecop_int(int64_t, int64, i)
 
 #undef mag_impl_vecop_int
 

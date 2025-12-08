@@ -42,19 +42,33 @@
 #define mag_cmd_attr(i) (payload->cmd->attrs[(i)])
 
 /* Remainder functions that adjust for sign, as in Python and MATLAB. C's % operator does not do this 😿 */
-static inline float mag_remf(float x, float y) {
+static MAG_AINLINE float mag_remf(float x, float y) {
     float r = fmodf(x, y);
     if (r != 0.0f && (r < 0.0f) != (y < 0.0f)) r += y;
     return r;
 }
 
-static inline int64_t mag_remi(int64_t x, int64_t y) {
+static MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
     int64_t r = x % y;
     if (r != 0 && (r < 0) != (y < 0)) r += y;
     return r;
 }
 
 #define mag_remu(x, y) ((x) % (y)) /* Unsigned remainder is the same as in C */
+
+/* Arithmetic / logical shifts with defined behavior for out-of-bounds shift amounts */
+
+#define mag_sal(x, y, bits) (mag_unlikely((y) < 0 || (y) >= (bits)) ? 0 : (x)<<(y))
+#define mag_sar(x, y, bits) (mag_unlikely((y) < 0 || (y) >= (bits)) ? ((x) < 0 ? -1 : 0) : (x)>>(y))
+#define mag_shl(x, y, bits) (mag_unlikely((y) < 0 || (y) >= (bits)) ? 0 : (x)<<(y))
+#define mag_shr(x, y, bits) (mag_unlikely((y) < 0 || (y) >= (bits)) ? 0 : (x)>>(y))
+
+/* Alias names for kernel macros based on signess suffix (i or u) */
+
+#define mag_shlu(x, y, bits) mag_shl(x, y, bits)
+#define mag_shru(x, y, bits) mag_shr(x, y, bits)
+#define mag_shli(x, y, bits) mag_sal(x, y, bits)
+#define mag_shri(x, y, bits) mag_sar(x, y, bits)
 
 #define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 
