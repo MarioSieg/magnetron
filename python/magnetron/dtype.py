@@ -39,6 +39,14 @@ class DataType:
         return self in INTEGER_DTYPES
 
     @property
+    def is_signed_integer(self) -> bool:
+        return self in SIGNED_INTEGER_DTYPES
+
+    @property
+    def is_unsigned_integer(self) -> bool:
+        return self in UNSIGNED_INTEGER_DTYPES
+
+    @property
     def is_numeric(self) -> bool:
         return self in NUMERIC_DTYPES
 
@@ -75,7 +83,9 @@ DTYPE_ENUM_MAP: dict[int, DataType] = {
     int64.enum_value: int64,
 }
 FLOATING_POINT_DTYPES = {float32, float16}
-INTEGER_DTYPES = {uint8, int8, uint16, int16, uint32, int32, uint64, int64}
+UNSIGNED_INTEGER_DTYPES = {uint8, uint16, uint32, uint64}
+SIGNED_INTEGER_DTYPES = {int8, int16, int32, int64}
+INTEGER_DTYPES = UNSIGNED_INTEGER_DTYPES | SIGNED_INTEGER_DTYPES
 NUMERIC_DTYPES = FLOATING_POINT_DTYPES | INTEGER_DTYPES
 INTEGRAL_DTYPES = INTEGER_DTYPES | {boolean}
 ALL_DTYPES = FLOATING_POINT_DTYPES | INTEGRAL_DTYPES

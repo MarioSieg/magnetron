@@ -695,7 +695,7 @@ class Tensor:
         if self.dtype.is_floating_point:
             _handle_errc(_C.mag_fill_(self._ptr, _C.mag_scalar_float(value)))
         else:
-            _handle_errc(_C.mag_fill_(self._ptr, _C.mag_scalar_int(value)))
+            _handle_errc(_C.mag_fill_(self._ptr, _C.mag_scalar_int(int(value))))
 
     def masked_fill_(self, mask: Tensor, value: float | int | bool) -> None:
         assert mask.dtype == boolean, f'Mask tensor must be of boolean dtype, but is {mask.dtype}'
@@ -703,7 +703,7 @@ class Tensor:
         if self.dtype.is_floating_point:
             _handle_errc(_C.mag_masked_fill_(self._ptr, mask._ptr, _C.mag_scalar_float(value)))
         else:
-            _handle_errc(_C.mag_masked_fill_(self._ptr, mask._ptr, _C.mag_scalar_int(value)))
+            _handle_errc(_C.mag_masked_fill_(self._ptr, mask._ptr, _C.mag_scalar_int(int(value))))
 
     def masked_fill(self, mask: Tensor, value: float | int | bool) -> Tensor:
         filled = self.clone()
@@ -719,9 +719,9 @@ class Tensor:
             _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_float(low), _C.mag_scalar_float(high)))
         else:
             if low >= 0 and high > 0x7fffffffffffffff:
-                _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_uint(low), _C.mag_scalar_uint(high)))
+                _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_uint(int(low)), _C.mag_scalar_uint(int(high))))
             else:
-                _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_int(low), _C.mag_scalar_int(high)))
+                _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_int(int(low)), _C.mag_scalar_int(int(high))))
 
     def normal_(self, mean: float, std: float) -> None:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)

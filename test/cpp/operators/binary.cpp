@@ -20,7 +20,7 @@ template <typename T>
 [[nodiscard]] static constexpr std::pair<T, T> get_sample_interval() noexcept {
     if constexpr (std::is_floating_point_v<T> || std::is_same_v<T, half_float::half>)
         return {static_cast<T>(-10.0f), static_cast<T>(10.0f)};
-    else if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+    else if constexpr (std::is_integral_v<T> && !std::is_same_v<T, uint8_t>)
         return {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()};
     else return {0, 1};
 }
@@ -28,7 +28,7 @@ template <typename T>
 template <typename T>
 static void test_binary_operator(
     device_kind dev,
-    bool inplace,
+    uint8_t inplace,
     dtype ty,
     std::function<tensor (tensor, tensor)>&& a,
     std::function<T (T, T)>&& b,
@@ -38,7 +38,7 @@ static void test_binary_operator(
     ctx.stop_grad_recorder();
     for_all_test_shapes([&](const std::vector<int64_t>& shape) {
         tensor t_a {ctx, ty, shape};
-        if constexpr (std::is_same_v<T, bool>)
+        if constexpr (std::is_same_v<T, uint8_t>)
             t_a.fill_(std::bernoulli_distribution{}(gen));
         else if constexpr (std::is_integral_v<T>)
              t_a.fill_(std::uniform_int_distribution<T>{random_interval.first, random_interval.second}(gen));
@@ -69,14 +69,14 @@ static void test_binary_cmp(
     device_kind dev,
     dtype ty,
     std::function<tensor (tensor, tensor)>&& a,
-    std::function<bool (T, T)>&& b,
+    std::function<uint8_t (T, T)>&& b,
     std::pair<T, T> random_interval = get_sample_interval<T>()
 ) {
     auto& ctx = get_cached_context(dev);
     ctx.stop_grad_recorder();
     for_all_test_shapes([&](const std::vector<int64_t>& shape){
         tensor t_a{ctx, ty, shape};
-        if constexpr (std::is_same_v<T, bool>)
+        if constexpr (std::is_same_v<T, uint8_t>)
             t_a.fill_(std::bernoulli_distribution{}(gen));
         else if constexpr (std::is_integral_v<T>)
             t_a.fill_(std::uniform_int_distribution<T>{random_interval.first, random_interval.second}(gen));
@@ -90,7 +90,7 @@ static void test_binary_cmp(
         ASSERT_EQ(t_r.dtype(), dtype::boolean);
         ASSERT_EQ(d_a.size(), d_b.size());
         ASSERT_EQ(d_a.size(), t_r.numel());
-        std::vector<bool> d_r {t_r.to_vector<bool>()};
+        std::vector<uint8_t> d_r {t_r.to_vector<uint8_t>()};
         for (int64_t i = 0; i < d_r.size(); ++i)
             ASSERT_EQ(std::invoke(b, d_a[i], d_b[i]), d_r[i]) << d_a[i] << " ? " << d_b[i] << " = " << d_r[i];
     });
@@ -114,13 +114,13 @@ static void test_binary_cmp(
     TEST_P(binary_operators, name##_same_shape_##data_type) { \
         test_binary_cmp<T>(GetParam(), dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](T a, T b) -> bool { return a op b; } \
+            [](T a, T b) -> uint8_t { return a op b; } \
         ); \
     } \
     TEST_P(binary_operators, name##_broadcast_##data_type) { \
         test_binary_cmp<T>(GetParam(), dtype::data_type, \
             [](tensor a, tensor b) -> tensor { return a op b; }, \
-            [](T a, T b) -> bool { return a op b; } \
+            [](T a, T b) -> uint8_t { return a op b; } \
         ); \
     }
 
@@ -171,7 +171,7 @@ impl_binary_operator_test_group(div, /, NO_OP_B, i32, int32_t)
 impl_binary_operator_test_group(div, /, NO_OP_B, u64, uint64_t)
 impl_binary_operator_test_group(div, /, NO_OP_B, i64, int64_t)
 
-impl_binary_operator_test_group(and, &, NO_OP_B, boolean, bool)
+impl_binary_operator_test_group(and, &, NO_OP_B, boolean, uint8_t)
 impl_binary_operator_test_group(and, &, NO_OP_B, u8, uint8_t)
 impl_binary_operator_test_group(and, &, NO_OP_B, i8, int8_t)
 impl_binary_operator_test_group(and, &, NO_OP_B, u16, uint16_t)
@@ -181,7 +181,7 @@ impl_binary_operator_test_group(and, &, NO_OP_B, i32, int32_t)
 impl_binary_operator_test_group(and, &, NO_OP_B, u64, uint64_t)
 impl_binary_operator_test_group(and, &, NO_OP_B, i64, int64_t)
 
-impl_binary_operator_test_group(or, |, NO_OP_B, boolean, bool)
+impl_binary_operator_test_group(or, |, NO_OP_B, boolean, uint8_t)
 impl_binary_operator_test_group(or, |, NO_OP_B, u8, uint8_t)
 impl_binary_operator_test_group(or, |, NO_OP_B, i8, int8_t)
 impl_binary_operator_test_group(or, |, NO_OP_B, u16, uint16_t)
@@ -191,7 +191,7 @@ impl_binary_operator_test_group(or, |, NO_OP_B, i32, int32_t)
 impl_binary_operator_test_group(or, |, NO_OP_B, u64, uint64_t)
 impl_binary_operator_test_group(or, |, NO_OP_B, i64, int64_t)
 
-impl_binary_operator_test_group(xor, ^, NO_OP_B, boolean, bool)
+impl_binary_operator_test_group(xor, ^, NO_OP_B, boolean, uint8_t)
 impl_binary_operator_test_group(xor, ^, NO_OP_B, u8, uint8_t)
 impl_binary_operator_test_group(xor, ^, NO_OP_B, i8, int8_t)
 impl_binary_operator_test_group(xor, ^, NO_OP_B, u16, uint16_t)
@@ -221,7 +221,7 @@ impl_binary_operator_test_group(shr, >>, &63, i64, int64_t)
 
 impl_binary_operator_cmp_test_group(eq, ==, float32, float)
 impl_binary_operator_cmp_test_group(eq, ==, float16, float16)
-impl_binary_operator_cmp_test_group(eq, ==, boolean, bool)
+impl_binary_operator_cmp_test_group(eq, ==, boolean, uint8_t)
 impl_binary_operator_cmp_test_group(eq, ==, u8, uint8_t)
 impl_binary_operator_cmp_test_group(eq, ==, i8, int8_t)
 impl_binary_operator_cmp_test_group(eq, ==, u16, uint16_t)
@@ -233,7 +233,7 @@ impl_binary_operator_cmp_test_group(eq, ==, i64, int64_t)
 
 impl_binary_operator_cmp_test_group(ne, !=, float32, float)
 impl_binary_operator_cmp_test_group(ne, !=, float16, float16)
-impl_binary_operator_cmp_test_group(ne, !=, boolean, bool)
+impl_binary_operator_cmp_test_group(ne, !=, boolean, uint8_t)
 impl_binary_operator_cmp_test_group(ne, !=, u8, uint8_t)
 impl_binary_operator_cmp_test_group(ne, !=, i8, int8_t)
 impl_binary_operator_cmp_test_group(ne, !=, u16, uint16_t)
