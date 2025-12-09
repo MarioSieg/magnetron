@@ -16,7 +16,7 @@ FLOATING_POINT_DTYPES: set[DataType] = set()  # Includes all floating-point type
 INTEGRAL_DTYPES: set[DataType] = set()  # Includes all integral types (integers + boolean).
 INTEGER_DTYPES: set[DataType] = set()  # Include all integer types (integers - boolean).
 NUMERIC_DTYPES: set[DataType] = set()  # Include all numeric dtypes (floating point + integers - boolean)
-
+ALL_DTYPES: set[DataType] = set()
 
 @dataclass(frozen=True)
 class DataType:
@@ -76,5 +76,6 @@ DTYPE_ENUM_MAP: dict[int, DataType] = {
 }
 FLOATING_POINT_DTYPES = {float32, float16}
 INTEGER_DTYPES = {uint8, int8, uint16, int16, uint32, int32, uint64, int64}
-INTEGRAL_DTYPES = INTEGER_DTYPES | {boolean}
 NUMERIC_DTYPES = FLOATING_POINT_DTYPES | INTEGER_DTYPES
+INTEGRAL_DTYPES = INTEGER_DTYPES | {boolean}
+ALL_DTYPES = FLOATING_POINT_DTYPES | INTEGRAL_DTYPES

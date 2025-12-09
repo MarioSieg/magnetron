@@ -67,10 +67,7 @@ def unary_op(
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) < rank_min:
             return
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-        else:
-            x = Tensor.uniform(shape, low=-1.0, high=1.0, dtype=dtype)
+        x = random_tensor(shape, dtype)
         r = mag_callback(x.clone())
         torch.testing.assert_close(totorch(r), torch_callback(totorch(x)), equal_nan=True)
 

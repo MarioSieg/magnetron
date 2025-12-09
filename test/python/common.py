@@ -5,15 +5,13 @@ from __future__ import annotations
 import itertools
 import multiprocessing
 import random
-from collections.abc import Callable
+import pytest
 from typing import Any, Iterator
 
 import torch
 import numpy as np
-import pytest
 from magnetron import *
 from collections import deque
-from enum import Enum, unique
 
 # Give torch 1//4 of the total cores to not overload the CPU with inner parallelism threads + parallel spawned pytests
 torch.set_num_threads(max(4, multiprocessing.cpu_count() // 8))
@@ -125,6 +123,12 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             shape_B = (*batched, K, N)
                             yield shape_A, shape_B
 
+def random_tensor(shape: tuple[int, ...], dtype: DataType) -> Tensor:
+    if dtype == boolean:
+        return Tensor.bernoulli(shape)
+    else:
+        lim = 100 if dtype.is_integer else 1.0
+        return Tensor.uniform(shape, low=-lim, high=lim, dtype=dtype)
 
 DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
     (),

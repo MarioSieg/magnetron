@@ -427,12 +427,12 @@ class Tensor:
 
     @classmethod
     def of(cls, data: NestedList, *, dtype: DataType | None = None, requires_grad: bool = False) -> Tensor:
-        if not data:
-            return cls.empty(0, dtype=dtype if dtype is not None else _default_dtype())
-        if isinstance(data, int | float | bool):
+        if isinstance(data, (int, float, bool)):
             if dtype is None:
                 dtype = _deduce_tensor_dtype(data)
             return cls.scalar(value=data, dtype=dtype, requires_grad=requires_grad)
+        if isinstance(data, (list, tuple)) and len(data) == 0:
+            raise ValueError("Tensor.of() does not support empty lists; use Tensor.empty(shape, ...) instead")
         shape, flattened_data = _flatten_nested_lists(data)
         dtype: DataType = dtype if dtype is not None else _deduce_tensor_dtype(flattened_data[0])
         native_name: str = dtype.native_type

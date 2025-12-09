@@ -37,14 +37,9 @@ def binary_unary_op(
     np_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray]
 ) -> None:
     def test(shape: tuple[int, ...]) -> None:
-        if dtype == boolean:
-            x = Tensor.bernoulli(shape)
-            y = Tensor.bernoulli(shape)
-        else:
-            lim = 100 if dtype.is_integer else 1.0
-            x = Tensor.uniform(shape, low=-lim, high=lim, dtype=dtype)
-            y = Tensor.uniform(shape, low=-lim, high=lim, dtype=dtype)
-            y = y + (y == 0).cast(dtype) # Removes zeros from y to avoid division by zero
+        x = random_tensor(shape, dtype)
+        y = random_tensor(shape, dtype)
+        y = y + (y == 0).cast(dtype) # Removes zeros from y to avoid division by zero
         r = mag_callback(x.clone(), y.clone())
         np.testing.assert_allclose(tonumpy(r), np_callback(tonumpy(x), tonumpy(y)), equal_nan=True)
 
