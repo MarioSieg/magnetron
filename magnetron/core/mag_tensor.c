@@ -216,38 +216,20 @@ uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor) {
 }
 
 void *mag_tensor_copy_data(mag_tensor_t *tensor) {
+    mag_assert2(mag_device_is(tensor->storage->device, "cpu"));
     mag_tensor_t *cont;
     mag_status_t stat = mag_contiguous(&cont, tensor);
     if (mag_iserr(stat)) return NULL;
     size_t size = mag_tensor_numbytes(cont);
     mag_assert2(size);
     void *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
-    mag_storage_buffer_t *sto = cont->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(cont), dst, size);
+    const void *src = (const void *)mag_tensor_data_ptr(cont);
+    memcpy(dst, src, size);
     mag_rc_decref(cont);
     return dst;
 }
 
 void mag_tensor_copy_data_free(void *ret_val) {
-    (*mag_alloc)(ret_val, 0, 0);
-}
-
-float *mag_tensor_copy_float_data(mag_tensor_t *tensor) {
-    mag_tensor_t *cont;
-    mag_status_t stat = mag_contiguous(&cont, tensor);
-    if (mag_iserr(stat)) return NULL;
-    mag_assert(mag_tensor_is_floating_point_typed(cont), "Tensor must be a floating point tensor, but has dtype: %s", mag_type_trait(tensor->dtype)->name);
-    size_t size = cont->numel*sizeof(float);
-    mag_assert2(size);
-    float *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
-    mag_storage_buffer_t *sto = cont->storage;
-    if (cont->dtype == MAG_DTYPE_FLOAT32) (*sto->transfer)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(cont), dst, size);
-    else (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(cont), dst, size, MAG_DTYPE_FLOAT32);
-    mag_rc_decref(cont);
-    return dst;
-}
-
-void mag_tensor_copy_float_data_free(float *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
@@ -347,10 +329,7 @@ bool mag_full_cont2(const mag_tensor_t *a, const mag_tensor_t *b) {
 }
 
 bool mag_full_cont3(const mag_tensor_t *a, const mag_tensor_t *b, const mag_tensor_t *c) {
-    return a->numel == b->numel && a->numel == c->numel &&
-           mag_tensor_is_contiguous(a) &&
-           mag_tensor_is_contiguous(b) &&
-           mag_tensor_is_contiguous(c);
+    return a->numel == b->numel && a->numel == c->numel && mag_tensor_is_contiguous(a) && mag_tensor_is_contiguous(b) && mag_tensor_is_contiguous(c);
 }
 
 bool mag_tensor_is_shape_eq(const mag_tensor_t *x, const mag_tensor_t *y) {

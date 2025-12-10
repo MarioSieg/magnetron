@@ -211,7 +211,6 @@ extern MAG_EXPORT mag_status_t mag_arange(mag_tensor_t **out_result, mag_context
 extern MAG_EXPORT mag_status_t mag_one_hot(mag_tensor_t **out_result, mag_tensor_t *indices, int64_t num_classes);
 extern MAG_EXPORT mag_status_t mag_rand_perm(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n);
 extern MAG_EXPORT mag_status_t mag_load_image(mag_tensor_t **out_result, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height);
-extern MAG_EXPORT mag_status_t mag_copy_float_(mag_tensor_t *tensor, const float *data, size_t num_elems);
 extern MAG_EXPORT mag_status_t mag_copy_raw_(mag_tensor_t *tensor, const void *data, size_t size_bytes);
 extern MAG_EXPORT mag_status_t mag_zero_(mag_tensor_t *tensor);
 extern MAG_EXPORT mag_status_t mag_fill_(mag_tensor_t *tensor, mag_scalar_t value);
@@ -411,8 +410,6 @@ extern MAG_EXPORT mag_status_t mag_tensor_backward(mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_tensor_zero_grad(mag_tensor_t *tensor);
 extern MAG_EXPORT void *mag_tensor_copy_data(mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_tensor_copy_data_free(void *ret_val);
-extern MAG_EXPORT float *mag_tensor_copy_float_data(mag_tensor_t *tensor);
-extern MAG_EXPORT void mag_tensor_copy_float_data_free(float *ret_val);
 extern MAG_EXPORT mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value);
 extern MAG_EXPORT mag_tensor_t *mag_tensor_detach(mag_tensor_t *tensor);
 extern MAG_EXPORT char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold);

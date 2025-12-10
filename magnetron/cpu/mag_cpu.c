@@ -38,57 +38,6 @@ static MAG_HOTPROC void mag_cpu_submit(mag_device_t *dvc, const mag_command_t *c
     mag_threadpool_parallel_compute(cpu_dvc->pool, cmd, intraop_workers); /* Multithreaded exec + barrier */
 }
 
-#define mag_ranges_overlap(a, asz, b, bsz) (((uintptr_t)(a)+(asz)) > (uintptr_t)(b) && ((uintptr_t)(b)+(bsz)) > (uintptr_t)(a))
-
-static void mag_cpu_transfer(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size) {
-    mag_assert2(inout && size);
-    if (size % sto->granularity) mag_panic("Transfer size not a multiple of storage granularity, got %zu, expected multiple of %zu", size, sto->granularity);
-    uintptr_t base = sto->base;
-    uintptr_t dp = base+offs;
-    uintptr_t dpe = dp+size;
-    mag_assert2(dpe > dp);
-    mag_assert2(dpe <= base+sto->size);
-    if (offs & sto->granularity) mag_panic("Transfer offset not aligned to storage granularity, got %zu, expected multiple of %zu", offs, sto->granularity);
-    uintptr_t hp = (uintptr_t)inout;
-    uintptr_t hpe = hp+size;
-    mag_assert2(hpe > hp);
-    mag_assert2(!mag_ranges_overlap((void *)hp, size, (void *)dp, size));
-    void *restrict device = (void *)dp;
-    void *restrict host = inout;
-    if (dir == MAG_TRANSFER_DIR_H2D) memcpy(device, host, size);
-    else memcpy(host, device, size);
-}
-
-static void mag_cpu_convert(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *restrict host, size_t size, mag_dtype_t hdt) {
-    mag_assert2(host && size);
-    mag_dtype_t ddt = sto->dtype;
-    if (ddt == hdt) { /* identical dtype – delegate to raw copy */
-        (*sto->transfer)(sto, dir, offs, host, size);
-        return;
-    }
-    uintptr_t base = sto->base;
-    size_t hsz = mag_type_trait(hdt)->size;
-    size_t dsz = mag_type_trait(ddt)->size;
-    mag_assert2(!(hsz & (hsz-1)));              /* pow2 */
-    mag_assert2(!(size & (hsz-1)));             /* multiple of dtype size */
-    mag_assert2(!((uintptr_t)host & (hsz-1)));  /* aligned */
-    mag_assert2(!(dsz & (dsz-1)));              /* pow2 */
-    mag_assert2(!(offs & (dsz-1)));             /* multiple of dtype size */
-    size_t helem = size / hsz;                  /* host numel */
-    mag_assert2(helem > 0);
-    mag_assert2(!(sto->granularity & (dsz-1))); /* sane granularity */
-    size_t tnb = helem * sto->granularity;      /* device bytes */
-    mag_assert2(tnb <= sto->size-offs);
-    void *dvb = (void *)(base+offs);
-    void (*kern)(size_t, const void *, mag_dtype_t, void *, mag_dtype_t)
-        = ((mag_cpu_device_t *)sto->device->impl)->kernels.vector_cast;
-    mag_assert2(kern);
-    mag_assert2(!mag_ranges_overlap(host, size, dvb, tnb));
-    void *restrict device = dvb;
-    if (dir == MAG_TRANSFER_DIR_H2D) (*kern)(size, host, hdt, device, ddt);
-    else (*kern)(tnb, device, ddt, host, hdt);
-}
-
 static void mag_cpu_storage_dtor(void *self) {
     mag_storage_buffer_t *buf = self;
     mag_context_t *ctx = buf->ctx;
@@ -112,8 +61,6 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
         .dtype = dtype,
         .granularity = mag_type_trait(dtype)->size,
         .device = host,
-        .transfer = &mag_cpu_transfer,
-        .convert = &mag_cpu_convert
     };
     if (size <= sizeof(void *)) { /* Store value intrusive (scalar storage optimization) */
         buf->base = (uintptr_t)&buf->aux.inline_buf[0]; /* Use 8-byte impl pointer for storage. TODO: this does NOT guarantee MAG_CPU_BUF_ALIGN alignment. */

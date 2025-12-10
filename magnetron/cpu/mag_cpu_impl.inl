@@ -857,34 +857,6 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     },
 };
 
-static void (*const mag_lut_cast_kernels[MAG_DTYPE__NUM][MAG_DTYPE__NUM])(int64_t, void *, const void *) = {
-    [MAG_DTYPE_FLOAT32] = {
-        [MAG_DTYPE_FLOAT16] = &mag_vcast_float_to_mag_float16_t,
-        [MAG_DTYPE_INT32] = &mag_vcast_float_to_int32_t,
-    },
-    [MAG_DTYPE_FLOAT16] = {
-        [MAG_DTYPE_FLOAT32] = &mag_vcast_mag_float16_t_to_float,
-        [MAG_DTYPE_INT32] = &mag_vcast_mag_float16_t_to_int32_t,
-    },
-    [MAG_DTYPE_INT32] = {
-        [MAG_DTYPE_FLOAT32] = &mag_vcast_int32_t_to_float,
-        [MAG_DTYPE_FLOAT16] = &mag_vcast_int32_t_to_mag_float16_t
-    },
-};
-
-static void MAG_HOTPROC mag_vector_cast_stub(size_t nb, const void *src, mag_dtype_t src_t, void *dst, mag_dtype_t dst_t) {
-    mag_assert2(dst_t != src_t); /* src and dst types must differ */
-    size_t nbs = mag_type_trait(src_t)->size;
-    size_t nbd = mag_type_trait(dst_t)->size;
-    mag_assert2(!((uintptr_t)src&(nbs-1)));     /* src must be aligned */
-    mag_assert2(!((uintptr_t)dst&(nbd-1)));     /* dst must be aligned */
-    mag_assert2(!(nb&(nbs-1)));                 /* size must be aligned */
-    int64_t numel = (int64_t)(nb/nbs);          /* byte -> elems */
-    void (*kern)(int64_t, void *, const void *) = mag_lut_cast_kernels[src_t][dst_t];
-    mag_assert(kern, "invalid cast dtypes %s -> %s", mag_type_trait(src_t)->name, mag_type_trait(dst_t)->name);
-    (*kern)(numel, dst, src);
-}
-
 static size_t mag_vreg_width(void) {
     return MAG_VREG_WIDTH;
 }
@@ -905,7 +877,6 @@ void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t *kernels) {
             kernels->operators[i][j] = mag_lut_eval_kernels[i][j];
         }
     }
-    kernels->vector_cast = &mag_vector_cast_stub;
     kernels->vreg_width = &mag_vreg_width;
 }
 

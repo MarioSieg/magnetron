@@ -51,8 +51,6 @@ struct mag_storage_buffer_t {
     size_t granularity;                     /* Element size granularity. */
     mag_dtype_t dtype;                      /* Data type of buffer. */
     mag_device_t *device;                   /* Host device. */
-    void (*transfer)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size);
-    void (*convert)(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size, mag_dtype_t inout_type);
 };
 MAG_RC_OBJECT_IS_VALID(mag_storage_buffer_t);
 

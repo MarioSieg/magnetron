@@ -102,7 +102,8 @@ namespace magnetron {
 
     template <typename T>
     [[nodiscard]] constexpr std::optional<dtype> generic_to_dtype() {
-        if constexpr (std::is_same_v<T, uint8_t> || std::is_same_v<T, bool>) return dtype::u8;
+        if constexpr (std::is_same_v<T, bool>) return dtype::boolean;
+        if constexpr (std::is_same_v<T, uint8_t>) return dtype::u8;
         if constexpr (std::is_same_v<T, int8_t>) return dtype::i8;
         if constexpr (std::is_same_v<T, uint16_t>) return dtype::u16;
         if constexpr (std::is_same_v<T, int16_t>) return dtype::i16;
@@ -841,8 +842,11 @@ namespace magnetron {
             mag_copy_raw_(m_tensor, buf, nb);
         }
 
-        auto fill_(const std::vector<float>& data) -> void {
-            mag_copy_float_(m_tensor, data.data(), data.size());
+        template <typename T>
+        auto fill_(const std::vector<T>& data) -> void {
+            if (generic_to_dtype<T>() != dtype())
+                throw std::runtime_error{"tensor::fill_: data type does not match tensor dtype"};
+            mag_copy_raw_(m_tensor, data.data(), data.size()*sizeof(data[0]));
         }
 
         auto fill_(const std::vector<uint8_t>& data) -> void {
@@ -850,10 +854,6 @@ namespace magnetron {
             unpacked.resize(data.size());
             for (size_t i=0; i < unpacked.size(); ++i) unpacked[i] = data[i];
             mag_copy_raw_(m_tensor, unpacked.data(), unpacked.size()*sizeof(data[0]));
-        }
-
-        auto fill_(const std::vector<int32_t>& data) -> void {
-            mag_copy_raw_(m_tensor, data.data(), data.size()*sizeof(data[0]));
         }
 
         template <typename T>

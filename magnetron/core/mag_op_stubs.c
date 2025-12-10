@@ -1559,24 +1559,15 @@ mag_status_t mag_gather(mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t
     return MAG_STATUS_OK;
 }
 
-mag_status_t mag_copy_float_(mag_tensor_t *tensor, const float *data, size_t num_elems) {
-    mag_context_t *ctx = tensor->ctx;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, data && num_elems, "invalid data pointer or length");
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, tensor->numel == num_elems, "data length (%" PRIu64 ") does not match tensor numel (%" PRIu64 ")", (uint64_t)num_elems, (uint64_t)tensor->numel);
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(tensor), "tensor dtype must be floating point, got %s", mag_type_trait(tensor->dtype)->name);
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(tensor), "tensor must be contiguous");
-    mag_storage_buffer_t *sto = tensor->storage;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_H2D, 0, (void *)data, num_elems*sizeof(*data), MAG_DTYPE_FLOAT32);
-    return MAG_STATUS_OK;
-}
-
 mag_status_t mag_copy_raw_(mag_tensor_t *tensor, const void *data, size_t size_bytes) {
     mag_context_t *ctx = tensor->ctx;
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, data != NULL && size_bytes > 0, "invalid data pointer or length");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_device_is(tensor->storage->device, "cpu"), "tensor storage device must be CPU for mag_copy_raw_");
     mag_contract(ctx, ERR_INVALID_PARAM, {}, data && size_bytes, "invalid data pointer or length");
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_numbytes(tensor) == size_bytes, "data length (%" PRIu64 ") does not match tensor nbytes (%" PRIu64 ")", (uint64_t)size_bytes, (uint64_t)mag_tensor_numbytes(tensor));
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(tensor), "tensor must be contiguous");
-    mag_storage_buffer_t *sto = tensor->storage;
-    (*sto->transfer)(sto, MAG_TRANSFER_DIR_H2D, 0, (void *)data, size_bytes);
+    void *dst = (void *)mag_tensor_data_ptr_mut(tensor);
+    memcpy(dst, data, size_bytes);
     return MAG_STATUS_OK;
 }
 

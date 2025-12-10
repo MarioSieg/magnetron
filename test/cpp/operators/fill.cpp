@@ -62,7 +62,7 @@ TEST(cpu_tensor_init_ops, copy_float16) {
     context ctx {};
     for_all_test_shapes([&](const std::vector<int64_t>& shape) {
         tensor t {ctx, dtype::float16, shape};
-        std::vector<float> fill_data {};
+        std::vector<float16> fill_data {};
         fill_data.resize(t.numel());
         std::uniform_real_distribution dist {-1.0f, 1.0f};
         std::generate(fill_data.begin(), fill_data.end(), [&] { return dist(gen); });

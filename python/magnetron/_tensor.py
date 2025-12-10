@@ -221,16 +221,25 @@ class Tensor:
     def tolist(self) -> NestedList:
         if self.numel == 0:
             return []
-        is_fp: bool = self.dtype.is_floating_point
-        unpack_fn = _C.mag_tensor_copy_float_data if is_fp else _C.mag_tensor_copy_data
-        free_fn = _C.mag_tensor_copy_float_data_free if is_fp else _C.mag_tensor_copy_data_free
-        ptr = unpack_fn(self._ptr)
-        if not is_fp:
-            native: str | None = self.dtype.native_type
-            assert native is not None, f'Tensor dtype {self.dtype} does not have a native type'
-            ptr = _FFI.cast(f'const {native}*', ptr)
+        dt = self.dtype
+        native = None
+        if dt.is_floating_point:
+            tensor = self.cast(float32)
+            native = 'float'
+        elif dt.is_signed_integer:
+            tensor = self.cast(int64)
+            native = 'int64_t'
+        elif dt.is_unsigned_integer:
+            tensor = self.cast(uint64)
+            native = 'uint64_t'
+        elif dt == boolean:
+            tensor = self.cast(boolean)
+            native = 'uint8_t'
+        else:
+            raise TypeError(f'Tensor dtype {self.dtype} is not supported for tolist()')
+        ptr = _FFI.cast(f'const {native}*', _C.mag_tensor_copy_data(tensor.native_ptr))
         flat = list(_FFI.unpack(ptr, self.numel))
-        free_fn(ptr)
+        _C.mag_tensor_copy_data_free(ptr)
         cont_strides = _row_major_strides(self.shape)
         return _ravel_nested_lists(flat, self.shape, cont_strides, offset=0, dim=0)
 
@@ -448,17 +457,28 @@ class Tensor:
             raise ValueError("Tensor.of() does not support empty lists; use Tensor.empty(shape, ...) instead")
         shape, flattened_data = _flatten_nested_lists(data)
         dtype: DataType = dtype if dtype is not None else _deduce_tensor_dtype(flattened_data[0])
-        native_name: str = dtype.native_type
-        alloc_fn: _FFI.CData = dtype.fill_fn
-        tensor: Tensor = cls.empty(*shape, dtype=dtype, requires_grad=requires_grad)
+        native_name = None
+        wide_dtype = None
+        if dtype.is_floating_point:
+            native_name = 'float'
+            wide_dtype = float32
+        elif dtype.is_signed_integer:
+            native_name = 'int64_t'
+            wide_dtype = int64
+        elif dtype.is_unsigned_integer:
+            native_name = 'uint64_t'
+            wide_dtype = uint64
+        elif dtype == boolean:
+            native_name = 'uint8_t'
+            wide_dtype = boolean
+        else:
+            raise TypeError(f'Tensor dtype {dtype} is not supported for Tensor.of()')
+        assert native_name is not None and wide_dtype is not None
+        raw: Tensor = cls.empty(*shape, dtype=wide_dtype, requires_grad=requires_grad)
         staging_buffer: _FFI.CData = _FFI.new(f'{native_name}[{len(flattened_data)}]', flattened_data)
-        copy_bytes_numel: int = len(flattened_data)
-        if (
-            alloc_fn == _C.mag_copy_raw_
-        ):  # If the dtype is not a floating point type, we need to multiply by the size of the dtype for the raw bytes initializer.
-            copy_bytes_numel *= dtype.size
-        alloc_fn(tensor._ptr, staging_buffer, copy_bytes_numel)
-        return tensor
+        nb = len(flattened_data)*raw.dtype.size
+        _handle_errc(_C.mag_copy_raw_(raw.native_ptr, staging_buffer, nb))
+        return raw.cast(dtype)
 
     @classmethod
     def zeros(
