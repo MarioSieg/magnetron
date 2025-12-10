@@ -25,10 +25,7 @@
 #include <optional>
 #include <vector>
 
-#include <half.hpp>
-
 #include "extern/half/include/half.hpp"
-
 
 namespace magnetron {
     /**
