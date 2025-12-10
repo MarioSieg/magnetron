@@ -581,11 +581,13 @@ class Tensor:
                 if d == dim:
                     continue
                 assert t.shape[d] == ref.shape[d], f'All tensors must match on dim {d}: {t.shape[d]} vs {ref.shape[d]}'
-        tensor_ptrs = _FFI.new(f'mag_tensor_t*[{num_tensors}]')
-        tensors = [t.contiguous() for t in tensors]
-        for i, t in enumerate(tensors):
+        contig = [t.contiguous() for t in tensors]
+        tensor_ptrs = _FFI.new(f"mag_tensor_t*[{len(contig)}]")
+        for i,t in enumerate(contig):
             tensor_ptrs[i] = t.native_ptr
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_cat(out, tensor_ptrs, num_tensors, dim)))
+        out = Tensor(_wrap_out_alloc(lambda out: _C.mag_cat(out, tensor_ptrs, len(contig), dim)))
+        del contig
+        return out
 
     @classmethod
     def load_image(cls, path: str, channels: str = 'RGB', resize_to: tuple[int, int] = (0, 0)) -> Tensor:

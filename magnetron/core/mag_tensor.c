@@ -158,7 +158,7 @@ static void mag_tensor_dtor(void *self) {
 }
 
 size_t mag_tensor_numbytes(const mag_tensor_t *t) {
-    return t->numel*mag_type_trait(t->dtype)->size;
+    return t->storage->size;
 }
 int64_t mag_tensor_numel(const mag_tensor_t *tensor) {
     return tensor->numel;
