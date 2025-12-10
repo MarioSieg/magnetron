@@ -313,22 +313,22 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
     const mag_op_attr_t *params = layout ? layout->slots : NULL;
     uint32_t num_params = layout ? layout->count : 0;
     mag_assert_correct_op_data(op, in, num_in, out, num_out, params, num_params);
-    inplace &= !!(meta->flags & MAG_OP_FLAG_SUPPORTS_INPLACE);
-    bool rec_grads = !!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward;
-    for (uint32_t i=0; i < num_out; ++i) { /* Populate autodiff state and handle gradient tracking */
-        mag_tensor_t *r = out[i];
-        mag_au_state_t *au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
-        au->op = op;
-        for (uint32_t j=0; j < num_in; ++j) {
-            mag_tensor_t *input = in[j];
-            au->op_inputs[j] = input;
-            if (rec_grads) {
-                if (input->flags & MAG_TFLAG_REQUIRES_GRAD && !(r->flags & MAG_TFLAG_REQUIRES_GRAD)) /* If any input requires grad, the output must also require grad*/
+    if (!!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward) {
+        for (uint32_t i=0; i < num_out; ++i) {
+            mag_tensor_t *r = out[i];
+            mag_au_state_t *au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
+            au->op = op;
+            for (uint32_t j=0; j < num_in; ++j) {
+                mag_tensor_t *input = in[j];
+                au->op_inputs[j] = input;
+                if (input->flags & MAG_TFLAG_REQUIRES_GRAD &&
+                    !(r->flags & MAG_TFLAG_REQUIRES_GRAD))
                     mag_tensor_set_requires_grad(r, true);
-                mag_rc_incref(input); /* Keep input alive for the backward pass. */
+                mag_rc_incref(input);
             }
+            if (params)
+                memcpy(au->op_attrs, params, num_params * sizeof(*params));
         }
-        if (params) memcpy(au->op_attrs, params, num_params*sizeof(*params));
     }
     mag_command_t cmd = {
         .op = op,
@@ -342,7 +342,6 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
     (*submit)(ctx->device, &cmd);
     for (uint32_t i=0; i < num_out; ++i) {
         if (inplace) mag_bump_version(out[i]);   /* Result aliases the modified storage */
-        if (!rec_grads) mag_tensor_detach_inplace(out[i]); /* If gradient are not recorded, detach the tensor's parents (clear parent and opcode). TODO: why are we doing this? */
     }
     ++ctx->ops_dispatched;
 }
