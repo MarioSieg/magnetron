@@ -81,19 +81,27 @@ void mag_topo_sort(mag_tensor_t *root, mag_topo_set_t *out_sorted) {
     mag_hashset_init(&visited, MAG_TOPOSORT_HASHSET_INIT_CAP);
     mag_topo_stack_t stack;
     mag_topo_stack_init(&stack, MAG_TOPOSORT_STACK_INIT_CAP);
+    if (!root->au_state) {
+        mag_au_state_lazy_alloc(&root->au_state, root->ctx);
+        root->au_state->op = MAG_OP_NOP;
+    }
     mag_topo_stack_push(&stack, root);
     while (stack.len) { /* Iterative DFS */
         mag_topo_stack_record_t *top = mag_topo_stack_peek(&stack);
         mag_tensor_t *top_t = top->tensor;
-        mag_assert(top_t->au_state, "Autodiff state not allocated for tensor that requires gradient");
-        uint32_t num_children = mag_op_traits(top_t->au_state->op)->in;
+        if (!top_t->au_state && (top_t->flags & MAG_TFLAG_REQUIRES_GRAD)) {
+            mag_au_state_lazy_alloc(&top_t->au_state, top_t->ctx);
+            top_t->au_state->op = MAG_OP_NOP;  // no parents
+        }
+        mag_au_state_t *au = top_t->au_state;
+        uint32_t num_children = mag_op_traits(au->op)->in;
         if (top->next_child_idx >= num_children) { /* All children processed */
             mag_topo_stack_pop(&stack);
             mag_topo_set_push(out_sorted, top_t);
             continue;
         }
-        mag_tensor_t *child = top_t->au_state->op_inputs[top->next_child_idx++];
-        if (child && (child->flags & MAG_TFLAG_REQUIRES_GRAD) && !mag_hashset_contains_key(&visited, child)) { /* Visit child and mark as visited */
+        mag_tensor_t *child = au->op_inputs[top->next_child_idx++];
+        if (child && child->flags & MAG_TFLAG_REQUIRES_GRAD && !mag_hashset_contains_key(&visited, child)) {
             mag_assert(mag_hashset_insert(&visited, child) != MAG_HASHSET_FULL, "Hashset exhausted");
             mag_topo_stack_push(&stack, child);
         }
