@@ -1305,18 +1305,18 @@ class Tensor:
     def __floordiv__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_div(out, self._ptr, rhs._ptr)))
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_floordiv(out, self._ptr, rhs._ptr)))
 
     def __rfloordiv__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return rhs / self
+        return rhs // self
 
     def __ifloordiv__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_div_(out, self._ptr, rhs._ptr)))
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_floordiv_(out, self._ptr, rhs._ptr)))
 
     def __mod__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)

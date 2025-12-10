@@ -109,6 +109,7 @@ typedef enum mag_opflags_t {
     _(SUB, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, sub)__\
     _(MUL, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, mul)__\
     _(DIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, div)__\
+    _(FLOORDIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(MOD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(MATMUL, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, matmul)__\
     _(REPEAT_BACK, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\

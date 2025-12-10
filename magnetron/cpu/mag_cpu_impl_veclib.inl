@@ -328,12 +328,8 @@ static void MAG_HOTPROC mag_vmul_float16(int64_t numel, mag_float16_t *o, const 
 }
 
 static void MAG_HOTPROC mag_vdiv_float32(int64_t numel, float *o, const float *x, const float *y) {
-#ifdef MAG_ACCELERATE
-    vDSP_vdiv(y, 1, x, 1, o, 1, numel);
-#else
     for (int64_t i=0; i < numel; ++i)
         o[i] = x[i] / y[i];
-#endif
 }
 
 static void MAG_HOTPROC mag_vdiv_float16(int64_t numel, mag_float16_t *o, const mag_float16_t *x, const mag_float16_t *y) {
@@ -389,6 +385,16 @@ static void MAG_HOTPROC mag_vdiv_float16(int64_t numel, mag_float16_t *o, const 
     for (; i < numel; ++i) { /* Scalar drain loop */
         o[i] = mag_float32_to_float16(mag_float16_to_float32(x[i]) / mag_float16_to_float32(y[i]));
     }
+}
+
+static void MAG_HOTPROC mag_vfloordiv_float32(int64_t numel, float *o, const float *x, const float *y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_floordivf(x[i], y[i]);
+}
+
+static void MAG_HOTPROC mag_vfloordiv_float16(int64_t numel, mag_float16_t *o, const mag_float16_t *x, const mag_float16_t *y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_float32_to_float16(mag_floordivf(mag_float16_to_float32(x[i]), mag_float16_to_float32(y[i])));
 }
 
 static void MAG_HOTPROC mag_vmod_float32(int64_t numel, float *o, const float *x, const float *y) {
@@ -1046,16 +1052,10 @@ static void MAG_HOTPROC mag_vgelu_dv_float16(int64_t numel, mag_float16_t *o, co
 }
 
 static double MAG_HOTPROC mag_vsum_f64_float32(int64_t numel, const float *x) {
-#ifdef MAG_ACCELERATE
-    float sum;
-    vDSP_sve(x, 1, &sum, numel);
-    return (double)sum;
-#else
     double sum = 0.0;
     for (int64_t i=0; i < numel; ++i)
         sum += (double)x[i];
     return sum;
-#endif
 }
 
 static double MAG_HOTPROC mag_vsum_f64_float16(int64_t numel, const mag_float16_t *x) {
@@ -1109,6 +1109,10 @@ static float MAG_HOTPROC mag_vmax_float16(int64_t numel, const mag_float16_t *x)
     static void mag_vdiv_##TF(int64_t numel, T *o, const T *x, const T *y) { \
         for (int64_t i=0; i < numel; ++i) \
             o[i] = x[i]/y[i]; \
+    } \
+    static void mag_vfloordiv_##TF(int64_t numel, T *o, const T *x, const T *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = mag_floordiv##SIGNESS(x[i],y[i]); \
     } \
     static void mag_vmod_##TF(int64_t numel, T *o, const T *x, const T *y) { \
         for (int64_t i=0; i < numel; ++i) \

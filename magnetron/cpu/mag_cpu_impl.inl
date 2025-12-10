@@ -70,6 +70,10 @@ static MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
 #define mag_shli(x, y, bits) mag_sal(x, y, bits)
 #define mag_shri(x, y, bits) mag_sar(x, y, bits)
 
+#define mag_floordivi(x, y) (((x) - mag_remi((x), (y)))/(y))
+#define mag_floordivu(x, y) ((x)/(y))
+#define mag_floordivf(x, y) (floorf((x)/(y)))
+
 #define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 
 typedef struct mag_scratch_buf_t {
@@ -667,6 +671,18 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_INT32] = &mag_div_int32,
         [MAG_DTYPE_UINT64] = &mag_div_uint64,
         [MAG_DTYPE_INT64] = &mag_div_int64,
+    },
+    [MAG_OP_FLOORDIV] = {
+        [MAG_DTYPE_FLOAT32] = &mag_floordiv_float32,
+        [MAG_DTYPE_FLOAT16] = &mag_floordiv_float16,
+        [MAG_DTYPE_UINT8] = &mag_floordiv_uint8,
+        [MAG_DTYPE_INT8] = &mag_floordiv_int8,
+        [MAG_DTYPE_UINT16] = &mag_floordiv_uint16,
+        [MAG_DTYPE_INT16] = &mag_floordiv_int16,
+        [MAG_DTYPE_UINT32] = &mag_floordiv_uint32,
+        [MAG_DTYPE_INT32] = &mag_floordiv_int32,
+        [MAG_DTYPE_UINT64] = &mag_floordiv_uint64,
+        [MAG_DTYPE_INT64] = &mag_floordiv_int64,
     },
     [MAG_OP_MOD] = {
         [MAG_DTYPE_FLOAT32] = &mag_mod_float32,

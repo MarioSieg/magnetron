@@ -1274,7 +1274,25 @@ static mag_status_t mag_op_stub_binary(mag_tensor_t **out_result, mag_opcode_t o
     mag_status_t stat;
     mag_dtype_t prom_type; /* common compute dtype for x,y */
     mag_dtype_t res_type;  /* dtype of 'result' tensor */
-    if (flags & MAG_BINOP_LOGICAL) {
+    bool x_int = mag_tensor_is_integer_typed(x);
+    bool y_int = mag_tensor_is_integer_typed(y);
+    if (flags & MAG_BINOP_INPLACE) {
+        switch (op) {
+            case MAG_OP_DIV: {
+                mag_contract(ctx, ERR_INVALID_PARAM, {}, !x_int, "Inplace truediv is not allowed on integer tensors, got dtype %s", mag_type_trait(x->dtype)->name);
+            } break;
+            case MAG_OP_FLOORDIV: {
+                mag_contract(ctx, ERR_INVALID_PARAM, {}, x_int && y_int, "Inplace floordiv is only allowed for integer tensors, got dtypes %s and %s", mag_type_trait(x->dtype)->name, mag_type_trait(y->dtype)->name);
+            } break;
+            default: { /* Inplace ops must keep x's dtype */
+                mag_dtype_t prom;
+                bool prom_ok = mag_promote_type(&prom, x->dtype, y->dtype);
+                mag_contract(ctx, ERR_INVALID_PARAM, {},  prom_ok && prom == x->dtype,  "Inplace binary op '%s' would change the dtype from %s to %s", mag_op_traits(op)->mnemonic, mag_type_trait(x->dtype)->name, mag_type_trait(prom)->name);
+            } break;
+        }
+        prom_type = x->dtype;
+        res_type = x->dtype;
+    } else if (flags & MAG_BINOP_LOGICAL) { /* Inplace keeps x's dtype, but cast y to x's dtype if needed */
         bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
         mag_contract(ctx, ERR_INVALID_PARAM, {}, prom_ok, "Logical binary operator '%s' not supported for dtypes %s and %s",
             mag_op_traits(op)->mnemonic,
@@ -1283,17 +1301,48 @@ static mag_status_t mag_op_stub_binary(mag_tensor_t **out_result, mag_opcode_t o
         );
         res_type = MAG_DTYPE_BOOLEAN; /* logical ops always yield boolean result */
         mag_assert2(!(flags & MAG_BINOP_INPLACE));
-    } else if (flags & MAG_BINOP_INPLACE) { /* Inplace keeps x's dtype, but cast y to x's dtype if needed */
-        prom_type = x->dtype;
-        res_type = x->dtype;
     } else { /* Pure out of place -> full promotion */
-        bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
-        mag_contract(ctx, ERR_INVALID_PARAM, {}, prom_ok, "Binary operator '%s' not supported for dtypes %s and %s",
-            mag_op_traits(op)->mnemonic,
-            mag_type_trait(x->dtype)->name,
-            mag_type_trait(y->dtype)->name
-        );
-        res_type = prom_type;
+        switch (op) {
+            case MAG_OP_DIV: { /* Special case for truediv */
+                if (x_int && y_int) { /* Integer division always promotes to default float dtype */
+                    prom_type = res_type = MAG_DTYPE_FLOAT32;
+                } else {
+                    bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
+                    mag_contract(ctx, ERR_INVALID_PARAM, {}, prom_ok,
+                        "Binary operator '%s' not supported for dtypes %s and %s",
+                        mag_op_traits(op)->mnemonic,
+                        mag_type_trait(x->dtype)->name,
+                        mag_type_trait(y->dtype)->name
+                    );
+                    res_type = prom_type;  /* will be a floating dtype */
+                }
+            } break;
+            case MAG_OP_FLOORDIV: {
+                bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
+                mag_contract(ctx, ERR_INVALID_PARAM, {}, prom_ok,
+                    "Binary operator '%s' not supported for dtypes %s and %s",
+                    mag_op_traits(op)->mnemonic,
+                    mag_type_trait(x->dtype)->name,
+                        mag_type_trait(y->dtype)->name
+                );
+                if (x_int && y_int) { /* Integer floor division keeps integer dtype */
+                    res_type = prom_type;
+                } else { /* Non-integer floor division promotes to floating dtype */
+                    if (!(mag_dtype_bit(prom_type) & MAG_DTYPE_MASK_FP))
+                        prom_type = MAG_DTYPE_FLOAT32;
+                    res_type = prom_type;
+                }
+            } break;
+            default: {
+                bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
+                mag_contract(ctx, ERR_INVALID_PARAM, {}, prom_ok, "Binary operator '%s' not supported for dtypes %s and %s",
+                    mag_op_traits(op)->mnemonic,
+                    mag_type_trait(x->dtype)->name,
+                    mag_type_trait(y->dtype)->name
+                );
+                res_type = prom_type;
+            } break;
+        }
     }
     if (flags & MAG_BINOP_INPLACE) {
         mag_assert2(!(flags & MAG_BINOP_LOGICAL));
@@ -1357,6 +1406,7 @@ mag_impl_binary_pair(add, ADD, false)
 mag_impl_binary_pair(sub, SUB, false)
 mag_impl_binary_pair(mul, MUL, false)
 mag_impl_binary_pair(div, DIV, false)
+mag_impl_binary_pair(floordiv, FLOORDIV, false)
 mag_impl_binary_pair(mod, MOD, false)
 mag_impl_binary_pair(and, AND, false)
 mag_impl_binary_pair(or, OR, false)
