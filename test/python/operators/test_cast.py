@@ -8,7 +8,7 @@ from ..common import *
 
 @pytest.mark.parametrize('src_dtype', ALL_DTYPES)
 @pytest.mark.parametrize('dst_dtype', ALL_DTYPES)
-def test_unary_operators(src_dtype: DataType, dst_dtype: DataType) -> None:
+def test_cast_op(src_dtype: DataType, dst_dtype: DataType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         x = random_tensor(shape, dtype=src_dtype)
         r = x.cast(dst_dtype)

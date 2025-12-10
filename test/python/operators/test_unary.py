@@ -75,7 +75,7 @@ def unary_op(
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
 @pytest.mark.parametrize('op', _UNARY_OPS)
-def test_unary_operators(op: UnaryOpTestCase, dtype: DataType) -> None:
+def test_unary_op(op: UnaryOpTestCase, dtype: DataType) -> None:
     name = op.name
     if op.torch_callback is not None:
         torch_op = op.torch_callback
