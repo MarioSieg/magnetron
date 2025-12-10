@@ -136,11 +136,11 @@ namespace magnetron {
         tensor(context& ctx, dtype type, S&&... shape) : tensor{ctx, type, {static_cast<int64_t>(shape)...}} {}
 
         tensor(context& ctx, std::initializer_list<int64_t> shape, const std::vector<float>& data) : tensor{ctx, dtype::float32, shape} {
-            fill_(data);
+            copy_(data);
         }
 
         tensor(context& ctx, std::initializer_list<int64_t> shape, const std::vector<int32_t>& data) : tensor{ctx, dtype::i32, shape} {
-            fill_(data);
+            copy_(data);
         }
 
         tensor(const tensor& other) {
@@ -838,18 +838,18 @@ namespace magnetron {
             return tensor{out};
         }
 
-        auto fill_(const void* buf, size_t nb) -> void {
+        auto copy_(const void* buf, size_t nb) -> void {
             mag_copy_raw_(m_tensor, buf, nb);
         }
 
         template <typename T>
-        auto fill_(const std::vector<T>& data) -> void {
+        auto copy_(const std::vector<T>& data) -> void {
             if (generic_to_dtype<T>() != dtype())
-                throw std::runtime_error{"tensor::fill_: data type does not match tensor dtype"};
+                throw std::runtime_error{"data type does not match tensor dtype"};
             mag_copy_raw_(m_tensor, data.data(), data.size()*sizeof(data[0]));
         }
 
-        auto fill_(const std::vector<uint8_t>& data) -> void {
+        auto copy_(const std::vector<uint8_t>& data) -> void {
             std::vector<uint8_t> unpacked {};
             unpacked.resize(data.size());
             for (size_t i=0; i < unpacked.size(); ++i) unpacked[i] = data[i];
@@ -857,7 +857,16 @@ namespace magnetron {
         }
 
         template <typename T>
-        auto fill_(T val) -> void;
+        auto fill_(T val) -> void {
+            static_assert(std::is_arithmetic_v<T> || std::is_same_v<T, bool>);
+            if constexpr (std::is_floating_point_v<T>) {
+                handle_error(mag_fill_(m_tensor, mag_scalar_float(static_cast<double>(val))));
+            } else if constexpr (std::is_integral_v<T>) {
+                handle_error(mag_fill_(m_tensor, mag_scalar_int(static_cast<int64_t>(val))));
+            } else {
+                throw std::runtime_error{"unsupported type for fill_"};
+            }
+        }
 
         template <typename T>
         auto masked_fill_(tensor mask, T val) -> void;
@@ -893,7 +902,18 @@ namespace magnetron {
         [[nodiscard]] auto storage_base_ptr() const noexcept -> void* { return reinterpret_cast<void *>(mag_tensor_data_storage_ptr_mut(m_tensor)); }
 
         template <typename T>
-        [[nodiscard]] auto to_vector() const -> std::vector<T>;
+        [[nodiscard]] auto to_vector() const -> std::vector<T> {
+            static_assert(!std::is_same_v<T, bool>); // use uint8_t for bool
+            if (dtype() != generic_to_dtype<T>())
+                throw std::runtime_error {"T and tensor dtype must match: " + std::string{typeid(std::decay_t<T>).name()} + " != " + std::string{mag_type_trait(m_tensor->dtype)->name}};
+            auto* data {static_cast<T *>(mag_tensor_copy_data(m_tensor))};
+            std::vector<T> result {};
+            result.resize(numel());
+            std::copy_n(data, numel(), result.begin());
+            mag_tensor_copy_data_free(data);
+            return result;
+        }
+
         [[nodiscard]] auto data_size() const noexcept -> int64_t { return mag_tensor_numbytes(m_tensor); }
         [[nodiscard]] auto numel() const noexcept -> int64_t { return mag_tensor_numel(m_tensor); }
         [[nodiscard]] auto is_shape_eq(tensor other) const noexcept -> bool { return mag_tensor_is_shape_eq(m_tensor, &*other); }
@@ -927,21 +947,6 @@ namespace magnetron {
     };
 
     template <>
-    inline auto tensor::fill_(float val) -> void {
-        handle_error(mag_fill_(m_tensor, mag_scalar_float(val)));
-    }
-
-    template <typename T>
-    inline auto tensor::fill_(T val) -> void {
-        handle_error(mag_fill_(m_tensor, mag_scalar_int(static_cast<int64_t>(val))));
-    }
-
-    template <>
-    inline auto tensor::fill_(bool val) -> void {
-        handle_error(mag_fill_(m_tensor, mag_scalar_int(val)));
-    }
-
-    template <>
     inline auto tensor::masked_fill_(tensor mask, float val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
@@ -970,18 +975,5 @@ namespace magnetron {
     template <>
     inline auto tensor::uniform_(int64_t min, int64_t max) -> void {
         handle_error(mag_uniform_(m_tensor, mag_scalar_int(min), mag_scalar_int(max)));
-    }
-
-    template <typename T>
-    auto tensor::to_vector() const -> std::vector<T> {
-        static_assert(!std::is_same_v<T, bool>); // use uint8_t for bool
-        if (dtype() != generic_to_dtype<T>())
-            throw std::runtime_error {"T and tensor dtype must match: " + std::string{typeid(std::decay_t<T>).name()} + " != " + std::string{mag_type_trait(m_tensor->dtype)->name}};
-        auto* data {static_cast<T *>(mag_tensor_copy_data(m_tensor))};
-        std::vector<T> result {};
-        result.resize(numel());
-        std::copy_n(data, numel(), result.begin());
-        mag_tensor_copy_data_free(data);
-        return result;
     }
 }

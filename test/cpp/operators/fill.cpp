@@ -49,7 +49,7 @@ TEST(cpu_tensor_init_ops, copy_float32) {
         fill_data.resize(t.numel());
         std::uniform_real_distribution dist {dtype_traits<float>::min, dtype_traits<float>::max};
         std::generate(fill_data.begin(), fill_data.end(), [&] { return dist(gen); });
-        t.fill_(fill_data);
+        t.copy_(fill_data);
         std::vector data {t.to_vector<float>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
@@ -66,7 +66,7 @@ TEST(cpu_tensor_init_ops, copy_float16) {
         fill_data.resize(t.numel());
         std::uniform_real_distribution dist {-1.0f, 1.0f};
         std::generate(fill_data.begin(), fill_data.end(), [&] { return dist(gen); });
-        t.fill_(fill_data);
+        t.copy_(fill_data);
         std::vector data {t.to_vector<float16>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
@@ -85,7 +85,7 @@ TEST(cpu_tensor_init_ops, copy_bool) {
         for (size_t i {}; i < t.numel(); ++i) {
             fill_data.emplace_back(dist(gen));
         }
-        t.fill_(fill_data);
+        t.copy_(fill_data);
         std::vector data {t.to_vector<uint8_t>()};
         ASSERT_EQ(data.size(), t.numel());
         for (size_t i {}; i < data.size(); ++i) {
