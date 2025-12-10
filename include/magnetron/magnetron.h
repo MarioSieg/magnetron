@@ -20,7 +20,7 @@
 extern "C" {
 #endif
 
-#define MAG_MAX_DIMS 8 /* Maximum number of dimensions for a tensor. Currently fixed. */
+#define MAG_MAX_DIMS 16 /* Maximum number of dimensions for a tensor. Currently fixed. */
 
 #ifndef MAG_EXPORT
 #ifdef _MSC_VER
