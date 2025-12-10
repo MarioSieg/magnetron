@@ -20,7 +20,7 @@ from ._bootstrap import _FFI, _C
 from ._error import _handle_errc
 
 _MAIN_TID: int = threading.get_native_id()
-_MAX_DIMS: int = 8
+_MAX_DIMS: int = 16
 _DIM_MAX: int = 0x7FFFFFFFFFFFFFFF
 
 NestedList = float | bool | int | list['NestedData']
