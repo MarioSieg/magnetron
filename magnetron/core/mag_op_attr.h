@@ -75,7 +75,7 @@ static inline void mag_op_attr_registry_init(mag_op_attr_registry_t *set) {
 }
 
 static inline size_t mag_op_attr_registry_insert(mag_op_attr_registry_t *set, mag_op_attr_t param) {
-    mag_assert(set->count < MAG_MAX_OP_PARAMS, "Too many operation parameters");
+    mag_assert(set->count < MAG_MAX_OP_PARAMS, "too many operation parameters: %u, max=%d", set->count, MAG_MAX_OP_PARAMS);
     set->slots[set->count] = param;
     return set->count++;
 }

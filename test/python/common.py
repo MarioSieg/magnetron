@@ -392,42 +392,8 @@ DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
     (1, 2, 3, 4, 1, 2, 3, 4),
 )
 
-SMALL_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
-    (),
-    (1,),
-    (2,),
-    (3,),
-    (1, 1),
-    (2, 2),
-    (2, 3),
-    (3, 2),
-    (3, 3),
-    (1, 2, 3),
-    (3, 2, 1),
-    (2, 3, 5),
-    (1, 2),
-    (2, 1),
-    (1, 2, 1),
-    (1, 2, 3, 1),
-    (2, 1, 3, 1),
-    (1, 1, 2, 3),
-    (1, 2, 3, 4),
-    (1, 1, 2, 3, 4),
-    (1, 3, 8, 8),
-    (2, 3, 8, 8),
-    (2, 3, 16, 16),
-    (1, 16, 64),
-    (2, 16, 64),
-    (2, 32, 64),
-    (2, 32, 128),
-    (7, 13),
-    (13, 7),
-    (5, 21),
-    (21, 5),
-)
-
 def for_all_shapes(f: Callable[tuple[int, ...]]) -> None:
-    for shape in SMALL_TEST_SHAPES: # We use small shapes for faster tests
+    for shape in DETAILED_TEST_SHAPES: # We use small shapes for faster tests
         f(shape)
 
 def nested_len(obj: list[Any]) -> int:
