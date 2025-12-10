@@ -13,11 +13,25 @@
 #include "mag_context.h"
 #include "mag_reduce_plan.h"
 
-static bool mag_scalar_is_f64(mag_scalar_t s) { return s.type == MAG_SCALAR_TYPE_F64; }
-static bool mag_scalar_is_i64(mag_scalar_t s) { return s.type == MAG_SCALAR_TYPE_I64; }
-static bool mag_scalar_is_u64(mag_scalar_t s) { return s.type == MAG_SCALAR_TYPE_U64; }
+mag_scalar_t mag_scalar_float(double value) {
+    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.f64 = value};
+}
 
-static double mag_scalar_as_f64(mag_scalar_t s) {
+mag_scalar_t mag_scalar_int(int64_t value) {
+    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_I64, .value.i64 = value};
+}
+
+mag_scalar_t mag_scalar_uint(uint64_t value) {
+    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_U64, .value.u64 = value};
+}
+
+bool mag_scalar_is_f64(mag_scalar_t s) { return s.type == MAG_SCALAR_TYPE_F64; }
+
+bool mag_scalar_is_i64(mag_scalar_t s) { return s.type == MAG_SCALAR_TYPE_I64; }
+
+bool mag_scalar_is_u64(mag_scalar_t s) { return s.type == MAG_SCALAR_TYPE_U64; }
+
+double mag_scalar_as_f64(mag_scalar_t s) {
     switch (s.type) {
         case MAG_SCALAR_TYPE_F64: return s.value.f64;
         case MAG_SCALAR_TYPE_I64: return (double)s.value.i64;
@@ -26,7 +40,7 @@ static double mag_scalar_as_f64(mag_scalar_t s) {
     }
 }
 
-static int64_t mag_scalar_as_i64(mag_scalar_t s) {
+int64_t mag_scalar_as_i64(mag_scalar_t s) {
     switch (s.type) {
         case MAG_SCALAR_TYPE_I64: return s.value.i64;
         case MAG_SCALAR_TYPE_U64: return (int64_t)s.value.u64;
@@ -35,7 +49,7 @@ static int64_t mag_scalar_as_i64(mag_scalar_t s) {
     }
 }
 
-static uint64_t mag_scalar_as_u64(mag_scalar_t s) {
+uint64_t mag_scalar_as_u64(mag_scalar_t s) {
     switch (s.type) {
         case MAG_SCALAR_TYPE_U64: return s.value.u64;
         case MAG_SCALAR_TYPE_I64: return (uint64_t)s.value.i64;
@@ -1228,7 +1242,13 @@ mag_status_t mag_one_hot(mag_tensor_t **out_result, mag_tensor_t *indices, int64
         mag_tensor_t *maxv = NULL;
         stat = mag_max(&maxv, indices, NULL, 0, false);
         if (mag_iserr(stat)) return stat;
-        int64_t max_class = mag_tensor_item_int(maxv);
+        mag_scalar_t max_scalar;
+        stat = mag_tensor_item(maxv, &max_scalar);
+        if (mag_iserr(stat)) {
+            mag_tensor_decref(maxv);
+            return stat;
+        }
+        int64_t max_class = mag_scalar_as_i64(max_scalar);
         mag_tensor_decref(maxv);
         num_classes = max_class >= 0 ? 1+max_class : 0;
     }

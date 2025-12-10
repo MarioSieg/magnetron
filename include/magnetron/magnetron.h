@@ -182,6 +182,14 @@ extern MAG_EXPORT mag_scalar_t mag_scalar_float(double value);
 extern MAG_EXPORT mag_scalar_t mag_scalar_int(int64_t value);
 extern MAG_EXPORT mag_scalar_t mag_scalar_uint(uint64_t value);
 
+extern MAG_EXPORT bool mag_scalar_is_f64(mag_scalar_t s);
+extern MAG_EXPORT bool mag_scalar_is_i64(mag_scalar_t s);
+extern MAG_EXPORT bool mag_scalar_is_u64(mag_scalar_t s);
+
+extern MAG_EXPORT double mag_scalar_as_f64(mag_scalar_t s);
+extern MAG_EXPORT int64_t mag_scalar_as_i64(mag_scalar_t s);
+extern MAG_EXPORT uint64_t mag_scalar_as_u64(mag_scalar_t s);
+
 extern MAG_EXPORT mag_status_t mag_empty(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape);
 extern MAG_EXPORT mag_status_t mag_as_strided(mag_tensor_t **out_result, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset);
 extern MAG_EXPORT mag_status_t mag_empty_like(mag_tensor_t **out_result, mag_tensor_t *like);
@@ -405,9 +413,7 @@ extern MAG_EXPORT void *mag_tensor_copy_data(mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_tensor_copy_data_free(void *ret_val);
 extern MAG_EXPORT float *mag_tensor_copy_float_data(mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_tensor_copy_float_data_free(float *ret_val);
-extern MAG_EXPORT float mag_tensor_item_float(const mag_tensor_t *tensor);
-extern MAG_EXPORT int64_t mag_tensor_item_int(const mag_tensor_t *tensor);
-extern MAG_EXPORT bool mag_tensor_item_bool(const mag_tensor_t *tensor);
+extern MAG_EXPORT mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value);
 extern MAG_EXPORT mag_tensor_t *mag_tensor_detach(mag_tensor_t *tensor);
 extern MAG_EXPORT char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold);
 extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val);

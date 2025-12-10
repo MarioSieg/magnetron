@@ -197,14 +197,21 @@ class Tensor:
     def item(self) -> float | int | bool:
         if self.numel != 1:
             raise ValueError('Tensor must have exactly one element to retrieve an item')
-        if self.dtype.is_floating_point:
-            return float(_C.mag_tensor_item_float(self._ptr))
-        elif self.dtype.is_integer:
-            return int(_C.mag_tensor_item_int(self._ptr))
-        elif self.dtype == boolean:
-            return bool(_C.mag_tensor_item_bool(self._ptr))
-        else:
-            raise TypeError(f'Unsupported tensor dtype for item retrieval: {self.dtype}')
+        scalar_buf = _FFI.new("mag_scalar_t[1]")
+        status = _C.mag_tensor_item(self._ptr, scalar_buf)
+        if status != _C.MAG_STATUS_OK:
+            raise RuntimeError(f"mag_tensor_item failed with status {int(status)}")
+        s = scalar_buf[0]
+        if _C.mag_scalar_is_f64(s):
+            return float(_C.mag_scalar_as_f64(s))
+        if _C.mag_scalar_is_i64(s):
+            return int(_C.mag_scalar_as_i64(s))
+        if _C.mag_scalar_is_u64(s):
+            v = _C.mag_scalar_as_u64(s)
+            if self.dtype == boolean:
+                return bool(v)
+            return int(v)
+        raise TypeError(f'Unsupported scalar type for item retrieval (scalar.type={int(s.type)})')
 
     def __bool__(self) -> bool:
         if self.numel != 1:

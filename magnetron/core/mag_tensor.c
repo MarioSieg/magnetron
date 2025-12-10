@@ -251,25 +251,63 @@ void mag_tensor_copy_float_data_free(float *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
-float mag_tensor_item_float(const mag_tensor_t *tensor) {
-    mag_storage_buffer_t *sto = tensor->storage;
-    float val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(tensor), &val, sizeof(val), MAG_DTYPE_FLOAT32);
-    return val;
-}
-
-int64_t mag_tensor_item_int(const mag_tensor_t *tensor) {
-    mag_storage_buffer_t *sto = tensor->storage;
-    int64_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(tensor), &val, sizeof(val), MAG_DTYPE_INT64);
-    return val;
-}
-
-bool mag_tensor_item_bool(const mag_tensor_t *tensor) {
-    mag_storage_buffer_t *sto = tensor->storage;
-    uint8_t val;
-    (*sto->convert)(sto, MAG_TRANSFER_DIR_D2H, mag_tensor_data_offset(tensor), &val, sizeof(val), MAG_DTYPE_BOOLEAN);
-    return !!val;
+mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
+    mag_context_t *ctx = tensor->ctx;
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_device_is(tensor->storage->device, "cpu"), "item() is only supported for CPU tensors");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, tensor->numel == 1, "item() can only be called on single element (scalar) tensors, but tensor has %" PRIi64 " elements", tensor->numel);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, out_value != NULL, "Output value must not be NULL");
+    mag_status_t stat;
+    mag_tensor_t *scalar = NULL;
+    if (tensor->coords.rank == 0) {
+        mag_tensor_incref(tensor);
+        scalar = tensor;
+    } else {
+        stat = mag_view(&scalar, tensor, NULL, 0);
+        if (mag_iserr(stat))
+            return stat;
+    }
+    mag_dtype_t dt = scalar->dtype;
+    mag_dtype_mask_t mask = mag_dtype_bit(dt);
+    mag_scalar_t res;
+    if (mask & MAG_DTYPE_MASK_FP) {
+        mag_tensor_t *wide = scalar;
+        if (dt != MAG_DTYPE_FLOAT32) {
+            stat = mag_cast(&wide, scalar, MAG_DTYPE_FLOAT32);
+            mag_tensor_decref(scalar);
+            if (mag_iserr(stat)) return stat;
+        }
+        res = mag_scalar_float(*(const float *)mag_tensor_data_ptr(wide));
+        mag_tensor_decref(wide);
+        *out_value = res;
+        return MAG_STATUS_OK;
+    }
+    if (mask & MAG_DTYPE_MASK_SINT) {
+        mag_tensor_t *wide = scalar;
+        if (dt != MAG_DTYPE_INT64) {
+            stat = mag_cast(&wide, scalar, MAG_DTYPE_INT64);
+            mag_tensor_decref(scalar);
+            if (mag_iserr(stat)) return stat;
+        }
+        res = mag_scalar_int(*(const int64_t *)mag_tensor_data_ptr(wide));
+        mag_tensor_decref(wide);
+        *out_value = res;
+        return MAG_STATUS_OK;
+    }
+    if ((mask & MAG_DTYPE_MASK_UINT) || dt == MAG_DTYPE_BOOLEAN) {
+        mag_tensor_t *wide = scalar;
+        if (dt != MAG_DTYPE_UINT64) {
+            stat = mag_cast(&wide, scalar, MAG_DTYPE_UINT64);
+            mag_tensor_decref(scalar);
+            if (mag_iserr(stat)) return stat;
+        }
+        res = mag_scalar_uint(*(const uint64_t *)mag_tensor_data_ptr(wide));
+        mag_tensor_decref(wide);
+        *out_value = res;
+        return MAG_STATUS_OK;
+    }
+    mag_tensor_decref(scalar);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, false, "Unsupported dtype %s", mag_type_trait(dt)->name);
+    return MAG_STATUS_ERR_INVALID_PARAM;
 }
 
 mag_context_t *mag_tensor_context(const mag_tensor_t *tensor) {
