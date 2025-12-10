@@ -427,7 +427,7 @@ SMALL_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
 )
 
 def for_all_shapes(f: Callable[tuple[int, ...]]) -> None:
-    for shape in SMALL_TEST_SHAPES:
+    for shape in SMALL_TEST_SHAPES: # We use small shapes for faster tests
         f(shape)
 
 def nested_len(obj: list[Any]) -> int:

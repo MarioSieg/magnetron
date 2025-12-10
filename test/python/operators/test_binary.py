@@ -5,7 +5,7 @@ from ..common import *
 # We test against numpy here as torch has some issues with certain dtypes
 # Torch's unsigned types are shell types and do not support key operations properly
 
-_BINARY_OPS_NUMERIC: tuple[str, Callable] = (
+_BINARY_OPS_NUMERIC: tuple[tuple[str, Callable], ...] = (
     ('add', lambda x, y: x + y),
     ('sub', lambda x, y: x - y),
     ('mul', lambda x, y: x * y),
@@ -20,13 +20,13 @@ _BINARY_OPS_NUMERIC: tuple[str, Callable] = (
     ('ge', lambda x, y: x >= y),
 )
 
-_BINARY_OPS_BITWISE_INTEGRAL: tuple[str, Callable] = (
+_BINARY_OPS_BITWISE_INTEGRAL: tuple[tuple[str, Callable], ...] = (
     ('bitwise_and', lambda x, y: x & y),
     ('bitwise_or', lambda x, y: x | y),
     ('bitwise_xor', lambda x, y: x ^ y),
 )
 
-_BINARY_OPS_INTEGER: tuple[str, Callable] = (
+_BINARY_OPS_INTEGER: tuple[tuple[str, Callable], ...] = (
     ('lshift', lambda x, y: x << y),
     ('rshift', lambda x, y: x >> y),
 )
