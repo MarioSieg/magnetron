@@ -6,14 +6,6 @@ import torch.nn.functional
 
 from ..common import *
 
-def random_dim(shape: tuple[int, ...]) -> int | None:
-    if len(shape) == 0:
-        return None
-    elif len(shape) == 1:
-        return 0
-    else:
-        return random.randrange(len(shape))
-
 _ALL_DTYPE_REDUCES = (
     'sum',
     'prod',

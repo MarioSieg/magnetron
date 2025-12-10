@@ -447,6 +447,13 @@ def nested_len(obj: list[Any]) -> int:
                 total += 1
     return total
 
+def random_dim(shape: tuple[int, ...]) -> int | None:
+    if len(shape) == 0:
+        return None
+    elif len(shape) == 1:
+        return 0
+    else:
+        return random.randrange(len(shape))
 
 def flatten(nested: Any) -> list[Any]:
     out: list[Any] = []

@@ -157,8 +157,8 @@ static void mag_tensor_dtor(void *self) {
     mag_tensor_free_header(t);
 }
 
-int64_t mag_tensor_numbytes(const mag_tensor_t *t) {
-    return t->storage->size;
+size_t mag_tensor_numbytes(const mag_tensor_t *t) {
+    return t->numel*mag_type_trait(t->dtype)->size;
 }
 int64_t mag_tensor_numel(const mag_tensor_t *tensor) {
     return tensor->numel;

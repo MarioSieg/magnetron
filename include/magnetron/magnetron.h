@@ -379,7 +379,7 @@ extern MAG_EXPORT uintptr_t mag_tensor_data_ptr(const mag_tensor_t *tensor);
 extern MAG_EXPORT uintptr_t mag_tensor_data_ptr_mut(const mag_tensor_t *tensor);
 extern MAG_EXPORT uintptr_t mag_tensor_data_storage_ptr(const mag_tensor_t *tensor);
 extern MAG_EXPORT uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor);
-extern MAG_EXPORT int64_t mag_tensor_numbytes(const mag_tensor_t *tensor);
+extern MAG_EXPORT size_t mag_tensor_numbytes(const mag_tensor_t *tensor);
 extern MAG_EXPORT int64_t mag_tensor_numel(const mag_tensor_t *tensor);
 extern MAG_EXPORT mag_context_t *mag_tensor_context(const mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_is_view(const mag_tensor_t *tensor);

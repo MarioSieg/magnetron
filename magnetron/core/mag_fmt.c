@@ -658,7 +658,6 @@ typedef struct mag_tensor_format_context_t {
     mag_dtype_t dtype;
     const mag_coords_iter_t *iter;
     int64_t idx[MAG_MAX_DIMS];
-    int64_t numel;
     int64_t head;
     int64_t tail;
     bool trunc;
@@ -678,13 +677,9 @@ static void mag_fmt_indent(mag_tensor_format_context_t *fmt, int depth) {
     for (int i=0; i <= depth; ++i) mag_fmt_putc(fmt, ' ');
 }
 
-static char *mag_fmt_scalar(char (*fmt)[MAG_FMT_BUF_MAX], int64_t numel, const void *buf, int64_t i, mag_dtype_t type) {
+static char *mag_fmt_scalar(char (*fmt)[MAG_FMT_BUF_MAX], const void *buf, int64_t i, mag_dtype_t type) {
     int64_t nb = (int64_t)mag_type_trait(type)->size;
     const void *val = (const uint8_t *)buf + i*nb; /* Pointer to the value */
-    if (mag_unlikely(!((uintptr_t)val >= (uintptr_t)buf && (uintptr_t)val < (uintptr_t)buf + nb*numel))) { /* Quick bounds check just in case */
-        mag_log_error("Index out of bounds when formatting scalar: index %" PRIi64 " for type %d", i, type);
-        return NULL;
-    }
     if (type == MAG_DTYPE_BOOLEAN) {
         int n = snprintf(*fmt, sizeof(*fmt), "%s", *(const uint8_t *)val ? "True" : "False");
         return *fmt + n;
@@ -725,7 +720,7 @@ static bool mag_fmt_lastdim_elem(
     }
     fmt->idx[depth] = k < heads ? k : dim_size - tails + (k - heads - (use_ellipsis ? 1 : 0));
     int64_t off = mag_coords_iter_offset_at(iter, fmt->idx);
-    char *e = mag_fmt_scalar(tmp, fmt->numel, fmt->buf, off, fmt->dtype);
+    char *e = mag_fmt_scalar(tmp, fmt->buf, off, fmt->dtype);
     if (mag_unlikely(!e)) return false;
     ptrdiff_t len = e-*tmp;
     if (mag_unlikely(len <= 0)) {
@@ -741,7 +736,7 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
     char tmp[MAG_FMT_BUF_MAX];
     if (depth == iter->rank) { /* scalar leaf */
         int64_t off = mag_coords_iter_offset_at(iter, fmt->idx);
-        char *e = mag_fmt_scalar(&tmp, fmt->numel, fmt->buf, off, fmt->dtype);
+        char *e = mag_fmt_scalar(&tmp, fmt->buf, off, fmt->dtype);
         if (mag_unlikely(!e)) return;
         ptrdiff_t len = e - tmp;
         if (mag_likely(len > 0)) mag_sstream_append_strn(fmt->ss, tmp, (size_t)len);
@@ -832,7 +827,6 @@ char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int
         .dtype = tensor->dtype,
         .iter = &iter,
         .idx = {0},
-        .numel = tensor->numel,
         .head = head,
         .tail = tail,
         .trunc = tensor->numel > threshold,

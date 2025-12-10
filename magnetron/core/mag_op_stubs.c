@@ -660,37 +660,26 @@ mag_status_t mag_reshape(mag_tensor_t **out_result, mag_tensor_t *x, const int64
 mag_status_t mag_view_slice(mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t start, int64_t len, int64_t step) {
     *out_result = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_contract(ctx, ERR_INVALID_RANK, {}, dim >= 0 && dim < x->coords.rank, "Dim %" PRIi64 " out_result of range for rank %" PRIi64, dim, x->coords.rank);
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, step != 0, "Slice step must be != 0");
+    int64_t rank = x->coords.rank;
+    mag_contract(ctx, ERR_INVALID_RANK, {}, rank > 0, "Cannot slice scalar tensor");
+    mag_norm_axis(&dim, rank);
+    mag_contract(ctx, ERR_INVALID_RANK, {}, 0 <= dim && dim < rank, "Dim %" PRIi64 " out of range for rank %" PRIi64, dim, rank);
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, step > 0, "Slice step must be > 0, got %" PRIi64, step);
     int64_t sz = x->coords.shape[dim];
-    int64_t stop;
     mag_norm_axis(&start, sz);
-    if (step > 0) {
-        stop = len < 0 ? sz : start + len*step;
-        int64_t last = start + (len - 1)*step;
-        mag_contract(ctx, ERR_INVALID_PARAM, {}, 0 <= start && start < sz, "Slice start out_result of bounds for dim %" PRIi64 ": %" PRIi64 " >= %" PRIi64, dim, start, sz);
-        mag_contract(ctx, ERR_INVALID_PARAM, {}, stop >= start, "Slice stop < start with %" PRIi64 " < %" PRIi64, stop, start);
-        mag_contract(ctx, ERR_INVALID_PARAM, {}, last < sz, "Slice exceeds bounds for dim %" PRIi64 ": last index %" PRIi64 " >= %" PRIi64, dim, last, sz);
-    } else {
-        step = (int64_t)(~(uint64_t)step+1);
-        stop = len < 0 ? -1 : start - len*step;
-        mag_contract(ctx, ERR_INVALID_PARAM, {}, 0 <= start && start < sz, "Slice start out_result of bounds");
-        mag_contract(ctx, ERR_INVALID_PARAM, {}, stop < start, "Slice stop >= start with negative step");
-        mag_contract(ctx, ERR_INVALID_PARAM, {}, stop >= -1, "Slice exceeds bounds (neg)");
-    }
-    if (len < 0) len = step > 0 ? (stop - start + step - 1)/step : (start - stop + step - 1)/step;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, len > 0, "Slice length is 0");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, 0 <= start && start < sz, "Slice start out of bounds for dim %" PRIi64 ": %" PRIi64 " (size=%" PRIi64 ")", dim, start, sz);
+    if (len < 0) len = (sz - start + step - 1)/step;
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, len > 0, "Slice length must be > 0, got %" PRIi64, len);
+    int64_t last = start + (len - 1)*step;
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, 0 <= last && last < sz, "Slice exceeds bounds for dim %" PRIi64 ": last index %" PRIi64 " >= %" PRIi64, dim, last, sz);
     int64_t shape[MAG_MAX_DIMS];
     int64_t strides[MAG_MAX_DIMS];
-    memcpy(shape, x->coords.shape, sizeof(shape));
-    memcpy(strides, x->coords.strides, sizeof(strides));
+    memcpy(shape, x->coords.shape, rank*sizeof(*shape));
+    memcpy(strides, x->coords.strides, rank*sizeof(*strides));
     shape[dim] = len;
-    strides[dim] = x->coords.strides[dim]*step;
-    int64_t tmp[MAG_MAX_DIMS];
-    if (mag_solve_view_strides(&tmp, shape, strides, x->coords.rank, shape, x->coords.rank))
-        memcpy(strides, tmp, sizeof(tmp));
+    strides[dim] = x->coords.strides[dim] * step;
     int64_t offset = x->storage_offset + start*x->coords.strides[dim];
-    return mag_as_strided(out_result, x->ctx, x, x->coords.rank, shape, strides, offset);
+    return mag_as_strided(out_result, x->ctx, x, rank, shape, strides, offset);
 }
 
 mag_status_t mag_transpose(mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim1, int64_t dim2) {
@@ -778,9 +767,9 @@ mag_status_t mag_squeeze_dim(mag_tensor_t **out_result, mag_tensor_t *x, int64_t
     int64_t rank = x->coords.rank;
     mag_contract(ctx, ERR_INVALID_RANK, {}, rank > 0, "Cannot squeeze dim of scalar tensor");
     mag_norm_axis(&dim, rank);
-    mag_contract(ctx, ERR_INVALID_RANK, {}, 0 <= dim && dim < rank, "Dim %" PRIi64 " out_result of range for rank %" PRIi64, dim, rank);
+    mag_contract(ctx, ERR_INVALID_RANK, {}, 0 <= dim && dim < rank, "Dim %" PRIi64 " out of range for rank %" PRIi64, dim, rank);
     int64_t sz = x->coords.shape[dim];
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, sz == 1, "Cannot squeeze dim %" PRIi64 " with size %" PRIi64 " (must be 1)", dim, sz);
+    if (sz != 1) return mag_view(out_result, x, x->coords.shape, rank);
     int64_t shape[MAG_MAX_DIMS];
     int64_t nrank = 0;
     for (int64_t i=0; i < rank; ++i) {
@@ -796,8 +785,8 @@ mag_status_t mag_unsqueeze(mag_tensor_t **out_result, mag_tensor_t *x, int64_t d
     int64_t rank = x->coords.rank;
     int64_t nrank = rank+1;
     mag_contract(ctx, ERR_INVALID_RANK, {}, nrank <= MAG_MAX_DIMS, "Unsqueeze would exceed MAG_MAX_DIMS (%d)", MAG_MAX_DIMS);
-    mag_norm_axis(&dim, rank);
-    mag_contract(ctx, ERR_INVALID_RANK, {}, 0 <= dim && dim < nrank, "Unsqueeze dim %" PRIi64 " out_result of range for new rank %" PRIi64, dim, nrank);
+    mag_norm_axis(&dim, nrank);
+    mag_contract(ctx, ERR_INVALID_RANK, {}, 0 <= dim && dim < nrank, "Unsqueeze dim %" PRIi64 " out of range for new rank %" PRIi64, dim, nrank);
     int64_t shape[MAG_MAX_DIMS];
     for (int64_t i=0, j=0; i < nrank; ++i)
         shape[i] = i == dim ? 1 : x->coords.shape[j++];
@@ -863,7 +852,6 @@ mag_status_t mag_unflatten(mag_tensor_t **out_result, mag_tensor_t *x, int64_t d
 mag_status_t mag_narrow(mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t start, int64_t length) {
     *out_result = NULL;
     mag_context_t *ctx = x->ctx;
-    mag_contract(ctx, ERR_INVALID_RANK, {}, 0, "NYI: narrow is currently disabled due to a bug"); /* TODO: fix */
     int64_t rank = x->coords.rank;
     mag_contract(ctx, ERR_INVALID_RANK, {}, rank > 0, "Cannot narrow a scalar tensor");
     mag_norm_axis(&dim, rank);
@@ -877,6 +865,7 @@ mag_status_t mag_narrow(mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim,
 }
 
 mag_status_t mag_movedim(mag_tensor_t **out_result, mag_tensor_t *x, int64_t src, int64_t dst) {
+    *out_result = NULL;
     mag_context_t *ctx = x->ctx;
     int64_t rank = x->coords.rank;
     mag_contract(ctx, ERR_INVALID_RANK, {}, rank > 0, "Cannot movedim on scalar tensor");
@@ -887,13 +876,19 @@ mag_status_t mag_movedim(mag_tensor_t **out_result, mag_tensor_t *x, int64_t src
     if (src == dst)
         return mag_view(out_result, x, x->coords.shape, rank);
     int64_t perm[MAG_MAX_DIMS];
-    memcpy(perm, x->coords.shape, rank*sizeof(*perm));
+    for (int64_t i = 0; i < rank; ++i) {
+        perm[i] = i;
+    }
     int64_t tmp = perm[src];
     if (src < dst) {
-        for (int64_t i=src; i < dst; ++i) perm[i] = perm[i+1];
+        for (int64_t i = src; i < dst; ++i) {
+            perm[i] = perm[i + 1];
+        }
         perm[dst] = tmp;
     } else {
-        for (int64_t i=src; i > dst; --i) perm[i] = perm[i-1];
+        for (int64_t i = src; i > dst; --i) {
+            perm[i] = perm[i - 1];
+        }
         perm[dst] = tmp;
     }
     return mag_permute(out_result, x, perm, rank);
@@ -935,7 +930,7 @@ mag_status_t mag_split(mag_tensor_t **outs, int64_t num_splits, mag_tensor_t *x,
     for (int64_t i=0; i < num_splits; ++i) {
         int64_t remaining = sz - start;
         int64_t length = remaining < split_size ? remaining : split_size;  /* min */
-        mag_status_t stat = mag_view_slice(&outs[i], x, dim, start, length, 1);
+        mag_status_t stat = mag_view_slice(outs+i, x, dim, start, length, 1);
         if (mag_iserr(stat)) {
             for (int64_t j=0; j < i; ++j) {
                 mag_tensor_decref(outs[j]);
@@ -943,7 +938,7 @@ mag_status_t mag_split(mag_tensor_t **outs, int64_t num_splits, mag_tensor_t *x,
             }
             return stat;
         }
-        start += split_size;
+        start += length;
     }
     return MAG_STATUS_OK;
 }

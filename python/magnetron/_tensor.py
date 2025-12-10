@@ -85,11 +85,17 @@ def _ravel_nested_lists(flat: list[Any], shape: tuple[int], strides: tuple[int],
     return [_ravel_nested_lists(flat, shape, strides, offset + i * stride, dim + 1) for i in range(size)]
 
 
-def _unpack_shape(*shape: int | tuple[int, ...]) -> tuple[int, ...]:
-    if len(shape) == 1 and isinstance(shape[0], tuple):
-        shape = shape[0]
-    assert len(shape) <= _MAX_DIMS, f'Invalid number of dimensions: {len(shape)}, maximum is {_MAX_DIMS}'
-    return shape
+def _unpack_shape(*dims: int | tuple[int, ...]) -> tuple[int, ...]:
+    out: list[int] = []
+    def _flatten(obj: int | tuple[int, ...] | list[int]):
+        if isinstance(obj, (tuple, list)):
+            for y in obj:
+                _flatten(y)
+        else:
+            out.append(int(obj))
+    for d in dims:
+        _flatten(d)
+    return tuple(out)
 
 
 def _get_reduction_axes(dim: int | Sequence[int] | None) -> tuple[_FFI.CData, int]:
@@ -318,7 +324,7 @@ class Tensor:
             if idx is None:
                 if curr.rank == _MAX_DIMS:
                     raise NotImplementedError(f'Rank > {_MAX_DIMS} not supported')
-                curr = curr.view(*curr.shape[:axis], 1, *curr.shape[axis:])
+                curr = curr.view(curr.shape[:axis], 1, *curr.shape[axis:])
                 axis += 1
                 continue
             elif isinstance(idx, int):
@@ -332,7 +338,7 @@ class Tensor:
                 del new_shape[axis]
                 if not new_shape:
                     new_shape = [1]
-                curr = curr.view(*new_shape) if new_shape else curr.view()
+                curr = curr.view(new_shape) if new_shape else curr.view()
                 continue
             elif isinstance(idx, slice):
                 start, stop, step = idx.indices(curr.shape[axis])
@@ -598,7 +604,7 @@ class Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_cast(out, self._ptr, dst_type.enum_value)))
 
     def view(self, *dims: int | tuple[int, ...]) -> Tensor:
-        dims = _unpack_shape(dims)
+        dims = _unpack_shape(*dims)
         num_dims: int = len(dims)
         view_dims: _FFI.CData = _FFI.new(f'int64_t[{num_dims}]', dims)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_view(out, self._ptr, view_dims, num_dims)))
@@ -611,20 +617,22 @@ class Tensor:
         )
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_view_slice(out, self._ptr, dim, start, length, step)))
 
-    def split(self, chunk_size: int, dim: int = 0) -> tuple[Tensor, ...]:
-        assert chunk_size > 0, 'chunk_size must be greater than 0, got {chunk_size}'
-        assert -self.rank <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
-        dim: int = dim % self.rank
-        size: int = self.shape[dim]
-        n_chunks: int = (size + chunk_size - 1) // chunk_size
-        chunks: list[Tensor] = []
-        start: int = 0
-        for _ in range(n_chunks):
-            length = min(chunk_size, size - start)
-            view = self.view_slice(dim, start, length, 1)
-            chunks.append(view)
-            start += chunk_size
-        return tuple(chunks)
+    def split(self, split_size: int, dim: int = 0) -> tuple[Tensor, ...]:
+        if self.rank == 0:
+            raise RuntimeError("split() is not defined for 0-dim tensors")
+        if split_size <= 0:
+            raise ValueError(f"split_size must be > 0, got {split_size}")
+        if dim < 0:
+            dim += self.rank
+        if dim < 0 or dim >= self.rank:
+            raise IndexError(f"split(): dim {dim} out of range for rank {self.rank}")
+        size = self.shape[dim]
+        if size == 0:
+            return ()
+        n_chunks = (size + split_size - 1) // split_size  # same as C expected_chunks
+        outs = _FFI.new(f"mag_tensor_t *[{n_chunks}]")
+        _handle_errc(_C.mag_split(outs, n_chunks, self._ptr, split_size, dim))
+        return tuple(Tensor(outs[i]) for i in range(n_chunks))
 
     def gather(self, dim: int, index: Tensor) -> Tensor:
         assert 0 <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
@@ -637,16 +645,21 @@ class Tensor:
         view_dims: _FFI.CData = _FFI.new(f'int64_t[{num_dims}]', dims)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_reshape(out, self._ptr, view_dims, num_dims)))
 
-    def transpose(self, dim1: int = 0, dim2: int = 1) -> Tensor:
-        assert dim1 != dim2, f'Transposition axes must be not equal, but {dim1} == {dim2}'
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_transpose(out, self._ptr, dim1, dim2)))
+    def transpose(self, dim0: int = 0, dim1: int = 1) -> Tensor:
+        assert dim0 != dim1, f'Transposition axes must be not equal, but {dim0} == {dim1}'
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_transpose(out, self._ptr, dim0, dim1)))
 
     def one_hot(self, num_classes: int = -1) -> Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_one_hot(out, self._ptr, num_classes)))
 
     @property
     def T(self) -> Tensor:
-        return self.transpose(0, 1)
+        nd = self.rank
+        if nd < 2:
+            return self
+        if nd == 2:
+            return self.transpose(0, 1)
+        return self.permute(*range(nd - 1, -1, -1))
 
     def detach(self) -> Tensor:
         _C.mag_tensor_detach(self._ptr)
@@ -677,9 +690,9 @@ class Tensor:
     def flatten(self, start_dim: int = 0, end_dim: int = -1) -> Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_flatten(out, self._ptr, start_dim, end_dim)))
 
-    def unflatten(self, shape: tuple[int, ...]) -> Tensor:
-        shape_dims: _FFI.CData = _FFI.new(f'int64_t[{len(shape)}]', shape)
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_unflatten(out, self._ptr, shape_dims, len(shape))))
+    def unflatten(self, dim: int, sizes: list[int]) -> Tensor:
+        shape_dims: _FFI.CData = _FFI.new(f'int64_t[{len(sizes)}]', sizes)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_unflatten(out, self._ptr, dim, shape_dims, len(sizes))))
 
     def narrow(self, dim: int, start: int, length: int) -> Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_narrow(out, self._ptr, dim, start, length)))
