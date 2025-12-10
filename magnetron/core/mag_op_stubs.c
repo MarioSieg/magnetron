@@ -612,14 +612,7 @@ mag_status_t mag_view(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t 
         if (mag_iserr(stat)) return stat;
     }
 
-    mag_op_attr_registry_t layout;
-    mag_op_attr_registry_init(&layout);
-    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(rank));
-    if (dims)
-        for (int64_t i=0; i < rank; ++i)
-            mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dims[i]));
-
-    mag_dispatch(MAG_OP_VIEW, false, &layout, &x, 1, &result, 1);
+    mag_dispatch(MAG_OP_VIEW, false, NULL, &x, 1, &result, 1);
     *out_result = result;
     return MAG_STATUS_OK;
 }
