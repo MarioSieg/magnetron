@@ -42,13 +42,13 @@ static MAG_HOTPROC void mag_cpu_submit(mag_device_t *dvc, const mag_command_t *c
 
 static void mag_cpu_transfer(mag_storage_buffer_t *sto, mag_transfer_dir_t dir, size_t offs, void *inout, size_t size) {
     mag_assert2(inout && size);
-    mag_assert(!(size & sto->granularity), "(%zu) mod (%zu) != 0", size, sto->granularity);
+    if (size % sto->granularity) mag_panic("Transfer size not a multiple of storage granularity, got %zu, expected multiple of %zu", size, sto->granularity);
     uintptr_t base = sto->base;
     uintptr_t dp = base+offs;
     uintptr_t dpe = dp+size;
     mag_assert2(dpe > dp);
     mag_assert2(dpe <= base+sto->size);
-    mag_assert2(!(offs & sto->granularity));
+    if (offs & sto->granularity) mag_panic("Transfer offset not aligned to storage granularity, got %zu, expected multiple of %zu", offs, sto->granularity);
     uintptr_t hp = (uintptr_t)inout;
     uintptr_t hpe = hp+size;
     mag_assert2(hpe > hp);

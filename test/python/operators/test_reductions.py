@@ -66,3 +66,24 @@ def test_reduce_op_mean(dtype: DataType, keepdim: bool) -> None: # Mean is only 
         torch.testing.assert_close(totorch(r), t, equal_nan=True)
 
     for_all_shapes(test)
+
+@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('largest', [True, False])
+def test_reduce_op_topk(dtype: DataType, largest: bool) -> None: # Mean is only for floating point
+    def test(shape: tuple[int, ...]) -> None:
+        if len(shape) == 0: # topk not defined for 0-dim tensors
+            return
+        x = random_tensor(shape, dtype=dtype)
+        k = random.randint(1, max(1, min(shape )))
+        dim = random_dim(shape)
+        if dim is None:
+            rv, ri = x.topk(k, largest=largest)
+            tv, ti = totorch(x).topk(k, largest=largest)
+        else:
+            rv, ri = x.topk(k, dim=dim, largest=largest)
+            tv, ti = totorch(x).topk(k, dim=dim, largest=largest)
+
+        torch.testing.assert_close(totorch(rv), tv, equal_nan=True)
+        torch.testing.assert_close(totorch(ri), ti)
+
+    for_all_shapes(test)

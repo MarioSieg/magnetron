@@ -335,7 +335,11 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
             for (int64_t r=0; r < k; ++r) { \
                 int64_t best = r; \
                 for (int64_t p = r+1; p < dim_size; ++p) { \
-                    bool better = largest ? CVT(vals_buf[p]) > CVT(vals_buf[best]) : CVT(vals_buf[p]) < CVT(vals_buf[best]); \
+                    T vp = vals_buf[p]; \
+                    T vb = vals_buf[best]; \
+                    bool better; \
+                    if (largest) better = (CVT(vp) > CVT(vb)) || ((CVT(vp) == CVT(vb)) && (idx_buf[p] < idx_buf[best])); \
+                    else better = (CVT(vp) < CVT(vb)) || ((CVT(vp) == CVT(vb)) && (idx_buf[p] < idx_buf[best])); \
                     if (better) best = p; \
                 } \
                 if (best != r) { \
