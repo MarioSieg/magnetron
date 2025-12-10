@@ -32,14 +32,6 @@
 
 namespace magnetron {
     /**
-     * Enable or disable internal magnetron logging to stdout.
-     * @param enable
-     */
-    inline auto enable_logging(bool enable) noexcept -> void {
-        mag_set_log_mode(enable);
-    }
-
-    /**
      * The context owns all tensors and runtime data structures. It must kept alive as long as any tensor is used.
      */
     class context final {

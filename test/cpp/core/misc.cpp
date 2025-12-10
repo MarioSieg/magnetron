@@ -13,11 +13,6 @@
 
 using namespace magnetron;
 
-TEST(misc, enable_disable_logging) {
-    enable_logging(false);
-    enable_logging(true);
-}
-
 TEST(misc, hash_function) {
     ASSERT_EQ(mag_hash("hello", 5, 0), 15821672119091348640ull);
     ASSERT_EQ(mag_hash("hello", 5, 0), 15821672119091348640ull);

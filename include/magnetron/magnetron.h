@@ -41,7 +41,15 @@ extern "C" {
 #define MAG_VERSION mag_ver_encode(0, 1, 3)
 #define MAG_STORAGE_VERSION mag_ver_encode(0, 1, 0)
 
-extern MAG_EXPORT void mag_set_log_mode(bool enabled); /* Enable/disable logging. */
+typedef enum mag_log_level_t {
+    MAG_LOG_LEVEL_NONE,
+    MAG_LOG_LEVEL_ERROR,
+    MAG_LOG_LEVEL_WARN,
+    MAG_LOG_LEVEL_INFO
+} mag_log_level_t;
+
+extern MAG_EXPORT void mag_set_log_level(mag_log_level_t level); /* Set global log level. */
+extern MAG_EXPORT mag_log_level_t mag_log_level(void); /* Get current global log level. */
 
 /**
  * Status return codes for magnetron library functions.

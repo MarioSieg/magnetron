@@ -338,7 +338,7 @@ static bool nd_similar(uint32_t *nd, uint32_t ndhi, uint32_t* ref, size_t hilen,
     } else {
         prec -= hilen - 9;
     }
-    mag_assert(prec < 9, "bad precision %d", prec);
+    mag_assert(prec < 9, "bad precision %zu", prec);
     mag_wuint9(nd9, nd[ndhi]);
     mag_wuint9(ref9, *ref);
     return !memcmp(nd9, ref9, prec) && (nd9[prec] < '5') == (ref9[prec] < '5');

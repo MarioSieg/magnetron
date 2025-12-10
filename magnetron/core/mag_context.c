@@ -40,7 +40,7 @@ static void mag_system_host_info_dump(mag_context_t *ctx) {
         (double)ctx->machine.cpu_l3_size/1024.0/1024.0
     );
 #if defined(__x86_64__) || defined(_M_X64) /* Print detected CPU features for x86-64 platforms. */
-    if (mag_log_enabled) {
+    if (mag_log_level() >= MAG_LOG_LEVEL_INFO) {
         mag_log_info("%s CPU flags:", cpu_arch);
         for (unsigned i=0, j=0; i < MAG_AMD64_CAP__NUM; ++i) {
             if (i == MAG_AMD64_CAP_AMD || i == MAG_AMD64_CAP_INTEL) continue; /* Skip vendor caps */
@@ -52,7 +52,7 @@ static void mag_system_host_info_dump(mag_context_t *ctx) {
         putchar('\n');
     }
 #elif defined(__aarch64__) /* Print detected CPU features for ARM64 platforms. */
-    if (mag_log_enabled) {
+    if (mag_log_level() >= MAG_LOG_LEVEL_INFO) {
         printf(MAG_CC_CYAN "[magnetron] " MAG_CC_RESET "%s caps: ", cpu_arch);
         for (uint32_t i=0; i < MAG_ARM64_CAP__NUM; ++i)
             if (ctx->machine.arm64_cpu_caps & (1ull<<i))

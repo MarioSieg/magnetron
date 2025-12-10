@@ -64,8 +64,8 @@ extern "C" {
 #define restrict __restrict__
 #endif
 
-/* Compiler specific macros and utils for GCC, Clang and ICC. */
-#if defined(__GNUC__) || defined(__clang__) || defined(__INTEL_COMPILER)
+/* Compiler specific macros and utils for GCC and CLang. */
+#if defined(__GNUC__) || defined(__clang__)
 
 #define MAG_NORET __attribute__((noreturn))
 #define mag_alignas(x) __attribute__((aligned(x)))
@@ -83,6 +83,7 @@ extern "C" {
 #define mag_fls(x) ((uint32_t)(__builtin_clz(x)^31))
 #define mag_ffs64(x) ((uint32_t)__builtin_ctzll(x))
 #define mag_fls64(x) ((uint32_t)(__builtin_clzll(x)^63))
+#define mag_printf_fmt(str, idx) __attribute__((format(printf, str, idx)))
 
 /* Memory order for atomic operations. */
 typedef enum mag_memory_order_t {
@@ -197,6 +198,7 @@ static MAG_AINLINE uint32_t mag_fls64(uint64_t x) {
     _BitScanReverse64(&r, x);
     return (uint32_t)r;
 }
+#define mag_printf_fmt(str, idx)
 
 typedef enum mag_memory_order_t { /* Atomic memory order. Has no effect with MSVC for now, all operations are sequencial consistent. */
     MAG_MO_RELAXED,
@@ -456,28 +458,10 @@ static MAG_AINLINE uint64_t mag_mulhilo64(uint64_t x, uint64_t y) {
 #endif
 }
 
-extern MAG_EXPORT MAG_NORET MAG_COLDPROC void mag_panic(const char *msg, ...); /* Print error message and abort. */
-extern MAG_EXPORT bool mag_log_enabled; /* Enable/disable logging to stdout/stderr. */
+/* Logging and panic utilities. */
 
-extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
-
-/* Humanize memory size. Format and convert a memory size to the appropriate unit. For example. 1024 => 1 KiB */
-extern void mag_humanize_memory_size(size_t n, double *out, const char **unit);
-extern uintptr_t mag_thread_id(void); /* Get current native thread ID. */
-extern FILE *mag_fopen(const char *file, const char *mode);
-extern uint64_t mag_hpc_clock_ns(void); /* Get high precision clock in nanoseconds. */
-extern uint64_t mag_hpc_clock_elapsed_ns(uint64_t start);
-extern double mag_hpc_clock_elapsed_ms(uint64_t start);
-extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
-
-#define mag_swap(T, a, b) do { T tmp = (a); (a) = (b); (b) = tmp; } while (0)
-#define mag_xmax(x, y) (((x) > (y)) ? (x) : (y))
-#define mag_xmin(x, y) (((x) < (y)) ? (x) : (y))
-#define mag_rd_down(x,m) ((x)/(m) * (m))
-#define mag_clamp(v, lo, hi) ((v) < (lo) ? (lo) : (v) > (hi) ? (hi) : (v))
-
-#define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
-#define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
+extern MAG_EXPORT MAG_NORET MAG_COLDPROC void mag_panic(const char *fmt, ...) mag_printf_fmt(1, 2); /* Print error message and abort. */
+extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) mag_printf_fmt(2, 3); /* Log message to stdout if below log level. */
 
 /* Logging and debugging macros. */
 #define MAG_CC_RED "\x1b[31m"
@@ -494,10 +478,9 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 #else
 #   define MAG_SRC_NAME __FILE__ ":" MAG_STRINGIZE(__LINE__)
 #endif
-#define mag_log_info(msg, ...) do { if (mag_unlikely(mag_log_enabled)) fprintf(stdout, MAG_CC_CYAN "[magnetron] " MAG_CC_RESET MAG_SRC_NAME " " msg "\n", ## __VA_ARGS__); } while (0)
-#define mag_log_info_force(msg, ...) do { fprintf(stdout,   MAG_CC_CYAN "[magnetron] " MAG_CC_RESET MAG_SRC_NAME " " msg "\n", ## __VA_ARGS__); } while (0)
-#define mag_log_warn(msg, ...) do { fprintf(stdout,  MAG_CC_CYAN "[magnetron] " MAG_CC_RESET MAG_SRC_NAME " " MAG_CC_YELLOW msg MAG_CC_RESET "\n", ## __VA_ARGS__); fflush(stdout); } while (0)
-#define mag_log_error(msg, ...) do { fprintf(stdout,  MAG_CC_CYAN "[magnetron] " MAG_CC_RESET MAG_SRC_NAME " " MAG_CC_RED msg MAG_CC_RESET "\n", ## __VA_ARGS__); fflush(stdout); } while (0)
+#define mag_log_info(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_INFO, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
+#define mag_log_warn(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_WARN, MAG_SRC_NAME " " msg, ## __VA_ARGS__);  } while (0)
+#define mag_log_error(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_ERROR, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
 
 /* Panic and print 'msg' if 'expr' is false. */
 #define mag_assert(expr, msg, ...) \
@@ -513,9 +496,9 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 #define mag_bnd_chk(ptr, base, N) \
     mag_assert((char*)(ptr) >= (char*)(base) && (char*)(ptr) < (char*)(base)+(N), \
         "\nBound check failed: %p not in [%p, %p), base+0x%x, end+0x%x", \
-        (void*)(ptr), \
-        (void*)(base), \
-        (void*)((char*)(base)+(N)), \
+        (void *)(ptr), \
+        (void *)(base), \
+        (void *)((char *)(base)+(N)), \
         abs((int)((intptr_t)(ptr)-(intptr_t)(base))), /* Allow +-2G delta */ \
         abs((int)(((intptr_t)(base)+(N))-(intptr_t)(ptr))) \
     )
@@ -553,6 +536,26 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
         cleanup \
         return MAG_STATUS_##status; \
     }
+
+extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
+
+/* Humanize memory size. Format and convert a memory size to the appropriate unit. For example. 1024 => 1 KiB */
+extern void mag_humanize_memory_size(size_t n, double *out, const char **unit);
+extern uintptr_t mag_thread_id(void); /* Get current native thread ID. */
+extern FILE *mag_fopen(const char *file, const char *mode);
+extern uint64_t mag_hpc_clock_ns(void); /* Get high precision clock in nanoseconds. */
+extern uint64_t mag_hpc_clock_elapsed_ns(uint64_t start);
+extern double mag_hpc_clock_elapsed_ms(uint64_t start);
+extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
+
+#define mag_swap(T, a, b) do { T tmp = (a); (a) = (b); (b) = tmp; } while (0)
+#define mag_xmax(x, y) (((x) > (y)) ? (x) : (y))
+#define mag_xmin(x, y) (((x) < (y)) ? (x) : (y))
+#define mag_rd_down(x,m) ((x)/(m) * (m))
+#define mag_clamp(v, lo, hi) ((v) < (lo) ? (lo) : (v) > (hi) ? (hi) : (v))
+
+#define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
+#define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
 
 /* Increment pointer or size with correct type alignment. */
 static inline void *mag_pincr(void **p, size_t sz, size_t align) {
