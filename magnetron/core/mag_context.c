@@ -40,7 +40,7 @@ static void mag_system_host_info_dump(mag_context_t *ctx) {
         (double)ctx->machine.cpu_l3_size/1024.0/1024.0
     );
 #if defined(__x86_64__) || defined(_M_X64) /* Print detected CPU features for x86-64 platforms. */
-    if (mag_log_enabled) {
+    if (mag_log_level() >= MAG_LOG_LEVEL_INFO) {
         mag_log_info("%s CPU flags:", cpu_arch);
         for (unsigned i=0, j=0; i < MAG_AMD64_CAP__NUM; ++i) {
             if (i == MAG_AMD64_CAP_AMD || i == MAG_AMD64_CAP_INTEL) continue; /* Skip vendor caps */
@@ -52,7 +52,7 @@ static void mag_system_host_info_dump(mag_context_t *ctx) {
         putchar('\n');
     }
 #elif defined(__aarch64__) /* Print detected CPU features for ARM64 platforms. */
-    if (mag_log_enabled) {
+    if (mag_log_level() >= MAG_LOG_LEVEL_INFO) {
         printf(MAG_CC_CYAN "[magnetron] " MAG_CC_RESET "%s caps: ", cpu_arch);
         for (uint32_t i=0; i < MAG_ARM64_CAP__NUM; ++i)
             if (ctx->machine.arm64_cpu_caps & (1ull<<i))
@@ -183,10 +183,11 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     mag_backend_registry_free(ctx->backend_registry);
     size_t num_created_tensors = ctx->num_created_tensors;
     size_t storage_bytes = ctx->storage_bytes_allocated;
+    size_t ops_dispatched = ctx->ops_dispatched;
     memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
     (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
     ctx = NULL;
-    mag_log_info("magnetron context destroyed, %zu K tensors total, %.02f GiB storage allocation", num_created_tensors/1000, (double)storage_bytes/(double)(1<<30));
+    mag_log_info("magnetron context destroyed, %zuK operators executed, %zuK tensors total, %.02fGiB storage allocation", ops_dispatched/1000, num_created_tensors/1000, (double)storage_bytes/(double)(1<<30));
 }
 
 const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx) {
@@ -269,18 +270,6 @@ bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx) {
 
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
     (*ctx->device->manual_seed)(ctx->device, seed);
-}
-
-mag_scalar_t mag_scalar_float(double value) {
-    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.f64 = value};
-}
-
-mag_scalar_t mag_scalar_int(int64_t value) {
-    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_I64, .value.i64 = value};
-}
-
-mag_scalar_t mag_scalar_uint(uint64_t value) {
-    return (mag_scalar_t){.type = MAG_SCALAR_TYPE_U64, .value.u64 = value};
 }
 
 const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {

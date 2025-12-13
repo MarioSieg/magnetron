@@ -12,7 +12,7 @@ from collections.abc import Iterator, Callable, MutableMapping
 from collections import OrderedDict
 from collections.abc import Mapping
 
-from magnetron import Tensor
+from magnetron import Tensor, dtype
 
 
 class Parameter:
@@ -258,6 +258,25 @@ class Module:
         for _, t in self.named_buffers():
             yield t
 
+    def cast(self, dt: DataType) -> Module:
+        for p in self.parameters():
+            tensor = p.x
+            requires_grad = p.x.requires_grad
+            casted = tensor.cast(dt)
+            casted.requires_grad = requires_grad
+            p.x = casted
+        seen: set[int] = set()
+        for m in self.modules():
+            for name in getattr(m, '_buffer_names', set()):
+                buf = getattr(m, name)
+                if not isinstance(buf, Tensor):
+                    continue
+                bid = id(buf)
+                if bid in seen:
+                    continue
+                seen.add(bid)
+                setattr(m, name, buf.cast(dt))
+        return self
 
 class ModuleList(Module, list):
     """A list of modules that can be used as a single module."""

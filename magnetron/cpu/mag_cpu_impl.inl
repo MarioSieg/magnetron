@@ -14,6 +14,7 @@
 #include <core/mag_tensor.h>
 #include <core/mag_cpuid.h>
 #include <core/mag_alloc.h>
+#include <core/mag_float16.h>
 #include <core/mag_coords.h>
 #include <core/mag_coords_iter.h>
 
@@ -39,6 +40,39 @@
 #define mag_cmd_in(i) (payload->cmd->in[(i)])
 #define mag_cmd_out(i) (payload->cmd->out[(i)])
 #define mag_cmd_attr(i) (payload->cmd->attrs[(i)])
+
+/* Remainder functions that adjust for sign, as in Python and MATLAB. C's % operator does not do this 😿 */
+static MAG_AINLINE float mag_remf(float x, float y) {
+    float r = fmodf(x, y);
+    if (r != 0.0f && (r < 0.0f) != (y < 0.0f)) r += y;
+    return r;
+}
+
+static MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
+    int64_t r = x % y;
+    if (r != 0 && (r < 0) != (y < 0)) r += y;
+    return r;
+}
+
+#define mag_remu(x, y) ((x) % (y)) /* Unsigned remainder is the same as in C */
+
+/* Arithmetic / logical shifts with defined behavior for out-of-bounds shift amounts */
+
+#define mag_sal(x, y, bits) (mag_unlikely((y) < 0 || (y) >= (bits)) ? 0 : (x)<<(y))
+#define mag_sar(x, y, bits) (mag_unlikely((y) < 0 || (y) >= (bits)) ? ((x) < 0 ? -1 : 0) : (x)>>(y))
+#define mag_shl(x, y, bits) (mag_unlikely((y) < 0 || (y) >= (bits)) ? 0 : (x)<<(y))
+#define mag_shr(x, y, bits) (mag_unlikely((y) < 0 || (y) >= (bits)) ? 0 : (x)>>(y))
+
+/* Alias names for kernel macros based on signess suffix (i or u) */
+
+#define mag_shlu(x, y, bits) mag_shl(x, y, bits)
+#define mag_shru(x, y, bits) mag_shr(x, y, bits)
+#define mag_shli(x, y, bits) mag_sal(x, y, bits)
+#define mag_shri(x, y, bits) mag_sar(x, y, bits)
+
+#define mag_floordivi(x, y) (((x) - mag_remi((x), (y)))/(y))
+#define mag_floordivu(x, y) ((x)/(y))
+#define mag_floordivf(x, y) (floorf((x)/(y)))
 
 #define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 
@@ -351,6 +385,18 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_UINT64] = &mag_any_uint64,
         [MAG_DTYPE_INT64] = &mag_any_int64,
     },
+    [MAG_OP_TOPK] = {
+        [MAG_DTYPE_FLOAT32] = &mag_topk_float32,
+        [MAG_DTYPE_FLOAT16] = &mag_topk_float16,
+        [MAG_DTYPE_UINT8] = &mag_topk_uint8,
+        [MAG_DTYPE_INT8] = &mag_topk_int8,
+        [MAG_DTYPE_UINT16] = &mag_topk_uint16,
+        [MAG_DTYPE_INT16] = &mag_topk_int16,
+        [MAG_DTYPE_UINT32] = &mag_topk_uint32,
+        [MAG_DTYPE_INT32] = &mag_topk_int32,
+        [MAG_DTYPE_UINT64] = &mag_topk_uint64,
+        [MAG_DTYPE_INT64] = &mag_topk_int64,
+    },
     [MAG_OP_ABS] = {
         [MAG_DTYPE_FLOAT32] = &mag_abs_float32,
         [MAG_DTYPE_FLOAT16] = &mag_abs_float16,
@@ -626,6 +672,18 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_UINT64] = &mag_div_uint64,
         [MAG_DTYPE_INT64] = &mag_div_int64,
     },
+    [MAG_OP_FLOORDIV] = {
+        [MAG_DTYPE_FLOAT32] = &mag_floordiv_float32,
+        [MAG_DTYPE_FLOAT16] = &mag_floordiv_float16,
+        [MAG_DTYPE_UINT8] = &mag_floordiv_uint8,
+        [MAG_DTYPE_INT8] = &mag_floordiv_int8,
+        [MAG_DTYPE_UINT16] = &mag_floordiv_uint16,
+        [MAG_DTYPE_INT16] = &mag_floordiv_int16,
+        [MAG_DTYPE_UINT32] = &mag_floordiv_uint32,
+        [MAG_DTYPE_INT32] = &mag_floordiv_int32,
+        [MAG_DTYPE_UINT64] = &mag_floordiv_uint64,
+        [MAG_DTYPE_INT64] = &mag_floordiv_int64,
+    },
     [MAG_OP_MOD] = {
         [MAG_DTYPE_FLOAT32] = &mag_mod_float32,
         [MAG_DTYPE_FLOAT16] = &mag_mod_float16,
@@ -799,34 +857,6 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     },
 };
 
-static void (*const mag_lut_cast_kernels[MAG_DTYPE__NUM][MAG_DTYPE__NUM])(int64_t, void *, const void *) = {
-    [MAG_DTYPE_FLOAT32] = {
-        [MAG_DTYPE_FLOAT16] = &mag_vcast_float_to_mag_float16_t,
-        [MAG_DTYPE_INT32] = &mag_vcast_float_to_int32_t,
-    },
-    [MAG_DTYPE_FLOAT16] = {
-        [MAG_DTYPE_FLOAT32] = &mag_vcast_mag_float16_t_to_float,
-        [MAG_DTYPE_INT32] = &mag_vcast_mag_float16_t_to_int32_t,
-    },
-    [MAG_DTYPE_INT32] = {
-        [MAG_DTYPE_FLOAT32] = &mag_vcast_int32_t_to_float,
-        [MAG_DTYPE_FLOAT16] = &mag_vcast_int32_t_to_mag_float16_t
-    },
-};
-
-static void MAG_HOTPROC mag_vector_cast_stub(size_t nb, const void *src, mag_dtype_t src_t, void *dst, mag_dtype_t dst_t) {
-    mag_assert2(dst_t != src_t); /* src and dst types must differ */
-    size_t nbs = mag_type_trait(src_t)->size;
-    size_t nbd = mag_type_trait(dst_t)->size;
-    mag_assert2(!((uintptr_t)src&(nbs-1)));     /* src must be aligned */
-    mag_assert2(!((uintptr_t)dst&(nbd-1)));     /* dst must be aligned */
-    mag_assert2(!(nb&(nbs-1)));                 /* size must be aligned */
-    int64_t numel = (int64_t)(nb/nbs);          /* byte -> elems */
-    void (*kern)(int64_t, void *, const void *) = mag_lut_cast_kernels[src_t][dst_t];
-    mag_assert(kern, "invalid cast dtypes %s -> %s", mag_type_trait(src_t)->name, mag_type_trait(dst_t)->name);
-    (*kern)(numel, dst, src);
-}
-
 static size_t mag_vreg_width(void) {
     return MAG_VREG_WIDTH;
 }
@@ -847,7 +877,6 @@ void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t *kernels) {
             kernels->operators[i][j] = mag_lut_eval_kernels[i][j];
         }
     }
-    kernels->vector_cast = &mag_vector_cast_stub;
     kernels->vreg_width = &mag_vreg_width;
 }
 

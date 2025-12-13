@@ -24,17 +24,9 @@
 #include <time.h>
 #endif
 
-#ifdef MAG_DEBUG
-#define MAG_LOG_DEFAULT_ENABLE 1
-#else
-#define MAG_LOG_DEFAULT_ENABLE 0
-#endif
-bool mag_log_enabled = MAG_LOG_DEFAULT_ENABLE; /* Read from multiple threads, allowed to be written from main thread once at start. */
-#undef MAG_LOG_DEFAULT_ENABLE
-
-void mag_set_log_mode(bool enabled) {
-  mag_log_enabled = enabled;
-}
+static mag_log_level_t mag_log_level_var = MAG_LOG_LEVEL_ERROR;
+void mag_set_log_level(mag_log_level_t level) { mag_log_level_var = level; }
+mag_log_level_t mag_log_level(void) { return mag_log_level_var; }
 
 const char *mag_status_get_name(mag_status_t op){
     static const char *names[] = {
@@ -89,23 +81,41 @@ static void MAG_COLDPROC mag_panic_dump(FILE *f, bool cc, const char *msg, va_li
   fflush(f);
 }
 
-MAG_NORET MAG_COLDPROC void mag_panic(const char *msg, ...) { /* Panic and exit the program. If available print backtrace. */
+MAG_NORET MAG_COLDPROC void mag_panic(const char *fmt, ...) { /* Panic and exit the program. If available print backtrace. */
   va_list args;
-  va_start(args, msg);
+  va_start(args, fmt);
 #if 0
   FILE *f = fopen("magnetron_panic.log", "w");
   if (f) {
-    mag_panic_dump(f, false, msg, args);
+    mag_panic_dump(f, false, fmt, args);
     fclose(f), f = NULL;
   }
 #endif
   fflush(stdout);
-  mag_panic_dump(stderr, true, msg, args);
+  mag_panic_dump(stderr, true, fmt, args);
   va_end(args);
 #ifdef NDEBUG
   mag_dump_backtrace();
 #endif
   abort();
+}
+
+void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) {
+    if (level > mag_log_level_var) return;
+    FILE *f = stdout;
+    const char *color = NULL;
+    switch (level) {
+        case MAG_LOG_LEVEL_WARN: color = MAG_CC_YELLOW; break;
+        case MAG_LOG_LEVEL_ERROR: color = MAG_CC_RED; break;
+        default:;
+    }
+    fprintf(f, MAG_CC_CYAN "[magnetron] " MAG_CC_RESET "%s", color ? color : "");
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(f, fmt, args);
+    va_end(args);
+    fprintf(f, "%s\n", color ? MAG_CC_RESET : "");
+    if (level == MAG_LOG_LEVEL_ERROR) fflush(f);
 }
 
 void MAG_COLDPROC mag_print_separator(FILE *f) {

@@ -44,6 +44,7 @@ struct mag_context_t {
     size_t num_alive_storages;                  /* Total storage buffers allocated. */
     size_t num_created_tensors;                 /* Total tensor instances created. */
     size_t storage_bytes_allocated;             /* Total bytes allocated for storage buffers. */
+    size_t ops_dispatched;                      /* Total number of dispatched operations. */
 #ifdef MAG_DEBUG
     mag_tensor_t *alive_head;                   /* List of alive tensors used for leak detection. */
 #endif

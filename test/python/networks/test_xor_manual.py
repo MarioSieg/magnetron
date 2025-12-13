@@ -1,10 +1,10 @@
 # (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
 
 import numpy as np
-from magnetron import Tensor, Context, active_context
+from magnetron import Tensor, context
 
 np.random.seed(932002)
-active_context().manual_seed(932002)
+context.manual_seed(932002)
 
 LR: float = 0.1
 EPOCHS: int = 10000
@@ -80,7 +80,7 @@ def xor_nn_mag() -> list[Tensor]:
         a1 = (x @ w1 + b1).sigmoid()
         a2 = (a1 @ w2 + b2).sigmoid()
 
-        loss = (y - a2).sqr_().mean()[0]
+        loss = (y - a2).sqr_().mean().item()
 
         if epoch % 1000 == 0:
             print(f'Epoch: {epoch}, loss: {loss}')
@@ -105,7 +105,7 @@ def xor_nn_mag() -> list[Tensor]:
         a2 = z2.sigmoid()
         return a2
 
-    return [predict(Tensor.of([xr]))[0].item() for xr in INPUT]
+    return [predict(Tensor.of(xr)).item() for xr in INPUT]
 
 
 def test_xor_nn() -> None:

@@ -252,3 +252,124 @@ mag_gen_stub_tri_mask(uint64_t, uint64, u, 0, >=)
 mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
 
 #undef mag_gen_stub_tri_mask
+
+#define mag_gen_stub_topk(T, TF, CVT) \
+    static MAG_HOTPROC void mag_topk_##TF(const mag_kernel_payload_t *payload) { \
+        const mag_tensor_t *x = mag_cmd_in(0); \
+        mag_tensor_t *v = mag_cmd_out(0); \
+        mag_tensor_t *idx = mag_cmd_out(1); \
+        const int64_t k = mag_op_attr_unwrap_int64(mag_cmd_attr(0)); \
+        int64_t dim = mag_op_attr_unwrap_int64(mag_cmd_attr(1)); \
+        bool largest = mag_op_attr_unwrap_bool(mag_cmd_attr(2)); \
+        bool sorted = mag_op_attr_unwrap_bool(mag_cmd_attr(3)); \
+        (void)sorted; /* TODO: support unsorted */ \
+        int64_t R = x->coords.rank; \
+        mag_assert2(R > 0); \
+        mag_assert2(dim >= 0 && dim < R); \
+        const int64_t *shape_x = x->coords.shape; \
+        const int64_t *shape_v = v->coords.shape; \
+        const int64_t *shape_i = idx->coords.shape; \
+        const int64_t dim_size = shape_x[dim]; \
+        mag_assert2(k > 0 && k <= dim_size); \
+        for (int64_t d=0; d < R; ++d) { \
+            int64_t expected = d == dim ? k : shape_x[d]; \
+            mag_assert2(shape_v[d] == expected); \
+            mag_assert2(shape_i[d] == expected); \
+        } \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
+        T *bv = (T *)mag_tensor_data_ptr_mut(v); \
+        int64_t *bi = (int64_t *)mag_tensor_data_ptr_mut(idx); \
+        int64_t tc = payload->thread_num; \
+        int64_t ti = payload->thread_idx; \
+        int64_t outer_count = x->numel / dim_size; \
+        if (outer_count <= 0) return; \
+        int64_t stride_x_dim = x->coords.strides[dim]; \
+        int64_t stride_v_dim = v->coords.strides[dim]; \
+        int64_t outer_rank = R - 1; \
+        int64_t shape_outer[MAG_MAX_DIMS]; \
+        int64_t mult_outer[MAG_MAX_DIMS]; \
+        int64_t outer_to_full[MAG_MAX_DIMS]; \
+        { \
+            int64_t t=0; \
+            for (int64_t d=0; d < R; ++d) { \
+                if (d == dim) continue; \
+                shape_outer[t] = shape_x[d]; \
+                outer_to_full[t] = d; \
+                ++t; \
+            } \
+            for (int64_t t2=0; t2 < outer_rank; ++t2) { \
+                int64_t m=1; \
+                for (int64_t k2=t2+1; k2 < outer_rank; ++k2) \
+                    m *= shape_outer[k2]; \
+                mult_outer[t2] = m; \
+            } \
+        } \
+        int64_t chunk = (outer_count + tc - 1)/tc; \
+        int64_t oa = ti*chunk; \
+        int64_t ob = mag_xmin(oa + chunk, outer_count); \
+        for (int64_t row=oa; row < ob; ++row) { \
+            int64_t base_idx[MAG_MAX_DIMS]; \
+            for (int64_t d=0; d < R; ++d) base_idx[d] = 0; \
+            int64_t rtmp = row; \
+            for (int64_t t=0; t < outer_rank; ++t) { \
+                int64_t q = mult_outer[t] == 0 ? 0 : rtmp / mult_outer[t]; \
+                if (mult_outer[t] != 0) rtmp = rtmp % mult_outer[t]; \
+                int64_t fd = outer_to_full[t]; \
+                base_idx[fd] = q; \
+            } \
+            base_idx[dim] = 0; \
+            int64_t off_x0=0; \
+            int64_t off_v0=0; \
+            for (int64_t d=0; d < R; ++d) { \
+                off_x0 += base_idx[d] * x->coords.strides[d]; \
+                off_v0 += base_idx[d] * v->coords.strides[d]; \
+            } \
+            T vals_buf[dim_size]; \
+            int64_t idx_buf[dim_size]; \
+            for (int64_t p = 0; p < dim_size; ++p) { \
+                const int64_t off_x = off_x0 + p * stride_x_dim; \
+                mag_bnd_chk(bx + off_x, bx, mag_tensor_numbytes(x)); \
+                vals_buf[p] = bx[off_x]; \
+                idx_buf[p] = p; \
+            } \
+            for (int64_t r=0; r < k; ++r) { \
+                int64_t best = r; \
+                for (int64_t p = r+1; p < dim_size; ++p) { \
+                    T vp = vals_buf[p]; \
+                    T vb = vals_buf[best]; \
+                    bool better; \
+                    if (largest) better = (CVT(vp) > CVT(vb)) || ((CVT(vp) == CVT(vb)) && (idx_buf[p] < idx_buf[best])); \
+                    else better = (CVT(vp) < CVT(vb)) || ((CVT(vp) == CVT(vb)) && (idx_buf[p] < idx_buf[best])); \
+                    if (better) best = p; \
+                } \
+                if (best != r) { \
+                    T tv = vals_buf[r]; \
+                    vals_buf[r] = vals_buf[best]; \
+                    vals_buf[best] = tv; \
+                    int64_t ti2 = idx_buf[r]; \
+                    idx_buf[r] = idx_buf[best]; \
+                    idx_buf[best] = ti2; \
+                } \
+            } \
+            for (int64_t r=0; r < k; ++r) { \
+                const int64_t off_v = off_v0 + r*stride_v_dim; \
+                mag_bnd_chk(bv + off_v, bv, mag_tensor_numbytes(v)); \
+                mag_bnd_chk(bi + off_v, bi, mag_tensor_numbytes(idx)); \
+                bv[off_v] = vals_buf[r]; \
+                bi[off_v] = idx_buf[r]; \
+            } \
+        } \
+    }
+
+mag_gen_stub_topk(float, float32, mag_cvt_nop)
+mag_gen_stub_topk(mag_float16_t, float16, mag_float16_to_float32)
+mag_gen_stub_topk(uint8_t, uint8, mag_cvt_nop)
+mag_gen_stub_topk(int8_t, int8, mag_cvt_nop)
+mag_gen_stub_topk(uint16_t, uint16, mag_cvt_nop)
+mag_gen_stub_topk(int16_t, int16, mag_cvt_nop)
+mag_gen_stub_topk(uint32_t, uint32, mag_cvt_nop)
+mag_gen_stub_topk(int32_t, int32, mag_cvt_nop)
+mag_gen_stub_topk(uint64_t, uint64, mag_cvt_nop)
+mag_gen_stub_topk(int64_t, int64, mag_cvt_nop)
+
+#undef mag_gen_stub_topk

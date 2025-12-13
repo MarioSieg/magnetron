@@ -15,15 +15,21 @@
         const mag_tensor_t *x = mag_cmd_in(0); \
         T *br = (T *)mag_tensor_data_ptr_mut(r); \
         const T *bx = (const T *)mag_tensor_data_ptr(x); \
+        int64_t total = r->numel; \
+        int64_t tc = payload->thread_num; \
+        int64_t ti = payload->thread_idx; \
+        int64_t chunk = (total+tc-1)/tc; \
+        int64_t ra = ti*chunk; \
+        int64_t rb = mag_xmin(ra+chunk, total); \
+        if (mag_unlikely(rb <= ra)) return; \
         if (mag_full_cont2(r, x)) { \
-            memcpy(br, bx, mag_tensor_numbytes(r)); \
+            memcpy(br+ra, bx+ra, (rb-ra)*sizeof(T)); \
             return; \
         } \
         mag_coords_iter_t cr, cx; \
         mag_coords_iter_init(&cr, &r->coords); \
         mag_coords_iter_init(&cx, &x->coords); \
-        int64_t numel = r->numel; \
-        for (int64_t i=0; i < numel; ++i) { \
+        for (int64_t i=ra; i < rb; ++i) { \
             int64_t ri, xi; \
             mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi); \
             mag_bnd_chk(bx+xi, bx, mag_tensor_numbytes(x)); \
@@ -225,19 +231,27 @@ mag_gen_stub_unary(int64_t, int64, not)
 static void MAG_HOTPROC mag_softmax_float32(const mag_kernel_payload_t *payload) {
     mag_tensor_t *r = mag_cmd_out(0);
     const mag_tensor_t *x = mag_cmd_in(0);
+    mag_assert(mag_tensor_is_contiguous(x), "Softmax input tensor must be contiguous");
     float *br = (float *)mag_tensor_data_ptr_mut(r);
     const float *bx = (const float *)mag_tensor_data_ptr(x);
-    int64_t last_dim = r->coords.shape[r->coords.rank-1];
-    int64_t num_rows = r->numel / last_dim;
+    int64_t rank  = r->coords.rank;
+    int64_t numel = r->numel;
+    if (mag_unlikely(!numel)) return;
+    if (rank == 0) {
+        if (payload->thread_idx == 0) *br = 1.0f;
+        return;
+    }
+    int64_t last_dim = r->coords.shape[rank-1];
+    int64_t rows = r->numel / last_dim;
     int64_t tc = payload->thread_num;
     int64_t ti = payload->thread_idx;
-    int64_t rows_per_thread = (num_rows + tc - 1)/tc;
-    int64_t start_row = ti*rows_per_thread;
-    int64_t end_row = (start_row + rows_per_thread) < num_rows ? (start_row + rows_per_thread) : num_rows;
-    for (int64_t row = start_row; row < end_row; ++row) {
-        const float *row_in = bx + row*last_dim;
+    int64_t rpt = (rows + tc - 1)/tc;
+    int64_t ra = ti*rpt;
+    int64_t rb = mag_xmin(ra + rpt, rows);
+    for (int64_t ri=ra; ri < rb; ++ri) {
+        const float *row_in = bx + ri*last_dim;
         mag_bnd_chk(row_in, bx, mag_tensor_numbytes(x));
-        float *row_out = br + row*last_dim;
+        float *row_out = br + ri*last_dim;
         float max_val = row_in[0]; /* Max val is computed for numerical stability */
         for (int64_t i=1; i < last_dim; ++i) {
             if (row_in[i] > max_val) {
@@ -245,15 +259,19 @@ static void MAG_HOTPROC mag_softmax_float32(const mag_kernel_payload_t *payload)
                 max_val = row_in[i];
             }
         }
-        float sum = 0.0f;
+        double sum = 0.0f;
         for (int64_t i=0; i < last_dim; ++i) {
             mag_bnd_chk(row_in+i, bx, mag_tensor_numbytes(x));
             mag_bnd_chk(row_out+i, br, mag_tensor_numbytes(r));
             row_out[i] = expf(row_in[i] - max_val); /* -max for numerical stability */
             sum += row_out[i];
         }
-        for (int64_t i=0; i < last_dim; ++i) {
-            row_out[i] /= sum;
+        if (!isfinite(sum) || sum <= 0.0) {
+            float inv = 1.0f / (float)last_dim;
+            for (int64_t i=0; i < last_dim; ++i) row_out[i] = inv;
+        } else {
+            float inv = (float)(1.0 / sum);
+            for (int64_t i=0; i < last_dim; ++i) row_out[i] *= inv;
         }
     }
 }
@@ -261,38 +279,48 @@ static void MAG_HOTPROC mag_softmax_float32(const mag_kernel_payload_t *payload)
 static void MAG_HOTPROC mag_softmax_float16(const mag_kernel_payload_t *payload) {
     mag_tensor_t *r = mag_cmd_out(0);
     const mag_tensor_t *x = mag_cmd_in(0);
+    mag_assert(mag_tensor_is_contiguous(x), "Softmax input tensor must be contiguous");
     mag_float16_t *br = (mag_float16_t *)mag_tensor_data_ptr_mut(r);
     const mag_float16_t *bx = (const mag_float16_t *)mag_tensor_data_ptr(x);
+    int64_t rank  = r->coords.rank;
+    int64_t numel = r->numel;
+    if (mag_unlikely(!numel)) return;
+    if (rank == 0) {
+        if (payload->thread_idx == 0) *br = MAG_FLOAT16_ONE;
+        return;
+    }
     int64_t last_dim = r->coords.shape[r->coords.rank-1];
-    int64_t num_rows = r->numel / last_dim;
+    int64_t rows = r->numel / last_dim;
     int64_t tc = payload->thread_num;
     int64_t ti = payload->thread_idx;
-    int64_t rows_per_thread = (num_rows + tc - 1)/tc;
-    int64_t start_row = ti*rows_per_thread;
-    int64_t end_row = (start_row + rows_per_thread) < num_rows ? (start_row + rows_per_thread) : num_rows;
-    for (int64_t row = start_row; row < end_row; ++row) {
-        const mag_float16_t *row_in = bx + row*last_dim;
+    int64_t rpt = (rows + tc - 1)/tc;
+    int64_t ra = ti*rpt;
+    int64_t rb = mag_xmin(ra + rpt, rows);
+    for (int64_t ri=ra; ri < rb; ++ri) {
+        const mag_float16_t *row_in = bx + ri*last_dim;
         mag_bnd_chk(row_in, bx, mag_tensor_numbytes(x));
-        mag_float16_t *row_out = br + row*last_dim;
+        mag_float16_t *row_out = br + ri*last_dim;
         float max_val = mag_float16_to_float32(row_in[0]); /* Max val is computed for numerical stability */
         for (int64_t i=1; i < last_dim; ++i) {
-            float fp32_row = mag_float16_to_float32(row_in[i]);
-            if (fp32_row > max_val) {
+            if (mag_float16_to_float32(row_in[i]) > max_val) {
                 mag_bnd_chk(row_in+i, bx, mag_tensor_numbytes(x));
-                max_val = fp32_row;
+                max_val = mag_float16_to_float32(row_in[i]);
             }
         }
-        float sum = 0.0f;
+        double sum = 0.0f;
         for (int64_t i=0; i < last_dim; ++i) {
             mag_bnd_chk(row_in+i, bx, mag_tensor_numbytes(x));
             mag_bnd_chk(row_out+i, br, mag_tensor_numbytes(r));
-            float fp32_row = mag_float16_to_float32(row_in[i]);
-            float exp = expf(fp32_row - max_val);
-            row_out[i] = mag_float32_to_float16(exp); /* -max for numerical stability */
-            sum += exp;
+            float ro = expf(mag_float16_to_float32(row_in[i]) - max_val);
+            row_out[i] = mag_float32_to_float16(ro); /* -max for numerical stability */
+            sum += ro;
         }
-        for (int64_t i=0; i < last_dim; ++i) {
-            row_out[i] = mag_float32_to_float16(mag_float16_to_float32(row_out[i]) / sum);
+        if (!isfinite(sum) || sum <= 0.0) {
+            mag_float16_t inv = mag_float32_to_float16(1.0f / (float)last_dim);
+            for (int64_t i=0; i < last_dim; ++i) row_out[i] = inv;
+        } else {
+            float inv = (float)(1.0 / sum);
+            for (int64_t i=0; i < last_dim; ++i) row_out[i] = mag_float32_to_float16(mag_float16_to_float32(row_out[i]) * inv);
         }
     }
 }

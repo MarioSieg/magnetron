@@ -16,15 +16,13 @@ FLOATING_POINT_DTYPES: set[DataType] = set()  # Includes all floating-point type
 INTEGRAL_DTYPES: set[DataType] = set()  # Includes all integral types (integers + boolean).
 INTEGER_DTYPES: set[DataType] = set()  # Include all integer types (integers - boolean).
 NUMERIC_DTYPES: set[DataType] = set()  # Include all numeric dtypes (floating point + integers - boolean)
-
+ALL_DTYPES: set[DataType] = set()
 
 @dataclass(frozen=True)
 class DataType:
     enum_value: int
     size: int
     name: str
-    native_type: str | None
-    fill_fn: _FFI.CData
 
     @property
     def is_floating_point(self) -> bool:
@@ -39,6 +37,14 @@ class DataType:
         return self in INTEGER_DTYPES
 
     @property
+    def is_signed_integer(self) -> bool:
+        return self in SIGNED_INTEGER_DTYPES
+
+    @property
+    def is_unsigned_integer(self) -> bool:
+        return self in UNSIGNED_INTEGER_DTYPES
+
+    @property
     def is_numeric(self) -> bool:
         return self in NUMERIC_DTYPES
 
@@ -49,17 +55,17 @@ class DataType:
         return self.name
 
 
-float32: DataType = DataType(_C.MAG_DTYPE_FLOAT32, 4, 'float32', 'float', _C.mag_copy_float_)
-float16: DataType = DataType(_C.MAG_DTYPE_FLOAT16, 2, 'float16', None, _C.mag_copy_float_)
-boolean: DataType = DataType(_C.MAG_DTYPE_BOOLEAN, 1, 'uint8', 'uint8_t', _C.mag_copy_raw_)
-uint8: DataType = DataType(_C.MAG_DTYPE_UINT8, 1, 'uint8', 'uint8_t', _C.mag_copy_raw_)
-int8: DataType = DataType(_C.MAG_DTYPE_INT8, 1, 'int8', 'int8_t', _C.mag_copy_raw_)
-uint16: DataType = DataType(_C.MAG_DTYPE_UINT16, 2, 'uint16', 'uint16_t', _C.mag_copy_raw_)
-int16: DataType = DataType(_C.MAG_DTYPE_INT16, 2, 'int16', 'int16_t', _C.mag_copy_raw_)
-uint32: DataType = DataType(_C.MAG_DTYPE_UINT32, 4, 'uint32', 'uint32_t', _C.mag_copy_raw_)
-int32: DataType = DataType(_C.MAG_DTYPE_INT32, 4, 'int32', 'int32_t', _C.mag_copy_raw_)
-uint64: DataType = DataType(_C.MAG_DTYPE_UINT64, 8, 'uint64', 'uint64_t', _C.mag_copy_raw_)
-int64: DataType = DataType(_C.MAG_DTYPE_INT64, 8, 'int64', 'int64_t', _C.mag_copy_raw_)
+float32: DataType = DataType(_C.MAG_DTYPE_FLOAT32, 4, 'float32')
+float16: DataType = DataType(_C.MAG_DTYPE_FLOAT16, 2, 'float16')
+boolean: DataType = DataType(_C.MAG_DTYPE_BOOLEAN, 1, 'uint8')
+uint8: DataType = DataType(_C.MAG_DTYPE_UINT8, 1, 'uint8')
+int8: DataType = DataType(_C.MAG_DTYPE_INT8, 1, 'int8')
+uint16: DataType = DataType(_C.MAG_DTYPE_UINT16, 2, 'uint16')
+int16: DataType = DataType(_C.MAG_DTYPE_INT16, 2, 'int16')
+uint32: DataType = DataType(_C.MAG_DTYPE_UINT32, 4, 'uint32')
+int32: DataType = DataType(_C.MAG_DTYPE_INT32, 4, 'int32')
+uint64: DataType = DataType(_C.MAG_DTYPE_UINT64, 8, 'uint64')
+int64: DataType = DataType(_C.MAG_DTYPE_INT64, 8, 'int64')
 
 DTYPE_ENUM_MAP: dict[int, DataType] = {
     float32.enum_value: float32,
@@ -75,6 +81,9 @@ DTYPE_ENUM_MAP: dict[int, DataType] = {
     int64.enum_value: int64,
 }
 FLOATING_POINT_DTYPES = {float32, float16}
-INTEGER_DTYPES = {uint8, int8, uint16, int16, uint32, int32, uint64, int64}
-INTEGRAL_DTYPES = INTEGER_DTYPES | {boolean}
+UNSIGNED_INTEGER_DTYPES = {uint8, uint16, uint32, uint64}
+SIGNED_INTEGER_DTYPES = {int8, int16, int32, int64}
+INTEGER_DTYPES = UNSIGNED_INTEGER_DTYPES | SIGNED_INTEGER_DTYPES
 NUMERIC_DTYPES = FLOATING_POINT_DTYPES | INTEGER_DTYPES
+INTEGRAL_DTYPES = INTEGER_DTYPES | {boolean}
+ALL_DTYPES = FLOATING_POINT_DTYPES | INTEGRAL_DTYPES

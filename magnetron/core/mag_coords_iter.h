@@ -35,6 +35,13 @@ static inline void mag_coords_iter_init(mag_coords_iter_t *ci, const mag_coords_
     }
 }
 
+static MAG_CUDA_DEVICE inline int64_t mag_coords_iter_offset_at(const mag_coords_iter_t *ci, const int64_t *idx) {
+    int64_t o=0;
+    for (int64_t k=0; k < ci->rank; ++k)
+        o += idx[k]*ci->strides[k];
+    return o;
+}
+
 static MAG_CUDA_DEVICE inline int64_t mag_coords_iter_to_offset(const mag_coords_iter_t *cr, int64_t i) {
     const int64_t *restrict rd = cr->shape;
     const int64_t *restrict rs = cr->strides;

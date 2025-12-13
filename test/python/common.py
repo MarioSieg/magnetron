@@ -5,14 +5,13 @@ from __future__ import annotations
 import itertools
 import multiprocessing
 import random
-from collections.abc import Callable
+import pytest
 from typing import Any, Iterator
 
 import torch
-import pytest
+import numpy as np
 from magnetron import *
 from collections import deque
-from enum import Enum, unique
 
 # Give torch 1//4 of the total cores to not overload the CPU with inner parallelism threads + parallel spawned pytests
 torch.set_num_threads(max(4, multiprocessing.cpu_count() // 8))
@@ -32,11 +31,29 @@ DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
     int64: torch.int64,
 }
 
+NUMPY_DTYPE_MAP: dict[DataType, np.dtype] = {
+    float16: np.float16,
+    float32: np.float32,
+    boolean: np.bool_,
+    uint8: np.uint8,
+    int8: np.int8,
+    uint16: np.uint16,
+    int16: np.int16,
+    uint32: np.uint32,
+    int32: np.int32,
+    uint64: np.uint64,
+    int64: np.int64,
+}
 
 def totorch_dtype(dtype: DataType) -> torch.dtype:
     if dtype not in DTYPE_TORCH_MAP:
         raise ValueError(f'Unsupported dtype: {dtype}')
     return DTYPE_TORCH_MAP[dtype]
+
+def tonumpy_dtype(dtype: DataType) -> np.dtype:
+    if dtype not in NUMPY_DTYPE_MAP:
+        raise ValueError(f'Unsupported dtype: {dtype}')
+    return NUMPY_DTYPE_MAP[dtype]
 
 
 def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) -> torch.Tensor:
@@ -47,10 +64,17 @@ def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) 
     if dtype is None:
         dtype = totorch_dtype(obj.dtype)
     t = torch.tensor(obj.tolist(), dtype=dtype)
-    if tuple(obj.shape) == (1,):
-        return t.reshape(())
     return t.reshape(obj.shape)
 
+def tonumpy(obj: Tensor | int | float | bool, dtype: np.dtype | None = None) -> np.array:
+    if isinstance(obj, np.ndarray):
+        return obj.astype(dtype) if dtype is not None else obj
+    if not isinstance(obj, Tensor):
+        return np.array(obj, dtype=dtype) if dtype is not None else np.array(obj)
+    if dtype is None:
+        dtype = tonumpy_dtype(obj.dtype)
+    a = np.array(obj.tolist(), dtype=dtype)
+    return a.reshape(obj.shape)
 
 def broadcastable(a: tuple[int, ...], b: tuple[int, ...]) -> bool:
     for x, y in zip(a[::-1], b[::-1]):
@@ -83,7 +107,6 @@ def iter_shapes(rank: int, lim: int) -> Iterator[tuple[int, ...]]:
             break
         tup[i] += 1
 
-
 def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tuple[int, ...], tuple[int, ...]]]:
     max_batch_rank = max_total_rank - 2
     rng = range(1, lim + 1)
@@ -100,8 +123,15 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             shape_B = (*batched, K, N)
                             yield shape_A, shape_B
 
+def random_tensor(shape: tuple[int, ...], dtype: DataType) -> Tensor:
+    if dtype == boolean:
+        return Tensor.bernoulli(shape)
+    else:
+        lim = 100 if dtype.is_integer else 1.0
+        return Tensor.uniform(shape, low=-lim, high=lim, dtype=dtype)
 
-TEST_SHAPES: tuple[tuple[int], ...] = (
+DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
+    (),
     (1,),
     (1, 1),
     (1, 1, 1),
@@ -158,7 +188,7 @@ TEST_SHAPES: tuple[tuple[int], ...] = (
     (1, 3, 224, 224),
     (1, 3, 512, 512),
     (8, 3, 32, 32),
-    (4, 3, 1024, 1024),
+    (4, 3, 256, 256),
     (64, 3, 7, 7),
     (128, 64, 3, 3),
     (256, 128, 1, 1),
@@ -178,18 +208,17 @@ TEST_SHAPES: tuple[tuple[int], ...] = (
     (40, 128),
     (64, 128),
     (32, 96),
-    (4096 // 4, 12288 // 4),
-    (8192 // 4, 8192 // 4),
-    (12288 // 4, 12288 // 4),
-    (11008 // 4, 4096 // 4),
-    (4096 // 4, 11008 // 4),
-    (8192 // 4, 22016 // 6),
-    (12288 // 4, 49152 // 8),
-    (1, 32, 2048 // 4, 128 // 4),
-    (4, 32, 2048 // 4, 128),
-    (1, 40, 4096 // 4, 96),
-    (8, 64, 1024 // 4, 128 // 4),
-    (2, 32, 4096 // 4, 128),
+    (1024, 3072),
+    (2048, 2048),
+    (1024, 1536),
+    (1376, 1024),
+    (1024, 1376),
+    (512, 917),
+    (768, 1536),
+    (4, 32, 128, 64),
+    (1, 40, 512, 48),
+    (8, 64, 128, 16),
+    (2, 32, 256, 64),
     (16, 128),
     (128, 128),
     (2048, 128),
@@ -209,16 +238,16 @@ TEST_SHAPES: tuple[tuple[int], ...] = (
     (2, 3, 4, 5, 6),
     (6, 5, 4, 3, 2),
     (1, 2, 3, 4, 5, 6),
-    (1, 1, 4096, 4096),
-    (1024 // 2, 1024 // 2),
-    (2048 // 2, 2048 // 2),
-    (4096 // 2, 1024 // 2),
-    (1024 // 2, 4096 // 2),
-    (4096 // 2, 4096 // 2),
-    (8192 // 2, 2048 // 2),
+    (1, 1, 1024, 1024),  # smaller
+    (512, 512),
+    (1024, 1024),
+    (2048, 512),          # smaller
+    (512, 2048),          # smaller
+    (2048, 512),          # smaller
+    (512, 2048),          # smaller
     (6, 66, 666),
-    (4, 4, 1024, 1024),
-    (2, 8, 512, 512),
+    (4, 4, 256, 256),     # smaller
+    (2, 8, 256, 256),     # smaller
     (5,),
     (7,),
     (9,),
@@ -363,103 +392,9 @@ TEST_SHAPES: tuple[tuple[int], ...] = (
     (1, 2, 3, 4, 1, 2, 3, 4),
 )
 
-
 def for_all_shapes(f: Callable[tuple[int, ...]]) -> None:
-    for shape in TEST_SHAPES:
+    for shape in DETAILED_TEST_SHAPES: # We use small shapes for faster tests
         f(shape)
-
-
-@unique
-class BinaryOpParamKind(Enum):
-    TENSOR = 'tensor'
-    SCALAR = 'scalar'
-    LIST = 'list'
-
-
-def _allocate_binary_op_args(
-    dtype: DataType, shape: tuple[int, ...], kind: BinaryOpParamKind, low: float | int = 0, high: float | int = 1
-) -> tuple[Tensor, Tensor | list[Any] | float | int]:
-    if dtype == boolean:
-        x = Tensor.bernoulli(shape)
-        match kind:
-            case BinaryOpParamKind.TENSOR:
-                return x, Tensor.bernoulli(shape)
-            case BinaryOpParamKind.LIST:
-                return x, [random.choice([True, False]) for _ in range(nested_len(list(shape)))]
-            case BinaryOpParamKind.SCALAR:
-                return x, random.choice([True, False])
-            case _:
-                raise ValueError(f'Unknown BinaryOpParamKind: {kind}')
-    else:
-        x = Tensor.uniform(shape, dtype=dtype, low=low, high=high)
-        match kind:
-            case BinaryOpParamKind.TENSOR:
-                return x, Tensor.uniform(shape, dtype=dtype, low=low, high=high)
-            case BinaryOpParamKind.LIST:
-                if dtype.is_integer:
-                    return x, [random.randint(low, high) for _ in range(nested_len(list(shape)))]
-                else:
-                    return x, [random.uniform(low, high) for _ in range(nested_len(list(shape)))]
-            case BinaryOpParamKind.SCALAR:
-                if dtype.is_integer:
-                    return x, random.randint(low, high)
-                else:
-                    return x, random.uniform(low, high)
-            case _:
-                raise ValueError(f'Unknown BinaryOpParamKind: {kind}')
-
-
-def binary_op_square(
-    dtype: DataType,
-    callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor],
-    kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR,
-    low: float | int = 0,
-    high: float | int = 1,
-) -> None:
-    def func(shape: tuple[int, ...]) -> None:
-        x, y = _allocate_binary_op_args(dtype, shape, kind, low, high)
-        r = callback(x, y)
-        torch.testing.assert_close(totorch(r), callback(totorch(x), totorch(y)))
-
-    for_all_shapes(func)
-
-
-def binary_cmp_op(
-    dtype: DataType,
-    callback: Callable[[Tensor | torch.Tensor, Tensor | torch.Tensor], Tensor | torch.Tensor],
-    kind: BinaryOpParamKind = BinaryOpParamKind.TENSOR,
-    low: float | int = 0,
-    high: float | int = 1,
-) -> None:
-    def func(shape: tuple[int, ...]) -> None:
-        x, y = _allocate_binary_op_args(dtype, shape, kind, low, high)
-        r = callback(x, y)
-        assert r.dtype == boolean
-        torch.testing.assert_close(totorch(r, torch.bool), callback(totorch(x), totorch(y)))
-
-    for_all_shapes(func)
-
-
-def scalar_op(dtype: DataType, callback: Callable[[Tensor | torch.Tensor, int | float | bool], Tensor | torch.Tensor], rhs: bool = True) -> None:
-    def func(shape: tuple[int, ...]) -> None:  # x op scalar
-        xi: float = random.uniform(-1.0, 1.0)
-        x = Tensor.uniform(shape, dtype=dtype)
-        r = callback(x, xi)
-        torch.testing.assert_close(totorch(r), callback(totorch(x), xi))
-
-    for_all_shapes(func)
-
-    if not rhs:
-        return
-
-    def func(shape: tuple[int, ...]) -> None:  # scalar op x
-        xi: float = random.uniform(-1.0, 1.0)
-        x = Tensor.uniform(shape)
-        r = callback(xi, x)
-        torch.testing.assert_close(totorch(r), callback(xi, totorch(x)))
-
-    for_all_shapes(func)
-
 
 def nested_len(obj: list[Any]) -> int:
     total = 0
@@ -478,6 +413,13 @@ def nested_len(obj: list[Any]) -> int:
                 total += 1
     return total
 
+def random_dim(shape: tuple[int, ...]) -> int | None:
+    if len(shape) == 0:
+        return None
+    elif len(shape) == 1:
+        return 0
+    else:
+        return random.randrange(len(shape))
 
 def flatten(nested: Any) -> list[Any]:
     out: list[Any] = []

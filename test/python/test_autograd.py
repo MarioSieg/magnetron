@@ -6,9 +6,9 @@ import magnetron as mag
 import torch
 
 
-def test_autograd_1() -> None:
-    x = mag.Tensor.of([3.0], requires_grad=True)
-    y = mag.Tensor.of([2.0], requires_grad=True)
+def test_autograd_simple() -> None:
+    x = mag.Tensor.of(3.0, requires_grad=True)
+    y = mag.Tensor.of(2.0, requires_grad=True)
     assert x.requires_grad
     assert y.requires_grad
     y = (x + y) * (x - y)
@@ -27,8 +27,8 @@ def test_autograd_1() -> None:
     assert magx.grad.item() == torchx.grad.item()
 
 
-def test_autograd_2() -> None:
-    x = mag.Tensor.of([-4.0], requires_grad=True)
+def test_autograd_simple2() -> None:
+    x = mag.Tensor.of(-4.0, requires_grad=True)
     z = 2 * x + 2 + x
     q = z.relu() + z * x
     h = (z * z).relu()
@@ -52,8 +52,8 @@ def test_autograd_2() -> None:
 def test_autograd_inherit() -> None:
     xi1 = random.random() * 128.0
     xi2 = random.random() * 512.0
-    x = mag.Tensor.of([xi1], requires_grad=True)
-    y = mag.Tensor.of([xi2], requires_grad=True)
+    x = mag.Tensor.of(xi1, requires_grad=True)
+    y = mag.Tensor.of(xi2, requires_grad=True)
     t1 = x + y
     t2 = x - y
     t3 = t1 * t2
@@ -86,8 +86,8 @@ def test_autograd_inherit_nograd() -> None:
     xi1 = random.random() * 128.0
     xi2 = random.random() * 512.0
     with mag.no_grad():
-        x = mag.Tensor.of([xi1], requires_grad=True)
-        y = mag.Tensor.of([xi2], requires_grad=True)
+        x = mag.Tensor.of(xi1, requires_grad=True)
+        y = mag.Tensor.of(xi2, requires_grad=True)
         t1 = x + y
         t2 = x - y
         t3 = t1 * t2
@@ -112,13 +112,3 @@ def test_autograd_inherit_nograd() -> None:
         torchy = y
 
     assert magy.item() == torchy.data.item()
-
-
-def test_autograd_broadcast() -> None:
-    x = torch.full(size=(3, 3, 3, 3), fill_value=3.0, requires_grad=True)
-    y = torch.full(size=(3, 3), fill_value=2.0, requires_grad=True)
-    k = torch.full(size=(1,), fill_value=10.0, requires_grad=True)
-    z = (x + y) * (x - y) / k
-    z.sum().backward()
-    print('\nx grad:' + str(x.grad[0][0][0][0]))
-    print('\ny grad:' + str(y.grad[0][0]))

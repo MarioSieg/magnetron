@@ -53,7 +53,7 @@ mag_fastdiv_t mag_fastdiv_init(uint64_t d) {
     mag_assert(d != 0, "x/0 is now allowed");
     mag_fastdiv_t result;
     uint32_t fl2d = mag_fls64(d);
-    if (!(d&(d-1))) {
+    if (!(d & (d-1))) {
         result.magic = 0;
         result.flags = (uint8_t)(fl2d-1);
     } else {

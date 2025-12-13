@@ -20,7 +20,7 @@ from ._bootstrap import _FFI, _C
 from ._error import _handle_errc
 
 _MAIN_TID: int = threading.get_native_id()
-_MAX_DIMS: int = 8
+_MAX_DIMS: int = 16
 _DIM_MAX: int = 0x7FFFFFFFFFFFFFFF
 
 NestedList = float | bool | int | list['NestedData']
@@ -85,11 +85,17 @@ def _ravel_nested_lists(flat: list[Any], shape: tuple[int], strides: tuple[int],
     return [_ravel_nested_lists(flat, shape, strides, offset + i * stride, dim + 1) for i in range(size)]
 
 
-def _unpack_shape(*shape: int | tuple[int, ...]) -> tuple[int, ...]:
-    if len(shape) == 1 and isinstance(shape[0], tuple):
-        shape = shape[0]
-    assert len(shape) <= _MAX_DIMS, f'Invalid number of dimensions: {len(shape)}, maximum is {_MAX_DIMS}'
-    return shape
+def _unpack_shape(*dims: int | tuple[int, ...]) -> tuple[int, ...]:
+    out: list[int] = []
+    def _flatten(obj: int | tuple[int, ...] | list[int]):
+        if isinstance(obj, (tuple, list)):
+            for y in obj:
+                _flatten(y)
+        else:
+            out.append(int(obj))
+    for d in dims:
+        _flatten(d)
+    return tuple(out)
 
 
 def _get_reduction_axes(dim: int | Sequence[int] | None) -> tuple[_FFI.CData, int]:
@@ -191,14 +197,21 @@ class Tensor:
     def item(self) -> float | int | bool:
         if self.numel != 1:
             raise ValueError('Tensor must have exactly one element to retrieve an item')
-        if self.dtype.is_floating_point:
-            return float(_C.mag_tensor_item_float(self._ptr))
-        elif self.dtype.is_integer:
-            return int(_C.mag_tensor_item_int(self._ptr))
-        elif self.dtype == boolean:
-            return bool(_C.mag_tensor_item_bool(self._ptr))
-        else:
-            raise TypeError(f'Unsupported tensor dtype for item retrieval: {self.dtype}')
+        scalar_buf = _FFI.new("mag_scalar_t[1]")
+        status = _C.mag_tensor_item(self._ptr, scalar_buf)
+        if status != _C.MAG_STATUS_OK:
+            raise RuntimeError(f"mag_tensor_item failed with status {int(status)}")
+        s = scalar_buf[0]
+        if _C.mag_scalar_is_f64(s):
+            return float(_C.mag_scalar_as_f64(s))
+        if _C.mag_scalar_is_i64(s):
+            return int(_C.mag_scalar_as_i64(s))
+        if _C.mag_scalar_is_u64(s):
+            v = _C.mag_scalar_as_u64(s)
+            if self.dtype == boolean:
+                return bool(v)
+            return int(v)
+        raise TypeError(f'Unsupported scalar type for item retrieval (scalar.type={int(s.type)})')
 
     def __bool__(self) -> bool:
         if self.numel != 1:
@@ -208,16 +221,25 @@ class Tensor:
     def tolist(self) -> NestedList:
         if self.numel == 0:
             return []
-        is_fp: bool = self.dtype.is_floating_point
-        unpack_fn = _C.mag_tensor_copy_float_data if is_fp else _C.mag_tensor_copy_data
-        free_fn = _C.mag_tensor_copy_float_data_free if is_fp else _C.mag_tensor_copy_data_free
-        ptr = unpack_fn(self._ptr)
-        if not is_fp:
-            native: str | None = self.dtype.native_type
-            assert native is not None, f'Tensor dtype {self.dtype} does not have a native type'
-            ptr = _FFI.cast(f'const {native}*', ptr)
+        dt = self.dtype
+        native = None
+        if dt.is_floating_point:
+            tensor = self.cast(float32)
+            native = 'float'
+        elif dt.is_signed_integer:
+            tensor = self.cast(int64)
+            native = 'int64_t'
+        elif dt.is_unsigned_integer:
+            tensor = self.cast(uint64)
+            native = 'uint64_t'
+        elif dt == boolean:
+            tensor = self.cast(boolean)
+            native = 'uint8_t'
+        else:
+            raise TypeError(f'Tensor dtype {self.dtype} is not supported for tolist()')
+        ptr = _FFI.cast(f'const {native}*', _C.mag_tensor_copy_data(tensor.native_ptr))
         flat = list(_FFI.unpack(ptr, self.numel))
-        free_fn(ptr)
+        _C.mag_tensor_copy_data_free(ptr)
         cont_strides = _row_major_strides(self.shape)
         return _ravel_nested_lists(flat, self.shape, cont_strides, offset=0, dim=0)
 
@@ -298,7 +320,9 @@ class Tensor:
         return self.shape[0]
 
     def __str__(self) -> str:
-        cstr: _FFI.CData = _C.mag_tensor_to_string(self._ptr, False, 0, 0)
+        head, tail = 3, 3
+        threshold = 1000 # todo make tose configureable
+        cstr: _FFI.CData = _C.mag_tensor_to_string(self._ptr, head, tail, threshold)
         data_str: str = _FFI.string(cstr).decode('utf-8')
         _C.mag_tensor_to_string_free_data(cstr)
         return data_str
@@ -316,7 +340,7 @@ class Tensor:
             if idx is None:
                 if curr.rank == _MAX_DIMS:
                     raise NotImplementedError(f'Rank > {_MAX_DIMS} not supported')
-                curr = curr.view(*curr.shape[:axis], 1, *curr.shape[axis:])
+                curr = curr.view(curr.shape[:axis], 1, *curr.shape[axis:])
                 axis += 1
                 continue
             elif isinstance(idx, int):
@@ -330,7 +354,7 @@ class Tensor:
                 del new_shape[axis]
                 if not new_shape:
                     new_shape = [1]
-                curr = curr.view(*new_shape) if new_shape else curr.view()
+                curr = curr.view(new_shape) if new_shape else curr.view()
                 continue
             elif isinstance(idx, slice):
                 start, stop, step = idx.indices(curr.shape[axis])
@@ -379,12 +403,22 @@ class Tensor:
     @classmethod
     def empty(cls, *shape: int | tuple[int, ...], dtype: DataType = _default_dtype(), requires_grad: bool = False) -> Tensor:
         shape: tuple[int, ...] = _unpack_shape(*shape)
-        assert 0 < len(shape) <= _MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
+        assert 0 <= len(shape) <= _MAX_DIMS, f'Invalid number of dimensions: {len(shape)}'
         assert all(0 < dim <= _DIM_MAX for dim in shape), 'Invalid dimension size'
         dims: _FFI.CData = _FFI.new(f'int64_t[{len(shape)}]', shape)
         instance = _wrap_out_alloc(lambda out: _C.mag_empty(out, context.native_ptr(), dtype.enum_value, len(shape), dims))
         tensor: Tensor = cls(instance)
         tensor.requires_grad = requires_grad
+        return tensor
+
+    @classmethod
+    def scalar(
+        cls, value: int | float | bool, *, dtype: DataType | None = None, requires_grad: bool = False
+    ) -> Tensor:
+        instance = _wrap_out_alloc(lambda out: _C.mag_scalar(out, context.native_ptr(), dtype.enum_value, _C.mag_scalar_float(value) if isinstance(value, float) else _C.mag_scalar_int(value)))
+        tensor: Tensor = cls(instance)
+        tensor.requires_grad = requires_grad
+        tensor.fill_(value)
         return tensor
 
     @classmethod
@@ -415,21 +449,36 @@ class Tensor:
 
     @classmethod
     def of(cls, data: NestedList, *, dtype: DataType | None = None, requires_grad: bool = False) -> Tensor:
-        if not data:
-            return cls.empty(0, dtype=dtype if dtype is not None else _default_dtype())
+        if isinstance(data, (int, float, bool)):
+            if dtype is None:
+                dtype = _deduce_tensor_dtype(data)
+            return cls.scalar(value=data, dtype=dtype, requires_grad=requires_grad)
+        if isinstance(data, (list, tuple)) and len(data) == 0:
+            raise ValueError("Tensor.of() does not support empty lists; use Tensor.empty(shape, ...) instead")
         shape, flattened_data = _flatten_nested_lists(data)
         dtype: DataType = dtype if dtype is not None else _deduce_tensor_dtype(flattened_data[0])
-        native_name: str = dtype.native_type
-        alloc_fn: _FFI.CData = dtype.fill_fn
-        tensor: Tensor = cls.empty(*shape, dtype=dtype, requires_grad=requires_grad)
+        native_name = None
+        wide_dtype = None
+        if dtype.is_floating_point:
+            native_name = 'float'
+            wide_dtype = float32
+        elif dtype.is_signed_integer:
+            native_name = 'int64_t'
+            wide_dtype = int64
+        elif dtype.is_unsigned_integer:
+            native_name = 'uint64_t'
+            wide_dtype = uint64
+        elif dtype == boolean:
+            native_name = 'uint8_t'
+            wide_dtype = boolean
+        else:
+            raise TypeError(f'Tensor dtype {dtype} is not supported for Tensor.of()')
+        assert native_name is not None and wide_dtype is not None
+        raw: Tensor = cls.empty(*shape, dtype=wide_dtype, requires_grad=requires_grad)
         staging_buffer: _FFI.CData = _FFI.new(f'{native_name}[{len(flattened_data)}]', flattened_data)
-        copy_bytes_numel: int = len(flattened_data)
-        if (
-            alloc_fn == _C.mag_copy_raw_
-        ):  # If the dtype is not a floating point type, we need to multiply by the size of the dtype for the raw bytes initializer.
-            copy_bytes_numel *= dtype.size
-        alloc_fn(tensor._ptr, staging_buffer, copy_bytes_numel)
-        return tensor
+        nb = len(flattened_data)*raw.dtype.size
+        _handle_errc(_C.mag_copy_raw_(raw.native_ptr, staging_buffer, nb))
+        return raw.cast(dtype)
 
     @classmethod
     def zeros(
@@ -520,7 +569,7 @@ class Tensor:
             start = 0
         if dtype is None:
             dtype = _deduce_tensor_dtype(start)
-        # Ensure that start, stop, and step are the same type
+
         assert type(start) == type(stop) == type(step), 'start, stop, and step must be of the same type'
         start = _C.mag_scalar_int(start) if isinstance(start, int) else _C.mag_scalar_float(start)
         stop = _C.mag_scalar_int(stop) if isinstance(stop, int) else _C.mag_scalar_float(stop)
@@ -559,11 +608,13 @@ class Tensor:
                 if d == dim:
                     continue
                 assert t.shape[d] == ref.shape[d], f'All tensors must match on dim {d}: {t.shape[d]} vs {ref.shape[d]}'
-        tensor_ptrs = _FFI.new(f'mag_tensor_t*[{num_tensors}]')
-        tensors = [t.contiguous() for t in tensors]
-        for i, t in enumerate(tensors):
+        contig = [t.contiguous() for t in tensors]
+        tensor_ptrs = _FFI.new(f"mag_tensor_t*[{len(contig)}]")
+        for i,t in enumerate(contig):
             tensor_ptrs[i] = t.native_ptr
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_cat(out, tensor_ptrs, num_tensors, dim)))
+        out = Tensor(_wrap_out_alloc(lambda out: _C.mag_cat(out, tensor_ptrs, len(contig), dim)))
+        del contig
+        return out
 
     @classmethod
     def load_image(cls, path: str, channels: str = 'RGB', resize_to: tuple[int, int] = (0, 0)) -> Tensor:
@@ -582,7 +633,7 @@ class Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_cast(out, self._ptr, dst_type.enum_value)))
 
     def view(self, *dims: int | tuple[int, ...]) -> Tensor:
-        dims = _unpack_shape(dims)
+        dims = _unpack_shape(*dims)
         num_dims: int = len(dims)
         view_dims: _FFI.CData = _FFI.new(f'int64_t[{num_dims}]', dims)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_view(out, self._ptr, view_dims, num_dims)))
@@ -595,20 +646,22 @@ class Tensor:
         )
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_view_slice(out, self._ptr, dim, start, length, step)))
 
-    def split(self, chunk_size: int, dim: int = 0) -> tuple[Tensor, ...]:
-        assert chunk_size > 0, 'chunk_size must be greater than 0, got {chunk_size}'
-        assert -self.rank <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
-        dim: int = dim % self.rank
-        size: int = self.shape[dim]
-        n_chunks: int = (size + chunk_size - 1) // chunk_size
-        chunks: list[Tensor] = []
-        start: int = 0
-        for _ in range(n_chunks):
-            length = min(chunk_size, size - start)
-            view = self.view_slice(dim, start, length, 1)
-            chunks.append(view)
-            start += chunk_size
-        return tuple(chunks)
+    def split(self, split_size: int, dim: int = 0) -> tuple[Tensor, ...]:
+        if self.rank == 0:
+            raise RuntimeError("split() is not defined for 0-dim tensors")
+        if split_size <= 0:
+            raise ValueError(f"split_size must be > 0, got {split_size}")
+        if dim < 0:
+            dim += self.rank
+        if dim < 0 or dim >= self.rank:
+            raise IndexError(f"split(): dim {dim} out of range for rank {self.rank}")
+        size = self.shape[dim]
+        if size == 0:
+            return ()
+        n_chunks = (size + split_size - 1) // split_size  # same as C expected_chunks
+        outs = _FFI.new(f"mag_tensor_t *[{n_chunks}]")
+        _handle_errc(_C.mag_split(outs, n_chunks, self._ptr, split_size, dim))
+        return tuple(Tensor(outs[i]) for i in range(n_chunks))
 
     def gather(self, dim: int, index: Tensor) -> Tensor:
         assert 0 <= dim < self.rank, f'Dimension {dim} out of range for tensor with rank {self.rank}'
@@ -621,16 +674,21 @@ class Tensor:
         view_dims: _FFI.CData = _FFI.new(f'int64_t[{num_dims}]', dims)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_reshape(out, self._ptr, view_dims, num_dims)))
 
-    def transpose(self, dim1: int = 0, dim2: int = 1) -> Tensor:
-        assert dim1 != dim2, f'Transposition axes must be not equal, but {dim1} == {dim2}'
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_transpose(out, self._ptr, dim1, dim2)))
+    def transpose(self, dim0: int = 0, dim1: int = 1) -> Tensor:
+        assert dim0 != dim1, f'Transposition axes must be not equal, but {dim0} == {dim1}'
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_transpose(out, self._ptr, dim0, dim1)))
 
     def one_hot(self, num_classes: int = -1) -> Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_one_hot(out, self._ptr, num_classes)))
 
     @property
     def T(self) -> Tensor:
-        return self.transpose(0, 1)
+        nd = self.rank
+        if nd < 2:
+            return self
+        if nd == 2:
+            return self.transpose(0, 1)
+        return self.permute(*range(nd - 1, -1, -1))
 
     def detach(self) -> Tensor:
         _C.mag_tensor_detach(self._ptr)
@@ -661,9 +719,9 @@ class Tensor:
     def flatten(self, start_dim: int = 0, end_dim: int = -1) -> Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_flatten(out, self._ptr, start_dim, end_dim)))
 
-    def unflatten(self, shape: tuple[int, ...]) -> Tensor:
-        shape_dims: _FFI.CData = _FFI.new(f'int64_t[{len(shape)}]', shape)
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_unflatten(out, self._ptr, shape_dims, len(shape))))
+    def unflatten(self, dim: int, sizes: list[int]) -> Tensor:
+        shape_dims: _FFI.CData = _FFI.new(f'int64_t[{len(sizes)}]', sizes)
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_unflatten(out, self._ptr, dim, shape_dims, len(sizes))))
 
     def narrow(self, dim: int, start: int, length: int) -> Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_narrow(out, self._ptr, dim, start, length)))
@@ -675,11 +733,11 @@ class Tensor:
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_select(out, self._ptr, dim, index)))
 
     def fill_(self, value: float | int | bool) -> None:
-        self._validate_inplace_op()
+        #self._validate_inplace_op()
         if self.dtype.is_floating_point:
             _handle_errc(_C.mag_fill_(self._ptr, _C.mag_scalar_float(value)))
         else:
-            _handle_errc(_C.mag_fill_(self._ptr, _C.mag_scalar_int(value)))
+            _handle_errc(_C.mag_fill_(self._ptr, _C.mag_scalar_int(int(value))))
 
     def masked_fill_(self, mask: Tensor, value: float | int | bool) -> None:
         assert mask.dtype == boolean, f'Mask tensor must be of boolean dtype, but is {mask.dtype}'
@@ -687,7 +745,7 @@ class Tensor:
         if self.dtype.is_floating_point:
             _handle_errc(_C.mag_masked_fill_(self._ptr, mask._ptr, _C.mag_scalar_float(value)))
         else:
-            _handle_errc(_C.mag_masked_fill_(self._ptr, mask._ptr, _C.mag_scalar_int(value)))
+            _handle_errc(_C.mag_masked_fill_(self._ptr, mask._ptr, _C.mag_scalar_int(int(value))))
 
     def masked_fill(self, mask: Tensor, value: float | int | bool) -> Tensor:
         filled = self.clone()
@@ -702,9 +760,10 @@ class Tensor:
         if self.dtype.is_floating_point:
             _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_float(low), _C.mag_scalar_float(high)))
         else:
-            low &= 2**63 - 2
-            high &= 2**63 - 2  # TODO fix for unsigned types
-            _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_int(low), _C.mag_scalar_int(high)))
+            if low >= 0 and high > 0x7fffffffffffffff:
+                _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_uint(int(low)), _C.mag_scalar_uint(int(high))))
+            else:
+                _handle_errc(_C.mag_uniform_(self._ptr, _C.mag_scalar_int(int(low)), _C.mag_scalar_int(int(high))))
 
     def normal_(self, mean: float, std: float) -> None:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
@@ -768,6 +827,13 @@ class Tensor:
     def all(self, dim: int | Sequence[int] | None = None, keepdim: bool = False) -> Tensor:
         dims, num_dims = _get_reduction_axes(dim)
         return Tensor(_wrap_out_alloc(lambda out: _C.mag_all(out, self._ptr, dims, num_dims, keepdim)))
+
+    def topk(self, k: int, dim: int = -1, largest: bool = True, sorted: bool = True) -> tuple[Tensor, Tensor]:
+        self._validate_dtypes(self, allowed_types=NUMERIC_DTYPES)
+        values: _FFI.CData = _FFI.new(f'mag_tensor_t*[1]')
+        indices: _FFI.CData = _FFI.new(f'mag_tensor_t*[1]')
+        _handle_errc(_C.mag_topk(values, indices, self._ptr, k, dim, largest, sorted))
+        return Tensor(values[0]), Tensor(indices[0])
 
     def abs(self) -> Tensor:
         self._validate_dtypes(self, allowed_types=FLOATING_POINT_DTYPES)
@@ -1281,18 +1347,18 @@ class Tensor:
     def __floordiv__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_div(out, self._ptr, rhs._ptr)))
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_floordiv(out, self._ptr, rhs._ptr)))
 
     def __rfloordiv__(self, rhs: int | float) -> Tensor:
         rhs = Tensor.full_like(self, rhs)
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return rhs / self
+        return rhs // self
 
     def __ifloordiv__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
         self._validate_inplace_op()
         self._validate_dtypes(self, rhs, allowed_types=NUMERIC_DTYPES)
-        return Tensor(_wrap_out_alloc(lambda out: _C.mag_div_(out, self._ptr, rhs._ptr)))
+        return Tensor(_wrap_out_alloc(lambda out: _C.mag_floordiv_(out, self._ptr, rhs._ptr)))
 
     def __mod__(self, rhs: Tensor | int | float) -> Tensor:
         rhs = self._expand_rhs(rhs)
