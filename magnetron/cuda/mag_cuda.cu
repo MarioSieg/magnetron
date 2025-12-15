@@ -217,7 +217,7 @@ namespace mag {
         mag_context_t *ctx = device->ctx;
         uintptr_t base;
         mag_cuda_check(cudaMalloc(reinterpret_cast<void **>(&base), size));
-        *out = static_cast<mag_storage_buffer_t*>(mag_fixed_pool_alloc_block(&ctx->storage_pool));
+        *out = static_cast<mag_storage_buffer_t*>(mag_slab_alloc(&ctx->storage_slab));
         new (*out) mag_storage_buffer_t {
             .__rcb = {},
             .ctx = ctx,
@@ -234,7 +234,7 @@ namespace mag {
             auto *buffer = static_cast<mag_storage_buffer_t *>(self);
             mag_context_t *ctx = buffer->ctx;
             mag_cuda_check(cudaFree(reinterpret_cast<void *>(buffer->base)));
-            mag_fixed_pool_free_block(&ctx->storage_pool, buffer);
+            mag_slab_free(&ctx->storage_slab, buffer);
         };
         mag_rc_init_object(*out, dealloc_callback);
     }

@@ -45,12 +45,12 @@ static void mag_cpu_storage_dtor(void *self) {
     --ctx->num_alive_storages;
     if (!(buf->flags & MAG_STORAGE_FLAG_INTRUSIVE))
         (*mag_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
-    mag_fixed_pool_free_block(&ctx->storage_pool, buf);
+    mag_slab_free(&ctx->storage_slab, buf);
 }
 
 static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
     mag_context_t *ctx = host->ctx;
-    mag_storage_buffer_t *buf = mag_fixed_pool_alloc_block(&ctx->storage_pool);
+    mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
     *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
         .ctx = ctx,
         .aux = {},

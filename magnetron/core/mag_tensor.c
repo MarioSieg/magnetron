@@ -11,7 +11,7 @@
 
 #include "mag_tensor.h"
 #include "mag_context.h"
-#include "mag_pool.h"
+#include "mag_slab.h"
 #include "mag_alloc.h"
 #include "mag_autodiff.h"
 #include "mag_coords_iter.h"
@@ -22,11 +22,11 @@ static void mag_view_meta_dtor(void *p) {
     if (vm->base->view_meta == vm)
         vm->base->view_meta = NULL;
     mag_rc_decref(vm->base);
-    mag_fixed_pool_free_block(&ctx->view_meta_pool, vm);
+    mag_slab_free(&ctx->view_meta_slab, vm);
 }
 
 mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
-    mag_view_meta_t *vm = mag_fixed_pool_alloc_block(&base->ctx->view_meta_pool);
+    mag_view_meta_t *vm = mag_slab_alloc(&base->ctx->view_meta_slab);
     mag_rc_init_object(vm, &mag_view_meta_dtor);
     vm->base = base;
     mag_rc_incref(base);
@@ -37,7 +37,7 @@ mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
 static void mag_tensor_dtor(void *self); /* Destructor forward declaration. */
 
 static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel) {
-    mag_tensor_t *hdr = mag_fixed_pool_alloc_block(&ctx->tensor_pool); /* Allocate tensor header. */
+    mag_tensor_t *hdr = mag_slab_alloc(&ctx->tensor_slab); /* Allocate tensor header. */
     memset(hdr, 0, sizeof(*hdr));
     *hdr = (mag_tensor_t) { /* Initialize tensor header. */
         .ctx = ctx,
@@ -66,7 +66,7 @@ static void mag_tensor_free_header(mag_tensor_t *t) {
     mag_leak_detector_dequeue(t); /* Pop from alive list */
     memset(t, 0, sizeof(*t));
 #endif
-    mag_fixed_pool_free_block(&ctx->tensor_pool, t);
+    mag_slab_free(&ctx->tensor_slab, t);
 }
 
 /* Create a new tensor. The must be created on the same thread as the context. */

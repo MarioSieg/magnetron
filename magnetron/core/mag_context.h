@@ -13,7 +13,7 @@
 #define MAG_CONTEXT_H
 
 #include "mag_def.h"
-#include "mag_pool.h"
+#include "mag_slab.h"
 #include "mag_machine.h"
 #include "mag_backend.h"
 
@@ -30,10 +30,10 @@ typedef enum mag_context_flags_t {
 struct mag_context_t {
     mag_error_t error_status;                   /* Last error status. */
     mag_machine_info_t machine;                 /* Machine information. */
-    mag_fixed_pool_t tensor_pool;               /* Tensor header memory pool. */
-    mag_fixed_pool_t storage_pool;              /* Storage header memory pool. */
-    mag_fixed_pool_t view_meta_pool;            /* View metadata header memory pool. */
-    mag_fixed_pool_t au_state_pool;             /* Autodiff state memory pool. */
+    mag_slab_alloc_t tensor_slab;               /* Tensor headers. */
+    mag_slab_alloc_t storage_slab;              /* Storage headers. */
+    mag_slab_alloc_t view_meta_slab;            /* View metadata headers. */
+    mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
     mag_context_flags_t flags;                  /* Context flags. */
     uintptr_t tr_id;                            /* Context thread ID. */
     mag_backend_registry_t *backend_registry;   /* Compute backend registry */

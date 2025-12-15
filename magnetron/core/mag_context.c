@@ -112,10 +112,10 @@ mag_context_t *mag_ctx_create(const char *device_id) {
     memset(ctx, 0, sizeof(*ctx));
 
     /* Init memory pools */
-    mag_fixed_pool_init(&ctx->tensor_pool, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
-    mag_fixed_pool_init(&ctx->storage_pool, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000);
-    mag_fixed_pool_init(&ctx->view_meta_pool, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
-    mag_fixed_pool_init(&ctx->au_state_pool, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
+    mag_slab_init(&ctx->tensor_slab, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
+    mag_slab_init(&ctx->storage_slab, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000);
+    mag_slab_init(&ctx->view_meta_slab, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
+    mag_slab_init(&ctx->au_state_slab, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
 
     ctx->tr_id = mag_thread_id(); /* Get thread ID. */
     ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
@@ -173,10 +173,10 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
         if (suppress_leak_detection) mag_log_warn("%s", msg);
         else mag_panic("%s", msg);
     }
-    mag_fixed_pool_destroy(&ctx->au_state_pool);
-    mag_fixed_pool_destroy(&ctx->view_meta_pool);
-    mag_fixed_pool_destroy(&ctx->tensor_pool);
-    mag_fixed_pool_destroy(&ctx->storage_pool);
+    mag_slab_destroy(&ctx->au_state_slab);
+    mag_slab_destroy(&ctx->view_meta_slab);
+    mag_slab_destroy(&ctx->tensor_slab);
+    mag_slab_destroy(&ctx->storage_slab);
     (*ctx->backend->destroy_device)(ctx->backend, ctx->device);
     ctx->device = NULL;
     ctx->backend = NULL;
