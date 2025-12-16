@@ -15,14 +15,10 @@ static int64_t mag_offset_rmn(const mag_tensor_t *t, int64_t flat, int64_t i, in
     const int64_t *restrict ts = t->coords.strides;
     if (mag_likely(ra <= 3)) { /* Fast path */
         switch (ra) {
-        case 1:
-            return i*ts[0];
-        case 2:
-            return i*ts[0] + j*ts[1];
-        case 3:
-            return flat*ts[0] + i*ts[1] + j*ts[2];
-        default:
-            mag_panic("invalid rank: %" PRIi64, ra);
+            case 0: return 0;
+            case 1: return i*ts[0];
+            case 2: return i*ts[0] + j*ts[1];
+            case 3: return flat*ts[0] + i*ts[1] + j*ts[2];
         }
     }
     int64_t off = 0, rem = flat;
