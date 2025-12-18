@@ -308,6 +308,7 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
         int64_t oa = ti*chunk; \
         int64_t ob = mag_xmin(oa + chunk, outer_count); \
         for (int64_t row=oa; row < ob; ++row) { \
+            size_t mark = mag_scratch_arena_mark(&mag_tls_arena); \
             int64_t base_idx[MAG_MAX_DIMS]; \
             for (int64_t d=0; d < R; ++d) base_idx[d] = 0; \
             int64_t rtmp = row; \
@@ -324,8 +325,8 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
                 off_x0 += base_idx[d] * x->coords.strides[d]; \
                 off_v0 += base_idx[d] * v->coords.strides[d]; \
             } \
-            T vals_buf[dim_size]; \
-            int64_t idx_buf[dim_size]; \
+            T *vals_buf = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)dim_size*sizeof(*vals_buf)); \
+            int64_t *idx_buf = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)dim_size*sizeof(*idx_buf)); \
             for (int64_t p = 0; p < dim_size; ++p) { \
                 const int64_t off_x = off_x0 + p * stride_x_dim; \
                 mag_bnd_chk(bx + off_x, bx, mag_tensor_numbytes(x)); \
@@ -358,6 +359,7 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
                 bv[off_v] = vals_buf[r]; \
                 bi[off_v] = idx_buf[r]; \
             } \
+            mag_scratch_arena_reset(&mag_tls_arena, mark); \
         } \
     }
 

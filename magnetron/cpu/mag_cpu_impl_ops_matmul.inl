@@ -1332,9 +1332,10 @@ MAG_HOTPROC static void mag_matmul_float32(const mag_kernel_payload_t *payload) 
     int64_t bdy = y->coords.rank > 2 ? y->coords.rank-2 : 0;
     int64_t tic = (M+MC-1)/MC;
     int64_t tjc = (N+NC-1)/NC;
-    int64_t tpb = tic  *tjc;
-    int64_t tt = batch_total  *tpb;
-    float *scratch = mag_sb_acquire(sizeof(*scratch)*(KC*NC + MC*KC));
+    int64_t tpb = tic*tjc;
+    int64_t tt = batch_total*tpb;
+    mag_scratch_arena_clear(&mag_tls_arena);
+    float *scratch = mag_scratch_arena_alloc(&mag_tls_arena, sizeof(*scratch)*(KC*NC + MC*KC));
     float *Bp = scratch;
     float *Ap = Bp + KC*NC;
     for (;;) {
@@ -1391,6 +1392,7 @@ MAG_HOTPROC static void mag_matmul_float32(const mag_kernel_payload_t *payload) 
                         pc);
         }
     }
+    mag_scratch_arena_clear(&mag_tls_arena);
 }
 
 static MAG_HOTPROC void mag_matmul_float16(const mag_kernel_payload_t *payload) {
@@ -1410,7 +1412,8 @@ static MAG_HOTPROC void mag_matmul_float16(const mag_kernel_payload_t *payload) 
     int64_t bdx = x->coords.rank > 2 ? x->coords.rank-2 : 0;
     int64_t bdy = y->coords.rank > 2 ? y->coords.rank-2 : 0;
     bool x_row = mag_tensor_is_contiguous(x) && x->coords.strides[x->coords.rank-1] == 1;
-    mag_float16_t *scratch = mag_sb_acquire(sizeof(mag_float16_t)*(K*N + (x_row ? 0 : M*K)));
+    mag_scratch_arena_clear(&mag_tls_arena);
+    mag_float16_t *scratch = mag_scratch_arena_alloc(&mag_tls_arena, sizeof(mag_float16_t)*(K*N + (x_row ? 0 : M*K)));
     mag_float16_t *xbuf = x_row ? NULL : scratch;
     mag_float16_t *ybuf = scratch + (x_row ? 0 : M*K);
     int64_t idx_r[4] = {0};
@@ -1448,4 +1451,5 @@ static MAG_HOTPROC void mag_matmul_float16(const mag_kernel_payload_t *payload) 
             }
         }
     }
+    mag_scratch_arena_clear(&mag_tls_arena);
 }

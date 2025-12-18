@@ -58,7 +58,8 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
                 for (int64_t s=0; s < num_samples; ++s) o[s] = -1; \
                 continue; \
             } \
-            mag_discrete_sample_pair_t *arr = (mag_discrete_sample_pair_t*)alloca(nnz*sizeof(*arr)); \
+            size_t mark = mag_scratch_arena_mark(&mag_tls_arena); \
+            mag_discrete_sample_pair_t *arr = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)nnz*sizeof(*arr)); \
             int64_t m=0; \
             for (int64_t i=0; i < K; ++i) { \
                 float wi = CVT(w[i]); \
@@ -72,6 +73,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
             qsort(arr, (size_t)m, sizeof(*arr), mag_discrete_sample_pair_cmp); \
             for (int64_t s=0; s < k; ++s) o[s] = arr[s].idx; \
             for (int64_t s=k; s < num_samples; ++s) o[s] = -1; \
+            mag_scratch_arena_reset(&mag_tls_arena, mark); \
         } \
     }
 

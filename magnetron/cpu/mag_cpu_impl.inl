@@ -10,6 +10,7 @@
 */
 
 #include "mag_cpu.h"
+#include "mag_tls_arena.h"
 
 #include <core/mag_tensor.h>
 #include <core/mag_cpuid.h>
@@ -74,33 +75,7 @@ static MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
 #define mag_floordivu(x, y) ((x)/(y))
 #define mag_floordivf(x, y) (floorf((x)/(y)))
 
-#define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
-
-typedef struct mag_scratch_buf_t {
-    void *top;
-    size_t cap;
-} mag_scratch_buf_t;
-
-static MAG_THREAD_LOCAL mag_scratch_buf_t mag_tls_scratch = {0};
-
-static void *mag_sb_acquire(size_t size) {
-    mag_scratch_buf_t *sb = &mag_tls_scratch;
-    if (size <= sb->cap) return sb->top; /* Enough space allocated */
-    sb->top = (*mag_alloc)(sb->top, size, MAG_MM_SCRATCH_ALIGN); /* Reallocate */
-    sb->cap = size;
-    void *p = sb->top;
-#ifndef _MSC_VER
-    p = __builtin_assume_aligned(p, MAG_MM_SCRATCH_ALIGN);
-#endif
-    return p;
-}
-
-static void mag_sb_release(void) {
-    mag_scratch_buf_t *sb = &mag_tls_scratch;
-    if (sb->top) (*mag_alloc)(sb->top, 0, MAG_MM_SCRATCH_ALIGN);
-    sb->top = NULL;
-    sb->cap = 0;
-}
+extern MAG_THREAD_LOCAL mag_scratch_arena_t mag_tls_arena; /* 4 MiB keep before decay */
 
 #ifdef __AVX512F__ /* Vector register width in bytes */
 #define MAG_VREG_WIDTH 64
@@ -866,7 +841,7 @@ static void mag_impl_init(void) {
 }
 
 static void mag_impl_deinit(void) {
-    mag_sb_release();
+    mag_scratch_arena_destroy(&mag_tls_arena);
 }
 
 void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t *kernels) {
