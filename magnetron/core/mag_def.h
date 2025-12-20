@@ -592,6 +592,7 @@ extern uint32_t mag_crc32c(const void *buffer, size_t size); /* Compute CRC32 ch
 extern bool mag_utf8_validate(const char *str, size_t len);
 extern char *mag_strdup(const char *s);
 extern void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);
+extern int mag_casecmp(const char *a, const char *b);
 
 #ifdef __cplusplus
 }

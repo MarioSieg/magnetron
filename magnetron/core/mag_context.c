@@ -17,6 +17,7 @@
 #include "mag_machine.h"
 
 #include <time.h>
+#include <ctype.h>
 
 /* Print host system and machine information. */
 static void mag_system_host_info_dump(mag_context_t *ctx) {
@@ -100,8 +101,21 @@ static MAG_COLDPROC void mag_ctx_dump_compiler_info(void) {
     );
 }
 
+static void mag_setup_environ(void) {
+    /* Parse MAG_LOG_LEVEL environment variable. */
+    const char *v = getenv("MAG_LOG_LEVEL");
+    if (!v || !*v) return;
+    if (mag_casecmp(v, "off")) mag_set_log_level(MAG_LOG_LEVEL_NONE);
+    else if (mag_casecmp(v, "error")) mag_set_log_level(MAG_LOG_LEVEL_ERROR);
+    else if (mag_casecmp(v, "warn") || mag_casecmp(v, "warning")) mag_set_log_level(MAG_LOG_LEVEL_WARN);
+    else if (mag_casecmp(v, "info")) mag_set_log_level(MAG_LOG_LEVEL_INFO);
+    else mag_log_error("Invalid MAG_LOG_LEVEL value '%s' (valid: off, error, warn, info)", v);
+}
+
 /* Create context with compute device descriptor. */
 mag_context_t *mag_ctx_create(const char *device_id) {
+    mag_setup_environ(); /* Parse and apply environment variables. */
+
     mag_log_info("Creating magnetron context...");
 
     uint64_t time_stamp_start = mag_hpc_clock_ns();

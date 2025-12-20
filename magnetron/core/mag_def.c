@@ -12,6 +12,8 @@
 #include "mag_def.h"
 #include "mag_alloc.h"
 
+#include <ctype.h>
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -538,4 +540,11 @@ void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file) {
         *out_dir = path;
         *out_file = path;
     }
+}
+
+int mag_casecmp(const char *a, const char *b) {
+    for (; *a && *b; a++, b++)
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
+            return 0;
+    return *a == 0 && *b == 0;
 }
