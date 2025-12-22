@@ -478,6 +478,7 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 #else
 #   define MAG_SRC_NAME __FILE__ ":" MAG_STRINGIZE(__LINE__)
 #endif
+#define mag_log_debug(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_DEBUG, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
 #define mag_log_info(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_INFO, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
 #define mag_log_warn(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_WARN, MAG_SRC_NAME " " msg, ## __VA_ARGS__);  } while (0)
 #define mag_log_error(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_ERROR, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)

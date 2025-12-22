@@ -45,7 +45,8 @@ typedef enum mag_log_level_t {
     MAG_LOG_LEVEL_NONE,
     MAG_LOG_LEVEL_ERROR,
     MAG_LOG_LEVEL_WARN,
-    MAG_LOG_LEVEL_INFO
+    MAG_LOG_LEVEL_INFO,
+    MAG_LOG_LEVEL_DEBUG
 } mag_log_level_t;
 
 extern MAG_EXPORT void mag_set_log_level(mag_log_level_t level); /* Set global log level. */

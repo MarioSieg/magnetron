@@ -109,6 +109,7 @@ static void mag_setup_environ(void) {
     else if (mag_casecmp(v, "error")) mag_set_log_level(MAG_LOG_LEVEL_ERROR);
     else if (mag_casecmp(v, "warn") || mag_casecmp(v, "warning")) mag_set_log_level(MAG_LOG_LEVEL_WARN);
     else if (mag_casecmp(v, "info")) mag_set_log_level(MAG_LOG_LEVEL_INFO);
+    else if (mag_casecmp(v, "debug")) mag_set_log_level(MAG_LOG_LEVEL_DEBUG);
     else mag_log_error("Invalid MAG_LOG_LEVEL value '%s' (valid: off, error, warn, info)", v);
 }
 

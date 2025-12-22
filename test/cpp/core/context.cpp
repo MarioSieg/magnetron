@@ -14,7 +14,7 @@
 using namespace magnetron;
 
 TEST(context, create_cpu) {
-    mag_set_log_level(MAG_LOG_LEVEL_INFO);
+    mag_set_log_level(MAG_LOG_LEVEL_DEBUG);
     context ctx {};
     ASSERT_TRUE(mag_device_is((*ctx).device, "cpu"));
     ASSERT_FALSE(mag_device_is((*ctx).device, "cuda"));
