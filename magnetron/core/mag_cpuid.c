@@ -371,6 +371,12 @@ void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
 #ifdef HWCAP2_SVE2
     if (hwcap2 & HWCAP2_SVE2) *o|=mag_arm64_cap(SVE2);
 #endif
+#ifdef HWCAP_CRC32
+    if (hwcap & HWCAP_CRC32) *o |= mag_arm64_cap(CRC32);
+#endif
+#ifdef HWCAP_PMULL
+    if (hwcap & HWCAP_PMULL) *o |= mag_arm64_cap(PMULL);
+#endif
     *sve_width = 0; /* NYI */
 #elif defined(_WIN32)
     if (IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(NEON);
@@ -412,6 +418,12 @@ void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
     v = 0; n = sizeof(v);
     if (sysctlbyname("hw.optional.arm.FEAT_SVE", &v, &n, NULL, 0) == 0 && n == sizeof(v) && v)
         *o |= mag_arm64_cap(SVE);
+    if (sysctlbyname("hw.optional.armv8_crc32", &v, &n, NULL, 0) == 0 && n == sizeof(v) && v)
+        *o |= mag_arm64_cap(CRC32);
+    if (sysctlbyname("hw.optional.arm.FEAT_AES", &v, &n, NULL, 0) == 0 && n == sizeof(v) && v)
+        *o |= mag_arm64_cap(PMULL);
+    if (sysctlbyname("hw.optional.armv8_aes", &v, &n, NULL, 0) == 0 && n == sizeof(v) && v)
+        *o |= mag_arm64_cap(PMULL);
     *sve_width = 0;
 #endif
 }

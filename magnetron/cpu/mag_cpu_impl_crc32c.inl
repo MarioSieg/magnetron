@@ -10,9 +10,11 @@
 */
 
 /*
-*Fast CRC32 Castagnoli implementation using hardware acceleration if available.
-*Fallback to a software implementation using a lookup table otherwise.
- */
+** Fast CRC32 Castagnoli implementation using hardware acceleration if available.
+** Fallback to a software implementation using a lookup table otherwise.
+** Based on generations by: https://github.com/corsix/fast-crc32/.
+** See MIT license at the end of this file.
+*/
 
 #if defined(__SSE4_2__) && (defined(__PCLMUL__) || defined(__PCLMULQDQ__))
 
@@ -516,6 +518,17 @@ static uint32_t mag_crc32c(const void *buffer, size_t len) {
     return ~crc0;
 }
 
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+
+static uint32_t mag_crc32c(const void *buffer, size_t len) {
+    const uint8_t *buf = buffer;
+    uint32_t crc = ~0u;
+    for (; len && ((uintptr_t)buf & 7); --len) crc = __crc32cb(crc, *buf++);
+    for (; len >= 8; buf += 8, len -= 8) crc = __crc32cd(crc, *(const uint64_t*)buf);
+    for (; len; --len) crc = __crc32cb(crc, *buf++);
+    return ~crc;
+}
+
 #else
 
 static uint32_t mag_crc32c(const void *buffer, size_t len) {
@@ -528,3 +541,25 @@ static uint32_t mag_crc32c(const void *buffer, size_t len) {
 }
 
 #endif
+
+/*
+**  Copyright (c) 2023 Peter Cawley
+**
+**  Permission is hereby granted, free of charge, to any person obtaining a copy
+**  of this software and associated documentation files (the "Software"), to deal
+**  in the Software without restriction, including without limitation the rights
+**  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+**  copies of the Software, and to permit persons to whom the Software is
+**  furnished to do so, subject to the following conditions:
+**
+**  The above copyright notice and this permission notice shall be included in all
+**  copies or substantial portions of the Software.
+**
+**  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+**  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+**  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+**  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+**  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+**  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+**  SOFTWARE.
+*/

@@ -102,6 +102,8 @@ extern void mag_probe_cpu_amd64(mag_amd64_cap_bitset_t *o, uint32_t *avx10ver);
 #define mag_armd64_capdef(_, __) /* Enumerator */\
     _(NONE)__\
     _(NEON)__\
+    _(PMULL)__\
+    _(CRC32)__\
     _(DOTPROD)__\
     _(I8MM)__\
     _(F16SCALAR)__\
