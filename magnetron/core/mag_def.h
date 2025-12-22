@@ -588,7 +588,6 @@ return __builtin_smull_overflow(a, b, c);
 }
 
 extern MAG_EXPORT uint64_t mag_hash(const void *key, size_t len, uint32_t seed); /* Compute murmur3_64 hash */
-extern uint32_t mag_crc32c(const void *buffer, size_t size); /* Compute CRC32 checksum with CRC32c polynomial. */
 extern bool mag_utf8_validate(const char *str, size_t len);
 extern char *mag_strdup(const char *s);
 extern void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);

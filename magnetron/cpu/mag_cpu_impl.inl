@@ -845,15 +845,16 @@ static void mag_impl_deinit(void) {
     mag_scratch_arena_destroy(&mag_tls_arena);
 }
 
-void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t *kernels) {
-    kernels->init = &mag_impl_init;
-    kernels->deinit = &mag_impl_deinit;
+void MAG_BLAS_SPECIALIZATION(mag_kernel_registry_t *registry) {
+    registry->init = &mag_impl_init;
+    registry->deinit = &mag_impl_deinit;
     for (int i=0; i < MAG_OP__NUM; ++i) {
         for (int j=0; j < MAG_DTYPE__NUM; ++j) {
-            kernels->operators[i][j] = mag_lut_eval_kernels[i][j];
+            registry->operators[i][j] = mag_lut_eval_kernels[i][j];
         }
     }
-    kernels->vreg_width = &mag_vreg_width;
+    registry->vreg_width = &mag_vreg_width;
+    registry->crc32c = &mag_crc32c;
 }
 
 #ifndef MAG_BLAS_SPECIALIZATION
@@ -927,6 +928,13 @@ mag_amd64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
 #ifdef __AVX10__
     caps|=mag_amd64_cap(AVX10);
 #endif
+#ifdef __PCLMUL__
+    caps|=mag_amd64_cap(PCLMULQDQ);
+#endif
+#ifdef __VPCLMULQDQ__
+    caps|=mag_amd64_cap(VPCLMULQDQ);
+#endif
+
 
 #ifdef __AVX512F__
     caps|=mag_amd64_cap(AVX512_F);
