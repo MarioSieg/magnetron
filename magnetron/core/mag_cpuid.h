@@ -43,6 +43,8 @@ extern "C" {
     _(AVX_IFMA)__\
     _(AVX_VNNI_INT16)__\
     _(AVX10)__\
+    _(PCLMULQDQ)__\
+    _(VPCLMULQDQ)__\
     \
     _(AVX512_F)__\
     _(AVX512_DQ)__\

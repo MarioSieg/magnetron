@@ -97,6 +97,7 @@ typedef uint16_t __fp16; /* MSVC does not support __fp16. */
 #endif
 #endif
 
+#include "mag_cpu_impl_crc32c.inl"
 #include "mag_cpu_impl_cast.inl"
 #include "mag_cpu_impl_approxfn.inl"
 #include "mag_cpu_impl_rand.inl"

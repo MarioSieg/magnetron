@@ -86,6 +86,7 @@ void mag_probe_cpu_amd64(mag_amd64_cap_bitset_t *o, uint32_t *avx10ver) {
     }
     mag_cpuid(&id, 1);
     mag_captest(ecx, 0, SSE3);
+    mag_captest(ecx, 1, PCLMULQDQ);
     mag_captest(ecx, 9, SSSE3);
     mag_captest(ecx, 19, SSE41);
     mag_captest(ecx, 20, SSE42);
@@ -131,6 +132,7 @@ void mag_probe_cpu_amd64(mag_amd64_cap_bitset_t *o, uint32_t *avx10ver) {
         mag_captest(ebx, 3, BMI1);
         mag_captest(ebx, 8, BMI2);
         mag_captest(ecx, 8, GFNI);
+        mag_captest(ecx, 10, VPCLMULQDQ);
         mag_captest(edx, 22, AMX_BF16);
         mag_captest(edx, 24, AMX_TILE);
         mag_captest(edx, 25, AMX_INT8);
