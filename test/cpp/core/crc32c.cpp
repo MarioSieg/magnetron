@@ -72,11 +72,13 @@ TEST(crc32c, test_correctness) {
     context ctx {};
     mag_device_t *cpu;
     mag_backend_registry_get_by_device_id((*ctx).backend_registry, &cpu, "cpu");
-    ASSERT_TRUE(cpu != NULL);
+    ASSERT_NE(cpu, nullptr);
+    ASSERT_NE(cpu->impl, nullptr);
     const mag_kernel_registry_t &reg = static_cast<mag_cpu_device_t *>(cpu->impl)->kernels;
+    ASSERT_NE(reg.crc32c, nullptr);
     auto &crc32c = reg.crc32c;
     std::vector<uint8_t> data {};
-    data.reserve(0xffff);
+    data.reserve(8192);
     for (size_t len = 0; len < data.capacity(); ++len) {
         data.clear();
         for (size_t i = 0; i < len; ++i) {
@@ -86,4 +88,70 @@ TEST(crc32c, test_correctness) {
         uint32_t crc_test = crc32c(data.data(), len);
         ASSERT_EQ(crc_ref, crc_test) << "Length: " << len;
     }
+}
+
+[[nodiscard]] static inline double gib_per_sec(uint64_t bytes, double seconds) {
+    return static_cast<double>(bytes) / (seconds * std::pow(1024.0, 3.0));
+}
+
+[[nodiscard]] static inline uint64_t ns_since(std::chrono::steady_clock::time_point t0, std::chrono::steady_clock::time_point t1) {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+}
+
+static inline void do_not_optimize_u32(uint32_t x) {
+    #if defined(__clang__) || defined(__GNUC__)
+        asm volatile("" : : "r"(x) : "memory");
+    #else
+        (void)x;
+    #endif
+}
+
+TEST(crc32c, benchmark_throughput_gibs) {
+    context ctx{};
+    mag_device_t* cpu = nullptr;
+    mag_backend_registry_get_by_device_id((*ctx).backend_registry, &cpu, "cpu");
+    ASSERT_NE(cpu, nullptr);
+    ASSERT_NE(cpu->impl, nullptr);
+    const mag_kernel_registry_t& reg = static_cast<mag_cpu_device_t*>(cpu->impl)->kernels;
+    ASSERT_NE(reg.crc32c, nullptr);
+    auto crc_fast = reg.crc32c;
+    auto crc_naive = crc32c_ref;
+    constexpr size_t buf_bytes = 8ull<<20;
+    constexpr int warmup_iters = 5;
+    constexpr int measure_iters = 10;
+    std::vector<uint8_t> buf(buf_bytes);
+    std::mt19937 rng(123);
+    std::uniform_int_distribution<int> dist(0, 255);
+    for (size_t i = 0; i < buf.size(); ++i) buf[i] = static_cast<uint8_t>(dist(rng));
+    uint32_t ref0 = crc_naive(buf.data(), buf.size());
+    uint32_t tst0 = crc_fast(buf.data(), buf.size());
+    ASSERT_EQ(ref0, tst0);
+    auto run = [&](auto fn, const char* name) -> double {
+        for (int i = 0; i < warmup_iters; ++i) {
+            uint32_t c = fn(buf.data(), buf.size());
+            do_not_optimize_u32(c);
+        }
+        uint64_t best_ns = std::numeric_limits<uint64_t>::max();
+        uint32_t sink = 0;
+        for (int i = 0; i < measure_iters; ++i) {
+            auto t0 = std::chrono::steady_clock::now();
+            uint32_t c = fn(buf.data(), buf.size());
+            auto t1 = std::chrono::steady_clock::now();
+            sink ^= c;
+            best_ns = std::min(best_ns, ns_since(t0, t1));
+        }
+        do_not_optimize_u32(sink);
+        double sec = static_cast<double>(best_ns) * 1e-9;
+        double gibs = gib_per_sec(buf.size(), sec);
+        std::cout << name << ": best " << best_ns << " ns, " << gibs << " GiB/s\n";
+        return gibs;
+    };
+    double gibs_naive = run(crc_naive, "crc32c_naive");
+    double gibs_fast = run(crc_fast, "crc32c_fast");
+    double speedup = gibs_fast / gibs_naive;
+    RecordProperty("buf_bytes", (long long)buf_bytes);
+    RecordProperty("gibs_naive", gibs_naive);
+    RecordProperty("gibs_fast", gibs_fast);
+    RecordProperty("speedup", speedup);
+    std::cout << "Speedup: " << speedup << "x\n";
 }
