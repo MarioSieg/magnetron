@@ -1061,6 +1061,12 @@ mag_arm64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(void) {
 #ifdef __ARM_FEATURE_BF16
     caps|=mag_arm64_cap(BF16);
 #endif
+#ifdef __ARM_FEATURE_CRC32
+    caps|=mag_arm64_cap(CRC32);
+#endif
+#ifdef __ARM_FEATURE_CRYPTO
+    caps|=mag_arm64_cap(PMULL);
+#endif
 #ifdef __ARM_FEATURE_SVE
     caps|=mag_arm64_cap(SVE);
 #endif
