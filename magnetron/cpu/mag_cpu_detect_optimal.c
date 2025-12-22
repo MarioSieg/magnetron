@@ -215,6 +215,9 @@ mag_arm64_spec_extern(9_sve2);
 #ifdef MAG_HAVE_CPU_ARMV8_2_A_SVE
 mag_arm64_spec_extern(82_sve);
 #endif
+#ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD_CRYPTO
+mag_arm64_spec_extern(86_crypto);
+#endif
 #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD
 mag_arm64_spec_extern(86);
 #endif
@@ -229,6 +232,9 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_context_t *ctx, mag_kerne
         #endif
         #ifdef MAG_HAVE_CPU_ARMV8_2_A_SVE
             mag_arm64_spec_dispatch(82_sve),
+        #endif
+        #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD_CRYPTO
+            mag_arm64_spec_dispatch(86_crypto),
         #endif
         #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD
             mag_arm64_spec_dispatch(86),
