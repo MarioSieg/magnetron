@@ -928,7 +928,7 @@ mag_amd64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST() {
 #ifdef __AVX10__
     caps|=mag_amd64_cap(AVX10);
 #endif
-#ifdef __PCLMUL__
+#if defined(__PCLMUL__) || defined(__PCLMULQDQ__)
     caps|=mag_amd64_cap(PCLMULQDQ);
 #endif
 #ifdef __VPCLMULQDQ__

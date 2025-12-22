@@ -14,7 +14,7 @@
 *Fallback to a software implementation using a lookup table otherwise.
  */
 
-#if defined(__SSE4_2__) && defined(__PCLMUL__)
+#if defined(__SSE4_2__) && (defined(__PCLMUL__) || defined(__PCLMULQDQ__))
 
 static uint32_t mag_xnmodp(uint64_t n) {
     uint64_t stack = ~(uint64_t)1;
@@ -256,7 +256,7 @@ static uint32_t mag_crc32c(const void *buffer, size_t len) {
     return ~crc0;
 }
 
-#elif defined(__SSE4_2__) && defined(__PCLMUL__)
+#elif defined(__SSE4_2__) &&  (defined(__PCLMUL__) || defined(__PCLMULQDQ__))
 
 #define mag_clmullo(a, b) (_mm_clmulepi64_si128((a), (b), 0))
 #define mag_clmulhi(a, b) (_mm_clmulepi64_si128((a), (b), 17))
@@ -364,6 +364,155 @@ static uint32_t mag_crc32c(const void *buffer, size_t len) {
     }
     for (; len >= 8; buf += 8, len -= 8) crc0 = _mm_crc32_u64(crc0, *(const uint64_t *)buf);
     for (; len; --len) crc0 = _mm_crc32_u8(crc0, *buf++);
+    return ~crc0;
+}
+
+
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO)
+
+MAG_AINLINE static uint64x2_t mag_clmullo(uint64x2_t a, uint64x2_t b, uint64x2_t c) {
+    uint64x2_t r;
+    __asm__ __volatile__(
+        "pmull %0.1q, %2.1d, %3.1d\n"
+        "eor %0.16b, %0.16b, %1.16b\n"
+        : "=w"(r), "+w"(c)
+        : "w"(a), "w"(b)
+    );
+    return r;
+}
+
+MAG_AINLINE static uint64x2_t mag_clmulhi(uint64x2_t a, uint64x2_t b, uint64x2_t c) {
+    uint64x2_t r;
+    __asm__ __volatile__(
+        "pmull2 %0.1q, %2.2d, %3.2d\n"
+        "eor %0.16b, %0.16b, %1.16b\n"
+        : "=w"(r), "+w"(c)
+        : "w"(a), "w"(b)
+    );
+    return r;
+}
+
+MAG_AINLINE static uint64x2_t mag_clmuls(uint32_t a, uint32_t b) {
+    uint64x2_t r;
+    __asm__ __volatile__(
+        "pmull %0.1q, %1.1d, %2.1d\n"
+        : "=w"(r)
+        : "w"(vmovq_n_u64(a)),
+        "w"(vmovq_n_u64(b))
+    );
+    return r;
+}
+
+static uint32_t mag_xnmodp(uint64_t n) {
+    uint64_t stack = ~(uint64_t)1;
+    uint32_t acc, low;
+    for (; n > 191; n = (n >> 1) - 16) {
+        stack = (stack << 1) + (n & 1);
+    }
+    stack = ~stack;
+    acc = 0x80000000u >> (n & 31);
+    for (n >>= 5; n; --n) {
+        acc = __crc32cw(acc, 0);
+    }
+    while ((low = stack & 1), stack >>= 1) {
+        poly8x8_t x = vreinterpret_p8_u64(vmov_n_u64(acc));
+        uint64_t y = vgetq_lane_u64(vreinterpretq_u64_p16(vmull_p8(x, x)), 0);
+        acc = __crc32cd(0, y << low);
+    }
+    return acc;
+}
+
+MAG_AINLINE static uint64x2_t mag_crc_shift(uint32_t crc, size_t nbytes) {
+    return mag_clmuls(crc, mag_xnmodp(nbytes * 8 - 33));
+}
+
+static uint32_t mag_crc32c(const void *buffer, size_t len) {
+    const uint8_t *buf = buffer;
+    uint32_t crc0 = ~0u;
+    for (; len && ((uintptr_t)buf & 7); --len) crc0 = __crc32cb(crc0, *buf++);
+    if (((uintptr_t)buf & 8) && len >= 8) {
+        crc0 = __crc32cd(crc0, *(const uint64_t *)buf);
+        buf += 8;
+        len -= 8;
+    }
+    if (len >= 112) {
+        const uint8_t *end = buf + len;
+        size_t blk = (len - 0) / 112;
+        size_t klen = blk * 16;
+        const uint8_t *buf2 = buf + klen * 4;
+        const uint8_t *limit = buf + klen - 32;
+        uint32_t crc1 = 0;
+        uint32_t crc2 = 0;
+        uint32_t crc3 = 0;
+        uint64x2_t vc0;
+        uint64x2_t vc1;
+        uint64x2_t vc2;
+        uint64x2_t vc3;
+        uint64_t vc;
+        uint64x2_t x0 = vld1q_u64((const uint64_t *)buf2), y0;
+        uint64x2_t x1 = vld1q_u64((const uint64_t *)(buf2 + 16)), y1;
+        uint64x2_t x2 = vld1q_u64((const uint64_t *)(buf2 + 32)), y2;
+        uint64x2_t k;
+        { static const uint64_t mag_alignas(16) k_[] = {0x1c291d04, 0xddc0152b}; k = vld1q_u64(k_); }
+        buf2 += 48;
+        while (buf <= limit) {
+            y0 = mag_clmullo(x0, k, vld1q_u64((const uint64_t *)buf2)), x0 = mag_clmulhi(x0, k, y0);
+            y1 = mag_clmullo(x1, k, vld1q_u64((const uint64_t *)(buf2 + 16))), x1 = mag_clmulhi(x1, k, y1);
+            y2 = mag_clmullo(x2, k, vld1q_u64((const uint64_t *)(buf2 + 32))), x2 = mag_clmulhi(x2, k, y2);
+            crc0 = __crc32cd(crc0, *(const uint64_t *)buf);
+            crc1 = __crc32cd(crc1, *(const uint64_t *)(buf + klen));
+            crc2 = __crc32cd(crc2, *(const uint64_t *)(buf + klen * 2));
+            crc3 = __crc32cd(crc3, *(const uint64_t *)(buf + klen * 3));
+            crc0 = __crc32cd(crc0, *(const uint64_t *)(buf + 8));
+            crc1 = __crc32cd(crc1, *(const uint64_t *)(buf + klen + 8));
+            crc2 = __crc32cd(crc2, *(const uint64_t *)(buf + klen * 2 + 8));
+            crc3 = __crc32cd(crc3, *(const uint64_t *)(buf + klen * 3 + 8));
+            buf += 16;
+            buf2 += 48;
+        }
+        { static const uint64_t mag_alignas(16) k_[] = {0xf20c0dfe, 0x493c7d27}; k = vld1q_u64(k_); }
+        y0 = mag_clmullo(x0, k, x1), x0 = mag_clmulhi(x0, k, y0);
+        x1 = x2;
+        y0 = mag_clmullo(x0, k, x1), x0 = mag_clmulhi(x0, k, y0);
+        crc0 = __crc32cd(crc0, *(const uint64_t *)buf);
+        crc1 = __crc32cd(crc1, *(const uint64_t *)(buf + klen));
+        crc2 = __crc32cd(crc2, *(const uint64_t *)(buf + klen * 2));
+        crc3 = __crc32cd(crc3, *(const uint64_t *)(buf + klen * 3));
+        crc0 = __crc32cd(crc0, *(const uint64_t *)(buf + 8));
+        crc1 = __crc32cd(crc1, *(const uint64_t *)(buf + klen + 8));
+        crc2 = __crc32cd(crc2, *(const uint64_t *)(buf + klen * 2 + 8));
+        crc3 = __crc32cd(crc3, *(const uint64_t *)(buf + klen * 3 + 8));
+        vc0 = mag_crc_shift(crc0, klen * 3 + blk * 48);
+        vc1 = mag_crc_shift(crc1, klen * 2 + blk * 48);
+        vc2 = mag_crc_shift(crc2, klen + blk * 48);
+        vc3 = mag_crc_shift(crc3, 0 + blk * 48);
+        vc = vgetq_lane_u64(veorq_u64(veorq_u64(vc0, vc1), veorq_u64(vc2, vc3)), 0);
+        crc0 = __crc32cd(0, vgetq_lane_u64(x0, 0));
+        crc0 = __crc32cd(crc0, vc ^ vgetq_lane_u64(x0, 1));
+        buf = buf2;
+        len = end - buf;
+    }
+    if (len >= 32) {
+        uint64x2_t x0 = vld1q_u64((const uint64_t *)buf), y0;
+        uint64x2_t x1 = vld1q_u64((const uint64_t *)(buf + 16)), y1;
+        uint64x2_t k;
+        { static const uint64_t mag_alignas(16) k_[] = {0x3da6d0cb, 0xba4fc28e}; k = vld1q_u64(k_); }
+        x0 = veorq_u64((uint64x2_t){crc0, 0}, x0);
+        buf += 32;
+        len -= 32;
+        while (len >= 32) {
+            y0 = mag_clmullo(x0, k, vld1q_u64((const uint64_t *)buf)), x0 = mag_clmulhi(x0, k, y0);
+            y1 = mag_clmullo(x1, k, vld1q_u64((const uint64_t *)(buf + 16))), x1 = mag_clmulhi(x1, k, y1);
+            buf += 32;
+            len -= 32;
+        }
+        { static const uint64_t mag_alignas(16) k_[] = {0xf20c0dfe, 0x493c7d27}; k = vld1q_u64(k_); }
+        y0 = mag_clmullo(x0, k, x1), x0 = mag_clmulhi(x0, k, y0);
+        crc0 = __crc32cd(0, vgetq_lane_u64(x0, 0));
+        crc0 = __crc32cd(crc0, vgetq_lane_u64(x0, 1));
+    }
+    for (; len >= 8; buf += 8, len -= 8) crc0 = __crc32cd(crc0, *(const uint64_t *)buf);
+    for (; len; --len) crc0 = __crc32cb(crc0, *buf++);
     return ~crc0;
 }
 
