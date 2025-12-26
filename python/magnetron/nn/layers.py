@@ -52,26 +52,14 @@ class RMSNorm(Module):
     def __init__(self, dim: int, eps: float = 1e-5) -> None:
         super().__init__()
         self.eps = eps
-        self.weight = Parameter(Tensor.zeros(dim))
+        self.weight = Parameter(Tensor.ones(dim))
 
     def _norm(self, x: Tensor) -> Tensor:
-        rms = ((x**2).mean(axis=-1, keepdim=True) + self.eps) ** 0.5
+        rms = (x.sqr().mean(dim=-1, keepdim=True) + self.eps).sqrt_()
         return x / rms
 
     def forward(self, x: Tensor) -> Tensor:
-        output = self._norm(x)
-        return output * self.weight
-
-
-class Dropout(Module):
-    def __init__(self, p: float = 0.5, inplace: bool = False) -> None:
-        super().__init__()
-        assert 0 <= p <= 1, 'Bernoulli probability must be between 0 and 1'
-        self.p = p
-        self.inplace = inplace
-
-    def forward(self, x: Tensor) -> Tensor:
-        return x.dropout_(self.p) if self.inplace else x.dropout(self.p)
+        return self._norm(x) * self.weight.x
 
 
 class LayerNorm(Module):
