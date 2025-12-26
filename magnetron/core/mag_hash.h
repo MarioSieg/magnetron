@@ -9,8 +9,8 @@
 ** +---------------------------------------------------------------------+
 */
 
-#ifndef MAG_ROMAP_H
-#define MAG_ROMAP_H
+#ifndef MAG_HASH_H
+#define MAG_HASH_H
 
 #include "mag_def.h"
 #include "mag_u128.h"
