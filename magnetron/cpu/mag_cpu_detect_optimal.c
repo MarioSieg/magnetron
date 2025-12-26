@@ -66,6 +66,9 @@ mag_amd64_blas_spec_decl(ivybridge);
 #ifdef MAG_HAVE_CPU_NEHALEM
 mag_amd64_blas_spec_decl(nehalem);
 #endif
+#ifdef MAG_HAVE_CPU_WESTMERE
+mag_amd64_blas_spec_decl(westmere);
+#endif
 #ifdef MAG_HAVE_CPU_SANDYBRIDGE
 mag_amd64_blas_spec_decl(sandybridge);
 #endif
@@ -134,6 +137,9 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_context_t *host_ctx, mag_
         #endif
         #ifdef MAG_HAVE_CPU_SANDYBRIDGE
                 mag_amd64_blas_spec_permute(sandybridge),
+        #endif
+        #ifdef MAG_HAVE_CPU_WESTMERE
+               mag_amd64_blas_spec_permute(westmere),
         #endif
         #ifdef MAG_HAVE_CPU_NEHALEM
                 mag_amd64_blas_spec_permute(nehalem),

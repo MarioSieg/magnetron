@@ -16,7 +16,7 @@
 ** See MIT license at the end of this file.
 */
 
-#if defined(__SSE4_2__) && (defined(__PCLMUL__) || defined(__PCLMULQDQ__))
+#if defined(__SSE4_2__) && defined(__CRC32__) && (defined(__PCLMUL__) || defined(__PCLMULQDQ__))
 
 static uint32_t mag_xnmodp(uint64_t n) {
     uint64_t stack = ~(uint64_t)1;
@@ -47,7 +47,7 @@ MAG_AINLINE static __m128i mag_crcshift(uint32_t crc, size_t nbytes) {
 
 #endif
 
-#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__VPCLMULQDQ__)
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__VPCLMULQDQ__) && defined(__CRC32__)
 
 #define mag_clmullo(a, b) (_mm512_clmulepi64_epi128((a), (b), 0))
 #define mag_clmulhi(a, b) (_mm512_clmulepi64_epi128((a), (b), 17))
@@ -140,7 +140,7 @@ static uint32_t mag_crc32c(const void *buffer, size_t len) {
     return ~crc0;
 }
 
-#elif defined(__AVX512F__) && defined(__AVX512VL__)
+#elif defined(__AVX512F__) && defined(__AVX512VL__) && defined(__CRC32__)
 
 #define mag_clmullo(a, b) (_mm_clmulepi64_si128((a), (b), 0))
 #define mag_clmulhi(a, b) (_mm_clmulepi64_si128((a), (b), 17))
@@ -258,7 +258,7 @@ static uint32_t mag_crc32c(const void *buffer, size_t len) {
     return ~crc0;
 }
 
-#elif defined(__SSE4_2__) &&  (defined(__PCLMUL__) || defined(__PCLMULQDQ__))
+#elif defined(__SSE4_2__) &&  (defined(__PCLMUL__) || defined(__PCLMULQDQ__)) && defined(__CRC32__)
 
 #define mag_clmullo(a, b) (_mm_clmulepi64_si128((a), (b), 0))
 #define mag_clmulhi(a, b) (_mm_clmulepi64_si128((a), (b), 17))

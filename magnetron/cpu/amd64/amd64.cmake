@@ -16,6 +16,7 @@ mag_register_cpu_backend("amd64/mag_cpu_amd64_sapphirerapids.c"  "-march=sapphir
 mag_register_cpu_backend("amd64/mag_cpu_amd64_sierraforest.c"    "-march=sierraforest -mtune=sierraforest"       "/arch:AVX2")   # E-core server: AVX2 + AVX-VNNI
 mag_register_cpu_backend("amd64/mag_cpu_amd64_skylake_avx512.c"  "-march=skylake-avx512 -mtune=skylake-avx512"   "/arch:AVX512") # base AVX-512 (F+VL+DQ+BW)
 mag_register_cpu_backend("amd64/mag_cpu_amd64_tigerlake.c"       "-march=tigerlake -mtune=tigerlake"             "/arch:AVX512") # client AVX-512 (VNNI etc.)
+mag_register_cpu_backend("amd64/mag_cpu_amd64_westmere.c"        "-march=westmere -mtune=westmere"               "/arch:SSE4.2")  # SSE4.2 + PCLMUL
 
 # AMD
 mag_register_cpu_backend("amd64/mag_cpu_amd64_zn1.c"             "-march=znver1 -mtune=znver1"                   "/arch:AVX2")   # Zen/Zen+
