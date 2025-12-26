@@ -11,11 +11,12 @@
 
 #include <prelude.hpp>
 
+#include <core/mag_hash.h>
+
 using namespace magnetron;
 
-TEST(misc, hash_function) {
-    ASSERT_EQ(mag_hash("hello", 5, 0), 15821672119091348640ull);
-    ASSERT_EQ(mag_hash("hello", 5, 0), 15821672119091348640ull);
-    ASSERT_NE(mag_hash("hello", 5, 1), 15821672119091348640ull);
-    ASSERT_NE(mag_hash("helli", 5, 0), 15821672119091348640ull);
+TEST(hash, murmur3) {
+    ASSERT_EQ(mag_murmur3_128_reduced_64("hello", 5, 0), mag_murmur3_128_reduced_64("hello", 5, 0));
+    ASSERT_NE(mag_murmur3_128_reduced_64("hello", 5, 1), mag_murmur3_128_reduced_64("hello", 5, 0));
+    ASSERT_NE(mag_murmur3_128_reduced_64("hello", 5, 0), mag_murmur3_128_reduced_64("hella", 5, 0));
 }

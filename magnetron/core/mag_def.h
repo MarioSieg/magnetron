@@ -588,7 +588,6 @@ return __builtin_smull_overflow(a, b, c);
 #endif
 }
 
-extern MAG_EXPORT uint64_t mag_hash(const void *key, size_t len, uint32_t seed); /* Compute murmur3_64 hash */
 extern bool mag_utf8_validate(const char *str, size_t len);
 extern char *mag_strdup(const char *s);
 extern void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);

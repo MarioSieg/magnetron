@@ -13,6 +13,7 @@
 #include "mag_dylib.h"
 #include "mag_os.h"
 #include "mag_alloc.h"
+#include "mag_hash.h"
 
 #include <ctype.h>
 
@@ -99,7 +100,7 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     *module = (mag_backend_module_t) {
         .handle = handle,
         .backend = backend,
-        .fname_hash = mag_hash(file, strlen(file), 0),
+        .fname_hash = mag_murmur3_128_reduced_64(file, strlen(file), 0),
         .fn_abi_cookie = fn_abi_cookie,
         .fn_init = fn_init,
         .fn_shutdown = fn_shutdown
@@ -197,7 +198,7 @@ static void mag_format_dylib_name(char (*o)[1024], const char *basedir, const ch
 }
 
 static bool mag_backend_registry_try_backend_load(mag_backend_registry_t *reg, const char *file_path) {
-    if (mag_backend_registry_is_backend_loaded(reg, mag_hash(file_path, strlen(file_path), 0))) return false; /* Already loaded (file name hash exists) */
+    if (mag_backend_registry_is_backend_loaded(reg, mag_murmur3_128_reduced_64(file_path, strlen(file_path), 0))) return false; /* Already loaded (file name hash exists) */
     mag_backend_module_t *mod = mag_backend_module_load(file_path, reg->ctx);
     if (mag_unlikely(!mod)) { /* Attempt to load module */
         return false; /* Failed to load, skip */
