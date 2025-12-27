@@ -15,9 +15,10 @@
 #include <core/mag_tensor.h>
 #include <core/mag_cpuid.h>
 #include <core/mag_alloc.h>
-#include <core/mag_float16.h>
 #include <core/mag_coords.h>
 #include <core/mag_coords_iter.h>
+#include <core/mag_float16.h>
+#include <core/mag_bfloat16.h>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -114,6 +115,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_NOP] = {
         [MAG_DTYPE_FLOAT32] = &mag_nop,
         [MAG_DTYPE_FLOAT16] = &mag_nop,
+        [MAG_DTYPE_BFLOAT16] = &mag_nop,
         [MAG_DTYPE_BOOLEAN] = &mag_nop,
         [MAG_DTYPE_UINT8] = &mag_nop,
         [MAG_DTYPE_INT8] = &mag_nop,
@@ -127,6 +129,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_FILL] = {
         [MAG_DTYPE_FLOAT32] = &mag_fill_float32,
         [MAG_DTYPE_FLOAT16] = &mag_fill_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_fill_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_fill_uint8,
         [MAG_DTYPE_UINT8] = &mag_fill_uint8,
         [MAG_DTYPE_INT8] = &mag_fill_int8,
@@ -140,6 +143,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_MASKED_FILL] = {
         [MAG_DTYPE_FLOAT32] = &mag_masked_fill_float32,
         [MAG_DTYPE_FLOAT16] = &mag_masked_fill_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_masked_fill_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_masked_fill_uint8,
         [MAG_DTYPE_UINT8] = &mag_masked_fill_uint8,
         [MAG_DTYPE_INT8] = &mag_masked_fill_int8,
@@ -153,6 +157,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_RAND_UNIFORM] = {
         [MAG_DTYPE_FLOAT32] = &mag_fill_rand_uniform_float32,
         [MAG_DTYPE_FLOAT16] = &mag_fill_rand_uniform_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_fill_rand_uniform_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_fill_rand_uniform_uint8,
         [MAG_DTYPE_INT8] = &mag_fill_rand_uniform_int8,
         [MAG_DTYPE_UINT16] = &mag_fill_rand_uniform_uint16,
@@ -165,6 +170,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_RAND_NORMAL] = {
         [MAG_DTYPE_FLOAT32] = &mag_fill_rand_normal_float32,
         [MAG_DTYPE_FLOAT16] = &mag_fill_rand_normal_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_fill_rand_normal_bfloat16,
     },
     [MAG_OP_RAND_BERNOULLI] = {
         [MAG_DTYPE_BOOLEAN] = &mag_fill_rand_bernoulli_bool,
@@ -182,6 +188,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_ARANGE] = {
         [MAG_DTYPE_FLOAT32] = &mag_arange_float32,
         [MAG_DTYPE_FLOAT16] = &mag_arange_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_arange_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_arange_uint8,
         [MAG_DTYPE_INT8] = &mag_arange_int8,
         [MAG_DTYPE_UINT16] = &mag_arange_uint16,
@@ -197,6 +204,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_CAST] = {
         [MAG_DTYPE_FLOAT32] = &mag_cast_generic,
         [MAG_DTYPE_FLOAT16] = &mag_cast_generic,
+        [MAG_DTYPE_BFLOAT16] = &mag_cast_generic,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_generic,
         [MAG_DTYPE_UINT8] = &mag_cast_generic,
         [MAG_DTYPE_INT8] = &mag_cast_generic,
@@ -210,6 +218,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_CLONE] = {
         [MAG_DTYPE_FLOAT32] = &mag_clone_float32,
         [MAG_DTYPE_FLOAT16] = &mag_clone_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_clone_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_clone_uint8,
         [MAG_DTYPE_UINT8] = &mag_clone_uint8,
         [MAG_DTYPE_INT8] = &mag_clone_int8,
@@ -223,6 +232,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_VIEW] = {
         [MAG_DTYPE_FLOAT32] = &mag_nop,
         [MAG_DTYPE_FLOAT16] = &mag_nop,
+        [MAG_DTYPE_BFLOAT16] = &mag_nop,
         [MAG_DTYPE_BOOLEAN] = &mag_nop,
         [MAG_DTYPE_UINT8] = &mag_nop,
         [MAG_DTYPE_INT8] = &mag_nop,
@@ -236,6 +246,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_TRANSPOSE] = {
         [MAG_DTYPE_FLOAT32] = &mag_nop,
         [MAG_DTYPE_FLOAT16] = &mag_nop,
+        [MAG_DTYPE_BFLOAT16] = &mag_nop,
         [MAG_DTYPE_BOOLEAN] = &mag_nop,
         [MAG_DTYPE_UINT8] = &mag_nop,
         [MAG_DTYPE_INT8] = &mag_nop,
@@ -249,6 +260,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_PERMUTE] = {
         [MAG_DTYPE_FLOAT32] = &mag_nop,
         [MAG_DTYPE_FLOAT16] = &mag_nop,
+        [MAG_DTYPE_BFLOAT16] = &mag_nop,
         [MAG_DTYPE_BOOLEAN] = &mag_nop,
         [MAG_DTYPE_UINT8] = &mag_nop,
         [MAG_DTYPE_INT8] = &mag_nop,
@@ -262,10 +274,12 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_MEAN] = {
         [MAG_DTYPE_FLOAT32] = &mag_mean_float32,
         [MAG_DTYPE_FLOAT16] = &mag_mean_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_mean_bfloat16,
     },
     [MAG_OP_MIN] = {
         [MAG_DTYPE_FLOAT32] = &mag_min_float32,
         [MAG_DTYPE_FLOAT16] = &mag_min_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_min_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_min_uint8,
         [MAG_DTYPE_INT8] = &mag_min_int8,
         [MAG_DTYPE_UINT16] = &mag_min_uint16,
@@ -278,6 +292,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_MAX] = {
         [MAG_DTYPE_FLOAT32] = &mag_max_float32,
         [MAG_DTYPE_FLOAT16] = &mag_max_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_max_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_max_uint8,
         [MAG_DTYPE_INT8] = &mag_max_int8,
         [MAG_DTYPE_UINT16] = &mag_max_uint16,
@@ -290,6 +305,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_ARGMIN] = {
         [MAG_DTYPE_FLOAT32] = &mag_argmin_float32,
         [MAG_DTYPE_FLOAT16] = &mag_argmin_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_argmin_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_argmin_uint8,
         [MAG_DTYPE_INT8] = &mag_argmin_int8,
         [MAG_DTYPE_UINT16] = &mag_argmin_uint16,
@@ -302,6 +318,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_ARGMAX] = {
         [MAG_DTYPE_FLOAT32] = &mag_argmax_float32,
         [MAG_DTYPE_FLOAT16] = &mag_argmax_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_argmax_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_argmax_uint8,
         [MAG_DTYPE_INT8] = &mag_argmax_int8,
         [MAG_DTYPE_UINT16] = &mag_argmax_uint16,
@@ -314,6 +331,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_SUM] = {
         [MAG_DTYPE_FLOAT32] = &mag_sum_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sum_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_sum_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_sum_uint8,
         [MAG_DTYPE_INT8] = &mag_sum_int8,
         [MAG_DTYPE_UINT16] = &mag_sum_uint16,
@@ -326,6 +344,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_PROD] = {
         [MAG_DTYPE_FLOAT32] = &mag_prod_float32,
         [MAG_DTYPE_FLOAT16] = &mag_prod_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_prod_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_prod_uint8,
         [MAG_DTYPE_INT8] = &mag_prod_int8,
         [MAG_DTYPE_UINT16] = &mag_prod_uint16,
@@ -338,6 +357,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_ALL] = {
         [MAG_DTYPE_FLOAT32] = &mag_all_float32,
         [MAG_DTYPE_FLOAT16] = &mag_all_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_all_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_all_uint8,
         [MAG_DTYPE_UINT8] = &mag_all_uint8,
         [MAG_DTYPE_INT8] = &mag_all_int8,
@@ -351,6 +371,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_ANY] = {
         [MAG_DTYPE_FLOAT32] = &mag_any_float32,
         [MAG_DTYPE_FLOAT16] = &mag_any_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_any_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_any_uint8,
         [MAG_DTYPE_UINT8] = &mag_any_uint8,
         [MAG_DTYPE_INT8] = &mag_any_int8,
@@ -364,6 +385,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_TOPK] = {
         [MAG_DTYPE_FLOAT32] = &mag_topk_float32,
         [MAG_DTYPE_FLOAT16] = &mag_topk_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_topk_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_topk_uint8,
         [MAG_DTYPE_INT8] = &mag_topk_int8,
         [MAG_DTYPE_UINT16] = &mag_topk_uint16,
@@ -376,190 +398,236 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_ABS] = {
         [MAG_DTYPE_FLOAT32] = &mag_abs_float32,
         [MAG_DTYPE_FLOAT16] = &mag_abs_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_abs_bfloat16,
     },
     [MAG_OP_SGN] = {
         [MAG_DTYPE_FLOAT32] = &mag_sgn_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sgn_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_sgn_bfloat16,
     },
     [MAG_OP_NEG] = {
         [MAG_DTYPE_FLOAT32] = &mag_neg_float32,
         [MAG_DTYPE_FLOAT16] = &mag_neg_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_neg_bfloat16,
     },
     [MAG_OP_LOG] = {
         [MAG_DTYPE_FLOAT32] = &mag_log_float32,
         [MAG_DTYPE_FLOAT16] = &mag_log_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_log_bfloat16,
     },
     [MAG_OP_LOG10] = {
         [MAG_DTYPE_FLOAT32] = &mag_log10_float32,
         [MAG_DTYPE_FLOAT16] = &mag_log10_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_log10_bfloat16,
     },
     [MAG_OP_LOG1P] = {
         [MAG_DTYPE_FLOAT32] = &mag_log1p_float32,
         [MAG_DTYPE_FLOAT16] = &mag_log1p_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_log1p_bfloat16,
     },
     [MAG_OP_LOG2] = {
         [MAG_DTYPE_FLOAT32] = &mag_log2_float32,
         [MAG_DTYPE_FLOAT16] = &mag_log2_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_log2_bfloat16,
     },
     [MAG_OP_SQR] = {
         [MAG_DTYPE_FLOAT32] = &mag_sqr_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sqr_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_sqr_bfloat16,
     },
     [MAG_OP_RCP] = {
         [MAG_DTYPE_FLOAT32] = &mag_rcp_float32,
         [MAG_DTYPE_FLOAT16] = &mag_rcp_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_rcp_bfloat16,
     },
     [MAG_OP_SQRT] = {
         [MAG_DTYPE_FLOAT32] = &mag_sqrt_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sqrt_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_sqrt_bfloat16,
     },
     [MAG_OP_RSQRT] = {
         [MAG_DTYPE_FLOAT32] = &mag_rsqrt_float32,
         [MAG_DTYPE_FLOAT16] = &mag_rsqrt_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_rsqrt_bfloat16,
     },
     [MAG_OP_SIN] = {
         [MAG_DTYPE_FLOAT32] = &mag_sin_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sin_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_sin_bfloat16,
     },
     [MAG_OP_COS] = {
         [MAG_DTYPE_FLOAT32] = &mag_cos_float32,
         [MAG_DTYPE_FLOAT16] = &mag_cos_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_cos_bfloat16,
     },
     [MAG_OP_TAN] = {
         [MAG_DTYPE_FLOAT32] = &mag_tan_float32,
         [MAG_DTYPE_FLOAT16] = &mag_tan_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_tan_bfloat16,
     },
     [MAG_OP_SINH] = {
         [MAG_DTYPE_FLOAT32] = &mag_sinh_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sinh_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_sinh_bfloat16,
     },
     [MAG_OP_COSH] = {
         [MAG_DTYPE_FLOAT32] = &mag_cosh_float32,
         [MAG_DTYPE_FLOAT16] = &mag_cosh_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_cosh_bfloat16,
     },
     [MAG_OP_TANH] = {
         [MAG_DTYPE_FLOAT32] = &mag_tanh_float32,
         [MAG_DTYPE_FLOAT16] = &mag_tanh_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_tanh_bfloat16,
     },
     [MAG_OP_ASIN] = {
         [MAG_DTYPE_FLOAT32] = &mag_asin_float32,
         [MAG_DTYPE_FLOAT16] = &mag_asin_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_asin_bfloat16,
     },
     [MAG_OP_ACOS] = {
         [MAG_DTYPE_FLOAT32] = &mag_acos_float32,
         [MAG_DTYPE_FLOAT16] = &mag_acos_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_acos_bfloat16,
     },
     [MAG_OP_ATAN] = {
         [MAG_DTYPE_FLOAT32] = &mag_atan_float32,
         [MAG_DTYPE_FLOAT16] = &mag_atan_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_atan_bfloat16,
     },
     [MAG_OP_ASINH] = {
         [MAG_DTYPE_FLOAT32] = &mag_asinh_float32,
         [MAG_DTYPE_FLOAT16] = &mag_asinh_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_asinh_bfloat16,
     },
     [MAG_OP_ACOSH] = {
         [MAG_DTYPE_FLOAT32] = &mag_acosh_float32,
         [MAG_DTYPE_FLOAT16] = &mag_acosh_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_acosh_bfloat16,
     },
     [MAG_OP_ATANH] = {
         [MAG_DTYPE_FLOAT32] = &mag_atanh_float32,
         [MAG_DTYPE_FLOAT16] = &mag_atanh_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_atanh_bfloat16,
     },
     [MAG_OP_STEP] = {
         [MAG_DTYPE_FLOAT32] = &mag_step_float32,
         [MAG_DTYPE_FLOAT16] = &mag_step_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_step_bfloat16,
     },
     [MAG_OP_ERF] = {
         [MAG_DTYPE_FLOAT32] = &mag_erf_float32,
         [MAG_DTYPE_FLOAT16] = &mag_erf_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_erf_bfloat16,
     },
     [MAG_OP_ERFC] = {
         [MAG_DTYPE_FLOAT32] = &mag_erfc_float32,
         [MAG_DTYPE_FLOAT16] = &mag_erfc_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_erfc_bfloat16,
     },
     [MAG_OP_EXP] = {
         [MAG_DTYPE_FLOAT32] = &mag_exp_float32,
         [MAG_DTYPE_FLOAT16] = &mag_exp_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_exp_bfloat16,
     },
     [MAG_OP_EXP2] = {
         [MAG_DTYPE_FLOAT32] = &mag_exp2_float32,
         [MAG_DTYPE_FLOAT16] = &mag_exp2_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_exp2_bfloat16,
     },
     [MAG_OP_EXPM1] = {
         [MAG_DTYPE_FLOAT32] = &mag_expm1_float32,
         [MAG_DTYPE_FLOAT16] = &mag_expm1_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_expm1_bfloat16,
     },
     [MAG_OP_FLOOR] = {
         [MAG_DTYPE_FLOAT32] = &mag_floor_float32,
         [MAG_DTYPE_FLOAT16] = &mag_floor_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_floor_bfloat16,
     },
     [MAG_OP_CEIL] = {
         [MAG_DTYPE_FLOAT32] = &mag_ceil_float32,
         [MAG_DTYPE_FLOAT16] = &mag_ceil_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_ceil_bfloat16,
     },
     [MAG_OP_ROUND] = {
         [MAG_DTYPE_FLOAT32] = &mag_round_float32,
         [MAG_DTYPE_FLOAT16] = &mag_round_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_round_bfloat16,
     },
     [MAG_OP_TRUNC] = {
         [MAG_DTYPE_FLOAT32] = &mag_trunc_float32,
         [MAG_DTYPE_FLOAT16] = &mag_trunc_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_trunc_bfloat16,
     },
     [MAG_OP_SOFTMAX] = {
         [MAG_DTYPE_FLOAT32] = &mag_softmax_float32,
         [MAG_DTYPE_FLOAT16] = &mag_softmax_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_softmax_bfloat16,
     },
     [MAG_OP_SOFTMAX_DV] = {
         [MAG_DTYPE_FLOAT32] = &mag_softmax_dv_float32,
         [MAG_DTYPE_FLOAT16] = &mag_softmax_dv_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_softmax_dv_bfloat16,
     },
     [MAG_OP_SIGMOID] = {
         [MAG_DTYPE_FLOAT32] = &mag_sigmoid_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sigmoid_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_sigmoid_bfloat16,
     },
     [MAG_OP_SIGMOID_DV] = {
         [MAG_DTYPE_FLOAT32] = &mag_sigmoid_dv_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sigmoid_dv_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_sigmoid_dv_bfloat16,
     },
     [MAG_OP_HARD_SIGMOID] = {
         [MAG_DTYPE_FLOAT32] = &mag_hard_sigmoid_float32,
         [MAG_DTYPE_FLOAT16] = &mag_hard_sigmoid_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_hard_sigmoid_bfloat16,
     },
     [MAG_OP_SILU] = {
         [MAG_DTYPE_FLOAT32] = &mag_silu_float32,
         [MAG_DTYPE_FLOAT16] = &mag_silu_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_silu_bfloat16,
     },
     [MAG_OP_SILU_DV] = {
         [MAG_DTYPE_FLOAT32] = &mag_silu_dv_float32,
         [MAG_DTYPE_FLOAT16] = &mag_silu_dv_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_silu_dv_bfloat16,
     },
     [MAG_OP_TANH_DV] = {
         [MAG_DTYPE_FLOAT32] = &mag_tanh_dv_float32,
         [MAG_DTYPE_FLOAT16] = &mag_tanh_dv_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_tanh_dv_bfloat16,
     },
     [MAG_OP_RELU] = {
         [MAG_DTYPE_FLOAT32] = &mag_relu_float32,
         [MAG_DTYPE_FLOAT16] = &mag_relu_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_relu_bfloat16,
     },
     [MAG_OP_RELU_DV] = {
         [MAG_DTYPE_FLOAT32] = &mag_relu_dv_float32,
         [MAG_DTYPE_FLOAT16] = &mag_relu_dv_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_relu_dv_bfloat16,
     },
     [MAG_OP_GELU] = {
         [MAG_DTYPE_FLOAT32] = &mag_gelu_float32,
         [MAG_DTYPE_FLOAT16] = &mag_gelu_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_gelu_bfloat16,
     },
     [MAG_OP_GELU_APPROX] = {
         [MAG_DTYPE_FLOAT32] = &mag_gelu_approx_float32,
         [MAG_DTYPE_FLOAT16] = &mag_gelu_approx_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_gelu_approx_bfloat16,
     },
     [MAG_OP_GELU_DV] = {
         [MAG_DTYPE_FLOAT32] = &mag_gelu_dv_float32,
-        [MAG_DTYPE_FLOAT16] = &mag_gelu_dv_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_gelu_dv_bfloat16,
     },
     [MAG_OP_TRIL] = {
         [MAG_DTYPE_FLOAT32] = &mag_tril_float32,
         [MAG_DTYPE_FLOAT16] = &mag_tril_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_tril_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_tril_uint8,
         [MAG_DTYPE_UINT8] = &mag_tril_uint8,
         [MAG_DTYPE_INT8] = &mag_tril_int8,
@@ -573,6 +641,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_TRIU] = {
         [MAG_DTYPE_FLOAT32] = &mag_triu_float32,
         [MAG_DTYPE_FLOAT16] = &mag_triu_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_triu_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_triu_uint8,
         [MAG_DTYPE_UINT8] = &mag_triu_uint8,
         [MAG_DTYPE_INT8] = &mag_triu_int8,
@@ -586,10 +655,12 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_MULTINOMIAL] = {
         [MAG_DTYPE_FLOAT32] = &mag_multinomial_float32,
         [MAG_DTYPE_FLOAT16] = &mag_multinomial_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_multinomial_bfloat16,
     },
     [MAG_OP_CAT] = {
         [MAG_DTYPE_FLOAT32] = &mag_cat_float32,
         [MAG_DTYPE_FLOAT16] = &mag_cat_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_cat_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_cat_uint8,
         [MAG_DTYPE_UINT8] = &mag_cat_uint8,
         [MAG_DTYPE_INT8] = &mag_cat_int8,
@@ -603,6 +674,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_ADD] = {
         [MAG_DTYPE_FLOAT32] = &mag_add_float32,
         [MAG_DTYPE_FLOAT16] = &mag_add_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_add_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_add_uint8,
         [MAG_DTYPE_INT8] = &mag_add_int8,
         [MAG_DTYPE_UINT16] = &mag_add_uint16,
@@ -615,6 +687,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_SUB] = {
         [MAG_DTYPE_FLOAT32] = &mag_sub_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sub_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_sub_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_sub_uint8,
         [MAG_DTYPE_INT8] = &mag_sub_int8,
         [MAG_DTYPE_UINT16] = &mag_sub_uint16,
@@ -627,6 +700,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_MUL] = {
         [MAG_DTYPE_FLOAT32] = &mag_mul_float32,
         [MAG_DTYPE_FLOAT16] = &mag_mul_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_mul_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_mul_uint8,
         [MAG_DTYPE_INT8] = &mag_mul_int8,
         [MAG_DTYPE_UINT16] = &mag_mul_uint16,
@@ -639,6 +713,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_DIV] = {
         [MAG_DTYPE_FLOAT32] = &mag_div_float32,
         [MAG_DTYPE_FLOAT16] = &mag_div_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_div_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_div_uint8,
         [MAG_DTYPE_INT8] = &mag_div_int8,
         [MAG_DTYPE_UINT16] = &mag_div_uint16,
@@ -651,6 +726,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_FLOORDIV] = {
         [MAG_DTYPE_FLOAT32] = &mag_floordiv_float32,
         [MAG_DTYPE_FLOAT16] = &mag_floordiv_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_floordiv_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_floordiv_uint8,
         [MAG_DTYPE_INT8] = &mag_floordiv_int8,
         [MAG_DTYPE_UINT16] = &mag_floordiv_uint16,
@@ -663,6 +739,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_MOD] = {
         [MAG_DTYPE_FLOAT32] = &mag_mod_float32,
         [MAG_DTYPE_FLOAT16] = &mag_mod_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_mod_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_mod_uint8,
         [MAG_DTYPE_INT8] = &mag_mod_int8,
         [MAG_DTYPE_UINT16] = &mag_mod_uint16,
@@ -675,14 +752,17 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_MATMUL] = {
         [MAG_DTYPE_FLOAT32] = &mag_matmul_float32,
         [MAG_DTYPE_FLOAT16] = &mag_matmul_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_matmul_bfloat16,
     },
     [MAG_OP_REPEAT_BACK] = {
         [MAG_DTYPE_FLOAT32] = &mag_repeat_back_float32,
         [MAG_DTYPE_FLOAT16] = &mag_repeat_back_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_repeat_back_bfloat16,
     },
     [MAG_OP_GATHER] = {
         [MAG_DTYPE_FLOAT32] = &mag_gather_float32,
         [MAG_DTYPE_FLOAT16] = &mag_gather_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_gather_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_gather_uint8,
         [MAG_DTYPE_UINT8] = &mag_gather_uint8,
         [MAG_DTYPE_INT8] = &mag_gather_int8,
@@ -760,6 +840,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_EQ] = {
         [MAG_DTYPE_FLOAT32] = &mag_eq_float32,
         [MAG_DTYPE_FLOAT16] = &mag_eq_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_eq_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_eq_uint8,
         [MAG_DTYPE_UINT8] = &mag_eq_uint8,
         [MAG_DTYPE_INT8] = &mag_eq_int8,
@@ -773,6 +854,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_NE] = {
         [MAG_DTYPE_FLOAT32] = &mag_ne_float32,
         [MAG_DTYPE_FLOAT16] = &mag_ne_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_ne_bfloat16,
         [MAG_DTYPE_BOOLEAN] = &mag_ne_uint8,
         [MAG_DTYPE_UINT8] = &mag_ne_uint8,
         [MAG_DTYPE_INT8] = &mag_ne_int8,
@@ -786,6 +868,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_LE] = {
         [MAG_DTYPE_FLOAT32] = &mag_le_float32,
         [MAG_DTYPE_FLOAT16] = &mag_le_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_le_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_le_uint8,
         [MAG_DTYPE_INT8] = &mag_le_int8,
         [MAG_DTYPE_UINT16] = &mag_le_uint16,
@@ -798,6 +881,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_GE] = {
         [MAG_DTYPE_FLOAT32] = &mag_ge_float32,
         [MAG_DTYPE_FLOAT16] = &mag_ge_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_ge_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_ge_uint8,
         [MAG_DTYPE_INT8] = &mag_ge_int8,
         [MAG_DTYPE_UINT16] = &mag_ge_uint16,
@@ -810,6 +894,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_LT] = {
         [MAG_DTYPE_FLOAT32] = &mag_lt_float32,
         [MAG_DTYPE_FLOAT16] = &mag_lt_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_lt_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_lt_uint8,
         [MAG_DTYPE_INT8] = &mag_lt_int8,
         [MAG_DTYPE_UINT16] = &mag_lt_uint16,
@@ -822,6 +907,7 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
     [MAG_OP_GT] = {
         [MAG_DTYPE_FLOAT32] = &mag_gt_float32,
         [MAG_DTYPE_FLOAT16] = &mag_gt_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_gt_bfloat16,
         [MAG_DTYPE_UINT8] = &mag_gt_uint8,
         [MAG_DTYPE_INT8] = &mag_gt_int8,
         [MAG_DTYPE_UINT16] = &mag_gt_uint16,

@@ -136,6 +136,7 @@ typedef struct mag_tensor_t mag_tensor_t;
 typedef enum mag_dtype_t {
     MAG_DTYPE_FLOAT32,
     MAG_DTYPE_FLOAT16,
+    MAG_DTYPE_BFLOAT16,
     MAG_DTYPE_BOOLEAN,
     MAG_DTYPE_UINT8,
     MAG_DTYPE_INT8,

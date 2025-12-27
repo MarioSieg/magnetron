@@ -15,6 +15,8 @@
 #include "mag_tensor.h"
 #include "mag_autodiff.h"
 #include "mag_machine.h"
+#include "mag_float16.h"
+#include "mag_bfloat16.h"
 
 #include <time.h>
 #include <ctype.h>
@@ -298,6 +300,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
             .name="float16",
             .size=sizeof(mag_float16_t),
             .align=__alignof(mag_float16_t),
+        },
+        [MAG_DTYPE_BFLOAT16] = {
+            .name="bfloat16",
+            .size=sizeof(mag_bfloat16_t),
+            .align=__alignof(mag_bfloat16_t),
         },
         [MAG_DTYPE_BOOLEAN] = {
             .name="boolean",
