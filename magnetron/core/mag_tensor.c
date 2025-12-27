@@ -258,7 +258,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
-        res = mag_scalar_float(*(const float *)mag_tensor_data_ptr(wide));
+        res = mag_scalar_from_f64(*(const float *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
         *out_value = res;
         return MAG_STATUS_OK;
@@ -270,7 +270,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
-        res = mag_scalar_int(*(const int64_t *)mag_tensor_data_ptr(wide));
+        res = mag_scalar_from_i64(*(const int64_t *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
         *out_value = res;
         return MAG_STATUS_OK;
@@ -282,7 +282,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
-        res = mag_scalar_uint(*(const uint64_t *)mag_tensor_data_ptr(wide));
+        res = mag_scalar_from_u64(*(const uint64_t *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
         *out_value = res;
         return MAG_STATUS_OK;

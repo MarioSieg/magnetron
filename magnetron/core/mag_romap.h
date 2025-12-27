@@ -41,9 +41,9 @@ typedef struct mag_map_t {
 } mag_map_t;
 
 extern MAG_EXPORT void mag_map_init(mag_map_t *map, size_t cap, bool clone_keys);
-extern MAG_EXPORT void *map_map_get(mag_map_t *map, const void *key, size_t len);
-extern MAG_EXPORT void *map_map_put(mag_map_t *map, const void *key, size_t len, void *val);
-extern MAG_EXPORT void *map_map_del(mag_map_t *map, const void *key, size_t len);
+extern MAG_EXPORT void *mag_map_lookup(mag_map_t *map, const void *key, size_t len);
+extern MAG_EXPORT void *mag_map_insert(mag_map_t *map, const void *key, size_t len, void *val);
+extern MAG_EXPORT void *mag_map_erase(mag_map_t *map, const void *key, size_t len);
 extern MAG_EXPORT void *mag_map_next(mag_map_t *map, size_t *iter, size_t *len, void **val);
 extern MAG_EXPORT void mag_map_free(mag_map_t *map);
 

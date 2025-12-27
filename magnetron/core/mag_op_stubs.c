@@ -13,15 +13,15 @@
 #include "mag_context.h"
 #include "mag_reduce_plan.h"
 
-mag_scalar_t mag_scalar_float(double value) {
+mag_scalar_t mag_scalar_from_f64(double value) {
     return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.f64 = value};
 }
 
-mag_scalar_t mag_scalar_int(int64_t value) {
+mag_scalar_t mag_scalar_from_i64(int64_t value) {
     return (mag_scalar_t){.type = MAG_SCALAR_TYPE_I64, .value.i64 = value};
 }
 
-mag_scalar_t mag_scalar_uint(uint64_t value) {
+mag_scalar_t mag_scalar_from_u64(uint64_t value) {
     return (mag_scalar_t){.type = MAG_SCALAR_TYPE_U64, .value.u64 = value};
 }
 
@@ -423,19 +423,19 @@ mag_status_t mag_full_like(mag_tensor_t **out_result, mag_tensor_t *like, mag_sc
 }
 
 mag_status_t mag_zeros(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
-    return mag_full(out_result, ctx, type, rank, shape, mag_scalar_uint(0));
+    return mag_full(out_result, ctx, type, rank, shape, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_zeros_like(mag_tensor_t **out_result, mag_tensor_t *like) {
-    return mag_full_like(out_result, like, mag_scalar_uint(0));
+    return mag_full_like(out_result, like, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_ones(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
-    return mag_full(out_result, ctx, type, rank, shape, mag_scalar_uint(0));
+    return mag_full(out_result, ctx, type, rank, shape, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_ones_like(mag_tensor_t **out_result, mag_tensor_t *like) {
-    return mag_full_like(out_result, like, mag_scalar_uint(0));
+    return mag_full_like(out_result, like, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_uniform(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_scalar_t min, mag_scalar_t max) {
@@ -1565,7 +1565,7 @@ mag_status_t mag_copy_raw_(mag_tensor_t *tensor, const void *data, size_t size_b
 }
 
 mag_status_t mag_zero_(mag_tensor_t *tensor) {
-    return mag_fill_(tensor, mag_scalar_uint(0));
+    return mag_fill_(tensor, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_fill_(mag_tensor_t *tensor, mag_scalar_t value) {

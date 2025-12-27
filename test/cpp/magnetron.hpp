@@ -698,22 +698,22 @@ namespace magnetron {
         }
         [[nodiscard]] auto add(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_float(other)));
+            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other)));
             return add(tensor{sca});
         }
         [[nodiscard]] auto sub(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_float(other)));
+            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other)));
             return sub(tensor{sca});
         }
         [[nodiscard]] auto mul(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_float(other)));
+            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other)));
             return mul(tensor{sca});
         }
         [[nodiscard]] auto div(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_float(other)));
+            handle_error(mag_scalar(&sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other)));
             return div(tensor{sca});
         }
         [[nodiscard]] auto band(tensor other) const noexcept -> tensor {
@@ -857,9 +857,9 @@ namespace magnetron {
         auto fill_(T val) -> void {
             static_assert(std::is_arithmetic_v<T> || std::is_same_v<T, bool>);
             if constexpr (std::is_floating_point_v<T>) {
-                handle_error(mag_fill_(m_tensor, mag_scalar_float(static_cast<double>(val))));
+                handle_error(mag_fill_(m_tensor, mag_scalar_from_f64(static_cast<double>(val))));
             } else if constexpr (std::is_integral_v<T>) {
-                handle_error(mag_fill_(m_tensor, mag_scalar_int(static_cast<int64_t>(val))));
+                handle_error(mag_fill_(m_tensor, mag_scalar_from_i64(static_cast<int64_t>(val))));
             } else {
                 throw std::runtime_error{"unsupported type for fill_"};
             }
@@ -872,11 +872,11 @@ namespace magnetron {
         auto uniform_(T min, T max) -> void;
 
         auto normal_(float mean, float stddev) -> void {
-            mag_normal_(m_tensor, mag_scalar_float(mean), mag_scalar_float(stddev));
+            mag_normal_(m_tensor, mag_scalar_from_f64(mean), mag_scalar_from_f64(stddev));
         }
 
         auto bernoulli_(float p = 0.5f) -> void {
-            mag_bernoulli_(m_tensor, mag_scalar_float(p));
+            mag_bernoulli_(m_tensor, mag_scalar_from_f64(p));
         }
 
         [[nodiscard]] auto to_string(int64_t head = 3, int64_t tail = 3, int64_t threshold = 1000) const -> std::string {
@@ -947,30 +947,30 @@ namespace magnetron {
     inline auto tensor::masked_fill_(tensor mask, float val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_float(val)));
+        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_from_f64(val)));
     }
 
     template <>
     inline auto tensor::masked_fill_(tensor mask, int64_t val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_int(val)));
+        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_from_i64(val)));
     }
 
     template <>
     inline auto tensor::masked_fill_(tensor mask, bool val) -> void {
         if (mask.dtype() != dtype::boolean)
             throw std::runtime_error {"mask must be bool tensor"};
-        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_int(val)));
+        handle_error(mag_masked_fill_(m_tensor, &*mask, mag_scalar_from_i64(val)));
     }
 
     template <>
     inline auto tensor::uniform_(float min, float max) -> void {
-        handle_error(mag_uniform_(m_tensor, mag_scalar_float(min), mag_scalar_float(max)));
+        handle_error(mag_uniform_(m_tensor, mag_scalar_from_f64(min), mag_scalar_from_f64(max)));
     }
 
     template <>
     inline auto tensor::uniform_(int64_t min, int64_t max) -> void {
-        handle_error(mag_uniform_(m_tensor, mag_scalar_int(min), mag_scalar_int(max)));
+        handle_error(mag_uniform_(m_tensor, mag_scalar_from_i64(min), mag_scalar_from_i64(max)));
     }
 }

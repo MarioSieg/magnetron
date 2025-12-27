@@ -78,7 +78,7 @@ void mag_map_init(mag_map_t *map, size_t cap, bool clone_keys) {
     mag_map_resize(map, cap);
 }
 
-void *map_map_get(mag_map_t *map, const void *key, size_t len) {
+void *mag_map_lookup(mag_map_t *map, const void *key, size_t len) {
     mag_assert2(key && len && len <= UINT32_MAX);
     uint64_t hash = mag_murmur3_128_reduced_64(key, len, map->hash_seed);
     size_t mask = map->size-1;
@@ -93,7 +93,7 @@ void *map_map_get(mag_map_t *map, const void *key, size_t len) {
     }
 }
 
-void *map_map_put(mag_map_t *map, const void *key, size_t len, void *val) {
+void *mag_map_insert(mag_map_t *map, const void *key, size_t len, void *val) {
     mag_assert2(key && len && len <= UINT32_MAX);
     if (map->nitems * 100 >= map->size * 85)
         mag_map_resize(map, map->size<<1);
@@ -132,7 +132,7 @@ void *map_map_put(mag_map_t *map, const void *key, size_t len, void *val) {
     }
 }
 
-void *map_map_del(mag_map_t *map, const void *key, size_t len) {
+void *mag_map_erase(mag_map_t *map, const void *key, size_t len) {
     mag_assert2(key && len && len <= UINT32_MAX);
     uint64_t hash = mag_murmur3_128_reduced_64(key, len, map->hash_seed);
     size_t mask = map->size-1;

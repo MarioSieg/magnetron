@@ -163,11 +163,18 @@ extern MAG_EXPORT const mag_type_traits_t *mag_type_trait(mag_dtype_t type);
 /**
  * Type tag discriminating between different scalar types.
  */
-typedef enum mag_scalar_type_t { MAG_SCALAR_TYPE_F64, MAG_SCALAR_TYPE_I64, MAG_SCALAR_TYPE_U64 } mag_scalar_type_t;
+typedef enum mag_scalar_type_t {
+    MAG_SCALAR_TYPE_F64,
+    MAG_SCALAR_TYPE_I64,
+    MAG_SCALAR_TYPE_U64,
+} mag_scalar_type_t;
 
 /**
- * @brief Represents a scalar value that can be of different types (float, int, uint).
- * Used to pass scalar values to tensor factories, to avoid overloading or multiple versions of functions for different scalar types. (e.g. we don't want mag_full_f64, mag_full_i64, mag_full_u64, etc.)
+ * @brief Represents a scalar value that can be of different types (float, int, uint, bool).
+ * Used to pass scalar values to tensor factories,
+ * to avoid overloading or multiple versions of functions for different scalar types.
+ * (e.g. we don't want mag_full_f64, mag_full_i64, mag_full_u64, etc.).
+ * Also used for metadata records in snapshots.
  */
 typedef struct mag_scalar_t {
     mag_scalar_type_t type;
@@ -178,10 +185,9 @@ typedef struct mag_scalar_t {
     } value;
 } mag_scalar_t;
 
-
-extern MAG_EXPORT mag_scalar_t mag_scalar_float(double value);
-extern MAG_EXPORT mag_scalar_t mag_scalar_int(int64_t value);
-extern MAG_EXPORT mag_scalar_t mag_scalar_uint(uint64_t value);
+extern MAG_EXPORT mag_scalar_t mag_scalar_from_f64(double value);
+extern MAG_EXPORT mag_scalar_t mag_scalar_from_i64(int64_t value);
+extern MAG_EXPORT mag_scalar_t mag_scalar_from_u64(uint64_t value);
 
 extern MAG_EXPORT bool mag_scalar_is_f64(mag_scalar_t s);
 extern MAG_EXPORT bool mag_scalar_is_i64(mag_scalar_t s);
@@ -418,6 +424,15 @@ extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val);
 extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_tensor_visualize_backprop_graph(mag_tensor_t *tensor, const char *file);
+
+typedef struct mag_snapshot_t mag_snapshot_t;
+
+extern MAG_EXPORT mag_snapshot_t *mag_snapshot_new(mag_context_t *ctx);
+extern MAG_EXPORT void mag_snapshot_metadata_insert(mag_snapshot_t *snap, const char *key, mag_scalar_t record);
+extern MAG_EXPORT const mag_scalar_t *mag_snapshot_metadata_lookup(mag_snapshot_t *snap, const char *key);
+extern MAG_EXPORT void mag_snapshot_metadata_erase(mag_snapshot_t *snap, const char *key);
+extern MAG_EXPORT void mag_snapshot_free(mag_snapshot_t *snap);
+
 
 #ifdef __cplusplus
 }
