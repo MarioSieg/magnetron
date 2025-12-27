@@ -19,6 +19,7 @@ torch.set_num_interop_threads(max(4, multiprocessing.cpu_count() // 8))
 
 DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
     float16: torch.float16,
+    bfloat16: torch.bfloat16,
     float32: torch.float32,
     boolean: torch.bool,
     uint8: torch.uint8,

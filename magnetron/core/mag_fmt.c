@@ -43,6 +43,7 @@
 #include "mag_fmt.h"
 #include "mag_sstream.h"
 #include "mag_float16.h"
+#include "mag_bfloat16.h"
 #include "mag_coords_iter.h"
 #include "mag_tensor.h"
 #include "mag_backend.h"
@@ -687,6 +688,7 @@ static char *mag_fmt_scalar(char (*fmt)[MAG_FMT_BUF_MAX], const void *buf, int64
     switch (type) {
         case MAG_DTYPE_FLOAT32: return mag_fmt_e11m52(*fmt, *(const float *)val, MAG_FMT_G5);
         case MAG_DTYPE_FLOAT16: return mag_fmt_e11m52(*fmt, mag_float16_to_float32_soft_fp(*(const mag_float16_t *)val), MAG_FMT_G5);
+        case MAG_DTYPE_BFLOAT16: return mag_fmt_e11m52(*fmt, mag_bfloat16_to_float32_soft_fp(*(const mag_bfloat16_t *)val), MAG_FMT_G5);
         case MAG_DTYPE_UINT8: return mag_fmt_uint64(*fmt, *(const uint8_t *)val);
         case MAG_DTYPE_INT8: return mag_fmt_int64(*fmt, *(const int8_t *)val);
         case MAG_DTYPE_UINT16: return mag_fmt_uint64(*fmt, *(const uint16_t *)val);

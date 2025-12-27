@@ -9,37 +9,6 @@
 ** +---------------------------------------------------------------------+
 */
 
-/*
-** This file contains code derived from LuaJIT's floating-point number formatting implementation.
-** LuaJIT Project Readme:
-**
-**      README for LuaJIT 2.1
-**      ---------------------
-**
-**      LuaJIT is a Just-In-Time (JIT) compiler for the Lua programming language.
-**
-**      Project Homepage: https://luajit.org/
-**
-**      LuaJIT is Copyright (C) 2005-2025 Mike Pall.
-**      LuaJIT is free software, released under the MIT license.
-**      See full Copyright Notice in the COPYRIGHT file or in luajit.h.
-**
-**      Documentation for LuaJIT is available in HTML format.
-**      Please point your favorite browser to:
-**
-**     doc/luajit.html
-**
-** Original Source File Notice:
-**      String formatting for floating-point numbers.
-**      Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
-**      Contributed by Peter Cawley.
-**
-** Modifications:
-**   This file includes modifications by Mario Sieg for the
-**   Magnetron project. All modifications are licensed under the
-**   Apache License, Version 2.0.
-*/
-
 #ifndef MAG_FMT_H
 #define MAG_FMT_H
 

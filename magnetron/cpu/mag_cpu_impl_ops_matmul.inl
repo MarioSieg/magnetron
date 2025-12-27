@@ -61,6 +61,35 @@ static MAG_HOTPROC mag_float16_t *mag_mm_pack_y_float16(mag_float16_t *ybuf, int
     return ybuf;
 }
 
+static MAG_HOTPROC mag_bfloat16_t *mag_mm_pack_x_bfloat16(mag_bfloat16_t *xbuf, int64_t M, int64_t K, int64_t xb, const mag_tensor_t *x, const mag_bfloat16_t *px) {
+    for (int64_t i=0; i < M; ++i) {
+        for (int64_t k=0; k < K; ++k) {
+            size_t j = mag_offset_rmn(x, xb, i, k);
+            mag_bnd_chk(px+j, px, mag_tensor_numbytes(x));
+            mag_bnd_chk(xbuf + i*K + k, xbuf, M*K*sizeof(*xbuf));
+            xbuf[i*K + k] = px[j];
+        }
+    }
+    return xbuf;
+}
+
+static MAG_HOTPROC mag_bfloat16_t *mag_mm_pack_y_bfloat16(mag_bfloat16_t *ybuf, int64_t K, int64_t N, int64_t yb, const mag_tensor_t *y, const mag_bfloat16_t *py) {
+    if (y->coords.rank == 1) {
+        for (int64_t k=0; k < K; ++k) {
+            for (int64_t n=0; n < N; ++n) {
+                ybuf[n*K + k] = py[k];
+            }
+        }
+    } else {
+        for (int64_t k=0; k < K; ++k) {
+            for (int64_t n=0; n < N; ++n) {
+                ybuf[n*K + k] = py[mag_offset_rmn(y, yb, k, n)];
+            }
+        }
+    }
+    return ybuf;
+}
+
 #define MAG_PREFETCH_SPAN 8
 #define MAG_PF_GROUP 8
 #define MAG_PFDIST_B_L1 (MAG_PREFETCH_SPAN*2)
@@ -1452,4 +1481,85 @@ static MAG_HOTPROC void mag_matmul_float16(const mag_kernel_payload_t *payload) 
         }
     }
     mag_scratch_arena_clear(&mag_tls_arena);
+}
+
+static MAG_HOTPROC void mag_matmul_bfloat16(const mag_kernel_payload_t *payload) {
+    mag_tensor_t *r = mag_cmd_out(0);
+    const mag_tensor_t *x = mag_cmd_in(0);
+    const mag_tensor_t *y = mag_cmd_in(1);
+    mag_bfloat16_t *br = (mag_bfloat16_t *)mag_tensor_data_ptr_mut(r);
+    const mag_bfloat16_t *bx = (const mag_bfloat16_t *)mag_tensor_data_ptr(x);
+    const mag_bfloat16_t *by = (const mag_bfloat16_t *)mag_tensor_data_ptr(y);
+    int64_t M = (x->coords.rank == 1) ? 1 : x->coords.shape[x->coords.rank - 2];
+    int64_t N = (y->coords.rank == 1) ? 1 : y->coords.shape[y->coords.rank - 1];
+    int64_t K = x->coords.shape[x->coords.rank - 1];
+    int64_t bdr = (r->coords.rank > 2) ? (r->coords.rank - 2) : 0;
+    int64_t batch_total = 1;
+    for (int64_t d = 0; d < bdr; ++d)
+        batch_total *= r->coords.shape[d];
+    int64_t bdx = (x->coords.rank > 2) ? (x->coords.rank - 2) : 0;
+    int64_t bdy = (y->coords.rank > 2) ? (y->coords.rank - 2) : 0;
+    bool x_row = mag_tensor_is_contiguous(x) && x->coords.strides[x->coords.rank - 1] == 1;
+    int64_t work_total = batch_total * M;
+    int64_t tid = payload->thread_idx;
+    int64_t nth = payload->thread_num;
+    for (int64_t work = tid; work < work_total; work += nth) {
+        int64_t b = work / M;
+        int64_t i = work - b * M;
+        int64_t idx_r[4] = {0};
+        {
+            int64_t rem = b;
+            for (int64_t d = bdr - 1; d >= 0; --d) {
+                idx_r[d] = rem % r->coords.shape[d];
+                rem /= r->coords.shape[d];
+            }
+        }
+        int64_t xb_flat = 0, yb_flat = 0;
+        if (bdx) {
+            for (int64_t d = 0; d < bdx; ++d) {
+                int64_t rd = bdr - bdx + d;
+                int64_t idx = (x->coords.shape[d] == 1) ? 0 : idx_r[rd];
+                xb_flat = xb_flat * x->coords.shape[d] + idx;
+            }
+        }
+        if (bdy) {
+            for (int64_t d = 0; d < bdy; ++d) {
+                int64_t rd = bdr - bdy + d;
+                int64_t idx = (y->coords.shape[d] == 1) ? 0 : idx_r[rd];
+                yb_flat = yb_flat * y->coords.shape[d] + idx;
+            }
+        }
+        const mag_bfloat16_t *px = bx + mag_offset_rmn(x, xb_flat, 0, 0);
+        const mag_bfloat16_t *py = by + mag_offset_rmn(y, yb_flat, 0, 0);
+        mag_bfloat16_t *pr = br + mag_offset_rmn(r, b, 0, 0);
+        mag_scratch_arena_clear(&mag_tls_arena);
+        mag_bfloat16_t *scratch = mag_scratch_arena_alloc(
+            &mag_tls_arena,
+            sizeof(mag_bfloat16_t) * (K * N + (x_row ? 0 : K))
+        );
+        mag_bfloat16_t *xrow_buf = x_row ? NULL : scratch;
+        mag_bfloat16_t *ybuf = scratch + (x_row ? 0 : K);
+        const mag_bfloat16_t *restrict a_row;
+        if (x_row) {
+            a_row = px + (size_t)i * (size_t)K;
+        } else {
+            for (int64_t k = 0; k < K; ++k)
+                xrow_buf[k] = bx[mag_offset_rmn(x, xb_flat, i, k)];
+            a_row = xrow_buf;
+        }
+        if (y->coords.rank == 1) {
+            for (int64_t n = 0; n < N; ++n)
+                for (int64_t k = 0; k < K; ++k)
+                    ybuf[n*K + k] = py[k];
+        } else {
+            for (int64_t n = 0; n < N; ++n)
+                for (int64_t k = 0; k < K; ++k)
+                    ybuf[n*K + k] = py[mag_offset_rmn(y, yb_flat, k, n)];
+        }
+        mag_bfloat16_t *restrict Crow = pr + (size_t)i * (size_t)N;
+        for (int64_t n = 0; n < N; ++n)
+            Crow[n] = mag_vdot_bfloat16(K, ybuf + n*K, a_row);
+
+        mag_scratch_arena_clear(&mag_tls_arena);
+    }
 }

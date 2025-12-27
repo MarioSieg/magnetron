@@ -143,7 +143,7 @@ mag_static_assert(MAG_DTYPE__NUM <= 16); /* Must fit in 8 bits, if this fails in
 #define mag_dtype_bit(x) (((mag_dtype_mask_t)1)<<((x)&((sizeof(mag_dtype_mask_t)<<3)-1)))
 #define mag_dtype_mask(enume) mag_dtype_bit(MAG_DTYPE_##enume)
 #define MAG_DTYPE_MASK_NONE 0
-#define MAG_DTYPE_MASK_FP (mag_dtype_mask(FLOAT32)|mag_dtype_mask(FLOAT16))
+#define MAG_DTYPE_MASK_FP (mag_dtype_mask(FLOAT32)|mag_dtype_mask(FLOAT16)|mag_dtype_mask(BFLOAT16))
 #define MAG_DTYPE_MASK_UINT (mag_dtype_mask(UINT8)|mag_dtype_mask(UINT16)|mag_dtype_mask(UINT32)|mag_dtype_mask(UINT64))
 #define MAG_DTYPE_MASK_SINT (mag_dtype_mask(INT8)|mag_dtype_mask(INT16)|mag_dtype_mask(INT32)|mag_dtype_mask(INT64))
 #define MAG_DTYPE_MASK_INTEGER (MAG_DTYPE_MASK_UINT|MAG_DTYPE_MASK_SINT)

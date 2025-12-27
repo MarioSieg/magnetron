@@ -118,6 +118,7 @@ def _get_reduction_axes(dim: int | Sequence[int] | None) -> tuple[_FFI.CData, in
 _SAMPLE_RANGE_DICT: dict[DataType, int | float] = {
     float32: (0.0, 1.0),
     float16: (0.0, 1.0),
+    bfloat16: (0.0, 1.0),
     uint8: (0, 2**8 - 1),
     int8: (-(2**7), 2**7 - 1),
     uint16: (0, 2**16 - 1),

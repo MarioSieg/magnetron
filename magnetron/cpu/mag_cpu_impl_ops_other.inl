@@ -74,6 +74,7 @@
 
 mag_gen_stub_cat(float, float32)
 mag_gen_stub_cat(mag_float16_t, float16)
+mag_gen_stub_cat(mag_bfloat16_t, bfloat16)
 mag_gen_stub_cat(uint8_t, uint8)
 mag_gen_stub_cat(int8_t, int8)
 mag_gen_stub_cat(uint16_t, uint16)
@@ -111,6 +112,7 @@ mag_gen_stub_cat(int64_t, int64)
 
 mag_gen_stub_repeat_back(float, float32, .0f, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_repeat_back(mag_float16_t, float16, MAG_FLOAT16_ZERO, mag_float16_to_float32, mag_float32_to_float16)
+mag_gen_stub_repeat_back(mag_bfloat16_t, bfloat16, MAG_BFLOAT16_ZERO, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
 
 #undef mag_gen_stub_repeat_back
 
@@ -187,6 +189,7 @@ mag_gen_stub_repeat_back(mag_float16_t, float16, MAG_FLOAT16_ZERO, mag_float16_t
 
 mag_gen_stub_gather(float, float32)
 mag_gen_stub_gather(mag_float16_t, float16)
+mag_gen_stub_gather(mag_bfloat16_t, bfloat16)
 mag_gen_stub_gather(uint8_t, uint8)
 mag_gen_stub_gather(int8_t, int8)
 mag_gen_stub_gather(uint16_t, uint16)
@@ -231,6 +234,7 @@ mag_gen_stub_gather(int64_t, int64)
 
 mag_gen_stub_tri_mask(float, float32, l, 0.f, <=)
 mag_gen_stub_tri_mask(mag_float16_t, float16, l, MAG_FLOAT16_ZERO, <=)
+mag_gen_stub_tri_mask(mag_bfloat16_t, bfloat16, l, MAG_BFLOAT16_ZERO, <=)
 mag_gen_stub_tri_mask(uint8_t, uint8, l, 0, <=)
 mag_gen_stub_tri_mask(int8_t, int8, l, 0, <=)
 mag_gen_stub_tri_mask(uint16_t, uint16, l, 0, <=)
@@ -242,6 +246,7 @@ mag_gen_stub_tri_mask(int64_t, int64, l, 0, <=)
 
 mag_gen_stub_tri_mask(float, float32, u, 0.f, >=)
 mag_gen_stub_tri_mask(mag_float16_t, float16, u, MAG_FLOAT16_ZERO, >=)
+mag_gen_stub_tri_mask(mag_bfloat16_t, bfloat16, u, MAG_BFLOAT16_ZERO, >=)
 mag_gen_stub_tri_mask(uint8_t, uint8, u, 0, >=)
 mag_gen_stub_tri_mask(int8_t, int8, u, 0, >=)
 mag_gen_stub_tri_mask(uint16_t, uint16, u, 0, >=)
@@ -365,6 +370,7 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
 
 mag_gen_stub_topk(float, float32, mag_cvt_nop)
 mag_gen_stub_topk(mag_float16_t, float16, mag_float16_to_float32)
+mag_gen_stub_topk(mag_bfloat16_t, bfloat16, mag_bfloat16_to_float32)
 mag_gen_stub_topk(uint8_t, uint8, mag_cvt_nop)
 mag_gen_stub_topk(int8_t, int8, mag_cvt_nop)
 mag_gen_stub_topk(uint16_t, uint16, mag_cvt_nop)

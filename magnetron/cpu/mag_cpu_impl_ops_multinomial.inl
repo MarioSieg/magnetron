@@ -79,3 +79,4 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
 
 mag_gen_stub_multinomial(float, float32, mag_cvt_nop)
 mag_gen_stub_multinomial(mag_float16_t, float16, mag_float16_to_float32)
+mag_gen_stub_multinomial(mag_bfloat16_t, bfloat16, mag_bfloat16_to_float32)

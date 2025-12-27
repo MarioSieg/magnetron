@@ -55,7 +55,7 @@ A CUDA backend and mixed-precision support are currently in development.
   Includes `Linear`, `Sequential`, `ReLU`, `Tanh`, `Sigmoid`, `LayerNorm`, `Embedding`, and more.
 
 - **Rich data types with many operators**  
-  Supports `float16`, `float32`, `int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32`, `int64`, `uint64`, and `boolean`.
+  Supports `bfloat16`, `float16`, `float32`, `int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32`, `int64`, `uint64`, and `boolean`.
 
 - **Custom serialization format**  
   Fast, portable model saving and loading through Magnetron’s own binary tensor format.

@@ -42,6 +42,7 @@
 
 mag_gen_stub_fill(float, float32, mag_G, float64, mag_cvt_nop)
 mag_gen_stub_fill(mag_float16_t, float16, mag_G_underlying, float64, mag_float32_to_float16)
+mag_gen_stub_fill(mag_bfloat16_t, bfloat16, mag_G_underlying, float64, mag_float32_to_bfloat16)
 mag_gen_stub_fill(uint8_t, uint8, mag_G, uint64, mag_cvt_nop)
 mag_gen_stub_fill(int8_t, int8, mag_G, int64, mag_cvt_nop)
 mag_gen_stub_fill(uint16_t, uint16, mag_G, uint64, mag_cvt_nop)
@@ -90,6 +91,7 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
 
 mag_gen_stub_masked_fill(float, float32, mag_G, float64, mag_cvt_nop)
 mag_gen_stub_masked_fill(mag_float16_t, float16, mag_G_underlying, float64, mag_float32_to_float16)
+mag_gen_stub_masked_fill(mag_bfloat16_t, bfloat16, mag_G_underlying, float64, mag_float32_to_bfloat16)
 mag_gen_stub_masked_fill(uint8_t, uint8, mag_G, uint64, mag_cvt_int32_to_int64)
 mag_gen_stub_masked_fill(int8_t, int8, mag_G, int64, mag_cvt_int32_to_int64)
 mag_gen_stub_masked_fill(uint16_t, uint16, mag_G, uint64, mag_cvt_int32_to_int64)
@@ -130,6 +132,7 @@ mag_gen_stub_masked_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
 
 mag_gen_stub_fill_rand(uniform, float, float, float64, float32)
 mag_gen_stub_fill_rand(uniform, mag_float16_t, float, float64, float16)
+mag_gen_stub_fill_rand(uniform, mag_bfloat16_t, float, float64, bfloat16)
 mag_gen_stub_fill_rand(uniform, uint8_t, uint64_t, uint64, uint8)
 mag_gen_stub_fill_rand(uniform, int8_t, int64_t, int64, int8)
 mag_gen_stub_fill_rand(uniform, uint16_t, uint64_t, uint64, uint16)
@@ -141,6 +144,7 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
 
 mag_gen_stub_fill_rand(normal, float, float, float64, float32)
 mag_gen_stub_fill_rand(normal, mag_float16_t, float, float64, float16)
+mag_gen_stub_fill_rand(normal, mag_bfloat16_t, float, float64, bfloat16)
 
 #undef mag_gen_stub_fill_rand
 
@@ -175,6 +179,7 @@ mag_gen_stub_fill_rand(normal, mag_float16_t, float, float64, float16)
 
 mag_gen_stub_arange(float, float32, mag_cvt_nop)
 mag_gen_stub_arange(mag_float16_t, float16, mag_float32_to_float16)
+mag_gen_stub_arange(mag_bfloat16_t, bfloat16, mag_float32_to_bfloat16)
 mag_gen_stub_arange(uint8_t, uint8, mag_cvt_int32_to_int64)
 mag_gen_stub_arange(int8_t, int8, mag_cvt_int32_to_int64)
 mag_gen_stub_arange(uint16_t, uint16, mag_cvt_int32_to_int64)
