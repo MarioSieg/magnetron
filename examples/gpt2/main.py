@@ -248,6 +248,7 @@ def _main() -> None:
     context.manual_seed(args.seed)
 
     model = GPT2.from_pretrained(args.model)
+    model = model.cast(dtype.bfloat16)
     puts = lambda s: console.print(s, style='bold white', end='')
     puts(args.prompt)
     if not args.no_stream:

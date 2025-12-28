@@ -443,7 +443,7 @@ static void MAG_HOTPROC mag_vmod_bfloat16(int64_t numel, mag_bfloat16_t *o, cons
 
 static void MAG_HOTPROC mag_vabs_float32(int64_t numel, float *o, const float *x) {
     for (int64_t i=0; i < numel; ++i)
-        o[i] = x[i];
+        o[i] = fabsf(x[i]);
 }
 
 static void MAG_HOTPROC mag_vabs_float16(int64_t numel, mag_float16_t *o, const mag_float16_t *x) {
@@ -1029,7 +1029,7 @@ static void MAG_HOTPROC mag_vround_float16(int64_t numel, mag_float16_t *o, cons
 
 static void MAG_HOTPROC mag_vround_bfloat16(int64_t numel, mag_bfloat16_t *o, const mag_bfloat16_t *x) {
     for (int64_t i=0; i < numel; ++i)
-        o[i] = mag_float32_to_bfloat16(roundf(mag_bfloat16_to_float32(x[i])));
+        o[i] = mag_float32_to_bfloat16(nearbyintf(mag_bfloat16_to_float32(x[i])));
 }
 
 static void MAG_HOTPROC mag_vtrunc_float32(int64_t numel, float *o, const float *x) {
