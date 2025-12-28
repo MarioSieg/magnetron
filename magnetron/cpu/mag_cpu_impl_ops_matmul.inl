@@ -1210,7 +1210,7 @@ static MAG_AINLINE void mag_mm_tile_16x32_float32(int64_t kc, const float *restr
     mag_mm_tile_16x16_float32(kc, a, lda, b+16, ldb, c+16, ldc, acc);
 }
 
-static MAG_HOTPROC void mag_mm_block_float32(int64_t kc, int64_t mr, int64_t nr, const float *A, int64_t lda, const float *B, int64_t ldb, float *C, int64_t ldc, bool acc) {
+static MAG_HOTPROC void mag_mm_block_float32(int64_t kc, int64_t mr, int64_t nr, const float *restrict A, int64_t lda, const float *restrict B, int64_t ldb, float *restrict C, int64_t ldc, bool acc) {
     int64_t j = 0;
     for (; nr-j >= 32; j += 32) {
         int64_t i = 0;
@@ -1300,69 +1300,102 @@ MAG_HOTPROC static void mag_matmul_float32(const mag_kernel_payload_t *payload) 
     }
     int64_t bdx = x->coords.rank > 2 ? x->coords.rank-2 : 0;
     int64_t bdy = y->coords.rank > 2 ? y->coords.rank-2 : 0;
-    int64_t tic = (M+MC-1)/MC;
-    int64_t tjc = (N+NC-1)/NC;
-    int64_t tpb = tic*tjc;
-    int64_t tt = batch_total*tpb;
+    int64_t tic = (M + MC - 1)/MC;
+    int64_t tjc = (N + NC - 1)/NC;
+    int64_t tpb = tjc;
+    int64_t tt  = batch_total * tpb;
     mag_scratch_arena_clear(&mag_tls_arena);
-    float *scratch = mag_scratch_arena_alloc(&mag_tls_arena, sizeof(*scratch)*(KC*NC + MC*KC));
-    float *Bp = scratch;
-    float *Ap = Bp + KC*NC;
+    float *restrict scratch = mag_scratch_arena_alloc(&mag_tls_arena, sizeof(*scratch)*(KC*NC + MC*KC));
+    float *restrict Bp = scratch;
+    float *restrict Ap = Bp + KC*NC;
     for (;;) {
         int64_t tile = mag_atomic64_fetch_add(payload->mm_next_tile, 1, MAG_MO_RELAXED);
         if (tile >= tt) break;
         int64_t batch_idx = tile / tpb;
-        int64_t rem = tile % tpb;
-        int64_t jc = rem % tjc;
-        int64_t ic = rem / tjc;
+        int64_t jc = tile % tjc;
+        int64_t j0 = jc * NC;
+        int64_t nc = mag_xmin(NC, N - j0);
+
+        /* compute batch indices once */
         int64_t idx_r[MAG_MAX_DIMS] = {0};
-        for (int64_t d=bdr-1, t=batch_idx; d >= 0; --d) {
+        for (int64_t d = bdr - 1, t = batch_idx; d >= 0; --d) {
             idx_r[d] = t % r->coords.shape[d];
             t /= r->coords.shape[d];
         }
+
         int64_t xb_flat = 0;
-        for (int64_t d=0; d < bdx; ++d) {
+        for (int64_t d = 0; d < bdx; ++d) {
             int64_t rd = bdr - bdx + d;
-            xb_flat = xb_flat*x->coords.shape[d] + (x->coords.shape[d] == 1 ? 0 : idx_r[rd]);
+            xb_flat = xb_flat * x->coords.shape[d]
+                    + (x->coords.shape[d] == 1 ? 0 : idx_r[rd]);
         }
+
         int64_t yb_flat = 0;
-        for (int64_t d=0; d < bdy; ++d) {
+        for (int64_t d = 0; d < bdy; ++d) {
             int64_t rd = bdr - bdy + d;
-            yb_flat = yb_flat*y->coords.shape[d] + (y->coords.shape[d] == 1 ? 0 : idx_r[rd]);
+            yb_flat = yb_flat * y->coords.shape[d]
+                    + (y->coords.shape[d] == 1 ? 0 : idx_r[rd]);
         }
-        bool yv = y->coords.rank == 1;
-        const float *px_base = bx + mag_offset_rmn(x, xb_flat, 0, 0);
-        const float *py_base = by + mag_offset_rmn(y, yb_flat, 0, 0);
-        float *pr_base = br + mag_offset_rmn(r, batch_idx, 0, 0);
-        int64_t i0 = ic*MC;
-        int64_t mc = i0+MC <= M ? MC : M-i0;
-        int64_t j0 = jc*NC;
-        int64_t nc = j0+NC <= N ? NC : N-j0;
-        int64_t sMx = x->coords.strides[x->coords.rank-2];
-        int64_t sKx = x->coords.strides[x->coords.rank-1];
-        int64_t sKy = yv ? 0 : y->coords.strides[y->coords.rank-2];
-        int64_t sNy = yv ? 0 : y->coords.strides[y->coords.rank-1];
+
+        bool yv = (y->coords.rank == 1);
+
+        const float *restrict px_base = bx + mag_offset_rmn(x, xb_flat, 0, 0);
+        const float *restrict py_base = by + mag_offset_rmn(y, yb_flat, 0, 0);
+        float *restrict pr_base       = br + mag_offset_rmn(r, batch_idx, 0, 0);
+
+        int64_t sMx = x->coords.strides[x->coords.rank - 2];
+        int64_t sKx = x->coords.strides[x->coords.rank - 1];
+        int64_t sKy = yv ? 0 : y->coords.strides[y->coords.rank - 2];
+        int64_t sNy = yv ? 0 : y->coords.strides[y->coords.rank - 1];
+
+        /* === PC loop: pack B ONCE === */
         for (int64_t pc = 0; pc < K; pc += KC) {
             int64_t kc = mag_xmin(KC, K - pc);
-            if (y->coords.rank == 1) mag_mm_pack_B_vec_float32(kc, nc, py_base + pc, Bp);
-            else mag_mm_pack_B_kc_nc_float32(kc, nc, py_base + pc*sKy +  j0*sNy, sKy, sNy, Bp);
-            mag_mm_pack_A_mc_kc_panel8_float32(kc, mc,  px_base + i0*sMx + pc*sKx, sMx, sKx, Ap);
-            for (int64_t ir=0; ir < mc; ir += MR)
-                for (int64_t jr=0; jr < nc; jr += NR)
-                    mag_mm_block_float32(
-                        kc,
-                        mag_xmin(MR, mc - ir),
-                        mag_xmin(NR, nc - jr),
-                        Ap + ir*kc,
-                        kc,
-                        Bp + jr,
-                        nc,
-                        pr_base + (i0 + ir)*N + (j0 + jr),
-                        N,
-                        pc);
+
+            const float *restrict Bsrc =
+                yv ? (py_base + pc)
+                   : (py_base + pc*sKy + j0*sNy);
+
+            if (yv) {
+                mag_mm_pack_B_vec_float32(kc, nc, Bsrc, Bp);
+            } else {
+                mag_mm_pack_B_kc_nc_float32(kc, nc, Bsrc, sKy, sNy, Bp);
+            }
+
+            /* === IC loop: reuse packed B === */
+            for (int64_t ic = 0; ic < tic; ++ic) {
+                int64_t i0 = ic * MC;
+                int64_t mc = mag_xmin(MC, M - i0);
+                if (mc <= 0) continue;
+
+                mag_mm_pack_A_mc_kc_panel8_float32(
+                    kc,
+                    mc,
+                    px_base + i0*sMx + pc*sKx,
+                    sMx,
+                    sKx,
+                    Ap
+                );
+
+                const bool acc = (pc != 0);
+
+                for (int64_t ir = 0; ir < mc; ir += MR)
+                    for (int64_t jr = 0; jr < nc; jr += NR)
+                        mag_mm_block_float32(
+                            kc,
+                            mag_xmin(MR, mc - ir),
+                            mag_xmin(NR, nc - jr),
+                            Ap + ir*kc,
+                            kc,
+                            Bp + jr,
+                            nc,
+                            pr_base + (i0 + ir)*N + (j0 + jr),
+                            N,
+                            acc
+                        );
+            }
         }
     }
-    mag_scratch_arena_clear(&mag_tls_arena);
 }
 
 static MAG_AINLINE float mag_load_x_f16_as_f32(
