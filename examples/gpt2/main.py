@@ -205,10 +205,10 @@ class GPT2(nn.Module):
 
     @no_grad()
     def generate_stream(self, prompt: str, max_tokens: int, temp: float = 1.0, top_k: int | None = None) -> Iterator[str]:
+        start = time.perf_counter()
         tokens = encode(prompt)
         dec = codecs.getincrementaldecoder('utf-8')()
-        start = time.perf_counter()
-        n = 0
+        count = 0
         idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=dtype.int64)[None, ...]
         logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
@@ -219,7 +219,7 @@ class GPT2(nn.Module):
             probs = logits.softmax(dim=-1)
             next_id = probs.multinomial(num_samples=1).item()
             tokens.append(next_id)
-            n += 1
+            count += 1
             delta = dec.decode(tok.decode_single_token_bytes(next_id))
             if delta:
                 yield delta
@@ -228,9 +228,9 @@ class GPT2(nn.Module):
         tail = dec.decode(b'', final=True)
         if tail:
             yield tail
-        elapsed = time.perf_counter() - start
-        if n > 0:
-            console.print(f'\nTokens/s: {n / elapsed:.2f}, {n} tokens in {elapsed:.3f}s', style='dim')
+        if count > 0:
+            elapsed = time.perf_counter() - start
+            console.print(f'\nTokens/s: {count / elapsed:.2f}, {count} tokens in {elapsed:.3f}s', style='dim')
 
 
 def _main() -> None:
