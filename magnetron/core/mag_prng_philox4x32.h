@@ -56,7 +56,7 @@ static MAG_CUDA_DEVICE MAG_AINLINE mag_philox4x32_uint32x4_t mag_philox4x32_next
         key.v[1] += 0xbb67ae85u;
     }
     /* Treat control as 128-bit integral and increment */
-    #if !defined(__CUDA_ARCH__) && defined(__SIZEOF_INT128__) && defined(MAG_LE)
+    #if !defined(__CUDA_ARCH__) && defined(__SIZEOF_INT128__) && defined(MAG_LITTLE_ENDIAN)
         unsigned __int128 x;
         memcpy(&x, stream->ctr.v, sizeof(x));
         ++x;

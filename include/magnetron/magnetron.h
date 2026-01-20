@@ -432,6 +432,7 @@ extern MAG_EXPORT mag_snapshot_t *mag_snapshot_new(mag_context_t *ctx);
 extern MAG_EXPORT void mag_snapshot_metadata_insert(mag_snapshot_t *snap, const char *key, mag_scalar_t record);
 extern MAG_EXPORT const mag_scalar_t *mag_snapshot_metadata_lookup(mag_snapshot_t *snap, const char *key);
 extern MAG_EXPORT void mag_snapshot_metadata_erase(mag_snapshot_t *snap, const char *key);
+extern MAG_EXPORT bool mag_snapshot_save(mag_snapshot_t *snap, const char *filename);
 extern MAG_EXPORT void mag_snapshot_free(mag_snapshot_t *snap);
 
 

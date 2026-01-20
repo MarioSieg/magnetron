@@ -87,7 +87,7 @@ def _ravel_nested_lists(flat: list[Any], shape: tuple[int], strides: tuple[int],
 
 def _unpack_shape(*dims: int | tuple[int, ...]) -> tuple[int, ...]:
     out: list[int] = []
-    def _flatten(obj: int | tuple[int, ...] | list[int]):
+    def _flatten(obj: int | tuple[int, ...] | list[int]) -> None:
         if isinstance(obj, (tuple, list)):
             for y in obj:
                 _flatten(y)

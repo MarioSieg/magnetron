@@ -9,6 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
+#include <filesystem>
 #include <prelude.hpp>
 
 #include <core/mag_snapshot.h>
@@ -28,6 +29,11 @@ TEST(snapshot, metadata) {
     ASSERT_DOUBLE_EQ(mag_scalar_as_f64(*mag_snapshot_metadata_lookup(snap, "rms_norm_eps")), 1e-6);
     ASSERT_DOUBLE_EQ(mag_scalar_as_f64(*mag_snapshot_metadata_lookup(snap, "rope_theta")), 1000000.0);
     ASSERT_EQ(mag_scalar_as_i64(*mag_snapshot_metadata_lookup(snap, "max_position_embeddings")), -32768);
+
+    mag_snapshot_save(snap, "snap.mag");
+
+    ASSERT_TRUE(std::filesystem::exists("snap.mag"));
+    //ASSERT_TRUE(std::filesystem::remove("snap.mag"));
 
     mag_snapshot_free(snap);
 }

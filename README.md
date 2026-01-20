@@ -11,7 +11,7 @@
 
 <h3 align="center">magnetron</h3>
   <p align="center">
-    A compact, PyTorch-style machine learning framework written in pure C99.
+    A compact, PyTorch-style machine learning framework written in C and modern Python.
     <br />
     Designed for speed, clarity, and portability - from desktop to embedded.
     <br /><br />
@@ -67,12 +67,13 @@ A CUDA backend and mixed-precision support are currently in development.
 
 ## 🚀 Example Models
 
-| Example                                          | Description |
-|--------------------------------------------------|-------------|
-| [GPT-2 Inference](examples/gpt2/)                | Transformer-based text generation using pretrained GPT-2 weights. |
-| [Autoencoder](examples/ae/)                      | Image reconstruction using a small dense encoder–decoder network. |
-| [Linear Regression](examples/linear_regression/) | Fits a linear model to noisy synthetic data. |
-| [XOR](examples/xor/)                             | Trains a small neural network to learn the XOR logical function. |
+| Example                                          | Description                                                         |
+|--------------------------------------------------|---------------------------------------------------------------------|
+| [Qwen2.5 Inference](examples/qwen25/)            | Transformer-based text generation using pretrained Qwen2.5 weights. |
+| [GPT-2 Inference](examples/gpt2/)                | Transformer-based text generation using pretrained GPT-2 weights.   |
+| [Autoencoder](examples/ae/)                      | Image reconstruction using a small dense encoder–decoder network.   |
+| [Linear Regression](examples/linear_regression/) | Fits a linear model to noisy synthetic data.                        |
+| [XOR](examples/xor/)                             | Trains a small neural network to learn the XOR logical function.    |
 
 ---
 

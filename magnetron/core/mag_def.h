@@ -331,20 +331,20 @@ mag_static_assert(sizeof(0ull) == 8);   /* ull literal suffix must infer to uint
 /* Endianness detection. */
 #ifdef __BYTE_ORDER
 #if defined(__BIG_ENDIAN) && (__BYTE_ORDER == __BIG_ENDIAN)
-#define MAG_BE
+#define MAG_BIG_ENDIAN
 #elif defined(__LITTLE_ENDIAN) && (__BYTE_ORDER == __LITTLE_ENDIAN)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #endif
 #elif defined(_BYTE_ORDER)
 #if defined(_BIG_ENDIAN) && (_BYTE_ORDER == _BIG_ENDIAN)
-#define MAG_BE
+#define MAG_BIG_ENDIAN
 #elif defined(_LITTLE_ENDIAN) && (_BYTE_ORDER == _LITTLE_ENDIAN)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #endif
 #elif defined(__BIG_ENDIAN__)
-#define MAG_BE
+#define MAG_BIG_ENDIAN
 #elif defined(__LITTLE_ENDIAN__)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #else
 #if defined(__ARMEL__) || defined(__THUMBEL__) || defined(__AARCH64EL__) || \
 defined(_MIPSEL) || defined(__MIPSEL) || defined(__MIPSEL__) || \
@@ -355,17 +355,17 @@ defined(_M_IX86) || defined(_X86_) || defined(__THW_INTEL__) || defined(__I86__)
 defined(__INTEL__) || defined(__x86_64) || defined(__x86_64__) || \
 defined(__amd64__) || defined(__amd64) || defined(_M_X64) || \
 defined(__bfin__) || defined(__BFIN__) || defined(bfin) || defined(BFIN)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #elif defined(__m68k__) || defined(M68000) || defined(__hppa__) || defined(__hppa) || defined(__HPPA__) || \
 defined(__sparc__) || defined(__sparc) || defined(__370__) || defined(__THW_370__) || \
 defined(__s390__) || defined(__s390x__) || defined(__SYSC_ZARCH__)
-#define MAG_BE
+#define MAG_BIG_ENDIAN
 #elif defined(__arm__) || defined(__arm64) || defined(__thumb__) || \
 defined(__TARGET_ARCH_ARM) || defined(__TARGET_ARCH_THUMB) || defined(__ARM_ARCH) || \
 defined(_M_ARM) || defined(_M_ARM64)
 #if defined(_WIN32) || defined(_WIN64) || \
 defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #else
 #error "Unknown endianness"
 #endif
