@@ -94,9 +94,9 @@ static MAG_COLDPROC void mag_ctx_dump_compiler_info(void) {
         mag_ver_major(MAG_VERSION),
         mag_ver_minor(MAG_VERSION),
         mag_ver_patch(MAG_VERSION),
-        mag_ver_major(MAG_STORAGE_VERSION),
-        mag_ver_minor(MAG_STORAGE_VERSION),
-        mag_ver_patch(MAG_STORAGE_VERSION),
+        mag_ver_major(MAG_SNAPSHOT_VERSION),
+        mag_ver_minor(MAG_SNAPSHOT_VERSION),
+        mag_ver_patch(MAG_SNAPSHOT_VERSION),
         compiler_name,
         compiler_version_major,
         compiler_version_minor

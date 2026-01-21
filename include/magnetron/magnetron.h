@@ -39,7 +39,7 @@ extern "C" {
 #define mag_ver_minor(v) (((v)/100u)%100u)
 #define mag_ver_patch(v) ((v)%100u)
 #define MAG_VERSION mag_ver_encode(0, 1, 4)
-#define MAG_STORAGE_VERSION mag_ver_encode(0, 1, 0)
+#define MAG_SNAPSHOT_VERSION mag_ver_encode(0, 1, 0)
 
 typedef enum mag_log_level_t {
     MAG_LOG_LEVEL_NONE,
@@ -429,7 +429,8 @@ extern MAG_EXPORT void mag_tensor_visualize_backprop_graph(mag_tensor_t *tensor,
 typedef struct mag_snapshot_t mag_snapshot_t;
 
 extern MAG_EXPORT mag_snapshot_t *mag_snapshot_new(mag_context_t *ctx);
-extern MAG_EXPORT bool mag_snapshot_save(mag_snapshot_t *snap, const char *filename);
+extern MAG_EXPORT mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filename);
+extern MAG_EXPORT bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename);
 extern MAG_EXPORT mag_tensor_t *mag_snapshot_get_tensor(mag_snapshot_t *snap, const char *key);
 extern MAG_EXPORT bool mag_snapshot_put_tensor(mag_snapshot_t *snap, const char *key, mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_snapshot_free(mag_snapshot_t *snap);
