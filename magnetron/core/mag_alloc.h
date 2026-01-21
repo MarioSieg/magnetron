@@ -26,9 +26,9 @@ extern "C" {
 **     If alignment value > 0, it must be the same when using the realloc and dealloc mode.
 **
 ** This single function is essentially a realloc and is used for allocating, reallocating and deallocating the following way:
-** (*mag_alloc)(NULL, size, 0) <=> malloc(size)            <- Passing NULL as reallocation base and size != 0 => allocation.
-** (*mag_alloc)(ptr, size, 0) <=> realloc(ptr, size)       <- Passing non-NULL pointer as reallocation base and size != 0 => reallocation.
-** (*mag_alloc)(ptr, 0, 0) <=> free(ptr)                   <- Passing NULL as reallocation base and size == 0 => free.
+** (*mag_alloc)(NULL, buf_size, 0) <=> malloc(buf_size)            <- Passing NULL as reallocation base and buf_size != 0 => allocation.
+** (*mag_alloc)(ptr, buf_size, 0) <=> realloc(ptr, buf_size)       <- Passing non-NULL pointer as reallocation base and buf_size != 0 => reallocation.
+** (*mag_alloc)(ptr, 0, 0) <=> free(ptr)                   <- Passing NULL as reallocation base and buf_size == 0 => free.
 */
 extern MAG_EXPORT void *(*mag_alloc)(void *blk, size_t size, size_t align);
 

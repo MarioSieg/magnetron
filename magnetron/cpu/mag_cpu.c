@@ -90,9 +90,9 @@ static MAG_HOTPROC void mag_cpu_submit(mag_device_t *dvc, const mag_command_t *c
 static void mag_cpu_storage_dtor(void *self) {
     mag_storage_buffer_t *buf = self;
     mag_context_t *ctx = buf->ctx;
-    mag_assert(ctx->num_alive_storages > 0, "double freed storage");
-    --ctx->num_alive_storages;
-    if (!(buf->flags & MAG_STORAGE_FLAG_INTRUSIVE))
+    mag_assert(ctx->telemetry.num_alive_storages > 0, "double freed storage");
+    --ctx->telemetry.num_alive_storages;
+    if (!(buf->flags & MAG_STORAGE_FLAG_BORROWED))
         (*mag_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
     mag_slab_free(&ctx->storage_slab, buf);
 }
@@ -113,12 +113,12 @@ static void mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer_t **out
     };
     if (size <= sizeof(void *)) { /* Store value intrusive (scalar storage optimization) */
         buf->base = (uintptr_t)&buf->aux.inline_buf[0]; /* Use 8-byte impl pointer for storage. TODO: this does NOT guarantee MAG_CPU_BUF_ALIGN alignment. */
-        buf->flags |= MAG_STORAGE_FLAG_INTRUSIVE;
+        buf->flags |= MAG_STORAGE_FLAG_BORROWED;
     } else {
         buf->base = (uintptr_t)(*mag_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
     }
     mag_rc_init_object(buf, &mag_cpu_storage_dtor);
-    ++host->ctx->num_alive_storages;
+    ++host->ctx->telemetry.num_alive_storages;
     *out = buf;
 }
 

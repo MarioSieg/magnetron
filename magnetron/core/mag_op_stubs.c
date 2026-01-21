@@ -371,7 +371,7 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
     for (uint32_t i=0; i < num_out; ++i) {
         if (inplace) mag_bump_version(out[i]);   /* Result aliases the modified storage */
     }
-    ++ctx->ops_dispatched;
+    ++ctx->telemetry.ops_dispatched;
 }
 
 static void mag_assert_dtype_compat(mag_opcode_t op, mag_tensor_t **inputs) {

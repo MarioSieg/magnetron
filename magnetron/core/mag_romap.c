@@ -87,7 +87,24 @@ void *mag_map_lookup(mag_map_t *map, const void *key, size_t len) {
     for (;;) {
         mag_bucket_t *b = map->buckets+idx;
         if (!b->key || n > b->psl) return NULL;
-        if (b->hash == hash && b->len  == len && memcmp(b->key, key, len) == 0) return b->val;
+        if (b->hash == hash && b->len  == len && memcmp(b->key, key, len) == 0)
+            return b->val;
+        ++n;
+        idx = (idx+1) & mask;
+    }
+}
+
+const void *mag_map_lookup_key_ptr(mag_map_t *map, const void *key, size_t len) {
+    mag_assert2(key && len && len <= UINT32_MAX);
+    uint64_t hash = mag_murmur3_128_reduced_64(key, len, map->hash_seed);
+    size_t mask = map->size-1;
+    size_t idx = hash & mask;
+    size_t n = 0;
+    for (;;) {
+        mag_bucket_t *b = map->buckets+idx;
+        if (!b->key || n > b->psl) return NULL;
+        if (b->hash == hash && b->len  == len && memcmp(b->key, key, len) == 0)
+            return b->key;
         ++n;
         idx = (idx+1) & mask;
     }

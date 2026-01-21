@@ -38,7 +38,7 @@ static bool mag_backend_module_dlym(mag_dylib_t* handle, const char *sym, const 
 
 static mag_backend_module_t *mag_backend_module_load(const char *file, mag_context_t *ctx) {
     mag_log_info("Loading backend module: '%s'", file);
-    mag_assert(mag_utf8_validate(file, strlen(file)), "Path is not valid UTF-8");
+    mag_assert(mag_utf8_validate((const uint8_t *)file, strlen(file)), "Path is not valid UTF-8");
     mag_dylib_t* handle = mag_dylib_open(file); /* Open the dynamic library */
     if (mag_unlikely(!handle)) {
         return NULL;

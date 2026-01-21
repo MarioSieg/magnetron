@@ -291,49 +291,48 @@ uint64_t mag_cycles(void) {
 #endif
 }
 
-bool mag_utf8_validate(const char *str, size_t len) {
-    const uint8_t *data = (const uint8_t *)str;
+bool mag_utf8_validate(const uint8_t *p, size_t len) {
     size_t pos = 0;
     uint32_t cp = 0;
     while (pos < len) {
-        uint64_t next_pos = pos+16;
-        if (next_pos <= len) {
+        size_t np = pos+16;
+        if (np <= len) {
             uint64_t v1, v2;
-            memcpy(&v1, data+pos, sizeof(v1));
-            memcpy(&v2, data+pos+sizeof(v1), sizeof(v2));
-            if (!((v1 | v2) & 0x8080808080808080)) {
-                pos = next_pos;
+            memcpy(&v1, p+pos, sizeof(v1));
+            memcpy(&v2, p+pos+sizeof(v1), sizeof(v2));
+            if (!((v1|v2) & 0x8080808080808080)) {
+                pos = np;
                 continue;
             }
         }
-        uint8_t byte = data[pos];
+        uint8_t byte = p[pos];
         while (byte < 0x80) {
             if (++pos == len) return true;
-            byte = data[pos];
+            byte = p[pos];
         }
         if ((byte & 0xe0) == 0xc0) {
-            next_pos = pos+2;
-            if (next_pos > len) return false;
-            if ((data[pos+1] & 0xc0) != 0x80) return false;
-            cp = (byte & 0x1f)<<6 | (data[pos+1] & 0x3f);
-            if ((cp < 0x80) || (0x7ff < cp)) return false;
+            np = pos+2;
+            if (mag_unlikely(np > len)) return false;
+            if (mag_unlikely((p[pos+1] & 0xc0) != 0x80)) return false;
+            cp = (byte & 0x1f)<<6 | (p[pos+1] & 0x3f);
+            if (mag_unlikely((cp < 0x80) || (0x7ff < cp))) return false;
         } else if ((byte & 0xf0) == 0xe0) {
-            next_pos = pos+3;
-            if (next_pos > len) return false;
-            if ((data[pos+1] & 0xc0) != 0x80) return false;
-            if ((data[pos+2] & 0xc0) != 0x80) return false;
-            cp = (byte & 0xf)<<12 | (data[pos+1] & 0x3f)<<6 | (data[pos+2] & 0x3f);
-            if ((cp < 0x800) || (0xffff < cp) || (0xd7ff < cp && cp < 0xe000)) return false;
+            np = pos+3;
+            if (mag_unlikely(np > len)) return false;
+            if (mag_unlikely((p[pos+1] & 0xc0) != 0x80)) return false;
+            if (mag_unlikely((p[pos+2] & 0xc0) != 0x80)) return false;
+            cp = (byte & 0xf)<<12 | (p[pos+1] & 0x3f)<<6 | (p[pos+2] & 0x3f);
+            if (mag_unlikely((cp < 0x800) || (0xffff < cp) || (0xd7ff < cp && cp < 0xe000))) return false;
         } else if ((byte & 0xf8) == 0xf0) {
-            next_pos = pos + 4;
-            if (next_pos > len) return false;
-            if ((data[pos+1] & 0xc0) != 0x80) return false;
-            if ((data[pos+2] & 0xc0) != 0x80) return false;
-            if ((data[pos+3] & 0xc0) != 0x80) return false;
-            cp = (byte & 0x7)<<18 | (data[pos+1] & 0x3f)<<12 | (data[pos+2] & 0x3f)<<6 | (data[pos+3] & 0x3f);
-            if (cp <= 0xffff || 0x10ffff < cp) return false;
+            np = pos + 4;
+            if (mag_unlikely(np > len)) return false;
+            if (mag_unlikely((p[pos+1] & 0xc0) != 0x80)) return false;
+            if (mag_unlikely((p[pos+2] & 0xc0) != 0x80)) return false;
+            if (mag_unlikely((p[pos+3] & 0xc0) != 0x80)) return false;
+            cp = (byte & 0x7)<<18 | (p[pos+1] & 0x3f)<<12 | (p[pos+2] & 0x3f)<<6 | (p[pos+3] & 0x3f);
+            if (mag_unlikely(cp <= 0xffff || 0x10ffff < cp)) return false;
         } else return false;
-        pos = next_pos;
+        pos = np;
     }
     return true;
 }

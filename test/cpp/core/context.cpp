@@ -32,7 +32,6 @@ TEST(context, create_cpu) {
     ctx.start_grad_recorder();
     ctx.stop_grad_recorder();
     std::cout << ctx.device_name() << std::endl;
-    mag_set_log_level(MAG_LOG_LEVEL_NONE);
 }
 
 #ifdef MAG_ENABLE_CUDA

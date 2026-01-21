@@ -50,7 +50,7 @@
 #include "mag_alloc.h"
 
 #define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
-static char* mag_wuint9(char *p, uint32_t u) {
+static char *mag_wuint9(char *p, uint32_t u) {
     uint32_t v = u / 10000, w;
     u -= v * 10000;
     w = v / 10000;
@@ -69,7 +69,7 @@ static char* mag_wuint9(char *p, uint32_t u) {
 #undef wint_r
 
 #define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
-static char* mag_wint(char *p, int32_t k) {
+static char *mag_wint(char *p, int32_t k) {
     uint32_t u = (uint32_t)k;
     if (k < 0) { u = ~u+1u; *p++ = '-'; }
     if (u < 10000) {
@@ -372,7 +372,7 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
         *p++ = (char)(ch >> 16); *p++ = (char)(ch >> 8); *p++ = (char)ch;
     } else if (MAG_FMT_FP(sf) == MAG_FMT_FP(MAG_FMT_T_FP_A)) {
         /* %a */
-        const char* hexdig = (sf & MAG_FMT_F_UPPER) ? "0123456789ABCDEFPX" : "0123456789abcdefpx";
+        const char *hexdig = (sf & MAG_FMT_F_UPPER) ? "0123456789ABCDEFPX" : "0123456789abcdefpx";
         int32_t e = (t.u32.hi >> 20) & 0x7ff;
         char prefix = 0, eprefix = '+';
         if (t.u32.hi & 0x80000000) prefix = '-';
@@ -415,7 +415,7 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
         *p++ = '0' + (t.u32.hi >> 20); /* Usually '1', sometimes '0' or '2'. */
         if ((prec | (sf & MAG_FMT_F_ALT))) {
             /* Emit fractional part. */
-            char* q = p + 1 + prec;
+            char *q = p + 1 + prec;
             *p = '.';
             if (prec < 13) t.u64 >>= (52 - prec*4);
             else while (prec > 13) p[prec--] = '0';

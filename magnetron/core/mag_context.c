@@ -183,10 +183,10 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
 #ifdef MAG_DEBUG
     mag_leak_detector_dump_results(ctx);  /* Provide detailed leak check info */
 #endif
-    bool leaks_detected = ctx->num_alive_tensors || ctx->num_alive_storages;
+    bool leaks_detected = ctx->telemetry.num_alive_tensors || ctx->telemetry.num_alive_storages;
     if (mag_unlikely(leaks_detected)) {
         char msg[256] = {0};
-        snprintf(msg, sizeof(msg), "magnetron context destroyed with %zu leaked tensors and %zu leaked storages", ctx->num_alive_tensors, ctx->num_alive_storages);
+        snprintf(msg, sizeof(msg), "magnetron context destroyed with %zu leaked tensors and %zu leaked storages", ctx->telemetry.num_alive_tensors, ctx->telemetry.num_alive_storages);
         if (suppress_leak_detection) mag_log_warn("%s", msg);
         else mag_panic("%s", msg);
     }
@@ -198,13 +198,21 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     ctx->device = NULL;
     ctx->backend = NULL;
     mag_backend_registry_free(ctx->backend_registry);
-    size_t num_created_tensors = ctx->num_created_tensors;
-    size_t storage_bytes = ctx->storage_bytes_allocated;
-    size_t ops_dispatched = ctx->ops_dispatched;
+    size_t num_created_tensors = ctx->telemetry.num_created_tensors;
+    size_t storage_bytes = ctx->telemetry.storage_bytes_allocated;
+    size_t ops_dispatched = ctx->telemetry.ops_dispatched;
     memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
     (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
     ctx = NULL;
-    mag_log_info("magnetron context destroyed, %zuK operators executed, %zuK tensors total, %.02fGiB storage allocation", ops_dispatched/1000, num_created_tensors/1000, (double)storage_bytes/(double)(1<<30));
+    mag_log_info(
+        "runtime metrics: ops: %zu, tensors: %zuK, storage alloc: %.02fGiB",
+        ops_dispatched/1000,
+        num_created_tensors/1000,
+        (double)storage_bytes / (double)(1<<30)
+    );
+    mag_log_info("magnetron context offline");
+    fflush(stdout);
+    fflush(stderr);
 }
 
 const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx) {

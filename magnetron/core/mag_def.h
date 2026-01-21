@@ -373,15 +373,15 @@ defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
 #endif
 
 #ifdef __cpp_lib_hardware_interference_size
-/* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
+/* Cache line buf_size. Used for alignment to avoid destructive interference (false sharing). */
 #define MAG_DESTRUCTIVE_INTERFERENCE_SIZE std::hardware_destructive_interference_size
 #else
-/* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
+/* Cache line buf_size. Used for alignment to avoid destructive interference (false sharing). */
 #define MAG_DESTRUCTIVE_INTERFERENCE_SIZE 64
 #endif
 
-#define MAG_PAGE_SIZE_4K 0x1000     /* 4 KiB page size */
-#define MAG_PAGE_SIZE_2M 0x200000   /* 2 MiB page size */
+#define MAG_PAGE_SIZE_4K 0x1000     /* 4 KiB page buf_size */
+#define MAG_PAGE_SIZE_2M 0x200000   /* 2 MiB page buf_size */
 
 #define MAG_CPU_BUF_ALIGN 64
 
@@ -540,7 +540,7 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 
 extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
 
-/* Humanize memory size. Format and convert a memory size to the appropriate unit. For example. 1024 => 1 KiB */
+/* Humanize memory buf_size. Format and convert a memory buf_size to the appropriate unit. For example. 1024 => 1 KiB */
 extern void mag_humanize_memory_size(size_t n, double *out, const char **unit);
 extern uintptr_t mag_thread_id(void); /* Get current native thread ID. */
 extern FILE *mag_fopen(const char *file, const char *mode);
@@ -558,7 +558,7 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 #define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
 #define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
 
-/* Increment pointer or size with correct type alignment. */
+/* Increment pointer or buf_size with correct type alignment. */
 static inline void *mag_pincr(void **p, size_t sz, size_t align) {
     void *pp = (void *)(((uintptr_t)*p+align-1)&-align);
     *p = (void *)((uint8_t *)pp+sz);
@@ -588,7 +588,7 @@ return __builtin_smull_overflow(a, b, c);
 #endif
 }
 
-extern bool mag_utf8_validate(const char *str, size_t len);
+extern bool mag_utf8_validate(const uint8_t *str, size_t len);
 extern char *mag_strdup(const char *s);
 extern void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);
 extern int mag_casecmp(const char *a, const char *b);
