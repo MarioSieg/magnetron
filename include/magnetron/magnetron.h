@@ -430,7 +430,8 @@ typedef struct mag_snapshot_t mag_snapshot_t;
 
 extern MAG_EXPORT mag_snapshot_t *mag_snapshot_new(mag_context_t *ctx);
 extern MAG_EXPORT bool mag_snapshot_save(mag_snapshot_t *snap, const char *filename);
-extern MAG_EXPORT void mag_snapshot_put_tensor(mag_snapshot_t *snap, mag_tensor_t *tensor);
+extern MAG_EXPORT mag_tensor_t *mag_snapshot_get_tensor(mag_snapshot_t *snap, const char *key);
+extern MAG_EXPORT bool mag_snapshot_put_tensor(mag_snapshot_t *snap, const char *key, mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_snapshot_free(mag_snapshot_t *snap);
 
 

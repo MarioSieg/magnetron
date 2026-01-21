@@ -20,7 +20,15 @@ TEST(snapshot, metadata) {
     context ctx {};
     mag_snapshot_t *snap = mag_snapshot_new(&*ctx);
 
-    mag_snapshot_save(snap, "snap.mag");
+    tensor test {ctx, dtype::bfloat16, 64, 64};
+    test.uniform_(0.0f, 1.0f);
+
+    tensor test2 {ctx, dtype::i8, 9,9,9,9};
+    test2.uniform_(-128, 127);
+
+    ASSERT_TRUE(mag_snapshot_put_tensor(snap, "xiMat2x2", &*test));
+    ASSERT_TRUE(mag_snapshot_put_tensor(snap, "mask", &*test2));
+    ASSERT_TRUE(mag_snapshot_save(snap, "snap.mag"));
 
     ASSERT_TRUE(std::filesystem::exists("snap.mag"));
     //ASSERT_TRUE(std::filesystem::remove("snap.mag"));

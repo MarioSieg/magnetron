@@ -70,6 +70,7 @@ namespace magnetron {
     enum class dtype : std::underlying_type_t<mag_dtype_t> {
         float32 = MAG_DTYPE_FLOAT32,
         float16 = MAG_DTYPE_FLOAT16,
+        bfloat16 = MAG_DTYPE_BFLOAT16,
         boolean = MAG_DTYPE_BOOLEAN,
         u8 = MAG_DTYPE_UINT8,
         i8 = MAG_DTYPE_INT8,
@@ -967,6 +968,11 @@ namespace magnetron {
     template <>
     inline auto tensor::uniform_(float min, float max) -> void {
         handle_error(mag_uniform_(m_tensor, mag_scalar_from_f64(min), mag_scalar_from_f64(max)));
+    }
+
+    template <>
+    inline auto tensor::uniform_(int min, int max) -> void {
+        handle_error(mag_uniform_(m_tensor, mag_scalar_from_i64(min), mag_scalar_from_i64(max)));
     }
 
     template <>
