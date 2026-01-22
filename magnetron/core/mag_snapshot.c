@@ -63,6 +63,10 @@ if (mag_unlikely(!(expr))) { \
 }
 
 #define MAG_STO_MAX_STRLEN 0xffff
+#define MAG_STO_MAX_RANK 64
+#define MAG_STO_MAX_STR_POOL_BLOB_SIZE (128ull<<20) /* 128 MiB */
+#define MAG_STO_MAX_OFFSETS 0xffff
+
 #define mag_sto_pack4_ne(a,b,c,d) ((((d)&255)<<24)+(((c)&255)<<16)+(((b)&255)<<8)+((a)&255))
 #define MAG_STO_FILE_MAGIC mag_sto_pack4_ne('M', 'A', 'G', '!')
 #define MAG_STO_SECTION_STR_POOL mag_sto_pack4_ne('S', 'R', 'P', '!')
@@ -70,7 +74,6 @@ if (mag_unlikely(!(expr))) { \
 #define MAG_STO_SECTION_TENSOR_DESC mag_sto_pack4_ne('D', 'S', 'C', '!')
 #define MAG_STO_SECTION_TENSOR_DATA mag_sto_pack4_ne('B', 'U', 'F', '!')
 #define MAG_STO_SECTION_MARKERS_COUNT 4 /* File magic is not included, belongs to file header */
-#define MAG_STO_MAX_RANK 64
 
 #ifdef MAG_BIG_ENDIAN
 /*
@@ -217,34 +220,11 @@ static bool mag_stream_wbytes(mag_mem_stream_t *stream, const void *buf, size_t 
     return true;
 }
 
-static bool mag_stream_rbuf_alloc(mag_mem_stream_t *stream, uint8_t **out_buf, uint32_t *out_len) {
-    mag_sto_verify(out_buf != NULL, return false);
-    mag_sto_verify(out_len != NULL, return false);
-    uint32_t len = 0;
-    mag_sto_verify(mag_stream_ru32_le(stream, &len), return false);
-    mag_sto_verify((size_t)(stream->end - stream->pos) >= len, return false);
-    uint8_t *buf = NULL;
-    if (len) {
-        buf = (*mag_alloc)(NULL, (size_t)len, 0);
-        mag_sto_verify(buf != NULL, return false);
-        memcpy(buf, stream->pos, len);
-    }
-    stream->pos += len;
-    *out_buf = buf;
-    *out_len = len;
-    return true;
-}
-
-static bool mag_stream_rbuf_view(mag_mem_stream_t *stream, const uint8_t **out_buf, uint32_t *out_len) {
-    mag_sto_verify(out_buf != NULL, return false);
-    mag_sto_verify(out_len != NULL, return false);
-    uint32_t len = 0;
-    mag_sto_verify(mag_stream_ru32_le(stream, &len), return false);
-    mag_sto_verify((size_t)(stream->end - stream->pos) >= len, return false);
-    const uint8_t *buf = stream->pos;
-    stream->pos += len;
-    *out_buf = buf;
-    *out_len = len;
+static bool mag_stream_rbytes_view(mag_mem_stream_t *s, const uint8_t **out, size_t len) {
+    mag_sto_verify(out != NULL, return false);
+    mag_sto_verify((size_t)(s->end - s->pos) >= len, return false);
+    *out = s->pos;
+    s->pos += len;
     return true;
 }
 
@@ -341,7 +321,7 @@ typedef struct mag_string_pool_t {
 
 static void mag_pool_init(mag_string_pool_t *pool) {
     memset(pool, 0, sizeof(*pool));
-    mag_map_init(&pool->map, 256, true);
+    mag_map_init(&pool->map, 256, true); /* TODO: we don't want this */
 }
 
 static void mag_pool_free(mag_string_pool_t *pool) {
@@ -393,6 +373,45 @@ static bool mag_pool_serialize(const mag_string_pool_t *pool, mag_mem_stream_t *
         mag_sto_verify(mag_stream_wbytes(stream, rec->ptr, rec->len), return false);
     }
     return true;
+}
+
+static bool mag_pool_deserialize(mag_string_pool_t *pool, mag_mem_stream_t *stream) {
+    mag_pool_free(pool);
+    mag_pool_init(pool);
+    mag_assert2(pool->len == 0); /*Pool must be fresh */
+    uint32_t count = 0;
+    mag_sto_verify(mag_stream_ru32_le(stream, &count), return false);
+    size_t num_offsets = (size_t)count+1;
+    mag_sto_verify(num_offsets <= MAG_STO_MAX_OFFSETS, return false);
+    uint32_t *offs = (*mag_alloc)(NULL, num_offsets*sizeof(*offs), 0);
+    for (size_t i=0; i < num_offsets; ++i) /* Read in offsets */
+        mag_sto_verify(mag_stream_ru32_le(stream, offs+i), goto fail);
+    mag_sto_verify(*offs == 0, goto fail);
+    for (size_t i=1; i < num_offsets; ++i)
+        mag_sto_verify(offs[i] >= offs[i-1], goto fail); /* Monotonic verify */
+    uint32_t blob_size = offs[count];
+    mag_sto_verify(blob_size <= MAG_STO_MAX_STR_POOL_BLOB_SIZE, goto fail);
+    const uint8_t *blob = NULL;
+    mag_sto_verify(mag_stream_rbytes_view(stream, &blob, blob_size), goto fail);
+    for (uint32_t id=0; id < count; ++id) {
+        uint32_t a = offs[id];
+        uint32_t b = offs[id+1];
+        mag_sto_verify(a <= b && b <= blob_size, goto fail);
+        const uint8_t *str = blob+a;
+        uint32_t delta = b-a;
+        mag_sto_verify(delta, goto fail);
+        mag_sto_verify(mag_utf8_validate(str, delta), goto fail);
+        uint32_t len = 0;
+        mag_sto_verify(mag_pool_intern(pool, str, delta, &len), goto fail);
+        mag_sto_verify(len == id, goto fail);
+    }
+    (*mag_alloc)(offs, 0, 0);
+    return true;
+fail:
+    (*mag_alloc)(offs, 0, 0);
+    mag_pool_free(pool);
+    mag_pool_init(pool);
+    return false;
 }
 
 static size_t mag_pool_compute_size(mag_string_pool_t *pool) {
@@ -462,8 +481,21 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_sto_verify(mag_stream_mmap_file_r(stream, filename), return false);
     snap->owns_stream = true; /* We need to free the stream later as we reference memory from it now */
     mag_sto_verify(mag_stream_remaining(stream) >= MAG_FILE_HEADER_SIZE + 4*MAG_STO_SECTION_MARKERS_COUNT, goto error); /* We must at minimum have enough bytes for an empty file */
+
+    size_t marker = mag_stream_needle(stream);
+    /* File header */
     mag_file_header_t header = {0};
     mag_sto_verify(mag_file_header_deserialize(&header, stream), goto error)
+    mag_assert2(mag_stream_needle(stream)-marker == MAG_FILE_HEADER_SIZE); /* Verify exact file header bytes written */
+
+    /* String pool */
+    marker = mag_stream_needle(stream);
+    uint32_t section_marker = 0;
+    mag_sto_verify(mag_stream_ru32_le(stream, &section_marker), goto error);
+    mag_sto_verify(section_marker == MAG_STO_SECTION_STR_POOL, goto error);
+    mag_sto_verify(mag_pool_deserialize(&snap->str_pool, stream), goto error);
+    mag_assert2(mag_stream_needle(stream)-marker == 4+mag_pool_compute_size(&snap->str_pool)); /* Verify exact section marker + pool bytes written */
+
     return snap;
     error:
         mag_snapshot_free(snap);
@@ -591,4 +623,19 @@ bool mag_snapshot_put_tensor(mag_snapshot_t *snap, const char *key, mag_tensor_t
     mag_map_insert(&snap->tensor_map, rec->ptr, rec->len, tensor);
     mag_tensor_incref(tensor);
     return true;
+}
+
+MAG_COLDPROC void mag_snapshot_print_info(mag_snapshot_t *snap) {
+    const mag_string_pool_t *pool = &snap->str_pool;
+    printf("--- String Pool ---\n");
+    printf("count: %zu\n", pool->len);
+    printf("serialized_bytes: %zu\n", mag_pool_compute_size((mag_string_pool_t *)pool));
+    for (size_t i = 0; i < pool->len; ++i) {
+        const mag_pool_record_t *rec = pool->records+i;
+        if (!rec->ptr || !rec->len) continue;
+        printf("[%zu] len=%u  \"", i, rec->len);
+        printf("%.*s", (int)rec->len, (const char *)rec->ptr);
+        printf("\"\n");
+    }
+    printf("-------------------\n");
 }

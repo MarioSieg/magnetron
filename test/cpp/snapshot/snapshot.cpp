@@ -33,6 +33,7 @@ TEST(snapshot, metadata) {
     { // read
         mag_snapshot_t *snap = mag_snapshot_deserialize(&*ctx, "snap.mag");
         ASSERT_NE(snap, nullptr);
+        mag_snapshot_print_info(snap);
         mag_snapshot_free(snap);
     }
 
