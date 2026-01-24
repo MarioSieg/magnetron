@@ -89,7 +89,7 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     uint32_t backend_ver = (*backend->runtime_version)(backend);
     if (mag_unlikely(backend_ver != MAG_VERSION)) {
         uint32_t b_maj = mag_ver_major(backend_ver), b_min = mag_ver_minor(backend_ver), b_pat = mag_ver_patch(backend_ver);
-        uint32_t rt_maj = mag_ver_major(backend_ver), rt_min = mag_ver_minor(backend_ver), rt_pat = mag_ver_patch(backend_ver);
+        uint32_t rt_maj = mag_ver_major(MAG_VERSION), rt_min = mag_ver_minor(MAG_VERSION), rt_pat = mag_ver_patch(MAG_VERSION);
         mag_log_error("Backend library file '%s' has incompatible runtime version (got %d.%d.%d, expected %d.%d.%d)", file, b_maj, b_min, b_pat, rt_maj, rt_min, rt_pat);
         mag_dylib_close(handle);
         return NULL;

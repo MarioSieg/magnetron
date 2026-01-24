@@ -302,8 +302,33 @@ static bool mag_tensor_desc_serialize(const mag_tensor_desc_t *desc, mag_mem_str
     mag_sto_verify(mag_stream_wu32_le(stream, desc->key_id), return false);
     mag_sto_verify(mag_stream_wu64_le(stream, desc->numel), return false);
     mag_sto_verify(mag_stream_wu64_le(stream, desc->offset), return false);
-    for (int i=0; i < desc->rank; ++i)
+    for (uint8_t i=0; i < desc->rank; ++i)
         mag_sto_verify(mag_stream_wu64_le(stream, desc->shape[i]), return false);
+    return true;
+}
+
+static bool mag_tensor_desc_deserialize(mag_tensor_desc_t *desc, mag_mem_stream_t *stream) {
+    uint32_t packed = 0;
+    mag_sto_verify(mag_stream_ru32_le(stream, &packed), return false);
+    uint8_t dtype;
+    mag_unpack4xu8_le(packed, &desc->rank, &dtype, &desc->aux0, &desc->aux1);
+    mag_sto_verify(desc->rank < MAG_STO_MAX_RANK, return false);
+    mag_sto_verify(dtype < MAG_DTYPE__NUM, return false);
+    desc->dtype = dtype;
+    mag_sto_verify(mag_stream_ru32_le(stream, &desc->key_id), return false);
+    mag_sto_verify(desc->key_id != 0, return false); /* TODO: key id */
+    mag_sto_verify(mag_stream_ru64_le(stream, &desc->numel), return false);
+    mag_sto_verify(desc->numel > 0 && desc->numel <= INT64_MAX, return false);
+    mag_sto_verify(mag_stream_ru64_le(stream, &desc->offset), return false);     /* TODO: verify offset */
+    int64_t numel_prod = 1;
+    for (uint8_t i=0; i < desc->rank; ++i) {
+        uint64_t dim=0;
+        mag_sto_verify(mag_stream_ru64_le(stream, &dim), return false);
+        mag_sto_verify(dim <= INT64_MAX, return false);
+        mag_sto_verify(!mag_mulov64(dim, numel_prod, &numel_prod), return false);
+        desc->shape[i] = dim;
+    }
+    mag_sto_verify(numel_prod <= INT64_MAX && numel_prod == desc->numel, return false);
     return true;
 }
 
@@ -495,6 +520,20 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_sto_verify(section_marker == MAG_STO_SECTION_STR_POOL, goto error);
     mag_sto_verify(mag_pool_deserialize(&snap->str_pool, stream), goto error);
     mag_assert2(mag_stream_needle(stream)-marker == 4+mag_pool_compute_size(&snap->str_pool)); /* Verify exact section marker + pool bytes written */
+
+    /*uint64_t offs=0;*/
+    for (uint32_t i=0; i < header.tensor_header_count; ++i) {
+        mag_tensor_desc_t desc = {0};
+        mag_sto_verify(mag_tensor_desc_deserialize(&desc, stream), goto error);
+        mag_tensor_t *tensor = NULL;
+        int64_t shape[MAG_STO_MAX_RANK];
+        for (uint8_t j=0; j < desc.rank && j < sizeof(shape)/sizeof(*shape); ++j)
+            shape[j] = (int64_t)desc.shape[j];
+        mag_sto_verify(mag_empty(&tensor, ctx, desc.dtype, desc.rank, shape), goto error); /*  */
+        /*mag_snapshot_put_tensor() TODO: lookup key and insert tensor */
+    }
+
+    /* Read data */
 
     return snap;
     error:

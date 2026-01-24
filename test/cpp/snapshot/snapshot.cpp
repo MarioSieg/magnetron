@@ -22,6 +22,7 @@ TEST(snapshot, metadata) {
         mag_snapshot_t *snap = mag_snapshot_new(&*ctx);
         tensor test {ctx, dtype::bfloat16, 64, 64};
         test.uniform_(0.0f, 1.0f);
+        std::cout << test.to_string() << std::endl;
         tensor test2 {ctx, dtype::i8, 9,9,9,9};
         test2.uniform_(-128, 127);
         test2 = test2.transpose();
