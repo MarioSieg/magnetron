@@ -284,17 +284,27 @@ class GenerationContext:
         gc.collect()
 
     def repl(self) -> None:
-        console.print('Interactive chat. Commands: /exit, /reset', style='dim')
+        from rich.panel import Panel
+        from rich.rule import Rule
+        from rich.text import Text
+        from rich.prompt import Prompt
+        console.print(
+            Panel.fit(
+                Text('Qwen2.5 REPL', style='bold white') + Text('\n/exit  /reset', style='dim'),
+                border_style='cyan',
+            )
+        )
         history: list[tuple[str, str]] = []
+        last_ctx_used: int = 0
         while True:
-            user = input('\nYou> ').strip()
+            user = Prompt.ask('[bold cyan]You[/]').strip()
             if not user:
                 continue
             if user == '/exit':
                 break
             if user == '/reset':
                 history.clear()
-                console.print('History cleared.', style='dim')
+                console.print('[dim]History cleared.[/dim]')
                 continue
             history.append(('user', user))
             history = _clamp_history_by_tokens(
@@ -305,8 +315,10 @@ class GenerationContext:
                 reserve_gen=self.args.reserve_gen,
             )
             prompt = _build_prompt(self.args.system, history)
-            model_inputs = self.tokenizer([prompt], return_tensors='np')
+            model_inputs = self.tokenizer([prompt], return_tensors='np', add_special_tokens=False)
             model_input_ids = Tensor.of(model_inputs.input_ids.tolist(), dtype=dtype.int64)
+            console.print(Rule(style='dim'))
+            console.print('[bold magenta]Assistant[/]:', end=' ')
             try:
                 reply = self.model.generate(
                     model_input_ids,
@@ -316,6 +328,7 @@ class GenerationContext:
                     top_k=self.args.top_k,
                 )
             except KeyboardInterrupt:
+                console.print('\n[dim]Interrupted.[/dim]')
                 continue
             history.append(('assistant', reply))
             history = _clamp_history_by_tokens(
@@ -325,6 +338,13 @@ class GenerationContext:
                 max_ctx=self.args.max_ctx,
                 reserve_gen=self.args.reserve_gen,
             )
+            try:
+                ctx_used = len(self.tokenizer(_build_prompt(self.args.system, history), add_special_tokens=False).input_ids)
+                last_ctx_used = ctx_used
+            except Exception:
+                ctx_used = last_ctx_used
+            console.print()
+            console.print(f'[dim]ctx: {ctx_used}/{self.args.max_ctx}, reserve: {self.args.reserve_gen}[/dim]')
             gc.collect()
 
     def one_shot_answer(self, prompt: str) -> str:
