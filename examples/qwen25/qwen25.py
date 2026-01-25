@@ -119,6 +119,11 @@ class SlidingWindowAttention(nn.Module):
         q, k_cur = _apply_rope(q, k_cur, cos_freq, sin_freq, idx)
         if prev_kv is not None:
             past_k, past_v = prev_kv
+            if self.sliding_window is not None:
+                max_past = max(0, self.sliding_window - k_cur.shape[2])
+                if past_k.shape[2] > max_past:
+                    past_k = past_k[:, :, -max_past:, :]
+                    past_v = past_v[:, :, -max_past:, :]
             k: Tensor = Tensor.cat([past_k, k_cur], dim=2)
             v: Tensor = Tensor.cat([past_v, v_cur], dim=2)
         else:
@@ -133,13 +138,9 @@ class SlidingWindowAttention(nn.Module):
         k_pos_indices: Tensor = Tensor.arange(k_len).reshape(1, -1)
         q_pos_indices: Tensor = Tensor.arange(start=(k_len - q_len), stop=k_len).reshape(-1, 1)
         causal_mask: Tensor = k_pos_indices <= q_pos_indices
-        window_mask: Tensor = (
-            q_pos_indices - k_pos_indices
-        ) < self.sliding_window  # TODO: branch if sliding window is enabled and handle both cases dynamically
-        should_attend: Tensor = causal_mask
-        keep: Tensor = should_attend.cast(scores.dtype)
+        keep: Tensor = causal_mask.cast(scores.dtype)
         additive_mask: Tensor = (1.0 - keep) * -1e4
-        additive_mask = additive_mask.reshape(1, 1, q_len, k_len)  # TODO use where
+        additive_mask = additive_mask.reshape(1, 1, q_len, k_len)
         masked_scores: Tensor = scores + additive_mask
         attn_weights: Tensor = masked_scores.softmax(dim=-1)
         out: Tensor = (attn_weights @ v).transpose(1, 2).reshape(block_size, seq_len, -1)
@@ -217,7 +218,7 @@ class Qwen25Model(nn.Module):
         in_len: int = idx.shape[1]
         logits, prev_kv = self(idx, idx=Tensor.arange(stop=in_len).reshape(1, -1), prev_kv=None)
         next_logits: Tensor = logits[:, -1, :] / temp
-        tokens: str = []
+        tokens: str = ''
         curr_len: int = in_len
         count: int = 0
         for _ in range(max_tokens):
@@ -248,6 +249,31 @@ def _build_prompt(system: str, messages: list[tuple[str, str]]) -> str:
     out.append('<|im_start|>assistant\n')
     return ''.join(out)
 
+
+def _clamp_history_by_tokens(
+    tokenizer: AutoTokenizer,
+    system: str,
+    history: list[tuple[str, str]],
+    max_ctx: int,
+    reserve_gen: int,
+) -> list[tuple[str, str]]:
+    budget = max(256, max_ctx - reserve_gen)  # avoid too-small budgets
+    prompt = _build_prompt(system, history)
+    n = len(tokenizer(prompt, add_special_tokens=False).input_ids)
+    if n <= budget:
+        return history
+    trimmed = history[:]
+    while trimmed:
+        trimmed.pop(0)
+        if trimmed and trimmed[0][0] == 'assistant':
+            trimmed.pop(0)
+        prompt = _build_prompt(system, trimmed)
+        n = len(tokenizer(prompt, add_special_tokens=False).input_ids)
+        if n <= budget:
+            return trimmed
+    return []
+
+
 class GenerationContext:
     def __init__(self, args: argparse.Namespace) -> None:
         context.stop_grad_recorder()
@@ -271,6 +297,13 @@ class GenerationContext:
                 console.print('History cleared.', style='dim')
                 continue
             history.append(('user', user))
+            history = _clamp_history_by_tokens(
+                self.tokenizer,
+                self.args.system,
+                history,
+                max_ctx=self.args.max_ctx,
+                reserve_gen=self.args.reserve_gen,
+            )
             prompt = _build_prompt(self.args.system, history)
             model_inputs = self.tokenizer([prompt], return_tensors='np')
             model_input_ids = Tensor.of(model_inputs.input_ids.tolist(), dtype=dtype.int64)
@@ -285,6 +318,13 @@ class GenerationContext:
             except KeyboardInterrupt:
                 continue
             history.append(('assistant', reply))
+            history = _clamp_history_by_tokens(
+                self.tokenizer,
+                self.args.system,
+                history,
+                max_ctx=self.args.max_ctx,
+                reserve_gen=self.args.reserve_gen,
+            )
             gc.collect()
 
     def one_shot_answer(self, prompt: str) -> str:
@@ -294,6 +334,7 @@ class GenerationContext:
         reply = self.model.generate(model_input_ids, self.tokenizer, max_tokens=self.args.max_tokens, temp=self.args.temp, top_k=self.args.top_k)
         gc.collect()
         return reply
+
 
 def _main() -> None:
     args = argparse.ArgumentParser(description='Run QWEN-2.5 model inference')
@@ -305,6 +346,8 @@ def _main() -> None:
     args.add_argument('--temp', type=float, default=0.6, help='Sampling temperature')
     args.add_argument('--snapshot', type=str, default='qwen2.5-3b-instruct-float32.mag', help='Path to model snapshot file')
     args.add_argument('--system', type=str, default='You are a helpful assistant.', help='System prompt')
+    args.add_argument('--max_ctx', type=int, default=4096, help='Max prompt context tokens (including system)')
+    args.add_argument('--reserve_gen', type=int, default=512, help='Reserve tokens for generation headroom')
     args = args.parse_args()
 
     if not args.repl and not args.prompt:
@@ -317,6 +360,7 @@ def _main() -> None:
     else:  # Single shot mode
         reply = model_context.one_shot_answer(args.prompt)
         console.print(f'\n\nAnswer: {reply}', style='bold green')
+
 
 if __name__ == '__main__':
     _main()
