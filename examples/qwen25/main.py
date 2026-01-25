@@ -22,24 +22,16 @@ from rich.text import Text
 from rich.prompt import Prompt
 
 REPO_ID: str = 'mario-sieg/qwen2.5-3b-instruct-magnetron'  # HF repo we download the data from
-LOCAL_CACHE_DIR: str = '.cache'  # Local cache dir for HF hub downloads
-if not os.path.exists(LOCAL_CACHE_DIR):
-    os.makedirs(LOCAL_CACHE_DIR)
 
 
-def _download_or_ensure_hf_file(repo_id: str, filename: str, local_dir: str = LOCAL_CACHE_DIR) -> str:
+def _download_or_ensure_hf_file(repo_id: str, filename: str) -> str:
     from huggingface_hub import hf_hub_download
 
-    os.makedirs(local_dir, exist_ok=True)
-    local_path = os.path.join(local_dir, filename)
-    if os.path.exists(local_path):
-        return local_path
-    console.print(f'Downloading {filename} into {local_dir}', style='dim')
+    console.print(f'Downloading {filename}', style='dim')
     return hf_hub_download(
         repo_id=repo_id,
         filename=filename,
         repo_type='model',
-        local_dir=local_dir,
     )
 
 
