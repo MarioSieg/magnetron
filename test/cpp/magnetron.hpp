@@ -836,6 +836,24 @@ namespace magnetron {
             return tensor{out};
         }
 
+        [[nodiscard]] auto all() const noexcept -> bool {
+            mag_tensor_t *result = nullptr;
+            handle_error(mag_all(&result, m_tensor, nullptr, 0, false));
+            mag_scalar_t scalar;
+            handle_error(mag_tensor_item(result, &scalar));
+            mag_tensor_decref(result);
+            return !!mag_scalar_as_u64(scalar);
+        }
+
+        [[nodiscard]] auto any() const noexcept -> bool {
+            mag_tensor_t *result = nullptr;
+            handle_error(mag_any(&result, m_tensor, nullptr, 0, false));
+            mag_scalar_t scalar;
+            handle_error(mag_tensor_item(result, &scalar));
+            mag_tensor_decref(result);
+            return !!mag_scalar_as_u64(scalar);
+        }
+
         auto copy_(const void* buf, size_t nb) -> void {
             mag_copy_raw_(m_tensor, buf, nb);
         }

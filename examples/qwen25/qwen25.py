@@ -1,51 +1,23 @@
+# +---------------------------------------------------------------------+
+# | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+# | Licensed under the Apache License, Version 2.0                      |
+# |                                                                     |
+# | Website : https://mariosieg.com                                     |
+# | GitHub  : https://github.com/MarioSieg                              |
+# | License : https://www.apache.org/licenses/LICENSE-2.0               |
+# +---------------------------------------------------------------------+
+
 import gc
-import json
-import os
 import argparse
 import math
-import glob
 import time
 
-from huggingface_hub import snapshot_download
-from safetensors.torch import load_file
-
-from magnetron import Tensor, nn, dtype, context
+from magnetron import Tensor, Snapshot, nn, dtype, context
 from dataclasses import dataclass
 from transformers import AutoTokenizer
-from magnetron._bootstrap import _FFI, _C
 from rich.console import Console
 
 console = Console()
-
-
-def _iter_safetensor_shards(repo_dir: str) -> list[str]:
-    index_path = os.path.join(repo_dir, 'model.safetensors.index.json')
-    if os.path.exists(index_path):
-        with open(index_path, encoding='utf-8') as f:
-            index = json.load(f)
-        shards = sorted(set(index['weight_map'].values()))
-        return [os.path.join(repo_dir, s) for s in shards]
-    shards = sorted(glob.glob(os.path.join(repo_dir, 'model-*.safetensors')))
-    if shards:
-        return shards
-    single = os.path.join(repo_dir, 'model.safetensors')
-    if os.path.exists(single):
-        return [single]
-
-    raise FileNotFoundError('No safetensors weights found in repo snapshot.')
-
-
-def _copy_from_torch(dst: Tensor, src: 'torch.Tensor') -> None:
-    import torch
-
-    if src.dtype != torch.float32:
-        src = src.to(torch.float32)
-    src = src.contiguous()
-    assert dst.dtype == dtype.float32
-    assert tuple(dst.shape) == tuple(src.shape), f'Shape mismatch: {tuple(dst.shape)} != {tuple(src.shape)}'
-    bytes_n = src.numel() * src.element_size()
-    _C.mag_copy_raw_(dst._ptr, _FFI.cast('void*', src.data_ptr()), bytes_n)
-
 
 @dataclass
 class Qwen25HyperParams:
@@ -206,57 +178,21 @@ class Qwen25Model(nn.Module):
         self.cos_cache = cos_cache
         self.sin_cache = sin_cache
 
+    def _load_from_snapshot(self, snapshot_file: str) -> None:
+        with Snapshot.read(snapshot_file) as snap:
+            for name, param in self.named_parameters():
+                tensor = snap.get_tensor(name)
+                if tuple(tensor.shape) != tuple(param.x.shape):
+                    raise RuntimeError(f'Shape mismatch for {name}: {tensor.shape} != {param.shape}')
+                if tensor.dtype != param.x.dtype:
+                    raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.dtype}')
+                param.x = tensor
+
     @staticmethod
-    def from_pretrained(
-        repo_id: str = 'Qwen/Qwen2.5-3B-Instruct',
-    ) -> 'Qwen25Model':
-        repo_dir = snapshot_download(repo_id=repo_id)
-        config = Qwen25HyperParams()
-        model = Qwen25Model(config)
-        model = model.cast(dtype.float32)
-        sd = model.state_dict()
-        remaining = dict(sd)
-        SKIP = {'cos_cache', 'sin_cache'}
-        for k in list(remaining.keys()):
-            if k in SKIP:
-                remaining.pop(k)
-
-        def hf_key_for(mag_key: str) -> str:
-            if mag_key == 'lm_head.weight' and config.tie_word_embeddings:
-                return 'model.embed_tokens.weight'
-            if mag_key.startswith('lm_head.'):
-                return mag_key  # "lm_head.weight"
-            return 'model.' + mag_key
-
-        for shard_path in _iter_safetensor_shards(repo_dir):
-            sd_hf = load_file(shard_path, device='cpu')
-            to_remove = []
-            for mag_k, t_mag in remaining.items():
-                hf_k = hf_key_for(mag_k)
-                if hf_k not in sd_hf:
-                    continue
-                w = sd_hf[hf_k]
-                console.print(f'Loading {hf_k}...')
-                _copy_from_torch(t_mag, w)  # in-place copy, TODO: from file format
-                to_remove.append(mag_k)
-
-            for k in to_remove:
-                remaining.pop(k)
-
-            del sd_hf
-
-            if not remaining:
-                break
-
-        for mag_k, t_mag in remaining.items():
-            if mag_k.endswith('.bias'):
-                t_mag.zeros_()
-            else:
-                raise KeyError(f'Missing HF weight for magnetron key: {mag_k}')
-
-        # one manual collect
-        gc.collect()
-
+    def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen25Model':
+        console.print(f'Loading QWEN-2.5 model from snapshot: {snapshot_file}', style='dim')
+        model = Qwen25Model(Qwen25HyperParams())
+        model._load_from_snapshot(snapshot_file)
         return model
 
     def forward(
@@ -320,7 +256,7 @@ def _main() -> None:
     context.stop_grad_recorder()
     context.manual_seed(args.seed)
 
-    model = Qwen25Model.from_pretrained()
+    model = Qwen25Model.from_pretrained_snapshot('qwen2.5-3b-instruct-float32.mag')
     tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-3B-Instruct')
     prompt = _make_prompt_template('You are a helpful assistant.', args.prompt)
     model_inputs = tokenizer([prompt], return_tensors='np')

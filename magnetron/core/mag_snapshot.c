@@ -307,7 +307,7 @@ static bool mag_tensor_desc_serialize(const mag_tensor_desc_t *desc, mag_mem_str
     return true;
 }
 
-static bool mag_tensor_desc_deserialize(mag_tensor_desc_t *desc, mag_mem_stream_t *stream) {
+static bool mag_tensor_desc_deserialize(mag_tensor_desc_t *desc, mag_mem_stream_t *stream, uint32_t pool_len) {
     uint32_t packed = 0;
     mag_sto_verify(mag_stream_ru32_le(stream, &packed), return false);
     uint8_t dtype;
@@ -316,7 +316,7 @@ static bool mag_tensor_desc_deserialize(mag_tensor_desc_t *desc, mag_mem_stream_
     mag_sto_verify(dtype < MAG_DTYPE__NUM, return false);
     desc->dtype = dtype;
     mag_sto_verify(mag_stream_ru32_le(stream, &desc->key_id), return false);
-    mag_sto_verify(desc->key_id != 0, return false); /* TODO: key id */
+    mag_sto_verify(desc->key_id < pool_len, return false);
     mag_sto_verify(mag_stream_ru64_le(stream, &desc->numel), return false);
     mag_sto_verify(desc->numel > 0 && desc->numel <= INT64_MAX, return false);
     mag_sto_verify(mag_stream_ru64_le(stream, &desc->offset), return false);     /* TODO: verify offset */
@@ -360,7 +360,7 @@ static bool mag_pool_intern(mag_string_pool_t *pool, const uint8_t *buf, size_t 
     mag_sto_verify(mag_utf8_validate(buf, len), return false);
     void *found = mag_map_lookup(&pool->map, buf, len);
     if (found) {
-        *out_id = (uint32_t)(uintptr_t)found;
+        *out_id = (uint32_t)(uintptr_t)found-1;  /* unbias */
         return true;
     }
     mag_sto_verify(pool->len < UINT32_MAX, return false);
@@ -371,7 +371,7 @@ static bool mag_pool_intern(mag_string_pool_t *pool, const uint8_t *buf, size_t 
         pool->records = (*mag_alloc)(pool->records, cap*sizeof(*pool->records), 0);
         pool->cap = cap;
     }
-    mag_map_insert(&pool->map, buf, len, (void *)(uintptr_t)*out_id);
+    mag_map_insert(&pool->map, buf, len, (void *)(uintptr_t)(1+*out_id)); /* bias by 1 to distinguish from NULL */
     const uint8_t *owned = mag_map_lookup_key_ptr(&pool->map, buf, len);
     mag_sto_verify(owned, return false);
     mag_pool_record_t *rec = pool->records+*out_id;
@@ -447,6 +447,14 @@ static size_t mag_pool_compute_size(mag_string_pool_t *pool) {
     return nb;
 }
 
+static bool mag_pool_find_id(mag_string_pool_t *pool, const uint8_t *buf, size_t len, uint32_t *out_id) {
+    mag_sto_verify(pool && buf && len && out_id, return false);
+    void *found = mag_map_lookup(&pool->map, buf, len);
+    if (!found) return false;
+    *out_id = (uint32_t)(uintptr_t)found-1; /* unbias */
+    return true;
+}
+
 struct mag_snapshot_t {
     mag_context_t *ctx;
     mag_string_pool_t str_pool;
@@ -480,7 +488,7 @@ mag_snapshot_t *mag_snapshot_new(mag_context_t *ctx) {
     memset(snap, 0, sizeof(*snap));
     snap->ctx = ctx;
     mag_pool_init(&snap->str_pool);
-    mag_map_init(&snap->tensor_map, MAG_SNAPSHOT_META_MAP_DEFAULT_CAP, false);
+    mag_map_init(&snap->tensor_map, MAG_SNAPSHOT_META_MAP_DEFAULT_CAP, true);
     return snap;
 }
 
@@ -489,7 +497,7 @@ void mag_snapshot_free(mag_snapshot_t *snap) {
     size_t iter = 0, len = 0;
     void *val = NULL;
     while (mag_map_next(&snap->tensor_map, &iter, &len, &val)) /* Free cloned metadata records */
-        mag_tensor_decref(val);
+        if (val) mag_tensor_decref(val);
     if (snap->owns_stream) /* If we own the stream, close it. TODO: what if tensors are still alive which reference the mem?! */
         mag_stream_close(&snap->stream);
     mag_map_free(&snap->tensor_map);
@@ -497,10 +505,25 @@ void mag_snapshot_free(mag_snapshot_t *snap) {
     (*mag_alloc)(snap, 0, 0);
 }
 
+static bool mag_snapshot_insert_tensor_by_id(mag_snapshot_t *snap, uint32_t key_id, mag_tensor_t *tensor) {
+    mag_sto_verify(snap && tensor, return false);
+    mag_sto_verify(key_id < snap->str_pool.len, return false);
+    mag_map_insert(&snap->tensor_map, &key_id, sizeof(key_id), tensor);
+    mag_tensor_incref(tensor);
+    return true;
+}
+
+typedef struct mag_tensor_offset_pair_t {
+    mag_tensor_t *tensor;
+    uint64_t offs;
+} mag_tensor_offset_pair_t;
+
 mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filename) {
     mag_sto_verify(filename && *filename, return false);
     const char *ext = strrchr(filename, '.'); /* check that the file extension is .mag */
     mag_sto_verify(ext != NULL && strcmp(ext, ".mag") == 0, return false);
+
+    mag_tensor_offset_pair_t *stable = NULL;
     mag_snapshot_t *snap = mag_snapshot_new(ctx);
     mag_mem_stream_t *stream = &snap->stream;
     mag_sto_verify(mag_stream_mmap_file_r(stream, filename), return false);
@@ -508,6 +531,7 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_sto_verify(mag_stream_remaining(stream) >= MAG_FILE_HEADER_SIZE + 4*MAG_STO_SECTION_MARKERS_COUNT, goto error); /* We must at minimum have enough bytes for an empty file */
 
     size_t marker = mag_stream_needle(stream);
+
     /* File header */
     mag_file_header_t header = {0};
     mag_sto_verify(mag_file_header_deserialize(&header, stream), goto error)
@@ -521,22 +545,49 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_sto_verify(mag_pool_deserialize(&snap->str_pool, stream), goto error);
     mag_assert2(mag_stream_needle(stream)-marker == 4+mag_pool_compute_size(&snap->str_pool)); /* Verify exact section marker + pool bytes written */
 
-    /*uint64_t offs=0;*/
-    for (uint32_t i=0; i < header.tensor_header_count; ++i) {
+    mag_sto_verify(mag_stream_ru32_le(stream, &section_marker), goto error);
+    mag_sto_verify(section_marker == MAG_STO_SECTION_META_DATA, goto error);
+    /* TODO: metadata */
+
+    size_t nt = header.tensor_header_count;
+    stable = (*mag_alloc)(NULL, nt*sizeof(*stable), 0);
+
+    mag_sto_verify(mag_stream_ru32_le(stream, &section_marker), goto error);
+    mag_sto_verify(section_marker == MAG_STO_SECTION_TENSOR_DESC, goto error);
+    for (uint32_t i=0; i < nt; ++i) {
         mag_tensor_desc_t desc = {0};
-        mag_sto_verify(mag_tensor_desc_deserialize(&desc, stream), goto error);
+        mag_sto_verify(mag_tensor_desc_deserialize(&desc, stream, snap->str_pool.len), goto error);
         mag_tensor_t *tensor = NULL;
         int64_t shape[MAG_STO_MAX_RANK];
         for (uint8_t j=0; j < desc.rank && j < sizeof(shape)/sizeof(*shape); ++j)
             shape[j] = (int64_t)desc.shape[j];
-        mag_sto_verify(mag_empty(&tensor, ctx, desc.dtype, desc.rank, shape), goto error); /*  */
-        /*mag_snapshot_put_tensor() TODO: lookup key and insert tensor */
+        mag_sto_verify(mag_isok(mag_empty(&tensor, ctx, desc.dtype, desc.rank, shape)), goto error);
+        mag_sto_verify(mag_snapshot_insert_tensor_by_id(snap, desc.key_id, tensor), mag_tensor_decref(tensor); goto error);
+        mag_tensor_decref(tensor); /* Decref as the snapshot now holds a reference */
+        stable[i].tensor = tensor;
+        stable[i].offs = desc.offset;
     }
 
     /* Read data */
+    mag_sto_verify(mag_stream_ru32_le(stream, &section_marker), goto error);
+    mag_sto_verify(section_marker == MAG_STO_SECTION_TENSOR_DATA, goto error);
+    uint64_t offs=0;
+    for (size_t i=0; i < nt; ++i) {
+        mag_tensor_t *tensor = stable[i].tensor;
+        uint64_t offset = stable[i].offs;
+        size_t nbytes = mag_tensor_numbytes(tensor);
+        mag_sto_verify(offset == offs, goto error); /* Verify offset */
+        const uint8_t *blob = NULL;
+        mag_sto_verify(mag_stream_rbytes_view(stream, &blob, nbytes), goto error);
+        void *dst = (void *)mag_tensor_data_ptr_mut(tensor);
+        memcpy(dst, blob, nbytes); /* TODO: zero copy */
+        offs += nbytes;
+    }
 
+    (*mag_alloc)(stable, 0, 0);
     return snap;
     error:
+        if (stable) (*mag_alloc)(stable, 0, 0);
         mag_snapshot_free(snap);
         return NULL;
 }
@@ -577,18 +628,20 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
 
     stable = (*mag_alloc)(NULL, snap->tensor_map.nitems*sizeof(*stable), 0);
     uint64_t offs = 0;
-    size_t iter = 0, len = 0; /* Write tensor headers */
-    void *val = NULL;
+    size_t iter = 0, klen = 0; /* Write tensor headers */
+    void *key = NULL, *val = NULL;
     size_t k;
-    mag_sto_verify(mag_stream_wu32_le(&stream, MAG_STO_SECTION_TENSOR_DESC),goto error); /* Tensor desc marker */
-    for (k=0; k < snap->tensor_map.nitems && mag_map_next(&snap->tensor_map, &iter, &len, &val); ++k) {  /* Tensor descriptors */
+    mag_sto_verify(mag_stream_wu32_le(&stream, MAG_STO_SECTION_TENSOR_DESC), goto error); /* Tensor desc marker */
+    for (k=0; k < snap->tensor_map.nitems && (key = mag_map_next(&snap->tensor_map, &iter, &klen, &val)); ++k) {  /* Tensor descriptors */
+        mag_assert2(klen == sizeof(uint32_t));
+        uint32_t key_id = *(const uint32_t *)key;
         mag_tensor_t *tensor = val;
         mag_tensor_desc_t desc = {
             .rank = tensor->coords.rank,
             .dtype = tensor->dtype,
             .aux0 = 0,
             .aux1 = 0,
-            .key_id = 0, /* TODO */
+            .key_id = key_id,
             .numel = tensor->numel,
             .offset = offs,
             .shape = {}
@@ -648,33 +701,106 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
 }
 
 mag_tensor_t *mag_snapshot_get_tensor(mag_snapshot_t *snap, const char *key) {
-    mag_sto_verify(snap && key && *key, return false;)
+    mag_sto_verify(snap && key && *key, return NULL);
     uint32_t key_id = 0;
-    mag_sto_verify(mag_pool_intern(&snap->str_pool, (const uint8_t *)key, strlen(key), &key_id), return false;)
-    return mag_map_lookup(&snap->tensor_map, &key_id, sizeof(key_id));
+    if (mag_unlikely(!mag_pool_find_id(&snap->str_pool, (const uint8_t*)key, strlen(key), &key_id))) return NULL;
+    mag_tensor_t *found = mag_map_lookup(&snap->tensor_map, &key_id, sizeof(key_id));
+    if (found) mag_tensor_incref(found);
+    return found;
 }
 
 bool mag_snapshot_put_tensor(mag_snapshot_t *snap, const char *key, mag_tensor_t *tensor) {
     mag_sto_verify(key && *key && tensor, return false;)
     uint32_t key_id = 0;
-    mag_sto_verify(mag_pool_intern(&snap->str_pool, (const uint8_t *)key, strlen(key), &key_id), return false;)
-    const mag_pool_record_t *rec = snap->str_pool.records+key_id;
-    mag_map_insert(&snap->tensor_map, rec->ptr, rec->len, tensor);
-    mag_tensor_incref(tensor);
-    return true;
+    if (mag_unlikely(!mag_pool_intern(&snap->str_pool, (const uint8_t *)key, strlen(key), &key_id))) return false;
+    return mag_snapshot_insert_tensor_by_id(snap, key_id, tensor);
+}
+
+size_t mag_snapshot_get_num_tensors(mag_snapshot_t *snap) {
+    return snap->tensor_map.nitems;
+}
+
+const char **mag_snapshot_get_tensor_keys(mag_snapshot_t *snap, size_t *out_num_keys) {
+    if (!out_num_keys) return NULL;
+    *out_num_keys = 0;
+    if (!snap) return NULL;
+    const size_t n = snap->tensor_map.nitems;
+    if (n == 0) return NULL;
+    char **keys = (*mag_alloc)(NULL, n*sizeof(*keys), 0);
+    if (!keys) return NULL;
+    size_t iter = 0, klen = 0, idx = 0;
+    void *keyp = NULL, *valp = NULL;
+    while ((keyp = mag_map_next(&snap->tensor_map, &iter, &klen, &valp))) {
+        if (klen != sizeof(uint32_t)) goto fail;
+        const uint32_t key_id = *(const uint32_t *)keyp;
+        if (key_id >= snap->str_pool.len) goto fail;
+        const mag_pool_record_t *rec = snap->str_pool.records + key_id;
+        if (!rec->ptr || rec->len == 0) goto fail;
+        char *name = (*mag_alloc)(NULL, (size_t)rec->len + 1, 0);
+        if (!name) goto fail;
+        memcpy(name, rec->ptr, rec->len);
+        name[rec->len] = '\0';
+        keys[idx++] = name;
+        if (idx > n) goto fail; // defensive
+    }
+    if (idx != n) goto fail;
+    *out_num_keys = n;
+    return (const char **)keys;
+    fail:
+        for (size_t i=0; i < idx; ++i)
+            (*mag_alloc)(keys[i], 0, 0);
+    (*mag_alloc)(keys, 0, 0);
+    *out_num_keys = 0;
+    return NULL;
+}
+
+void mag_snapshot_free_tensor_keys(const char **keys, size_t num_keys) {
+    if (!keys) return;
+    for (size_t i=0; i < num_keys; ++i)
+        (*mag_alloc)((void *)keys[i], 0, 0);
+    (*mag_alloc)((void *)keys, 0, 0);
 }
 
 MAG_COLDPROC void mag_snapshot_print_info(mag_snapshot_t *snap) {
     const mag_string_pool_t *pool = &snap->str_pool;
     printf("--- String Pool ---\n");
-    printf("count: %zu\n", pool->len);
-    printf("serialized_bytes: %zu\n", mag_pool_compute_size((mag_string_pool_t *)pool));
+    printf("Entries: %zu\n", pool->len);
+    double size = 0.0;
+    const char *unit = "";
+    mag_humanize_memory_size(mag_pool_compute_size((mag_string_pool_t *)pool), &size, &unit);
+    printf("Size: %.03f%s\n", size, unit);
     for (size_t i = 0; i < pool->len; ++i) {
         const mag_pool_record_t *rec = pool->records+i;
         if (!rec->ptr || !rec->len) continue;
-        printf("[%zu] len=%u  \"", i, rec->len);
+        printf("\t[%zu] Len: %u, Val: \"", i, rec->len);
         printf("%.*s", (int)rec->len, (const char *)rec->ptr);
         printf("\"\n");
+    }
+    printf("--- Tensors ---\n");
+    printf("Entries: %zu\n", snap->tensor_map.nitems);
+    size_t iter = 0, klen = 0;
+    void *keyp = NULL, *valp = NULL;
+    for (size_t slot=0; (keyp = mag_map_next(&snap->tensor_map, &iter, &klen, &valp)); ++slot) {
+        mag_tensor_t *tensor = valp;
+        uint32_t key_id = 0;
+        if (klen == sizeof(uint32_t)) key_id = *(const uint32_t *)keyp;
+        const char *name = NULL; /* NOT null terminated, must use length! */
+        uint32_t name_len = 0;
+        if (klen == sizeof(uint32_t) && key_id < pool->len) {
+            const mag_pool_record_t *rec = pool->records + key_id;
+            if (rec->ptr && rec->len) {
+                name = (const char *)rec->ptr;
+                name_len = rec->len;
+            }
+        }
+        if (!name || !name_len) {
+            name = "?";
+            name_len = sizeof("?")-1;
+        }
+        char shape[MAG_FMT_DIM_BUF_SIZE];
+        mag_fmt_shape(&shape, &tensor->coords.shape, tensor->coords.rank);
+        mag_humanize_memory_size(mag_tensor_numbytes(tensor), &size, &unit);
+        printf("\t[%zu] Name: \"%.*s\", Shape: %s, Type: %s, Size: %.01f%s\n", slot, (int)name_len, name, shape, mag_type_trait(tensor->dtype)->name, size, unit);
     }
     printf("-------------------\n");
 }
