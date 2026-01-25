@@ -248,30 +248,16 @@ def _build_prompt(system: str, messages: list[tuple[str, str]]) -> str:
     out.append('<|im_start|>assistant\n')
     return ''.join(out)
 
+class GenerationContext:
+    def __init__(self, args: argparse.Namespace) -> None:
+        context.stop_grad_recorder()
+        context.manual_seed(args.seed)
+        self.model = Qwen25Model.from_pretrained_snapshot(args.snapshot)
+        self.tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-3B-Instruct')
+        self.args = args
+        gc.collect()
 
-def _main() -> None:
-    args = argparse.ArgumentParser(description='Run QWEN-2.5 model inference')
-    args.add_argument('prompt', type=str, help='Prompt to start generation')
-    args.add_argument('--max_tokens', type=int, default=128, help='Maximum number of new tokens to generate')
-    args.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
-    args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
-    args.add_argument('--temp', type=float, default=0.7, help='Sampling temperature')
-    args.add_argument('--repl', action='store_true', help='Run interactive chat REPL')
-    args.add_argument('--snapshot', type=str, default='qwen2.5-3b-instruct-float32.mag', help='Path to model snapshot file')
-    args.add_argument('--system', type=str, default='You are a helpful assistant.', help='System prompt')
-    args = args.parse_args()
-
-    if not args.repl and not args.prompt:
-        args.error('the --prompt argument is required when not running in REPL mode')
-
-    context.stop_grad_recorder()
-    context.manual_seed(args.seed)
-
-    model = Qwen25Model.from_pretrained_snapshot(args.snapshot)
-    tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-3B-Instruct')
-    gc.collect()
-
-    if args.repl:  # REPL
+    def repl(self) -> None:
         console.print('Interactive chat. Commands: /exit, /reset', style='dim')
         history: list[tuple[str, str]] = []
         while True:
@@ -285,23 +271,52 @@ def _main() -> None:
                 console.print('History cleared.', style='dim')
                 continue
             history.append(('user', user))
-            prompt = _build_prompt(args.system, history)
-            model_inputs = tokenizer([prompt], return_tensors='np')
+            prompt = _build_prompt(self.args.system, history)
+            model_inputs = self.tokenizer([prompt], return_tensors='np')
             model_input_ids = Tensor.of(model_inputs.input_ids.tolist(), dtype=dtype.int64)
-            reply = model.generate(
-                model_input_ids,
-                tokenizer,
-                max_tokens=args.max_tokens,
-                temp=args.temp,
-                top_k=args.top_k,
-            )
+            try:
+                reply = self.model.generate(
+                    model_input_ids,
+                    self.tokenizer,
+                    max_tokens=self.args.max_tokens,
+                    temp=self.args.temp,
+                    top_k=self.args.top_k,
+                )
+            except KeyboardInterrupt:
+                continue
             history.append(('assistant', reply))
-    else:  # Single shot mode
-        prompt = _build_prompt(args.system, [('user', args.prompt)])
-        model_input_ids = Tensor.of(tokenizer([prompt], return_tensors='np').input_ids.tolist(), dtype=dtype.int64)
-        gc.collect()
-        model.generate(model_input_ids, tokenizer, max_tokens=args.max_tokens, temp=args.temp, top_k=args.top_k)
+            gc.collect()
 
+    def one_shot_answer(self, prompt: str) -> str:
+        prompt = _build_prompt(self.args.system, [('user', prompt)])
+        model_input_ids = Tensor.of(self.tokenizer([prompt], return_tensors='np').input_ids.tolist(), dtype=dtype.int64)
+        gc.collect()
+        reply = self.model.generate(model_input_ids, self.tokenizer, max_tokens=self.args.max_tokens, temp=self.args.temp, top_k=self.args.top_k)
+        gc.collect()
+        return reply
+
+def _main() -> None:
+    args = argparse.ArgumentParser(description='Run QWEN-2.5 model inference')
+    args.add_argument('--prompt', type=str, help='Prompt to start generation')
+    args.add_argument('--repl', action='store_true', help='Run interactive chat REPL')
+    args.add_argument('--max_tokens', type=int, default=256, help='Maximum number of new tokens to generate')
+    args.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
+    args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
+    args.add_argument('--temp', type=float, default=0.6, help='Sampling temperature')
+    args.add_argument('--snapshot', type=str, default='qwen2.5-3b-instruct-float32.mag', help='Path to model snapshot file')
+    args.add_argument('--system', type=str, default='You are a helpful assistant.', help='System prompt')
+    args = args.parse_args()
+
+    if not args.repl and not args.prompt:
+        args.error('the --prompt argument is required when not running in REPL mode')
+
+    model_context = GenerationContext(args)
+
+    if args.repl:  # REPL
+        model_context.repl()
+    else:  # Single shot mode
+        reply = model_context.one_shot_answer(args.prompt)
+        console.print(f'\n\nAnswer: {reply}', style='bold green')
 
 if __name__ == '__main__':
     _main()
