@@ -7,17 +7,12 @@
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
 
-import gc
-import argparse
 import math
-import time
+from collections.abc import Iterator
+from typing import Any
 
-from magnetron import Tensor, Snapshot, nn, dtype, context
+from magnetron import Tensor, Snapshot, nn, dtype
 from dataclasses import dataclass
-from transformers import AutoTokenizer
-from rich.console import Console
-
-console = Console()
 
 
 @dataclass
@@ -192,7 +187,6 @@ class Qwen25Model(nn.Module):
 
     @staticmethod
     def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen25Model':
-        console.print(f'Loading QWEN-2.5 model from snapshot: {snapshot_file}', style='dim')
         model = Qwen25Model(Qwen25HyperParams())
         model._load_from_snapshot(snapshot_file)
         return model
@@ -212,178 +206,40 @@ class Qwen25Model(nn.Module):
         h = self.norm(h)
         return self.lm_head(h), next_kv
 
-    def generate(self, idx: Tensor, tokenizer: AutoTokenizer, max_tokens: int, temp: float = 1.0, top_k: int = 10) -> str:
-        start: float = time.perf_counter()
+    def generate_stream(
+        self,
+        idx: Tensor,
+        tokenizer: Any,
+        max_tokens: int,
+        temp: float = 1.0,
+        top_k: int = 10,
+    ) -> Iterator[str]:
         idx = idx.reshape(1, -1)
         in_len: int = idx.shape[1]
         logits, prev_kv = self(idx, idx=Tensor.arange(stop=in_len).reshape(1, -1), prev_kv=None)
         next_logits: Tensor = logits[:, -1, :] / temp
-        tokens: str = ''
         curr_len: int = in_len
-        count: int = 0
         for _ in range(max_tokens):
             logits_1d: Tensor = next_logits.reshape(-1)
             top_vals, top_idx = logits_1d.topk(top_k, dim=0, largest=True, sorted=False)
             pick: Tensor = top_vals.softmax(dim=-1).reshape(1, -1).multinomial(num_samples=1)
             tok_id: int = int(top_idx[pick[0, 0]].item())
             if tok_id == self.config.eos_token_id:
-                break
-            token: str = tokenizer.decode(tok_id, skip_special_tokens=True)
-            tokens += token
-            console.print(token, style='bold white', end='')
+                return
+            yield tokenizer.decode_id(tok_id)
             input_ids = Tensor.of([tok_id], dtype=dtype.int64).reshape(1, 1)
-            logits, prev_kv = self(input_ids, idx=Tensor.of([curr_len], dtype=dtype.int64).reshape(1, 1), prev_kv=prev_kv)
+            logits, prev_kv = self(
+                input_ids,
+                idx=Tensor.of([curr_len], dtype=dtype.int64).reshape(1, 1),
+                prev_kv=prev_kv,
+            )
             next_logits = logits[:, -1, :] / temp
             curr_len += 1
-            count += 1
-        if count > 0:
-            elapsed = time.perf_counter() - start
-            console.print(f'\nTokens/s: {count / elapsed:.2f}, {count} tokens in {elapsed:.3f}s', style='dim')
-        return tokens
 
 
-def _build_prompt(system: str, messages: list[tuple[str, str]]) -> str:
+def build_prompt(system: str, messages: list[tuple[str, str]]) -> str:
     out = [f'<|im_start|>system\n{system}<|im_end|>\n']
     for role, content in messages:
         out.append(f'<|im_start|>{role}\n{content}<|im_end|>\n')
     out.append('<|im_start|>assistant\n')
     return ''.join(out)
-
-
-def _clamp_history_by_tokens(
-    tokenizer: AutoTokenizer,
-    system: str,
-    history: list[tuple[str, str]],
-    max_ctx: int,
-    reserve_gen: int,
-) -> list[tuple[str, str]]:
-    budget = max(256, max_ctx - reserve_gen)  # avoid too-small budgets
-    prompt = _build_prompt(system, history)
-    n = len(tokenizer(prompt, add_special_tokens=False).input_ids)
-    if n <= budget:
-        return history
-    trimmed = history[:]
-    while trimmed:
-        trimmed.pop(0)
-        if trimmed and trimmed[0][0] == 'assistant':
-            trimmed.pop(0)
-        prompt = _build_prompt(system, trimmed)
-        n = len(tokenizer(prompt, add_special_tokens=False).input_ids)
-        if n <= budget:
-            return trimmed
-    return []
-
-
-class GenerationContext:
-    def __init__(self, args: argparse.Namespace) -> None:
-        start = time.perf_counter()
-        context.stop_grad_recorder()
-        context.manual_seed(args.seed)
-        self.model = Qwen25Model.from_pretrained_snapshot(args.snapshot)
-        self.tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-3B-Instruct')
-        self.args = args
-        end = time.perf_counter()
-        console.print(f'Ready in {end - start:.2f}s', style='dim')
-        gc.collect()
-
-    def repl(self) -> None:
-        from rich.panel import Panel
-        from rich.rule import Rule
-        from rich.text import Text
-        from rich.prompt import Prompt
-        console.print(
-            Panel.fit(
-                Text('Qwen2.5 REPL', style='bold white') + Text('\n/exit  /reset', style='dim'),
-                border_style='cyan',
-            )
-        )
-        history: list[tuple[str, str]] = []
-        last_ctx_used: int = 0
-        while True:
-            user = Prompt.ask('[bold cyan]You[/]').strip()
-            if not user:
-                continue
-            if user == '/exit':
-                break
-            if user == '/reset':
-                history.clear()
-                console.print('[dim]History cleared.[/dim]')
-                continue
-            history.append(('user', user))
-            history = _clamp_history_by_tokens(
-                self.tokenizer,
-                self.args.system,
-                history,
-                max_ctx=self.args.max_ctx,
-                reserve_gen=self.args.reserve_gen,
-            )
-            prompt = _build_prompt(self.args.system, history)
-            model_inputs = self.tokenizer([prompt], return_tensors='np', add_special_tokens=False)
-            model_input_ids = Tensor.of(model_inputs.input_ids.tolist(), dtype=dtype.int64)
-            console.print(Rule(style='dim'))
-            console.print('[bold magenta]Assistant[/]:', end=' ')
-            try:
-                reply = self.model.generate(
-                    model_input_ids,
-                    self.tokenizer,
-                    max_tokens=self.args.max_tokens,
-                    temp=self.args.temp,
-                    top_k=self.args.top_k,
-                )
-            except KeyboardInterrupt:
-                console.print('\n[dim]Interrupted.[/dim]')
-                continue
-            history.append(('assistant', reply))
-            history = _clamp_history_by_tokens(
-                self.tokenizer,
-                self.args.system,
-                history,
-                max_ctx=self.args.max_ctx,
-                reserve_gen=self.args.reserve_gen,
-            )
-            try:
-                ctx_used = len(self.tokenizer(_build_prompt(self.args.system, history), add_special_tokens=False).input_ids)
-                last_ctx_used = ctx_used
-            except Exception:
-                ctx_used = last_ctx_used
-            console.print()
-            console.print(f'[dim]ctx: {ctx_used}/{self.args.max_ctx}, reserve: {self.args.reserve_gen}[/dim]')
-            gc.collect()
-
-    def one_shot_answer(self, prompt: str) -> str:
-        prompt = _build_prompt(self.args.system, [('user', prompt)])
-        model_input_ids = Tensor.of(self.tokenizer([prompt], return_tensors='np').input_ids.tolist(), dtype=dtype.int64)
-        gc.collect()
-        reply = self.model.generate(model_input_ids, self.tokenizer, max_tokens=self.args.max_tokens, temp=self.args.temp, top_k=self.args.top_k)
-        gc.collect()
-        return reply
-
-
-def _main() -> None:
-    args = argparse.ArgumentParser(description='Run QWEN-2.5 model inference')
-    args.add_argument('--prompt', type=str, help='Prompt to start generation')
-    args.add_argument('--repl', action='store_true', help='Run interactive chat REPL')
-    args.add_argument('--max_tokens', type=int, default=256, help='Maximum number of new tokens to generate')
-    args.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
-    args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
-    args.add_argument('--temp', type=float, default=0.6, help='Sampling temperature')
-    args.add_argument('--snapshot', type=str, default='qwen2.5-3b-instruct-float32.mag', help='Path to model snapshot file')
-    args.add_argument('--system', type=str, default='You are a helpful assistant.', help='System prompt')
-    args.add_argument('--max_ctx', type=int, default=4096, help='Max prompt context tokens (including system)')
-    args.add_argument('--reserve_gen', type=int, default=512, help='Reserve tokens for generation headroom')
-    args = args.parse_args()
-
-    if not args.repl and not args.prompt:
-        args.error('the --prompt argument is required when not running in REPL mode')
-
-    model_context = GenerationContext(args)
-
-    if args.repl:  # REPL
-        model_context.repl()
-    else:  # Single shot mode
-        reply = model_context.one_shot_answer(args.prompt)
-        console.print(f'\n\nAnswer: {reply}', style='bold green')
-
-
-if __name__ == '__main__':
-    _main()
