@@ -276,11 +276,14 @@ def _clamp_history_by_tokens(
 
 class GenerationContext:
     def __init__(self, args: argparse.Namespace) -> None:
+        start = time.perf_counter()
         context.stop_grad_recorder()
         context.manual_seed(args.seed)
         self.model = Qwen25Model.from_pretrained_snapshot(args.snapshot)
         self.tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-3B-Instruct')
         self.args = args
+        end = time.perf_counter()
+        console.print(f'Ready in {end - start:.2f}s', style='dim')
         gc.collect()
 
     def repl(self) -> None:
