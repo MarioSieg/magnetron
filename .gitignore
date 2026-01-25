@@ -14,6 +14,7 @@ _deps
 /cmake-build-relwithdebinfo
 /.idea
 /.vscode
+/.cache/
 /bin
 **/.DS_Store
 .vs/

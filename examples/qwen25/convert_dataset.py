@@ -11,7 +11,6 @@ import argparse
 import json
 import os
 import glob
-
 import torch
 from magnetron import Snapshot, Tensor, dtype
 from magnetron._bootstrap import _C, _FFI

@@ -10,10 +10,10 @@
 import gc
 import time
 import argparse
+import os.path
 
 from magnetron import Tensor, context
 from tokenizers import Tokenizer
-from huggingface_hub import hf_hub_download
 from model import build_prompt, Qwen25Model, dtype
 from rich.console import Console
 from rich.panel import Panel
@@ -21,10 +21,31 @@ from rich.rule import Rule
 from rich.text import Text
 from rich.prompt import Prompt
 
+REPO_ID: str = 'mario-sieg/qwen2.5-3b-instruct-magnetron'  # HF repo we download the data from
+LOCAL_CACHE_DIR: str = '.cache'  # Local cache dir for HF hub downloads
+if not os.path.exists(LOCAL_CACHE_DIR):
+    os.makedirs(LOCAL_CACHE_DIR)
+
+
+def _download_or_ensure_hf_file(repo_id: str, filename: str, local_dir: str = LOCAL_CACHE_DIR) -> str:
+    from huggingface_hub import hf_hub_download
+
+    os.makedirs(local_dir, exist_ok=True)
+    local_path = os.path.join(local_dir, filename)
+    if os.path.exists(local_path):
+        return local_path
+    console.print(f'Downloading {filename} into {local_dir}', style='dim')
+    return hf_hub_download(
+        repo_id=repo_id,
+        filename=filename,
+        repo_type='model',
+        local_dir=local_dir,
+    )
+
 
 class HFTokenizer:
     def __init__(self, repo_id: str) -> None:
-        tok_path = hf_hub_download(repo_id=repo_id, filename='tokenizer.json')
+        tok_path = _download_or_ensure_hf_file(repo_id=repo_id, filename='tokenizer.json')
         self.tok = Tokenizer.from_file(tok_path)
 
     def encode_ids(self, text: str) -> list[int]:
@@ -62,13 +83,13 @@ def _clamp_history_by_tokens(
 
 
 class GenerationContext:
-    def __init__(self, args: argparse.Namespace) -> None:
+    def __init__(self, snapshot: str, args: argparse.Namespace) -> None:
         start = time.perf_counter()
         context.stop_grad_recorder()
         context.manual_seed(args.seed)
-        console.print(f'Loading QWEN-2.5 model from snapshot: {args.snapshot}', style='dim')
-        self.model = Qwen25Model.from_pretrained_snapshot(args.snapshot)
-        self.tokenizer = HFTokenizer('Qwen/Qwen2.5-3B-Instruct')
+        console.print(f'Loading QWEN-2.5 model from snapshot: {snapshot}', style='dim')
+        self.model = Qwen25Model.from_pretrained_snapshot(snapshot)
+        self.tokenizer = HFTokenizer(REPO_ID)
         self.args = args
         end = time.perf_counter()
         console.print(f'Ready in {end - start:.2f}s', style='dim')
@@ -162,16 +183,17 @@ def _main() -> None:
     args.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
     args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
     args.add_argument('--temp', type=float, default=0.6, help='Sampling temperature')
-    args.add_argument('--snapshot', type=str, default='qwen2.5-3b-instruct-float32.mag', help='Path to model snapshot file')
     args.add_argument('--system', type=str, default='You are a helpful assistant.', help='System prompt')
     args.add_argument('--max_ctx', type=int, default=4096, help='Max prompt context tokens (including system)')
     args.add_argument('--reserve_gen', type=int, default=512, help='Reserve tokens for generation headroom')
     args = args.parse_args()
 
+    snapshot_file = _download_or_ensure_hf_file(repo_id=REPO_ID, filename='qwen2.5-3b-instruct-float32.mag')
+
     if not args.repl and not args.prompt:
         args.error('the --prompt argument is required when not running in REPL mode')
 
-    model_context = GenerationContext(args)
+    model_context = GenerationContext(snapshot_file, args)
 
     if args.repl:  # REPL
         model_context.repl()
