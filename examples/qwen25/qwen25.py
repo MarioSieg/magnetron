@@ -19,6 +19,7 @@ from rich.console import Console
 
 console = Console()
 
+
 @dataclass
 class Qwen25HyperParams:
     vocab_size: int = 151936
@@ -210,13 +211,13 @@ class Qwen25Model(nn.Module):
         h = self.norm(h)
         return self.lm_head(h), next_kv
 
-    def generate(self, idx: Tensor, tokenizer: AutoTokenizer, max_tokens: int, temp: float = 1.0, top_k: int = 10) -> list[str]:
+    def generate(self, idx: Tensor, tokenizer: AutoTokenizer, max_tokens: int, temp: float = 1.0, top_k: int = 10) -> str:
         start: float = time.perf_counter()
         idx = idx.reshape(1, -1)
         in_len: int = idx.shape[1]
         logits, prev_kv = self(idx, idx=Tensor.arange(stop=in_len).reshape(1, -1), prev_kv=None)
         next_logits: Tensor = logits[:, -1, :] / temp
-        tokens: list[str] = []
+        tokens: str = []
         curr_len: int = in_len
         count: int = 0
         for _ in range(max_tokens):
@@ -227,7 +228,7 @@ class Qwen25Model(nn.Module):
             if tok_id == self.config.eos_token_id:
                 break
             token: str = tokenizer.decode(tok_id, skip_special_tokens=True)
-            tokens.append(token)
+            tokens += token
             console.print(token, style='bold white', end='')
             input_ids = Tensor.of([tok_id], dtype=dtype.int64).reshape(1, 1)
             logits, prev_kv = self(input_ids, idx=Tensor.of([curr_len], dtype=dtype.int64).reshape(1, 1), prev_kv=prev_kv)
@@ -240,8 +241,12 @@ class Qwen25Model(nn.Module):
         return tokens
 
 
-def _make_prompt_template(sys: str, usr: str) -> str:
-    return f'<|im_start|>system\n{sys}<|im_end|>\n<|im_start|>user\n{usr}<|im_end|>\n<|im_start|>assistant\n'
+def _build_prompt(system: str, messages: list[tuple[str, str]]) -> str:
+    out = [f'<|im_start|>system\n{system}<|im_end|>\n']
+    for role, content in messages:
+        out.append(f'<|im_start|>{role}\n{content}<|im_end|>\n')
+    out.append('<|im_start|>assistant\n')
+    return ''.join(out)
 
 
 def _main() -> None:
@@ -251,18 +256,51 @@ def _main() -> None:
     args.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
     args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
     args.add_argument('--temp', type=float, default=0.7, help='Sampling temperature')
+    args.add_argument('--repl', action='store_true', help='Run interactive chat REPL')
+    args.add_argument('--snapshot', type=str, default='qwen2.5-3b-instruct-float32.mag', help='Path to model snapshot file')
+    args.add_argument('--system', type=str, default='You are a helpful assistant.', help='System prompt')
     args = args.parse_args()
+
+    if not args.repl and not args.prompt:
+        args.error('the --prompt argument is required when not running in REPL mode')
 
     context.stop_grad_recorder()
     context.manual_seed(args.seed)
 
-    model = Qwen25Model.from_pretrained_snapshot('qwen2.5-3b-instruct-float32.mag')
+    model = Qwen25Model.from_pretrained_snapshot(args.snapshot)
     tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-3B-Instruct')
-    prompt = _make_prompt_template('You are a helpful assistant.', args.prompt)
-    model_inputs = tokenizer([prompt], return_tensors='np')
-    model_input_ids = Tensor.of(model_inputs.input_ids.tolist(), dtype=dtype.int64)
     gc.collect()
-    model.generate(model_input_ids, tokenizer, max_tokens=args.max_tokens, temp=args.temp, top_k=args.top_k)
+
+    if args.repl:  # REPL
+        console.print('Interactive chat. Commands: /exit, /reset', style='dim')
+        history: list[tuple[str, str]] = []
+        while True:
+            user = input('\nYou> ').strip()
+            if not user:
+                continue
+            if user == '/exit':
+                break
+            if user == '/reset':
+                history.clear()
+                console.print('History cleared.', style='dim')
+                continue
+            history.append(('user', user))
+            prompt = _build_prompt(args.system, history)
+            model_inputs = tokenizer([prompt], return_tensors='np')
+            model_input_ids = Tensor.of(model_inputs.input_ids.tolist(), dtype=dtype.int64)
+            reply = model.generate(
+                model_input_ids,
+                tokenizer,
+                max_tokens=args.max_tokens,
+                temp=args.temp,
+                top_k=args.top_k,
+            )
+            history.append(('assistant', reply))
+    else:  # Single shot mode
+        prompt = _build_prompt(args.system, [('user', args.prompt)])
+        model_input_ids = Tensor.of(tokenizer([prompt], return_tensors='np').input_ids.tolist(), dtype=dtype.int64)
+        gc.collect()
+        model.generate(model_input_ids, tokenizer, max_tokens=args.max_tokens, temp=args.temp, top_k=args.top_k)
 
 
 if __name__ == '__main__':
