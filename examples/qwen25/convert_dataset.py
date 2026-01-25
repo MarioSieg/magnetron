@@ -16,7 +16,7 @@ import torch
 from magnetron import Snapshot, Tensor, dtype
 from magnetron._bootstrap import _C, _FFI
 import gc
-from qwen25 import Qwen25Model, Qwen25HyperParams
+from model import Qwen25Model, Qwen25HyperParams
 from huggingface_hub import snapshot_download
 from safetensors.torch import load_file
 
