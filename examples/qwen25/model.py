@@ -6,7 +6,7 @@
 # | GitHub  : https://github.com/MarioSieg                              |
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
-
+import gc
 import math
 from collections.abc import Iterator
 from typing import Any
@@ -59,10 +59,10 @@ def _repeat_kv(x: Tensor, n_rep: int) -> Tensor:
 
 
 def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Tensor, Tensor]:
-    idx: Tensor = Tensor.arange(0, dim, 2, dtype=dtype.float32) / dim
+    idx: Tensor = Tensor.arange(0, dim, 2, dtype=dtype.bfloat16) / dim
     log_theta: float = math.log(theta)
     inv_freq: Tensor = Tensor.exp(-idx * log_theta)  # TODO: use pow
-    seq: Tensor = Tensor.arange(stop=max_seq_len, dtype=dtype.float32)
+    seq: Tensor = Tensor.arange(stop=max_seq_len, dtype=dtype.bfloat16)
     freqs: Tensor = seq.reshape(max_seq_len, 1) * inv_freq.reshape(1, -1)  # TODO: outer product
     cos_half: Tensor = Tensor.cos(freqs)
     sin_half: Tensor = Tensor.sin(freqs)
@@ -182,13 +182,14 @@ class Qwen25Model(nn.Module):
                 if tuple(tensor.shape) != tuple(param.x.shape):
                     raise RuntimeError(f'Shape mismatch for {name}: {tensor.shape} != {param.shape}')
                 if tensor.dtype != param.x.dtype:
-                    raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.dtype}')
+                    raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.x.dtype}')
                 param.x = tensor
 
     @staticmethod
     def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen25Model':
-        model = Qwen25Model(Qwen25HyperParams())
+        model = Qwen25Model(Qwen25HyperParams()).cast(dtype.bfloat16)
         model._load_from_snapshot(snapshot_file)
+        gc.collect()
         return model
 
     def forward(
@@ -226,7 +227,7 @@ class Qwen25Model(nn.Module):
             tok_id: int = int(top_idx[pick[0, 0]].item())
             if tok_id == self.config.eos_token_id:
                 return
-            yield tokenizer.decode_id(tok_id)
+            yield tokenizer.decode(tok_id)
             input_ids = Tensor.of([tok_id], dtype=dtype.int64).reshape(1, 1)
             logits, prev_kv = self(
                 input_ids,

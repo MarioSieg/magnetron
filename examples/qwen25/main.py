@@ -23,7 +23,6 @@ from rich.prompt import Prompt
 
 REPO_ID: str = 'mario-sieg/qwen2.5-3b-instruct-magnetron'  # HF repo we download the data from
 
-
 def _download_or_ensure_hf_file(repo_id: str, filename: str) -> str:
     from huggingface_hub import hf_hub_download
 
@@ -40,10 +39,10 @@ class HFTokenizer:
         tok_path = _download_or_ensure_hf_file(repo_id=repo_id, filename='tokenizer.json')
         self.tok = Tokenizer.from_file(tok_path)
 
-    def encode_ids(self, text: str) -> list[int]:
+    def encode(self, text: str) -> list[int]:
         return self.tok.encode(text).ids
 
-    def decode_id(self, tok_id: int) -> str:
+    def decode(self, tok_id: int) -> str:
         return self.tok.decode([tok_id])
 
 
@@ -59,7 +58,7 @@ def _clamp_history_by_tokens(
 ) -> list[tuple[str, str]]:
     budget = max(256, max_ctx - reserve_gen)  # avoid too-small budgets
     prompt = build_prompt(system, history)
-    n = len(tokenizer.encode_ids(prompt))
+    n = len(tokenizer.encode(prompt))
     if n <= budget:
         return history
     trimmed = history[:]
@@ -68,7 +67,7 @@ def _clamp_history_by_tokens(
         if trimmed and trimmed[0][0] == 'assistant':
             trimmed.pop(0)
         prompt = build_prompt(system, trimmed)
-        n = len(tokenizer.encode_ids(prompt))
+        n = len(tokenizer.encode(prompt))
         if n <= budget:
             return trimmed
     return []
@@ -115,7 +114,7 @@ class GenerationContext:
                 reserve_gen=self.args.reserve_gen,
             )
             prompt = build_prompt(self.args.system, history)
-            model_input_ids = Tensor.of([self.tokenizer.encode_ids(prompt)], dtype=dtype.int64)
+            model_input_ids = Tensor.of([self.tokenizer.encode(prompt)], dtype=dtype.int64)
             console.print(Rule(style='dim'))
             console.print('[bold magenta]Assistant[/]:', end=' ')
             start = time.perf_counter()
@@ -160,9 +159,18 @@ class GenerationContext:
 
     def one_shot_answer(self, prompt: str) -> str:
         prompt = build_prompt(self.args.system, [('user', prompt)])
-        model_input_ids = Tensor.of(self.tokenizer([prompt], return_tensors='np').input_ids.tolist(), dtype=dtype.int64)
+        model_input_ids = Tensor.of([self.tokenizer.encode(prompt)], dtype=dtype.int64)
         gc.collect()
-        reply = self.model.generate(model_input_ids, self.tokenizer, max_tokens=self.args.max_tokens, temp=self.args.temp, top_k=self.args.top_k)
+        reply_parts: list[str] = []
+        for chunk in self.model.generate_stream(
+            model_input_ids,
+            self.tokenizer,
+            max_tokens=self.args.max_tokens,
+            temp=self.args.temp,
+            top_k=self.args.top_k,
+        ):
+            reply_parts.append(chunk)
+        reply = ''.join(reply_parts)
         gc.collect()
         return reply
 
@@ -180,7 +188,7 @@ def _main() -> None:
     args.add_argument('--reserve_gen', type=int, default=512, help='Reserve tokens for generation headroom')
     args = args.parse_args()
 
-    snapshot_file = _download_or_ensure_hf_file(repo_id=REPO_ID, filename='qwen2.5-3b-instruct-float32.mag')
+    snapshot_file = _download_or_ensure_hf_file(repo_id=REPO_ID, filename='qwen2.5-3b-instruct-bf16.mag')
 
     if not args.repl and not args.prompt:
         args.error('the --prompt argument is required when not running in REPL mode')
