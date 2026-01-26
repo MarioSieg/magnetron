@@ -6,6 +6,7 @@
 # | GitHub  : https://github.com/MarioSieg                              |
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
+
 import gc
 import math
 from collections.abc import Iterator
