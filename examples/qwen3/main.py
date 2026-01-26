@@ -10,18 +10,18 @@
 import gc
 import time
 import argparse
-import os.path
 
 from magnetron import Tensor, context
 from tokenizers import Tokenizer
-from model import build_prompt, Qwen25Model, dtype
+from model import build_prompt, Qwen3Model, dtype
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 from rich.prompt import Prompt
 
-REPO_ID: str = 'mario-sieg/qwen2.5-3b-instruct-magnetron'  # HF repo we download the data from
+REPO_ID: str = 'mario-sieg/qwen3.0-4b-2507-instruct-magnetron'  # HF repo we download the data from
+
 
 def _download_or_ensure_hf_file(repo_id: str, filename: str) -> str:
     from huggingface_hub import hf_hub_download
@@ -42,8 +42,8 @@ class HFTokenizer:
     def encode(self, text: str) -> list[int]:
         return self.tok.encode(text).ids
 
-    def decode(self, tok_id: int) -> str:
-        return self.tok.decode([tok_id])
+    def decode(self, tok_id: list[int]) -> str:
+        return self.tok.decode(tok_id)
 
 
 console = Console()
@@ -78,8 +78,8 @@ class GenerationContext:
         start = time.perf_counter()
         context.stop_grad_recorder()
         context.manual_seed(args.seed)
-        console.print(f'Loading QWEN-2.5 model from snapshot: {snapshot}', style='dim')
-        self.model = Qwen25Model.from_pretrained_snapshot(snapshot)
+        console.print(f'Loading model from snapshot: {snapshot}', style='dim')
+        self.model = Qwen3Model.from_pretrained_snapshot(snapshot)
         self.tokenizer = HFTokenizer(REPO_ID)
         self.args = args
         end = time.perf_counter()
@@ -89,7 +89,7 @@ class GenerationContext:
     def repl(self) -> None:
         console.print(
             Panel.fit(
-                Text('Qwen2.5 REPL', style='bold white') + Text('\n/exit  /reset', style='dim'),
+                Text('Qwen3 REPL', style='bold white') + Text('\n/exit  /reset', style='dim'),
                 border_style='cyan',
             )
         )
@@ -149,7 +149,7 @@ class GenerationContext:
                 reserve_gen=self.args.reserve_gen,
             )
             try:
-                ctx_used = len(self.tokenizer(build_prompt(self.args.system, history), add_special_tokens=False).input_ids)
+                ctx_used = len(self.tokenizer.encode(build_prompt(self.args.system, history)))
                 last_ctx_used = ctx_used
             except Exception:
                 ctx_used = last_ctx_used
@@ -176,7 +176,7 @@ class GenerationContext:
 
 
 def _main() -> None:
-    args = argparse.ArgumentParser(description='Run QWEN-2.5 model inference')
+    args = argparse.ArgumentParser(description='Run Qwen-3 model inference')
     args.add_argument('--prompt', type=str, help='Prompt to start generation')
     args.add_argument('--repl', action='store_true', help='Run interactive chat REPL')
     args.add_argument('--max_tokens', type=int, default=256, help='Maximum number of new tokens to generate')
@@ -188,7 +188,7 @@ def _main() -> None:
     args.add_argument('--reserve_gen', type=int, default=512, help='Reserve tokens for generation headroom')
     args = args.parse_args()
 
-    snapshot_file = _download_or_ensure_hf_file(repo_id=REPO_ID, filename='qwen2.5-3b-instruct-bf16.mag')
+    snapshot_file = _download_or_ensure_hf_file(repo_id=REPO_ID, filename='qwen3-4b-instruct-2507-bfloat16.mag')
 
     if not args.repl and not args.prompt:
         args.error('the --prompt argument is required when not running in REPL mode')

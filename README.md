@@ -17,7 +17,7 @@
     <br /><br />
     <a href="https://github.com/MarioSieg/magnetron/blob/develop/docs/4.%20Operator%20Cheatsheet.md"><strong>Documentation »</strong></a>
     <br /><br />
-    <a href="https://github.com/MarioSieg/magnetron/blob/master/examples/gpt2/gpt2.py">GPT-2 Example</a>
+    <a href="https://github.com/MarioSieg/magnetron/blob/master/examples/qwen3">Qwen3Example</a>
     ·
     <a href="https://github.com/MarioSieg/magnetron/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     ·
@@ -67,13 +67,13 @@ A CUDA backend and mixed-precision support are currently in development.
 
 ## 🚀 Example Models
 
-| Example                                          | Description                                                         |
-|--------------------------------------------------|---------------------------------------------------------------------|
-| [Qwen2.5 Inference](examples/qwen25/)            | Transformer-based text generation using pretrained Qwen2.5 weights. |
-| [GPT-2 Inference](examples/gpt2/)                | Transformer-based text generation using pretrained GPT-2 weights.   |
-| [Autoencoder](examples/ae/)                      | Image reconstruction using a small dense encoder–decoder network.   |
-| [Linear Regression](examples/linear_regression/) | Fits a linear model to noisy synthetic data.                        |
-| [XOR](examples/xor/)                             | Trains a small neural network to learn the XOR logical function.    |
+| Example                                          | Description                                                                                     |
+|--------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| [Qwen3 Inference](examples/qwen3/)               | Transformer-based text generation using pretrained Qwen3 weights, loaded from custom .mag file. |
+| [GPT-2 Inference](examples/gpt2/)                | Transformer-based text generation using pretrained GPT-2 weights.                               |
+| [Autoencoder](examples/ae/)                      | Image reconstruction using a small dense encoder–decoder network.                               |
+| [Linear Regression](examples/linear_regression/) | Fits a linear model to noisy synthetic data.                                                    |
+| [XOR](examples/xor/)                             | Trains a small neural network to learn the XOR logical function.                                |
 
 ---
 

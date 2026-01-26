@@ -15,7 +15,7 @@ import torch
 from magnetron import Snapshot, Tensor, dtype
 from magnetron._bootstrap import _C, _FFI
 import gc
-from model import Qwen25Model, Qwen25HyperParams
+from model import Qwen3Model, Qwen3HyperParams
 from huggingface_hub import snapshot_download
 from safetensors.torch import load_file
 
@@ -53,8 +53,8 @@ def _convert_model(model: str, torch_dtype: torch.dtype, mag_dtype: dtype.DataTy
     repo = f'Qwen/{model}'
     print(f'Downloading model {model} from Hugging Face...')
     repo_dir = snapshot_download(repo_id=repo)
-    cfg = Qwen25HyperParams()
-    mag_model = Qwen25Model(cfg).cast(mag_dtype)
+    cfg = Qwen3HyperParams()
+    mag_model = Qwen3Model(cfg).cast(mag_dtype)
     sd_mag: dict[str, Tensor] = mag_model.state_dict()
     remaining = dict(sd_mag)
     SKIP = {'cos_cache', 'sin_cache'}
@@ -106,7 +106,7 @@ def _convert_model(model: str, torch_dtype: torch.dtype, mag_dtype: dtype.DataTy
 
 def _main() -> None:
     args = argparse.ArgumentParser(description='Convert Hugging Face Qwen model to Magnetron file format')
-    args.add_argument('--model', type=str, default='Qwen2.5-3B-Instruct', help='HF repo model name')
+    args.add_argument('--model', type=str, default='Qwen3-4B-Instruct-2507', help='HF repo model name')
     args.add_argument('--dtype', type=str, default='bfloat16', choices=['float16', 'bfloat16', 'float32'], help='Data type for Magnetron tensors')
     args = args.parse_args()
     torch_dtype = torch.bfloat16 if args.dtype == 'bfloat16' else (torch.float16 if args.dtype == 'float16' else torch.float32)

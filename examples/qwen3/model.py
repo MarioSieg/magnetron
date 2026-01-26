@@ -14,27 +14,29 @@ from typing import Any
 from magnetron import Tensor, Snapshot, nn, dtype
 from dataclasses import dataclass
 
+_EOS: set[int] = {151645, 151643}
+
 
 @dataclass
-class Qwen25HyperParams:
+class Qwen3HyperParams:
     vocab_size: int = 151936
-    hidden_size: int = 2048
-    intermediate_size: int = 11008
+    hidden_size: int = 2560
+    intermediate_size: int = 9728
     num_hidden_layers: int = 36
-    num_attention_heads: int = 16
-    num_key_value_heads: int = 2
-    max_position_embeddings: int = 32768
+    num_attention_heads: int = 32
+    num_key_value_heads: int = 8
+    head_dim: int = 128
+    max_position_embeddings: int = 262144
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = True
-    rope_theta: float = 1000000.0
-    sliding_window: int = 131072
-    max_window_layers: int = 70
+    rope_theta: float = 5_000_000.0
+    sliding_window: int | None = None
     bos_token_id: int = 151643
     eos_token_id: int = 151645
 
 
 class MLP(nn.Module):
-    def __init__(self, config: Qwen25HyperParams) -> None:
+    def __init__(self, config: Qwen3HyperParams) -> None:
         super().__init__()
         self.hidden_size: int = config.hidden_size
         self.inter_size: int = config.intermediate_size
@@ -59,15 +61,14 @@ def _repeat_kv(x: Tensor, n_rep: int) -> Tensor:
 
 
 def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Tensor, Tensor]:
-    idx: Tensor = Tensor.arange(0, dim, 2, dtype=dtype.bfloat16) / dim
-    log_theta: float = math.log(theta)
-    inv_freq: Tensor = Tensor.exp(-idx * log_theta)  # TODO: use pow
-    seq: Tensor = Tensor.arange(stop=max_seq_len, dtype=dtype.bfloat16)
-    freqs: Tensor = seq.reshape(max_seq_len, 1) * inv_freq.reshape(1, -1)  # TODO: outer product
-    cos_half: Tensor = Tensor.cos(freqs)
-    sin_half: Tensor = Tensor.sin(freqs)
-    cos: Tensor = Tensor.cat([cos_half, cos_half], dim=-1)
-    sin: Tensor = Tensor.cat([sin_half, sin_half], dim=-1)
+    idx = Tensor.arange(0, dim, 2, dtype=dtype.float32) / dim
+    inv_freq = Tensor.exp(-idx * math.log(theta))  # TODO: pow
+    seq = Tensor.arange(stop=max_seq_len, dtype=dtype.float32)
+    freqs = seq.reshape(max_seq_len, 1) * inv_freq.reshape(1, -1)
+    cos_half = Tensor.cos(freqs)
+    sin_half = Tensor.sin(freqs)
+    cos = Tensor.cat([cos_half, cos_half], dim=-1).cast(dtype.bfloat16)
+    sin = Tensor.cat([sin_half, sin_half], dim=-1).cast(dtype.bfloat16)
     return cos, sin
 
 
@@ -89,28 +90,32 @@ def _apply_rope(q: Tensor, k: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: T
 
 
 class SlidingWindowAttention(nn.Module):
-    def __init__(self, config: Qwen25HyperParams) -> None:
+    def __init__(self, config: Qwen3HyperParams) -> None:
         super().__init__()
-        self.head_size = config.hidden_size // config.num_attention_heads
+        self.head_dim = config.head_dim
         self.num_heads = config.num_attention_heads
         self.num_kv_heads = config.num_key_value_heads
         self.n_rep = self.num_heads // self.num_kv_heads
         self.sliding_window = config.sliding_window
-        self.q_proj = nn.Linear(config.hidden_size, self.num_heads * self.head_size)
-        self.k_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_size)
-        self.v_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_size)
-        self.o_proj = nn.Linear(self.num_heads * self.head_size, config.hidden_size)
+        self.q_proj = nn.Linear(config.hidden_size, self.num_heads * self.head_dim, bias=False)
+        self.k_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
+        self.v_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
+        self.o_proj = nn.Linear(self.num_heads * self.head_dim, config.hidden_size, bias=False)
+        self.q_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps)
+        self.k_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps)
 
     def forward(
         self, x: Tensor, cos_freq: Tensor, sin_freq: Tensor, idx: Tensor, prev_kv: tuple[Tensor, Tensor] | None = None
     ) -> tuple[Tensor, tuple[Tensor, Tensor]]:
-        block_size, seq_len, _ = x.shape
-        q: Tensor = self.q_proj(x)
-        k_cur: Tensor = self.k_proj(x)
-        v_cur: Tensor = self.v_proj(x)
-        q = q.reshape(block_size, seq_len, self.num_heads, self.head_size).transpose(1, 2)
-        k_cur = k_cur.reshape(block_size, seq_len, self.num_kv_heads, self.head_size).transpose(1, 2)
-        v_cur = v_cur.reshape(block_size, seq_len, self.num_kv_heads, self.head_size).transpose(1, 2)
+        B, T, _ = x.shape
+        q = self.q_proj(x)
+        k_cur = self.k_proj(x)
+        v_cur = self.v_proj(x)
+        q = q.reshape(B, T, self.num_heads, self.head_dim).transpose(1, 2)
+        k_cur = k_cur.reshape(B, T, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        v_cur = v_cur.reshape(B, T, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        q = self.q_norm(q)
+        k_cur = self.k_norm(k_cur)
         q, k_cur = _apply_rope(q, k_cur, cos_freq, sin_freq, idx)
         if prev_kv is not None:
             past_k, past_v = prev_kv
@@ -122,12 +127,12 @@ class SlidingWindowAttention(nn.Module):
             k: Tensor = Tensor.cat([past_k, k_cur], dim=2)
             v: Tensor = Tensor.cat([past_v, v_cur], dim=2)
         else:
-            k: Tensor = k_cur
-            v: Tensor = v_cur
+            k = k_cur
+            v = v_cur
         curr_kv: tuple[Tensor, Tensor] = (k, v)
         k = _repeat_kv(k, self.n_rep)
         v = _repeat_kv(v, self.n_rep)
-        scores: Tensor = (q @ k.transpose(2, 3)) * (1.0 / math.sqrt(self.head_size))
+        scores: Tensor = (q @ k.transpose(2, 3)) * (1.0 / math.sqrt(self.head_dim))
         q_len: int = q.shape[2]
         k_len: int = k.shape[2]
         k_pos_indices: Tensor = Tensor.arange(k_len).reshape(1, -1)
@@ -138,12 +143,12 @@ class SlidingWindowAttention(nn.Module):
         additive_mask = additive_mask.reshape(1, 1, q_len, k_len)
         masked_scores: Tensor = scores + additive_mask
         attn_weights: Tensor = masked_scores.softmax(dim=-1)
-        out: Tensor = (attn_weights @ v).transpose(1, 2).reshape(block_size, seq_len, -1)
+        out: Tensor = (attn_weights @ v).transpose(1, 2).reshape(B, T, -1)
         return self.o_proj(out), curr_kv
 
 
 class Block(nn.Module):
-    def __init__(self, config: Qwen25HyperParams) -> None:
+    def __init__(self, config: Qwen3HyperParams) -> None:
         super().__init__()
         self.self_attn = SlidingWindowAttention(config)
         self.mlp = MLP(config)
@@ -159,8 +164,8 @@ class Block(nn.Module):
         return h + self.mlp(self.post_attention_layernorm(h)), present_kv
 
 
-class Qwen25Model(nn.Module):
-    def __init__(self, config: Qwen25HyperParams) -> None:
+class Qwen3Model(nn.Module):
+    def __init__(self, config: Qwen3HyperParams) -> None:
         super().__init__()
         self.config = config
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
@@ -169,9 +174,7 @@ class Qwen25Model(nn.Module):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         if config.tie_word_embeddings:
             self.lm_head.weight = self.embed_tokens.weight
-        cos_cache, sin_cache = _precompute_freq_cache(
-            config.hidden_size // config.num_attention_heads, config.rope_theta, config.max_position_embeddings
-        )
+        cos_cache, sin_cache = _precompute_freq_cache(config.head_dim, config.rope_theta, config.max_position_embeddings)
         self.cos_cache = cos_cache
         self.sin_cache = sin_cache
 
@@ -186,8 +189,8 @@ class Qwen25Model(nn.Module):
                 param.x = tensor
 
     @staticmethod
-    def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen25Model':
-        model = Qwen25Model(Qwen25HyperParams()).cast(dtype.bfloat16)
+    def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen3Model':
+        model = Qwen3Model(Qwen3HyperParams()).cast(dtype.bfloat16)
         model._load_from_snapshot(snapshot_file)
         gc.collect()
         return model
@@ -220,14 +223,22 @@ class Qwen25Model(nn.Module):
         logits, prev_kv = self(idx, idx=Tensor.arange(stop=in_len).reshape(1, -1), prev_kv=None)
         next_logits: Tensor = logits[:, -1, :] / temp
         curr_len: int = in_len
+        gen_ids: list[int] = []
+        concated: str = ''
+        pending: str = ''
         for _ in range(max_tokens):
             logits_1d: Tensor = next_logits.reshape(-1)
             top_vals, top_idx = logits_1d.topk(top_k, dim=0, largest=True, sorted=False)
             pick: Tensor = top_vals.softmax(dim=-1).reshape(1, -1).multinomial(num_samples=1)
             tok_id: int = int(top_idx[pick[0, 0]].item())
-            if tok_id == self.config.eos_token_id:
+            if tok_id == self.config.eos_token_id or tok_id in _EOS:
                 return
-            yield tokenizer.decode(tok_id)
+            gen_ids.append(tok_id)
+            text: str = tokenizer.decode(gen_ids)
+            if len(text) > len(concated):
+                delta = text[len(concated) :]
+                concated = text
+                yield delta
             input_ids = Tensor.of([tok_id], dtype=dtype.int64).reshape(1, 1)
             logits, prev_kv = self(
                 input_ids,
