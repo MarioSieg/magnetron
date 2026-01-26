@@ -17,7 +17,7 @@
     <br /><br />
     <a href="https://github.com/MarioSieg/magnetron/blob/develop/docs/4.%20Operator%20Cheatsheet.md"><strong>Documentation »</strong></a>
     <br /><br />
-    <a href="https://github.com/MarioSieg/magnetron/blob/master/examples/qwen3">Qwen3Example</a>
+    <a href="https://github.com/MarioSieg/magnetron/blob/master/examples/qwen3">Qwen3 Example</a>
     ·
     <a href="https://github.com/MarioSieg/magnetron/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     ·
