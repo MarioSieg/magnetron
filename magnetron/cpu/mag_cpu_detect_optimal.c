@@ -13,6 +13,7 @@
 
 #include <core/mag_context.h>
 #include <core/mag_cpuid.h>
+#include <core/mag_sstream.h>
 
 extern void mag_cpu_blas_specialization_fallback(mag_kernel_registry_t *kernels); /* Generic any CPU impl */
 
@@ -64,6 +65,9 @@ mag_amd64_blas_spec_decl(ivybridge);
 #endif
 #ifdef MAG_HAVE_CPU_NEHALEM
 mag_amd64_blas_spec_decl(nehalem);
+#endif
+#ifdef MAG_HAVE_CPU_WESTMERE
+mag_amd64_blas_spec_decl(westmere);
 #endif
 #ifdef MAG_HAVE_CPU_SANDYBRIDGE
 mag_amd64_blas_spec_decl(sandybridge);
@@ -134,6 +138,9 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_context_t *host_ctx, mag_
         #ifdef MAG_HAVE_CPU_SANDYBRIDGE
                 mag_amd64_blas_spec_permute(sandybridge),
         #endif
+        #ifdef MAG_HAVE_CPU_WESTMERE
+               mag_amd64_blas_spec_permute(westmere),
+        #endif
         #ifdef MAG_HAVE_CPU_NEHALEM
                 mag_amd64_blas_spec_permute(nehalem),
         #endif
@@ -166,13 +173,17 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_context_t *host_ctx, mag_
     const mag_amd64_specialization_dispatch_t *impls = is_amd ? specializations_amd : specializations_intel;
     size_t num_impls = is_amd ? sizeof(specializations_amd)/sizeof(*specializations_amd) : sizeof(specializations_intel)/sizeof(*specializations_intel);
 
+    mag_log_debug("CPU detected as %s, available specializations: %zu", is_amd ? "AMD" : "Intel", num_impls);
+
     mag_amd64_cap_bitset_t cap_machine = host_ctx->machine.amd64_cpu_caps;
     for (size_t i=0; i < num_impls; ++i) { /* Find best blas spec for the host CPU */
         const mag_amd64_specialization_dispatch_t *spec = impls+i;
         mag_amd64_cap_bitset_t cap_required = (*spec->get_feature_permutation)(); /* Get requires features */
-        if ((cap_machine & cap_required) == cap_required) { /* Since specializations are sorted by score, we found the perfect spec. */
+        bool matches = (cap_machine & cap_required) == cap_required;
+        mag_log_debug("Checked specialization %s: requires 0x%zu, machine caps 0x%zu, matches: %s", spec->name, (size_t)cap_required, (size_t)cap_machine, matches ? "yes" : "no");
+        if (matches) { /* Since specializations are sorted by score, we found the perfect spec. */
             (*spec->inject_kernels)(kernels);
-            mag_log_info("Using tuned specialization: %s", spec->name);
+            mag_log_info("Found tuned specialization: %s", spec->name);
             return true;
         }
     }
@@ -210,6 +221,9 @@ mag_arm64_spec_extern(9_sve2);
 #ifdef MAG_HAVE_CPU_ARMV8_2_A_SVE
 mag_arm64_spec_extern(82_sve);
 #endif
+#ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD_CRYPTO
+mag_arm64_spec_extern(86_crypto);
+#endif
 #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD
 mag_arm64_spec_extern(86);
 #endif
@@ -224,6 +238,9 @@ static bool mag_blas_detect_gen_optimal_spec(const mag_context_t *ctx, mag_kerne
         #endif
         #ifdef MAG_HAVE_CPU_ARMV8_2_A_SVE
             mag_arm64_spec_dispatch(82_sve),
+        #endif
+        #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD_CRYPTO
+            mag_arm64_spec_dispatch(86_crypto),
         #endif
         #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD
             mag_arm64_spec_dispatch(86),

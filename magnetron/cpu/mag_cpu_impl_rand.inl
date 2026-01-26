@@ -28,6 +28,7 @@
 
 mag_gen_vrand_uniform_fp(float, mag_cvt_nop)
 mag_gen_vrand_uniform_fp(mag_float16_t, mag_float32_to_float16)
+mag_gen_vrand_uniform_fp(mag_bfloat16_t, mag_float32_to_bfloat16)
 
 #undef mag_gen_vrand_uniform_fp
 
@@ -48,6 +49,7 @@ mag_gen_vrand_uniform_fp(mag_float16_t, mag_float32_to_float16)
 
 mag_gen_vrand_normal_fp(float, mag_cvt_nop)
 mag_gen_vrand_normal_fp(mag_float16_t, mag_float32_to_float16)
+mag_gen_vrand_normal_fp(mag_bfloat16_t, mag_float32_to_bfloat16)
 
 #undef mag_gen_vrand_normal_fp
 

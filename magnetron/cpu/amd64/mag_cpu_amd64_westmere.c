@@ -9,13 +9,8 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include <prelude.hpp>
+#define MAG_BLAS_SPECIALIZATION mag_cpu_blas_specialization_amd64_westmere
+#define MAG_BLAS_SPECIALIZATION_FEAT_REQUEST mag_cpu_blas_specialization_amd64_westmere_features
 
-using namespace magnetron;
+#include "../mag_cpu_impl.inl"
 
-TEST(misc, hash_function) {
-    ASSERT_EQ(mag_hash("hello", 5, 0), 15821672119091348640ull);
-    ASSERT_EQ(mag_hash("hello", 5, 0), 15821672119091348640ull);
-    ASSERT_NE(mag_hash("hello", 5, 1), 15821672119091348640ull);
-    ASSERT_NE(mag_hash("helli", 5, 0), 15821672119091348640ull);
-}

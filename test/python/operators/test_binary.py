@@ -1,8 +1,10 @@
 # (c) 2025 Mario 'Neo' Sieg. <mario.sieg.64@gmail.com>
+import torch.testing
 
 from ..common import *
 
-# We test against numpy here as torch has some issues with certain dtypes
+# We test integers against numpy here as torch has some issues with certain dtypes.
+# Float binary ops required touch tough as numpy does not support bfloat16 😾
 # Torch's unsigned types are shell types and do not support key operations properly
 
 _BINARY_OPS_NUMERIC: tuple[tuple[str, Callable], ...] = (
@@ -31,7 +33,7 @@ _BINARY_OPS_INTEGER: tuple[tuple[str, Callable], ...] = (
     ('rshift', lambda x, y: x >> y),
 )
 
-def binary_unary_op(
+def binary_unary_op_np(
     dtype: DataType,
     avoid_zero_in_y: bool,
     mag_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray],
@@ -47,21 +49,43 @@ def binary_unary_op(
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', NUMERIC_DTYPES)
-@pytest.mark.parametrize('op', _BINARY_OPS_NUMERIC)
-def test_binary_op_numeric(dtype: DataType, op: tuple[str, Callable]) -> None:
-    callback = op[1]
-    binary_unary_op(dtype, True, callback, callback)
 
+def binary_unary_op_torch(
+    dtype: DataType,
+    avoid_zero_in_y: bool,
+    mag_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray],
+    np_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray]
+) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        x = random_tensor(shape, dtype)
+        y = random_tensor(shape, dtype)
+        if avoid_zero_in_y: # For division and similar operations
+            y = y + (y == 0).cast(dtype) # Removes zeros from y to avoid division by zero
+        r = mag_callback(x.clone(), y.clone())
+        torch.testing.assert_close(totorch(r), np_callback(totorch(x), totorch(y)), equal_nan=True)
+
+    for_all_shapes(test)
+
+@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('op', _BINARY_OPS_NUMERIC)
+def test_binary_op_numeric_fp(dtype: DataType, op: tuple[str, Callable]) -> None:
+    callback = op[1]
+    binary_unary_op_torch(dtype, True, callback, callback)
+
+@pytest.mark.parametrize('dtype', INTEGER_DTYPES)
+@pytest.mark.parametrize('op', _BINARY_OPS_NUMERIC)
+def test_binary_op_numeric_integers(dtype: DataType, op: tuple[str, Callable]) -> None:
+    callback = op[1]
+    binary_unary_op_np(dtype, True, callback, callback)
 
 @pytest.mark.parametrize('dtype', INTEGRAL_DTYPES)
 @pytest.mark.parametrize('op', _BINARY_OPS_BITWISE_INTEGRAL)
 def test_binary_op_integral(dtype: DataType, op: tuple[str, Callable]) -> None:
     callback = op[1]
-    binary_unary_op(dtype, False, callback, callback)
+    binary_unary_op_np(dtype, False, callback, callback)
 
 @pytest.mark.parametrize('dtype', INTEGER_DTYPES)
 @pytest.mark.parametrize('op', _BINARY_OPS_INTEGER)
 def test_binary_op_integer(dtype: DataType, op: tuple[str, Callable]) -> None:
     callback = op[1]
-    binary_unary_op(dtype, True, callback, callback)
+    binary_unary_op_np(dtype, True, callback, callback)

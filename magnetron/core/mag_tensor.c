@@ -11,7 +11,7 @@
 
 #include "mag_tensor.h"
 #include "mag_context.h"
-#include "mag_pool.h"
+#include "mag_slab.h"
 #include "mag_alloc.h"
 #include "mag_autodiff.h"
 #include "mag_coords_iter.h"
@@ -22,11 +22,11 @@ static void mag_view_meta_dtor(void *p) {
     if (vm->base->view_meta == vm)
         vm->base->view_meta = NULL;
     mag_rc_decref(vm->base);
-    mag_fixed_pool_free_block(&ctx->view_meta_pool, vm);
+    mag_slab_free(&ctx->view_meta_slab, vm);
 }
 
 mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
-    mag_view_meta_t *vm = mag_fixed_pool_alloc_block(&base->ctx->view_meta_pool);
+    mag_view_meta_t *vm = mag_slab_alloc(&base->ctx->view_meta_slab);
     mag_rc_init_object(vm, &mag_view_meta_dtor);
     vm->base = base;
     mag_rc_incref(base);
@@ -37,7 +37,7 @@ mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
 static void mag_tensor_dtor(void *self); /* Destructor forward declaration. */
 
 static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel) {
-    mag_tensor_t *hdr = mag_fixed_pool_alloc_block(&ctx->tensor_pool); /* Allocate tensor header. */
+    mag_tensor_t *hdr = mag_slab_alloc(&ctx->tensor_slab); /* Allocate tensor header. */
     memset(hdr, 0, sizeof(*hdr));
     *hdr = (mag_tensor_t) { /* Initialize tensor header. */
         .ctx = ctx,
@@ -56,7 +56,7 @@ static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type
     hdr->alive_next = NULL;
     mag_leak_detector_enqueue(hdr);
 #endif
-    ++ctx->num_alive_tensors; /* Increase tensor count in context. */
+    ++ctx->telemetry.num_alive_tensors; /* Increase tensor count in context. */
     return hdr;
 }
 
@@ -66,7 +66,7 @@ static void mag_tensor_free_header(mag_tensor_t *t) {
     mag_leak_detector_dequeue(t); /* Pop from alive list */
     memset(t, 0, sizeof(*t));
 #endif
-    mag_fixed_pool_free_block(&ctx->tensor_pool, t);
+    mag_slab_free(&ctx->tensor_slab, t);
 }
 
 /* Create a new tensor. The must be created on the same thread as the context. */
@@ -86,7 +86,7 @@ mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type,
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
     mag_device_t *dvc = ctx->device;
     void (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;
-    ctx->storage_bytes_allocated += numbytes;
+    ctx->telemetry.storage_bytes_allocated += numbytes;
     (*allocator)(dvc, &tensor->storage, numbytes, type);
     for (int i=0; i < MAG_MAX_DIMS; ++i)  {
         tensor->coords.shape[i] = shape && i < rank ? shape[i] : 1;
@@ -98,7 +98,7 @@ mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type,
             mag_contract(ctx, ERR_DIM_OVERFLOW, { mag_tensor_free_header(tensor); *out = NULL; }, !mag_mulov64(tensor->coords.strides[i+1], tensor->coords.shape[i+1], tensor->coords.strides+i), "Stride overflowed at dim[%" PRIi64 "]", i);
         }
     }
-    ++ctx->num_created_tensors;
+    ++ctx->telemetry.num_created_tensors;
     *out = tensor;
     return MAG_STATUS_OK;
 }
@@ -143,8 +143,8 @@ mag_status_t mag_as_strided(mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t
 static void mag_tensor_dtor(void *self) {
     mag_tensor_t *t = self;
     mag_context_t *ctx = t->ctx;
-    mag_assert(ctx->num_alive_tensors > 0, "Double free detected on tensor %p", t);
-    --ctx->num_alive_tensors;
+    mag_assert(ctx->telemetry.num_alive_tensors > 0, "Double free detected on tensor %p", t);
+    --ctx->telemetry.num_alive_tensors;
     if (t->view_meta) {
         mag_rc_decref(t->view_meta);
         t->view_meta = NULL;
@@ -258,7 +258,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
-        res = mag_scalar_float(*(const float *)mag_tensor_data_ptr(wide));
+        res = mag_scalar_from_f64(*(const float *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
         *out_value = res;
         return MAG_STATUS_OK;
@@ -270,7 +270,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
-        res = mag_scalar_int(*(const int64_t *)mag_tensor_data_ptr(wide));
+        res = mag_scalar_from_i64(*(const int64_t *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
         *out_value = res;
         return MAG_STATUS_OK;
@@ -282,7 +282,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
-        res = mag_scalar_uint(*(const uint64_t *)mag_tensor_data_ptr(wide));
+        res = mag_scalar_from_u64(*(const uint64_t *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
         *out_value = res;
         return MAG_STATUS_OK;

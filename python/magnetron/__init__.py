@@ -16,3 +16,4 @@ __url__ = 'https://github.com/MarioSieg/magnetron'
 
 from .context import *
 from ._tensor import *
+from ._snapshot import *

@@ -28,25 +28,49 @@ static void mag_cpuid_ex(uint32_t (*o)[4], uint32_t eax, uint32_t ecx) {
     __cpuid_count(eax, ecx, (*o)[0], (*o)[1], (*o)[2], (*o)[3]);
 #endif
 }
+
 static void mag_cpuid(uint32_t (*o)[4], uint32_t eax) {
     mag_cpuid_ex(o, eax, 0);
 }
+
 static bool mag_cpuid_streq(uint32_t ebx, uint32_t ecx, uint32_t edx, const char str[12]) {
 #define mag_strbe(x) ((x)[0] | ((x)[1]<<8) | ((x)[2]<<16) | ((x)[3]<<24))
     return ebx == mag_strbe(str) && edx == mag_strbe(str+4) && ecx == mag_strbe(str+8);
 #undef mag_strbe
 }
+
 static uint64_t MAG_AINLINE mag_xgetbv(void) { /* Query extended control register value. */
 #ifdef _MSC_VER
     return _xgetbv(0);
 #else
     uint32_t eax, edx;
-    __asm__ volatile(".byte 0x0f,0x01,0xd0" : "=a"(eax), "=d"(edx) : "c"(0));
+    __asm__ __volatile__(".byte 0x0f,0x01,0xd0" : "=a"(eax), "=d"(edx) : "c"(0));
     return (uint64_t)edx<<32 | eax;
 #endif
 }
+
 void mag_probe_cpu_amd64(mag_amd64_cap_bitset_t *o, uint32_t *avx10ver) {
     memset(o, 0, sizeof(*o));
+    #if defined(__GNUC__) || defined(__clang__) /* x86-64 should technically always have CPUID, but we prove it just in case. */
+        int has_cpuid = 0;
+        __asm__ __volatile__(
+            "pushfq\n"
+            "popq %%rax\n"
+            "movq %%rax, %%rcx\n"
+            "xorl $2097152, %%eax\n"
+            "pushq %%rax\n"
+            "popfq\n"
+            "pushfq\n"
+            "popq %%rax\n"
+            "xorl %%ecx, %%eax\n"
+            "jz 1f\n"
+            "movl $1, %0\n"
+            "1:\n"
+            : "=m" (has_cpuid)
+            : : "%rax", "%rcx"
+        );
+        if (!has_cpuid) return; /* CPUID not supported */
+    #endif
     uint32_t id[4] = {0};
     const uint32_t *eax = id+0, *ebx = id+1, *ecx = id+2, *edx = id+3;
     mag_cpuid(&id, 0);
@@ -62,6 +86,7 @@ void mag_probe_cpu_amd64(mag_amd64_cap_bitset_t *o, uint32_t *avx10ver) {
     }
     mag_cpuid(&id, 1);
     mag_captest(ecx, 0, SSE3);
+    mag_captest(ecx, 1, PCLMULQDQ);
     mag_captest(ecx, 9, SSSE3);
     mag_captest(ecx, 19, SSE41);
     mag_captest(ecx, 20, SSE42);
@@ -107,6 +132,7 @@ void mag_probe_cpu_amd64(mag_amd64_cap_bitset_t *o, uint32_t *avx10ver) {
         mag_captest(ebx, 3, BMI1);
         mag_captest(ebx, 8, BMI2);
         mag_captest(ecx, 8, GFNI);
+        mag_captest(ecx, 10, VPCLMULQDQ);
         mag_captest(edx, 22, AMX_BF16);
         mag_captest(edx, 24, AMX_TILE);
         mag_captest(edx, 25, AMX_INT8);
@@ -345,6 +371,12 @@ void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
 #ifdef HWCAP2_SVE2
     if (hwcap2 & HWCAP2_SVE2) *o|=mag_arm64_cap(SVE2);
 #endif
+#ifdef HWCAP_CRC32
+    if (hwcap & HWCAP_CRC32) *o |= mag_arm64_cap(CRC32);
+#endif
+#ifdef HWCAP_PMULL
+    if (hwcap & HWCAP_PMULL) *o |= mag_arm64_cap(PMULL);
+#endif
     *sve_width = 0; /* NYI */
 #elif defined(_WIN32)
     if (IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(NEON);
@@ -386,6 +418,12 @@ void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
     v = 0; n = sizeof(v);
     if (sysctlbyname("hw.optional.arm.FEAT_SVE", &v, &n, NULL, 0) == 0 && n == sizeof(v) && v)
         *o |= mag_arm64_cap(SVE);
+    if (sysctlbyname("hw.optional.armv8_crc32", &v, &n, NULL, 0) == 0 && n == sizeof(v) && v)
+        *o |= mag_arm64_cap(CRC32);
+    if (sysctlbyname("hw.optional.arm.FEAT_AES", &v, &n, NULL, 0) == 0 && n == sizeof(v) && v)
+        *o |= mag_arm64_cap(PMULL);
+    if (sysctlbyname("hw.optional.armv8_aes", &v, &n, NULL, 0) == 0 && n == sizeof(v) && v)
+        *o |= mag_arm64_cap(PMULL);
     *sve_width = 0;
 #endif
 }

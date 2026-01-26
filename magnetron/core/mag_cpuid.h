@@ -43,6 +43,8 @@ extern "C" {
     _(AVX_IFMA)__\
     _(AVX_VNNI_INT16)__\
     _(AVX10)__\
+    _(PCLMULQDQ)__\
+    _(VPCLMULQDQ)__\
     \
     _(AVX512_F)__\
     _(AVX512_DQ)__\
@@ -100,6 +102,8 @@ extern void mag_probe_cpu_amd64(mag_amd64_cap_bitset_t *o, uint32_t *avx10ver);
 #define mag_armd64_capdef(_, __) /* Enumerator */\
     _(NONE)__\
     _(NEON)__\
+    _(PMULL)__\
+    _(CRC32)__\
     _(DOTPROD)__\
     _(I8MM)__\
     _(F16SCALAR)__\

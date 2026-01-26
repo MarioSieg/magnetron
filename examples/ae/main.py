@@ -1,10 +1,18 @@
+# +---------------------------------------------------------------------+
+# | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+# | Licensed under the Apache License, Version 2.0                      |
+# |                                                                     |
+# | Website : https://mariosieg.com                                     |
+# | GitHub  : https://github.com/MarioSieg                              |
+# | License : https://www.apache.org/licenses/LICENSE-2.0               |
+# +---------------------------------------------------------------------+
+
 from __future__ import annotations
 
 import argparse
 
 from magnetron import nn, optim, context, Tensor, no_grad, dtype
 import matplotlib.pyplot as plt
-
 
 class AE(nn.Module):
     def __init__(self, w: int, h: int, latent_dim: int = 16) -> None:

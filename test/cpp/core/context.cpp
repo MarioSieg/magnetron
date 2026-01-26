@@ -14,7 +14,7 @@
 using namespace magnetron;
 
 TEST(context, create_cpu) {
-    mag_set_log_level(MAG_LOG_LEVEL_INFO);
+    mag_set_log_level(MAG_LOG_LEVEL_DEBUG);
     context ctx {};
     ASSERT_TRUE(mag_device_is((*ctx).device, "cpu"));
     ASSERT_FALSE(mag_device_is((*ctx).device, "cuda"));
@@ -32,7 +32,6 @@ TEST(context, create_cpu) {
     ctx.start_grad_recorder();
     ctx.stop_grad_recorder();
     std::cout << ctx.device_name() << std::endl;
-    mag_set_log_level(MAG_LOG_LEVEL_NONE);
 }
 
 #ifdef MAG_ENABLE_CUDA

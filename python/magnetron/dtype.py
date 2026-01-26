@@ -57,6 +57,7 @@ class DataType:
 
 float32: DataType = DataType(_C.MAG_DTYPE_FLOAT32, 4, 'float32')
 float16: DataType = DataType(_C.MAG_DTYPE_FLOAT16, 2, 'float16')
+bfloat16: DataType = DataType(_C.MAG_DTYPE_BFLOAT16, 2, 'bfloat16')
 boolean: DataType = DataType(_C.MAG_DTYPE_BOOLEAN, 1, 'uint8')
 uint8: DataType = DataType(_C.MAG_DTYPE_UINT8, 1, 'uint8')
 int8: DataType = DataType(_C.MAG_DTYPE_INT8, 1, 'int8')
@@ -70,6 +71,7 @@ int64: DataType = DataType(_C.MAG_DTYPE_INT64, 8, 'int64')
 DTYPE_ENUM_MAP: dict[int, DataType] = {
     float32.enum_value: float32,
     float16.enum_value: float16,
+    bfloat16.enum_value: bfloat16,
     boolean.enum_value: boolean,
     uint8.enum_value: uint8,
     int8.enum_value: int8,
@@ -80,7 +82,7 @@ DTYPE_ENUM_MAP: dict[int, DataType] = {
     uint64.enum_value: uint64,
     int64.enum_value: int64,
 }
-FLOATING_POINT_DTYPES = {float32, float16}
+FLOATING_POINT_DTYPES = {float32, float16, bfloat16}
 UNSIGNED_INTEGER_DTYPES = {uint8, uint16, uint32, uint64}
 SIGNED_INTEGER_DTYPES = {int8, int16, int32, int64}
 INTEGER_DTYPES = UNSIGNED_INTEGER_DTYPES | SIGNED_INTEGER_DTYPES

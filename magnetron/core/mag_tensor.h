@@ -53,7 +53,7 @@ struct mag_tensor_t {
     MAG_RC_INJECT_HEADER;                           /* RC Control block must be first */
 
     mag_context_t  *ctx;                            /* Host context. */
-    mag_coords_t coords;                     /* Coords */
+    mag_coords_t coords;                            /* Coords */
     mag_dtype_t dtype : 8;                          /* Data type of the tensor. */
     mag_tensor_flags_t flags : 8;                   /* Tensor flags. */
     mag_storage_buffer_t *storage;                  /* Storage buffer. */

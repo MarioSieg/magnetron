@@ -331,20 +331,20 @@ mag_static_assert(sizeof(0ull) == 8);   /* ull literal suffix must infer to uint
 /* Endianness detection. */
 #ifdef __BYTE_ORDER
 #if defined(__BIG_ENDIAN) && (__BYTE_ORDER == __BIG_ENDIAN)
-#define MAG_BE
+#define MAG_BIG_ENDIAN
 #elif defined(__LITTLE_ENDIAN) && (__BYTE_ORDER == __LITTLE_ENDIAN)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #endif
 #elif defined(_BYTE_ORDER)
 #if defined(_BIG_ENDIAN) && (_BYTE_ORDER == _BIG_ENDIAN)
-#define MAG_BE
+#define MAG_BIG_ENDIAN
 #elif defined(_LITTLE_ENDIAN) && (_BYTE_ORDER == _LITTLE_ENDIAN)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #endif
 #elif defined(__BIG_ENDIAN__)
-#define MAG_BE
+#define MAG_BIG_ENDIAN
 #elif defined(__LITTLE_ENDIAN__)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #else
 #if defined(__ARMEL__) || defined(__THUMBEL__) || defined(__AARCH64EL__) || \
 defined(_MIPSEL) || defined(__MIPSEL) || defined(__MIPSEL__) || \
@@ -355,17 +355,17 @@ defined(_M_IX86) || defined(_X86_) || defined(__THW_INTEL__) || defined(__I86__)
 defined(__INTEL__) || defined(__x86_64) || defined(__x86_64__) || \
 defined(__amd64__) || defined(__amd64) || defined(_M_X64) || \
 defined(__bfin__) || defined(__BFIN__) || defined(bfin) || defined(BFIN)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #elif defined(__m68k__) || defined(M68000) || defined(__hppa__) || defined(__hppa) || defined(__HPPA__) || \
 defined(__sparc__) || defined(__sparc) || defined(__370__) || defined(__THW_370__) || \
 defined(__s390__) || defined(__s390x__) || defined(__SYSC_ZARCH__)
-#define MAG_BE
+#define MAG_BIG_ENDIAN
 #elif defined(__arm__) || defined(__arm64) || defined(__thumb__) || \
 defined(__TARGET_ARCH_ARM) || defined(__TARGET_ARCH_THUMB) || defined(__ARM_ARCH) || \
 defined(_M_ARM) || defined(_M_ARM64)
 #if defined(_WIN32) || defined(_WIN64) || \
 defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
-#define MAG_LE
+#define MAG_LITTLE_ENDIAN
 #else
 #error "Unknown endianness"
 #endif
@@ -373,15 +373,15 @@ defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
 #endif
 
 #ifdef __cpp_lib_hardware_interference_size
-/* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
+/* Cache line buf_size. Used for alignment to avoid destructive interference (false sharing). */
 #define MAG_DESTRUCTIVE_INTERFERENCE_SIZE std::hardware_destructive_interference_size
 #else
-/* Cache line size. Used for alignment to avoid destructive interference (false sharing). */
+/* Cache line buf_size. Used for alignment to avoid destructive interference (false sharing). */
 #define MAG_DESTRUCTIVE_INTERFERENCE_SIZE 64
 #endif
 
-#define MAG_PAGE_SIZE_4K 0x1000     /* 4 KiB page size */
-#define MAG_PAGE_SIZE_2M 0x200000   /* 2 MiB page size */
+#define MAG_PAGE_SIZE_4K 0x1000     /* 4 KiB page buf_size */
+#define MAG_PAGE_SIZE_2M 0x200000   /* 2 MiB page buf_size */
 
 #define MAG_CPU_BUF_ALIGN 64
 
@@ -478,6 +478,7 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 #else
 #   define MAG_SRC_NAME __FILE__ ":" MAG_STRINGIZE(__LINE__)
 #endif
+#define mag_log_debug(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_DEBUG, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
 #define mag_log_info(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_INFO, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
 #define mag_log_warn(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_WARN, MAG_SRC_NAME " " msg, ## __VA_ARGS__);  } while (0)
 #define mag_log_error(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_ERROR, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
@@ -539,7 +540,7 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 
 extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
 
-/* Humanize memory size. Format and convert a memory size to the appropriate unit. For example. 1024 => 1 KiB */
+/* Humanize memory buf_size. Format and convert a memory buf_size to the appropriate unit. For example. 1024 => 1 KiB */
 extern void mag_humanize_memory_size(size_t n, double *out, const char **unit);
 extern uintptr_t mag_thread_id(void); /* Get current native thread ID. */
 extern FILE *mag_fopen(const char *file, const char *mode);
@@ -557,7 +558,7 @@ extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
 #define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
 #define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
 
-/* Increment pointer or size with correct type alignment. */
+/* Increment pointer or buf_size with correct type alignment. */
 static inline void *mag_pincr(void **p, size_t sz, size_t align) {
     void *pp = (void *)(((uintptr_t)*p+align-1)&-align);
     *p = (void *)((uint8_t *)pp+sz);
@@ -587,11 +588,10 @@ return __builtin_smull_overflow(a, b, c);
 #endif
 }
 
-extern MAG_EXPORT uint64_t mag_hash(const void *key, size_t len, uint32_t seed); /* Compute murmur3_64 hash */
-extern uint32_t mag_crc32c(const void *buffer, size_t size); /* Compute CRC32 checksum with CRC32c polynomial. */
-extern bool mag_utf8_validate(const char *str, size_t len);
+extern bool mag_utf8_validate(const uint8_t *str, size_t len);
 extern char *mag_strdup(const char *s);
 extern void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);
+extern int mag_casecmp(const char *a, const char *b);
 
 #ifdef __cplusplus
 }

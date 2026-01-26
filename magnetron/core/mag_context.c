@@ -15,8 +15,11 @@
 #include "mag_tensor.h"
 #include "mag_autodiff.h"
 #include "mag_machine.h"
+#include "mag_float16.h"
+#include "mag_bfloat16.h"
 
 #include <time.h>
+#include <ctype.h>
 
 /* Print host system and machine information. */
 static void mag_system_host_info_dump(mag_context_t *ctx) {
@@ -91,17 +94,31 @@ static MAG_COLDPROC void mag_ctx_dump_compiler_info(void) {
         mag_ver_major(MAG_VERSION),
         mag_ver_minor(MAG_VERSION),
         mag_ver_patch(MAG_VERSION),
-        mag_ver_major(MAG_STORAGE_VERSION),
-        mag_ver_minor(MAG_STORAGE_VERSION),
-        mag_ver_patch(MAG_STORAGE_VERSION),
+        mag_ver_major(MAG_SNAPSHOT_VERSION),
+        mag_ver_minor(MAG_SNAPSHOT_VERSION),
+        mag_ver_patch(MAG_SNAPSHOT_VERSION),
         compiler_name,
         compiler_version_major,
         compiler_version_minor
     );
 }
 
+static void mag_setup_environ(void) {
+    /* Parse MAG_LOG_LEVEL environment variable. */
+    const char *v = getenv("MAG_LOG_LEVEL");
+    if (!v || !*v) return;
+    if (mag_casecmp(v, "off")) mag_set_log_level(MAG_LOG_LEVEL_NONE);
+    else if (mag_casecmp(v, "error")) mag_set_log_level(MAG_LOG_LEVEL_ERROR);
+    else if (mag_casecmp(v, "warn") || mag_casecmp(v, "warning")) mag_set_log_level(MAG_LOG_LEVEL_WARN);
+    else if (mag_casecmp(v, "info")) mag_set_log_level(MAG_LOG_LEVEL_INFO);
+    else if (mag_casecmp(v, "debug")) mag_set_log_level(MAG_LOG_LEVEL_DEBUG);
+    else mag_log_error("Invalid MAG_LOG_LEVEL value '%s' (valid: off, error, warn, info)", v);
+}
+
 /* Create context with compute device descriptor. */
 mag_context_t *mag_ctx_create(const char *device_id) {
+    mag_setup_environ(); /* Parse and apply environment variables. */
+
     mag_log_info("Creating magnetron context...");
 
     uint64_t time_stamp_start = mag_hpc_clock_ns();
@@ -112,10 +129,10 @@ mag_context_t *mag_ctx_create(const char *device_id) {
     memset(ctx, 0, sizeof(*ctx));
 
     /* Init memory pools */
-    mag_fixed_pool_init(&ctx->tensor_pool, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
-    mag_fixed_pool_init(&ctx->storage_pool, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000);
-    mag_fixed_pool_init(&ctx->view_meta_pool, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
-    mag_fixed_pool_init(&ctx->au_state_pool, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
+    mag_slab_init(&ctx->tensor_slab, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
+    mag_slab_init(&ctx->storage_slab, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000);
+    mag_slab_init(&ctx->view_meta_slab, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
+    mag_slab_init(&ctx->au_state_slab, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
 
     ctx->tr_id = mag_thread_id(); /* Get thread ID. */
     ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
@@ -166,28 +183,36 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
 #ifdef MAG_DEBUG
     mag_leak_detector_dump_results(ctx);  /* Provide detailed leak check info */
 #endif
-    bool leaks_detected = ctx->num_alive_tensors || ctx->num_alive_storages;
+    bool leaks_detected = ctx->telemetry.num_alive_tensors || ctx->telemetry.num_alive_storages;
     if (mag_unlikely(leaks_detected)) {
         char msg[256] = {0};
-        snprintf(msg, sizeof(msg), "magnetron context destroyed with %zu leaked tensors and %zu leaked storages", ctx->num_alive_tensors, ctx->num_alive_storages);
+        snprintf(msg, sizeof(msg), "magnetron context destroyed with %zu leaked tensors and %zu leaked storages", ctx->telemetry.num_alive_tensors, ctx->telemetry.num_alive_storages);
         if (suppress_leak_detection) mag_log_warn("%s", msg);
         else mag_panic("%s", msg);
     }
-    mag_fixed_pool_destroy(&ctx->au_state_pool);
-    mag_fixed_pool_destroy(&ctx->view_meta_pool);
-    mag_fixed_pool_destroy(&ctx->tensor_pool);
-    mag_fixed_pool_destroy(&ctx->storage_pool);
+    mag_slab_destroy(&ctx->au_state_slab);
+    mag_slab_destroy(&ctx->view_meta_slab);
+    mag_slab_destroy(&ctx->tensor_slab);
+    mag_slab_destroy(&ctx->storage_slab);
     (*ctx->backend->destroy_device)(ctx->backend, ctx->device);
     ctx->device = NULL;
     ctx->backend = NULL;
     mag_backend_registry_free(ctx->backend_registry);
-    size_t num_created_tensors = ctx->num_created_tensors;
-    size_t storage_bytes = ctx->storage_bytes_allocated;
-    size_t ops_dispatched = ctx->ops_dispatched;
+    size_t num_created_tensors = ctx->telemetry.num_created_tensors;
+    size_t storage_bytes = ctx->telemetry.storage_bytes_allocated;
+    size_t ops_dispatched = ctx->telemetry.ops_dispatched;
     memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
     (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
     ctx = NULL;
-    mag_log_info("magnetron context destroyed, %zuK operators executed, %zuK tensors total, %.02fGiB storage allocation", ops_dispatched/1000, num_created_tensors/1000, (double)storage_bytes/(double)(1<<30));
+    mag_log_info(
+        "runtime metrics: ops: %zu, tensors: %zuK, storage alloc: %.02fGiB",
+        ops_dispatched/1000,
+        num_created_tensors/1000,
+        (double)storage_bytes / (double)(1<<30)
+    );
+    mag_log_info("magnetron context offline");
+    fflush(stdout);
+    fflush(stderr);
 }
 
 const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx) {
@@ -283,6 +308,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
             .name="float16",
             .size=sizeof(mag_float16_t),
             .align=__alignof(mag_float16_t),
+        },
+        [MAG_DTYPE_BFLOAT16] = {
+            .name="bfloat16",
+            .size=sizeof(mag_bfloat16_t),
+            .align=__alignof(mag_bfloat16_t),
         },
         [MAG_DTYPE_BOOLEAN] = {
             .name="boolean",

@@ -13,15 +13,15 @@
 #include "mag_context.h"
 #include "mag_reduce_plan.h"
 
-mag_scalar_t mag_scalar_float(double value) {
+mag_scalar_t mag_scalar_from_f64(double value) {
     return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.f64 = value};
 }
 
-mag_scalar_t mag_scalar_int(int64_t value) {
+mag_scalar_t mag_scalar_from_i64(int64_t value) {
     return (mag_scalar_t){.type = MAG_SCALAR_TYPE_I64, .value.i64 = value};
 }
 
-mag_scalar_t mag_scalar_uint(uint64_t value) {
+mag_scalar_t mag_scalar_from_u64(uint64_t value) {
     return (mag_scalar_t){.type = MAG_SCALAR_TYPE_U64, .value.u64 = value};
 }
 
@@ -96,6 +96,20 @@ static const mag_dtype_t mag_type_promotion_rules[MAG_DTYPE__NUM][MAG_DTYPE__NUM
         [MAG_DTYPE_INT8]    = MAG_DTYPE_FLOAT16,
         [MAG_DTYPE_UINT16]  = MAG_DTYPE_FLOAT16,
         [MAG_DTYPE_INT16]   = MAG_DTYPE_FLOAT16,
+        [MAG_DTYPE_UINT32]  = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_INT32]   = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_UINT64]  = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_INT64]   = MAG_DTYPE_FLOAT32,
+    },
+    [MAG_DTYPE_BFLOAT16] = {
+        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT32,
+        [MAG_DTYPE_BFLOAT16]= MAG_DTYPE_BFLOAT16,
+        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_BFLOAT16,
+        [MAG_DTYPE_UINT8]   = MAG_DTYPE_BFLOAT16,
+        [MAG_DTYPE_INT8]    = MAG_DTYPE_BFLOAT16,
+        [MAG_DTYPE_UINT16]  = MAG_DTYPE_BFLOAT16,
+        [MAG_DTYPE_INT16]   = MAG_DTYPE_BFLOAT16,
         [MAG_DTYPE_UINT32]  = MAG_DTYPE_FLOAT32,
         [MAG_DTYPE_INT32]   = MAG_DTYPE_FLOAT32,
         [MAG_DTYPE_UINT64]  = MAG_DTYPE_FLOAT32,
@@ -357,7 +371,7 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
     for (uint32_t i=0; i < num_out; ++i) {
         if (inplace) mag_bump_version(out[i]);   /* Result aliases the modified storage */
     }
-    ++ctx->ops_dispatched;
+    ++ctx->telemetry.ops_dispatched;
 }
 
 static void mag_assert_dtype_compat(mag_opcode_t op, mag_tensor_t **inputs) {
@@ -423,19 +437,19 @@ mag_status_t mag_full_like(mag_tensor_t **out_result, mag_tensor_t *like, mag_sc
 }
 
 mag_status_t mag_zeros(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
-    return mag_full(out_result, ctx, type, rank, shape, mag_scalar_uint(0));
+    return mag_full(out_result, ctx, type, rank, shape, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_zeros_like(mag_tensor_t **out_result, mag_tensor_t *like) {
-    return mag_full_like(out_result, like, mag_scalar_uint(0));
+    return mag_full_like(out_result, like, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_ones(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
-    return mag_full(out_result, ctx, type, rank, shape, mag_scalar_uint(0));
+    return mag_full(out_result, ctx, type, rank, shape, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_ones_like(mag_tensor_t **out_result, mag_tensor_t *like) {
-    return mag_full_like(out_result, like, mag_scalar_uint(0));
+    return mag_full_like(out_result, like, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_uniform(mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_scalar_t min, mag_scalar_t max) {
@@ -1565,7 +1579,7 @@ mag_status_t mag_copy_raw_(mag_tensor_t *tensor, const void *data, size_t size_b
 }
 
 mag_status_t mag_zero_(mag_tensor_t *tensor) {
-    return mag_fill_(tensor, mag_scalar_uint(0));
+    return mag_fill_(tensor, mag_scalar_from_u64(0));
 }
 
 mag_status_t mag_fill_(mag_tensor_t *tensor, mag_scalar_t value) {

@@ -17,8 +17,14 @@ from collections import deque
 torch.set_num_threads(max(4, multiprocessing.cpu_count() // 8))
 torch.set_num_interop_threads(max(4, multiprocessing.cpu_count() // 8))
 
+# The operator tests test many many shape permutations.
+# To speed up testing, set this to True to only test a base set of shapes.
+# ! Before changing this to False, ensure that the detailed shape tests pass locally!
+SHAPE_TEST_FAST: bool = True
+
 DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
     float16: torch.float16,
+    bfloat16: torch.bfloat16,
     float32: torch.float32,
     boolean: torch.bool,
     uint8: torch.uint8,
@@ -392,8 +398,43 @@ DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
     (1, 2, 3, 4, 1, 2, 3, 4),
 )
 
+BASE_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
+    (),
+    (1,),
+    (2,),
+    (3,),
+    (1, 1),
+    (2, 2),
+    (2, 3),
+    (3, 2),
+    (3, 3),
+    (1, 2, 3),
+    (3, 2, 1),
+    (2, 3, 5),
+    (1, 2),
+    (2, 1),
+    (1, 2, 1),
+    (1, 2, 3, 1),
+    (2, 1, 3, 1),
+    (1, 1, 2, 3),
+    (1, 2, 3, 4),
+    (1, 1, 2, 3, 4),
+    (1, 3, 8, 8),
+    (2, 3, 8, 8),
+    (2, 3, 16, 16),
+    (1, 16, 64),
+    (2, 16, 64),
+    (2, 32, 64),
+    (2, 32, 128),
+    (7, 13),
+    (13, 7),
+    (5, 21),
+    (21, 5),
+)
+
 def for_all_shapes(f: Callable[tuple[int, ...]]) -> None:
-    for shape in DETAILED_TEST_SHAPES: # We use small shapes for faster tests
+    shapes = BASE_TEST_SHAPES if SHAPE_TEST_FAST else DETAILED_TEST_SHAPES
+    for shape in shapes:
         f(shape)
 
 def nested_len(obj: list[Any]) -> int:

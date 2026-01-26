@@ -30,7 +30,7 @@ typedef enum mag_transfer_dir_t {
 
 typedef enum mag_storage_flags_t {
     MAG_STORAGE_FLAG_NONE = 0,
-    MAG_STORAGE_FLAG_INTRUSIVE = 1<<0,      /* Storage is intrusive (e.g. scalar optimization). */
+    MAG_STORAGE_FLAG_BORROWED = 1<<0,       /* Storage memory is borrowed and must not be freed. */
     MAG_STORAGE_FLAG_ACCESS_W = 1<<1,       /* Write access. */
 } mag_storage_flags_t;
 
