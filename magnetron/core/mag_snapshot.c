@@ -66,9 +66,30 @@ if (mag_unlikely(!(expr))) { \
 #error "Big endian is not supported at the moment"
 #endif
 
+typedef struct mag_mmap_owner_t {
+    MAG_RC_INJECT_HEADER;
+    mag_mapped_file_t file;
+} mag_mmap_owner_t;
+
+static void mag_mmap_owner_dtor(void *self) {
+    mag_mmap_owner_t *o = self;
+    mag_unmap_file(&o->file);
+    (*mag_alloc)(o, 0, 0);
+}
+
+static mag_mmap_owner_t *mag_mmap_owner_open(const char *path) {
+    mag_mmap_owner_t *o = (*mag_alloc)(NULL, sizeof(*o), 0);
+    memset(o, 0, sizeof(*o));
+    if (!mag_map_file(&o->file, path, 0, MAG_MAP_READ)) {
+        (*mag_alloc)(o, 0, 0);
+        return NULL;
+    }
+    mag_rc_init_object(o, &mag_mmap_owner_dtor);
+    return o;
+}
+
 typedef enum mag_mem_stream_flags_t {
     MAG_MEM_STREAM_FLAGS_NONE = 0,
-    MAG_MEM_STREAM_FLAGS_ISFILE = 1<<0,
     MAG_MEM_STREAM_FLAGS_WRITE = 1<<1
 } mag_mem_stream_flags_t;
 
@@ -77,35 +98,31 @@ typedef struct mag_mem_stream_t {
     uint8_t *pos;
     uint8_t *end;
     mag_mem_stream_flags_t flags;
-    mag_mapped_file_t file;
 } mag_mem_stream_t;
 
-static bool mag_stream_mmap_file_r(mag_mem_stream_t *stream, const char *path) {
-    memset(stream, 0, sizeof(*stream));
-    mag_snap_verify(path != NULL && *path, return false);
-    mag_snap_verify(mag_map_file(&stream->file, path, 0, MAG_MAP_READ), return false);
-    stream->base = stream->pos = stream->file.map;
-    stream->end = stream->base + stream->file.fs;
-    stream->flags |= MAG_MEM_STREAM_FLAGS_ISFILE;
-    return true;
-}
-
-static bool mag_stream_mmap_file_w(mag_mem_stream_t *stream, const char *path, size_t size) {
-    memset(stream, 0, sizeof(*stream));
-    mag_snap_verify(path != NULL && *path, return false);
-    mag_snap_verify(size > 0, return false);
-    mag_snap_verify(mag_map_file(&stream->file, path, size, MAG_MAP_WRITE), return false);
-    stream->base = stream->pos = stream->file.map;
-    stream->end = stream->base + stream->file.fs;
-    stream->flags |= MAG_MEM_STREAM_FLAGS_ISFILE|MAG_MEM_STREAM_FLAGS_WRITE;
+static bool mag_stream_from_mapped_file(mag_mem_stream_t *s, mag_mmap_owner_t *owner, bool write) {
+    memset(s, 0, sizeof(*s));
+    mag_snap_verify(owner && owner->file.map && owner->file.fs, return false);
+    s->base = s->pos = owner->file.map;
+    s->end = s->base + owner->file.fs;
+    if (write) s->flags |= MAG_MEM_STREAM_FLAGS_WRITE;
     return true;
 }
 
 static void mag_stream_close(mag_mem_stream_t *stream) {
     if (!stream) return;
-    if (stream->flags & MAG_MEM_STREAM_FLAGS_ISFILE)
-        mag_unmap_file(&stream->file);
     memset(stream, 0, sizeof(*stream));
+}
+
+static bool mag_stream_mmap_file_w(mag_mem_stream_t *stream, mag_mapped_file_t *map, const char *path, size_t size) {
+    memset(stream, 0, sizeof(*stream));
+    mag_snap_verify(path != NULL && *path, return false);
+    mag_snap_verify(size > 0, return false);
+    mag_snap_verify(mag_map_file(map, path, size, MAG_MAP_WRITE), return false);
+    stream->base = stream->pos = map->map;
+    stream->end = stream->base + map->fs;
+    stream->flags |= MAG_MEM_STREAM_FLAGS_WRITE;
+    return true;
 }
 
 static size_t mag_stream_needle(const mag_mem_stream_t *stream) { return (size_t)(stream->pos - stream->base); }
@@ -442,7 +459,7 @@ struct mag_snapshot_t {
     mag_string_pool_t str_pool;
     mag_map_t tensor_map;
     mag_mem_stream_t stream;
-    bool owns_stream; /* (Reading mode) If true, memory from within the stream is referenced and must kept alive until snapshot_free. */
+    mag_mmap_owner_t *mmap_owner;
 };
 
 static size_t mag_snaprage_compute_tensor_sizes(mag_map_t *tmap) {
@@ -480,8 +497,8 @@ void mag_snapshot_free(mag_snapshot_t *snap) {
     void *val = NULL;
     while (mag_map_next(&snap->tensor_map, &iter, &len, &val)) /* Free cloned metadata records */
         if (val) mag_tensor_decref(val);
-    if (snap->owns_stream) /* If we own the stream, close it. TODO: what if tensors are still alive which reference the mem?! */
-        mag_stream_close(&snap->stream);
+    if (snap->mmap_owner)
+        mag_rc_decref(snap->mmap_owner);
     mag_map_free(&snap->tensor_map);
     memset(snap, 0, sizeof(*snap));
     (*mag_alloc)(snap, 0, 0);
@@ -496,21 +513,63 @@ static bool mag_snapshot_insert_tensor_by_id(mag_snapshot_t *snap, uint32_t key_
     return true;
 }
 
-typedef struct mag_tensor_offset_pair_t {
-    mag_tensor_t *tensor;
-    uint64_t offs;
-} mag_tensor_offset_pair_t;
+extern mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape);
+
+static void mag_cpu_storage_dtor(void *self) {
+    mag_storage_buffer_t *buf = self;
+    mag_context_t *ctx = buf->ctx;
+    mag_assert(ctx->telemetry.num_alive_storages > 0, "double freed storage");
+    --ctx->telemetry.num_alive_storages;
+    if (buf->flags & MAG_STORAGE_FLAG_BORROWED) {
+        mag_mmap_owner_t *owner = (mag_mmap_owner_t *)(uintptr_t)buf->aux.impl;
+        if (owner) mag_rc_decref(owner);
+    } else {
+        (*mag_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
+    }
+    mag_slab_free(&ctx->storage_slab, buf);
+}
+
+static void mag_cpu_borrow_storage(
+    mag_device_t *cpu,
+    mag_storage_buffer_t **out,
+    const void *ptr,
+    size_t size,
+    mag_dtype_t dtype,
+    mag_mmap_owner_t *owner /* retained */
+) {
+    mag_context_t *ctx = cpu->ctx;
+    mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
+    *buf = (mag_storage_buffer_t){
+        .ctx = ctx,
+        .aux = {0},
+        .flags = MAG_STORAGE_FLAG_BORROWED,
+        .base = (uintptr_t)ptr,
+        .size = size,
+        .alignment = 1,
+        .dtype = dtype,
+        .granularity = mag_type_trait(dtype)->size,
+        .device = cpu,
+    };
+    buf->flags &= ~MAG_STORAGE_FLAG_ACCESS_W;
+    buf->aux.impl = owner;
+    mag_rc_incref(owner);
+    mag_rc_init_object(buf, &mag_cpu_storage_dtor);
+    ++ctx->telemetry.num_alive_storages;
+    *out = buf;
+}
 
 mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filename) {
     mag_snap_verify(filename && *filename, return false);
     const char *ext = strrchr(filename, '.'); /* check that the file extension is .mag */
     mag_snap_verify(ext != NULL && strcmp(ext, ".mag") == 0, return false);
+    mag_snap_verify(mag_device_is(ctx->device, "cpu"), return false);
 
-    mag_tensor_offset_pair_t *stable = NULL;
+    mag_tensor_desc_t *stable = NULL;
     mag_snapshot_t *snap = mag_snapshot_new(ctx);
     mag_mem_stream_t *stream = &snap->stream;
-    mag_snap_verify(mag_stream_mmap_file_r(stream, filename), return false);
-    snap->owns_stream = true; /* We need to free the stream later as we reference memory from it now */
+    snap->mmap_owner = mag_mmap_owner_open(filename);
+    mag_snap_verify(snap->mmap_owner != NULL, goto error);
+    mag_snap_verify(mag_stream_from_mapped_file(stream, snap->mmap_owner, false), goto error);
     mag_snap_verify(mag_stream_remaining(stream) >= MAG_FILE_HEADER_SIZE + 4*MAG_SNAP_SECTION_MARKERS_COUNT, goto error); /* We must at minimum have enough bytes for an empty file */
 
     size_t marker = mag_stream_needle(stream);
@@ -538,17 +597,8 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_snap_verify(mag_stream_ru32_le(stream, &section_marker), goto error);
     mag_snap_verify(section_marker == MAG_SNAP_SECTION_TENSOR_DESC, goto error);
     for (uint32_t i=0; i < nt; ++i) {
-        mag_tensor_desc_t desc = {0};
-        mag_snap_verify(mag_tensor_desc_deserialize(&desc, stream, snap->str_pool.len), goto error);
-        mag_tensor_t *tensor = NULL;
-        int64_t shape[MAG_SNAP_MAX_RANK];
-        for (uint8_t j=0; j < desc.rank && j < sizeof(shape)/sizeof(*shape); ++j)
-            shape[j] = (int64_t)desc.shape[j];
-        mag_snap_verify(mag_isok(mag_empty(&tensor, ctx, desc.dtype, desc.rank, shape)), goto error);
-        mag_snap_verify(mag_snapshot_insert_tensor_by_id(snap, desc.key_id, tensor), mag_tensor_decref(tensor); goto error);
-        mag_tensor_decref(tensor); /* Decref as the snapshot now holds a reference */
-        stable[i].tensor = tensor;
-        stable[i].offs = desc.offset;
+        mag_tensor_desc_t *desc = stable+i;
+        mag_snap_verify(mag_tensor_desc_deserialize(desc, stream, snap->str_pool.len), goto error);
     }
 
     /* Read data */
@@ -556,14 +606,22 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_snap_verify(section_marker == MAG_SNAP_SECTION_TENSOR_DATA, goto error);
     uint64_t offs=0;
     for (size_t i=0; i < nt; ++i) {
-        mag_tensor_t *tensor = stable[i].tensor;
-        uint64_t offset = stable[i].offs;
-        size_t nbytes = mag_tensor_numbytes(tensor);
+        const mag_tensor_desc_t *desc = stable+i;
+        uint64_t offset = desc->offset;
+        int64_t shape[MAG_SNAP_MAX_RANK];
+        for (uint8_t j=0; j < desc->rank && j < sizeof(shape)/sizeof(*shape); ++j)
+            shape[j] = (int64_t)desc->shape[j];
+        size_t nbytes = (size_t)desc->numel*(size_t)mag_type_trait(desc->dtype)->size;
         mag_snap_verify(offset == offs, goto error); /* Verify offset */
         const uint8_t *blob = NULL;
         mag_snap_verify(mag_stream_rbytes_view(stream, &blob, nbytes), goto error);
-        void *dst = (void *)mag_tensor_data_ptr_mut(tensor);
-        memcpy(dst, blob, nbytes); /* TODO: zero copy */
+        mag_storage_buffer_t *storage = NULL;
+        mag_cpu_borrow_storage(ctx->device, &storage, blob, nbytes, desc->dtype, snap->mmap_owner);
+        mag_tensor_t *tensor = NULL;
+        mag_snap_verify(mag_isok(mag_tensor_init(&tensor, ctx, storage, desc->dtype, desc->rank, shape)), goto error);
+        mag_snap_verify(mag_snapshot_insert_tensor_by_id(snap, desc->key_id, tensor), mag_tensor_decref(tensor); goto error);
+        mag_tensor_decref(tensor); /* Decref as the snapshot now holds a reference */
+        mag_rc_decref(storage); /* Decref as the snapshot now holds a reference */
         offs += nbytes;
     }
 
@@ -580,8 +638,9 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
     const char *ext = strrchr(filename, '.'); /* check that the file extension is .mag */
     mag_snap_verify(ext != NULL && strcmp(ext, ".mag") == 0, return false);
     mag_snap_verify(snap->tensor_map.nitems <= UINT32_MAX, return false);
-    mag_mem_stream_t stream;
-    mag_snap_verify(mag_stream_mmap_file_w(&stream, filename, mag_snaprage_compute_size(snap)), return false);
+    mag_mem_stream_t stream = {0};
+    mag_mapped_file_t map = {0};
+    mag_snap_verify(mag_stream_mmap_file_w(&stream, &map, filename, mag_snaprage_compute_size(snap)), return false);
     mag_file_header_t header = (mag_file_header_t) {
         .magic = MAG_SNAP_FILE_MAGIC,
         .version = MAG_SNAPSHOT_VERSION,
@@ -675,10 +734,12 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
     mag_assert2(mag_stream_needle(&stream)-marker == 4+nb_dat_total); /* Data section marker + total bytes */
     mag_assert2(mag_stream_needle(&stream) == stream.end-stream.base); /* All pre-estimated bytes must be written, down to the last crumb of cookie */
     mag_stream_close(&stream);
+    mag_unmap_file(&map);
     (*mag_alloc)(stable, 0, 0);
     return true;
     error:
     mag_stream_close(&stream);
+    mag_unmap_file(&map);
     if (stable) (*mag_alloc)(stable, 0, 0);
     return false;
 }

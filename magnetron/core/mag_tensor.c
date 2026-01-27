@@ -70,7 +70,7 @@ static void mag_tensor_free_header(mag_tensor_t *t) {
 }
 
 /* Create a new tensor. The must be created on the same thread as the context. */
-mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
+mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape) {
     *out = NULL;
     mag_contract(ctx, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", (uint64_t)mag_thread_id(), (uint64_t)ctx->tr_id);
     mag_contract(ctx, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within [0, %d]", MAG_MAX_DIMS);
@@ -85,9 +85,18 @@ mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type,
     mag_contract(ctx, ERR_DIM_OVERFLOW, {}, !mag_mulov64(numel, dts, &numbytes), "Total size overflowed: numel = %" PRIi64 ", dtype size = %" PRIi64, numel, dts);
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
     mag_device_t *dvc = ctx->device;
-    void (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;
     ctx->telemetry.storage_bytes_allocated += numbytes;
-    (*allocator)(dvc, &tensor->storage, numbytes, type);
+    if (!storage) {
+        void (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;
+        (*allocator)(dvc, &tensor->storage, numbytes, type);
+    } else {
+        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->device == dvc, "Provided storage device mismatch: tensor device=%s storage device=%s", dvc->id, storage->device ? storage->device->id : "(null)");
+        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->dtype == type, "Provided storage dtype mismatch: tensor dtype=%s storage dtype=%s", mag_type_trait(type)->name, mag_type_trait(storage->dtype)->name);
+        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->size >= (size_t)numbytes, "Provided storage too small: need=%" PRIi64 " have=%zu", numbytes, storage->size);
+        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->base != 0 || storage->size == 0, "Provided storage has NULL base");
+        tensor->storage = storage;
+        mag_rc_incref(storage); /* Retain provided storage */
+    }
     for (int i=0; i < MAG_MAX_DIMS; ++i)  {
         tensor->coords.shape[i] = shape && i < rank ? shape[i] : 1;
         tensor->coords.strides[i] = 1;
@@ -101,6 +110,11 @@ mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type,
     ++ctx->telemetry.num_created_tensors;
     *out = tensor;
     return MAG_STATUS_OK;
+}
+
+/* Create a new tensor. The must be created on the same thread as the context. */
+mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
+    return mag_tensor_init(out, ctx, NULL, type, rank, shape);
 }
 
 mag_status_t mag_as_strided(mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
