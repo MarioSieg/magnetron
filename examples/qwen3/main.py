@@ -89,7 +89,7 @@ class GenerationContext:
     def repl(self) -> None:
         console.print(
             Panel.fit(
-                Text('Qwen3 REPL', style='bold white') + Text('\n/exit  /reset', style='dim'),
+                Text('Magnetron Qwen3 REPL', style='bold white') + Text('\n/exit  /reset', style='dim'),
                 border_style='cyan',
             )
         )
@@ -179,13 +179,13 @@ def _main() -> None:
     args = argparse.ArgumentParser(description='Run Qwen-3 model inference')
     args.add_argument('--prompt', type=str, help='Prompt to start generation')
     args.add_argument('--repl', action='store_true', help='Run interactive chat REPL')
-    args.add_argument('--max_tokens', type=int, default=256, help='Maximum number of new tokens to generate')
+    args.add_argument('--max_tokens', type=int, default=1024, help='Maximum number of new tokens to generate')
     args.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
     args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
     args.add_argument('--temp', type=float, default=0.6, help='Sampling temperature')
     args.add_argument('--system', type=str, default='You are a helpful assistant.', help='System prompt')
     args.add_argument('--max_ctx', type=int, default=4096, help='Max prompt context tokens (including system)')
-    args.add_argument('--reserve_gen', type=int, default=512, help='Reserve tokens for generation headroom')
+    args.add_argument('--reserve_gen', type=int, default=1024, help='Reserve tokens for generation headroom')
     args = args.parse_args()
 
     snapshot_file = _download_or_ensure_hf_file(repo_id=REPO_ID, filename='qwen3-4b-instruct-2507-bfloat16.mag')

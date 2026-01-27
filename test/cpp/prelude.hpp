@@ -23,6 +23,13 @@ namespace magnetron::test {
         cuda,
     };
 
+    struct scope_guard final {
+        explicit scope_guard(std::function<void()> &&f) : func{std::move(f)} {}
+        ~scope_guard() { if (func) func(); }
+    private:
+        std::function<void()> func {};
+    };
+
     [[nodiscard]] constexpr const char* get_device_kind_name(device_kind dvc) {
         switch (dvc) {
             case device_kind::cpu: return "cpu";

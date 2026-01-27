@@ -110,7 +110,7 @@ const void *mag_map_lookup_key_ptr(mag_map_t *map, const void *key, size_t len) 
     }
 }
 
-void *mag_map_insert(mag_map_t *map, const void *key, size_t len, void *val) {
+void *mag_map_insert_if_absent(mag_map_t *map, const void *key, size_t len, void *val) {
     mag_assert2(key && len && len <= UINT32_MAX);
     if (map->nitems * 100 >= map->size * 85)
         mag_map_resize(map, map->size<<1);

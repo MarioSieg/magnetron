@@ -12,41 +12,57 @@
 #include <filesystem>
 #include <prelude.hpp>
 
-#include <core/mag_snapshot.h>
-
 using namespace magnetron;
 
-TEST(snapshot, metadata) {
+TEST(snapshot, read_write_tensors) {
     context ctx {};
-    tensor test {ctx, dtype::bfloat16, 64, 64};
-    test.uniform_(0.0f, 1.0f);
-    tensor test2 {ctx, dtype::i8, 9,9,9,9};
-    test2.uniform_(-128, 127);
-    test2 = test2.transpose();
+    std::mt19937_64 rng {1234};
+    std::vector<std::pair<std::string, tensor>> tensors {};
+    for (int type = 0; type < MAG_DTYPE__NUM; ++type) {
+        size_t num_tensors = std::uniform_int_distribution<size_t>{1, 10}(rng);
+        for (size_t i=0; i < num_tensors; ++i) {
+            std::string name = "tensor_" + std::to_string(i) + "_typeid_" + std::to_string(type);
+            std::vector<int64_t> shape = {};
+            int64_t rank = std::uniform_int_distribution<int64_t>{1, 6}(rng);
+            shape.reserve(rank);
+            for (int64_t r=0; r < rank; ++r)
+                shape.emplace_back(std::uniform_int_distribution<int64_t>{1, 10}(rng));
+            tensor data {ctx, static_cast<dtype>(type), shape};
+            if (type == MAG_DTYPE_BOOLEAN) data.bernoulli_();
+            else if (data.is_floating_point_typed()) data.uniform_(-100.f, 100.f);
+            else data.uniform_(0, 100);
+            tensors.emplace_back(name, data);
+        }
+    }
     { // write
         mag_snapshot_t *snap = mag_snapshot_new(&*ctx);
-        ASSERT_TRUE(mag_snapshot_put_tensor(snap, "xiMat2x2", &*test));
-        ASSERT_TRUE(mag_snapshot_put_tensor(snap, "mask", &*test2));
+        ASSERT_NE(snap, nullptr);
+        test::scope_guard sg {[&] { mag_snapshot_free(snap); }};
+        for (auto&& [name, t] : tensors)
+            ASSERT_TRUE(mag_snapshot_put_tensor(snap, name.c_str(), &*t));
         ASSERT_TRUE(mag_snapshot_serialize(snap, "snap.mag"));
-        mag_snapshot_free(snap);
     }
+    ASSERT_TRUE(std::filesystem::exists("snap.mag"));
     { // read
         mag_snapshot_t *snap = mag_snapshot_deserialize(&*ctx, "snap.mag");
+        ASSERT_NE(snap, nullptr);
+        test::scope_guard sg {[&] { mag_snapshot_free(snap); }};
         {
-            ASSERT_NE(snap, nullptr);
             mag_snapshot_print_info(snap);
-            mag_tensor_t *test_loaded_raw = mag_snapshot_get_tensor(snap, "xiMat2x2");
-            ASSERT_NE(test_loaded_raw, nullptr);
-            tensor test_loaded {test_loaded_raw};
-            ASSERT_TRUE((test == test_loaded).all());
-            mag_tensor_t *test2_loaded_raw = mag_snapshot_get_tensor(snap, "mask");
-            ASSERT_NE(test2_loaded_raw, nullptr);
-            tensor test2_loaded {test2_loaded_raw};
-            ASSERT_TRUE((test2 == test2_loaded).all());
+            for (auto&& [name, t_orig] : tensors) {
+                mag_tensor_t *t_loaded = mag_snapshot_get_tensor(snap, name.c_str());
+                ASSERT_NE(t_loaded, nullptr);
+                tensor loaded {t_loaded};
+                ASSERT_EQ(loaded.dtype(), t_orig.dtype()) << "Dtype mismatch for tensor: "
+                    << name << ": "
+                    << mag_type_trait(static_cast<mag_dtype_t>(loaded.dtype()))->name << " != "
+                    << mag_type_trait(static_cast<mag_dtype_t>(t_orig.dtype()))->name;
+                ASSERT_EQ(loaded.shape(), t_orig.shape()) << "Shape mismatch for tensor: " << name;
+                ASSERT_EQ(loaded.numel(), t_orig.numel()) << "Numel mismatch for tensor: " << name;
+                ASSERT_TRUE((loaded == t_orig).all()) << "Tensor data mismatch for tensor: " << name;
+            }
         }
-        mag_snapshot_free(snap);
     }
-
-    ASSERT_TRUE(std::filesystem::exists("snap.mag"));
-    //ASSERT_TRUE(std::filesystem::remove("snap.mag"));
+    tensors.clear();
+    ASSERT_TRUE(std::filesystem::remove("snap.mag"));
 }

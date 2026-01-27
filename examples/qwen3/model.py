@@ -27,7 +27,7 @@ class Qwen3HyperParams:
     num_attention_heads: int = 32
     num_key_value_heads: int = 8
     head_dim: int = 128
-    max_position_embeddings: int = 262144
+    max_position_embeddings: int = 8192  # 262144
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = True
     rope_theta: float = 5_000_000.0
@@ -41,9 +41,9 @@ class MLP(nn.Module):
         super().__init__()
         self.hidden_size: int = config.hidden_size
         self.inter_size: int = config.intermediate_size
-        self.gate_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False)
-        self.down_proj = nn.Linear(self.inter_size, self.hidden_size, bias=False)
+        self.gate_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=dtype.bfloat16, init=False)
+        self.up_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=dtype.bfloat16, init=False)
+        self.down_proj = nn.Linear(self.inter_size, self.hidden_size, bias=False, dtype=dtype.bfloat16, init=False)
 
     def forward(self, x: Tensor) -> Tensor:
         return self.down_proj(self.gate_proj(x).silu() * self.up_proj(x))
@@ -98,12 +98,12 @@ class SlidingWindowAttention(nn.Module):
         self.num_kv_heads = config.num_key_value_heads
         self.n_rep = self.num_heads // self.num_kv_heads
         self.sliding_window = config.sliding_window
-        self.q_proj = nn.Linear(config.hidden_size, self.num_heads * self.head_dim, bias=False)
-        self.k_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
-        self.v_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, config.hidden_size, bias=False)
-        self.q_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps)
-        self.k_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps)
+        self.q_proj = nn.Linear(config.hidden_size, self.num_heads * self.head_dim, bias=False, dtype=dtype.bfloat16, init=False)
+        self.k_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=dtype.bfloat16, init=False)
+        self.v_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=dtype.bfloat16, init=False)
+        self.o_proj = nn.Linear(self.num_heads * self.head_dim, config.hidden_size, bias=False, dtype=dtype.bfloat16, init=False)
+        self.q_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps, dtype=dtype.bfloat16, init=False)
+        self.k_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps, dtype=dtype.bfloat16, init=False)
 
     def forward(
         self, x: Tensor, cos_freq: Tensor, sin_freq: Tensor, idx: Tensor, prev_kv: tuple[Tensor, Tensor] | None = None
@@ -153,8 +153,8 @@ class Block(nn.Module):
         super().__init__()
         self.self_attn = SlidingWindowAttention(config)
         self.mlp = MLP(config)
-        self.input_layernorm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps, init=False, dtype=dtype.bfloat16)
+        self.post_attention_layernorm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps, init=False, dtype=dtype.bfloat16)
 
     def forward(
         self, x: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: Tensor, prev_kv: tuple[Tensor, Tensor] | None = None
@@ -169,10 +169,10 @@ class Qwen3Model(nn.Module):
     def __init__(self, config: Qwen3HyperParams) -> None:
         super().__init__()
         self.config = config
-        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, init=False, dtype=dtype.bfloat16)
         self.layers = nn.ModuleList([Block(config) for _ in range(config.num_hidden_layers)])
-        self.norm = nn.RMSNorm(config.hidden_size, config.rms_norm_eps)
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.norm = nn.RMSNorm(config.hidden_size, config.rms_norm_eps, init=False, dtype=dtype.bfloat16)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False, dtype=dtype.bfloat16, init=False)
         if config.tie_word_embeddings:
             self.lm_head.weight = self.embed_tokens.weight
         cos_cache, sin_cache = _precompute_freq_cache(config.head_dim, config.rope_theta, config.max_position_embeddings)
@@ -191,7 +191,7 @@ class Qwen3Model(nn.Module):
 
     @staticmethod
     def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen3Model':
-        model = Qwen3Model(Qwen3HyperParams()).cast(dtype.bfloat16)
+        model = Qwen3Model(Qwen3HyperParams())
         model._load_from_snapshot(snapshot_file)
         gc.collect()
         return model
@@ -226,7 +226,6 @@ class Qwen3Model(nn.Module):
         curr_len: int = in_len
         gen_ids: list[int] = []
         concated: str = ''
-        pending: str = ''
         for _ in range(max_tokens):
             logits_1d: Tensor = next_logits.reshape(-1)
             top_vals, top_idx = logits_1d.topk(top_k, dim=0, largest=True, sorted=False)
@@ -238,6 +237,7 @@ class Qwen3Model(nn.Module):
             text: str = tokenizer.decode(gen_ids)
             if len(text) > len(concated):
                 delta = text[len(concated) :]
+                delta = delta.replace('\ufffd', '')
                 concated = text
                 yield delta
             input_ids = Tensor.of([tok_id], dtype=dtype.int64).reshape(1, 1)
