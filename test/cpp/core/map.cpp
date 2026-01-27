@@ -34,11 +34,11 @@ TEST(romap, put_get_roundtrip) {
     void *v1 = reinterpret_cast<void *>(static_cast<uintptr_t>(0x1111));
     void *v2 = reinterpret_cast<void *>(static_cast<uintptr_t>(0x2222));
 
-    EXPECT_EQ(mag_map_insert(&m, "hello", 5, v1), v1);
+    EXPECT_EQ(mag_map_insert_if_absent(&m, "hello", 5, v1), v1);
     EXPECT_EQ(mag_map_lookup(&m, "hello", 5), v1);
     EXPECT_EQ(mag_map_lookup(&m, "hella", 5), nullptr);
 
-    EXPECT_EQ(mag_map_insert(&m, "world", 5, v2), v2);
+    EXPECT_EQ(mag_map_insert_if_absent(&m, "world", 5, v2), v2);
     EXPECT_EQ(mag_map_lookup(&m, "world", 5), v2);
 
     mag_map_free(&m);
@@ -51,10 +51,10 @@ TEST(romap, put_duplicate_key_returns_old_value_and_keeps_old) {
     void *v1 = reinterpret_cast<void *>(static_cast<uintptr_t>(0x1111));
     void *v2 = reinterpret_cast<void *>(static_cast<uintptr_t>(0x2222));
 
-    EXPECT_EQ(mag_map_insert(&m, "k", 1, v1), v1);
+    EXPECT_EQ(mag_map_insert_if_absent(&m, "k", 1, v1), v1);
     EXPECT_EQ(mag_map_lookup(&m, "k", 1), v1);
 
-    EXPECT_EQ(mag_map_insert(&m, "k", 1, v2), v1);
+    EXPECT_EQ(mag_map_insert_if_absent(&m, "k", 1, v2), v1);
     EXPECT_EQ(mag_map_lookup(&m, "k", 1), v1);
 
     mag_map_free(&m);
@@ -66,7 +66,7 @@ TEST(romap, delete_existing_and_missing) {
 
     void *v1 = reinterpret_cast<void *>(static_cast<uintptr_t>(0x1111));
 
-    EXPECT_EQ(mag_map_insert(&m, "a", 1, v1), v1);
+    EXPECT_EQ(mag_map_insert_if_absent(&m, "a", 1, v1), v1);
     EXPECT_EQ(mag_map_lookup(&m, "a", 1), v1);
 
     EXPECT_EQ(mag_map_erase(&m, "a", 1), v1);
@@ -88,7 +88,7 @@ TEST(romap, many_inserts_trigger_resize_and_all_findable) {
     for (int i = 0; i < N; i++) {
         keys.emplace_back("k" + std::to_string(i));
         void *v = reinterpret_cast<void *>(static_cast<uintptr_t>(0x1000 + i));
-        EXPECT_EQ(mag_map_insert(&m, keys.back().data(), keys.back().size(), v), v);
+        EXPECT_EQ(mag_map_insert_if_absent(&m, keys.back().data(), keys.back().size(), v), v);
     }
 
     for (int i = 0; i < N; i++) {
@@ -110,7 +110,7 @@ TEST(romap, delete_many_preserves_others) {
     for (int i = 0; i < N; i++) {
         keys.emplace_back("k" + std::to_string(i));
         void *v = reinterpret_cast<void *>(static_cast<uintptr_t>(0x2000 + i));
-        EXPECT_EQ(mag_map_insert(&m, keys.back().data(), keys.back().size(), v), v);
+        EXPECT_EQ(mag_map_insert_if_absent(&m, keys.back().data(), keys.back().size(), v), v);
     }
 
     for (int i = 0; i < N; i += 2) {
@@ -152,7 +152,7 @@ TEST(romap, iterator_visits_all_items_exactly_once_and_values_match) {
     for (int i = 0; i < N; i++) {
         keys.emplace_back("k" + std::to_string(i));
         void *v = reinterpret_cast<void *>(static_cast<uintptr_t>(0x3000 + i));
-        EXPECT_EQ(mag_map_insert(&m, keys.back().data(), keys.back().size(), v), v);
+        EXPECT_EQ(mag_map_insert_if_absent(&m, keys.back().data(), keys.back().size(), v), v);
     }
 
     std::unordered_set<std::string> seen;
@@ -182,7 +182,7 @@ TEST(romap, clone_keys_true_key_bytes_stable) {
     std::memcpy(buf, "temp-key", 8);
 
     void *v = reinterpret_cast<void *>(static_cast<uintptr_t>(0xdeadbeef));
-    EXPECT_EQ(mag_map_insert(&m, buf, 8, v), v);
+    EXPECT_EQ(mag_map_insert_if_absent(&m, buf, 8, v), v);
 
     std::memset(buf, 'X', 8);
 
@@ -208,7 +208,7 @@ TEST(romap, clone_keys_false_key_points_to_source_buffer) {
     std::memcpy(buf, "temp-key", 8);
 
     void *v = reinterpret_cast<void *>(static_cast<uintptr_t>(0xdeadbeef));
-    EXPECT_EQ(mag_map_insert(&m, buf, 8, v), v);
+    EXPECT_EQ(mag_map_insert_if_absent(&m, buf, 8, v), v);
     EXPECT_EQ(mag_map_lookup(&m, buf, 8), v);
 
     size_t it = 0;
