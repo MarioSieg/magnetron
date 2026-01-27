@@ -948,7 +948,6 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
     }
 
 #else
-    /* scalar fallback (allowed conversions) */
     for (int64_t rr = 0; rr < 8; ++rr) {
         for (int64_t cc = 0; cc < 16; ++cc) {
             float sum = acc ? mag_bfloat16_to_float32(c[rr*ldc + cc]) : 0.f;
@@ -1076,7 +1075,6 @@ static MAG_AINLINE void mag_mm_tile_1x16_bfloat16(
     } else {
         C = _mm512_setzero_ps();
     }
-
     int64_t k = 0;
     for (; k + 3 < kc; k += 4) {
         if (!(k & (MAG_PF_GROUP - 1))) {
@@ -1085,7 +1083,6 @@ static MAG_AINLINE void mag_mm_tile_1x16_bfloat16(
             mag_prefetcht0(a + (k + MAG_PFDIST_A_L1));
             mag_prefetcht1(a + (k + MAG_PFDIST_A_L2));
         }
-
 #define MAG_STEP1x16(KI) do { \
             uint16_t abits = a[k + (KI)].bits; \
             __m256bh Abh = (__m256bh)_mm256_set1_epi16((short)abits); \
@@ -1317,7 +1314,7 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
                 _mm256_storeu_si256((__m256i*)(dst + j + 96), v6);
                 _mm256_storeu_si256((__m256i*)(dst + j + 112), v7);
             }
-            for (; j + 63 < nc; j += 64) {
+            for (; j+63 < nc; j += 64) {
                 __m256i v0 = _mm256_loadu_si256((const __m256i*)(src + j +  0));
                 __m256i v1 = _mm256_loadu_si256((const __m256i*)(src + j + 16));
                 __m256i v2 = _mm256_loadu_si256((const __m256i*)(src + j + 32));
@@ -1327,24 +1324,23 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
                 _mm256_storeu_si256((__m256i*)(dst + j + 32), v2);
                 _mm256_storeu_si256((__m256i*)(dst + j + 48), v3);
             }
-            for (; j + 31 < nc; j += 32) {
+            for (; j+31 < nc; j += 32) {
                 __m256i v0 = _mm256_loadu_si256((const __m256i*)(src + j +  0));
                 __m256i v1 = _mm256_loadu_si256((const __m256i*)(src + j + 16));
                 _mm256_storeu_si256((__m256i*)(dst + j +  0), v0);
                 _mm256_storeu_si256((__m256i*)(dst + j + 16), v1);
             }
-            for (; j + 15 < nc; j += 16) {
+            for (; j+15 < nc; j += 16) {
                 __m256i v = _mm256_loadu_si256((const __m256i*)(src + j));
                 _mm256_storeu_si256((__m256i*)(dst + j), v);
             }
             if (j < nc) {
-                /* tail: scalar copy (no float conversions) */
                 for (; j < nc; ++j) dst[j] = src[j];
             }
 
 #elif (defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_BF16))
             int64_t j = 0;
-            for (; j + 31 < nc; j += 32) {
+            for (; j+31 < nc; j += 32) {
                 uint16x8_t v0 = vld1q_u16((const uint16_t*)(src + j +  0));
                 uint16x8_t v1 = vld1q_u16((const uint16_t*)(src + j +  8));
                 uint16x8_t v2 = vld1q_u16((const uint16_t*)(src + j + 16));
@@ -1354,7 +1350,7 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
                 vst1q_u16((uint16_t*)(dst + j + 16), v2);
                 vst1q_u16((uint16_t*)(dst + j + 24), v3);
             }
-            for (; j + 15 < nc; j += 16) {
+            for (; j+15 < nc; j += 16) {
                 uint16x8_t v0 = vld1q_u16((const uint16_t*)(src + j + 0));
                 uint16x8_t v1 = vld1q_u16((const uint16_t*)(src + j + 8));
                 vst1q_u16((uint16_t*)(dst + j + 0), v0);
@@ -1460,7 +1456,7 @@ static MAG_AINLINE void mag_mm_pack_A_mr8_kc_float32(int64_t kc, const float *re
     } else {
 #pragma GCC unroll 8
         for (int i=0; i < 8; ++i) {
-            const float *src = Asrc + i*strideK*kc; /* start of row i */
+            const float *src = Asrc + i*strideK*kc;
             for (int64_t k = 0; k < kc; ++k)
                 Ap[i*kc + k] = src[k*strideK];
         }
@@ -1544,50 +1540,43 @@ static MAG_AINLINE void mag_mm_pack_B_vec_bfloat16(
 ) {
 #if defined(__AVX512F__) && defined(__AVX512BF16__)
     for (int64_t k = 0; k < kc; ++k) {
-        /* broadcast bf16 bits across 32 lanes (16-bit each) */
         __m512bh val = (__m512bh)_mm512_set1_epi16((int)yvec[k].bits);
-
         mag_bfloat16_t *dst = Bp + k * nc;
         int64_t j = 0;
-
-        for (; j + 63 < nc; j += 64) {
+        for (; j+63 < nc; j += 64) {
             _mm512_storeu_si512((void*)(dst + j +  0), (__m512i)val);
             _mm512_storeu_si512((void*)(dst + j + 32), (__m512i)val);
         }
-        for (; j + 31 < nc; j += 32) {
+        for (; j+31 < nc; j += 32) {
             _mm512_storeu_si512((void*)(dst + j), (__m512i)val);
         }
-        for (; j + 15 < nc; j += 16) {
+        for (; j+15 < nc; j += 16) {
             _mm256_storeu_si256((__m256i*)(dst + j), _mm512_castsi512_si256((__m512i)val));
         }
         if (j < nc) {
             int64_t rem = nc - j;
             __mmask16 m = (rem == 16) ? (__mmask16)0xffff : (__mmask16)((1u << rem) - 1u);
-            /* store low 16 bf16 lanes */
             _mm256_mask_storeu_epi16((void*)(dst + j), m, _mm512_castsi512_si256((__m512i)val));
         }
     }
 
 #elif (defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_BF16))
     for (int64_t k = 0; k < kc; ++k) {
-        /* broadcast bf16 bits without scalar float conversions */
         uint16_t u = yvec[k].bits;
         bfloat16x8_t val = vreinterpretq_bf16_u16(vdupq_n_u16(u));
-
         mag_bfloat16_t *dst = Bp + k * nc;
         int64_t j = 0;
-
-        for (; j + 31 < nc; j += 32) {
+        for (; j+31 < nc; j += 32) {
             vst1q_u16((uint16_t*)(dst + j +  0), vreinterpretq_u16_bf16(val));
             vst1q_u16((uint16_t*)(dst + j +  8), vreinterpretq_u16_bf16(val));
             vst1q_u16((uint16_t*)(dst + j + 16), vreinterpretq_u16_bf16(val));
             vst1q_u16((uint16_t*)(dst + j + 24), vreinterpretq_u16_bf16(val));
         }
-        for (; j + 15 < nc; j += 16) {
+        for (; j+15 < nc; j += 16) {
             vst1q_u16((uint16_t*)(dst + j + 0), vreinterpretq_u16_bf16(val));
             vst1q_u16((uint16_t*)(dst + j + 8), vreinterpretq_u16_bf16(val));
         }
-        for (; j + 7 < nc; j += 8) {
+        for (; j+7 < nc; j += 8) {
             vst1q_u16((uint16_t*)(dst + j), vreinterpretq_u16_bf16(val));
         }
         for (; j < nc; ++j) {
@@ -1596,7 +1585,6 @@ static MAG_AINLINE void mag_mm_pack_B_vec_bfloat16(
     }
 
 #else
-    /* scalar fallback (allowed; no intrinsics beyond AVX512BF16/NEON BF16 paths requested) */
     for (int64_t k = 0; k < kc; ++k) {
         mag_bfloat16_t v = yvec[k];
         for (int64_t j = 0; j < nc; ++j)
@@ -1822,8 +1810,6 @@ static MAG_AINLINE void mag_mm_pack_A_mc_kc_panel8_bfloat16(
     mag_bfloat16_t *restrict pa
 ) {
     int64_t m8 = mr & ~7;
-
-    /* Pack 8 rows at a time into AoS-8: pa ensure dst[(k*8)+r] = A[r][k] */
     for (int64_t i = 0; i < m8; i += 8) {
         const mag_bfloat16_t *p0 = ra + (i + 0) * sMx;
         const mag_bfloat16_t *p1 = ra + (i + 1) * sMx;
@@ -1833,33 +1819,24 @@ static MAG_AINLINE void mag_mm_pack_A_mc_kc_panel8_bfloat16(
         const mag_bfloat16_t *p5 = ra + (i + 5) * sMx;
         const mag_bfloat16_t *p6 = ra + (i + 6) * sMx;
         const mag_bfloat16_t *p7 = ra + (i + 7) * sMx;
-
         mag_bfloat16_t *dst = pa + i * kc;
         int64_t k = 0;
-
-        for (; k + 1 < kc; k += 2) {
+        for (; k+1 < kc; k += 2) {
             if ((k & ((MAG_PF_GROUP << 1) - 1)) == 0) {
                 mag_prefetcht0(p0 + (int64_t)MAG_PFDIST_A_L1 * sKx);
                 mag_prefetcht0(p4 + (int64_t)MAG_PFDIST_A_L1 * sKx);
                 mag_prefetcht1(p0 + (int64_t)MAG_PFDIST_A_L2 * sKx);
                 mag_prefetcht1(p4 + (int64_t)MAG_PFDIST_A_L2 * sKx);
             }
-
-            /* load 8 bf16 scalars for k and k+1 */
             uint16_t s00 = p0[0].bits, s10 = p1[0].bits, s20 = p2[0].bits, s30 = p3[0].bits;
             uint16_t s40 = p4[0].bits, s50 = p5[0].bits, s60 = p6[0].bits, s70 = p7[0].bits;
-
             p0 += sKx; p1 += sKx; p2 += sKx; p3 += sKx;
             p4 += sKx; p5 += sKx; p6 += sKx; p7 += sKx;
-
             uint16_t s01 = p0[0].bits, s11 = p1[0].bits, s21 = p2[0].bits, s31 = p3[0].bits;
             uint16_t s41 = p4[0].bits, s51 = p5[0].bits, s61 = p6[0].bits, s71 = p7[0].bits;
-
             p0 += sKx; p1 += sKx; p2 += sKx; p3 += sKx;
             p4 += sKx; p5 += sKx; p6 += sKx; p7 += sKx;
-
 #if defined(__AVX512F__) && defined(__AVX512BF16__)
-            /* write 16 bf16 = 2 columns * 8 rows */
             __m256i v16 = _mm256_setr_epi16(
                 (int)s00,(int)s10,(int)s20,(int)s30,(int)s40,(int)s50,(int)s60,(int)s70,
                 (int)s01,(int)s11,(int)s21,(int)s31,(int)s41,(int)s51,(int)s61,(int)s71
@@ -1867,7 +1844,6 @@ static MAG_AINLINE void mag_mm_pack_A_mc_kc_panel8_bfloat16(
             _mm256_storeu_si256((__m256i*)(dst + k * 8), v16);
 
 #elif (defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_BF16))
-            /* store 8 bf16 for k, then 8 bf16 for k+1 */
             uint16x8_t v0 = (uint16x8_t){ s00,s10,s20,s30,s40,s50,s60,s70 };
             uint16x8_t v1 = (uint16x8_t){ s01,s11,s21,s31,s41,s51,s61,s71 };
             vst1q_u16((uint16_t*)(dst + (k + 0) * 8), v0);
@@ -1904,8 +1880,6 @@ static MAG_AINLINE void mag_mm_pack_A_mc_kc_panel8_bfloat16(
 #endif
         }
     }
-
-    /* Tail rows: store contiguous kc bf16 per row (no float conversions here) */
     for (int64_t i = m8; i < mr; ++i) {
         const mag_bfloat16_t *src = ra + i * sMx;
         mag_bfloat16_t *dst = pa + i * kc;
@@ -1951,8 +1925,6 @@ static MAG_AINLINE void mag_mm_pack_A_mc_kc_panel8_bfloat16(
         for (; k + 15 < kc; k += 16) {
             mag_prefetcht0(src + (k + MAG_PFDIST_A_L1) * sKx);
             mag_prefetcht1(src + (k + MAG_PFDIST_A_L2) * sKx);
-
-            /* stride-gather into registers then store */
             uint16x8_t v0 = (uint16x8_t){
                 src[(k+0)*sKx].bits, src[(k+1)*sKx].bits, src[(k+2)*sKx].bits, src[(k+3)*sKx].bits,
                 src[(k+4)*sKx].bits, src[(k+5)*sKx].bits, src[(k+6)*sKx].bits, src[(k+7)*sKx].bits
@@ -2194,8 +2166,6 @@ static MAG_AINLINE void mag_gemv_bfloat16(
 ) {
 #if defined(__AVX512F__) && defined(__AVX512BF16__)
     int64_t j = 0;
-
-    /* ---- 128 cols ---- */
     for (; j + 127 < N; j += 128) {
         __m512 s0 = _mm512_setzero_ps();
         __m512 s1 = _mm512_setzero_ps();
@@ -2205,22 +2175,19 @@ static MAG_AINLINE void mag_gemv_bfloat16(
         __m512 s5 = _mm512_setzero_ps();
         __m512 s6 = _mm512_setzero_ps();
         __m512 s7 = _mm512_setzero_ps();
-
         const mag_bfloat16_t *restrict brow = B + j;
-
         int64_t k = 0;
         for (; k + 1 < K; k += 2, brow += 2 * ldb) {
-            /* Broadcast pair (A[k], A[k+1]) into 32 bf16 lanes as repeating 16-bit pairs */
             uint16_t a0 = A[k + 0].bits;
             uint16_t a1 = A[k + 1].bits;
             uint32_t apair = (uint32_t)a0 | ((uint32_t)a1 << 16);
             __m512bh avec = (__m512bh)_mm512_set1_epi32((int)apair);
 
 #define DP_STEP(acc, off) do { \
-                const mag_bfloat16_t *r0 = brow + (k + 0 - k) * ldb + (off); /* row k */ \
-                const mag_bfloat16_t *r1 = brow + (k + 1 - k) * ldb + (off); /* row k+1 */ \
-                __m256i b0 = _mm256_loadu_si256((const __m256i*)r0); /* 16 bf16 */ \
-                __m256i b1 = _mm256_loadu_si256((const __m256i*)r1); /* 16 bf16 */ \
+                const mag_bfloat16_t *r0 = brow + (k + 0 - k) * ldb + (off); \
+                const mag_bfloat16_t *r1 = brow + (k + 1 - k) * ldb + (off); \
+                __m256i b0 = _mm256_loadu_si256((const __m256i*)r0); \
+                __m256i b1 = _mm256_loadu_si256((const __m256i*)r1); \
                 __m256i lo = _mm256_unpacklo_epi16(b0, b1); \
                 __m256i hi = _mm256_unpackhi_epi16(b0, b1); \
                 __m512i  bi = _mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1); \
@@ -2239,8 +2206,6 @@ static MAG_AINLINE void mag_gemv_bfloat16(
 
 #undef DP_STEP
         }
-
-        /* Odd-K tail: one fp32 fma using bf16->fp32 vector convert (no scalar conversion). */
         if (k < K) {
             float a = mag_bfloat16_to_float32(A[k]);
             __m512 av = _mm512_set1_ps(a);
@@ -2261,8 +2226,6 @@ static MAG_AINLINE void mag_gemv_bfloat16(
             FMA_TAIL(s7, 112);
 #undef FMA_TAIL
         }
-
-        /* Store: fp32 -> bf16 (intrinsic), 16 elems at a time */
         _mm256_storeu_si256((__m256i*)(C + j +   0), (__m256i)_mm512_cvtneps_pbh(s0));
         _mm256_storeu_si256((__m256i*)(C + j +  16), (__m256i)_mm512_cvtneps_pbh(s1));
         _mm256_storeu_si256((__m256i*)(C + j +  32), (__m256i)_mm512_cvtneps_pbh(s2));
@@ -2272,23 +2235,18 @@ static MAG_AINLINE void mag_gemv_bfloat16(
         _mm256_storeu_si256((__m256i*)(C + j +  96), (__m256i)_mm512_cvtneps_pbh(s6));
         _mm256_storeu_si256((__m256i*)(C + j + 112), (__m256i)_mm512_cvtneps_pbh(s7));
     }
-
-    /* ---- 64 cols ---- */
-    for (; j + 63 < N; j += 64) {
+    for (; j+63 < N; j += 64) {
         __m512 s0 = _mm512_setzero_ps();
         __m512 s1 = _mm512_setzero_ps();
         __m512 s2 = _mm512_setzero_ps();
         __m512 s3 = _mm512_setzero_ps();
-
         const mag_bfloat16_t *restrict brow = B + j;
-
         int64_t k = 0;
         for (; k + 1 < K; k += 2, brow += 2 * ldb) {
             uint16_t a0 = A[k + 0].bits;
             uint16_t a1 = A[k + 1].bits;
             uint32_t apair = (uint32_t)a0 | ((uint32_t)a1 << 16);
             __m512bh avec = (__m512bh)_mm512_set1_epi32((int)apair);
-
 #define DP_STEP(acc, off) do { \
                 const mag_bfloat16_t *r0 = brow + (off); \
                 const mag_bfloat16_t *r1 = brow + ldb + (off); \
@@ -2300,15 +2258,12 @@ static MAG_AINLINE void mag_gemv_bfloat16(
                 __m512bh bvec = (__m512bh)bi; \
                 acc = _mm512_dpbf16_ps(acc, avec, bvec); \
             } while (0)
-
             DP_STEP(s0,  0);
             DP_STEP(s1, 16);
             DP_STEP(s2, 32);
             DP_STEP(s3, 48);
-
 #undef DP_STEP
         }
-
         if (k < K) {
             float a = mag_bfloat16_to_float32(A[k]);
             __m512 av = _mm512_set1_ps(a);
@@ -2325,38 +2280,30 @@ static MAG_AINLINE void mag_gemv_bfloat16(
             FMA_TAIL(s3, 48);
 #undef FMA_TAIL
         }
-
         _mm256_storeu_si256((__m256i*)(C + j +  0), (__m256i)_mm512_cvtneps_pbh(s0));
         _mm256_storeu_si256((__m256i*)(C + j + 16), (__m256i)_mm512_cvtneps_pbh(s1));
         _mm256_storeu_si256((__m256i*)(C + j + 32), (__m256i)_mm512_cvtneps_pbh(s2));
         _mm256_storeu_si256((__m256i*)(C + j + 48), (__m256i)_mm512_cvtneps_pbh(s3));
     }
-
-    /* ---- 16 cols ---- */
-    for (; j + 15 < N; j += 16) {
+    for (; j+15 < N; j += 16) {
         __m512 s = _mm512_setzero_ps();
         const mag_bfloat16_t *restrict brow = B + j;
-
         int64_t k = 0;
         for (; k + 1 < K; k += 2, brow += 2 * ldb) {
             uint16_t a0 = A[k + 0].bits;
             uint16_t a1 = A[k + 1].bits;
             uint32_t apair = (uint32_t)a0 | ((uint32_t)a1 << 16);
             __m512bh avec = (__m512bh)_mm512_set1_epi32((int)apair);
-
             const mag_bfloat16_t *r0 = brow;
             const mag_bfloat16_t *r1 = brow + ldb;
-
             __m256i b0 = _mm256_loadu_si256((const __m256i*)r0);
             __m256i b1 = _mm256_loadu_si256((const __m256i*)r1);
             __m256i lo = _mm256_unpacklo_epi16(b0, b1);
             __m256i hi = _mm256_unpackhi_epi16(b0, b1);
             __m512i bi = _mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1);
             __m512bh bvec = (__m512bh)bi;
-
             s = _mm512_dpbf16_ps(s, avec, bvec);
         }
-
         if (k < K) {
             float a = mag_bfloat16_to_float32(A[k]);
             __m512 av = _mm512_set1_ps(a);
@@ -2365,11 +2312,8 @@ static MAG_AINLINE void mag_gemv_bfloat16(
             __m512 bv = _mm512_cvtpbh_ps(bb);
             s = _mm512_fmadd_ps(av, bv, s);
         }
-
         _mm256_storeu_si256((__m256i*)(C + j), (__m256i)_mm512_cvtneps_pbh(s));
     }
-
-    /* ---- scalar tail in N (allowed to use scalar conversion here) ---- */
     for (; j < N; ++j) {
         float sum = 0.0f;
         for (int64_t k = 0; k < K; ++k) {
@@ -2382,35 +2326,22 @@ static MAG_AINLINE void mag_gemv_bfloat16(
 
 #elif (defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_BF16))
     int64_t j = 0;
-
-    /* 8 cols at a time using BF16 FMLA into FP32 accumulators */
     for (; j + 7 < N; j += 8) {
         float32x4_t acc0 = vdupq_n_f32(0.0f);
         float32x4_t acc1 = vdupq_n_f32(0.0f);
-
         const mag_bfloat16_t *restrict brow = B + j;
-
         for (int64_t k = 0; k < K; ++k, brow += ldb) {
             uint16_t ab = A[k].bits;
-            /* Create bfloat16x8_t broadcast from raw 16-bit bits (no scalar fp conversion). */
             uint16x4_t au16 = vdup_n_u16(ab);
             bfloat16x4_t a4  = vreinterpret_bf16_u16(au16);
             bfloat16x8_t a8  = vcombine_bf16(a4, a4);
-
-            /* Load 8 bf16 */
             bfloat16x8_t b8 = vreinterpretq_bf16_u16(vld1q_u16((const uint16_t*)brow));
-
-            /* acc += a*b (low/hi halves) */
             acc0 = vbfmlalbq_f32(acc0, a8, b8);
             acc1 = vbfmlaltq_f32(acc1, a8, b8);
         }
-
-        /* Store fp32 -> bf16 (intrinsic narrowing) */
         bfloat16x8_t out = vcombine_bf16(vcvt_bf16_f32(acc0), vcvt_bf16_f32(acc1));
         vst1q_u16((uint16_t*)(C + j), vreinterpretq_u16_bf16(out));
     }
-
-    /* scalar tail (allowed) */
     for (; j < N; ++j) {
         float sum = 0.0f;
         for (int64_t k = 0; k < K; ++k) {
@@ -2422,7 +2353,6 @@ static MAG_AINLINE void mag_gemv_bfloat16(
     }
 
 #else
-    /* Fallback scalar (allowed) */
     for (int64_t j = 0; j < N; ++j) {
         float sum = 0.0f;
         for (int64_t k = 0; k < K; ++k) {
@@ -2475,40 +2405,34 @@ static MAG_HOTPROC void mag_mm_block_bfloat16(
     bool acc
 ) {
     int64_t j = 0;
-
     for (; nr - j >= 32; j += 32) {
         int64_t i = 0;
         for (; mr - i >= 16; i += 16) mag_mm_tile_16x32_bfloat16(kc, A + i*lda, lda, B + j, ldb, C + i*ldc + j, ldc, acc);
         for (; mr - i >=  8; i +=  8) mag_mm_tile_8x32_bfloat16 (kc, A + i*lda, lda, B + j, ldb, C + i*ldc + j, ldc, acc);
-        for (; i < mr; ++i)            mag_mm_tile_1x32_bfloat16 (kc, A + i*lda,      B + j, ldb, C + i*ldc + j,      acc);
+        for (; i < mr; ++i) mag_mm_tile_1x32_bfloat16 (kc, A + i*lda, B + j, ldb, C + i*ldc + j, acc);
     }
     for (; nr - j >= 16; j += 16) {
         int64_t i = 0;
         for (; mr - i >= 8; i += 8) mag_mm_tile_8x16_bfloat16(kc, A + i*lda, lda, B + j, ldb, C + i*ldc + j, ldc, acc);
-        for (; i < mr; ++i)         mag_mm_tile_1x16_bfloat16(kc, A + i*lda,      B + j, ldb, C + i*ldc + j,      acc);
+        for (; i < mr; ++i) mag_mm_tile_1x16_bfloat16(kc, A + i*lda, B + j, ldb, C + i*ldc + j, acc);
     }
     for (; nr - j >= 8; j += 8) {
         int64_t i = 0;
         for (; mr - i >= 8; i += 8) mag_mm_tile_8x8_bfloat16(kc, A + i*lda, lda, B + j, ldb, C + i*ldc + j, ldc, acc);
-        for (; i < mr; ++i)         mag_mm_tile_1x8_bfloat16(kc, A + i*lda,      B + j, ldb, C + i*ldc + j,      acc);
+        for (; i < mr; ++i) mag_mm_tile_1x8_bfloat16(kc, A + i*lda, B + j, ldb, C + i*ldc + j, acc);
     }
-
     int64_t rem = nr - j;
     if (!rem) return;
-
-    /* Tail: scalar fallback, conversions only here */
     for (int64_t i2 = 0; i2 < mr; ++i2) {
         const mag_bfloat16_t *ap = A + i2 * lda;
-        mag_bfloat16_t *cp = C + i2 * ldc + j;
-
+        mag_bfloat16_t *cp = C + i2*ldc + j;
         for (int64_t jj = 0; jj < rem; ++jj) {
             float sum = 0.0f;
             if (acc) sum = mag_bfloat16_to_float32(cp[jj]);
-
             for (int64_t k = 0; k < kc; ++k) {
                 float ax  = mag_bfloat16_to_float32(ap[k]);
                 float byv = mag_bfloat16_to_float32(B[k*ldb + (j + jj)]);
-                sum += ax * byv;
+                sum += ax*byv;
             }
             cp[jj] = mag_float32_to_bfloat16(sum);
         }

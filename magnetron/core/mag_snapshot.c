@@ -707,26 +707,26 @@ const char **mag_snapshot_get_tensor_keys(mag_snapshot_t *snap, size_t *out_num_
     if (!out_num_keys) return NULL;
     *out_num_keys = 0;
     if (!snap) return NULL;
-    const size_t n = snap->tensor_map.nitems;
-    if (n == 0) return NULL;
+    size_t n = snap->tensor_map.nitems;
+    if (mag_unlikely(!n)) return NULL;
     char **keys = (*mag_alloc)(NULL, n*sizeof(*keys), 0);
-    if (!keys) return NULL;
+    if (mag_unlikely(!keys)) return NULL;
     size_t iter = 0, klen = 0, idx = 0;
     void *keyp = NULL, *valp = NULL;
     while ((keyp = mag_map_next(&snap->tensor_map, &iter, &klen, &valp))) {
-        if (klen != sizeof(uint32_t)) goto fail;
+        if (mag_unlikely(klen != sizeof(uint32_t))) goto fail;
         const uint32_t key_id = *(const uint32_t *)keyp;
-        if (key_id >= snap->str_pool.len) goto fail;
+        if (mag_unlikely(key_id >= snap->str_pool.len)) goto fail;
         const mag_pool_record_t *rec = snap->str_pool.records + key_id;
         if (!rec->ptr || rec->len == 0) goto fail;
         char *name = (*mag_alloc)(NULL, (size_t)rec->len + 1, 0);
-        if (!name) goto fail;
+        if (mag_unlikely(!name)) goto fail;
         memcpy(name, rec->ptr, rec->len);
         name[rec->len] = '\0';
         keys[idx++] = name;
-        if (idx > n) goto fail; // defensive
+        if (mag_unlikely(idx > n)) goto fail;
     }
-    if (idx != n) goto fail;
+    if (mag_unlikely(idx != n)) goto fail;
     *out_num_keys = n;
     return (const char **)keys;
     fail:
