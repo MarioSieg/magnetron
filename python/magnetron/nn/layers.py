@@ -21,11 +21,14 @@ class Flatten(Module):
 
 
 class Linear(Module):
-    def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, init: bool = True) -> None:
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.weight = Parameter(Tensor.normal(out_features, in_features, mean=0.0, std=1.0) / math.sqrt(in_features + out_features))
+        if init:
+            self.weight = Parameter(Tensor.normal(out_features, in_features, mean=0.0, std=1.0) / math.sqrt(in_features + out_features))
+        else:
+            self.weight = Parameter(Tensor.empty(out_features, in_features))
         self.bias = None
         if bias:
             self.bias = Parameter(Tensor.zeros(out_features))
@@ -38,21 +41,24 @@ class Linear(Module):
 
 
 class Embedding(Module):
-    def __init__(self, num_embeddings: int, embedding_dim: int) -> None:
+    def __init__(self, num_embeddings: int, embedding_dim: int, init: bool = True) -> None:
         super().__init__()
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        self.weight = Parameter(Tensor.normal(num_embeddings, embedding_dim) / embedding_dim)
+        if init:
+            self.weight = Parameter(Tensor.normal(num_embeddings, embedding_dim) / embedding_dim)
+        else:
+            self.weight = Parameter(Tensor.empty(num_embeddings, embedding_dim))
 
     def forward(self, x: Tensor) -> Tensor:
         return self.weight.x[x]
 
 
 class RMSNorm(Module):
-    def __init__(self, dim: int, eps: float = 1e-5) -> None:
+    def __init__(self, dim: int, eps: float = 1e-5, init: bool = True) -> None:
         super().__init__()
         self.eps = eps
-        self.weight = Parameter(Tensor.ones(dim))
+        self.weight = Parameter(Tensor.ones(dim) if init else Tensor.empty(dim))
 
     def _norm(self, x: Tensor) -> Tensor:
         rms = (x.sqr().mean(dim=-1, keepdim=True) + self.eps).sqrt_()
@@ -63,10 +69,10 @@ class RMSNorm(Module):
 
 
 class LayerNorm(Module):
-    def __init__(self, ndim: int, bias: bool = True, eps: float = 1e-5) -> None:
+    def __init__(self, ndim: int, bias: bool = True, eps: float = 1e-5, init: bool = True) -> None:
         super().__init__()
-        self.weight = Parameter(Tensor.ones(ndim))
-        self.bias = Parameter(Tensor.zeros(ndim)) if bias else None
+        self.weight = Parameter(Tensor.ones(ndim) if init else Tensor.empty(ndim))
+        self.bias = Parameter(Tensor.zeros(ndim) if init else Tensor.empty(ndim)) if bias else None
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
