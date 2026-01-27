@@ -226,7 +226,6 @@ class Qwen3Model(nn.Module):
         curr_len: int = in_len
         gen_ids: list[int] = []
         concated: str = ''
-        pending: str = ''
         for _ in range(max_tokens):
             logits_1d: Tensor = next_logits.reshape(-1)
             top_vals, top_idx = logits_1d.topk(top_k, dim=0, largest=True, sorted=False)
@@ -238,6 +237,7 @@ class Qwen3Model(nn.Module):
             text: str = tokenizer.decode(gen_ids)
             if len(text) > len(concated):
                 delta = text[len(concated) :]
+                delta = delta.replace('\ufffd', '')
                 concated = text
                 yield delta
             input_ids = Tensor.of([tok_id], dtype=dtype.int64).reshape(1, 1)
