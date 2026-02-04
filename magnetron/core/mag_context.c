@@ -73,36 +73,6 @@ static void mag_system_host_info_dump(mag_context_t *ctx) {
     mag_log_info("Physical Machine Memory: %.03f %s, Free: %.03f %s, Used: %.03f %s (%.02f%%)", mem_total, mem_unit_total, mem_free, mem_unit_free, mem_used, mem_unit_used, mem_used_percent);
 }
 
-/* Print compiler information such as name, version and build time. */
-static MAG_COLDPROC void mag_ctx_dump_compiler_info(void) {
-    const char *compiler_name = "Unknown";
-    int compiler_version_major = 0, compiler_version_minor = 0;
-#ifdef __clang__
-    compiler_name = "Clang";
-    compiler_version_major = __clang_major__;
-    compiler_version_minor = __clang_minor__;
-#elif defined(__GNUC__)
-    compiler_name = "GCC";
-    compiler_version_major = __GNUC__;
-    compiler_version_minor = __GNUC_MINOR__;
-#elif defined(_MSC_VER)
-    compiler_name = "MSVC";
-    compiler_version_major = _MSC_VER / 100;
-    compiler_version_minor = _MSC_VER % 100;
-#endif
-    mag_log_info("magnetron v.%d.%d.%d, storage format v.%d.%d.%d - Built: " __DATE__ " " __TIME__ " - %s v.%d.%d",
-        mag_ver_major(MAG_VERSION),
-        mag_ver_minor(MAG_VERSION),
-        mag_ver_patch(MAG_VERSION),
-        mag_ver_major(MAG_SNAPSHOT_VERSION),
-        mag_ver_minor(MAG_SNAPSHOT_VERSION),
-        mag_ver_patch(MAG_SNAPSHOT_VERSION),
-        compiler_name,
-        compiler_version_major,
-        compiler_version_minor
-    );
-}
-
 static void mag_setup_environ(void) {
     /* Parse MAG_LOG_LEVEL environment variable. */
     const char *v = getenv("MAG_LOG_LEVEL");
@@ -115,6 +85,43 @@ static void mag_setup_environ(void) {
     else mag_log_error("Invalid MAG_LOG_LEVEL value '%s' (valid: off, error, warn, info)", v);
 }
 
+/* Print compiler information such as name, version and build time. */
+static void mag_ctx_dump_banner(void) {
+    const char *compiler_name = "Unknown";
+    int cmaj = 0, cmin = 0, cpatch = 0;
+#if defined(__clang__)
+    compiler_name = "Clang";
+    cmaj = __clang_major__;
+    cmin = __clang_minor__;
+    cpatch = __clang_patchlevel__;
+#elif defined(__GNUC__)
+    compiler_name = "GCC";
+    cmaj = __GNUC__;
+    cmin = __GNUC_MINOR__;
+    cpatch = __GNUC_PATCHLEVEL__;
+#elif defined(_MSC_VER)
+    compiler_name = "MSVC";
+    cmaj = _MSC_VER/100;
+    cmin = _MSC_VER%100;
+#endif
+    mag_log_info("------------------------------------------------------------");
+    mag_log_info("Magnetron");
+    mag_log_info("Version        : v.%d.%d.%d (storage v.%d.%d.%d)",
+        mag_ver_major(MAG_VERSION),
+        mag_ver_minor(MAG_VERSION),
+        mag_ver_patch(MAG_VERSION),
+        mag_ver_major(MAG_SNAPSHOT_VERSION),
+        mag_ver_minor(MAG_SNAPSHOT_VERSION),
+        mag_ver_patch(MAG_SNAPSHOT_VERSION)
+    );
+    mag_log_info("Copyright      : (c) 2024–2026 Mario Sieg");
+    mag_log_info("License        : Apache-2.0");
+    mag_log_info("Source         : https://github.com/MarioSieg/magnetron");
+    mag_log_info("Build          : " __DATE__ " " __TIME__);
+    mag_log_info("Compiler       : %s %d.%d.%d", compiler_name, cmaj, cmin, cpatch);
+    mag_log_info("------------------------------------------------------------");
+}
+
 /* Create context with compute device descriptor. */
 mag_context_t *mag_ctx_create(const char *device_id) {
     mag_setup_environ(); /* Parse and apply environment variables. */
@@ -122,7 +129,7 @@ mag_context_t *mag_ctx_create(const char *device_id) {
     mag_log_info("Creating magnetron context...");
 
     uint64_t time_stamp_start = mag_hpc_clock_ns();
-    mag_ctx_dump_compiler_info(); /* Dump compiler info. */
+    mag_ctx_dump_banner();
 
     /* Initialize context with default values or from context info. */
     mag_context_t *ctx = (*mag_alloc)(NULL, sizeof(*ctx), 0); /* Allocate context. */
