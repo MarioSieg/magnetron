@@ -460,6 +460,9 @@ struct mag_snapshot_t {
     mag_map_t tensor_map;
     mag_mem_stream_t stream;
     mag_mmap_owner_t *mmap_owner;
+A    size_t nb_total;
+    size_t nb_meta;
+    size_t nb_storage;
 };
 
 static size_t mag_snaprage_compute_tensor_sizes(mag_map_t *tmap) {
@@ -572,6 +575,7 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_snap_verify(mag_stream_from_mapped_file(stream, snap->mmap_owner, false), goto error);
     mag_snap_verify(mag_stream_remaining(stream) >= MAG_FILE_HEADER_SIZE + 4*MAG_SNAP_SECTION_MARKERS_COUNT, goto error); /* We must at minimum have enough bytes for an empty file */
 
+    snap->nb_total = mag_stream_remaining(stream);
     size_t marker = mag_stream_needle(stream);
 
     /* File header */
@@ -600,10 +604,12 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
         mag_tensor_desc_t *desc = stable+i;
         mag_snap_verify(mag_tensor_desc_deserialize(desc, stream, snap->str_pool.len), goto error);
     }
-
     /* Read data */
     mag_snap_verify(mag_stream_ru32_le(stream, &section_marker), goto error);
     mag_snap_verify(section_marker == MAG_SNAP_SECTION_TENSOR_DATA, goto error);
+
+    snap->nb_meta = mag_stream_needle(stream); /* Everything up to here is metadata */
+
     uint64_t offs=0;
     for (size_t i=0; i < nt; ++i) {
         const mag_tensor_desc_t *desc = stable+i;
@@ -624,6 +630,9 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
         mag_rc_decref(storage); /* Decref as the snapshot now holds a reference */
         offs += nbytes;
     }
+
+    snap->nb_storage = mag_stream_needle(stream) - snap->nb_meta;
+    mag_snap_verify(snap->nb_total == snap->nb_meta + snap->nb_storage, goto error);
 
     (*mag_alloc)(stable, 0, 0);
     return snap;
@@ -846,5 +855,12 @@ MAG_COLDPROC void mag_snapshot_print_info(mag_snapshot_t *snap) {
         mag_humanize_memory_size(mag_tensor_numbytes(tensor), &size, &unit);
         printf("\t[%zu] Name: \"%.*s\", Shape: %s, Type: %s, Size: %.01f%s\n", slot, (int)name_len, name, shape, mag_type_trait(tensor->dtype)->name, size, unit);
     }
+    printf("--- Stats ---\n");
+    mag_humanize_memory_size(snap->nb_meta, &size, &unit);
+    printf("\tMetadata Size: %.03f%s (%.01f%%)\n", size, unit, snap->nb_meta ? 100.0*(double)snap->nb_meta / (double)snap->nb_total : 0.0);
+    mag_humanize_memory_size(snap->nb_storage, &size, &unit);
+    printf("\tStorage Size: %.03f%s (%.01f%%)\n", size, unit, snap->nb_total ? 100.0*(double)snap->nb_storage / (double)snap->nb_total : 0.0);
+    mag_humanize_memory_size(snap->nb_total, &size, &unit);
+    printf("\tTotal File Size: %.03f%s\n", size, unit);
     printf("-------------------\n");
 }

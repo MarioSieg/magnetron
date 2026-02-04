@@ -896,19 +896,13 @@ mag_status_t mag_movedim(mag_tensor_t **out_result, mag_tensor_t *x, int64_t src
     if (src == dst)
         return mag_view(out_result, x, x->coords.shape, rank);
     int64_t perm[MAG_MAX_DIMS];
-    for (int64_t i = 0; i < rank; ++i) {
-        perm[i] = i;
-    }
+    for (int64_t i=0; i < rank; ++i) perm[i] = i;
     int64_t tmp = perm[src];
     if (src < dst) {
-        for (int64_t i = src; i < dst; ++i) {
-            perm[i] = perm[i + 1];
-        }
+        for (int64_t i=src; i < dst; ++i) perm[i] = perm[i+1];
         perm[dst] = tmp;
     } else {
-        for (int64_t i = src; i > dst; --i) {
-            perm[i] = perm[i - 1];
-        }
+        for (int64_t i=src; i > dst; --i) perm[i] = perm[i-1];
         perm[dst] = tmp;
     }
     return mag_permute(out_result, x, perm, rank);

@@ -21,13 +21,21 @@ keywords = [
     "gpu",
     "simd",
 ]
+
 [urls]
 Homepage = "https://github.com/MarioSieg/magnetron"
 Source = "https://github.com/MarioSieg/magnetron"
 Issues = "https://github.com/MarioSieg/magnetron/issues"
 
 [project.optional-dependencies]
-dev = [
+examples = [
+    "tokenizers",
+    "rich",
+    "matplotlib",
+    "huggingface_hub"
+]
+
+test = [
     "ruff",
     "torch",
     "numpy",
