@@ -460,7 +460,7 @@ struct mag_snapshot_t {
     mag_map_t tensor_map;
     mag_mem_stream_t stream;
     mag_mmap_owner_t *mmap_owner;
-A    size_t nb_total;
+    size_t nb_total;
     size_t nb_meta;
     size_t nb_storage;
 };
