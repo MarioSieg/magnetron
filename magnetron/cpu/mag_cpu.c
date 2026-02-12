@@ -164,6 +164,7 @@ static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_thr
     mag_device_t *device = (*mag_alloc)(NULL, sizeof(*device), 0);
     *device = (mag_device_t) { /* Initialize device interface */
         .ctx = ctx,
+        .id = MAG_DEVICE_ID_CPU,
         .physical_device_name = "CPU",
         .impl = cpu_dvc,
         .is_async = false,
@@ -171,7 +172,6 @@ static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_thr
         .alloc_storage = &mag_cpu_alloc_storage,
         .manual_seed = &mag_cpu_manual_seed
     };
-    snprintf(device->id, sizeof(device->id), "cpu");
     snprintf(device->physical_device_name, sizeof(device->physical_device_name), "%s", ctx->machine.cpu_name);
     return device;
 }

@@ -20,6 +20,26 @@
 extern "C" {
 #endif
 
+/* Name, Required */
+#define mag_backenddef(_)\
+    _(CPU, true)\
+    _(CUDA, false)\
+    _(CUSTOM, false)\
+
+typedef enum mag_backend_type_t {
+#define _(name, required) MAG_BACKEND_TYPE_##name,
+    mag_backenddef(_)
+#undef _
+} mag_backend_type_t;
+extern const char *mag_backend_type_to_str(mag_backend_type_t type);
+
+typedef struct mag_device_id_t {
+    mag_backend_type_t type;        /* Backend type, (e.g. CPU, CUDA, etc..) */
+    uint32_t device_ordinal;        /* Device index for the given backend type, (e.g. 0 for cuda:0). */
+} mag_device_id_t;
+
+#define MAG_DEVICE_ID_CPU ((mag_device_id_t){.type=MAG_BACKEND_TYPE_CPU, .device_ordinal=0})
+
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 typedef struct mag_device_t mag_device_t;
 
@@ -63,22 +83,17 @@ typedef struct mag_command_t {
     mag_op_attr_t attrs[MAG_MAX_OP_PARAMS];
 } mag_command_t;
 
-#define MAG_DEVICEID_MAX 32
-
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 struct mag_device_t {
     mag_context_t *ctx;                                             /* Owning context */
+    mag_device_id_t id;                                             /* Device ID, (e.g. cuda:0, cpu, etc..) */
     void *impl;                                                     /* Backend specific device implementation, if any. */
     bool is_async;                                                  /* True if the device executes commands asynchronously. */
     char physical_device_name[256];                                 /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
-    char id[MAG_DEVICEID_MAX];                                      /* Unique device ID, (e.g. "cpu:0", "cuda:0", "cuda:1", "tpu:0") */
     void (*submit)(mag_device_t *dvc, const mag_command_t *cmd);    /* Submit a command to the device for execution. */
     void (*alloc_storage)(mag_device_t *dvc, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype);
     void (*manual_seed)(mag_device_t *dvc, uint64_t seed);
 };
-
-extern MAG_EXPORT bool mag_device_is(const mag_device_t *dvc, const char *device_id);
-extern MAG_EXPORT bool mag_parse_device_id(const char *device_id, char (*out_type)[MAG_DEVICEID_MAX], int *out_idx);
 
 #define MAG_BACKEND_MODULE_ABI_VER 1 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */
 typedef struct mag_backend_t mag_backend_t;
@@ -124,7 +139,7 @@ typedef struct mag_backend_registry_t mag_backend_registry_t;
 
 extern MAG_EXPORT mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
 extern MAG_EXPORT bool mag_backend_registry_load_all_available(mag_backend_registry_t *reg);
-extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id); /* Get corresponding backend for device ID like cuda:0 or cpu. */
+extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const mag_device_id_t *id);
 extern MAG_EXPORT mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg);
 extern MAG_EXPORT void mag_backend_registry_free(mag_backend_registry_t *reg);
 

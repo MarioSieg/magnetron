@@ -33,8 +33,8 @@ namespace magnetron {
      */
     class context final {
     public:
-        explicit context(const char *device_id = "cpu") noexcept {
-            m_ctx = mag_ctx_create(device_id);
+        context() noexcept {
+            m_ctx = mag_ctx_create();
         }
 
         context(context&&) = default;

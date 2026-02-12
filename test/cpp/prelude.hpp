@@ -39,7 +39,6 @@ namespace magnetron::test {
     }
 
     [[nodiscard]] extern std::vector<device_kind> get_supported_test_backends();
-    [[nodiscard]] extern context& get_cached_context(device_kind dev);
 
     using float16 = half_float::half;
 

@@ -127,35 +127,6 @@ static void mag_backend_module_shutdown(mag_backend_module_t *mod) {
     (*mag_alloc)(mod, 0, 0);
 }
 
-bool mag_device_is(const mag_device_t *dvc, const char *device_id) {
-    char wanted_id[MAG_DEVICEID_MAX];
-    int idx;
-    if (mag_unlikely(!mag_parse_device_id(device_id, &wanted_id, &idx))) return false;
-    char actual_id[MAG_DEVICEID_MAX];
-    int actual_idx;
-    if (mag_unlikely(!mag_parse_device_id(dvc->id, &actual_id, &actual_idx))) return false;
-    return strcmp(wanted_id, actual_id) == 0 && (idx != -1 && actual_idx != -1 ? idx == actual_idx : true); /* If both have index, compare it */
-}
-
-bool mag_parse_device_id(const char *device_id, char (*out_type)[MAG_DEVICEID_MAX], int *out_idx) {
-    if (mag_unlikely(!device_id || !out_type || !out_idx)) return false;
-    const char *sep = strchr(device_id, ':');
-    size_t name_len = sep ? (size_t)(sep - device_id) : strlen(device_id);
-    if (mag_unlikely(!name_len)) return false;
-    int n = snprintf(*out_type, MAG_DEVICEID_MAX, "%.*s", (int)name_len, device_id);
-    if (mag_unlikely(n < 0 || n >= MAG_DEVICEID_MAX)) return false;
-    if (!sep || !sep[1]) {
-        *out_idx = -1; /* No index specified */
-        return true;
-    }
-    *out_idx = 0;
-    for (const char *p = sep+1; *p; ++p) {
-        if (mag_unlikely(!isdigit((unsigned char)*p))) return false;
-        *out_idx = 10**out_idx + (*p-'0');
-    }
-    return true;
-}
-
 struct mag_backend_registry_t {
     mag_context_t *ctx;
     char *module_path;
@@ -163,6 +134,15 @@ struct mag_backend_registry_t {
     size_t backends_num;
     size_t backends_cap;
 };
+
+const char * mag_backend_type_to_str(mag_backend_type_t type) {
+    static const char *type_strs[] = {
+#define _(name, required) [MAG_BACKEND_TYPE_##name] = #name,
+    mag_backenddef(_)
+#undef _
+    };
+    return type_strs[type];
+}
 
 mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx) {
     mag_backend_registry_t *reg = (*mag_alloc)(NULL, sizeof(*reg), 0);
@@ -241,17 +221,14 @@ bool mag_backend_registry_load_all_available(mag_backend_registry_t *reg) {
     return reg->backends_num > 0;
 }
 
-mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id) {
-    char type[MAG_DEVICEID_MAX];
-    int idx;
-    if (mag_unlikely(!mag_parse_device_id(device_id, &type, &idx))) return NULL;
+mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const mag_device_id_t *id) {
     for (size_t i=0; i < reg->backends_num; ++i) {
         mag_backend_t *backend = reg->backends[i]->backend;
         size_t num_devices = (*backend->num_devices)(backend);
         for (size_t d=0; d < num_devices; ++d) {
             mag_device_t *dev = (*backend->init_device)(backend, reg->ctx, d);
             if (mag_unlikely(!dev)) continue;
-            if (mag_device_is(dev, device_id)) { /* Found matching device */
+            if (dev->id.type == id->type && dev->id.device_ordinal == id->device_ordinal) { /* Found matching device */
                 *device = dev;
                 return backend;
             }

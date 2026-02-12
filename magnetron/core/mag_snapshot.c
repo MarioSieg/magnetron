@@ -566,7 +566,7 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_snap_verify(filename && *filename, return false);
     const char *ext = strrchr(filename, '.'); /* check that the file extension is .mag */
     mag_snap_verify(ext != NULL && strcmp(ext, ".mag") == 0, return false);
-    mag_snap_verify(mag_device_is(ctx->device, "cpu"), return false);
+    mag_snap_verify(ctx->device->id.type == MAG_BACKEND_TYPE_CPU, return false); /* Only CPU deserialization is supported at the moment */
 
     mag_tensor_desc_t *stable = NULL;
     mag_snapshot_t *snap = mag_snapshot_new(ctx);
@@ -714,7 +714,7 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
     /* Compute checksum of metadata before data section starts */
     const uint8_t *chk_end = stream.pos;
     mag_device_t *dvc_interface;
-    mag_backend_registry_get_by_device_id(snap->ctx->backend_registry, &dvc_interface, "cpu:0");
+    mag_backend_registry_get_by_device_id(snap->ctx->backend_registry, &dvc_interface, &MAG_DEVICE_ID_CPU);
     mag_assert2(dvc_interface);
     mag_cpu_device_t *dvc_impl = dvc_interface->impl;
     mag_assert2(dvc_impl);
@@ -734,7 +734,7 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
     size_t nb_dat_total = 0;
     for (size_t i=0; i < snap->tensor_map.nitems; ++i) { /* Tensor data */
         mag_tensor_t *tensor = stable[i];
-        mag_snap_verify(mag_device_is(tensor->storage->device, "cpu"), goto error); /* Tensor must live on CPU */
+        mag_snap_verify(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, goto error); /* Tensor must live on CPU */
         mag_contiguous(&tensor, tensor); /* Make contiguous to allow the 1:1 copy into mmap destination region */
         size_t nb = mag_tensor_numbytes(tensor);
         nb_dat_total += nb;

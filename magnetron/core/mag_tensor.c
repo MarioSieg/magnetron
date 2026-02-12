@@ -90,7 +90,7 @@ mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage
         void (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;
         (*allocator)(dvc, &tensor->storage, numbytes, type);
     } else {
-        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->device == dvc, "Provided storage device mismatch: tensor device=%s storage device=%s", dvc->id, storage->device ? storage->device->id : "(null)");
+        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->device == dvc, "Provided storage device mismatch: tensor device=%s storage device=%s", mag_backend_type_to_str(dvc->id.type), mag_backend_type_to_str(storage->device->id.type));
         mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->dtype == type, "Provided storage dtype mismatch: tensor dtype=%s storage dtype=%s", mag_type_trait(type)->name, mag_type_trait(storage->dtype)->name);
         mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->size >= (size_t)numbytes, "Provided storage too small: need=%" PRIi64 " have=%zu", numbytes, storage->size);
         mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->base != 0 || storage->size == 0, "Provided storage has NULL base");
@@ -230,7 +230,7 @@ uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor) {
 }
 
 void *mag_tensor_copy_data(mag_tensor_t *tensor) {
-    mag_assert2(mag_device_is(tensor->storage->device, "cpu"));
+    mag_assert(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "Data copy requires tensot storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
     mag_tensor_t *cont;
     mag_status_t stat = mag_contiguous(&cont, tensor);
     if (mag_iserr(stat)) return NULL;
@@ -249,7 +249,8 @@ void mag_tensor_copy_data_free(void *ret_val) {
 
 mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
     mag_context_t *ctx = tensor->ctx;
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_device_is(tensor->storage->device, "cpu"), "item() is only supported for CPU tensors");
+    /* TODO: auto transfer */
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "item() requires tensor storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
     mag_contract(ctx, ERR_INVALID_PARAM, {}, tensor->numel == 1, "item() can only be called on single element (scalar) tensors, but tensor has %" PRIi64 " elements", tensor->numel);
     mag_contract(ctx, ERR_INVALID_PARAM, {}, out_value != NULL, "Output value must not be NULL");
     mag_status_t stat;

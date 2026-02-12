@@ -248,15 +248,14 @@ namespace mag {
         const physical_device &phys_device = impl->devices()[idx];
         auto *device = new mag_device_t {
             .ctx = ctx,
+            .id = {.type=MAG_BACKEND_TYPE_CUDA, .device_ordinal=idx},
             .impl = nullptr,
             .is_async = false,
             .physical_device_name = "",
-            .id = "",
             .submit = &submit,
             .alloc_storage = &alloc_storage_buffer,
             .manual_seed = &manual_seed
         };
-        std::snprintf(device->id, sizeof(device->id), "cuda:%u", idx);
         std::snprintf(device->physical_device_name, sizeof(device->physical_device_name), "%s", phys_device.name.data());
         return device;
     }

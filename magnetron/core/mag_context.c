@@ -123,7 +123,7 @@ static void mag_ctx_dump_banner(void) {
 }
 
 /* Create context with compute device descriptor. */
-mag_context_t *mag_ctx_create(const char *device_id) {
+mag_context_t *mag_ctx_create(void) {
     mag_setup_environ(); /* Parse and apply environment variables. */
 
     mag_log_info("Creating magnetron context...");
@@ -160,15 +160,16 @@ mag_context_t *mag_ctx_create(const char *device_id) {
         "\nCheck the searched path manually to see if any backends were found: %s",
         num_backend_paths && backend_paths && *backend_paths && **backend_paths ? *backend_paths : "(no paths)"
     );
-    ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, device_id);
+    mag_device_id_t cpu_dvc = MAG_DEVICE_ID_CPU; /* TODO: maybe allow users to specify a preferred default device type via env var or context info struct in the future? */
+    ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, &cpu_dvc);
     if (mag_unlikely(!ctx->backend || !ctx->device)) {
         mag_log_error(
-            "\nNo suitable magnetron compute backend found for device id '%s'!"
+            "\nNo suitable magnetron compute backend found for device id %s:%u !"
            "\nMake sure the specified device id is correct and that the corresponding backend is available.",
-           device_id ? device_id : "(null)"
+           mag_backend_type_to_str(cpu_dvc.type), cpu_dvc.device_ordinal
         );
-        device_id = "cpu"; /* Fallback to CPU backend */
-        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, device_id);
+        cpu_dvc = MAG_DEVICE_ID_CPU;
+        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, &cpu_dvc);
         mag_assert(ctx->backend && ctx->device,
             "\nFailed to initialize fallback CPU compute backend!"
             "\nMake sure the magnetron_cpu backend is available next to the magnetron_core library."

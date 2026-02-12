@@ -299,7 +299,9 @@ static mag_status_t mag_tensor_strided_view(mag_tensor_t **out_result, mag_tenso
 
 static void MAG_COLDPROC mag_dbg_trace_op_ir(mag_opcode_t op, bool inplace, mag_tensor_t **in, uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
     const mag_op_traits_t *meta = mag_op_traits(op);
-    const char *dvc = in ? (*in)->ctx->device->id : (*out)->ctx->device->id;
+    char dvc[32];
+    const mag_device_id_t *dvcid = *in ? &(*in)->storage->device->id : &(*out)->storage->device->id;
+    snprintf(dvc, sizeof(dvc), "%s:%u", mag_backend_type_to_str(dvcid->type), dvcid->device_ordinal);
     bool cont = true;
     for (uint32_t i=0; i < num_in; ++i) cont &= mag_tensor_is_contiguous(in[i]);
     for (uint32_t i=0; i < num_out; ++i) cont &= mag_tensor_is_contiguous(out[i]);
@@ -1563,7 +1565,7 @@ mag_status_t mag_gather(mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t
 mag_status_t mag_copy_raw_(mag_tensor_t *tensor, const void *data, size_t size_bytes) {
     mag_context_t *ctx = tensor->ctx;
     mag_contract(ctx, ERR_INVALID_PARAM, {}, data != NULL && size_bytes > 0, "invalid data pointer or length");
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_device_is(tensor->storage->device, "cpu"), "tensor storage device must be CPU for mag_copy_raw_");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "mag_copy_raw_ is only supported for CPU tensors, but storage is allocated on device %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.device_ordinal);
     mag_contract(ctx, ERR_INVALID_PARAM, {}, data && size_bytes, "invalid data pointer or length");
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_numbytes(tensor) == size_bytes, "data length (%" PRIu64 ") does not match tensor nbytes (%" PRIu64 ")", (uint64_t)size_bytes, (uint64_t)mag_tensor_numbytes(tensor));
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(tensor), "tensor must be contiguous");

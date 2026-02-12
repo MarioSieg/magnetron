@@ -12,15 +12,6 @@ namespace magnetron::test {
         return *backends;
     }
 
-    context &get_cached_context(device_kind dev) {
-        static std::unordered_map<device_kind, std::unique_ptr<context> > cached;
-        if (cached.find(dev) == cached.end()) {
-            cached[dev] = std::make_unique<context>(get_device_kind_name(dev));
-            cached[dev]->stop_grad_recorder();
-        }
-        return *cached[dev];
-    }
-
     std::string get_gtest_backend_name(const TestParamInfo<device_kind> &info) {
         return get_device_kind_name(info.param);
     }
