@@ -185,6 +185,7 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_binary_op<op_t<float, float>>(r, x, y); break;
             case MAG_DTYPE_FLOAT16: launch_binary_op<op_t<half, half>>(r, x, y); break;
+            case MAG_DTYPE_BFLOAT16: launch_binary_op<op_t<__nv_bfloat16, __nv_bfloat16>>(r, x, y); break;
             case MAG_DTYPE_UINT8: launch_binary_op<op_t<uint8_t, uint8_t>>(r, x, y); break;
             case MAG_DTYPE_INT8: launch_binary_op<op_t<int8_t, int8_t>>(r, x, y); break;
             case MAG_DTYPE_UINT16: launch_binary_op<op_t<uint16_t, uint16_t>>(r, x, y); break;
@@ -226,6 +227,7 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_binary_op<op_t<float, uint8_t>>(r, x, y); break;
             case MAG_DTYPE_FLOAT16: launch_binary_op<op_t<half, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_BFLOAT16: launch_binary_op<op_t<__nv_bfloat16, uint8_t>>(r, x, y); break;
             case MAG_DTYPE_BOOLEAN:
             case MAG_DTYPE_UINT8: launch_binary_op<op_t<uint8_t, uint8_t>>(r, x, y); break;
             case MAG_DTYPE_INT8: launch_binary_op<op_t<int8_t, int8_t>>(r, x, y); break;

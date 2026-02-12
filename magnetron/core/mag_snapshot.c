@@ -56,6 +56,7 @@ if (mag_unlikely(!(expr))) { \
 #define MAG_SNAP_SECTION_TENSOR_DESC mag_snap_pack4_ne('D', 'S', 'C', '!')
 #define MAG_SNAP_SECTION_TENSOR_DATA mag_snap_pack4_ne('B', 'U', 'F', '!')
 #define MAG_SNAP_SECTION_MARKERS_COUNT 4 /* File magic is not included, belongs to file header */
+#define MAG_SNAP_TBUF_ALIGN 16 /* Every tensor buffer start address must be aligned to this */
 
 #ifdef MAG_BIG_ENDIAN
 /*

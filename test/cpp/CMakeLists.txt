@@ -2,13 +2,6 @@
 
 add_subdirectory(extern/googletest)
 
-# Install boost with: sudo apt-get install libboost-all-dev
-cmake_policy(SET CMP0167 NEW)
-set(Boost_USE_STATIC_LIBS ON)
-set(Boost_USE_MULTITHREADED ON)
-set(Boost_USE_STATIC_RUNTIME OFF)
-find_package(Boost COMPONENTS math)
-
 file(GLOB_RECURSE TEST_SOURCES *.hpp *.cpp)
 add_executable(magnetron_test ${TEST_SOURCES})
 add_dependencies(magnetron_test magnetron_runtime)

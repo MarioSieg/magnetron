@@ -142,6 +142,7 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
             case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
+            case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
             default: mag_assert(false, "Unsupported dtype for unary op");
         }
     }
@@ -152,6 +153,7 @@ namespace mag {
         switch (x->dtype) {
             case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
             case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
+            case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
             case MAG_DTYPE_UINT8: launch_reduce_op<op_t<uint8_t, uint64_t, uint64_t>>(cmd); break;
             case MAG_DTYPE_INT8: launch_reduce_op<op_t<int8_t, int64_t, int64_t>>(cmd); break;
             case MAG_DTYPE_UINT16: launch_reduce_op<op_t<uint16_t, uint64_t, uint64_t>>(cmd); break;
