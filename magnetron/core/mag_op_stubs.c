@@ -297,36 +297,47 @@ static mag_status_t mag_tensor_strided_view(mag_tensor_t **out_result, mag_tenso
     return mag_as_strided(out_result, base->ctx, base, base->coords.rank, base->coords.shape, base->coords.strides, base->storage_offset);
 }
 
-static void MAG_COLDPROC mag_dbg_trace_op_ir(mag_opcode_t op, bool inplace, mag_tensor_t **in, uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
+static void MAG_COLDPROC mag_dbg_trace_op_ir(mag_opcode_t op, bool inplace, mag_tensor_t **in,  uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
     const mag_op_traits_t *meta = mag_op_traits(op);
-    const char *dvc = in ? (*in)->ctx->device->id : (*out)->ctx->device->id;
+    const char *dvc = in && num_in ? in[0]->ctx->device->id : out[0]->ctx->device->id;
     bool cont = true;
-    for (uint32_t i=0; i < num_in; ++i) cont &= mag_tensor_is_contiguous(in[i]);
+    for (uint32_t i=0; i < num_in;  ++i) cont &= mag_tensor_is_contiguous(in[i]);
     for (uint32_t i=0; i < num_out; ++i) cont &= mag_tensor_is_contiguous(out[i]);
     char opcode[64];
     snprintf(opcode, sizeof(opcode), "%s", meta->mnemonic);
-    for (char *p=opcode; *p; ++p) if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')) *p = (char)(*p|0x20);
-    printf("%02X %s.%s%s%s ", op, opcode, cont ? "cont." : "", inplace ? "inplace." : "", dvc);
-    for (uint32_t i=0; i < num_in; ++i) {
-        mag_tensor_t *tensor = in[i];
-        printf("in[%u](%s,", i, mag_type_trait(tensor->dtype)->name);
-        for (int64_t j=0; j < tensor->coords.rank; ++j) {
-            printf("%" PRIi64, tensor->coords.shape[j]);
-            if (j+1 < tensor->coords.rank) printf("x");
+    for (char *p = opcode; *p; ++p) if (*p >= 'A' && *p <= 'Z') *p |= 0x20;
+    const mag_tensor_t *tin = num_in ? in[0] : NULL;
+    const mag_tensor_t *tout = num_out ? out[0] : NULL;
+    int64_t rank = tin ? tin->coords.rank : tout->coords.rank;
+    printf("%s.%s.%s%s.", opcode, dvc, cont ? "cont" : "stri", inplace ? ".inl" : "");
+    if (op == MAG_OP_CAST && num_in && num_out) {
+        printf("%s.%s.", mag_type_trait(out[0]->dtype)->short_name, mag_type_trait(in[0]->dtype)->short_name);
+    } else if (num_out == 1) {
+        printf("%s.", mag_type_trait(out[0]->dtype)->short_name);
+    } else {
+        putchar('(');
+        for (uint32_t i=0; i < num_out; ++i) {
+            fputs(mag_type_trait(out[i]->dtype)->short_name, stdout);
+            if (i+1 < num_out) putchar(',');
         }
-        printf(") ");
+        printf(").");
     }
-    printf("-> ");
-    for (uint32_t i=0; i < num_out; ++i) {
-        mag_tensor_t *tensor = out[i];
-        printf("out[%u](%s,", i, mag_type_trait(tensor->dtype)->name);
-        for (int64_t j=0; j < tensor->coords.rank; ++j) {
-            printf("%" PRIi64, tensor->coords.shape[j]);
-            if (j+1 < tensor->coords.rank) printf("x");
+    printf("%zud", (size_t)rank);
+    if (rank > 0) putchar('.');
+    if (tin && rank > 0) {
+        for (int64_t i=0; i < tin->coords.rank; ++i) {
+            printf("%" PRIi64, tin->coords.shape[i]);
+            if (i+1 < tin->coords.rank) putchar('x');
         }
-        printf(") ");
     }
-    printf("\n");
+    if (tout && rank > 0) {
+        putchar('.');
+        for (int64_t i=0; i < tout->coords.rank; ++i) {
+            printf("%" PRIi64, tout->coords.shape[i]);
+            if (i+1 < tout->coords.rank) putchar('x');
+        }
+    }
+    putchar('\n');
 }
 
 /* Execute an operator on the active compute device and return result tensor. */
@@ -334,7 +345,7 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
     const mag_op_traits_t *meta = mag_op_traits(op);
     mag_assert2((in && num_in) || (out && num_out));
     mag_assert2(op != MAG_OP_NOP);
-#if 0 /* Debug: print dispatched ops */
+#if 1 /* Debug: print dispatched ops */
     mag_dbg_trace_op_ir(op, inplace, in, num_in, out, num_out);
 #endif
     mag_context_t *ctx = in ? (*in)->ctx : (*out)->ctx;
