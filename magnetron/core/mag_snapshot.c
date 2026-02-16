@@ -71,6 +71,7 @@ typedef struct mag_mmap_owner_t {
     MAG_RC_INJECT_HEADER;
     mag_mapped_file_t file;
 } mag_mmap_owner_t;
+MAG_RC_OBJECT_IS_VALID(mag_mmap_owner_t);
 
 static void mag_mmap_owner_dtor(void *self) {
     mag_mmap_owner_t *o = self;

@@ -299,17 +299,20 @@ static mag_status_t mag_tensor_strided_view(mag_tensor_t **out_result, mag_tenso
 
 static void MAG_COLDPROC mag_dbg_trace_op_ir(mag_opcode_t op, bool inplace, mag_tensor_t **in,  uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
     const mag_op_traits_t *meta = mag_op_traits(op);
-    const char *dvc = in && num_in ? in[0]->ctx->device->id : out[0]->ctx->device->id;
+    const mag_device_id_t *dvc = in && num_in ? &in[0]->ctx->device->id : &out[0]->ctx->device->id;
     bool cont = true;
     for (uint32_t i=0; i < num_in;  ++i) cont &= mag_tensor_is_contiguous(in[i]);
     for (uint32_t i=0; i < num_out; ++i) cont &= mag_tensor_is_contiguous(out[i]);
     char opcode[64];
     snprintf(opcode, sizeof(opcode), "%s", meta->mnemonic);
     for (char *p = opcode; *p; ++p) if (*p >= 'A' && *p <= 'Z') *p |= 0x20;
+    char dvcname[64];
+    snprintf(dvcname, sizeof(dvcname), "%s", mag_backend_type_to_str(dvc->type));
+    for (char *p = dvcname; *p; ++p) if (*p >= 'A' && *p <= 'Z') *p |= 0x20;
     const mag_tensor_t *tin = num_in ? in[0] : NULL;
     const mag_tensor_t *tout = num_out ? out[0] : NULL;
     int64_t rank = tin ? tin->coords.rank : tout->coords.rank;
-    printf("%s.%s.%s%s.", opcode, dvc, cont ? "cont" : "stri", inplace ? ".inl" : "");
+    printf("%s.%s:%u.%s%s.", opcode, dvcname, dvc->device_ordinal, cont ? "cont" : "stri", inplace ? ".inl" : "");
     if (op == MAG_OP_CAST && num_in && num_out) {
         printf("%s.%s.", mag_type_trait(out[0]->dtype)->short_name, mag_type_trait(in[0]->dtype)->short_name);
     } else if (num_out == 1) {
@@ -345,7 +348,7 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
     const mag_op_traits_t *meta = mag_op_traits(op);
     mag_assert2((in && num_in) || (out && num_out));
     mag_assert2(op != MAG_OP_NOP);
-#if 1 /* Debug: print dispatched ops */
+#if 0 /* Debug: print dispatched ops */
     mag_dbg_trace_op_ir(op, inplace, in, num_in, out, num_out);
 #endif
     mag_context_t *ctx = in ? (*in)->ctx : (*out)->ctx;
@@ -1574,7 +1577,7 @@ mag_status_t mag_gather(mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t
 mag_status_t mag_copy_raw_(mag_tensor_t *tensor, const void *data, size_t size_bytes) {
     mag_context_t *ctx = tensor->ctx;
     mag_contract(ctx, ERR_INVALID_PARAM, {}, data != NULL && size_bytes > 0, "invalid data pointer or length");
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_device_is(tensor->storage->device, "cpu"), "tensor storage device must be CPU for mag_copy_raw_");
+    mag_contract(ctx, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "tensor storage must be allocated on CPU, but is allocated on %s", mag_backend_type_to_str(tensor->storage->device->id.type));
     mag_contract(ctx, ERR_INVALID_PARAM, {}, data && size_bytes, "invalid data pointer or length");
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_numbytes(tensor) == size_bytes, "data length (%" PRIu64 ") does not match tensor nbytes (%" PRIu64 ")", (uint64_t)size_bytes, (uint64_t)mag_tensor_numbytes(tensor));
     mag_contract(ctx, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(tensor), "tensor must be contiguous");

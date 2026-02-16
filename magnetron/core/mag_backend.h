@@ -29,6 +29,7 @@ extern "C" {
 typedef enum mag_backend_type_t {
 #define _(name, required) MAG_BACKEND_TYPE_##name,
     mag_backenddef(_)
+    MAG_BACKEND_TYPE__COUNT
 #undef _
 } mag_backend_type_t;
 extern const char *mag_backend_type_to_str(mag_backend_type_t type);
@@ -37,6 +38,8 @@ typedef struct mag_device_id_t {
     mag_backend_type_t type;        /* Backend type, (e.g. CPU, CUDA, etc..) */
     uint32_t device_ordinal;        /* Device index for the given backend type, (e.g. 0 for cuda:0). */
 } mag_device_id_t;
+extern void mag_device_id_to_str(mag_device_id_t id, char (*buf)[32]);
+extern bool mag_device_id_parse(mag_device_id_t *id, const char *str);
 
 #define MAG_DEVICE_ID_CPU ((mag_device_id_t){.type=MAG_BACKEND_TYPE_CPU, .device_ordinal=0})
 
