@@ -84,7 +84,7 @@ mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage
     int64_t numbytes;
     mag_contract(ctx, ERR_DIM_OVERFLOW, {}, !mag_mulov64(numel, dts, &numbytes), "Total size overflowed: numel = %" PRIi64 ", dtype size = %" PRIi64, numel, dts);
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
-    mag_device_t *dvc = ctx->device;
+    mag_device_t *dvc = ctx->active_device;
     ctx->telemetry.storage_bytes_allocated += numbytes;
     if (!storage) {
         void (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;

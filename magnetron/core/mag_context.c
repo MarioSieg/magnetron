@@ -161,16 +161,16 @@ mag_context_t *mag_ctx_create(void) {
         num_backend_paths && backend_paths && *backend_paths && **backend_paths ? *backend_paths : "(no paths)"
     );
     mag_device_id_t cpu_dvc = MAG_DEVICE_ID_CPU; /* TODO: maybe allow users to specify a preferred default device type via env var or context info struct in the future? */
-    ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, &cpu_dvc);
-    if (mag_unlikely(!ctx->backend || !ctx->device)) {
+    ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->active_device, &cpu_dvc);
+    if (mag_unlikely(!ctx->backend || !ctx->active_device)) {
         mag_log_error(
             "\nNo suitable magnetron compute backend found for device id %s:%u !"
            "\nMake sure the specified device id is correct and that the corresponding backend is available.",
            mag_backend_type_to_str(cpu_dvc.type), cpu_dvc.device_ordinal
         );
         cpu_dvc = MAG_DEVICE_ID_CPU;
-        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, &cpu_dvc);
-        mag_assert(ctx->backend && ctx->device,
+        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->active_device, &cpu_dvc);
+        mag_assert(ctx->backend && ctx->active_device,
             "\nFailed to initialize fallback CPU compute backend!"
             "\nMake sure the magnetron_cpu backend is available next to the magnetron_core library."
         );
@@ -202,8 +202,7 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     mag_slab_destroy(&ctx->view_meta_slab);
     mag_slab_destroy(&ctx->tensor_slab);
     mag_slab_destroy(&ctx->storage_slab);
-    (*ctx->backend->destroy_device)(ctx->backend, ctx->device);
-    ctx->device = NULL;
+    ctx->active_device = NULL;
     ctx->backend = NULL;
     mag_backend_registry_free(ctx->backend_registry);
     size_t num_created_tensors = ctx->telemetry.num_created_tensors;
@@ -250,7 +249,7 @@ bool mag_ctx_has_error(const mag_context_t *ctx){
 }
 
 const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx) {
-    return ctx->device->physical_device_name;
+    return ctx->active_device->physical_device_name;
 }
 
 const char *mag_ctx_get_os_name(const mag_context_t *ctx) {
@@ -302,7 +301,7 @@ bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx) {
 }
 
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
-    (*ctx->device->manual_seed)(ctx->device, seed);
+    (*ctx->active_device->manual_seed)(ctx->active_device, seed);
 }
 
 const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {

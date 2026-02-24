@@ -71,15 +71,16 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     /* Check that all function pointers are provided */
     bool fn_ok = true;
     mag_assert2(MAG_BACKEND_MODULE_ABI_VER == 1); /* Ensure this code is updated if ABI changes */
-    mag_assert2(MAG_BACKEND_VTABLE_SIZE == 8); /* Ensure this code is updated if vtable size changes */
+    mag_assert2(MAG_BACKEND_VTABLE_SIZE == 9); /* Ensure this code is updated if vtable size changes */
+    fn_ok &= !!backend->init;
+    fn_ok &= !!backend->shutdown;
     fn_ok &= !!backend->backend_version;
     fn_ok &= !!backend->runtime_version;
     fn_ok &= !!backend->score;
     fn_ok &= !!backend->id;
     fn_ok &= !!backend->num_devices;
-    fn_ok &= !!backend->best_device_idx;
-    fn_ok &= !!backend->init_device;
-    fn_ok &= !!backend->destroy_device;
+    fn_ok &= !!backend->best_device_id;
+    fn_ok &= !!backend->get_device;
     if (mag_unlikely(!fn_ok)) {
         mag_log_error("Backend struct from file '%s' is missing required function pointers", file);
         mag_dylib_close(handle);
@@ -254,15 +255,14 @@ bool mag_backend_registry_load_all_available(mag_backend_registry_t *reg) {
 mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const mag_device_id_t *id) {
     for (size_t i=0; i < reg->backends_num; ++i) {
         mag_backend_t *backend = reg->backends[i]->backend;
-        size_t num_devices = (*backend->num_devices)(backend);
-        for (size_t d=0; d < num_devices; ++d) {
-            mag_device_t *dev = (*backend->init_device)(backend, reg->ctx, d);
+        uint32_t num_devices = (*backend->num_devices)(backend);
+        for (uint32_t idx=0; idx < num_devices; ++idx) {
+            mag_device_t *dev = (*backend->get_device)(backend, idx);
             if (mag_unlikely(!dev)) continue;
             if (dev->id.type == id->type && dev->id.device_ordinal == id->device_ordinal) { /* Found matching device */
                 *device = dev;
                 return backend;
             }
-            (*backend->destroy_device)(backend, dev);
         }
     }
     return mag_backend_registry_best_backend(reg); /* Fallback to best backend */

@@ -299,7 +299,7 @@ static mag_status_t mag_tensor_strided_view(mag_tensor_t **out_result, mag_tenso
 
 static void MAG_COLDPROC mag_dbg_trace_op_ir(mag_opcode_t op, bool inplace, mag_tensor_t **in,  uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
     const mag_op_traits_t *meta = mag_op_traits(op);
-    const mag_device_id_t *dvc = in && num_in ? &in[0]->ctx->device->id : &out[0]->ctx->device->id;
+    const mag_device_id_t *dvc = in && num_in ? &in[0]->ctx->active_device->id : &out[0]->ctx->active_device->id;
     bool cont = true;
     for (uint32_t i=0; i < num_in;  ++i) cont &= mag_tensor_is_contiguous(in[i]);
     for (uint32_t i=0; i < num_out; ++i) cont &= mag_tensor_is_contiguous(out[i]);
@@ -380,8 +380,8 @@ static void MAG_HOTPROC mag_dispatch(mag_opcode_t op, bool inplace, const mag_op
         .num_out = num_out,
     };
     if (params) memcpy(cmd.attrs, params, num_params*sizeof(*params));
-    void (*submit)(mag_device_t *, const mag_command_t *) = ctx->device->submit;
-    (*submit)(ctx->device, &cmd);
+    void (*submit)(mag_device_t *, const mag_command_t *) = ctx->active_device->submit;
+    (*submit)(ctx->active_device, &cmd);
     for (uint32_t i=0; i < num_out; ++i) {
         if (inplace) mag_bump_version(out[i]);   /* Result aliases the modified storage */
     }

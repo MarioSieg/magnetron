@@ -16,7 +16,7 @@ using namespace magnetron;
 TEST(context, create_cpu) {
     mag_set_log_level(MAG_LOG_LEVEL_DEBUG);
     context ctx {};
-    ASSERT_EQ((*ctx).device->id.type, MAG_BACKEND_TYPE_CPU);
+    ASSERT_EQ((*ctx).active_device->id.type, MAG_BACKEND_TYPE_CPU);
     ASSERT_TRUE(!ctx.cpu_name().empty());
     ASSERT_TRUE(!ctx.device_name().empty());
     ASSERT_TRUE(!ctx.os_name().empty());

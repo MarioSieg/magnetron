@@ -47,7 +47,7 @@ struct mag_context_t {
     mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
     mag_backend_registry_t *backend_registry;   /* Compute backend registry */
     mag_backend_t *backend;                     /* Active compute backend. */
-    mag_device_t *device;                       /* Active compute device. */
+    mag_device_t *active_device;                       /* Active compute device. */
 #ifdef MAG_DEBUG
     mag_tensor_t *alive_head;                   /* List of alive tensors used for leak detection. */
 #endif

@@ -567,7 +567,7 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_snap_verify(filename && *filename, return false);
     const char *ext = strrchr(filename, '.'); /* check that the file extension is .mag */
     mag_snap_verify(ext != NULL && strcmp(ext, ".mag") == 0, return false);
-    mag_snap_verify(ctx->device->id.type == MAG_BACKEND_TYPE_CPU, return false); /* Only CPU deserialization is supported at the moment */
+    mag_snap_verify(ctx->active_device->id.type == MAG_BACKEND_TYPE_CPU, return false); /* Only CPU deserialization is supported at the moment */
 
     mag_tensor_desc_t *stable = NULL;
     mag_snapshot_t *snap = mag_snapshot_new(ctx);
@@ -624,7 +624,7 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
         const uint8_t *blob = NULL;
         mag_snap_verify(mag_stream_rbytes_view(stream, &blob, nbytes), goto error);
         mag_storage_buffer_t *storage = NULL;
-        mag_cpu_borrow_storage(ctx->device, &storage, blob, nbytes, desc->dtype, snap->mmap_owner);
+        mag_cpu_borrow_storage(ctx->active_device, &storage, blob, nbytes, desc->dtype, snap->mmap_owner);
         mag_tensor_t *tensor = NULL;
         mag_snap_verify(mag_isok(mag_tensor_init(&tensor, ctx, storage, desc->dtype, desc->rank, shape)), goto error);
         mag_snap_verify(mag_snapshot_insert_tensor_by_id(snap, desc->key_id, tensor), mag_tensor_decref(tensor); goto error);
