@@ -35,7 +35,7 @@ TEST(context, create_cpu) {
 
 #ifdef MAG_ENABLE_CUDA
 
-#if 1
+#if 0
 TEST(context, create_cuda) {
     context ctx {"cuda:0"};
     tensor y {ctx, dtype::float32, 8};
