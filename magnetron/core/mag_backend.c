@@ -63,7 +63,7 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     /* Init backend */
     mag_backend_t *backend = (*(MAG_BACKEND_SYM_FN_INIT*)fn_init)(ctx); /* Call the function to initialize the backend */
     if (mag_unlikely(!backend)) {
-        mag_log_error("Backend library file '%s' failed to initialize", file);
+        mag_log_error("Backend library file '%s' failed to initialize interface", file);
         mag_dylib_close(handle);
         return NULL;
     }
@@ -96,6 +96,14 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
         return NULL;
     }
 
+    /* Invoke init hook */
+    if (mag_unlikely(!(*backend->init)(backend, ctx))) {
+        mag_log_error("Backend library file '%s' init hook failed", file);
+        mag_dylib_close(handle);
+        return NULL;
+    }
+
+    /* Create backend module */
     mag_backend_module_t *module = (*mag_alloc)(NULL, sizeof(*module), 0);
     memset(module, 0, sizeof(*module));
     *module = (mag_backend_module_t) {
@@ -106,6 +114,7 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
         .fn_init = fn_init,
         .fn_shutdown = fn_shutdown
     };
+
     char id[64];
     snprintf(id, sizeof(id), "%s", (*backend->id)(backend));
     for (char *p = id; *p; ++p)
@@ -117,6 +126,9 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
 
 static void mag_backend_module_shutdown(mag_backend_module_t *mod) {
     if (!mod) return;
+    if (mag_unlikely(!(*mod->backend->shutdown)(mod->backend))) {
+        mag_log_error("Backend shutdown hook failed");
+    }
     if (mod->fn_shutdown && mod->backend) {
         (*mod->fn_shutdown)(mod->backend);
         mod->backend = NULL;

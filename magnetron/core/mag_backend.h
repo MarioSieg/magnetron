@@ -88,22 +88,22 @@ typedef struct mag_command_t {
 
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 struct mag_device_t {
+    void *impl;                                                     /* Backend specific device implementation, if any. */
     mag_context_t *ctx;                                             /* Owning context */
     mag_device_id_t id;                                             /* Device ID, (e.g. cuda:0, cpu, etc..) */
-    void *impl;                                                     /* Backend specific device implementation, if any. */
     bool is_async;                                                  /* True if the device executes commands asynchronously. */
-    char physical_device_name[256];                                 /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
     void (*submit)(mag_device_t *dvc, const mag_command_t *cmd);    /* Submit a command to the device for execution. */
     void (*alloc_storage)(mag_device_t *dvc, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype);
     void (*manual_seed)(mag_device_t *dvc, uint64_t seed);
+    char physical_device_name[256];                                 /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
 };
 
 #define MAG_BACKEND_MODULE_ABI_VER 1 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */
 typedef struct mag_backend_t mag_backend_t;
 struct mag_backend_t {
     void *impl;
-    void (*init)(mag_backend_t *self, mag_context_t *ctx);
-    void (*shutdown)(mag_backend_t *self);
+    bool (*init)(mag_backend_t *self, mag_context_t *ctx);
+    bool (*shutdown)(mag_backend_t *self);
     uint32_t (*backend_version)(mag_backend_t *bck);
     uint32_t (*runtime_version)(mag_backend_t *bck);
     uint32_t (*score)(mag_backend_t *bck);
