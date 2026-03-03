@@ -143,8 +143,6 @@ typedef void (MAG_BACKEND_SYM_FN_SHUTDOWN)(mag_backend_t *bck);
 typedef struct mag_backend_registry_t mag_backend_registry_t;
 
 extern MAG_EXPORT mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
-extern MAG_EXPORT bool mag_backend_registry_load_all_available(mag_backend_registry_t *reg);
-extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag_backend_type_t type);
 extern MAG_EXPORT bool mag_backend_registry_get_backend_and_device_by_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
 extern MAG_EXPORT void mag_backend_registry_free(mag_backend_registry_t *reg);
 

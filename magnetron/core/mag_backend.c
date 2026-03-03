@@ -119,7 +119,6 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     for (char *p = id; *p; ++p)
         if (*p >= 'a' && *p <= 'z')
             *p = (char)(*p - ('a' - 'A'));
-    mag_log_info("Initialized backend module '%s' ABI: v.%d, Hash: 0x%" PRIx64 ", Lib: %s", id, mag_abi_cookie_ver(abi_cookie), (uint64_t)module->fname_hash, file);
     return module;
 }
 
@@ -141,7 +140,6 @@ static void mag_backend_module_shutdown(mag_backend_module_t *mod) {
 
 struct mag_backend_registry_t {
     mag_context_t *ctx;
-    char *module_path;
     mag_backend_module_t *backends[MAG_BACKEND_TYPE__COUNT];
     size_t backends_num;
     size_t backends_cap;
@@ -199,39 +197,47 @@ mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx) {
     memset(reg, 0, sizeof(*reg));
     reg->ctx = ctx;
     char *modpath = mag_current_module_path();
-    mag_assert(modpath && *modpath, "Failed to query current library module path, cannot load backends!");
-    char *dir, *file;
-    mag_path_split_dir_inplace(modpath, &dir, &file);
-    reg->module_path = mag_strdup(dir);
-    (*mag_alloc)(modpath, 0, 0);
-    return reg;
-}
-
-static void mag_format_dylib_name(char (*o)[1024], const char *basedir, const char *backend_name) {
-    snprintf(*o, sizeof(*o), "%s/%smagnetron_%s.%s", basedir, MAG_DYLIB_PREFIX, backend_name, MAG_DYLIB_EXT);
-}
-
-bool mag_backend_registry_load_all_available(mag_backend_registry_t *reg) {
-    const char *basedir = reg->module_path;
+    if (mag_unlikely(!modpath)) {
+        mag_log_error("Failed to get current module path");
+        goto error;
+    }
+    char *module_dir, *file;
+    mag_path_split_dir_inplace(modpath, &module_dir, &file);
+    mag_log_info("Module search path: '%s'", module_dir);
+    /* Try to load all backends */
     char pathbuf[1024] = {0};
-    /* Try to load additional backends */
     for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
-        char name[64];
-        snprintf(name, sizeof(name), "%s", mag_backend_type_to_str(type));
-        mag_format_dylib_name(&pathbuf, basedir, name);
+        snprintf(pathbuf, sizeof(pathbuf), "%s/%smagnetron_%s.%s", module_dir, MAG_DYLIB_PREFIX, mag_backend_type_to_str(type), MAG_DYLIB_EXT);
         mag_backend_module_t *mod = mag_backend_module_load(pathbuf, reg->ctx);
         if (mag_unlikely(!mod)) {
-            if (mag_backend_type_is_required(type)) {
-                mag_log_error("Failed to load required CPU backend module, cannot continue!");
-                return false;
-            }
-            mag_log_info("Backend module for type '%s' not found, skipping", mag_backend_type_to_str(type));
+            if (type != MAG_BACKEND_TYPE_CUSTOM) /* Custom backend is very optional, so don't print error for it */
+                mag_log_error("Failed to load backend module. Name: %s, Required: %s", mag_backend_type_to_str(type), mag_backend_type_is_required(type) ? "Yes" : "No");
+            if (mag_backend_type_is_required(type)) goto error;
             continue;
         }
         reg->backends[type] = mod;
         ++reg->backends_num;
     }
-    return reg->backends_num > 0;
+    (*mag_alloc)(modpath, 0, 0);
+    /* Print short overview of loaded backends */
+    for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
+        if (reg->backends[type]) {
+            mag_backend_t *bck = reg->backends[type]->backend;
+            mag_log_info("Loaded backend: %s (version %d.%d.%d, %u device%s)",
+                (*bck->id)(bck),
+                mag_ver_major((*bck->runtime_version)(bck)),
+                mag_ver_minor((*bck->runtime_version)(bck)),
+                mag_ver_patch((*bck->runtime_version)(bck)),
+                (*bck->num_devices)(bck),
+                (*bck->num_devices)(bck) == 1 ? "" : "s"
+            );
+        }
+    }
+    return reg;
+error:
+    if (modpath) (*mag_alloc)(modpath, 0, 0);
+    if (reg) (*mag_alloc)(reg, 0, 0);
+    return NULL;
 }
 
 mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag_backend_type_t type) {
@@ -256,6 +262,5 @@ void mag_backend_registry_free(mag_backend_registry_t *reg) {
     for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type)
         if (reg->backends[type])
             mag_backend_module_shutdown(reg->backends[type]);
-    (*mag_alloc)(reg->module_path, 0, 0);
     (*mag_alloc)(reg, 0, 0);
 }

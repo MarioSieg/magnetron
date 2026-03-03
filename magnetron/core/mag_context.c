@@ -150,15 +150,12 @@ mag_context_t *mag_ctx_create(const char *device_id) {
 
     /* Create selected compute device. */
     ctx->backend_registry = mag_backend_registry_init(ctx);
-    const char** backend_paths = NULL;
-    size_t num_backend_paths = 0;
-    mag_assert(mag_backend_registry_load_all_available(ctx->backend_registry),
+    mag_assert(ctx->backend_registry != NULL,
         "\nNo magnetron compute backends found!"
         "\nBackends are loaded dynamically as shared libraries in the directory containing the magnetron_core library, but none were found."
         "\nMake sure you have at least one backend (e.g. magnetron_cpu) next to the magnetron_core library within the venv or installation path."
         "\nThe backend shared library must be named magnetron_<backend>.{so|dylib|dll}"
-        "\nCheck the searched path manually to see if any backends were found: %s",
-        num_backend_paths && backend_paths && *backend_paths && **backend_paths ? *backend_paths : "(no paths)"
+        "\nCheck the searched path manually to see if any backends were found."
     );
     mag_device_id_t requested_dvc = MAG_DEVICE_ID_CPU;
     ctx->backend = NULL;
