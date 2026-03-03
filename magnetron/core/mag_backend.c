@@ -223,13 +223,14 @@ mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx) {
     for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
         if (reg->backends[type]) {
             mag_backend_t *bck = reg->backends[type]->backend;
-            mag_log_info("Loaded backend: %s (version %d.%d.%d, %u device%s)",
+            mag_log_info("Loaded backend: %s (Version %d.%d.%d, %u Device%s, Best Device: '%s')",
                 (*bck->id)(bck),
                 mag_ver_major((*bck->runtime_version)(bck)),
                 mag_ver_minor((*bck->runtime_version)(bck)),
                 mag_ver_patch((*bck->runtime_version)(bck)),
                 (*bck->num_devices)(bck),
-                (*bck->num_devices)(bck) == 1 ? "" : "s"
+                (*bck->num_devices)(bck) == 1 ? "" : "s",
+                (*bck->num_devices)(bck) > 0 ? bck->get_device(bck, (*bck->best_device_id)(bck))->physical_device_name : "N/A"
             );
         }
     }
