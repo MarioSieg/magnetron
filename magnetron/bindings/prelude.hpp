@@ -25,3 +25,6 @@
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+// Lazy init the context, destruction is handled by the module destructor. Im
+[[nodiscard]] extern mag_context_t *get_ctx();

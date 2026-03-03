@@ -14,7 +14,7 @@
 static std::once_flag g_ctx_once;
 static std::atomic<mag_context_t*> g_ctx{nullptr};
 
-mag_context_t* get_ctx() {
+mag_context_t *get_ctx() {
     std::call_once(g_ctx_once, [] {
         mag_context_t *ctx = mag_ctx_create("cpu:0");
         g_ctx.store(ctx, std::memory_order_release);
