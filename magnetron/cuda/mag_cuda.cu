@@ -183,13 +183,12 @@ namespace mag {
             .dtype = dtype,
             .device = device,
         };
-        static constexpr auto *dealloc_callback = +[](void *self) {
+        mag_rc_init_object(*out, +[](void *self) {
             auto *buffer = static_cast<mag_storage_buffer_t *>(self);
             mag_context_t *ctx = buffer->ctx;
             mag_cuda_check(cudaFree(reinterpret_cast<void *>(buffer->base)));
             mag_slab_free(&ctx->storage_slab, buffer);
-        };
-        mag_rc_init_object(*out, dealloc_callback);
+        });
     }
 
     class physical_device final : public mag_device_t {

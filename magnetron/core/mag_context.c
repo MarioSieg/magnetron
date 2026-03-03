@@ -123,7 +123,7 @@ static void mag_ctx_dump_banner(void) {
 }
 
 /* Create context with compute device descriptor. */
-mag_context_t *mag_ctx_create(void) {
+mag_context_t *mag_ctx_create(const char *device_id) {
     mag_setup_environ(); /* Parse and apply environment variables. */
 
     mag_log_info("Creating magnetron context...");
@@ -160,16 +160,19 @@ mag_context_t *mag_ctx_create(void) {
         "\nCheck the searched path manually to see if any backends were found: %s",
         num_backend_paths && backend_paths && *backend_paths && **backend_paths ? *backend_paths : "(no paths)"
     );
-    mag_device_id_t cpu_dvc = MAG_DEVICE_ID_CPU; /* TODO: maybe allow users to specify a preferred default device type via env var or context info struct in the future? */
-    ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->active_device, &cpu_dvc);
+    mag_device_id_t requested_dvc = MAG_DEVICE_ID_CPU;
+    ctx->backend = NULL;
+    ctx->active_device = NULL;
+    if (mag_device_id_parse(&requested_dvc, device_id)) /* Try to parse requested device id from input string. */
+        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->active_device, &requested_dvc); /* Try to find a backend that can handle the requested device id. */
     if (mag_unlikely(!ctx->backend || !ctx->active_device)) {
         mag_log_error(
             "\nNo suitable magnetron compute backend found for device id %s:%u !"
            "\nMake sure the specified device id is correct and that the corresponding backend is available.",
-           mag_backend_type_to_str(cpu_dvc.type), cpu_dvc.device_ordinal
+           mag_backend_type_to_str(requested_dvc.type), requested_dvc.device_ordinal
         );
-        cpu_dvc = MAG_DEVICE_ID_CPU;
-        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->active_device, &cpu_dvc);
+        requested_dvc = MAG_DEVICE_ID_CPU;
+        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->active_device, &requested_dvc);
         mag_assert(ctx->backend && ctx->active_device,
             "\nFailed to initialize fallback CPU compute backend!"
             "\nMake sure the magnetron_cpu backend is available next to the magnetron_core library."
