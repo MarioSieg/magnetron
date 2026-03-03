@@ -11,6 +11,17 @@
 
 #pragma once
 
-namespace mag::bindings {
+#include <atomic>
+#include <mutex>
+#include <string>
+#include <memory>
+#include <vector>
 
-}
+#include <magnetron/magnetron.h>
+#include <nanobind/nanobind.h>
+
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
+
+namespace nb = nanobind;
+using namespace nb::literals;

@@ -7,12 +7,6 @@ add_custom_target(magnetron_runtime ALL
     DEPENDS magnetron_core
 )
 
-# Optional Python bindings
-if (${MAGNETRON_BUILD_PYTHON_BINDINGS})
-    add_subdirectory(bindings)
-    add_dependencies(magnetron_runtime magnetron) # magnetron is name of the Python bindings target
-endif()
-
 function(add_backend name)
     message(STATUS "Configuring magnetron backend module: ${name}")
     add_subdirectory("${name}")
@@ -26,4 +20,11 @@ if (${MAGNETRON_ENABLE_BACKEND_CPU})
 endif()
 if (${MAGNETRON_ENABLE_BACKEND_CUDA})
     add_backend(cuda)
+endif()
+
+# Optional Python bindings
+if (${MAGNETRON_BUILD_PYTHON_BINDINGS})
+    add_subdirectory(bindings)
+    add_dependencies(magnetron magnetron_runtime) # magnetron is name of the Python bindings target
+    target_link_libraries(magnetron PRIVATE magnetron_core)
 endif()

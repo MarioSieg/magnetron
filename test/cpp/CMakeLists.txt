@@ -9,10 +9,6 @@ target_link_libraries(magnetron_test magnetron_core)
 target_include_directories(magnetron_test PRIVATE ../../magnetron)
 target_include_directories(magnetron_test PRIVATE ../../include)
 target_include_directories(magnetron_test PRIVATE extern/half/include)
-if(Boost_FOUND)
-    target_include_directories(magnetron_test PRIVATE ${Boost_INCLUDE_DIRS})
-    target_link_libraries(magnetron_test ${Boost_LIBRARIES})
-endif()
 target_include_directories(magnetron_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
     magnetron_test

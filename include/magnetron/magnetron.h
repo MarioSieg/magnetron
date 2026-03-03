@@ -98,8 +98,8 @@ extern MAG_EXPORT mag_context_t *mag_ctx_create(const char *device_id);         
 
 extern MAG_EXPORT const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx);                                  /* Get last error and clear it. */
 extern MAG_EXPORT void mag_ctx_set_last_error(mag_context_t *ctx, const mag_error_t *error);                            /* Set last error. */
-extern MAG_EXPORT mag_status_t mag_ctx_get_last_error_code(const mag_context_t *ctx);                                   /* Get last error code without clearing it. */
-extern MAG_EXPORT void mag_ctx_clear_last_error(mag_context_t *ctx);                                                    /* Clear last error. */
+extern MAG_EXPORT mag_status_t mag_ctx_get_error_code(const mag_context_t *ctx);                                   /* Get last error code without clearing it. */
+extern MAG_EXPORT void mag_ctx_clear_error(mag_context_t *ctx);                                                    /* Clear last error. */
 extern MAG_EXPORT void mag_ctx_take_last_error(mag_context_t *ctx, mag_error_t *err);                                   /* Take last error and clear it. */
 extern MAG_EXPORT bool mag_ctx_has_error(const mag_context_t *ctx);                                                     /* Check if there is an error. */
 
