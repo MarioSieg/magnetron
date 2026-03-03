@@ -224,46 +224,52 @@ namespace mag {
             cudaDeviceProp props = {};
             if ((res2 = cudaGetDeviceProperties(&props, ord)) != cudaSuccess)
                 throw cuda_backend_error {res2, "Failed to get device properties"};
-            vram = props.totalGlobalMem;
-            cl = static_cast<uint32_t>(100*props.major + 10*props.minor);
-            nsm = static_cast<uint32_t>(props.multiProcessorCount);
-            ntpb = static_cast<uint32_t>(props.maxThreadsPerBlock);
-            smpb = props.sharedMemPerBlock;
-            smpb_opt = props.sharedMemPerBlockOptin;
-            has_vmm = !!vmm_support;
-            vmm_granularity = vmm_gran;
+            m_vram = props.totalGlobalMem;
+            m_cl = static_cast<uint32_t>(100*props.major + 10*props.minor);
+            m_nsm = static_cast<uint32_t>(props.multiProcessorCount);
+            m_ntpb = static_cast<uint32_t>(props.maxThreadsPerBlock);
+            m_smpb = props.sharedMemPerBlock;
+            m_smpb_opt = props.sharedMemPerBlockOptin;
+            m_has_vmm = !!vmm_support;
+            m_vmm_granularity = vmm_gran;
             std::snprintf(physical_device_name, std::size(physical_device_name), "%s", props.name);
         }
 
-        size_t vram = 0;
-        uint32_t cl = 0;
-        uint32_t nsm = 0;
-        uint32_t ntpb = 0;
-        size_t smpb = 0;
-        size_t smpb_opt = 0;
-        bool has_vmm = false;
-        size_t vmm_granularity = 0;
+        [[nodiscard]] size_t vram() const noexcept { return m_vram; }
+        [[nodiscard]] uint32_t compute_capability() const noexcept { return m_cl; }
+        [[nodiscard]] uint32_t num_sms() const noexcept { return m_nsm; }
+        [[nodiscard]] uint32_t max_threads_per_block() const noexcept { return m_ntpb; }
+        [[nodiscard]] size_t shared_mem_per_block() const noexcept { return m_smpb; }
+        [[nodiscard]] size_t shared_mem_per_block_optin() const noexcept { return m_smpb_opt; }
+        [[nodiscard]] bool supports_vmm() const noexcept { return m_has_vmm; }
+        [[nodiscard]] size_t vmm_granularity() const noexcept { return m_vmm_granularity; }
+
+    private:
+        size_t m_vram = 0;
+        uint32_t m_cl = 0;
+        uint32_t m_nsm = 0;
+        uint32_t m_ntpb = 0;
+        size_t m_smpb = 0;
+        size_t m_smpb_opt = 0;
+        bool m_has_vmm = false;
+        size_t m_vmm_granularity = 0;
     };
 
     class cuda_backend final : public mag_backend_t {
     public:
-        [[nodiscard]] const physical_device &active_device() const { return *m_phys_devices.at(m_active_dvc); }
-        [[nodiscard]] const std::vector<std::unique_ptr<physical_device>> &devices() noexcept { return m_phys_devices; }
-
         cuda_backend() : mag_backend_t{} {
             // Only init the interface of superclass here, the actual device initialization is deferred to the init callback
-            impl = this;
-            init = +[](mag_backend_t *bck, mag_context_t *ctx) -> bool {
+            this->impl = this;
+            this->init = +[](mag_backend_t *bck, mag_context_t *ctx) -> bool {
                 return static_cast<cuda_backend *>(bck->impl)->initialize(ctx);
             };
-            shutdown = +[](mag_backend_t *bck) -> bool {
+            this->shutdown = +[](mag_backend_t *bck) -> bool {
                 return static_cast<cuda_backend *>(bck->impl)->destroy();
             };
             backend_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_CUDA_BACKEND_VERSION; };
             runtime_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_VERSION; };
-            score = +[](mag_backend_t *bck) noexcept -> uint32_t { return 0; }; // TODO: fix score to reflect actual performance
             id = +[](mag_backend_t *bck) noexcept -> const char* { return "cuda"; };
-            num_devices = +[](mag_backend_t *bck) noexcept -> uint32_t { return static_cast<cuda_backend *>(bck->impl)->devices().size(); };
+            num_devices = +[](mag_backend_t *bck) noexcept -> uint32_t { return static_cast<cuda_backend *>(bck->impl)->device_count(); };
             best_device_id = +[](mag_backend_t *bck) noexcept -> uint32_t { return 0; };
             get_device = +[](mag_backend_t *bck, uint32_t idx) -> mag_device_t* {
                 auto &dvc = static_cast<cuda_backend *>(bck->impl)->devices();
@@ -275,6 +281,13 @@ namespace mag {
             };
         }
 
+        [[nodiscard]] uint32_t device_count() const noexcept { return static_cast<uint32_t>(m_devices.size()); }
+        [[nodiscard]] uint32_t active_device_idx() const noexcept { return m_active_device_idx; }
+        [[nodiscard]] uint32_t best_device_idx() const noexcept { return m_best_device_idx; }
+        [[nodiscard]] const physical_device &active_device() const noexcept { return *m_devices.at(m_active_device_idx); }
+        [[nodiscard]] const physical_device &best_device() const noexcept { return *m_devices.at(m_best_device_idx); }
+        [[nodiscard]] const std::vector<std::unique_ptr<physical_device>> &devices() const noexcept { return m_devices; }
+
     private:
         bool initialize(mag_context_t *ctx) {
             int ndvc = 0;
@@ -282,23 +295,27 @@ namespace mag {
                 mag_log_error("No CUDA-capable devices found.");
                 return false;
             }
-            m_ngpus = static_cast<uint32_t>(ndvc);
-            m_phys_devices.reserve(m_ngpus);
-            for (uint32_t device_id=0; device_id < m_ngpus; ++device_id) {
-                m_phys_devices.emplace_back(std::make_unique<physical_device>(ctx, device_id));
+            m_devices.reserve(ndvc);
+            for (int device_id=0; device_id < ndvc; ++device_id) {
+                try {
+                    m_devices.emplace_back(std::make_unique<physical_device>(ctx, device_id));
+                } catch (const cuda_backend_error &e) {
+                    mag_log_error("Failed to initialize CUDA device %d: %s", device_id, e.what());
+                } catch (...) {
+                    mag_log_error("Unknown error while initializing CUDA device %d", device_id);
+                }
             }
             return true;
         }
 
         bool destroy() {
-            m_phys_devices.clear();
+            m_devices.clear();
             return true;
         }
 
-        uint32_t m_ngpus = 0;
-        size_t m_active_dvc = 0;
-        size_t m_best_dvc = 0;
-        std::vector<std::unique_ptr<physical_device>> m_phys_devices = {};
+        uint32_t m_active_device_idx = 0;
+        uint32_t m_best_device_idx = 0;
+        std::vector<std::unique_ptr<physical_device>> m_devices = {};
     };
 }
 

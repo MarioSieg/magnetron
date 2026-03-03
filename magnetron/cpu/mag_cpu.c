@@ -198,7 +198,6 @@ static bool mag_cpu_shutdown(mag_backend_t *self) {
 }
 static uint32_t mag_cpu_backend_version(mag_backend_t *bck) { return MAG_CPU_BACKEND_VERSION; }
 static uint32_t mag_cpu_backend_runtime_version(mag_backend_t *bck) { return MAG_VERSION; }
-static uint32_t mag_cpu_backend_score(mag_backend_t *bck) { return 10; }
 static const char* mag_cpu_backend_id(mag_backend_t *bck) { return "cpu"; }
 static uint32_t mag_cpu_backend_num_devices(mag_backend_t *bck) { return 1; }
 static uint32_t mag_cpu_backend_best_device_idx(mag_backend_t *bck) { return 0; }
@@ -219,7 +218,6 @@ mag_backend_t *MAG_BACKEND_SYM_INIT(mag_context_t *ctx) { /* Create and return i
         .shutdown = &mag_cpu_shutdown,
         .backend_version = &mag_cpu_backend_version,
         .runtime_version = &mag_cpu_backend_runtime_version,
-        .score = &mag_cpu_backend_score,
         .id = &mag_cpu_backend_id,
         .num_devices = &mag_cpu_backend_num_devices,
         .best_device_id = &mag_cpu_backend_best_device_idx,

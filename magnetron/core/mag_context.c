@@ -162,18 +162,17 @@ mag_context_t *mag_ctx_create(const char *device_id) {
     );
     mag_device_id_t requested_dvc = MAG_DEVICE_ID_CPU;
     ctx->backend = NULL;
-    ctx->active_device = NULL;
-    if (mag_device_id_parse(&requested_dvc, device_id)) /* Try to parse requested device id from input string. */
-        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->active_device, &requested_dvc); /* Try to find a backend that can handle the requested device id. */
-    if (mag_unlikely(!ctx->backend || !ctx->active_device)) {
+    bool bck_ok = mag_device_id_parse(&requested_dvc, device_id);
+    if (bck_ok) /* If parsing succeeded, try to get the requested backend and device */
+        bck_ok = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, requested_dvc, &ctx->backend, &ctx->active_device);
+    if (mag_unlikely(!bck_ok)) { /* If parsing failed or backend/device retrieval failed, log error and fallback to CPU backend. */
         mag_log_error(
             "\nNo suitable magnetron compute backend found for device id %s:%u !"
            "\nMake sure the specified device id is correct and that the corresponding backend is available.",
            mag_backend_type_to_str(requested_dvc.type), requested_dvc.device_ordinal
         );
-        requested_dvc = MAG_DEVICE_ID_CPU;
-        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->active_device, &requested_dvc);
-        mag_assert(ctx->backend && ctx->active_device,
+        bck_ok = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, MAG_DEVICE_ID_CPU, &ctx->backend, &ctx->active_device);
+        mag_assert(bck_ok, /* CPU backend must be available as fallback, if not we abort as there's no way to run magnetron at all. */
             "\nFailed to initialize fallback CPU compute backend!"
             "\nMake sure the magnetron_cpu backend is available next to the magnetron_core library."
         );

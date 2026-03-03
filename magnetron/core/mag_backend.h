@@ -20,19 +20,20 @@
 extern "C" {
 #endif
 
-/* Name, Required */
+/* Name, ID, Required */
 #define mag_backenddef(_)\
-    _(CPU, true)\
-    _(CUDA, false)\
-    _(CUSTOM, false)\
+    _(CPU, cpu, true)\
+    _(CUDA, cuda, false)\
+    _(CUSTOM, custom, false)\
 
 typedef enum mag_backend_type_t {
-#define _(name, required) MAG_BACKEND_TYPE_##name,
+#define _(name, id, required) MAG_BACKEND_TYPE_##name,
     mag_backenddef(_)
     MAG_BACKEND_TYPE__COUNT
 #undef _
 } mag_backend_type_t;
 extern const char *mag_backend_type_to_str(mag_backend_type_t type);
+extern bool mag_backend_type_is_required(mag_backend_type_t type);
 
 typedef struct mag_device_id_t {
     mag_backend_type_t type;        /* Backend type, (e.g. CPU, CUDA, etc..) */
@@ -106,13 +107,12 @@ struct mag_backend_t {
     bool (*shutdown)(mag_backend_t *self);
     uint32_t (*backend_version)(mag_backend_t *bck);
     uint32_t (*runtime_version)(mag_backend_t *bck);
-    uint32_t (*score)(mag_backend_t *bck);
     const char *(*id)(mag_backend_t *bck);
     uint32_t (*num_devices)(mag_backend_t *bck);
     uint32_t (*best_device_id)(mag_backend_t *bck);
     mag_device_t *(*get_device)(mag_backend_t *bck, uint32_t idx);
 };
-#define MAG_BACKEND_VTABLE_SIZE 9 /* Number of function pointers in mag_backend_t struct. */
+#define MAG_BACKEND_VTABLE_SIZE 8 /* Number of function pointers in mag_backend_t struct. */
 mag_static_assert((sizeof(mag_backend_t)/sizeof(void *))-1 == MAG_BACKEND_VTABLE_SIZE);
 
 #define mag_backend_cat_name(x,y) x##y
@@ -144,8 +144,8 @@ typedef struct mag_backend_registry_t mag_backend_registry_t;
 
 extern MAG_EXPORT mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
 extern MAG_EXPORT bool mag_backend_registry_load_all_available(mag_backend_registry_t *reg);
-extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const mag_device_id_t *id);
-extern MAG_EXPORT mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg);
+extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag_backend_type_t type);
+extern MAG_EXPORT bool mag_backend_registry_get_backend_and_device_by_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
 extern MAG_EXPORT void mag_backend_registry_free(mag_backend_registry_t *reg);
 
 #ifdef __cplusplus

@@ -72,7 +72,7 @@ TEST(crc32c, test_correctness) {
     context ctx {};
     mag_device_t *cpu;
     auto cpudvc = MAG_DEVICE_ID_CPU;
-    mag_backend_registry_get_by_device_id((*ctx).backend_registry, &cpu, &cpudvc);
+    mag_backend_registry_get_backend_and_device_by_id((*ctx).backend_registry, cpudvc, nullptr, &cpu);
     ASSERT_NE(cpu, nullptr);
     ASSERT_NE(cpu->impl, nullptr);
     const mag_kernel_registry_t &reg = static_cast<mag_cpu_device_t *>(cpu->impl)->kernels;
@@ -111,7 +111,7 @@ TEST(crc32c, benchmark_throughput_gibs) {
     context ctx{};
     mag_device_t* cpu = nullptr;
     auto cpudvc = MAG_DEVICE_ID_CPU;
-    mag_backend_registry_get_by_device_id((*ctx).backend_registry, &cpu, &cpudvc);
+    mag_backend_registry_get_backend_and_device_by_id((*ctx).backend_registry, cpudvc, nullptr, &cpu);
     ASSERT_NE(cpu, nullptr);
     ASSERT_NE(cpu->impl, nullptr);
     const mag_kernel_registry_t& reg = static_cast<mag_cpu_device_t*>(cpu->impl)->kernels;

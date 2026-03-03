@@ -715,7 +715,7 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
     /* Compute checksum of metadata before data section starts */
     const uint8_t *chk_end = stream.pos;
     mag_device_t *dvc_interface;
-    mag_backend_registry_get_by_device_id(snap->ctx->backend_registry, &dvc_interface, &MAG_DEVICE_ID_CPU);
+    mag_backend_registry_get_backend_and_device_by_id(snap->ctx->backend_registry, MAG_DEVICE_ID_CPU, NULL, &dvc_interface);
     mag_assert2(dvc_interface);
     mag_cpu_device_t *dvc_impl = dvc_interface->impl;
     mag_assert2(dvc_impl);
