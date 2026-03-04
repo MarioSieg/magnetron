@@ -115,9 +115,6 @@ namespace magnetron {
         return std::nullopt;
     }
 
-    /**
-     * A 1-6 dimensional, reference counted tensor with a fixed size and data type.
-     */
     class tensor final {
     public:
         tensor(context& ctx, dtype type, std::initializer_list<int64_t> shape) {

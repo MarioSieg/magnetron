@@ -416,13 +416,13 @@ extern MAG_EXPORT mag_status_t mag_tensor_grad(const mag_tensor_t *tensor, mag_t
 extern MAG_EXPORT bool mag_tensor_requires_grad(const mag_tensor_t *tensor);
 extern MAG_EXPORT mag_status_t mag_tensor_set_requires_grad(mag_tensor_t *tensor, bool requires_grad);
 extern MAG_EXPORT mag_status_t mag_tensor_backward(mag_tensor_t *tensor);
-extern MAG_EXPORT void mag_tensor_zero_grad(mag_tensor_t *tensor);
+extern MAG_EXPORT mag_status_t mag_tensor_zero_grad(mag_tensor_t *tensor);
 extern MAG_EXPORT void *mag_tensor_copy_data(mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_tensor_copy_data_free(void *ret_val);
 extern MAG_EXPORT mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value);
 extern MAG_EXPORT mag_tensor_t *mag_tensor_detach(mag_tensor_t *tensor);
-extern MAG_EXPORT char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold);
-extern MAG_EXPORT void mag_tensor_to_string_free_data(char *ret_val);
+extern MAG_EXPORT const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold);
+extern MAG_EXPORT void mag_tensor_to_string_free_data(const char *ret_val);
 extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_tensor_visualize_backprop_graph(mag_tensor_t *tensor, const char *file);

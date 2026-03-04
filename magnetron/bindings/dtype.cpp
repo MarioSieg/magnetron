@@ -11,8 +11,6 @@
 
 #include "prelude.hpp"
 
-struct dtype_wrapper final { mag_dtype_t v; };
-
 void mag_init_bindings_dtype(nb::module_ &m) {
     auto dtype = m.def_submodule(
        "dtype",
@@ -20,14 +18,14 @@ void mag_init_bindings_dtype(nb::module_ &m) {
    );
 
     nb::class_<dtype_wrapper>(dtype, "DType")
-        .def_prop_ro("id", [](const dtype_wrapper &dtw) noexcept -> int { return dtw.v; })
-        .def_prop_ro("name", [](const dtype_wrapper &dtw) noexcept -> const char * { return mag_type_trait(dtw.v)->name; })
-        .def_prop_ro("short_name", [](const dtype_wrapper &dtw) noexcept -> const char * { return mag_type_trait(dtw.v)->short_name; })
-        .def_prop_ro("size", [](const dtype_wrapper &dtw) noexcept -> size_t { return mag_type_trait(dtw.v)->size; })
-        .def_prop_ro("alignment", [](const dtype_wrapper &dtw) noexcept -> size_t { return mag_type_trait(dtw.v)->alignment; })
-        .def("__repr__", [](const dtype_wrapper &dtw) -> nb::str { return nb::str{"magnetron.dtype.{}"}.format(mag_type_trait(dtw.v)->name); })
-        .def("__int__", [](const dtype_wrapper &dtw) noexcept -> int { return dtw.v; })
-        .def("__hash__", [](const dtype_wrapper &dtw) noexcept -> size_t { return dtw.v; })
+        .def_prop_ro("id", [](const dtype_wrapper &self) noexcept -> int { return self.v; })
+        .def_prop_ro("name", [](const dtype_wrapper &self) noexcept -> const char * { return mag_type_trait(self.v)->name; })
+        .def_prop_ro("short_name", [](const dtype_wrapper &self) noexcept -> const char * { return mag_type_trait(self.v)->short_name; })
+        .def_prop_ro("size", [](const dtype_wrapper &self) noexcept -> size_t { return mag_type_trait(self.v)->size; })
+        .def_prop_ro("alignment", [](const dtype_wrapper &self) noexcept -> size_t { return mag_type_trait(self.v)->alignment; })
+        .def("__repr__", [](const dtype_wrapper &self) -> nb::str { return nb::str{"magnetron.dtype.{}"}.format(mag_type_trait(self.v)->name); })
+        .def("__int__", [](const dtype_wrapper &self) noexcept -> int { return self.v; })
+        .def("__hash__", [](const dtype_wrapper &self) noexcept -> size_t { return self.v; })
         .def("__eq__", [](const dtype_wrapper &a, const dtype_wrapper &b) noexcept -> bool { return a.v == b.v; });
 
     // Bind all dtypes

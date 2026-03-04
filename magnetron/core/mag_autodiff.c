@@ -129,7 +129,8 @@ end:
     return MAG_STATUS_OK;
 }
 
-void mag_tensor_zero_grad(mag_tensor_t *tensor) {
+mag_status_t mag_tensor_zero_grad(mag_tensor_t *tensor) {
     if (tensor->flags & MAG_TFLAG_REQUIRES_GRAD && tensor->au_state && tensor->au_state->grad)
-        mag_zero_(tensor->au_state->grad);
+        return mag_zero_(tensor->au_state->grad);
+    return MAG_STATUS_OK;
 }
