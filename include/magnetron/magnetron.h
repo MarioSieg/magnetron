@@ -158,7 +158,7 @@ typedef struct mag_type_traits_t {
     const char *name;       /* Name of the data type. eg. bfloat16 */
     const char *short_name; /* Short name of the data type. eg. bf16 */
     size_t size;            /* Size of the data type in bytes. Must be a power of two. */
-    size_t align;           /* CPU Alignment of the data type in bytes. Must be a power of two. */
+    size_t alignment;           /* CPU Alignment of the data type in bytes. Must be a power of two. */
 } mag_type_traits_t;
 extern MAG_EXPORT const mag_type_traits_t *mag_type_trait(mag_dtype_t type);
 

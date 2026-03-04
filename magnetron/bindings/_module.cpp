@@ -9,3 +9,14 @@
 ** +---------------------------------------------------------------------+
 */
 
+#include "prelude.hpp"
+
+extern void mag_init_bindings_context(nb::module_ &m);
+extern void mag_init_bindings_dtype(nb::module_ &m);
+
+// Global module entry defin
+NB_MODULE(magnetron, m) {
+    mag_init_bindings_context(m);
+    mag_init_bindings_dtype(m);
+}
+

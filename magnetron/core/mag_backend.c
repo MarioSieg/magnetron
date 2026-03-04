@@ -175,17 +175,27 @@ bool mag_device_id_parse(mag_device_id_t *id, const char *str) {
     if (mag_unlikely(!n || n >= sizeof(name))) return false;
     memcpy(name, str, n);
     name[n] = '\0';
-    for (char *p = name; *p; ++p) *p = tolower(*p);
+    for (char *p = name; *p; ++p) *p |= ' ';
     mag_backend_type_t found = MAG_BACKEND_TYPE__COUNT;
-    for (mag_backend_type_t type=0; type < MAG_BACKEND_TYPE__COUNT; ++type)
-        if (strcmp(name, mag_backend_type_to_str(type)) == 0) { found = type; break; }
+    for (mag_backend_type_t type=0; type < MAG_BACKEND_TYPE__COUNT; ++type) {
+        if (strcmp(name, mag_backend_type_to_str(type)) == 0) {
+            found = type;
+            break;
+        }
+    }
     if (mag_unlikely(found == MAG_BACKEND_TYPE__COUNT)) return false;
     uint32_t ord=0;
     if (sep) {
-        char *end = NULL;
-        unsigned long v = strtoul(sep+1, &end, 10);
-        if (mag_unlikely(end == sep+1 || *end != '\0' || v > UINT32_MAX)) return false;
-        ord = (uint32_t)v;
+        const char *p = sep+1;
+        if (mag_unlikely(!*p)) return false;
+        uint32_t v = 0;
+        for (; *p; ++p) {
+            if (mag_unlikely(*p < '0' || *p > '9')) return false;
+            uint32_t dig = (uint32_t)(*p - '0');
+            if (mag_unlikely(v > (UINT32_MAX - dig)/10)) return false;
+            v = 10*v + dig;
+        }
+        ord = v;
     }
     id->type = found;
     id->device_ordinal = ord;

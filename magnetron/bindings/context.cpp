@@ -27,59 +27,61 @@ static void destroy_ctx(void *) noexcept {
         mag_ctx_destroy(ctx, false);
 }
 
-NB_MODULE(magnetron, m) {
+void mag_init_bindings_context(nb::module_ &m) {
     // Keep the context guard alive for the lifetime of the module
     // When the module unloads, the capsule destructor runs
     m.attr("_ctx_guard") = nb::capsule {reinterpret_cast<const void *>(1), &destroy_ctx};
 
-    m.doc() = "Magnetron Python bindings";
-    auto ctx = m.def_submodule(
+    auto context = m.def_submodule(
         "context",
         "Global runtime controls (errors, RNG, CPU info, backend, etc.)."
     );
-    ctx.def("last_error", +[]() -> int {
+    context.def("last_error", []() -> int {
         return mag_ctx_get_error_code(get_ctx());
     });
-    ctx.def("has_error", +[]() -> bool {
+    context.def("has_error", []() -> bool {
         return mag_ctx_has_error(get_ctx());
     });
-    ctx.def("clear_error", +[]() -> void {
+    context.def("clear_error", []() -> void {
         mag_ctx_clear_error(get_ctx());
     });
-    ctx.def("last_error_name", +[]() -> std::string {
+    context.def("last_error_name", []() -> std::string {
         return mag_status_get_name(mag_ctx_get_error_code(get_ctx()));
     });
-    ctx.def("start_grad_recorder", +[]() -> void {
+    context.def("start_grad_recorder", []() -> void {
         mag_ctx_grad_recorder_start(get_ctx());
     });
-    ctx.def("stop_grad_recorder", +[]() -> void {
+    context.def("stop_grad_recorder", []() -> void {
         mag_ctx_grad_recorder_stop(get_ctx());
     });
-    ctx.def("is_grad_recording", +[]() -> bool {
+    context.def("is_grad_recording", []() -> bool {
         return mag_ctx_grad_recorder_is_running(get_ctx());
     });
-    ctx.def("manual_seed", +[](uint64_t seed) -> void {
+    context.def("manual_seed", [](uint64_t seed) -> void {
         mag_ctx_manual_seed(get_ctx(), seed);
     }, "seed"_a);
-    ctx.def("cpu_name", +[]() -> std::string {
+    context.def("os_name", []() -> std::string {
+       return mag_ctx_get_os_name(get_ctx());
+    });
+    context.def("cpu_name", []() -> std::string {
         return mag_ctx_get_cpu_name(get_ctx());
     });
-    ctx.def("cpu_virtual_cores", +[]() -> uint32_t {
+    context.def("cpu_virtual_cores", []() -> uint32_t {
         return mag_ctx_get_cpu_virtual_cores(get_ctx());
     });
-    ctx.def("cpu_physical_cores", +[]() -> uint32_t {
+    context.def("cpu_physical_cores", []() -> uint32_t {
         return mag_ctx_get_cpu_physical_cores(get_ctx());
     });
-    ctx.def("cpu_sockets", +[]() -> uint32_t {
+    context.def("cpu_sockets", []() -> uint32_t {
         return mag_ctx_get_cpu_sockets(get_ctx());
     });
-    ctx.def("physical_memory_total", +[]() -> uint64_t {
+    context.def("physical_memory_total", []() -> uint64_t {
         return mag_ctx_get_physical_memory_total(get_ctx());
     });
-    ctx.def("physical_memory_free", +[]() -> uint64_t {
+    context.def("physical_memory_free", []() -> uint64_t {
        return mag_ctx_get_physical_memory_free(get_ctx());
     });
-    ctx.def("is_numa_system", +[]() -> bool {
+    context.def("is_numa_system", []() -> bool {
         return mag_ctx_is_numa_system(get_ctx());
     });
 }
