@@ -50,7 +50,7 @@ namespace mag::bindings {
                 for (int64_t k=0; k < rank - consuming; ++k)
                     out.append(nb::slice(nb::none(), nb::none(), nb::none()));
             } else {
-                for (auto && idx : idxs)
+                for (auto &&idx : idxs)
                     out.append(idx);
             }
         }
@@ -126,7 +126,7 @@ namespace mag::bindings {
                     continue;
                 }
                 if (nb::isinstance<nb::int_>(idx)) {
-                    int64_t i = nb::cast<int64_t>(idx);
+                    auto i = nb::cast<int64_t>(idx);
                     int64_t dim_size = mag_tensor_shape_ptr(*curr)[ax];
                     if (i < 0) i += dim_size;
                     if (i < 0 || i >= dim_size)
@@ -153,9 +153,7 @@ namespace mag::bindings {
                         if (mag_tensor_is_integer_typed(*idx_tw) || it == MAG_DTYPE_BOOLEAN) {
                             mag_scalar_t s {};
                             throw_if_error(mag_tensor_item(*idx_tw, &s));
-                            int64_t i = mag_scalar_is_i64(s) ? mag_scalar_as_i64(s)
-                                       : mag_scalar_is_u64(s) ? (int64_t) mag_scalar_as_u64(s)
-                                       : (throw nb::type_error("Tensor index scalar must be integer or bool"), 0);
+                            int64_t i = mag_scalar_is_i64(s) ? mag_scalar_as_i64(s) : mag_scalar_is_u64(s) ? (int64_t) mag_scalar_as_u64(s) : (throw nb::type_error("Tensor index scalar must be integer or bool"), 0);
                             int64_t dim_size = mag_tensor_shape_ptr(*curr)[ax];
                             if (i < 0) i += dim_size;
                             if (i < 0 || i >= dim_size)
@@ -173,14 +171,14 @@ namespace mag::bindings {
                 }
                 if (nb::isinstance<nb::sequence>(idx)) {
                     auto seq = nb::cast<nb::sequence>(idx);
-                    std::vector<int64_t> data;
+                    std::vector<int64_t> data {};
                     data.reserve(nb::len(seq));
                     for (auto &&v : seq)
                         data.emplace_back(nb::cast<int64_t>(v));
                     auto sh = static_cast<int64_t>(data.size());
                     mag_tensor_t *idx_tensor = nullptr;
                     throw_if_error(mag_empty(&idx_tensor, get_ctx(), MAG_DTYPE_INT64, 1, &sh));
-                    on_scope_exit defer_idx([idx_tensor] { mag_tensor_decref(idx_tensor); });
+                    on_scope_exit defer_idx {[idx_tensor] { mag_tensor_decref(idx_tensor); }};
                     throw_if_error(mag_copy_raw_(idx_tensor, data.data(), data.size() * sizeof(int64_t)));
                     mag_tensor_t *out = nullptr;
                     throw_if_error(mag_gather(&out, *curr, ax, idx_tensor));

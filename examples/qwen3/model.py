@@ -107,7 +107,7 @@ class SlidingWindowAttention(nn.Module):
     def forward(
         self, x: Tensor, cos_freq: Tensor, sin_freq: Tensor, idx: Tensor, prev_kv: tuple[Tensor, Tensor] | None = None
     ) -> tuple[Tensor, tuple[Tensor, Tensor]]:
-        print(x)
+        print(x.shape)
         B, T, _ = x.shape
         q = self.q_proj(x)
         k_cur = self.k_proj(x)
