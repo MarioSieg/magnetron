@@ -247,20 +247,60 @@ namespace mag::bindings {
             }
         );
         cls.attr("arange") = nb::cpp_function(
-            [](nb::kwargs kwargs) -> tensor_wrapper {
-                if (!kwargs.contains("stop") && !kwargs.contains("end"))
-                    throw nb::type_error("arange(...): missing 'stop' (or 'end')");
-                nb::handle stop_h = kwargs.contains("stop") ? kwargs["stop"] : kwargs["end"];
-                nb::handle start_h = kwargs.contains("start") ? kwargs["start"] : nb::handle{};
-                nb::handle step_h = kwargs.contains("step")  ? kwargs["step"] : nb::handle{};
-                bool stop_is_float = nb::isinstance<nb::float_>(stop_h);
-                nb::object start_obj = kwargs.contains("start") ? nb::borrow<nb::object>(start_h) : stop_is_float ? nb::object{nb::float_{0.0}} : nb::object{nb::int_{1.0}};
-                nb::object step_obj  = kwargs.contains("step") ? nb::borrow<nb::object>(step_h) : stop_is_float ? nb::object{nb::float_{1.0}} : nb::object{nb::int_{1.0}};
-                dtype_wrapper dt = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : deduce_dtype_from_py_scalar(start_obj);
+            [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+                nb::handle start_h = nb::handle{};
+                nb::handle stop_h  = nb::handle{};
+                nb::handle step_h  = nb::handle{};
+
+                // kwargs path: arange(stop=..., start=..., step=...)
+                if (args.size() == 0) {
+                    if (!kwargs.contains("stop") && !kwargs.contains("end"))
+                        throw nb::type_error("arange(...): missing 'stop' (or 'end')");
+                    stop_h  = kwargs.contains("stop") ? kwargs["stop"] : kwargs["end"];
+                    start_h = kwargs.contains("start") ? kwargs["start"] : nb::handle{};
+                    step_h  = kwargs.contains("step")  ? kwargs["step"]  : nb::handle{};
+                } else {
+                    // positional path: arange(stop) / arange(start, stop) / arange(start, stop, step)
+                    if (args.size() > 3)
+                        throw nb::type_error("arange(start?, stop, step?): expected 1..3 positional args");
+
+                    if (args.size() == 1) {
+                        stop_h = args[0];
+                    } else if (args.size() == 2) {
+                        start_h = args[0];
+                        stop_h  = args[1];
+                    } else { // 3
+                        start_h = args[0];
+                        stop_h  = args[1];
+                        step_h  = args[2];
+                    }
+                }
+
+                bool any_float =
+                    nb::isinstance<nb::float_>(stop_h) ||
+                    (start_h.is_valid() && nb::isinstance<nb::float_>(start_h)) ||
+                    (step_h.is_valid()  && nb::isinstance<nb::float_>(step_h));
+
+                nb::object start_obj = start_h.is_valid()
+                    ? nb::borrow<nb::object>(start_h)
+                    : (any_float ? nb::object{nb::float_{0.0}} : nb::object{nb::int_{0}});
+
+                nb::object step_obj = step_h.is_valid()
+                    ? nb::borrow<nb::object>(step_h)
+                    : (any_float ? nb::object{nb::float_{1.0}} : nb::object{nb::int_{1}});
+
+                nb::object stop_obj = nb::borrow<nb::object>(stop_h);
+
+                dtype_wrapper dt = kwargs.contains("dtype")
+                    ? nb::cast<dtype_wrapper>(kwargs["dtype"])
+                    : deduce_dtype_from_py_scalar(any_float ? nb::object{nb::float_{0.0}} : nb::object{nb::int_{0}});
+
                 bool requires_grad = kw_requires_grad_or(kwargs, false);
+
                 mag_scalar_t start = scalar_from_py(start_obj);
-                mag_scalar_t stop = scalar_from_py(stop_h);
-                mag_scalar_t step = scalar_from_py(step_obj);
+                mag_scalar_t stop  = scalar_from_py(stop_obj);
+                mag_scalar_t step  = scalar_from_py(step_obj);
+
                 mag_context_t *ctx = get_ctx();
                 mag_tensor_t *out = nullptr;
                 throw_if_error(mag_arange(&out, ctx, dt.v, start, stop, step));

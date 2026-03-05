@@ -15,6 +15,7 @@ namespace mag::bindings {
     extern void init_bindings_context(nb::module_ &m);
     extern void init_bindings_dtype(nb::module_ &m);
     extern void init_bindings_tensor(nb::module_ &m);
+    extern void init_bindings_snapshot(nb::module_ &m);
 }
 
 // Global module entry defin
@@ -22,5 +23,6 @@ NB_MODULE(_magnetron, m) {
     mag::bindings::init_bindings_context(m);
     mag::bindings::init_bindings_dtype(m);
     mag::bindings::init_bindings_tensor(m);
+    mag::bindings::init_bindings_snapshot(m);
 }
 

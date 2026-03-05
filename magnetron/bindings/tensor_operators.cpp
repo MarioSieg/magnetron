@@ -430,23 +430,48 @@ namespace mag::bindings {
             "num_samples"_a = 1, "replacement"_a = false
         );
 
-        cls.attr("cat") = nb::cpp_function([](nb::handle tensors_h, int64_t dim = 0) -> tensor_wrapper {
+        cls.attr("cat") = nb::cpp_function(
+            [](nb::handle tensors_h, int64_t dim = 0) -> tensor_wrapper {
                 if (!nb::isinstance<nb::sequence>(tensors_h))
                     throw nb::type_error("cat: 'tensors' must be a sequence of Tensor");
+
                 auto seq = nb::cast<nb::sequence>(tensors_h);
                 size_t n = nb::len(seq);
                 if (n == 0)
                     throw nb::value_error("cat: at least one tensor is required");
-                std::vector<tensor_wrapper> keep {};
-                keep.reserve(n);
-                std::vector<mag_tensor_t *> ptrs {};
-                ptrs.reserve(n);
+
+                // Parse tensors
+                std::vector<tensor_wrapper> tensors;
+                tensors.reserve(n);
                 for (nb::handle h : seq) {
                     auto tw = nb::cast<tensor_wrapper>(h);
                     if (!tw) throw nb::value_error("cat: encountered a null Tensor");
-                    keep.emplace_back(tw);
-                    ptrs.emplace_back(*keep.back());
+                    tensors.emplace_back(tw);
                 }
+
+                // Normalize dim (and validate rank)
+                int64_t rank = mag_tensor_rank(*tensors[0]);
+                if (rank <= 0)
+                    throw nb::value_error("cat: tensors must have rank > 0");
+
+                if (dim < 0) dim += rank;
+                if (dim < 0 || dim >= rank)
+                    throw nb::index_error("cat: dim out of range");
+
+                // Make contiguous copies (required by mag_cat contract)
+                std::vector<tensor_wrapper> contig;
+                contig.reserve(n);
+
+                std::vector<mag_tensor_t*> ptrs;
+                ptrs.reserve(n);
+
+                for (size_t i = 0; i < n; ++i) {
+                    mag_tensor_t *ci = nullptr;
+                    throw_if_error(mag_contiguous(&ci, *tensors[i]));
+                    contig.emplace_back(tensor_wrapper{ci}); // owns ci
+                    ptrs.emplace_back(*contig.back());
+                }
+
                 mag_tensor_t *out = nullptr;
                 throw_if_error(mag_cat(&out, ptrs.data(), ptrs.size(), dim));
                 return tensor_wrapper{out};
@@ -501,6 +526,20 @@ namespace mag::bindings {
         bind_unary_pair(cls, gelu);
         bind_unary_pair(cls, gelu_approx);
         bind_unary_pair(cls, gelu_dv);
+        cls
+        .def("__neg__", [](const tensor_wrapper &self) -> tensor_wrapper {
+            mag_tensor_t *out = nullptr;
+            throw_if_error(mag_neg(&out, *self));
+            return tensor_wrapper{out};
+        })
+        .def("__pos__", [](const tensor_wrapper &self) -> tensor_wrapper {
+            return self;
+        })
+        .def("__abs__", [](const tensor_wrapper &self) -> tensor_wrapper {
+            mag_tensor_t *out = nullptr;
+            throw_if_error(mag_abs(&out, *self));
+            return tensor_wrapper{out};
+        });
 
         // Binary operators
         bind_binary_full_named(cls, add, add, add);
