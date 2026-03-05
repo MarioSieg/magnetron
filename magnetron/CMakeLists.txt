@@ -13,6 +13,10 @@ function(add_backend name)
     if (TARGET "magnetron_${name}")
         add_dependencies(magnetron_runtime "magnetron_${name}")
     endif()
+    install(TARGETS "magnetron_${name}"
+        LIBRARY DESTINATION magnetron
+        COMPONENT python
+    )
 endfunction()
 
 if (${MAGNETRON_ENABLE_BACKEND_CPU})
@@ -25,6 +29,6 @@ endif()
 # Optional Python bindings
 if (${MAGNETRON_BUILD_PYTHON_BINDINGS})
     add_subdirectory(bindings)
-    add_dependencies(magnetron magnetron_runtime) # magnetron is name of the Python bindings target
-    target_link_libraries(magnetron PRIVATE magnetron_core)
+    add_dependencies(_magnetron magnetron_runtime) # _magnetron is name of the Python bindings target
+    target_link_libraries(_magnetron PRIVATE magnetron_core)
 endif()

@@ -12,8 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from ._tensor import Tensor
-from .context import no_grad
+from . import Tensor, no_grad
 from .nn import Parameter
 
 

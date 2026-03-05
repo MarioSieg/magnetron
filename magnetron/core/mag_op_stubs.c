@@ -747,6 +747,22 @@ mag_status_t mag_transpose(mag_tensor_t **out_result, mag_tensor_t *x, int64_t d
     return MAG_STATUS_OK;
 }
 
+mag_status_t mag_T(mag_tensor_t **out_result, mag_tensor_t *x) {
+    int64_t rank = mag_tensor_rank(x);
+    if (rank < 2) {
+        mag_rc_incref(x);
+        *out_result = x;
+        return MAG_STATUS_OK;
+    }
+    if (rank == 2) {
+        return mag_transpose(out_result, x, 0, 1);
+    }
+    int64_t dims[MAG_MAX_DIMS];
+    for (int64_t i=0; i < rank; ++i)
+        dims[i] = rank-1-i;
+    return mag_permute(out_result, x, dims, rank);
+}
+
 mag_status_t mag_permute(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank) {
     *out_result = NULL;
     mag_context_t *ctx = x->ctx;

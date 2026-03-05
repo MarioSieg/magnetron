@@ -10,7 +10,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 
-from magnetron import Tensor
+from .. import Tensor
 
 
 class Loss(ABC):

@@ -233,6 +233,7 @@ extern MAG_EXPORT mag_status_t mag_view(mag_tensor_t **out_result, mag_tensor_t 
 extern MAG_EXPORT mag_status_t mag_view_slice(mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t start, int64_t len, int64_t step);
 extern MAG_EXPORT mag_status_t mag_reshape(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank);
 extern MAG_EXPORT mag_status_t mag_transpose(mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim1, int64_t dim2);
+extern MAG_EXPORT mag_status_t mag_T(mag_tensor_t **out_result, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_permute(mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank);
 extern MAG_EXPORT mag_status_t mag_contiguous(mag_tensor_t **out_result, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_squeeze_all(mag_tensor_t **out_result, mag_tensor_t *x);

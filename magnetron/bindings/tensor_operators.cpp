@@ -137,15 +137,21 @@ namespace mag::bindings {
             throw_if_error(mag_cast(&out, *self, dt.v));
             return tensor_wrapper{out};
         }, "dtype"_a)
-        .def("view", [](const tensor_wrapper &self, nb::handle shape_h) -> tensor_wrapper {
-            auto shape_seq = nb::cast<nb::sequence>(shape_h);
+        .def("view", [](const tensor_wrapper &self, nb::args args) -> tensor_wrapper {
             std::vector<int64_t> shape {};
-            shape.reserve(nb::len(shape_seq));
-            for (nb::handle h : shape_seq)
-                shape.emplace_back(nb::cast<int64_t>(h));
+            if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
+                auto seq = nb::cast<nb::sequence>(args[0]);
+                shape.reserve(nb::len(seq));
+                for (auto &&h : seq)
+                    shape.emplace_back(nb::cast<int64_t>(h));
+            } else {
+                shape.reserve(args.size());
+                for (auto &&h : args)
+                    shape.emplace_back(nb::cast<int64_t>(h));
+            }
             validate_shape(shape);
             mag_tensor_t *out = nullptr;
-            throw_if_error(mag_view(&out, *self, shape.data(), static_cast<int64_t>(shape.size())));
+            throw_if_error(mag_view(&out, *self, shape.data(), (int64_t)shape.size()));
             return tensor_wrapper{out};
         }, "shape"_a)
         .def("view_slice", [](const tensor_wrapper &self, int64_t dim, int64_t start, int64_t len, int64_t step) -> tensor_wrapper {
@@ -177,6 +183,11 @@ namespace mag::bindings {
             },
             "dim0"_a = 0, "dim1"_a = 1
         )
+        .def_prop_ro("T", [](const tensor_wrapper &self) -> tensor_wrapper {
+            mag_tensor_t *out = nullptr;
+            throw_if_error(mag_T(&out, *self));
+            return tensor_wrapper{out};
+        })
         .def("permute",
             [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
                 std::vector<int64_t> dims = parse_i64_dims(dims_args, "permute");
@@ -418,6 +429,7 @@ namespace mag::bindings {
             },
             "num_samples"_a = 1, "replacement"_a = false
         );
+
         cls.attr("cat") = nb::cpp_function([](nb::handle tensors_h, int64_t dim = 0) -> tensor_wrapper {
                 if (!nb::isinstance<nb::sequence>(tensors_h))
                     throw nb::type_error("cat: 'tensors' must be a sequence of Tensor");
@@ -508,5 +520,16 @@ namespace mag::bindings {
         bind_compare(cls, ge, ge, ge);
         bind_compare(cls, eq, eq, eq);
         bind_compare(cls, ne, ne, ne);
+
+        // Matmul
+        cls.def("__matmul__",
+            [](const tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper {
+                tensor_wrapper b = normalize_rhs_to_tensor(a, rhs);
+                mag_tensor_t *out = nullptr;
+                throw_if_error(mag_matmul(&out, *a, *b));
+                return tensor_wrapper{out};
+            },
+            "rhs"_a
+        );
     }
 }

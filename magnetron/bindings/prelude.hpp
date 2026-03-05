@@ -91,8 +91,8 @@ namespace mag::bindings {
         constexpr mag_tensor_t *operator * () const noexcept { return p; }
     };
 
-    struct reduction_axes {
-        std::vector<int64_t> storage;
+    struct reduction_axes final {
+        std::vector<int64_t> storage {};
         const int64_t *ptr = nullptr;
         int64_t rank = 0;
     };

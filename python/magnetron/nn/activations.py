@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from magnetron import Tensor
+from .. import Tensor
 from magnetron.nn.module import Module
 
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 
-from magnetron import Tensor, DataType, dtype
+from .. import Tensor, dtype
 from magnetron.nn.module import Module, Parameter
 
 
@@ -21,7 +21,7 @@ class Flatten(Module):
 
 
 class Linear(Module):
-    def __init__(self, in_features: int, out_features: int, bias: bool = True, dtype: DataType = dtype.float32, init: bool = True) -> None:
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, dtype: dtype.DType = dtype.float32, init: bool = True) -> None:
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -41,7 +41,7 @@ class Linear(Module):
 
 
 class Embedding(Module):
-    def __init__(self, num_embeddings: int, embedding_dim: int, dtype: DataType = dtype.float32, init: bool = True) -> None:
+    def __init__(self, num_embeddings: int, embedding_dim: int, dtype: dtype.DType = dtype.float32, init: bool = True) -> None:
         super().__init__()
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
@@ -55,7 +55,7 @@ class Embedding(Module):
 
 
 class RMSNorm(Module):
-    def __init__(self, dim: int, eps: float = 1e-5, dtype: DataType = dtype.float32, init: bool = True) -> None:
+    def __init__(self, dim: int, eps: float = 1e-5, dtype: dtype.DType = dtype.float32, init: bool = True) -> None:
         super().__init__()
         self.eps = eps
         self.weight = Parameter(Tensor.ones(dim, dtype=dtype) if init else Tensor.empty(dim, dtype=dtype))
@@ -69,7 +69,7 @@ class RMSNorm(Module):
 
 
 class LayerNorm(Module):
-    def __init__(self, ndim: int, bias: bool = True, eps: float = 1e-5, dtype: DataType = dtype.float32, init: bool = True) -> None:
+    def __init__(self, ndim: int, bias: bool = True, eps: float = 1e-5, dtype: dtype.DType = dtype.float32, init: bool = True) -> None:
         super().__init__()
         self.weight = Parameter(Tensor.ones(ndim, dtype=dtype) if init else Tensor.empty(ndim, dtype=dtype))
         self.bias = Parameter(Tensor.zeros(ndim, dtype=dtype) if init else Tensor.empty(ndim, dtype=dtype)) if bias else None

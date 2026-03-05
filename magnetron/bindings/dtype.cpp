@@ -16,9 +16,9 @@ namespace mag::bindings {
         auto dtype = m.def_submodule(
            "dtype",
            "Contains all data type definitions and related utilities."
-       );
+        );
 
-        nb::class_<dtype_wrapper>(dtype, "DType")
+        nb::class_<dtype_wrapper>{dtype, "DType"}
             .def_prop_ro("id", [](const dtype_wrapper &self) noexcept -> int { return self.v; })
             .def_prop_ro("name", [](const dtype_wrapper &self) noexcept -> const char * { return mag_type_trait(self.v)->name; })
             .def_prop_ro("short_name", [](const dtype_wrapper &self) noexcept -> const char * { return mag_type_trait(self.v)->short_name; })

@@ -12,7 +12,7 @@ from collections.abc import Iterator, Callable, MutableMapping
 from collections import OrderedDict
 from collections.abc import Mapping
 
-from magnetron import Tensor, dtype
+from .. import Tensor, dtype
 
 
 class Parameter:

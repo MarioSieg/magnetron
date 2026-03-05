@@ -10,8 +10,36 @@
 */
 
 #include "prelude.hpp"
+#include "core/mag_tensor.h"
 
 namespace mag::bindings {
+    template <typename T, typename PT>
+    [[nodiscard]] static nb::object build_list_recursive(
+        const T *data,
+        const int64_t *shape,
+        const int64_t *strides,
+        int64_t rank,
+        int64_t offset,
+        int64_t dim
+    ) {
+        if (dim == rank) return PT(data[offset]);
+        int64_t size = shape[dim];
+        PyObject *raw = PyList_New(size); // We use the raw Python API to preallocate the list's capacity
+        if (!raw) throw std::runtime_error {"Failed to allocate list for tolist()"};
+        for (int64_t i=0; i < size; ++i) {
+            nb::object item = build_list_recursive<T, PT>(
+                data,
+                shape,
+                strides,
+                rank,
+                offset + i*strides[dim],
+                dim + 1
+            );
+            PyList_SET_ITEM(raw, i, item.release().ptr());
+        }
+        return nb::steal<nb::object>(raw);
+    }
+
     static void init_tensor_class_base(nb::class_<tensor_wrapper> &cls) {
         cls
         .def_prop_ro("rank", [](const tensor_wrapper &self) -> int64_t {
@@ -79,7 +107,7 @@ namespace mag::bindings {
             throw_if_error(mag_tensor_zero_grad(*self));
         })
         .def("item", [](const tensor_wrapper &self) -> nb::object {
-            if (mag_tensor_numel(*self) != 0)
+            if (mag_tensor_numel(*self) != 1)
                 throw nb::value_error("Tensor must have exactly one element to retrieve an item");
             mag_scalar_t s {};
             throw_if_error(mag_tensor_item(*self, &s));
@@ -95,6 +123,52 @@ namespace mag::bindings {
         })
         .def("detach", [](const tensor_wrapper &self) -> tensor_wrapper {
             return tensor_wrapper{mag_tensor_detach(*self)};
+        })
+        .def("tolist", [](const tensor_wrapper &self) -> nb::object {
+            if (!mag_tensor_numel(*self)) return nb::list();
+            auto *tensor = *self;
+            if (tensor->storage->device->id.type != MAG_BACKEND_TYPE_CPU)
+                throw nb::value_error("tolist() only supports CPU tensors");
+            enum class CastedTypeFamily { Float, Int, Bool };
+            CastedTypeFamily casted_type {};
+            mag_tensor_t *contig = nullptr;
+            {
+                mag_tensor_t *casted = nullptr;
+                if (mag_tensor_is_floating_point_typed(tensor)) {
+                   throw_if_error(mag_cast(&casted, *self, MAG_DTYPE_FLOAT32));
+                   casted_type = CastedTypeFamily::Float;
+                } else if (mag_tensor_is_integer_typed(tensor)) {
+                   throw_if_error(mag_cast(&casted, *self, MAG_DTYPE_INT64));
+                   casted_type = CastedTypeFamily::Int;
+                } else if (mag_tensor_type(tensor) == MAG_DTYPE_BOOLEAN) {
+                   throw_if_error(mag_cast(&casted, *self, MAG_DTYPE_UINT8));
+                   casted_type = CastedTypeFamily::Bool;
+                } else throw nb::type_error("Unsupported dtype for tolist()");
+                on_scope_exit defer_decref {[casted] { mag_tensor_decref(casted); }};
+                throw_if_error(mag_contiguous(&contig, casted));
+            }
+            on_scope_exit defer_decref2 {[contig] { mag_tensor_decref(contig); }};
+            const auto *ptr = reinterpret_cast<const void *>(mag_tensor_data_ptr(contig));
+            int64_t rank = mag_tensor_rank(contig);
+            if (rank == 0) { // Handle scalars
+                switch (casted_type) {
+                    case CastedTypeFamily::Float: return nb::float_{*static_cast<const float *>(ptr)};
+                    case CastedTypeFamily::Int: return nb::int_{*static_cast<const int64_t *>(ptr)};
+                    case CastedTypeFamily::Bool: return nb::bool_{static_cast<bool>(*static_cast<const uint8_t *>(ptr))};
+                }
+            }
+            const int64_t *shape = mag_tensor_shape_ptr(contig);
+            std::vector<int64_t> strides(rank);
+            strides[rank-1] = 1;
+            for (int64_t i=rank-2; i >= 0; --i) // RowMaj strides
+                strides[i] = strides[i+1]*shape[i+1];
+            nb::object result {};
+            switch (casted_type) {
+                case CastedTypeFamily::Float: result = build_list_recursive<float, nb::float_>(static_cast<const float *>(ptr), shape, strides.data(), rank, 0, 0); break;
+                case CastedTypeFamily::Int: result = build_list_recursive<int64_t, nb::int_>( static_cast<const int64_t *>(ptr), shape, strides.data(), rank, 0, 0); break;
+                case CastedTypeFamily::Bool: result = build_list_recursive<uint8_t, nb::bool_>(static_cast<const uint8_t *>(ptr), shape, strides.data(), rank, 0, 0); break;
+            }
+            return result;
         });
     }
 
