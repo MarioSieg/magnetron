@@ -104,7 +104,7 @@ namespace mag::bindings {
     [[nodiscard]] extern tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs);
     [[nodiscard]] extern std::vector<int64_t> parse_shape_from_args(const nb::args &args);
     extern void validate_shape(const std::vector<int64_t> &shape);
-    [[nodiscard]] extern std::vector<int64_t> parse_i64_dims(nb::args args, const char *what);
+    [[nodiscard]] extern std::vector<int64_t> parse_i64_dims(const nb::args &args, const char *what);
     [[nodiscard]] extern std::vector<int64_t> parse_i64_list_handle(nb::handle h, const char *what);
     [[nodiscard]] extern reduction_axes parse_reduction_axes(nb::handle dim_h);
     [[nodiscard]] extern mag_scalar_t scalar_from_py(nb::handle h);

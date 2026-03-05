@@ -138,17 +138,7 @@ namespace mag::bindings {
             return tensor_wrapper{out};
         }, "dtype"_a)
         .def("view", [](const tensor_wrapper &self, nb::args args) -> tensor_wrapper {
-            std::vector<int64_t> shape {};
-            if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
-                auto seq = nb::cast<nb::sequence>(args[0]);
-                shape.reserve(nb::len(seq));
-                for (auto &&h : seq)
-                    shape.emplace_back(nb::cast<int64_t>(h));
-            } else {
-                shape.reserve(args.size());
-                for (auto &&h : args)
-                    shape.emplace_back(nb::cast<int64_t>(h));
-            }
+            std::vector<int64_t> shape = parse_i64_dims(args, "view");
             validate_shape(shape);
             mag_tensor_t *out = nullptr;
             throw_if_error(mag_view(&out, *self, shape.data(), (int64_t)shape.size()));

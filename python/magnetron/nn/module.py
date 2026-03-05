@@ -278,6 +278,7 @@ class Module:
                 setattr(m, name, buf.cast(dt))
         return self
 
+
 class ModuleList(Module, list):
     """A list of modules that can be used as a single module."""
 

@@ -97,17 +97,23 @@ namespace mag::bindings {
         }
     }
 
-    std::vector<int64_t> parse_i64_dims(nb::args args, const char *what) {
+    static void flatten_i64_handle(nb::handle h, std::vector<int64_t> &out) {
+        if (nb::isinstance<nb::sequence>(h) && !nb::isinstance<nb::str>(h) && !nb::isinstance<tensor_wrapper>(h)) {
+            auto seq = nb::cast<nb::sequence>(h);
+            for (nb::handle child : seq)
+                flatten_i64_handle(child, out);
+        } else {
+            out.emplace_back(nb::cast<int64_t>(h));
+        }
+    }
+
+    std::vector<int64_t> parse_i64_dims(const nb::args &args, const char *what) {
         std::vector<int64_t> out;
         if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
-            nb::sequence seq = nb::cast<nb::sequence>(args[0]);
-            out.reserve(nb::len(seq));
-            for (nb::handle h : seq)
-                out.emplace_back(nb::cast<int64_t>(h));
+            flatten_i64_handle(args[0], out);
         } else {
-            out.reserve(args.size());
             for (nb::handle h : args)
-                out.emplace_back(nb::cast<int64_t>(h));
+                flatten_i64_handle(h, out);
         }
         if (out.empty())
             throw nb::value_error((std::string(what) + ": expected at least one dimension").c_str());

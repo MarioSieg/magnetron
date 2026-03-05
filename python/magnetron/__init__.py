@@ -20,7 +20,8 @@ from types import TracebackType
 from ._magnetron import *
 
 
-#__all__ = ['dtype', 'context', 'Tensor', 'Snapshot', 'no_grad']
+# __all__ = ['dtype', 'context', 'Tensor', 'Snapshot', 'no_grad']
+
 
 class no_grad(ContextDecorator):
     """Disables gradient recording within a function or block."""
@@ -29,7 +30,6 @@ class no_grad(ContextDecorator):
         """Disable gradient tracking by stopping the active context's recorder."""
         context.stop_grad_recorder()
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None,
-                 traceback: TracebackType | None) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None) -> None:
         """Re-enable gradient tracking when exiting the context."""
         context.start_grad_recorder()

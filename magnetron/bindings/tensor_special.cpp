@@ -148,21 +148,6 @@ namespace mag::bindings {
                 }
                 if (nb::isinstance<tensor_wrapper>(idx)) {
                     auto idx_tw = nb::cast<tensor_wrapper>(idx);
-                    if (mag_tensor_numel(*idx_tw) == 1) {
-                        mag_dtype_t it = mag_tensor_type(*idx_tw);
-                        if (mag_tensor_is_integer_typed(*idx_tw) || it == MAG_DTYPE_BOOLEAN) {
-                            mag_scalar_t s {};
-                            throw_if_error(mag_tensor_item(*idx_tw, &s));
-                            int64_t i = mag_scalar_is_i64(s) ? mag_scalar_as_i64(s) : mag_scalar_is_u64(s) ? (int64_t) mag_scalar_as_u64(s) : (throw nb::type_error("Tensor index scalar must be integer or bool"), 0);
-                            int64_t dim_size = mag_tensor_shape_ptr(*curr)[ax];
-                            if (i < 0) i += dim_size;
-                            if (i < 0 || i >= dim_size)
-                                throw nb::index_error("Index out of bounds");
-                            mag_tensor_t *out = index_by_scalar_per_axis(*curr, ax, i);
-                            curr = tensor_wrapper{out};
-                            continue;
-                        }
-                    }
                     mag_tensor_t *out = nullptr;
                     throw_if_error(mag_gather(&out, *curr, ax, *idx_tw));
                     curr = tensor_wrapper{out};
@@ -188,7 +173,6 @@ namespace mag::bindings {
                 }
                 throw nb::type_error("Invalid index component");
             }
-
             return curr;
         });
     }
