@@ -75,7 +75,7 @@ namespace mag::bindings {
             return self;
         }, nb::rv_policy::reference_internal)
         .def("__exit__", [](snapshot_wrapper &self, nb::args) -> bool {
-            self.serialize_if_needed();
+            self.close();
             return false;
         })
         .def("close", [](snapshot_wrapper &self) {

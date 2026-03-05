@@ -896,7 +896,7 @@ namespace magnetron {
         }
 
         [[nodiscard]] auto to_string(int64_t head = 3, int64_t tail = 3, int64_t threshold = 1000) const -> std::string {
-            char* fmt {mag_tensor_to_string(m_tensor, head, tail, threshold)};
+            const char* fmt {mag_tensor_to_string(m_tensor, head, tail, threshold)};
             std::string str {fmt};
             mag_tensor_to_string_free_data(fmt);
             return str;

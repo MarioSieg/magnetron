@@ -284,7 +284,8 @@ namespace mag::bindings {
                 PyObject *t = PyTuple_New(n_chunks);
                 if (!t) throw nb::python_error();
                 for (int64_t i=0; i < n_chunks; ++i) {
-                    nb::object obj = nb::cast(tensor_wrapper{outs[static_cast<size_t>(i)]});
+                    tensor_wrapper tw{outs[static_cast<size_t>(i)]};
+                    nb::object obj = nb::cast(tw);
                     PyTuple_SET_ITEM(t, i, obj.release().ptr());
                 }
                 return nb::steal<nb::tuple>(t);
@@ -377,10 +378,12 @@ namespace mag::bindings {
                 mag_tensor_t *values = nullptr;
                 mag_tensor_t *indices = nullptr;
                 throw_if_error(mag_topk(&values, &indices, *self, k, dim, largest, sorted));
+                tensor_wrapper v_tw{values};
+                tensor_wrapper i_tw{indices};
                 PyObject *t = PyTuple_New(2);
                 if (!t) throw nb::python_error();
-                nb::object v = nb::cast(tensor_wrapper{values});
-                nb::object i = nb::cast(tensor_wrapper{indices});
+                nb::object v = nb::cast(v_tw);
+                nb::object i = nb::cast(i_tw);
                 PyTuple_SET_ITEM(t, 0, v.release().ptr());
                 PyTuple_SET_ITEM(t, 1, i.release().ptr());
                 return nb::steal<nb::tuple>(t);
@@ -434,13 +437,10 @@ namespace mag::bindings {
             [](nb::handle tensors_h, int64_t dim = 0) -> tensor_wrapper {
                 if (!nb::isinstance<nb::sequence>(tensors_h))
                     throw nb::type_error("cat: 'tensors' must be a sequence of Tensor");
-
                 auto seq = nb::cast<nb::sequence>(tensors_h);
                 size_t n = nb::len(seq);
                 if (n == 0)
                     throw nb::value_error("cat: at least one tensor is required");
-
-                // Parse tensors
                 std::vector<tensor_wrapper> tensors;
                 tensors.reserve(n);
                 for (nb::handle h : seq) {
@@ -448,30 +448,22 @@ namespace mag::bindings {
                     if (!tw) throw nb::value_error("cat: encountered a null Tensor");
                     tensors.emplace_back(tw);
                 }
-
-                // Normalize dim (and validate rank)
                 int64_t rank = mag_tensor_rank(*tensors[0]);
                 if (rank <= 0)
                     throw nb::value_error("cat: tensors must have rank > 0");
-
                 if (dim < 0) dim += rank;
                 if (dim < 0 || dim >= rank)
                     throw nb::index_error("cat: dim out of range");
-
-                // Make contiguous copies (required by mag_cat contract)
                 std::vector<tensor_wrapper> contig;
                 contig.reserve(n);
-
                 std::vector<mag_tensor_t*> ptrs;
                 ptrs.reserve(n);
-
                 for (size_t i = 0; i < n; ++i) {
                     mag_tensor_t *ci = nullptr;
                     throw_if_error(mag_contiguous(&ci, *tensors[i]));
                     contig.emplace_back(tensor_wrapper{ci}); // owns ci
                     ptrs.emplace_back(*contig.back());
                 }
-
                 mag_tensor_t *out = nullptr;
                 throw_if_error(mag_cat(&out, ptrs.data(), ptrs.size(), dim));
                 return tensor_wrapper{out};
@@ -513,7 +505,27 @@ namespace mag::bindings {
         bind_unary_pair(cls, ceil);
         bind_unary_pair(cls, round);
         bind_unary_pair(cls, trunc);
-        bind_unary_pair(cls, softmax);
+
+        // Softmax has params and required a specialized binding
+        cls.def("softmax",
+            [](const tensor_wrapper &self, [[maybe_unused]] int64_t dim) -> tensor_wrapper {
+                mag_tensor_t *out = nullptr;
+                throw_if_error(mag_softmax(&out, *self)); // TODO: respect dim
+                return tensor_wrapper{out};
+            },
+            "dim"_a
+        );
+        cls.def("softmax_",
+            [](tensor_wrapper &self, [[maybe_unused]] int64_t dim) -> tensor_wrapper& {
+                mag_tensor_t *out = nullptr;
+                throw_if_error(mag_softmax_(&out, *self)); // TODO: respect dim
+                if (self.p) mag_tensor_decref(self.p);
+                self.p = out;
+                return self;
+            },
+            "dim"_a, nb::rv_policy::reference
+        );
+
         bind_unary_pair(cls, softmax_dv);
         bind_unary_pair(cls, sigmoid);
         bind_unary_pair(cls, sigmoid_dv);

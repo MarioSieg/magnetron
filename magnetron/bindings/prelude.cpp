@@ -151,18 +151,9 @@ namespace mag::bindings {
     }
 
     mag_scalar_t scalar_from_py(nb::handle h) {
-        if (nb::isinstance<nb::bool_>(h)) {
-            bool b = nb::cast<bool>(h);
-            return mag_scalar_from_u64(b ? 1u : 0u);
-        }
-        if (nb::isinstance<nb::int_>(h)) {
-            auto v = nb::cast<int64_t>(h);
-            return mag_scalar_from_i64(v);
-        }
-        if (nb::isinstance<nb::float_>(h)) {
-            auto v = nb::cast<double>(h);
-            return mag_scalar_from_f64(v);
-        }
+        if (nb::isinstance<nb::bool_>(h)) return mag_scalar_from_u64(nb::cast<bool>(h));
+        if (nb::isinstance<nb::int_>(h)) return mag_scalar_from_i64(nb::cast<int64_t>(h));
+        if (nb::isinstance<nb::float_>(h)) return mag_scalar_from_f64(nb::cast<double>(h));
         throw nb::type_error("Expected scalar (bool|int|float)");
     }
 

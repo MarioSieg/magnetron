@@ -11,6 +11,8 @@
 
 #include "prelude.hpp"
 
+#include <core/mag_operator.h>
+
 namespace mag::bindings {
     [[nodiscard]] static dtype_wrapper kw_dtype_or(nb::kwargs &kwargs, dtype_wrapper def = dtype_wrapper{MAG_DTYPE_FLOAT32}) {
         if (kwargs.contains("dtype"))
@@ -360,6 +362,131 @@ namespace mag::bindings {
                 mag_context_t *ctx = get_ctx();
                 mag_tensor_t *out = nullptr;
                 throw_if_error(mag_as_strided(&out, ctx, *base, static_cast<int64_t>(shape.size()), shape.data(), strides.data(), offset));
+                throw_if_ctx_error(ctx);
+                return tensor_wrapper{out};
+            }
+        );
+        cls.attr("of") = nb::cpp_function(
+            [](nb::handle data_h, nb::kwargs kwargs) -> tensor_wrapper {
+                dtype_wrapper dt = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{MAG_DTYPE__NUM};
+                bool requires_grad = kw_requires_grad_or(kwargs, false);
+                if (nb::isinstance<nb::int_>(data_h) || nb::isinstance<nb::float_>(data_h) || nb::isinstance<nb::bool_>(data_h)) {
+                    if (dt.v == MAG_DTYPE__NUM)
+                        dt = deduce_dtype_from_py_scalar(data_h);
+                    mag_context_t *ctx = get_ctx();
+                    mag_tensor_t *out = nullptr;
+                    mag_scalar_t s = scalar_from_py(data_h);
+                    throw_if_error(mag_scalar(&out, ctx, dt.v, s));
+                    throw_if_ctx_error(ctx);
+                    maybe_set_requires_grad(ctx, out, requires_grad);
+                    return tensor_wrapper{out};
+                }
+                if (!nb::isinstance<nb::sequence>(data_h))
+                    throw nb::type_error("Tensor.of(data): data must be a scalar or a (nested) sequence");
+                std::vector<int64_t> shape {};
+                std::vector<nb::handle> stack {};
+                std::vector<int64_t> idx_stack {};
+                std::vector<nb::handle> flat_h {};
+                nb::handle cur = data_h;
+                {
+                    nb::handle tmp = cur;
+                    while (nb::isinstance<nb::sequence>(tmp) && !nb::isinstance<nb::str>(tmp) && !nb::isinstance<tensor_wrapper>(tmp)) {
+                        auto s = nb::cast<nb::sequence>(tmp);
+                        size_t n = nb::len(s);
+                        if (n == 0)
+                            throw nb::value_error("Tensor.of() does not support empty lists; use Tensor.empty(shape, ...) instead");
+                        shape.emplace_back(static_cast<int64_t>(n));
+                        tmp = s[0];
+                    }
+                    stack.emplace_back(cur);
+                    idx_stack.emplace_back(0);
+                    while (!stack.empty()) {
+                        nb::handle top = stack.back();
+                        auto &i = idx_stack.back();
+                        if (nb::isinstance<nb::sequence>(top) && !nb::isinstance<nb::str>(top) && !nb::isinstance<tensor_wrapper>(top)) {
+                            auto s = nb::cast<nb::sequence>(top);
+                            auto n = static_cast<int64_t>(nb::len(s));
+                            int64_t depth = static_cast<int64_t>(stack.size()) - 1;
+                            if (depth < static_cast<int64_t>(shape.size()) && n != shape[static_cast<size_t>(depth)])
+                                throw nb::value_error("Tensor.of(): ragged nested sequence (non-rectangular)");
+                            if (i >= n) {
+                                stack.pop_back();
+                                idx_stack.pop_back();
+                                if (!idx_stack.empty())
+                                    idx_stack.back() += 1;
+                                continue;
+                            }
+                            nb::handle child = s[i];
+                            stack.emplace_back(child);
+                            idx_stack.emplace_back(0);
+                            continue;
+                        }
+                        flat_h.emplace_back(top);
+                        stack.pop_back();
+                        idx_stack.pop_back();
+                        if (!idx_stack.empty())
+                            idx_stack.back() += 1;
+                    }
+                }
+                if (flat_h.empty())
+                    throw nb::value_error("Tensor.of(): empty data");
+                if (dt.v == MAG_DTYPE__NUM)
+                    dt = deduce_dtype_from_py_scalar(flat_h[0]);
+                enum class Kind { Float, SInt, UInt, Bool };
+                Kind kind {};
+                mag_dtype_t wide = MAG_DTYPE_FLOAT32;
+                mag_dtype_mask_t mask = mag_dtype_bit(dt.v);
+                if (mask & MAG_DTYPE_MASK_FP) {
+                    kind = Kind::Float;
+                    wide = MAG_DTYPE_FLOAT32;
+                } else if (mask & MAG_DTYPE_MASK_SINT) {
+                    kind = Kind::SInt;
+                    wide = MAG_DTYPE_INT64;
+                } else if (mask & MAG_DTYPE_MASK_UINT) {
+                    kind = Kind::UInt;
+                    wide = MAG_DTYPE_UINT64;
+                } else if (dt.v == MAG_DTYPE_BOOLEAN) {
+                    kind = Kind::Bool;
+                    wide = MAG_DTYPE_UINT8;
+                } else {
+                    throw nb::type_error("Tensor.of(): unsupported dtype");
+                }
+                mag_context_t *ctx = get_ctx();
+                mag_tensor_t *raw = nullptr;
+                if (shape.empty()) throw_if_error(mag_empty_scalar(&raw, ctx, wide));
+                else throw_if_error(mag_empty(&raw, ctx, wide, (int64_t)shape.size(), shape.data()));
+                throw_if_ctx_error(ctx);
+                maybe_set_requires_grad(ctx, raw, requires_grad);
+                on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
+                size_t n = flat_h.size();
+                if (kind == Kind::Float) {
+                    std::vector<float> buf {};
+                    buf.reserve(n);
+                    for (nb::handle h : flat_h) buf.emplace_back(static_cast<float>(nb::cast<double>(h)));
+                    throw_if_error(mag_copy_raw_(raw, buf.data(), buf.size() * sizeof(float)));
+                } else if (kind == Kind::SInt) {
+                    std::vector<int64_t> buf {};
+                    buf.reserve(n);
+                    for (nb::handle h : flat_h) buf.emplace_back(nb::cast<int64_t>(h));
+                    throw_if_error(mag_copy_raw_(raw, buf.data(), buf.size() * sizeof(int64_t)));
+                } else if (kind == Kind::UInt) {
+                    std::vector<uint64_t> buf {};
+                    buf.reserve(n);
+                    for (nb::handle h : flat_h) buf.emplace_back(nb::cast<uint64_t>(h));
+                    throw_if_error(mag_copy_raw_(raw, buf.data(), buf.size() * sizeof(uint64_t)));
+                } else { // Bool
+                    std::vector<uint8_t> buf {};
+                    buf.reserve(n);
+                    for (nb::handle h : flat_h) buf.emplace_back(static_cast<uint8_t>(nb::cast<bool>(h) ? 1 : 0));
+                    throw_if_error(mag_copy_raw_(raw, buf.data(), buf.size() * sizeof(uint8_t)));
+                }
+                throw_if_ctx_error(ctx);
+                if (wide == dt.v) {
+                    mag_tensor_incref(raw);
+                    return tensor_wrapper{raw};
+                }
+                mag_tensor_t *out = nullptr;
+                throw_if_error(mag_cast(&out, raw, dt.v));
                 throw_if_ctx_error(ctx);
                 return tensor_wrapper{out};
             }
