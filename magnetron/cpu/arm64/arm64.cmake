@@ -1,4 +1,4 @@
-# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+# (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
 mag_register_cpu_backend("arm64/mag_cpu_arm64_v82.c" "-march=armv8.2-a+dotprod+fp16" "")
 mag_register_cpu_backend("arm64/mag_cpu_arm64_v86.c" "-march=armv8.6-a+bf16+i8mm+fp16+dotprod" "")

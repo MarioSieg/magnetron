@@ -1,4 +1,4 @@
-// (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+// (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
 namespace magnetron::test {
     std::vector<device_kind> get_supported_test_backends() {
