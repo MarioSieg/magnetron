@@ -35,7 +35,7 @@ typedef struct mag_reduce_plan_t {
 } mag_reduce_plan_t;
 
 extern MAG_EXPORT mag_status_t mag_reduce_plan_init(
-    mag_context_t *ctx,
+    mag_error_t *err,
     mag_reduce_plan_t *plan,
     const mag_coords_t *coords,
     const int64_t *dims_in,

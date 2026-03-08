@@ -109,29 +109,34 @@ namespace mag::bindings {
             return mag_tensor_requires_grad(*self);
         }, [](const tensor_wrapper &self, bool req) {
             std::lock_guard lock {get_global_mutex()};
-            mag_tensor_set_requires_grad(*self, req);
+            mag_error_t err {};
+            throw_if_error(mag_tensor_set_requires_grad(&err, *self, req), err);
         })
         .def_prop_ro("grad", [](const tensor_wrapper &self) -> nb::object {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *grad = nullptr;
-            throw_if_error(mag_tensor_grad(*self, &grad));
+            mag_error_t err {};
+            throw_if_error(mag_tensor_grad(&err, *self, &grad), err);
             if (!grad) return nb::none();
             return nb::cast(tensor_wrapper {grad});
         })
         .def("backward", [](const tensor_wrapper &self) -> void {
             std::lock_guard lock {get_global_mutex()};
-            throw_if_error(mag_tensor_backward(*self));
+            mag_error_t err {};
+            throw_if_error(mag_tensor_backward(&err, *self), err);
         })
         .def("zero_grad", [](const tensor_wrapper &self) -> void {
             std::lock_guard lock {get_global_mutex()};
-            throw_if_error(mag_tensor_zero_grad(*self));
+            mag_error_t err {};
+            throw_if_error(mag_tensor_zero_grad(&err, *self), err);
         })
         .def("item", [](const tensor_wrapper &self) -> nb::object {
             std::lock_guard lock {get_global_mutex()};
             if (mag_tensor_numel(*self) != 1)
                 throw nb::value_error("Tensor must have exactly one element to retrieve an item");
             mag_scalar_t s {};
-            throw_if_error(mag_tensor_item(*self, &s));
+            mag_error_t err {};
+            throw_if_error(mag_tensor_item(&err, *self, &s), err);
             if (mag_scalar_is_f64(s)) return nb::float_(mag_scalar_as_f64(s));
             if (mag_scalar_is_i64(s)) return nb::int_(mag_scalar_as_i64(s));
             if (mag_scalar_is_u64(s)) {
@@ -156,19 +161,20 @@ namespace mag::bindings {
             CastedTypeFamily casted_type {};
             mag_tensor_t *contig = nullptr;
             {
+                mag_error_t err {};
                 mag_tensor_t *casted = nullptr;
                 if (mag_tensor_is_floating_point_typed(tensor)) {
-                   throw_if_error(mag_cast(&casted, *self, MAG_DTYPE_FLOAT32));
+                   throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_FLOAT32), err);
                    casted_type = CastedTypeFamily::Float;
                 } else if (mag_tensor_is_integer_typed(tensor)) {
-                   throw_if_error(mag_cast(&casted, *self, MAG_DTYPE_INT64));
+                   throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_INT64), err);
                    casted_type = CastedTypeFamily::Int;
                 } else if (mag_tensor_type(tensor) == MAG_DTYPE_BOOLEAN) {
-                   throw_if_error(mag_cast(&casted, *self, MAG_DTYPE_UINT8));
+                   throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_UINT8), err);
                    casted_type = CastedTypeFamily::Bool;
                 } else throw nb::type_error("Unsupported dtype for tolist()");
                 on_scope_exit defer_decref {[casted] { mag_tensor_decref(casted); }};
-                throw_if_error(mag_contiguous(&contig, casted));
+                throw_if_error(mag_contiguous(&err, &contig, casted), err);
             }
             on_scope_exit defer_decref2 {[contig] { mag_tensor_decref(contig); }};
             const auto *ptr = reinterpret_cast<const void *>(mag_tensor_data_ptr(contig));

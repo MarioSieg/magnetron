@@ -28,40 +28,28 @@ namespace mag::bindings {
         return nb::steal<nb::tuple>(t);
     }
 
-    void throw_if_ctx_error(mag_context_t *ctx) {
-        if (!mag_ctx_has_error(ctx)) return;
-        mag_status_t code = mag_ctx_get_error_code(ctx);
-        const char *name = mag_status_get_name(code);
-        throw std::runtime_error {name ? name : "Unknown Magnetron Error"};
-    }
-
-    void throw_if_error(mag_status_t st) {
-        if (st == MAG_STATUS_OK) return;
-        const char *name = mag_status_get_name(st);
-        throw std::runtime_error {name ? name : "Unknown Magnetron Error"};
-    }
-
     tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt) {
         mag_context_t *ctx = get_ctx();
         mag_tensor_t *out = nullptr;
         if (nb::isinstance<nb::bool_>(obj)) { // Prefer bool first: in Python, bool is a subclass of int.
             bool b = nb::cast<bool>(obj);
             mag_scalar_t s = mag_scalar_from_u64(!!b);
-            throw_if_error(mag_scalar(&out, ctx, dt, s));
+            mag_error_t err {};
+            throw_if_error(mag_scalar(&err, &out, ctx, dt, s), err);
             return tensor_wrapper{out};
         }
         if (nb::isinstance<nb::int_>(obj)) { // Python int is arbitrary precision; nb::cast<int64_t> will throw if too big.
             auto v = nb::cast<int64_t>(obj);
             mag_scalar_t s = mag_scalar_from_i64(v);
-            throw_if_error(mag_scalar(&out, ctx, dt, s));
-            throw_if_ctx_error(ctx);
+            mag_error_t err {};
+            throw_if_error(mag_scalar(&err, &out, ctx, dt, s), err);
             return tensor_wrapper{out};
         }
         if (nb::isinstance<nb::float_>(obj)) {
             auto v = nb::cast<double>(obj);
             mag_scalar_t s = mag_scalar_from_f64(v);
-            throw_if_error(mag_scalar(&out, ctx, dt, s));
-            throw_if_ctx_error(ctx);
+            mag_error_t err {};
+            throw_if_error(mag_scalar(&err, &out, ctx, dt, s), err);
             return tensor_wrapper{out};
         }
         throw nb::type_error("rhs must be Tensor, int, float, or bool");
@@ -77,11 +65,11 @@ namespace mag::bindings {
         if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
             auto seq = nb::cast<nb::sequence>(args[0]);
             shape.reserve(nb::len(seq));
-            for (nb::handle h : seq)
+            for (auto &&h : seq)
                 shape.emplace_back(nb::cast<int64_t>(h));
         } else {
             shape.reserve(args.size());
-            for (nb::handle h : args)
+            for (auto &&h : args)
                 shape.emplace_back(nb::cast<int64_t>(h));
         }
         return shape;
@@ -100,7 +88,7 @@ namespace mag::bindings {
     static void flatten_i64_handle(nb::handle h, std::vector<int64_t> &out) {
         if (nb::isinstance<nb::sequence>(h) && !nb::isinstance<nb::str>(h) && !nb::isinstance<tensor_wrapper>(h)) {
             auto seq = nb::cast<nb::sequence>(h);
-            for (nb::handle child : seq)
+            for (auto &&child : seq)
                 flatten_i64_handle(child, out);
         } else {
             out.emplace_back(nb::cast<int64_t>(h));
@@ -112,7 +100,7 @@ namespace mag::bindings {
         if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
             flatten_i64_handle(args[0], out);
         } else {
-            for (nb::handle h : args)
+            for (auto &&h : args)
                 flatten_i64_handle(h, out);
         }
         if (out.empty())
@@ -121,10 +109,10 @@ namespace mag::bindings {
     }
 
     std::vector<int64_t> parse_i64_list_handle(nb::handle h, const char *what) {
-        nb::sequence seq = nb::cast<nb::sequence>(h);
-        std::vector<int64_t> out;
+        auto seq = nb::cast<nb::sequence>(h);
+        std::vector<int64_t> out {};
         out.reserve(nb::len(seq));
-        for (nb::handle x : seq)
+        for (auto &&x : seq)
             out.emplace_back(nb::cast<int64_t>(x));
         if (out.empty())
             throw nb::value_error((std::string(what) + ": empty sequence").c_str());
@@ -147,7 +135,7 @@ namespace mag::bindings {
         if (nb::isinstance<nb::sequence>(dim_h)) {
             auto seq = nb::cast<nb::sequence>(dim_h);
             ax.storage.reserve(nb::len(seq));
-            for (nb::handle h : seq)
+            for (auto &&h : seq)
                 ax.storage.emplace_back(nb::cast<int64_t>(h));
             ax.ptr = ax.storage.data();
             ax.rank = static_cast<int64_t>(ax.storage.size());
@@ -168,5 +156,19 @@ namespace mag::bindings {
         if (nb::isinstance<nb::int_>(h)) return dtype_wrapper{MAG_DTYPE_INT64};
         if (nb::isinstance<nb::float_>(h)) return dtype_wrapper{MAG_DTYPE_FLOAT32};
         throw nb::type_error("Cannot deduce dtype from this object");
+    }
+
+    std::string format_error_msg(const mag_error_t &err) {
+        std::stringstream ss {};
+        const char *name = mag_status_get_name(err.code);
+        ss << "MagnetronError[" << (name ? name : "UNKNOWN") << "]: ";
+        ss << (err.message[0] ? err.message : "unknown error");
+        if (err.file) {
+            ss << " (" << err.file << ":" << err.line;
+            if (err.func)
+                ss << " in " << err.func;
+            ss << ")";
+        }
+        return ss.str();
     }
 }

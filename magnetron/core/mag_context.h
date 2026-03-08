@@ -38,7 +38,6 @@ typedef struct mag_rt_telemetry_t {
 struct mag_context_t {
     uintptr_t tr_id;                            /* Context thread ID. */
     mag_context_flags_t flags;                  /* Context flags. */
-    mag_error_t error_status;                   /* Last error status. */
     mag_machine_info_t machine;                 /* Machine information. */
     mag_rt_telemetry_t telemetry;               /* Runtime telemetry */
     mag_slab_alloc_t tensor_slab;               /* Tensor headers. */

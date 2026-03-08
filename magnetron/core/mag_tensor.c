@@ -70,19 +70,19 @@ static void mag_tensor_free_header(mag_tensor_t *t) {
 }
 
 /* Create a new tensor. The must be created on the same thread as the context. */
-mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape) {
+mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape) {
     *out = NULL;
-    mag_contract(ctx, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", (uint64_t)mag_thread_id(), (uint64_t)ctx->tr_id);
-    mag_contract(ctx, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within [0, %d]", MAG_MAX_DIMS);
-    if (rank > 0) mag_contract(ctx, ERR_INVALID_PARAM, {}, shape != NULL, "Shape must not be NULL if rank > 0");
+    mag_contract(err, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", (uint64_t)mag_thread_id(), (uint64_t)ctx->tr_id);
+    mag_contract(err, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within [0, %d]", MAG_MAX_DIMS);
+    if (rank > 0) mag_contract(err, ERR_INVALID_PARAM, {}, shape != NULL, "Shape must not be NULL if rank > 0");
     int64_t dts = (int64_t)mag_type_trait(type)->size;
     int64_t numel = 1;
     for (int64_t i=0; i < rank; ++i) {
-        mag_contract(ctx, ERR_INVALID_DIM, {}, shape[i] > 0, "All shape dimensions must be > 0, but shape[% " PRIi64 "] = %" PRIi64, i, shape[i]);
-        mag_contract(ctx, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i], numel, &numel), "Dim prod overflowed: dim[%" PRIi64 "] = %" PRIi64, i, shape[i]);
+        mag_contract(err, ERR_INVALID_DIM, {}, shape[i] > 0, "All shape dimensions must be > 0, but shape[% " PRIi64 "] = %" PRIi64, i, shape[i]);
+        mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i], numel, &numel), "Dim prod overflowed: dim[%" PRIi64 "] = %" PRIi64, i, shape[i]);
     }
     int64_t numbytes;
-    mag_contract(ctx, ERR_DIM_OVERFLOW, {}, !mag_mulov64(numel, dts, &numbytes), "Total size overflowed: numel = %" PRIi64 ", dtype size = %" PRIi64, numel, dts);
+    mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(numel, dts, &numbytes), "Total size overflowed: numel = %" PRIi64 ", dtype size = %" PRIi64, numel, dts);
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
     mag_device_t *dvc = ctx->active_device;
     ctx->telemetry.storage_bytes_allocated += numbytes;
@@ -90,10 +90,10 @@ mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage
         void (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;
         (*allocator)(dvc, &tensor->storage, numbytes, type);
     } else {
-        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->device == dvc, "Provided storage device mismatch: tensor device=%s storage device=%s", mag_backend_type_to_str(dvc->id.type), mag_backend_type_to_str(storage->device->id.type));
-        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->dtype == type, "Provided storage dtype mismatch: tensor dtype=%s storage dtype=%s", mag_type_trait(type)->name, mag_type_trait(storage->dtype)->name);
-        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->size >= (size_t)numbytes, "Provided storage too small: need=%" PRIi64 " have=%zu", numbytes, storage->size);
-        mag_contract(ctx, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->base != 0 || storage->size == 0, "Provided storage has NULL base");
+        mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->device == dvc, "Provided storage device mismatch: tensor device=%s storage device=%s", mag_backend_type_to_str(dvc->id.type), mag_backend_type_to_str(storage->device->id.type));
+        mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->dtype == type, "Provided storage dtype mismatch: tensor dtype=%s storage dtype=%s", mag_type_trait(type)->name, mag_type_trait(storage->dtype)->name);
+        mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->size >= (size_t)numbytes, "Provided storage too small: need=%" PRIi64 " have=%zu", numbytes, storage->size);
+        mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->base != 0 || storage->size == 0, "Provided storage has NULL base");
         tensor->storage = storage;
         mag_rc_incref(storage); /* Retain provided storage */
     }
@@ -104,7 +104,7 @@ mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage
     if (rank > 0) {
         tensor->coords.strides[rank-1] = 1;
         for (int64_t i=rank-2; i >= 0; --i) {
-            mag_contract(ctx, ERR_DIM_OVERFLOW, { mag_tensor_free_header(tensor); *out = NULL; }, !mag_mulov64(tensor->coords.strides[i+1], tensor->coords.shape[i+1], tensor->coords.strides+i), "Stride overflowed at dim[%" PRIi64 "]", i);
+            mag_contract(err, ERR_DIM_OVERFLOW, { mag_tensor_free_header(tensor); *out = NULL; }, !mag_mulov64(tensor->coords.strides[i+1], tensor->coords.shape[i+1], tensor->coords.strides+i), "Stride overflowed at dim[%" PRIi64 "]", i);
         }
     }
     ++ctx->telemetry.num_created_tensors;
@@ -113,27 +113,27 @@ mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage
 }
 
 /* Create a new tensor. The must be created on the same thread as the context. */
-mag_status_t mag_empty(mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
-    return mag_tensor_init(out, ctx, NULL, type, rank, shape);
+mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
+    return mag_tensor_init(err, out, ctx, NULL, type, rank, shape);
 }
 
-mag_status_t mag_as_strided(mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
+mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
     *out = NULL;
-    mag_contract(ctx, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", (uint64_t)mag_thread_id(), (uint64_t)ctx->tr_id);
-    mag_contract(ctx, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within [0, %d]", MAG_MAX_DIMS);
-    mag_contract(ctx, ERR_INVALID_INDEX, {}, offset >= 0, "Offset must be non-negative, but is: %" PRIi64, offset);
-    if (rank > 0) mag_contract(ctx, ERR_INVALID_PARAM, {}, shape && strides, "shape/strides cannot be NULL if rank > 0");
+    mag_contract(err, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", (uint64_t)mag_thread_id(), (uint64_t)ctx->tr_id);
+    mag_contract(err, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within [0, %d]", MAG_MAX_DIMS);
+    mag_contract(err, ERR_INVALID_INDEX, {}, offset >= 0, "Offset must be non-negative, but is: %" PRIi64, offset);
+    if (rank > 0) mag_contract(err, ERR_INVALID_PARAM, {}, shape && strides, "shape/strides cannot be NULL if rank > 0");
     int64_t last = offset;
     int64_t numel = 1;
     for (int64_t i=0; i < rank; ++i) {
-        mag_contract(ctx, ERR_INVALID_DIM, {}, shape[i] > 0 && (shape[i] == 1 ? strides[i] >= 0 : strides[i] > 0), "All shape dimensions must be > 0 and strides must be positive for non-singleton dims, but shape[% " PRIi64 "] = %" PRIi64 ", strides[%" PRIi64 "] = %" PRIi64, i, shape[i], i, strides[i]);
+        mag_contract(err, ERR_INVALID_DIM, {}, shape[i] > 0 && (shape[i] == 1 ? strides[i] >= 0 : strides[i] > 0), "All shape dimensions must be > 0 and strides must be positive for non-singleton dims, but shape[% " PRIi64 "] = %" PRIi64 ", strides[%" PRIi64 "] = %" PRIi64, i, shape[i], i, strides[i]);
         int64_t span;
-        mag_contract(ctx, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i]-1, strides[i], &span), "Span overflowed at dim[%" PRIi64 "]", i);
-        mag_contract(ctx, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i], numel, &numel), "Dim prod overflowed: dim[%" PRIi64 "] = %" PRIi64, i, shape[i]);
+        mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i]-1, strides[i], &span), "Span overflowed at dim[%" PRIi64 "]", i);
+        mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i], numel, &numel), "Dim prod overflowed: dim[%" PRIi64 "] = %" PRIi64, i, shape[i]);
         last += span;
     }
     int64_t numel_end = (int64_t)base->storage->size/base->storage->granularity;
-    mag_contract(ctx, ERR_OUT_OF_BOUNDS, {}, last < numel_end, "View exceeds base tensor storage bounds: view end = %" PRIi64 ", base storage numel = %" PRIi64, last, numel_end);
+    mag_contract(err, ERR_OUT_OF_BOUNDS, {}, last < numel_end, "View exceeds base tensor storage bounds: view end = %" PRIi64 ", base storage numel = %" PRIi64, last, numel_end);
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
     for (int i=0; i < MAG_MAX_DIMS; ++i) {
         tensor->coords.shape[i] = i < rank && shape ? shape[i] : 1;
@@ -229,39 +229,37 @@ uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor) {
     return mag_tensor_data_storage_ptr(tensor);
 }
 
-void *mag_tensor_copy_data(mag_tensor_t *tensor) {
-    mag_assert(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "Data copy requires tensot storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
+mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void **out_buf, size_t *out_size_bytes) {
+    mag_contract(err, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "Tensor storage must be allocated on CPU, but is allocated on %s", mag_backend_type_to_str(tensor->storage->device->id.type));
     mag_tensor_t *cont;
-    mag_status_t stat = mag_contiguous(&cont, tensor);
-    if (mag_iserr(stat)) return NULL;
+    mag_try(mag_contiguous(err, &cont, tensor));
     size_t size = mag_tensor_numbytes(cont);
     mag_assert2(size);
     void *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     const void *src = (const void *)mag_tensor_data_ptr(cont);
     memcpy(dst, src, size);
     mag_rc_decref(cont);
-    return dst;
+    *out_buf = dst;
+    *out_size_bytes = size;
+    return MAG_STATUS_OK;
 }
 
 void mag_tensor_copy_data_free(void *ret_val) {
     (*mag_alloc)(ret_val, 0, 0);
 }
 
-mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
-    mag_context_t *ctx = tensor->ctx;
+mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t *out_value) {
     /* TODO: auto transfer */
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "item() requires tensor storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, tensor->numel == 1, "item() can only be called on single element (scalar) tensors, but tensor has %" PRIi64 " elements", tensor->numel);
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, out_value != NULL, "Output value must not be NULL");
+    mag_contract(err, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "item() requires tensor storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
+    mag_contract(err, ERR_INVALID_PARAM, {}, tensor->numel == 1, "item() can only be called on single element (scalar) tensors, but tensor has %" PRIi64 " elements", tensor->numel);
+    mag_contract(err, ERR_INVALID_PARAM, {}, out_value != NULL, "Output value must not be NULL");
     mag_status_t stat;
     mag_tensor_t *scalar = NULL;
     if (tensor->coords.rank == 0) {
         mag_tensor_incref(tensor);
         scalar = tensor;
     } else {
-        stat = mag_view(&scalar, tensor, NULL, 0);
-        if (mag_iserr(stat))
-            return stat;
+        mag_try(mag_view(err, &scalar, tensor, NULL, 0));
     }
     mag_dtype_t dt = scalar->dtype;
     mag_dtype_mask_t mask = mag_dtype_bit(dt);
@@ -269,7 +267,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
     if (mask & MAG_DTYPE_MASK_FP) {
         mag_tensor_t *wide = scalar;
         if (dt != MAG_DTYPE_FLOAT32) {
-            stat = mag_cast(&wide, scalar, MAG_DTYPE_FLOAT32);
+            stat = mag_cast(err, &wide, scalar, MAG_DTYPE_FLOAT32);
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
@@ -281,7 +279,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
     if (mask & MAG_DTYPE_MASK_SINT) {
         mag_tensor_t *wide = scalar;
         if (dt != MAG_DTYPE_INT64) {
-            stat = mag_cast(&wide, scalar, MAG_DTYPE_INT64);
+            stat = mag_cast(err, &wide, scalar, MAG_DTYPE_INT64);
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
@@ -293,7 +291,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
     if ((mask & MAG_DTYPE_MASK_UINT) || dt == MAG_DTYPE_BOOLEAN) {
         mag_tensor_t *wide = scalar;
         if (dt != MAG_DTYPE_UINT64) {
-            stat = mag_cast(&wide, scalar, MAG_DTYPE_UINT64);
+            stat = mag_cast(err, &wide, scalar, MAG_DTYPE_UINT64);
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
@@ -303,7 +301,7 @@ mag_status_t mag_tensor_item(mag_tensor_t *tensor, mag_scalar_t *out_value) {
         return MAG_STATUS_OK;
     }
     mag_tensor_decref(scalar);
-    mag_contract(ctx, ERR_INVALID_PARAM, {}, false, "Unsupported dtype %s", mag_type_trait(dt)->name);
+    mag_contract(err, ERR_INVALID_PARAM, {}, false, "Unsupported dtype %s", mag_type_trait(dt)->name);
     return MAG_STATUS_ERR_INVALID_PARAM;
 }
 

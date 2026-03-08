@@ -518,7 +518,7 @@ static bool mag_snapshot_insert_tensor_by_id(mag_snapshot_t *snap, uint32_t key_
     return true;
 }
 
-extern mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape);
+extern mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape);
 
 static void mag_cpu_storage_dtor(void *self) {
     mag_storage_buffer_t *buf = self;
@@ -626,7 +626,7 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
         mag_storage_buffer_t *storage = NULL;
         mag_cpu_borrow_storage(ctx->active_device, &storage, blob, nbytes, desc->dtype, snap->mmap_owner);
         mag_tensor_t *tensor = NULL;
-        mag_snap_verify(mag_isok(mag_tensor_init(&tensor, ctx, storage, desc->dtype, desc->rank, shape)), goto error);
+        mag_snap_verify(mag_isok(mag_tensor_init(NULL, &tensor, ctx, storage, desc->dtype, desc->rank, shape)), goto error);
         mag_snap_verify(mag_snapshot_insert_tensor_by_id(snap, desc->key_id, tensor), mag_tensor_decref(tensor); goto error);
         mag_tensor_decref(tensor); /* Decref as the snapshot now holds a reference */
         mag_rc_decref(storage); /* Decref as the snapshot now holds a reference */
@@ -736,7 +736,8 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
     for (size_t i=0; i < snap->tensor_map.nitems; ++i) { /* Tensor data */
         mag_tensor_t *tensor = stable[i];
         mag_snap_verify(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, goto error); /* Tensor must live on CPU */
-        mag_contiguous(&tensor, tensor); /* Make contiguous to allow the 1:1 copy into mmap destination region */
+        mag_error_t err = {0};
+        mag_snap_verify(mag_isok(mag_contiguous(&err, &tensor, tensor)), goto error); /* TODO: Migrate to new error system Make contiguous to allow the 1:1 copy into mmap destination region */
         size_t nb = mag_tensor_numbytes(tensor);
         nb_dat_total += nb;
         mag_snap_verify(mag_stream_wbytes(&stream, (const void *)mag_tensor_data_ptr(tensor), nb), mag_tensor_decref(tensor); goto error);

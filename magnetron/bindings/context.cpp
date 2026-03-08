@@ -40,22 +40,6 @@ namespace mag::bindings {
             "context",
             "Global runtime controls (errors, RNG, CPU info, backend, etc.)."
         );
-        context.def("last_error", []() -> int {
-            std::lock_guard lock {get_global_mutex()};
-            return mag_ctx_get_error_code(get_ctx());
-        });
-        context.def("has_error", []() -> bool {
-            std::lock_guard lock {get_global_mutex()};
-            return mag_ctx_has_error(get_ctx());
-        });
-        context.def("clear_error", []() -> void {
-            std::lock_guard lock {get_global_mutex()};
-            mag_ctx_clear_error(get_ctx());
-        });
-        context.def("last_error_name", []() -> std::string {
-            std::lock_guard lock {get_global_mutex()};
-            return mag_status_get_name(mag_ctx_get_error_code(get_ctx()));
-        });
         context.def("start_grad_recorder", []() -> void {
             std::lock_guard lock {get_global_mutex()};
             mag_ctx_grad_recorder_start(get_ctx());

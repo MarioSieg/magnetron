@@ -16,13 +16,15 @@
         .def(#name, [](const tensor_wrapper &self) -> tensor_wrapper { \
             std::lock_guard lock {get_global_mutex()}; \
             mag_tensor_t *out = nullptr; \
-            throw_if_error(mag_##name(&out, *self)); \
+            mag_error_t err {}; \
+            throw_if_error(mag_##name(&err, &out, *self), err); \
             return tensor_wrapper {out}; \
         }) \
         .def(#name "_", [](tensor_wrapper &self) -> tensor_wrapper& { \
             std::lock_guard lock {get_global_mutex()}; \
             mag_tensor_t *out = nullptr; \
-            throw_if_error(mag_##name##_(&out, *self)); \
+            mag_error_t err {}; \
+            throw_if_error(mag_##name##_(&err, &out, *self), err); \
             if (self.p) mag_tensor_decref(self.p); \
             self.p = out; \
             return self; \
@@ -34,7 +36,8 @@
             std::lock_guard lock {get_global_mutex()}; \
             tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
             mag_tensor_t *out = nullptr; \
-            throw_if_error(mag_##c_name(&out, *a, *b)); \
+            mag_error_t err {}; \
+            throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
             return tensor_wrapper{out}; \
         }, "rhs"_a); \
     cls.def("__r" #dunder_name "__", \
@@ -42,7 +45,8 @@
             std::lock_guard lock {get_global_mutex()}; \
             tensor_wrapper l = normalize_rhs_to_tensor(a, lhs); \
             mag_tensor_t *out = nullptr; \
-            throw_if_error(mag_##c_name(&out, *l, *a)); \
+            mag_error_t err {}; \
+            throw_if_error(mag_##c_name(&err, &out, *l, *a), err); \
             return tensor_wrapper{out}; \
         }, "lhs"_a); \
     cls.def("__i" #dunder_name "__", \
@@ -50,7 +54,8 @@
             std::lock_guard lock {get_global_mutex()}; \
             tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
             mag_tensor_t *out = nullptr; \
-            throw_if_error(mag_##c_name##_(&out, *a, *b)); \
+            mag_error_t err {}; \
+            throw_if_error(mag_##c_name##_(&err, &out, *a, *b), err); \
             if (a.p) mag_tensor_decref(a.p); \
             a.p = out; \
             return a; \
@@ -60,7 +65,8 @@
             std::lock_guard lock {get_global_mutex()}; \
             tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
             mag_tensor_t *out = nullptr; \
-            throw_if_error(mag_##c_name(&out, *a, *b)); \
+            mag_error_t err {}; \
+            throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
             return tensor_wrapper{out}; \
         }, "rhs"_a); \
     cls.def(#named_name "_", \
@@ -68,7 +74,8 @@
             std::lock_guard lock {get_global_mutex()}; \
             tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
             mag_tensor_t *out = nullptr; \
-            throw_if_error(mag_##c_name##_(&out, *a, *b)); \
+            mag_error_t err {}; \
+            throw_if_error(mag_##c_name##_(&err, &out, *a, *b), err); \
             if (a.p) mag_tensor_decref(a.p); \
             a.p = out; \
             return a; \
@@ -80,7 +87,8 @@
             std::lock_guard lock {get_global_mutex()}; \
             tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
             mag_tensor_t *out = nullptr; \
-            throw_if_error(mag_##c_name(&out, *a, *b)); \
+            mag_error_t err {}; \
+            throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
             return tensor_wrapper{out}; \
         }, "rhs"_a); \
     cls.def(#named_name, \
@@ -88,7 +96,8 @@
             std::lock_guard lock {get_global_mutex()}; \
             tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
             mag_tensor_t *out = nullptr; \
-            throw_if_error(mag_##c_name(&out, *a, *b)); \
+            mag_error_t err {}; \
+            throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
             return tensor_wrapper{out}; \
         }, "rhs"_a)
 
@@ -98,7 +107,8 @@ namespace mag::bindings {
         .def("fill_",
             [](tensor_wrapper &self, nb::handle value) -> tensor_wrapper& {
                 std::lock_guard lock {get_global_mutex()};
-                throw_if_error(mag_fill_(*self, scalar_from_py(value)));
+                mag_error_t err {};
+                throw_if_error(mag_fill_(&err, *self, scalar_from_py(value)), err);
                 return self;
             },
             "value"_a
@@ -108,7 +118,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 if (mag_tensor_type(*mask) != MAG_DTYPE_BOOLEAN)
                     throw nb::type_error("masked_fill_: mask must have dtype boolean");
-                throw_if_error(mag_masked_fill_(*self, *mask, scalar_from_py(value)));
+                mag_error_t err {};
+                throw_if_error(mag_masked_fill_(&err, *self, *mask, scalar_from_py(value)), err);
                 return self;
             },
             "mask"_a, "value"_a
@@ -118,7 +129,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 mag_scalar_t low  = low_h.is_none()  ? mag_scalar_from_f64(0.0) : scalar_from_py(low_h);
                 mag_scalar_t high = high_h.is_none() ? mag_scalar_from_f64(1.0) : scalar_from_py(high_h);
-                throw_if_error(mag_uniform_(*self, low, high));
+                mag_error_t err {};
+                throw_if_error(mag_uniform_(&err, *self, low, high), err);
                 return self;
             },
             "low"_a = nb::none(),
@@ -127,7 +139,8 @@ namespace mag::bindings {
         .def("normal_",
             [](tensor_wrapper &self, nb::handle mean_h = nb::float_(0.0), nb::handle std_h  = nb::float_(1.0)) -> tensor_wrapper& {
                 std::lock_guard lock {get_global_mutex()};
-                throw_if_error(mag_normal_(*self, scalar_from_py(mean_h), scalar_from_py(std_h)));
+                mag_error_t err {};
+                throw_if_error(mag_normal_(&err, *self, scalar_from_py(mean_h), scalar_from_py(std_h)), err);
                 return self;
             },
             "mean"_a = 0.0,
@@ -136,7 +149,8 @@ namespace mag::bindings {
         .def("bernoulli_",
             [](tensor_wrapper &self, nb::handle p_h = nb::float_(0.5)) -> tensor_wrapper& {
                 std::lock_guard lock {get_global_mutex()};
-                throw_if_error(mag_bernoulli_(*self, scalar_from_py(p_h)));
+                mag_error_t err {};
+                throw_if_error(mag_bernoulli_(&err, *self, scalar_from_py(p_h)), err);
                 return self;
             },
             "p"_a = 0.5
@@ -144,13 +158,15 @@ namespace mag::bindings {
         .def("clone", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *out = nullptr;
-            throw_if_error(mag_clone(&out, *self));
+            mag_error_t err {};
+            throw_if_error(mag_clone(&err, &out, *self), err);
             return tensor_wrapper{out};
         })
         .def("cast", [](const tensor_wrapper &self, dtype_wrapper dt) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *out = nullptr;
-            throw_if_error(mag_cast(&out, *self, dt.v));
+            mag_error_t err {};
+            throw_if_error(mag_cast(&err, &out, *self, dt.v), err);
             return tensor_wrapper{out};
         }, "dtype"_a)
         .def("view", [](const tensor_wrapper &self, nb::args args) -> tensor_wrapper {
@@ -158,13 +174,15 @@ namespace mag::bindings {
             std::vector<int64_t> shape = parse_i64_dims(args, "view");
             validate_shape(shape);
             mag_tensor_t *out = nullptr;
-            throw_if_error(mag_view(&out, *self, shape.data(), (int64_t)shape.size()));
+            mag_error_t err {};
+            throw_if_error(mag_view(&err, &out, *self, shape.data(), static_cast<int64_t>(shape.size())), err);
             return tensor_wrapper{out};
         }, "shape"_a)
         .def("view_slice", [](const tensor_wrapper &self, int64_t dim, int64_t start, int64_t len, int64_t step) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *out = nullptr;
-            throw_if_error(mag_view_slice(&out, *self, dim, start, len, step));
+            mag_error_t err {};
+            throw_if_error(mag_view_slice(&err, &out, *self, dim, start, len, step), err);
             return tensor_wrapper{out};
         }, "dim"_a, "start"_a, "len"_a, "step"_a)
         .def("reshape",
@@ -178,7 +196,8 @@ namespace mag::bindings {
                 }
                 if (neg_ones > 1) throw nb::value_error("reshape: only one -1 is allowed");
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_reshape(&out, *self, dims.data(), static_cast<int64_t>(dims.size())));
+                mag_error_t err {};
+                throw_if_error(mag_reshape(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())), err);
                 return tensor_wrapper{out};
             }
         )
@@ -188,7 +207,8 @@ namespace mag::bindings {
                 if (dim0 == dim1)
                     throw nb::value_error("transpose: dim0 and dim1 must be different");
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_transpose(&out, *self, dim0, dim1));
+                mag_error_t err {};
+                throw_if_error(mag_transpose(&err, &out, *self, dim0, dim1), err);
                 return tensor_wrapper{out};
             },
             "dim0"_a = 0, "dim1"_a = 1
@@ -196,7 +216,8 @@ namespace mag::bindings {
         .def_prop_ro("T", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *out = nullptr;
-            throw_if_error(mag_T(&out, *self));
+            mag_error_t err {};
+            throw_if_error(mag_T(&err, &out, *self), err);
             return tensor_wrapper{out};
         })
         .def("permute",
@@ -204,11 +225,12 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 std::vector<int64_t> dims = parse_i64_dims(dims_args, "permute");
                 int64_t r = mag_tensor_rank(*self);
-                if ((int64_t) dims.size() != r)
+                if (static_cast<int64_t>(dims.size()) != r)
                     throw nb::value_error("permute: number of dims must match tensor rank");
 
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_permute(&out, *self, dims.data(), (int64_t) dims.size()));
+                mag_error_t err {};
+                throw_if_error(mag_permute(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())), err);
                 return tensor_wrapper{out};
             }
         )
@@ -216,7 +238,8 @@ namespace mag::bindings {
             [](const tensor_wrapper &self) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_contiguous(&out, *self));
+                mag_error_t err {};
+                throw_if_error(mag_contiguous(&err, &out, *self), err);
                 return tensor_wrapper{out};
             }
         )
@@ -224,11 +247,12 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, nb::handle dim_h = nb::none()) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
+                mag_error_t err {};
                 if (dim_h.is_none()) {
-                    throw_if_error(mag_squeeze_all(&out, *self));
+                    throw_if_error(mag_squeeze_all(&err, &out, *self), err);
                 } else {
                     auto dim = nb::cast<int64_t>(dim_h);
-                    throw_if_error(mag_squeeze_dim(&out, *self, dim));
+                    throw_if_error(mag_squeeze_dim(&err, &out, *self, dim), err);
                 }
                 return tensor_wrapper{out};
             },
@@ -238,7 +262,8 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, int64_t dim) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_unsqueeze(&out, *self, dim));
+                mag_error_t err {};
+                throw_if_error(mag_unsqueeze(&err, &out, *self, dim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a
@@ -247,7 +272,8 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, int64_t start_dim = 0, int64_t end_dim = -1) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_flatten(&out, *self, start_dim, end_dim));
+                mag_error_t err {};
+                throw_if_error(mag_flatten(&err, &out, *self, start_dim, end_dim), err);
                 return tensor_wrapper{out};
             },
             "start_dim"_a = 0, "end_dim"_a = -1
@@ -257,7 +283,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 std::vector<int64_t> sizes = parse_i64_list_handle(sizes_h, "unflatten(sizes)");
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_unflatten(&out, *self, dim, sizes.data(), static_cast<int64_t>(sizes.size())));
+                mag_error_t err {};
+                throw_if_error(mag_unflatten(&err, &out, *self, dim, sizes.data(), static_cast<int64_t>(sizes.size())), err);
                 return tensor_wrapper{out};
             },
             "dim"_a, "sizes"_a
@@ -266,7 +293,8 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, int64_t dim, int64_t start, int64_t length) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_narrow(&out, *self, dim, start, length));
+                mag_error_t err {};
+                throw_if_error(mag_narrow(&err, &out, *self, dim, start, length), err);
                 return tensor_wrapper{out};
             },
             "dim"_a, "start"_a, "length"_a
@@ -275,7 +303,8 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, int64_t src, int64_t dst) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_movedim(&out, *self, src, dst));
+                mag_error_t err {};
+                throw_if_error(mag_movedim(&err, &out, *self, src, dst), err);
                 return tensor_wrapper{out};
             },
             "src"_a, "dst"_a
@@ -284,7 +313,8 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, int64_t dim, int64_t index) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_select(&out, *self, dim, index));
+                mag_error_t err {};
+                throw_if_error(mag_select(&err, &out, *self, dim, index), err);
                 return tensor_wrapper{out};
             },
             "dim"_a, "index"_a
@@ -298,10 +328,11 @@ namespace mag::bindings {
                 if (dim < 0) dim += rank;
                 if (dim < 0 || dim >= rank) throw nb::index_error("split: dim out of range");
                 int64_t size = mag_tensor_shape_ptr(*self)[dim];
-                if (size == 0) return nb::tuple(); // empty tuple
-                int64_t n_chunks = (size + split_size - 1) / split_size;
+                if (size == 0) return {};
+                int64_t n_chunks = (size + split_size - 1)/split_size;
                 std::vector<mag_tensor_t*> outs(static_cast<size_t>(n_chunks), nullptr);
-                throw_if_error(mag_split(outs.data(), n_chunks, *self, split_size, dim));
+                mag_error_t err {};
+                throw_if_error(mag_split(&err, outs.data(), n_chunks, *self, split_size, dim), err);
                 PyObject *t = PyTuple_New(n_chunks);
                 if (!t) throw nb::python_error();
                 for (int64_t i=0; i < n_chunks; ++i) {
@@ -318,7 +349,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 auto ax = parse_reduction_axes(dim);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_mean(&out, *self, ax.ptr, ax.rank, keepdim));
+                mag_error_t err {};
+                throw_if_error(mag_mean(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a = nb::none(), "keepdim"_a = false
@@ -328,7 +360,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 auto ax = parse_reduction_axes(dim);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_min(&out, *self, ax.ptr, ax.rank, keepdim));
+                mag_error_t err {};
+                throw_if_error(mag_min(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a = nb::none(), "keepdim"_a = false
@@ -338,7 +371,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 auto ax = parse_reduction_axes(dim);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_max(&out, *self, ax.ptr, ax.rank, keepdim));
+                mag_error_t err {};
+                throw_if_error(mag_max(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a = nb::none(), "keepdim"_a = false
@@ -348,7 +382,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 auto ax = parse_reduction_axes(dim);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_argmin(&out, *self, ax.ptr, ax.rank, keepdim));
+                mag_error_t err {};
+                throw_if_error(mag_argmin(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a = nb::none(), "keepdim"_a = false
@@ -358,7 +393,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 auto ax = parse_reduction_axes(dim);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_argmax(&out, *self, ax.ptr, ax.rank, keepdim));
+                mag_error_t err {};
+                throw_if_error(mag_argmax(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a = nb::none(), "keepdim"_a = false
@@ -368,7 +404,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 auto ax = parse_reduction_axes(dim);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_sum(&out, *self, ax.ptr, ax.rank, keepdim));
+                mag_error_t err {};
+                throw_if_error(mag_sum(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a = nb::none(), "keepdim"_a = false
@@ -378,7 +415,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 auto ax = parse_reduction_axes(dim);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_prod(&out, *self, ax.ptr, ax.rank, keepdim));
+                mag_error_t err {};
+                throw_if_error(mag_prod(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a = nb::none(), "keepdim"_a = false
@@ -388,7 +426,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 auto ax = parse_reduction_axes(dim);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_all(&out, *self, ax.ptr, ax.rank, keepdim));
+                mag_error_t err {};
+                throw_if_error(mag_all(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a = nb::none(), "keepdim"_a = false
@@ -398,7 +437,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 auto ax = parse_reduction_axes(dim);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_any(&out, *self, ax.ptr, ax.rank, keepdim));
+                mag_error_t err {};
+                throw_if_error(mag_any(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
             "dim"_a = nb::none(), "keepdim"_a = false
@@ -408,7 +448,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *values = nullptr;
                 mag_tensor_t *indices = nullptr;
-                throw_if_error(mag_topk(&values, &indices, *self, k, dim, largest, sorted));
+                mag_error_t err {};
+                throw_if_error(mag_topk(&err, &values, &indices, *self, k, dim, largest, sorted), err);
                 tensor_wrapper v_tw{values};
                 tensor_wrapper i_tw{indices};
                 PyObject *t = PyTuple_New(2);
@@ -425,7 +466,8 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_tril(&out, *self, diagonal));
+                mag_error_t err {};
+                throw_if_error(mag_tril(&err, &out, *self, diagonal), err);
                 return tensor_wrapper{out};
             },
             "diagonal"_a = 0
@@ -434,7 +476,8 @@ namespace mag::bindings {
             [](tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_tril_(&out, *self, diagonal));
+                mag_error_t err {};
+                throw_if_error(mag_tril_(&err, &out, *self, diagonal), err);
                 return tensor_wrapper {out};
             },
             "diagonal"_a = 0
@@ -443,7 +486,8 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_triu(&out, *self, diagonal));
+                mag_error_t err {};
+                throw_if_error(mag_triu(&err, &out, *self, diagonal), err);
                 return tensor_wrapper{out};
             },
             "diagonal"_a = 0
@@ -452,7 +496,8 @@ namespace mag::bindings {
             [](tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_triu_(&out, *self, diagonal));
+                mag_error_t err {};
+                throw_if_error(mag_triu_(&err, &out, *self, diagonal), err);
                 return tensor_wrapper {out};
             },
             "diagonal"_a = 0
@@ -463,7 +508,8 @@ namespace mag::bindings {
                 if (num_samples <= 0)
                     throw nb::value_error("multinomial: num_samples must be > 0");
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_multinomial(&out, *self, num_samples, replacement));
+                mag_error_t err {};
+                throw_if_error(mag_multinomial(&err, &out, *self, num_samples, replacement), err);
                 return tensor_wrapper{out};
             },
             "num_samples"_a = 1, "replacement"_a = false
@@ -495,14 +541,15 @@ namespace mag::bindings {
                 contig.reserve(n);
                 std::vector<mag_tensor_t*> ptrs;
                 ptrs.reserve(n);
+                mag_error_t err {};
                 for (size_t i = 0; i < n; ++i) {
                     mag_tensor_t *ci = nullptr;
-                    throw_if_error(mag_contiguous(&ci, *tensors[i]));
-                    contig.emplace_back(tensor_wrapper{ci}); // owns ci
+                    throw_if_error(mag_contiguous(&err, &ci, *tensors[i]), err);
+                    contig.emplace_back(ci);
                     ptrs.emplace_back(*contig.back());
                 }
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_cat(&out, ptrs.data(), ptrs.size(), dim));
+                throw_if_error(mag_cat(&err, &out, ptrs.data(), ptrs.size(), dim), err);
                 return tensor_wrapper{out};
             },
             "tensors"_a, "dim"_a = 0
@@ -548,7 +595,8 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, [[maybe_unused]] int64_t dim) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_softmax(&out, *self)); // TODO: respect dim
+                mag_error_t err {};
+                throw_if_error(mag_softmax(&err, &out, *self), err); // TODO: respect dim
                 return tensor_wrapper{out};
             },
             "dim"_a
@@ -557,7 +605,8 @@ namespace mag::bindings {
             [](tensor_wrapper &self, [[maybe_unused]] int64_t dim) -> tensor_wrapper& {
                 std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_softmax_(&out, *self)); // TODO: respect dim
+                mag_error_t err {};
+                throw_if_error(mag_softmax_(&err, &out, *self), err); // TODO: respect dim
                 if (self.p) mag_tensor_decref(self.p);
                 self.p = out;
                 return self;
@@ -581,7 +630,8 @@ namespace mag::bindings {
         .def("__neg__", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *out = nullptr;
-            throw_if_error(mag_neg(&out, *self));
+            mag_error_t err {};
+            throw_if_error(mag_neg(&err, &out, *self), err);
             return tensor_wrapper{out};
         })
         .def("__pos__", [](const tensor_wrapper &self) -> tensor_wrapper {
@@ -591,7 +641,8 @@ namespace mag::bindings {
         .def("__abs__", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *out = nullptr;
-            throw_if_error(mag_abs(&out, *self));
+            mag_error_t err {};
+            throw_if_error(mag_abs(&err, &out, *self), err);
             return tensor_wrapper{out};
         });
 
@@ -620,7 +671,8 @@ namespace mag::bindings {
                 std::lock_guard lock {get_global_mutex()};
                 tensor_wrapper b = normalize_rhs_to_tensor(a, rhs);
                 mag_tensor_t *out = nullptr;
-                throw_if_error(mag_matmul(&out, *a, *b));
+                mag_error_t err {};
+                throw_if_error(mag_matmul(&err, &out, *a, *b), err);
                 return tensor_wrapper{out};
             },
             "rhs"_a

@@ -21,7 +21,11 @@ namespace mag::bindings {
         snapshot_wrapper(const std::string &fname, bool write) : write_mode(write), filename(fname) {
             mag_context_t *ctx = get_ctx();
             p = write ? mag_snapshot_new(ctx) : mag_snapshot_deserialize(ctx, fname.c_str());
-            if (!p) throw std::runtime_error("Failed to create or load snapshot");
+            if (!p) {
+                std::ostringstream oss;
+                oss << "Failed to create or load snapshot: " << fname;
+                throw std::runtime_error(oss.str());
+            }
         }
         ~snapshot_wrapper() {
             if (p) mag_snapshot_free(p);
@@ -40,8 +44,11 @@ namespace mag::bindings {
 
         void serialize_if_needed() {
             if (write_mode && p) {
-                if (!mag_snapshot_serialize(p, filename.c_str()))
-                    throw std::runtime_error {"Failed to serialize snapshot"};
+                if (!mag_snapshot_serialize(p, filename.c_str())) {
+                    std::ostringstream oss;
+                    oss << "Failed to serialize snapshot: " << filename;
+                    throw std::runtime_error(oss.str());
+                }
             }
         }
 
@@ -63,14 +70,20 @@ namespace mag::bindings {
         nb::class_<snapshot_wrapper>(m, "Snapshot")
         .def_static("write", [](const std::string &filename) {
             std::lock_guard lock {get_global_mutex()};
-            if (!ends_with(filename, ".mag"))
-                throw nb::value_error("Filename must end with .mag");
+            if (!ends_with(filename, ".mag")) {
+                std::ostringstream oss;
+                oss << "Filename must end with .mag: " << filename;
+                throw nb::value_error(oss.str().c_str());
+            }
             return snapshot_wrapper{filename, true};
         })
         .def_static("read", [](const std::string &filename) {
             std::lock_guard lock {get_global_mutex()};
-            if (!ends_with(filename, ".mag"))
-                throw nb::value_error("Filename must end with .mag");
+            if (!ends_with(filename, ".mag")) {
+                std::ostringstream oss;
+                oss << "Filename must end with .mag: " << filename;
+                throw nb::value_error(oss.str().c_str());
+            }
             return snapshot_wrapper{filename, false};
         })
         .def("__enter__", [](snapshot_wrapper &self) -> snapshot_wrapper& {
@@ -88,13 +101,21 @@ namespace mag::bindings {
         .def("put_tensor", [](snapshot_wrapper &self, const std::string &name, const tensor_wrapper &tensor) {
             std::lock_guard lock {get_global_mutex()};
             if (!self.is_write_mode()) throw std::runtime_error("Snapshot opened in read mode");
-            if (!mag_snapshot_put_tensor(*self, name.c_str(), *tensor)) throw std::runtime_error("Failed to store tensor");
+            if (!mag_snapshot_put_tensor(*self, name.c_str(), *tensor)) {
+                std::ostringstream oss;
+                oss << "Failed to store tensor: " << name;
+                throw std::runtime_error(oss.str());
+            }
         })
         .def("get_tensor", [](snapshot_wrapper &self, const std::string &name) {
             std::lock_guard lock {get_global_mutex()};
             if (self.is_write_mode()) throw std::runtime_error("Snapshot opened in write mode");
             mag_tensor_t *t = mag_snapshot_get_tensor(*self, name.c_str());
-            if (!t) throw std::runtime_error("Tensor not found");
+            if (!t) {
+                std::ostringstream oss;
+                oss << "Tensor not found: " << name;
+                throw std::runtime_error(oss.str());
+            }
             return tensor_wrapper{t};
         })
         .def("tensor_keys", [](snapshot_wrapper &self) {

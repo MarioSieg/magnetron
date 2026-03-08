@@ -221,32 +221,6 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     fflush(stderr);
 }
 
-const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx) {
-    return &ctx->error_status;
-}
-
-void mag_ctx_set_last_error(mag_context_t *ctx, const mag_error_t *error){
-    ctx->error_status = *error;
-}
-
-mag_status_t mag_ctx_get_error_code(const mag_context_t *ctx) {
-    return ctx->error_status.code;
-}
-
-void mag_ctx_clear_error(mag_context_t *ctx) {
-    memset(&ctx->error_status, 0, sizeof(ctx->error_status));
-    ctx->error_status.code = MAG_STATUS_OK;
-}
-
-void mag_ctx_take_last_error(mag_context_t *ctx, mag_error_t *err){
-    *err = ctx->error_status;
-    mag_ctx_clear_error(ctx);
-}
-
-bool mag_ctx_has_error(const mag_context_t *ctx){
-    return ctx->error_status.code != MAG_STATUS_OK;
-}
-
 const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx) {
     return ctx->active_device->physical_device_name;
 }

@@ -15,6 +15,7 @@
 #include <functional>
 #include <exception>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <memory>
 #include <vector>
@@ -99,8 +100,6 @@ namespace mag::bindings {
     };
 
     [[nodiscard]] extern nb::tuple tuple_from_i64_span(const int64_t *p, Py_ssize_t n);
-    extern void throw_if_ctx_error(mag_context_t *ctx);
-    extern void throw_if_error(mag_status_t st);
     [[nodiscard]] extern tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt);
     [[nodiscard]] extern tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs);
     [[nodiscard]] extern std::vector<int64_t> parse_shape_from_args(const nb::args &args);
@@ -110,4 +109,11 @@ namespace mag::bindings {
     [[nodiscard]] extern reduction_axes parse_reduction_axes(nb::handle dim_h);
     [[nodiscard]] extern mag_scalar_t scalar_from_py(nb::handle h);
     [[nodiscard]] extern dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h);
+    [[nodiscard]] extern std::string format_error_msg(const mag_error_t &err);
+
+    inline void throw_if_error(mag_status_t st, const mag_error_t &err) {
+        if (st == MAG_STATUS_OK) return;
+        std::string msg = format_error_msg(err);
+        throw std::runtime_error {msg.c_str()};
+    }
 }
