@@ -22,7 +22,7 @@ jobs:
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
-          pip install cibuildwheel==2.* build
+          pip install 'cibuildwheel>=3' build
 
       - name: Get version from tag
         id: get_version
@@ -36,6 +36,8 @@ jobs:
           CIBW_ARCHS_LINUX: "x86_64"
           CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_*"
+          # manylinux_2_34 has glibc 2.34 so pre-built LLVM 20 clang can run (default image has older glibc)
+          CIBW_MANYLINUX_X86_64_IMAGE: "quay.io/pypa/manylinux_2_34_x86_64"
           # Use LLVM/Clang 20 for AVX-512 BF16 intrinsics (_mm512_cvtpbh_ps); install in container before build
           CIBW_BEFORE_ALL_LINUX: |
             set -eux
