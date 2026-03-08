@@ -30,8 +30,9 @@ namespace mag::bindings {
     namespace nb = nanobind;
     using namespace nb::literals;
 
-    // Lazy init the context, destruction is handled by the module destructor. Im
+    // Lazy init the context, destruction is handled by the module destructor.
     [[nodiscard]] extern mag_context_t *get_ctx();
+    [[nodiscard]] extern std::mutex &get_global_mutex();
 
     struct dtype_wrapper final { mag_dtype_t v; };
 

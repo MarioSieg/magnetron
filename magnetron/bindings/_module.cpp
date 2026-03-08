@@ -18,8 +18,9 @@ namespace mag::bindings {
     extern void init_bindings_snapshot(nb::module_ &m);
 }
 
-// Global module entry defin
+// Global module entry definition
 NB_MODULE(_magnetron, m) {
+    std::lock_guard lock {mag::bindings::get_global_mutex()};
     mag::bindings::init_bindings_context(m);
     mag::bindings::init_bindings_dtype(m);
     mag::bindings::init_bindings_tensor(m);

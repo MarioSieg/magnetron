@@ -14,6 +14,7 @@
 namespace mag::bindings {
     static std::once_flag g_ctx_once;
     static std::atomic<mag_context_t*> g_ctx{nullptr};
+    static std::mutex g_mutex;
 
     mag_context_t *get_ctx() {
         std::call_once(g_ctx_once, [] {
@@ -22,6 +23,8 @@ namespace mag::bindings {
         });
         return g_ctx.load(std::memory_order_acquire);
     }
+
+    std::mutex &get_global_mutex() { return g_mutex; }
 
     static void destroy_ctx(void *) noexcept {
         if (mag_context_t* ctx = g_ctx.exchange(nullptr, std::memory_order_acq_rel))
@@ -38,51 +41,67 @@ namespace mag::bindings {
             "Global runtime controls (errors, RNG, CPU info, backend, etc.)."
         );
         context.def("last_error", []() -> int {
+            std::lock_guard lock {get_global_mutex()};
             return mag_ctx_get_error_code(get_ctx());
         });
         context.def("has_error", []() -> bool {
+            std::lock_guard lock {get_global_mutex()};
             return mag_ctx_has_error(get_ctx());
         });
         context.def("clear_error", []() -> void {
+            std::lock_guard lock {get_global_mutex()};
             mag_ctx_clear_error(get_ctx());
         });
         context.def("last_error_name", []() -> std::string {
+            std::lock_guard lock {get_global_mutex()};
             return mag_status_get_name(mag_ctx_get_error_code(get_ctx()));
         });
         context.def("start_grad_recorder", []() -> void {
+            std::lock_guard lock {get_global_mutex()};
             mag_ctx_grad_recorder_start(get_ctx());
         });
         context.def("stop_grad_recorder", []() -> void {
+            std::lock_guard lock {get_global_mutex()};
             mag_ctx_grad_recorder_stop(get_ctx());
         });
         context.def("is_grad_recording", []() -> bool {
+            std::lock_guard lock {get_global_mutex()};
             return mag_ctx_grad_recorder_is_running(get_ctx());
         });
         context.def("manual_seed", [](uint64_t seed) -> void {
+            std::lock_guard lock {get_global_mutex()};
             mag_ctx_manual_seed(get_ctx(), seed);
         }, "seed"_a);
         context.def("os_name", []() -> std::string {
-           return mag_ctx_get_os_name(get_ctx());
+            std::lock_guard lock {get_global_mutex()};
+            return mag_ctx_get_os_name(get_ctx());
         });
         context.def("cpu_name", []() -> std::string {
+            std::lock_guard lock {get_global_mutex()};
             return mag_ctx_get_cpu_name(get_ctx());
         });
         context.def("cpu_virtual_cores", []() -> uint32_t {
+            std::lock_guard lock {get_global_mutex()};
             return mag_ctx_get_cpu_virtual_cores(get_ctx());
         });
         context.def("cpu_physical_cores", []() -> uint32_t {
+            std::lock_guard lock {get_global_mutex()};
             return mag_ctx_get_cpu_physical_cores(get_ctx());
         });
         context.def("cpu_sockets", []() -> uint32_t {
+            std::lock_guard lock {get_global_mutex()};
             return mag_ctx_get_cpu_sockets(get_ctx());
         });
         context.def("physical_memory_total", []() -> uint64_t {
+            std::lock_guard lock {get_global_mutex()};
             return mag_ctx_get_physical_memory_total(get_ctx());
         });
         context.def("physical_memory_free", []() -> uint64_t {
+            std::lock_guard lock {get_global_mutex()};
            return mag_ctx_get_physical_memory_free(get_ctx());
         });
         context.def("is_numa_system", []() -> bool {
+            std::lock_guard lock {get_global_mutex()};
             return mag_ctx_is_numa_system(get_ctx());
         });
     }

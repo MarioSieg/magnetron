@@ -62,11 +62,13 @@ namespace mag::bindings {
     void init_bindings_snapshot(nb::module_ &m) {
         nb::class_<snapshot_wrapper>(m, "Snapshot")
         .def_static("write", [](const std::string &filename) {
+            std::lock_guard lock {get_global_mutex()};
             if (!ends_with(filename, ".mag"))
                 throw nb::value_error("Filename must end with .mag");
             return snapshot_wrapper{filename, true};
         })
         .def_static("read", [](const std::string &filename) {
+            std::lock_guard lock {get_global_mutex()};
             if (!ends_with(filename, ".mag"))
                 throw nb::value_error("Filename must end with .mag");
             return snapshot_wrapper{filename, false};
@@ -75,23 +77,28 @@ namespace mag::bindings {
             return self;
         }, nb::rv_policy::reference_internal)
         .def("__exit__", [](snapshot_wrapper &self, nb::args) -> bool {
+            std::lock_guard lock {get_global_mutex()};
             self.close();
             return false;
         })
         .def("close", [](snapshot_wrapper &self) {
+            std::lock_guard lock {get_global_mutex()};
             self.close();
         })
         .def("put_tensor", [](snapshot_wrapper &self, const std::string &name, const tensor_wrapper &tensor) {
+            std::lock_guard lock {get_global_mutex()};
             if (!self.is_write_mode()) throw std::runtime_error("Snapshot opened in read mode");
             if (!mag_snapshot_put_tensor(*self, name.c_str(), *tensor)) throw std::runtime_error("Failed to store tensor");
         })
         .def("get_tensor", [](snapshot_wrapper &self, const std::string &name) {
+            std::lock_guard lock {get_global_mutex()};
             if (self.is_write_mode()) throw std::runtime_error("Snapshot opened in write mode");
             mag_tensor_t *t = mag_snapshot_get_tensor(*self, name.c_str());
             if (!t) throw std::runtime_error("Tensor not found");
             return tensor_wrapper{t};
         })
         .def("tensor_keys", [](snapshot_wrapper &self) {
+            std::lock_guard lock {get_global_mutex()};
             size_t n=0;
             const char **keys = mag_snapshot_get_tensor_keys(*self, &n);
             on_scope_exit defer([keys, n] { mag_snapshot_free_tensor_keys(keys, n); });
@@ -101,6 +108,7 @@ namespace mag::bindings {
             return out;
         })
         .def("print_info", [](snapshot_wrapper &self) {
+            std::lock_guard lock {get_global_mutex()};
             mag_snapshot_print_info(*self);
         });
     }

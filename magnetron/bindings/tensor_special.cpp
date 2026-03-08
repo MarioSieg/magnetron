@@ -78,11 +78,13 @@ namespace mag::bindings {
     void init_tensor_special_methods(nb::class_<tensor_wrapper> &cls) {
         cls
        .def("__len__", [](const tensor_wrapper &self) -> int64_t {
+           std::lock_guard lock {get_global_mutex()};
            if (mag_tensor_rank(*self) == 0)
                throw nb::value_error("Tensor must have at least one dimension to use len()");
            return *mag_tensor_shape_ptr(*self);
        })
        .def("__str__", [](const tensor_wrapper &self) -> nb::str {
+           std::lock_guard lock {get_global_mutex()};
            const char *cstr = mag_tensor_to_string(*self, 3, 3, 1000);
            if (!cstr) throw std::runtime_error {"Failed to convert tensor to string"};
            on_scope_exit defer_free {[cstr] { mag_tensor_to_string_free_data(cstr); }};
@@ -90,6 +92,7 @@ namespace mag::bindings {
            return str;
        })
        .def("__repr__", [](const tensor_wrapper &self) -> nb::str {
+           std::lock_guard lock {get_global_mutex()};
            const char *cstr = mag_tensor_to_string(*self, 3, 3, 1000);
            if (!cstr) throw std::runtime_error {"Failed to convert tensor to string"};
            on_scope_exit defer_free {[cstr] { mag_tensor_to_string_free_data(cstr); }};
@@ -97,6 +100,7 @@ namespace mag::bindings {
            return str;
        })
        .def("__bool__", [](const tensor_wrapper &self) -> bool {
+           std::lock_guard lock {get_global_mutex()};
            if (mag_tensor_numel(*self) != 1) {
                throw nb::value_error(
                    "The truth value of a Tensor with more than one element is ambiguous. Use .any() or .all() instead."
@@ -110,9 +114,8 @@ namespace mag::bindings {
            throw nb::type_error("Unsupported scalar type for __bool__()");
         })
        .def("__getitem__", [](const tensor_wrapper &self, nb::object index) -> tensor_wrapper {
-            nb::tuple idxs_in = nb::isinstance<nb::tuple>(index)
-                ? nb::cast<nb::tuple>(index)
-                : nb::make_tuple(index);
+           std::lock_guard lock {get_global_mutex()};
+            nb::tuple idxs_in = nb::isinstance<nb::tuple>(index) ? nb::cast<nb::tuple>(index) : nb::make_tuple(index);
             tensor_wrapper curr = self;
             int64_t rank0 = mag_tensor_rank(*curr);
             nb::list indices = expand_ellipsis(idxs_in, rank0);
@@ -123,9 +126,7 @@ namespace mag::bindings {
                     throw_if_error(mag_unsqueeze(&out, *curr, ax));
                     curr = tensor_wrapper{out};
                     ++ax;
-                    continue;
-                }
-                if (nb::isinstance<nb::int_>(idx)) {
+                } else if (nb::isinstance<nb::int_>(idx)) {
                     auto i = nb::cast<int64_t>(idx);
                     int64_t dim_size = mag_tensor_shape_ptr(*curr)[ax];
                     if (i < 0) i += dim_size;
@@ -133,9 +134,7 @@ namespace mag::bindings {
                         throw nb::index_error("Index out of bounds");
                     mag_tensor_t *out = index_by_scalar_per_axis(*curr, ax, i);
                     curr = tensor_wrapper{out};
-                    continue;
-                }
-                if (nb::isinstance<nb::slice>(idx)) {
+                } else if (nb::isinstance<nb::slice>(idx)) {
                     auto s = nb::cast<nb::slice>(idx);
                     auto [start, stop, step, length] = s.compute(mag_tensor_shape_ptr(*curr)[ax]);
                     if (step <= 0) throw nb::value_error("Non-positive slice steps are not supported");
@@ -144,17 +143,13 @@ namespace mag::bindings {
                     throw_if_error(mag_view_slice(&out, *curr, ax, start, (int64_t) length, (int64_t) step));
                     curr = tensor_wrapper{out};
                     ++ax;
-                    continue;
-                }
-                if (nb::isinstance<tensor_wrapper>(idx)) {
+                } else if (nb::isinstance<tensor_wrapper>(idx)) {
                     auto idx_tw = nb::cast<tensor_wrapper>(idx);
                     mag_tensor_t *out = nullptr;
                     throw_if_error(mag_gather(&out, *curr, ax, *idx_tw));
                     curr = tensor_wrapper{out};
                     ++ax;
-                    continue;
-                }
-                if (nb::isinstance<nb::sequence>(idx)) {
+                } else if (nb::isinstance<nb::sequence>(idx)) {
                     auto seq = nb::cast<nb::sequence>(idx);
                     std::vector<int64_t> data {};
                     data.reserve(nb::len(seq));
@@ -169,9 +164,7 @@ namespace mag::bindings {
                     throw_if_error(mag_gather(&out, *curr, ax, idx_tensor));
                     curr = tensor_wrapper{out};
                     ++ax;
-                    continue;
-                }
-                throw nb::type_error("Invalid index component");
+                } else throw nb::type_error("Invalid index component type");
             }
             return curr;
         });

@@ -35,6 +35,7 @@ namespace mag::bindings {
     void init_tensor_class_factories(nb::class_<tensor_wrapper> &cls) {
         cls.attr("empty") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 dtype_wrapper dt {MAG_DTYPE_FLOAT32};
                 bool requires_grad = false;
                 if (kwargs.contains("dtype"))
@@ -66,6 +67,7 @@ namespace mag::bindings {
         );
         cls.attr("empty_like") = nb::cpp_function(
             [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
                 throw_if_error(mag_empty_like(&out, *like));
                 mag_context_t *ctx = get_ctx();
@@ -77,6 +79,7 @@ namespace mag::bindings {
         );
         cls.attr("scalar") = nb::cpp_function(
             [](nb::handle value, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 dtype_wrapper dt = kw_dtype_or(kwargs, deduce_dtype_from_py_scalar(value));
                 bool requires_grad = kw_requires_grad_or(kwargs, false);
                 mag_context_t *ctx = get_ctx();
@@ -90,6 +93,7 @@ namespace mag::bindings {
         );
         cls.attr("full") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 if (!kwargs.contains("fill_value"))
                     throw nb::type_error("full(...): missing keyword argument 'fill_value'");
                 nb::handle fill_value = kwargs["fill_value"];
@@ -108,6 +112,7 @@ namespace mag::bindings {
         );
         cls.attr("full_like") = nb::cpp_function(
             [](const tensor_wrapper &like, nb::handle fill_value, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
                 mag_scalar_t s = scalar_from_py(fill_value);
                 throw_if_error(mag_full_like(&out, *like, s));
@@ -120,6 +125,7 @@ namespace mag::bindings {
         );
         cls.attr("zeros") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 dtype_wrapper dt = kw_dtype_or(kwargs, {MAG_DTYPE_FLOAT32});
                 bool requires_grad = kw_requires_grad_or(kwargs, false);
                 std::vector<int64_t> shape = parse_shape_from_args(args);
@@ -134,6 +140,7 @@ namespace mag::bindings {
         );
         cls.attr("zeros_like") = nb::cpp_function(
             [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
                 throw_if_error(mag_zeros_like(&out, *like));
                 mag_context_t *ctx = get_ctx();
@@ -145,6 +152,7 @@ namespace mag::bindings {
         );
         cls.attr("ones") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 dtype_wrapper dt = kw_dtype_or(kwargs, {MAG_DTYPE_FLOAT32});
                 bool requires_grad = kw_requires_grad_or(kwargs, false);
                 std::vector<int64_t> shape = parse_shape_from_args(args);
@@ -159,6 +167,7 @@ namespace mag::bindings {
         );
         cls.attr("ones_like") = nb::cpp_function(
             [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 mag_tensor_t *out = nullptr;
                 throw_if_error(mag_ones_like(&out, *like));
                 mag_context_t *ctx = get_ctx();
@@ -170,6 +179,7 @@ namespace mag::bindings {
         );
         cls.attr("uniform") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 dtype_wrapper dt = kw_dtype_or(kwargs, {MAG_DTYPE_FLOAT32});
                 bool requires_grad = kw_requires_grad_or(kwargs, false);
                 mag_scalar_t low  = kwargs.contains("low")  ? scalar_from_py(kwargs["low"])  : mag_scalar_from_f64(0.0);
@@ -186,6 +196,7 @@ namespace mag::bindings {
         );
         cls.attr("uniform_like") = nb::cpp_function(
             [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 mag_scalar_t low  = kwargs.contains("low")  ? scalar_from_py(kwargs["low"])  : mag_scalar_from_f64(0.0);
                 mag_scalar_t high = kwargs.contains("high") ? scalar_from_py(kwargs["high"]) : mag_scalar_from_f64(1.0);
                 mag_tensor_t *out = nullptr;
@@ -199,6 +210,7 @@ namespace mag::bindings {
         );
         cls.attr("normal") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 dtype_wrapper dt = kw_dtype_or(kwargs, {MAG_DTYPE_FLOAT32});
                 bool requires_grad = kw_requires_grad_or(kwargs, false);
                 mag_scalar_t mean = kwargs.contains("mean") ? scalar_from_py(kwargs["mean"]) : mag_scalar_from_f64(0.0);
@@ -215,6 +227,7 @@ namespace mag::bindings {
         );
         cls.attr("normal_like") = nb::cpp_function(
             [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 mag_scalar_t mean = kwargs.contains("mean") ? scalar_from_py(kwargs["mean"]) : mag_scalar_from_f64(0.0);
                 mag_scalar_t std  = kwargs.contains("std")  ? scalar_from_py(kwargs["std"])  : mag_scalar_from_f64(1.0);
                 mag_tensor_t *out = nullptr;
@@ -228,6 +241,7 @@ namespace mag::bindings {
         );
         cls.attr("bernoulli") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 mag_scalar_t p = kwargs.contains("p") ? scalar_from_py(kwargs["p"]) : mag_scalar_from_f64(0.5);
                 std::vector<int64_t> shape = parse_shape_from_args(args);
                 validate_shape(shape);
@@ -240,6 +254,7 @@ namespace mag::bindings {
         );
         cls.attr("bernoulli_like") = nb::cpp_function(
             [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 mag_scalar_t p = kwargs.contains("p") ? scalar_from_py(kwargs["p"]) : mag_scalar_from_f64(0.5);
                 mag_tensor_t *out = nullptr;
                 throw_if_error(mag_bernoulli_like(&out, *like, p));
@@ -250,6 +265,7 @@ namespace mag::bindings {
         );
         cls.attr("arange") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 nb::handle start_h = nb::handle{};
                 nb::handle stop_h  = nb::handle{};
                 nb::handle step_h  = nb::handle{};
@@ -313,6 +329,7 @@ namespace mag::bindings {
         );
         cls.attr("rand_perm") = nb::cpp_function(
             [](int64_t n, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 dtype_wrapper dt = kw_dtype_or(kwargs, dtype_wrapper{MAG_DTYPE_INT64});
                 bool requires_grad = kw_requires_grad_or(kwargs, false);
                 mag_context_t *ctx = get_ctx();
@@ -325,6 +342,7 @@ namespace mag::bindings {
         );
         cls.attr("load_image") = nb::cpp_function(
             [](const std::string &path, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 std::string channels = "RGB";
                 uint32_t rw = 0, rh = 0;
                 if (kwargs.contains("channels"))
@@ -345,6 +363,7 @@ namespace mag::bindings {
         );
         cls.attr("as_strided") = nb::cpp_function(
             [](const tensor_wrapper &base, nb::handle shape_h, nb::handle strides_h, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 auto shape_seq = nb::cast<nb::sequence>(shape_h);
                 auto strides_seq = nb::cast<nb::sequence>(strides_h);
                 if (nb::len(shape_seq) != nb::len(strides_seq))
@@ -368,6 +387,7 @@ namespace mag::bindings {
         );
         cls.attr("of") = nb::cpp_function(
             [](nb::handle data_h, nb::kwargs kwargs) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
                 dtype_wrapper dt = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{MAG_DTYPE__NUM};
                 bool requires_grad = kw_requires_grad_or(kwargs, false);
                 if (nb::isinstance<nb::int_>(data_h) || nb::isinstance<nb::float_>(data_h) || nb::isinstance<nb::bool_>(data_h)) {

@@ -180,7 +180,7 @@ typedef enum mag_scalar_type_t {
  */
 typedef struct mag_scalar_t {
     mag_scalar_type_t type;
-    struct { /* TODO: Make union when we moved to new Python API bindings which don't rely on CFFI anymore as CFFI does not support unions */
+    union {
         double f64;
         int64_t i64;
         uint64_t u64;
