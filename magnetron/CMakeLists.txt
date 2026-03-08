@@ -1,4 +1,4 @@
-# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+# (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
 add_subdirectory(core)
 
@@ -12,6 +12,10 @@ function(add_backend name)
     add_subdirectory("${name}")
     if (TARGET "magnetron_${name}")
         add_dependencies(magnetron_runtime "magnetron_${name}")
+        install(TARGETS "magnetron_${name}"
+            LIBRARY DESTINATION magnetron
+            COMPONENT python
+        )
     endif()
 endfunction()
 
@@ -20,4 +24,18 @@ if (${MAGNETRON_ENABLE_BACKEND_CPU})
 endif()
 if (${MAGNETRON_ENABLE_BACKEND_CUDA})
     add_backend(cuda)
+endif()
+
+# Optional Python bindings
+if (${MAGNETRON_BUILD_PYTHON_BINDINGS})
+    add_subdirectory(bindings)
+    add_dependencies(_magnetron_bindings magnetron_runtime) # _magnetron is name of the Python bindings target
+    target_link_libraries(_magnetron_bindings PRIVATE magnetron_core)
+    if (APPLE)
+        set_target_properties(_magnetron_bindings PROPERTIES
+            MACOSX_RPATH ON
+            BUILD_WITH_INSTALL_RPATH ON
+            INSTALL_RPATH "@loader_path"
+        )
+    endif()
 endif()

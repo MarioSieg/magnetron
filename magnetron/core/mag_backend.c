@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -63,7 +63,7 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     /* Init backend */
     mag_backend_t *backend = (*(MAG_BACKEND_SYM_FN_INIT*)fn_init)(ctx); /* Call the function to initialize the backend */
     if (mag_unlikely(!backend)) {
-        mag_log_error("Backend library file '%s' failed to initialize", file);
+        mag_log_error("Backend library file '%s' failed to initialize interface", file);
         mag_dylib_close(handle);
         return NULL;
     }
@@ -72,14 +72,14 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
     bool fn_ok = true;
     mag_assert2(MAG_BACKEND_MODULE_ABI_VER == 1); /* Ensure this code is updated if ABI changes */
     mag_assert2(MAG_BACKEND_VTABLE_SIZE == 8); /* Ensure this code is updated if vtable size changes */
+    fn_ok &= !!backend->init;
+    fn_ok &= !!backend->shutdown;
     fn_ok &= !!backend->backend_version;
     fn_ok &= !!backend->runtime_version;
-    fn_ok &= !!backend->score;
     fn_ok &= !!backend->id;
     fn_ok &= !!backend->num_devices;
-    fn_ok &= !!backend->best_device_idx;
-    fn_ok &= !!backend->init_device;
-    fn_ok &= !!backend->destroy_device;
+    fn_ok &= !!backend->best_device_id;
+    fn_ok &= !!backend->get_device;
     if (mag_unlikely(!fn_ok)) {
         mag_log_error("Backend struct from file '%s' is missing required function pointers", file);
         mag_dylib_close(handle);
@@ -95,6 +95,14 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
         return NULL;
     }
 
+    /* Invoke init hook */
+    if (mag_unlikely(!(*backend->init)(backend, ctx))) {
+        mag_log_error("Backend library file '%s' init hook failed", file);
+        mag_dylib_close(handle);
+        return NULL;
+    }
+
+    /* Create backend module */
     mag_backend_module_t *module = (*mag_alloc)(NULL, sizeof(*module), 0);
     memset(module, 0, sizeof(*module));
     *module = (mag_backend_module_t) {
@@ -105,17 +113,20 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
         .fn_init = fn_init,
         .fn_shutdown = fn_shutdown
     };
+
     char id[64];
     snprintf(id, sizeof(id), "%s", (*backend->id)(backend));
     for (char *p = id; *p; ++p)
         if (*p >= 'a' && *p <= 'z')
             *p = (char)(*p - ('a' - 'A'));
-    mag_log_info("Initialized backend module '%s' ABI: v.%d, Hash: 0x%" PRIx64 ", Lib: %s", id, mag_abi_cookie_ver(abi_cookie), (uint64_t)module->fname_hash, file);
     return module;
 }
 
 static void mag_backend_module_shutdown(mag_backend_module_t *mod) {
     if (!mod) return;
+    if (mag_unlikely(!(*mod->backend->shutdown)(mod->backend))) {
+        mag_log_error("Backend shutdown hook failed");
+    }
     if (mod->fn_shutdown && mod->backend) {
         (*mod->fn_shutdown)(mod->backend);
         mod->backend = NULL;
@@ -127,149 +138,139 @@ static void mag_backend_module_shutdown(mag_backend_module_t *mod) {
     (*mag_alloc)(mod, 0, 0);
 }
 
-bool mag_device_is(const mag_device_t *dvc, const char *device_id) {
-    char wanted_id[MAG_DEVICEID_MAX];
-    int idx;
-    if (mag_unlikely(!mag_parse_device_id(device_id, &wanted_id, &idx))) return false;
-    char actual_id[MAG_DEVICEID_MAX];
-    int actual_idx;
-    if (mag_unlikely(!mag_parse_device_id(dvc->id, &actual_id, &actual_idx))) return false;
-    return strcmp(wanted_id, actual_id) == 0 && (idx != -1 && actual_idx != -1 ? idx == actual_idx : true); /* If both have index, compare it */
-}
-
-bool mag_parse_device_id(const char *device_id, char (*out_type)[MAG_DEVICEID_MAX], int *out_idx) {
-    if (mag_unlikely(!device_id || !out_type || !out_idx)) return false;
-    const char *sep = strchr(device_id, ':');
-    size_t name_len = sep ? (size_t)(sep - device_id) : strlen(device_id);
-    if (mag_unlikely(!name_len)) return false;
-    int n = snprintf(*out_type, MAG_DEVICEID_MAX, "%.*s", (int)name_len, device_id);
-    if (mag_unlikely(n < 0 || n >= MAG_DEVICEID_MAX)) return false;
-    if (!sep || !sep[1]) {
-        *out_idx = -1; /* No index specified */
-        return true;
-    }
-    *out_idx = 0;
-    for (const char *p = sep+1; *p; ++p) {
-        if (mag_unlikely(!isdigit((unsigned char)*p))) return false;
-        *out_idx = 10**out_idx + (*p-'0');
-    }
-    return true;
-}
-
 struct mag_backend_registry_t {
     mag_context_t *ctx;
-    char *module_path;
-    mag_backend_module_t **backends;
+    mag_backend_module_t *backends[MAG_BACKEND_TYPE__COUNT];
     size_t backends_num;
     size_t backends_cap;
 };
+
+const char *mag_backend_type_to_str(mag_backend_type_t type) {
+    static const char *data[] = {
+#define _(name, id, required) [MAG_BACKEND_TYPE_##name] = #id,
+    mag_backenddef(_)
+#undef _
+    };
+    return data[type];
+}
+
+bool mag_backend_type_is_required(mag_backend_type_t type) {
+    static const bool data[] = {
+#define _(name, id, required) [MAG_BACKEND_TYPE_##name] = required,
+        mag_backenddef(_)
+    #undef _
+        };
+    return data[type];
+}
+
+void mag_device_id_to_str(mag_device_id_t id, char(*buf)[32]) {
+    snprintf(*buf, sizeof(*buf), "%s:%u", mag_backend_type_to_str(id.type), id.device_ordinal);
+}
+
+bool mag_device_id_parse(mag_device_id_t *id, const char *str) {
+    if (mag_unlikely(!id || !str || !*str)) return false;
+    const char *sep = strchr(str, ':');
+    char name[32];
+    size_t n = sep ? (size_t)(sep-str) : strlen(str);
+    if (mag_unlikely(!n || n >= sizeof(name))) return false;
+    memcpy(name, str, n);
+    name[n] = '\0';
+    for (char *p = name; *p; ++p) *p |= ' ';
+    mag_backend_type_t found = MAG_BACKEND_TYPE__COUNT;
+    for (mag_backend_type_t type=0; type < MAG_BACKEND_TYPE__COUNT; ++type) {
+        if (strcmp(name, mag_backend_type_to_str(type)) == 0) {
+            found = type;
+            break;
+        }
+    }
+    if (mag_unlikely(found == MAG_BACKEND_TYPE__COUNT)) return false;
+    uint32_t ord=0;
+    if (sep) {
+        const char *p = sep+1;
+        if (mag_unlikely(!*p)) return false;
+        uint32_t v = 0;
+        for (; *p; ++p) {
+            if (mag_unlikely(*p < '0' || *p > '9')) return false;
+            uint32_t dig = (uint32_t)(*p - '0');
+            if (mag_unlikely(v > (UINT32_MAX - dig)/10)) return false;
+            v = 10*v + dig;
+        }
+        ord = v;
+    }
+    id->type = found;
+    id->device_ordinal = ord;
+    return true;
+}
 
 mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx) {
     mag_backend_registry_t *reg = (*mag_alloc)(NULL, sizeof(*reg), 0);
     memset(reg, 0, sizeof(*reg));
     reg->ctx = ctx;
     char *modpath = mag_current_module_path();
-    mag_assert(modpath && *modpath, "Failed to query current library module path, cannot load backends!");
-    char *dir, *file;
-    mag_path_split_dir_inplace(modpath, &dir, &file);
-    reg->module_path = mag_strdup(dir);
+    if (mag_unlikely(!modpath)) {
+        mag_log_error("Failed to get current module path");
+        goto error;
+    }
+    char *module_dir, *file;
+    mag_path_split_dir_inplace(modpath, &module_dir, &file);
+    mag_log_info("Module search path: '%s'", module_dir);
+    /* Try to load all backends */
+    char pathbuf[1024] = {0};
+    for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
+        snprintf(pathbuf, sizeof(pathbuf), "%s/%smagnetron_%s.%s", module_dir, MAG_DYLIB_PREFIX, mag_backend_type_to_str(type), MAG_DYLIB_EXT);
+        mag_backend_module_t *mod = mag_backend_module_load(pathbuf, reg->ctx);
+        if (mag_unlikely(!mod)) {
+            mag_log_info("Backend module not available. Name: %s, Required: %s", mag_backend_type_to_str(type), mag_backend_type_is_required(type) ? "Yes" : "No");
+            if (mag_backend_type_is_required(type)) goto error;
+            continue;
+        }
+        reg->backends[type] = mod;
+        ++reg->backends_num;
+    }
     (*mag_alloc)(modpath, 0, 0);
+    /* Print short overview of loaded backends */
+    for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
+        if (reg->backends[type]) {
+            mag_backend_t *bck = reg->backends[type]->backend;
+            mag_log_info("Loaded backend: %s (Version %d.%d.%d, %u Device%s, Best Device: '%s')",
+                (*bck->id)(bck),
+                mag_ver_major((*bck->runtime_version)(bck)),
+                mag_ver_minor((*bck->runtime_version)(bck)),
+                mag_ver_patch((*bck->runtime_version)(bck)),
+                (*bck->num_devices)(bck),
+                (*bck->num_devices)(bck) == 1 ? "" : "s",
+                (*bck->num_devices)(bck) > 0 ? bck->get_device(bck, (*bck->best_device_id)(bck))->physical_device_name : "N/A"
+            );
+        }
+    }
     return reg;
+error:
+    if (modpath) (*mag_alloc)(modpath, 0, 0);
+    if (reg) (*mag_alloc)(reg, 0, 0);
+    return NULL;
 }
 
-static bool mag_backend_registry_is_backend_loaded(mag_backend_registry_t *reg, size_t fname_hash) {
-    for (size_t i=0; i < reg->backends_num; ++i)
-        if (reg->backends[i]->fname_hash == fname_hash)
-            return true;
-    return false;
+mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag_backend_type_t type) {
+    if (mag_unlikely(type >= MAG_BACKEND_TYPE__COUNT)) return NULL;
+    mag_backend_module_t *mod = reg->backends[type];
+    if (mag_unlikely(!mod)) return NULL;
+    return mod->backend;
 }
 
-static void mag_backend_registry_register(mag_backend_registry_t *reg, mag_backend_module_t *mod) {
-    size_t *len = &reg->backends_num, *cap = &reg->backends_cap; /* Add to registry */
-    if (*len == *cap) {
-        *cap = *cap ? *cap<<1 : 2;
-        reg->backends = (*mag_alloc)(reg->backends, sizeof(*reg->backends)**cap, 0);
-    }
-    reg->backends[(*len)++] = mod;
-}
-
-static void mag_format_dylib_name(char (*o)[1024], const char *basedir, const char *backend_name) {
-    snprintf(*o, sizeof(*o), "%s/%smagnetron_%s.%s", basedir, MAG_DYLIB_PREFIX, backend_name, MAG_DYLIB_EXT);
-}
-
-static bool mag_backend_registry_try_backend_load(mag_backend_registry_t *reg, const char *file_path) {
-    if (mag_backend_registry_is_backend_loaded(reg, mag_murmur3_128_reduced_64(file_path, strlen(file_path), 0))) return false; /* Already loaded (file name hash exists) */
-    mag_backend_module_t *mod = mag_backend_module_load(file_path, reg->ctx);
-    if (mag_unlikely(!mod)) { /* Attempt to load module */
-        return false; /* Failed to load, skip */
-    }
-    mag_backend_registry_register(reg, mod); /* Register the loaded module */
+bool mag_backend_registry_get_backend_and_device_by_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc) {
+    mag_backend_t *bck = mag_backend_registry_get_backend(reg, id.type);
+    if (mag_unlikely(!bck)) return false;
+    if (mag_unlikely(id.device_ordinal >= (*bck->num_devices)(bck))) return false;
+    mag_device_t *dvc = (*bck->get_device)(bck, id.device_ordinal);
+    if (mag_unlikely(!dvc)) return false;
+    if (out_bck) *out_bck = bck;
+    if (out_dvc) *out_dvc = dvc;
     return true;
 }
 
-static int mag_backend_registry_module_score_sort_callback(const void *pa, const void *pb) {
-    mag_backend_module_t **a = (mag_backend_module_t **)pa;
-    mag_backend_module_t **b = (mag_backend_module_t **)pb;
-    int32_t sa = (int32_t)(*(*a)->backend->score)((*a)->backend);
-    int32_t sb = (int32_t)(*(*b)->backend->score)((*b)->backend);
-    if (sa != sb) return sb - sa; /* Descending order */
-    const char *namea = (*(*a)->backend->id)((*a)->backend);
-    const char *nameb = (*(*b)->backend->id)((*b)->backend);
-    return namea ? (nameb ? strcmp(namea, nameb) : -1) : nameb ? 1 : 0; /* Ascending order by name if scores are equal */
-}
-
-static const char *mag_additional_backend_names[] = { /* Additional backends without CPU, as CPU is always included */
-    "cuda"
-};
-
-bool mag_backend_registry_load_all_available(mag_backend_registry_t *reg) {
-    const char *basedir = reg->module_path;
-    char pathbuf[1024] = {0};
-    /* Always try to load required CPU backend first */
-    mag_format_dylib_name(&pathbuf, basedir, "cpu"); /* TODO: maybe statically link the CPU backend? */
-    if (mag_unlikely(!mag_backend_registry_try_backend_load(reg, pathbuf))) {
-        mag_log_error("Failed to load required CPU backend module, aborting backend loading.\n");
-        return false;
-    }
-    /* Try to load additional backends */
-    for (size_t i=0; i < sizeof(mag_additional_backend_names)/sizeof(mag_additional_backend_names[0]); ++i) {
-        mag_format_dylib_name(&pathbuf, basedir, mag_additional_backend_names[i]);
-        mag_backend_registry_try_backend_load(reg, pathbuf); /* Ignore failure, as these are optional */
-    }
-    if (reg->backends_num > 1) /* Sort backend modules by score */
-        qsort(reg->backends, reg->backends_num, sizeof(*reg->backends), &mag_backend_registry_module_score_sort_callback);
-    return reg->backends_num > 0;
-}
-
-mag_backend_t *mag_backend_registry_get_by_device_id(mag_backend_registry_t *reg, mag_device_t **device, const char *device_id) {
-    char type[MAG_DEVICEID_MAX];
-    int idx;
-    if (mag_unlikely(!mag_parse_device_id(device_id, &type, &idx))) return NULL;
-    for (size_t i=0; i < reg->backends_num; ++i) {
-        mag_backend_t *backend = reg->backends[i]->backend;
-        size_t num_devices = (*backend->num_devices)(backend);
-        for (size_t d=0; d < num_devices; ++d) {
-            mag_device_t *dev = (*backend->init_device)(backend, reg->ctx, d);
-            if (mag_unlikely(!dev)) continue;
-            if (mag_device_is(dev, device_id)) { /* Found matching device */
-                *device = dev;
-                return backend;
-            }
-            (*backend->destroy_device)(backend, dev);
-        }
-    }
-    return mag_backend_registry_best_backend(reg); /* Fallback to best backend */
-}
-
-mag_backend_t *mag_backend_registry_best_backend(mag_backend_registry_t *reg) {
-    mag_assert2(reg->backends_num);
-    return (*reg->backends)->backend; /* Backends are sorted by score */
-}
-
 void mag_backend_registry_free(mag_backend_registry_t *reg) {
-    for (size_t i=0; i < reg->backends_num; ++i)
-        mag_backend_module_shutdown(reg->backends[i]);
-    (*mag_alloc)(reg->backends, 0, 0);
-    (*mag_alloc)(reg->module_path, 0, 0);
+    for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type)
+        if (reg->backends[type])
+            mag_backend_module_shutdown(reg->backends[type]);
     (*mag_alloc)(reg, 0, 0);
 }

@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -164,6 +164,7 @@ static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_thr
     mag_device_t *device = (*mag_alloc)(NULL, sizeof(*device), 0);
     *device = (mag_device_t) { /* Initialize device interface */
         .ctx = ctx,
+        .id = MAG_DEVICE_ID_CPU,
         .physical_device_name = "CPU",
         .impl = cpu_dvc,
         .is_async = false,
@@ -171,7 +172,6 @@ static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_thr
         .alloc_storage = &mag_cpu_alloc_storage,
         .manual_seed = &mag_cpu_manual_seed
     };
-    snprintf(device->id, sizeof(device->id), "cpu");
     snprintf(device->physical_device_name, sizeof(device->physical_device_name), "%s", ctx->machine.cpu_name);
     return device;
 }
@@ -182,46 +182,51 @@ static void mag_cpu_release_interface(mag_device_t *ctx) {
     (*mag_alloc)(ctx, 0, 0); /* Free all memory */
 }
 
+static bool mag_cpu_init(mag_backend_t *self, mag_context_t *ctx) {
+    mag_assert2(!self->impl);
+    uint32_t hwc = mag_xmax(1, ctx->machine.cpu_virtual_cores);
+    uint32_t nt = ctx->machine.cpu_virtual_cores;
+    nt = nt ? nt : hwc;
+    self->impl = mag_cpu_init_interface(ctx, nt);
+    return true;
+}
+static bool mag_cpu_shutdown(mag_backend_t *self) {
+    mag_assert2(self->impl);
+    mag_cpu_release_interface(self->impl);
+    self->impl = NULL;
+    return true;
+}
 static uint32_t mag_cpu_backend_version(mag_backend_t *bck) { return MAG_CPU_BACKEND_VERSION; }
 static uint32_t mag_cpu_backend_runtime_version(mag_backend_t *bck) { return MAG_VERSION; }
-static uint32_t mag_cpu_backend_score(mag_backend_t *bck) { return 10; }
 static const char* mag_cpu_backend_id(mag_backend_t *bck) { return "cpu"; }
 static uint32_t mag_cpu_backend_num_devices(mag_backend_t *bck) { return 1; }
 static uint32_t mag_cpu_backend_best_device_idx(mag_backend_t *bck) { return 0; }
-mag_device_t *mag_cpu_backend_init_device(mag_backend_t *bck, mag_context_t *ctx, uint32_t idx) {
-    uint32_t hw_concurrency = mag_xmax(1, ctx->machine.cpu_virtual_cores);
-    /*uint32_t num_threads = desc->cpu_thread_count; TODO */
-    uint32_t num_threads = ctx->machine.cpu_virtual_cores;
-    num_threads = num_threads ? num_threads : hw_concurrency;
-    mag_device_t *dvc = mag_cpu_init_interface(ctx, num_threads);
-    return dvc;
-}
-void mag_cpu_backend_destroy_device(mag_backend_t *bck, mag_device_t *dvc) {
-    mag_cpu_release_interface(dvc);
+mag_device_t *mag_cpu_backend_get_device(mag_backend_t *bck, uint32_t idx) {
+    return bck->impl;
 }
 
 uint32_t MAG_BACKEND_SYM_ABI_COOKIE(void){
     return mag_pack_abi_cookie('M', 'A', 'G', MAG_BACKEND_MODULE_ABI_VER);
 }
 
-mag_backend_t *MAG_BACKEND_SYM_INIT(mag_context_t *ctx) {
-    mag_backend_t *backend = (*mag_alloc)(NULL, sizeof(*backend), 0);
-    memset(backend, 0, sizeof(*backend));
+mag_backend_t *MAG_BACKEND_SYM_INIT(mag_context_t *ctx) { /* Create and return interface struct */
+    mag_backend_t *backend = (*mag_alloc)(NULL, sizeof(*backend)+sizeof(mag_device_t *), 0);
+    memset(backend, 0, sizeof(*backend)+sizeof(mag_device_t *));
     *backend = (mag_backend_t){
+        .impl = NULL,
+        .init = &mag_cpu_init,
+        .shutdown = &mag_cpu_shutdown,
         .backend_version = &mag_cpu_backend_version,
         .runtime_version = &mag_cpu_backend_runtime_version,
-        .score = &mag_cpu_backend_score,
         .id = &mag_cpu_backend_id,
         .num_devices = &mag_cpu_backend_num_devices,
-        .best_device_idx = &mag_cpu_backend_best_device_idx,
-        .init_device = &mag_cpu_backend_init_device,
-        .destroy_device = &mag_cpu_backend_destroy_device,
-        .impl = NULL
+        .best_device_id = &mag_cpu_backend_best_device_idx,
+        .get_device = &mag_cpu_backend_get_device,
     };
     return backend;
 }
 
-void MAG_BACKEND_SYM_SHUTDOWN(mag_backend_t *backend) {
+void MAG_BACKEND_SYM_SHUTDOWN(mag_backend_t *backend) { /* Free interface struct */
     (*mag_alloc)(backend, 0, 0);
 }
 

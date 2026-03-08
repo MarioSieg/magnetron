@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -811,8 +811,9 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
     mag_fmt_putc(fmt, ']');
 }
 
-char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold) {
-    mag_assert(mag_device_is(tensor->storage->device, "cpu"), "Tensor must be on CPU to convert to string.");
+const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold) {
+    /* TODO: auto transfer */
+    mag_assert(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "Data copy requires tensor storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
     head = head < 0 ? MAG_FMT_TENSOR_DEFAULT_HEAD_ELEMS : head;
     tail = tail < 0 ? MAG_FMT_TENSOR_DEFAULT_TAIL_ELEMS : tail;
     threshold = threshold < 0 ? MAG_FMT_TENSOR_DEFAULT_THRESHOLD : threshold;
@@ -838,10 +839,12 @@ char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int
     };
     memset(fmt.idx, 0, sizeof(fmt.idx));
     mag_tensor_fmt_recursive(&fmt, 0); /* Recursive format */
-    mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_type_trait(tensor->dtype)->name, tensor->storage->device->id);
+    char device_str[32];
+    mag_device_id_to_str(tensor->storage->device->id, &device_str);
+    mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_type_trait(tensor->dtype)->name, device_str);
     return ss.buf; /* Return the string, must be freed with mag_tensor_to_string_free_data. */
 }
 
-void mag_tensor_to_string_free_data(char *ret_val) {
-    (*mag_alloc)(ret_val, 0, 0);
+void mag_tensor_to_string_free_data(const char *ret_val) {
+    (*mag_alloc)((char *)ret_val, 0, 0);
 }

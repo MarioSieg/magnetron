@@ -1,5 +1,5 @@
 # +---------------------------------------------------------------------+
-# | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+# | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 # | Licensed under the Apache License, Version 2.0                      |
 # |                                                                     |
 # | Website : https://mariosieg.com                                     |
@@ -114,7 +114,7 @@ class GenerationContext:
                 reserve_gen=self.args.reserve_gen,
             )
             prompt = build_prompt(self.args.system, history)
-            model_input_ids = Tensor.of([self.tokenizer.encode(prompt)], dtype=dtype.int64)
+            model_input_ids = Tensor([self.tokenizer.encode(prompt)], dtype=dtype.int64)
             console.print(Rule(style='dim'))
             console.print('[bold magenta]Assistant[/]:', end=' ')
             start = time.perf_counter()
@@ -159,7 +159,7 @@ class GenerationContext:
 
     def one_shot_answer(self, prompt: str) -> str:
         prompt = build_prompt(self.args.system, [('user', prompt)])
-        model_input_ids = Tensor.of([self.tokenizer.encode(prompt)], dtype=dtype.int64)
+        model_input_ids = Tensor([self.tokenizer.encode(prompt)], dtype=dtype.int64)
         gc.collect()
         reply_parts: list[str] = []
         for chunk in self.model.generate_stream(

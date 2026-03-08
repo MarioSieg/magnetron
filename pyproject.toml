@@ -1,19 +1,18 @@
 [build-system]
 requires = [
-    "scikit-build-core",
-    "cffi",
+    "scikit-build-core"
 ]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "magnetron"
-version = "0.1.4"
+version = "0.1.5"
 description = "High-performance, lightweight deep-learning library with a PyTorch like API and GPU support."
 requires-python = ">=3.10"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Mario Sieg", email = "mario.sieg.64@gmail.com" }]
-dependencies = ["cffi"]
+dependencies = []
 keywords = [
     "machine-learning",
     "deep-learning",
@@ -21,13 +20,21 @@ keywords = [
     "gpu",
     "simd",
 ]
+
 [urls]
 Homepage = "https://github.com/MarioSieg/magnetron"
 Source = "https://github.com/MarioSieg/magnetron"
 Issues = "https://github.com/MarioSieg/magnetron/issues"
 
 [project.optional-dependencies]
-dev = [
+examples = [
+    "tokenizers",
+    "rich",
+    "matplotlib",
+    "huggingface_hub"
+]
+
+test = [
     "ruff",
     "torch",
     "numpy",
@@ -46,6 +53,7 @@ MAGNETRON_ENABLE_BACKEND_CPU = true
 MAGNETRON_ENABLE_BACKEND_CUDA = false
 
 # Enable / disable features
+MAGNETRON_BUILD_PYTHON_BINDINGS = true # Required for the Python package
 MAGNETRON_DEBUG = false
 MAGNETRON_BUILD_TESTS = false
 MAGNETRON_BUILD_BENCHMARKS = false

@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -20,6 +20,7 @@
 
 #include <cuda.h>
 #include <cuda_fp16.h>
+#include <cuda_bf16.h>
 
 extern "C" {
   mag_backend_decl_interface();

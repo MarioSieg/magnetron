@@ -1,5 +1,5 @@
 # +---------------------------------------------------------------------+
-# | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+# | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 # | Licensed under the Apache License, Version 2.0                      |
 # |                                                                     |
 # | Website : https://mariosieg.com                                     |
@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from magnetron import Tensor
+from .. import Tensor
 from magnetron.nn.module import Module
 
 

@@ -31,11 +31,11 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Build wheels (Linux x86_64, Python ≥3.11)
+      - name: Build wheels (Linux x86_64, Python 3.10–3.14)
         env:
           CIBW_ARCHS_LINUX: "x86_64"
-          CIBW_BUILD: "cp3*-manylinux_x86_64"
-          CIBW_SKIP: "cp310-* *-musllinux_*"
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          CIBW_SKIP: "*-musllinux_*"
         run: |
           python -m cibuildwheel --output-dir wheelhouse .
 
@@ -70,10 +70,10 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Build wheels (macOS arm64, Python ≥3.11)
+      - name: Build wheels (macOS arm64, Python 3.10–3.14)
         env:
           CIBW_ARCHS_MACOS: "arm64"
-          CIBW_BUILD: "cp311-* cp312-* cp313-*"
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_BEFORE_ALL_MACOS: |
             set -eux
             brew update

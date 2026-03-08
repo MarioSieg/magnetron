@@ -1,8 +1,12 @@
-# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+# (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
 file(GLOB MAGNETRON_CUDA_SOURCES "*.cuh" "*.cu")
 
 find_package(CUDAToolkit)
+
+if (NOT CUDAToolkit_FOUND)
+    set(CMAKE_CUDA_COMPILER /usr/local/cuda-13.0/bin/nvcc) # Set to your CUDA compiler path if not found automatically
+endif()
 
 if (CUDAToolkit_FOUND)
     message(STATUS "CUDA Toolkit found")

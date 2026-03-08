@@ -1,4 +1,4 @@
-# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+# (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
 add_executable(magnetron_benchmark benchmarks.cpp)
 add_dependencies(magnetron_benchmark magnetron_runtime)

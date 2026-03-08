@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -35,7 +35,7 @@ typedef struct mag_reduce_plan_t {
 } mag_reduce_plan_t;
 
 extern MAG_EXPORT mag_status_t mag_reduce_plan_init(
-    mag_context_t *ctx,
+    mag_error_t *err,
     mag_reduce_plan_t *plan,
     const mag_coords_t *coords,
     const int64_t *dims_in,

@@ -1,4 +1,4 @@
-// (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+// (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
 #pragma once
 
@@ -39,7 +39,6 @@ namespace magnetron::test {
     }
 
     [[nodiscard]] extern std::vector<device_kind> get_supported_test_backends();
-    [[nodiscard]] extern context& get_cached_context(device_kind dev);
 
     using float16 = half_float::half;
 

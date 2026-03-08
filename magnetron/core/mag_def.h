@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -474,14 +474,14 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 #define MAG_STRINGIZE2(x) #x
 #define MAG_STRINGIZE(x) MAG_STRINGIZE2(x)
 #ifdef __FILE_NAME__
-#   define MAG_SRC_NAME __FILE_NAME__ ":" MAG_STRINGIZE(__LINE__)
+#   define MAG_SRC_NAME __FILE_NAME__
 #else
-#   define MAG_SRC_NAME __FILE__ ":" MAG_STRINGIZE(__LINE__)
+#   define MAG_SRC_NAME __FILE__
 #endif
-#define mag_log_debug(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_DEBUG, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
-#define mag_log_info(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_INFO, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
-#define mag_log_warn(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_WARN, MAG_SRC_NAME " " msg, ## __VA_ARGS__);  } while (0)
-#define mag_log_error(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_ERROR, MAG_SRC_NAME " " msg, ## __VA_ARGS__); } while (0)
+#define mag_log_debug(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_DEBUG, MAG_SRC_NAME ":" MAG_STRINGIZE(__LINE__) " " msg, ## __VA_ARGS__); } while (0)
+#define mag_log_info(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_INFO, MAG_SRC_NAME ":" MAG_STRINGIZE(__LINE__) " " msg, ## __VA_ARGS__); } while (0)
+#define mag_log_warn(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_WARN, MAG_SRC_NAME ":" MAG_STRINGIZE(__LINE__) " " msg, ## __VA_ARGS__);  } while (0)
+#define mag_log_error(msg, ...) do { mag_log_fmt(MAG_LOG_LEVEL_ERROR, MAG_SRC_NAME ":" MAG_STRINGIZE(__LINE__) " " msg, ## __VA_ARGS__); } while (0)
 
 /* Panic and print 'msg' if 'expr' is false. */
 #define mag_assert(expr, msg, ...) \
@@ -523,20 +523,39 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 '* return 'status'. Optionally perform 'cleanup' code before returning.
 '* The 'msg' is a printf-style format string with optional arguments.
 */
-#define mag_contract(ctx, status, cleanup, expr, msg, ...) \
-    if (mag_unlikely(!(expr))) { \
-        mag_error_t err = { \
-            .code = MAG_STATUS_##status, \
-            .message = "", \
-            .file = __FILE__, \
-            .line = __LINE__, \
-            .func = __FUNCTION__, \
-        }; \
-        snprintf(err.message, sizeof(err.message), msg, ## __VA_ARGS__); \
-        mag_ctx_set_last_error((ctx), &err); \
-        cleanup \
-        return MAG_STATUS_##status; \
-    }
+#define mag_contract(E, status, cleanup, expr, msg, ...) \
+    do { \
+        if (mag_unlikely(!(expr))) { \
+            if ((E) != NULL && (E)->code == MAG_STATUS_OK) { \
+                *(E) = (mag_error_t){ \
+                    .code = MAG_STATUS_##status, \
+                    .message = "", \
+                    .file = MAG_SRC_NAME, \
+                    .line = __LINE__, \
+                    .func = __func__, \
+                }; \
+                snprintf((E)->message, sizeof((E)->message), (msg), ##__VA_ARGS__); \
+            } \
+            cleanup; \
+            return MAG_STATUS_##status; \
+        } \
+    } while (0)
+
+
+#define mag_try(call) \
+    do { \
+        mag_status_t status____ = (call); \
+        if (mag_iserr(status____)) return status____; \
+    } while (0)
+
+#define mag_try_do(call, cleanup) \
+    do { \
+        mag_status_t status____ = (call); \
+        if (mag_iserr(status____)) { \
+            cleanup; \
+            return status____; \
+        } \
+    } while (0)
 
 extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
 

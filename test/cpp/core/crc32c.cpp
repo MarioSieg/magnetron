@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -71,7 +71,8 @@ static uint32_t crc32c_ref(const uint8_t *buf, size_t len) {
 TEST(crc32c, test_correctness) {
     context ctx {};
     mag_device_t *cpu;
-    mag_backend_registry_get_by_device_id((*ctx).backend_registry, &cpu, "cpu");
+    auto cpudvc = MAG_DEVICE_ID_CPU;
+    mag_backend_registry_get_backend_and_device_by_id((*ctx).backend_registry, cpudvc, nullptr, &cpu);
     ASSERT_NE(cpu, nullptr);
     ASSERT_NE(cpu->impl, nullptr);
     const mag_kernel_registry_t &reg = static_cast<mag_cpu_device_t *>(cpu->impl)->kernels;
@@ -109,7 +110,8 @@ static inline void do_not_optimize_u32(uint32_t x) {
 TEST(crc32c, benchmark_throughput_gibs) {
     context ctx{};
     mag_device_t* cpu = nullptr;
-    mag_backend_registry_get_by_device_id((*ctx).backend_registry, &cpu, "cpu");
+    auto cpudvc = MAG_DEVICE_ID_CPU;
+    mag_backend_registry_get_backend_and_device_by_id((*ctx).backend_registry, cpudvc, nullptr, &cpu);
     ASSERT_NE(cpu, nullptr);
     ASSERT_NE(cpu->impl, nullptr);
     const mag_kernel_registry_t& reg = static_cast<mag_cpu_device_t*>(cpu->impl)->kernels;

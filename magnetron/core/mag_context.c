@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -73,36 +73,6 @@ static void mag_system_host_info_dump(mag_context_t *ctx) {
     mag_log_info("Physical Machine Memory: %.03f %s, Free: %.03f %s, Used: %.03f %s (%.02f%%)", mem_total, mem_unit_total, mem_free, mem_unit_free, mem_used, mem_unit_used, mem_used_percent);
 }
 
-/* Print compiler information such as name, version and build time. */
-static MAG_COLDPROC void mag_ctx_dump_compiler_info(void) {
-    const char *compiler_name = "Unknown";
-    int compiler_version_major = 0, compiler_version_minor = 0;
-#ifdef __clang__
-    compiler_name = "Clang";
-    compiler_version_major = __clang_major__;
-    compiler_version_minor = __clang_minor__;
-#elif defined(__GNUC__)
-    compiler_name = "GCC";
-    compiler_version_major = __GNUC__;
-    compiler_version_minor = __GNUC_MINOR__;
-#elif defined(_MSC_VER)
-    compiler_name = "MSVC";
-    compiler_version_major = _MSC_VER / 100;
-    compiler_version_minor = _MSC_VER % 100;
-#endif
-    mag_log_info("magnetron v.%d.%d.%d, storage format v.%d.%d.%d - Built: " __DATE__ " " __TIME__ " - %s v.%d.%d",
-        mag_ver_major(MAG_VERSION),
-        mag_ver_minor(MAG_VERSION),
-        mag_ver_patch(MAG_VERSION),
-        mag_ver_major(MAG_SNAPSHOT_VERSION),
-        mag_ver_minor(MAG_SNAPSHOT_VERSION),
-        mag_ver_patch(MAG_SNAPSHOT_VERSION),
-        compiler_name,
-        compiler_version_major,
-        compiler_version_minor
-    );
-}
-
 static void mag_setup_environ(void) {
     /* Parse MAG_LOG_LEVEL environment variable. */
     const char *v = getenv("MAG_LOG_LEVEL");
@@ -115,6 +85,43 @@ static void mag_setup_environ(void) {
     else mag_log_error("Invalid MAG_LOG_LEVEL value '%s' (valid: off, error, warn, info)", v);
 }
 
+/* Print compiler information such as name, version and build time. */
+static void mag_ctx_dump_banner(void) {
+    const char *compiler_name = "Unknown";
+    int cmaj = 0, cmin = 0, cpatch = 0;
+#if defined(__clang__)
+    compiler_name = "Clang";
+    cmaj = __clang_major__;
+    cmin = __clang_minor__;
+    cpatch = __clang_patchlevel__;
+#elif defined(__GNUC__)
+    compiler_name = "GCC";
+    cmaj = __GNUC__;
+    cmin = __GNUC_MINOR__;
+    cpatch = __GNUC_PATCHLEVEL__;
+#elif defined(_MSC_VER)
+    compiler_name = "MSVC";
+    cmaj = _MSC_VER/100;
+    cmin = _MSC_VER%100;
+#endif
+    mag_log_info("------------------------------------------------------------");
+    mag_log_info("Magnetron");
+    mag_log_info("Version        : v.%d.%d.%d (storage v.%d.%d.%d)",
+        mag_ver_major(MAG_VERSION),
+        mag_ver_minor(MAG_VERSION),
+        mag_ver_patch(MAG_VERSION),
+        mag_ver_major(MAG_SNAPSHOT_VERSION),
+        mag_ver_minor(MAG_SNAPSHOT_VERSION),
+        mag_ver_patch(MAG_SNAPSHOT_VERSION)
+    );
+    mag_log_info("Copyright      : (c) 2024–2026 Mario Sieg");
+    mag_log_info("License        : Apache-2.0");
+    mag_log_info("Source         : https://github.com/MarioSieg/magnetron");
+    mag_log_info("Build          : " __DATE__ " " __TIME__);
+    mag_log_info("Compiler       : %s %d.%d.%d", compiler_name, cmaj, cmin, cpatch);
+    mag_log_info("------------------------------------------------------------");
+}
+
 /* Create context with compute device descriptor. */
 mag_context_t *mag_ctx_create(const char *device_id) {
     mag_setup_environ(); /* Parse and apply environment variables. */
@@ -122,7 +129,7 @@ mag_context_t *mag_ctx_create(const char *device_id) {
     mag_log_info("Creating magnetron context...");
 
     uint64_t time_stamp_start = mag_hpc_clock_ns();
-    mag_ctx_dump_compiler_info(); /* Dump compiler info. */
+    mag_ctx_dump_banner();
 
     /* Initialize context with default values or from context info. */
     mag_context_t *ctx = (*mag_alloc)(NULL, sizeof(*ctx), 0); /* Allocate context. */
@@ -143,26 +150,26 @@ mag_context_t *mag_ctx_create(const char *device_id) {
 
     /* Create selected compute device. */
     ctx->backend_registry = mag_backend_registry_init(ctx);
-    const char** backend_paths = NULL;
-    size_t num_backend_paths = 0;
-    mag_assert(mag_backend_registry_load_all_available(ctx->backend_registry),
+    mag_assert(ctx->backend_registry != NULL,
         "\nNo magnetron compute backends found!"
         "\nBackends are loaded dynamically as shared libraries in the directory containing the magnetron_core library, but none were found."
         "\nMake sure you have at least one backend (e.g. magnetron_cpu) next to the magnetron_core library within the venv or installation path."
         "\nThe backend shared library must be named magnetron_<backend>.{so|dylib|dll}"
-        "\nCheck the searched path manually to see if any backends were found: %s",
-        num_backend_paths && backend_paths && *backend_paths && **backend_paths ? *backend_paths : "(no paths)"
+        "\nCheck the searched path manually to see if any backends were found."
     );
-    ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, device_id);
-    if (mag_unlikely(!ctx->backend || !ctx->device)) {
+    mag_device_id_t requested_dvc = MAG_DEVICE_ID_CPU;
+    ctx->backend = NULL;
+    bool bck_ok = mag_device_id_parse(&requested_dvc, device_id);
+    if (bck_ok) /* If parsing succeeded, try to get the requested backend and device */
+        bck_ok = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, requested_dvc, &ctx->backend, &ctx->active_device);
+    if (mag_unlikely(!bck_ok)) { /* If parsing failed or backend/device retrieval failed, log error and fallback to CPU backend. */
         mag_log_error(
-            "\nNo suitable magnetron compute backend found for device id '%s'!"
+            "\nNo suitable magnetron compute backend found for device id %s:%u !"
            "\nMake sure the specified device id is correct and that the corresponding backend is available.",
-           device_id ? device_id : "(null)"
+           mag_backend_type_to_str(requested_dvc.type), requested_dvc.device_ordinal
         );
-        device_id = "cpu"; /* Fallback to CPU backend */
-        ctx->backend = mag_backend_registry_get_by_device_id(ctx->backend_registry, &ctx->device, device_id);
-        mag_assert(ctx->backend && ctx->device,
+        bck_ok = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, MAG_DEVICE_ID_CPU, &ctx->backend, &ctx->active_device);
+        mag_assert(bck_ok, /* CPU backend must be available as fallback, if not we abort as there's no way to run magnetron at all. */
             "\nFailed to initialize fallback CPU compute backend!"
             "\nMake sure the magnetron_cpu backend is available next to the magnetron_core library."
         );
@@ -194,8 +201,7 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     mag_slab_destroy(&ctx->view_meta_slab);
     mag_slab_destroy(&ctx->tensor_slab);
     mag_slab_destroy(&ctx->storage_slab);
-    (*ctx->backend->destroy_device)(ctx->backend, ctx->device);
-    ctx->device = NULL;
+    ctx->active_device = NULL;
     ctx->backend = NULL;
     mag_backend_registry_free(ctx->backend_registry);
     size_t num_created_tensors = ctx->telemetry.num_created_tensors;
@@ -215,34 +221,8 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     fflush(stderr);
 }
 
-const mag_error_t *mag_ctx_get_last_error(const mag_context_t *ctx) {
-    return &ctx->error_status;
-}
-
-void mag_ctx_set_last_error(mag_context_t *ctx, const mag_error_t *error){
-    ctx->error_status = *error;
-}
-
-mag_status_t mag_ctx_get_last_error_code(const mag_context_t *ctx) {
-    return ctx->error_status.code;
-}
-
-void mag_ctx_clear_last_error(mag_context_t *ctx) {
-    memset(&ctx->error_status, 0, sizeof(ctx->error_status));
-    ctx->error_status.code = MAG_STATUS_OK;
-}
-
-void mag_ctx_take_last_error(mag_context_t *ctx, mag_error_t *err){
-    *err = ctx->error_status;
-    mag_ctx_clear_last_error(ctx);
-}
-
-bool mag_ctx_has_error(const mag_context_t *ctx){
-    return ctx->error_status.code != MAG_STATUS_OK;
-}
-
 const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx) {
-    return ctx->device->physical_device_name;
+    return ctx->active_device->physical_device_name;
 }
 
 const char *mag_ctx_get_os_name(const mag_context_t *ctx) {
@@ -294,71 +274,107 @@ bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx) {
 }
 
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
-    (*ctx->device->manual_seed)(ctx->device, seed);
+    (*ctx->active_device->manual_seed)(ctx->active_device, seed);
 }
 
 const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
     static const mag_type_traits_t infos[MAG_DTYPE__NUM] = {
         [MAG_DTYPE_FLOAT32] = {
             .name="float32",
+            .short_name="f32",
             .size=sizeof(float),
-            .align=__alignof(float),
+            .alignment=__alignof(float),
         },
         [MAG_DTYPE_FLOAT16] = {
             .name="float16",
+            .short_name="f16",
             .size=sizeof(mag_float16_t),
-            .align=__alignof(mag_float16_t),
+            .alignment=__alignof(mag_float16_t),
         },
         [MAG_DTYPE_BFLOAT16] = {
             .name="bfloat16",
+            .short_name="bf16",
             .size=sizeof(mag_bfloat16_t),
-            .align=__alignof(mag_bfloat16_t),
+            .alignment=__alignof(mag_bfloat16_t),
         },
         [MAG_DTYPE_BOOLEAN] = {
             .name="boolean",
+            .short_name="b8",
             .size=sizeof(uint8_t),
-            .align=__alignof(uint8_t),
+            .alignment=__alignof(uint8_t),
         },
         [MAG_DTYPE_UINT8] = {
             .name="uint8",
+            .short_name="u8",
             .size=sizeof(uint8_t),
-            .align=__alignof(uint8_t),
+            .alignment=__alignof(uint8_t),
         },
         [MAG_DTYPE_INT8] = {
             .name="int8",
+            .short_name="i8",
             .size=sizeof(int8_t),
-            .align=__alignof(int8_t),
+            .alignment=__alignof(int8_t),
         },
         [MAG_DTYPE_UINT16] = {
             .name="uint16",
+            .short_name="u16",
             .size=sizeof(uint16_t),
-            .align=__alignof(uint16_t),
+            .alignment=__alignof(uint16_t),
         },
         [MAG_DTYPE_INT16] = {
             .name="int16",
+            .short_name="i16",
             .size=sizeof(int16_t),
-            .align=__alignof(int16_t),
+            .alignment=__alignof(int16_t),
         },
         [MAG_DTYPE_UINT32] = {
             .name="uint32",
+            .short_name="u32",
             .size=sizeof(uint32_t),
-            .align=__alignof(uint32_t),
+            .alignment=__alignof(uint32_t),
         },
         [MAG_DTYPE_INT32] = {
             .name="int32",
+            .short_name="i32",
             .size=sizeof(int32_t),
-            .align=__alignof(int32_t),
+            .alignment=__alignof(int32_t),
         },
         [MAG_DTYPE_UINT64] = {
             .name="int64",
+            .short_name="u64",
             .size=sizeof(uint64_t),
-            .align=__alignof(uint64_t),
+            .alignment=__alignof(uint64_t),
         },
         [MAG_DTYPE_INT64] = {
             .name="int64",
+            .short_name="i64",
             .size=sizeof(int64_t),
-            .align=__alignof(int64_t),
+            .alignment=__alignof(int64_t),
         },
     };
     return &infos[type];
+}
+
+bool mag_type_category_is_floating_point(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_FP;
+}
+
+bool mag_type_category_is_unsigned_integer(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_UINT;
+}
+
+bool mag_type_category_is_signed_integer(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_SINT;
+}
+
+bool mag_type_category_is_integer(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_INTEGER;
+}
+
+bool mag_type_category_is_integral(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_INTEGRAL;
+}
+
+bool mag_type_category_is_numeric(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_NUMERIC;
 }

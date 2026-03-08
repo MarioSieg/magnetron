@@ -1,4 +1,4 @@
-// (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+// (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
 namespace magnetron::test {
     std::vector<device_kind> get_supported_test_backends() {
@@ -10,15 +10,6 @@ namespace magnetron::test {
             #endif
         }
         return *backends;
-    }
-
-    context &get_cached_context(device_kind dev) {
-        static std::unordered_map<device_kind, std::unique_ptr<context> > cached;
-        if (cached.find(dev) == cached.end()) {
-            cached[dev] = std::make_unique<context>(get_device_kind_name(dev));
-            cached[dev]->stop_grad_recorder();
-        }
-        return *cached[dev];
     }
 
     std::string get_gtest_backend_name(const TestParamInfo<device_kind> &info) {

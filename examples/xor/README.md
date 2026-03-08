@@ -6,7 +6,7 @@ The model uses a minimal fully connected architecture and shows how to define te
 
 ## 📚 Description
 
-- Defines the XOR truth table using `Tensor.of()`
+- Defines the XOR truth table using `Tensor()`
 - Builds a simple feedforward neural network with `Linear` and `Tanh` layers
 - Trains the model using **mean squared error (MSE)** loss and **stochastic gradient descent (SGD)** optimizer
 - Prints predictions after training

@@ -1,4 +1,4 @@
-# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+# (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
 import numpy as np
 from magnetron import Tensor, context
@@ -65,8 +65,8 @@ def xor_nn_np() -> list[float]:
 
 
 def xor_nn_mag() -> list[Tensor]:
-    x = Tensor.of(INPUT)
-    y = Tensor.of(TARGET)
+    x = Tensor(INPUT)
+    y = Tensor(TARGET)
 
     def sigmoid_derivative(x: Tensor) -> Tensor:
         return x * (1 - x)
@@ -105,7 +105,7 @@ def xor_nn_mag() -> list[Tensor]:
         a2 = z2.sigmoid()
         return a2
 
-    return [predict(Tensor.of(xr)).item() for xr in INPUT]
+    return [predict(Tensor(xr)).item() for xr in INPUT]
 
 
 def test_xor_nn() -> None:

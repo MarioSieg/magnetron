@@ -1,5 +1,5 @@
 # +---------------------------------------------------------------------+
-# | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+# | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 # | Licensed under the Apache License, Version 2.0                      |
 # |                                                                     |
 # | Website : https://mariosieg.com                                     |
@@ -71,7 +71,6 @@ def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Te
     cos = Tensor.cat([cos_half, cos_half], dim=-1).cast(dtype.bfloat16)
     sin = Tensor.cat([sin_half, sin_half], dim=-1).cast(dtype.bfloat16)
     return cos, sin
-
 
 def _apply_rope(q: Tensor, k: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: Tensor) -> tuple[Tensor, Tensor]:
     def _rot_half(x: Tensor) -> Tensor:
@@ -240,10 +239,10 @@ class Qwen3Model(nn.Module):
                 delta = delta.replace('\ufffd', '')
                 concated = text
                 yield delta
-            input_ids = Tensor.of([tok_id], dtype=dtype.int64).reshape(1, 1)
+            input_ids = Tensor([tok_id], dtype=dtype.int64).reshape(1, 1)
             logits, prev_kv = self(
                 input_ids,
-                idx=Tensor.of([curr_len], dtype=dtype.int64).reshape(1, 1),
+                idx=Tensor([curr_len], dtype=dtype.int64).reshape(1, 1),
                 prev_kv=prev_kv,
             )
             next_logits = logits[:, -1, :] / temp

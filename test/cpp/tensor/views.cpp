@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -174,7 +174,7 @@ TEST(views, inplace_bumps_version_and_detaches) {
     tensor y = v.abs();
     ctx.stop_grad_recorder();
     mag_tensor_t *vv;
-    handle_error(mag_full_like(&vv, &*x, mag_scalar_from_f64(1.0)));
+    handle_error(mag_full_like(nullptr, &vv, &*x, mag_scalar_from_f64(1.0)));
     x += tensor{vv};
     ctx.start_grad_recorder();
     tensor loss = y.sum();

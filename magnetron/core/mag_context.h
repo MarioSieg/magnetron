@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -38,7 +38,6 @@ typedef struct mag_rt_telemetry_t {
 struct mag_context_t {
     uintptr_t tr_id;                            /* Context thread ID. */
     mag_context_flags_t flags;                  /* Context flags. */
-    mag_error_t error_status;                   /* Last error status. */
     mag_machine_info_t machine;                 /* Machine information. */
     mag_rt_telemetry_t telemetry;               /* Runtime telemetry */
     mag_slab_alloc_t tensor_slab;               /* Tensor headers. */
@@ -47,7 +46,7 @@ struct mag_context_t {
     mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
     mag_backend_registry_t *backend_registry;   /* Compute backend registry */
     mag_backend_t *backend;                     /* Active compute backend. */
-    mag_device_t *device;                       /* Active compute device. */
+    mag_device_t *active_device;                       /* Active compute device. */
 #ifdef MAG_DEBUG
     mag_tensor_t *alive_head;                   /* List of alive tensors used for leak detection. */
 #endif

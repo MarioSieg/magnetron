@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -57,145 +57,170 @@ namespace mag {
             [MAG_DTYPE_FLOAT32] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<float, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<float, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<float, uint8_t>,   // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<float, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<float, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<float, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<float, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<float, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<float, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<float, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<float, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<float, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<float, uint8_t>,   // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<float, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<float, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<float, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<float, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<float, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<float, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<float, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<float, int64_t>,
             },
             [MAG_DTYPE_FLOAT16] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<half, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<half, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<half, uint8_t>,   // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<half, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<half, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<half, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<half, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<half, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<half, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<half, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<half, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<half, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<half, uint8_t>,   // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<half, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<half, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<half, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<half, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<half, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<half, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<half, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<half, int64_t>,
+            },
+            [MAG_DTYPE_BFLOAT16] = {
+                [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<__nv_bfloat16, float>,
+                [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<__nv_bfloat16, half>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<__nv_bfloat16, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<__nv_bfloat16, uint8_t>,   // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<__nv_bfloat16, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<__nv_bfloat16, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<__nv_bfloat16, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<__nv_bfloat16, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<__nv_bfloat16, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<__nv_bfloat16, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<__nv_bfloat16, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<__nv_bfloat16, int64_t>,
             },
             [MAG_DTYPE_BOOLEAN] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint8_t, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint8_t, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<uint8_t, uint8_t>,     // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<uint8_t, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<uint8_t, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<uint8_t, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<uint8_t, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<uint8_t, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<uint8_t, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<uint8_t, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<uint8_t, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint8_t, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint8_t, uint8_t>,     // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint8_t, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<uint8_t, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<uint8_t, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<uint8_t, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<uint8_t, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<uint8_t, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<uint8_t, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<uint8_t, int64_t>,
             },
             [MAG_DTYPE_UINT8] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint8_t, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint8_t, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<uint8_t, uint8_t>,     // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<uint8_t, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<uint8_t, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<uint8_t, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<uint8_t, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<uint8_t, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<uint8_t, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<uint8_t, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<uint8_t, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint8_t, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint8_t, uint8_t>,     // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint8_t, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<uint8_t, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<uint8_t, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<uint8_t, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<uint8_t, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<uint8_t, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<uint8_t, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<uint8_t, int64_t>,
             },
             [MAG_DTYPE_INT8] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<int8_t, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<int8_t, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<int8_t, uint8_t>,      // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<int8_t, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<int8_t, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<int8_t, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<int8_t, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<int8_t, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<int8_t, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<int8_t, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<int8_t, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<int8_t, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<int8_t, uint8_t>,      // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<int8_t, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<int8_t, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<int8_t, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<int8_t, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<int8_t, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<int8_t, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<int8_t, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<int8_t, int64_t>,
             },
             [MAG_DTYPE_UINT16] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint16_t, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint16_t, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<uint16_t, uint8_t>,    // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<uint16_t, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<uint16_t, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<uint16_t, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<uint16_t, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<uint16_t, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<uint16_t, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<uint16_t, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<uint16_t, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint16_t, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint16_t, uint8_t>,    // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint16_t, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<uint16_t, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<uint16_t, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<uint16_t, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<uint16_t, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<uint16_t, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<uint16_t, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<uint16_t, int64_t>,
             },
             [MAG_DTYPE_INT16] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<int16_t, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<int16_t, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<int16_t, uint8_t>,     // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<int16_t, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<int16_t, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<int16_t, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<int16_t, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<int16_t, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<int16_t, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<int16_t, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<int16_t, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<int16_t, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<int16_t, uint8_t>,     // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<int16_t, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<int16_t, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<int16_t, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<int16_t, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<int16_t, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<int16_t, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<int16_t, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<int16_t, int64_t>,
             },
             [MAG_DTYPE_UINT32] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint32_t, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint32_t, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<uint32_t, uint8_t>,    // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<uint32_t, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<uint32_t, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<uint32_t, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<uint32_t, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<uint32_t, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<uint32_t, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<uint32_t, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<uint32_t, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint32_t, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint32_t, uint8_t>,    // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint32_t, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<uint32_t, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<uint32_t, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<uint32_t, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<uint32_t, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<uint32_t, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<uint32_t, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<uint32_t, int64_t>,
             },
             [MAG_DTYPE_INT32] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<int32_t, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<int32_t, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<int32_t, uint8_t>,     // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<int32_t, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<int32_t, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<int32_t, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<int32_t, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<int32_t, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<int32_t, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<int32_t, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<int32_t, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<int32_t, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<int32_t, uint8_t>,     // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<int32_t, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<int32_t, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<int32_t, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<int32_t, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<int32_t, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<int32_t, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<int32_t, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<int32_t, int64_t>,
             },
             [MAG_DTYPE_UINT64] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint64_t, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint64_t, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<uint64_t, uint8_t>,    // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<uint64_t, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<uint64_t, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<uint64_t, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<uint64_t, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<uint64_t, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<uint64_t, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<uint64_t, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<uint64_t, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint64_t, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint64_t, uint8_t>,    // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint64_t, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<uint64_t, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<uint64_t, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<uint64_t, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<uint64_t, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<uint64_t, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<uint64_t, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<uint64_t, int64_t>,
             },
             [MAG_DTYPE_INT64] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<int64_t, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<int64_t, half>,
-                [MAG_DTYPE_BOOLEAN]  = &mag_cast_launcher<int64_t, uint8_t>,     // bool uses uint8_t kernels
-                [MAG_DTYPE_UINT8]    = &mag_cast_launcher<int64_t, uint8_t>,
-                [MAG_DTYPE_INT8]    = &mag_cast_launcher<int64_t, int8_t>,
-                [MAG_DTYPE_UINT16]   = &mag_cast_launcher<int64_t, uint16_t>,
-                [MAG_DTYPE_INT16]   = &mag_cast_launcher<int64_t, int16_t>,
-                [MAG_DTYPE_UINT32]   = &mag_cast_launcher<int64_t, uint32_t>,
-                [MAG_DTYPE_INT32]   = &mag_cast_launcher<int64_t, int32_t>,
-                [MAG_DTYPE_UINT64]   = &mag_cast_launcher<int64_t, uint64_t>,
-                [MAG_DTYPE_INT64]   = &mag_cast_launcher<int64_t, int64_t>,
+                [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<int64_t, __nv_bfloat16>,
+                [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<int64_t, uint8_t>,     // bool uses uint8_t kernels
+                [MAG_DTYPE_UINT8] = &mag_cast_launcher<int64_t, uint8_t>,
+                [MAG_DTYPE_INT8] = &mag_cast_launcher<int64_t, int8_t>,
+                [MAG_DTYPE_UINT16] = &mag_cast_launcher<int64_t, uint16_t>,
+                [MAG_DTYPE_INT16] = &mag_cast_launcher<int64_t, int16_t>,
+                [MAG_DTYPE_UINT32] = &mag_cast_launcher<int64_t, uint32_t>,
+                [MAG_DTYPE_INT32] = &mag_cast_launcher<int64_t, int32_t>,
+                [MAG_DTYPE_UINT64] = &mag_cast_launcher<int64_t, uint64_t>,
+                [MAG_DTYPE_INT64] = &mag_cast_launcher<int64_t, int64_t>,
             },
         };
         static_assert(std::size(cast_table_2d) == static_cast<size_t>(MAG_DTYPE__NUM));
@@ -249,6 +274,7 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_clone<float>(r, x); break;
             case MAG_DTYPE_FLOAT16: launch_clone<half>(r, x); break;
+            case MAG_DTYPE_BFLOAT16: launch_clone<__nv_bfloat16>(r, x); break;
             case MAG_DTYPE_BOOLEAN:
             case MAG_DTYPE_UINT8: launch_clone<uint8_t>(r, x); break;
             case MAG_DTYPE_INT8: launch_clone<int8_t>(r, x); break;
@@ -624,6 +650,7 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_unary_op<op_t<float>>(r, x); break;
             case MAG_DTYPE_FLOAT16: launch_unary_op<op_t<half>>(r, x); break;
+            case MAG_DTYPE_BFLOAT16: launch_unary_op<op_t<__nv_bfloat16>>(r, x); break;
             default: mag_assert(false, "Unsupported dtype for unary op");
         }
     }

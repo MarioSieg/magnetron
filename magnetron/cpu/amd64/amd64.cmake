@@ -1,4 +1,4 @@
-# (c) 2025 Mario Sieg. <mario.sieg.64@gmail.com>
+# (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
 # Intel
 mag_register_cpu_backend("amd64/mag_cpu_amd64_alderlake.c"       "-march=alderlake -mtune=alderlake"             "/arch:AVX2")   # AVX-VNNI (no AVX-512 on most SKUs)

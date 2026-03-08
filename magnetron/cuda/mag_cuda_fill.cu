@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -137,6 +137,7 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd); break;
             case MAG_DTYPE_FLOAT16: launch_fill_kernel<half>(r, cmd); break;
+            case MAG_DTYPE_BFLOAT16: launch_fill_kernel<__nv_bfloat16>(r, cmd); break;
             case MAG_DTYPE_BOOLEAN:
             case MAG_DTYPE_UINT8: launch_fill_kernel<uint8_t>(r, cmd); break;
             case MAG_DTYPE_INT8: launch_fill_kernel<int8_t>(r, cmd); break;
@@ -156,6 +157,7 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd, mask); break;
             case MAG_DTYPE_FLOAT16: launch_fill_kernel<half>(r, cmd, mask); break;
+            case MAG_DTYPE_BFLOAT16: launch_fill_kernel<__nv_bfloat16>(r, cmd, mask); break;
             case MAG_DTYPE_BOOLEAN:
             case MAG_DTYPE_UINT8: launch_fill_kernel<uint8_t>(r, cmd, mask); break;
             case MAG_DTYPE_INT8: launch_fill_kernel<int8_t>(r, cmd, mask); break;
@@ -174,6 +176,7 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, false>(r, cmd); break;
             case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, false>(r, cmd); break;
+            case MAG_DTYPE_BFLOAT16: launch_rand_fill_kernel<__nv_bfloat16, false>(r, cmd); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
         }
     }
@@ -183,6 +186,7 @@ namespace mag {
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, true>(r, cmd); break;
             case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, true>(r, cmd); break;
+            case MAG_DTYPE_BFLOAT16: launch_rand_fill_kernel<__nv_bfloat16, true>(r, cmd); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
         }
     }

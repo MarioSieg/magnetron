@@ -1,5 +1,5 @@
 # +---------------------------------------------------------------------+
-# | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+# | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 # | Licensed under the Apache License, Version 2.0                      |
 # |                                                                     |
 # | Website : https://mariosieg.com                                     |
@@ -12,7 +12,7 @@ from collections.abc import Iterator, Callable, MutableMapping
 from collections import OrderedDict
 from collections.abc import Mapping
 
-from magnetron import Tensor, dtype
+from .. import Tensor, dtype
 
 
 class Parameter:
@@ -277,6 +277,7 @@ class Module:
                 seen.add(bid)
                 setattr(m, name, buf.cast(dt))
         return self
+
 
 class ModuleList(Module, list):
     """A list of modules that can be used as a single module."""

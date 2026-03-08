@@ -1,6 +1,6 @@
 /*
 ** +---------------------------------------------------------------------+
-** | (c) 2025 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 ** | Licensed under the Apache License, Version 2.0                      |
 ** |                                                                     |
 ** | Website : https://mariosieg.com                                     |
@@ -56,6 +56,7 @@ if (mag_unlikely(!(expr))) { \
 #define MAG_SNAP_SECTION_TENSOR_DESC mag_snap_pack4_ne('D', 'S', 'C', '!')
 #define MAG_SNAP_SECTION_TENSOR_DATA mag_snap_pack4_ne('B', 'U', 'F', '!')
 #define MAG_SNAP_SECTION_MARKERS_COUNT 4 /* File magic is not included, belongs to file header */
+#define MAG_SNAP_TBUF_ALIGN 16 /* Every tensor buffer start address must be aligned to this */
 
 #ifdef MAG_BIG_ENDIAN
 /*
@@ -70,6 +71,7 @@ typedef struct mag_mmap_owner_t {
     MAG_RC_INJECT_HEADER;
     mag_mapped_file_t file;
 } mag_mmap_owner_t;
+MAG_RC_OBJECT_IS_VALID(mag_mmap_owner_t);
 
 static void mag_mmap_owner_dtor(void *self) {
     mag_mmap_owner_t *o = self;
@@ -460,6 +462,9 @@ struct mag_snapshot_t {
     mag_map_t tensor_map;
     mag_mem_stream_t stream;
     mag_mmap_owner_t *mmap_owner;
+    size_t nb_total;
+    size_t nb_meta;
+    size_t nb_storage;
 };
 
 static size_t mag_snaprage_compute_tensor_sizes(mag_map_t *tmap) {
@@ -513,7 +518,7 @@ static bool mag_snapshot_insert_tensor_by_id(mag_snapshot_t *snap, uint32_t key_
     return true;
 }
 
-extern mag_status_t mag_tensor_init(mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape);
+extern mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape);
 
 static void mag_cpu_storage_dtor(void *self) {
     mag_storage_buffer_t *buf = self;
@@ -562,7 +567,7 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_snap_verify(filename && *filename, return false);
     const char *ext = strrchr(filename, '.'); /* check that the file extension is .mag */
     mag_snap_verify(ext != NULL && strcmp(ext, ".mag") == 0, return false);
-    mag_snap_verify(mag_device_is(ctx->device, "cpu"), return false);
+    mag_snap_verify(ctx->active_device->id.type == MAG_BACKEND_TYPE_CPU, return false); /* Only CPU deserialization is supported at the moment */
 
     mag_tensor_desc_t *stable = NULL;
     mag_snapshot_t *snap = mag_snapshot_new(ctx);
@@ -572,6 +577,7 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_snap_verify(mag_stream_from_mapped_file(stream, snap->mmap_owner, false), goto error);
     mag_snap_verify(mag_stream_remaining(stream) >= MAG_FILE_HEADER_SIZE + 4*MAG_SNAP_SECTION_MARKERS_COUNT, goto error); /* We must at minimum have enough bytes for an empty file */
 
+    snap->nb_total = mag_stream_remaining(stream);
     size_t marker = mag_stream_needle(stream);
 
     /* File header */
@@ -600,10 +606,12 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
         mag_tensor_desc_t *desc = stable+i;
         mag_snap_verify(mag_tensor_desc_deserialize(desc, stream, snap->str_pool.len), goto error);
     }
-
     /* Read data */
     mag_snap_verify(mag_stream_ru32_le(stream, &section_marker), goto error);
     mag_snap_verify(section_marker == MAG_SNAP_SECTION_TENSOR_DATA, goto error);
+
+    snap->nb_meta = mag_stream_needle(stream); /* Everything up to here is metadata */
+
     uint64_t offs=0;
     for (size_t i=0; i < nt; ++i) {
         const mag_tensor_desc_t *desc = stable+i;
@@ -616,14 +624,17 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
         const uint8_t *blob = NULL;
         mag_snap_verify(mag_stream_rbytes_view(stream, &blob, nbytes), goto error);
         mag_storage_buffer_t *storage = NULL;
-        mag_cpu_borrow_storage(ctx->device, &storage, blob, nbytes, desc->dtype, snap->mmap_owner);
+        mag_cpu_borrow_storage(ctx->active_device, &storage, blob, nbytes, desc->dtype, snap->mmap_owner);
         mag_tensor_t *tensor = NULL;
-        mag_snap_verify(mag_isok(mag_tensor_init(&tensor, ctx, storage, desc->dtype, desc->rank, shape)), goto error);
+        mag_snap_verify(mag_isok(mag_tensor_init(NULL, &tensor, ctx, storage, desc->dtype, desc->rank, shape)), goto error);
         mag_snap_verify(mag_snapshot_insert_tensor_by_id(snap, desc->key_id, tensor), mag_tensor_decref(tensor); goto error);
         mag_tensor_decref(tensor); /* Decref as the snapshot now holds a reference */
         mag_rc_decref(storage); /* Decref as the snapshot now holds a reference */
         offs += nbytes;
     }
+
+    snap->nb_storage = mag_stream_needle(stream) - snap->nb_meta;
+    mag_snap_verify(snap->nb_total == snap->nb_meta + snap->nb_storage, goto error);
 
     (*mag_alloc)(stable, 0, 0);
     return snap;
@@ -704,7 +715,7 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
     /* Compute checksum of metadata before data section starts */
     const uint8_t *chk_end = stream.pos;
     mag_device_t *dvc_interface;
-    mag_backend_registry_get_by_device_id(snap->ctx->backend_registry, &dvc_interface, "cpu:0");
+    mag_backend_registry_get_backend_and_device_by_id(snap->ctx->backend_registry, MAG_DEVICE_ID_CPU, NULL, &dvc_interface);
     mag_assert2(dvc_interface);
     mag_cpu_device_t *dvc_impl = dvc_interface->impl;
     mag_assert2(dvc_impl);
@@ -724,8 +735,9 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
     size_t nb_dat_total = 0;
     for (size_t i=0; i < snap->tensor_map.nitems; ++i) { /* Tensor data */
         mag_tensor_t *tensor = stable[i];
-        mag_snap_verify(mag_device_is(tensor->storage->device, "cpu"), goto error); /* Tensor must live on CPU */
-        mag_contiguous(&tensor, tensor); /* Make contiguous to allow the 1:1 copy into mmap destination region */
+        mag_snap_verify(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, goto error); /* Tensor must live on CPU */
+        mag_error_t err = {0};
+        mag_snap_verify(mag_isok(mag_contiguous(&err, &tensor, tensor)), goto error); /* TODO: Migrate to new error system Make contiguous to allow the 1:1 copy into mmap destination region */
         size_t nb = mag_tensor_numbytes(tensor);
         nb_dat_total += nb;
         mag_snap_verify(mag_stream_wbytes(&stream, (const void *)mag_tensor_data_ptr(tensor), nb), mag_tensor_decref(tensor); goto error);
@@ -846,5 +858,12 @@ MAG_COLDPROC void mag_snapshot_print_info(mag_snapshot_t *snap) {
         mag_humanize_memory_size(mag_tensor_numbytes(tensor), &size, &unit);
         printf("\t[%zu] Name: \"%.*s\", Shape: %s, Type: %s, Size: %.01f%s\n", slot, (int)name_len, name, shape, mag_type_trait(tensor->dtype)->name, size, unit);
     }
+    printf("--- Stats ---\n");
+    mag_humanize_memory_size(snap->nb_meta, &size, &unit);
+    printf("\tMetadata Size: %.03f%s (%.01f%%)\n", size, unit, snap->nb_meta ? 100.0*(double)snap->nb_meta / (double)snap->nb_total : 0.0);
+    mag_humanize_memory_size(snap->nb_storage, &size, &unit);
+    printf("\tStorage Size: %.03f%s (%.01f%%)\n", size, unit, snap->nb_total ? 100.0*(double)snap->nb_storage / (double)snap->nb_total : 0.0);
+    mag_humanize_memory_size(snap->nb_total, &size, &unit);
+    printf("\tTotal File Size: %.03f%s\n", size, unit);
     printf("-------------------\n");
 }
