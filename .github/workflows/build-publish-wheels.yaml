@@ -36,6 +36,15 @@ jobs:
           CIBW_ARCHS_LINUX: "x86_64"
           CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_*"
+          # Use LLVM/Clang 20 for AVX-512 BF16 intrinsics (_mm512_cvtpbh_ps); install in container before build
+          CIBW_BEFORE_ALL_LINUX: |
+            set -eux
+            LLVM_VER=20.1.8
+            curl -sL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/LLVM-${LLVM_VER}-Linux-X64.tar.xz" -o /tmp/llvm.tar.xz
+            tar -xf /tmp/llvm.tar.xz -C /opt
+            rm /tmp/llvm.tar.xz
+            ln -sf "/opt/LLVM-${LLVM_VER}-Linux-X64" /opt/llvm
+          CIBW_ENVIRONMENT_LINUX: "CC=/opt/llvm/bin/clang CXX=/opt/llvm/bin/clang++"
         run: |
           python -m cibuildwheel --output-dir wheelhouse .
 
