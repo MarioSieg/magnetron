@@ -207,8 +207,9 @@ namespace mag::bindings {
 
     void init_bindings_tensor(nb::module_ &m) {
         auto cls = nb::class_<tensor_wrapper>{m, "Tensor",
-            "A multi-dimensional array with for automatic differentiation."
-            "Supports CPU, CUDA and custom backends, dtypes, and in-place or out-of-place ops."};
+            "A multi-dimensional array with for automatic differentiation. "
+            "Supports CPU, CUDA and custom backends, dtypes, and in-place or out-of-place ops."
+        };
         init_tensor_class_base(cls);
         init_tensor_special_methods(cls);
         init_tensor_class_factories(cls);
