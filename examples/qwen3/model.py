@@ -239,10 +239,10 @@ class Qwen3Model(nn.Module):
                 delta = delta.replace('\ufffd', '')
                 concated = text
                 yield delta
-            input_ids = Tensor.of([tok_id], dtype=dtype.int64).reshape(1, 1)
+            input_ids = Tensor([tok_id], dtype=dtype.int64).reshape(1, 1)
             logits, prev_kv = self(
                 input_ids,
-                idx=Tensor.of([curr_len], dtype=dtype.int64).reshape(1, 1),
+                idx=Tensor([curr_len], dtype=dtype.int64).reshape(1, 1),
                 prev_kv=prev_kv,
             )
             next_logits = logits[:, -1, :] / temp

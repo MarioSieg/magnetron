@@ -11,7 +11,7 @@
 
 #include "prelude.hpp"
 
-#define bind_unary_pair(cls, name) \
+#define bind_unary_pair(cls, name, doc) \
     cls \
         .def(#name, [](const tensor_wrapper &self) -> tensor_wrapper { \
             std::lock_guard lock {get_global_mutex()}; \
@@ -19,7 +19,7 @@
             mag_error_t err {}; \
             throw_if_error(mag_##name(&err, &out, *self), err); \
             return tensor_wrapper {out}; \
-        }) \
+        }, doc) \
         .def(#name "_", [](tensor_wrapper &self) -> tensor_wrapper& { \
             std::lock_guard lock {get_global_mutex()}; \
             mag_tensor_t *out = nullptr; \
@@ -28,9 +28,9 @@
             if (self.p) mag_tensor_decref(self.p); \
             self.p = out; \
             return self; \
-        }, nb::rv_policy::reference)
+        }, "In-place version.", nb::rv_policy::reference)
 
-#define bind_binary_full_named(cls, dunder_name, c_name, named_name) \
+#define bind_binary_full_named(cls, dunder_name, c_name, named_name, doc) \
     cls.def("__" #dunder_name "__", \
         [](const tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper { \
             std::lock_guard lock {get_global_mutex()}; \
@@ -39,7 +39,7 @@
             mag_error_t err {}; \
             throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
             return tensor_wrapper{out}; \
-        }, "rhs"_a); \
+        }, "rhs"_a, doc); \
     cls.def("__r" #dunder_name "__", \
         [](const tensor_wrapper &a, nb::handle lhs) -> tensor_wrapper { \
             std::lock_guard lock {get_global_mutex()}; \
@@ -48,7 +48,7 @@
             mag_error_t err {}; \
             throw_if_error(mag_##c_name(&err, &out, *l, *a), err); \
             return tensor_wrapper{out}; \
-        }, "lhs"_a); \
+        }, "lhs"_a, "Right-hand side of " #named_name " (reflected)."); \
     cls.def("__i" #dunder_name "__", \
         [](tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper& { \
             std::lock_guard lock {get_global_mutex()}; \
@@ -59,7 +59,7 @@
             if (a.p) mag_tensor_decref(a.p); \
             a.p = out; \
             return a; \
-        }, "rhs"_a, nb::rv_policy::reference); \
+        }, "rhs"_a, "In-place " #named_name ".", nb::rv_policy::reference); \
     cls.def(#named_name, \
         [](const tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper { \
             std::lock_guard lock {get_global_mutex()}; \
@@ -68,7 +68,7 @@
             mag_error_t err {}; \
             throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
             return tensor_wrapper{out}; \
-        }, "rhs"_a); \
+        }, "rhs"_a, doc); \
     cls.def(#named_name "_", \
         [](tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper& { \
             std::lock_guard lock {get_global_mutex()}; \
@@ -79,9 +79,9 @@
             if (a.p) mag_tensor_decref(a.p); \
             a.p = out; \
             return a; \
-        }, "rhs"_a, nb::rv_policy::reference)
+        }, "rhs"_a, "In-place version.", nb::rv_policy::reference)
 
-#define bind_compare(cls, dunder_name, c_name, named_name) \
+#define bind_compare(cls, dunder_name, c_name, named_name, doc) \
     cls.def("__" #dunder_name "__", \
         [](const tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper { \
             std::lock_guard lock {get_global_mutex()}; \
@@ -90,7 +90,7 @@
             mag_error_t err {}; \
             throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
             return tensor_wrapper{out}; \
-        }, "rhs"_a); \
+        }, "rhs"_a, doc); \
     cls.def(#named_name, \
         [](const tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper { \
             std::lock_guard lock {get_global_mutex()}; \
@@ -99,7 +99,7 @@
             mag_error_t err {}; \
             throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
             return tensor_wrapper{out}; \
-        }, "rhs"_a)
+        }, "rhs"_a, doc)
 
 namespace mag::bindings {
     void init_tensor_class_operators(nb::class_<tensor_wrapper> &cls) {
@@ -111,7 +111,8 @@ namespace mag::bindings {
                 throw_if_error(mag_fill_(&err, *self, scalar_from_py(value)), err);
                 return self;
             },
-            "value"_a
+            "value"_a,
+            "Fill the tensor with a scalar value."
         )
         .def("masked_fill_",
             [](tensor_wrapper &self, const tensor_wrapper &mask, nb::handle value) -> tensor_wrapper& {
@@ -122,7 +123,8 @@ namespace mag::bindings {
                 throw_if_error(mag_masked_fill_(&err, *self, *mask, scalar_from_py(value)), err);
                 return self;
             },
-            "mask"_a, "value"_a
+            "mask"_a, "value"_a,
+            "Fill elements where mask is True with value."
         )
         .def("uniform_",
             [](tensor_wrapper &self, nb::handle low_h = nb::none(), nb::handle high_h = nb::none()) -> tensor_wrapper& {
@@ -134,7 +136,8 @@ namespace mag::bindings {
                 return self;
             },
             "low"_a = nb::none(),
-            "high"_a = nb::none()
+            "high"_a = nb::none(),
+            "Fill with samples from uniform(low, high). Default [0, 1)."
         )
         .def("normal_",
             [](tensor_wrapper &self, nb::handle mean_h = nb::float_(0.0), nb::handle std_h  = nb::float_(1.0)) -> tensor_wrapper& {
@@ -144,7 +147,8 @@ namespace mag::bindings {
                 return self;
             },
             "mean"_a = 0.0,
-            "std"_a  = 1.0
+            "std"_a  = 1.0,
+            "Fill with samples from normal(mean, std)."
         )
         .def("bernoulli_",
             [](tensor_wrapper &self, nb::handle p_h = nb::float_(0.5)) -> tensor_wrapper& {
@@ -153,7 +157,8 @@ namespace mag::bindings {
                 throw_if_error(mag_bernoulli_(&err, *self, scalar_from_py(p_h)), err);
                 return self;
             },
-            "p"_a = 0.5
+            "p"_a = 0.5,
+            "Fill with 0/1 from Bernoulli(p)."
         )
         .def("clone", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
@@ -161,14 +166,14 @@ namespace mag::bindings {
             mag_error_t err {};
             throw_if_error(mag_clone(&err, &out, *self), err);
             return tensor_wrapper{out};
-        })
+        }, "Return a copy with the same data and dtype.")
         .def("cast", [](const tensor_wrapper &self, dtype_wrapper dt) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *out = nullptr;
             mag_error_t err {};
             throw_if_error(mag_cast(&err, &out, *self, dt.v), err);
             return tensor_wrapper{out};
-        }, "dtype"_a)
+        }, "dtype"_a, "Return a copy with the given dtype.")
         .def("view", [](const tensor_wrapper &self, nb::args args) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             std::vector<int64_t> shape = parse_i64_dims(args, "view");
@@ -177,14 +182,14 @@ namespace mag::bindings {
             mag_error_t err {};
             throw_if_error(mag_view(&err, &out, *self, shape.data(), static_cast<int64_t>(shape.size())), err);
             return tensor_wrapper{out};
-        }, "shape"_a)
+        }, "shape"_a, "View with new shape (same storage).")
         .def("view_slice", [](const tensor_wrapper &self, int64_t dim, int64_t start, int64_t len, int64_t step) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *out = nullptr;
             mag_error_t err {};
             throw_if_error(mag_view_slice(&err, &out, *self, dim, start, len, step), err);
             return tensor_wrapper{out};
-        }, "dim"_a, "start"_a, "len"_a, "step"_a)
+        }, "dim"_a, "start"_a, "len"_a, "step"_a, "View a slice along one dimension.")
         .def("reshape",
             [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
@@ -199,7 +204,9 @@ namespace mag::bindings {
                 mag_error_t err {};
                 throw_if_error(mag_reshape(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())), err);
                 return tensor_wrapper{out};
-            }
+            },
+            "shape"_a,
+            "Return a view with the given shape. Use -1 for one inferred dimension."
         )
         .def("transpose",
             [](const tensor_wrapper &self, int64_t dim0 = 0, int64_t dim1 = 1) -> tensor_wrapper {
@@ -211,7 +218,8 @@ namespace mag::bindings {
                 throw_if_error(mag_transpose(&err, &out, *self, dim0, dim1), err);
                 return tensor_wrapper{out};
             },
-            "dim0"_a = 0, "dim1"_a = 1
+            "dim0"_a = 0, "dim1"_a = 1,
+            "Swap two dimensions."
         )
         .def_prop_ro("T", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
@@ -219,7 +227,7 @@ namespace mag::bindings {
             mag_error_t err {};
             throw_if_error(mag_T(&err, &out, *self), err);
             return tensor_wrapper{out};
-        })
+        }, "Transpose of the tensor (dims 0 and 1 swapped).")
         .def("permute",
             [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
@@ -232,7 +240,9 @@ namespace mag::bindings {
                 mag_error_t err {};
                 throw_if_error(mag_permute(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())), err);
                 return tensor_wrapper{out};
-            }
+            },
+            "dims"_a,
+            "Reorder dimensions by the given permutation."
         )
         .def("contiguous",
             [](const tensor_wrapper &self) -> tensor_wrapper {
@@ -241,7 +251,8 @@ namespace mag::bindings {
                 mag_error_t err {};
                 throw_if_error(mag_contiguous(&err, &out, *self), err);
                 return tensor_wrapper{out};
-            }
+            },
+            "Return a contiguous copy if needed; otherwise self."
         )
         .def("squeeze",
             [](const tensor_wrapper &self, nb::handle dim_h = nb::none()) -> tensor_wrapper {
@@ -256,7 +267,8 @@ namespace mag::bindings {
                 }
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none()
+            "dim"_a = nb::none(),
+            "Remove size-1 dimensions (all or only dim)."
         )
         .def("unsqueeze",
             [](const tensor_wrapper &self, int64_t dim) -> tensor_wrapper {
@@ -266,7 +278,8 @@ namespace mag::bindings {
                 throw_if_error(mag_unsqueeze(&err, &out, *self, dim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a
+            "dim"_a,
+            "Insert a size-1 dimension at dim."
         )
         .def("flatten",
             [](const tensor_wrapper &self, int64_t start_dim = 0, int64_t end_dim = -1) -> tensor_wrapper {
@@ -276,7 +289,8 @@ namespace mag::bindings {
                 throw_if_error(mag_flatten(&err, &out, *self, start_dim, end_dim), err);
                 return tensor_wrapper{out};
             },
-            "start_dim"_a = 0, "end_dim"_a = -1
+            "start_dim"_a = 0, "end_dim"_a = -1,
+            "Flatten dimensions from start_dim to end_dim (inclusive)."
         )
         .def("unflatten",
             [](const tensor_wrapper &self, int64_t dim, nb::handle sizes_h) -> tensor_wrapper {
@@ -287,7 +301,8 @@ namespace mag::bindings {
                 throw_if_error(mag_unflatten(&err, &out, *self, dim, sizes.data(), static_cast<int64_t>(sizes.size())), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a, "sizes"_a
+            "dim"_a, "sizes"_a,
+            "Expand dim into multiple dimensions with sizes."
         )
         .def("narrow",
             [](const tensor_wrapper &self, int64_t dim, int64_t start, int64_t length) -> tensor_wrapper {
@@ -297,7 +312,8 @@ namespace mag::bindings {
                 throw_if_error(mag_narrow(&err, &out, *self, dim, start, length), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a, "start"_a, "length"_a
+            "dim"_a, "start"_a, "length"_a,
+            "View a slice of length along dim starting at start."
         )
         .def("movedim",
             [](const tensor_wrapper &self, int64_t src, int64_t dst) -> tensor_wrapper {
@@ -307,7 +323,8 @@ namespace mag::bindings {
                 throw_if_error(mag_movedim(&err, &out, *self, src, dst), err);
                 return tensor_wrapper{out};
             },
-            "src"_a, "dst"_a
+            "src"_a, "dst"_a,
+            "Move dimension src to position dst."
         )
         .def("select",
             [](const tensor_wrapper &self, int64_t dim, int64_t index) -> tensor_wrapper {
@@ -317,7 +334,8 @@ namespace mag::bindings {
                 throw_if_error(mag_select(&err, &out, *self, dim, index), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a, "index"_a
+            "dim"_a, "index"_a,
+            "Select a slice at index along dim (reduces rank by 1)."
         )
         .def("split",
             [](const tensor_wrapper &self, int64_t split_size, int64_t dim = 0) -> nb::tuple {
@@ -342,7 +360,8 @@ namespace mag::bindings {
                 }
                 return nb::steal<nb::tuple>(t);
             },
-            "split_size"_a, "dim"_a = 0
+            "split_size"_a, "dim"_a = 0,
+            "Split into chunks of split_size along dim. Returns tuple of tensors."
         )
         .def("mean",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -353,7 +372,8 @@ namespace mag::bindings {
                 throw_if_error(mag_mean(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none(), "keepdim"_a = false
+            "dim"_a = nb::none(), "keepdim"_a = false,
+            "Mean over dim(s). None = all dims."
         )
         .def("min",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -364,7 +384,8 @@ namespace mag::bindings {
                 throw_if_error(mag_min(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none(), "keepdim"_a = false
+            "dim"_a = nb::none(), "keepdim"_a = false,
+            "Minimum over dim(s). None = all dims."
         )
         .def("max",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -375,7 +396,8 @@ namespace mag::bindings {
                 throw_if_error(mag_max(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none(), "keepdim"_a = false
+            "dim"_a = nb::none(), "keepdim"_a = false,
+            "Maximum over dim(s). None = all dims."
         )
         .def("argmin",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -386,7 +408,8 @@ namespace mag::bindings {
                 throw_if_error(mag_argmin(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none(), "keepdim"_a = false
+            "dim"_a = nb::none(), "keepdim"_a = false,
+            "Indices of minimum over dim(s)."
         )
         .def("argmax",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -397,7 +420,8 @@ namespace mag::bindings {
                 throw_if_error(mag_argmax(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none(), "keepdim"_a = false
+            "dim"_a = nb::none(), "keepdim"_a = false,
+            "Indices of maximum over dim(s)."
         )
         .def("sum",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -408,7 +432,8 @@ namespace mag::bindings {
                 throw_if_error(mag_sum(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none(), "keepdim"_a = false
+            "dim"_a = nb::none(), "keepdim"_a = false,
+            "Sum over dim(s). None = all dims."
         )
         .def("prod",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -419,7 +444,8 @@ namespace mag::bindings {
                 throw_if_error(mag_prod(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none(), "keepdim"_a = false
+            "dim"_a = nb::none(), "keepdim"_a = false,
+            "Product over dim(s). None = all dims."
         )
         .def("all",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -430,7 +456,8 @@ namespace mag::bindings {
                 throw_if_error(mag_all(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none(), "keepdim"_a = false
+            "dim"_a = nb::none(), "keepdim"_a = false,
+            "Logical AND over dim(s). Boolean tensor."
         )
         .def("any",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -441,7 +468,8 @@ namespace mag::bindings {
                 throw_if_error(mag_any(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
                 return tensor_wrapper{out};
             },
-            "dim"_a = nb::none(), "keepdim"_a = false
+            "dim"_a = nb::none(), "keepdim"_a = false,
+            "Logical OR over dim(s). Boolean tensor."
         )
         .def("topk",
             [](const tensor_wrapper &self, int64_t k, int64_t dim = -1, bool largest = true, bool sorted = true) -> nb::tuple {
@@ -460,7 +488,8 @@ namespace mag::bindings {
                 PyTuple_SET_ITEM(t, 1, i.release().ptr());
                 return nb::steal<nb::tuple>(t);
             },
-            "k"_a, "dim"_a = -1, "largest"_a = true, "sorted"_a = true
+            "k"_a, "dim"_a = -1, "largest"_a = true, "sorted"_a = true,
+            "Return (values, indices) of the k largest or smallest elements along dim."
         )
         .def("tril",
             [](const tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {
@@ -470,7 +499,8 @@ namespace mag::bindings {
                 throw_if_error(mag_tril(&err, &out, *self, diagonal), err);
                 return tensor_wrapper{out};
             },
-            "diagonal"_a = 0
+            "diagonal"_a = 0,
+            "Lower triangular part; elements above diagonal set to 0."
         )
         .def("tril_",
             [](tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {
@@ -480,7 +510,8 @@ namespace mag::bindings {
                 throw_if_error(mag_tril_(&err, &out, *self, diagonal), err);
                 return tensor_wrapper {out};
             },
-            "diagonal"_a = 0
+            "diagonal"_a = 0,
+            "In-place lower triangular."
         )
         .def("triu",
             [](const tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {
@@ -490,7 +521,8 @@ namespace mag::bindings {
                 throw_if_error(mag_triu(&err, &out, *self, diagonal), err);
                 return tensor_wrapper{out};
             },
-            "diagonal"_a = 0
+            "diagonal"_a = 0,
+            "Upper triangular part; elements below diagonal set to 0."
         )
         .def("triu_",
             [](tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {
@@ -500,7 +532,8 @@ namespace mag::bindings {
                 throw_if_error(mag_triu_(&err, &out, *self, diagonal), err);
                 return tensor_wrapper {out};
             },
-            "diagonal"_a = 0
+            "diagonal"_a = 0,
+            "In-place upper triangular."
         )
         .def("multinomial",
             [](const tensor_wrapper &self, int64_t num_samples = 1, bool replacement = false) -> tensor_wrapper {
@@ -512,7 +545,8 @@ namespace mag::bindings {
                 throw_if_error(mag_multinomial(&err, &out, *self, num_samples, replacement), err);
                 return tensor_wrapper{out};
             },
-            "num_samples"_a = 1, "replacement"_a = false
+            "num_samples"_a = 1, "replacement"_a = false,
+            "Sample indices from probabilities (last dim). Returns shape (..., num_samples)."
         );
 
         cls.attr("cat") = nb::cpp_function(
@@ -552,43 +586,44 @@ namespace mag::bindings {
                 throw_if_error(mag_cat(&err, &out, ptrs.data(), ptrs.size(), dim), err);
                 return tensor_wrapper{out};
             },
-            "tensors"_a, "dim"_a = 0
+            "tensors"_a, "dim"_a = 0,
+            "Concatenate tensors along the given dimension."
         );
 
 
         // Unary operators
-        bind_unary_pair(cls, abs);
-        bind_unary_pair(cls, sgn);
-        bind_unary_pair(cls, neg);
-        bind_unary_pair(cls, log);
-        bind_unary_pair(cls, log10);
-        bind_unary_pair(cls, log1p);
-        bind_unary_pair(cls, log2);
-        bind_unary_pair(cls, sqr);
-        bind_unary_pair(cls, rcp);
-        bind_unary_pair(cls, sqrt);
-        bind_unary_pair(cls, rsqrt);
-        bind_unary_pair(cls, sin);
-        bind_unary_pair(cls, cos);
-        bind_unary_pair(cls, tan);
-        bind_unary_pair(cls, sinh);
-        bind_unary_pair(cls, cosh);
-        bind_unary_pair(cls, tanh);
-        bind_unary_pair(cls, asin);
-        bind_unary_pair(cls, acos);
-        bind_unary_pair(cls, atan);
-        bind_unary_pair(cls, asinh);
-        bind_unary_pair(cls, acosh);
-        bind_unary_pair(cls, atanh);
-        bind_unary_pair(cls, step);
-        bind_unary_pair(cls, erf);
-        bind_unary_pair(cls, erfc);
-        bind_unary_pair(cls, exp);
-        bind_unary_pair(cls, expm1);
-        bind_unary_pair(cls, floor);
-        bind_unary_pair(cls, ceil);
-        bind_unary_pair(cls, round);
-        bind_unary_pair(cls, trunc);
+        bind_unary_pair(cls, abs, "Element-wise absolute value.");
+        bind_unary_pair(cls, sgn, "Element-wise sign (-1, 0, or 1).");
+        bind_unary_pair(cls, neg, "Element-wise negation.");
+        bind_unary_pair(cls, log, "Natural logarithm.");
+        bind_unary_pair(cls, log10, "Base-10 logarithm.");
+        bind_unary_pair(cls, log1p, "log(1 + x).");
+        bind_unary_pair(cls, log2, "Base-2 logarithm.");
+        bind_unary_pair(cls, sqr, "Element-wise square.");
+        bind_unary_pair(cls, rcp, "Reciprocal 1/x.");
+        bind_unary_pair(cls, sqrt, "Element-wise square root.");
+        bind_unary_pair(cls, rsqrt, "Reciprocal square root 1/sqrt(x).");
+        bind_unary_pair(cls, sin, "Element-wise sine.");
+        bind_unary_pair(cls, cos, "Element-wise cosine.");
+        bind_unary_pair(cls, tan, "Element-wise tangent.");
+        bind_unary_pair(cls, sinh, "Element-wise hyperbolic sine.");
+        bind_unary_pair(cls, cosh, "Element-wise hyperbolic cosine.");
+        bind_unary_pair(cls, tanh, "Element-wise hyperbolic tangent.");
+        bind_unary_pair(cls, asin, "Element-wise arc sine.");
+        bind_unary_pair(cls, acos, "Element-wise arc cosine.");
+        bind_unary_pair(cls, atan, "Element-wise arc tangent.");
+        bind_unary_pair(cls, asinh, "Element-wise inverse hyperbolic sine.");
+        bind_unary_pair(cls, acosh, "Element-wise inverse hyperbolic cosine.");
+        bind_unary_pair(cls, atanh, "Element-wise inverse hyperbolic tangent.");
+        bind_unary_pair(cls, step, "Heaviside step (0 if x < 0 else 1).");
+        bind_unary_pair(cls, erf, "Error function.");
+        bind_unary_pair(cls, erfc, "Complementary error function.");
+        bind_unary_pair(cls, exp, "Element-wise exp(x).");
+        bind_unary_pair(cls, expm1, "exp(x) - 1.");
+        bind_unary_pair(cls, floor, "Round down to integer.");
+        bind_unary_pair(cls, ceil, "Round up to integer.");
+        bind_unary_pair(cls, round, "Round to nearest integer.");
+        bind_unary_pair(cls, trunc, "Truncate toward zero.");
 
         // Softmax has params and required a specialized binding
         cls.def("softmax",
@@ -599,7 +634,8 @@ namespace mag::bindings {
                 throw_if_error(mag_softmax(&err, &out, *self), err); // TODO: respect dim
                 return tensor_wrapper{out};
             },
-            "dim"_a
+            "dim"_a,
+            "Softmax over dim (normalizes to sum to 1)."
         );
         cls.def("softmax_",
             [](tensor_wrapper &self, [[maybe_unused]] int64_t dim) -> tensor_wrapper& {
@@ -611,21 +647,21 @@ namespace mag::bindings {
                 self.p = out;
                 return self;
             },
-            "dim"_a, nb::rv_policy::reference
+            "dim"_a, "In-place softmax.", nb::rv_policy::reference
         );
 
-        bind_unary_pair(cls, softmax_dv);
-        bind_unary_pair(cls, sigmoid);
-        bind_unary_pair(cls, sigmoid_dv);
-        bind_unary_pair(cls, hard_sigmoid);
-        bind_unary_pair(cls, silu);
-        bind_unary_pair(cls, silu_dv);
-        bind_unary_pair(cls, tanh_dv);
-        bind_unary_pair(cls, relu);
-        bind_unary_pair(cls, relu_dv);
-        bind_unary_pair(cls, gelu);
-        bind_unary_pair(cls, gelu_approx);
-        bind_unary_pair(cls, gelu_dv);
+        bind_unary_pair(cls, softmax_dv, "Softmax derivative (for autodiff).");
+        bind_unary_pair(cls, sigmoid, "Sigmoid 1/(1+exp(-x)).");
+        bind_unary_pair(cls, sigmoid_dv, "Sigmoid derivative.");
+        bind_unary_pair(cls, hard_sigmoid, "Hard sigmoid approximation.");
+        bind_unary_pair(cls, silu, "SiLU (Swish) x*sigmoid(x).");
+        bind_unary_pair(cls, silu_dv, "SiLU derivative.");
+        bind_unary_pair(cls, tanh_dv, "Tanh derivative.");
+        bind_unary_pair(cls, relu, "ReLU max(0, x).");
+        bind_unary_pair(cls, relu_dv, "ReLU derivative.");
+        bind_unary_pair(cls, gelu, "GELU activation.");
+        bind_unary_pair(cls, gelu_approx, "GELU approximate form.");
+        bind_unary_pair(cls, gelu_dv, "GELU derivative.");
         cls
         .def("__neg__", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
@@ -633,37 +669,37 @@ namespace mag::bindings {
             mag_error_t err {};
             throw_if_error(mag_neg(&err, &out, *self), err);
             return tensor_wrapper{out};
-        })
+        }, "Element-wise negation (unary -).")
         .def("__pos__", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             return self;
-        })
+        }, "Unary + (returns self).")
         .def("__abs__", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *out = nullptr;
             mag_error_t err {};
             throw_if_error(mag_abs(&err, &out, *self), err);
             return tensor_wrapper{out};
-        });
+        }, "Element-wise absolute value.");
 
         // Binary operators
-        bind_binary_full_named(cls, add, add, add);
-        bind_binary_full_named(cls, sub, sub, sub);
-        bind_binary_full_named(cls, mul, mul, mul);
-        bind_binary_full_named(cls, mod, mod, mod);
-        bind_binary_full_named(cls, truediv, div, truediv);
-        bind_binary_full_named(cls, floordiv, floordiv, floordiv);
-        bind_binary_full_named(cls, and, and, logical_and);
-        bind_binary_full_named(cls, or,  or,  logical_or);
-        bind_binary_full_named(cls, xor, xor, logical_xor);
-        bind_binary_full_named(cls, lshift, shl, lshift);
-        bind_binary_full_named(cls, rshift, shr, rshift);
-        bind_compare(cls, lt, lt, lt);
-        bind_compare(cls, le, le, le);
-        bind_compare(cls, gt, gt, gt);
-        bind_compare(cls, ge, ge, ge);
-        bind_compare(cls, eq, eq, eq);
-        bind_compare(cls, ne, ne, ne);
+        bind_binary_full_named(cls, add, add, add, "Element-wise addition.");
+        bind_binary_full_named(cls, sub, sub, sub, "Element-wise subtraction.");
+        bind_binary_full_named(cls, mul, mul, mul, "Element-wise multiplication.");
+        bind_binary_full_named(cls, mod, mod, mod, "Element-wise modulo.");
+        bind_binary_full_named(cls, truediv, div, truediv, "Element-wise true division.");
+        bind_binary_full_named(cls, floordiv, floordiv, floordiv, "Element-wise floor division.");
+        bind_binary_full_named(cls, and, and, logical_and, "Element-wise logical AND.");
+        bind_binary_full_named(cls, or,  or,  logical_or, "Element-wise logical OR.");
+        bind_binary_full_named(cls, xor, xor, logical_xor, "Element-wise logical XOR.");
+        bind_binary_full_named(cls, lshift, shl, lshift, "Element-wise left shift.");
+        bind_binary_full_named(cls, rshift, shr, rshift, "Element-wise right shift.");
+        bind_compare(cls, lt, lt, lt, "Element-wise less than. Returns boolean tensor.");
+        bind_compare(cls, le, le, le, "Element-wise less or equal.");
+        bind_compare(cls, gt, gt, gt, "Element-wise greater than.");
+        bind_compare(cls, ge, ge, ge, "Element-wise greater or equal.");
+        bind_compare(cls, eq, eq, eq, "Element-wise equality.");
+        bind_compare(cls, ne, ne, ne, "Element-wise not equal.");
 
         // Matmul
         cls.def("__matmul__",
@@ -675,7 +711,8 @@ namespace mag::bindings {
                 throw_if_error(mag_matmul(&err, &out, *a, *b), err);
                 return tensor_wrapper{out};
             },
-            "rhs"_a
+            "rhs"_a,
+            "Matrix multiplication (or batch matmul). Supports @ operator."
         );
     }
 }

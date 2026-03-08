@@ -45,65 +45,65 @@ namespace mag::bindings {
         .def_prop_ro("rank", [](const tensor_wrapper &self) -> int64_t {
             std::lock_guard lock {get_global_mutex()};
             return mag_tensor_rank(*self);
-        })
+        }, "Number of dimensions.")
         .def_prop_ro("numel", [](const tensor_wrapper &self) -> int64_t {
             std::lock_guard lock {get_global_mutex()};
            return mag_tensor_numel(*self);
-        })
+        }, "Total number of elements.")
         .def_prop_ro("numbytes", [](const tensor_wrapper &self) -> size_t {
             std::lock_guard lock {get_global_mutex()};
            return mag_tensor_numbytes(*self);
-        })
+        }, "Size in bytes of the tensor data.")
         .def_prop_ro("dtype", [](const tensor_wrapper &self) -> dtype_wrapper {
             std::lock_guard lock {get_global_mutex()};
             return dtype_wrapper{ mag_tensor_type(*self) };
-        })
+        }, "Data type of the tensor (e.g. float32, int64).")
         .def_prop_ro("is_transposed", [](const tensor_wrapper &self) -> bool {
             std::lock_guard lock {get_global_mutex()};
            return mag_tensor_is_transposed(*self);
-        })
+        }, "True if this tensor is a transpose of another.")
         .def_prop_ro("is_permuted", [](const tensor_wrapper &self) -> bool {
             std::lock_guard lock {get_global_mutex()};
            return mag_tensor_is_permuted(*self);
-        })
+        }, "True if dimensions have been permuted.")
         .def_prop_ro("is_view", [](const tensor_wrapper &self) -> bool {
             std::lock_guard lock {get_global_mutex()};
            return mag_tensor_is_view(*self);
-        })
+        }, "True if this tensor shares storage with another.")
         .def_prop_ro("is_contiguous", [](const tensor_wrapper &self) -> bool {
             std::lock_guard lock {get_global_mutex()};
            return mag_tensor_is_contiguous(*self);
-        })
+        }, "True if elements are stored in contiguous memory order.")
         .def_prop_ro("shape",
         [](const tensor_wrapper &self) -> nb::tuple {
             std::lock_guard lock {get_global_mutex()};
             return tuple_from_i64_span(mag_tensor_shape_ptr(*self), mag_tensor_rank(*self));
-        })
+        }, "Tuple of dimension sizes.")
         .def_prop_ro("strides",
         [](const tensor_wrapper &self) -> nb::tuple {
             std::lock_guard lock {get_global_mutex()};
             return tuple_from_i64_span(mag_tensor_strides_ptr(*self), mag_tensor_rank(*self));
-        })
+        }, "Tuple of strides (in elements) per dimension.")
         .def_prop_ro("data_ptr", [](const tensor_wrapper &self) -> uintptr_t {
             std::lock_guard lock {get_global_mutex()};
             return mag_tensor_data_ptr(*self);
-        })
+        }, "Raw pointer to the first element (read-only).")
         .def_prop_ro("data_ptr_mut", [](const tensor_wrapper &self) -> uintptr_t {
             std::lock_guard lock {get_global_mutex()};
             return mag_tensor_data_ptr_mut(*self);
-        })
+        }, "Raw pointer to the first element (mutable).")
         .def_prop_ro("data_storage_ptr", [](const tensor_wrapper &self) -> uintptr_t {
             std::lock_guard lock {get_global_mutex()};
            return mag_tensor_data_storage_ptr(*self);
-        })
+        }, "Pointer to the underlying storage block.")
         .def_prop_ro("data_storage_ptr_mut", [](const tensor_wrapper &self) -> uintptr_t {
             std::lock_guard lock {get_global_mutex()};
            return mag_tensor_data_storage_ptr_mut(*self);
-        })
+        }, "Mutable pointer to the underlying storage block.")
         .def("can_broadcast", [](const tensor_wrapper &self, const tensor_wrapper &rhs) -> bool {
             std::lock_guard lock {get_global_mutex()};
            return mag_tensor_can_broadcast(*self, *rhs);
-        })
+        }, "rhs"_a, "Return True if this tensor can broadcast with rhs.")
         .def_prop_rw("requires_grad", [](const tensor_wrapper &self) -> bool {
             std::lock_guard lock {get_global_mutex()};
             return mag_tensor_requires_grad(*self);
@@ -111,7 +111,7 @@ namespace mag::bindings {
             std::lock_guard lock {get_global_mutex()};
             mag_error_t err {};
             throw_if_error(mag_tensor_set_requires_grad(&err, *self, req), err);
-        })
+        }, "If True, gradients are recorded for autodiff.")
         .def_prop_ro("grad", [](const tensor_wrapper &self) -> nb::object {
             std::lock_guard lock {get_global_mutex()};
             mag_tensor_t *grad = nullptr;
@@ -119,17 +119,17 @@ namespace mag::bindings {
             throw_if_error(mag_tensor_grad(&err, *self, &grad), err);
             if (!grad) return nb::none();
             return nb::cast(tensor_wrapper {grad});
-        })
+        }, "Gradient accumulated for this tensor (None if not computed).")
         .def("backward", [](const tensor_wrapper &self) -> void {
             std::lock_guard lock {get_global_mutex()};
             mag_error_t err {};
             throw_if_error(mag_tensor_backward(&err, *self), err);
-        })
+        }, "Compute gradients for all tensors that contributed to this one.")
         .def("zero_grad", [](const tensor_wrapper &self) -> void {
             std::lock_guard lock {get_global_mutex()};
             mag_error_t err {};
             throw_if_error(mag_tensor_zero_grad(&err, *self), err);
-        })
+        }, "Set stored gradient to zero.")
         .def("item", [](const tensor_wrapper &self) -> nb::object {
             std::lock_guard lock {get_global_mutex()};
             if (mag_tensor_numel(*self) != 1)
@@ -146,11 +146,11 @@ namespace mag::bindings {
                 return nb::int_{v};
             }
             throw nb::type_error("Unsupported scalar type for item()");
-        })
+        }, "Return the value of a single-element tensor as a Python scalar.")
         .def("detach", [](const tensor_wrapper &self) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             return tensor_wrapper{mag_tensor_detach(*self)};
-        })
+        }, "Return a new tensor detached from the autodiff graph.")
         .def("tolist", [](const tensor_wrapper &self) -> nb::object {
             std::lock_guard lock {get_global_mutex()};
             if (!mag_tensor_numel(*self)) return nb::list();
@@ -198,7 +198,7 @@ namespace mag::bindings {
                 case CastedTypeFamily::Bool: result = build_list_recursive<uint8_t, nb::bool_>(static_cast<const uint8_t *>(ptr), shape, strides.data(), rank, 0, 0); break;
             }
             return result;
-        });
+        }, "Convert tensor to a nested Python list (CPU only).");
     }
 
     extern void init_tensor_special_methods(nb::class_<tensor_wrapper> &cls);
@@ -206,7 +206,9 @@ namespace mag::bindings {
     extern void init_tensor_class_operators(nb::class_<tensor_wrapper> &cls);
 
     void init_bindings_tensor(nb::module_ &m) {
-        auto cls = nb::class_<tensor_wrapper>{m, "Tensor"};
+        auto cls = nb::class_<tensor_wrapper>{m, "Tensor",
+            "A multi-dimensional array with for automatic differentiation."
+            "Supports CPU, CUDA and custom backends, dtypes, and in-place or out-of-place ops."};
         init_tensor_class_base(cls);
         init_tensor_special_methods(cls);
         init_tensor_class_factories(cls);

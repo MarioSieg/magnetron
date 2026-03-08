@@ -198,7 +198,7 @@ class GPT2(nn.Module):
     @no_grad()
     def generate(self, prompt: str, max_tokens: int, temp: float = 1.0, top_k: int | None = None) -> str:
         tokens = encode(prompt)
-        idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=dtype.int64)[None, ...]
+        idx = Tensor(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=dtype.int64)[None, ...]
         logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
             logits = logits[:, -1, :] / temp
@@ -208,7 +208,7 @@ class GPT2(nn.Module):
             probs = logits.softmax(dim=-1)
             next_id = probs.multinomial(num_samples=1).item()
             tokens.append(next_id)
-            idx = Tensor.of([next_id], dtype=dtype.int64)[None, ...]
+            idx = Tensor([next_id], dtype=dtype.int64)[None, ...]
             logits, kv = self(idx, prev_kv=kv)
         return decode(tokens)
 
@@ -218,7 +218,7 @@ class GPT2(nn.Module):
         tokens = encode(prompt)
         dec = codecs.getincrementaldecoder('utf-8')()
         count = 0
-        idx = Tensor.of(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=dtype.int64)[None, ...]
+        idx = Tensor(tokens[-self.config.block_size :] if len(tokens) > self.config.block_size else tokens, dtype=dtype.int64)[None, ...]
         logits, kv = self(idx, prev_kv=None)
         for _ in range(max_tokens):
             logits = logits[:, -1, :] / temp
@@ -232,7 +232,7 @@ class GPT2(nn.Module):
             delta = dec.decode(tok.decode_single_token_bytes(next_id))
             if delta:
                 yield delta
-            idx = Tensor.of([next_id], dtype=dtype.int64)[None, ...]
+            idx = Tensor([next_id], dtype=dtype.int64)[None, ...]
             logits, kv = self(idx, prev_kv=kv)
         tail = dec.decode(b'', final=True)
         if tail:

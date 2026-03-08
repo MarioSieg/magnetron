@@ -89,7 +89,7 @@ namespace mag::bindings {
            if (mag_tensor_rank(*self) == 0)
                throw nb::value_error("Tensor must have at least one dimension to use len()");
            return *mag_tensor_shape_ptr(*self);
-       })
+       }, "Length of the first dimension.")
        .def("__str__", [](const tensor_wrapper &self) -> nb::str {
            std::lock_guard lock {get_global_mutex()};
            const char *cstr = mag_tensor_to_string(*self, 3, 3, 1000);
@@ -97,7 +97,7 @@ namespace mag::bindings {
            on_scope_exit defer_free {[cstr] { mag_tensor_to_string_free_data(cstr); }};
            auto str = nb::str{cstr};
            return str;
-       })
+       }, "Short string representation.")
        .def("__repr__", [](const tensor_wrapper &self) -> nb::str {
            std::lock_guard lock {get_global_mutex()};
            const char *cstr = mag_tensor_to_string(*self, 3, 3, 1000);
@@ -105,7 +105,7 @@ namespace mag::bindings {
            on_scope_exit defer_free {[cstr] { mag_tensor_to_string_free_data(cstr); }};
            auto str = nb::str {cstr};
            return str;
-       })
+       }, "Full repr (shape, dtype, values).")
        .def("__bool__", [](const tensor_wrapper &self) -> bool {
             std::lock_guard lock {get_global_mutex()};
             if (mag_tensor_numel(*self) != 1)
@@ -117,7 +117,7 @@ namespace mag::bindings {
             if (mag_scalar_is_i64(s)) return mag_scalar_as_i64(s) != 0;
             if (mag_scalar_is_u64(s)) return mag_scalar_as_u64(s) != 0;
             throw nb::type_error("Unsupported scalar type for __bool__()");
-        })
+        }, "True if single element is non-zero (only for 0-dim or 1-element tensors).")
        .def("__getitem__", [](const tensor_wrapper &self, nb::object index) -> tensor_wrapper {
            std::lock_guard lock {get_global_mutex()};
             nb::tuple idxs_in = nb::isinstance<nb::tuple>(index) ? nb::cast<nb::tuple>(index) : nb::make_tuple(index);
@@ -180,6 +180,6 @@ namespace mag::bindings {
                 } else throw nb::type_error("Invalid index component type");
             }
             return curr;
-        });
+        }, "Index with int, slice, ellipsis, or boolean/int index tensor. Supports NumPy-style indexing.");
     }
 }

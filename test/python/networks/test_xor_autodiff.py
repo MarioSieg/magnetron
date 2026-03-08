@@ -11,8 +11,8 @@ def test_xor_network():
     criterion = nn.MSELoss()
 
     # Data
-    x = mag.Tensor.of([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=mag.float32)
-    y = mag.Tensor.of([[0], [1], [1], [0]], dtype=mag.float32)
+    x = mag.Tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=mag.float32)
+    y = mag.Tensor([[0], [1], [1], [0]], dtype=mag.float32)
 
     # Train 2000 epochs
     for epoch in range(2000):

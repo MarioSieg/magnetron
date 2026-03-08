@@ -16,8 +16,8 @@ EPOCHS: int = 2000
 LR: float = 1e-1
 
 # Define the XOR input and output data
-x = Tensor.of([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
-y = Tensor.of([[0.0], [1.0], [1.0], [0.0]])
+x = Tensor([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
+y = Tensor([[0.0], [1.0], [1.0], [0.0]])
 
 # Create the model, loss function, and optimizer
 model = nn.Sequential(nn.Linear(2, 2), nn.Tanh(), nn.Linear(2, 1), nn.Tanh())

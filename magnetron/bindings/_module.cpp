@@ -22,6 +22,8 @@ namespace mag::bindings {
 NB_MODULE(_magnetron_bindings, m) {
     std::lock_guard lock {mag::bindings::get_global_mutex()};
 
+    m.doc() = "A compact, bloat-free machine learning framework with CPU and CUDA acceleration.";
+
     // Export metadata
     std::array<char, 64> version_buf {};
     std::snprintf(version_buf.data(), version_buf.size(), "%d.%d.%d", mag_ver_major(MAG_VERSION), mag_ver_minor(MAG_VERSION), mag_ver_patch(MAG_VERSION));

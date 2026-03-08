@@ -67,7 +67,7 @@ namespace mag::bindings {
     };
 
     void init_bindings_snapshot(nb::module_ &m) {
-        nb::class_<snapshot_wrapper>(m, "Snapshot")
+        nb::class_<snapshot_wrapper>(m, "Snapshot", "Save/load tensors to a .mag file. Use Snapshot.write(path) or Snapshot.read(path), then put_tensor/get_tensor.")
         .def_static("write", [](const std::string &filename) {
             std::lock_guard lock {get_global_mutex()};
             if (!ends_with(filename, ".mag")) {
@@ -76,7 +76,7 @@ namespace mag::bindings {
                 throw nb::value_error(oss.str().c_str());
             }
             return snapshot_wrapper{filename, true};
-        })
+        }, "filename"_a, "Open a snapshot for writing. File must end with .mag.")
         .def_static("read", [](const std::string &filename) {
             std::lock_guard lock {get_global_mutex()};
             if (!ends_with(filename, ".mag")) {
@@ -85,7 +85,7 @@ namespace mag::bindings {
                 throw nb::value_error(oss.str().c_str());
             }
             return snapshot_wrapper{filename, false};
-        })
+        }, "filename"_a, "Open a snapshot for reading. File must end with .mag.")
         .def("__enter__", [](snapshot_wrapper &self) -> snapshot_wrapper& {
             return self;
         }, nb::rv_policy::reference_internal)
@@ -97,7 +97,7 @@ namespace mag::bindings {
         .def("close", [](snapshot_wrapper &self) {
             std::lock_guard lock {get_global_mutex()};
             self.close();
-        })
+        }, "Close the snapshot and flush (write mode) or release (read mode).")
         .def("put_tensor", [](snapshot_wrapper &self, const std::string &name, const tensor_wrapper &tensor) {
             std::lock_guard lock {get_global_mutex()};
             if (!self.is_write_mode()) throw std::runtime_error("Snapshot opened in read mode");
@@ -106,7 +106,7 @@ namespace mag::bindings {
                 oss << "Failed to store tensor: " << name;
                 throw std::runtime_error(oss.str());
             }
-        })
+        }, "name"_a, "tensor"_a, "Store a tensor under name (write mode only).")
         .def("get_tensor", [](snapshot_wrapper &self, const std::string &name) {
             std::lock_guard lock {get_global_mutex()};
             if (self.is_write_mode()) throw std::runtime_error("Snapshot opened in write mode");
@@ -117,7 +117,7 @@ namespace mag::bindings {
                 throw std::runtime_error(oss.str());
             }
             return tensor_wrapper{t};
-        })
+        }, "name"_a, "Load tensor by name (read mode only).")
         .def("tensor_keys", [](snapshot_wrapper &self) {
             std::lock_guard lock {get_global_mutex()};
             size_t n=0;
@@ -127,10 +127,10 @@ namespace mag::bindings {
             for (size_t i=0; i < n; ++i)
                 out.append(nb::str{keys[i]});
             return out;
-        })
+        }, "List of tensor names in the snapshot.")
         .def("print_info", [](snapshot_wrapper &self) {
             std::lock_guard lock {get_global_mutex()};
             mag_snapshot_print_info(*self);
-        });
+        }, "Print snapshot contents to stdout.");
     }
 }

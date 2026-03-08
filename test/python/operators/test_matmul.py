@@ -183,7 +183,7 @@ def test_matmul_simple_mlp() -> None:
 
     mag_data = []
     for x in truth_table:
-        x = Tensor.of([x])
+        x = Tensor([x])
 
         z1 = x @ W1 + b1
         a1 = z1.sigmoid()
