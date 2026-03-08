@@ -220,8 +220,7 @@ mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx) {
         snprintf(pathbuf, sizeof(pathbuf), "%s/%smagnetron_%s.%s", module_dir, MAG_DYLIB_PREFIX, mag_backend_type_to_str(type), MAG_DYLIB_EXT);
         mag_backend_module_t *mod = mag_backend_module_load(pathbuf, reg->ctx);
         if (mag_unlikely(!mod)) {
-            if (type != MAG_BACKEND_TYPE_CUSTOM) /* Custom backend is very optional, so don't print error for it */
-                mag_log_error("Failed to load backend module. Name: %s, Required: %s", mag_backend_type_to_str(type), mag_backend_type_is_required(type) ? "Yes" : "No");
+            mag_log_info("Backend module not available. Name: %s, Required: %s", mag_backend_type_to_str(type), mag_backend_type_is_required(type) ? "Yes" : "No");
             if (mag_backend_type_is_required(type)) goto error;
             continue;
         }

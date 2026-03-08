@@ -354,3 +354,27 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
     };
     return &infos[type];
 }
+
+bool mag_type_category_is_floating_point(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_FP;
+}
+
+bool mag_type_category_is_unsigned_integer(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_UINT;
+}
+
+bool mag_type_category_is_signed_integer(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_SINT;
+}
+
+bool mag_type_category_is_integer(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_INTEGER;
+}
+
+bool mag_type_category_is_integral(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_INTEGRAL;
+}
+
+bool mag_type_category_is_numeric(mag_dtype_t type) {
+    return mag_dtype_bit(type) & MAG_DTYPE_MASK_NUMERIC;
+}

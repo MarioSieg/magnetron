@@ -25,15 +25,25 @@ namespace mag::bindings {
             .def_prop_ro("size", [](const dtype_wrapper &self) noexcept -> size_t { return mag_type_trait(self.v)->size; })
             .def_prop_ro("alignment", [](const dtype_wrapper &self) noexcept -> size_t { return mag_type_trait(self.v)->alignment; })
             .def("__repr__", [](const dtype_wrapper &self) -> nb::str { return nb::str{"magnetron.dtype.{}"}.format(mag_type_trait(self.v)->name); })
+            .def("is_floating_point", [](const dtype_wrapper &self) noexcept -> bool { return mag_type_category_is_floating_point(self.v); })
+            .def("is_unsigned_integer", [](const dtype_wrapper &self) noexcept -> bool { return mag_type_category_is_unsigned_integer(self.v); })
+            .def("is_signed_integer", [](const dtype_wrapper &self) noexcept -> bool { return mag_type_category_is_signed_integer(self.v); })
+            .def("is_integer", [](const dtype_wrapper &self) noexcept -> bool { return mag_type_category_is_integer(self.v); })
+            .def("is_integral", [](const dtype_wrapper &self) noexcept -> bool { return mag_type_category_is_integral(self.v); })
+            .def("is_numeric", [](const dtype_wrapper &self) noexcept -> bool { return mag_type_category_is_numeric(self.v); })
             .def("__int__", [](const dtype_wrapper &self) noexcept -> int { return self.v; })
             .def("__hash__", [](const dtype_wrapper &self) noexcept -> size_t { return self.v; })
             .def("__eq__", [](const dtype_wrapper &a, const dtype_wrapper &b) noexcept -> bool { return a.v == b.v; });
 
         // Bind all dtypes
         static_assert(MAG_DTYPE_FLOAT32 == 0);
+        nb::set all_types {};
         for (int dt=MAG_DTYPE_FLOAT32; dt < MAG_DTYPE__NUM; ++dt) {
             auto dte = static_cast<mag_dtype_t>(dt);
-            dtype.attr(mag_type_trait(dte)->name) = nb::cast(dtype_wrapper{dte});
+            auto attr = dtype.attr(mag_type_trait(dte)->name);
+            attr = nb::cast(dtype_wrapper{dte});
+            all_types.add(attr);
         }
+        dtype.attr("all_types") = all_types;
     }
 }

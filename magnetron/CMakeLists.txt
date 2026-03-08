@@ -29,10 +29,10 @@ endif()
 # Optional Python bindings
 if (${MAGNETRON_BUILD_PYTHON_BINDINGS})
     add_subdirectory(bindings)
-    add_dependencies(_magnetron magnetron_runtime) # _magnetron is name of the Python bindings target
-    target_link_libraries(_magnetron PRIVATE magnetron_core)
+    add_dependencies(_magnetron_bindings magnetron_runtime) # _magnetron is name of the Python bindings target
+    target_link_libraries(_magnetron_bindings PRIVATE magnetron_core)
     if (APPLE)
-        set_target_properties(_magnetron PROPERTIES
+        set_target_properties(_magnetron_bindings PROPERTIES
             MACOSX_RPATH ON
             BUILD_WITH_INSTALL_RPATH ON
             INSTALL_RPATH "@loader_path"

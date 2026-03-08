@@ -145,12 +145,18 @@ mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fit in 1 byte */
 * @brief Contains metadata about a data type such as its name, size, and alignment.
 */
 typedef struct mag_type_traits_t {
-    const char *name;       /* Name of the data type. eg. bfloat16 */
-    const char *short_name; /* Short name of the data type. eg. bf16 */
-    size_t size;            /* Size of the data type in bytes. Must be a power of two. */
+    const char *name;           /* Name of the data type. eg. bfloat16 */
+    const char *short_name;     /* Short name of the data type. eg. bf16 */
+    size_t size;                /* Size of the data type in bytes. Must be a power of two. */
     size_t alignment;           /* CPU Alignment of the data type in bytes. Must be a power of two. */
 } mag_type_traits_t;
 extern MAG_EXPORT const mag_type_traits_t *mag_type_trait(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_floating_point(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_unsigned_integer(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_signed_integer(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_integer(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_integral(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_numeric(mag_dtype_t type);
 
 /**
  * Type tag discriminating between different scalar types.
