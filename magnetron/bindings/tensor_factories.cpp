@@ -11,9 +11,29 @@
 
 #include "prelude.hpp"
 
+#include <nanobind/ndarray.h>
+
 #include <core/mag_operator.h>
 
 namespace mag::bindings {
+
+    /** Map nanobind ndarray dtype to mag_dtype_t. Returns MAG_DTYPE__NUM if unsupported. */
+    template <typename... Args>
+    [[nodiscard]] static mag_dtype_t ndarray_dtype_to_mag_dtype(const nb::ndarray<Args...> &arr) {
+        if (arr.dtype() == nb::dtype<float>()) return MAG_DTYPE_FLOAT32;
+        /* MAG_DTYPE_FLOAT64 not yet in magnetron; float64 arrays rejected below */
+        if (arr.dtype() == nb::dtype<bool>()) return MAG_DTYPE_BOOLEAN;
+        if (arr.dtype() == nb::dtype<uint8_t>()) return MAG_DTYPE_UINT8;
+        if (arr.dtype() == nb::dtype<int8_t>()) return MAG_DTYPE_INT8;
+        if (arr.dtype() == nb::dtype<uint16_t>()) return MAG_DTYPE_UINT16;
+        if (arr.dtype() == nb::dtype<int16_t>()) return MAG_DTYPE_INT16;
+        if (arr.dtype() == nb::dtype<uint32_t>()) return MAG_DTYPE_UINT32;
+        if (arr.dtype() == nb::dtype<int32_t>()) return MAG_DTYPE_INT32;
+        if (arr.dtype() == nb::dtype<uint64_t>()) return MAG_DTYPE_UINT64;
+        if (arr.dtype() == nb::dtype<int64_t>()) return MAG_DTYPE_INT64;
+        return MAG_DTYPE__NUM;
+    }
+
     [[nodiscard]] static dtype_wrapper kw_dtype_or(nb::kwargs &kwargs, dtype_wrapper def = dtype_wrapper{MAG_DTYPE_FLOAT32}) {
         if (kwargs.contains("dtype"))
             return nb::cast<dtype_wrapper>(kwargs["dtype"]);
@@ -32,6 +52,7 @@ namespace mag::bindings {
         throw_if_error(mag_tensor_set_requires_grad(&err, t, true), err);
     }
 
+    // Create a tensor from a Python scalar, list or Numpy/Pytorch CPU tensor.
     [[nodiscard]] static tensor_wrapper tensor_from_data(nb::handle data_h, nb::kwargs &kwargs) {
         dtype_wrapper dt = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{MAG_DTYPE__NUM};
         bool requires_grad = kw_requires_grad_or(kwargs, false);
@@ -46,8 +67,41 @@ namespace mag::bindings {
             maybe_set_requires_grad(ctx, out, requires_grad);
             return tensor_wrapper{out};
         }
+        /* Accept NumPy, PyTorch, etc. when CPU and C-contiguous (nanobind may copy if not). */
+        try {
+            auto arr = nb::cast<nb::ndarray<nb::c_contig, nb::device::cpu>>(data_h);
+            mag_dtype_t elem_dtype = ndarray_dtype_to_mag_dtype(arr);
+            if (elem_dtype == MAG_DTYPE__NUM)
+                throw nb::type_error("Tensor() from array: unsupported dtype (use float32, bool, or int/uint 8/16/32/64)");
+            mag_dtype_t target_dtype = (dt.v != MAG_DTYPE__NUM ? dt.v : elem_dtype);
+            std::vector<int64_t> shape {};
+            shape.reserve(arr.ndim());
+            for (size_t i=0; i < arr.ndim(); ++i)
+                shape.emplace_back(static_cast<int64_t>(arr.shape(i)));
+            mag_context_t *ctx = get_ctx();
+            mag_tensor_t *raw = nullptr;
+            mag_error_t err {};
+            if (shape.empty()) throw_if_error(mag_empty_scalar(&err, &raw, ctx, elem_dtype), err);
+            else throw_if_error(mag_empty(&err, &raw, ctx, elem_dtype, static_cast<int64_t>(shape.size()), shape.data()), err);
+            maybe_set_requires_grad(ctx, raw, requires_grad);
+            on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
+            size_t numel = 1;
+            for (int64_t s : shape)
+                numel *= static_cast<size_t>(s);
+            size_t item_size = mag_type_trait(elem_dtype)->size;
+            throw_if_error(mag_copy_raw_(&err, raw, arr.data(), numel * item_size), err);
+            if (target_dtype == elem_dtype) {
+                mag_tensor_incref(raw);
+                return tensor_wrapper{raw};
+            }
+            mag_tensor_t *out = nullptr;
+            throw_if_error(mag_cast(&err, &out, raw, target_dtype), err);
+            return tensor_wrapper{out};
+        } catch (const nb::cast_error &) {
+            /* Not array-like - fall through to sequence path */
+        }
         if (!nb::isinstance<nb::sequence>(data_h))
-            throw nb::type_error("Tensor() requires scalar or nested sequence");
+            throw nb::type_error("Tensor() requires scalar, array (NumPy/torch CPU contiguous), or nested sequence");
         std::vector<int64_t> shape {};
         std::vector<nb::handle> stack {};
         std::vector<int64_t> idx_stack {};
@@ -161,7 +215,7 @@ namespace mag::bindings {
                 new (self) tensor_wrapper {tensor_from_data(data_h, kwargs)};
             },
             "data"_a, "kwargs"_a,
-            "Create tensor from Python scalar or nested list. Kwargs: dtype, requires_grad."
+            "Create tensor from scalar, array (NumPy/PyTorch CPU contiguous), or nested list. Kwargs: dtype, requires_grad."
         );
         cls.attr("empty") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
