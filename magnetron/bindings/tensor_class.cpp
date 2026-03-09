@@ -130,6 +130,10 @@ namespace mag::bindings {
             mag_error_t err {};
             throw_if_error(mag_tensor_zero_grad(&err, *self), err);
         }, "Set stored gradient to zero.")
+        .def("_replace", [](tensor_wrapper *self, const tensor_wrapper &other) -> void {
+            std::lock_guard lock {get_global_mutex()};
+            *self = other;
+        }, "other"_a, "Replace this tensor's storage with another.")
         .def("item", [](const tensor_wrapper &self) -> nb::object {
             std::lock_guard lock {get_global_mutex()};
             if (mag_tensor_numel(*self) != 1)

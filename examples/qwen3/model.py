@@ -182,11 +182,11 @@ class Qwen3Model(nn.Module):
         with Snapshot.read(snapshot_file) as snap:
             for name, param in self.named_parameters():
                 tensor = snap.get_tensor(name)
-                if tuple(tensor.shape) != tuple(param.x.shape):
+                if tuple(tensor.shape) != tuple(param.shape):
                     raise RuntimeError(f'Shape mismatch for {name}: {tensor.shape} != {param.shape}')
-                if tensor.dtype != param.x.dtype:
-                    raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.x.dtype}')
-                param.x = tensor
+                if tensor.dtype != param.dtype:
+                    raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.dtype}')
+                param.data = tensor
 
     @staticmethod
     def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen3Model':

@@ -210,12 +210,22 @@ namespace mag::bindings {
 
     void init_tensor_class_factories(nb::class_<tensor_wrapper> &cls) {
         cls.def("__init__",
+            [](tensor_wrapper *self, const tensor_wrapper &other) {
+                std::lock_guard lock {get_global_mutex()};
+                new (self) tensor_wrapper(other);
+                mag_error_t err {};
+                throw_if_error(mag_tensor_set_requires_grad(&err, **self, true), err);
+            },
+            "other"_a,
+            "Wrap an existing tensor (e.g. for Parameter). Sets requires_grad=True."
+        );
+        cls.def("__init__",
             [](tensor_wrapper *self, nb::handle data_h, nb::kwargs kwargs) {
                 std::lock_guard lock {get_global_mutex()};
                 new (self) tensor_wrapper {tensor_from_data(data_h, kwargs)};
             },
             "data"_a, "kwargs"_a,
-            "Create tensor from scalar, array (NumPy/PyTorch CPU contiguous), or nested list. Kwargs: dtype, requires_grad."
+            "Create tensor from scalar, array (NumPy/PyTorch), or nested list. Kwargs: dtype, requires_grad."
         );
         cls.attr("empty") = nb::cpp_function(
             [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
@@ -228,7 +238,7 @@ namespace mag::bindings {
                     requires_grad = nb::cast<bool>(kwargs["requires_grad"]);
                 std::vector<int64_t> shape {};
                 if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
-                    nb::sequence seq = nb::cast<nb::sequence>(args[0]);
+                    auto seq = nb::cast<nb::sequence>(args[0]);
                     shape.reserve(nb::len(seq));
                     for (auto &&h : seq)
                         shape.emplace_back(nb::cast<int64_t>(h));

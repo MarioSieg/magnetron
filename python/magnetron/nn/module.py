@@ -15,26 +15,20 @@ from collections.abc import Mapping
 from .. import Tensor, dtype
 
 
-class Parameter:
+class Parameter(Tensor):
     """A tensor that is a learnable parameter of a model."""
 
     def __init__(self, x: Tensor) -> None:
-        x.requires_grad = True
-        self.x = x
+        Tensor.__init__(self, x)
+        self.requires_grad = True
 
     @property
     def data(self) -> Tensor:
-        return self.x
+        return self
 
     @data.setter
     def data(self, v: Tensor) -> None:
-        self.x = v
-
-    def __str__(self) -> str:
-        return self.x.__str__()
-
-    def __repr__(self) -> str:
-        return self.x.__repr__()
+        self._replace(v)
 
 
 class Module:
@@ -123,7 +117,7 @@ class Module:
     def _state_items(self, prefix: str = '') -> Iterator[tuple[str, Tensor]]:
         for name, attr in self.__dict__.items():
             if isinstance(attr, Parameter):
-                yield f'{prefix}{name}', attr.x
+                yield f'{prefix}{name}', attr
             elif isinstance(attr, Tensor):
                 yield f'{prefix}{name}', attr
             elif isinstance(attr, Module):
@@ -216,13 +210,13 @@ class Module:
     def eval(self) -> Module:
         """Set module to evaluation mode (disable gradients)."""
         for p in self.parameters():
-            p.x.requires_grad = False
+            p.requires_grad = False
         return self
 
     def train(self) -> Module:
         """Set module to training mode (enable gradients)."""
         for p in self.parameters():
-            p.x.requires_grad = True
+            p.requires_grad = True
         return self
 
     def forward(self, *args: Tensor, **kwargs: dict) -> Tensor:
@@ -260,11 +254,10 @@ class Module:
 
     def cast(self, dt: DataType) -> Module:
         for p in self.parameters():
-            tensor = p.x
-            requires_grad = p.x.requires_grad
-            casted = tensor.cast(dt)
+            requires_grad = p.requires_grad
+            casted = p.cast(dt)
             casted.requires_grad = requires_grad
-            p.x = casted
+            p._replace(casted)
         seen: set[int] = set()
         for m in self.modules():
             for name in getattr(m, '_buffer_names', set()):

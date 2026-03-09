@@ -48,7 +48,7 @@ class Optimizer(ABC):
     @no_grad()
     def zero_grad(self) -> None:
         for param in self.params:
-            param.x.zero_grad()
+            param.zero_grad()
 
 
 class SGD(Optimizer):
@@ -61,7 +61,7 @@ class SGD(Optimizer):
     @no_grad()
     def step(self) -> None:
         for param in self.params:
-            param.x -= param.x.grad * self.lr
+            param -= param.grad * self.lr
 
 
 class Adam(Optimizer):
@@ -78,18 +78,18 @@ class Adam(Optimizer):
         self.betas = betas
         self.eps = eps
         self.t = 0
-        self.m = [Tensor.zeros(p.x.shape) for p in self.params]
-        self.v = [Tensor.zeros(p.x.shape) for p in self.params]
+        self.m = [Tensor.zeros(p.shape) for p in self.params]
+        self.v = [Tensor.zeros(p.shape) for p in self.params]
 
     @no_grad()
     def step(self) -> None:
         self.t += 1
         for i, p in enumerate(self.params):
-            grad = p.x.grad
+            grad = p.grad
             if grad is None:
                 continue
             self.m[i] = self.betas[0] * self.m[i] + (1.0 - self.betas[0]) * grad
             self.v[i] = self.betas[1] * self.v[i] + (1.0 - self.betas[1]) * grad.sqr_()
             m_hat: Tensor = self.m[i] / (1.0 - self.betas[0] ** self.t)
             v_hat: Tensor = self.v[i] / (1.0 - self.betas[1] ** self.t)
-            p.x -= self.lr * m_hat / (v_hat.sqrt_() + self.eps)
+            p -= self.lr * m_hat / (v_hat.sqrt_() + self.eps)

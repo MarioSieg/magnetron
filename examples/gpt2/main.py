@@ -170,9 +170,9 @@ class GPT2(nn.Module):
         return model
 
     def get_num_params(self, non_embedding: bool = False) -> int:
-        n_params = sum(p.x.numel for p in self.parameters())
+        n_params = sum(p.numel for p in self.parameters())
         if non_embedding:
-            n_params -= self.transformer.wpe.weight.x.numel
+            n_params -= self.transformer.wpe.weight.numel
         return n_params
 
     def forward(self, idx: Tensor, prev_kv: list[tuple[Tensor, Tensor]] | None = None) -> tuple[Tensor, list[tuple[Tensor, Tensor]] | None]:
