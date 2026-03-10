@@ -85,10 +85,11 @@ mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t
     mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(numel, dts, &numbytes), "Total size overflowed: numel = %" PRIi64 ", dtype size = %" PRIi64, numel, dts);
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
     mag_device_t *dvc = ctx->active_device;
-    ctx->telemetry.storage_bytes_allocated += numbytes;
     if (!storage) {
-        void (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;
-        (*allocator)(dvc, &tensor->storage, numbytes, type);
+        mag_status_t (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;
+        mag_try_or((*allocator)(dvc, &tensor->storage, numbytes, type), {
+            mag_tensor_free_header(tensor);
+        });
     } else {
         mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->device == dvc, "Provided storage device mismatch: tensor device=%s storage device=%s", mag_backend_type_to_str(dvc->id.type), mag_backend_type_to_str(storage->device->id.type));
         mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->dtype == type, "Provided storage dtype mismatch: tensor dtype=%s storage dtype=%s", mag_type_trait(type)->name, mag_type_trait(storage->dtype)->name);
@@ -97,6 +98,7 @@ mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t
         tensor->storage = storage;
         mag_rc_incref(storage); /* Retain provided storage */
     }
+    ctx->telemetry.storage_bytes_allocated += numbytes;
     for (int i=0; i < MAG_MAX_DIMS; ++i)  {
         tensor->coords.shape[i] = shape && i < rank ? shape[i] : 1;
         tensor->coords.strides[i] = 1;

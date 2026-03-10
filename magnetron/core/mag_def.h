@@ -548,7 +548,7 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
         if (mag_iserr(status____)) return status____; \
     } while (0)
 
-#define mag_try_do(call, cleanup) \
+#define mag_try_or(call, cleanup) \
     do { \
         mag_status_t status____ = (call); \
         if (mag_iserr(status____)) { \

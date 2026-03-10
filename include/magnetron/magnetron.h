@@ -55,24 +55,31 @@ extern MAG_EXPORT mag_log_level_t mag_log_level(void); /* Get current global log
 /**
  * Status return codes for magnetron library functions.
  */
+#define mag_statusdef(_) \
+    _(MAG_STATUS_OK, "OK") \
+    _(MAG_STATUS_ERR_PENDING, "Operation already pending") \
+    _(MAG_STATUS_ERR_THREAD_MISMATCH, "Thread mismatch") \
+    _(MAG_STATUS_ERR_INVALID_RANK, "Invalid tensor rank") \
+    _(MAG_STATUS_ERR_INVALID_DIM, "Invalid dimension") \
+    _(MAG_STATUS_ERR_DIM_OVERFLOW, "Dimension overflow") \
+    _(MAG_STATUS_ERR_INVALID_INDEX, "Invalid index") \
+    _(MAG_STATUS_ERR_OUT_OF_BOUNDS, "Index out of bounds") \
+    _(MAG_STATUS_ERR_INVALID_PARAM, "Invalid parameter") \
+    _(MAG_STATUS_ERR_STRIDE_SOLVER_FAILED, "Stride solver failed") \
+    _(MAG_STATUS_ERR_BROADCAST_IMPOSSIBLE, "Broadcast not possible") \
+    _(MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE, "Operator cannot be applied to given tensors") \
+    _(MAG_STATUS_ERR_INVALID_STATE, "Invalid state") \
+    _(MAG_STATUS_ERR_IMAGE_ERROR, "Image processing error") \
+    _(MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "Memory allocation failed") \
+    _(MAG_STATUS_ERR_UNKNOWN, "Unknown error")
+
 typedef enum mag_status_t {
-    MAG_STATUS_OK = 0,
-    MAG_STATUS_ERR_PENDING,
-    MAG_STATUS_ERR_THREAD_MISMATCH,
-    MAG_STATUS_ERR_INVALID_RANK,
-    MAG_STATUS_ERR_INVALID_DIM,
-    MAG_STATUS_ERR_DIM_OVERFLOW,
-    MAG_STATUS_ERR_INVALID_INDEX,
-    MAG_STATUS_ERR_OUT_OF_BOUNDS,
-    MAG_STATUS_ERR_INVALID_PARAM,
-    MAG_STATUS_ERR_STRIDE_SOLVER_FAILED,
-    MAG_STATUS_ERR_BROADCAST_IMPOSSIBLE,
-    MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE,
-    MAG_STATUS_ERR_INVALID_STATE,
-    MAG_STATUS_ERR_IMAGE_ERROR,
-    MAG_STATUS_ERR_UNKNOWN
+#define _(code, msg) code,
+    mag_statusdef(_)
+#undef _
 } mag_status_t;
 extern MAG_EXPORT const char *mag_status_get_name(mag_status_t op);
+extern MAG_EXPORT const char *mag_status_get_message(mag_status_t op);
 
 /**
  * @brief Error structure for magnetron library functions.
