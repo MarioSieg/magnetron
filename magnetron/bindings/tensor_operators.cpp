@@ -11,6 +11,8 @@
 
 #include "prelude.hpp"
 
+#include <algorithm>
+
 #define bind_unary_pair(cls, name, doc) \
     cls \
         .def(#name, [](const tensor_wrapper &self) -> tensor_wrapper { \
@@ -194,11 +196,9 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 std::vector<int64_t> dims = parse_i64_dims(dims_args, "reshape");
-                int neg_ones = 0;
-                for (int64_t d : dims) {
-                    if (d == -1) ++neg_ones;
-                    else if (d == 0) throw nb::value_error("reshape: dimension 0 is not allowed");
-                }
+                if (std::find(dims.begin(), dims.end(), 0) != dims.end())
+                    throw nb::value_error("reshape: dimension 0 is not allowed");
+                int neg_ones = static_cast<int>(std::count(dims.begin(), dims.end(), -1));
                 if (neg_ones > 1) throw nb::value_error("reshape: only one -1 is allowed");
                 mag_tensor_t *out = nullptr;
                 mag_error_t err {};

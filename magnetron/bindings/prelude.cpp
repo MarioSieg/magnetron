@@ -11,6 +11,8 @@
 
 #include "prelude.hpp"
 
+#include <algorithm>
+
 namespace mag::bindings {
     // Helper to convert a C array of int64_t to a Python tuple of ints.
     // Nanobind doesn't have a built-in way to do this and would require allocating a list and then conerting it to a tuple, which sucks.
@@ -80,9 +82,8 @@ namespace mag::bindings {
             auto msg = "Invalid number of dimensions, must be <= " + std::to_string(MAG_MAX_DIMS);
             throw nb::value_error(msg.c_str());
         }
-        for (auto d : shape) {
-            if (d <= 0) throw nb::value_error("Invalid dimension size (must be > 0)");
-        }
+        if (std::any_of(shape.begin(), shape.end(), [](int64_t d) { return d <= 0; }))
+            throw nb::value_error("Invalid dimension size (must be > 0)");
     }
 
     static void flatten_i64_handle(nb::handle h, std::vector<int64_t> &out) {

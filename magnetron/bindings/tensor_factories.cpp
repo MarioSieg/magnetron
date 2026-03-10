@@ -11,6 +11,7 @@
 
 #include "prelude.hpp"
 
+#include <algorithm>
 #include <numeric>
 
 #include <nanobind/ndarray.h>
@@ -200,24 +201,20 @@ namespace mag::bindings {
         on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
         size_t n = flat_h.size();
         if (kind == Kind::Float) {
-            std::vector<float> buf {};
-            buf.reserve(n);
-            for (auto &&h : flat_h) buf.emplace_back(static_cast<float>(nb::cast<double>(h)));
+            std::vector<float> buf(n);
+            std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::handle &h) { return static_cast<float>(nb::cast<double>(h)); });
             throw_if_error(mag_copy_raw_(&err, raw, buf.data(), buf.size() * sizeof(float)), err);
         } else if (kind == Kind::SInt) {
-            std::vector<int64_t> buf {};
-            buf.reserve(n);
-            for (auto &&h : flat_h) buf.emplace_back(nb::cast<int64_t>(h));
+            std::vector<int64_t> buf(n);
+            std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::handle &h) { return nb::cast<int64_t>(h); });
             throw_if_error(mag_copy_raw_(&err, raw, buf.data(), buf.size() * sizeof(int64_t)), err);
         } else if (kind == Kind::UInt) {
-            std::vector<uint64_t> buf {};
-            buf.reserve(n);
-            for (auto &&h : flat_h) buf.emplace_back(nb::cast<uint64_t>(h));
+            std::vector<uint64_t> buf(n);
+            std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::handle &h) { return nb::cast<uint64_t>(h); });
             throw_if_error(mag_copy_raw_(&err, raw, buf.data(), buf.size() * sizeof(uint64_t)), err);
         } else {
-            std::vector<uint8_t> buf {};
-            buf.reserve(n);
-            for (auto &&h : flat_h) buf.emplace_back(static_cast<uint8_t>(nb::cast<bool>(h) ? 1 : 0));
+            std::vector<uint8_t> buf(n);
+            std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::handle &h) { return static_cast<uint8_t>(nb::cast<bool>(h) ? 1 : 0); });
             throw_if_error(mag_copy_raw_(&err, raw, buf.data(), buf.size() * sizeof(uint8_t)), err);
         }
         if (wide == dt.v) {
@@ -560,7 +557,7 @@ namespace mag::bindings {
                 uint32_t rw = 0, rh = 0;
                 if (kwargs.contains("channels"))
                     channels = nb::cast<std::string>(kwargs["channels"]);
-                for (auto &c : channels) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                std::transform(channels.begin(), channels.end(), channels.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
                 if (channels != "GRAY" && channels != "GRAY_ALPHA" && channels != "RGB" && channels != "RGBA") {
                     std::ostringstream oss;
                     oss << "Invalid channels: " << channels << ". Must be one of GRAY, GRAY_ALPHA, RGB, RGBA.";
