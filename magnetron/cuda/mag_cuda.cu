@@ -62,7 +62,7 @@ namespace mag {
 
     static void op_nop(const mag_command_t *) { }
 
-    static void submit(mag_device_t *dvc, const mag_command_t *cmd) {
+    static mag_status_t submit(mag_device_t *dvc, const mag_command_t *cmd) {
         static constexpr kernel_fn *dispatch_table[] = {
             [MAG_OP_NOP] = &op_nop,
             [MAG_OP_FILL] = &fill_op_fill,
@@ -164,9 +164,10 @@ namespace mag {
         kernel_fn *kern = dispatch_table[cmd->op];
         mag_assert(kern != nullptr, "Operator %s not implemented in CUDA backend", mag_op_traits(cmd->op)->mnemonic);
         (*kern)(cmd);
+        return MAG_STATUS_OK;
     }
 
-    static void alloc_storage_buffer(mag_device_t *device, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
+    static mag_status_t alloc_storage_buffer(mag_device_t *device, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
         mag_context_t *ctx = device->ctx;
         uintptr_t base;
         mag_cuda_check(cudaMalloc(reinterpret_cast<void **>(&base), size));
@@ -189,6 +190,7 @@ namespace mag {
             mag_cuda_check(cudaFree(reinterpret_cast<void *>(buffer->base)));
             mag_slab_free(&ctx->storage_slab, buffer);
         });
+        return MAG_STATUS_OK;
     }
 
     class physical_device final : public mag_device_t {

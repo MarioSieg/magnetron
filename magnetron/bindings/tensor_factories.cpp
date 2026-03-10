@@ -11,16 +11,39 @@
 
 #include "prelude.hpp"
 
+#include <numeric>
+
 #include <nanobind/ndarray.h>
 
 #include <core/mag_operator.h>
+#include <core/mag_bfloat16.h>
+
+namespace nanobind::detail {
+    template <> struct dtype_traits<mag_float16_t> {
+        static constexpr dlpack::dtype value {
+            static_cast<uint8_t>(dlpack::dtype_code::Float),
+            16,
+            1
+        };
+        static constexpr auto name = const_name("float16");
+    };
+    template <> struct dtype_traits<mag_bfloat16_t> {
+        static constexpr dlpack::dtype value {
+            static_cast<uint8_t>(dlpack::dtype_code::Bfloat),
+            16,
+            1
+        };
+        static constexpr auto name = const_name("bfloat16");
+    };
+}
 
 namespace mag::bindings {
-
     /** Map nanobind ndarray dtype to mag_dtype_t. Returns MAG_DTYPE__NUM if unsupported. */
     template <typename... Args>
     [[nodiscard]] static mag_dtype_t ndarray_dtype_to_mag_dtype(const nb::ndarray<Args...> &arr) {
         if (arr.dtype() == nb::dtype<float>()) return MAG_DTYPE_FLOAT32;
+        if (arr.dtype() == nb::dtype<mag_float16_t>()) return MAG_DTYPE_FLOAT16;
+        if (arr.dtype() == nb::dtype<mag_bfloat16_t>()) return MAG_DTYPE_BFLOAT16;
         /* MAG_DTYPE_FLOAT64 not yet in magnetron; float64 arrays rejected below */
         if (arr.dtype() == nb::dtype<bool>()) return MAG_DTYPE_BOOLEAN;
         if (arr.dtype() == nb::dtype<uint8_t>()) return MAG_DTYPE_UINT8;
@@ -72,8 +95,8 @@ namespace mag::bindings {
             auto arr = nb::cast<nb::ndarray<nb::c_contig, nb::device::cpu>>(data_h);
             mag_dtype_t elem_dtype = ndarray_dtype_to_mag_dtype(arr);
             if (elem_dtype == MAG_DTYPE__NUM)
-                throw nb::type_error("Tensor() from array: unsupported dtype (use float32, bool, or int/uint 8/16/32/64)");
-            mag_dtype_t target_dtype = (dt.v != MAG_DTYPE__NUM ? dt.v : elem_dtype);
+                throw nb::type_error("Tensor() from array: unsupported dtype. Supported: float16, bfloat16, float32, bool, uint8, int8, uint16, int16, uint32, int32, uint64, int64");
+            mag_dtype_t target_dtype = dt.v != MAG_DTYPE__NUM ? dt.v : elem_dtype;
             std::vector<int64_t> shape {};
             shape.reserve(arr.ndim());
             for (size_t i=0; i < arr.ndim(); ++i)
@@ -85,9 +108,7 @@ namespace mag::bindings {
             else throw_if_error(mag_empty(&err, &raw, ctx, elem_dtype, static_cast<int64_t>(shape.size()), shape.data()), err);
             maybe_set_requires_grad(ctx, raw, requires_grad);
             on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
-            size_t numel = 1;
-            for (int64_t s : shape)
-                numel *= static_cast<size_t>(s);
+            size_t numel = std::accumulate(shape.begin(), shape.end(), static_cast<size_t>(1), std::multiplies<>());
             size_t item_size = mag_type_trait(elem_dtype)->size;
             throw_if_error(mag_copy_raw_(&err, raw, arr.data(), numel * item_size), err);
             if (target_dtype == elem_dtype) {
