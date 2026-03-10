@@ -24,6 +24,8 @@ namespace mag::bindings {
             .def_prop_ro("short_name", [](const dtype_wrapper &self) noexcept -> const char * { return mag_type_trait(self.v)->short_name; }, "Short name for display.")
             .def_prop_ro("size", [](const dtype_wrapper &self) noexcept -> size_t { return mag_type_trait(self.v)->size; }, "Size in bytes.")
             .def_prop_ro("alignment", [](const dtype_wrapper &self) noexcept -> size_t { return mag_type_trait(self.v)->alignment; }, "Alignment in bytes.")
+            .def_prop_ro("min", [](const dtype_wrapper &self) noexcept -> nb::object { return py_scalar_from_mag_scalar(mag_type_trait(self.v)->min_val); }, "Minimum representable value for this dtype.")
+            .def_prop_ro("max", [](const dtype_wrapper &self) noexcept -> nb::object { return py_scalar_from_mag_scalar(mag_type_trait(self.v)->max_val); }, "Maximum representable value for this dtype.")
             .def("__repr__", [](const dtype_wrapper &self) -> nb::str { return nb::str{"magnetron.dtype.{}"}.format(mag_type_trait(self.v)->name); })
             .def("is_floating_point", [](const dtype_wrapper &self) noexcept -> bool { return mag_type_category_is_floating_point(self.v); }, "True for float types.")
             .def("is_unsigned_integer", [](const dtype_wrapper &self) noexcept -> bool { return mag_type_category_is_unsigned_integer(self.v); }, "True for unsigned int types.")

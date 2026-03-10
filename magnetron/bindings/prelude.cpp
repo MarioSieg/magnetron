@@ -151,6 +151,15 @@ namespace mag::bindings {
         throw nb::type_error("Expected scalar (bool|int|float)");
     }
 
+    nb::object py_scalar_from_mag_scalar(const mag_scalar_t &scalar) {
+        switch (scalar.type) {
+            case MAG_SCALAR_TYPE_I64: return nb::cast<int64_t>(mag_scalar_as_i64(scalar));
+            case MAG_SCALAR_TYPE_U64: return nb::cast<uint64_t>(mag_scalar_as_u64(scalar));
+            case MAG_SCALAR_TYPE_F64: return nb::cast<double>(mag_scalar_as_f64(scalar));
+            default: throw nb::type_error("Unsupported scalar type");
+        }
+    }
+
     dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h) {
         if (nb::isinstance<nb::bool_>(h)) return dtype_wrapper{MAG_DTYPE_BOOLEAN};
         if (nb::isinstance<nb::int_>(h)) return dtype_wrapper{MAG_DTYPE_INT64};

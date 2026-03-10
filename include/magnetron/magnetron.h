@@ -149,25 +149,8 @@ typedef enum mag_dtype_t {
 mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fit in 1 byte */
 
 /**
-* @brief Contains metadata about a data type such as its name, size, and alignment.
+* Type tag discriminating between different scalar types.
 */
-typedef struct mag_type_traits_t {
-    const char *name;           /* Name of the data type. eg. bfloat16 */
-    const char *short_name;     /* Short name of the data type. eg. bf16 */
-    size_t size;                /* Size of the data type in bytes. Must be a power of two. */
-    size_t alignment;           /* CPU Alignment of the data type in bytes. Must be a power of two. */
-} mag_type_traits_t;
-extern MAG_EXPORT const mag_type_traits_t *mag_type_trait(mag_dtype_t type);
-extern MAG_EXPORT bool mag_type_category_is_floating_point(mag_dtype_t type);
-extern MAG_EXPORT bool mag_type_category_is_unsigned_integer(mag_dtype_t type);
-extern MAG_EXPORT bool mag_type_category_is_signed_integer(mag_dtype_t type);
-extern MAG_EXPORT bool mag_type_category_is_integer(mag_dtype_t type);
-extern MAG_EXPORT bool mag_type_category_is_integral(mag_dtype_t type);
-extern MAG_EXPORT bool mag_type_category_is_numeric(mag_dtype_t type);
-
-/**
- * Type tag discriminating between different scalar types.
- */
 typedef enum mag_scalar_type_t {
     MAG_SCALAR_TYPE_F64,
     MAG_SCALAR_TYPE_I64,
@@ -201,6 +184,25 @@ extern MAG_EXPORT bool mag_scalar_is_u64(mag_scalar_t s);
 extern MAG_EXPORT double mag_scalar_as_f64(mag_scalar_t s);
 extern MAG_EXPORT int64_t mag_scalar_as_i64(mag_scalar_t s);
 extern MAG_EXPORT uint64_t mag_scalar_as_u64(mag_scalar_t s);
+
+/**
+* @brief Contains metadata about a data type such as its name, size, and alignment.
+*/
+typedef struct mag_type_traits_t {
+    const char *name;           /* Name of the data type. eg. bfloat16 */
+    const char *short_name;     /* Short name of the data type. eg. bf16 */
+    size_t size;                /* Size of the data type in bytes. Must be a power of two. */
+    size_t alignment;           /* CPU Alignment of the data type in bytes. Must be a power of two. */
+    mag_scalar_t min_val;       /* Minimum finite value representable by this data type, as a scalar. For integer types, this is the smallest integer. For floating point types, this is the smallest normalized positive value. */
+    mag_scalar_t max_val;       /* Maximum finite value representable by this data type, as a scalar. For integer types, this is the largest integer. For floating point types, this is the largest finite value. */
+} mag_type_traits_t;
+extern MAG_EXPORT const mag_type_traits_t *mag_type_trait(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_floating_point(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_unsigned_integer(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_signed_integer(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_integer(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_integral(mag_dtype_t type);
+extern MAG_EXPORT bool mag_type_category_is_numeric(mag_dtype_t type);
 
 extern MAG_EXPORT mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape);
 extern MAG_EXPORT mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset);

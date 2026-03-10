@@ -108,6 +108,7 @@ namespace mag::bindings {
     [[nodiscard]] extern std::vector<int64_t> parse_i64_list_handle(nb::handle h, const char *what);
     [[nodiscard]] extern reduction_axes parse_reduction_axes(nb::handle dim_h);
     [[nodiscard]] extern mag_scalar_t scalar_from_py(nb::handle h);
+    [[nodiscard]] extern nb::object py_scalar_from_mag_scalar(const mag_scalar_t &scalar);
     [[nodiscard]] extern dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h);
     [[nodiscard]] extern std::string format_error_msg(const mag_error_t &err);
 
