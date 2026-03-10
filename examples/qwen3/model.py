@@ -72,6 +72,7 @@ def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Te
     sin = Tensor.cat([sin_half, sin_half], dim=-1).cast(dtype.bfloat16)
     return cos, sin
 
+
 def _apply_rope(q: Tensor, k: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: Tensor) -> tuple[Tensor, Tensor]:
     def _rot_half(x: Tensor) -> Tensor:
         half: int = x.shape[-1] >> 1
