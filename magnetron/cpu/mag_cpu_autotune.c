@@ -160,6 +160,12 @@ void mag_mm_autotune_block_params(const mag_matmul_block_tune_info_t *info, mag_
     } else if (info->elsize == 2 && W == 32) {
         KC_hi = 896;
         if (K >= 1024) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
+    } else if (info->elsize == 2 && W == 16) {
+        /* ARM64 NEON: larger KC to amortize pack, match AVX-512-style tuning for LLM shapes */
+        KC_hi = 1536;
+        if (K >= 512) kc = mag_clamp(kc + 192, KC_lo, KC_hi);
+        if (K >= 2048) kc = mag_clamp(kc + 192, KC_lo, KC_hi);
+        if (K >= 4096) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
     }
     kc = mag_clamp(kc, KC_lo, KC_hi);
     if (K >= 2048 && info->elsize != 2) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
@@ -178,6 +184,9 @@ void mag_mm_autotune_block_params(const mag_matmul_block_tune_info_t *info, mag_
     if (N >= 32768 && W == 64) NC_cap = 384;
     if (N >= 65536 && W == 64) NC_cap = 512;
     if (N >= 131072 && W == 64) NC_cap = 768;
+    if (N >= 32768 && W == 16) NC_cap = 256;
+    if (N >= 65536 && W == 16) NC_cap = 384;
+    if (N >= 131072 && W == 16) NC_cap = 512;
     if (NC > NC_cap) NC = mag_rd_down(NC_cap, NR);
     int64_t tic = (M + MC - 1)/MC;
     int64_t tjc = (N + NC - 1)/NC;

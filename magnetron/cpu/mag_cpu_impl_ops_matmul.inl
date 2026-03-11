@@ -703,17 +703,14 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
             bfloat16x8_t av = vld1q_bf16((const bfloat16_t *)(a + (k + (KI))*8)); \
             float32x4_t A0 = vcvt_f32_bf16(vget_low_bf16(av)); \
             float32x4_t A1 = vcvt_f32_bf16(vget_high_bf16(av)); \
-            float a0 = vgetq_lane_f32(A0, 0), a1 = vgetq_lane_f32(A0, 1), a2 = vgetq_lane_f32(A0, 2), a3 = vgetq_lane_f32(A0, 3); \
-            float a4 = vgetq_lane_f32(A1, 0), a5 = vgetq_lane_f32(A1, 1), a6 = vgetq_lane_f32(A1, 2), a7 = vgetq_lane_f32(A1, 3); \
-            float32x4_t s; \
-            s = vdupq_n_f32(a0); C[0][0] = vfmaq_f32(C[0][0], B0, s); C[0][1] = vfmaq_f32(C[0][1], B1, s); \
-            s = vdupq_n_f32(a1); C[1][0] = vfmaq_f32(C[1][0], B0, s); C[1][1] = vfmaq_f32(C[1][1], B1, s); \
-            s = vdupq_n_f32(a2); C[2][0] = vfmaq_f32(C[2][0], B0, s); C[2][1] = vfmaq_f32(C[2][1], B1, s); \
-            s = vdupq_n_f32(a3); C[3][0] = vfmaq_f32(C[3][0], B0, s); C[3][1] = vfmaq_f32(C[3][1], B1, s); \
-            s = vdupq_n_f32(a4); C[4][0] = vfmaq_f32(C[4][0], B0, s); C[4][1] = vfmaq_f32(C[4][1], B1, s); \
-            s = vdupq_n_f32(a5); C[5][0] = vfmaq_f32(C[5][0], B0, s); C[5][1] = vfmaq_f32(C[5][1], B1, s); \
-            s = vdupq_n_f32(a6); C[6][0] = vfmaq_f32(C[6][0], B0, s); C[6][1] = vfmaq_f32(C[6][1], B1, s); \
-            s = vdupq_n_f32(a7); C[7][0] = vfmaq_f32(C[7][0], B0, s); C[7][1] = vfmaq_f32(C[7][1], B1, s); \
+            C[0][0] = vfmaq_laneq_f32(C[0][0], B0, A0, 0); C[0][1] = vfmaq_laneq_f32(C[0][1], B1, A0, 0); \
+            C[1][0] = vfmaq_laneq_f32(C[1][0], B0, A0, 1); C[1][1] = vfmaq_laneq_f32(C[1][1], B1, A0, 1); \
+            C[2][0] = vfmaq_laneq_f32(C[2][0], B0, A0, 2); C[2][1] = vfmaq_laneq_f32(C[2][1], B1, A0, 2); \
+            C[3][0] = vfmaq_laneq_f32(C[3][0], B0, A0, 3); C[3][1] = vfmaq_laneq_f32(C[3][1], B1, A0, 3); \
+            C[4][0] = vfmaq_laneq_f32(C[4][0], B0, A1, 0); C[4][1] = vfmaq_laneq_f32(C[4][1], B1, A1, 0); \
+            C[5][0] = vfmaq_laneq_f32(C[5][0], B0, A1, 1); C[5][1] = vfmaq_laneq_f32(C[5][1], B1, A1, 1); \
+            C[6][0] = vfmaq_laneq_f32(C[6][0], B0, A1, 2); C[6][1] = vfmaq_laneq_f32(C[6][1], B1, A1, 2); \
+            C[7][0] = vfmaq_laneq_f32(C[7][0], B0, A1, 3); C[7][1] = vfmaq_laneq_f32(C[7][1], B1, A1, 3); \
         } while (0)
 
         MAG_STEP8N(0);
@@ -730,23 +727,17 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
         bfloat16x8_t bv = vld1q_bf16((const bfloat16_t *)(b + k*ldb));
         float32x4_t B0 = vcvt_f32_bf16(vget_low_bf16(bv));
         float32x4_t B1 = vcvt_f32_bf16(vget_high_bf16(bv));
-
         bfloat16x8_t av = vld1q_bf16((const bfloat16_t *)(a + k*8));
         float32x4_t A0 = vcvt_f32_bf16(vget_low_bf16(av));
         float32x4_t A1 = vcvt_f32_bf16(vget_high_bf16(av));
-
-        float a0 = vgetq_lane_f32(A0, 0), a1 = vgetq_lane_f32(A0, 1), a2 = vgetq_lane_f32(A0, 2), a3 = vgetq_lane_f32(A0, 3);
-        float a4 = vgetq_lane_f32(A1, 0), a5 = vgetq_lane_f32(A1, 1), a6 = vgetq_lane_f32(A1, 2), a7 = vgetq_lane_f32(A1, 3);
-
-        float32x4_t s;
-        s = vdupq_n_f32(a0); C[0][0] = vfmaq_f32(C[0][0], B0, s); C[0][1] = vfmaq_f32(C[0][1], B1, s);
-        s = vdupq_n_f32(a1); C[1][0] = vfmaq_f32(C[1][0], B0, s); C[1][1] = vfmaq_f32(C[1][1], B1, s);
-        s = vdupq_n_f32(a2); C[2][0] = vfmaq_f32(C[2][0], B0, s); C[2][1] = vfmaq_f32(C[2][1], B1, s);
-        s = vdupq_n_f32(a3); C[3][0] = vfmaq_f32(C[3][0], B0, s); C[3][1] = vfmaq_f32(C[3][1], B1, s);
-        s = vdupq_n_f32(a4); C[4][0] = vfmaq_f32(C[4][0], B0, s); C[4][1] = vfmaq_f32(C[4][1], B1, s);
-        s = vdupq_n_f32(a5); C[5][0] = vfmaq_f32(C[5][0], B0, s); C[5][1] = vfmaq_f32(C[5][1], B1, s);
-        s = vdupq_n_f32(a6); C[6][0] = vfmaq_f32(C[6][0], B0, s); C[6][1] = vfmaq_f32(C[6][1], B1, s);
-        s = vdupq_n_f32(a7); C[7][0] = vfmaq_f32(C[7][0], B0, s); C[7][1] = vfmaq_f32(C[7][1], B1, s);
+        C[0][0] = vfmaq_laneq_f32(C[0][0], B0, A0, 0); C[0][1] = vfmaq_laneq_f32(C[0][1], B1, A0, 0);
+        C[1][0] = vfmaq_laneq_f32(C[1][0], B0, A0, 1); C[1][1] = vfmaq_laneq_f32(C[1][1], B1, A0, 1);
+        C[2][0] = vfmaq_laneq_f32(C[2][0], B0, A0, 2); C[2][1] = vfmaq_laneq_f32(C[2][1], B1, A0, 2);
+        C[3][0] = vfmaq_laneq_f32(C[3][0], B0, A0, 3); C[3][1] = vfmaq_laneq_f32(C[3][1], B1, A0, 3);
+        C[4][0] = vfmaq_laneq_f32(C[4][0], B0, A1, 0); C[4][1] = vfmaq_laneq_f32(C[4][1], B1, A1, 0);
+        C[5][0] = vfmaq_laneq_f32(C[5][0], B0, A1, 1); C[5][1] = vfmaq_laneq_f32(C[5][1], B1, A1, 1);
+        C[6][0] = vfmaq_laneq_f32(C[6][0], B0, A1, 2); C[6][1] = vfmaq_laneq_f32(C[6][1], B1, A1, 2);
+        C[7][0] = vfmaq_laneq_f32(C[7][0], B0, A1, 3); C[7][1] = vfmaq_laneq_f32(C[7][1], B1, A1, 3);
     }
 
 #pragma GCC unroll 8
@@ -934,17 +925,14 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
             bfloat16x8_t av = vld1q_bf16((const bfloat16_t *)(a + (k + (KI))*8)); \
             float32x4_t A0 = vcvt_f32_bf16(vget_low_bf16(av)); \
             float32x4_t A1 = vcvt_f32_bf16(vget_high_bf16(av)); \
-            float a0=vgetq_lane_f32(A0,0), a1=vgetq_lane_f32(A0,1), a2=vgetq_lane_f32(A0,2), a3=vgetq_lane_f32(A0,3); \
-            float a4=vgetq_lane_f32(A1,0), a5=vgetq_lane_f32(A1,1), a6=vgetq_lane_f32(A1,2), a7=vgetq_lane_f32(A1,3); \
-            float32x4_t s; \
-            s=vdupq_n_f32(a0); C[0][0]=vfmaq_f32(C[0][0],B00,s); C[0][1]=vfmaq_f32(C[0][1],B01,s); C[0][2]=vfmaq_f32(C[0][2],B10,s); C[0][3]=vfmaq_f32(C[0][3],B11,s); \
-            s=vdupq_n_f32(a1); C[1][0]=vfmaq_f32(C[1][0],B00,s); C[1][1]=vfmaq_f32(C[1][1],B01,s); C[1][2]=vfmaq_f32(C[1][2],B10,s); C[1][3]=vfmaq_f32(C[1][3],B11,s); \
-            s=vdupq_n_f32(a2); C[2][0]=vfmaq_f32(C[2][0],B00,s); C[2][1]=vfmaq_f32(C[2][1],B01,s); C[2][2]=vfmaq_f32(C[2][2],B10,s); C[2][3]=vfmaq_f32(C[2][3],B11,s); \
-            s=vdupq_n_f32(a3); C[3][0]=vfmaq_f32(C[3][0],B00,s); C[3][1]=vfmaq_f32(C[3][1],B01,s); C[3][2]=vfmaq_f32(C[3][2],B10,s); C[3][3]=vfmaq_f32(C[3][3],B11,s); \
-            s=vdupq_n_f32(a4); C[4][0]=vfmaq_f32(C[4][0],B00,s); C[4][1]=vfmaq_f32(C[4][1],B01,s); C[4][2]=vfmaq_f32(C[4][2],B10,s); C[4][3]=vfmaq_f32(C[4][3],B11,s); \
-            s=vdupq_n_f32(a5); C[5][0]=vfmaq_f32(C[5][0],B00,s); C[5][1]=vfmaq_f32(C[5][1],B01,s); C[5][2]=vfmaq_f32(C[5][2],B10,s); C[5][3]=vfmaq_f32(C[5][3],B11,s); \
-            s=vdupq_n_f32(a6); C[6][0]=vfmaq_f32(C[6][0],B00,s); C[6][1]=vfmaq_f32(C[6][1],B01,s); C[6][2]=vfmaq_f32(C[6][2],B10,s); C[6][3]=vfmaq_f32(C[6][3],B11,s); \
-            s=vdupq_n_f32(a7); C[7][0]=vfmaq_f32(C[7][0],B00,s); C[7][1]=vfmaq_f32(C[7][1],B01,s); C[7][2]=vfmaq_f32(C[7][2],B10,s); C[7][3]=vfmaq_f32(C[7][3],B11,s); \
+            C[0][0] = vfmaq_laneq_f32(C[0][0], B00, A0, 0); C[0][1] = vfmaq_laneq_f32(C[0][1], B01, A0, 0); C[0][2] = vfmaq_laneq_f32(C[0][2], B10, A0, 0); C[0][3] = vfmaq_laneq_f32(C[0][3], B11, A0, 0); \
+            C[1][0] = vfmaq_laneq_f32(C[1][0], B00, A0, 1); C[1][1] = vfmaq_laneq_f32(C[1][1], B01, A0, 1); C[1][2] = vfmaq_laneq_f32(C[1][2], B10, A0, 1); C[1][3] = vfmaq_laneq_f32(C[1][3], B11, A0, 1); \
+            C[2][0] = vfmaq_laneq_f32(C[2][0], B00, A0, 2); C[2][1] = vfmaq_laneq_f32(C[2][1], B01, A0, 2); C[2][2] = vfmaq_laneq_f32(C[2][2], B10, A0, 2); C[2][3] = vfmaq_laneq_f32(C[2][3], B11, A0, 2); \
+            C[3][0] = vfmaq_laneq_f32(C[3][0], B00, A0, 3); C[3][1] = vfmaq_laneq_f32(C[3][1], B01, A0, 3); C[3][2] = vfmaq_laneq_f32(C[3][2], B10, A0, 3); C[3][3] = vfmaq_laneq_f32(C[3][3], B11, A0, 3); \
+            C[4][0] = vfmaq_laneq_f32(C[4][0], B00, A1, 0); C[4][1] = vfmaq_laneq_f32(C[4][1], B01, A1, 0); C[4][2] = vfmaq_laneq_f32(C[4][2], B10, A1, 0); C[4][3] = vfmaq_laneq_f32(C[4][3], B11, A1, 0); \
+            C[5][0] = vfmaq_laneq_f32(C[5][0], B00, A1, 1); C[5][1] = vfmaq_laneq_f32(C[5][1], B01, A1, 1); C[5][2] = vfmaq_laneq_f32(C[5][2], B10, A1, 1); C[5][3] = vfmaq_laneq_f32(C[5][3], B11, A1, 1); \
+            C[6][0] = vfmaq_laneq_f32(C[6][0], B00, A1, 2); C[6][1] = vfmaq_laneq_f32(C[6][1], B01, A1, 2); C[6][2] = vfmaq_laneq_f32(C[6][2], B10, A1, 2); C[6][3] = vfmaq_laneq_f32(C[6][3], B11, A1, 2); \
+            C[7][0] = vfmaq_laneq_f32(C[7][0], B00, A1, 3); C[7][1] = vfmaq_laneq_f32(C[7][1], B01, A1, 3); C[7][2] = vfmaq_laneq_f32(C[7][2], B10, A1, 3); C[7][3] = vfmaq_laneq_f32(C[7][3], B11, A1, 3); \
         } while (0)
 
         MAG_STEP16N(0);
@@ -965,23 +953,17 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
         float32x4_t B01 = vcvt_f32_bf16(vget_high_bf16(b0));
         float32x4_t B10 = vcvt_f32_bf16(vget_low_bf16(b1));
         float32x4_t B11 = vcvt_f32_bf16(vget_high_bf16(b1));
-
         bfloat16x8_t av = vld1q_bf16((const bfloat16_t *)(a + k*8));
         float32x4_t A0 = vcvt_f32_bf16(vget_low_bf16(av));
         float32x4_t A1 = vcvt_f32_bf16(vget_high_bf16(av));
-
-        float a0=vgetq_lane_f32(A0,0), a1=vgetq_lane_f32(A0,1), a2=vgetq_lane_f32(A0,2), a3=vgetq_lane_f32(A0,3);
-        float a4=vgetq_lane_f32(A1,0), a5=vgetq_lane_f32(A1,1), a6=vgetq_lane_f32(A1,2), a7=vgetq_lane_f32(A1,3);
-
-        float32x4_t s;
-        s=vdupq_n_f32(a0); C[0][0]=vfmaq_f32(C[0][0],B00,s); C[0][1]=vfmaq_f32(C[0][1],B01,s); C[0][2]=vfmaq_f32(C[0][2],B10,s); C[0][3]=vfmaq_f32(C[0][3],B11,s);
-        s=vdupq_n_f32(a1); C[1][0]=vfmaq_f32(C[1][0],B00,s); C[1][1]=vfmaq_f32(C[1][1],B01,s); C[1][2]=vfmaq_f32(C[1][2],B10,s); C[1][3]=vfmaq_f32(C[1][3],B11,s);
-        s=vdupq_n_f32(a2); C[2][0]=vfmaq_f32(C[2][0],B00,s); C[2][1]=vfmaq_f32(C[2][1],B01,s); C[2][2]=vfmaq_f32(C[2][2],B10,s); C[2][3]=vfmaq_f32(C[2][3],B11,s);
-        s=vdupq_n_f32(a3); C[3][0]=vfmaq_f32(C[3][0],B00,s); C[3][1]=vfmaq_f32(C[3][1],B01,s); C[3][2]=vfmaq_f32(C[3][2],B10,s); C[3][3]=vfmaq_f32(C[3][3],B11,s);
-        s=vdupq_n_f32(a4); C[4][0]=vfmaq_f32(C[4][0],B00,s); C[4][1]=vfmaq_f32(C[4][1],B01,s); C[4][2]=vfmaq_f32(C[4][2],B10,s); C[4][3]=vfmaq_f32(C[4][3],B11,s);
-        s=vdupq_n_f32(a5); C[5][0]=vfmaq_f32(C[5][0],B00,s); C[5][1]=vfmaq_f32(C[5][1],B01,s); C[5][2]=vfmaq_f32(C[5][2],B10,s); C[5][3]=vfmaq_f32(C[5][3],B11,s);
-        s=vdupq_n_f32(a6); C[6][0]=vfmaq_f32(C[6][0],B00,s); C[6][1]=vfmaq_f32(C[6][1],B01,s); C[6][2]=vfmaq_f32(C[6][2],B10,s); C[6][3]=vfmaq_f32(C[6][3],B11,s);
-        s=vdupq_n_f32(a7); C[7][0]=vfmaq_f32(C[7][0],B00,s); C[7][1]=vfmaq_f32(C[7][1],B01,s); C[7][2]=vfmaq_f32(C[7][2],B10,s); C[7][3]=vfmaq_f32(C[7][3],B11,s);
+        C[0][0] = vfmaq_laneq_f32(C[0][0], B00, A0, 0); C[0][1] = vfmaq_laneq_f32(C[0][1], B01, A0, 0); C[0][2] = vfmaq_laneq_f32(C[0][2], B10, A0, 0); C[0][3] = vfmaq_laneq_f32(C[0][3], B11, A0, 0);
+        C[1][0] = vfmaq_laneq_f32(C[1][0], B00, A0, 1); C[1][1] = vfmaq_laneq_f32(C[1][1], B01, A0, 1); C[1][2] = vfmaq_laneq_f32(C[1][2], B10, A0, 1); C[1][3] = vfmaq_laneq_f32(C[1][3], B11, A0, 1);
+        C[2][0] = vfmaq_laneq_f32(C[2][0], B00, A0, 2); C[2][1] = vfmaq_laneq_f32(C[2][1], B01, A0, 2); C[2][2] = vfmaq_laneq_f32(C[2][2], B10, A0, 2); C[2][3] = vfmaq_laneq_f32(C[2][3], B11, A0, 2);
+        C[3][0] = vfmaq_laneq_f32(C[3][0], B00, A0, 3); C[3][1] = vfmaq_laneq_f32(C[3][1], B01, A0, 3); C[3][2] = vfmaq_laneq_f32(C[3][2], B10, A0, 3); C[3][3] = vfmaq_laneq_f32(C[3][3], B11, A0, 3);
+        C[4][0] = vfmaq_laneq_f32(C[4][0], B00, A1, 0); C[4][1] = vfmaq_laneq_f32(C[4][1], B01, A1, 0); C[4][2] = vfmaq_laneq_f32(C[4][2], B10, A1, 0); C[4][3] = vfmaq_laneq_f32(C[4][3], B11, A1, 0);
+        C[5][0] = vfmaq_laneq_f32(C[5][0], B00, A1, 1); C[5][1] = vfmaq_laneq_f32(C[5][1], B01, A1, 1); C[5][2] = vfmaq_laneq_f32(C[5][2], B10, A1, 1); C[5][3] = vfmaq_laneq_f32(C[5][3], B11, A1, 1);
+        C[6][0] = vfmaq_laneq_f32(C[6][0], B00, A1, 2); C[6][1] = vfmaq_laneq_f32(C[6][1], B01, A1, 2); C[6][2] = vfmaq_laneq_f32(C[6][2], B10, A1, 2); C[6][3] = vfmaq_laneq_f32(C[6][3], B11, A1, 2);
+        C[7][0] = vfmaq_laneq_f32(C[7][0], B00, A1, 3); C[7][1] = vfmaq_laneq_f32(C[7][1], B01, A1, 3); C[7][2] = vfmaq_laneq_f32(C[7][2], B10, A1, 3); C[7][3] = vfmaq_laneq_f32(C[7][3], B11, A1, 3);
     }
 
 #pragma GCC unroll 8
@@ -1445,9 +1427,28 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
             if (k + 1 < kc)
                 __builtin_prefetch((const char *)(Bsrc + (k + 1) * strideK), 0, 3);
             int64_t j = 0;
+            for (; j + 63 < nc; j += 64) {
+                __builtin_prefetch((const char *)(src + j + 128), 0, 3);
+                __builtin_prefetch((const char *)(src + j + 256), 0, 2);
+                uint16x8_t v0 = vld1q_u16((const uint16_t*)(src + j +  0));
+                uint16x8_t v1 = vld1q_u16((const uint16_t*)(src + j +  8));
+                uint16x8_t v2 = vld1q_u16((const uint16_t*)(src + j + 16));
+                uint16x8_t v3 = vld1q_u16((const uint16_t*)(src + j + 24));
+                uint16x8_t v4 = vld1q_u16((const uint16_t*)(src + j + 32));
+                uint16x8_t v5 = vld1q_u16((const uint16_t*)(src + j + 40));
+                uint16x8_t v6 = vld1q_u16((const uint16_t*)(src + j + 48));
+                uint16x8_t v7 = vld1q_u16((const uint16_t*)(src + j + 56));
+                vst1q_u16((uint16_t*)(dst + j +  0), v0);
+                vst1q_u16((uint16_t*)(dst + j +  8), v1);
+                vst1q_u16((uint16_t*)(dst + j + 16), v2);
+                vst1q_u16((uint16_t*)(dst + j + 24), v3);
+                vst1q_u16((uint16_t*)(dst + j + 32), v4);
+                vst1q_u16((uint16_t*)(dst + j + 40), v5);
+                vst1q_u16((uint16_t*)(dst + j + 48), v6);
+                vst1q_u16((uint16_t*)(dst + j + 56), v7);
+            }
             for (; j+31 < nc; j += 32) {
                 __builtin_prefetch((const char *)(src + j + 64), 0, 3);
-                __builtin_prefetch((const char *)(src + j + 128), 0, 2);
                 uint16x8_t v0 = vld1q_u16((const uint16_t*)(src + j +  0));
                 uint16x8_t v1 = vld1q_u16((const uint16_t*)(src + j +  8));
                 uint16x8_t v2 = vld1q_u16((const uint16_t*)(src + j + 16));
