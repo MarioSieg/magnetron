@@ -153,9 +153,10 @@ void mag_mm_autotune_block_params(const mag_matmul_block_tune_info_t *info, mag_
     int64_t KC_hi = W == 64 ? 1024 : W == 32 ? 768 : 512;
     /* bf16/f16 (elsize==2): allow larger KC to amortize B packing, especially when B is strided */
     if (info->elsize == 2 && W == 64) {
-        KC_hi = 1536;
+        KC_hi = 2048;
         if (K >= 512) kc = mag_clamp(kc + 256, KC_lo, KC_hi);
-        if (K >= 2048) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
+        if (K >= 2048) kc = mag_clamp(kc + 256, KC_lo, KC_hi);
+        if (K >= 4096) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
     } else if (info->elsize == 2 && W == 32) {
         KC_hi = 896;
         if (K >= 1024) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
@@ -174,6 +175,7 @@ void mag_mm_autotune_block_params(const mag_matmul_block_tune_info_t *info, mag_
     int64_t NC_cap = W == 64 ? 256 : 128;
     if (N < 8192) NC_cap = 128;
     /* very large N (e.g. 151936): use larger NC to reduce B-pack iterations and improve throughput */
+    if (N >= 32768 && W == 64) NC_cap = 384;
     if (N >= 65536 && W == 64) NC_cap = 512;
     if (N >= 131072 && W == 64) NC_cap = 768;
     if (NC > NC_cap) NC = mag_rd_down(NC_cap, NR);

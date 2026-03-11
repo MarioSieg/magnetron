@@ -586,7 +586,7 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
     }
 
     int64_t k = 0;
-    for (; k + 3 < kc; k += 4) {
+    for (; k + 7 < kc; k += 8) {
         if (!(k & (MAG_PF_GROUP - 1))) {
             mag_prefetcht0(b + (k + MAG_PFDIST_B_L1)*ldb);
             mag_prefetcht1(b + (k + MAG_PFDIST_B_L2)*ldb);
@@ -621,6 +621,10 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
         MAG_STEP8(1);
         MAG_STEP8(2);
         MAG_STEP8(3);
+        MAG_STEP8(4);
+        MAG_STEP8(5);
+        MAG_STEP8(6);
+        MAG_STEP8(7);
 #undef MAG_STEP8
     }
     for (; k < kc; ++k) {
@@ -787,7 +791,7 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
     }
 
     int64_t k = 0;
-    for (; k + 3 < kc; k += 4) {
+    for (; k + 7 < kc; k += 8) {
         if (!(k & (MAG_PF_GROUP - 1))) {
             mag_prefetcht0(b + (k + MAG_PFDIST_B_L1)*ldb);
             mag_prefetcht1(b + (k + MAG_PFDIST_B_L2)*ldb);
@@ -822,6 +826,10 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
         MAG_STEP16(1);
         MAG_STEP16(2);
         MAG_STEP16(3);
+        MAG_STEP16(4);
+        MAG_STEP16(5);
+        MAG_STEP16(6);
+        MAG_STEP16(7);
 #undef MAG_STEP16
     }
     for (; k < kc; ++k) {
@@ -1287,11 +1295,33 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
 ) {
     if (strideN == 1) {
         for (int64_t k = 0; k < kc; ++k) {
+            if (k + 1 < kc)
+                mag_prefetcht0((const char *)(Bsrc + (k + 1) * strideK));
             const mag_bfloat16_t *src = Bsrc + k * strideK;
             mag_bfloat16_t *dst = Bp + k * nc;
 
 #if defined(__AVX512F__) && defined(__AVX512BF16__)
             int64_t j = 0;
+            for (; j + 255 < nc; j += 256) {
+                mag_prefetcht0((const char*)(src + j) + 512);
+                mag_prefetcht1((const char*)(src + j) + 2048);
+                __m512i w0 = _mm512_loadu_si512((const __m512i*)(src + j +  0));
+                __m512i w1 = _mm512_loadu_si512((const __m512i*)(src + j + 32));
+                __m512i w2 = _mm512_loadu_si512((const __m512i*)(src + j + 64));
+                __m512i w3 = _mm512_loadu_si512((const __m512i*)(src + j + 96));
+                __m512i w4 = _mm512_loadu_si512((const __m512i*)(src + j + 128));
+                __m512i w5 = _mm512_loadu_si512((const __m512i*)(src + j + 160));
+                __m512i w6 = _mm512_loadu_si512((const __m512i*)(src + j + 192));
+                __m512i w7 = _mm512_loadu_si512((const __m512i*)(src + j + 224));
+                _mm512_storeu_si512((__m512i*)(dst + j +  0), w0);
+                _mm512_storeu_si512((__m512i*)(dst + j + 32), w1);
+                _mm512_storeu_si512((__m512i*)(dst + j + 64), w2);
+                _mm512_storeu_si512((__m512i*)(dst + j + 96), w3);
+                _mm512_storeu_si512((__m512i*)(dst + j + 128), w4);
+                _mm512_storeu_si512((__m512i*)(dst + j + 160), w5);
+                _mm512_storeu_si512((__m512i*)(dst + j + 192), w6);
+                _mm512_storeu_si512((__m512i*)(dst + j + 224), w7);
+            }
             for (; j + 127 < nc; j += 128) {
                 mag_prefetcht0((const char*)(src + j) + 256);
                 mag_prefetcht1((const char*)(src + j) + 1024);
@@ -1374,12 +1404,63 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
         __m512i iota = _mm512_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
         __m512i strideN_v = _mm512_set1_epi32((int)strideN);
         __m512i step16 = _mm512_set1_epi32(16 * (int)strideN);
+        __m512i step32 = _mm512_set1_epi32(32 * (int)strideN);
+        __m512i step48 = _mm512_set1_epi32(48 * (int)strideN);
         for (int64_t k = 0; k < kc; ++k) {
             if (k + 1 < kc)
                 mag_prefetcht0((const char *)(Bsrc + (k + 1) * strideK));
+            if (k + 2 < kc)
+                mag_prefetcht1((const char *)(Bsrc + (k + 2) * strideK));
             const mag_bfloat16_t *src = Bsrc + k * strideK;
             mag_bfloat16_t *dst = Bp + k * nc;
             int64_t j = 0;
+            for (; j + 64 <= nc; j += 64) {
+                int base = (int)(j * (ptrdiff_t)strideN);
+                __m512i idx0 = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_mullo_epi32(iota, strideN_v));
+                __m512i idx1 = _mm512_add_epi32(idx0, step16);
+                __m512i idx2 = _mm512_add_epi32(idx0, step32);
+                __m512i idx3 = _mm512_add_epi32(idx0, step48);
+                __m512i v0 = _mm512_i32gather_epi32(idx0, (const void *)src, 2);
+                __m512i v1 = _mm512_i32gather_epi32(idx1, (const void *)src, 2);
+                __m512i v2 = _mm512_i32gather_epi32(idx2, (const void *)src, 2);
+                __m512i v3 = _mm512_i32gather_epi32(idx3, (const void *)src, 2);
+                v0 = _mm512_and_si512(v0, _mm512_set1_epi32(0xFFFF));
+                v1 = _mm512_and_si512(v1, _mm512_set1_epi32(0xFFFF));
+                v2 = _mm512_and_si512(v2, _mm512_set1_epi32(0xFFFF));
+                v3 = _mm512_and_si512(v3, _mm512_set1_epi32(0xFFFF));
+#if defined(__AVX512BW__)
+                __m256i p0 = _mm512_cvtepi32_epi16(v0);
+                __m256i p1 = _mm512_cvtepi32_epi16(v1);
+                __m256i p2 = _mm512_cvtepi32_epi16(v2);
+                __m256i p3 = _mm512_cvtepi32_epi16(v3);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j), p0);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j + 16), p1);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j + 32), p2);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j + 48), p3);
+#else
+                __m256i v00 = _mm512_castsi512_si256(v0), v01 = _mm512_extracti32x8_epi32(v0, 1);
+                __m256i v10 = _mm512_castsi512_si256(v1), v11 = _mm512_extracti32x8_epi32(v1, 1);
+                __m256i v20 = _mm512_castsi512_si256(v2), v21 = _mm512_extracti32x8_epi32(v2, 1);
+                __m256i v30 = _mm512_castsi512_si256(v3), v31 = _mm512_extracti32x8_epi32(v3, 1);
+                __m128i lo, hi;
+                lo = _mm256_castsi256_si128(v00); hi = _mm256_extracti128_si256(v00, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v01); hi = _mm256_extracti128_si256(v01, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v10); hi = _mm256_extracti128_si256(v10, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 16), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v11); hi = _mm256_extracti128_si256(v11, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 24), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v20); hi = _mm256_extracti128_si256(v20, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 32), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v21); hi = _mm256_extracti128_si256(v21, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 40), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v30); hi = _mm256_extracti128_si256(v30, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 48), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v31); hi = _mm256_extracti128_si256(v31, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 56), _mm_packus_epi32(lo, hi));
+#endif
+            }
             for (; j + 32 <= nc; j += 32) {
                 int base = (int)(j * (ptrdiff_t)strideN);
                 __m512i idx_a = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_mullo_epi32(iota, strideN_v));
