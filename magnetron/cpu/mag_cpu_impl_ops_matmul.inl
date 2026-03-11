@@ -688,7 +688,7 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
     }
 
     int64_t k = 0;
-    for (; k + 3 < kc; k += 4) {
+    for (; k + 7 < kc; k += 8) {
         if (!(k & (MAG_PF_GROUP - 1))) {
             __builtin_prefetch(b + (k + MAG_PFDIST_B_L1)*ldb, 0, 3);
             __builtin_prefetch(b + (k + MAG_PFDIST_B_L2)*ldb, 0, 2);
@@ -720,6 +720,10 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
         MAG_STEP8N(1);
         MAG_STEP8N(2);
         MAG_STEP8N(3);
+        MAG_STEP8N(4);
+        MAG_STEP8N(5);
+        MAG_STEP8N(6);
+        MAG_STEP8N(7);
 #undef MAG_STEP8N
     }
     for (; k < kc; ++k) {
@@ -882,7 +886,7 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
     }
 
     int64_t k = 0;
-    for (; k + 3 < kc; k += 4) {
+    for (; k + 7 < kc; k += 8) {
         if (!(k & (MAG_PF_GROUP - 1))) {
             __builtin_prefetch(b + (k + MAG_PFDIST_B_L1)*ldb, 0, 3);
             __builtin_prefetch(b + (k + MAG_PFDIST_B_L2)*ldb, 0, 2);
@@ -918,6 +922,10 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
         MAG_STEP16N(1);
         MAG_STEP16N(2);
         MAG_STEP16N(3);
+        MAG_STEP16N(4);
+        MAG_STEP16N(5);
+        MAG_STEP16N(6);
+        MAG_STEP16N(7);
 #undef MAG_STEP16N
     }
     for (; k < kc; ++k) {
@@ -1369,6 +1377,8 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
             }
 
 #elif (defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_BF16))
+            if (k + 1 < kc)
+                __builtin_prefetch((const char *)(Bsrc + (k + 1) * strideK), 0, 3);
             int64_t j = 0;
             for (; j+31 < nc; j += 32) {
                 uint16x8_t v0 = vld1q_u16((const uint16_t*)(src + j +  0));
@@ -1528,9 +1538,55 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
         }
 #elif defined(__AVX2__)
         for (int64_t k = 0; k < kc; ++k) {
+            if (k + 1 < kc)
+                mag_prefetcht0((const char *)(Bsrc + (k + 1) * strideK));
+            if (k + 2 < kc)
+                mag_prefetcht1((const char *)(Bsrc + (k + 2) * strideK));
             const mag_bfloat16_t *src = Bsrc + k * strideK;
             mag_bfloat16_t *dst = Bp + k * nc;
             int64_t j = 0;
+            for (; j + 32 <= nc; j += 32) {
+                __m256i idx0 = _mm256_set_epi32(
+                    (int)((j + 7) * (ptrdiff_t)strideN), (int)((j + 6) * (ptrdiff_t)strideN),
+                    (int)((j + 5) * (ptrdiff_t)strideN), (int)((j + 4) * (ptrdiff_t)strideN),
+                    (int)((j + 3) * (ptrdiff_t)strideN), (int)((j + 2) * (ptrdiff_t)strideN),
+                    (int)((j + 1) * (ptrdiff_t)strideN), (int)(j * (ptrdiff_t)strideN));
+                __m256i idx1 = _mm256_set_epi32(
+                    (int)((j + 15) * (ptrdiff_t)strideN), (int)((j + 14) * (ptrdiff_t)strideN),
+                    (int)((j + 13) * (ptrdiff_t)strideN), (int)((j + 12) * (ptrdiff_t)strideN),
+                    (int)((j + 11) * (ptrdiff_t)strideN), (int)((j + 10) * (ptrdiff_t)strideN),
+                    (int)((j + 9) * (ptrdiff_t)strideN),  (int)((j + 8) * (ptrdiff_t)strideN));
+                __m256i v0 = _mm256_i32gather_epi32((const int *)(const void *)src, idx0, 2);
+                __m256i v1 = _mm256_i32gather_epi32((const int *)(const void *)src, idx1, 2);
+                v0 = _mm256_and_si256(v0, _mm256_set1_epi32(0xFFFF));
+                v1 = _mm256_and_si256(v1, _mm256_set1_epi32(0xFFFF));
+                __m128i lo0 = _mm256_castsi256_si128(v0), hi0 = _mm256_extracti128_si256(v0, 1);
+                __m128i lo1 = _mm256_castsi256_si128(v1), hi1 = _mm256_extracti128_si256(v1, 1);
+                __m128i p0 = _mm_packus_epi32(lo0, hi0);
+                __m128i p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), p1);
+                __m256i idx2 = _mm256_set_epi32(
+                    (int)((j + 23) * (ptrdiff_t)strideN), (int)((j + 22) * (ptrdiff_t)strideN),
+                    (int)((j + 21) * (ptrdiff_t)strideN), (int)((j + 20) * (ptrdiff_t)strideN),
+                    (int)((j + 19) * (ptrdiff_t)strideN), (int)((j + 18) * (ptrdiff_t)strideN),
+                    (int)((j + 17) * (ptrdiff_t)strideN), (int)((j + 16) * (ptrdiff_t)strideN));
+                __m256i idx3 = _mm256_set_epi32(
+                    (int)((j + 31) * (ptrdiff_t)strideN), (int)((j + 30) * (ptrdiff_t)strideN),
+                    (int)((j + 29) * (ptrdiff_t)strideN), (int)((j + 28) * (ptrdiff_t)strideN),
+                    (int)((j + 27) * (ptrdiff_t)strideN), (int)((j + 26) * (ptrdiff_t)strideN),
+                    (int)((j + 25) * (ptrdiff_t)strideN), (int)((j + 24) * (ptrdiff_t)strideN));
+                __m256i v2 = _mm256_i32gather_epi32((const int *)(const void *)src, idx2, 2);
+                __m256i v3 = _mm256_i32gather_epi32((const int *)(const void *)src, idx3, 2);
+                v2 = _mm256_and_si256(v2, _mm256_set1_epi32(0xFFFF));
+                v3 = _mm256_and_si256(v3, _mm256_set1_epi32(0xFFFF));
+                lo0 = _mm256_castsi256_si128(v2); hi0 = _mm256_extracti128_si256(v2, 1);
+                lo1 = _mm256_castsi256_si128(v3); hi1 = _mm256_extracti128_si256(v3, 1);
+                p0 = _mm_packus_epi32(lo0, hi0);
+                p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 16), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 24), p1);
+            }
             for (; j + 16 <= nc; j += 16) {
                 __m256i idx0 = _mm256_set_epi32(
                     (int)((j + 7) * (ptrdiff_t)strideN), (int)((j + 6) * (ptrdiff_t)strideN),
