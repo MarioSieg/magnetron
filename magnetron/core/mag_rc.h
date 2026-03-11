@@ -24,7 +24,7 @@ typedef struct mag_rc_control_block_t {
         uint32_t __sentinel;
     #endif
     volatile mag_atomic32_t rc_strong; /* Strong atomic RC */
-    void (*dtor)(void *); /* Destructor (required). */
+    mag_status_t (*dtor)(void *); /* Destructor (required). */
 } mag_rc_control_block_t;
 
 #ifdef MAG_DEBUG
@@ -35,7 +35,7 @@ mag_static_assert(offsetof(mag_rc_control_block_t, __sentinel) == 0);
 #define MAG_RC_OBJECT_IS_VALID(T) mag_static_assert(offsetof(T, __rcb) == 0)
 
 /* Initialize reference count header for a new object. Object must have MAG_RC_INJECT_HEADER as first field. */
-static inline void mag_rc_init_object(void *obj, void (*dtor)(void *)) {
+static inline void mag_rc_init_object(void *obj, mag_status_t (*dtor)(void *)) {
     mag_rc_control_block_t *rc = (mag_rc_control_block_t *)obj;
     mag_atomic32_store(&rc->rc_strong, 1, MAG_MO_RELAXED);
     rc->dtor = dtor;

@@ -233,7 +233,7 @@ uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t *cmd, mag_d
         int64_t L2 = dvc->ctx->machine.cpu_l2_size;
         const mag_matmul_block_tune_info_t tune_info = {
             .nthreads = cpu_dvc->num_allocated_workers,
-            .elsize = (int64_t)x->storage->granularity,
+            .elsize = (int64_t)mag_type_trait(x->dtype)->size,
             .vecreg_width = (int64_t)(*cpu_dvc->kernels.vreg_width)(),
             .M = M,
             .N = N,

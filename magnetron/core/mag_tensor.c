@@ -16,13 +16,14 @@
 #include "mag_autodiff.h"
 #include "mag_coords_iter.h"
 
-static void mag_view_meta_dtor(void *p) {
+static mag_status_t mag_view_meta_dtor(void *p) {
     mag_view_meta_t *vm = p;
     mag_context_t *ctx = vm->base->ctx;
     if (vm->base->view_meta == vm)
         vm->base->view_meta = NULL;
     mag_rc_decref(vm->base);
     mag_slab_free(&ctx->view_meta_slab, vm);
+    return MAG_STATUS_OK;
 }
 
 mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
@@ -34,7 +35,7 @@ mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
     return vm;
 }
 
-static void mag_tensor_dtor(void *self); /* Destructor forward declaration. */
+static mag_status_t mag_tensor_dtor(void *self); /* Destructor forward declaration. */
 
 static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel) {
     mag_tensor_t *hdr = mag_slab_alloc(&ctx->tensor_slab); /* Allocate tensor header. */
@@ -92,7 +93,6 @@ mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t
         });
     } else {
         mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->device == dvc, "Provided storage device mismatch: tensor device=%s storage device=%s", mag_backend_type_to_str(dvc->id.type), mag_backend_type_to_str(storage->device->id.type));
-        mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->dtype == type, "Provided storage dtype mismatch: tensor dtype=%s storage dtype=%s", mag_type_trait(type)->name, mag_type_trait(storage->dtype)->name);
         mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->size >= (size_t)numbytes, "Provided storage too small: need=%" PRIi64 " have=%zu", numbytes, storage->size);
         mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->base != 0 || storage->size == 0, "Provided storage has NULL base");
         tensor->storage = storage;
@@ -134,7 +134,7 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
         mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i], numel, &numel), "Dim prod overflowed: dim[%" PRIi64 "] = %" PRIi64, i, shape[i]);
         last += span;
     }
-    int64_t numel_end = (int64_t)base->storage->size/base->storage->granularity;
+    int64_t numel_end = (int64_t)(base->storage->size/mag_type_trait(base->dtype)->size);
     mag_contract(err, ERR_OUT_OF_BOUNDS, {}, last < numel_end, "View exceeds base tensor storage bounds: view end = %" PRIi64 ", base storage numel = %" PRIi64, last, numel_end);
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
     for (int i=0; i < MAG_MAX_DIMS; ++i) {
@@ -156,7 +156,7 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
     return MAG_STATUS_OK;
 }
 
-static void mag_tensor_dtor(void *self) {
+static mag_status_t mag_tensor_dtor(void *self) {
     mag_tensor_t *t = self;
     mag_context_t *ctx = t->ctx;
     mag_assert(ctx->telemetry.num_alive_tensors > 0, "Double free detected on tensor %p", t);
@@ -171,6 +171,7 @@ static void mag_tensor_dtor(void *self) {
     }
     mag_rc_decref(t->storage);
     mag_tensor_free_header(t);
+    return MAG_STATUS_OK;
 }
 
 size_t mag_tensor_numbytes(const mag_tensor_t *t) {
@@ -210,7 +211,7 @@ mag_dtype_t mag_tensor_type(const mag_tensor_t *tensor) {
 }
 
 size_t mag_tensor_data_offset(const mag_tensor_t *tensor) {
-    return (size_t)tensor->storage_offset*tensor->storage->granularity; /* Return offset in bytes */
+    return (size_t)tensor->storage_offset*mag_type_trait(tensor->dtype)->size; /* Return offset in bytes */
 }
 
 uintptr_t mag_tensor_data_ptr(const mag_tensor_t *tensor) {
