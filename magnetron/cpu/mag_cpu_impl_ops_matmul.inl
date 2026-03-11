@@ -757,6 +757,35 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
         vst1q_bf16((bfloat16_t *)(c + r*ldc), out);
     }
 
+#elif defined(__AVX2__) && defined(__FMA__)
+    /* AVX2 bf16: soft bf16->fp32 then 8x8 FMA (no AVX512-BF16 on AVX2-only CPUs) */
+    __m256 C[8];
+    if (acc) {
+        for (int r = 0; r < 8; ++r) {
+            __m128i cv = _mm_loadu_si128((const __m128i *)(c + r*ldc));
+            __m256i cu = _mm256_cvtepu16_epi32(cv);
+            C[r] = _mm256_castsi256_ps(_mm256_slli_epi32(cu, 16));
+        }
+    } else {
+        __m256 z = _mm256_setzero_ps();
+        for (int r = 0; r < 8; ++r) C[r] = z;
+    }
+    for (int64_t k = 0; k < kc; ++k) {
+        __m128i av = _mm_loadu_si128((const __m128i *)(a + k*8));
+        __m256 a_f = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(av), 16));
+        __m128i bv = _mm_loadu_si128((const __m128i *)(b + k*ldb));
+        __m256 b_f = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(bv), 16));
+        for (int r = 0; r < 8; ++r)
+            C[r] = _mm256_fmadd_ps(_mm256_permutevar8x32_ps(a_f, _mm256_set1_epi32(r)), b_f, C[r]);
+    }
+    for (int r = 0; r < 8; ++r) {
+        __m256i ci = _mm256_castps_si256(C[r]);
+        __m256i sh = _mm256_srli_epi32(ci, 16);
+        __m128i lo = _mm256_castsi256_si128(sh);
+        __m128i hi = _mm256_extracti128_si256(sh, 1);
+        _mm_storeu_si128((__m128i *)(c + r*ldc), _mm_packus_epi32(lo, hi));
+    }
+
 #else
     /* scalar fallback (allowed conversions) */
     for (int64_t rr = 0; rr < 8; ++rr) {
@@ -961,6 +990,42 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
         bfloat16x8_t o1 = vcombine_bf16(vcvt_bf16_f32(C[r][2]), vcvt_bf16_f32(C[r][3]));
         vst1q_bf16((bfloat16_t *)(c + r*ldc + 0), o0);
         vst1q_bf16((bfloat16_t *)(c + r*ldc + 8), o1);
+    }
+
+#elif defined(__AVX2__) && defined(__FMA__)
+    /* AVX2 bf16 8x16: soft bf16->fp32 then FMA */
+    __m256 C[8][2];
+    if (acc) {
+        for (int r = 0; r < 8; ++r) {
+            __m128i c0 = _mm_loadu_si128((const __m128i *)(c + r*ldc + 0));
+            __m128i c1 = _mm_loadu_si128((const __m128i *)(c + r*ldc + 8));
+            C[r][0] = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(c0), 16));
+            C[r][1] = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(c1), 16));
+        }
+    } else {
+        __m256 z = _mm256_setzero_ps();
+        for (int r = 0; r < 8; ++r) C[r][0] = C[r][1] = z;
+    }
+    for (int64_t k = 0; k < kc; ++k) {
+        __m128i av = _mm_loadu_si128((const __m128i *)(a + k*8));
+        __m256 a_f = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(av), 16));
+        __m256i bv = _mm256_loadu_si256((const __m256i *)(b + k*ldb));
+        __m256 b_f0 = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm256_castsi256_si128(bv)), 16));
+        __m256 b_f1 = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm256_extracti128_si256(bv, 1)), 16));
+        for (int r = 0; r < 8; ++r) {
+            __m256 ar = _mm256_permutevar8x32_ps(a_f, _mm256_set1_epi32(r));
+            C[r][0] = _mm256_fmadd_ps(ar, b_f0, C[r][0]);
+            C[r][1] = _mm256_fmadd_ps(ar, b_f1, C[r][1]);
+        }
+    }
+    for (int r = 0; r < 8; ++r) {
+        for (int j = 0; j < 2; ++j) {
+            __m256i ci = _mm256_castps_si256(C[r][j]);
+            __m256i sh = _mm256_srli_epi32(ci, 16);
+            __m128i lo = _mm256_castsi256_si128(sh);
+            __m128i hi = _mm256_extracti128_si256(sh, 1);
+            _mm_storeu_si128((__m128i *)(c + r*ldc + j*8), _mm_packus_epi32(lo, hi));
+        }
     }
 
 #else
