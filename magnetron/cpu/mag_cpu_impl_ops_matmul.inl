@@ -1446,6 +1446,8 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
                 __builtin_prefetch((const char *)(Bsrc + (k + 1) * strideK), 0, 3);
             int64_t j = 0;
             for (; j+31 < nc; j += 32) {
+                __builtin_prefetch((const char *)(src + j + 64), 0, 3);
+                __builtin_prefetch((const char *)(src + j + 128), 0, 2);
                 uint16x8_t v0 = vld1q_u16((const uint16_t*)(src + j +  0));
                 uint16x8_t v1 = vld1q_u16((const uint16_t*)(src + j +  8));
                 uint16x8_t v2 = vld1q_u16((const uint16_t*)(src + j + 16));
@@ -1686,6 +1688,36 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
                 __m128i hi = _mm256_extracti128_si256(v, 1);
                 __m128i packed = _mm_packus_epi32(lo, hi);
                 _mm_storeu_si128((__m128i *)(void *)(dst + j), packed);
+            }
+            for (; j < nc; ++j)
+                dst[j] = src[j * strideN];
+        }
+#elif (defined(__aarch64__) && defined(__ARM_NEON))
+        /* ARM64 NEON: prefetch k+1/k+2; gather 8/16 elements per step, vectorized store. */
+        for (int64_t k = 0; k < kc; ++k) {
+            if (k + 1 < kc)
+                __builtin_prefetch((const char *)(Bsrc + (k + 1) * strideK), 0, 3);
+            if (k + 2 < kc)
+                __builtin_prefetch((const char *)(Bsrc + (k + 2) * strideK), 0, 2);
+            const mag_bfloat16_t *src = Bsrc + k * strideK;
+            mag_bfloat16_t *dst = Bp + k * nc;
+            int64_t j = 0;
+            for (; j + 16 <= nc; j += 16) {
+                const mag_bfloat16_t *p0 = src + (j + 0) * strideN;
+                const mag_bfloat16_t *p8 = src + (j + 8) * strideN;
+                uint16_t t0[8], t1[8];
+                for (int i = 0; i < 8; ++i) {
+                    t0[i] = p0[i * strideN].bits;
+                    t1[i] = p8[i * strideN].bits;
+                }
+                vst1q_u16((uint16_t *)(dst + j),      vld1q_u16(t0));
+                vst1q_u16((uint16_t *)(dst + j + 8), vld1q_u16(t1));
+            }
+            for (; j + 8 <= nc; j += 8) {
+                const mag_bfloat16_t *p = src + j * strideN;
+                uint16_t t[8];
+                for (int i = 0; i < 8; ++i) t[i] = p[i * strideN].bits;
+                vst1q_u16((uint16_t *)(dst + j), vld1q_u16(t));
             }
             for (; j < nc; ++j)
                 dst[j] = src[j * strideN];
