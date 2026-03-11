@@ -1368,13 +1368,134 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
 #endif
         }
     } else {
-        /* non-contiguous in N: gather scalars */
+        /* non-contiguous in N: AVX-512 gather; index via iota*strideN+base, pack via cvtepi32_epi16 when BW */
+#if defined(__AVX512F__)
+        /* Hoist constant index pattern: [0,1,...,15]*strideN computed once */
+        __m512i iota = _mm512_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+        __m512i strideN_v = _mm512_set1_epi32((int)strideN);
+        __m512i step16 = _mm512_set1_epi32(16 * (int)strideN);
+        for (int64_t k = 0; k < kc; ++k) {
+            if (k + 1 < kc)
+                mag_prefetcht0((const char *)(Bsrc + (k + 1) * strideK));
+            const mag_bfloat16_t *src = Bsrc + k * strideK;
+            mag_bfloat16_t *dst = Bp + k * nc;
+            int64_t j = 0;
+            for (; j + 32 <= nc; j += 32) {
+                int base = (int)(j * (ptrdiff_t)strideN);
+                __m512i idx_a = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_mullo_epi32(iota, strideN_v));
+                __m512i idx_b = _mm512_add_epi32(idx_a, step16);
+                __m512i va = _mm512_i32gather_epi32(idx_a, (const void *)src, 2);
+                __m512i vb = _mm512_i32gather_epi32(idx_b, (const void *)src, 2);
+                va = _mm512_and_si512(va, _mm512_set1_epi32(0xFFFF));
+                vb = _mm512_and_si512(vb, _mm512_set1_epi32(0xFFFF));
+#if defined(__AVX512BW__)
+                __m256i pa = _mm512_cvtepi32_epi16(va);
+                __m256i pb = _mm512_cvtepi32_epi16(vb);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j), pa);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j + 16), pb);
+#else
+                __m256i va0 = _mm512_castsi512_si256(va), va1 = _mm512_extracti32x8_epi32(va, 1);
+                __m256i vb0 = _mm512_castsi512_si256(vb), vb1 = _mm512_extracti32x8_epi32(vb, 1);
+                __m128i lo0 = _mm256_castsi256_si128(va0), hi0 = _mm256_extracti128_si256(va0, 1);
+                __m128i lo1 = _mm256_castsi256_si128(va1), hi1 = _mm256_extracti128_si256(va1, 1);
+                __m128i p0 = _mm_packus_epi32(lo0, hi0);
+                __m128i p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), p1);
+                lo0 = _mm256_castsi256_si128(vb0); hi0 = _mm256_extracti128_si256(vb0, 1);
+                lo1 = _mm256_castsi256_si128(vb1); hi1 = _mm256_extracti128_si256(vb1, 1);
+                p0 = _mm_packus_epi32(lo0, hi0);
+                p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 16), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 24), p1);
+#endif
+            }
+            for (; j + 16 <= nc; j += 16) {
+                int base = (int)(j * (ptrdiff_t)strideN);
+                __m512i idx = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_mullo_epi32(iota, strideN_v));
+                __m512i v = _mm512_i32gather_epi32(idx, (const void *)src, 2);
+                v = _mm512_and_si512(v, _mm512_set1_epi32(0xFFFF));
+#if defined(__AVX512BW__)
+                __m256i packed = _mm512_cvtepi32_epi16(v);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j), packed);
+#else
+                __m256i v0 = _mm512_castsi512_si256(v);
+                __m256i v1 = _mm512_extracti32x8_epi32(v, 1);
+                __m128i lo0 = _mm256_castsi256_si128(v0), hi0 = _mm256_extracti128_si256(v0, 1);
+                __m128i lo1 = _mm256_castsi256_si128(v1), hi1 = _mm256_extracti128_si256(v1, 1);
+                __m128i p0 = _mm_packus_epi32(lo0, hi0);
+                __m128i p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), p1);
+#endif
+            }
+            for (; j + 8 <= nc; j += 8) {
+                __m256i idx = _mm256_set_epi32(
+                    (int)((j + 7) * (ptrdiff_t)strideN), (int)((j + 6) * (ptrdiff_t)strideN),
+                    (int)((j + 5) * (ptrdiff_t)strideN), (int)((j + 4) * (ptrdiff_t)strideN),
+                    (int)((j + 3) * (ptrdiff_t)strideN), (int)((j + 2) * (ptrdiff_t)strideN),
+                    (int)((j + 1) * (ptrdiff_t)strideN), (int)(j * (ptrdiff_t)strideN));
+                __m256i v = _mm256_i32gather_epi32((const int *)(const void *)src, idx, 2);
+                v = _mm256_and_si256(v, _mm256_set1_epi32(0xFFFF));
+                __m128i lo = _mm256_castsi256_si128(v);
+                __m128i hi = _mm256_extracti128_si256(v, 1);
+                __m128i packed = _mm_packus_epi32(lo, hi);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), packed);
+            }
+            for (; j < nc; ++j)
+                dst[j] = src[j * strideN];
+        }
+#elif defined(__AVX2__)
+        for (int64_t k = 0; k < kc; ++k) {
+            const mag_bfloat16_t *src = Bsrc + k * strideK;
+            mag_bfloat16_t *dst = Bp + k * nc;
+            int64_t j = 0;
+            for (; j + 16 <= nc; j += 16) {
+                __m256i idx0 = _mm256_set_epi32(
+                    (int)((j + 7) * (ptrdiff_t)strideN), (int)((j + 6) * (ptrdiff_t)strideN),
+                    (int)((j + 5) * (ptrdiff_t)strideN), (int)((j + 4) * (ptrdiff_t)strideN),
+                    (int)((j + 3) * (ptrdiff_t)strideN), (int)((j + 2) * (ptrdiff_t)strideN),
+                    (int)((j + 1) * (ptrdiff_t)strideN), (int)(j * (ptrdiff_t)strideN));
+                __m256i idx1 = _mm256_set_epi32(
+                    (int)((j + 15) * (ptrdiff_t)strideN), (int)((j + 14) * (ptrdiff_t)strideN),
+                    (int)((j + 13) * (ptrdiff_t)strideN), (int)((j + 12) * (ptrdiff_t)strideN),
+                    (int)((j + 11) * (ptrdiff_t)strideN), (int)((j + 10) * (ptrdiff_t)strideN),
+                    (int)((j + 9) * (ptrdiff_t)strideN),  (int)((j + 8) * (ptrdiff_t)strideN));
+                __m256i v0 = _mm256_i32gather_epi32((const int *)(const void *)src, idx0, 2);
+                __m256i v1 = _mm256_i32gather_epi32((const int *)(const void *)src, idx1, 2);
+                v0 = _mm256_and_si256(v0, _mm256_set1_epi32(0xFFFF));
+                v1 = _mm256_and_si256(v1, _mm256_set1_epi32(0xFFFF));
+                __m128i lo0 = _mm256_castsi256_si128(v0), hi0 = _mm256_extracti128_si256(v0, 1);
+                __m128i lo1 = _mm256_castsi256_si128(v1), hi1 = _mm256_extracti128_si256(v1, 1);
+                __m128i p0 = _mm_packus_epi32(lo0, hi0);
+                __m128i p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), p1);
+            }
+            for (; j + 8 <= nc; j += 8) {
+                __m256i idx = _mm256_set_epi32(
+                    (int)((j + 7) * (ptrdiff_t)strideN), (int)((j + 6) * (ptrdiff_t)strideN),
+                    (int)((j + 5) * (ptrdiff_t)strideN), (int)((j + 4) * (ptrdiff_t)strideN),
+                    (int)((j + 3) * (ptrdiff_t)strideN), (int)((j + 2) * (ptrdiff_t)strideN),
+                    (int)((j + 1) * (ptrdiff_t)strideN), (int)(j * (ptrdiff_t)strideN));
+                __m256i v = _mm256_i32gather_epi32((const int *)(const void *)src, idx, 2);
+                v = _mm256_and_si256(v, _mm256_set1_epi32(0xFFFF));
+                __m128i lo = _mm256_castsi256_si128(v);
+                __m128i hi = _mm256_extracti128_si256(v, 1);
+                __m128i packed = _mm_packus_epi32(lo, hi);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), packed);
+            }
+            for (; j < nc; ++j)
+                dst[j] = src[j * strideN];
+        }
+#else
         for (int64_t k = 0; k < kc; ++k) {
             const mag_bfloat16_t *src = Bsrc + k * strideK;
             for (int64_t j = 0; j < nc; ++j) {
                 Bp[k * nc + j] = src[j * strideN];
             }
         }
+#endif
     }
 }
 
