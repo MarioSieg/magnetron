@@ -112,24 +112,52 @@ class InferenceEngine:
         console.print(f'Ready in {end - start:.2f}s', style='dim')
         gc.collect()
 
-    def stream_chat(self, history: list[tuple[str, str]]) -> Iterator[str]:
+    def stream_chat(
+        self,
+        history: list[tuple[str, str]],
+        system_override: str | None = None,
+        mode: str | None = None,
+    ) -> Iterator[str]:
         c = self.config
-        history = clamp_history_by_tokens(self.tokenizer, c.system, history, max_ctx=c.max_ctx, reserve_gen=c.reserve_gen)
-        prompt = build_prompt(c.system, history)
+        system = (system_override or c.system).strip() or c.system
+        max_tokens = c.max_tokens
+        temp = c.temp
+        if mode == 'proactive':
+            max_tokens = min(80, c.max_tokens)
+            temp = 0.8
+        yield from self._stream_chat_impl(history, system, max_tokens=max_tokens, temp=temp)
+
+    def _stream_chat_impl(
+        self,
+        history: list[tuple[str, str]],
+        system: str,
+        max_tokens: int,
+        temp: float,
+    ) -> Iterator[str]:
+        c = self.config
+        history = clamp_history_by_tokens(self.tokenizer, system, history, max_ctx=c.max_ctx, reserve_gen=c.reserve_gen)
+        prompt = build_prompt(system, history)
         model_input_ids = Tensor([self.tokenizer.encode(prompt)], dtype=dtype.int64)
-        for chunk in self.model.generate_stream(model_input_ids, self.tokenizer, max_tokens=c.max_tokens, temp=c.temp, top_k=c.top_k):
+        for chunk in self.model.generate_stream(model_input_ids, self.tokenizer, max_tokens=max_tokens, temp=temp, top_k=c.top_k):
             yield chunk
         gc.collect()
 
-    async def async_stream_chat(self, history: list[tuple[str, str]]) -> AsyncIterator[str]:
+    async def async_stream_chat(
+        self,
+        history: list[tuple[str, str]],
+        system_override: str | None = None,
+        mode: str | None = None,
+    ) -> AsyncIterator[str]:
         c = self.config
-        history = clamp_history_by_tokens(self.tokenizer, c.system, history, max_ctx=c.max_ctx, reserve_gen=c.reserve_gen)
-        prompt = build_prompt(c.system, history)
-        model_input_ids = Tensor([self.tokenizer.encode(prompt)], dtype=dtype.int64)
-        for chunk in self.model.generate_stream(model_input_ids, self.tokenizer, max_tokens=c.max_tokens, temp=c.temp, top_k=c.top_k):
+        system = (system_override or c.system).strip() or c.system
+        max_tokens = c.max_tokens
+        temp = c.temp
+        if mode == 'proactive':
+            max_tokens = min(80, c.max_tokens)
+            temp = 0.8
+        for chunk in self._stream_chat_impl(history, system, max_tokens=max_tokens, temp=temp):
             yield chunk
             await asyncio.sleep(0)
-        gc.collect()
 
     def one_shot_answer(self, prompt: str) -> str:
         prompt = build_prompt(self.config.system, [('user', prompt)])
