@@ -8,7 +8,7 @@ from magnetron import dtype
 from ..common import *
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_view(dtype: DataType) -> None:
+def test_view(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         x = random_tensor(shape, dtype)
         assert not x.is_view
@@ -20,7 +20,7 @@ def test_view(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_reshape(dtype: DataType) -> None:
+def test_reshape(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         new_shape = list(shape)
         random.shuffle(new_shape)
@@ -33,7 +33,7 @@ def test_reshape(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_transpose(dtype: DataType) -> None:
+def test_transpose(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) < 2: # transpose requires at least 2 dimensions
             return
@@ -49,7 +49,7 @@ def test_transpose(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_permute(dtype: DataType) -> None:
+def test_permute(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         x = random_tensor(shape, dtype)
         perm = random.sample(range(len(shape)), len(shape))
@@ -59,7 +59,7 @@ def test_permute(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_contiguous(dtype: DataType) -> None:
+def test_contiguous(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) < 2:
             return
@@ -79,7 +79,7 @@ def test_contiguous(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_squeeze(dtype: DataType) -> None:
+def test_squeeze(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0: # squeeze on scalars is not supported
             return
@@ -91,7 +91,7 @@ def test_squeeze(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_unsqueeze(dtype: DataType) -> None:
+def test_unsqueeze(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0: # squeeze on scalars is not supported
             return
@@ -104,7 +104,7 @@ def test_unsqueeze(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_flatten(dtype: DataType) -> None:
+def test_flatten(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0: # squeeze on scalars is not supported
             return
@@ -119,7 +119,7 @@ def test_flatten(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_unflatten(dtype: DataType) -> None:
+def test_unflatten(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:  # unflatten on scalars is weird, skip
             return
@@ -139,7 +139,7 @@ def test_unflatten(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_narrow(dtype: DataType) -> None:
+def test_narrow(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:
             return
@@ -160,7 +160,7 @@ def test_narrow(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_movedim(dtype: DataType) -> None:
+def test_movedim(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) < 2:
             return
@@ -174,7 +174,7 @@ def test_movedim(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_select(dtype: DataType) -> None:
+def test_select(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:
             return
@@ -191,7 +191,7 @@ def test_select(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_split_and_cat_roundtrip(dtype: DataType) -> None:
+def test_split_and_cat_roundtrip(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:
             return
@@ -217,7 +217,7 @@ def test_split_and_cat_roundtrip(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_cat(dtype: DataType) -> None:
+def test_cat(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:
             return

@@ -51,11 +51,10 @@ def _iter_safetensor_shards(repo_dir: str) -> list[str]:
     raise FileNotFoundError('No safetensors weights found in repo snapshot.')
 
 
-def _convert_model(model: str, torch_dtype: torch.dtype, mag_dtype: dtype.DType) -> None:
-    repo: str = f'Qwen/{model}'
+def _convert_model(repo: str, torch_dtype: torch.dtype, mag_dtype: dtype.DType) -> None:
     skip: set[str] = {'cos_cache', 'sin_cache'}
 
-    print(f'Downloading model {model} from Hugging Face...')
+    print(f'Downloading model {repo} from Hugging Face...')
 
     repo_dir = snapshot_download(repo_id=repo)
     cfg = Qwen3HyperParams()
@@ -74,7 +73,7 @@ def _convert_model(model: str, torch_dtype: torch.dtype, mag_dtype: dtype.DType)
             return mag_key
         return 'model.' + mag_key
 
-    snap_file = f'{model.lower()}-{mag_dtype.name}.mag'
+    snap_file = f'{repo.split("/")[1].lower()}-{mag_dtype.name}.mag'
 
     print(f'Writing snapshot to {snap_file}...')
     with Snapshot.write(snap_file) as snap:
@@ -112,7 +111,7 @@ def _convert_model(model: str, torch_dtype: torch.dtype, mag_dtype: dtype.DType)
 
 def _main() -> None:
     args = argparse.ArgumentParser(description='Convert Hugging Face Qwen model to Magnetron file format')
-    args.add_argument('--model', type=str, default='Qwen3-4B-Instruct-2507', help='HF repo model name')
+    args.add_argument('--model', type=str, default='Qwen/Qwen3-4B-Instruct-2507', help='HF repo model name')
     args.add_argument('--dtype', type=str, default='bfloat16', choices=['float16', 'bfloat16', 'float32'], help='Data type for Magnetron tensors')
     args = args.parse_args()
     mag_dtype = _mag_dtype_from_str(args.dtype)

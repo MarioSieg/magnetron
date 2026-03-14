@@ -62,10 +62,8 @@ def _repeat_kv(x: Tensor, n_rep: int) -> Tensor:
 
 
 def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Tensor, Tensor]:
-    idx = Tensor.arange(0, dim, 2, dtype=dtype.float32) / dim
-    inv_freq = Tensor.exp(-idx * math.log(theta))  # TODO: pow
-    seq = Tensor.arange(stop=max_seq_len, dtype=dtype.float32)
-    freqs = seq.reshape(max_seq_len, 1) * inv_freq.reshape(1, -1)
+    inv_freq = (theta ** -(Tensor.arange(0, dim, 2, dtype=dtype.float32) / dim)).reshape(1, -1)
+    freqs = Tensor.arange(stop=max_seq_len, dtype=dtype.float32).reshape(max_seq_len, 1) * inv_freq
     cos_half = Tensor.cos(freqs)
     sin_half = Tensor.sin(freqs)
     cos = Tensor.cat([cos_half, cos_half], dim=-1).cast(dtype.bfloat16)

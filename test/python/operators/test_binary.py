@@ -1,4 +1,6 @@
 # (c) 2025 Mario 'Neo' Sieg. <mario.sieg.64@gmail.com>
+from typing import Callable
+
 import torch.testing
 
 from ..common import *
@@ -14,6 +16,7 @@ _BINARY_OPS_NUMERIC: tuple[tuple[str, Callable], ...] = (
     ('truediv', lambda x, y: x / y),
     ('floordiv', lambda x, y: x // y),
     ('mod', lambda x, y: x % y),
+    ('mod', lambda x, y: x ** y),
     ('eq', lambda x, y: x == y),
     ('ne', lambda x, y: x != y),
     ('lt', lambda x, y: x < y),
@@ -34,7 +37,7 @@ _BINARY_OPS_INTEGER: tuple[tuple[str, Callable], ...] = (
 )
 
 def binary_unary_op_np(
-    dtype: DataType,
+    dtype: dtype.DType,
     avoid_zero_in_y: bool,
     mag_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray],
     np_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray]
@@ -51,7 +54,7 @@ def binary_unary_op_np(
 
 
 def binary_unary_op_torch(
-    dtype: DataType,
+    dtype: dtype.DType,
     avoid_zero_in_y: bool,
     mag_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray],
     np_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray]
@@ -68,24 +71,24 @@ def binary_unary_op_torch(
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
 @pytest.mark.parametrize('op', _BINARY_OPS_NUMERIC)
-def test_binary_op_numeric_fp(dtype: DataType, op: tuple[str, Callable]) -> None:
+def test_binary_op_numeric_fp(dtype: dtype.DType, op: tuple[str, Callable]) -> None:
     callback = op[1]
     binary_unary_op_torch(dtype, True, callback, callback)
 
 @pytest.mark.parametrize('dtype', INTEGER_DTYPES)
 @pytest.mark.parametrize('op', _BINARY_OPS_NUMERIC)
-def test_binary_op_numeric_integers(dtype: DataType, op: tuple[str, Callable]) -> None:
+def test_binary_op_numeric_integers(dtype: dtype.DType, op: tuple[str, Callable]) -> None:
     callback = op[1]
     binary_unary_op_np(dtype, True, callback, callback)
 
 @pytest.mark.parametrize('dtype', INTEGRAL_DTYPES)
 @pytest.mark.parametrize('op', _BINARY_OPS_BITWISE_INTEGRAL)
-def test_binary_op_integral(dtype: DataType, op: tuple[str, Callable]) -> None:
+def test_binary_op_integral(dtype: dtype.DType, op: tuple[str, Callable]) -> None:
     callback = op[1]
     binary_unary_op_np(dtype, False, callback, callback)
 
 @pytest.mark.parametrize('dtype', INTEGER_DTYPES)
 @pytest.mark.parametrize('op', _BINARY_OPS_INTEGER)
-def test_binary_op_integer(dtype: DataType, op: tuple[str, Callable]) -> None:
+def test_binary_op_integer(dtype: dtype.DType, op: tuple[str, Callable]) -> None:
     callback = op[1]
     binary_unary_op_np(dtype, True, callback, callback)

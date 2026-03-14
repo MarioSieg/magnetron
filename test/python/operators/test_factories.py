@@ -7,7 +7,7 @@ import torch.nn.functional
 from ..common import *
 
 @pytest.mark.parametrize('dtype', ALL_DTYPES)
-def test_factory_full(dtype: DataType) -> None:
+def test_factory_full(dtype: dtype.DType) -> None:
     # We only test full here because Tensor.full_like, Tensor.ones etc. are just wrappers around Tensor.full
     def test(shape: tuple[int, ...]) -> None:
         fill_value = random.randint(-100, 100) if dtype.is_integer else random.uniform(-100.0, 100.0)
@@ -18,7 +18,7 @@ def test_factory_full(dtype: DataType) -> None:
     for_all_shapes(test)
 
 @pytest.mark.parametrize('dtype', NUMERIC_DTYPES)
-def test_factory_arange(dtype: DataType) -> None:
+def test_factory_arange(dtype: dtype.DType) -> None:
     # We test against numpy here because torch does not support arange for unsigned integers (uint8, uint16, uint32, uint64)
     def test() -> None:
         start = random.randint(-100, 0) if dtype.is_integer else random.uniform(-100.0, 0.0)

@@ -59,7 +59,7 @@ _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
 )
 
 def unary_op(
-    dtype: DataType,
+    dtype: dtype.DType,
     rank_min: int,
     mag_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
     torch_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor]
@@ -75,7 +75,7 @@ def unary_op(
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
 @pytest.mark.parametrize('op', _UNARY_OPS)
-def test_unary_op(op: UnaryOpTestCase, dtype: DataType) -> None:
+def test_unary_op(op: UnaryOpTestCase, dtype: dtype.DType) -> None:
     name = op.name
     if op.torch_callback is not None:
         torch_op = op.torch_callback
