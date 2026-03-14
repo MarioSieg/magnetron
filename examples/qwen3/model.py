@@ -136,13 +136,8 @@ class SlidingWindowAttention(nn.Module):
         k_len: int = k.shape[2]
         k_pos_indices: Tensor = Tensor.arange(k_len).reshape(1, -1)
         q_pos_indices: Tensor = Tensor.arange(start=(k_len - q_len), stop=k_len).reshape(-1, 1)
-        causal_mask: Tensor = k_pos_indices <= q_pos_indices
-        keep: Tensor = causal_mask.cast(scores.dtype)
-        additive_mask: Tensor = (1.0 - keep) * -1e4
-        additive_mask = additive_mask.reshape(1, 1, q_len, k_len)
-        masked_scores: Tensor = scores + additive_mask
-        attn_weights: Tensor = masked_scores.softmax(dim=-1)
-        out: Tensor = (attn_weights @ v).transpose(1, 2).reshape(B, T, -1)
+        additive_mask = ((1.0 - (k_pos_indices <= q_pos_indices).cast(scores.dtype)) * -1e4).reshape(1, 1, q_len, k_len)
+        out: Tensor = ((scores + additive_mask).softmax(dim=-1) @ v).transpose(1, 2).reshape(B, T, -1)
         return self.o_proj(out), curr_kv
 
 
