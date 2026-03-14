@@ -687,7 +687,7 @@ namespace mag::bindings {
         bind_binary_full_named(cls, sub, sub, sub, "Element-wise subtraction.");
         bind_binary_full_named(cls, mul, mul, mul, "Element-wise multiplication.");
         bind_binary_full_named(cls, mod, mod, mod, "Element-wise modulo.");
-        bind_binary_full_named(cls, pow, pow, pow, "Element-wise power.");
+        bind_binary_full_named(cls, pow, pow, pow, "Element-wise exponentiation.");
         bind_binary_full_named(cls, truediv, div, truediv, "Element-wise true division.");
         bind_binary_full_named(cls, floordiv, floordiv, floordiv, "Element-wise floor division.");
         bind_binary_full_named(cls, and, and, logical_and, "Element-wise logical AND.");
