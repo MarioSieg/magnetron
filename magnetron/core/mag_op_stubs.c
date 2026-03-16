@@ -74,172 +74,6 @@ static void mag_norm_axis(int64_t *ax, int64_t ra) {
     if (*ax < 0) *ax += ra;
 }
 
-static const mag_dtype_t mag_type_promotion_rules[MAG_DTYPE__NUM][MAG_DTYPE__NUM] = {
-    [MAG_DTYPE_FLOAT32] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_FLOAT32,
-    },
-    [MAG_DTYPE_FLOAT16] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_FLOAT32,
-    },
-    [MAG_DTYPE_BFLOAT16] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_BFLOAT16]= MAG_DTYPE_BFLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_BFLOAT16,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_BFLOAT16,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_BFLOAT16,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_BFLOAT16,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_BFLOAT16,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_FLOAT32,
-    },
-    [MAG_DTYPE_BOOLEAN] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_BOOLEAN,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT8,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT8,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT16,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT16,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT32,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
-    },
-    [MAG_DTYPE_UINT8] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_UINT8,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT8,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT16,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT16,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT16,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT32,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
-    },
-    [MAG_DTYPE_INT8] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_INT8,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_INT16,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT8,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_INT32,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT16,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
-    },
-    [MAG_DTYPE_UINT16] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_UINT16,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT16,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT16,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT16,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT32,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
-    },
-    [MAG_DTYPE_INT16] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_INT16,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_INT16,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT16,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_INT32,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT16,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
-    },
-    [MAG_DTYPE_UINT32] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_UINT32,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT32,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT32,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT32,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT64,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
-    },
-    [MAG_DTYPE_INT32] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_INT32,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT32,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
-    },
-    [MAG_DTYPE_UINT64] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_UINT64,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_UINT64,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT64,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_UINT64,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT64,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_UINT64,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT64,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_UINT64,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
-    },
-    [MAG_DTYPE_INT64] = {
-        [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
-        [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT16,
-        [MAG_DTYPE_BOOLEAN] = MAG_DTYPE_INT64,
-        [MAG_DTYPE_UINT8]   = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT8]    = MAG_DTYPE_INT64,
-        [MAG_DTYPE_UINT16]  = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT16]   = MAG_DTYPE_INT64,
-        [MAG_DTYPE_UINT32]  = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT32]   = MAG_DTYPE_INT64,
-        [MAG_DTYPE_UINT64]  = MAG_DTYPE_INT64,
-        [MAG_DTYPE_INT64]   = MAG_DTYPE_INT64,
-    },
-};
-
-static bool mag_promote_type(mag_dtype_t *out, mag_dtype_t lhs, mag_dtype_t rhs) {
-    if (mag_unlikely(lhs >= MAG_DTYPE__NUM || rhs >= MAG_DTYPE__NUM)) return false;
-    *out = mag_type_promotion_rules[lhs][rhs];
-    return *out < MAG_DTYPE__NUM;
-}
-
 static bool mag_op_requires_op_params(mag_opcode_t op) { /* Returns true if the op requires any op params and thus requires validation of them. */
     const mag_op_traits_t *meta = mag_op_traits(op);
     for (int i=0; i < MAG_MAX_OP_PARAMS; ++i) {
@@ -458,7 +292,7 @@ mag_status_t mag_ones(mag_error_t *err, mag_tensor_t **out_result, mag_context_t
 }
 
 mag_status_t mag_ones_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like) {
-    return mag_full_like(err, out_result, like, mag_scalar_from_u64(0));
+    return mag_full_like(err, out_result, like, mag_scalar_from_u64(1));
 }
 
 mag_status_t mag_uniform(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_scalar_t min, mag_scalar_t max) {
@@ -1287,8 +1121,7 @@ static mag_status_t mag_op_stub_binary(mag_error_t *err, mag_tensor_t **out_resu
             } break;
             case MAG_OP_FLOORDIV: {
                 bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
-                mag_contract(err, ERR_INVALID_PARAM, {}, prom_ok,
-"Binary operator '%s' is not supported for dtypes %s and %s.",
+                mag_contract(err, ERR_INVALID_PARAM, {}, prom_ok, "Binary operator '%s' is not supported for dtypes %s and %s.",
                     mag_op_traits(op)->mnemonic,
                     mag_type_trait(x->dtype)->name,
                     mag_type_trait(y->dtype)->name
@@ -1385,6 +1218,34 @@ mag_impl_binary_pair(gt, GT, true)
 
 #undef mag_impl_binary_pair
 
+mag_status_t mag_where(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *cond, mag_tensor_t *x, mag_tensor_t *y) {
+    *out_result = NULL;
+    mag_contract(err, ERR_INVALID_PARAM, {}, cond->dtype == MAG_DTYPE_BOOLEAN, "where: condition tensor dtype must be boolean; got %s", mag_type_trait(cond->dtype)->name);
+    mag_contract(err, ERR_INVALID_PARAM, {}, x->dtype == y->dtype, "where: x and y tensors must have the same dtype; got %s and %s", mag_type_trait(x->dtype)->name, mag_type_trait(y->dtype)->name);
+    int64_t dims[MAG_MAX_DIMS];
+    int64_t rank;
+    const mag_coords_t *coords[3] = {&cond->coords, &x->coords, &y->coords};
+    if (mag_unlikely(!mag_coords_broadcast_multi_shape(coords, sizeof(coords)/sizeof(*coords), dims, &rank))) {
+        char sc[MAG_FMT_DIM_BUF_SIZE];
+        char sx[MAG_FMT_DIM_BUF_SIZE];
+        char sy[MAG_FMT_DIM_BUF_SIZE];
+        mag_fmt_shape(&sc, &cond->coords.shape, cond->coords.rank);
+        mag_fmt_shape(&sx, &x->coords.shape, x->coords.rank);
+        mag_fmt_shape(&sy, &y->coords.shape, y->coords.rank);
+        mag_contract(err, ERR_BROADCAST_IMPOSSIBLE, {}, 0,
+            "Cannot broadcast tensors with shapes %s, %s, and %s for operator 'where'.\n"
+            "    Hint: ensure that condition, x, and y are broadcast-compatible.\n",
+            sc, sx, sy);
+    }
+    mag_tensor_t *result = NULL;
+    mag_try(rank ? mag_empty(err, &result, x->ctx, x->dtype, rank, dims) : mag_empty_scalar(err, &result, x->ctx, x->dtype));
+    mag_tensor_t *in[3] = {cond, x, y};
+    mag_try(mag_check_dtype_compat(err, MAG_OP_WHERE, in));
+    mag_try(mag_dispatch(err, MAG_OP_WHERE, false, NULL, in, sizeof(in)/sizeof(*in), &result, 1));
+    *out_result = result;
+    return MAG_STATUS_OK;
+}
+
 mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
     *out_result = NULL;
     mag_contract(err, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(x) && mag_tensor_is_floating_point_typed(y), "matmul: both tensors must be floating-point typed.");
@@ -1443,7 +1304,7 @@ mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
         shape[rbd+1] = y->coords.shape[y->coords.rank-1];
         mag_try(mag_empty(err, &result,x->ctx, x->dtype, rbd+2, shape));
     }
-    mag_try(mag_dispatch(err, MAG_OP_MATMUL, false, false, (mag_tensor_t *[2]) {x, y}, 2, &result, 1));
+    mag_try(mag_dispatch(err, MAG_OP_MATMUL, false, NULL, (mag_tensor_t *[2]) {x, y}, 2, &result, 1));
     *out_result = result;
     return MAG_STATUS_OK;
 }

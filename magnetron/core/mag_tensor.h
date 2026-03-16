@@ -68,8 +68,7 @@ struct mag_tensor_t {
 };
 MAG_RC_OBJECT_IS_VALID(mag_tensor_t);
 
-extern MAG_EXPORT bool mag_full_cont2(const mag_tensor_t *a, const mag_tensor_t *b);
-extern MAG_EXPORT bool mag_full_cont3(const mag_tensor_t *a, const mag_tensor_t *b, const mag_tensor_t *c);
+extern MAG_EXPORT bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n); /* Returns true if shapes are equal and all tensors are contigous */
 
 #ifdef MAG_DEBUG
 extern void mag_leak_detector_enqueue(mag_tensor_t *t);

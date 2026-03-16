@@ -204,7 +204,7 @@ static MAG_HOTPROC void mag_one_hot_int64(const mag_kernel_payload_t *payload) {
     int64_t ra = ti*chunk;
     int64_t rb = mag_xmin(ra + chunk, total);
     if (mag_unlikely(rb <= ra)) return;
-    if (mag_full_cont2(r, idx)) {
+    if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, idx}, 2)) {
         for (int64_t i=ra; i < rb; ++i) {
             int64_t cls = pidx[i];
             if ((uint64_t)cls < (uint64_t)nc) {

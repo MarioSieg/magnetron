@@ -167,6 +167,57 @@ static MAG_CUDA_DEVICE inline void mag_coords_iter_offset3(
     *oiy = iy;
 }
 
+static MAG_CUDA_DEVICE inline void mag_coords_iter_offset4(
+    mag_coords_iter_t *cr,
+    const mag_coords_iter_t *ca,
+    const mag_coords_iter_t *cb,
+    const mag_coords_iter_t *cc,
+    int64_t i,
+    int64_t *oir,
+    int64_t *oia,
+    int64_t *oib,
+    int64_t *oic
+) {
+    const int64_t *restrict rd = cr->shape;
+    const int64_t *restrict rs = cr->strides;
+    const int64_t *restrict ad = ca->shape;
+    const int64_t *restrict as = ca->strides;
+    const int64_t *restrict bd = cb->shape;
+    const int64_t *restrict bs = cb->strides;
+    const int64_t *restrict cd = cc->shape;
+    const int64_t *restrict cs = cc->strides;
+    int64_t rr = cr->rank;
+    int64_t ra = ca->rank;
+    int64_t rb = cb->rank;
+    int64_t rc = cc->rank;
+    int64_t da = rr - ra;
+    int64_t db = rr - rb;
+    int64_t dc = rr - rc;
+    int64_t ir = 0;
+    int64_t ia = 0;
+    int64_t ib = 0;
+    int64_t ic = 0;
+    for (int64_t k=rr-1; k >= 0; --k) {
+        int64_t dim = rd[k];
+        int64_t ax = i % dim;
+        i /= dim;
+        ir += ax*rs[k];
+        int64_t ka = k - da;
+        if (ka >= 0 && ad[ka] > 1)
+            ia += ax*as[ka];
+        int64_t kb = k - db;
+        if (kb >= 0 && bd[kb] > 1)
+            ib += ax*bs[kb];
+        int64_t kc = k - dc;
+        if (kc >= 0 && cd[kc] > 1)
+            ic += ax*cs[kc];
+    }
+    *oir = ir;
+    *oia = ia;
+    *oib = ib;
+    *oic = ic;
+}
+
 #ifdef __cplusplus
 }
 #endif

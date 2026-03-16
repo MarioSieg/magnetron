@@ -340,14 +340,6 @@ bool mag_tensor_is_numeric_typed(const mag_tensor_t *tensor) {
     return mag_dtype_bit(tensor->dtype) & MAG_DTYPE_MASK_NUMERIC;
 }
 
-bool mag_full_cont2(const mag_tensor_t *a, const mag_tensor_t *b) {
-    return a->numel == b->numel && mag_tensor_is_contiguous(a) && mag_tensor_is_contiguous(b);
-}
-
-bool mag_full_cont3(const mag_tensor_t *a, const mag_tensor_t *b, const mag_tensor_t *c) {
-    return a->numel == b->numel && a->numel == c->numel && mag_tensor_is_contiguous(a) && mag_tensor_is_contiguous(b) && mag_tensor_is_contiguous(c);
-}
-
 bool mag_tensor_is_shape_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
     return mag_coords_shape_cmp(&x->coords, &y->coords);
 }
@@ -383,6 +375,27 @@ void mag_tensor_incref(mag_tensor_t *tensor) {
 
 bool mag_tensor_decref(mag_tensor_t *tensor) {
     return mag_rc_decref(tensor);
+}
+
+bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {
+    if (mag_unlikely(!tensors || !n)) return false;
+    const mag_tensor_t *t0 = *tensors;
+    if (mag_unlikely(!t0)) return false;
+    if (!mag_tensor_is_contiguous(t0)) false;
+    const int64_t rank = t0->coords.rank;
+    const int64_t *shape0 = t0->coords.shape;
+    for (size_t i=1; i < n; ++i) {
+        const mag_tensor_t *t = tensors[i];
+        if (mag_unlikely(!t)) return false;
+        if (!mag_tensor_is_contiguous(t)) return false;
+        if (t->coords.rank != rank) return false;
+        const int64_t *shape = t->coords.shape;
+        for (int64_t d = 0; d < rank; ++d) {
+            if (shape[d] != shape0[d])
+                return false;
+        }
+    }
+    return true;
 }
 
 #ifdef MAG_DEBUG

@@ -381,3 +381,50 @@ mag_gen_stub_topk(uint64_t, uint64, mag_cvt_nop)
 mag_gen_stub_topk(int64_t, int64, mag_cvt_nop)
 
 #undef mag_gen_stub_topk
+
+#define mag_gen_stub_where(T, TF) \
+    static void MAG_HOTPROC mag_where_##TF(const mag_kernel_payload_t *payload) { \
+        mag_tensor_t *r = mag_cmd_out(0); \
+        const mag_tensor_t *cond = mag_cmd_in(0); \
+        const mag_tensor_t *x = mag_cmd_in(1); \
+        const mag_tensor_t *y = mag_cmd_in(2); \
+        mag_assert2(cond->dtype == MAG_DTYPE_BOOLEAN); \
+        T *br = (T *)mag_tensor_data_ptr_mut(r); \
+        const uint8_t *bc = (const uint8_t *)mag_tensor_data_ptr(cond); \
+        const T *bx = (const T *)mag_tensor_data_ptr(x); \
+        const T *by = (const T *)mag_tensor_data_ptr(y); \
+        int64_t tc = payload->thread_num; \
+        int64_t ti = payload->thread_idx; \
+        int64_t total = r->numel; \
+        int64_t chunk = (total + tc - 1)/tc; \
+        int64_t ra = ti*chunk; \
+        int64_t rb = mag_xmin(ra + chunk, total); \
+        mag_coords_iter_t cr, cc, cx, cy; \
+        mag_coords_iter_init(&cr, &r->coords); \
+        mag_coords_iter_init(&cc, &cond->coords); \
+        mag_coords_iter_init(&cx, &x->coords); \
+        mag_coords_iter_init(&cy, &y->coords); \
+        for (int64_t i=ra; i < rb; ++i) { \
+            int64_t ri, ci, xi, yi; \
+            mag_coords_iter_offset4(&cr, &cc, &cx, &cy, i, &ri, &ci, &xi, &yi); \
+            mag_bnd_chk(bc+ci, bc, mag_tensor_numbytes(cond)); \
+            mag_bnd_chk(bx+xi, bx, mag_tensor_numbytes(x)); \
+            mag_bnd_chk(by+yi, by, mag_tensor_numbytes(y)); \
+            mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
+            br[ri] = bc[ci] ? bx[xi] : by[yi]; \
+        } \
+    }
+
+mag_gen_stub_where(float, float32)
+mag_gen_stub_where(mag_float16_t, float16)
+mag_gen_stub_where(mag_bfloat16_t, bfloat16)
+mag_gen_stub_where(uint8_t, uint8)
+mag_gen_stub_where(int8_t, int8)
+mag_gen_stub_where(uint16_t, uint16)
+mag_gen_stub_where(int16_t, int16)
+mag_gen_stub_where(uint32_t, uint32)
+mag_gen_stub_where(int32_t, int32)
+mag_gen_stub_where(uint64_t, uint64)
+mag_gen_stub_where(int64_t, int64)
+
+#undef mag_gen_stub_where

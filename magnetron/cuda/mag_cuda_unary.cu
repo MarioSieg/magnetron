@@ -256,7 +256,7 @@ namespace mag {
         int64_t n = mag_tensor_numel(r);
         auto *pr = reinterpret_cast<scalar_t *>(mag_tensor_data_ptr_mut(r));
         const auto *px = reinterpret_cast<const scalar_t *>(mag_tensor_data_ptr(x));
-        if (mag_full_cont2(r, x)) {
+        if (std::array<const mag_tensor_t *, 2> tensors {r, x}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) { // TODO: Can be relaxed to non-shape
             cudaMemcpy(pr, px, n*sizeof(scalar_t), cudaMemcpyDeviceToDevice);
             return;
         }
@@ -640,7 +640,7 @@ namespace mag {
         mag_coords_iter_init(&xc, &x->coords);
         auto *pr = reinterpret_cast<typename op_t::out_t *>(mag_tensor_data_ptr_mut(r));
         const auto *px = reinterpret_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
-        if (mag_full_cont2(r, x)) unary_op_kernel<op_t, true><<<blocks, UNARY_BLOCK_SIZE>>>(op_t{}, n, pr, px, rc, xc);
+        if (std::array<const mag_tensor_t *, 3> tensors {r, x}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) unary_op_kernel<op_t, true><<<blocks, UNARY_BLOCK_SIZE>>>(op_t{}, n, pr, px, rc, xc);
         else unary_op_kernel<op_t, false><<<blocks, UNARY_BLOCK_SIZE>>>(op_t{}, n, pr, px, rc, xc);
     }
 

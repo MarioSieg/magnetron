@@ -23,7 +23,7 @@
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        if (mag_full_cont3(r, x, y)) { \
+        if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r, x, y}, 3)) { \
             mag_v##FUNC##_##TF(rb-ra, br+ra, bx+ra, by+ra); \
             return; \
         } \
@@ -221,7 +221,7 @@ mag_gen_stub_binop(int64_t, int64, shr, mag_opf_sar, mag_cvt_nop, mag_cvt_nop)
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        if (mag_full_cont3(r, x, y)) { \
+        if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r, x, y}, 3)) { \
             mag_v##FUNC##_##TF(rb-ra, br+ra, bx+ra, by+ra); \
             return; \
         } \

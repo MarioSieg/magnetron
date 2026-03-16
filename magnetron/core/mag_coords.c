@@ -24,6 +24,22 @@ bool mag_coords_broadcast_shape(const mag_coords_t *x, const mag_coords_t *y, in
     return true;
 }
 
+bool mag_coords_broadcast_multi_shape(const mag_coords_t **x, size_t n, int64_t *dims, int64_t *rank) {
+    mag_assert2(n > 0);
+    mag_coords_t acc = **x;
+    for (size_t i=1; i < n; ++i) {
+        int64_t tmp_dims[MAG_MAX_DIMS];
+        int64_t tmp_rank = 0;
+        if (!mag_coords_broadcast_shape(&acc, x[i], tmp_dims, &tmp_rank))
+            return false;
+        acc.rank = tmp_rank;
+        memcpy(acc.shape, tmp_dims, sizeof(int64_t)*tmp_rank);
+    }
+    *rank = acc.rank;
+    memcpy(dims, acc.shape, sizeof(int64_t)*acc.rank);
+    return true;
+}
+
 bool mag_coords_shape_cmp(const mag_coords_t *x, const mag_coords_t *y) {
     if (x->rank != y->rank) return false;
     for (int64_t i=0; i < x->rank; ++i)

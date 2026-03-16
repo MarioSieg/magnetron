@@ -159,7 +159,8 @@ namespace mag {
             [MAG_OP_LE] = &binary_op_le,
             [MAG_OP_GE] = &binary_op_ge,
             [MAG_OP_LT] = &binary_op_lt,
-            [MAG_OP_GT] = &binary_op_gt
+            [MAG_OP_GT] = &binary_op_gt,
+            [MAG_OP_WHERE] = nullptr
         };
         static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
         kernel_fn *kern = dispatch_table[cmd->op];

@@ -129,27 +129,6 @@ extern MAG_EXPORT void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_de
 typedef struct mag_tensor_t mag_tensor_t;
 
 /**
- * @brief Data types for tensors.
- */
-typedef enum mag_dtype_t {
-    MAG_DTYPE_FLOAT32,
-    MAG_DTYPE_FLOAT16,
-    MAG_DTYPE_BFLOAT16,
-    MAG_DTYPE_BOOLEAN,
-    MAG_DTYPE_UINT8,
-    MAG_DTYPE_INT8,
-    MAG_DTYPE_UINT16,
-    MAG_DTYPE_INT16,
-    MAG_DTYPE_UINT32,
-    MAG_DTYPE_INT32,
-    MAG_DTYPE_UINT64,
-    MAG_DTYPE_INT64,
-
-    MAG_DTYPE__NUM
-} mag_dtype_t;
-mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fit in 1 byte */
-
-/**
 * Type tag discriminating between different scalar types.
 */
 typedef enum mag_scalar_type_t {
@@ -185,6 +164,29 @@ extern MAG_EXPORT bool mag_scalar_is_u64(mag_scalar_t s);
 extern MAG_EXPORT double mag_scalar_as_f64(mag_scalar_t s);
 extern MAG_EXPORT int64_t mag_scalar_as_i64(mag_scalar_t s);
 extern MAG_EXPORT uint64_t mag_scalar_as_u64(mag_scalar_t s);
+
+/**
+ * @brief Data types for tensors.
+ */
+typedef enum mag_dtype_t {
+    MAG_DTYPE_FLOAT32,
+    MAG_DTYPE_FLOAT16,
+    MAG_DTYPE_BFLOAT16,
+    MAG_DTYPE_BOOLEAN,
+    MAG_DTYPE_UINT8,
+    MAG_DTYPE_INT8,
+    MAG_DTYPE_UINT16,
+    MAG_DTYPE_INT16,
+    MAG_DTYPE_UINT32,
+    MAG_DTYPE_INT32,
+    MAG_DTYPE_UINT64,
+    MAG_DTYPE_INT64,
+
+    MAG_DTYPE__NUM
+} mag_dtype_t;
+mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fit in 1 byte */
+
+extern MAG_EXPORT bool mag_promote_type(mag_dtype_t *out, mag_dtype_t lhs, mag_dtype_t rhs);
 
 /**
 * @brief Contains metadata about a data type such as its name, size, and alignment.
@@ -388,6 +390,7 @@ extern MAG_EXPORT mag_status_t mag_le(mag_error_t *err, mag_tensor_t **out_resul
 extern MAG_EXPORT mag_status_t mag_ge(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_lt(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_gt(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);
+extern MAG_EXPORT mag_status_t mag_where(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *cond, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int32_t diag);
 extern MAG_EXPORT mag_status_t mag_tril_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int32_t diag);
 extern MAG_EXPORT mag_status_t mag_triu(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int32_t diag);
