@@ -142,7 +142,7 @@ namespace mag {
             [MAG_OP_DIV] = &binary_op_div,
             [MAG_OP_FLOORDIV] = nullptr,
             [MAG_OP_MOD] = &binary_op_mod,
-            [MAG_OP_POW] = nullptr,
+            [MAG_OP_POW] = &binary_op_pow,
             [MAG_OP_MATMUL] = nullptr,
             [MAG_OP_REPEAT_BACK] = nullptr,
             [MAG_OP_GATHER] = nullptr,

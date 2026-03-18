@@ -76,35 +76,6 @@ static MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
 #define mag_floordivu(x, y) ((x)/(y))
 #define mag_floordivf(x, y) (floorf((x)/(y)))
 
-static MAG_AINLINE uint64_t mag_powu(uint64_t x, uint64_t k) {
-    if (!k) return 1;
-    for (; !(k&1); k >>= 1) x *= x;
-    uint64_t y = x;
-    if (k>>=1) {
-        for (;;) {
-            x *= x;
-            if (k == 1) break;
-            if (k&1) y *= x;
-            k >>= 1;
-        }
-        y *= x;
-    }
-    return y;
-}
-
-static MAG_AINLINE int64_t mag_powi(int64_t x, int64_t k) {
-    if (!k) return 1;
-    if (k < 0) {
-        switch (x) {
-            case 0:  return UINT64_C(0x7fffffffffffffff);
-            case 1:  return 1;
-            case -1: return (k&1) ? -1 : 1;
-            default: return 0;
-        }
-    }
-    return (int64_t)mag_powu((uint64_t)x, (uint64_t)k);
-}
-
 #define mag_powf(x,y) powf((x), (y))
 
 extern MAG_THREAD_LOCAL mag_scratch_arena_t mag_tls_arena; /* 4 MiB keep before decay */

@@ -609,7 +609,7 @@ return __builtin_smull_overflow(a, b, c);
 #endif
 }
 
-static MAG_CUDA_DEVICE inline uint32_t mag_next_pow2_u32(uint32_t x) {
+static MAG_CUDA_DEVICE MAG_AINLINE uint32_t mag_next_pow2_u32(uint32_t x) {
     if (mag_unlikely(x <= 1)) return 1;
     --x;
     x |= x>>1;
@@ -618,6 +618,35 @@ static MAG_CUDA_DEVICE inline uint32_t mag_next_pow2_u32(uint32_t x) {
     x |= x>>8;
     x |= x>>16;
     return x+1;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE uint64_t mag_powu(uint64_t x, uint64_t k) {
+    if (!k) return 1;
+    for (; !(k&1); k >>= 1) x *= x;
+    uint64_t y = x;
+    if (k>>=1) {
+        for (;;) {
+            x *= x;
+            if (k == 1) break;
+            if (k&1) y *= x;
+            k >>= 1;
+        }
+        y *= x;
+    }
+    return y;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_powi(int64_t x, int64_t k) {
+    if (!k) return 1;
+    if (k < 0) {
+        switch (x) {
+            case 0:  return UINT64_C(0x7fffffffffffffff);
+            case 1:  return 1;
+            case -1: return (k&1) ? -1 : 1;
+            default: return 0;
+        }
+    }
+    return (int64_t)mag_powu((uint64_t)x, (uint64_t)k);
 }
 
 extern bool mag_utf8_validate(const uint8_t *str, size_t len);
