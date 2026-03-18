@@ -149,7 +149,7 @@ namespace mag {
             [MAG_OP_AND] = &binary_op_and,
             [MAG_OP_OR] = &binary_op_or,
             [MAG_OP_XOR] = &binary_op_xor,
-            [MAG_OP_NOT] = nullptr,
+            [MAG_OP_NOT] = &unary_op_not,
             [MAG_OP_SHL] = &binary_op_shl,
             [MAG_OP_SHR] = &binary_op_shr,
             [MAG_OP_EQ] = &binary_op_eq,

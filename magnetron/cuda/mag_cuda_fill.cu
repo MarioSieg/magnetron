@@ -128,8 +128,11 @@ namespace mag {
         mag_coords_iter_init(&rc, &r->coords);
         uint64_t seed = global_seed.load(std::memory_order_relaxed);
         uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
-        if (mag_tensor_is_contiguous(r)) fill_random_kernel<scalar_t, true, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);
-        else fill_random_kernel<scalar_t, false, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);
+        if (mag_tensor_is_contiguous(r)) {
+            fill_random_kernel<scalar_t, true, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);
+        } else {
+            fill_random_kernel<scalar_t, false, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);
+        }
     }
 
     void fill_op_fill(const mag_command_t &cmd) {

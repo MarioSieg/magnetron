@@ -21,6 +21,7 @@ namespace mag {
     extern void unary_op_abs(const mag_command_t &cmd);
     extern void unary_op_sgn(const mag_command_t &cmd);
     extern void unary_op_neg(const mag_command_t &cmd);
+    extern void unary_op_not(const mag_command_t &cmd);
     extern void unary_op_log(const mag_command_t &cmd);
     extern void unary_op_log10(const mag_command_t &cmd);
     extern void unary_op_log1p(const mag_command_t &cmd);
@@ -63,5 +64,4 @@ namespace mag {
     extern void unary_op_relu_dv(const mag_command_t &cmd);
     extern void unary_op_gelu(const mag_command_t &cmd);
     extern void unary_op_gelu_dv(const mag_command_t &cmd);
-    extern void unary_op_not(const mag_command_t &cmd);
 }

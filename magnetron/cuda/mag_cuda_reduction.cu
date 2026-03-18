@@ -192,8 +192,8 @@ namespace mag {
         mag_tensor_t *r = cmd.out[0];
         mag_assert2(r->dtype == x->dtype);
         switch (x->dtype) {
-            case MAG_DTYPE_FLOAT32:  launch_reduce_op<op_t<float, float, double>>(cmd); break;
-            case MAG_DTYPE_FLOAT16:  launch_reduce_op<op_t<half, half, float>>(cmd); break;
+            case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
+            case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
             case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
             default: mag_assert(false, "Unsupported dtype for floating reduction op");
         }
