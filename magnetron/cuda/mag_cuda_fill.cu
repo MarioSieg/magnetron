@@ -60,9 +60,9 @@ namespace mag {
     }
 
     template <typename scalar_t>
-    static void launch_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd, const mag_tensor_t *mask = nullptr) {
+    static void launch_fill_kernel(mag_tensor_t *r, const mag_command_t &cmd, const mag_tensor_t *mask = nullptr) {
         auto *o = reinterpret_cast<scalar_t *>(mag_tensor_data_ptr_mut(r));
-        auto v = unpack_param<scalar_t>(cmd->attrs, 0);
+        auto v = unpack_param<scalar_t>(cmd.attrs, 0);
         mag_coords_iter_t rc;
         mag_coords_iter_init(&rc, &r->coords);
         bool rc_cont = mag_tensor_is_contiguous(r);
@@ -118,10 +118,10 @@ namespace mag {
     }
 
     template <typename scalar_t, const bool normal>
-    static void launch_rand_fill_kernel(mag_tensor_t *r, const mag_command_t *cmd) {
+    static void launch_rand_fill_kernel(mag_tensor_t *r, const mag_command_t &cmd) {
         auto *o = reinterpret_cast<scalar_t *>(mag_tensor_data_ptr_mut(r));
-        auto p0 = unpack_param<scalar_t>(cmd->attrs, 0);
-        auto p1 = unpack_param<scalar_t>(cmd->attrs, 1);
+        auto p0 = unpack_param<scalar_t>(cmd.attrs, 0);
+        auto p1 = unpack_param<scalar_t>(cmd.attrs, 1);
         int64_t n = mag_tensor_numel(r);
         int64_t blocks = (((n+3)>>2)+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
         mag_coords_iter_t rc;
@@ -132,8 +132,8 @@ namespace mag {
         else fill_random_kernel<scalar_t, false, normal><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p0, p1, seed, subseq, rc);
     }
 
-    void fill_op_fill(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
+    void fill_op_fill(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd); break;
             case MAG_DTYPE_FLOAT16: launch_fill_kernel<half>(r, cmd); break;
@@ -151,9 +151,9 @@ namespace mag {
         }
     }
 
-    void fill_op_masked_fill(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
-        mag_tensor_t *mask = static_cast<mag_tensor_t *>(mag_op_attr_unwrap_ptr(cmd->attrs[0])); // TODO: pass in cmd in why the fuck are these here
+    void fill_op_masked_fill(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        mag_tensor_t *mask = static_cast<mag_tensor_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0])); // TODO: pass in cmd in why the fuck are these here
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd, mask); break;
             case MAG_DTYPE_FLOAT16: launch_fill_kernel<half>(r, cmd, mask); break;
@@ -171,8 +171,8 @@ namespace mag {
         }
     }
 
-    void fill_op_fill_rand_uniform(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
+    void fill_op_fill_rand_uniform(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, false>(r, cmd); break;
             case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, false>(r, cmd); break;
@@ -181,8 +181,8 @@ namespace mag {
         }
     }
 
-    void fill_op_fill_rand_normal(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
+    void fill_op_fill_rand_normal(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, true>(r, cmd); break;
             case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, true>(r, cmd); break;

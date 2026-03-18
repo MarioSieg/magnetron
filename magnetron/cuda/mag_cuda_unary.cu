@@ -49,9 +49,9 @@ namespace mag {
         else cast_kernel<src_t, dst_t, false><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, xc);
     }
 
-    void unary_op_cast(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
-        const mag_tensor_t *x = cmd->in[0];
+    void unary_op_cast(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        const mag_tensor_t *x = cmd.in[0];
         using cast_fn = void (mag_tensor_t *, const mag_tensor_t *);
         static constexpr cast_fn *const cast_table_2d[MAG_DTYPE__NUM][MAG_DTYPE__NUM] = {
             [MAG_DTYPE_FLOAT32] = {
@@ -267,9 +267,9 @@ namespace mag {
         clone_strided_kernel<scalar_t><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, rc, xc);
     }
 
-    void unary_op_clone(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
-        const mag_tensor_t *x = cmd->in[0];
+    void unary_op_clone(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        const mag_tensor_t *x = cmd.in[0];
         mag_assert2(r->dtype == x->dtype);
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_clone<float>(r, x); break;
@@ -655,50 +655,50 @@ namespace mag {
         }
     }
 
-    void unary_op_abs(const mag_command_t *cmd) { impl_unary_op<op_abs>(cmd->out[0], cmd->in[0]); }
-    void unary_op_sgn(const mag_command_t *cmd) { impl_unary_op<op_sgn>(cmd->out[0], cmd->in[0]); }
-    void unary_op_neg(const mag_command_t *cmd) { impl_unary_op<op_neg>(cmd->out[0], cmd->in[0]); }
-    void unary_op_log(const mag_command_t *cmd) { impl_unary_op<op_log>(cmd->out[0], cmd->in[0]); }
-    void unary_op_log10(const mag_command_t *cmd) { impl_unary_op<op_log10>(cmd->out[0], cmd->in[0]); }
-    void unary_op_log1p(const mag_command_t *cmd) { impl_unary_op<op_log1p>(cmd->out[0], cmd->in[0]); }
-    void unary_op_log2(const mag_command_t *cmd) { impl_unary_op<op_log2>(cmd->out[0], cmd->in[0]); }
-    void unary_op_sqr(const mag_command_t *cmd) { impl_unary_op<op_sqr>(cmd->out[0], cmd->in[0]); }
-    void unary_op_rcp(const mag_command_t *cmd) { impl_unary_op<op_rcp>(cmd->out[0], cmd->in[0]); }
-    void unary_op_sqrt(const mag_command_t *cmd) { impl_unary_op<op_sqrt>(cmd->out[0], cmd->in[0]); }
-    void unary_op_rsqrt(const mag_command_t *cmd) { impl_unary_op<op_rsqrt>(cmd->out[0], cmd->in[0]); }
-    void unary_op_sin(const mag_command_t *cmd) { impl_unary_op<op_sin>(cmd->out[0], cmd->in[0]); }
-    void unary_op_cos(const mag_command_t *cmd) { impl_unary_op<op_cos>(cmd->out[0], cmd->in[0]); }
-    void unary_op_tan(const mag_command_t *cmd) { impl_unary_op<op_tan>(cmd->out[0], cmd->in[0]); }
-    void unary_op_asin(const mag_command_t *cmd) { impl_unary_op<op_asin>(cmd->out[0], cmd->in[0]); }
-    void unary_op_acos(const mag_command_t *cmd) { impl_unary_op<op_acos>(cmd->out[0], cmd->in[0]); }
-    void unary_op_atan(const mag_command_t *cmd) { impl_unary_op<op_atan>(cmd->out[0], cmd->in[0]); }
-    void unary_op_sinh(const mag_command_t *cmd) { impl_unary_op<op_sinh>(cmd->out[0], cmd->in[0]); }
-    void unary_op_cosh(const mag_command_t *cmd) { impl_unary_op<op_cosh>(cmd->out[0], cmd->in[0]); }
-    void unary_op_tanh(const mag_command_t *cmd) { impl_unary_op<op_tanh>(cmd->out[0], cmd->in[0]); }
-    void unary_op_asinh(const mag_command_t *cmd) { impl_unary_op<op_asinh>(cmd->out[0], cmd->in[0]); }
-    void unary_op_acosh(const mag_command_t *cmd) { impl_unary_op<op_acosh>(cmd->out[0], cmd->in[0]); }
-    void unary_op_atanh(const mag_command_t *cmd) { impl_unary_op<op_atanh>(cmd->out[0], cmd->in[0]); }
-    void unary_op_step(const mag_command_t *cmd) { impl_unary_op<op_step>(cmd->out[0], cmd->in[0]); }
-    void unary_op_erf(const mag_command_t *cmd) { impl_unary_op<op_erf>(cmd->out[0], cmd->in[0]); }
-    void unary_op_erfc(const mag_command_t *cmd) { impl_unary_op<op_erfc>(cmd->out[0], cmd->in[0]); }
-    void unary_op_exp(const mag_command_t *cmd) { impl_unary_op<op_exp>(cmd->out[0], cmd->in[0]); }
-    void unary_op_exp2(const mag_command_t *cmd) { impl_unary_op<op_exp2>(cmd->out[0], cmd->in[0]); }
-    void unary_op_expm1(const mag_command_t *cmd) { impl_unary_op<op_expm1>(cmd->out[0], cmd->in[0]); }
-    void unary_op_floor(const mag_command_t *cmd) { impl_unary_op<op_floor>(cmd->out[0], cmd->in[0]); }
-    void unary_op_ceil(const mag_command_t *cmd) { impl_unary_op<op_ceil>(cmd->out[0], cmd->in[0]); }
-    void unary_op_round(const mag_command_t *cmd) { impl_unary_op<op_round>(cmd->out[0], cmd->in[0]); }
-    void unary_op_trunc(const mag_command_t *cmd) { impl_unary_op<op_trunc>(cmd->out[0], cmd->in[0]); }
-    void unary_op_softmax(const mag_command_t *cmd) { impl_unary_op<op_softmax>(cmd->out[0], cmd->in[0]); }
-    void unary_op_softmax_dv(const mag_command_t *cmd) { impl_unary_op<op_softmax_dv>(cmd->out[0], cmd->in[0]); }
-    void unary_op_sigmoid(const mag_command_t *cmd) { impl_unary_op<op_sigmoid>(cmd->out[0], cmd->in[0]); }
-    void unary_op_sigmoid_dv(const mag_command_t *cmd) { impl_unary_op<op_sigmoid_dv>(cmd->out[0], cmd->in[0]); }
-    void unary_op_hard_sigmoid(const mag_command_t *cmd) { impl_unary_op<op_hard_sigmoid>(cmd->out[0], cmd->in[0]); }
-    void unary_op_silu(const mag_command_t *cmd) { impl_unary_op<op_silu>(cmd->out[0], cmd->in[0]); }
-    void unary_op_silu_dv(const mag_command_t *cmd) { impl_unary_op<op_silu_dv>(cmd->out[0], cmd->in[0]); }
-    void unary_op_tanh_dv(const mag_command_t *cmd) { impl_unary_op<op_tanh_dv>(cmd->out[0], cmd->in[0]); }
-    void unary_op_relu(const mag_command_t *cmd) { impl_unary_op<op_relu>(cmd->out[0], cmd->in[0]); }
-    void unary_op_relu_dv(const mag_command_t *cmd) { impl_unary_op<op_relu_dv>(cmd->out[0], cmd->in[0]); }
-    void unary_op_gelu(const mag_command_t *cmd) { impl_unary_op<op_gelu>(cmd->out[0], cmd->in[0]); }
-    void unary_op_gelu_dv(const mag_command_t *cmd) { impl_unary_op<op_gelu_dv>(cmd->out[0], cmd->in[0]); }
-    void unary_op_not(const mag_command_t *cmd) { }
+    void unary_op_abs(const mag_command_t &cmd) { impl_unary_op<op_abs>(cmd.out[0], cmd.in[0]); }
+    void unary_op_sgn(const mag_command_t &cmd) { impl_unary_op<op_sgn>(cmd.out[0], cmd.in[0]); }
+    void unary_op_neg(const mag_command_t &cmd) { impl_unary_op<op_neg>(cmd.out[0], cmd.in[0]); }
+    void unary_op_log(const mag_command_t &cmd) { impl_unary_op<op_log>(cmd.out[0], cmd.in[0]); }
+    void unary_op_log10(const mag_command_t &cmd) { impl_unary_op<op_log10>(cmd.out[0], cmd.in[0]); }
+    void unary_op_log1p(const mag_command_t &cmd) { impl_unary_op<op_log1p>(cmd.out[0], cmd.in[0]); }
+    void unary_op_log2(const mag_command_t &cmd) { impl_unary_op<op_log2>(cmd.out[0], cmd.in[0]); }
+    void unary_op_sqr(const mag_command_t &cmd) { impl_unary_op<op_sqr>(cmd.out[0], cmd.in[0]); }
+    void unary_op_rcp(const mag_command_t &cmd) { impl_unary_op<op_rcp>(cmd.out[0], cmd.in[0]); }
+    void unary_op_sqrt(const mag_command_t &cmd) { impl_unary_op<op_sqrt>(cmd.out[0], cmd.in[0]); }
+    void unary_op_rsqrt(const mag_command_t &cmd) { impl_unary_op<op_rsqrt>(cmd.out[0], cmd.in[0]); }
+    void unary_op_sin(const mag_command_t &cmd) { impl_unary_op<op_sin>(cmd.out[0], cmd.in[0]); }
+    void unary_op_cos(const mag_command_t &cmd) { impl_unary_op<op_cos>(cmd.out[0], cmd.in[0]); }
+    void unary_op_tan(const mag_command_t &cmd) { impl_unary_op<op_tan>(cmd.out[0], cmd.in[0]); }
+    void unary_op_asin(const mag_command_t &cmd) { impl_unary_op<op_asin>(cmd.out[0], cmd.in[0]); }
+    void unary_op_acos(const mag_command_t &cmd) { impl_unary_op<op_acos>(cmd.out[0], cmd.in[0]); }
+    void unary_op_atan(const mag_command_t &cmd) { impl_unary_op<op_atan>(cmd.out[0], cmd.in[0]); }
+    void unary_op_sinh(const mag_command_t &cmd) { impl_unary_op<op_sinh>(cmd.out[0], cmd.in[0]); }
+    void unary_op_cosh(const mag_command_t &cmd) { impl_unary_op<op_cosh>(cmd.out[0], cmd.in[0]); }
+    void unary_op_tanh(const mag_command_t &cmd) { impl_unary_op<op_tanh>(cmd.out[0], cmd.in[0]); }
+    void unary_op_asinh(const mag_command_t &cmd) { impl_unary_op<op_asinh>(cmd.out[0], cmd.in[0]); }
+    void unary_op_acosh(const mag_command_t &cmd) { impl_unary_op<op_acosh>(cmd.out[0], cmd.in[0]); }
+    void unary_op_atanh(const mag_command_t &cmd) { impl_unary_op<op_atanh>(cmd.out[0], cmd.in[0]); }
+    void unary_op_step(const mag_command_t &cmd) { impl_unary_op<op_step>(cmd.out[0], cmd.in[0]); }
+    void unary_op_erf(const mag_command_t &cmd) { impl_unary_op<op_erf>(cmd.out[0], cmd.in[0]); }
+    void unary_op_erfc(const mag_command_t &cmd) { impl_unary_op<op_erfc>(cmd.out[0], cmd.in[0]); }
+    void unary_op_exp(const mag_command_t &cmd) { impl_unary_op<op_exp>(cmd.out[0], cmd.in[0]); }
+    void unary_op_exp2(const mag_command_t &cmd) { impl_unary_op<op_exp2>(cmd.out[0], cmd.in[0]); }
+    void unary_op_expm1(const mag_command_t &cmd) { impl_unary_op<op_expm1>(cmd.out[0], cmd.in[0]); }
+    void unary_op_floor(const mag_command_t &cmd) { impl_unary_op<op_floor>(cmd.out[0], cmd.in[0]); }
+    void unary_op_ceil(const mag_command_t &cmd) { impl_unary_op<op_ceil>(cmd.out[0], cmd.in[0]); }
+    void unary_op_round(const mag_command_t &cmd) { impl_unary_op<op_round>(cmd.out[0], cmd.in[0]); }
+    void unary_op_trunc(const mag_command_t &cmd) { impl_unary_op<op_trunc>(cmd.out[0], cmd.in[0]); }
+    void unary_op_softmax(const mag_command_t &cmd) { impl_unary_op<op_softmax>(cmd.out[0], cmd.in[0]); }
+    void unary_op_softmax_dv(const mag_command_t &cmd) { impl_unary_op<op_softmax_dv>(cmd.out[0], cmd.in[0]); }
+    void unary_op_sigmoid(const mag_command_t &cmd) { impl_unary_op<op_sigmoid>(cmd.out[0], cmd.in[0]); }
+    void unary_op_sigmoid_dv(const mag_command_t &cmd) { impl_unary_op<op_sigmoid_dv>(cmd.out[0], cmd.in[0]); }
+    void unary_op_hard_sigmoid(const mag_command_t &cmd) { impl_unary_op<op_hard_sigmoid>(cmd.out[0], cmd.in[0]); }
+    void unary_op_silu(const mag_command_t &cmd) { impl_unary_op<op_silu>(cmd.out[0], cmd.in[0]); }
+    void unary_op_silu_dv(const mag_command_t &cmd) { impl_unary_op<op_silu_dv>(cmd.out[0], cmd.in[0]); }
+    void unary_op_tanh_dv(const mag_command_t &cmd) { impl_unary_op<op_tanh_dv>(cmd.out[0], cmd.in[0]); }
+    void unary_op_relu(const mag_command_t &cmd) { impl_unary_op<op_relu>(cmd.out[0], cmd.in[0]); }
+    void unary_op_relu_dv(const mag_command_t &cmd) { impl_unary_op<op_relu_dv>(cmd.out[0], cmd.in[0]); }
+    void unary_op_gelu(const mag_command_t &cmd) { impl_unary_op<op_gelu>(cmd.out[0], cmd.in[0]); }
+    void unary_op_gelu_dv(const mag_command_t &cmd) { impl_unary_op<op_gelu_dv>(cmd.out[0], cmd.in[0]); }
+    void unary_op_not(const mag_command_t &cmd) { }
 }

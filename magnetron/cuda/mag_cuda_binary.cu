@@ -178,10 +178,10 @@ namespace mag {
     }
 
     template <template <typename, typename> typename op_t>
-    static void impl_binary_op_numeric(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
-        const mag_tensor_t *x = cmd->in[0];
-        const mag_tensor_t *y = cmd->in[1];
+    static void impl_binary_op_numeric(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        const mag_tensor_t *x = cmd.in[0];
+        const mag_tensor_t *y = cmd.in[1];
         mag_assert2(r->dtype == x->dtype && r->dtype == y->dtype);
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_binary_op<op_t<float, float>>(r, x, y); break;
@@ -200,10 +200,10 @@ namespace mag {
     }
 
     template <template <typename, typename> typename op_t>
-    static void impl_binary_op_logical(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
-        const mag_tensor_t *x = cmd->in[0];
-        const mag_tensor_t *y = cmd->in[1];
+    static void impl_binary_op_logical(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        const mag_tensor_t *x = cmd.in[0];
+        const mag_tensor_t *y = cmd.in[1];
         mag_assert2(r->dtype == x->dtype && r->dtype == y->dtype);
         switch (r->dtype) {
             case MAG_DTYPE_BOOLEAN:
@@ -220,10 +220,10 @@ namespace mag {
     }
 
     template <template <typename, typename> typename op_t>
-    static void impl_binary_op_cmp(const mag_command_t *cmd) {
-        mag_tensor_t *r = cmd->out[0];
-        const mag_tensor_t *x = cmd->in[0];
-        const mag_tensor_t *y = cmd->in[1];
+    static void impl_binary_op_cmp(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        const mag_tensor_t *x = cmd.in[0];
+        const mag_tensor_t *y = cmd.in[1];
         mag_assert2(r->dtype == MAG_DTYPE_BOOLEAN && x->dtype == y->dtype);
         switch (r->dtype) {
             case MAG_DTYPE_FLOAT32: launch_binary_op<op_t<float, uint8_t>>(r, x, y); break;
@@ -242,20 +242,20 @@ namespace mag {
         }
     }
 
-    void binary_op_add(const mag_command_t *cmd) { impl_binary_op_numeric<op_add>(cmd); }
-    void binary_op_sub(const mag_command_t *cmd) { impl_binary_op_numeric<op_sub>(cmd); }
-    void binary_op_mul(const mag_command_t *cmd) { impl_binary_op_numeric<op_mul>(cmd); }
-    void binary_op_div(const mag_command_t *cmd) { impl_binary_op_numeric<op_div>(cmd); }
-    void binary_op_mod(const mag_command_t *cmd) { impl_binary_op_numeric<op_mod>(cmd); }
-    void binary_op_and(const mag_command_t *cmd) { impl_binary_op_logical<op_and>(cmd); }
-    void binary_op_or(const mag_command_t *cmd)  { impl_binary_op_logical<op_or>(cmd); }
-    void binary_op_xor(const mag_command_t *cmd) { impl_binary_op_logical<op_xor>(cmd); }
-    void binary_op_shl(const mag_command_t *cmd) { impl_binary_op_logical<op_shl>(cmd); }
-    void binary_op_shr(const mag_command_t *cmd) { impl_binary_op_logical<op_shr>(cmd); }
-    void binary_op_eq(const mag_command_t *cmd) { impl_binary_op_cmp<op_eq>(cmd); }
-    void binary_op_ne(const mag_command_t *cmd) { impl_binary_op_cmp<op_ne>(cmd); }
-    void binary_op_le(const mag_command_t *cmd) { impl_binary_op_cmp<op_le>(cmd); }
-    void binary_op_ge(const mag_command_t *cmd) { impl_binary_op_cmp<op_ge>(cmd); }
-    void binary_op_lt(const mag_command_t *cmd) { impl_binary_op_cmp<op_lt>(cmd); }
-    void binary_op_gt(const mag_command_t *cmd) { impl_binary_op_cmp<op_gt>(cmd); }
+    void binary_op_add(const mag_command_t &cmd) { impl_binary_op_numeric<op_add>(cmd); }
+    void binary_op_sub(const mag_command_t &cmd) { impl_binary_op_numeric<op_sub>(cmd); }
+    void binary_op_mul(const mag_command_t &cmd) { impl_binary_op_numeric<op_mul>(cmd); }
+    void binary_op_div(const mag_command_t &cmd) { impl_binary_op_numeric<op_div>(cmd); }
+    void binary_op_mod(const mag_command_t &cmd) { impl_binary_op_numeric<op_mod>(cmd); }
+    void binary_op_and(const mag_command_t &cmd) { impl_binary_op_logical<op_and>(cmd); }
+    void binary_op_or(const mag_command_t &cmd)  { impl_binary_op_logical<op_or>(cmd); }
+    void binary_op_xor(const mag_command_t &cmd) { impl_binary_op_logical<op_xor>(cmd); }
+    void binary_op_shl(const mag_command_t &cmd) { impl_binary_op_logical<op_shl>(cmd); }
+    void binary_op_shr(const mag_command_t &cmd) { impl_binary_op_logical<op_shr>(cmd); }
+    void binary_op_eq(const mag_command_t &cmd) { impl_binary_op_cmp<op_eq>(cmd); }
+    void binary_op_ne(const mag_command_t &cmd) { impl_binary_op_cmp<op_ne>(cmd); }
+    void binary_op_le(const mag_command_t &cmd) { impl_binary_op_cmp<op_le>(cmd); }
+    void binary_op_ge(const mag_command_t &cmd) { impl_binary_op_cmp<op_ge>(cmd); }
+    void binary_op_lt(const mag_command_t &cmd) { impl_binary_op_cmp<op_lt>(cmd); }
+    void binary_op_gt(const mag_command_t &cmd) { impl_binary_op_cmp<op_gt>(cmd); }
 }

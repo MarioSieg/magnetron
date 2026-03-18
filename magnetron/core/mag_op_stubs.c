@@ -786,7 +786,7 @@ static mag_status_t mag_op_stub_reduction(mag_error_t *err, mag_tensor_t **out_r
         otype = MAG_DTYPE_BOOLEAN;
     } else if (op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX) { /* For argmin/argmax, use int64 dtype */
         otype = MAG_DTYPE_INT64;
-    }else { /* For other reductions, use same dtype as input */
+    } else { /* For other reductions, use same dtype as input */
         otype = x->dtype;
     }
     if (!keepdim && !plan.out_rank) mag_try(mag_empty_scalar(err, &result, x->ctx,otype));

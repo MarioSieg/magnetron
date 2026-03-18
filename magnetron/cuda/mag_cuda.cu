@@ -58,13 +58,11 @@ namespace mag {
         global_seed.store(seed, std::memory_order_relaxed);
     }
 
-    using kernel_fn = void (const mag_command_t *);
-
-    static void op_nop(const mag_command_t *) { }
-
     [[nodiscard]] static mag_status_t submit(mag_device_t *dvc, const mag_command_t *cmd) {
-        static constexpr kernel_fn *dispatch_table[] = {
-            [MAG_OP_NOP] = &op_nop,
+        static constexpr auto *op_nop = +[](const mag_command_t &) -> void { };
+
+        static constexpr void(*dispatch_table[])(const mag_command_t &) = {
+            [MAG_OP_NOP] = op_nop,
             [MAG_OP_FILL] = &fill_op_fill,
             [MAG_OP_MASKED_FILL] = &fill_op_masked_fill,
             [MAG_OP_RAND_UNIFORM] = &fill_op_fill_rand_uniform,
@@ -75,9 +73,9 @@ namespace mag {
             [MAG_OP_ONE_HOT] = nullptr,
             [MAG_OP_CLONE] = &unary_op_clone,
             [MAG_OP_CAST] = &unary_op_cast,
-            [MAG_OP_VIEW] = &op_nop,
-            [MAG_OP_TRANSPOSE] = &op_nop,
-            [MAG_OP_PERMUTE] = &op_nop,
+            [MAG_OP_VIEW] = op_nop,
+            [MAG_OP_TRANSPOSE] = op_nop,
+            [MAG_OP_PERMUTE] = op_nop,
             [MAG_OP_MEAN] = &reduce_op_mean,
             [MAG_OP_MIN] = &reduce_op_min,
             [MAG_OP_MAX] = &reduce_op_max,
@@ -85,8 +83,8 @@ namespace mag {
             [MAG_OP_ARGMAX] = nullptr,
             [MAG_OP_SUM] = &reduce_op_sum,
             [MAG_OP_PROD] = &reduce_op_prod,
-            [MAG_OP_ALL] = nullptr,
-            [MAG_OP_ANY] = nullptr,
+            [MAG_OP_ALL] = &reduce_op_all,
+            [MAG_OP_ANY] = &reduce_op_any,
             [MAG_OP_TOPK] = nullptr,
             [MAG_OP_ABS] = &unary_op_abs,
             [MAG_OP_SGN] = &unary_op_sgn,
@@ -163,9 +161,14 @@ namespace mag {
             [MAG_OP_WHERE] = nullptr
         };
         static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
-        kernel_fn *kern = dispatch_table[cmd->op];
-        mag_assert(kern != nullptr, "Operator %s not implemented in CUDA backend", mag_op_traits(cmd->op)->mnemonic);
-        (*kern)(cmd);
+        //static_assert([] -> bool {
+        //    for (auto *fn : dispatch_table)
+        //        if (!fn) return false;
+        //    return true;
+        //}());
+        auto *kernel = dispatch_table[cmd->op];
+        mag_assert(kernel != nullptr, "Operator %s not implemented in CUDA backend", mag_op_traits(cmd->op)->mnemonic);
+        (*kernel)(*cmd);
         return MAG_STATUS_OK;
     }
 
