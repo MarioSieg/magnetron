@@ -50,12 +50,18 @@ namespace mag {
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const {
             if constexpr (std::is_integral_v<in_t>) {
                 if constexpr (std::is_unsigned_v<in_t>) {
-                    return static_cast<out_t>(mag_powu(static_cast<uint64_t>(x), static_cast<uint64_t>(y)));
+                    return x % y;
                 } else {
-                    return static_cast<out_t>(mag_powi(static_cast<uint64_t>(x), static_cast<uint64_t>(y)));
+                    int64_t r = x % y;
+                    if (r != 0 && (r < 0) != (y < 0)) r += y;
+                    return static_cast<out_t>(r);
                 }
             } else {
-                return fmodf(x, y);
+                auto xf32 = static_cast<float>(x);
+                auto yf32 = static_cast<float>(y);
+                float r = fmodf(xf32, yf32);
+                if (r != 0.0f && (r < 0.0f) != (yf32 < 0.0f)) r += yf32;
+                return static_cast<out_t>(r);
             }
         }
     };
@@ -65,8 +71,15 @@ namespace mag {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
         [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const {
-            if constexpr (std::is_integral_v<in_t>) return x%y;
-            else return powf(x, y);
+            if constexpr (std::is_integral_v<in_t>) {
+                if constexpr (std::is_unsigned_v<in_t>) {
+                    return static_cast<out_t>(mag_powu(static_cast<uint64_t>(x), static_cast<uint64_t>(y)));
+                } else {
+                    return static_cast<out_t>(mag_powi(static_cast<uint64_t>(x), static_cast<uint64_t>(y)));
+                }
+            } else {
+                return fmodf(x, y);
+            }
         }
     };
 
@@ -95,16 +108,24 @@ namespace mag {
     struct op_shl {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
-        static constexpr scalar_in_t mask = (8*sizeof(scalar_in_t))-1;
-        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x<<(y&mask); }
+        static constexpr in_t bits = sizeof(in_t)*8;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const {
+            return mag_unlikely(y < 0 || y >= bits) ? 0 : x<<y;
+        }
     };
 
     template <typename scalar_in_t, typename scalar_out_t>
     struct op_shr {
         using in_t = scalar_in_t;
         using out_t = scalar_out_t;
-        static constexpr scalar_in_t mask = (8*sizeof(scalar_in_t))-1;
-        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x>>(y&mask); }
+        static constexpr in_t bits = sizeof(in_t)*8;
+        [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const {
+            if (mag_unlikely(y < 0 || y >= bits)) {
+                if constexpr (std::is_signed_v<in_t>) return mag_unlikely(x < 0) ? -1 : 0; // SAR
+                else return 0; // SHR
+            }
+            return x>>y;
+        }
     };
 
     template <typename scalar_in_t, typename scalar_out_t>

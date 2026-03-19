@@ -640,13 +640,26 @@ static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_powi(int64_t x, int64_t k) {
     if (!k) return 1;
     if (k < 0) {
         switch (x) {
-            case 0:  return UINT64_C(0x7fffffffffffffff);
-            case 1:  return 1;
+            case 0: return UINT64_C(0x7fffffffffffffff);
+            case 1: return 1;
             case -1: return (k&1) ? -1 : 1;
             default: return 0;
         }
     }
     return (int64_t)mag_powu((uint64_t)x, (uint64_t)k);
+}
+
+/* Remainder functions that adjust for sign, as in Python and MATLAB. C's % operator does not do this 😿 */
+static MAG_CUDA_DEVICE MAG_AINLINE float mag_remf(float x, float y) {
+    float r = fmodf(x, y);
+    if (r != 0.0f && (r < 0.0f) != (y < 0.0f)) r += y;
+    return r;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
+    int64_t r = x % y;
+    if (r != 0 && (r < 0) != (y < 0)) r += y;
+    return r;
 }
 
 extern bool mag_utf8_validate(const uint8_t *str, size_t len);
