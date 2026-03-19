@@ -1,29 +1,17 @@
-# 🧮 XOR Example
+# XOR
 
-This example demonstrates how to train a small neural network with the Magnetron framework to learn the XOR function.
+Tiny training example: learn XOR with a 2-layer MLP (`Linear` + `Tanh`) and SGD. Uses autograd (`backward`) and plots the loss curve.
 
-The model uses a minimal fully connected architecture and shows how to define tensors, layers, and optimization in pure Magnetron without external dependencies.
+## Install
 
-## 📚 Description
-
-- Defines the XOR truth table using `Tensor()`
-- Builds a simple feedforward neural network with `Linear` and `Tanh` layers
-- Trains the model using **mean squared error (MSE)** loss and **stochastic gradient descent (SGD)** optimizer
-- Prints predictions after training
-- Plots the training loss over time
-
-## 🚀 Usage
-
-Run the example directly:
+From the repo root:
 
 ```bash
-python main.py
+uv pip install -e .[examples]
 ```
 
-No arguments are required.
-
-## ⚙️ Requirements
+## Run
 
 ```bash
-uv pip install magnetron matplotlib
+python examples/xor/main.py
 ```
