@@ -1,28 +1,17 @@
-# 📈 Linear Regression Example
+# Linear regression
 
-This example demonstrates a simple linear regression model implemented with the Magnetron framework.
+Fits a line to noisy 1D data using `nn.Linear` + MSE + SGD. Plots the fitted line and the loss curve.
 
-The model learns a straight-line relationship between input `x` and target `y` using a single `Linear` layer and mean squared error (MSE) loss.
+## Install
 
-## 📚 Description
-
-- Generates synthetic 1D data with added Gaussian noise
-- Builds a single-layer linear regression model
-- Trains the model using **stochastic gradient descent (SGD)**
-- Plots the fitted line and the training loss curve
-
-## 🚀 Usage
-
-Run the example directly:
+From the repo root:
 
 ```bash
-python main.py
+uv pip install -e .[examples]
 ```
 
-No arguments are required.
-
-## ⚙️ Requirements
+## Run
 
 ```bash
-uv pip install magnetron matplotlib
+python examples/linear_regression/main.py
 ```

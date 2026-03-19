@@ -6,7 +6,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "magnetron"
-version = "0.1.5"
+version = "0.1.6"
 description = "A compact machine learning runtime for developers who want to understand, control, and optimize the full stack."
 requires-python = ">=3.10"
 readme = "README.md"
