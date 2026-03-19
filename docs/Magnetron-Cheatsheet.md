@@ -1,4 +1,51 @@
-# Magnetron Operator Reference
+<br />
+<div align="center">
+  <a href="https://github.com/MarioSieg/magnetron">
+    <img src="https://raw.githubusercontent.com/MarioSieg/magnetron/develop/media/logo.png" alt="Magnetron Logo" width="200" height="200">
+  </a>
+<h3 align="center">magnetron cheatsheet</h3>
+  <p align="center">
+    Reference for data types, operators, and tensor semantics in Magnetron.
+  </p>
+</div>
+
+
+# Data Types
+
+Magnetron currently supports the following data types, with additional formats planned (e.g. MXFP8).<br>
+
+|   DType   | Type               | Size (bits) | Min value         | Max value        |
+|----------:|--------------------|------------:|-------------------|------------------|
+| float16   | Floating point     |          16 | $\approx -6.5e4$  | $\approx 6.5e4$  |
+| bfloat16  | Floating point     |          16 | $\approx -3.4e38$ | $\approx 3.4e38$ |
+| float32   | Floating point     |          32 | $\approx -3.4e38$ | $\approx 3.4e38$ |
+| boolean   | Boolean            |           8 | $0$               | $1$              |
+| int8      | Integer (signed)   |           8 | $-2^{7}$          | $2^{7}-1$        |
+| uint8     | Integer (unsigned) |           8 | $0$               | $2^{8}-1$        |
+| int16     | Integer (signed)   |          16 | $-2^{15}$         | $2^{15}-1$       |
+| uint16    | Integer (unsigned) |          16 | $0$               | $2^{16}-1$       |
+| int32     | Integer (signed)   |          32 | $-2^{31}$         | $2^{31}-1$       |
+| uint32    | Integer (unsigned) |          32 | $0$               | $2^{32}-1$       |
+| int64     | Integer (signed)   |          64 | $-2^{63}$         | $2^{63}-1$       |
+
+### Examples
+
+Create a `float16` tensor filled with zeros:
+```python
+Tensor.zeros(10, dtype=dtype.float16)
+```
+
+Create a 2×3 `float32` tensor filled with ones:
+```python
+Tensor.ones(2, 3, dtype=dtype.float32)
+```
+
+Create a range tensor of integers from 0 to 9:
+```python
+Tensor.arange(0, 10, dtype=dtype.int64)
+```
+
+# Operators
 
 All operations in Magnetron are exposed as **methods on `Tensor`**.
 If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
