@@ -55,7 +55,7 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
         h = (int)target_h;
     }
     mag_tensor_t *tensor;
-    mag_try_do(mag_empty(err, &tensor, ctx, MAG_DTYPE_UINT8, 3, (int64_t[3]){c, h, w}), {
+    mag_try_or(mag_empty(err, &tensor, ctx, MAG_DTYPE_UINT8, 3, (int64_t[3]){c, h, w}), {
         stbi_image_free(pixels);
     });
     uint8_t *restrict dst = (uint8_t *)mag_tensor_data_ptr_mut(tensor);

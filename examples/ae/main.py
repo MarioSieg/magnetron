@@ -14,6 +14,7 @@ import argparse
 from magnetron import nn, optim, context, Tensor, no_grad, dtype
 import matplotlib.pyplot as plt
 
+
 class AE(nn.Module):
     def __init__(self, w: int, h: int, latent_dim: int = 16) -> None:
         super().__init__()

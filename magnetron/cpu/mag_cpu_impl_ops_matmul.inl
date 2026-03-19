@@ -586,7 +586,7 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
     }
 
     int64_t k = 0;
-    for (; k + 3 < kc; k += 4) {
+    for (; k + 7 < kc; k += 8) {
         if (!(k & (MAG_PF_GROUP - 1))) {
             mag_prefetcht0(b + (k + MAG_PFDIST_B_L1)*ldb);
             mag_prefetcht1(b + (k + MAG_PFDIST_B_L2)*ldb);
@@ -621,6 +621,10 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
         MAG_STEP8(1);
         MAG_STEP8(2);
         MAG_STEP8(3);
+        MAG_STEP8(4);
+        MAG_STEP8(5);
+        MAG_STEP8(6);
+        MAG_STEP8(7);
 #undef MAG_STEP8
     }
     for (; k < kc; ++k) {
@@ -684,7 +688,7 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
     }
 
     int64_t k = 0;
-    for (; k + 3 < kc; k += 4) {
+    for (; k + 7 < kc; k += 8) {
         if (!(k & (MAG_PF_GROUP - 1))) {
             __builtin_prefetch(b + (k + MAG_PFDIST_B_L1)*ldb, 0, 3);
             __builtin_prefetch(b + (k + MAG_PFDIST_B_L2)*ldb, 0, 2);
@@ -699,46 +703,41 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
             bfloat16x8_t av = vld1q_bf16((const bfloat16_t *)(a + (k + (KI))*8)); \
             float32x4_t A0 = vcvt_f32_bf16(vget_low_bf16(av)); \
             float32x4_t A1 = vcvt_f32_bf16(vget_high_bf16(av)); \
-            float a0 = vgetq_lane_f32(A0, 0), a1 = vgetq_lane_f32(A0, 1), a2 = vgetq_lane_f32(A0, 2), a3 = vgetq_lane_f32(A0, 3); \
-            float a4 = vgetq_lane_f32(A1, 0), a5 = vgetq_lane_f32(A1, 1), a6 = vgetq_lane_f32(A1, 2), a7 = vgetq_lane_f32(A1, 3); \
-            float32x4_t s; \
-            s = vdupq_n_f32(a0); C[0][0] = vfmaq_f32(C[0][0], B0, s); C[0][1] = vfmaq_f32(C[0][1], B1, s); \
-            s = vdupq_n_f32(a1); C[1][0] = vfmaq_f32(C[1][0], B0, s); C[1][1] = vfmaq_f32(C[1][1], B1, s); \
-            s = vdupq_n_f32(a2); C[2][0] = vfmaq_f32(C[2][0], B0, s); C[2][1] = vfmaq_f32(C[2][1], B1, s); \
-            s = vdupq_n_f32(a3); C[3][0] = vfmaq_f32(C[3][0], B0, s); C[3][1] = vfmaq_f32(C[3][1], B1, s); \
-            s = vdupq_n_f32(a4); C[4][0] = vfmaq_f32(C[4][0], B0, s); C[4][1] = vfmaq_f32(C[4][1], B1, s); \
-            s = vdupq_n_f32(a5); C[5][0] = vfmaq_f32(C[5][0], B0, s); C[5][1] = vfmaq_f32(C[5][1], B1, s); \
-            s = vdupq_n_f32(a6); C[6][0] = vfmaq_f32(C[6][0], B0, s); C[6][1] = vfmaq_f32(C[6][1], B1, s); \
-            s = vdupq_n_f32(a7); C[7][0] = vfmaq_f32(C[7][0], B0, s); C[7][1] = vfmaq_f32(C[7][1], B1, s); \
+            C[0][0] = vfmaq_laneq_f32(C[0][0], B0, A0, 0); C[0][1] = vfmaq_laneq_f32(C[0][1], B1, A0, 0); \
+            C[1][0] = vfmaq_laneq_f32(C[1][0], B0, A0, 1); C[1][1] = vfmaq_laneq_f32(C[1][1], B1, A0, 1); \
+            C[2][0] = vfmaq_laneq_f32(C[2][0], B0, A0, 2); C[2][1] = vfmaq_laneq_f32(C[2][1], B1, A0, 2); \
+            C[3][0] = vfmaq_laneq_f32(C[3][0], B0, A0, 3); C[3][1] = vfmaq_laneq_f32(C[3][1], B1, A0, 3); \
+            C[4][0] = vfmaq_laneq_f32(C[4][0], B0, A1, 0); C[4][1] = vfmaq_laneq_f32(C[4][1], B1, A1, 0); \
+            C[5][0] = vfmaq_laneq_f32(C[5][0], B0, A1, 1); C[5][1] = vfmaq_laneq_f32(C[5][1], B1, A1, 1); \
+            C[6][0] = vfmaq_laneq_f32(C[6][0], B0, A1, 2); C[6][1] = vfmaq_laneq_f32(C[6][1], B1, A1, 2); \
+            C[7][0] = vfmaq_laneq_f32(C[7][0], B0, A1, 3); C[7][1] = vfmaq_laneq_f32(C[7][1], B1, A1, 3); \
         } while (0)
 
         MAG_STEP8N(0);
         MAG_STEP8N(1);
         MAG_STEP8N(2);
         MAG_STEP8N(3);
+        MAG_STEP8N(4);
+        MAG_STEP8N(5);
+        MAG_STEP8N(6);
+        MAG_STEP8N(7);
 #undef MAG_STEP8N
     }
     for (; k < kc; ++k) {
         bfloat16x8_t bv = vld1q_bf16((const bfloat16_t *)(b + k*ldb));
         float32x4_t B0 = vcvt_f32_bf16(vget_low_bf16(bv));
         float32x4_t B1 = vcvt_f32_bf16(vget_high_bf16(bv));
-
         bfloat16x8_t av = vld1q_bf16((const bfloat16_t *)(a + k*8));
         float32x4_t A0 = vcvt_f32_bf16(vget_low_bf16(av));
         float32x4_t A1 = vcvt_f32_bf16(vget_high_bf16(av));
-
-        float a0 = vgetq_lane_f32(A0, 0), a1 = vgetq_lane_f32(A0, 1), a2 = vgetq_lane_f32(A0, 2), a3 = vgetq_lane_f32(A0, 3);
-        float a4 = vgetq_lane_f32(A1, 0), a5 = vgetq_lane_f32(A1, 1), a6 = vgetq_lane_f32(A1, 2), a7 = vgetq_lane_f32(A1, 3);
-
-        float32x4_t s;
-        s = vdupq_n_f32(a0); C[0][0] = vfmaq_f32(C[0][0], B0, s); C[0][1] = vfmaq_f32(C[0][1], B1, s);
-        s = vdupq_n_f32(a1); C[1][0] = vfmaq_f32(C[1][0], B0, s); C[1][1] = vfmaq_f32(C[1][1], B1, s);
-        s = vdupq_n_f32(a2); C[2][0] = vfmaq_f32(C[2][0], B0, s); C[2][1] = vfmaq_f32(C[2][1], B1, s);
-        s = vdupq_n_f32(a3); C[3][0] = vfmaq_f32(C[3][0], B0, s); C[3][1] = vfmaq_f32(C[3][1], B1, s);
-        s = vdupq_n_f32(a4); C[4][0] = vfmaq_f32(C[4][0], B0, s); C[4][1] = vfmaq_f32(C[4][1], B1, s);
-        s = vdupq_n_f32(a5); C[5][0] = vfmaq_f32(C[5][0], B0, s); C[5][1] = vfmaq_f32(C[5][1], B1, s);
-        s = vdupq_n_f32(a6); C[6][0] = vfmaq_f32(C[6][0], B0, s); C[6][1] = vfmaq_f32(C[6][1], B1, s);
-        s = vdupq_n_f32(a7); C[7][0] = vfmaq_f32(C[7][0], B0, s); C[7][1] = vfmaq_f32(C[7][1], B1, s);
+        C[0][0] = vfmaq_laneq_f32(C[0][0], B0, A0, 0); C[0][1] = vfmaq_laneq_f32(C[0][1], B1, A0, 0);
+        C[1][0] = vfmaq_laneq_f32(C[1][0], B0, A0, 1); C[1][1] = vfmaq_laneq_f32(C[1][1], B1, A0, 1);
+        C[2][0] = vfmaq_laneq_f32(C[2][0], B0, A0, 2); C[2][1] = vfmaq_laneq_f32(C[2][1], B1, A0, 2);
+        C[3][0] = vfmaq_laneq_f32(C[3][0], B0, A0, 3); C[3][1] = vfmaq_laneq_f32(C[3][1], B1, A0, 3);
+        C[4][0] = vfmaq_laneq_f32(C[4][0], B0, A1, 0); C[4][1] = vfmaq_laneq_f32(C[4][1], B1, A1, 0);
+        C[5][0] = vfmaq_laneq_f32(C[5][0], B0, A1, 1); C[5][1] = vfmaq_laneq_f32(C[5][1], B1, A1, 1);
+        C[6][0] = vfmaq_laneq_f32(C[6][0], B0, A1, 2); C[6][1] = vfmaq_laneq_f32(C[6][1], B1, A1, 2);
+        C[7][0] = vfmaq_laneq_f32(C[7][0], B0, A1, 3); C[7][1] = vfmaq_laneq_f32(C[7][1], B1, A1, 3);
     }
 
 #pragma GCC unroll 8
@@ -747,6 +746,35 @@ static MAG_AINLINE void mag_mm_tile_8x8_bfloat16(
         bfloat16x4_t o1 = vcvt_bf16_f32(C[r][1]);
         bfloat16x8_t out = vcombine_bf16(o0, o1);
         vst1q_bf16((bfloat16_t *)(c + r*ldc), out);
+    }
+
+#elif defined(__AVX2__) && defined(__FMA__)
+    /* AVX2 bf16: soft bf16->fp32 then 8x8 FMA (no AVX512-BF16 on AVX2-only CPUs) */
+    __m256 C[8];
+    if (acc) {
+        for (int r = 0; r < 8; ++r) {
+            __m128i cv = _mm_loadu_si128((const __m128i *)(c + r*ldc));
+            __m256i cu = _mm256_cvtepu16_epi32(cv);
+            C[r] = _mm256_castsi256_ps(_mm256_slli_epi32(cu, 16));
+        }
+    } else {
+        __m256 z = _mm256_setzero_ps();
+        for (int r = 0; r < 8; ++r) C[r] = z;
+    }
+    for (int64_t k = 0; k < kc; ++k) {
+        __m128i av = _mm_loadu_si128((const __m128i *)(a + k*8));
+        __m256 a_f = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(av), 16));
+        __m128i bv = _mm_loadu_si128((const __m128i *)(b + k*ldb));
+        __m256 b_f = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(bv), 16));
+        for (int r = 0; r < 8; ++r)
+            C[r] = _mm256_fmadd_ps(_mm256_permutevar8x32_ps(a_f, _mm256_set1_epi32(r)), b_f, C[r]);
+    }
+    for (int r = 0; r < 8; ++r) {
+        __m256i ci = _mm256_castps_si256(C[r]);
+        __m256i sh = _mm256_srli_epi32(ci, 16);
+        __m128i lo = _mm256_castsi256_si128(sh);
+        __m128i hi = _mm256_extracti128_si256(sh, 1);
+        _mm_storeu_si128((__m128i *)(c + r*ldc), _mm_packus_epi32(lo, hi));
     }
 
 #else
@@ -787,7 +815,7 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
     }
 
     int64_t k = 0;
-    for (; k + 3 < kc; k += 4) {
+    for (; k + 7 < kc; k += 8) {
         if (!(k & (MAG_PF_GROUP - 1))) {
             mag_prefetcht0(b + (k + MAG_PFDIST_B_L1)*ldb);
             mag_prefetcht1(b + (k + MAG_PFDIST_B_L2)*ldb);
@@ -822,6 +850,10 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
         MAG_STEP16(1);
         MAG_STEP16(2);
         MAG_STEP16(3);
+        MAG_STEP16(4);
+        MAG_STEP16(5);
+        MAG_STEP16(6);
+        MAG_STEP16(7);
 #undef MAG_STEP16
     }
     for (; k < kc; ++k) {
@@ -874,7 +906,7 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
     }
 
     int64_t k = 0;
-    for (; k + 3 < kc; k += 4) {
+    for (; k + 7 < kc; k += 8) {
         if (!(k & (MAG_PF_GROUP - 1))) {
             __builtin_prefetch(b + (k + MAG_PFDIST_B_L1)*ldb, 0, 3);
             __builtin_prefetch(b + (k + MAG_PFDIST_B_L2)*ldb, 0, 2);
@@ -893,23 +925,24 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
             bfloat16x8_t av = vld1q_bf16((const bfloat16_t *)(a + (k + (KI))*8)); \
             float32x4_t A0 = vcvt_f32_bf16(vget_low_bf16(av)); \
             float32x4_t A1 = vcvt_f32_bf16(vget_high_bf16(av)); \
-            float a0=vgetq_lane_f32(A0,0), a1=vgetq_lane_f32(A0,1), a2=vgetq_lane_f32(A0,2), a3=vgetq_lane_f32(A0,3); \
-            float a4=vgetq_lane_f32(A1,0), a5=vgetq_lane_f32(A1,1), a6=vgetq_lane_f32(A1,2), a7=vgetq_lane_f32(A1,3); \
-            float32x4_t s; \
-            s=vdupq_n_f32(a0); C[0][0]=vfmaq_f32(C[0][0],B00,s); C[0][1]=vfmaq_f32(C[0][1],B01,s); C[0][2]=vfmaq_f32(C[0][2],B10,s); C[0][3]=vfmaq_f32(C[0][3],B11,s); \
-            s=vdupq_n_f32(a1); C[1][0]=vfmaq_f32(C[1][0],B00,s); C[1][1]=vfmaq_f32(C[1][1],B01,s); C[1][2]=vfmaq_f32(C[1][2],B10,s); C[1][3]=vfmaq_f32(C[1][3],B11,s); \
-            s=vdupq_n_f32(a2); C[2][0]=vfmaq_f32(C[2][0],B00,s); C[2][1]=vfmaq_f32(C[2][1],B01,s); C[2][2]=vfmaq_f32(C[2][2],B10,s); C[2][3]=vfmaq_f32(C[2][3],B11,s); \
-            s=vdupq_n_f32(a3); C[3][0]=vfmaq_f32(C[3][0],B00,s); C[3][1]=vfmaq_f32(C[3][1],B01,s); C[3][2]=vfmaq_f32(C[3][2],B10,s); C[3][3]=vfmaq_f32(C[3][3],B11,s); \
-            s=vdupq_n_f32(a4); C[4][0]=vfmaq_f32(C[4][0],B00,s); C[4][1]=vfmaq_f32(C[4][1],B01,s); C[4][2]=vfmaq_f32(C[4][2],B10,s); C[4][3]=vfmaq_f32(C[4][3],B11,s); \
-            s=vdupq_n_f32(a5); C[5][0]=vfmaq_f32(C[5][0],B00,s); C[5][1]=vfmaq_f32(C[5][1],B01,s); C[5][2]=vfmaq_f32(C[5][2],B10,s); C[5][3]=vfmaq_f32(C[5][3],B11,s); \
-            s=vdupq_n_f32(a6); C[6][0]=vfmaq_f32(C[6][0],B00,s); C[6][1]=vfmaq_f32(C[6][1],B01,s); C[6][2]=vfmaq_f32(C[6][2],B10,s); C[6][3]=vfmaq_f32(C[6][3],B11,s); \
-            s=vdupq_n_f32(a7); C[7][0]=vfmaq_f32(C[7][0],B00,s); C[7][1]=vfmaq_f32(C[7][1],B01,s); C[7][2]=vfmaq_f32(C[7][2],B10,s); C[7][3]=vfmaq_f32(C[7][3],B11,s); \
+            C[0][0] = vfmaq_laneq_f32(C[0][0], B00, A0, 0); C[0][1] = vfmaq_laneq_f32(C[0][1], B01, A0, 0); C[0][2] = vfmaq_laneq_f32(C[0][2], B10, A0, 0); C[0][3] = vfmaq_laneq_f32(C[0][3], B11, A0, 0); \
+            C[1][0] = vfmaq_laneq_f32(C[1][0], B00, A0, 1); C[1][1] = vfmaq_laneq_f32(C[1][1], B01, A0, 1); C[1][2] = vfmaq_laneq_f32(C[1][2], B10, A0, 1); C[1][3] = vfmaq_laneq_f32(C[1][3], B11, A0, 1); \
+            C[2][0] = vfmaq_laneq_f32(C[2][0], B00, A0, 2); C[2][1] = vfmaq_laneq_f32(C[2][1], B01, A0, 2); C[2][2] = vfmaq_laneq_f32(C[2][2], B10, A0, 2); C[2][3] = vfmaq_laneq_f32(C[2][3], B11, A0, 2); \
+            C[3][0] = vfmaq_laneq_f32(C[3][0], B00, A0, 3); C[3][1] = vfmaq_laneq_f32(C[3][1], B01, A0, 3); C[3][2] = vfmaq_laneq_f32(C[3][2], B10, A0, 3); C[3][3] = vfmaq_laneq_f32(C[3][3], B11, A0, 3); \
+            C[4][0] = vfmaq_laneq_f32(C[4][0], B00, A1, 0); C[4][1] = vfmaq_laneq_f32(C[4][1], B01, A1, 0); C[4][2] = vfmaq_laneq_f32(C[4][2], B10, A1, 0); C[4][3] = vfmaq_laneq_f32(C[4][3], B11, A1, 0); \
+            C[5][0] = vfmaq_laneq_f32(C[5][0], B00, A1, 1); C[5][1] = vfmaq_laneq_f32(C[5][1], B01, A1, 1); C[5][2] = vfmaq_laneq_f32(C[5][2], B10, A1, 1); C[5][3] = vfmaq_laneq_f32(C[5][3], B11, A1, 1); \
+            C[6][0] = vfmaq_laneq_f32(C[6][0], B00, A1, 2); C[6][1] = vfmaq_laneq_f32(C[6][1], B01, A1, 2); C[6][2] = vfmaq_laneq_f32(C[6][2], B10, A1, 2); C[6][3] = vfmaq_laneq_f32(C[6][3], B11, A1, 2); \
+            C[7][0] = vfmaq_laneq_f32(C[7][0], B00, A1, 3); C[7][1] = vfmaq_laneq_f32(C[7][1], B01, A1, 3); C[7][2] = vfmaq_laneq_f32(C[7][2], B10, A1, 3); C[7][3] = vfmaq_laneq_f32(C[7][3], B11, A1, 3); \
         } while (0)
 
         MAG_STEP16N(0);
         MAG_STEP16N(1);
         MAG_STEP16N(2);
         MAG_STEP16N(3);
+        MAG_STEP16N(4);
+        MAG_STEP16N(5);
+        MAG_STEP16N(6);
+        MAG_STEP16N(7);
 #undef MAG_STEP16N
     }
     for (; k < kc; ++k) {
@@ -920,23 +953,17 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
         float32x4_t B01 = vcvt_f32_bf16(vget_high_bf16(b0));
         float32x4_t B10 = vcvt_f32_bf16(vget_low_bf16(b1));
         float32x4_t B11 = vcvt_f32_bf16(vget_high_bf16(b1));
-
         bfloat16x8_t av = vld1q_bf16((const bfloat16_t *)(a + k*8));
         float32x4_t A0 = vcvt_f32_bf16(vget_low_bf16(av));
         float32x4_t A1 = vcvt_f32_bf16(vget_high_bf16(av));
-
-        float a0=vgetq_lane_f32(A0,0), a1=vgetq_lane_f32(A0,1), a2=vgetq_lane_f32(A0,2), a3=vgetq_lane_f32(A0,3);
-        float a4=vgetq_lane_f32(A1,0), a5=vgetq_lane_f32(A1,1), a6=vgetq_lane_f32(A1,2), a7=vgetq_lane_f32(A1,3);
-
-        float32x4_t s;
-        s=vdupq_n_f32(a0); C[0][0]=vfmaq_f32(C[0][0],B00,s); C[0][1]=vfmaq_f32(C[0][1],B01,s); C[0][2]=vfmaq_f32(C[0][2],B10,s); C[0][3]=vfmaq_f32(C[0][3],B11,s);
-        s=vdupq_n_f32(a1); C[1][0]=vfmaq_f32(C[1][0],B00,s); C[1][1]=vfmaq_f32(C[1][1],B01,s); C[1][2]=vfmaq_f32(C[1][2],B10,s); C[1][3]=vfmaq_f32(C[1][3],B11,s);
-        s=vdupq_n_f32(a2); C[2][0]=vfmaq_f32(C[2][0],B00,s); C[2][1]=vfmaq_f32(C[2][1],B01,s); C[2][2]=vfmaq_f32(C[2][2],B10,s); C[2][3]=vfmaq_f32(C[2][3],B11,s);
-        s=vdupq_n_f32(a3); C[3][0]=vfmaq_f32(C[3][0],B00,s); C[3][1]=vfmaq_f32(C[3][1],B01,s); C[3][2]=vfmaq_f32(C[3][2],B10,s); C[3][3]=vfmaq_f32(C[3][3],B11,s);
-        s=vdupq_n_f32(a4); C[4][0]=vfmaq_f32(C[4][0],B00,s); C[4][1]=vfmaq_f32(C[4][1],B01,s); C[4][2]=vfmaq_f32(C[4][2],B10,s); C[4][3]=vfmaq_f32(C[4][3],B11,s);
-        s=vdupq_n_f32(a5); C[5][0]=vfmaq_f32(C[5][0],B00,s); C[5][1]=vfmaq_f32(C[5][1],B01,s); C[5][2]=vfmaq_f32(C[5][2],B10,s); C[5][3]=vfmaq_f32(C[5][3],B11,s);
-        s=vdupq_n_f32(a6); C[6][0]=vfmaq_f32(C[6][0],B00,s); C[6][1]=vfmaq_f32(C[6][1],B01,s); C[6][2]=vfmaq_f32(C[6][2],B10,s); C[6][3]=vfmaq_f32(C[6][3],B11,s);
-        s=vdupq_n_f32(a7); C[7][0]=vfmaq_f32(C[7][0],B00,s); C[7][1]=vfmaq_f32(C[7][1],B01,s); C[7][2]=vfmaq_f32(C[7][2],B10,s); C[7][3]=vfmaq_f32(C[7][3],B11,s);
+        C[0][0] = vfmaq_laneq_f32(C[0][0], B00, A0, 0); C[0][1] = vfmaq_laneq_f32(C[0][1], B01, A0, 0); C[0][2] = vfmaq_laneq_f32(C[0][2], B10, A0, 0); C[0][3] = vfmaq_laneq_f32(C[0][3], B11, A0, 0);
+        C[1][0] = vfmaq_laneq_f32(C[1][0], B00, A0, 1); C[1][1] = vfmaq_laneq_f32(C[1][1], B01, A0, 1); C[1][2] = vfmaq_laneq_f32(C[1][2], B10, A0, 1); C[1][3] = vfmaq_laneq_f32(C[1][3], B11, A0, 1);
+        C[2][0] = vfmaq_laneq_f32(C[2][0], B00, A0, 2); C[2][1] = vfmaq_laneq_f32(C[2][1], B01, A0, 2); C[2][2] = vfmaq_laneq_f32(C[2][2], B10, A0, 2); C[2][3] = vfmaq_laneq_f32(C[2][3], B11, A0, 2);
+        C[3][0] = vfmaq_laneq_f32(C[3][0], B00, A0, 3); C[3][1] = vfmaq_laneq_f32(C[3][1], B01, A0, 3); C[3][2] = vfmaq_laneq_f32(C[3][2], B10, A0, 3); C[3][3] = vfmaq_laneq_f32(C[3][3], B11, A0, 3);
+        C[4][0] = vfmaq_laneq_f32(C[4][0], B00, A1, 0); C[4][1] = vfmaq_laneq_f32(C[4][1], B01, A1, 0); C[4][2] = vfmaq_laneq_f32(C[4][2], B10, A1, 0); C[4][3] = vfmaq_laneq_f32(C[4][3], B11, A1, 0);
+        C[5][0] = vfmaq_laneq_f32(C[5][0], B00, A1, 1); C[5][1] = vfmaq_laneq_f32(C[5][1], B01, A1, 1); C[5][2] = vfmaq_laneq_f32(C[5][2], B10, A1, 1); C[5][3] = vfmaq_laneq_f32(C[5][3], B11, A1, 1);
+        C[6][0] = vfmaq_laneq_f32(C[6][0], B00, A1, 2); C[6][1] = vfmaq_laneq_f32(C[6][1], B01, A1, 2); C[6][2] = vfmaq_laneq_f32(C[6][2], B10, A1, 2); C[6][3] = vfmaq_laneq_f32(C[6][3], B11, A1, 2);
+        C[7][0] = vfmaq_laneq_f32(C[7][0], B00, A1, 3); C[7][1] = vfmaq_laneq_f32(C[7][1], B01, A1, 3); C[7][2] = vfmaq_laneq_f32(C[7][2], B10, A1, 3); C[7][3] = vfmaq_laneq_f32(C[7][3], B11, A1, 3);
     }
 
 #pragma GCC unroll 8
@@ -945,6 +972,42 @@ static MAG_AINLINE void mag_mm_tile_8x16_bfloat16(
         bfloat16x8_t o1 = vcombine_bf16(vcvt_bf16_f32(C[r][2]), vcvt_bf16_f32(C[r][3]));
         vst1q_bf16((bfloat16_t *)(c + r*ldc + 0), o0);
         vst1q_bf16((bfloat16_t *)(c + r*ldc + 8), o1);
+    }
+
+#elif defined(__AVX2__) && defined(__FMA__)
+    /* AVX2 bf16 8x16: soft bf16->fp32 then FMA */
+    __m256 C[8][2];
+    if (acc) {
+        for (int r = 0; r < 8; ++r) {
+            __m128i c0 = _mm_loadu_si128((const __m128i *)(c + r*ldc + 0));
+            __m128i c1 = _mm_loadu_si128((const __m128i *)(c + r*ldc + 8));
+            C[r][0] = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(c0), 16));
+            C[r][1] = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(c1), 16));
+        }
+    } else {
+        __m256 z = _mm256_setzero_ps();
+        for (int r = 0; r < 8; ++r) C[r][0] = C[r][1] = z;
+    }
+    for (int64_t k = 0; k < kc; ++k) {
+        __m128i av = _mm_loadu_si128((const __m128i *)(a + k*8));
+        __m256 a_f = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(av), 16));
+        __m256i bv = _mm256_loadu_si256((const __m256i *)(b + k*ldb));
+        __m256 b_f0 = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm256_castsi256_si128(bv)), 16));
+        __m256 b_f1 = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm256_extracti128_si256(bv, 1)), 16));
+        for (int r = 0; r < 8; ++r) {
+            __m256 ar = _mm256_permutevar8x32_ps(a_f, _mm256_set1_epi32(r));
+            C[r][0] = _mm256_fmadd_ps(ar, b_f0, C[r][0]);
+            C[r][1] = _mm256_fmadd_ps(ar, b_f1, C[r][1]);
+        }
+    }
+    for (int r = 0; r < 8; ++r) {
+        for (int j = 0; j < 2; ++j) {
+            __m256i ci = _mm256_castps_si256(C[r][j]);
+            __m256i sh = _mm256_srli_epi32(ci, 16);
+            __m128i lo = _mm256_castsi256_si128(sh);
+            __m128i hi = _mm256_extracti128_si256(sh, 1);
+            _mm_storeu_si128((__m128i *)(c + r*ldc + j*8), _mm_packus_epi32(lo, hi));
+        }
     }
 
 #else
@@ -1287,11 +1350,33 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
 ) {
     if (strideN == 1) {
         for (int64_t k = 0; k < kc; ++k) {
+            if (k + 1 < kc)
+                mag_prefetcht0((const char *)(Bsrc + (k + 1) * strideK));
             const mag_bfloat16_t *src = Bsrc + k * strideK;
             mag_bfloat16_t *dst = Bp + k * nc;
 
 #if defined(__AVX512F__) && defined(__AVX512BF16__)
             int64_t j = 0;
+            for (; j + 255 < nc; j += 256) {
+                mag_prefetcht0((const char*)(src + j) + 512);
+                mag_prefetcht1((const char*)(src + j) + 2048);
+                __m512i w0 = _mm512_loadu_si512((const __m512i*)(src + j +  0));
+                __m512i w1 = _mm512_loadu_si512((const __m512i*)(src + j + 32));
+                __m512i w2 = _mm512_loadu_si512((const __m512i*)(src + j + 64));
+                __m512i w3 = _mm512_loadu_si512((const __m512i*)(src + j + 96));
+                __m512i w4 = _mm512_loadu_si512((const __m512i*)(src + j + 128));
+                __m512i w5 = _mm512_loadu_si512((const __m512i*)(src + j + 160));
+                __m512i w6 = _mm512_loadu_si512((const __m512i*)(src + j + 192));
+                __m512i w7 = _mm512_loadu_si512((const __m512i*)(src + j + 224));
+                _mm512_storeu_si512((__m512i*)(dst + j +  0), w0);
+                _mm512_storeu_si512((__m512i*)(dst + j + 32), w1);
+                _mm512_storeu_si512((__m512i*)(dst + j + 64), w2);
+                _mm512_storeu_si512((__m512i*)(dst + j + 96), w3);
+                _mm512_storeu_si512((__m512i*)(dst + j + 128), w4);
+                _mm512_storeu_si512((__m512i*)(dst + j + 160), w5);
+                _mm512_storeu_si512((__m512i*)(dst + j + 192), w6);
+                _mm512_storeu_si512((__m512i*)(dst + j + 224), w7);
+            }
             for (; j + 127 < nc; j += 128) {
                 mag_prefetcht0((const char*)(src + j) + 256);
                 mag_prefetcht1((const char*)(src + j) + 1024);
@@ -1339,8 +1424,31 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
             }
 
 #elif (defined(__aarch64__) && defined(__ARM_NEON) && defined(__ARM_FEATURE_BF16))
+            if (k + 1 < kc)
+                __builtin_prefetch((const char *)(Bsrc + (k + 1) * strideK), 0, 3);
             int64_t j = 0;
+            for (; j + 63 < nc; j += 64) {
+                __builtin_prefetch((const char *)(src + j + 128), 0, 3);
+                __builtin_prefetch((const char *)(src + j + 256), 0, 2);
+                uint16x8_t v0 = vld1q_u16((const uint16_t*)(src + j +  0));
+                uint16x8_t v1 = vld1q_u16((const uint16_t*)(src + j +  8));
+                uint16x8_t v2 = vld1q_u16((const uint16_t*)(src + j + 16));
+                uint16x8_t v3 = vld1q_u16((const uint16_t*)(src + j + 24));
+                uint16x8_t v4 = vld1q_u16((const uint16_t*)(src + j + 32));
+                uint16x8_t v5 = vld1q_u16((const uint16_t*)(src + j + 40));
+                uint16x8_t v6 = vld1q_u16((const uint16_t*)(src + j + 48));
+                uint16x8_t v7 = vld1q_u16((const uint16_t*)(src + j + 56));
+                vst1q_u16((uint16_t*)(dst + j +  0), v0);
+                vst1q_u16((uint16_t*)(dst + j +  8), v1);
+                vst1q_u16((uint16_t*)(dst + j + 16), v2);
+                vst1q_u16((uint16_t*)(dst + j + 24), v3);
+                vst1q_u16((uint16_t*)(dst + j + 32), v4);
+                vst1q_u16((uint16_t*)(dst + j + 40), v5);
+                vst1q_u16((uint16_t*)(dst + j + 48), v6);
+                vst1q_u16((uint16_t*)(dst + j + 56), v7);
+            }
             for (; j+31 < nc; j += 32) {
+                __builtin_prefetch((const char *)(src + j + 64), 0, 3);
                 uint16x8_t v0 = vld1q_u16((const uint16_t*)(src + j +  0));
                 uint16x8_t v1 = vld1q_u16((const uint16_t*)(src + j +  8));
                 uint16x8_t v2 = vld1q_u16((const uint16_t*)(src + j + 16));
@@ -1368,13 +1476,261 @@ static MAG_AINLINE void mag_mm_pack_B_kc_nc_bfloat16(
 #endif
         }
     } else {
-        /* non-contiguous in N: gather scalars */
+        /* non-contiguous in N: AVX-512 gather; index via iota*strideN+base, pack via cvtepi32_epi16 when BW */
+#if defined(__AVX512F__)
+        /* Hoist constant index pattern: [0,1,...,15]*strideN computed once */
+        __m512i iota = _mm512_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+        __m512i strideN_v = _mm512_set1_epi32((int)strideN);
+        __m512i step16 = _mm512_set1_epi32(16 * (int)strideN);
+        __m512i step32 = _mm512_set1_epi32(32 * (int)strideN);
+        __m512i step48 = _mm512_set1_epi32(48 * (int)strideN);
+        for (int64_t k = 0; k < kc; ++k) {
+            if (k + 1 < kc)
+                mag_prefetcht0((const char *)(Bsrc + (k + 1) * strideK));
+            if (k + 2 < kc)
+                mag_prefetcht1((const char *)(Bsrc + (k + 2) * strideK));
+            const mag_bfloat16_t *src = Bsrc + k * strideK;
+            mag_bfloat16_t *dst = Bp + k * nc;
+            int64_t j = 0;
+            for (; j + 64 <= nc; j += 64) {
+                int base = (int)(j * (ptrdiff_t)strideN);
+                __m512i idx0 = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_mullo_epi32(iota, strideN_v));
+                __m512i idx1 = _mm512_add_epi32(idx0, step16);
+                __m512i idx2 = _mm512_add_epi32(idx0, step32);
+                __m512i idx3 = _mm512_add_epi32(idx0, step48);
+                __m512i v0 = _mm512_i32gather_epi32(idx0, (const void *)src, 2);
+                __m512i v1 = _mm512_i32gather_epi32(idx1, (const void *)src, 2);
+                __m512i v2 = _mm512_i32gather_epi32(idx2, (const void *)src, 2);
+                __m512i v3 = _mm512_i32gather_epi32(idx3, (const void *)src, 2);
+                v0 = _mm512_and_si512(v0, _mm512_set1_epi32(0xFFFF));
+                v1 = _mm512_and_si512(v1, _mm512_set1_epi32(0xFFFF));
+                v2 = _mm512_and_si512(v2, _mm512_set1_epi32(0xFFFF));
+                v3 = _mm512_and_si512(v3, _mm512_set1_epi32(0xFFFF));
+#if defined(__AVX512BW__)
+                __m256i p0 = _mm512_cvtepi32_epi16(v0);
+                __m256i p1 = _mm512_cvtepi32_epi16(v1);
+                __m256i p2 = _mm512_cvtepi32_epi16(v2);
+                __m256i p3 = _mm512_cvtepi32_epi16(v3);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j), p0);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j + 16), p1);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j + 32), p2);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j + 48), p3);
+#else
+                __m256i v00 = _mm512_castsi512_si256(v0), v01 = _mm512_extracti32x8_epi32(v0, 1);
+                __m256i v10 = _mm512_castsi512_si256(v1), v11 = _mm512_extracti32x8_epi32(v1, 1);
+                __m256i v20 = _mm512_castsi512_si256(v2), v21 = _mm512_extracti32x8_epi32(v2, 1);
+                __m256i v30 = _mm512_castsi512_si256(v3), v31 = _mm512_extracti32x8_epi32(v3, 1);
+                __m128i lo, hi;
+                lo = _mm256_castsi256_si128(v00); hi = _mm256_extracti128_si256(v00, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v01); hi = _mm256_extracti128_si256(v01, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v10); hi = _mm256_extracti128_si256(v10, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 16), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v11); hi = _mm256_extracti128_si256(v11, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 24), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v20); hi = _mm256_extracti128_si256(v20, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 32), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v21); hi = _mm256_extracti128_si256(v21, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 40), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v30); hi = _mm256_extracti128_si256(v30, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 48), _mm_packus_epi32(lo, hi));
+                lo = _mm256_castsi256_si128(v31); hi = _mm256_extracti128_si256(v31, 1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 56), _mm_packus_epi32(lo, hi));
+#endif
+            }
+            for (; j + 32 <= nc; j += 32) {
+                int base = (int)(j * (ptrdiff_t)strideN);
+                __m512i idx_a = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_mullo_epi32(iota, strideN_v));
+                __m512i idx_b = _mm512_add_epi32(idx_a, step16);
+                __m512i va = _mm512_i32gather_epi32(idx_a, (const void *)src, 2);
+                __m512i vb = _mm512_i32gather_epi32(idx_b, (const void *)src, 2);
+                va = _mm512_and_si512(va, _mm512_set1_epi32(0xFFFF));
+                vb = _mm512_and_si512(vb, _mm512_set1_epi32(0xFFFF));
+#if defined(__AVX512BW__)
+                __m256i pa = _mm512_cvtepi32_epi16(va);
+                __m256i pb = _mm512_cvtepi32_epi16(vb);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j), pa);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j + 16), pb);
+#else
+                __m256i va0 = _mm512_castsi512_si256(va), va1 = _mm512_extracti32x8_epi32(va, 1);
+                __m256i vb0 = _mm512_castsi512_si256(vb), vb1 = _mm512_extracti32x8_epi32(vb, 1);
+                __m128i lo0 = _mm256_castsi256_si128(va0), hi0 = _mm256_extracti128_si256(va0, 1);
+                __m128i lo1 = _mm256_castsi256_si128(va1), hi1 = _mm256_extracti128_si256(va1, 1);
+                __m128i p0 = _mm_packus_epi32(lo0, hi0);
+                __m128i p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), p1);
+                lo0 = _mm256_castsi256_si128(vb0); hi0 = _mm256_extracti128_si256(vb0, 1);
+                lo1 = _mm256_castsi256_si128(vb1); hi1 = _mm256_extracti128_si256(vb1, 1);
+                p0 = _mm_packus_epi32(lo0, hi0);
+                p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 16), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 24), p1);
+#endif
+            }
+            for (; j + 16 <= nc; j += 16) {
+                int base = (int)(j * (ptrdiff_t)strideN);
+                __m512i idx = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_mullo_epi32(iota, strideN_v));
+                __m512i v = _mm512_i32gather_epi32(idx, (const void *)src, 2);
+                v = _mm512_and_si512(v, _mm512_set1_epi32(0xFFFF));
+#if defined(__AVX512BW__)
+                __m256i packed = _mm512_cvtepi32_epi16(v);
+                _mm256_storeu_si256((__m256i *)(void *)(dst + j), packed);
+#else
+                __m256i v0 = _mm512_castsi512_si256(v);
+                __m256i v1 = _mm512_extracti32x8_epi32(v, 1);
+                __m128i lo0 = _mm256_castsi256_si128(v0), hi0 = _mm256_extracti128_si256(v0, 1);
+                __m128i lo1 = _mm256_castsi256_si128(v1), hi1 = _mm256_extracti128_si256(v1, 1);
+                __m128i p0 = _mm_packus_epi32(lo0, hi0);
+                __m128i p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), p1);
+#endif
+            }
+            for (; j + 8 <= nc; j += 8) {
+                __m256i idx = _mm256_set_epi32(
+                    (int)((j + 7) * (ptrdiff_t)strideN), (int)((j + 6) * (ptrdiff_t)strideN),
+                    (int)((j + 5) * (ptrdiff_t)strideN), (int)((j + 4) * (ptrdiff_t)strideN),
+                    (int)((j + 3) * (ptrdiff_t)strideN), (int)((j + 2) * (ptrdiff_t)strideN),
+                    (int)((j + 1) * (ptrdiff_t)strideN), (int)(j * (ptrdiff_t)strideN));
+                __m256i v = _mm256_i32gather_epi32((const int *)(const void *)src, idx, 2);
+                v = _mm256_and_si256(v, _mm256_set1_epi32(0xFFFF));
+                __m128i lo = _mm256_castsi256_si128(v);
+                __m128i hi = _mm256_extracti128_si256(v, 1);
+                __m128i packed = _mm_packus_epi32(lo, hi);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), packed);
+            }
+            for (; j < nc; ++j)
+                dst[j] = src[j * strideN];
+        }
+#elif defined(__AVX2__)
+        for (int64_t k = 0; k < kc; ++k) {
+            if (k + 1 < kc)
+                mag_prefetcht0((const char *)(Bsrc + (k + 1) * strideK));
+            if (k + 2 < kc)
+                mag_prefetcht1((const char *)(Bsrc + (k + 2) * strideK));
+            const mag_bfloat16_t *src = Bsrc + k * strideK;
+            mag_bfloat16_t *dst = Bp + k * nc;
+            int64_t j = 0;
+            for (; j + 32 <= nc; j += 32) {
+                __m256i idx0 = _mm256_set_epi32(
+                    (int)((j + 7) * (ptrdiff_t)strideN), (int)((j + 6) * (ptrdiff_t)strideN),
+                    (int)((j + 5) * (ptrdiff_t)strideN), (int)((j + 4) * (ptrdiff_t)strideN),
+                    (int)((j + 3) * (ptrdiff_t)strideN), (int)((j + 2) * (ptrdiff_t)strideN),
+                    (int)((j + 1) * (ptrdiff_t)strideN), (int)(j * (ptrdiff_t)strideN));
+                __m256i idx1 = _mm256_set_epi32(
+                    (int)((j + 15) * (ptrdiff_t)strideN), (int)((j + 14) * (ptrdiff_t)strideN),
+                    (int)((j + 13) * (ptrdiff_t)strideN), (int)((j + 12) * (ptrdiff_t)strideN),
+                    (int)((j + 11) * (ptrdiff_t)strideN), (int)((j + 10) * (ptrdiff_t)strideN),
+                    (int)((j + 9) * (ptrdiff_t)strideN),  (int)((j + 8) * (ptrdiff_t)strideN));
+                __m256i v0 = _mm256_i32gather_epi32((const int *)(const void *)src, idx0, 2);
+                __m256i v1 = _mm256_i32gather_epi32((const int *)(const void *)src, idx1, 2);
+                v0 = _mm256_and_si256(v0, _mm256_set1_epi32(0xFFFF));
+                v1 = _mm256_and_si256(v1, _mm256_set1_epi32(0xFFFF));
+                __m128i lo0 = _mm256_castsi256_si128(v0), hi0 = _mm256_extracti128_si256(v0, 1);
+                __m128i lo1 = _mm256_castsi256_si128(v1), hi1 = _mm256_extracti128_si256(v1, 1);
+                __m128i p0 = _mm_packus_epi32(lo0, hi0);
+                __m128i p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), p1);
+                __m256i idx2 = _mm256_set_epi32(
+                    (int)((j + 23) * (ptrdiff_t)strideN), (int)((j + 22) * (ptrdiff_t)strideN),
+                    (int)((j + 21) * (ptrdiff_t)strideN), (int)((j + 20) * (ptrdiff_t)strideN),
+                    (int)((j + 19) * (ptrdiff_t)strideN), (int)((j + 18) * (ptrdiff_t)strideN),
+                    (int)((j + 17) * (ptrdiff_t)strideN), (int)((j + 16) * (ptrdiff_t)strideN));
+                __m256i idx3 = _mm256_set_epi32(
+                    (int)((j + 31) * (ptrdiff_t)strideN), (int)((j + 30) * (ptrdiff_t)strideN),
+                    (int)((j + 29) * (ptrdiff_t)strideN), (int)((j + 28) * (ptrdiff_t)strideN),
+                    (int)((j + 27) * (ptrdiff_t)strideN), (int)((j + 26) * (ptrdiff_t)strideN),
+                    (int)((j + 25) * (ptrdiff_t)strideN), (int)((j + 24) * (ptrdiff_t)strideN));
+                __m256i v2 = _mm256_i32gather_epi32((const int *)(const void *)src, idx2, 2);
+                __m256i v3 = _mm256_i32gather_epi32((const int *)(const void *)src, idx3, 2);
+                v2 = _mm256_and_si256(v2, _mm256_set1_epi32(0xFFFF));
+                v3 = _mm256_and_si256(v3, _mm256_set1_epi32(0xFFFF));
+                lo0 = _mm256_castsi256_si128(v2); hi0 = _mm256_extracti128_si256(v2, 1);
+                lo1 = _mm256_castsi256_si128(v3); hi1 = _mm256_extracti128_si256(v3, 1);
+                p0 = _mm_packus_epi32(lo0, hi0);
+                p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 16), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 24), p1);
+            }
+            for (; j + 16 <= nc; j += 16) {
+                __m256i idx0 = _mm256_set_epi32(
+                    (int)((j + 7) * (ptrdiff_t)strideN), (int)((j + 6) * (ptrdiff_t)strideN),
+                    (int)((j + 5) * (ptrdiff_t)strideN), (int)((j + 4) * (ptrdiff_t)strideN),
+                    (int)((j + 3) * (ptrdiff_t)strideN), (int)((j + 2) * (ptrdiff_t)strideN),
+                    (int)((j + 1) * (ptrdiff_t)strideN), (int)(j * (ptrdiff_t)strideN));
+                __m256i idx1 = _mm256_set_epi32(
+                    (int)((j + 15) * (ptrdiff_t)strideN), (int)((j + 14) * (ptrdiff_t)strideN),
+                    (int)((j + 13) * (ptrdiff_t)strideN), (int)((j + 12) * (ptrdiff_t)strideN),
+                    (int)((j + 11) * (ptrdiff_t)strideN), (int)((j + 10) * (ptrdiff_t)strideN),
+                    (int)((j + 9) * (ptrdiff_t)strideN),  (int)((j + 8) * (ptrdiff_t)strideN));
+                __m256i v0 = _mm256_i32gather_epi32((const int *)(const void *)src, idx0, 2);
+                __m256i v1 = _mm256_i32gather_epi32((const int *)(const void *)src, idx1, 2);
+                v0 = _mm256_and_si256(v0, _mm256_set1_epi32(0xFFFF));
+                v1 = _mm256_and_si256(v1, _mm256_set1_epi32(0xFFFF));
+                __m128i lo0 = _mm256_castsi256_si128(v0), hi0 = _mm256_extracti128_si256(v0, 1);
+                __m128i lo1 = _mm256_castsi256_si128(v1), hi1 = _mm256_extracti128_si256(v1, 1);
+                __m128i p0 = _mm_packus_epi32(lo0, hi0);
+                __m128i p1 = _mm_packus_epi32(lo1, hi1);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), p0);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j + 8), p1);
+            }
+            for (; j + 8 <= nc; j += 8) {
+                __m256i idx = _mm256_set_epi32(
+                    (int)((j + 7) * (ptrdiff_t)strideN), (int)((j + 6) * (ptrdiff_t)strideN),
+                    (int)((j + 5) * (ptrdiff_t)strideN), (int)((j + 4) * (ptrdiff_t)strideN),
+                    (int)((j + 3) * (ptrdiff_t)strideN), (int)((j + 2) * (ptrdiff_t)strideN),
+                    (int)((j + 1) * (ptrdiff_t)strideN), (int)(j * (ptrdiff_t)strideN));
+                __m256i v = _mm256_i32gather_epi32((const int *)(const void *)src, idx, 2);
+                v = _mm256_and_si256(v, _mm256_set1_epi32(0xFFFF));
+                __m128i lo = _mm256_castsi256_si128(v);
+                __m128i hi = _mm256_extracti128_si256(v, 1);
+                __m128i packed = _mm_packus_epi32(lo, hi);
+                _mm_storeu_si128((__m128i *)(void *)(dst + j), packed);
+            }
+            for (; j < nc; ++j)
+                dst[j] = src[j * strideN];
+        }
+#elif (defined(__aarch64__) && defined(__ARM_NEON))
+        /* ARM64 NEON: prefetch k+1/k+2; gather 8/16 elements per step, vectorized store. */
+        for (int64_t k = 0; k < kc; ++k) {
+            if (k + 1 < kc)
+                __builtin_prefetch((const char *)(Bsrc + (k + 1) * strideK), 0, 3);
+            if (k + 2 < kc)
+                __builtin_prefetch((const char *)(Bsrc + (k + 2) * strideK), 0, 2);
+            const mag_bfloat16_t *src = Bsrc + k * strideK;
+            mag_bfloat16_t *dst = Bp + k * nc;
+            int64_t j = 0;
+            for (; j + 16 <= nc; j += 16) {
+                const mag_bfloat16_t *p0 = src + (j + 0) * strideN;
+                const mag_bfloat16_t *p8 = src + (j + 8) * strideN;
+                uint16_t t0[8], t1[8];
+                for (int i = 0; i < 8; ++i) {
+                    t0[i] = p0[i * strideN].bits;
+                    t1[i] = p8[i * strideN].bits;
+                }
+                vst1q_u16((uint16_t *)(dst + j),      vld1q_u16(t0));
+                vst1q_u16((uint16_t *)(dst + j + 8), vld1q_u16(t1));
+            }
+            for (; j + 8 <= nc; j += 8) {
+                const mag_bfloat16_t *p = src + j * strideN;
+                uint16_t t[8];
+                for (int i = 0; i < 8; ++i) t[i] = p[i * strideN].bits;
+                vst1q_u16((uint16_t *)(dst + j), vld1q_u16(t));
+            }
+            for (; j < nc; ++j)
+                dst[j] = src[j * strideN];
+        }
+#else
         for (int64_t k = 0; k < kc; ++k) {
             const mag_bfloat16_t *src = Bsrc + k * strideK;
             for (int64_t j = 0; j < nc; ++j) {
                 Bp[k * nc + j] = src[j * strideN];
             }
         }
+#endif
     }
 }
 

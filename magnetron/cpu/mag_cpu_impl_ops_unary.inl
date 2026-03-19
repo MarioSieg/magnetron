@@ -22,7 +22,7 @@
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra+chunk, total); \
         if (mag_unlikely(rb <= ra)) return; \
-        if (mag_full_cont2(r, x)) { \
+        if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
             memcpy(br+ra, bx+ra, (rb-ra)*sizeof(T)); \
             return; \
         } \
@@ -64,7 +64,7 @@ mag_gen_stub_clone(int64_t, int64)
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        if (mag_full_cont2(x, r)) { \
+        if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
             mag_v##FUNC##_##TF(rb-ra, br+ra, bx+ra); \
             return; \
         } \

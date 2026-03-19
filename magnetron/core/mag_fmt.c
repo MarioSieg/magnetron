@@ -119,7 +119,6 @@ static char *mag_uint64_to_str(char *p, uint64_t v) {
 static char *mag_int64_to_str(char *p, int64_t v) {
     if (v < 0) {
         *p++ = '-';
-        // safe for INT64_MIN
         uint64_t uv = (uint64_t)(-(v + 1)) + 1u;
         return mag_uint64_to_str(p, uv);
     }
@@ -665,6 +664,9 @@ typedef struct mag_tensor_format_context_t {
     size_t pad;
     size_t linewidth;
     size_t col;
+    /* Per-column max width for last dimension (PyTorch-style alignment across rows) */
+    size_t *col_widths;
+    size_t ncol;
 } mag_tensor_format_context_t;
 
 static void mag_fmt_putc(mag_tensor_format_context_t *fmt, char c) {
@@ -712,9 +714,60 @@ static bool mag_fmt_lastdim_elem(
     char (*tmp)[MAG_FMT_BUF_MAX],
     bool *out_ellipsis,
     size_t *out_elen
+);
+
+static void mag_tensor_fmt_col_widths(mag_tensor_format_context_t *fmt, int depth) {
+    const mag_coords_iter_t *iter = fmt->iter;
+    char tmp[MAG_FMT_BUF_MAX];
+    if (depth == iter->rank - 1) {
+        int64_t dim = iter->shape[depth];
+        int64_t head = fmt->head;
+        int64_t tail = fmt->tail;
+        if (!fmt->trunc || head + tail >= dim) {
+            head = dim;
+            tail = 0;
+        }
+        bool use_ellipsis = head + tail < dim;
+        int64_t tails = use_ellipsis ? tail : 0;
+        int64_t total = head + tails + (use_ellipsis ? 1 : 0);
+        for (int64_t k=0; k < total && (size_t)k < fmt->ncol; ++k) {
+            bool ellipsis;
+            size_t elen = 0;
+            if (mag_fmt_lastdim_elem(fmt, depth, k, head, tails, dim, use_ellipsis, &tmp, &ellipsis, &elen))
+                fmt->col_widths[k] = mag_xmax(fmt->col_widths[k], elen + (k < total - 1 ? 2 : 0));
+        }
+        return;
+    }
+    int64_t dim = iter->shape[depth];
+    int64_t head = fmt->head;
+    int64_t tail = fmt->tail;
+    if (!fmt->trunc || head + tail >= dim) {
+        head = dim;
+        tail = 0;
+    }
+    bool use_ellipsis = head + tail < dim;
+    int64_t tails = use_ellipsis ? tail : 0;
+    int64_t total = head + tails + (use_ellipsis ? 1 : 0);
+    for (int64_t k=0; k < total; ++k) {
+        fmt->idx[depth] = k < head ? k : dim - tails + (k - head - (use_ellipsis ? 1 : 0));
+        mag_tensor_fmt_col_widths(fmt, depth + 1);
+    }
+}
+
+static bool mag_fmt_lastdim_elem(
+    mag_tensor_format_context_t *fmt,
+    int depth,
+    int64_t k,
+    int64_t heads,
+    int64_t tails,
+    int64_t dim_size,
+    bool use_ellipsis,
+    char (*tmp)[MAG_FMT_BUF_MAX],
+    bool *out_ellipsis,
+    size_t *out_elen
 ) {
     const mag_coords_iter_t *iter = fmt->iter;
-    bool ellipsis = use_ellipsis && (k == heads);
+    bool ellipsis = use_ellipsis && k == heads;
     *out_ellipsis = ellipsis;
     if (ellipsis) {
         *out_elen = 3; /* "..." */
@@ -756,33 +809,18 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
     int64_t tails = use_ellipsis ? tail : 0;
     int64_t total = head + tails + (use_ellipsis ? 1 : 0);
     mag_fmt_putc(fmt, '[');
-    if (last_dim) {  /* Pass 1: compute max element width (including numbers and "...") */
-        size_t max_width = 0;
+    if (last_dim) {
         for (int64_t k=0; k < total; ++k) {
             bool ellipsis;
             size_t elen = 0;
             if (mag_unlikely(!mag_fmt_lastdim_elem(fmt, depth, k, head, tails, dim, use_ellipsis, &tmp, &ellipsis, &elen)))
                 continue;
-            max_width = mag_xmax(max_width, elen);
-        }
-        for (int64_t k=0; k < total; ++k) { /* Pass 2: actually print, with linewidth + right alignment */
-            bool ellipsis;
-            size_t elen = 0;
-            if (mag_unlikely(!mag_fmt_lastdim_elem(fmt, depth, k, head, tails, dim, use_ellipsis, &tmp, &ellipsis, &elen)))
-                continue;
-            if (k > 0) {
-                if (fmt->linewidth > 0 && fmt->col+2 + max_width > fmt->linewidth) {
-                    mag_fmt_putc(fmt, ',');
-                    mag_fmt_putc(fmt, '\n');
-                    mag_fmt_indent(fmt, depth);
-                } else {
-                    mag_fmt_putc(fmt, ',');
-                    mag_fmt_putc(fmt, ' ');
-                }
+            size_t w = fmt->col_widths && (size_t)k < fmt->ncol ? fmt->col_widths[k] : (elen + (k < total - 1 ? 2 : 0));
+            if (k > 0 && fmt->linewidth > 0 && fmt->col + w > fmt->linewidth) {
+                mag_fmt_putc(fmt, '\n');
+                mag_fmt_indent(fmt, depth);
             }
-            size_t pad = max_width > elen ? max_width - elen : 0;
-            for (size_t i=0; i < pad; ++i)
-                mag_fmt_putc(fmt, ' ');
+            /* Number, then ", " (one space after comma), then space-pad to column width. */
             if (ellipsis) {
                 mag_fmt_putc(fmt, '.');
                 mag_fmt_putc(fmt, '.');
@@ -791,6 +829,13 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
                 for (size_t i=0; i < elen; ++i)
                     mag_fmt_putc(fmt, tmp[i]);
             }
+            if (k < total - 1) {
+                mag_fmt_putc(fmt, ',');
+                mag_fmt_putc(fmt, ' ');
+            }
+            size_t pad = w > elen + (k < total - 1 ? 2 : 0) ? w - elen - (k < total - 1 ? 2 : 0) : 0;
+            for (size_t i=0; i < pad; ++i)
+                mag_fmt_putc(fmt, ' ');
         }
     } else {
         for (int64_t k=0; k < total; ++k) {
@@ -824,6 +869,21 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
     mag_sstream_append(&ss, prefix);
     mag_coords_iter_t iter;
     mag_coords_iter_init(&iter, &tensor->coords);
+    size_t ncol = 0;
+    size_t *col_widths = NULL;
+    if (iter.rank > 0) {
+        int64_t last_dim = iter.shape[iter.rank - 1];
+        int64_t head_e = head, tail_e = tail;
+        if (!(tensor->numel > threshold) || head_e + tail_e >= last_dim) {
+            head_e = last_dim;
+            tail_e = 0;
+        }
+        bool use_ell = head_e + tail_e < last_dim;
+        int64_t tails_e = use_ell ? tail_e : 0;
+        ncol = (size_t)(head_e + tails_e + (use_ell ? 1 : 0));
+        col_widths = ncol ? (*mag_alloc)(NULL, ncol*sizeof(*col_widths), 0) : NULL;
+        if (col_widths) memset(col_widths, 0, ncol*sizeof(*col_widths));
+    }
     mag_tensor_format_context_t fmt = {
         .ss = &ss,
         .buf = (const void *)mag_tensor_data_ptr(tensor),
@@ -835,10 +895,14 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
         .trunc = tensor->numel > threshold,
         .pad = pad,
         .linewidth = MAG_FMT_TENSOR_DEFAULT_LINE_WIDTH,
-        .col = pad
+        .col = pad,
+        .col_widths = col_widths,
+        .ncol = ncol
     };
     memset(fmt.idx, 0, sizeof(fmt.idx));
+    if (col_widths) mag_tensor_fmt_col_widths(&fmt, 0);
     mag_tensor_fmt_recursive(&fmt, 0); /* Recursive format */
+    if (col_widths) (*mag_alloc)(col_widths, 0, 0);
     char device_str[32];
     mag_device_id_to_str(tensor->storage->device->id, &device_str);
     mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_type_trait(tensor->dtype)->name, device_str);

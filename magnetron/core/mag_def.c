@@ -32,24 +32,22 @@ mag_log_level_t mag_log_level(void) { return mag_log_level_var; }
 
 const char *mag_status_get_name(mag_status_t op){
     static const char *names[] = {
-        "MAG_STATUS_OK",
-        "MAG_STATUS_ERR_PENDING",
-        "MAG_STATUS_ERR_THREAD_MISMATCH",
-        "MAG_STATUS_ERR_INVALID_RANK",
-        "MAG_STATUS_ERR_INVALID_DIM",
-        "MAG_STATUS_ERR_DIM_OVERFLOW",
-        "MAG_STATUS_ERR_INVALID_INDEX",
-        "MAG_STATUS_ERR_OUT_OF_BOUNDS",
-        "MAG_STATUS_ERR_INVALID_PARAM",
-        "MAG_STATUS_ERR_STRIDE_SOLVER_FAILED",
-        "MAG_STATUS_ERR_BROADCAST_IMPOSSIBLE",
-        "MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE",
-        "MAG_STATUS_ERR_INVALID_STATE",
-        "MAG_STATUS_ERR_IMAGE_ERROR",
-        "MAG_STATUS_ERR_UNKNOWN",
+        #define _(name, str) [name] = str,
+        mag_statusdef(_)
+        #undef _
     };
     mag_static_assert(sizeof(names)/sizeof(*names)-1 == MAG_STATUS_ERR_UNKNOWN);
     return names[op];
+}
+
+const char *mag_status_get_message(mag_status_t op) {
+    static const char *messages[] = {
+        #define _(name, str) [name] = str,
+        mag_statusdef(_)
+        #undef _
+    };
+    mag_static_assert(sizeof(messages)/sizeof(*messages)-1 == MAG_STATUS_ERR_UNKNOWN);
+    return messages[op];
 }
 
 #if defined(__linux__) && defined(__GLIBC__)

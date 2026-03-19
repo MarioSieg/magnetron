@@ -11,6 +11,9 @@
 
 #include <prelude.hpp>
 
+#include <core/mag_bfloat16.h>
+#include <core/mag_float16.h>
+
 using namespace magnetron;
 
 TEST(context, create_cpu) {

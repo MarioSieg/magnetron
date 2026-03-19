@@ -111,6 +111,7 @@ typedef enum mag_opflags_t {
     _(DIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, div)__\
     _(FLOORDIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(MOD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(POW, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(MATMUL, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, matmul)__\
     _(REPEAT_BACK, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(GATHER, 2, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
@@ -126,6 +127,7 @@ typedef enum mag_opflags_t {
     _(GE, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(LT, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(GT, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(WHERE, 3, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -135,7 +137,7 @@ typedef enum mag_opcode_t {
     MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_GT+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_WHERE+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */

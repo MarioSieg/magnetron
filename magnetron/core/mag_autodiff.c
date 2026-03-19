@@ -16,7 +16,7 @@
 #include "mag_hashset.h"
 #include "mag_toposort.h"
 
-static void mag_au_state_dtor(void *p) {
+static mag_status_t mag_au_state_dtor(void *p) {
     mag_au_state_t *au = p;
     if (au->grad) {
         mag_rc_decref(au->grad);
@@ -25,6 +25,7 @@ static void mag_au_state_dtor(void *p) {
     for (size_t i=0; i < sizeof(au->op_inputs)/sizeof(*au->op_inputs); ++i)
         if (au->op_inputs[i]) mag_rc_decref(au->op_inputs[i]);
     mag_slab_free(&au->ctx->au_state_slab, au);
+    return MAG_STATUS_OK;
 }
 
 mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t *ctx) {

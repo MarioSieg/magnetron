@@ -23,7 +23,7 @@
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        if (mag_full_cont3(r, x, y)) { \
+        if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r, x, y}, 3)) { \
             mag_v##FUNC##_##TF(rb-ra, br+ra, bx+ra, by+ra); \
             return; \
         } \
@@ -53,6 +53,9 @@
 #define mag_opf_imod(T, x, y) (mag_remi(x, y))
 #define mag_opf_fmod(T, x, y) (mag_remf(x, y))
 #define mag_opf_umod(T, x, y) (mag_remu(x, y))
+#define mag_opf_ipow(T, x, y) (mag_powi(x, y))
+#define mag_opf_upow(T, x, y) (mag_powu(x, y))
+#define mag_opf_fpow(T, x, y) (mag_powf(x, y))
 #define mag_opf_and(T, x, y) ((x)&(y))
 #define mag_opf_or(T, x, y) ((x)|(y))
 #define mag_opf_xor(T, x, y) ((x)^(y))
@@ -133,6 +136,18 @@ mag_gen_stub_binop(int32_t, int32, mod, mag_opf_imod, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(uint64_t, uint64, mod, mag_opf_umod, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(int64_t, int64, mod, mag_opf_imod, mag_cvt_nop, mag_cvt_nop)
 
+mag_gen_stub_binop(float, float32, pow, mag_opf_fpow, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(mag_float16_t, float16, pow, mag_opf_fpow, mag_float16_to_float32, mag_float32_to_float16)
+mag_gen_stub_binop(mag_bfloat16_t, bfloat16, pow, mag_opf_fpow, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
+mag_gen_stub_binop(int8_t, int8, pow, mag_opf_ipow, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(int16_t, int16, pow, mag_opf_ipow, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(int32_t, int32, pow, mag_opf_ipow, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(int64_t, int64, pow, mag_opf_ipow, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(uint8_t, uint8, pow, mag_opf_upow, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(uint16_t, uint16, pow, mag_opf_upow, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(uint32_t, uint32, pow, mag_opf_upow, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_binop(uint64_t, uint64, pow, mag_opf_upow, mag_cvt_nop, mag_cvt_nop)
+
 mag_gen_stub_binop(uint8_t, uint8, and, mag_opf_and, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(int8_t, int8, and, mag_opf_and, mag_cvt_nop, mag_cvt_nop)
 mag_gen_stub_binop(uint16_t, uint16, and, mag_opf_and, mag_cvt_nop, mag_cvt_nop)
@@ -206,7 +221,7 @@ mag_gen_stub_binop(int64_t, int64, shr, mag_opf_sar, mag_cvt_nop, mag_cvt_nop)
         int64_t chunk = (total + tc - 1)/tc; \
         int64_t ra = ti*chunk; \
         int64_t rb = mag_xmin(ra + chunk, total); \
-        if (mag_full_cont3(r, x, y)) { \
+        if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r, x, y}, 3)) { \
             mag_v##FUNC##_##TF(rb-ra, br+ra, bx+ra, by+ra); \
             return; \
         } \

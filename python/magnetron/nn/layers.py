@@ -34,9 +34,9 @@ class Linear(Module):
             self.bias = Parameter(Tensor.zeros(out_features, dtype=dtype))
 
     def forward(self, x: Tensor) -> Tensor:
-        x = x @ self.weight.x.T
+        x = x @ self.weight.T
         if self.bias is not None:
-            x = x + self.bias.x
+            x = x + self.bias
         return x
 
 
@@ -51,7 +51,7 @@ class Embedding(Module):
             self.weight = Parameter(Tensor.empty(num_embeddings, embedding_dim, dtype=dtype))
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.weight.x[x]
+        return self.weight[x]
 
 
 class RMSNorm(Module):
@@ -65,7 +65,7 @@ class RMSNorm(Module):
         return x / rms
 
     def forward(self, x: Tensor) -> Tensor:
-        return self._norm(x) * self.weight.x
+        return self._norm(x) * self.weight
 
 
 class LayerNorm(Module):
@@ -80,7 +80,7 @@ class LayerNorm(Module):
         xm = x - mean
         var = xm.sqr().mean(dim=-1, keepdim=True)
         x_hat = xm * (var + self.eps).rsqrt()
-        y = self.weight.x * x_hat
+        y = self.weight * x_hat
         if self.bias is not None:
-            y = y + self.bias.x
+            y = y + self.bias
         return y

@@ -20,7 +20,7 @@ _ALL_DTYPE_REDUCES = (
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
 @pytest.mark.parametrize('op', _ALL_DTYPE_REDUCES)
 @pytest.mark.parametrize('keepdim', [True, False])
-def test_reduce_op(dtype: DataType, op: str, keepdim: bool) -> None:
+def test_reduce_op(dtype: dtype.DType, op: str, keepdim: bool) -> None:
     def test(shape: tuple[int, ...]) -> None:
         x = random_tensor(shape, dtype=dtype)
         dim = random_dim(shape)
@@ -44,7 +44,7 @@ def test_reduce_op(dtype: DataType, op: str, keepdim: bool) -> None:
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
 @pytest.mark.parametrize('keepdim', [True, False])
-def test_reduce_op_mean(dtype: DataType, keepdim: bool) -> None: # Mean is only for floating point
+def test_reduce_op_mean(dtype: dtype.DType, keepdim: bool) -> None: # Mean is only for floating point
     def test(shape: tuple[int, ...]) -> None:
         x = random_tensor(shape, dtype=dtype)
         dim = random_dim(shape)
@@ -61,7 +61,7 @@ def test_reduce_op_mean(dtype: DataType, keepdim: bool) -> None: # Mean is only 
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
 @pytest.mark.parametrize('largest', [True, False])
-def test_reduce_op_topk(dtype: DataType, largest: bool) -> None: # Mean is only for floating point
+def test_reduce_op_topk(dtype: dtype.DType, largest: bool) -> None: # Mean is only for floating point
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0: # topk not defined for 0-dim tensors
             return

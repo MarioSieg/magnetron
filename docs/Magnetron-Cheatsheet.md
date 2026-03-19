@@ -1,4 +1,51 @@
-# Magnetron Operator Reference
+<br />
+<div align="center">
+  <a href="https://github.com/MarioSieg/magnetron">
+    <img src="https://raw.githubusercontent.com/MarioSieg/magnetron/develop/media/logo.png" alt="Magnetron Logo" width="200" height="200">
+  </a>
+<h3 align="center">magnetron cheatsheet</h3>
+  <p align="center">
+    Reference for data types, operators, and tensor semantics in Magnetron.
+  </p>
+</div>
+
+
+# Data Types
+
+Magnetron currently supports the following data types, with additional formats planned (e.g. MXFP8).<br>
+
+|   DType   | Type               | Size (bits) | Min value         | Max value        |
+|----------:|--------------------|------------:|-------------------|------------------|
+| float16   | Floating point     |          16 | $\approx -6.5e4$  | $\approx 6.5e4$  |
+| bfloat16  | Floating point     |          16 | $\approx -3.4e38$ | $\approx 3.4e38$ |
+| float32   | Floating point     |          32 | $\approx -3.4e38$ | $\approx 3.4e38$ |
+| boolean   | Boolean            |           8 | $0$               | $1$              |
+| int8      | Integer (signed)   |           8 | $-2^{7}$          | $2^{7}-1$        |
+| uint8     | Integer (unsigned) |           8 | $0$               | $2^{8}-1$        |
+| int16     | Integer (signed)   |          16 | $-2^{15}$         | $2^{15}-1$       |
+| uint16    | Integer (unsigned) |          16 | $0$               | $2^{16}-1$       |
+| int32     | Integer (signed)   |          32 | $-2^{31}$         | $2^{31}-1$       |
+| uint32    | Integer (unsigned) |          32 | $0$               | $2^{32}-1$       |
+| int64     | Integer (signed)   |          64 | $-2^{63}$         | $2^{63}-1$       |
+
+### Examples
+
+Create a `float16` tensor filled with zeros:
+```python
+Tensor.zeros(10, dtype=dtype.float16)
+```
+
+Create a 2×3 `float32` tensor filled with ones:
+```python
+Tensor.ones(2, 3, dtype=dtype.float32)
+```
+
+Create a range tensor of integers from 0 to 9:
+```python
+Tensor.arange(0, 10, dtype=dtype.int64)
+```
+
+# Operators
 
 All operations in Magnetron are exposed as **methods on `Tensor`**.
 If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
@@ -40,17 +87,18 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 
 ## Filling & Mutation
 
-| Method                 | Description                              | Math                          | Example                  |
-|------------------------|------------------------------------------|-------------------------------|--------------------------|
-| `fill_(v)`             | Fill tensor in-place with constant value | $x_i=v$                       | `x.fill_(0)`             |
-| `zeros_()`             | In-place fill with zeros                 | $x_i=0$                       | `x.zeros_()`             |
-| `ones_()`              | In-place fill with ones                  | $x_i=1$                       | `x.ones_()`              |
-| `copy_(y)`             | Copy data from another tensor            | $x=y$                         | `x.copy_(y)`             |
-| `masked_fill(mask,v)`  | Replace values where mask is true        | $x_i=v$ if $m_i$              | `y = x.masked_fill(m,0)` |
-| `masked_fill_(mask,v)` | In-place masked fill                     | N/A                           | `x.masked_fill_(m,0)`    |
-| `uniform_(a,b)`        | Fill with uniform random values          | $x\sim U(a,b)$                | `x.uniform_(0,1)`        |
-| `normal_(μ,σ)`         | Fill with normal distribution            | $x\sim\mathcal N(\mu,\sigma)$ | `x.normal_(0,1)`         |
-| `bernoulli_(p)`        | Fill with Bernoulli samples              | $x\sim\text{Bern}(p)$         | `x.bernoulli_(0.5)`      |
+| Method                   | Description                              | Math                                          | Example                         |
+|--------------------------|------------------------------------------|-----------------------------------------------|---------------------------------|
+| `fill_(v)`               | Fill tensor in-place with constant value | $x_i=v$                                       | `x.fill_(0)`                    |
+| `zeros_()`               | In-place fill with zeros                 | $x_i=0$                                       | `x.zeros_()`                    |
+| `ones_()`                | In-place fill with ones                  | $x_i=1$                                       | `x.ones_()`                     |
+| `copy_(y)`               | Copy data from another tensor            | $x=y$                                         | `x.copy_(y)`                    |
+| `masked_fill(mask,v)`    | Replace values where mask is true        | $x_i=v$ if $m_i$                              | `y = x.masked_fill(m,0)`        |
+| `masked_fill_(mask,v)`   | In-place masked fill                     | N/A                                           | `x.masked_fill_(m,0)`           |
+| `uniform_(a,b)`          | Fill with uniform random values          | $x\sim U(a,b)$                                | `x.uniform_(0,1)`               |
+| `normal_(μ,σ)`           | Fill with normal distribution            | $x\sim\mathcal N(\mu,\sigma)$                 | `x.normal_(0,1)`                |
+| `bernoulli_(p)`          | Fill with Bernoulli samples              | $x\sim\text{Bern}(p)$                         | `x.bernoulli_(0.5)`             |
+| `Tensor.where(cond,x,y)` | Conditional elementwise selection        | $z_i = x_i \text{ if } c_i \text{ else } y_i$ | `z = Tensor.where(x > 0, x, 0)` |
 
 ---
 
@@ -151,6 +199,7 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 | `div()`      | `/`      | Elementwise division       | $\frac{x}{y}$               | `x / y`  |
 | `floordiv()` | `//`     | Elementwise floor division | $\lfloor\frac{x}{y}\rfloor$ | `x // y` |
 | `mod()`      | `%`      | Elementwise modulus        | $x\bmod y$                  | `x % y`  |
+| `pow()`      | `**`     | Elementwise exponentiation | $x^y$                       | `x ** y` |
 | `matmul()`   | `@`      | Matrix multiplication      | $XY$                        | `x @ y`  |
 
 ## Comparison

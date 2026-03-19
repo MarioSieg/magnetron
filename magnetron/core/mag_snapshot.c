@@ -73,10 +73,11 @@ typedef struct mag_mmap_owner_t {
 } mag_mmap_owner_t;
 MAG_RC_OBJECT_IS_VALID(mag_mmap_owner_t);
 
-static void mag_mmap_owner_dtor(void *self) {
+static mag_status_t mag_mmap_owner_dtor(void *self) {
     mag_mmap_owner_t *o = self;
     mag_unmap_file(&o->file);
     (*mag_alloc)(o, 0, 0);
+    return MAG_STATUS_OK;
 }
 
 static mag_mmap_owner_t *mag_mmap_owner_open(const char *path) {
@@ -520,7 +521,7 @@ static bool mag_snapshot_insert_tensor_by_id(mag_snapshot_t *snap, uint32_t key_
 
 extern mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape);
 
-static void mag_cpu_storage_dtor(void *self) {
+static mag_status_t mag_cpu_storage_dtor(void *self) {
     mag_storage_buffer_t *buf = self;
     mag_context_t *ctx = buf->ctx;
     mag_assert(ctx->telemetry.num_alive_storages > 0, "double freed storage");
@@ -532,6 +533,7 @@ static void mag_cpu_storage_dtor(void *self) {
         (*mag_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
     }
     mag_slab_free(&ctx->storage_slab, buf);
+    return MAG_STATUS_OK;
 }
 
 static void mag_cpu_borrow_storage(
@@ -550,9 +552,7 @@ static void mag_cpu_borrow_storage(
         .flags = MAG_STORAGE_FLAG_BORROWED,
         .base = (uintptr_t)ptr,
         .size = size,
-        .alignment = 1,
-        .dtype = dtype,
-        .granularity = mag_type_trait(dtype)->size,
+        .alignment = MAG_CPU_BUF_ALIGN, /* TODO: is this respected */
         .device = cpu,
     };
     buf->flags &= ~MAG_STORAGE_FLAG_ACCESS_W;

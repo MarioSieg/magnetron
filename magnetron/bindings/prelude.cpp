@@ -11,6 +11,8 @@
 
 #include "prelude.hpp"
 
+#include <algorithm>
+
 namespace mag::bindings {
     // Helper to convert a C array of int64_t to a Python tuple of ints.
     // Nanobind doesn't have a built-in way to do this and would require allocating a list and then conerting it to a tuple, which sucks.
@@ -80,9 +82,8 @@ namespace mag::bindings {
             auto msg = "Invalid number of dimensions, must be <= " + std::to_string(MAG_MAX_DIMS);
             throw nb::value_error(msg.c_str());
         }
-        for (auto d : shape) {
-            if (d <= 0) throw nb::value_error("Invalid dimension size (must be > 0)");
-        }
+        if (std::any_of(shape.begin(), shape.end(), [](int64_t d) { return d <= 0; }))
+            throw nb::value_error("Invalid dimension size (must be > 0)");
     }
 
     static void flatten_i64_handle(nb::handle h, std::vector<int64_t> &out) {
@@ -149,6 +150,15 @@ namespace mag::bindings {
         if (nb::isinstance<nb::int_>(h)) return mag_scalar_from_i64(nb::cast<int64_t>(h));
         if (nb::isinstance<nb::float_>(h)) return mag_scalar_from_f64(nb::cast<double>(h));
         throw nb::type_error("Expected scalar (bool|int|float)");
+    }
+
+    nb::object py_scalar_from_mag_scalar(const mag_scalar_t &scalar) {
+        switch (scalar.type) {
+            case MAG_SCALAR_TYPE_I64: return nb::cast<int64_t>(mag_scalar_as_i64(scalar));
+            case MAG_SCALAR_TYPE_U64: return nb::cast<uint64_t>(mag_scalar_as_u64(scalar));
+            case MAG_SCALAR_TYPE_F64: return nb::cast<double>(mag_scalar_as_f64(scalar));
+            default: throw nb::type_error("Unsupported scalar type");
+        }
     }
 
     dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h) {

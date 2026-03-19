@@ -11,17 +11,17 @@ _TOLS = {
 }
 
 
-def _atol_rtol(dtype: DataType) -> tuple[float, float]:
+def _atol_rtol(dtype: dtype.DType) -> tuple[float, float]:
     return _TOLS.get(dtype, (1e-5, 1e-5))
 
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
-def test_matmul_squared(dtype: DataType) -> None:
+def test_matmul_squared(dtype: dtype.DType) -> None:
     binary_op_square(dtype, lambda x, y: x + y, kind=BinaryOpParamKind.TENSOR)
 
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
-def test_matmul_full(dtype: DataType) -> None:
+def test_matmul_full(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     for A, B in matmul_shape_pairs(lim=3, max_total_rank=6):
         a = Tensor.uniform(A, dtype=dtype)
@@ -33,7 +33,7 @@ def test_matmul_full(dtype: DataType) -> None:
         assert torch.allclose(totorch(r), rt, atol=atol, rtol=rtol)
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
-def test_matmul_squared(dtype: DataType) -> None:
+def test_matmul_squared(dtype: dtype.DType) -> None:
     shapes = [4, 8, 16, 32, 64, 128, 256, 512, 1024]
     atol, rtol = _atol_rtol(dtype)
     for shape in shapes:
@@ -48,7 +48,7 @@ def test_matmul_squared(dtype: DataType) -> None:
 
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
-def test_matmul(dtype: DataType) -> None:
+def test_matmul(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shapes = [
         (4, 8),
@@ -72,7 +72,7 @@ def test_matmul(dtype: DataType) -> None:
 
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
-def test_matmul_matrix_by_vector(dtype: DataType) -> None:
+def test_matmul_matrix_by_vector(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shapes = [
         (4, 8),
@@ -96,7 +96,7 @@ def test_matmul_matrix_by_vector(dtype: DataType) -> None:
 
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
-def test_matmul_vector_by_matrix(dtype: DataType) -> None:
+def test_matmul_vector_by_matrix(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shapes = [
         (4, 8),
@@ -120,7 +120,7 @@ def test_matmul_vector_by_matrix(dtype: DataType) -> None:
 
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
-def test_matmul_scalar_by_matrix(dtype: DataType) -> None:
+def test_matmul_scalar_by_matrix(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shapes = [
         (4, 8),
@@ -143,7 +143,7 @@ def test_matmul_scalar_by_matrix(dtype: DataType) -> None:
 
 
 @pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
-def test_matmul_x_transposed(dtype: DataType) -> None:
+def test_matmul_x_transposed(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shape_a = (4, 2)
     shape_b = (4, 4)

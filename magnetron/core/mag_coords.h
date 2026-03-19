@@ -27,6 +27,7 @@ typedef struct mag_coords_t {
 #define MAG_FMT_DIM_BUF_SIZE (8 + MAG_MAX_DIMS*sizeof("-9223372036854775808, "))
 
 extern bool mag_coords_broadcast_shape(const mag_coords_t *x, const mag_coords_t *y, int64_t *dims, int64_t *rank);
+extern bool mag_coords_broadcast_multi_shape(const mag_coords_t **x, size_t n, int64_t *dims, int64_t *rank);
 extern bool mag_coords_shape_cmp(const mag_coords_t *x, const mag_coords_t *y);
 extern bool mag_coords_strides_cmp(const mag_coords_t *x, const mag_coords_t *y);
 extern bool mag_coords_can_broadcast(const mag_coords_t *x, const mag_coords_t *y);

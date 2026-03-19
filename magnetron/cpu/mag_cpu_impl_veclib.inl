@@ -430,8 +430,7 @@ static void MAG_HOTPROC mag_vmod_float32(int64_t numel, float *o, const float *x
 }
 
 static void MAG_HOTPROC mag_vmod_float16(int64_t numel, mag_float16_t *o, const mag_float16_t *x, const mag_float16_t *y) {
-    int64_t i=0;
-    for (; i < numel; ++i) { /* Scalar drain loop */
+    for (int64_t i=0; i < numel; ++i) {
         o[i] = mag_float32_to_float16(mag_remf(mag_float16_to_float32(x[i]), mag_float16_to_float32(y[i])));
     }
 }
@@ -439,6 +438,22 @@ static void MAG_HOTPROC mag_vmod_float16(int64_t numel, mag_float16_t *o, const 
 static void MAG_HOTPROC mag_vmod_bfloat16(int64_t numel, mag_bfloat16_t *o, const mag_bfloat16_t *x, const mag_bfloat16_t *y) {
     for (int64_t i=0; i < numel; ++i)
         o[i] = mag_float32_to_bfloat16(mag_remf(mag_bfloat16_to_float32(x[i]), mag_bfloat16_to_float32(y[i])));
+}
+
+static void MAG_HOTPROC mag_vpow_float32(int64_t numel, float *o, const float *x, const float *y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_powf(x[i], y[i]);
+}
+
+static void MAG_HOTPROC mag_vpow_float16(int64_t numel, mag_float16_t *o, const mag_float16_t *x, const mag_float16_t *y) {
+    for (int64_t i=0; i < numel; ++i) {
+        o[i] = mag_float32_to_float16(mag_powf(mag_float16_to_float32(x[i]), mag_float16_to_float32(y[i])));
+    }
+}
+
+static void MAG_HOTPROC mag_vpow_bfloat16(int64_t numel, mag_bfloat16_t *o, const mag_bfloat16_t *x, const mag_bfloat16_t *y) {
+    for (int64_t i=0; i < numel; ++i)
+        o[i] = mag_float32_to_bfloat16(mag_powf(mag_bfloat16_to_float32(x[i]), mag_bfloat16_to_float32(y[i])));
 }
 
 static void MAG_HOTPROC mag_vabs_float32(int64_t numel, float *o, const float *x) {
@@ -1310,6 +1325,10 @@ static void MAG_HOTPROC mag_vgelu_dv_bfloat16(int64_t numel, mag_bfloat16_t *o, 
     static void mag_vmod_##TF(int64_t numel, T *o, const T *x, const T *y) { \
         for (int64_t i=0; i < numel; ++i) \
             o[i] = mag_rem##SIGNESS(x[i],y[i]); \
+    } \
+    static void mag_vpow_##TF(int64_t numel, T *o, const T *x, const T *y) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = mag_pow##SIGNESS(x[i],y[i]); \
     } \
     static void mag_vand_##TF(int64_t numel, T *o, const T *x, const T *y) { \
         for (int64_t i=0; i < numel; ++i) \

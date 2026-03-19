@@ -62,21 +62,20 @@ typedef enum mag_storage_flags_t {
 typedef struct mag_storage_buffer_t mag_storage_buffer_t;
 struct mag_storage_buffer_t {
     MAG_RC_INJECT_HEADER;                   /* RC Control block must be first */
-
     mag_context_t *ctx;
-    union {
-        void *impl;                         /* Backend specific storage buffer implementation, if any. */
-        uint8_t inline_buf[sizeof(void *)]; /* Inline buffer for small storage optimizations. */
-    } aux;                                  /* Auxiliary storage for backend specific data. */
-    mag_storage_flags_t flags;              /* Storage buffer flags. */
-    uintptr_t base;                         /* Pointer to buffer on device. Might point to GPU or any other device memory. */
-    size_t size;                            /* Size of buffer in bytes. */
-    size_t alignment;                       /* Alignment of buffer. */
-    size_t granularity;                     /* Element size granularity. */
-    mag_dtype_t dtype;                      /* Data type of buffer. */
-    mag_device_t *device;                   /* Host device. */
+    mag_storage_flags_t flags;                                  /* Storage buffer flags. */
+    uint32_t alignment;                                         /* Alignment of buffer. */
+    uintptr_t base;                                             /* Pointer to buffer on device. Might point to GPU or any other device memory. */
+    size_t size;                                                /* Size of buffer in bytes. */
+    mag_device_t *device;                                       /* Host device. */
+    mag_alignas(MAG_CPU_BUF_INTRUSIVE_CAP) union {
+        void *impl;                                             /* Backend specific storage buffer implementation, if any. */
+        mag_alignas(MAG_CPU_BUF_INTRUSIVE_CAP) uint8_t intrusive_storage[MAG_CPU_BUF_INTRUSIVE_CAP]; /* (CPU only) Intrusive inline st */
+    } aux;
 };
 MAG_RC_OBJECT_IS_VALID(mag_storage_buffer_t);
+
+mag_static_assert(offsetof(mag_storage_buffer_t, aux) % MAG_CPU_BUF_ALIGN == 0); /* Ensure aux is properly aligned for intrusive storage. */
 
 typedef struct mag_command_t {
     mag_opcode_t op;
@@ -89,12 +88,12 @@ typedef struct mag_command_t {
 
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 struct mag_device_t {
-    void *impl;                                                     /* Backend specific device implementation, if any. */
-    mag_context_t *ctx;                                             /* Owning context */
-    mag_device_id_t id;                                             /* Device ID, (e.g. cuda:0, cpu, etc..) */
-    bool is_async;                                                  /* True if the device executes commands asynchronously. */
-    void (*submit)(mag_device_t *dvc, const mag_command_t *cmd);    /* Submit a command to the device for execution. */
-    void (*alloc_storage)(mag_device_t *dvc, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype);
+    void *impl;                                                             /* Backend specific device implementation, if any. */
+    mag_context_t *ctx;                                                     /* Owning context */
+    mag_device_id_t id;                                                     /* Device ID, (e.g. cuda:0, cpu, etc..) */
+    bool is_async;                                                          /* True if the device executes commands asynchronously. */
+    mag_status_t (*submit)(mag_device_t *dvc, const mag_command_t *cmd);    /* Submit a command to the device for execution. */
+    mag_status_t (*alloc_storage)(mag_device_t *dvc, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype);
     void (*manual_seed)(mag_device_t *dvc, uint64_t seed);
     char physical_device_name[256];                                 /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
 };

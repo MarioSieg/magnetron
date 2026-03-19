@@ -62,7 +62,7 @@ namespace mag {
 
     static void op_nop(const mag_command_t *) { }
 
-    static void submit(mag_device_t *dvc, const mag_command_t *cmd) {
+    [[nodiscard]] static mag_status_t submit(mag_device_t *dvc, const mag_command_t *cmd) {
         static constexpr kernel_fn *dispatch_table[] = {
             [MAG_OP_NOP] = &op_nop,
             [MAG_OP_FILL] = &fill_op_fill,
@@ -144,6 +144,7 @@ namespace mag {
             [MAG_OP_DIV] = &binary_op_div,
             [MAG_OP_FLOORDIV] = nullptr,
             [MAG_OP_MOD] = &binary_op_mod,
+            [MAG_OP_POW] = nullptr,
             [MAG_OP_MATMUL] = nullptr,
             [MAG_OP_REPEAT_BACK] = nullptr,
             [MAG_OP_GATHER] = nullptr,
@@ -158,37 +159,40 @@ namespace mag {
             [MAG_OP_LE] = &binary_op_le,
             [MAG_OP_GE] = &binary_op_ge,
             [MAG_OP_LT] = &binary_op_lt,
-            [MAG_OP_GT] = &binary_op_gt
+            [MAG_OP_GT] = &binary_op_gt,
+            [MAG_OP_WHERE] = nullptr
         };
         static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
         kernel_fn *kern = dispatch_table[cmd->op];
         mag_assert(kern != nullptr, "Operator %s not implemented in CUDA backend", mag_op_traits(cmd->op)->mnemonic);
         (*kern)(cmd);
+        return MAG_STATUS_OK;
     }
 
-    static void alloc_storage_buffer(mag_device_t *device, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
-        mag_context_t *ctx = device->ctx;
+    [[nodiscard]] static mag_status_t alloc_storage_buffer(mag_device_t *dvc, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
+        mag_context_t *ctx = dvc->ctx;
         uintptr_t base;
-        mag_cuda_check(cudaMalloc(reinterpret_cast<void **>(&base), size));
-        *out = static_cast<mag_storage_buffer_t*>(mag_slab_alloc(&ctx->storage_slab));
+        if (cudaMalloc(reinterpret_cast<void **>(&base), size) != cudaSuccess)
+            return MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED;
+        *out = static_cast<mag_storage_buffer_t *>(mag_slab_alloc(&ctx->storage_slab));
         new (*out) mag_storage_buffer_t {
             .__rcb = {},
             .ctx = ctx,
-            .aux = {},
             .flags = MAG_STORAGE_FLAG_ACCESS_W,
+            .alignment = 256, // cudaMalloc guarantees this
             .base = base,
             .size = size,
-            .alignment = 256, // cudaMalloc guarantees this
-            .granularity = mag_type_trait(dtype)->size,
-            .dtype = dtype,
-            .device = device,
+            .device = dvc,
+            .aux = {},
         };
-        mag_rc_init_object(*out, +[](void *self) {
+        mag_rc_init_object(*out, +[](void *self) -> mag_status_t {
             auto *buffer = static_cast<mag_storage_buffer_t *>(self);
             mag_context_t *ctx = buffer->ctx;
-            mag_cuda_check(cudaFree(reinterpret_cast<void *>(buffer->base)));
+            auto *base = reinterpret_cast<void *>(buffer->base);
             mag_slab_free(&ctx->storage_slab, buffer);
+            return cudaFree(base) == cudaSuccess ? MAG_STATUS_OK : MAG_STATUS_ERR_MEMORY_DEALLOCATION_FAILED;
         });
+        return MAG_STATUS_OK;
     }
 
     class physical_device final : public mag_device_t {
@@ -289,26 +293,26 @@ namespace mag {
         [[nodiscard]] const std::vector<std::unique_ptr<physical_device>> &devices() const noexcept { return m_devices; }
 
     private:
-        bool initialize(mag_context_t *ctx) {
+        [[nodiscard]] bool initialize(mag_context_t *ctx) {
             int ndvc = 0;
             if (cudaGetDeviceCount(&ndvc) != cudaSuccess || ndvc <= 0) { // No GPUs found, backend cannot be used
                 mag_log_error("No CUDA-capable devices found.");
                 return false;
             }
             m_devices.reserve(ndvc);
-            for (int device_id=0; device_id < ndvc; ++device_id) {
+            for (int device_ordinal=0; device_ordinal < ndvc; ++device_ordinal) {
                 try {
-                    m_devices.emplace_back(std::make_unique<physical_device>(ctx, device_id));
+                    m_devices.emplace_back(std::make_unique<physical_device>(ctx, device_ordinal));
                 } catch (const cuda_backend_error &e) {
-                    mag_log_error("Failed to initialize CUDA device %d: %s", device_id, e.what());
+                    mag_log_error("Failed to initialize CUDA device %d: %s", device_ordinal, e.what());
                 } catch (...) {
-                    mag_log_error("Unknown error while initializing CUDA device %d", device_id);
+                    mag_log_error("Unknown error while initializing CUDA device %d", device_ordinal);
                 }
             }
             return true;
         }
 
-        bool destroy() {
+        [[nodiscard]] bool destroy() {
             m_devices.clear();
             return true;
         }

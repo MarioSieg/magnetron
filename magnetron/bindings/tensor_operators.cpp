@@ -11,6 +11,8 @@
 
 #include "prelude.hpp"
 
+#include <algorithm>
+
 #define bind_unary_pair(cls, name, doc) \
     cls \
         .def(#name, [](const tensor_wrapper &self) -> tensor_wrapper { \
@@ -102,6 +104,35 @@
         }, "rhs"_a, doc)
 
 namespace mag::bindings {
+    [[nodiscard]] static std::pair<tensor_wrapper, tensor_wrapper> normalize_where_operands(const tensor_wrapper &cond, nb::handle xh, nb::handle yh) {
+        if (mag_tensor_type(*cond) != MAG_DTYPE_BOOLEAN)
+            throw nb::type_error("where: condition must have dtype boolean");
+        bool x_is_tensor = nb::isinstance<tensor_wrapper>(xh);
+        bool y_is_tensor = nb::isinstance<tensor_wrapper>(yh);
+        tensor_wrapper x;
+        tensor_wrapper y;
+        if (x_is_tensor && y_is_tensor) {
+            x = nb::cast<tensor_wrapper>(xh);
+            y = nb::cast<tensor_wrapper>(yh);
+        } else if (x_is_tensor) {
+            x = nb::cast<tensor_wrapper>(xh);
+            y = normalize_rhs_to_tensor(x, yh);
+        } else if (y_is_tensor) {
+            y = nb::cast<tensor_wrapper>(yh);
+            x = normalize_rhs_to_tensor(y, xh);
+        } else {
+            dtype_wrapper dx = deduce_dtype_from_py_scalar(xh);
+            dtype_wrapper dy = deduce_dtype_from_py_scalar(yh);
+            mag_dtype_t promoted {};
+            if (!mag_promote_type(&promoted, dx.v, dy.v))
+                throw nb::type_error("where: could not promote scalar dtypes for x and y");
+            x = tensor_from_py_scalar(xh, promoted);
+            y = tensor_from_py_scalar(yh, promoted);
+        }
+        if (!x || !y) throw nb::value_error("where: x and y must not be null");
+        return {x, y};
+    }
+
     void init_tensor_class_operators(nb::class_<tensor_wrapper> &cls) {
         cls
         .def("fill_",
@@ -194,11 +225,9 @@ namespace mag::bindings {
             [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};
                 std::vector<int64_t> dims = parse_i64_dims(dims_args, "reshape");
-                int neg_ones = 0;
-                for (int64_t d : dims) {
-                    if (d == -1) ++neg_ones;
-                    else if (d == 0) throw nb::value_error("reshape: dimension 0 is not allowed");
-                }
+                if (std::find(dims.begin(), dims.end(), 0) != dims.end())
+                    throw nb::value_error("reshape: dimension 0 is not allowed");
+                int neg_ones = static_cast<int>(std::count(dims.begin(), dims.end(), -1));
                 if (neg_ones > 1) throw nb::value_error("reshape: only one -1 is allowed");
                 mag_tensor_t *out = nullptr;
                 mag_error_t err {};
@@ -571,12 +600,12 @@ namespace mag::bindings {
                 if (dim < 0) dim += rank;
                 if (dim < 0 || dim >= rank)
                     throw nb::index_error("cat: dim out of range");
-                std::vector<tensor_wrapper> contig;
+                std::vector<tensor_wrapper> contig {};
                 contig.reserve(n);
-                std::vector<mag_tensor_t*> ptrs;
+                std::vector<mag_tensor_t*> ptrs {};
                 ptrs.reserve(n);
                 mag_error_t err {};
-                for (size_t i = 0; i < n; ++i) {
+                for (size_t i=0; i < n; ++i) {
                     mag_tensor_t *ci = nullptr;
                     throw_if_error(mag_contiguous(&err, &ci, *tensors[i]), err);
                     contig.emplace_back(ci);
@@ -590,6 +619,17 @@ namespace mag::bindings {
             "Concatenate tensors along the given dimension."
         );
 
+        cls.attr("where") = nb::cpp_function([](const tensor_wrapper &cond, nb::handle xh, nb::handle yh) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
+                auto [x, y] = normalize_where_operands(cond, xh, yh);
+                mag_tensor_t *out = nullptr;
+                mag_error_t err {};
+                throw_if_error(mag_where(&err, &out, *cond, *x, *y), err);
+                return tensor_wrapper{out};
+            },
+            "condition"_a, "x"_a, "y"_a,
+            "Return elements from x where condition is True, otherwise from y."
+        );
 
         // Unary operators
         bind_unary_pair(cls, abs, "Element-wise absolute value.");
@@ -687,6 +727,7 @@ namespace mag::bindings {
         bind_binary_full_named(cls, sub, sub, sub, "Element-wise subtraction.");
         bind_binary_full_named(cls, mul, mul, mul, "Element-wise multiplication.");
         bind_binary_full_named(cls, mod, mod, mod, "Element-wise modulo.");
+        bind_binary_full_named(cls, pow, pow, pow, "Element-wise exponentiation.");
         bind_binary_full_named(cls, truediv, div, truediv, "Element-wise true division.");
         bind_binary_full_named(cls, floordiv, floordiv, floordiv, "Element-wise floor division.");
         bind_binary_full_named(cls, and, and, logical_and, "Element-wise logical AND.");

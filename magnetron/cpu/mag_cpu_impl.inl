@@ -76,6 +76,37 @@ static MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
 #define mag_floordivu(x, y) ((x)/(y))
 #define mag_floordivf(x, y) (floorf((x)/(y)))
 
+static MAG_AINLINE uint64_t mag_powu(uint64_t x, uint64_t k) {
+    if (!k) return 1;
+    for (; !(k&1); k >>= 1) x *= x;
+    uint64_t y = x;
+    if (k>>=1) {
+        for (;;) {
+            x *= x;
+            if (k == 1) break;
+            if (k&1) y *= x;
+            k >>= 1;
+        }
+        y *= x;
+    }
+    return y;
+}
+
+static MAG_AINLINE int64_t mag_powi(int64_t x, int64_t k) {
+    if (!k) return 1;
+    if (k < 0) {
+        switch (x) {
+            case 0:  return UINT64_C(0x7fffffffffffffff);
+            case 1:  return 1;
+            case -1: return (k&1) ? -1 : 1;
+            default: return 0;
+        }
+    }
+    return (int64_t)mag_powu((uint64_t)x, (uint64_t)k);
+}
+
+#define mag_powf(x,y) powf((x), (y))
+
 extern MAG_THREAD_LOCAL mag_scratch_arena_t mag_tls_arena; /* 4 MiB keep before decay */
 
 #ifdef __AVX512F__ /* Vector register width in bytes */
@@ -107,7 +138,7 @@ typedef uint16_t __fp16; /* MSVC does not support __fp16. */
 #include "mag_cpu_impl_ops_unary.inl"
 #include "mag_cpu_impl_ops_multinomial.inl"
 #include "mag_cpu_impl_ops_other.inl"
-#include "mag_cpu_impl_ops_prim.inl"
+#include "mag_cpu_impl_ops_binary.inl"
 #include "mag_cpu_impl_ops_reduce.inl"
 #include "mag_cpu_impl_ops_matmul.inl"
 
@@ -749,6 +780,19 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_UINT64] = &mag_mod_uint64,
         [MAG_DTYPE_INT64] = &mag_mod_int64,
     },
+    [MAG_OP_POW] = {
+        [MAG_DTYPE_FLOAT32] = &mag_pow_float32,
+        [MAG_DTYPE_FLOAT16] = &mag_pow_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_pow_bfloat16,
+        [MAG_DTYPE_UINT8] = &mag_pow_uint8,
+        [MAG_DTYPE_INT8] = &mag_pow_int8,
+        [MAG_DTYPE_UINT16] = &mag_pow_uint16,
+        [MAG_DTYPE_INT16] = &mag_pow_int16,
+        [MAG_DTYPE_UINT32] = &mag_pow_uint32,
+        [MAG_DTYPE_INT32] = &mag_pow_int32,
+        [MAG_DTYPE_UINT64] = &mag_pow_uint64,
+        [MAG_DTYPE_INT64] = &mag_pow_int64,
+    },
     [MAG_OP_MATMUL] = {
         [MAG_DTYPE_FLOAT32] = &mag_matmul_float32,
         [MAG_DTYPE_FLOAT16] = &mag_matmul_float16,
@@ -916,6 +960,20 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_INT32] = &mag_gt_int32,
         [MAG_DTYPE_UINT64] = &mag_gt_uint64,
         [MAG_DTYPE_INT64] = &mag_gt_int64,
+    },
+    [MAG_OP_WHERE] = {
+        [MAG_DTYPE_FLOAT32] = &mag_where_float32,
+        [MAG_DTYPE_FLOAT16] = &mag_where_float16,
+        [MAG_DTYPE_BFLOAT16] = &mag_where_bfloat16,
+        [MAG_DTYPE_BOOLEAN] = &mag_where_uint8,
+        [MAG_DTYPE_UINT8] = &mag_where_uint8,
+        [MAG_DTYPE_INT8] = &mag_where_int8,
+        [MAG_DTYPE_UINT16] = &mag_where_uint16,
+        [MAG_DTYPE_INT16] = &mag_where_int16,
+        [MAG_DTYPE_UINT32] = &mag_where_uint32,
+        [MAG_DTYPE_INT32] = &mag_where_int32,
+        [MAG_DTYPE_UINT64] = &mag_where_uint64,
+        [MAG_DTYPE_INT64] = &mag_where_int64,
     },
 };
 

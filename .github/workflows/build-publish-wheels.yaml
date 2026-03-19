@@ -22,7 +22,7 @@ jobs:
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
-          pip install cibuildwheel==2.* build
+          pip install cibuildwheel build
 
       - name: Get version from tag
         id: get_version
@@ -69,6 +69,18 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Pre-download virtualenv (avoid GitHub 429 during cibuildwheel)
+        run: |
+          CACHE_DIR="$HOME/Library/Caches/cibuildwheel"
+          mkdir -p "$CACHE_DIR"
+          VENV_URL="https://github.com/pypa/get-virtualenv/blob/20.30.0/public/virtualenv.pyz?raw=true"
+          for i in 1 2 3 4 5; do
+            curl -sSLf -o "$CACHE_DIR/virtualenv-20.30.0.pyz" "$VENV_URL" && break
+            echo "Download attempt $i failed (often 429), waiting 30s..."
+            sleep 30
+          done
+          test -f "$CACHE_DIR/virtualenv-20.30.0.pyz"
 
       - name: Build wheels (macOS arm64, Python 3.10–3.14)
         env:

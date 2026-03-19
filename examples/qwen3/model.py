@@ -62,15 +62,14 @@ def _repeat_kv(x: Tensor, n_rep: int) -> Tensor:
 
 
 def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Tensor, Tensor]:
-    idx = Tensor.arange(0, dim, 2, dtype=dtype.float32) / dim
-    inv_freq = Tensor.exp(-idx * math.log(theta))  # TODO: pow
-    seq = Tensor.arange(stop=max_seq_len, dtype=dtype.float32)
-    freqs = seq.reshape(max_seq_len, 1) * inv_freq.reshape(1, -1)
+    inv_freq = (theta ** -(Tensor.arange(0, dim, 2, dtype=dtype.float32) / dim)).reshape(1, -1)
+    freqs = Tensor.arange(stop=max_seq_len, dtype=dtype.float32).reshape(max_seq_len, 1) * inv_freq
     cos_half = Tensor.cos(freqs)
     sin_half = Tensor.sin(freqs)
     cos = Tensor.cat([cos_half, cos_half], dim=-1).cast(dtype.bfloat16)
     sin = Tensor.cat([sin_half, sin_half], dim=-1).cast(dtype.bfloat16)
     return cos, sin
+
 
 def _apply_rope(q: Tensor, k: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: Tensor) -> tuple[Tensor, Tensor]:
     def _rot_half(x: Tensor) -> Tensor:
@@ -137,13 +136,8 @@ class SlidingWindowAttention(nn.Module):
         k_len: int = k.shape[2]
         k_pos_indices: Tensor = Tensor.arange(k_len).reshape(1, -1)
         q_pos_indices: Tensor = Tensor.arange(start=(k_len - q_len), stop=k_len).reshape(-1, 1)
-        causal_mask: Tensor = k_pos_indices <= q_pos_indices
-        keep: Tensor = causal_mask.cast(scores.dtype)
-        additive_mask: Tensor = (1.0 - keep) * -1e4
-        additive_mask = additive_mask.reshape(1, 1, q_len, k_len)
-        masked_scores: Tensor = scores + additive_mask
-        attn_weights: Tensor = masked_scores.softmax(dim=-1)
-        out: Tensor = (attn_weights @ v).transpose(1, 2).reshape(B, T, -1)
+        additive_mask = Tensor.where(k_pos_indices <= q_pos_indices, 0.0, -1e4).cast(scores.dtype).reshape(1, 1, q_len, k_len)
+        out: Tensor = ((scores + additive_mask).softmax(dim=-1) @ v).transpose(1, 2).reshape(B, T, -1)
         return self.o_proj(out), curr_kv
 
 
@@ -182,11 +176,11 @@ class Qwen3Model(nn.Module):
         with Snapshot.read(snapshot_file) as snap:
             for name, param in self.named_parameters():
                 tensor = snap.get_tensor(name)
-                if tuple(tensor.shape) != tuple(param.x.shape):
+                if tuple(tensor.shape) != tuple(param.shape):
                     raise RuntimeError(f'Shape mismatch for {name}: {tensor.shape} != {param.shape}')
-                if tensor.dtype != param.x.dtype:
-                    raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.x.dtype}')
-                param.x = tensor
+                if tensor.dtype != param.dtype:
+                    raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.dtype}')
+                param.data = tensor
 
     @staticmethod
     def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen3Model':

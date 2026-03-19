@@ -22,41 +22,41 @@ torch.set_num_interop_threads(max(4, multiprocessing.cpu_count() // 8))
 # ! Before changing this to False, ensure that the detailed shape tests pass locally!
 SHAPE_TEST_FAST: bool = True
 
-DTYPE_TORCH_MAP: dict[DataType, torch.dtype] = {
-    float16: torch.float16,
-    bfloat16: torch.bfloat16,
-    float32: torch.float32,
-    boolean: torch.bool,
-    uint8: torch.uint8,
-    int8: torch.int8,
-    uint16: torch.uint16,
-    int16: torch.int16,
-    uint32: torch.uint32,
-    int32: torch.int32,
-    uint64: torch.uint64,
-    int64: torch.int64,
+DTYPE_TORCH_MAP: dict[dtype.DType, torch.dtype] = {
+    dtype.float16: torch.float16,
+    dtype.bfloat16: torch.bfloat16,
+    dtype.float32: torch.float32,
+    dtype.boolean: torch.bool,
+    dtype.uint8: torch.uint8,
+    dtype.int8: torch.int8,
+    dtype.uint16: torch.uint16,
+    dtype.int16: torch.int16,
+    dtype.uint32: torch.uint32,
+    dtype.int32: torch.int32,
+    dtype.uint64: torch.uint64,
+    dtype.int64: torch.int64,
 }
 
-NUMPY_DTYPE_MAP: dict[DataType, np.dtype] = {
-    float16: np.float16,
-    float32: np.float32,
-    boolean: np.bool_,
-    uint8: np.uint8,
-    int8: np.int8,
-    uint16: np.uint16,
-    int16: np.int16,
-    uint32: np.uint32,
-    int32: np.int32,
-    uint64: np.uint64,
-    int64: np.int64,
+NUMPY_DTYPE_MAP: dict[dtype.DType, np.dtype] = {
+    dtype.float16: np.float16,
+    dtype.float32: np.float32,
+    dtype.boolean: np.bool_,
+    dtype.uint8: np.uint8,
+    dtype.int8: np.int8,
+    dtype.uint16: np.uint16,
+    dtype.int16: np.int16,
+    dtype.uint32: np.uint32,
+    dtype.int32: np.int32,
+    dtype.uint64: np.uint64,
+    dtype.int64: np.int64,
 }
 
-def totorch_dtype(dtype: DataType) -> torch.dtype:
+def totorch_dtype(dtype: dtype.DType) -> torch.dtype:
     if dtype not in DTYPE_TORCH_MAP:
         raise ValueError(f'Unsupported dtype: {dtype}')
     return DTYPE_TORCH_MAP[dtype]
 
-def tonumpy_dtype(dtype: DataType) -> np.dtype:
+def tonumpy_dtype(dtype: dtype.DType) -> np.dtype:
     if dtype not in NUMPY_DTYPE_MAP:
         raise ValueError(f'Unsupported dtype: {dtype}')
     return NUMPY_DTYPE_MAP[dtype]
@@ -129,7 +129,7 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             shape_B = (*batched, K, N)
                             yield shape_A, shape_B
 
-def random_tensor(shape: tuple[int, ...], dtype: DataType) -> Tensor:
+def random_tensor(shape: tuple[int, ...], dtype: dtype.DType) -> Tensor:
     if dtype == boolean:
         return Tensor.bernoulli(shape)
     else:

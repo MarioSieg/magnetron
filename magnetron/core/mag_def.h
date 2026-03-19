@@ -383,9 +383,11 @@ defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
 #define MAG_PAGE_SIZE_4K 0x1000     /* 4 KiB page buf_size */
 #define MAG_PAGE_SIZE_2M 0x200000   /* 2 MiB page buf_size */
 
-#define MAG_CPU_BUF_ALIGN 64
+#define MAG_CPU_BUF_ALIGN 16            /* CPU buffer alignment */
+#define MAG_CPU_BUF_INTRUSIVE_CAP 32    /* Number of bytes to be allocated in the storage header itself, (small storage optimization) */
 
 mag_static_assert(MAG_CPU_BUF_ALIGN >= 8 && !(MAG_CPU_BUF_ALIGN&(MAG_CPU_BUF_ALIGN-1)));
+mag_static_assert(MAG_CPU_BUF_INTRUSIVE_CAP >= sizeof(void *) && !(MAG_CPU_BUF_INTRUSIVE_CAP&(MAG_CPU_BUF_INTRUSIVE_CAP-1)));
 
 static uint16_t MAG_AINLINE mag_bswap16(uint16_t x) {
 #if (defined(__GNUC__) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) || defined(__clang__)
@@ -548,7 +550,7 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
         if (mag_iserr(status____)) return status____; \
     } while (0)
 
-#define mag_try_do(call, cleanup) \
+#define mag_try_or(call, cleanup) \
     do { \
         mag_status_t status____ = (call); \
         if (mag_iserr(status____)) { \
