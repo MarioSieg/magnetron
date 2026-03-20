@@ -167,8 +167,19 @@ void mag_mm_autotune_block_params(const mag_matmul_block_tune_info_t *info, mag_
         if (K >= 2048) kc = mag_clamp(kc + 192, KC_lo, KC_hi);
         if (K >= 4096) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
     }
+    /* fp32 (elsize==4): apply the same KC-amortization strategy as bf16. */
+    else if (info->elsize == 4 && W == 64) {
+        KC_hi = 2048;
+        if (K >= 512) kc = mag_clamp(kc + 256, KC_lo, KC_hi);
+        if (K >= 2048) kc = mag_clamp(kc + 256, KC_lo, KC_hi);
+        if (K >= 4096) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
+    } else if (info->elsize == 4 && W == 32) {
+        KC_hi = 896;
+        if (K >= 1024) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
+    }
     kc = mag_clamp(kc, KC_lo, KC_hi);
-    if (K >= 2048 && info->elsize != 2) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
+    /* Avoid double-increasing KC for fp32/bf16 paths above. */
+    if (K >= 2048 && info->elsize != 2 && info->elsize != 4) kc = mag_clamp(kc + 128, KC_lo, KC_hi);
     KC = kc;
     int64_t MC = (int64_t)(info->split_a*L2e / (nb*(double)KC));
     int64_t NC = (int64_t)((1.0-info->split_a)*L2e / (nb*(double)KC));
