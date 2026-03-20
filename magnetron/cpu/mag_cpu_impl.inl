@@ -11,6 +11,7 @@
 
 #include "mag_cpu.h"
 #include "mag_tls_arena.h"
+#include "mag_simd.h"
 
 #include <core/mag_tensor.h>
 #include <core/mag_cpuid.h>
@@ -19,21 +20,6 @@
 #include <core/mag_coords_iter.h>
 #include <core/mag_float16.h>
 #include <core/mag_bfloat16.h>
-
-#ifdef _MSC_VER
-#include <intrin.h>
-#else
-#ifdef __aarch64__
-#include <arm_neon.h>
-#include <arm_acle.h>
-#elif defined(__x86_64__) || defined(_M_X64)
-#include <immintrin.h>
-#include <cpuid.h>
-#endif
-#endif
-
-#include <float.h>
-#include <math.h>
 
 #define mag_cvt_nop(x) (x)
 #define mag_cvt_int_to_bool(x) (!!(x))
