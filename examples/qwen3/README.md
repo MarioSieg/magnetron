@@ -1,18 +1,43 @@
-# Qwen3 inference example
+# Qwen3 inference
 
-Run Qwen3 chat with Magnetron. Three entrypoints:
+Qwen3 chat running on Magnetron. Includes a CLI, a local HTTP server, and a small library wrapper. Weights are loaded from Magnetron `.mag` snapshots; the first run downloads the snapshot and tokenizer.
 
-- **`main.py`** — CLI: interactive REPL (`--repl`) or one-shot answer (`--prompt "..."`). Options: `--max_tokens`, `--temp`, `--system`, `--max_ctx`, etc.
-- **`server.py`** — Local HTTP API. `POST /chat/stream` (SSE) or `POST /chat` (JSON) with `{"messages": [{"role":"user","content":"..."}]}`. Default: `http://127.0.0.1:8000`.
-- **`inference.py`** — Library: `InferenceConfig` (dataclass with defaults or `from_args(namespace)` for CLI), `InferenceEngine(config)` (loads model, exposes `stream_chat` / `async_stream_chat` / `one_shot_answer`). Snapshot and tokenizer are downloaded on first use.
+## Install
 
-**Run (needs uv, magnetron deps):**
+From the repo root:
 
 ```bash
-cd magnetron && uv venv && source .venv/bin/activate
-uv pip install . huggingface_hub tokenizers rich
-# REPL
+uv pip install -e .[examples]
+```
+
+Server deps:
+
+```bash
+uv pip install fastapi uvicorn
+```
+
+## Run (CLI)
+
+Interactive REPL:
+
+```bash
 python examples/qwen3/main.py --repl
-# Server (add: fastapi uvicorn)
+```
+
+One-shot prompt:
+
+```bash
+python examples/qwen3/main.py --prompt "Explain KV caching in one paragraph."
+```
+
+## Run (server)
+
+```bash
 python examples/qwen3/server.py --port 8000
 ```
+
+Endpoints:
+
+- `GET /health`
+- `POST /chat`
+- `POST /chat/stream` (SSE)

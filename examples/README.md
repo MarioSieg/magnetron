@@ -1,29 +1,28 @@
-# 🧪 Examples
-Each example runs without PyTorch, TensorFlow, or NumPy.  
-They highlight Magnetron’s native tensor engine, autograd system, neural layers, and optimizers.
+# Examples
+
+Small, runnable demos for Magnetron. Some are pure Magnetron, others use external packages for tokenization, plotting, or downloading weights.
 
 ### [GPT-2 Inference](examples/gpt2/)
-Text generation using pretrained GPT-2 models.  
-Shows transformer blocks, KV caching, streaming generation, and Hugging Face weight loading.
+GPT-2 text generation in Magnetron (KV cache, streaming output). Uses `transformers` + `tiktoken`.
+
+### [Qwen3 Inference](examples/qwen3/)
+Qwen3 chat with a CLI and a local HTTP server. Loads weights from Magnetron `.mag` snapshots.
 
 ### [Autoencoder](examples/ae/)
-Image reconstruction from a learned latent space.  
-Shows built-in image loading, differentiable layers, and visualization.
+Train an autoencoder on an image and visualize reconstruction.
 
-### [Linear Regression](examples/linear/)
-Fits a straight line to noisy 1D data.  
-Shows gradient descent, loss tracking, and convergence.
+### [Linear Regression](examples/linear_regression/)
+Fit a line to noisy 1D data with `Linear` + SGD.
 
 ### [XOR](examples/xor/)
-Classic XOR problem learned by a small neural network.  
-Shows tensors, nonlinear activations, and manual training loops.
+Train a tiny MLP to learn XOR.
 
-## Requirements
+## Install (optional deps)
 
-Install the dependencies required for all examples:
+If you want to run most examples:
 
 ```bash
-uv pip install magnetron matplotlib tiktoken transformers rich
+uv pip install magnetron[examples]
 ```
 
-Each subdirectory includes its own `README.md` with usage details and parameters.
+Each folder has its own `README.md` with exact run commands and extra dependencies.

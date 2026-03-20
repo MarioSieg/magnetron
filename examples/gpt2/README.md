@@ -1,50 +1,33 @@
-# 🧠 GPT-2 Inference Example
+# GPT-2 inference
 
-Run text generation with a GPT-2 model using the Magnetron framework.  
-Supports streaming output and standard GPT-2 model variants.
+Runs GPT-2 text generation implemented in Magnetron. Includes KV caching and optional streaming output. Uses `transformers` for weights and `tiktoken` for tokenization.
 
-## 📚 Description
+## Install
 
-- Loads a pretrained GPT-2 (`gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`) via `transformers`
-- Uses `tiktoken` for tokenization with the GPT-2 vocabulary
-- Implements causal self-attention, MLP blocks, and KV caching
-- Provides both **streaming** and **non-streaming** generation modes
-- Prints throughput (tokens/s) after generation
-
-## 🚀 Usage
-
-Basic run (streams tokens by default):
+From the repo root:
 
 ```bash
-python main.py "What is the answer to life?"
+uv pip install -e .[examples]
 ```
 
-Specify model and parameters:
+## Run
 
 ```bash
-python main.py "What is the answer to life?" --model gpt2-xl --max_tokens 128 --temp 0.7
+python examples/gpt2/main.py "What is the answer to life?"
+```
+
+Pick a model and generation settings:
+
+```bash
+python examples/gpt2/main.py "Write a haiku about compilers" --model gpt2-xl --max_tokens 128 --temp 0.7
 ```
 
 Disable streaming:
 
 ```bash
-python main.py "What is the answer to life?" --no-stream
+python examples/gpt2/main.py "Hello" --no-stream
 ```
 
-### Arguments
+## Notes
 
-- `prompt` (positional): prompt text to start generation
-- `--model`: one of `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl` (default: `gpt2`)
-- `--max_tokens`: number of new tokens to generate (default: `128`)
-- `--temp`: sampling temperature (default: `0.6`)
-- `--no-stream`: disable incremental output
-
-## ⚙️ Requirements
-
-Install the minimal dependencies:
-
-```bash
-uv pip install magnetron tiktoken transformers rich
-```
-
-> Note: the first run will download model weights from Hugging Face.
+- First run downloads model weights from Hugging Face.
