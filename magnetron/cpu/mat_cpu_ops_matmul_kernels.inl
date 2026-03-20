@@ -555,11 +555,13 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x8_bf16(
     bool acc
 ) {
     (void)lda;
-    mag_vf32_8_t accv[MAG_MR];
+    mag_vf32_8_t p0[MAG_MR], p1[MAG_MR], p2[MAG_MR], p3[MAG_MR];
     mag_vf32_8_t z8 = mag_vf32_8_zero();
     #pragma GCC unroll 8
-    for (int r = 0; r < MAG_MR; ++r)
-        accv[r] = acc ? mag_vbf16_loadu_8_to_f32(c + r*ldc) : z8;
+    for (int r = 0; r < MAG_MR; ++r) {
+        p0[r] = acc ? mag_vbf16_loadu_8_to_f32(c + r*ldc) : z8;
+        p1[r] = p2[r] = p3[r] = z8;
+    }
 
     int64_t k = 0;
     for (; k + 3 < kc; k += 4) {
@@ -600,11 +602,22 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x8_bf16(
             mag_vf32_t A2 = mag_vbf16_broadcast(a2 + r);
             mag_vf32_t A3 = mag_vbf16_broadcast(a3 + r);
 #endif
-            accv[r] = mag_vf32_8_fmadd(A0, b0, accv[r]);
-            accv[r] = mag_vf32_8_fmadd(A1, b1, accv[r]);
-            accv[r] = mag_vf32_8_fmadd(A2, b2, accv[r]);
-            accv[r] = mag_vf32_8_fmadd(A3, b3, accv[r]);
+            p0[r] = mag_vf32_8_fmadd(A0, b0, p0[r]);
+            p1[r] = mag_vf32_8_fmadd(A1, b1, p1[r]);
+            p2[r] = mag_vf32_8_fmadd(A2, b2, p2[r]);
+            p3[r] = mag_vf32_8_fmadd(A3, b3, p3[r]);
         }
+    }
+
+    #pragma GCC unroll 8
+    for (int r = 0; r < MAG_MR; ++r) {
+        p0[r] = mag_vf32_8_add(
+            p0[r],
+            mag_vf32_8_add(
+                mag_vf32_8_add(p1[r], p2[r]),
+                p3[r]
+            )
+        );
     }
 
     for (; k < kc; ++k) {
@@ -613,13 +626,13 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x8_bf16(
         #pragma GCC unroll 8
         for (int r = 0; r < MAG_MR; ++r) {
             mag_vf32_t A = mag_vbf16_broadcast(ak + r);
-            accv[r] = mag_vf32_8_fmadd(A, bk, accv[r]);
+            p0[r] = mag_vf32_8_fmadd(A, bk, p0[r]);
         }
     }
 
     #pragma GCC unroll 8
     for (int r = 0; r < MAG_MR; ++r)
-        mag_vbf16_storeu_8_from_f32(c + r*ldc, accv[r]);
+        mag_vbf16_storeu_8_from_f32(c + r*ldc, p0[r]);
 }
 
 static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x16_bf16(
@@ -630,11 +643,13 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x16_bf16(
     bool acc
 ) {
     (void)lda;
-    mag_vf32_16_t accv[MAG_MR];
+    mag_vf32_16_t p0[MAG_MR], p1[MAG_MR], p2[MAG_MR], p3[MAG_MR];
     mag_vf32_16_t z16 = mag_vf32_16_zero();
     #pragma GCC unroll 8
-    for (int r = 0; r < MAG_MR; ++r)
-        accv[r] = acc ? mag_vbf16_loadu_16_to_f32(c + r*ldc) : z16;
+    for (int r = 0; r < MAG_MR; ++r) {
+        p0[r] = acc ? mag_vbf16_loadu_16_to_f32(c + r*ldc) : z16;
+        p1[r] = p2[r] = p3[r] = z16;
+    }
 
     int64_t k = 0;
     for (; k + 3 < kc; k += 4) {
@@ -675,11 +690,22 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x16_bf16(
             mag_vf32_t A2 = mag_vbf16_broadcast(a2 + r);
             mag_vf32_t A3 = mag_vbf16_broadcast(a3 + r);
 #endif
-            accv[r] = mag_vf32_16_fmadd(A0, b0, accv[r]);
-            accv[r] = mag_vf32_16_fmadd(A1, b1, accv[r]);
-            accv[r] = mag_vf32_16_fmadd(A2, b2, accv[r]);
-            accv[r] = mag_vf32_16_fmadd(A3, b3, accv[r]);
+            p0[r] = mag_vf32_16_fmadd(A0, b0, p0[r]);
+            p1[r] = mag_vf32_16_fmadd(A1, b1, p1[r]);
+            p2[r] = mag_vf32_16_fmadd(A2, b2, p2[r]);
+            p3[r] = mag_vf32_16_fmadd(A3, b3, p3[r]);
         }
+    }
+
+    #pragma GCC unroll 8
+    for (int r = 0; r < MAG_MR; ++r) {
+        p0[r] = mag_vf32_16_add(
+            p0[r],
+            mag_vf32_16_add(
+                mag_vf32_16_add(p1[r], p2[r]),
+                p3[r]
+            )
+        );
     }
 
     for (; k < kc; ++k) {
@@ -688,13 +714,13 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x16_bf16(
         #pragma GCC unroll 8
         for (int r = 0; r < MAG_MR; ++r) {
             mag_vf32_t A = mag_vbf16_broadcast(ak + r);
-            accv[r] = mag_vf32_16_fmadd(A, bk, accv[r]);
+            p0[r] = mag_vf32_16_fmadd(A, bk, p0[r]);
         }
     }
 
     #pragma GCC unroll 8
     for (int r = 0; r < MAG_MR; ++r)
-        mag_vbf16_storeu_16_from_f32(c + r*ldc, accv[r]);
+        mag_vbf16_storeu_16_from_f32(c + r*ldc, p0[r]);
 }
 
 static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x32_bf16(
@@ -715,6 +741,10 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x8_bf16(
     mag_bfloat16_t *restrict c,
     bool acc
 ) {
+    mag_vf32_8_t p0 = mag_vf32_8_zero();
+    mag_vf32_8_t p1 = mag_vf32_8_zero();
+    mag_vf32_8_t p2 = mag_vf32_8_zero();
+    mag_vf32_8_t p3 = mag_vf32_8_zero();
     mag_vf32_8_t accv = acc ? mag_vbf16_loadu_8_to_f32(c) : mag_vf32_8_zero();
 
     int64_t k = 0;
@@ -736,11 +766,19 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x8_bf16(
         mag_vf32_t A2 = mag_vbf16_broadcast(a + (k + 2));
         mag_vf32_t A3 = mag_vbf16_broadcast(a + (k + 3));
 
-        accv = mag_vf32_8_fmadd(A0, b0, accv);
-        accv = mag_vf32_8_fmadd(A1, b1, accv);
-        accv = mag_vf32_8_fmadd(A2, b2, accv);
-        accv = mag_vf32_8_fmadd(A3, b3, accv);
+        p0 = mag_vf32_8_fmadd(A0, b0, p0);
+        p1 = mag_vf32_8_fmadd(A1, b1, p1);
+        p2 = mag_vf32_8_fmadd(A2, b2, p2);
+        p3 = mag_vf32_8_fmadd(A3, b3, p3);
     }
+
+    accv = mag_vf32_8_add(
+        accv,
+        mag_vf32_8_add(
+            mag_vf32_8_add(p0, p1),
+            mag_vf32_8_add(p2, p3)
+        )
+    );
 
     for (; k < kc; ++k) {
         mag_vf32_8_t bk = mag_vbf16_loadu_8_to_f32(b + k*ldb);
@@ -758,6 +796,10 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x16_bf16(
     mag_bfloat16_t *restrict c,
     bool acc
 ) {
+    mag_vf32_16_t p0 = mag_vf32_16_zero();
+    mag_vf32_16_t p1 = mag_vf32_16_zero();
+    mag_vf32_16_t p2 = mag_vf32_16_zero();
+    mag_vf32_16_t p3 = mag_vf32_16_zero();
     mag_vf32_16_t accv = acc ? mag_vbf16_loadu_16_to_f32(c) : mag_vf32_16_zero();
 
     int64_t k = 0;
@@ -778,11 +820,19 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x16_bf16(
         mag_vf32_t A2 = mag_vbf16_broadcast(a + (k + 2));
         mag_vf32_t A3 = mag_vbf16_broadcast(a + (k + 3));
 
-        accv = mag_vf32_16_fmadd(A0, b0, accv);
-        accv = mag_vf32_16_fmadd(A1, b1, accv);
-        accv = mag_vf32_16_fmadd(A2, b2, accv);
-        accv = mag_vf32_16_fmadd(A3, b3, accv);
+        p0 = mag_vf32_16_fmadd(A0, b0, p0);
+        p1 = mag_vf32_16_fmadd(A1, b1, p1);
+        p2 = mag_vf32_16_fmadd(A2, b2, p2);
+        p3 = mag_vf32_16_fmadd(A3, b3, p3);
     }
+
+    accv = mag_vf32_16_add(
+        accv,
+        mag_vf32_16_add(
+            mag_vf32_16_add(p0, p1),
+            mag_vf32_16_add(p2, p3)
+        )
+    );
 
     for (; k < kc; ++k) {
         mag_vf32_16_t bk = mag_vbf16_loadu_16_to_f32(b + k*ldb);
