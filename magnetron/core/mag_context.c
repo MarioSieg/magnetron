@@ -283,6 +283,18 @@ bool mag_ctx_lazy_exec_is_running(const mag_context_t *ctx) {
     return ctx->flags & MAG_CTX_FLAG_LAZY_EXEC;
 }
 
+void mag_ctx_trace_all_ops_start(mag_context_t *ctx) {
+    ctx->flags |= MAG_CTX_FLAG_TRACE_ALL_OPS;
+}
+
+void mag_ctx_trace_all_ops_stop(mag_context_t *ctx) {
+    ctx->flags &= ~MAG_CTX_FLAG_TRACE_ALL_OPS;
+}
+
+bool mag_ctx_trace_all_ops_is_running(const mag_context_t *ctx) {
+    return ctx->flags & MAG_CTX_FLAG_TRACE_ALL_OPS;
+}
+
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
     (*ctx->active_device->manual_seed)(ctx->active_device, seed);
 }

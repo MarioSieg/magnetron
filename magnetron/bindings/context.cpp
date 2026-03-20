@@ -64,6 +64,18 @@ namespace mag::bindings {
             std::lock_guard lock {get_global_mutex()};
             return mag_ctx_lazy_exec_is_running(get_ctx());
         }, "True if lazy execution is enabled.");
+        context.def("start_full_graph_trace", []() -> void {
+            std::lock_guard lock {get_global_mutex()};
+            mag_ctx_trace_all_ops_start(get_ctx());
+        }, "Record all op edges (eager + lazy) for execution graph visualization.");
+        context.def("stop_full_graph_trace", []() -> void {
+            std::lock_guard lock {get_global_mutex()};
+            mag_ctx_trace_all_ops_stop(get_ctx());
+        }, "Stop recording eager op edges for full execution graph visualization.");
+        context.def("is_full_graph_trace_enabled", []() -> bool {
+            std::lock_guard lock {get_global_mutex()};
+            return mag_ctx_trace_all_ops_is_running(get_ctx());
+        }, "True if full op graph tracing is enabled.");
         context.def("manual_seed", [](uint64_t seed) -> void {
             std::lock_guard lock {get_global_mutex()};
             mag_ctx_manual_seed(get_ctx(), seed);

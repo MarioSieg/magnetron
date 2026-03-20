@@ -206,6 +206,7 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
         }
     }
     bool record_for_lazy = !!(ctx->flags & MAG_CTX_FLAG_LAZY_EXEC) && !grad_enabled && num_out == 1 && !inplace && !output_is_view;
+    bool record_for_trace = !!(ctx->flags & MAG_CTX_FLAG_TRACE_ALL_OPS) && num_out == 1 && !inplace;
     if (record_for_lazy && has_ptr_attr) {
         record_for_lazy = false; /* Pointer attrs may reference stack memory and are not safe to defer. */
     }
@@ -219,7 +220,10 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
     if (record_for_lazy && !can_record_inputs) {
         record_for_lazy = false; /* Fallback to eager execution for high fan-in ops (e.g. large cat). */
     }
-    if (record_for_grad || record_for_lazy) {
+    if (record_for_trace && !can_record_inputs) {
+        record_for_trace = false;
+    }
+    if (record_for_grad || record_for_lazy || record_for_trace) {
         for (uint32_t i=0; i < num_out; ++i) {
             mag_tensor_t *r = out[i];
             mag_au_state_t *au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
@@ -232,7 +236,7 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
             au->op = op;
             au->op_num_inputs = num_in;
             au->op_num_outputs = num_out;
-            au->op_num_attrs = num_params;
+            au->op_num_attrs = (record_for_grad || record_for_lazy) ? num_params : 0;
             au->op_inplace = inplace;
             for (uint32_t j=0; j < num_in; ++j) {
                 mag_tensor_t *input = in[j];
@@ -241,7 +245,7 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
                     mag_try(mag_tensor_set_requires_grad(err, r, true));
                 mag_rc_incref(input);
             }
-            if (params) {
+            if ((record_for_grad || record_for_lazy) && params) {
                 memcpy(au->op_attrs, params, num_params * sizeof(*params));
             } else {
                 memset(au->op_attrs, 0, sizeof(au->op_attrs));
@@ -396,10 +400,12 @@ mag_status_t mag_evalv(mag_error_t *err, mag_tensor_t **tensors, size_t count) {
     }
     if (num_cmds) {
         mag_device_t *dvc = order.data[0]->ctx->active_device;
-        mag_status_t stat = MAG_STATUS_OK;
-        for (size_t i=0; i < num_cmds; ++i) {
-            stat = (*dvc->submit)(dvc, cmds+i);
-            if (mag_iserr(stat)) break;
+        mag_status_t stat = dvc->submit_batch ? (*dvc->submit_batch)(dvc, cmds, num_cmds) : MAG_STATUS_OK;
+        if (!dvc->submit_batch) {
+            for (size_t i=0; i < num_cmds; ++i) {
+                stat = (*dvc->submit)(dvc, cmds+i);
+                if (mag_iserr(stat)) break;
+            }
         }
         if (mag_iserr(stat)) {
             (*mag_alloc)(cmds, 0, 0);

@@ -12,7 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from . import Tensor, no_grad
+from . import Tensor, no_grad, context
 from .nn import Parameter
 
 
@@ -60,8 +60,19 @@ class SGD(Optimizer):
 
     @no_grad()
     def step(self) -> None:
+        lazy_on = context.is_lazy_execution_enabled()
         for param in self.params:
-            param -= param.grad * self.lr
+            grad = param.grad
+            if grad is None:
+                continue
+            if lazy_on:
+                grad = grad.eval()
+            upd = grad * self.lr
+            if lazy_on:
+                upd = upd.eval()
+            param -= upd
+            if lazy_on:
+                param.eval()
 
 
 class Adam(Optimizer):
@@ -83,13 +94,26 @@ class Adam(Optimizer):
 
     @no_grad()
     def step(self) -> None:
+        lazy_on = context.is_lazy_execution_enabled()
         self.t += 1
         for i, p in enumerate(self.params):
             grad = p.grad
             if grad is None:
                 continue
-            self.m[i] = self.betas[0] * self.m[i] + (1.0 - self.betas[0]) * grad
-            self.v[i] = self.betas[1] * self.v[i] + (1.0 - self.betas[1]) * grad.sqr_()
+            if lazy_on:
+                grad = grad.eval()
+            m = self.betas[0] * self.m[i] + (1.0 - self.betas[0]) * grad
+            v = self.betas[1] * self.v[i] + (1.0 - self.betas[1]) * grad.sqr()
+            if lazy_on:
+                m = m.eval()
+                v = v.eval()
+            self.m[i] = m
+            self.v[i] = v
             m_hat: Tensor = self.m[i] / (1.0 - self.betas[0] ** self.t)
             v_hat: Tensor = self.v[i] / (1.0 - self.betas[1] ** self.t)
-            p -= self.lr * m_hat / (v_hat.sqrt_() + self.eps)
+            upd = self.lr * m_hat / (v_hat.sqrt_() + self.eps)
+            if lazy_on:
+                upd = upd.eval()
+            p -= upd
+            if lazy_on:
+                p.eval()

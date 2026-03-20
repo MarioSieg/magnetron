@@ -117,6 +117,9 @@ extern MAG_EXPORT bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx
 extern MAG_EXPORT void mag_ctx_lazy_exec_start(mag_context_t *ctx);                                                     /* Enable lazy execution. */
 extern MAG_EXPORT void mag_ctx_lazy_exec_stop(mag_context_t *ctx);                                                      /* Disable lazy execution. */
 extern MAG_EXPORT bool mag_ctx_lazy_exec_is_running(const mag_context_t *ctx);                                          /* Check if lazy execution is enabled. */
+extern MAG_EXPORT void mag_ctx_trace_all_ops_start(mag_context_t *ctx);                                                 /* Record all op edges for graph tracing. */
+extern MAG_EXPORT void mag_ctx_trace_all_ops_stop(mag_context_t *ctx);                                                  /* Stop recording eager op edges for tracing. */
+extern MAG_EXPORT bool mag_ctx_trace_all_ops_is_running(const mag_context_t *ctx);                                      /* Check if full op tracing is enabled. */
 extern MAG_EXPORT void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed);                                          /* Manually seed the PRNG. */
 extern MAG_EXPORT void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection);                               /* Destroy context and free memory */
 

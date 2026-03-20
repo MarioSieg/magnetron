@@ -50,7 +50,6 @@ def _main() -> None:
     print(args)
 
     context.manual_seed(args.seed)
-    context.start_lazy_execution()
 
     # Load and preprocess image
     image = Tensor.load_image(args.image, channels='RGB', resize_to=(args.width, args.height))  # Load image into uint8 CxHxW tensor
