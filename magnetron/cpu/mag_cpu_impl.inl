@@ -738,9 +738,9 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_INT64] = &mag_pow_int64,
     },
     [MAG_OP_MATMUL] = {
-        [MAG_DTYPE_FLOAT32] = &mag_matmul_float32,
+        [MAG_DTYPE_FLOAT32] = &mag_matmul_f32,
         [MAG_DTYPE_FLOAT16] = &mag_matmul_float16,
-        [MAG_DTYPE_BFLOAT16] = &mag_matmul_bfloat16,
+        [MAG_DTYPE_BFLOAT16] = &mag_matmul_bf16,
     },
     [MAG_OP_REPEAT_BACK] = {
         [MAG_DTYPE_FLOAT32] = &mag_repeat_back_float32,

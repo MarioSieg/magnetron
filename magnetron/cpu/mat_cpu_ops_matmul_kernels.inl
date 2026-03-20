@@ -547,7 +547,7 @@ static MAG_AINLINE void mag_mm_tile_16x32_f32(
 
 /* == bf16 (bfloat16) == */
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x8_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x8_bf16(
     int64_t kc,
     const mag_bfloat16_t *restrict a, ptrdiff_t lda,
     const mag_bfloat16_t *restrict b, ptrdiff_t ldb,
@@ -622,7 +622,7 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x8_bfloat16(
         mag_vbf16_storeu_8_from_f32(c + r*ldc, accv[r]);
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x16_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x16_bf16(
     int64_t kc,
     const mag_bfloat16_t *restrict a, ptrdiff_t lda,
     const mag_bfloat16_t *restrict b, ptrdiff_t ldb,
@@ -697,18 +697,18 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x16_bfloat16(
         mag_vbf16_storeu_16_from_f32(c + r*ldc, accv[r]);
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x32_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_8x32_bf16(
     int64_t kc,
     const mag_bfloat16_t *restrict a, ptrdiff_t lda,
     const mag_bfloat16_t *restrict b, ptrdiff_t ldb,
     mag_bfloat16_t *restrict c, ptrdiff_t ldc,
     bool acc
 ) {
-    mag_mm_tile_8x16_bfloat16(kc, a,    lda, b,    ldb, c,    ldc, acc);
-    mag_mm_tile_8x16_bfloat16(kc, a,    lda, b+16, ldb, c+16, ldc, acc);
+    mag_mm_tile_8x16_bf16(kc, a,    lda, b,    ldb, c,    ldc, acc);
+    mag_mm_tile_8x16_bf16(kc, a,    lda, b+16, ldb, c+16, ldc, acc);
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x8_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x8_bf16(
     int64_t kc,
     const mag_bfloat16_t *restrict a,
     const mag_bfloat16_t *restrict b, ptrdiff_t ldb,
@@ -751,7 +751,7 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x8_bfloat16(
     mag_vbf16_storeu_8_from_f32(c, accv);
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x16_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x16_bf16(
     int64_t kc,
     const mag_bfloat16_t *restrict a,
     const mag_bfloat16_t *restrict b, ptrdiff_t ldb,
@@ -793,37 +793,37 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x16_bfloat16(
     mag_vbf16_storeu_16_from_f32(c, accv);
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x32_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_1x32_bf16(
     int64_t kc,
     const mag_bfloat16_t *restrict a,
     const mag_bfloat16_t *restrict b, ptrdiff_t ldb,
     mag_bfloat16_t *restrict c,
     bool acc
 ) {
-    mag_mm_tile_1x16_bfloat16(kc, a, b,    ldb, c,    acc);
-    mag_mm_tile_1x16_bfloat16(kc, a, b+16, ldb, c+16, acc);
+    mag_mm_tile_1x16_bf16(kc, a, b,    ldb, c,    acc);
+    mag_mm_tile_1x16_bf16(kc, a, b+16, ldb, c+16, acc);
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_16x16_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_16x16_bf16(
     int64_t kc,
-    const mag_bfloat16_t *restrict a, ptrdiff_t lda,
+    const mag_bfloat16_t *restrict a,
     const mag_bfloat16_t *restrict b, ptrdiff_t ldb,
     mag_bfloat16_t *restrict c, ptrdiff_t ldc,
     bool acc
 ) {
-    mag_mm_tile_8x16_bfloat16(kc, a,         lda, b,    ldb, c,         ldc, acc);
-    mag_mm_tile_8x16_bfloat16(kc, a + 8*lda, lda, b,    ldb, c + 8*ldc, ldc, acc);
+    mag_mm_tile_8x16_bf16(kc, a,         MAG_MR, b,    ldb, c,         ldc, acc);
+    mag_mm_tile_8x16_bf16(kc, a + 8*kc, MAG_MR, b,    ldb, c + 8*ldc, ldc, acc);
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_16x32_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_tile_16x32_bf16(
     int64_t kc,
-    const mag_bfloat16_t *restrict a, ptrdiff_t lda,
+    const mag_bfloat16_t *restrict a,
     const mag_bfloat16_t *restrict b, ptrdiff_t ldb,
     mag_bfloat16_t *restrict c, ptrdiff_t ldc,
     bool acc
 ) {
-    mag_mm_tile_16x16_bfloat16(kc, a, lda, b,    ldb, c,    ldc, acc);
-    mag_mm_tile_16x16_bfloat16(kc, a, lda, b+16, ldb, c+16, ldc, acc);
+    mag_mm_tile_16x16_bf16(kc, a, b,    ldb, c,    ldc, acc);
+    mag_mm_tile_16x16_bf16(kc, a, b+16, ldb, c+16, ldc, acc);
 }
 
 static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_B_kc_nc_f32(
@@ -882,7 +882,7 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_A_mr8_kc_f32(
     }
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_A_mc_kc_panel8_float32(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_A_mc_kc_panel8_f32(
     int64_t kc, int64_t mr,
     const float *restrict ra, ptrdiff_t sMx, ptrdiff_t sKx,
     float *restrict pa
@@ -950,7 +950,7 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_B_vec_f32(
     }
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_B_kc_nc_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_B_kc_nc_bf16(
     int64_t kc, int64_t nc,
     const mag_bfloat16_t *restrict Bsrc, ptrdiff_t strideK, ptrdiff_t strideN,
     mag_bfloat16_t *restrict Bp
@@ -972,7 +972,7 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_B_kc_nc_bfloat16(
     }
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_B_vec_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_B_vec_bf16(
     int64_t kc, int64_t nc,
     const mag_bfloat16_t *restrict yvec,
     mag_bfloat16_t *restrict bp
@@ -989,7 +989,7 @@ static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_B_vec_bfloat16(
     }
 }
 
-static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_A_mc_kc_panel8_bfloat16(
+static MAG_AINLINE MAG_HOTPROC void mag_mm_pack_A_mc_kc_panel8_bf16(
     int64_t kc, int64_t mr,
     const mag_bfloat16_t *restrict ra, ptrdiff_t sMx, ptrdiff_t sKx,
     mag_bfloat16_t *restrict pa
@@ -1103,5 +1103,78 @@ static MAG_AINLINE MAG_HOTPROC void mag_gemv_f32(
     if (j < N) {
         unsigned rem = (unsigned)(N - j);
         mag_gemv_vf32_masked_f32(K, A, B + j, ldb, C + j, rem);
+    }
+}
+
+/* == bfloat16 (bf16) gemv == */
+
+static MAG_AINLINE MAG_HOTPROC void mag_gemv_vbf16_8_bf16(
+    int64_t K,
+    const mag_bfloat16_t *restrict A,
+    const mag_bfloat16_t *restrict B, /* B points to the first of 8 columns */
+    int64_t ldb,
+    mag_bfloat16_t *restrict C /* C points to the first of 8 outputs */
+) {
+    mag_vf32_8_t partial0 = mag_vf32_8_zero();
+    mag_vf32_8_t partial1 = mag_vf32_8_zero();
+    mag_vf32_8_t partial2 = mag_vf32_8_zero();
+    mag_vf32_8_t partial3 = mag_vf32_8_zero();
+
+    const mag_bfloat16_t *restrict row = B;
+    int64_t k = 0;
+
+    for (; k + 3 < K; k += 4, row += 4 * ldb) {
+        partial0 = mag_vf32_8_fmadd(mag_vbf16_broadcast(A + k + 0), mag_vbf16_loadu_8_to_f32(row + 0 * ldb), partial0);
+        partial1 = mag_vf32_8_fmadd(mag_vbf16_broadcast(A + k + 1), mag_vbf16_loadu_8_to_f32(row + 1 * ldb), partial1);
+        partial2 = mag_vf32_8_fmadd(mag_vbf16_broadcast(A + k + 2), mag_vbf16_loadu_8_to_f32(row + 2 * ldb), partial2);
+        partial3 = mag_vf32_8_fmadd(mag_vbf16_broadcast(A + k + 3), mag_vbf16_loadu_8_to_f32(row + 3 * ldb), partial3);
+    }
+
+    mag_vf32_8_t acc = mag_vf32_8_add(
+        mag_vf32_8_add(partial0, partial1),
+        mag_vf32_8_add(partial2, partial3)
+    );
+
+    for (; k < K; ++k, row += ldb) {
+        acc = mag_vf32_8_fmadd(mag_vbf16_broadcast(A + k), mag_vbf16_loadu_8_to_f32(row), acc);
+    }
+
+    mag_vbf16_storeu_8_from_f32(C, acc);
+}
+
+static MAG_AINLINE MAG_HOTPROC void mag_gemv_bf16(
+    int64_t K,
+    int64_t N,
+    const mag_bfloat16_t *restrict A,
+    const mag_bfloat16_t *restrict B,
+    int64_t ldb,
+    mag_bfloat16_t *restrict C
+) {
+    int64_t j = 0;
+
+    /* 4 vectors * logical 8 outputs = 32 columns per iteration. */
+    const int64_t step = 4 * 8;
+    for (; j + step - 1 < N; j += step) {
+        mag_gemv_vbf16_8_bf16(K, A, B + j + 0 * 8, ldb, C + j + 0 * 8);
+        mag_gemv_vbf16_8_bf16(K, A, B + j + 1 * 8, ldb, C + j + 1 * 8);
+        mag_gemv_vbf16_8_bf16(K, A, B + j + 2 * 8, ldb, C + j + 2 * 8);
+        mag_gemv_vbf16_8_bf16(K, A, B + j + 3 * 8, ldb, C + j + 3 * 8);
+    }
+
+    for (; j + 8 - 1 < N; j += 8)
+        mag_gemv_vbf16_8_bf16(K, A, B + j, ldb, C + j);
+
+    /* Tail: rem < 8 (scalar). */
+    if (j < N) {
+        int64_t rem = N - j;
+        for (int64_t col = 0; col < rem; ++col) {
+            float sum = 0.0f;
+            for (int64_t k = 0; k < K; ++k) {
+                float a = mag_bfloat16_to_float32(A[k]);
+                float b = mag_bfloat16_to_float32(B[k * ldb + (j + col)]);
+                sum += a * b;
+            }
+            C[j + col] = mag_float32_to_bfloat16(sum);
+        }
     }
 }
