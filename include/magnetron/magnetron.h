@@ -114,6 +114,9 @@ extern MAG_EXPORT size_t mag_ctx_get_total_tensors_created(const mag_context_t *
 extern MAG_EXPORT void mag_ctx_grad_recorder_start(mag_context_t *ctx);                                                 /* Start gradient recording */
 extern MAG_EXPORT void mag_ctx_grad_recorder_stop(mag_context_t *ctx);                                                  /* Stop gradient recording */
 extern MAG_EXPORT bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx);                                      /* Check if gradient recording is running */
+extern MAG_EXPORT void mag_ctx_lazy_exec_start(mag_context_t *ctx);                                                     /* Enable lazy execution. */
+extern MAG_EXPORT void mag_ctx_lazy_exec_stop(mag_context_t *ctx);                                                      /* Disable lazy execution. */
+extern MAG_EXPORT bool mag_ctx_lazy_exec_is_running(const mag_context_t *ctx);                                          /* Check if lazy execution is enabled. */
 extern MAG_EXPORT void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed);                                          /* Manually seed the PRNG. */
 extern MAG_EXPORT void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection);                               /* Destroy context and free memory */
 
@@ -432,12 +435,15 @@ extern MAG_EXPORT mag_status_t mag_tensor_zero_grad(mag_error_t *err, mag_tensor
 extern MAG_EXPORT mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void **out_buf, size_t *out_size_bytes);
 extern MAG_EXPORT void mag_tensor_copy_data_free(void *ret_val);
 extern MAG_EXPORT mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t *out_value);
+extern MAG_EXPORT mag_status_t mag_eval(mag_error_t *err, mag_tensor_t *tensor);
+extern MAG_EXPORT mag_status_t mag_evalv(mag_error_t *err, mag_tensor_t **tensors, size_t count);
 extern MAG_EXPORT mag_tensor_t *mag_tensor_detach(mag_tensor_t *tensor);
 extern MAG_EXPORT const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold);
 extern MAG_EXPORT void mag_tensor_to_string_free_data(const char *ret_val);
 extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *tensor);
 extern MAG_EXPORT void mag_tensor_visualize_backprop_graph(mag_tensor_t *tensor, const char *file);
+extern MAG_EXPORT void mag_tensor_visualize_execution_graph(mag_tensor_t *tensor, const char *file);
 
 typedef struct mag_snapshot_t mag_snapshot_t;
 

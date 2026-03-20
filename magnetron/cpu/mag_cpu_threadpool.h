@@ -30,6 +30,13 @@ typedef struct mag_thread_pool_t {
     const mag_kernel_registry_t *kernels;           /* Specialized compute kernel registry */
     mag_thread_prio_t sched_prio;             /* Scheduling priority */
     mag_context_t *host_ctx;                            /* Host context */
+    const mag_command_t *batch_cmds;                 /* Batched commands for graph eval. */
+    size_t batch_num_cmds;                           /* Number of batched commands. */
+    const uint32_t *batch_active_workers;            /* Active worker count per batched command. */
+    volatile mag_atomic64_t *batch_next_tiles;       /* One tile-counter per batched command. */
+    bool batch_mode;                                 /* True while processing a command batch. */
+    volatile mag_atomic32_t batch_barrier_count;     /* Intra-batch per-command barrier count. */
+    volatile mag_atomic32_t batch_barrier_epoch;     /* Intra-batch per-command barrier epoch. */
 } mag_thread_pool_t;
 
 struct mag_worker_t {
@@ -44,6 +51,7 @@ struct mag_worker_t {
 extern mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_workers, const mag_kernel_registry_t *kernels, mag_thread_prio_t prio);
 extern void mag_worker_exec_thread_local(const mag_kernel_registry_t *kernels, mag_kernel_payload_t *payload);
 extern void mag_threadpool_parallel_compute(mag_thread_pool_t *pool, const mag_command_t *cmd, uint32_t num_active_workers);
+extern void mag_threadpool_parallel_compute_batch(mag_thread_pool_t *pool, const mag_command_t *cmds, size_t num_cmds, const uint32_t *active_workers_per_cmd);
 extern void mag_threadpool_destroy(mag_thread_pool_t *pool);
 
 #ifdef __cplusplus

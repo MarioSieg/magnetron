@@ -28,8 +28,9 @@ typedef enum mag_tensor_flags_t {
     MAG_TFLAG_IS_VIEW = 1<<0,           /* Tensor is a view. */
     MAG_TFLAG_IS_GRAD = 1<<1,           /* Tensor is a gradient. */
     MAG_TFLAG_REQUIRES_GRAD = 1<<2,     /* Tensor requires gradient. */
+    MAG_TFLAG_OP_PENDING = 1<<3,        /* Tensor has a deferred operation pending execution. */
 
-    MAG_TFLAG_LEN = 4                   /* Number of flags. */
+    MAG_TFLAG_LEN = 5                   /* Number of flags. */
 } mag_tensor_flags_t;
 mag_static_assert(MAG_TFLAG_LEN <= 8); /* Must fit in one byte */
 

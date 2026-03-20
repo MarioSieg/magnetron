@@ -16,6 +16,8 @@
 #include "mag_autodiff.h"
 #include "mag_coords_iter.h"
 
+extern mag_status_t mag_eval(mag_error_t *err, mag_tensor_t *tensor);
+
 static mag_status_t mag_view_meta_dtor(void *p) {
     mag_view_meta_t *vm = p;
     mag_context_t *ctx = vm->base->ctx;
@@ -151,7 +153,7 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
         tensor->view_meta = base->view_meta;
         mag_rc_incref(tensor->view_meta); /* Retain view meta */
     }
-    tensor->flags = base->flags | MAG_TFLAG_IS_VIEW; /* Set view flag */
+    tensor->flags = (base->flags | MAG_TFLAG_IS_VIEW) & ~MAG_TFLAG_OP_PENDING; /* View metadata must not appear as a deferred op. */
     *out = tensor;
     return MAG_STATUS_OK;
 }
@@ -183,10 +185,20 @@ int64_t mag_tensor_numel(const mag_tensor_t *tensor) {
 
 void mag_tensor_detach_inplace(mag_tensor_t *target) {
     if (target->au_state) {
+        for (size_t i=0; i < sizeof(target->au_state->op_inputs)/sizeof(*target->au_state->op_inputs); ++i) {
+            if (target->au_state->op_inputs[i]) {
+                mag_rc_decref(target->au_state->op_inputs[i]);
+                target->au_state->op_inputs[i] = NULL;
+            }
+        }
         target->au_state->op = MAG_OP_NOP; /* Detach from operations */
-        memset(target->au_state->op_inputs, 0, sizeof(target->au_state->op_inputs)); /* Clear op inputs */
         memset(target->au_state->op_attrs, 0, sizeof(target->au_state->op_attrs));
+        target->au_state->op_num_inputs = 0;
+        target->au_state->op_num_outputs = 0;
+        target->au_state->op_num_attrs = 0;
+        target->au_state->op_inplace = false;
     }
+    target->flags &= ~MAG_TFLAG_OP_PENDING;
 }
 
 mag_tensor_t *mag_tensor_detach(mag_tensor_t *tensor) {
@@ -233,6 +245,7 @@ uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor) {
 }
 
 mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void **out_buf, size_t *out_size_bytes) {
+    mag_try(mag_eval(err, tensor));
     mag_contract(err, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "Tensor storage must be allocated on CPU, but is allocated on %s", mag_backend_type_to_str(tensor->storage->device->id.type));
     mag_tensor_t *cont;
     mag_try(mag_contiguous(err, &cont, tensor));
@@ -252,6 +265,7 @@ void mag_tensor_copy_data_free(void *ret_val) {
 }
 
 mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t *out_value) {
+    mag_try(mag_eval(err, tensor));
     /* TODO: auto transfer */
     mag_contract(err, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "item() requires tensor storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
     mag_contract(err, ERR_INVALID_PARAM, {}, tensor->numel == 1, "item() can only be called on single element (scalar) tensors, but tensor has %" PRIi64 " elements", tensor->numel);
@@ -274,6 +288,11 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
+        stat = mag_eval(err, wide);
+        if (mag_iserr(stat)) {
+            mag_tensor_decref(wide);
+            return stat;
+        }
         res = mag_scalar_from_f64(*(const float *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
         *out_value = res;
@@ -286,6 +305,11 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
         }
+        stat = mag_eval(err, wide);
+        if (mag_iserr(stat)) {
+            mag_tensor_decref(wide);
+            return stat;
+        }
         res = mag_scalar_from_i64(*(const int64_t *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
         *out_value = res;
@@ -297,6 +321,11 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
             stat = mag_cast(err, &wide, scalar, MAG_DTYPE_UINT64);
             mag_tensor_decref(scalar);
             if (mag_iserr(stat)) return stat;
+        }
+        stat = mag_eval(err, wide);
+        if (mag_iserr(stat)) {
+            mag_tensor_decref(wide);
+            return stat;
         }
         res = mag_scalar_from_u64(*(const uint64_t *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);

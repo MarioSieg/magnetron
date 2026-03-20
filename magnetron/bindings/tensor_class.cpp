@@ -155,6 +155,17 @@ namespace mag::bindings {
             std::lock_guard lock {get_global_mutex()};
             return tensor_wrapper{mag_tensor_detach(*self)};
         }, "Return a new tensor detached from the autodiff graph.")
+        .def("eval", [](const tensor_wrapper &self) -> tensor_wrapper {
+            std::lock_guard lock {get_global_mutex()};
+            mag_error_t err {};
+            throw_if_error(mag_eval(&err, *self), err);
+            mag_tensor_incref(*self);
+            return tensor_wrapper {*self};
+        }, "Force evaluation of this tensor and return itself.")
+        .def("visualize_execution_graph", [](const tensor_wrapper &self, const std::string &file) -> void {
+            std::lock_guard lock {get_global_mutex()};
+            mag_tensor_visualize_execution_graph(*self, file.c_str());
+        }, "file"_a, "Export the execution graph rooted at this tensor to Graphviz DOT.")
         .def("tolist", [](const tensor_wrapper &self) -> nb::object {
             std::lock_guard lock {get_global_mutex()};
             if (!mag_tensor_numel(*self)) return nb::list();
@@ -179,6 +190,7 @@ namespace mag::bindings {
                 } else throw nb::type_error("Unsupported dtype for tolist()");
                 on_scope_exit defer_decref {[casted] { mag_tensor_decref(casted); }};
                 throw_if_error(mag_contiguous(&err, &contig, casted), err);
+                throw_if_error(mag_eval(&err, contig), err);
             }
             on_scope_exit defer_decref2 {[contig] { mag_tensor_decref(contig); }};
             const auto *ptr = reinterpret_cast<const void *>(mag_tensor_data_ptr(contig));

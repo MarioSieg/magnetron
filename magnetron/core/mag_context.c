@@ -271,6 +271,18 @@ bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx) {
     return ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER;
 }
 
+void mag_ctx_lazy_exec_start(mag_context_t *ctx) {
+    ctx->flags |= MAG_CTX_FLAG_LAZY_EXEC;
+}
+
+void mag_ctx_lazy_exec_stop(mag_context_t *ctx) {
+    ctx->flags &= ~MAG_CTX_FLAG_LAZY_EXEC;
+}
+
+bool mag_ctx_lazy_exec_is_running(const mag_context_t *ctx) {
+    return ctx->flags & MAG_CTX_FLAG_LAZY_EXEC;
+}
+
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
     (*ctx->active_device->manual_seed)(ctx->active_device, seed);
 }

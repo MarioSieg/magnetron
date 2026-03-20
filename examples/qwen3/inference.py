@@ -103,9 +103,11 @@ class InferenceEngine:
             )
         start = time.perf_counter()
         context.stop_grad_recorder()
+        context.stop_lazy_execution()  # Keep snapshot/model setup eager.
         context.manual_seed(config.seed)
         console.print(f'Loading model from snapshot: {snapshot}', style='dim')
         self.model = Qwen3Model.from_pretrained_snapshot(snapshot)
+        context.start_lazy_execution()  # Enable lazy mode for inference passes.
         self.tokenizer = HFTokenizer(REPO_ID)
         self.config = config
         end = time.perf_counter()

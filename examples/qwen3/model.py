@@ -17,7 +17,6 @@ from dataclasses import dataclass
 
 _EOS: set[int] = {151645, 151643}
 
-
 @dataclass
 class Qwen3HyperParams:
     vocab_size: int = 151936
@@ -215,7 +214,7 @@ class Qwen3Model(nn.Module):
         idx = idx.reshape(1, -1)
         in_len: int = idx.shape[1]
         logits, prev_kv = self(idx, idx=Tensor.arange(stop=in_len).reshape(1, -1), prev_kv=None)
-        next_logits: Tensor = logits[:, -1, :] / temp
+        next_logits: Tensor = (logits[:, -1, :] / temp).eval()
         curr_len: int = in_len
         gen_ids: list[int] = []
         concated: str = ''
@@ -239,7 +238,7 @@ class Qwen3Model(nn.Module):
                 idx=Tensor([curr_len], dtype=dtype.int64).reshape(1, 1),
                 prev_kv=prev_kv,
             )
-            next_logits = logits[:, -1, :] / temp
+            next_logits = (logits[:, -1, :] / temp).eval()
             curr_len += 1
 
 

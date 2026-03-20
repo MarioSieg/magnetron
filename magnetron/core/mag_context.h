@@ -25,6 +25,7 @@ extern "C" {
 typedef enum mag_context_flags_t {
     MAG_CTX_FLAG_NONE = 0,
     MAG_CTX_FLAG_GRAD_RECORDER = 1<<0,     /* Gradient recording is currently active. */
+    MAG_CTX_FLAG_LAZY_EXEC = 1<<1,         /* Operations are deferred until explicit evaluation. */
 } mag_context_flags_t;
 
 typedef struct mag_rt_telemetry_t {

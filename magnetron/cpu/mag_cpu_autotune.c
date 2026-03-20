@@ -246,6 +246,9 @@ static uint32_t mag_mm_choose_workers(uint64_t flops, uint32_t tiles_total, uint
 
 uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t *cmd, mag_device_t *dvc) {
     mag_cpu_device_t *cpu_dvc = dvc->impl;
+    if (cmd->op == MAG_OP_GATHER) {
+        return 1;
+    }
     if (cmd->op == MAG_OP_MATMUL) {
         const mag_tensor_t *x = cmd->in[0];
         const mag_tensor_t *y = cmd->in[1];

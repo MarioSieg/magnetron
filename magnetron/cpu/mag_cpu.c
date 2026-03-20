@@ -88,6 +88,44 @@ static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_device_t *dvc, const mag_comm
     return MAG_STATUS_OK;
 }
 
+static MAG_HOTPROC mag_status_t mag_cpu_submit_batch(mag_device_t *dvc, const mag_command_t *cmds, size_t num_cmds) {
+    if (!num_cmds) return MAG_STATUS_OK;
+    mag_cpu_device_t *cpu_dvc = dvc->impl;
+    uint32_t *active_workers = (*mag_alloc)(NULL, num_cmds * sizeof(*active_workers), 0);
+    uint32_t max_active_workers = 1;
+    for (size_t i=0; i < num_cmds; ++i) {
+        uint32_t workers = mag_cpu_tune_heuristics_intraop_workers(cmds + i, dvc);
+        if (workers < 1) workers = 1;
+        active_workers[i] = workers;
+        if (workers > max_active_workers) max_active_workers = workers;
+    }
+    if (max_active_workers <= 1) {
+        volatile mag_atomic64_t next_tile = 0;
+        mag_matmul_block_params_t mm_params = {};
+        if (cpu_dvc->pool)
+            mm_params = cpu_dvc->pool->workers[0].payload.mm_params; /* TODO: Ugly */
+        mag_kernel_payload_t payload = {
+            .cmd = NULL,
+            .thread_idx = 0,
+            .thread_num = 1,
+            .prng = &cpu_dvc->primary_prng,
+            .mm_next_tile = &next_tile,
+            .mm_params = mm_params
+        };
+        for (size_t i=0; i < num_cmds; ++i) {
+            mag_atomic64_store(&next_tile, 0, MAG_MO_RELAXED);
+            payload.cmd = cmds + i;
+            payload.thread_num = active_workers[i];
+            mag_worker_exec_thread_local(&cpu_dvc->kernels, &payload);
+        }
+        (*mag_alloc)(active_workers, 0, 0);
+        return MAG_STATUS_OK;
+    }
+    mag_threadpool_parallel_compute_batch(cpu_dvc->pool, cmds, num_cmds, active_workers);
+    (*mag_alloc)(active_workers, 0, 0);
+    return MAG_STATUS_OK;
+}
+
 static mag_status_t mag_cpu_storage_dtor(void *self) {
     mag_storage_buffer_t *buf = self;
     mag_context_t *ctx = buf->ctx;
@@ -176,6 +214,7 @@ static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_thr
         .impl = cpu_dvc,
         .is_async = false,
         .submit = &mag_cpu_submit,
+        .submit_batch = &mag_cpu_submit_batch,
         .alloc_storage = &mag_cpu_alloc_storage,
         .manual_seed = &mag_cpu_manual_seed
     };

@@ -49,6 +49,8 @@
 #include "mag_backend.h"
 #include "mag_alloc.h"
 
+extern mag_status_t mag_eval(mag_error_t *err, mag_tensor_t *tensor);
+
 #define wint_r(x, sh, sc) { uint32_t d = (x*(((1<<sh)+sc-1)/sc))>>sh; x -= d*sc; *p++ = (char)('0'+d); }
 static char *mag_wuint9(char *p, uint32_t u) {
     uint32_t v = u / 10000, w;
@@ -857,6 +859,8 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
 }
 
 const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold) {
+    mag_error_t err = {0};
+    mag_assert(mag_eval(&err, tensor) == MAG_STATUS_OK, "Failed to evaluate tensor before formatting: %s", err.message);
     /* TODO: auto transfer */
     mag_assert(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "Data copy requires tensor storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
     head = head < 0 ? MAG_FMT_TENSOR_DEFAULT_HEAD_ELEMS : head;

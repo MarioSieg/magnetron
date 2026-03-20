@@ -51,7 +51,7 @@ class Embedding(Module):
             self.weight = Parameter(Tensor.empty(num_embeddings, embedding_dim, dtype=dtype))
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.weight[x]
+        return self.weight.gather(0, x)
 
 
 class RMSNorm(Module):

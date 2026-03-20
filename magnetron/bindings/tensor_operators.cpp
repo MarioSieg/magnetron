@@ -404,6 +404,17 @@ namespace mag::bindings {
             "dim"_a = nb::none(), "keepdim"_a = false,
             "Mean over dim(s). None = all dims."
         )
+        .def("gather",
+            [](const tensor_wrapper &self, int64_t dim, const tensor_wrapper &index) -> tensor_wrapper {
+                std::lock_guard lock {get_global_mutex()};
+                mag_tensor_t *out = nullptr;
+                mag_error_t err {};
+                throw_if_error(mag_gather(&err, &out, *self, dim, *index), err);
+                return tensor_wrapper{out};
+            },
+            "dim"_a, "index"_a,
+            "Gather values along a dimension using int64 indices."
+        )
         .def("min",
             [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
                 std::lock_guard lock {get_global_mutex()};

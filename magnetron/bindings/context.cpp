@@ -52,6 +52,18 @@ namespace mag::bindings {
             std::lock_guard lock {get_global_mutex()};
             return mag_ctx_grad_recorder_is_running(get_ctx());
         }, "True if gradient recording is active.");
+        context.def("start_lazy_execution", []() -> void {
+            std::lock_guard lock {get_global_mutex()};
+            mag_ctx_lazy_exec_start(get_ctx());
+        }, "Enable lazy execution (ops are deferred until eval/materialization).");
+        context.def("stop_lazy_execution", []() -> void {
+            std::lock_guard lock {get_global_mutex()};
+            mag_ctx_lazy_exec_stop(get_ctx());
+        }, "Disable lazy execution (ops execute eagerly).");
+        context.def("is_lazy_execution_enabled", []() -> bool {
+            std::lock_guard lock {get_global_mutex()};
+            return mag_ctx_lazy_exec_is_running(get_ctx());
+        }, "True if lazy execution is enabled.");
         context.def("manual_seed", [](uint64_t seed) -> void {
             std::lock_guard lock {get_global_mutex()};
             mag_ctx_manual_seed(get_ctx(), seed);

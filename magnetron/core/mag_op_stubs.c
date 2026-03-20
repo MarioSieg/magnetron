@@ -12,6 +12,12 @@
 #include "mag_autodiff.h"
 #include "mag_context.h"
 #include "mag_reduce_plan.h"
+#include "mag_alloc.h"
+#include "mag_hashset.h"
+#include "mag_toposort.h"
+
+extern mag_status_t mag_eval(mag_error_t *err, mag_tensor_t *tensor);
+extern mag_status_t mag_evalv(mag_error_t *err, mag_tensor_t **tensors, size_t count);
 
 mag_scalar_t mag_scalar_from_f64(double value) {
     return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.f64 = value};
@@ -189,11 +195,45 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
     const mag_op_attr_t *params = layout ? layout->slots : NULL;
     uint32_t num_params = layout ? layout->count : 0;
     mag_assert_correct_op_data(op, in, num_in, out, num_out, params, num_params);
-    if (!!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward) {
+    bool grad_enabled = !!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER);
+    bool record_for_grad = grad_enabled && meta->backward;
+    bool output_is_view = num_out == 1 && (out[0]->flags & MAG_TFLAG_IS_VIEW);
+    bool has_ptr_attr = false;
+    for (uint32_t i=0; i < num_params; ++i) {
+        if (params[i].tag == MAG_OP_ATTR_TYPE_PTR) {
+            has_ptr_attr = true;
+            break;
+        }
+    }
+    bool record_for_lazy = !!(ctx->flags & MAG_CTX_FLAG_LAZY_EXEC) && !grad_enabled && num_out == 1 && !inplace && !output_is_view;
+    if (record_for_lazy && has_ptr_attr) {
+        record_for_lazy = false; /* Pointer attrs may reference stack memory and are not safe to defer. */
+    }
+    bool can_record_inputs = num_in <= MAG_MAX_OP_INPUTS;
+    if (record_for_grad) {
+        mag_contract(err, ERR_INVALID_STATE, {}, can_record_inputs,
+            "Operation '%s' has %u inputs, but autodiff graph supports at most %u.",
+            meta->mnemonic, num_in, MAG_MAX_OP_INPUTS
+        );
+    }
+    if (record_for_lazy && !can_record_inputs) {
+        record_for_lazy = false; /* Fallback to eager execution for high fan-in ops (e.g. large cat). */
+    }
+    if (record_for_grad || record_for_lazy) {
         for (uint32_t i=0; i < num_out; ++i) {
             mag_tensor_t *r = out[i];
             mag_au_state_t *au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
+            for (size_t k=0; k < sizeof(au->op_inputs)/sizeof(*au->op_inputs); ++k) {
+                if (au->op_inputs[k]) {
+                    mag_rc_decref(au->op_inputs[k]);
+                    au->op_inputs[k] = NULL;
+                }
+            }
             au->op = op;
+            au->op_num_inputs = num_in;
+            au->op_num_outputs = num_out;
+            au->op_num_attrs = num_params;
+            au->op_inplace = inplace;
             for (uint32_t j=0; j < num_in; ++j) {
                 mag_tensor_t *input = in[j];
                 au->op_inputs[j] = input;
@@ -201,10 +241,22 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
                     mag_try(mag_tensor_set_requires_grad(err, r, true));
                 mag_rc_incref(input);
             }
-            if (params)
+            if (params) {
                 memcpy(au->op_attrs, params, num_params * sizeof(*params));
+            } else {
+                memset(au->op_attrs, 0, sizeof(au->op_attrs));
+            }
+            if (record_for_lazy) r->flags |= MAG_TFLAG_OP_PENDING;
+            else r->flags &= ~MAG_TFLAG_OP_PENDING;
         }
     }
+    if ((ctx->flags & MAG_CTX_FLAG_LAZY_EXEC) && !record_for_lazy && in) {
+        mag_try(mag_evalv(err, in, num_in));
+    }
+    if ((ctx->flags & MAG_CTX_FLAG_LAZY_EXEC) && num_out > 1) {
+        for (uint32_t i=0; i < num_out; ++i) out[i]->flags &= ~MAG_TFLAG_OP_PENDING;
+    }
+    if (record_for_lazy) return MAG_STATUS_OK;
     mag_command_t cmd = {
         .op = op,
         .in = in,
@@ -219,6 +271,159 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
         if (inplace) mag_bump_version(out[i]);  /* Result aliases the modified storage */
     ++ctx->telemetry.ops_dispatched;
     return stat;
+}
+
+typedef struct mag_exec_stack_record_t {
+    mag_tensor_t *tensor;
+    uint32_t next_child_idx;
+} mag_exec_stack_record_t;
+
+typedef struct mag_exec_stack_t {
+    mag_exec_stack_record_t *data;
+    size_t len;
+    size_t cap;
+} mag_exec_stack_t;
+
+static void mag_exec_stack_init(mag_exec_stack_t *s, size_t cap) {
+    s->len = 0;
+    s->cap = cap ? cap : 64;
+    s->data = (*mag_alloc)(NULL, s->cap * sizeof(*s->data), 0);
+}
+
+static void mag_exec_stack_push(mag_exec_stack_t *s, mag_tensor_t *t) {
+    if (s->len == s->cap) {
+        s->cap <<= 1;
+        s->data = (*mag_alloc)(s->data, s->cap * sizeof(*s->data), 0);
+    }
+    s->data[s->len++] = (mag_exec_stack_record_t){ .tensor = t, .next_child_idx = 0 };
+}
+
+static mag_exec_stack_record_t *mag_exec_stack_peek(mag_exec_stack_t *s) {
+    return s->data + (s->len - 1);
+}
+
+static void mag_exec_stack_pop(mag_exec_stack_t *s) {
+    --s->len;
+}
+
+static void mag_exec_stack_free(mag_exec_stack_t *s) {
+    (*mag_alloc)(s->data, 0, 0);
+    s->data = NULL;
+    s->len = 0;
+    s->cap = 0;
+}
+
+static void mag_eval_order_push(mag_topo_set_t *ts, mag_tensor_t *t) {
+    if (ts->size == ts->capacity) {
+        size_t cap = ts->capacity ? ts->capacity << 1 : 16;
+        ts->data = (*mag_alloc)(ts->data, cap * sizeof(*ts->data), 0);
+        ts->capacity = cap;
+    }
+    ts->data[ts->size++] = t;
+}
+
+static mag_tensor_t *mag_resolve_pending_root(mag_tensor_t *t) {
+    while (t && !(t->flags & MAG_TFLAG_OP_PENDING) && (t->flags & MAG_TFLAG_IS_VIEW) && t->view_meta && t->view_meta->base)
+        t = t->view_meta->base;
+    return t;
+}
+
+static mag_status_t mag_collect_eval_order(mag_error_t *err, mag_tensor_t **roots, size_t count, mag_topo_set_t *out_order) {
+    mag_hashset_t visited;
+    mag_hashset_init(&visited, 1024);
+    mag_exec_stack_t stack;
+    mag_exec_stack_init(&stack, 64);
+    for (size_t r=0; r < count; ++r) {
+        mag_tensor_t *root = mag_resolve_pending_root(roots[r]);
+        if (!root || !(root->flags & MAG_TFLAG_OP_PENDING)) continue;
+        if (mag_hashset_contains_key(&visited, root)) continue;
+        mag_assert(mag_hashset_insert(&visited, root) != MAG_HASHSET_FULL, "Hashset exhausted");
+        mag_exec_stack_push(&stack, root);
+        while (stack.len) {
+            mag_exec_stack_record_t *top = mag_exec_stack_peek(&stack);
+            mag_tensor_t *t = top->tensor;
+            if (!t->au_state || !(t->flags & MAG_TFLAG_OP_PENDING)) {
+                mag_exec_stack_pop(&stack);
+                continue;
+            }
+            mag_au_state_t *au = t->au_state;
+            if (top->next_child_idx >= au->op_num_inputs) {
+                mag_exec_stack_pop(&stack);
+                mag_eval_order_push(out_order, t);
+                continue;
+            }
+            mag_tensor_t *child = mag_resolve_pending_root(au->op_inputs[top->next_child_idx++]);
+            if (!child || !(child->flags & MAG_TFLAG_OP_PENDING)) continue;
+            if (!mag_hashset_contains_key(&visited, child)) {
+                mag_assert(mag_hashset_insert(&visited, child) != MAG_HASHSET_FULL, "Hashset exhausted");
+                mag_exec_stack_push(&stack, child);
+            }
+        }
+    }
+    mag_exec_stack_free(&stack);
+    mag_hashset_free(&visited);
+    (void)err;
+    return MAG_STATUS_OK;
+}
+
+mag_status_t mag_evalv(mag_error_t *err, mag_tensor_t **tensors, size_t count) {
+    mag_contract(err, ERR_INVALID_PARAM, {}, tensors != NULL, "Tensor array must not be NULL");
+    if (!count) return MAG_STATUS_OK;
+    mag_topo_set_t order;
+    mag_topo_set_init(&order);
+    mag_try(mag_collect_eval_order(err, tensors, count, &order));
+    if (!order.size) {
+        mag_topo_set_free(&order);
+        return MAG_STATUS_OK;
+    }
+    mag_command_t *cmds = (*mag_alloc)(NULL, order.size * sizeof(*cmds), 0);
+    size_t num_cmds = 0;
+    for (size_t i=0; i < order.size; ++i) {
+        mag_tensor_t *t = order.data[i];
+        if (!(t->flags & MAG_TFLAG_OP_PENDING)) continue;
+        mag_contract(err, ERR_INVALID_STATE, { (*mag_alloc)(cmds, 0, 0); mag_topo_set_free(&order); }, t->au_state != NULL, "Tensor has pending op but no op state");
+        mag_au_state_t *au = t->au_state;
+        mag_command_t cmd = {
+            .op = au->op,
+            .in = au->op_inputs,
+            .out = &order.data[i],
+            .num_in = au->op_num_inputs,
+            .num_out = 1,
+        };
+        if (au->op_num_attrs)
+            memcpy(cmd.attrs, au->op_attrs, au->op_num_attrs * sizeof(*cmd.attrs));
+        cmds[num_cmds++] = cmd;
+    }
+    if (num_cmds) {
+        mag_device_t *dvc = order.data[0]->ctx->active_device;
+        mag_status_t stat = MAG_STATUS_OK;
+        for (size_t i=0; i < num_cmds; ++i) {
+            stat = (*dvc->submit)(dvc, cmds+i);
+            if (mag_iserr(stat)) break;
+        }
+        if (mag_iserr(stat)) {
+            (*mag_alloc)(cmds, 0, 0);
+            mag_topo_set_free(&order);
+            return stat;
+        }
+    }
+    for (size_t i=0; i < order.size; ++i) {
+        mag_tensor_t *t = order.data[i];
+        if (!(t->flags & MAG_TFLAG_OP_PENDING)) continue;
+        mag_au_state_t *au = t->au_state;
+        if (au->op_inplace) mag_bump_version(t);
+        /* Lazy execution should release captured op edges after materialization to avoid graph growth/leaks. */
+        mag_tensor_detach_inplace(t);
+        ++t->ctx->telemetry.ops_dispatched;
+    }
+    (*mag_alloc)(cmds, 0, 0);
+    mag_topo_set_free(&order);
+    return MAG_STATUS_OK;
+}
+
+mag_status_t mag_eval(mag_error_t *err, mag_tensor_t *tensor) {
+    mag_contract(err, ERR_INVALID_PARAM, {}, tensor != NULL, "Tensor must not be NULL");
+    return mag_evalv(err, &tensor, 1);
 }
 
 static mag_status_t mag_check_dtype_compat(mag_error_t *err, mag_opcode_t op, mag_tensor_t **inputs) {
