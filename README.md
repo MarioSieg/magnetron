@@ -103,13 +103,13 @@ The system is intentionally kept **tight and explicit**, so each layer is unders
   Capable of running modern LLM inference (e.g. Qwen3 in BF16), not just toy models.
 
 - **Small, controllable ML runtime**  
-  Designed to stay inspectable end-to-end — no hidden execution layers or opaque backends.
+  Designed to stay inspectable end-to-end - no hidden execution layers or opaque backends.
 
 - **True ownership of execution**  
   You can reason about memory layout, kernel dispatch, and graph behavior without abstraction barriers.
 
 - **Hardware-aware by design**  
-  Not a generic backend wrapper — kernels and execution are written with specific ISAs and microarchitectures in mind.
+  Not a generic backend wrapper - kernels and execution are written with specific ISAs and microarchitectures in mind.
 
 - **Zero-copy model loading**  
   Memory-mapped `.mag` format enables fast startup and efficient handling of large models.
@@ -118,7 +118,7 @@ The system is intentionally kept **tight and explicit**, so each layer is unders
   Easy to modify operators, add kernels, or prototype new execution strategies.
 
 - **Minimal runtime surface**  
-  Native extension with no required Python dependencies — easy to deploy and embed.
+  Native extension with no required Python dependencies - easy to deploy and embed.
 
 ---
 
