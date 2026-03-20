@@ -13,6 +13,7 @@
 #define MAG_AUTODIFF_H
 
 #include "mag_tensor.h"
+#include "mag_reduce_plan.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +31,7 @@ struct mag_au_state_t {
     uint32_t op_num_outputs;
     uint32_t op_num_attrs;
     bool op_inplace;
+    mag_reduce_plan_t *owned_reduce_plan;
     mag_tensor_t *grad;
 };
 MAG_RC_OBJECT_IS_VALID(mag_au_state_t);

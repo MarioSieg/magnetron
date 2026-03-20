@@ -104,7 +104,7 @@ class InferenceEngine:
         start = time.perf_counter()
         context.stop_grad_recorder()
         context.start_lazy_execution()
-        context.start_full_graph_trace()
+        context.stop_full_graph_trace()  # Trace mode is expensive; keep disabled for normal inference.
         context.manual_seed(config.seed)
         console.print(f'Loading model from snapshot: {snapshot}', style='dim')
         self.model = Qwen3Model.from_pretrained_snapshot(snapshot)

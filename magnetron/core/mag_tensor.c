@@ -197,6 +197,10 @@ void mag_tensor_detach_inplace(mag_tensor_t *target) {
         target->au_state->op_num_outputs = 0;
         target->au_state->op_num_attrs = 0;
         target->au_state->op_inplace = false;
+        if (target->au_state->owned_reduce_plan) {
+            (*mag_alloc)(target->au_state->owned_reduce_plan, 0, 0);
+            target->au_state->owned_reduce_plan = NULL;
+        }
     }
     target->flags &= ~MAG_TFLAG_OP_PENDING;
 }

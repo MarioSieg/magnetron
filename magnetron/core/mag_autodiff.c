@@ -15,6 +15,7 @@
 #include "mag_alloc.h"
 #include "mag_hashset.h"
 #include "mag_toposort.h"
+#include "mag_reduce_plan.h"
 
 static mag_status_t mag_au_state_dtor(void *p) {
     mag_au_state_t *au = p;
@@ -24,6 +25,10 @@ static mag_status_t mag_au_state_dtor(void *p) {
     }
     for (size_t i=0; i < sizeof(au->op_inputs)/sizeof(*au->op_inputs); ++i)
         if (au->op_inputs[i]) mag_rc_decref(au->op_inputs[i]);
+    if (au->owned_reduce_plan) {
+        (*mag_alloc)(au->owned_reduce_plan, 0, 0);
+        au->owned_reduce_plan = NULL;
+    }
     mag_slab_free(&au->ctx->au_state_slab, au);
     return MAG_STATUS_OK;
 }
@@ -40,6 +45,7 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t
         .op_num_outputs = 0,
         .op_num_attrs = 0,
         .op_inplace = false,
+        .owned_reduce_plan = NULL,
         .grad = NULL,
     };
     mag_rc_init_object(*au_state, &mag_au_state_dtor);

@@ -133,6 +133,23 @@ static void mag_bump_version(mag_tensor_t *t) {
     ++t->version;
 }
 
+static bool mag_op_uses_reduce_plan_ptr(mag_opcode_t op) {
+    switch (op) {
+        case MAG_OP_MEAN:
+        case MAG_OP_MIN:
+        case MAG_OP_MAX:
+        case MAG_OP_ARGMIN:
+        case MAG_OP_ARGMAX:
+        case MAG_OP_SUM:
+        case MAG_OP_PROD:
+        case MAG_OP_ALL:
+        case MAG_OP_ANY:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static mag_status_t mag_tensor_strided_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *base) {
     return mag_as_strided(err, out_result, base->ctx, base, base->coords.rank, base->coords.shape, base->coords.strides, base->storage_offset);
 }
@@ -207,7 +224,7 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
     }
     bool record_for_lazy = !!(ctx->flags & MAG_CTX_FLAG_LAZY_EXEC) && !grad_enabled && num_out == 1 && !inplace && !output_is_view;
     bool record_for_trace = !!(ctx->flags & MAG_CTX_FLAG_TRACE_ALL_OPS) && num_out == 1 && !inplace;
-    if (record_for_lazy && has_ptr_attr) {
+    if (record_for_lazy && has_ptr_attr && !mag_op_uses_reduce_plan_ptr(op)) {
         record_for_lazy = false; /* Pointer attrs may reference stack memory and are not safe to defer. */
     }
     bool can_record_inputs = num_in <= MAG_MAX_OP_INPUTS;
@@ -238,6 +255,10 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
             au->op_num_outputs = num_out;
             au->op_num_attrs = (record_for_grad || record_for_lazy) ? num_params : 0;
             au->op_inplace = inplace;
+            if (au->owned_reduce_plan) {
+                (*mag_alloc)(au->owned_reduce_plan, 0, 0);
+                au->owned_reduce_plan = NULL;
+            }
             for (uint32_t j=0; j < num_in; ++j) {
                 mag_tensor_t *input = in[j];
                 au->op_inputs[j] = input;
@@ -247,6 +268,17 @@ static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, 
             }
             if ((record_for_grad || record_for_lazy) && params) {
                 memcpy(au->op_attrs, params, num_params * sizeof(*params));
+                if (record_for_lazy && has_ptr_attr && mag_op_uses_reduce_plan_ptr(op)) {
+                    for (uint32_t p=0; p < num_params; ++p) {
+                        if (au->op_attrs[p].tag == MAG_OP_ATTR_TYPE_PTR && au->op_attrs[p].value.ptr) {
+                            mag_reduce_plan_t *owned = (*mag_alloc)(NULL, sizeof(*owned), 0);
+                            memcpy(owned, au->op_attrs[p].value.ptr, sizeof(*owned));
+                            au->owned_reduce_plan = owned;
+                            au->op_attrs[p] = mag_op_attr_ptr(owned);
+                            break;
+                        }
+                    }
+                }
             } else {
                 memset(au->op_attrs, 0, sizeof(au->op_attrs));
             }
