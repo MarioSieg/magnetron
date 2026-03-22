@@ -333,6 +333,8 @@ void mag_probe_cpu_cache_topology(mag_amd64_cap_bitset_t caps, size_t *ol1, size
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
+#elif defined(__linux__)
+#include <sys/auxv.h>
 #endif
 
 #define _(ident) #ident
@@ -345,7 +347,6 @@ void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
 #ifdef __linux__
     unsigned long hwcap = getauxval(AT_HWCAP);
     unsigned long hwcap2 = getauxval(AT_HWCAP2);
-    (void)hwcap2;
     *o|=mag_arm64_cap(NEON); /* NEON is always required by build */
 #ifdef HWCAP_ASIMD
     if (hwcap & HWCAP_ASIMD) *o|=mag_arm64_cap(NEON);
@@ -357,10 +358,10 @@ void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
     if (hwcap2 & HWCAP2_I8MM) *o|=mag_arm64_cap(I8MM);
 #endif
 #ifdef HWCAP_FPHP
-    if (hwcap & HWCAP_FPHP) *o|=mag_arm64_cap(F16SCA);
+    if (hwcap & HWCAP_FPHP) *o|=mag_arm64_cap(F16SCALAR);
 #endif
 #ifdef HWCAP_ASIMDHP
-    if (hwcap & HWCAP_ASIMDHP) *o|=mag_arm64_cap(F16VEC);
+    if (hwcap & HWCAP_ASIMDHP) *o|=mag_arm64_cap(F16VECTOR);
 #endif
 #ifdef HWCAP2_BF16
     if (hwcap2 & HWCAP2_BF16) *o|=mag_arm64_cap(BF16);
