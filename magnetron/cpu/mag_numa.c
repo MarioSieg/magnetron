@@ -73,15 +73,17 @@ bool mag_numa_init(mag_numa_node_controller_t *nodes, mag_numa_strategy_t strate
     for (uint32_t i=0; i < nodes->num_nodes; ++i) {
         mag_numa_node_t *node = nodes->nodes+i;
         mag_log_debug("CPUs on node %u:", i);
+        if (mag_unlikely(mag_log_level() == MAG_LOG_LEVEL_DEBUG)) putchar('\t');
         node->num_cpus = 0;
         for (uint32_t k=0; k < nodes->num_cpus; ++k) {
             ret = snprintf(pathbuf, sizeof(pathbuf), "/sys/devices/system/node/node%u/cpu%u", i, k);
             if (mag_unlikely(!(ret > 0 && (unsigned)ret < sizeof(pathbuf)))) return false;
             if (stat(pathbuf, &st) == 0) {
                 node->cpus[node->num_cpus++] = k;
-                mag_log_debug("\t%u", k);
+                if (mag_unlikely(mag_log_level() == MAG_LOG_LEVEL_DEBUG)) printf("%u ", k);
             }
         }
+        if (mag_unlikely(mag_log_level() == MAG_LOG_LEVEL_DEBUG)) putchar('\n');
     }
     if (nodes->num_nodes > 0) {
         FILE *f = mag_fopen("/proc/sys/kernel/numa_balancing", "r");
