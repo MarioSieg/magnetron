@@ -14,6 +14,7 @@
 
 #include "mag_cpu_kernel_data.h"
 #include "mag_cpu_phase_fence.h"
+#include "mag_numa.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,13 +24,14 @@ typedef struct mag_worker_t mag_worker_t;
 typedef struct mag_thread_pool_t {
     mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) volatile bool interrupt;   /* Interrupt flag, 1=stop */
     mag_phase_fence_t fence;
-    int32_t num_allocated_workers;                 /* Number of intra-op workers allocated */
-    uint32_t num_active_workers;                    /* Number of intra-op workers that are actively used in this compute step. */
-    volatile mag_atomic32_t num_workers_online;       /* Number of workers that are online */
-    mag_worker_t *workers;                          /* Array of workers */
-    const mag_kernel_registry_t *kernels;           /* Specialized compute kernel registry */
-    mag_thread_prio_t sched_prio;             /* Scheduling priority */
+    int32_t num_allocated_workers;                      /* Number of intra-op workers allocated */
+    uint32_t num_active_workers;                        /* Number of intra-op workers that are actively used in this compute step. */
+    volatile mag_atomic32_t num_workers_online;         /* Number of workers that are online */
+    mag_worker_t *workers;                              /* Array of workers */
+    const mag_kernel_registry_t *kernels;               /* Specialized compute kernel registry */
+    mag_thread_prio_t sched_prio;                       /* Scheduling priority */
     mag_context_t *host_ctx;                            /* Host context */
+    mag_numa_node_controller_t *numa_ctrl;              /* NUMA controller */
 } mag_thread_pool_t;
 
 struct mag_worker_t {
@@ -41,7 +43,7 @@ struct mag_worker_t {
     mag_thread_t thread;                    /* Thread handle */
 } mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE);
 
-extern mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_workers, const mag_kernel_registry_t *kernels, mag_thread_prio_t prio);
+extern mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_workers, const mag_kernel_registry_t *kernels, mag_numa_node_controller_t *numa, mag_thread_prio_t prio);
 extern void mag_worker_exec_thread_local(const mag_kernel_registry_t *kernels, mag_kernel_payload_t *payload);
 extern void mag_threadpool_parallel_compute(mag_thread_pool_t *pool, const mag_command_t *cmd, uint32_t num_active_workers);
 extern void mag_threadpool_destroy(mag_thread_pool_t *pool);

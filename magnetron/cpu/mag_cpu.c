@@ -151,9 +151,10 @@ static mag_cpu_device_t *mag_cpu_init_device(mag_context_t *ctx, uint32_t num_th
         .kernels = {},
         .primary_prng = {}
     };
+    mag_numa_init(&dvc->numa_ctrl, MAG_NUMA_STRATEGY_DISTRIBUTE); /* TODO: make configureable */
     mag_blas_detect_optimal_specialization(ctx, &dvc->kernels);
     if (num_threads > 1) {
-        dvc->pool = mag_threadpool_create(ctx, num_threads, &dvc->kernels, sched_prio);
+        dvc->pool = mag_threadpool_create(ctx, num_threads, &dvc->kernels, &dvc->numa_ctrl, sched_prio);
         dvc->num_allocated_workers = num_threads;
     }
     if (*dvc->kernels.init) (*dvc->kernels.init)();

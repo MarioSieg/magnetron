@@ -48,10 +48,10 @@ extern "C" {
 #define MAG_SEP ,
 #define MAG_GELU_COEFF 0.044715f /* Coefficient for GELU approximation. */
 
-#define MAG_MAX_CPUS 8192
+#define MAG_MAX_CPUS 2048
+#define MAG_MAX_NUMA_NODES 16
 #define MAG_MAX_CPU_TOPO_DEPTH 2
 #define MAG_MAX_CPU_CACHE_DEPTH 10
-#define MAG_MAX_CPU_NUMA_NODES 64
 
 /* Allows compiling code for host and cuda */
 #if defined(__CUDA_ARCH__) && !defined(MAG_CUDA_DEVICE)
@@ -562,13 +562,13 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
 
 /* Humanize memory buf_size. Format and convert a memory buf_size to the appropriate unit. For example. 1024 => 1 KiB */
-extern void mag_humanize_memory_size(size_t n, double *out, const char **unit);
-extern uintptr_t mag_thread_id(void); /* Get current native thread ID. */
-extern FILE *mag_fopen(const char *file, const char *mode);
-extern uint64_t mag_hpc_clock_ns(void); /* Get high precision clock in nanoseconds. */
-extern uint64_t mag_hpc_clock_elapsed_ns(uint64_t start);
-extern double mag_hpc_clock_elapsed_ms(uint64_t start);
-extern uint64_t mag_cycles(void); /* Get current CPU cycles. */
+extern MAG_EXPORT void mag_humanize_memory_size(size_t n, double *out, const char **unit);
+extern MAG_EXPORT uintptr_t mag_thread_id(void); /* Get current native thread ID. */
+extern MAG_EXPORT FILE *mag_fopen(const char *file, const char *mode);
+extern MAG_EXPORT uint64_t mag_hpc_clock_ns(void); /* Get high precision clock in nanoseconds. */
+extern MAG_EXPORT uint64_t mag_hpc_clock_elapsed_ns(uint64_t start);
+extern MAG_EXPORT double mag_hpc_clock_elapsed_ms(uint64_t start);
+extern MAG_EXPORT uint64_t mag_cycles(void); /* Get current CPU cycles. */
 
 #define mag_swap(T, a, b) do { T tmp = (a); (a) = (b); (b) = tmp; } while (0)
 #define mag_xmax(x, y) (((x) > (y)) ? (x) : (y))

@@ -16,6 +16,7 @@
 #include <core/mag_thread.h>
 
 #include "mag_cpu_threadpool.h"
+#include "mag_numa.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,6 +32,7 @@ typedef struct mag_cpu_device_t {
     uint32_t num_allocated_workers;         /* Amount of worker thread used. if == 1 then single threaded mode and thread pool is not created */
     mag_kernel_registry_t kernels;          /* Compute kernels. Specialized by arch optimized version at boot (e.g. AVX, AVX512 etc..) */
     mag_philox4x32_stream_t primary_prng;   /* Primary prng context. */
+    mag_numa_node_controller_t numa_ctrl;
 } mag_cpu_device_t;
 
 #ifdef __cplusplus

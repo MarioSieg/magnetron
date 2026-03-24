@@ -12,6 +12,7 @@
 #include "mag_cpu_threadpool.h"
 #include "mag_cpu_phase_fence.h"
 #include "mag_cpu_kernel_data.h"
+#include "mag_numa.h"
 
 #include <core/mag_tensor.h>
 #include <core/mag_alloc.h>
@@ -63,6 +64,8 @@ static MAG_HOTPROC void *mag_worker_thread_entry(void *arg) {
     snprintf(name, sizeof(name), "mag_worker_%" PRIx64, payload->thread_idx);
     mag_thread_set_name(name);
     /*mag_thread_set_prio(pool->sched_prio);*/
+    if (mag_numa_is_numa(pool->numa_ctrl)) /* Pin numa affinity if numa system */
+        mag_numa_pin_thread_affinity(pool->numa_ctrl, payload->thread_idx);
     mag_atomic32_fetch_add(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
     while (mag_likely(mag_worker_await_work(worker, pool)))  /* Main work loop: wait, work, signal status */
         mag_worker_exec_and_broadcast(pool, kernels, payload);
@@ -71,7 +74,7 @@ static MAG_HOTPROC void *mag_worker_thread_entry(void *arg) {
 }
 
 /* Create thread pool and allocate threads */
-mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_workers, const mag_kernel_registry_t *kernels, mag_thread_prio_t prio) { /* Create a thread pool */
+mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_workers, const mag_kernel_registry_t *kernels, mag_numa_node_controller_t *numa, mag_thread_prio_t prio) { /* Create a thread pool */
     mag_thread_pool_t *pool = (*mag_alloc)(NULL, sizeof(*pool), __alignof(mag_thread_pool_t));
     memset(pool, 0, sizeof(*pool));
     mag_worker_t *workers = (*mag_alloc)(NULL, num_workers*sizeof(*workers), __alignof(mag_worker_t));
@@ -84,7 +87,8 @@ mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_w
         .workers = workers,
         .kernels = kernels,
         .sched_prio = prio,
-        .host_ctx = host_ctx
+        .host_ctx = host_ctx,
+        .numa_ctrl = numa
     };
     mag_phase_fence_init(&pool->fence);
     for (uint32_t ti=0; ti < num_workers; ++ti) { /* Initialize workers */
