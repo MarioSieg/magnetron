@@ -53,7 +53,7 @@ namespace mag {
         mag_tensor_t *r = cmd.out[0];
         const mag_tensor_t *x = cmd.in[0];
         using cast_fn = void (mag_tensor_t *, const mag_tensor_t *);
-        static constexpr cast_fn *const cast_table_2d[MAG_DTYPE__NUM][MAG_DTYPE__NUM] = {
+        static constexpr void (*const cast_table_2D[MAG_DTYPE__NUM][MAG_DTYPE__NUM])(mag_tensor_t *, const mag_tensor_t *) = {
             [MAG_DTYPE_FLOAT32] = {
                 [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<float, float>,
                 [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<float, half>,
@@ -223,10 +223,14 @@ namespace mag {
                 [MAG_DTYPE_INT64] = &mag_cast_launcher<int64_t, int64_t>,
             },
         };
-        static_assert(std::size(cast_table_2d) == static_cast<size_t>(MAG_DTYPE__NUM));
+        static_assert(std::size(cast_table_2D) == static_cast<size_t>(MAG_DTYPE__NUM));
+        static_assert([] -> bool {
+            for (auto *fn : cast_table_2D) if (!fn) return false;
+            return true;
+        }());
         mag_dtype_t src = x->dtype;
         mag_dtype_t dst = r->dtype;
-        cast_fn *kernel = cast_table_2d[src][dst];
+        cast_fn *kernel = cast_table_2D[src][dst];
         mag_assert(kernel, "No kernel found for type cast: %s -> %s", mag_type_trait(src)->name, mag_type_trait(dst)->name);
         (*kernel)(r, x);
     }
@@ -249,10 +253,7 @@ namespace mag {
     }
 
     template <typename scalar_t>
-    static void launch_clone(
-        mag_tensor_t *r,
-        const mag_tensor_t *x
-    ) {
+    static void launch_clone(mag_tensor_t *r, const mag_tensor_t *x) {
         int64_t n = mag_tensor_numel(r);
         auto *pr = reinterpret_cast<scalar_t *>(mag_tensor_data_ptr_mut(r));
         const auto *px = reinterpret_cast<const scalar_t *>(mag_tensor_data_ptr(x));
@@ -751,7 +752,7 @@ namespace mag {
         mag_coords_iter_init(&xc, &x->coords);
         auto *pr = reinterpret_cast<typename op_t::out_t *>(mag_tensor_data_ptr_mut(r));
         const auto *px = reinterpret_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
-        if (std::array<const mag_tensor_t *, 3> tensors {r, x}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
+        if (std::array<const mag_tensor_t *, 2> tensors {r, x}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
             unary_op_kernel<op_t, true><<<blocks, UNARY_BLOCK_SIZE>>>(op_t{}, n, pr, px, rc, xc);
         } else {
             unary_op_kernel<op_t, false><<<blocks, UNARY_BLOCK_SIZE>>>(op_t{}, n, pr, px, rc, xc);
