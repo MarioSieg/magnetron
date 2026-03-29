@@ -821,7 +821,80 @@ namespace mag {
     void unary_op_ceil(const mag_command_t &cmd) { impl_unary_op_fp<op_ceil>(cmd.out[0], cmd.in[0]); }
     void unary_op_round(const mag_command_t &cmd) { impl_unary_op_fp<op_round>(cmd.out[0], cmd.in[0]); }
     void unary_op_trunc(const mag_command_t &cmd) { impl_unary_op_fp<op_trunc>(cmd.out[0], cmd.in[0]); }
-    void unary_op_softmax(const mag_command_t &cmd) { impl_unary_op_fp<op_softmax>(cmd.out[0], cmd.in[0]); }
+
+    template <typename T>
+    [[nodiscard]] __device__ __forceinline__ float to_f32(T x) {
+        if constexpr (std::is_same_v<T, float>) return x;
+        else if constexpr (std::is_same_v<T, half>) return __half2float(x);
+        else return __bfloat162float(x);
+    }
+
+    template <typename T>
+    [[nodiscard]] __device__ __forceinline__ T from_f32(float x) {
+        if constexpr (std::is_same_v<T, float>) return x;
+        else if constexpr (std::is_same_v<T, half>) return __float2half(x);
+        else return __float2bfloat16(x);
+    }
+
+    template <typename scalar_t>
+    __global__ static void softmax_lastdim_kernel(
+        int64_t rows,
+        int64_t last_dim,
+        scalar_t *__restrict__ out,
+        const scalar_t *__restrict__ in
+    ) {
+        int64_t row = static_cast<int64_t>(blockIdx.x) * static_cast<int64_t>(blockDim.x) + threadIdx.x;
+        if (row >= rows) return;
+        const scalar_t *row_in = in + row * last_dim;
+        scalar_t *row_out = out + row * last_dim;
+        float maxv = to_f32(row_in[0]);
+        for (int64_t i = 1; i < last_dim; ++i) {
+            float v = to_f32(row_in[i]);
+            if (v > maxv) maxv = v;
+        }
+        double sum = 0.0;
+        for (int64_t i = 0; i < last_dim; ++i) {
+            float e = __expf(to_f32(row_in[i]) - maxv);
+            row_out[i] = from_f32<scalar_t>(e);
+            sum += e;
+        }
+        if (!isfinite(sum) || sum <= 0.0) {
+            float inv = 1.0f / static_cast<float>(last_dim);
+            for (int64_t i = 0; i < last_dim; ++i)
+                row_out[i] = from_f32<scalar_t>(inv);
+        } else {
+            float inv = static_cast<float>(1.0 / sum);
+            for (int64_t i = 0; i < last_dim; ++i)
+                row_out[i] = from_f32<scalar_t>(to_f32(row_out[i]) * inv);
+        }
+    }
+
+    template <typename scalar_t>
+    static void launch_softmax_lastdim(mag_tensor_t *r, const mag_tensor_t *x) {
+        mag_assert(mag_tensor_is_contiguous(x), "Softmax input tensor must be contiguous");
+        mag_assert(mag_tensor_is_contiguous(r), "Softmax output tensor must be contiguous");
+        int64_t rank = r->coords.rank;
+        int64_t numel = r->numel;
+        if (mag_unlikely(!numel)) return;
+        int64_t last_dim = rank == 0 ? 1 : r->coords.shape[rank - 1];
+        int64_t rows = rank == 0 ? 1 : (numel / last_dim);
+        auto *o = reinterpret_cast<scalar_t *>(mag_tensor_data_ptr_mut(r));
+        const auto *i = reinterpret_cast<const scalar_t *>(mag_tensor_data_ptr(x));
+        int64_t blocks = (rows + UNARY_BLOCK_SIZE - 1) / UNARY_BLOCK_SIZE;
+        softmax_lastdim_kernel<scalar_t><<<blocks, UNARY_BLOCK_SIZE>>>(rows, last_dim, o, i);
+    }
+
+    void unary_op_softmax(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        const mag_tensor_t *x = cmd.in[0];
+        mag_assert2(r->dtype == x->dtype);
+        switch (r->dtype) {
+            case MAG_DTYPE_FLOAT32: launch_softmax_lastdim<float>(r, x); break;
+            case MAG_DTYPE_FLOAT16: launch_softmax_lastdim<half>(r, x); break;
+            case MAG_DTYPE_BFLOAT16: launch_softmax_lastdim<__nv_bfloat16>(r, x); break;
+            default: mag_assert(false, "Unsupported dtype for softmax");
+        }
+    }
     void unary_op_softmax_dv(const mag_command_t &cmd) { impl_unary_op_fp<op_softmax_dv>(cmd.out[0], cmd.in[0]); }
     void unary_op_sigmoid(const mag_command_t &cmd) { impl_unary_op_fp<op_sigmoid>(cmd.out[0], cmd.in[0]); }
     void unary_op_sigmoid_dv(const mag_command_t &cmd) { impl_unary_op_fp<op_sigmoid_dv>(cmd.out[0], cmd.in[0]); }
