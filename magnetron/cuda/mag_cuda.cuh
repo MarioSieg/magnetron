@@ -34,8 +34,12 @@ namespace mag {
 
   template <typename scalar_t>
   [[nodiscard]] scalar_t unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
-    if constexpr (std::is_same_v<scalar_t, float> || std::is_same_v<scalar_t, half>) return static_cast<scalar_t>(mag_op_attr_unwrap_float64(params[i]));
-    else if constexpr (std::is_signed_v<scalar_t>) return static_cast<scalar_t>(mag_op_attr_unwrap_int64(params[i]));
-    else return static_cast<scalar_t>(mag_op_attr_unwrap_uint64(params[i]));
+    if constexpr (std::is_same_v<scalar_t, float> || std::is_same_v<scalar_t, half> || std::is_same_v<scalar_t, __nv_bfloat16>) {
+      return static_cast<scalar_t>(mag_op_attr_unwrap_float64(params[i]));
+    } else if constexpr (std::is_signed_v<scalar_t>) {
+      return static_cast<scalar_t>(mag_op_attr_unwrap_int64(params[i]));
+    } else {
+      return static_cast<scalar_t>(mag_op_attr_unwrap_uint64(params[i]));
+    }
   }
 }

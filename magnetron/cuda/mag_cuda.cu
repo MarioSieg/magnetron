@@ -125,6 +125,8 @@ namespace mag {
     }
 
     [[nodiscard]] static mag_status_t submit(mag_device_t *dvc, const mag_command_t *cmd) {
+        mag_cuda_check(cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)));
+
         static constexpr auto *op_nop = +[](const mag_command_t &) -> void { };
 
         static constexpr void(*dispatch_table[])(const mag_command_t &) = {
@@ -242,6 +244,8 @@ namespace mag {
     [[nodiscard]] static mag_status_t alloc_storage_buffer(mag_device_t *dvc, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype) {
         mag_context_t *ctx = dvc->ctx;
         uintptr_t base;
+        if (cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)) != cudaSuccess)
+            return MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED;
         if (cudaMalloc(reinterpret_cast<void **>(&base), size) != cudaSuccess)
             return MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED;
         *out = static_cast<mag_storage_buffer_t *>(mag_slab_alloc(&ctx->storage_slab));
@@ -258,8 +262,11 @@ namespace mag {
         mag_rc_init_object(*out, +[](void *self) -> mag_status_t {
             auto *buffer = static_cast<mag_storage_buffer_t *>(self);
             mag_context_t *ctx = buffer->ctx;
+            mag_device_t *dvc = buffer->device;
             auto *base = reinterpret_cast<void *>(buffer->base);
             mag_slab_free(&ctx->storage_slab, buffer);
+            if (cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)) != cudaSuccess)
+                return MAG_STATUS_ERR_MEMORY_DEALLOCATION_FAILED;
             return cudaFree(base) == cudaSuccess ? MAG_STATUS_OK : MAG_STATUS_ERR_MEMORY_DEALLOCATION_FAILED;
         });
         return MAG_STATUS_OK;
