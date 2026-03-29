@@ -224,7 +224,7 @@ namespace mag {
             },
         };
         static_assert(std::size(cast_table_2D) == static_cast<size_t>(MAG_DTYPE__NUM));
-        static_assert([] -> bool {
+        static_assert([]() -> bool {
             for (auto *fn : cast_table_2D) if (!fn) return false;
             return true;
         }());

@@ -11,6 +11,9 @@
 
 #include "prelude.hpp"
 
+#include <string_view>
+#include <sstream>
+#include <charconv>
 #include <algorithm>
 
 namespace mag::bindings {
@@ -20,7 +23,7 @@ namespace mag::bindings {
         PyObject *t = PyTuple_New(n);
         if (!t) throw nb::python_error {};
         for (Py_ssize_t i=0; i < n; ++i) {
-            PyObject *v = PyLong_FromLongLong(static_cast<long long>(p[i]));
+            PyObject *v = PyLong_FromLongLong(static_cast<long long int>(p[i]));
             if (!v) {
                 Py_DECREF(t);
                 throw nb::python_error {};
@@ -30,28 +33,28 @@ namespace mag::bindings {
         return nb::steal<nb::tuple>(t);
     }
 
-    tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt) {
+    tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt, mag_device_id_t device) {
         mag_context_t *ctx = get_ctx();
         mag_tensor_t *out = nullptr;
         if (nb::isinstance<nb::bool_>(obj)) { // Prefer bool first: in Python, bool is a subclass of int.
             bool b = nb::cast<bool>(obj);
             mag_scalar_t s = mag_scalar_from_u64(!!b);
             mag_error_t err {};
-            throw_if_error(mag_scalar(&err, &out, ctx, dt, s), err);
+            throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
             return tensor_wrapper{out};
         }
         if (nb::isinstance<nb::int_>(obj)) { // Python int is arbitrary precision; nb::cast<int64_t> will throw if too big.
             auto v = nb::cast<int64_t>(obj);
             mag_scalar_t s = mag_scalar_from_i64(v);
             mag_error_t err {};
-            throw_if_error(mag_scalar(&err, &out, ctx, dt, s), err);
+            throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
             return tensor_wrapper{out};
         }
         if (nb::isinstance<nb::float_>(obj)) {
             auto v = nb::cast<double>(obj);
             mag_scalar_t s = mag_scalar_from_f64(v);
             mag_error_t err {};
-            throw_if_error(mag_scalar(&err, &out, ctx, dt, s), err);
+            throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
             return tensor_wrapper{out};
         }
         throw nb::type_error("rhs must be Tensor, int, float, or bool");
@@ -59,7 +62,7 @@ namespace mag::bindings {
 
     tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs) {
         if (nb::isinstance<tensor_wrapper>(rhs)) return nb::cast<tensor_wrapper>(rhs);
-        return tensor_from_py_scalar(rhs, mag_tensor_type(*lhs));
+        return tensor_from_py_scalar(rhs, mag_tensor_type(*lhs), mag_tensor_device_id(*lhs));
     }
 
     std::vector<int64_t> parse_shape_from_args(const nb::args &args) {
@@ -180,5 +183,44 @@ namespace mag::bindings {
             ss << ")";
         }
         return ss.str();
+    }
+
+    std::optional<mag_device_id_t> parse_device_id_str(std::string &&str) {
+        std::string_view input{str};
+        if (input.empty()) return std::nullopt;
+        auto sep = input.find(':');
+        std::string_view name = input.substr(0, sep);
+        if (name.empty() || name.size() >= 32) return std::nullopt;
+        const auto iequals = [](std::string_view a, const char* b) -> bool {
+            size_t i=0;
+            for (; i < a.size() && b[i] != '\0'; ++i) {
+                const auto ac = static_cast<unsigned char>(a[i]);
+                const auto bc = static_cast<unsigned char>(b[i]);
+                if (std::tolower(ac) != std::tolower(bc)) return false;
+            }
+            return i == a.size() && b[i] == '\0';
+        };
+        mag_backend_type_t type = MAG_BACKEND_TYPE__COUNT;
+        static_assert(static_cast<std::underlying_type_t<mag_backend_type_t>>(MAG_BACKEND_TYPE_CPU) == 0);
+        for (std::underlying_type_t<mag_backend_type_t> type_idx = MAG_BACKEND_TYPE_CPU; type_idx < MAG_BACKEND_TYPE__COUNT; ++type_idx) {
+            if (iequals(name, mag_backend_type_to_str(static_cast<mag_backend_type_t>(type_idx)))) {
+                type = static_cast<mag_backend_type_t>(type_idx);
+                break;
+            }
+        }
+        if (type == MAG_BACKEND_TYPE__COUNT) return std::nullopt;
+        uint32_t ordinal = 0;
+        if (sep != std::string_view::npos) {
+            std::string_view ord_str = input.substr(sep + 1);
+            if (ord_str.empty()) return std::nullopt;
+            const char *first = ord_str.data();
+            const char *last  = ord_str.data() + ord_str.size();
+            auto [ptr, ec] = std::from_chars(first, last, ordinal);
+            if (ec != std::errc{} || ptr != last) return std::nullopt;
+        }
+        return mag_device_id_t{
+            .type = type,
+            .device_ordinal = ordinal,
+        };
     }
 }

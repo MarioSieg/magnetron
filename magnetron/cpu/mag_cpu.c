@@ -172,7 +172,7 @@ static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_thr
     mag_device_t *device = (*mag_alloc)(NULL, sizeof(*device), 0);
     *device = (mag_device_t) { /* Initialize device interface */
         .ctx = ctx,
-        .id = MAG_DEVICE_ID_CPU,
+        .id = mag_device(CPU, 0),
         .physical_device_name = "CPU",
         .impl = cpu_dvc,
         .is_async = false,

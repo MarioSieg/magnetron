@@ -126,8 +126,8 @@ namespace mag::bindings {
             mag_dtype_t promoted {};
             if (!mag_promote_type(&promoted, dx.v, dy.v))
                 throw nb::type_error("where: could not promote scalar dtypes for x and y");
-            x = tensor_from_py_scalar(xh, promoted);
-            y = tensor_from_py_scalar(yh, promoted);
+            x = tensor_from_py_scalar(xh, promoted, mag_tensor_device_id(*cond));
+            y = tensor_from_py_scalar(yh, promoted, mag_tensor_device_id(*cond));
         }
         if (!x || !y) throw nb::value_error("where: x and y must not be null");
         return {x, y};

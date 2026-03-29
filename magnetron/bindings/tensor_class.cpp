@@ -84,6 +84,13 @@ namespace mag::bindings {
             std::lock_guard lock {get_global_mutex()};
             return tuple_from_i64_span(mag_tensor_strides_ptr(*self), mag_tensor_rank(*self));
         }, "Tuple of strides (in elements) per dimension.")
+        .def_prop_ro("device", [](const tensor_wrapper &self) -> std::string {
+            std::lock_guard lock {get_global_mutex()};
+            auto id = mag_tensor_device_id(*self);
+            char fmt[32] = {0};
+            mag_device_id_to_str(id, &fmt);
+            return fmt;
+        }, "Device where the tensor is stored (e.g. 'cpu', 'cuda:0').")
         .def_prop_ro("data_ptr", [](const tensor_wrapper &self) -> uintptr_t {
             std::lock_guard lock {get_global_mutex()};
             return mag_tensor_data_ptr(*self);

@@ -11,15 +11,13 @@
 
 #pragma once
 
-#include <atomic>
 #include <functional>
 #include <exception>
 #include <mutex>
-#include <sstream>
 #include <string>
-#include <memory>
 #include <vector>
 #include <optional>
+#include <sstream>
 
 #include <magnetron/magnetron.h>
 
@@ -35,6 +33,8 @@ namespace mag::bindings {
     // Lazy init the context, destruction is handled by the module destructor.
     [[nodiscard]] extern mag_context_t *get_ctx();
     [[nodiscard]] extern std::mutex &get_global_mutex();
+    [[nodiscard]] extern const std::string &get_default_device_unlocked();
+    [[nodiscard]] extern std::string get_default_device();
 
     struct dtype_wrapper final { mag_dtype_t v; };
 
@@ -101,7 +101,7 @@ namespace mag::bindings {
     };
 
     [[nodiscard]] extern nb::tuple tuple_from_i64_span(const int64_t *p, Py_ssize_t n);
-    [[nodiscard]] extern tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt);
+    [[nodiscard]] extern tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt, mag_device_id_t device);
     [[nodiscard]] extern tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs);
     [[nodiscard]] extern std::vector<int64_t> parse_shape_from_args(const nb::args &args);
     extern void validate_shape(const std::vector<int64_t> &shape);
@@ -112,6 +112,7 @@ namespace mag::bindings {
     [[nodiscard]] extern nb::object py_scalar_from_mag_scalar(const mag_scalar_t &scalar);
     [[nodiscard]] extern dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h);
     [[nodiscard]] extern std::string format_error_msg(const mag_error_t &err);
+    [[nodiscard]] extern std::optional<mag_device_id_t> parse_device_id_str(std::string &&str);
 
     inline void throw_if_error(mag_status_t st, const mag_error_t &err) {
         if (st == MAG_STATUS_OK) return;

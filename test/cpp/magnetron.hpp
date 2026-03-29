@@ -33,8 +33,8 @@ namespace magnetron {
      */
     class context final {
     public:
-        context(const char *device_id = "cpu") noexcept {
-            m_ctx = mag_ctx_create(device_id);
+        context() noexcept {
+            m_ctx = mag_ctx_create();
         }
 
         context(context&&) = default;
@@ -120,13 +120,13 @@ namespace magnetron {
     class tensor final {
     public:
         tensor(context& ctx, dtype type, std::initializer_list<int64_t> shape) {
-            if (shape.size() == 1 && *shape.begin() == 1) handle_error(mag_empty_scalar(&g_error, &m_tensor, &*ctx, static_cast<mag_dtype_t>(type)), &*ctx);
-            else handle_error(mag_empty(&g_error, &m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.begin()), &*ctx);
+            if (shape.size() == 1 && *shape.begin() == 1) handle_error(mag_empty_scalar(&g_error, &m_tensor, &*ctx, static_cast<mag_dtype_t>(type), mag_device(CPU, 0)), &*ctx);
+            else handle_error(mag_empty(&g_error, &m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.begin(), mag_device(CPU, 0)), &*ctx);
         }
 
         tensor(context& ctx, dtype type, const std::vector<int64_t>& shape) {
-            if (shape.size() == 1 && *shape.begin() == 1) handle_error(mag_empty_scalar(&g_error, &m_tensor, &*ctx, static_cast<mag_dtype_t>(type)), &*ctx);
-            else handle_error(mag_empty(&g_error, &m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.data()), &*ctx);
+            if (shape.size() == 1 && *shape.begin() == 1) handle_error(mag_empty_scalar(&g_error, &m_tensor, &*ctx, static_cast<mag_dtype_t>(type), mag_device(CPU, 0)), &*ctx);
+            else handle_error(mag_empty(&g_error, &m_tensor, &*ctx, static_cast<mag_dtype_t>(type), shape.size(), shape.data(), mag_device(CPU, 0)), &*ctx);
         }
 
         template <typename... S, typename = std::enable_if_t<std::conjunction_v<std::is_integral<std::decay_t<S>>...>>>
@@ -698,22 +698,22 @@ namespace magnetron {
         }
         [[nodiscard]] auto add(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_scalar(&g_error, &sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other)));
+            handle_error(mag_scalar(&g_error, &sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other), mag_device(CPU, 0)));
             return add(tensor{sca});
         }
         [[nodiscard]] auto sub(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_scalar(&g_error, &sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other)));
+            handle_error(mag_scalar(&g_error, &sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other), mag_device(CPU, 0)));
             return sub(tensor{sca});
         }
         [[nodiscard]] auto mul(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_scalar(&g_error, &sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other)));
+            handle_error(mag_scalar(&g_error, &sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other), mag_device(CPU, 0)));
             return mul(tensor{sca});
         }
         [[nodiscard]] auto div(double other) const noexcept -> tensor {
             mag_tensor_t *sca = nullptr;
-            handle_error(mag_scalar(&g_error, &sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other)));
+            handle_error(mag_scalar(&g_error, &sca, mag_tensor_context(m_tensor), mag_tensor_type(m_tensor), mag_scalar_from_f64(other), mag_device(CPU, 0)));
             return div(tensor{sca});
         }
         [[nodiscard]] auto band(tensor other) const noexcept -> tensor {

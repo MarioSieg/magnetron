@@ -20,30 +20,6 @@
 extern "C" {
 #endif
 
-/* Name, ID, Required */
-#define mag_backenddef(_)\
-    _(CPU, cpu, true)\
-    _(CUDA, cuda, false)\
-    _(CUSTOM, custom, false)\
-
-typedef enum mag_backend_type_t {
-#define _(name, id, required) MAG_BACKEND_TYPE_##name,
-    mag_backenddef(_)
-    MAG_BACKEND_TYPE__COUNT
-#undef _
-} mag_backend_type_t;
-extern const char *mag_backend_type_to_str(mag_backend_type_t type);
-extern bool mag_backend_type_is_required(mag_backend_type_t type);
-
-typedef struct mag_device_id_t {
-    mag_backend_type_t type;        /* Backend type, (e.g. CPU, CUDA, etc..) */
-    uint32_t device_ordinal;        /* Device index for the given backend type, (e.g. 0 for cuda:0). */
-} mag_device_id_t;
-extern void mag_device_id_to_str(mag_device_id_t id, char (*buf)[32]);
-extern bool mag_device_id_parse(mag_device_id_t *id, const char *str);
-
-#define MAG_DEVICE_ID_CPU ((mag_device_id_t){.type=MAG_BACKEND_TYPE_CPU, .device_ordinal=0})
-
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 typedef struct mag_device_t mag_device_t;
 
@@ -143,6 +119,7 @@ typedef struct mag_backend_registry_t mag_backend_registry_t;
 
 extern MAG_EXPORT mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
 extern MAG_EXPORT bool mag_backend_registry_get_backend_and_device_by_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
+extern MAG_EXPORT void mag_backend_registry_iter_devices(mag_backend_registry_t *reg, void (*callback)(mag_backend_t *bck, mag_device_t *dvc, void *usr), void *usr);
 extern MAG_EXPORT void mag_backend_registry_free(mag_backend_registry_t *reg);
 
 #ifdef __cplusplus

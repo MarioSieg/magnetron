@@ -58,9 +58,9 @@ mag_status_t mag_op_backward_abs(mag_error_t *err, mag_au_state_t *node, mag_ten
     mag_tensor_t *sign = NULL;
     stat = mag_step(err, &step, x);
     if (mag_iserr(stat)) goto error;
-    stat = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_f64(1.0));
+    stat = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_f64(1.0), mag_tensor_device_id(x));
     if (mag_iserr(stat)) goto error;
-    stat = mag_scalar(err, &two, x->ctx, x->dtype, mag_scalar_from_f64(2.0));
+    stat = mag_scalar(err, &two, x->ctx, x->dtype, mag_scalar_from_f64(2.0), mag_tensor_device_id(x));
     if (mag_iserr(stat)) goto error;
     stat = mag_mul(err, &step2, step, two);
     if (mag_iserr(stat)) goto error;
@@ -78,7 +78,7 @@ error:
 
 mag_status_t mag_op_backward_neg(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
     mag_tensor_t *m1 = NULL;
-    mag_try(mag_scalar(err, &m1, node->grad->ctx, node->grad->dtype, mag_scalar_from_f64(-1.0)));
+    mag_try(mag_scalar(err, &m1, node->grad->ctx, node->grad->dtype, mag_scalar_from_f64(-1.0), mag_tensor_device_id(node->grad)));
     mag_try_or(mag_mul(err, grads, node->grad, m1), {
         mag_rc_decref(m1);
     });
@@ -96,7 +96,7 @@ mag_status_t mag_op_backward_sqr(mag_error_t *err, mag_au_state_t *node, mag_ten
     mag_tensor_t *two = NULL;
     mag_tensor_t *two_x = NULL;
 
-    mag_try(mag_scalar(err, &two, x->ctx, x->dtype, mag_scalar_from_f64(2.0)));
+    mag_try(mag_scalar(err, &two, x->ctx, x->dtype, mag_scalar_from_f64(2.0), mag_tensor_device_id(x)));
     mag_try_or(mag_mul(err, &two_x, x, two), {
         mag_rc_decref(two);
     });
@@ -117,7 +117,7 @@ mag_status_t mag_op_backward_sqrt(mag_error_t *err, mag_au_state_t *node, mag_te
     mag_tensor_t *denom = NULL;
 
     mag_try(mag_sqrt(err, &sqrt_x, x));
-    mag_try_or(mag_scalar(err, &two, x->ctx, x->dtype, mag_scalar_from_f64(2.0)), {
+    mag_try_or(mag_scalar(err, &two, x->ctx, x->dtype, mag_scalar_from_f64(2.0), mag_tensor_device_id(x)), {
         mag_rc_decref(sqrt_x);
     });
     mag_try_or(mag_mul(err, &denom, sqrt_x, two), {

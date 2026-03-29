@@ -11,20 +11,28 @@
 
 #include "prelude.hpp"
 
+#include <atomic>
+
 namespace mag::bindings {
     static std::once_flag g_ctx_once;
     static std::atomic<mag_context_t*> g_ctx{nullptr};
+    static std::string g_default_device = "cpu";
     static std::mutex g_mutex;
 
     mag_context_t *get_ctx() {
         std::call_once(g_ctx_once, [] {
-            mag_context_t *ctx = mag_ctx_create("cpu:0");
+            mag_context_t *ctx = mag_ctx_create();
             g_ctx.store(ctx, std::memory_order_release);
         });
         return g_ctx.load(std::memory_order_acquire);
     }
 
     std::mutex &get_global_mutex() { return g_mutex; }
+    const std::string &get_default_device_unlocked() { return g_default_device; }
+    std::string get_default_device() {
+        std::lock_guard lock {get_global_mutex()};
+        return get_default_device_unlocked();
+    }
 
     static void destroy_ctx(void *) noexcept {
         if (mag_context_t* ctx = g_ctx.exchange(nullptr, std::memory_order_acq_rel))
@@ -88,5 +96,13 @@ namespace mag::bindings {
             std::lock_guard lock {get_global_mutex()};
             return mag_ctx_is_numa_system(get_ctx());
         }, "True if the system is NUMA.");
+        context.def("get_default_device", []() -> std::string {
+            std::lock_guard lock {get_global_mutex()};
+            return g_default_device;
+        }, "Get the default device string (e.g., 'cpu', 'cuda:0').");
+        context.def("set_default_device", [](const std::string &device) {
+            std::lock_guard lock {get_global_mutex()};
+            g_default_device = device;
+        }, "device"_a, "Set the default device string (e.g., 'cpu', 'cuda:0').");
     }
 }

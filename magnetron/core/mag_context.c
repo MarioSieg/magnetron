@@ -121,7 +121,7 @@ static void mag_ctx_dump_banner(void) {
 }
 
 /* Create context with compute device descriptor. */
-mag_context_t *mag_ctx_create(const char *device_id) {
+mag_context_t *mag_ctx_create() {
     mag_setup_environ(); /* Parse and apply environment variables. */
 
     mag_log_info("Creating magnetron context...");
@@ -155,23 +155,6 @@ mag_context_t *mag_ctx_create(const char *device_id) {
         "\nThe backend shared library must be named magnetron_<backend>.{so|dylib|dll}"
         "\nCheck the searched path manually to see if any backends were found."
     );
-    mag_device_id_t requested_dvc = MAG_DEVICE_ID_CPU;
-    ctx->backend = NULL;
-    bool bck_ok = mag_device_id_parse(&requested_dvc, device_id);
-    if (bck_ok) /* If parsing succeeded, try to get the requested backend and device */
-        bck_ok = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, requested_dvc, &ctx->backend, &ctx->active_device);
-    if (mag_unlikely(!bck_ok)) { /* If parsing failed or backend/device retrieval failed, log error and fallback to CPU backend. */
-        mag_log_error(
-            "\nNo suitable magnetron compute backend found for device id %s:%u !"
-           "\nMake sure the specified device id is correct and that the corresponding backend is available.",
-           mag_backend_type_to_str(requested_dvc.type), requested_dvc.device_ordinal
-        );
-        bck_ok = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, MAG_DEVICE_ID_CPU, &ctx->backend, &ctx->active_device);
-        mag_assert(bck_ok, /* CPU backend must be available as fallback, if not we abort as there's no way to run magnetron at all. */
-            "\nFailed to initialize fallback CPU compute backend!"
-            "\nMake sure the magnetron_cpu backend is available next to the magnetron_core library."
-        );
-    }
 
     /* Seed prng once with secure system entropy */
     uint64_t global_seed = 0;
@@ -199,8 +182,6 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     mag_slab_destroy(&ctx->view_meta_slab);
     mag_slab_destroy(&ctx->tensor_slab);
     mag_slab_destroy(&ctx->storage_slab);
-    ctx->active_device = NULL;
-    ctx->backend = NULL;
     mag_backend_registry_free(ctx->backend_registry);
     size_t num_created_tensors = ctx->telemetry.num_created_tensors;
     size_t storage_bytes = ctx->telemetry.storage_bytes_allocated;
@@ -220,7 +201,7 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
 }
 
 const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx) {
-    return ctx->active_device->physical_device_name;
+    return ""; /* TODO */
 }
 
 const char *mag_ctx_get_os_name(const mag_context_t *ctx) {
@@ -271,6 +252,10 @@ bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx) {
     return ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER;
 }
 
+static void mag_seed_callback(mag_backend_t *bck, mag_device_t *dvc, void *usr) {
+    (*dvc->manual_seed)(dvc, *(const uint64_t *)usr);
+}
+
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
-    (*ctx->active_device->manual_seed)(ctx->active_device, seed);
+    mag_backend_registry_iter_devices(ctx->backend_registry, &mag_seed_callback, &seed);
 }

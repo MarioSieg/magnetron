@@ -71,7 +71,16 @@ static void mag_tensor_free_header(mag_tensor_t *t) {
 }
 
 /* Create a new tensor. The must be created on the same thread as the context. */
-mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape) {
+mag_status_t mag_tensor_init(
+    mag_error_t *err,
+    mag_tensor_t **out,
+    mag_context_t *ctx,
+    mag_storage_buffer_t *storage,
+    mag_dtype_t type,
+    int64_t rank,
+    const int64_t *shape,
+    mag_device_id_t device
+) {
     *out = NULL;
     mag_contract(err, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "%" PRIx64 " != %" PRIx64 " Tensor must be created on the same thread as the context.", (uint64_t)mag_thread_id(), (uint64_t)ctx->tr_id);
     mag_contract(err, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Rank must be within [0, %d]", MAG_MAX_DIMS);
@@ -84,15 +93,18 @@ mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t
     }
     int64_t numbytes;
     mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(numel, dts, &numbytes), "Total size overflowed: numel = %" PRIi64 ", dtype size = %" PRIi64, numel, dts);
+    mag_device_t *target_device=NULL;
+    char device_name[32];
+    mag_device_id_to_str(device, &device_name);
+    mag_contract(err, ERR_INVALID_DEVICE, {}, mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, device, NULL, &target_device), "Invalid device id %s, device or backend might not be available", device_name);
     mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
-    mag_device_t *dvc = ctx->active_device;
     if (!storage) {
-        mag_status_t (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = dvc->alloc_storage;
-        mag_try_or((*allocator)(dvc, &tensor->storage, numbytes, type), {
+        mag_status_t (*allocator)(mag_device_t *, mag_storage_buffer_t **, size_t, mag_dtype_t) = target_device->alloc_storage;
+        mag_try_or((*allocator)(target_device, &tensor->storage, numbytes, type), {
             mag_tensor_free_header(tensor);
         });
     } else {
-        mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->device == dvc, "Provided storage device mismatch: tensor device=%s storage device=%s", mag_backend_type_to_str(dvc->id.type), mag_backend_type_to_str(storage->device->id.type));
+        mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->device == target_device, "Provided storage device mismatch: tensor device=%s storage device=%s", mag_backend_type_to_str(target_device->id.type), mag_backend_type_to_str(storage->device->id.type));
         mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->size >= (size_t)numbytes, "Provided storage too small: need=%" PRIi64 " have=%zu", numbytes, storage->size);
         mag_contract(err, ERR_INVALID_PARAM, { mag_tensor_free_header(tensor); }, storage->base != 0 || storage->size == 0, "Provided storage has NULL base");
         tensor->storage = storage;
@@ -115,8 +127,8 @@ mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t
 }
 
 /* Create a new tensor. The must be created on the same thread as the context. */
-mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape) {
-    return mag_tensor_init(err, out, ctx, NULL, type, rank, shape);
+mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_device_id_t device) {
+    return mag_tensor_init(err, out, ctx, NULL, type, rank, shape, device);
 }
 
 mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
@@ -230,6 +242,10 @@ uintptr_t mag_tensor_data_storage_ptr(const mag_tensor_t *tensor) {
 uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor) {
     mag_assert(tensor->storage->flags & MAG_STORAGE_FLAG_ACCESS_W, "Tensor data storage is not writable");
     return mag_tensor_data_storage_ptr(tensor);
+}
+
+mag_device_id_t mag_tensor_device_id(const mag_tensor_t *tensor) {
+    return tensor->storage->device->id;
 }
 
 mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void **out_buf, size_t *out_size_bytes) {

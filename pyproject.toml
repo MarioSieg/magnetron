@@ -52,7 +52,7 @@ test = [
 [tool.scikit-build.cmake.define]
 # Enable / disable backends
 MAGNETRON_ENABLE_BACKEND_CPU = true
-MAGNETRON_ENABLE_BACKEND_CUDA = false
+MAGNETRON_ENABLE_BACKEND_CUDA = true
 
 # Enable / disable features
 MAGNETRON_BUILD_PYTHON_BINDINGS = true # Required for the Python package

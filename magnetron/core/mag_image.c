@@ -31,7 +31,7 @@
 #include <stb/stb_image.h>
 #include <stb/stb_image_resize2.h>
 
-mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height) {
+mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height, mag_device_id_t device) {
     int c = !strcmp(channels, "GRAY") ? 1 : !strcmp(channels, "GRAY_ALPHA") ? 2 : !strcmp(channels, "RGB") ? 3 : !strcmp(channels, "RGBA") ? 4 : -1;
     mag_contract(err, ERR_INVALID_PARAM, {}, (unsigned)c-1 < 4u, "c must be in {1,2,3,4}, got %d", c);
     int w, h, cf;
@@ -40,7 +40,7 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
         if (pixels) stbi_image_free(pixels);
         return MAG_STATUS_ERR_IMAGE_ERROR;
     }
-    uint32_t target_w = resize_width  > 0 ? resize_width  : (uint32_t)w;
+    uint32_t target_w = resize_width > 0 ? resize_width : (uint32_t)w;
     uint32_t target_h = resize_height > 0 ? resize_height : (uint32_t)h;
     if ((uint32_t)w != target_w || (uint32_t)h != target_h) {
         stbir_pixel_layout layout = c == 1 ? STBIR_1CHANNEL : c == 2 ? STBIR_RA : c == 3 ? STBIR_RGB : STBIR_RGBA;
@@ -55,7 +55,7 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
         h = (int)target_h;
     }
     mag_tensor_t *tensor;
-    mag_try_or(mag_empty(err, &tensor, ctx, MAG_DTYPE_UINT8, 3, (int64_t[3]){c, h, w}), {
+    mag_try_or(mag_empty(err, &tensor, ctx, MAG_DTYPE_UINT8, 3, (int64_t[3]){c, h, w}, mag_device(CPU, 0)), {
         stbi_image_free(pixels);
     });
     uint8_t *restrict dst = (uint8_t *)mag_tensor_data_ptr_mut(tensor);

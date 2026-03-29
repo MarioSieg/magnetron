@@ -519,7 +519,7 @@ static bool mag_snapshot_insert_tensor_by_id(mag_snapshot_t *snap, uint32_t key_
     return true;
 }
 
-extern mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape);
+extern mag_status_t mag_tensor_init(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_storage_buffer_t *storage, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_device_id_t device);
 
 static mag_status_t mag_cpu_storage_dtor(void *self) {
     mag_storage_buffer_t *buf = self;
@@ -567,7 +567,6 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
     mag_snap_verify(filename && *filename, return false);
     const char *ext = strrchr(filename, '.'); /* check that the file extension is .mag */
     mag_snap_verify(ext != NULL && strcmp(ext, ".mag") == 0, return false);
-    mag_snap_verify(ctx->active_device->id.type == MAG_BACKEND_TYPE_CPU, return false); /* Only CPU deserialization is supported at the moment */
 
     mag_tensor_desc_t *stable = NULL;
     mag_snapshot_t *snap = mag_snapshot_new(ctx);
@@ -612,6 +611,9 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
 
     snap->nb_meta = mag_stream_needle(stream); /* Everything up to here is metadata */
 
+    mag_device_t *cpu_device=NULL;
+    mag_snap_verify(mag_backend_registry_get_backend_and_device_by_id(snap->ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device), goto error);
+
     uint64_t offs=0;
     for (size_t i=0; i < nt; ++i) {
         const mag_tensor_desc_t *desc = stable+i;
@@ -624,9 +626,9 @@ mag_snapshot_t *mag_snapshot_deserialize(mag_context_t *ctx, const char *filenam
         const uint8_t *blob = NULL;
         mag_snap_verify(mag_stream_rbytes_view(stream, &blob, nbytes), goto error);
         mag_storage_buffer_t *storage = NULL;
-        mag_cpu_borrow_storage(ctx->active_device, &storage, blob, nbytes, desc->dtype, snap->mmap_owner);
+        mag_cpu_borrow_storage(cpu_device, &storage, blob, nbytes, desc->dtype, snap->mmap_owner);
         mag_tensor_t *tensor = NULL;
-        mag_snap_verify(mag_isok(mag_tensor_init(NULL, &tensor, ctx, storage, desc->dtype, desc->rank, shape)), goto error);
+        mag_snap_verify(mag_isok(mag_tensor_init(NULL, &tensor, ctx, storage, desc->dtype, desc->rank, shape, mag_device(CPU, 0))), goto error);
         mag_snap_verify(mag_snapshot_insert_tensor_by_id(snap, desc->key_id, tensor), mag_tensor_decref(tensor); goto error);
         mag_tensor_decref(tensor); /* Decref as the snapshot now holds a reference */
         mag_rc_decref(storage); /* Decref as the snapshot now holds a reference */
@@ -715,7 +717,7 @@ bool mag_snapshot_serialize(mag_snapshot_t *snap, const char *filename) {
     /* Compute checksum of metadata before data section starts */
     const uint8_t *chk_end = stream.pos;
     mag_device_t *dvc_interface;
-    mag_backend_registry_get_backend_and_device_by_id(snap->ctx->backend_registry, MAG_DEVICE_ID_CPU, NULL, &dvc_interface);
+    mag_backend_registry_get_backend_and_device_by_id(snap->ctx->backend_registry, mag_device(CPU, 0), NULL, &dvc_interface);
     mag_assert2(dvc_interface);
     mag_cpu_device_t *dvc_impl = dvc_interface->impl;
     mag_assert2(dvc_impl);

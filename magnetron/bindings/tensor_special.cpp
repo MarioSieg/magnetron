@@ -169,7 +169,7 @@ namespace mag::bindings {
                         data.emplace_back(nb::cast<int64_t>(v));
                     auto sh = static_cast<int64_t>(data.size());
                     mag_tensor_t *idx_tensor = nullptr;
-                    throw_if_error(mag_empty(&err, &idx_tensor, get_ctx(), MAG_DTYPE_INT64, 1, &sh), err);
+                    throw_if_error(mag_empty(&err, &idx_tensor, get_ctx(), MAG_DTYPE_INT64, 1, &sh, mag_tensor_device_id(*self)), err);
                     on_scope_exit defer_idx {[idx_tensor] { mag_tensor_decref(idx_tensor); }};
                     throw_if_error(mag_copy_raw_(&err, idx_tensor, data.data(), data.size() * sizeof(int64_t)), err);
                     mag_tensor_t *out = nullptr;

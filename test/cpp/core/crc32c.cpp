@@ -71,7 +71,7 @@ static uint32_t crc32c_ref(const uint8_t *buf, size_t len) {
 TEST(crc32c, test_correctness) {
     context ctx {};
     mag_device_t *cpu;
-    auto cpudvc = MAG_DEVICE_ID_CPU;
+    auto cpudvc = mag_device(CPU, 0);
     mag_backend_registry_get_backend_and_device_by_id((*ctx).backend_registry, cpudvc, nullptr, &cpu);
     ASSERT_NE(cpu, nullptr);
     ASSERT_NE(cpu->impl, nullptr);
@@ -110,7 +110,7 @@ static inline void do_not_optimize_u32(uint32_t x) {
 TEST(crc32c, benchmark_throughput_gibs) {
     context ctx{};
     mag_device_t* cpu = nullptr;
-    auto cpudvc = MAG_DEVICE_ID_CPU;
+    auto cpudvc = mag_device(CPU, 0);
     mag_backend_registry_get_backend_and_device_by_id((*ctx).backend_registry, cpudvc, nullptr, &cpu);
     ASSERT_NE(cpu, nullptr);
     ASSERT_NE(cpu->impl, nullptr);
