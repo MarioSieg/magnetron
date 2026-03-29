@@ -6,11 +6,11 @@ import torch.nn.functional
 
 from ..common import *
 
-@pytest.mark.parametrize('src_dtype', ALL_DTYPES)
-@pytest.mark.parametrize('dst_dtype', ALL_DTYPES)
+@pytest.mark.parametrize('src_dtype', dtype.all)
+@pytest.mark.parametrize('dst_dtype', dtype.all)
 def test_cast_op(src_dtype: dtype.DType, dst_dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
-        x = random_tensor(shape, dtype=src_dtype)
+        x = random_tensor(shape, dt=src_dtype)
         r = x.cast(dst_dtype)
         torch.testing.assert_close(totorch(r), totorch(x).to(totorch_dtype(dst_dtype)), equal_nan=True)
 

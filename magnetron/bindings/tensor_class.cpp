@@ -161,22 +161,27 @@ namespace mag::bindings {
             auto *tensor = *self;
             if (tensor->storage->device->id.type != MAG_BACKEND_TYPE_CPU)
                 throw nb::value_error("tolist() only supports CPU tensors");
-            enum class CastedTypeFamily { Float, Int, Bool };
+            enum class CastedTypeFamily { F64, I64, U64, Bool };
             CastedTypeFamily casted_type {};
             mag_tensor_t *contig = nullptr;
             {
                 mag_error_t err {};
                 mag_tensor_t *casted = nullptr;
                 if (mag_tensor_is_floating_point_typed(tensor)) {
-                   throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_FLOAT32), err);
-                   casted_type = CastedTypeFamily::Float;
-                } else if (mag_tensor_is_integer_typed(tensor)) {
-                   throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_INT64), err);
-                   casted_type = CastedTypeFamily::Int;
+                    throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_FLOAT32), err);
+                    casted_type = CastedTypeFamily::F64;
+                } else if (mag_tensor_is_signed_integer_typed(tensor)) {
+                    throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_INT64), err);
+                    casted_type = CastedTypeFamily::I64;
+                } else if (mag_tensor_is_unsigned_integer_typed(tensor)) {
+                    throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_UINT64), err);
+                    casted_type = CastedTypeFamily::U64;
                 } else if (mag_tensor_type(tensor) == MAG_DTYPE_BOOLEAN) {
-                   throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_UINT8), err);
-                   casted_type = CastedTypeFamily::Bool;
-                } else throw nb::type_error("Unsupported dtype for tolist()");
+                    throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_UINT8), err);
+                    casted_type = CastedTypeFamily::Bool;
+                } else {
+                    throw nb::type_error("Unsupported dtype for tolist()");
+                }
                 on_scope_exit defer_decref {[casted] { mag_tensor_decref(casted); }};
                 throw_if_error(mag_contiguous(&err, &contig, casted), err);
             }
@@ -185,9 +190,11 @@ namespace mag::bindings {
             int64_t rank = mag_tensor_rank(contig);
             if (rank == 0) { // Handle scalars
                 switch (casted_type) {
-                    case CastedTypeFamily::Float: return nb::float_{*static_cast<const float *>(ptr)};
-                    case CastedTypeFamily::Int: return nb::int_{*static_cast<const int64_t *>(ptr)};
+                    case CastedTypeFamily::F64: return nb::float_{*static_cast<const float *>(ptr)};
+                    case CastedTypeFamily::I64: return nb::int_{*static_cast<const int64_t *>(ptr)};
+                    case CastedTypeFamily::U64: return nb::int_{*static_cast<const uint64_t *>(ptr)};
                     case CastedTypeFamily::Bool: return nb::bool_{static_cast<bool>(*static_cast<const uint8_t *>(ptr))};
+                    default: throw nb::value_error("Unsupported dtype for tolist()");
                 }
             }
             const int64_t *shape = mag_tensor_shape_ptr(contig);
@@ -197,9 +204,11 @@ namespace mag::bindings {
                 strides[i] = strides[i+1]*shape[i+1];
             nb::object result {};
             switch (casted_type) {
-                case CastedTypeFamily::Float: result = build_list_recursive<float, nb::float_>(static_cast<const float *>(ptr), shape, strides.data(), rank, 0, 0); break;
-                case CastedTypeFamily::Int: result = build_list_recursive<int64_t, nb::int_>( static_cast<const int64_t *>(ptr), shape, strides.data(), rank, 0, 0); break;
+                case CastedTypeFamily::F64: result = build_list_recursive<float, nb::float_>(static_cast<const float *>(ptr), shape, strides.data(), rank, 0, 0); break;
+                case CastedTypeFamily::I64: result = build_list_recursive<int64_t, nb::int_>( static_cast<const int64_t *>(ptr), shape, strides.data(), rank, 0, 0); break;
+                case CastedTypeFamily::U64: result = build_list_recursive<uint64_t, nb::int_>( static_cast<const uint64_t *>(ptr), shape, strides.data(), rank, 0, 0); break;
                 case CastedTypeFamily::Bool: result = build_list_recursive<uint8_t, nb::bool_>(static_cast<const uint8_t *>(ptr), shape, strides.data(), rank, 0, 0); break;
+                default: throw nb::value_error("Unsupported dtype for tolist()");
             }
             return result;
         }, "Convert tensor to a nested Python list (CPU only).");

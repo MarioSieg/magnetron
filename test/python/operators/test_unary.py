@@ -1,6 +1,7 @@
 # (c) 2025 Mario 'Neo' Sieg. <mario.sieg.64@gmail.com>
 
 from __future__ import annotations
+from dataclasses import dataclass
 
 import torch.nn.functional
 
@@ -73,7 +74,7 @@ def unary_op(
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.floating)
 @pytest.mark.parametrize('op', _UNARY_OPS)
 def test_unary_op(op: UnaryOpTestCase, dtype: dtype.DType) -> None:
     name = op.name

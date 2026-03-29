@@ -44,7 +44,9 @@ test = [
     "pytest",
     "pytest-xdist",
     "pyinstrument",
-    "rich"
+    "rich",
+    "tokenizers",
+    "huggingface_hub"
 ]
 
 [tool.scikit-build.cmake.define]

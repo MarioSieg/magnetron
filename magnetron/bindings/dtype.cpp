@@ -37,15 +37,40 @@ namespace mag::bindings {
             .def("__hash__", [](const dtype_wrapper &self) noexcept -> size_t { return self.v; })
             .def("__eq__", [](const dtype_wrapper &a, const dtype_wrapper &b) noexcept -> bool { return a.v == b.v; });
 
-        // Bind all dtypes
-        static_assert(MAG_DTYPE_FLOAT32 == 0);
-        nb::set all_types {};
-        for (int dt=MAG_DTYPE_FLOAT32; dt < MAG_DTYPE__NUM; ++dt) {
-            auto dte = static_cast<mag_dtype_t>(dt);
-            auto attr = dtype.attr(mag_type_trait(dte)->name);
-            attr = nb::cast(dtype_wrapper{dte});
-            all_types.add(attr);
+        for (std::underlying_type_t<mag_dtype_t> type=0; type < MAG_DTYPE__NUM; ++type) {
+            auto dte = static_cast<mag_dtype_t>(type);
+            dtype.attr(mag_type_trait(dte)->name) = nb::cast(dtype_wrapper{dte});
         }
-        dtype.attr("all_types") = all_types;
+
+        const auto bind_dtype_set = [&](const char *name, auto pred) -> void {
+            nb::set s {};
+            for (std::underlying_type_t<mag_dtype_t> type = 0; type < MAG_DTYPE__NUM; ++type) {
+                auto dte = static_cast<mag_dtype_t>(type);
+                if constexpr (!std::is_same_v<decltype(pred), std::nullptr_t>)
+                    if (pred && !std::invoke(pred, dte)) continue;
+                s.add(dtype.attr(mag_type_trait(dte)->name));
+            }
+            dtype.attr(name) = s;
+        };
+
+        bind_dtype_set("all", nullptr);
+        bind_dtype_set("floating", [](mag_dtype_t dt) noexcept -> bool {
+            return mag_type_category_is_floating_point(dt);
+        });
+        bind_dtype_set("unsigned", [](mag_dtype_t dt) noexcept -> bool {
+            return mag_type_category_is_unsigned_integer(dt);
+        });
+        bind_dtype_set("signed", [](mag_dtype_t dt) noexcept -> bool {
+            return mag_type_category_is_signed_integer(dt);
+        });
+        bind_dtype_set("integer", [](mag_dtype_t dt) noexcept -> bool {
+            return mag_type_category_is_integer(dt);
+        });
+        bind_dtype_set("integral", [](mag_dtype_t dt) noexcept -> bool {
+            return mag_type_category_is_integral(dt);
+        });
+        bind_dtype_set("numeric", [](mag_dtype_t dt) noexcept -> bool {
+            return mag_type_category_is_numeric(dt);
+        });
     }
 }

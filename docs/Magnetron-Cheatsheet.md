@@ -14,19 +14,19 @@
 
 Magnetron currently supports the following data types, with additional formats planned (e.g. MXFP8).<br>
 
-|   DType   | Type               | Size (bits) | Min value         | Max value        |
+|     DType | Type               | Size (bits) | Min value         | Max value        |
 |----------:|--------------------|------------:|-------------------|------------------|
-| float16   | Floating point     |          16 | $\approx -6.5e4$  | $\approx 6.5e4$  |
-| bfloat16  | Floating point     |          16 | $\approx -3.4e38$ | $\approx 3.4e38$ |
-| float32   | Floating point     |          32 | $\approx -3.4e38$ | $\approx 3.4e38$ |
-| boolean   | Boolean            |           8 | $0$               | $1$              |
-| int8      | Integer (signed)   |           8 | $-2^{7}$          | $2^{7}-1$        |
-| uint8     | Integer (unsigned) |           8 | $0$               | $2^{8}-1$        |
-| int16     | Integer (signed)   |          16 | $-2^{15}$         | $2^{15}-1$       |
-| uint16    | Integer (unsigned) |          16 | $0$               | $2^{16}-1$       |
-| int32     | Integer (signed)   |          32 | $-2^{31}$         | $2^{31}-1$       |
-| uint32    | Integer (unsigned) |          32 | $0$               | $2^{32}-1$       |
-| int64     | Integer (signed)   |          64 | $-2^{63}$         | $2^{63}-1$       |
+|   float16 | Floating point     |          16 | $\approx -6.5e4$  | $\approx 6.5e4$  |
+|  bfloat16 | Floating point     |          16 | $\approx -3.4e38$ | $\approx 3.4e38$ |
+|   float32 | Floating point     |          32 | $\approx -3.4e38$ | $\approx 3.4e38$ |
+|   boolean | Boolean            |           8 | $0$               | $1$              |
+|      int8 | Integer (signed)   |           8 | $-2^{7}$          | $2^{7}-1$        |
+|     uint8 | Integer (unsigned) |           8 | $0$               | $2^{8}-1$        |
+|     int16 | Integer (signed)   |          16 | $-2^{15}$         | $2^{15}-1$       |
+|    uint16 | Integer (unsigned) |          16 | $0$               | $2^{16}-1$       |
+|     int32 | Integer (signed)   |          32 | $-2^{31}$         | $2^{31}-1$       |
+|    uint32 | Integer (unsigned) |          32 | $0$               | $2^{32}-1$       |
+|     int64 | Integer (signed)   |          64 | $-2^{63}$         | $2^{63}-1$       |
 
 ### Examples
 

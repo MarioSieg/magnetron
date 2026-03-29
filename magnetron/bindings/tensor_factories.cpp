@@ -498,9 +498,9 @@ namespace mag::bindings {
                 if (args.empty()) {
                     if (!kwargs.contains("stop") && !kwargs.contains("end"))
                         throw nb::type_error("arange() missing 'stop' or 'end'");
-                    stop_h  = kwargs.contains("stop") ? kwargs["stop"] : kwargs["end"];
-                    start_h = kwargs.contains("start") ? kwargs["start"] : nb::handle{};
-                    step_h  = kwargs.contains("step")  ? kwargs["step"]  : nb::handle{};
+                    stop_h = kwargs.contains("stop") ? kwargs["stop"] : kwargs["end"];
+                    start_h = kwargs.contains("start")? kwargs["start"] : nb::handle{};
+                    step_h = kwargs.contains("step")? kwargs["step"]  : nb::handle{};
                 } else {
                     if (args.size() > 3) {
                         std::ostringstream oss;
@@ -510,12 +510,12 @@ namespace mag::bindings {
                     if (args.size() == 1) {
                         stop_h = args[0];
                     } else if (args.size() == 2) {
-                        start_h = args[0];
-                        stop_h  = args[1];
+                        start_h= args[0];
+                        stop_h= args[1];
                     } else {
-                        start_h = args[0];
-                        stop_h  = args[1];
-                        step_h  = args[2];
+                        start_h= args[0];
+                        stop_h= args[1];
+                        step_h= args[2];
                     }
                 }
                 bool any_float = nb::isinstance<nb::float_>(stop_h) || (start_h.is_valid() && nb::isinstance<nb::float_>(start_h)) || (step_h.is_valid()  && nb::isinstance<nb::float_>(step_h));

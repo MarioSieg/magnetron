@@ -659,6 +659,7 @@ namespace mag::bindings {
         bind_unary_pair(cls, erf, "Error function.");
         bind_unary_pair(cls, erfc, "Complementary error function.");
         bind_unary_pair(cls, exp, "Element-wise exp(x).");
+        bind_unary_pair(cls, exp2, "Element-wise base-2 exponential.");
         bind_unary_pair(cls, expm1, "exp(x) - 1.");
         bind_unary_pair(cls, floor, "Round down to integer.");
         bind_unary_pair(cls, ceil, "Round up to integer.");
@@ -674,7 +675,7 @@ namespace mag::bindings {
                 throw_if_error(mag_softmax(&err, &out, *self), err); // TODO: respect dim
                 return tensor_wrapper{out};
             },
-            "dim"_a,
+            "dim"_a = -1,
             "Softmax over dim (normalizes to sum to 1)."
         );
         cls.def("softmax_",
@@ -687,7 +688,9 @@ namespace mag::bindings {
                 self.p = out;
                 return self;
             },
-            "dim"_a, "In-place softmax.", nb::rv_policy::reference
+            "dim"_a = -1,
+            "In-place softmax.",
+            nb::rv_policy::reference
         );
 
         bind_unary_pair(cls, softmax_dv, "Softmax derivative (for autodiff).");

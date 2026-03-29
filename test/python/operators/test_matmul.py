@@ -5,9 +5,9 @@ from ..common import *
 
 
 _TOLS = {
-    float16: (1e-2, 1e-3),
-    bfloat16: (1e-2, 1e-3),
-    float32: (1e-5, 1e-5),
+    dtype.float16: (1e-2, 1e-3),
+    dtype.bfloat16: (1e-2, 1e-3),
+    dtype.float32: (1e-5, 1e-5),
 }
 
 
@@ -15,12 +15,12 @@ def _atol_rtol(dtype: dtype.DType) -> tuple[float, float]:
     return _TOLS.get(dtype, (1e-5, 1e-5))
 
 
-@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
-def test_matmul_squared(dtype: dtype.DType) -> None:
-    binary_op_square(dtype, lambda x, y: x + y, kind=BinaryOpParamKind.TENSOR)
+#@pytest.mark.parametrize('dtype', dtype.floating)
+#def test_matmul_squared(dtype: dtype.DType) -> None:
+#    binary_op_square(dtype, lambda x, y: x + y, kind=BinaryOpParamKind.TENSOR)
 
 
-@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.floating)
 def test_matmul_full(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     for A, B in matmul_shape_pairs(lim=3, max_total_rank=6):
@@ -32,7 +32,7 @@ def test_matmul_full(dtype: dtype.DType) -> None:
         assert r.shape == rt.shape, f'Expected shape {rt.shape}, got {r.shape}'
         assert torch.allclose(totorch(r), rt, atol=atol, rtol=rtol)
 
-@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.floating)
 def test_matmul_squared(dtype: dtype.DType) -> None:
     shapes = [4, 8, 16, 32, 64, 128, 256, 512, 1024]
     atol, rtol = _atol_rtol(dtype)
@@ -47,7 +47,7 @@ def test_matmul_squared(dtype: dtype.DType) -> None:
         torch.testing.assert_close(totorch(mag_result), np_result, atol=atol, rtol=rtol)
 
 
-@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.floating)
 def test_matmul(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shapes = [
@@ -71,7 +71,7 @@ def test_matmul(dtype: dtype.DType) -> None:
         torch.testing.assert_close(totorch(mag_result), np_result, atol=atol, rtol=rtol)
 
 
-@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.floating)
 def test_matmul_matrix_by_vector(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shapes = [
@@ -95,7 +95,7 @@ def test_matmul_matrix_by_vector(dtype: dtype.DType) -> None:
         torch.testing.assert_close(totorch(mag_result), np_result, atol=atol, rtol=rtol)
 
 
-@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.floating)
 def test_matmul_vector_by_matrix(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shapes = [
@@ -119,7 +119,7 @@ def test_matmul_vector_by_matrix(dtype: dtype.DType) -> None:
         torch.testing.assert_close(totorch(mag_result), np_result, atol=atol, rtol=rtol)
 
 
-@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.floating)
 def test_matmul_scalar_by_matrix(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shapes = [
@@ -142,7 +142,7 @@ def test_matmul_scalar_by_matrix(dtype: dtype.DType) -> None:
         torch.testing.assert_close(totorch(mag_result), np_result, atol=atol, rtol=rtol)
 
 
-@pytest.mark.parametrize('dtype', FLOATING_POINT_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.floating)
 def test_matmul_x_transposed(dtype: dtype.DType) -> None:
     atol, rtol = _atol_rtol(dtype)
     shape_a = (4, 2)

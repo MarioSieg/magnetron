@@ -7,10 +7,12 @@ import torch.nn.functional
 from magnetron import dtype
 from ..common import *
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_view(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
-        x = random_tensor(shape, dtype)
+        if len(shape) == 0: # Requires at least one dim
+            return
+        x = random_tensor(shape, dt=dtype)
         assert not x.is_view
         r = x.view(shape)
         assert r.is_view
@@ -19,25 +21,27 @@ def test_view(dtype: dtype.DType) -> None:
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_reshape(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
+        if len(shape) == 0: # Requires at least one dim
+            return
         new_shape = list(shape)
         random.shuffle(new_shape)
         new_shape = tuple(new_shape)
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         r = x.reshape(new_shape)
         torch.testing.assert_close(totorch(r), totorch(x).reshape(new_shape))
         assert (r.reshape(shape) == x).all()
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_transpose(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) < 2: # transpose requires at least 2 dimensions
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         dim0 = random.randint(0, len(shape)-1)
         dim1 = dim0
         while dim1 == dim0: # ensure different dimensions
@@ -48,22 +52,24 @@ def test_transpose(dtype: dtype.DType) -> None:
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_permute(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
-        x = random_tensor(shape, dtype)
+        if len(shape) == 0: # Requires at least one dim
+            return
+        x = random_tensor(shape, dt=dtype)
         perm = random.sample(range(len(shape)), len(shape))
         r = x.permute(perm)
         torch.testing.assert_close(totorch(r), totorch(x).permute(perm))
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_contiguous(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) < 2:
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         assert x.is_contiguous
         dim0 = 0
         dim1 = 1
@@ -78,24 +84,24 @@ def test_contiguous(dtype: dtype.DType) -> None:
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_squeeze(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0: # squeeze on scalars is not supported
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         dim = random.choice(list(range(-len(shape), len(shape))))
         r = x.squeeze(dim)
         torch.testing.assert_close(totorch(r), totorch(x).squeeze(dim))
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_unsqueeze(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0: # squeeze on scalars is not supported
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         dim = random.choice(list(range(-len(shape), len(shape))))
         r = x.unsqueeze(dim)
         torch.testing.assert_close(totorch(r), totorch(x).unsqueeze(dim))
@@ -103,12 +109,12 @@ def test_unsqueeze(dtype: dtype.DType) -> None:
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_flatten(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0: # squeeze on scalars is not supported
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         start_dim = random.choice(list(range(-len(shape), len(shape))))
         end_dim = start_dim
         while end_dim < start_dim:
@@ -118,12 +124,12 @@ def test_flatten(dtype: dtype.DType) -> None:
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_unflatten(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:  # unflatten on scalars is weird, skip
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         dim = random.choice(list(range(-len(shape), len(shape))))
         dim_norm = dim % len(shape)
         dim_size = shape[dim_norm]
@@ -138,12 +144,12 @@ def test_unflatten(dtype: dtype.DType) -> None:
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_narrow(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         dim = random.choice(range(-len(shape), len(shape)))
         dim_norm = dim % len(shape)
         size = shape[dim_norm]
@@ -159,12 +165,12 @@ def test_narrow(dtype: dtype.DType) -> None:
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_movedim(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) < 2:
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         src = random.randint(-len(shape), len(shape) - 1)
         dst = random.randint(-len(shape), len(shape) - 1)
         r = x.movedim(src, dst)
@@ -173,12 +179,12 @@ def test_movedim(dtype: dtype.DType) -> None:
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_select(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         dim = random.choice(range(-len(shape), len(shape)))
         dim_norm = dim % len(shape)
         size = shape[dim_norm]
@@ -190,12 +196,12 @@ def test_select(dtype: dtype.DType) -> None:
         torch.testing.assert_close(totorch(r), t, equal_nan=True)
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_split_and_cat_roundtrip(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:
             return
-        x = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype)
         rank = len(shape)
         dim = random.randint(-rank, rank - 1)
         dim_norm = dim if dim >= 0 else dim + rank
@@ -216,7 +222,7 @@ def test_split_and_cat_roundtrip(dtype: dtype.DType) -> None:
 
     for_all_shapes(test)
 
-@pytest.mark.parametrize('dtype', ALL_DTYPES)
+@pytest.mark.parametrize('dtype', dtype.all)
 def test_cat(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) == 0:

@@ -59,6 +59,9 @@
 #define mag_shli(x, y, bits) mag_sal(x, y, bits)
 #define mag_shri(x, y, bits) mag_sar(x, y, bits)
 
+#define mag_sgnu(x) ((x)>0)
+#define mag_sgni(x) (((x)>0)-((x)<0))
+
 #define mag_floordivi(x, y) (((x) - mag_remi((x), (y)))/(y))
 #define mag_floordivu(x, y) ((x)/(y))
 #define mag_floordivf(x, y) (floorf((x)/(y)))
@@ -388,16 +391,40 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_FLOAT32] = &mag_abs_float32,
         [MAG_DTYPE_FLOAT16] = &mag_abs_float16,
         [MAG_DTYPE_BFLOAT16] = &mag_abs_bfloat16,
+        [MAG_DTYPE_UINT8] = &mag_abs_uint8,
+        [MAG_DTYPE_INT8] = &mag_abs_int8,
+        [MAG_DTYPE_UINT16] = &mag_abs_uint16,
+        [MAG_DTYPE_INT16] = &mag_abs_int16,
+        [MAG_DTYPE_UINT32] = &mag_abs_uint32,
+        [MAG_DTYPE_INT32] = &mag_abs_int32,
+        [MAG_DTYPE_UINT64] = &mag_abs_uint64,
+        [MAG_DTYPE_INT64] = &mag_abs_int64,
     },
     [MAG_OP_SGN] = {
         [MAG_DTYPE_FLOAT32] = &mag_sgn_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sgn_float16,
         [MAG_DTYPE_BFLOAT16] = &mag_sgn_bfloat16,
+        [MAG_DTYPE_UINT8] = &mag_sgn_uint8,
+        [MAG_DTYPE_INT8] = &mag_sgn_int8,
+        [MAG_DTYPE_UINT16] = &mag_sgn_uint16,
+        [MAG_DTYPE_INT16] = &mag_sgn_int16,
+        [MAG_DTYPE_UINT32] = &mag_sgn_uint32,
+        [MAG_DTYPE_INT32] = &mag_sgn_int32,
+        [MAG_DTYPE_UINT64] = &mag_sgn_uint64,
+        [MAG_DTYPE_INT64] = &mag_sgn_int64,
     },
     [MAG_OP_NEG] = {
         [MAG_DTYPE_FLOAT32] = &mag_neg_float32,
         [MAG_DTYPE_FLOAT16] = &mag_neg_float16,
         [MAG_DTYPE_BFLOAT16] = &mag_neg_bfloat16,
+        [MAG_DTYPE_UINT8] = &mag_neg_uint8,
+        [MAG_DTYPE_INT8] = &mag_neg_int8,
+        [MAG_DTYPE_UINT16] = &mag_neg_uint16,
+        [MAG_DTYPE_INT16] = &mag_neg_int16,
+        [MAG_DTYPE_UINT32] = &mag_neg_uint32,
+        [MAG_DTYPE_INT32] = &mag_neg_int32,
+        [MAG_DTYPE_UINT64] = &mag_neg_uint64,
+        [MAG_DTYPE_INT64] = &mag_neg_int64,
     },
     [MAG_OP_LOG] = {
         [MAG_DTYPE_FLOAT32] = &mag_log_float32,
@@ -423,6 +450,15 @@ static void (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(const mag
         [MAG_DTYPE_FLOAT32] = &mag_sqr_float32,
         [MAG_DTYPE_FLOAT16] = &mag_sqr_float16,
         [MAG_DTYPE_BFLOAT16] = &mag_sqr_bfloat16,
+        [MAG_DTYPE_BOOLEAN] = &mag_sqr_uint8,
+        [MAG_DTYPE_UINT8] = &mag_sqr_uint8,
+        [MAG_DTYPE_INT8] = &mag_sqr_int8,
+        [MAG_DTYPE_UINT16] = &mag_sqr_uint16,
+        [MAG_DTYPE_INT16] = &mag_sqr_int16,
+        [MAG_DTYPE_UINT32] = &mag_sqr_uint32,
+        [MAG_DTYPE_INT32] = &mag_sqr_int32,
+        [MAG_DTYPE_UINT64] = &mag_sqr_uint64,
+        [MAG_DTYPE_INT64] = &mag_sqr_int64,
     },
     [MAG_OP_RCP] = {
         [MAG_DTYPE_FLOAT32] = &mag_rcp_float32,

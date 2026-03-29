@@ -12,7 +12,6 @@
 #include "prelude.hpp"
 
 namespace mag::bindings {
-
     [[nodiscard]] static nb::list expand_ellipsis(nb::tuple idxs, int64_t rank) {
         int64_t consuming = 0;
         int64_t ellipsis_occ = 0;

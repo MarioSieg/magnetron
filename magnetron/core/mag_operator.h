@@ -55,14 +55,14 @@ typedef enum mag_opflags_t {
     _(ALL, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(ANY, 1, 1, ALL, {}, MAG_OP_FLAG_NONE, NULL)__\
     _(TOPK, 1, 2, NUMERIC, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-    _(ABS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, abs)__\
-    _(SGN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(NEG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, neg)__\
+    _(ABS, 1, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, abs)__\
+    _(SGN, 1, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+    _(NEG, 1, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, neg)__\
     _(LOG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, log)__\
     _(LOG10, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(LOG1P, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(LOG2, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-    _(SQR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sqr)__\
+    _(SQR, 1, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, sqr)__\
     _(RCP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
     _(SQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sqrt)__\
     _(RSQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\

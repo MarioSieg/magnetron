@@ -1354,6 +1354,28 @@ static void MAG_HOTPROC mag_vgelu_dv_bfloat16(int64_t numel, mag_bfloat16_t *o, 
         for (int64_t i=0; i < numel; ++i) \
             o[i] = ~x[i]; \
     } \
+    static void mag_vneg_##TF(int64_t numel, T *o, const T *x) { \
+        for (int64_t i=0; i < numel; ++i) \
+            o[i] = -x[i]; \
+    } \
+    static void mag_vabs_##TF(int64_t numel, T *o, const T *x) { \
+        for (int64_t i=0; i < numel; ++i) { \
+            T xi = x[i]; \
+            o[i] = xi < 0 ? -xi : xi; \
+        } \
+    } \
+    static void mag_vsgn_##TF(int64_t numel, T *o, const T *x) { \
+        for (int64_t i=0; i < numel; ++i) { \
+            T xi = x[i]; \
+            o[i] = mag_sgn##SIGNESS(xi); \
+        } \
+    } \
+    static void mag_vsqr_##TF(int64_t numel, T *o, const T *x) { \
+        for (int64_t i=0; i < numel; ++i) { \
+            T xi = x[i]; \
+            o[i] = xi*xi; \
+        } \
+    } \
     static void MAG_HOTPROC mag_veq_##TF(int64_t numel, uint8_t *o, const T *x, const T *y) { \
         for (int64_t i=0; i < numel; ++i) \
             o[i] = x[i]==y[i]; \

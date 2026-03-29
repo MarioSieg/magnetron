@@ -65,7 +65,6 @@ class MagGPT2Model(nn.Module):
         super().__init__()
         self.wte = nn.Embedding(vocab_size, n_embd)
         self.wpe = nn.Embedding(n_ctx, n_embd)
-        self.drop = nn.Dropout(0.1)
         self.h = nn.ModuleList([MagGPT2Block(n_embd, n_head, n_inner) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd, eps=1e-5)
 
@@ -121,7 +120,6 @@ class TorchGPT2Model(tnn.Module):
         super().__init__()
         self.wte = tnn.Embedding(vocab_size, n_embd)
         self.wpe = tnn.Embedding(n_ctx, n_embd)
-        self.drop = tnn.Dropout(0.1)
         self.h = tnn.ModuleList([TorchGPT2Block(n_embd, n_head, n_inner) for _ in range(n_layer)])
         self.ln_f = tnn.LayerNorm(n_embd, eps=1e-5)
 

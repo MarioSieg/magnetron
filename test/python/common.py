@@ -6,7 +6,7 @@ import itertools
 import multiprocessing
 import random
 import pytest
-from typing import Any, Iterator
+from typing import Any, Iterator, Callable
 
 import torch
 import numpy as np
@@ -129,12 +129,12 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             shape_B = (*batched, K, N)
                             yield shape_A, shape_B
 
-def random_tensor(shape: tuple[int, ...], dtype: dtype.DType) -> Tensor:
-    if dtype == boolean:
+def random_tensor(shape: tuple[int, ...], dt: dtype.DType) -> Tensor:
+    if dt == dtype.boolean:
         return Tensor.bernoulli(shape)
     else:
-        lim = 100 if dtype.is_integer else 1.0
-        return Tensor.uniform(shape, low=-lim, high=lim, dtype=dtype)
+        lim = 100 if dt.is_integer else 1.0
+        return Tensor.uniform(shape, low=-lim, high=lim, dtype=dt)
 
 DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
     (),
@@ -432,7 +432,7 @@ BASE_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
     (21, 5),
 )
 
-def for_all_shapes(f: Callable[tuple[int, ...]]) -> None:
+def for_all_shapes(f: Callable[[tuple[int, ...]], None]) -> None:
     shapes = BASE_TEST_SHAPES if SHAPE_TEST_FAST else DETAILED_TEST_SHAPES
     for shape in shapes:
         f(shape)
