@@ -13,6 +13,8 @@
 
 #include <core/mag_prng_philox4x32.h>
 
+#include <type_traits>
+
 namespace mag {
     template <typename scalar_t, const bool contig>
     __global__ static void fill_kernel(
@@ -191,6 +193,162 @@ namespace mag {
             case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, true>(r, cmd); break;
             case MAG_DTYPE_BFLOAT16: launch_rand_fill_kernel<__nv_bfloat16, true>(r, cmd); break;
             default: mag_assert(false, "Unsupported data type in binary operation");
+        }
+    }
+
+    __global__ static void bernoulli_kernel(
+        int64_t n,
+        uint8_t *__restrict__ o,
+        float p,
+        uint64_t seed,
+        uint64_t subseq,
+        mag_coords_iter_t rc,
+        bool contig
+    ) {
+        int64_t ti = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
+        int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+        for (; ti < n; ti += step) {
+            mag_philox4x32_stream_t stream;
+            mag_philox4x32_stream_seed(&stream, seed, subseq + static_cast<uint64_t>(ti));
+            float u = mag_philox4x32_next_float32(&stream);
+            uint8_t v = (u < p) ? 1u : 0u;
+            if (contig)
+                o[ti] = v;
+            else {
+                int64_t ri = mag_coords_iter_to_offset(&rc, ti);
+                o[ri] = v;
+            }
+        }
+    }
+
+    void fill_op_rand_bernoulli(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        mag_assert2(r->dtype == MAG_DTYPE_BOOLEAN);
+        float p = static_cast<float>(mag_op_attr_unwrap_float64(cmd.attrs[0]));
+        auto *o = reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r));
+        int64_t n = mag_tensor_numel(r);
+        int64_t blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
+        mag_coords_iter_t rc;
+        mag_coords_iter_init(&rc, &r->coords);
+        uint64_t seed = global_seed.load(std::memory_order_relaxed);
+        uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
+        if (mag_tensor_is_contiguous(r))
+            bernoulli_kernel<<<blocks, FILL_BLOCK_SIZE>>>(n, o, p, seed, subseq, rc, true);
+        else
+            bernoulli_kernel<<<blocks, FILL_BLOCK_SIZE>>>(n, o, p, seed, subseq, rc, false);
+    }
+
+    template <typename T>
+    __global__ static void rand_perm_single_thread_kernel(
+        int64_t n,
+        T *__restrict__ o,
+        uint64_t seed,
+        uint64_t subseq,
+        mag_coords_iter_t rc,
+        bool contig
+    ) {
+        if (blockIdx.x != 0 || threadIdx.x != 0) return;
+        mag_philox4x32_stream_t stream;
+        mag_philox4x32_stream_seed(&stream, seed, subseq);
+        for (int64_t i=0; i < n; ++i) {
+            int64_t ri = contig ? i : mag_coords_iter_to_offset(&rc, i);
+            o[ri] = static_cast<T>(i);
+        }
+        for (int64_t i=0; i < n-1; ++i) {
+            int64_t j = i + static_cast<int64_t>(mag_philox4x32_next_uint64(&stream) % static_cast<uint64_t>(n - i));
+            int64_t off_i = contig ? i : mag_coords_iter_to_offset(&rc, i);
+            int64_t off_j = contig ? j : mag_coords_iter_to_offset(&rc, j);
+            T tmp = o[off_i];
+            o[off_i] = o[off_j];
+            o[off_j] = tmp;
+        }
+    }
+
+    void fill_op_rand_perm(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        mag_coords_iter_t rc;
+        mag_coords_iter_init(&rc, &r->coords);
+        bool cont = mag_tensor_is_contiguous(r);
+        int64_t n = mag_tensor_numel(r);
+        uint64_t seed = global_seed.load(std::memory_order_relaxed);
+        uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
+        void *raw = reinterpret_cast<void *>(mag_tensor_data_ptr_mut(r));
+        switch (r->dtype) {
+        case MAG_DTYPE_UINT8: rand_perm_single_thread_kernel<uint8_t><<<1, 1>>>(n, reinterpret_cast<uint8_t *>(raw), seed, subseq, rc, cont); break;
+        case MAG_DTYPE_INT8: rand_perm_single_thread_kernel<int8_t><<<1, 1>>>(n, reinterpret_cast<int8_t *>(raw), seed, subseq, rc, cont); break;
+        case MAG_DTYPE_UINT16: rand_perm_single_thread_kernel<uint16_t><<<1, 1>>>(n, reinterpret_cast<uint16_t *>(raw), seed, subseq, rc, cont); break;
+        case MAG_DTYPE_INT16: rand_perm_single_thread_kernel<int16_t><<<1, 1>>>(n, reinterpret_cast<int16_t *>(raw), seed, subseq, rc, cont); break;
+        case MAG_DTYPE_UINT32: rand_perm_single_thread_kernel<uint32_t><<<1, 1>>>(n, reinterpret_cast<uint32_t *>(raw), seed, subseq, rc, cont); break;
+        case MAG_DTYPE_INT32: rand_perm_single_thread_kernel<int32_t><<<1, 1>>>(n, reinterpret_cast<int32_t *>(raw), seed, subseq, rc, cont); break;
+        case MAG_DTYPE_UINT64: rand_perm_single_thread_kernel<uint64_t><<<1, 1>>>(n, reinterpret_cast<uint64_t *>(raw), seed, subseq, rc, cont); break;
+        case MAG_DTYPE_INT64: rand_perm_single_thread_kernel<int64_t><<<1, 1>>>(n, reinterpret_cast<int64_t *>(raw), seed, subseq, rc, cont); break;
+        default: mag_assert(false, "Unsupported dtype for rand_perm");
+        }
+    }
+
+    template <typename scalar_t>
+    __global__ static void arange_kernel(
+        int64_t n,
+        scalar_t *__restrict__ o,
+        double start,
+        double step,
+        mag_coords_iter_t rc,
+        bool contig
+    ) {
+        int64_t ti = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
+        int64_t step_th = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+        for (; ti < n; ti += step_th) {
+            double v = start + static_cast<double>(ti)*step;
+            scalar_t out;
+            if constexpr (std::is_same_v<scalar_t, float>)
+                out = static_cast<scalar_t>(v);
+            else if constexpr (std::is_same_v<scalar_t, half>)
+                out = __float2half(static_cast<float>(v));
+            else if constexpr (std::is_same_v<scalar_t, __nv_bfloat16>)
+                out = __float2bfloat16(static_cast<float>(v));
+            else if constexpr (std::is_integral_v<scalar_t>)
+                out = static_cast<scalar_t>(v);
+            else
+                out = static_cast<scalar_t>(v);
+            if (contig)
+                o[ti] = out;
+            else {
+                int64_t ri = mag_coords_iter_to_offset(&rc, ti);
+                o[ri] = out;
+            }
+        }
+    }
+
+    template <typename scalar_t>
+    static void launch_arange(mag_tensor_t *r, const mag_command_t &cmd) {
+        auto *o = reinterpret_cast<scalar_t *>(mag_tensor_data_ptr_mut(r));
+        double start = mag_op_attr_unwrap_float64(cmd.attrs[0]);
+        double step = mag_op_attr_unwrap_float64(cmd.attrs[1]);
+        int64_t n = mag_tensor_numel(r);
+        int64_t blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
+        mag_coords_iter_t rc;
+        mag_coords_iter_init(&rc, &r->coords);
+        if (mag_tensor_is_contiguous(r))
+            arange_kernel<scalar_t><<<blocks, FILL_BLOCK_SIZE>>>(n, o, start, step, rc, true);
+        else
+            arange_kernel<scalar_t><<<blocks, FILL_BLOCK_SIZE>>>(n, o, start, step, rc, false);
+    }
+
+    void fill_op_arange(const mag_command_t &cmd) {
+        mag_tensor_t *r = cmd.out[0];
+        switch (r->dtype) {
+            case MAG_DTYPE_FLOAT32: launch_arange<float>(r, cmd); break;
+            case MAG_DTYPE_FLOAT16: launch_arange<half>(r, cmd); break;
+            case MAG_DTYPE_BFLOAT16: launch_arange<__nv_bfloat16>(r, cmd); break;
+            case MAG_DTYPE_UINT8: launch_arange<uint8_t>(r, cmd); break;
+            case MAG_DTYPE_INT8: launch_arange<int8_t>(r, cmd); break;
+            case MAG_DTYPE_UINT16: launch_arange<uint16_t>(r, cmd); break;
+            case MAG_DTYPE_INT16: launch_arange<int16_t>(r, cmd); break;
+            case MAG_DTYPE_UINT32: launch_arange<uint32_t>(r, cmd); break;
+            case MAG_DTYPE_INT32: launch_arange<int32_t>(r, cmd); break;
+            case MAG_DTYPE_UINT64: launch_arange<uint64_t>(r, cmd); break;
+            case MAG_DTYPE_INT64: launch_arange<int64_t>(r, cmd); break;
+            default: mag_assert(false, "Unsupported dtype for arange");
         }
     }
 }

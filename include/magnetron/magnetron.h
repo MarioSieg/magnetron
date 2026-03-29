@@ -103,6 +103,7 @@ typedef struct mag_device_id_t {
     uint32_t device_ordinal;        /* Device index for the given backend type, (e.g. 0 for cuda:0). */
 } mag_device_id_t;
 extern MAG_EXPORT void mag_device_id_to_str(mag_device_id_t id, char (*buf)[32]);
+extern MAG_EXPORT bool mag_device_id_eq(mag_device_id_t a, mag_device_id_t b);
 
 #define mag_device(name, ordinal) ((mag_device_id_t){MAG_BACKEND_TYPE_##name, (ordinal)})
 

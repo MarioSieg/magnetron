@@ -23,4 +23,6 @@ namespace mag {
     extern void reduce_op_prod(const mag_command_t &cmd);
     extern void reduce_op_all(const mag_command_t &cmd);
     extern void reduce_op_any(const mag_command_t &cmd);
+    extern void reduce_op_argmin(const mag_command_t &cmd);
+    extern void reduce_op_argmax(const mag_command_t &cmd);
 }

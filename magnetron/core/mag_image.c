@@ -65,6 +65,11 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
         dst[i + w*j + w*h*k] = pixels[k + c*i + c*w*j];
     mag_contract(err, ERR_IMAGE_ERROR, { stbi_image_free(pixels); }, w*h*c == mag_tensor_numel(tensor), "Buffer size mismatch: %d != %zu", w*h*c, (size_t)mag_tensor_numel(tensor));
     stbi_image_free(pixels);
-    *out = tensor;
+    mag_tensor_t *transferred = NULL;
+    mag_try_or(mag_transfer(err, &transferred, tensor, device), {
+        mag_tensor_decref(tensor);
+    });
+    mag_tensor_decref(tensor);
+    *out = transferred;
     return MAG_STATUS_OK;
 }

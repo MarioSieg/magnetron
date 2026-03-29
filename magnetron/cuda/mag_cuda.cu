@@ -14,6 +14,7 @@
 #include "mag_cuda_binary.cuh"
 #include "mag_cuda_fill.cuh"
 #include "mag_cuda_reduction.cuh"
+#include "mag_cuda_misc.cuh"
 
 #include "cpu/mag_cpu.h"
 
@@ -135,10 +136,10 @@ namespace mag {
             [MAG_OP_MASKED_FILL] = &fill_op_masked_fill,
             [MAG_OP_RAND_UNIFORM] = &fill_op_fill_rand_uniform,
             [MAG_OP_RAND_NORMAL] = &fill_op_fill_rand_normal,
-            [MAG_OP_RAND_BERNOULLI] = nullptr,
-            [MAG_OP_RAND_PERM] = nullptr,
-            [MAG_OP_ARANGE] = nullptr,
-            [MAG_OP_ONE_HOT] = nullptr,
+            [MAG_OP_RAND_BERNOULLI] = &fill_op_rand_bernoulli,
+            [MAG_OP_RAND_PERM] = &fill_op_rand_perm,
+            [MAG_OP_ARANGE] = &fill_op_arange,
+            [MAG_OP_ONE_HOT] = &misc_op_one_hot,
             [MAG_OP_CLONE] = &unary_op_clone,
             [MAG_OP_CAST] = &unary_op_cast,
             [MAG_OP_VIEW] = op_nop,
@@ -147,13 +148,13 @@ namespace mag {
             [MAG_OP_MEAN] = &reduce_op_mean,
             [MAG_OP_MIN] = &reduce_op_min,
             [MAG_OP_MAX] = &reduce_op_max,
-            [MAG_OP_ARGMIN] = nullptr,
-            [MAG_OP_ARGMAX] = nullptr,
+            [MAG_OP_ARGMIN] = &reduce_op_argmin,
+            [MAG_OP_ARGMAX] = &reduce_op_argmax,
             [MAG_OP_SUM] = &reduce_op_sum,
             [MAG_OP_PROD] = &reduce_op_prod,
             [MAG_OP_ALL] = &reduce_op_all,
             [MAG_OP_ANY] = &reduce_op_any,
-            [MAG_OP_TOPK] = nullptr,
+            [MAG_OP_TOPK] = &misc_op_topk,
             [MAG_OP_ABS] = &unary_op_abs,
             [MAG_OP_SGN] = &unary_op_sgn,
             [MAG_OP_NEG] = &unary_op_neg,
@@ -200,10 +201,10 @@ namespace mag {
             [MAG_OP_GELU] = &unary_op_gelu,
             [MAG_OP_GELU_APPROX] = &unary_op_gelu,
             [MAG_OP_GELU_DV] = &unary_op_gelu_dv,
-            [MAG_OP_TRIL] = nullptr,
-            [MAG_OP_TRIU] = nullptr,
-            [MAG_OP_MULTINOMIAL] = nullptr,
-            [MAG_OP_CAT] = nullptr,
+            [MAG_OP_TRIL] = &misc_op_tril,
+            [MAG_OP_TRIU] = &misc_op_triu,
+            [MAG_OP_MULTINOMIAL] = &misc_op_multinomial,
+            [MAG_OP_CAT] = &misc_op_cat,
             [MAG_OP_ADD] = &binary_op_add,
             [MAG_OP_SUB] = &binary_op_sub,
             [MAG_OP_MUL] = &binary_op_mul,
@@ -211,9 +212,9 @@ namespace mag {
             [MAG_OP_FLOORDIV] = &binary_op_floordiv,
             [MAG_OP_MOD] = &binary_op_mod,
             [MAG_OP_POW] = &binary_op_pow,
-            [MAG_OP_MATMUL] = nullptr,
-            [MAG_OP_REPEAT_BACK] = nullptr,
-            [MAG_OP_GATHER] = nullptr,
+            [MAG_OP_MATMUL] = &misc_op_matmul,
+            [MAG_OP_REPEAT_BACK] = &misc_op_repeat_back,
+            [MAG_OP_GATHER] = &misc_op_gather,
             [MAG_OP_AND] = &binary_op_and,
             [MAG_OP_OR] = &binary_op_or,
             [MAG_OP_XOR] = &binary_op_xor,
@@ -226,7 +227,7 @@ namespace mag {
             [MAG_OP_GE] = &binary_op_ge,
             [MAG_OP_LT] = &binary_op_lt,
             [MAG_OP_GT] = &binary_op_gt,
-            [MAG_OP_WHERE] = nullptr
+            [MAG_OP_WHERE] = &misc_op_where
         };
         static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
         //static_assert([] -> bool {

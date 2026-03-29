@@ -85,19 +85,27 @@ namespace mag::bindings {
     // Create a tensor from a Python scalar, list or Numpy/Pytorch CPU tensor.
     [[nodiscard]] static tensor_wrapper tensor_from_data(nb::handle data_h, nb::kwargs &kwargs) {
         dtype_wrapper dt = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{MAG_DTYPE__NUM};
-        //std::string device_id_str = kwargs.contains("device") ? nb::cast<std::string>(kwargs["device"]) : get_default_device();
-        mag_device_id_t device_id = mag_device(CPU, 0); // TODO
         bool requires_grad = kw_requires_grad_or(kwargs, false);
+        std::optional<mag_device_id_t> device_id = parse_device_id_str(kw_device_or_default(kwargs));
+        if (!device_id) throw std::runtime_error {"Invalid device id!"};
+        const mag_device_id_t cpu_id = mag_device(CPU, 0);
         if (nb::isinstance<nb::int_>(data_h) || nb::isinstance<nb::float_>(data_h) || nb::isinstance<nb::bool_>(data_h)) {
             if (dt.v == MAG_DTYPE__NUM)
                 dt = deduce_dtype_from_py_scalar(data_h);
             mag_context_t *ctx = get_ctx();
-            mag_tensor_t *out = nullptr;
+            mag_tensor_t *raw = nullptr;
             mag_scalar_t s = scalar_from_py(data_h);
             mag_error_t err {};
-            throw_if_error(mag_scalar(&err, &out, ctx, dt.v, s, device_id), err);
-            maybe_set_requires_grad(ctx, out, requires_grad);
-            return tensor_wrapper{out};
+            throw_if_error(mag_scalar(&err, &raw, ctx, dt.v, s, cpu_id), err);
+            maybe_set_requires_grad(ctx, raw, requires_grad);
+            on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
+            if (!mag_device_id_eq(*device_id, cpu_id)) {
+                mag_tensor_t *tmp = nullptr;
+                throw_if_error(mag_transfer(&err, &tmp, raw, *device_id), err);
+                return tensor_wrapper{tmp};
+            }
+            mag_tensor_incref(raw);
+            return tensor_wrapper{raw};
         }
         /* Accept NumPy, PyTorch, etc. when CPU and C-contiguous (nanobind may copy if not). */
         try {
@@ -113,20 +121,30 @@ namespace mag::bindings {
             mag_context_t *ctx = get_ctx();
             mag_tensor_t *raw = nullptr;
             mag_error_t err {};
-            if (shape.empty()) throw_if_error(mag_empty_scalar(&err, &raw, ctx, elem_dtype, device_id), err);
-            else throw_if_error(mag_empty(&err, &raw, ctx, elem_dtype, static_cast<int64_t>(shape.size()), shape.data(), device_id), err);
+            if (shape.empty()) throw_if_error(mag_empty_scalar(&err, &raw, ctx, elem_dtype, cpu_id), err);
+            else throw_if_error(mag_empty(&err, &raw, ctx, elem_dtype, static_cast<int64_t>(shape.size()), shape.data(), cpu_id), err);
             maybe_set_requires_grad(ctx, raw, requires_grad);
             on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
             size_t numel = std::accumulate(shape.begin(), shape.end(), static_cast<size_t>(1), std::multiplies<>());
             size_t item_size = mag_type_trait(elem_dtype)->size;
             throw_if_error(mag_copy_raw_(&err, raw, arr.data(), numel * item_size), err);
+
+            mag_tensor_t *typed_cpu = nullptr;
             if (target_dtype == elem_dtype) {
                 mag_tensor_incref(raw);
-                return tensor_wrapper{raw};
+                typed_cpu = raw;
+            } else {
+                throw_if_error(mag_cast(&err, &typed_cpu, raw, target_dtype), err);
             }
-            mag_tensor_t *out = nullptr;
-            throw_if_error(mag_cast(&err, &out, raw, target_dtype), err);
-            return tensor_wrapper{out};
+            on_scope_exit defer_typed_cpu([typed_cpu] { mag_tensor_decref(typed_cpu); });
+
+            if (!mag_device_id_eq(*device_id, cpu_id)) {
+                mag_tensor_t *out = nullptr;
+                throw_if_error(mag_transfer(&err, &out, typed_cpu, *device_id), err);
+                return tensor_wrapper{out};
+            }
+            mag_tensor_incref(typed_cpu);
+            return tensor_wrapper{typed_cpu};
         } catch (const nb::cast_error &) {
             /* Not array-like - fall through to sequence path */
         }
@@ -203,8 +221,8 @@ namespace mag::bindings {
         mag_context_t *ctx = get_ctx();
         mag_tensor_t *raw = nullptr;
         mag_error_t err {};
-        if (shape.empty()) throw_if_error(mag_empty_scalar(&err, &raw, ctx, wide, device_id), err);
-        else throw_if_error(mag_empty(&err, &raw, ctx, wide, static_cast<int64_t>(shape.size()), shape.data(), device_id), err);
+        if (shape.empty()) throw_if_error(mag_empty_scalar(&err, &raw, ctx, wide, cpu_id), err);
+        else throw_if_error(mag_empty(&err, &raw, ctx, wide, static_cast<int64_t>(shape.size()), shape.data(), cpu_id), err);
         maybe_set_requires_grad(ctx, raw, requires_grad);
         on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
         size_t n = flat_h.size();
@@ -225,13 +243,23 @@ namespace mag::bindings {
             std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::handle &h) { return static_cast<uint8_t>(nb::cast<bool>(h) ? 1 : 0); });
             throw_if_error(mag_copy_raw_(&err, raw, buf.data(), buf.size() * sizeof(uint8_t)), err);
         }
+
+        mag_tensor_t *typed_cpu = nullptr;
         if (wide == dt.v) {
             mag_tensor_incref(raw);
-            return tensor_wrapper{raw};
+            typed_cpu = raw;
+        } else {
+            throw_if_error(mag_cast(&err, &typed_cpu, raw, dt.v), err);
         }
-        mag_tensor_t *out = nullptr;
-        throw_if_error(mag_cast(&err, &out, raw, dt.v), err);
-        return tensor_wrapper{out};
+        on_scope_exit defer_typed_cpu([typed_cpu] { mag_tensor_decref(typed_cpu); });
+
+        if (!mag_device_id_eq(*device_id, cpu_id)) {
+            mag_tensor_t *out = nullptr;
+            throw_if_error(mag_transfer(&err, &out, typed_cpu, *device_id), err);
+            return tensor_wrapper{out};
+        }
+        mag_tensor_incref(typed_cpu);
+        return tensor_wrapper{typed_cpu};
     }
 
     void init_tensor_class_factories(nb::class_<tensor_wrapper> &cls) {

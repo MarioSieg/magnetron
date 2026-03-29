@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from magnetron import nn, optim, Tensor
+from magnetron import nn, optim, Tensor, context
 from matplotlib import pyplot as plt
 
 EPOCHS: int = 2000
