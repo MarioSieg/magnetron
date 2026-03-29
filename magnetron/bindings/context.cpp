@@ -64,38 +64,12 @@ namespace mag::bindings {
             std::lock_guard lock {get_global_mutex()};
             mag_ctx_manual_seed(get_ctx(), seed);
         }, "seed"_a, "Set RNG seed for reproducibility.");
-        context.def("os_name", []() -> std::string {
+        context.def("is_device_available", [](const std::string &device) -> bool {
             std::lock_guard lock {get_global_mutex()};
-            return mag_ctx_get_os_name(get_ctx());
-        }, "Operating system name.");
-        context.def("cpu_name", []() -> std::string {
-            std::lock_guard lock {get_global_mutex()};
-            return mag_ctx_get_cpu_name(get_ctx());
-        }, "CPU model name.");
-        context.def("cpu_virtual_cores", []() -> uint32_t {
-            std::lock_guard lock {get_global_mutex()};
-            return mag_ctx_get_cpu_virtual_cores(get_ctx());
-        }, "Number of logical CPU cores.");
-        context.def("cpu_physical_cores", []() -> uint32_t {
-            std::lock_guard lock {get_global_mutex()};
-            return mag_ctx_get_cpu_physical_cores(get_ctx());
-        }, "Number of physical CPU cores.");
-        context.def("cpu_sockets", []() -> uint32_t {
-            std::lock_guard lock {get_global_mutex()};
-            return mag_ctx_get_cpu_sockets(get_ctx());
-        }, "Number of CPU sockets.");
-        context.def("physical_memory_total", []() -> uint64_t {
-            std::lock_guard lock {get_global_mutex()};
-            return mag_ctx_get_physical_memory_total(get_ctx());
-        }, "Total physical memory in bytes.");
-        context.def("physical_memory_free", []() -> uint64_t {
-            std::lock_guard lock {get_global_mutex()};
-           return mag_ctx_get_physical_memory_free(get_ctx());
-        }, "Free physical memory in bytes.");
-        context.def("is_numa_system", []() -> bool {
-            std::lock_guard lock {get_global_mutex()};
-            return mag_ctx_is_numa_system(get_ctx());
-        }, "True if the system is NUMA.");
+            std::optional<mag_device_id_t> device_id = parse_device_id_str(std::string {device});
+            if (!device_id) return false;
+            return mag_ctx_is_device_available(get_ctx(), *device_id);
+        });
         context.def("get_default_device", []() -> std::string {
             std::lock_guard lock {get_global_mutex()};
             return g_default_device;

@@ -83,6 +83,29 @@ typedef enum mag_status_t {
 extern MAG_EXPORT const char *mag_status_get_name(mag_status_t op);
 extern MAG_EXPORT const char *mag_status_get_message(mag_status_t op);
 
+/* Name, ID, Required */
+#define mag_backenddef(_)\
+    _(CPU, cpu, true)\
+    _(CUDA, cuda, false)\
+    _(CUSTOM, custom, false)\
+
+typedef enum mag_backend_type_t {
+#define _(name, id, required) MAG_BACKEND_TYPE_##name,
+    mag_backenddef(_)
+    MAG_BACKEND_TYPE__COUNT
+#undef _
+} mag_backend_type_t;
+extern MAG_EXPORT const char *mag_backend_type_to_str(mag_backend_type_t type);
+extern MAG_EXPORT bool mag_backend_type_is_required(mag_backend_type_t type);
+
+typedef struct mag_device_id_t {
+    mag_backend_type_t type;        /* Backend type, (e.g. CPU, CUDA, etc..) */
+    uint32_t device_ordinal;        /* Device index for the given backend type, (e.g. 0 for cuda:0). */
+} mag_device_id_t;
+extern MAG_EXPORT void mag_device_id_to_str(mag_device_id_t id, char (*buf)[32]);
+
+#define mag_device(name, ordinal) ((mag_device_id_t){MAG_BACKEND_TYPE_##name, (ordinal)})
+
 /**
  * @brief Error structure for magnetron library functions.
  */
@@ -102,16 +125,7 @@ typedef struct mag_error_t {
 typedef struct mag_context_t mag_context_t;
 
 extern MAG_EXPORT mag_context_t *mag_ctx_create(void);                                                                  /* Create context with default config, and only specify device type. */
-extern MAG_EXPORT const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx);                                /* Get the name of the compute device */
-extern MAG_EXPORT const char *mag_ctx_get_os_name(const mag_context_t *ctx);                                            /* Get the name of the operating system */
-extern MAG_EXPORT const char *mag_ctx_get_cpu_name(const mag_context_t *ctx);                                           /* Get the name of the CPU */
-extern MAG_EXPORT uint32_t mag_ctx_get_cpu_virtual_cores(const mag_context_t *ctx);                                     /* Get the number of virtual cores */
-extern MAG_EXPORT uint32_t mag_ctx_get_cpu_physical_cores(const mag_context_t *ctx);                                    /* Get the number of physical cores */
-extern MAG_EXPORT uint32_t mag_ctx_get_cpu_sockets(const mag_context_t *ctx);                                           /* Get the number of CPU sockets */
-extern MAG_EXPORT uint64_t mag_ctx_get_physical_memory_total(const mag_context_t *ctx);                                 /* Get the total physical memory in bytes */
-extern MAG_EXPORT uint64_t mag_ctx_get_physical_memory_free(const mag_context_t *ctx);                                  /* Get the free physical memory in bytes */
-extern MAG_EXPORT bool mag_ctx_is_numa_system(const mag_context_t *ctx);                                                /* Check if the system is NUMA */
-extern MAG_EXPORT size_t mag_ctx_get_total_tensors_created(const mag_context_t *ctx);                                   /* Get total tensors created. (Including views) */
+extern MAG_EXPORT bool mag_ctx_is_device_available(mag_context_t *ctx, mag_device_id_t id);                             /* Check if a device is available in the context. */
 extern MAG_EXPORT void mag_ctx_grad_recorder_start(mag_context_t *ctx);                                                 /* Start gradient recording */
 extern MAG_EXPORT void mag_ctx_grad_recorder_stop(mag_context_t *ctx);                                                  /* Stop gradient recording */
 extern MAG_EXPORT bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx);                                      /* Check if gradient recording is running */
@@ -207,29 +221,6 @@ extern MAG_EXPORT bool mag_type_category_is_signed_integer(mag_dtype_t type);
 extern MAG_EXPORT bool mag_type_category_is_integer(mag_dtype_t type);
 extern MAG_EXPORT bool mag_type_category_is_integral(mag_dtype_t type);
 extern MAG_EXPORT bool mag_type_category_is_numeric(mag_dtype_t type);
-
-/* Name, ID, Required */
-#define mag_backenddef(_)\
-    _(CPU, cpu, true)\
-    _(CUDA, cuda, false)\
-    _(CUSTOM, custom, false)\
-
-typedef enum mag_backend_type_t {
-#define _(name, id, required) MAG_BACKEND_TYPE_##name,
-    mag_backenddef(_)
-    MAG_BACKEND_TYPE__COUNT
-#undef _
-} mag_backend_type_t;
-extern MAG_EXPORT const char *mag_backend_type_to_str(mag_backend_type_t type);
-extern MAG_EXPORT bool mag_backend_type_is_required(mag_backend_type_t type);
-
-typedef struct mag_device_id_t {
-    mag_backend_type_t type;        /* Backend type, (e.g. CPU, CUDA, etc..) */
-    uint32_t device_ordinal;        /* Device index for the given backend type, (e.g. 0 for cuda:0). */
-} mag_device_id_t;
-extern MAG_EXPORT void mag_device_id_to_str(mag_device_id_t id, char (*buf)[32]);
-
-#define mag_device(name, ordinal) ((mag_device_id_t){MAG_BACKEND_TYPE_##name, (ordinal)})
 
 extern MAG_EXPORT mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_device_id_t device);
 extern MAG_EXPORT mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset);

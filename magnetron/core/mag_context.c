@@ -167,6 +167,12 @@ mag_context_t *mag_ctx_create() {
     return ctx;
 }
 
+bool mag_ctx_is_device_available(mag_context_t *ctx, mag_device_id_t id) {
+    mag_device_t *device=NULL;
+    mag_backend_t *backend=NULL;
+    return mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, id, &backend, &device) && device && backend;
+}
+
 void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Destroy magnetron context. */
 #ifdef MAG_DEBUG
     mag_leak_detector_dump_results(ctx);  /* Provide detailed leak check info */
@@ -198,46 +204,6 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     mag_log_info("magnetron context offline");
     fflush(stdout);
     fflush(stderr);
-}
-
-const char *mag_ctx_get_compute_device_name(const mag_context_t *ctx) {
-    return ""; /* TODO */
-}
-
-const char *mag_ctx_get_os_name(const mag_context_t *ctx) {
-    return ctx->machine.os_name;
-}
-
-const char *mag_ctx_get_cpu_name(const mag_context_t *ctx) {
-    return ctx->machine.cpu_name;
-}
-
-uint32_t mag_ctx_get_cpu_virtual_cores(const mag_context_t *ctx) {
-    return ctx->machine.cpu_virtual_cores;
-}
-
-uint32_t mag_ctx_get_cpu_physical_cores(const mag_context_t *ctx) {
-    return ctx->machine.cpu_physical_cores;
-}
-
-uint32_t mag_ctx_get_cpu_sockets(const mag_context_t *ctx) {
-    return ctx->machine.cpu_sockets;
-}
-
-uint64_t mag_ctx_get_physical_memory_total(const mag_context_t *ctx) {
-    return ctx->machine.phys_mem_total;
-}
-
-uint64_t mag_ctx_get_physical_memory_free(const mag_context_t *ctx) {
-    return ctx->machine.phys_mem_free;
-}
-
-bool mag_ctx_is_numa_system(const mag_context_t *ctx) {
-    return false; /* TODO */
-}
-
-size_t mag_ctx_get_total_tensors_created(const mag_context_t *ctx) {
-    return 0; /* TODO */
 }
 
 void mag_ctx_grad_recorder_start(mag_context_t *ctx) {

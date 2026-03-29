@@ -235,6 +235,7 @@ namespace mag {
         auto *kernel = dispatch_table[cmd->op];
         mag_assert(kernel != nullptr, "Operator %s not implemented in CUDA backend", mag_op_traits(cmd->op)->mnemonic);
         (*kernel)(*cmd);
+        cudaDeviceSynchronize();
         return MAG_STATUS_OK;
     }
 

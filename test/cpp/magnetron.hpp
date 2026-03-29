@@ -48,16 +48,6 @@ namespace magnetron {
 
         [[nodiscard]] auto operator *() noexcept -> mag_context_t& { return *m_ctx; }
         [[nodiscard]] auto operator *() const noexcept -> const mag_context_t& { return *m_ctx; }
-        [[nodiscard]] auto device_name() const noexcept -> std::string_view { return mag_ctx_get_compute_device_name(m_ctx); }
-        [[nodiscard]] auto os_name() const noexcept -> std::string_view { return mag_ctx_get_os_name(m_ctx); }
-        [[nodiscard]] auto cpu_name() const noexcept -> std::string_view { return mag_ctx_get_cpu_name(m_ctx); }
-        [[nodiscard]] auto cpu_virtual_cores() const noexcept -> uint32_t { return mag_ctx_get_cpu_virtual_cores(m_ctx); }
-        [[nodiscard]] auto cpu_physical_cores() const noexcept -> uint32_t { return mag_ctx_get_cpu_physical_cores(m_ctx); }
-        [[nodiscard]] auto cpu_sockets() const noexcept -> uint32_t { return mag_ctx_get_cpu_sockets(m_ctx); }
-        [[nodiscard]] auto physical_memory_total() const noexcept -> uint64_t { return mag_ctx_get_physical_memory_total(m_ctx); }
-        [[nodiscard]] auto physical_memory_free() const noexcept -> uint64_t { return mag_ctx_get_physical_memory_free(m_ctx); }
-        [[nodiscard]] auto is_numa_system() const noexcept -> bool { return mag_ctx_is_numa_system(m_ctx); }
-        [[nodiscard]] auto total_tensors_created() const noexcept -> size_t { return mag_ctx_get_total_tensors_created(m_ctx); }
         auto start_grad_recorder() noexcept -> void { mag_ctx_grad_recorder_start(m_ctx); }
         auto stop_grad_recorder() noexcept -> void { mag_ctx_grad_recorder_stop(m_ctx); }
         [[nodiscard]] auto is_recording_gradients() const noexcept -> bool { return mag_ctx_grad_recorder_is_running(m_ctx); }
