@@ -13,6 +13,8 @@
 #include "mag_context.h"
 #include "mag_reduce_plan.h"
 
+#include <string.h>
+
 mag_scalar_t mag_scalar_from_f64(double value) {
     return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.f64 = value};
 }
@@ -314,7 +316,7 @@ mag_status_t mag_zeros_like(mag_error_t *err, mag_tensor_t **out_result, mag_ten
 }
 
 mag_status_t mag_ones(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_device_id_t device) {
-    return mag_full(err, out_result, ctx, type, rank, shape, mag_scalar_from_u64(0), device);
+    return mag_full(err, out_result, ctx, type, rank, shape, mag_scalar_from_u64(1), device);
 }
 
 mag_status_t mag_ones_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like) {
@@ -453,11 +455,50 @@ mag_status_t mag_cast(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
 
 mag_status_t mag_transfer(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_device_id_t device) {
     *out_result = NULL;
-    mag_tensor_t *result;
-    mag_try(mag_empty(err, &result, x->ctx, x->dtype, x->coords.rank, x->coords.shape, device));
-    mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_CAST, &x, 0));
-    mag_try(mag_dispatch(err, MAG_OP_CAST, false, NULL, &x, 1, &result, 1));
-    *out_result = result;
+    mag_device_id_t src_id = mag_tensor_device_id(x);
+    if (src_id.type == device.type && src_id.device_ordinal == device.device_ordinal) { /* If already on same device, bump refcount and do nothing */
+        mag_rc_incref(x);
+        *out_result = x;
+        return MAG_STATUS_OK;
+    }
+    mag_tensor_t *xc = NULL;
+    mag_try(mag_contiguous(err, &xc, x));
+    mag_tensor_t *out = NULL;
+    mag_try_or(mag_empty(err, &out, x->ctx, xc->dtype, xc->coords.rank, xc->coords.shape, device), {
+        mag_tensor_decref(xc);
+    });
+    mag_device_t *src_dvc = xc->storage->device;
+    mag_device_t *dst_dvc = out->storage->device;
+    bool src_hv = xc->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE;
+    bool dst_hv = out->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE;
+    if (src_hv && dst_hv) {
+        size_t nb = mag_tensor_numbytes(xc);
+        mag_contract(err, ERR_INVALID_PARAM, {}, nb == mag_tensor_numbytes(out), "Transfer size mismatch.");
+        mag_contract(err, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(xc) && mag_tensor_is_contiguous(out), "Transfer requires contiguous tensors.");
+        memcpy((void *)mag_tensor_data_ptr_mut(out), (const void *)mag_tensor_data_ptr(xc), nb);
+        mag_tensor_decref(xc);
+        *out_result = out;
+        return MAG_STATUS_OK;
+    }
+    mag_device_t *exec = NULL;
+    mag_transfer_dir_t dir;
+    if (src_hv && !dst_hv) {
+        exec = dst_dvc;
+        dir = MAG_TRANSFER_DIR_H2D;
+    } else if (!src_hv && dst_hv) {
+        exec = src_dvc;
+        dir = MAG_TRANSFER_DIR_D2H;
+    } else {
+        exec = dst_dvc;
+        dir = MAG_TRANSFER_DIR_D2D;
+    }
+    mag_contract(err, ERR_INVALID_STATE, {}, exec->transfer != NULL, "Target device has no transfer implementation.");
+    mag_try_or((*exec->transfer)(exec, err, dir, xc, out), {
+        mag_tensor_decref(out);
+        mag_tensor_decref(xc);
+    });
+    mag_tensor_decref(xc);
+    *out_result = out;
     return MAG_STATUS_OK;
 }
 
@@ -632,7 +673,7 @@ mag_status_t mag_permute(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
 
 mag_status_t mag_contiguous(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) {
     if (!x->storage_offset && mag_tensor_is_contiguous(x)) {
-        mag_rc_incref(x); /* If already contiguous, just incref */
+        mag_rc_incref(x); /* Borrow +1 ref for caller; *out may alias x — caller must mag_tensor_decref(*out) once */
         *out_result = x;
         return MAG_STATUS_OK;
     }

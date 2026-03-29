@@ -105,7 +105,7 @@ static mag_status_t mag_cpu_alloc_storage(mag_device_t *host, mag_storage_buffer
     *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
         .ctx = ctx,
         .aux = {},
-        .flags = MAG_STORAGE_FLAG_ACCESS_W,
+        .flags = MAG_STORAGE_FLAG_ACCESS_W|MAG_STORAGE_FLAG_HOST_VISIBLE,
         .alignment = MAG_CPU_BUF_ALIGN,
         .base = 0,
         .size = size,
@@ -178,7 +178,8 @@ static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_thr
         .is_async = false,
         .submit = &mag_cpu_submit,
         .alloc_storage = &mag_cpu_alloc_storage,
-        .manual_seed = &mag_cpu_manual_seed
+        .manual_seed = &mag_cpu_manual_seed,
+        .transfer = NULL
     };
     snprintf(device->physical_device_name, sizeof(device->physical_device_name), "%s", ctx->machine.cpu_name);
     return device;

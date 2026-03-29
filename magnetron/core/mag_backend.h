@@ -24,14 +24,17 @@ extern "C" {
 typedef struct mag_device_t mag_device_t;
 
 typedef enum mag_transfer_dir_t {
-    MAG_TRANSFER_DIR_H2D,   /* Host -> Device. */
-    MAG_TRANSFER_DIR_D2H,   /* Device -> Host. */
+    /* Contiguous tensor copy; dvc is the accelerator that performs the copy (destination for H2D/D2D, source for D2H). */
+    MAG_TRANSFER_DIR_H2D,   /* Host-visible storage -> device-local storage. */
+    MAG_TRANSFER_DIR_D2H,   /* Device-local storage -> host-visible storage. */
+    MAG_TRANSFER_DIR_D2D,   /* Device-local -> device-local (peer; dvc matches destination tensor's device). */
 } mag_transfer_dir_t;
 
 typedef enum mag_storage_flags_t {
     MAG_STORAGE_FLAG_NONE = 0,
     MAG_STORAGE_FLAG_BORROWED = 1<<0,       /* Storage memory is borrowed and must not be freed. */
     MAG_STORAGE_FLAG_ACCESS_W = 1<<1,       /* Write access. */
+    MAG_STORAGE_FLAG_HOST_VISIBLE = 1<<2    /* Storage is visible to host (CPU) and can be accessed directly. */
 } mag_storage_flags_t;
 
 /* Buffer interface on a compute device */
@@ -71,7 +74,8 @@ struct mag_device_t {
     mag_status_t (*submit)(mag_device_t *dvc, const mag_command_t *cmd);    /* Submit a command to the device for execution. */
     mag_status_t (*alloc_storage)(mag_device_t *dvc, mag_storage_buffer_t **out, size_t size, mag_dtype_t dtype);
     void (*manual_seed)(mag_device_t *dvc, uint64_t seed);
-    char physical_device_name[256];                                 /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
+    mag_status_t (*transfer)(mag_device_t *dvc, mag_error_t *err, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst);
+    char physical_device_name[256];                                         /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
 };
 
 #define MAG_BACKEND_MODULE_ABI_VER 1 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */

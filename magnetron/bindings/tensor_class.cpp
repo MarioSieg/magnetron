@@ -165,26 +165,27 @@ namespace mag::bindings {
         .def("tolist", [](const tensor_wrapper &self) -> nb::object {
             std::lock_guard lock {get_global_mutex()};
             if (!mag_tensor_numel(*self)) return nb::list();
-            auto *tensor = *self;
-            if (tensor->storage->device->id.type != MAG_BACKEND_TYPE_CPU)
-                throw nb::value_error("tolist() only supports CPU tensors");
+            mag_error_t err {};
+            mag_tensor_t *host = nullptr;
+            throw_if_error(mag_transfer(&err, &host, *self, mag_device(CPU, 0)), err);
+            on_scope_exit defer_host {[host] { mag_tensor_decref(host); }};
+            mag_tensor_t *tensor = host;
             enum class CastedTypeFamily { F64, I64, U64, Bool };
             CastedTypeFamily casted_type {};
             mag_tensor_t *contig = nullptr;
             {
-                mag_error_t err {};
                 mag_tensor_t *casted = nullptr;
                 if (mag_tensor_is_floating_point_typed(tensor)) {
-                    throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_FLOAT32), err);
+                    throw_if_error(mag_cast(&err, &casted, tensor, MAG_DTYPE_FLOAT32), err);
                     casted_type = CastedTypeFamily::F64;
                 } else if (mag_tensor_is_signed_integer_typed(tensor)) {
-                    throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_INT64), err);
+                    throw_if_error(mag_cast(&err, &casted, tensor, MAG_DTYPE_INT64), err);
                     casted_type = CastedTypeFamily::I64;
                 } else if (mag_tensor_is_unsigned_integer_typed(tensor)) {
-                    throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_UINT64), err);
+                    throw_if_error(mag_cast(&err, &casted, tensor, MAG_DTYPE_UINT64), err);
                     casted_type = CastedTypeFamily::U64;
                 } else if (mag_tensor_type(tensor) == MAG_DTYPE_BOOLEAN) {
-                    throw_if_error(mag_cast(&err, &casted, *self, MAG_DTYPE_UINT8), err);
+                    throw_if_error(mag_cast(&err, &casted, tensor, MAG_DTYPE_UINT8), err);
                     casted_type = CastedTypeFamily::Bool;
                 } else {
                     throw nb::type_error("Unsupported dtype for tolist()");
@@ -195,7 +196,7 @@ namespace mag::bindings {
             on_scope_exit defer_decref2 {[contig] { mag_tensor_decref(contig); }};
             const auto *ptr = reinterpret_cast<const void *>(mag_tensor_data_ptr(contig));
             int64_t rank = mag_tensor_rank(contig);
-            if (rank == 0) { // Handle scalars
+            if (rank == 0) {
                 switch (casted_type) {
                     case CastedTypeFamily::F64: return nb::float_{*static_cast<const float *>(ptr)};
                     case CastedTypeFamily::I64: return nb::int_{*static_cast<const int64_t *>(ptr)};
@@ -218,7 +219,7 @@ namespace mag::bindings {
                 default: throw nb::value_error("Unsupported dtype for tolist()");
             }
             return result;
-        }, "Convert tensor to a nested Python list (CPU only).");
+        }, "Convert tensor to a nested Python list (copies through host if needed).");
     }
 
     extern void init_tensor_special_methods(nb::class_<tensor_wrapper> &cls);

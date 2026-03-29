@@ -249,15 +249,19 @@ mag_device_id_t mag_tensor_device_id(const mag_tensor_t *tensor) {
 }
 
 mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void **out_buf, size_t *out_size_bytes) {
-    mag_contract(err, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "Tensor storage must be allocated on CPU, but is allocated on %s", mag_backend_type_to_str(tensor->storage->device->id.type));
-    mag_tensor_t *cont;
-    mag_try(mag_contiguous(err, &cont, tensor));
+    *out_buf = NULL;
+    *out_size_bytes = 0;
+    mag_tensor_t *host = NULL;
+    mag_try(mag_transfer(err, &host, tensor, mag_device(CPU, 0)));
+    mag_tensor_t *cont = NULL;
+    mag_try_or(mag_contiguous(err, &cont, host), { mag_tensor_decref(host); });
     size_t size = mag_tensor_numbytes(cont);
     mag_assert2(size);
     void *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     const void *src = (const void *)mag_tensor_data_ptr(cont);
     memcpy(dst, src, size);
-    mag_rc_decref(cont);
+    mag_tensor_decref(cont);
+    mag_tensor_decref(host);
     *out_buf = dst;
     *out_size_bytes = size;
     return MAG_STATUS_OK;
@@ -268,17 +272,16 @@ void mag_tensor_copy_data_free(void *ret_val) {
 }
 
 mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t *out_value) {
-    /* TODO: auto transfer */
-    mag_contract(err, ERR_INVALID_PARAM, {}, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "item() requires tensor storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
     mag_contract(err, ERR_INVALID_PARAM, {}, tensor->numel == 1, "item() can only be called on single element (scalar) tensors, but tensor has %" PRIi64 " elements", tensor->numel);
     mag_contract(err, ERR_INVALID_PARAM, {}, out_value != NULL, "Output value must not be NULL");
+    mag_tensor_t *host = NULL;
+    mag_try(mag_transfer(err, &host, tensor, mag_device(CPU, 0)));
     mag_status_t stat;
     mag_tensor_t *scalar = NULL;
-    if (tensor->coords.rank == 0) {
-        mag_tensor_incref(tensor);
-        scalar = tensor;
+    if (host->coords.rank == 0) {
+        scalar = host;
     } else {
-        mag_try(mag_view(err, &scalar, tensor, NULL, 0));
+        mag_try_or(mag_view(err, &scalar, host, NULL, 0), { mag_tensor_decref(host); });
     }
     mag_dtype_t dt = scalar->dtype;
     mag_dtype_mask_t mask = mag_dtype_bit(dt);
@@ -288,10 +291,14 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         if (dt != MAG_DTYPE_FLOAT32) {
             stat = mag_cast(err, &wide, scalar, MAG_DTYPE_FLOAT32);
             mag_tensor_decref(scalar);
-            if (mag_iserr(stat)) return stat;
+            if (mag_iserr(stat)) {
+                if (scalar != host) mag_tensor_decref(host);
+                return stat;
+            }
         }
         res = mag_scalar_from_f64(*(const float *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
+        if (scalar != host) mag_tensor_decref(host);
         *out_value = res;
         return MAG_STATUS_OK;
     }
@@ -300,10 +307,14 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         if (dt != MAG_DTYPE_INT64) {
             stat = mag_cast(err, &wide, scalar, MAG_DTYPE_INT64);
             mag_tensor_decref(scalar);
-            if (mag_iserr(stat)) return stat;
+            if (mag_iserr(stat)) {
+                if (scalar != host) mag_tensor_decref(host);
+                return stat;
+            }
         }
         res = mag_scalar_from_i64(*(const int64_t *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
+        if (scalar != host) mag_tensor_decref(host);
         *out_value = res;
         return MAG_STATUS_OK;
     }
@@ -312,14 +323,19 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         if (dt != MAG_DTYPE_UINT64) {
             stat = mag_cast(err, &wide, scalar, MAG_DTYPE_UINT64);
             mag_tensor_decref(scalar);
-            if (mag_iserr(stat)) return stat;
+            if (mag_iserr(stat)) {
+                if (scalar != host) mag_tensor_decref(host);
+                return stat;
+            }
         }
         res = mag_scalar_from_u64(*(const uint64_t *)mag_tensor_data_ptr(wide));
         mag_tensor_decref(wide);
+        if (scalar != host) mag_tensor_decref(host);
         *out_value = res;
         return MAG_STATUS_OK;
     }
     mag_tensor_decref(scalar);
+    if (scalar != host) mag_tensor_decref(host);
     mag_contract(err, ERR_INVALID_PARAM, {}, false, "Unsupported dtype %s", mag_type_trait(dt)->name);
     return MAG_STATUS_ERR_INVALID_PARAM;
 }

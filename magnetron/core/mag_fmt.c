@@ -857,8 +857,9 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
 }
 
 const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold) {
-    /* TODO: auto transfer */
-    mag_assert(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "Data copy requires tensor storage on CPU, but tensor storage device is allocated on %s:%u", mag_backend_type_to_str(tensor->storage->device->id.type), tensor->storage->device->id.type);
+    mag_error_t xfer_err = {0};
+    mag_tensor_t *host = NULL;
+    if (mag_iserr(mag_transfer(&xfer_err, &host, tensor, mag_device(CPU, 0)))) return NULL;
     head = head < 0 ? MAG_FMT_TENSOR_DEFAULT_HEAD_ELEMS : head;
     tail = tail < 0 ? MAG_FMT_TENSOR_DEFAULT_TAIL_ELEMS : tail;
     threshold = threshold < 0 ? MAG_FMT_TENSOR_DEFAULT_THRESHOLD : threshold;
@@ -868,13 +869,13 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
     size_t pad = strlen(prefix);
     mag_sstream_append(&ss, prefix);
     mag_coords_iter_t iter;
-    mag_coords_iter_init(&iter, &tensor->coords);
+    mag_coords_iter_init(&iter, &host->coords);
     size_t ncol = 0;
     size_t *col_widths = NULL;
     if (iter.rank > 0) {
         int64_t last_dim = iter.shape[iter.rank - 1];
         int64_t head_e = head, tail_e = tail;
-        if (!(tensor->numel > threshold) || head_e + tail_e >= last_dim) {
+        if (!(host->numel > threshold) || head_e + tail_e >= last_dim) {
             head_e = last_dim;
             tail_e = 0;
         }
@@ -886,13 +887,13 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
     }
     mag_tensor_format_context_t fmt = {
         .ss = &ss,
-        .buf = (const void *)mag_tensor_data_ptr(tensor),
-        .dtype = tensor->dtype,
+        .buf = (const void *)mag_tensor_data_ptr(host),
+        .dtype = host->dtype,
         .iter = &iter,
         .idx = {0},
         .head = head,
         .tail = tail,
-        .trunc = tensor->numel > threshold,
+        .trunc = host->numel > threshold,
         .pad = pad,
         .linewidth = MAG_FMT_TENSOR_DEFAULT_LINE_WIDTH,
         .col = pad,
@@ -906,6 +907,7 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
     char device_str[32];
     mag_device_id_to_str(tensor->storage->device->id, &device_str);
     mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_type_trait(tensor->dtype)->name, device_str);
+    mag_tensor_decref(host);
     return ss.buf; /* Return the string, must be freed with mag_tensor_to_string_free_data. */
 }
 

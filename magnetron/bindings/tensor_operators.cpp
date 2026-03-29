@@ -205,6 +205,15 @@ namespace mag::bindings {
             throw_if_error(mag_cast(&err, &out, *self, dt.v), err);
             return tensor_wrapper{out};
         }, "dtype"_a, "Return a copy with the given dtype.")
+        .def("transfer", [](const tensor_wrapper &self, const std::string &device_str) -> tensor_wrapper {
+            std::lock_guard lock {get_global_mutex()};
+            std::optional<mag_device_id_t> device_id = parse_device_id_str(std::string{device_str});
+            if (!device_id) throw std::runtime_error {"Invalid device id"};
+            mag_tensor_t *out = nullptr;
+            mag_error_t err {};
+            throw_if_error(mag_transfer(&err, &out, *self, *device_id), err);
+            return tensor_wrapper{out};
+        }, "device"_a, "Return a tensor on the given device (e.g. 'cpu', 'cuda:0'). Same device returns self (shared).")
         .def("view", [](const tensor_wrapper &self, nb::args args) -> tensor_wrapper {
             std::lock_guard lock {get_global_mutex()};
             std::vector<int64_t> shape = parse_i64_dims(args, "view");

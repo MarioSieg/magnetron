@@ -58,6 +58,72 @@ namespace mag {
         global_seed.store(seed, std::memory_order_relaxed);
     }
 
+    [[nodiscard]] static mag_status_t cuda_transfer(mag_device_t *dvc, mag_error_t *err, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst) {
+        const size_t nb = mag_tensor_numbytes(src);
+        mag_contract(err, ERR_INVALID_PARAM, {}, nb == mag_tensor_numbytes(dst), "Transfer: source and destination byte sizes differ.");
+        mag_contract(err, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(dst), "Transfer requires contiguous tensors.");
+
+        const int my_dev = static_cast<int>(dvc->id.device_ordinal);
+
+        auto report_cuda = [err](cudaError_t ce, const char *what) -> mag_status_t {
+            if (err && err->code == MAG_STATUS_OK) {
+                *err = mag_error_t{
+                    .code = MAG_STATUS_ERR_UNKNOWN,
+                    .message = "",
+                    .file = __FILE__,
+                    .line = __LINE__,
+                    .func = __func__,
+                };
+                snprintf(err->message, sizeof err->message, "%s: %s", what, cudaGetErrorString(ce));
+            }
+            return MAG_STATUS_ERR_UNKNOWN;
+        };
+
+        switch (dir) {
+        case MAG_TRANSFER_DIR_H2D: {
+            mag_contract(err, ERR_INVALID_PARAM, {}, src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE, "H2D: source storage must be host-visible.");
+            mag_contract(err, ERR_INVALID_PARAM, {}, !(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE), "H2D: destination storage must be device-local.");
+            mag_contract(err, ERR_INVALID_PARAM, {}, dst->storage->device == dvc, "H2D: destination device mismatch.");
+            cudaError_t ce = cudaSetDevice(my_dev);
+            if (mag_unlikely(ce != cudaSuccess))
+                return report_cuda(ce, "cudaSetDevice (H2D)");
+            ce = cudaMemcpy(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst)), reinterpret_cast<const void *>(mag_tensor_data_ptr(src)), nb, cudaMemcpyHostToDevice);
+            if (mag_unlikely(ce != cudaSuccess))
+                return report_cuda(ce, "cudaMemcpy H2D");
+            return MAG_STATUS_OK;
+        }
+        case MAG_TRANSFER_DIR_D2H: {
+            mag_contract(err, ERR_INVALID_PARAM, {}, !(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE), "D2H: source storage must be device-local.");
+            mag_contract(err, ERR_INVALID_PARAM, {}, src->storage->device == dvc, "D2H: source device mismatch.");
+            mag_contract(err, ERR_INVALID_PARAM, {}, dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE, "D2H: destination storage must be host-visible.");
+            cudaError_t ce = cudaSetDevice(my_dev);
+            if (mag_unlikely(ce != cudaSuccess))
+                return report_cuda(ce, "cudaSetDevice (D2H)");
+            ce = cudaMemcpy(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst)), reinterpret_cast<const void *>(mag_tensor_data_ptr(src)), nb, cudaMemcpyDeviceToHost);
+            if (mag_unlikely(ce != cudaSuccess))
+                return report_cuda(ce, "cudaMemcpy D2H");
+            return MAG_STATUS_OK;
+        }
+        case MAG_TRANSFER_DIR_D2D: {
+            mag_contract(err, ERR_INVALID_PARAM, {}, !(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE) && !(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE), "D2D: both storages must be device-local.");
+            const int src_ord = static_cast<int>(src->storage->device->id.device_ordinal);
+            const int dst_ord = static_cast<int>(dst->storage->device->id.device_ordinal);
+            mag_contract(err, ERR_INVALID_PARAM, {}, dst->storage->device == dvc, "D2D: destination device mismatch.");
+            cudaError_t ce = cudaSetDevice(dst_ord);
+            if (mag_unlikely(ce != cudaSuccess))
+                return report_cuda(ce, "cudaSetDevice (D2D)");
+            void *dp = reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst));
+            const void *sp = reinterpret_cast<const void *>(mag_tensor_data_ptr(src));
+            ce = cudaMemcpyPeer(dp, dst_ord, sp, src_ord, nb);
+            if (mag_unlikely(ce != cudaSuccess))
+                return report_cuda(ce, "cudaMemcpyPeer");
+            return MAG_STATUS_OK;
+        }
+        default:
+            mag_contract(err, ERR_INVALID_PARAM, {}, false, "Invalid transfer direction.");
+        }
+    }
+
     [[nodiscard]] static mag_status_t submit(mag_device_t *dvc, const mag_command_t *cmd) {
         static constexpr auto *op_nop = +[](const mag_command_t &) -> void { };
 
@@ -209,6 +275,7 @@ namespace mag {
             submit = &::mag::submit;
             alloc_storage = &::mag::alloc_storage_buffer;
             manual_seed = &::mag::manual_seed;
+            transfer = &::mag::cuda_transfer;
 
             CUdevice cu_dvc = 0;
             CUresult res = CUDA_SUCCESS;
