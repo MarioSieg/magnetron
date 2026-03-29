@@ -469,14 +469,14 @@ namespace mag {
     }
 
     /* --- matmul --- */
-    struct MatmulCudaDesc {
+    struct matmul_desc_t {
         int64_t rank;
         int64_t shape[MAG_MAX_DIMS];
         int64_t stride[MAG_MAX_DIMS];
     };
 
-    static MatmulCudaDesc desc_from(const mag_tensor_t *t) {
-        MatmulCudaDesc d{};
+    static matmul_desc_t desc_from(const mag_tensor_t *t) {
+        matmul_desc_t d{};
         d.rank = t->coords.rank;
         for (int64_t i=0; i < d.rank; ++i) {
             d.shape[i] = t->coords.shape[i];
@@ -485,7 +485,7 @@ namespace mag {
         return d;
     }
 
-    __device__ __forceinline__ int64_t mag_d_offset_rmn(MatmulCudaDesc t, int64_t flat, int64_t i, int64_t j) {
+    __device__ __forceinline__ int64_t mag_d_offset_rmn(matmul_desc_t t, int64_t flat, int64_t i, int64_t j) {
         int64_t ra = t.rank;
         const int64_t *td = t.shape;
         const int64_t *ts = t.stride;
@@ -523,19 +523,19 @@ namespace mag {
     }
 
     template <typename T>
-    __device__ float d_load_x(const MatmulCudaDesc &x, const T *bx, int64_t xb_flat, int64_t i, int64_t k) {
+    __device__ float d_load_x(const matmul_desc_t &x, const T *bx, int64_t xb_flat, int64_t i, int64_t k) {
         int64_t off = (x.rank == 1) ? mag_d_offset_rmn(x, k, 0, 0) : mag_d_offset_rmn(x, xb_flat, i, k);
         return d_mm_to_f32(bx[off]);
     }
 
     template <typename T>
-    __device__ float d_load_y(const MatmulCudaDesc &y, const T *by, int64_t yb_flat, int64_t k, int64_t n) {
+    __device__ float d_load_y(const matmul_desc_t &y, const T *by, int64_t yb_flat, int64_t k, int64_t n) {
         int64_t off = (y.rank == 1) ? mag_d_offset_rmn(y, k, 0, 0) : mag_d_offset_rmn(y, yb_flat, k, n);
         return d_mm_to_f32(by[off]);
     }
 
     template <typename T>
-    __device__ void d_store_r(const MatmulCudaDesc &r, T *br, int64_t rb_flat, int64_t i, int64_t n, float v) {
+    __device__ void d_store_r(const matmul_desc_t &r, T *br, int64_t rb_flat, int64_t i, int64_t n, float v) {
         if (r.rank == 0)
             br[0] = d_mm_from_f32<T>(v);
         else if (r.rank == 1) {
@@ -551,7 +551,7 @@ namespace mag {
     __global__ static void matmul_kernel(
         int64_t M, int64_t N, int64_t K, int64_t batch_total,
         int64_t bdx, int64_t bdy, int64_t bdr,
-        MatmulCudaDesc dx, MatmulCudaDesc dy, MatmulCudaDesc dr,
+        matmul_desc_t dx, matmul_desc_t dy, matmul_desc_t dr,
         T *br, const T *bx, const T *by
     ) {
         int64_t tid = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
@@ -609,9 +609,9 @@ namespace mag {
         for (int64_t d = 0; d < bdr; ++d) batch_total *= r->coords.shape[d];
         int64_t bdx = (x->coords.rank > 2) ? (x->coords.rank - 2) : 0;
         int64_t bdy = (y->coords.rank > 2) ? (y->coords.rank - 2) : 0;
-        MatmulCudaDesc dx = desc_from(x);
-        MatmulCudaDesc dy = desc_from(y);
-        MatmulCudaDesc dr = desc_from(r);
+        matmul_desc_t dx = desc_from(x);
+        matmul_desc_t dy = desc_from(y);
+        matmul_desc_t dr = desc_from(r);
         auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
         const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
         const auto *by = reinterpret_cast<const T *>(mag_tensor_data_ptr(y));

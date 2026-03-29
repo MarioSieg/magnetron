@@ -262,6 +262,14 @@ static mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opco
             }
         }
     }
+    if (op == MAG_OP_GATHER) {
+        mag_contract(err, ERR_INVALID_PARAM, {}, inputs[1]->dtype == MAG_DTYPE_INT64,
+            "Index tensor for operator '%s' must have dtype int64, but got '%s'.\n"
+            "    Hint: cast indices to int64.\n",
+            meta->mnemonic, mag_type_trait(inputs[1]->dtype)->name
+        );
+        return MAG_STATUS_OK;
+    }
     if (mag_unlikely(meta->in == 2 && n == 2 && inputs[0]->dtype != inputs[1]->dtype)) { /* For binary operators, check that both inputs have the same data type. */
         const char *dtype_x = mag_type_trait(inputs[0]->dtype)->name;
         const char *dtype_y = mag_type_trait(inputs[1]->dtype)->name;
