@@ -223,9 +223,10 @@ class Qwen3Model(nn.Module):
         concated: str = ''
         for _ in range(max_tokens):
             logits_1d: Tensor = next_logits.reshape(-1)
-            top_vals, top_idx = logits_1d.topk(top_k, dim=0, largest=True, sorted=False)
-            pick: Tensor = top_vals.softmax(dim=-1).reshape(1, -1).multinomial(num_samples=1)
-            tok_id: int = int(top_idx[pick[0, 0]].item())
+            # top_vals, top_idx = logits_1d.topk(top_k, dim=0, largest=True, sorted=False)
+            # pick: Tensor = top_vals.softmax(dim=-1).reshape(1, -1).multinomial(num_samples=1)
+            # tok_id: int = int(top_idx[pick[0, 0]].item())
+            tok_id = int(logits_1d.argmax(dim=0).item())
             if tok_id == self.config.eos_token_id or tok_id in _EOS:
                 return
             gen_ids.append(tok_id)

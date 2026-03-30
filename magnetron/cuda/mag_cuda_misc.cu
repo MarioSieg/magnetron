@@ -485,7 +485,6 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
         }
     }
 
-    /* --- topk --- */
     template <typename T>
     __device__ __forceinline__ float topk_cmp_val(T x) {
         if constexpr (std::is_same_v<T, float>) return x;
