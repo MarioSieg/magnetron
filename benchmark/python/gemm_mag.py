@@ -38,7 +38,7 @@ A, B = A.transfer('cpu'), B.transfer('cpu')
 last_result = last_result.transfer('cpu')
 errors = ((A @ B) - last_result).abs()
 if (errors > 1e-1).any():
-    raise RuntimeError(f'Matmul is wrong: {errors}')
+    raise RuntimeError(f'Matmul is wrong (max delta): {errors.max().item()}')
 
 gflops = [flops / t / 1e9 for t in times]
 print(

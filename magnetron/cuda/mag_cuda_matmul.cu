@@ -26,7 +26,7 @@
 namespace mag {
 #if MAG_CUDA_MATMUL_USE_WMMA
     template <typename T, bool TA, bool TB, int BM, int BN>
-    __global__ static void matmul_kernel_bf16_wmma(
+    __global__ static void matmul_kernel_wmma(
         int64_t M,
         int64_t N,
         int64_t K,
@@ -335,19 +335,19 @@ namespace mag {
                 dim3 grid_dim((N + BN - 1) / BN, (M + BM - 1) / BM,batch_total);
                 dim3 block_dim(BLOCK_THREADS, 1, 1);
                 if (!xT && !yT) {
-                    auto *kernel = matmul_kernel_bf16_wmma<T, false, false, BM, BN>;
+                    auto *kernel = matmul_kernel_wmma<T, false, false, BM, BN>;
                     set_kernel_smem_size(kernel, smem);
                     kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
                 } else if (!xT && yT) {
-                    auto *kernel = matmul_kernel_bf16_wmma<T, false, true, BM, BN>;
+                    auto *kernel = matmul_kernel_wmma<T, false, true, BM, BN>;
                     set_kernel_smem_size(kernel, smem);
                     kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
                 } else if (xT && !yT) {
-                    auto *kernel = matmul_kernel_bf16_wmma<T, true, false, BM, BN>;
+                    auto *kernel = matmul_kernel_wmma<T, true, false, BM, BN>;
                     set_kernel_smem_size(kernel, smem);
                     kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
                 } else {
-                    auto *kernel = matmul_kernel_bf16_wmma<T, true, true, BM, BN>;
+                    auto *kernel = matmul_kernel_wmma<T, true, true, BM, BN>;
                     set_kernel_smem_size(kernel, smem);
                     kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
                 }
