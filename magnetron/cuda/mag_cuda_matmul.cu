@@ -26,8 +26,8 @@ namespace mag {
     // https://alexarmbr.github.io/2024/08/10/How-To-Write-A-Fast-Matrix-Multiplication-From-Scratch-With-Tensor-Cores.html
     // https://cudaforfun.substack.com/p/outperforming-cublas-on-h100-a-worklog
     // https://gau-nernst.github.io/tcgen05/
-    template <typename T, int BM, int BN, int BK, int TM, int TN>
-    __global__ static void matmul_kernel_2d(
+    template <typename T, bool TA, bool TB, int BM, int BN, int BK, int TM, int TN>
+    __global__ static void matmul_kernel(
         int64_t M, int64_t N, int64_t K,
         int64_t batch_total,
         T *br, const T *bx, const T *by
@@ -37,11 +37,8 @@ namespace mag {
 
         extern __shared__ uint8_t smem[];
 
-        // MxK @ KxN -> MxN
-        // Tensor.uniform(2, 8, device='cuda') @ Tensor.uniform(8, 2, device='cuda')
-
-        T *a_smem = reinterpret_cast<T *>(smem);
-        T *b_smem = reinterpret_cast<T *>(smem) + A_SIZE;
+        auto *a_smem = reinterpret_cast<T *>(smem);
+        auto *b_smem = reinterpret_cast<T *>(smem) + A_SIZE;
 
         int batch = blockIdx.z;
         if (batch >= batch_total) return;
@@ -49,6 +46,11 @@ namespace mag {
         bx += batch*M*K;
         by += batch*K*N;
         br += batch*M*N;
+
+        int a_row_stride = TA ? 1 : K;
+        int a_col_stride = TA ? M : 1;
+        int b_row_stride = TB ? 1 : N;
+        int b_col_stride = TB ? K : 1;
 
         int tile_m = blockIdx.y * BM;
         int tile_n = blockIdx.x * BN;
@@ -68,7 +70,7 @@ namespace mag {
                 int col = i % BK;
                 int g_row = tile_m + row;
                 int g_col = k0 + col;
-                a_smem[i] = g_row < M && g_col < K ? bx[g_row*K + g_col] : T{};
+                a_smem[i] = g_row < M && g_col < K ? bx[g_row*a_row_stride + g_col*a_col_stride] : T{};
             }
             #pragma unroll
             for (int i=tid; i < B_SIZE; i += nthreads) {
@@ -76,7 +78,7 @@ namespace mag {
                 int col = i % BN;
                 int g_row = k0 + row;
                 int g_col = tile_n + col;
-                b_smem[i] = g_row < K && g_col < N ? by[g_row*N + g_col] : T{};
+                b_smem[i] = g_row < K && g_col < N ? by[g_row*b_row_stride + g_col*b_col_stride] : T{};
             }
             __syncthreads();
             #pragma unroll
@@ -114,18 +116,93 @@ namespace mag {
         }
     }
 
+    enum class mat_layout_t {
+        packed,
+        packed_transposed,
+        unsupported
+    };
+
+    struct mat_layout_info_t {
+        mat_layout_t layout;
+        bool batch_packed;
+    };
+
+    [[nodiscard]] static mat_layout_info_t detect_mat_layout_info(const mag_tensor_t *tensor) {
+        mat_layout_info_t info{mat_layout_t::unsupported, false};
+        int64_t rank = tensor->coords.rank;
+        if (rank < 2) {
+            info.layout = mat_layout_t::packed;
+            info.batch_packed = true;
+            return info;
+        }
+        int64_t rows = tensor->coords.shape[rank - 2];
+        int64_t cols = tensor->coords.shape[rank - 1];
+        int64_t srow = tensor->coords.strides[rank - 2];
+        int64_t scol = tensor->coords.strides[rank - 1];
+
+        if (scol == 1 && srow == cols) {
+            info.layout = mat_layout_t::packed;
+        } else if (srow == 1 && scol == rows) {
+            info.layout = mat_layout_t::packed_transposed;
+        } else {
+            return info;
+        }
+        int64_t expected_batch_stride = rows * cols;
+        if (rank == 2) {
+            info.batch_packed = true;
+            return info;
+        }
+        int64_t running = expected_batch_stride;
+        for (int64_t d = rank-3; d >= 0; --d) {
+            if (tensor->coords.strides[d] != running) {
+                info.layout = mat_layout_t::unsupported;
+                info.batch_packed = false;
+                return info;
+            }
+            running *= tensor->coords.shape[d];
+        }
+        info.batch_packed = true;
+        return info;
+    }
+
     template <typename T>
     static void launch_matmul(const mag_command_t &cmd) {
         mag_tensor_t *r = cmd.out[0];
         mag_tensor_t *x = cmd.in[0];
         mag_tensor_t *y = cmd.in[1];
 
-        mag_contiguous(nullptr, &x, x);
-        mag_contiguous(nullptr, &y, y);
+        mag_assert2(mag_tensor_is_contiguous(r));
 
-        int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank-2];
-        int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank-1];
-        int64_t K = x->coords.shape[x->coords.rank-1];
+        mat_layout_info_t xli = detect_mat_layout_info(x);
+        mat_layout_info_t yli = detect_mat_layout_info(y);
+
+        bool x_ok = xli.layout != mat_layout_t::unsupported && xli.batch_packed;
+        bool y_ok = yli.layout != mat_layout_t::unsupported && yli.batch_packed;
+        bool xT = x_ok && xli.layout == mat_layout_t::packed_transposed;
+        bool yT = y_ok && yli.layout == mat_layout_t::packed_transposed;
+
+        bool cloned_x = false;
+        bool cloned_y = false;
+
+        if (!x_ok) {
+            mag_contiguous(nullptr, &x, x);
+            xT = false;
+            cloned_x = true;
+        }
+        if (!y_ok) {
+            mag_contiguous(nullptr, &y, y);
+            yT = false;
+            cloned_y = true;
+        }
+
+        int64_t M  = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank - 2];
+        int64_t Kx = x->coords.shape[x->coords.rank - 1];
+        int64_t N  = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank - 1];
+        int64_t Ky = y->coords.rank == 1 ? y->coords.shape[0] : y->coords.shape[y->coords.rank - 2];
+
+        mag_assert2(Kx == Ky);
+        int64_t K = Kx;
+
         int64_t batch_rank = r->coords.rank > 2 ? r->coords.rank-2 : 0;
         int64_t batch_total = std::accumulate(r->coords.shape, r->coords.shape + batch_rank, 1, std::multiplies<int64_t>());
 
@@ -147,19 +224,37 @@ namespace mag {
         static constexpr int TRY = BM/TM;
         static_assert(TRX*TRY <= 1024);
 
-        auto &kernel = matmul_kernel_2d<T, BM, BN, BK, TM, TN>;
-
-        size_t smem_size = (BM*BK + BN*BK) * sizeof(T);
-        mag_assert(smem_size <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
-        cudaFuncSetAttribute(&kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(smem_size));
         int64_t blocks_x = (N + BN-1)/BN;
         int64_t blocks_y = (M + BM-1)/BM;
         dim3 grid_dim = dim3(blocks_x, blocks_y, batch_total);
         dim3 block_dim = dim3(TRX, TRY, 1);
-        kernel<<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
 
-        mag_tensor_decref(x);
-        mag_tensor_decref(y);
+        size_t smem_size = (BM*BK + BN*BK) * sizeof(T);
+        mag_assert(smem_size <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
+        auto set_kernel_smem_size = [&](auto kernel) -> void {
+            cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(smem_size));
+        };
+
+        if (!xT && !yT) {
+            auto *kernel = matmul_kernel<T, false, false, BM, BN, BK, TM, TN>;
+            set_kernel_smem_size(kernel);
+            kernel<<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
+        } else if (!xT && yT) {
+            auto *kernel = matmul_kernel<T, false, true, BM, BN, BK, TM, TN>;
+            set_kernel_smem_size(kernel);
+            kernel<<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
+        } else if (xT && !yT) {
+            auto *kernel = matmul_kernel<T, true, false, BM, BN, BK, TM, TN>;
+            set_kernel_smem_size(kernel);
+            kernel<<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
+        } else {
+            auto *kernel = matmul_kernel<T, true, true, BM, BN, BK, TM, TN>;
+            set_kernel_smem_size(kernel);
+            kernel<<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
+        }
+
+        if (cloned_x) mag_tensor_decref(x);
+        if (cloned_y) mag_tensor_decref(y);
     }
 
     void misc_op_matmul(const mag_command_t &cmd) {

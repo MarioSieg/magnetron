@@ -485,136 +485,166 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
         }
     }
 
-    template <typename T>
-    __device__ __forceinline__ float topk_cmp_val(T x) {
-        if constexpr (std::is_same_v<T, float>) return x;
-        else if constexpr (std::is_same_v<T, half>) return __half2float(x);
-        else if constexpr (std::is_same_v<T, __nv_bfloat16>) return __bfloat162float(x);
-        else return static_cast<float>(x);
+    template <int N>
+    __device__ __forceinline__ void topk_init_local(
+        float (&vals)[N],
+        int (&idxs)[N],
+        bool largest
+    ) {
+        float init = largest ? -INFINITY : INFINITY;
+        #pragma unroll
+        for (int i=0; i < N; ++i) {
+            vals[i] = init;
+            idxs[i] = 0;
+        }
     }
 
-    template <typename T>
-    __global__ static void topk_rows_kernel(
-        int64_t outer_count,
-        int64_t dim_size,
-        int64_t k,
+    __device__ __forceinline__ bool topk_better(float a_val, int a_idx, float b_val, int b_idx, bool largest) {
+        if (largest) {
+            return (a_val > b_val) || ((a_val == b_val) && (a_idx < b_idx));
+        } else {
+            return (a_val < b_val) || ((a_val == b_val) && (a_idx < b_idx));
+        }
+    }
+
+    template <int N>
+    __device__ __forceinline__ void topk_insert_local(
+        float (&vals)[N],
+        int (&idxs)[N],
+        float v,
+        int idx,
+        int k,
+        bool largest
+    ) {
+        if (!topk_better(v, idx, vals[k - 1], idxs[k - 1], largest)) return;
+        int pos = k - 1;
+        while (pos > 0 && topk_better(v, idx, vals[pos - 1], idxs[pos - 1], largest)) {
+            vals[pos] = vals[pos - 1];
+            idxs[pos] = idxs[pos - 1];
+            --pos;
+        }
+        vals[pos] = v;
+        idxs[pos] = idx;
+    }
+
+    template <typename T, int BLOCK_SIZE, int KMAX>
+    __global__ static void topk_rows_contig_lastdim_kernel(
+        int outer_count,
+        int dim_size,
+        int k,
         bool largest,
-        int64_t R,
-        int64_t dim,
-        int64_t stride_x_dim,
-        int64_t stride_v_dim,
-        mag_tensor_t x_t,
-        mag_tensor_t v_t,
-        mag_tensor_t i_t,
         const T *bx,
         T *bv,
-        int64_t *bi,
-        char *scratch_base,
-        size_t row_bytes
+        int64_t *bi
     ) {
-        int64_t row = static_cast<int64_t>(blockIdx.x);
-        if (row >= outer_count || threadIdx.x != 0) return;
-        const int64_t *shape_x = x_t.coords.shape;
-        const int64_t *str_x = x_t.coords.strides;
-        const int64_t *str_v = v_t.coords.strides;
-        (void)i_t;
-        T *vals_buf = reinterpret_cast<T *>(scratch_base + static_cast<size_t>(row) * row_bytes);
-        int64_t *idx_buf = reinterpret_cast<int64_t *>(vals_buf + dim_size);
-        int64_t outer_rank = R - 1;
-        int64_t shape_outer[MAG_MAX_DIMS];
-        int64_t mult_outer[MAG_MAX_DIMS];
-        int64_t outer_to_full[MAG_MAX_DIMS];
-        {
-            int64_t t=0;
-            for (int64_t d=0; d < R; ++d) {
-                if (d == dim) continue;
-                shape_outer[t] = shape_x[d];
-                outer_to_full[t] = d;
-                ++t;
+        int row = blockIdx.x;
+        if (row >= outer_count) return;
+
+        const T *row_x = bx + row*dim_size;
+        T *row_v = bv + row*k;
+        int64_t *row_i = bi + row*k;
+
+        float local_vals[KMAX];
+        int local_idxs[KMAX];
+        topk_init_local<KMAX>(local_vals, local_idxs, largest);
+
+        for (int col=threadIdx.x; col < dim_size; col += BLOCK_SIZE) {
+            auto v = static_cast<float>(row_x[col]);
+            topk_insert_local<KMAX>(local_vals, local_idxs, v, static_cast<int>(col), static_cast<int>(k), largest);
+        }
+
+        extern __shared__ uint8_t smem_raw[];
+        auto *smem_vals = reinterpret_cast<float *>(smem_raw);
+        auto smem_idxs = reinterpret_cast<int *>(smem_vals + BLOCK_SIZE*KMAX);
+
+        #pragma unroll
+        for (int t=0; t < KMAX; ++t) {
+            smem_vals[threadIdx.x*KMAX + t] = local_vals[t];
+            smem_idxs[threadIdx.x*KMAX + t] = local_idxs[t];
+        }
+
+        __syncthreads();
+
+        if (threadIdx.x == 0) {
+            float best_vals[KMAX];
+            int best_idxs[KMAX];
+            topk_init_local<KMAX>(best_vals, best_idxs, largest);
+
+            #pragma unroll
+            for (int th=0; th < BLOCK_SIZE; ++th) {
+                #pragma unroll
+                for (int t=0; t < KMAX; ++t) {
+                    float v = smem_vals[th*KMAX + t];
+                    int idx = smem_idxs[th*KMAX + t];
+                    topk_insert_local<KMAX>(best_vals, best_idxs, v, idx, static_cast<int>(k), largest);
+                }
             }
-            for (int64_t t2=0; t2 < outer_rank; ++t2) {
-                int64_t m=1;
-                for (int64_t k2=t2+1; k2 < outer_rank; ++k2)
-                    m *= shape_outer[k2];
-                mult_outer[t2] = m;
+
+            for (int j=0; j < k; ++j) {
+                int idx = best_idxs[j];
+                row_v[j] = row_x[idx];
+                row_i[j] = idx;
             }
-        }
-        int64_t rtmp = row;
-        int64_t base_idx[MAG_MAX_DIMS] = {0};
-        for (int64_t d=0; d < R; ++d) base_idx[d] = 0;
-        for (int64_t t=0; t < outer_rank; ++t) {
-            int64_t q = mult_outer[t] == 0 ? 0 : rtmp / mult_outer[t];
-            if (mult_outer[t] != 0) rtmp = rtmp % mult_outer[t];
-            int64_t fd = outer_to_full[t];
-            base_idx[fd] = q;
-        }
-        base_idx[dim] = 0;
-        int64_t off_x0=0;
-        int64_t off_v0=0;
-        for (int64_t d=0; d < R; ++d) {
-            off_x0 += base_idx[d] * str_x[d];
-            off_v0 += base_idx[d] * str_v[d];
-        }
-        for (int64_t p = 0; p < dim_size; ++p) {
-            int64_t off_x = off_x0 + p * stride_x_dim;
-            vals_buf[p] = bx[off_x];
-            idx_buf[p] = p;
-        }
-        for (int64_t rr=0; rr < k; ++rr) {
-            int64_t best = rr;
-            for (int64_t p = rr+1; p < dim_size; ++p) {
-                T vp = vals_buf[p];
-                T vb = vals_buf[best];
-                float fvp = topk_cmp_val(vp);
-                float fvb = topk_cmp_val(vb);
-                bool better;
-                if (largest) better = (fvp > fvb) || ((fvp == fvb) && (idx_buf[p] < idx_buf[best]));
-                else better = (fvp < fvb) || ((fvp == fvb) && (idx_buf[p] < idx_buf[best]));
-                if (better) best = p;
-            }
-            if (best != rr) {
-                T tv = vals_buf[rr];
-                vals_buf[rr] = vals_buf[best];
-                vals_buf[best] = tv;
-                int64_t ti2 = idx_buf[rr];
-                idx_buf[rr] = idx_buf[best];
-                idx_buf[best] = ti2;
-            }
-        }
-        for (int64_t rr=0; rr < k; ++rr) {
-            int64_t off_v = off_v0 + rr*stride_v_dim;
-            bv[off_v] = vals_buf[rr];
-            bi[off_v] = idx_buf[rr];
         }
     }
 
     template <typename T>
     static void launch_topk(const mag_command_t &cmd) {
-        const mag_tensor_t *x = cmd.in[0];
+        mag_tensor_t *x = cmd.in[0];
         mag_tensor_t *v = cmd.out[0];
         mag_tensor_t *idx = cmd.out[1];
-        const int64_t k = mag_op_attr_unwrap_int64(cmd.attrs[0]);
+
+        const int64_t k64 = mag_op_attr_unwrap_int64(cmd.attrs[0]);
         int64_t dim = mag_op_attr_unwrap_int64(cmd.attrs[1]);
-        bool largest = mag_op_attr_unwrap_bool(cmd.attrs[2]);
-        (void)mag_op_attr_unwrap_bool(cmd.attrs[3]);
-        int64_t R = x->coords.rank;
-        mag_assert2(dim >= 0 && dim < R);
-        const int64_t dim_size = x->coords.shape[dim];
-        mag_assert2(k > 0 && k <= dim_size);
-        int64_t outer_count = x->numel / dim_size;
-        if (outer_count <= 0) return;
-        size_t row_bytes = static_cast<size_t>(dim_size) * (sizeof(T) + sizeof(int64_t));
-        void *d_scratch = nullptr;
-        cuda_check(cudaMalloc(&d_scratch, row_bytes * static_cast<size_t>(outer_count)), "topk cudaMalloc");
+        const bool largest = mag_op_attr_unwrap_bool(cmd.attrs[2]);
+        const bool sorted = mag_op_attr_unwrap_bool(cmd.attrs[3]);
+        (void)sorted;
+
+        mag_assert2(x->coords.rank > 0);
+        if (dim < 0) dim += x->coords.rank;
+        mag_assert2(dim >= 0 && dim < x->coords.rank);
+        mag_assert2(dim == x->coords.rank-1);
+        mag_assert2(k64 > 0 && k64 <= x->coords.shape[dim]);
+        mag_contiguous(nullptr, &x, x);
+        int outer_count = static_cast<int>(x->numel / x->coords.shape[dim]);
+        int dim_size    = static_cast<int>(x->coords.shape[dim]);
+        int k           = static_cast<int>(k64);
+
+        if (outer_count <= 0) {
+            mag_tensor_decref(x);
+            return;
+        }
+
+        int max_smem_real;
+        int device;
+        cudaGetDevice(&device);
+        cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
+
         const T *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
         T *bv = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(v));
-        int64_t *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
-        int64_t stride_x_dim = x->coords.strides[dim];
-        int64_t stride_v_dim = v->coords.strides[dim];
-        topk_rows_kernel<T><<<static_cast<unsigned>(outer_count), 1>>>(
-            outer_count, dim_size, k, largest, R, dim, stride_x_dim, stride_v_dim,
-            *x, *v, *idx, bx, bv, bi, reinterpret_cast<char *>(d_scratch), row_bytes);
-        cuda_check(cudaFree(d_scratch), "topk cudaFree");
+        auto *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
+
+        constexpr int BLOCK_SIZE = 256;
+        constexpr int KMAX = 512;
+        mag_assert(k <= KMAX, "topk: k exceeds KMAX, k=%d", k);
+
+        auto &kernel = topk_rows_contig_lastdim_kernel<T, BLOCK_SIZE, KMAX>;
+
+        size_t smem_size = BLOCK_SIZE*KMAX*sizeof(float) + BLOCK_SIZE*KMAX*sizeof(int);
+        mag_assert(smem_size <= (unsigned)max_smem_real, "Required shared memory size for topk kernel exceeds device limit");
+        cudaFuncSetAttribute(&kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(smem_size));
+
+        kernel<<<static_cast<unsigned>(outer_count), BLOCK_SIZE, smem_size>>>(
+                outer_count,
+                dim_size,
+                k,
+                largest,
+                bx,
+                bv,
+                bi
+            );
+
+        mag_tensor_decref(x);
     }
 
     void misc_op_topk(const mag_command_t &cmd) {
