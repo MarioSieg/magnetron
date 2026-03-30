@@ -17,158 +17,128 @@
 
 #include <cmath>
 #include <cstdint>
+#include <numeric>
 #include <type_traits>
 
 namespace mag {
-    struct matmul_desc_t {
-        int64_t rank;
-        int64_t shape[MAG_MAX_DIMS];
-        int64_t stride[MAG_MAX_DIMS];
-    };
-
-    static matmul_desc_t desc_from(const mag_tensor_t *t) {
-        matmul_desc_t d{};
-        d.rank = t->coords.rank;
-        for (int64_t i=0; i < d.rank; ++i) {
-            d.shape[i] = t->coords.shape[i];
-            d.stride[i] = t->coords.strides[i];
-        }
-        return d;
-    }
-
-    __device__ __forceinline__ int64_t mag_d_offset_rmn(matmul_desc_t t, int64_t flat, int64_t i, int64_t j) {
-        int64_t ra = t.rank;
-        const int64_t *td = t.shape;
-        const int64_t *ts = t.stride;
-        if (ra <= 3) {
-            switch (ra) {
-                case 0: return 0;
-                case 1: return flat*ts[0];
-                case 2: return i*ts[0] + j*ts[1];
-                case 3: return flat*ts[0] + i*ts[1] + j*ts[2];
-            }
-        }
-        int64_t off = 0, rem = flat;
-        for (int64_t d = ra-3; d >= 0; --d) {
-            int64_t idx = rem % td[d];
-            rem /= td[d];
-            off += idx*ts[d];
-        }
-        off += i*ts[ra-2];
-        off += j*ts[ra-1];
-        return off;
-    }
-
-    template <typename T>
-    __device__ __forceinline__ float d_mm_to_f32(T x) {
-        if constexpr (std::is_same_v<T, float>) return x;
-        else if constexpr (std::is_same_v<T, half>) return __half2float(x);
-        else return __bfloat162float(x);
-    }
-
-    template <typename T>
-    __device__ __forceinline__ T d_mm_from_f32(float v) {
-        if constexpr (std::is_same_v<T, float>) return v;
-        else if constexpr (std::is_same_v<T, half>) return __float2half(v);
-        else return __float2bfloat16(v);
-    }
-
-    template <typename T>
-    __device__ float d_load_x(const matmul_desc_t &x, const T *bx, int64_t xb_flat, int64_t i, int64_t k) {
-        int64_t off = (x.rank == 1) ? mag_d_offset_rmn(x, k, 0, 0) : mag_d_offset_rmn(x, xb_flat, i, k);
-        return d_mm_to_f32(bx[off]);
-    }
-
-    template <typename T>
-    __device__ float d_load_y(const matmul_desc_t &y, const T *by, int64_t yb_flat, int64_t k, int64_t n) {
-        int64_t off = (y.rank == 1) ? mag_d_offset_rmn(y, k, 0, 0) : mag_d_offset_rmn(y, yb_flat, k, n);
-        return d_mm_to_f32(by[off]);
-    }
-
-    template <typename T>
-    __device__ void d_store_r(const matmul_desc_t &r, T *br, int64_t rb_flat, int64_t i, int64_t n, float v) {
-        if (r.rank == 0)
-            br[0] = d_mm_from_f32<T>(v);
-        else if (r.rank == 1) {
-            int64_t off = mag_d_offset_rmn(r, n, 0, 0);
-            br[off] = d_mm_from_f32<T>(v);
-        } else {
-            int64_t off = mag_d_offset_rmn(r, rb_flat, i, n);
-            br[off] = d_mm_from_f32<T>(v);
-        }
-    }
-
-    template <typename T>
-    __global__ static void matmul_kernel(
-        int64_t M, int64_t N, int64_t K, int64_t batch_total,
-        int64_t bdx, int64_t bdy, int64_t bdr,
-        matmul_desc_t dx, matmul_desc_t dy, matmul_desc_t dr,
+    // In order
+    // https://siboehm.com/articles/22/CUDA-MMM
+    // https://alexarmbr.github.io/2024/08/10/How-To-Write-A-Fast-Matrix-Multiplication-From-Scratch-With-Tensor-Cores.html
+    // https://cudaforfun.substack.com/p/outperforming-cublas-on-h100-a-worklog
+    // https://gau-nernst.github.io/tcgen05/
+    template <typename T, int BM, int BN, int BK>
+    __global__ static void matmul_kernel_2d(
+        int64_t M, int64_t N, int64_t K,
+        int64_t batch_total,
         T *br, const T *bx, const T *by
     ) {
-        int64_t tid = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
-        int64_t total = batch_total * M * N;
-        int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
-        for (int64_t w = tid; w < total; w += step) {
-            int64_t mn = M * N;
-            int64_t batch_idx = w / mn;
-            int64_t rem = w % mn;
-            int64_t i = rem / N;
-            int64_t n = rem % N;
-            int64_t idx_r[MAG_MAX_DIMS] = {0};
-            {
-                int64_t t = batch_idx;
-                for (int64_t d = bdr-1; d >= 0; --d) {
-                    idx_r[d] = t % dr.shape[d];
-                    t /= dr.shape[d];
-                }
+        static constexpr int A_SIZE = BM*BK;
+        static constexpr int B_SIZE = BN*BK;
+
+        extern __shared__ uint8_t smem[];
+
+        // MxK @ KxN -> MxN
+        // Tensor.uniform(2, 8, device='cuda') @ Tensor.uniform(8, 2, device='cuda')
+
+        T *a_smem = reinterpret_cast<T *>(smem);
+        T *b_smem = reinterpret_cast<T *>(smem) + BM*BK;
+
+        int batch = blockIdx.z;
+        if (batch >= batch_total) return;
+
+        bx += batch*M*K;
+        by += batch*K*N;
+        br += batch*M*N;
+
+        int o_row = blockIdx.x*BM;
+        int o_col = blockIdx.y*BN;
+        int tx = threadIdx.x;
+        int ty = threadIdx.y;
+        int tid = threadIdx.y*blockDim.x + threadIdx.x;
+        int nthreads = blockDim.x*blockDim.y;
+
+        // Make this 2D
+        // GMEM -> SMEM[TILE] -> REG[TILE]
+        float acc = 0.f;
+
+        for (int k=0; k < K; k += BK) {
+            #pragma unroll
+            for (int i=tid; i < A_SIZE; i += nthreads) {
+                int g_row = o_row + i/BK;
+                int g_col = i%BK + k;
+                // it goes GMEM -> REG -> SMEM
+                // you can do cp.async on newerish arch ampere+(?)
+                // you can load in float4
+                a_smem[i] = g_row < M && g_col < K ? bx[g_row*K + g_col] : T{};
             }
-            int64_t xb_flat = 0;
-            for (int64_t d = 0; d < bdx; ++d) {
-                int64_t rd = bdr - bdx + d;
-                int64_t idx = (dx.shape[d] == 1) ? 0 : idx_r[rd];
-                xb_flat = xb_flat * dx.shape[d] + idx;
+            // Shared memory swizzling
+            #pragma unroll
+            for (int i=tid; i < B_SIZE; i += nthreads) {
+                int g_row = k + i/BN;
+                int g_col = i%BN + o_col;
+                b_smem[i] = g_row < K && g_col < N ? by[g_row*N + g_col] : T{};
             }
-            int64_t yb_flat = 0;
-            for (int64_t d = 0; d < bdy; ++d) {
-                int64_t rd = bdr - bdy + d;
-                int64_t idx = (dy.shape[d] == 1) ? 0 : idx_r[rd];
-                yb_flat = yb_flat * dy.shape[d] + idx;
+            // can be double buffered
+            // 2 SMEM tiles
+            // You load to tile 1
+            // load tile 2
+            // you compute on tile 1
+            // load to tile 1
+            // compute on tile 2
+            // loop
+            __syncthreads();
+            // Do ACC with tensor cores
+            // https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions
+            // MMA not WGMMA
+            for (int i=0; i < BK; i++) {
+                acc += static_cast<float>(a_smem[tx*BK + i]) * static_cast<float>(b_smem[i*BN + ty]);
             }
-            int64_t rb_flat = 0;
-            for (int64_t d = 0; d < bdr; ++d)
-                rb_flat = rb_flat * dr.shape[d] + idx_r[d];
-            float sum = 0.f;
-            for (int64_t k = 0; k < K; ++k) {
-                float ax = d_load_x(dx, bx, xb_flat, i, k);
-                float byv = d_load_y(dy, by, yb_flat, k, n);
-                sum += ax * byv;
-            }
-            d_store_r(dr, br, rb_flat, i, n, sum);
+            __syncthreads();
+        }
+        if (o_row + tx < M && o_col + ty < N) {
+            br[(o_row+tx)*N + o_col + ty] = acc;
         }
     }
 
     template <typename T>
     static void launch_matmul(const mag_command_t &cmd) {
         mag_tensor_t *r = cmd.out[0];
-        const mag_tensor_t *x = cmd.in[0];
-        const mag_tensor_t *y = cmd.in[1];
-        int64_t M = (x->coords.rank == 1) ? 1 : x->coords.shape[x->coords.rank - 2];
-        int64_t N = (y->coords.rank == 1) ? 1 : y->coords.shape[y->coords.rank - 1];
-        int64_t K = x->coords.shape[x->coords.rank - 1];
-        int64_t bdr = (r->coords.rank > 2) ? (r->coords.rank - 2) : 0;
-        int64_t batch_total = 1;
-        for (int64_t d = 0; d < bdr; ++d) batch_total *= r->coords.shape[d];
-        int64_t bdx = (x->coords.rank > 2) ? (x->coords.rank - 2) : 0;
-        int64_t bdy = (y->coords.rank > 2) ? (y->coords.rank - 2) : 0;
-        matmul_desc_t dx = desc_from(x);
-        matmul_desc_t dy = desc_from(y);
-        matmul_desc_t dr = desc_from(r);
+        mag_tensor_t *x = cmd.in[0];
+        mag_tensor_t *y = cmd.in[1];
+
+        mag_contiguous(nullptr, &x, x);
+        mag_contiguous(nullptr, &y, y);
+
+        int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank-2];
+        int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank-1];
+        int64_t K = x->coords.shape[x->coords.rank-1];
+        int64_t batch_rank = r->coords.rank > 2 ? r->coords.rank-2 : 0;
+        int64_t batch_total = std::accumulate(r->coords.shape, r->coords.shape + batch_rank, 1, std::multiplies<int64_t>());
+
         auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
         const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
         const auto *by = reinterpret_cast<const T *>(mag_tensor_data_ptr(y));
-        int64_t total = batch_total * M * N;
-        int64_t blocks = (total + MATMUL_BLOCK_SIZE - 1) / MATMUL_BLOCK_SIZE;
-        matmul_kernel<T><<<blocks, MATMUL_BLOCK_SIZE>>>(M, N, K, batch_total, bdx, bdy, bdr, dx, dy, dr, br, bx, by);
+
+        int max_smem_real;
+        int device;
+        cudaGetDevice(&device);
+        cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
+
+        static constexpr int BK = 32;
+        static constexpr int BM = 32;
+        static constexpr int BN = 32;
+
+        size_t smem_size = (BM*BK + BN*BK) * sizeof(T);
+        mag_assert(smem_size <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
+        cudaFuncSetAttribute(matmul_kernel_2d<T, BM, BN, BK>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
+        int64_t blocks_x = (M + BM-1)/BM;
+        int64_t blocks_y = (N + BN-1)/BN;
+        dim3 grid_dim = dim3(blocks_x, blocks_y, batch_total);
+        dim3 block_dim = dim3(BM, BN, 1);
+        matmul_kernel_2d<T, BM, BN, BK><<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
+
+        mag_tensor_decref(x);
+        mag_tensor_decref(y);
     }
 
     void misc_op_matmul(const mag_command_t &cmd) {
@@ -180,5 +150,4 @@ namespace mag {
             default: mag_assert(false, "matmul: unsupported dtype");
         }
     }
-
 }

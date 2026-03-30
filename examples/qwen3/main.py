@@ -72,20 +72,20 @@ def repl(engine: InferenceEngine) -> None:
 
 
 def _main() -> None:
-    parser = argparse.ArgumentParser(description='Run Qwen-3 model inference')
-    parser.add_argument('--prompt', type=str, help='Prompt to start generation')
-    parser.add_argument('--repl', action='store_true', help='Run interactive chat REPL')
-    parser.add_argument('--max_tokens', type=int, default=1024, help='Maximum number of new tokens to generate')
-    parser.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
-    parser.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
-    parser.add_argument('--temp', type=float, default=0.6, help='Sampling temperature')
-    parser.add_argument('--system', type=str, default='You are a helpful assistant.', help='System prompt')
-    parser.add_argument('--max_ctx', type=int, default=4096, help='Max prompt context tokens (including system)')
-    parser.add_argument('--reserve_gen', type=int, default=1024, help='Reserve tokens for generation headroom')
-    args = parser.parse_args()
+    args = argparse.ArgumentParser(description='Run Qwen-3 model inference')
+    args.add_argument('--prompt', type=str, help='Prompt to start generation')
+    args.add_argument('--repl', action='store_true', help='Run interactive chat REPL')
+    args.add_argument('--max_tokens', type=int, default=1024, help='Maximum number of new tokens to generate')
+    args.add_argument('--top_k', type=int, default=200, help='Top-k sampling')
+    args.add_argument('--seed', type=int, default=3407, help='Random seed for reproducibility')
+    args.add_argument('--temp', type=float, default=0.6, help='Sampling temperature')
+    args.add_argument('--system', type=str, default='You are a helpful assistant.', help='System prompt')
+    args.add_argument('--max_ctx', type=int, default=4096, help='Max prompt context tokens (including system)')
+    args.add_argument('--reserve_gen', type=int, default=1024, help='Reserve tokens for generation headroom')
+    args = args.parse_args()
 
     if not args.repl and not args.prompt:
-        parser.error('the --prompt argument is required when not running in REPL mode')
+        args.error('the --prompt argument is required when not running in REPL mode')
 
     engine = InferenceEngine(InferenceConfig.from_args(args))
 

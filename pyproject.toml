@@ -34,7 +34,7 @@ examples = [
     "huggingface_hub"
 ]
 
-test = [
+dev = [
     "ruff",
     "torch",
     "numpy",
@@ -44,9 +44,10 @@ test = [
     "pytest",
     "pytest-xdist",
     "pyinstrument",
+    "line_profiler",
     "rich",
     "tokenizers",
-    "huggingface_hub"
+    "huggingface_hub",
 ]
 
 [tool.scikit-build.cmake.define]

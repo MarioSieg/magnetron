@@ -1,36 +1,44 @@
 # (c) 2025 Mario 'Neo' Sieg. <mario.sieg.64@gmail.com>
 
 import time, statistics as stats
-import torch
-import magnetron as mag
+import argparse
+from magnetron import Tensor, dtype, context
 
-VERIFY = False
+args = argparse.ArgumentParser(description='Benchmark contiguous matmul')
+args.add_argument('--B', type=int, default=32)
+args.add_argument('--M', type=int, default=512)
+args.add_argument('--K', type=int, default=512)
+args.add_argument('--N', type=int, default=512)
+args.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'])
+args.add_argument('--warmup', type=int, default=20)
+args.add_argument('--iters', type=int, default=1000)
+args.add_argument('--dtype', type=str, default='bfloat16', choices=['float16', 'bfloat16', 'float32'])
+args = args.parse_args()
 
-batch, M, K, N = 7, 768, 3072, 768
-A = mag.Tensor.uniform(batch, M, K)
-B = mag.Tensor.uniform(batch, K, N)
+batch, M, K, N = args.B, args.M, args.K, args.N
+A = Tensor.uniform(batch, M, K, dtype=getattr(dtype, args.dtype), device=args.device)
+B = Tensor.uniform(batch, K, N, dtype=getattr(dtype, args.dtype), device=args.device)
 
-for _ in range(10):
+for _ in range(args.warmup):
     C = A @ B
-    _ = C[0, 0, 0].item()
 
 flops = 2 * batch * M * N * K
 times = []
-results = []
-I = 1000
-for _ in range(I):
+last_result = None
+for i in range(args.iters):
     t0 = time.perf_counter()
     C = A @ B
-    s = float(C[0, 0, 0].item())
     t1 = time.perf_counter()
     times.append(t1 - t0)
-    results.append(C)
+    if i == args.iters-1: # Save last C
+        last_result = C
+    del C
 
-if VERIFY:
-    print('Verifying results...')
-    correct = torch.tensor(A.tolist(), dtype=torch.float32) @ torch.tensor(B.tolist(), dtype=torch.float32)
-    for r in results:
-        assert torch.allclose(torch.tensor(r.tolist()), correct, atol=1e-5), 'Results do not match!'
+A, B = A.transfer('cpu'), B.transfer('cpu')
+last_result = last_result.transfer('cpu')
+errors = ((A @ B) - last_result).abs()
+if (errors > 1e-1).any():
+    raise RuntimeError(f'Matmul is wrong: {errors}')
 
 gflops = [flops / t / 1e9 for t in times]
 print(

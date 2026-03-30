@@ -265,10 +265,10 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
         mag_tensor_t *idx = mag_cmd_out(1); \
         const int64_t k = mag_op_attr_unwrap_int64(mag_cmd_attr(0)); \
         int64_t dim = mag_op_attr_unwrap_int64(mag_cmd_attr(1)); \
-        bool largest = mag_op_attr_unwrap_bool(mag_cmd_attr(2)); \
-        bool sorted = mag_op_attr_unwrap_bool(mag_cmd_attr(3)); \
-        (void)sorted; /* TODO: support unsorted */ \
-        int64_t R = x->coords.rank; \
+        const bool largest = mag_op_attr_unwrap_bool(mag_cmd_attr(2)); \
+        const bool sorted = mag_op_attr_unwrap_bool(mag_cmd_attr(3)); \
+        (void)sorted; /* This implementation always emits sorted top-k, which is valid for sorted=false too. */ \
+        const int64_t R = x->coords.rank; \
         mag_assert2(R > 0); \
         mag_assert2(dim >= 0 && dim < R); \
         const int64_t *shape_x = x->coords.shape; \
@@ -277,25 +277,25 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
         const int64_t dim_size = shape_x[dim]; \
         mag_assert2(k > 0 && k <= dim_size); \
         for (int64_t d=0; d < R; ++d) { \
-            int64_t expected = d == dim ? k : shape_x[d]; \
+            const int64_t expected = (d == dim) ? k : shape_x[d]; \
             mag_assert2(shape_v[d] == expected); \
             mag_assert2(shape_i[d] == expected); \
         } \
         const T *bx = (const T *)mag_tensor_data_ptr(x); \
         T *bv = (T *)mag_tensor_data_ptr_mut(v); \
         int64_t *bi = (int64_t *)mag_tensor_data_ptr_mut(idx); \
-        int64_t tc = payload->thread_num; \
-        int64_t ti = payload->thread_idx; \
-        int64_t outer_count = x->numel / dim_size; \
+        const int64_t tc = payload->thread_num; \
+        const int64_t ti = payload->thread_idx; \
+        const int64_t outer_count = x->numel / dim_size; \
         if (outer_count <= 0) return; \
-        int64_t stride_x_dim = x->coords.strides[dim]; \
-        int64_t stride_v_dim = v->coords.strides[dim]; \
-        int64_t outer_rank = R - 1; \
+        const int64_t stride_x_dim = x->coords.strides[dim]; \
+        const int64_t stride_v_dim = v->coords.strides[dim]; \
+        const int64_t outer_rank = R - 1; \
         int64_t shape_outer[MAG_MAX_DIMS]; \
         int64_t mult_outer[MAG_MAX_DIMS]; \
         int64_t outer_to_full[MAG_MAX_DIMS]; \
         { \
-            int64_t t=0; \
+            int64_t t = 0; \
             for (int64_t d=0; d < R; ++d) { \
                 if (d == dim) continue; \
                 shape_outer[t] = shape_x[d]; \
@@ -303,66 +303,90 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
                 ++t; \
             } \
             for (int64_t t2=0; t2 < outer_rank; ++t2) { \
-                int64_t m=1; \
-                for (int64_t k2=t2+1; k2 < outer_rank; ++k2) \
+                int64_t m = 1; \
+                for (int64_t k2=t2+1; k2 < outer_rank; ++k2) { \
                     m *= shape_outer[k2]; \
+                } \
                 mult_outer[t2] = m; \
             } \
         } \
-        int64_t chunk = (outer_count + tc - 1)/tc; \
-        int64_t oa = ti*chunk; \
-        int64_t ob = mag_xmin(oa + chunk, outer_count); \
+        const int64_t chunk = (outer_count + tc - 1) / tc; \
+        const int64_t oa = ti * chunk; \
+        const int64_t ob = mag_xmin(oa + chunk, outer_count); \
         for (int64_t row=oa; row < ob; ++row) { \
             size_t mark = mag_scratch_arena_mark(&mag_tls_arena); \
             int64_t base_idx[MAG_MAX_DIMS]; \
             for (int64_t d=0; d < R; ++d) base_idx[d] = 0; \
             int64_t rtmp = row; \
             for (int64_t t=0; t < outer_rank; ++t) { \
-                int64_t q = mult_outer[t] == 0 ? 0 : rtmp / mult_outer[t]; \
-                if (mult_outer[t] != 0) rtmp = rtmp % mult_outer[t]; \
-                int64_t fd = outer_to_full[t]; \
-                base_idx[fd] = q; \
+                const int64_t q = (mult_outer[t] == 0) ? 0 : (rtmp / mult_outer[t]); \
+                if (mult_outer[t] != 0) rtmp %= mult_outer[t]; \
+                base_idx[outer_to_full[t]] = q; \
             } \
             base_idx[dim] = 0; \
-            int64_t off_x0=0; \
-            int64_t off_v0=0; \
+            int64_t off_x0 = 0; \
+            int64_t off_v0 = 0; \
             for (int64_t d=0; d < R; ++d) { \
                 off_x0 += base_idx[d] * x->coords.strides[d]; \
                 off_v0 += base_idx[d] * v->coords.strides[d]; \
             } \
-            T *vals_buf = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)dim_size*sizeof(*vals_buf)); \
-            int64_t *idx_buf = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)dim_size*sizeof(*idx_buf)); \
-            for (int64_t p = 0; p < dim_size; ++p) { \
+            T *best_vals = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_vals)); \
+            int64_t *best_idx = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_idx)); \
+            int64_t filled = 0; \
+            \
+            for (int64_t p=0; p < dim_size; ++p) { \
                 const int64_t off_x = off_x0 + p * stride_x_dim; \
                 mag_bnd_chk(bx + off_x, bx, mag_tensor_numbytes(x)); \
-                vals_buf[p] = bx[off_x]; \
-                idx_buf[p] = p; \
-            } \
-            for (int64_t r=0; r < k; ++r) { \
-                int64_t best = r; \
-                for (int64_t p = r+1; p < dim_size; ++p) { \
-                    T vp = vals_buf[p]; \
-                    T vb = vals_buf[best]; \
+                const T xv = bx[off_x]; \
+                const double xvc = (double)CVT(xv); \
+                if (filled < k) { \
+                    int64_t ins = filled; \
+                    while (ins > 0) { \
+                        const double prevc = (double)CVT(best_vals[ins - 1]); \
+                        const int64_t previ = best_idx[ins - 1]; \
+                        bool better; \
+                        if (largest) better = (xvc > prevc) || ((xvc == prevc) && (p < previ)); \
+                        else         better = (xvc < prevc) || ((xvc == prevc) && (p < previ)); \
+                        if (!better) break; \
+                        best_vals[ins] = best_vals[ins - 1]; \
+                        best_idx[ins] = best_idx[ins - 1]; \
+                        --ins; \
+                    } \
+                    best_vals[ins] = xv; \
+                    best_idx[ins] = p; \
+                    ++filled; \
+                    continue; \
+                } \
+                { \
+                    const double worstc = (double)CVT(best_vals[k - 1]); \
+                    const int64_t worsti = best_idx[k - 1]; \
                     bool better; \
-                    if (largest) better = (CVT(vp) > CVT(vb)) || ((CVT(vp) == CVT(vb)) && (idx_buf[p] < idx_buf[best])); \
-                    else better = (CVT(vp) < CVT(vb)) || ((CVT(vp) == CVT(vb)) && (idx_buf[p] < idx_buf[best])); \
-                    if (better) best = p; \
+                    if (largest) better = (xvc > worstc) || ((xvc == worstc) && (p < worsti)); \
+                    else         better = (xvc < worstc) || ((xvc == worstc) && (p < worsti)); \
+                    if (!better) continue; \
                 } \
-                if (best != r) { \
-                    T tv = vals_buf[r]; \
-                    vals_buf[r] = vals_buf[best]; \
-                    vals_buf[best] = tv; \
-                    int64_t ti2 = idx_buf[r]; \
-                    idx_buf[r] = idx_buf[best]; \
-                    idx_buf[best] = ti2; \
+                int64_t ins = k - 1; \
+                while (ins > 0) { \
+                    const double prevc = (double)CVT(best_vals[ins - 1]); \
+                    const int64_t previ = best_idx[ins - 1]; \
+                    bool better; \
+                    if (largest) better = (xvc > prevc) || ((xvc == prevc) && (p < previ)); \
+                    else         better = (xvc < prevc) || ((xvc == prevc) && (p < previ)); \
+                    if (!better) break; \
+                    best_vals[ins] = best_vals[ins - 1]; \
+                    best_idx[ins] = best_idx[ins - 1]; \
+                    --ins; \
                 } \
+                best_vals[ins] = xv; \
+                best_idx[ins] = p; \
             } \
+            mag_assert2(filled == k); \
             for (int64_t r=0; r < k; ++r) { \
-                const int64_t off_v = off_v0 + r*stride_v_dim; \
+                const int64_t off_v = off_v0 + r * stride_v_dim; \
                 mag_bnd_chk(bv + off_v, bv, mag_tensor_numbytes(v)); \
                 mag_bnd_chk(bi + off_v, bi, mag_tensor_numbytes(idx)); \
-                bv[off_v] = vals_buf[r]; \
-                bi[off_v] = idx_buf[r]; \
+                bv[off_v] = best_vals[r]; \
+                bi[off_v] = best_idx[r]; \
             } \
             mag_scratch_arena_reset(&mag_tls_arena, mark); \
         } \
