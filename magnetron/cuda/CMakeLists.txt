@@ -37,6 +37,7 @@ if (CUDAToolkit_FOUND)
     #   • Build virtual architectures to cover all features for best performance
     #   • Build real architectures for the most common GPUs
 
+    set(CMAKE_CUDA_ARCHITECTURES 120)
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
         if (CUDAToolkit_VERSION VERSION_LESS "13")
             list(APPEND CMAKE_CUDA_ARCHITECTURES 50-virtual 61-virtual 70-virtual)

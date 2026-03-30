@@ -14,18 +14,124 @@
 #include <core/mag_prng_philox4x32.h>
 
 #include <cuda_runtime.h>
+#include <cuda_bf16.h>
+#include <mma.h>
 
 #include <cmath>
 #include <cstdint>
 #include <numeric>
-#include <type_traits>
+
+#define MAG_CUDA_MATMUL_USE_WMMA 1
 
 namespace mag {
+#if MAG_CUDA_MATMUL_USE_WMMA
+    template <typename T, bool TA, bool TB, int BM, int BN>
+    __global__ static void matmul_kernel_bf16_wmma(
+        int64_t M,
+        int64_t N,
+        int64_t K,
+        int64_t batch_total,
+        T *br,
+        const T *bx,
+        const T *by
+    ) {
+        using namespace nvcuda;
+
+        static_assert(!(BM&15), "BM must be multiple of 16");
+        static_assert(!(BN&15), "BN must be multiple of 16");
+
+        static constexpr int BK = 16;
+        static constexpr int WARPS_M = BM>>4;
+        static constexpr int WARPS_N = BN>>4;
+        static constexpr int WARPS_PER_BLOCK = WARPS_M*WARPS_N;
+        static constexpr int BLOCK_THREADS = WARPS_PER_BLOCK<<5;
+
+        int batch = blockIdx.z;
+        if (batch >= batch_total) return;
+        int tile_m = blockIdx.y * BM;
+        int tile_n = blockIdx.x * BN;
+        int tid = threadIdx.x;
+        int warp_id = tid>>5;
+
+        const T *x_batch = bx + batch*M*K;
+        const T *y_batch = by + batch*K*N;
+        T *r_batch = br + batch*M*N;
+
+        extern __shared__ uint8_t smem_raw[];
+
+        auto *a_smem = reinterpret_cast<T *>(smem_raw);
+        auto *b_smem = a_smem + BM*BK;
+        auto *c_smem = reinterpret_cast<float *>(b_smem + BK*BN);
+
+        wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag;
+        wmma::fill_fragment(c_frag, 0.0f);
+
+        int warp_m = warp_id / WARPS_N;
+        int warp_n = warp_id % WARPS_N;
+
+        for (int k0=0; k0 < K; k0 += BK) {
+            #pragma unroll
+            for (int i=tid; i < BM*BK; i += BLOCK_THREADS) {
+                int row = i / BK;
+                int col = i % BK;
+                int g_m = tile_m + row;
+                int g_k = k0 + col;
+                a_smem[row*BK + col] = g_m < M && g_k < K ? x_batch[TA ? g_k*M + g_m : g_m*K + g_k] : T{};
+            }
+
+            #pragma unroll
+            for (int i=tid; i < BK*BN; i += BLOCK_THREADS) {
+                int n_local = i / BK;
+                int k_local = i % BK;
+                int g_k = k0 + k_local;
+                int g_n = tile_n + n_local;
+                b_smem[k_local + n_local*BK] = g_k < K && g_n < N ? y_batch[TB ? g_n*K + g_k : g_k*N + g_n] : T{};
+            }
+
+            __syncthreads();
+
+            if (warp_id < WARPS_PER_BLOCK) {
+                wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag;
+                wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
+                const T *a_ptr = a_smem + (warp_m<<4) * BK;
+                const T *b_ptr = b_smem + (warp_n<<4) * BK;
+                wmma::load_matrix_sync(a_frag, a_ptr, BK);
+                wmma::load_matrix_sync(b_frag, b_ptr, BK);
+                wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+            }
+            __syncthreads();
+        }
+
+        if (warp_id < WARPS_PER_BLOCK) {
+            float *c_ptr = c_smem + (warp_id<<8);
+            wmma::store_matrix_sync(c_ptr, c_frag, 16, wmma::mem_row_major);
+        }
+        __syncthreads();
+
+        for (int i=tid; i < BM * BN; i += BLOCK_THREADS) {
+            int row = i / BN;
+            int col = i % BN;
+            int g_row = tile_m + row;
+            int g_col = tile_n + col;
+            if (g_row < M && g_col < N) {
+                int warp_store_m = row>>4;
+                int warp_store_n = col>>4;
+                int warp_store = warp_store_m * WARPS_N + warp_store_n;
+                int row_in_warp = row&15;
+                int col_in_warp = col&15;
+                float v = c_smem[(warp_store<<8) + (row_in_warp<<4) + col_in_warp];
+                r_batch[g_row*N + g_col] = static_cast<T>(v);
+            }
+        }
+    }
+#endif
+
     // In order
     // https://siboehm.com/articles/22/CUDA-MMM
     // https://alexarmbr.github.io/2024/08/10/How-To-Write-A-Fast-Matrix-Multiplication-From-Scratch-With-Tensor-Cores.html
     // https://cudaforfun.substack.com/p/outperforming-cublas-on-h100-a-worklog
     // https://gau-nernst.github.io/tcgen05/
+
     template <typename T, bool TA, bool TB, int BM, int BN, int BK, int TM, int TN>
     __global__ static void matmul_kernel(
         int64_t M, int64_t N, int64_t K,
@@ -135,31 +241,26 @@ namespace mag {
             info.batch_packed = true;
             return info;
         }
-        int64_t rows = tensor->coords.shape[rank - 2];
-        int64_t cols = tensor->coords.shape[rank - 1];
-        int64_t srow = tensor->coords.strides[rank - 2];
-        int64_t scol = tensor->coords.strides[rank - 1];
-
-        if (scol == 1 && srow == cols) {
-            info.layout = mat_layout_t::packed;
-        } else if (srow == 1 && scol == rows) {
-            info.layout = mat_layout_t::packed_transposed;
-        } else {
-            return info;
-        }
-        int64_t expected_batch_stride = rows * cols;
+        int64_t rows = tensor->coords.shape[rank-2];
+        int64_t cols = tensor->coords.shape[rank-1];
+        int64_t srow = tensor->coords.strides[rank-2];
+        int64_t scol = tensor->coords.strides[rank-1];
+        if (scol == 1 && srow == cols) info.layout = mat_layout_t::packed;
+        else if (srow == 1 && scol == rows) info.layout = mat_layout_t::packed_transposed;
+        else return info;
+        int64_t expected_batch_stride = rows*cols;
         if (rank == 2) {
             info.batch_packed = true;
             return info;
         }
         int64_t running = expected_batch_stride;
-        for (int64_t d = rank-3; d >= 0; --d) {
-            if (tensor->coords.strides[d] != running) {
+        for (int64_t i=rank-3; i >= 0; --i) {
+            if (tensor->coords.strides[i] != running) {
                 info.layout = mat_layout_t::unsupported;
                 info.batch_packed = false;
                 return info;
             }
-            running *= tensor->coords.shape[d];
+            running *= tensor->coords.shape[i];
         }
         info.batch_packed = true;
         return info;
@@ -195,9 +296,9 @@ namespace mag {
             cloned_y = true;
         }
 
-        int64_t M  = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank - 2];
+        int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank - 2];
         int64_t Kx = x->coords.shape[x->coords.rank - 1];
-        int64_t N  = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank - 1];
+        int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank - 1];
         int64_t Ky = y->coords.rank == 1 ? y->coords.shape[0] : y->coords.shape[y->coords.rank - 2];
 
         mag_assert2(Kx == Ky);
@@ -215,6 +316,49 @@ namespace mag {
         cudaGetDevice(&device);
         cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
 
+        auto set_kernel_smem_size = [&](auto kernel, size_t size) -> void {
+            mag_assert2(size <= INT32_MAX);
+            cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(size));
+        };
+
+        #if MAG_CUDA_MATMUL_USE_WMMA
+            if constexpr (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>) {
+                static constexpr int BM = 32;
+                static constexpr int BN = 32;
+                static constexpr int BK = 16;
+                static constexpr int WARPS_M = BM>>4;
+                static constexpr int WARPS_N = BN>>4;
+                static constexpr int BLOCK_THREADS = WARPS_M * (WARPS_N<<5);
+                size_t smem = (BM * BK + BN * BK) * sizeof(T) + (WARPS_M * WARPS_N * 16 * 16) * sizeof(float);
+                mag_assert(smem <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
+
+                dim3 grid_dim((N + BN - 1) / BN, (M + BM - 1) / BM,batch_total);
+                dim3 block_dim(BLOCK_THREADS, 1, 1);
+                if (!xT && !yT) {
+                    auto *kernel = matmul_kernel_bf16_wmma<T, false, false, BM, BN>;
+                    set_kernel_smem_size(kernel, smem);
+                    kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
+                } else if (!xT && yT) {
+                    auto *kernel = matmul_kernel_bf16_wmma<T, false, true, BM, BN>;
+                    set_kernel_smem_size(kernel, smem);
+                    kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
+                } else if (xT && !yT) {
+                    auto *kernel = matmul_kernel_bf16_wmma<T, true, false, BM, BN>;
+                    set_kernel_smem_size(kernel, smem);
+                    kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
+                } else {
+                    auto *kernel = matmul_kernel_bf16_wmma<T, true, true, BM, BN>;
+                    set_kernel_smem_size(kernel, smem);
+                    kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
+                }
+
+                if (cloned_x) mag_tensor_decref(x);
+                if (cloned_y) mag_tensor_decref(y);
+                return;
+            }
+
+        #endif
+
         static constexpr int BM = 64;
         static constexpr int BN = 64;
         static constexpr int BK = 32;
@@ -229,28 +373,25 @@ namespace mag {
         dim3 grid_dim = dim3(blocks_x, blocks_y, batch_total);
         dim3 block_dim = dim3(TRX, TRY, 1);
 
-        size_t smem_size = (BM*BK + BN*BK) * sizeof(T);
-        mag_assert(smem_size <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
-        auto set_kernel_smem_size = [&](auto kernel) -> void {
-            cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(smem_size));
-        };
+        size_t smem = (BM*BK + BN*BK) * sizeof(T);
+        mag_assert(smem <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
 
         if (!xT && !yT) {
             auto *kernel = matmul_kernel<T, false, false, BM, BN, BK, TM, TN>;
-            set_kernel_smem_size(kernel);
-            kernel<<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
+            set_kernel_smem_size(kernel, smem);
+            kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
         } else if (!xT && yT) {
             auto *kernel = matmul_kernel<T, false, true, BM, BN, BK, TM, TN>;
-            set_kernel_smem_size(kernel);
-            kernel<<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
+            set_kernel_smem_size(kernel, smem);
+            kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
         } else if (xT && !yT) {
             auto *kernel = matmul_kernel<T, true, false, BM, BN, BK, TM, TN>;
-            set_kernel_smem_size(kernel);
-            kernel<<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
+            set_kernel_smem_size(kernel, smem);
+            kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
         } else {
             auto *kernel = matmul_kernel<T, true, true, BM, BN, BK, TM, TN>;
-            set_kernel_smem_size(kernel);
-            kernel<<<grid_dim, block_dim, smem_size>>>(M, N, K, batch_total, br, bx, by);
+            set_kernel_smem_size(kernel, smem);
+            kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
         }
 
         if (cloned_x) mag_tensor_decref(x);

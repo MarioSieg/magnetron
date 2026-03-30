@@ -17,7 +17,7 @@ args = args.parse_args()
 
 batch, M, K, N = args.B, args.M, args.K, args.N
 A = Tensor.uniform(batch, M, K, dtype=getattr(dtype, args.dtype), device=args.device)
-B = Tensor.uniform(batch, K, N, dtype=getattr(dtype, args.dtype), device=args.device)
+B = Tensor.uniform(batch, N, K, dtype=getattr(dtype, args.dtype), device=args.device)
 
 for _ in range(args.warmup):
     C = A @ B
