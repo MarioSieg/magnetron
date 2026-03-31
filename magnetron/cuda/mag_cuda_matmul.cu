@@ -201,7 +201,7 @@ namespace mag {
             cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(size));
         };
 
-        dim3 grid_dim((N + BN - 1) / BN, (M + BM - 1) / BM,batch_total);
+        dim3 grid_dim((N + BN - 1)/BN, (M + BM - 1)/BM,batch_total);
         dim3 block_dim(BLOCK_THREADS, 1, 1);
         if (!xT && !yT) {
             auto *kernel = matmul_kernel_wmma<T, false, false, BM, BN>;
@@ -238,10 +238,11 @@ namespace mag {
     ) {
         static constexpr int A_SIZE = BM*BK;
         static constexpr int B_SIZE = BK*BN;
+        static constexpr int STAGES = 2;
 
         extern __shared__ uint8_t smem[];
         auto *a_smem = reinterpret_cast<T *>(smem);
-        auto *b_smem = reinterpret_cast<T *>(smem) + A_SIZE;
+        auto *b_smem = reinterpret_cast<T *>(smem) + STAGES*A_SIZE;
 
         int batch = blockIdx.z;
         if (batch >= batch_total) return;
@@ -264,14 +265,18 @@ namespace mag {
         int local_n0 = tx * TN;
 
         float acc[TM][TN] = {};
-        for (int k0=0; k0 < K; k0 += BK) {
+
+        auto load_stage = [&](int stage, int k0) {
+            auto *a_buf = a_smem + stage*A_SIZE;
+            auto *b_buf = b_smem + stage*B_SIZE;
+
             #pragma unroll
             for (int i=tid; i < A_SIZE; i += nthreads) {
                 int row = i / BK;
                 int col = i % BK;
                 int g_row = tile_m + row;
                 int g_col = k0 + col;
-                a_smem[i] = g_row < M && g_col < K ? bx[g_row*a_row_stride + g_col*a_col_stride] : T{};
+                a_buf[i] = g_row < M && g_col < K ? bx[g_row*a_row_stride + g_col*a_col_stride] : T{};
             }
             #pragma unroll
             for (int i=tid; i < B_SIZE; i += nthreads) {
@@ -279,20 +284,25 @@ namespace mag {
                 int col = i % BN;
                 int g_row = k0 + row;
                 int g_col = tile_n + col;
-                b_smem[i] = g_row < K && g_col < N ? by[g_row*b_row_stride + g_col*b_col_stride] : T{};
+                b_buf[i] = g_row < K && g_col < N ? by[g_row*b_row_stride + g_col*b_col_stride] : T{};
             }
-            __syncthreads();
+        };
+
+        auto compute_stage = [&](int stage) {
+            auto *a_buf = a_smem + stage*A_SIZE;
+            auto *b_buf = b_smem + stage*B_SIZE;
+
             #pragma unroll
             for (int kk=0; kk < BK; ++kk) {
                 float a_frag[TM];
                 float b_frag[TN];
                 #pragma unroll
                 for (int i=0; i < TM; ++i) {
-                    a_frag[i] = static_cast<float>(a_smem[(local_m0 + i)*BK + kk]);
+                    a_frag[i] = static_cast<float>(a_buf[(local_m0 + i)*BK + kk]);
                 }
                 #pragma unroll
                 for (int i=0; i < TN; ++i) {
-                    b_frag[i] = static_cast<float>(b_smem[kk*BN + (local_n0 + i)]);
+                    b_frag[i] = static_cast<float>(b_buf[kk*BN + (local_n0 + i)]);
                 }
                 #pragma unroll
                 for (int i=0; i < TM; ++i) {
@@ -302,8 +312,22 @@ namespace mag {
                     }
                 }
             }
+        };
+
+        int k0 = 0;
+        int stage = 0;
+        load_stage(stage, k0);
+        __syncthreads();
+        for (; k0 < K; k0 += BK) {
+            int next_k0 = k0 + BK;
+            int next_stage = stage^1;
+            if (next_k0 < K)
+                load_stage(next_stage, next_k0);
+            compute_stage(stage);
             __syncthreads();
+            stage = next_stage;
         }
+
         #pragma unroll
         for (int i=0; i < TM; ++i) {
             int g_row = tile_m + local_m0 + i;
@@ -331,6 +355,7 @@ namespace mag {
         static constexpr int BK = 32;
         static constexpr int TM = 4;
         static constexpr int TN = 4;
+        static constexpr int STAGES = 2;
         static constexpr int TRX = BN/TN;
         static constexpr int TRY = BM/TM;
         static_assert(TRX*TRY <= 1024);
@@ -344,7 +369,7 @@ namespace mag {
         int device;
         cudaGetDevice(&device);
         cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
-        size_t smem = (BM*BK + BN*BK) * sizeof(T);
+        size_t smem = STAGES * (BM*BK + BN*BK) * sizeof(T);
         mag_assert(smem <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
         auto set_kernel_smem_size = [&](auto kernel, size_t size) -> void {
             mag_assert2(size <= INT32_MAX);
