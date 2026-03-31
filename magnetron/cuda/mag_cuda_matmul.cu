@@ -21,7 +21,7 @@
 #include <cstdint>
 #include <numeric>
 
-#define MAG_CUDA_MATMUL_USE_WMMA 0
+#define MAG_CUDA_MATMUL_USE_WMMA 1
 
 namespace mag {
     enum class mat_layout_t {
@@ -91,6 +91,9 @@ namespace mag {
         static constexpr int WARPS_N = BN>>4;
         static constexpr int WARPS_PER_BLOCK = WARPS_M*WARPS_N;
         static constexpr int BLOCK_THREADS = WARPS_PER_BLOCK<<5;
+        static constexpr int STAGES = 2;
+        static constexpr int A_SIZE = BM*BK;
+        static constexpr int B_SIZE = BK*BN;
 
         int batch = blockIdx.z;
         if (batch >= batch_total) return;
@@ -106,8 +109,8 @@ namespace mag {
         extern __shared__ uint8_t smem_raw[];
 
         auto *a_smem = reinterpret_cast<T *>(smem_raw);
-        auto *b_smem = a_smem + BM*BK;
-        auto *c_smem = reinterpret_cast<float *>(b_smem + BK*BN);
+        auto *b_smem = a_smem + STAGES*A_SIZE;
+        auto *c_smem = reinterpret_cast<float *>(b_smem + STAGES*B_SIZE);
 
         wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag;
         wmma::fill_fragment(c_frag, 0.0f);
@@ -115,14 +118,17 @@ namespace mag {
         int warp_m = warp_id / WARPS_N;
         int warp_n = warp_id % WARPS_N;
 
-        for (int k0=0; k0 < K; k0 += BK) {
+        auto load_stage = [&](int stage, int k0) {
+            auto *a_buf = a_smem + stage*A_SIZE;
+            auto *b_buf = b_smem + stage*B_SIZE;
+
             #pragma unroll
             for (int i=tid; i < BM*BK; i += BLOCK_THREADS) {
                 int row = i / BK;
                 int col = i % BK;
                 int g_m = tile_m + row;
                 int g_k = k0 + col;
-                a_smem[row*BK + col] = g_m < M && g_k < K ? x_batch[TA ? g_k*M + g_m : g_m*K + g_k] : T{};
+                a_buf[row*BK + col] = g_m < M && g_k < K ? x_batch[TA ? g_k*M + g_m : g_m*K + g_k] : T{};
             }
 
             #pragma unroll
@@ -131,21 +137,36 @@ namespace mag {
                 int k_local = i % BK;
                 int g_k = k0 + k_local;
                 int g_n = tile_n + n_local;
-                b_smem[k_local + n_local*BK] = g_k < K && g_n < N ? y_batch[TB ? g_n*K + g_k : g_k*N + g_n] : T{};
+                b_buf[k_local + n_local*BK] = g_k < K && g_n < N ? y_batch[TB ? g_n*K + g_k : g_k*N + g_n] : T{};
             }
+        };
 
-            __syncthreads();
+        auto compute_stage = [&](int stage) {
+            if (warp_id >= WARPS_PER_BLOCK) return;
+            auto *a_buf = a_smem + stage*A_SIZE;
+            auto *b_buf = b_smem + stage*B_SIZE;
+            wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag;
+            wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
+            const T *a_ptr = a_buf + (warp_m<<4)*BK;
+            const T *b_ptr = b_buf + (warp_n<<4)*BK;
+            wmma::load_matrix_sync(a_frag, a_ptr, BK);
+            wmma::load_matrix_sync(b_frag, b_ptr, BK);
+            wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+        };
 
-            if (warp_id < WARPS_PER_BLOCK) {
-                wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag;
-                wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
-                const T *a_ptr = a_smem + (warp_m<<4) * BK;
-                const T *b_ptr = b_smem + (warp_n<<4) * BK;
-                wmma::load_matrix_sync(a_frag, a_ptr, BK);
-                wmma::load_matrix_sync(b_frag, b_ptr, BK);
-                wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
-            }
+        int k0 = 0;
+        int stage = 0;
+        load_stage(stage, k0);
+        __syncthreads();
+
+        for (; k0 < K; k0 += BK) {
+            int next_k0 = k0 + BK;
+            int next_stage = stage^1;
+            if (next_k0 < K)
+                load_stage(next_stage, next_k0);
+            compute_stage(stage);
             __syncthreads();
+            stage = next_stage;
         }
 
         if (warp_id < WARPS_PER_BLOCK) {
@@ -183,18 +204,19 @@ namespace mag {
     ) {
         static_assert(std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>);
 
-        static constexpr int BM = 32;
-        static constexpr int BN = 32;
-        static constexpr int BK = 16;
+        static constexpr int BM = 64;
+        static constexpr int BN = 64;
+        static constexpr int BK = 32;
         static constexpr int WARPS_M = BM>>4;
         static constexpr int WARPS_N = BN>>4;
+        static constexpr int STAGES = 2;
         static constexpr int BLOCK_THREADS = WARPS_M * (WARPS_N<<5);
 
         int max_smem_real;
         int device;
         cudaGetDevice(&device);
         cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
-        size_t smem = (BM * BK + BN * BK) * sizeof(T) + (WARPS_M * WARPS_N * 16 * 16) * sizeof(float);
+        size_t smem = sizeof(T)*(STAGES*(BM*BK + BN*BK)) + sizeof(float)*(WARPS_M*WARPS_N*16*16);
         mag_assert(smem <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
         auto set_kernel_smem_size = [&](auto kernel, size_t size) -> void {
             mag_assert2(size <= INT32_MAX);
@@ -318,6 +340,7 @@ namespace mag {
         int stage = 0;
         load_stage(stage, k0);
         __syncthreads();
+
         for (; k0 < K; k0 += BK) {
             int next_k0 = k0 + BK;
             int next_stage = stage^1;
