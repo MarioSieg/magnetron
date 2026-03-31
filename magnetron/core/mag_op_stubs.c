@@ -180,7 +180,7 @@ static void MAG_COLDPROC mag_dbg_trace_op_ir(mag_opcode_t op, bool inplace, mag_
 }
 
 /* Execute an operator on the active compute device and return result tensor. */
-static mag_status_t MAG_HOTPROC mag_dispatch(mag_error_t *err, mag_opcode_t op, bool inplace, const mag_op_attr_registry_t *layout, mag_tensor_t **in, uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
+static mag_status_t mag_dispatch(mag_error_t *err, mag_opcode_t op, bool inplace, const mag_op_attr_registry_t *layout, mag_tensor_t **in, uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
     const mag_op_traits_t *meta = mag_op_traits(op);
     mag_assert2((in && num_in) || (out && num_out));
     mag_assert2(op != MAG_OP_NOP);
