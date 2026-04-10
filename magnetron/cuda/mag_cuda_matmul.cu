@@ -83,10 +83,11 @@ namespace mag {
     ) {
         using namespace nvcuda;
 
+        static constexpr int BK = 16;
+        static_assert(BK==16);
         static_assert(!(BM&15), "BM must be multiple of 16");
         static_assert(!(BN&15), "BN must be multiple of 16");
 
-        static constexpr int BK = 16;
         static constexpr int WARPS_M = BM>>4;
         static constexpr int WARPS_N = BN>>4;
         static constexpr int WARPS_PER_BLOCK = WARPS_M*WARPS_N;
@@ -206,7 +207,8 @@ namespace mag {
 
         static constexpr int BM = 64;
         static constexpr int BN = 64;
-        static constexpr int BK = 32;
+        static constexpr int BK = 16;
+        static_assert(BK == 16);
         static constexpr int WARPS_M = BM>>4;
         static constexpr int WARPS_N = BN>>4;
         static constexpr int STAGES = 2;
