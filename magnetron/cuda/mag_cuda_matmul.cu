@@ -146,6 +146,19 @@ namespace mag {
         );
     }
 
+    template <typename T>
+    __device__ __forceinline__ void store_f32x2(T *dst, float a, float b);
+
+    template <>
+    __device__ __forceinline__ void store_f32x2<half>(half *dst, float a, float b) {
+        *reinterpret_cast<half2 *>(dst) = __halves2half2(__float2half_rn(a), __float2half_rn(b));
+    }
+
+    template <>
+    __device__ __forceinline__ void store_f32x2<__nv_bfloat16>(__nv_bfloat16* dst, float a, float b) {
+        *reinterpret_cast<__nv_bfloat162 *>(dst) = __halves2bfloat162(__float2bfloat16(a), __float2bfloat16(b));
+    }
+
    template <typename T, bool TA, bool TB, int BM, int BN, int STAGES>
     __global__ static void matmul_kernel_wmma(
         int64_t M,
@@ -315,23 +328,25 @@ namespace mag {
             __syncwarp();
 
             #pragma unroll
-            for (int i=lane; i < 256; i += 32) {
+            for (int i=lane<<1; i < 256; i += 64) {
                 int row = i>>4;
                 int col = i&15;
-                int g_row = tile_m + (warp_m0<<4) + row;
-                int g_col = tile_n + (warp_n0<<4) + col;
-                if (g_row < M && g_col < N)
-                    r_batch[g_row*N + g_col] = static_cast<T>(c_ptr0[i]);
+                int g_row = tile_m+(warp_m0 << 4) + row;
+                int g_col = tile_n+(warp_n0 << 4) + col;
+                if (g_row >= M) continue;
+                if (g_col+1 < N) store_f32x2<T>(r_batch + (g_row*N + g_col), c_ptr0[i], c_ptr0[i+1]);
+                else if (g_col < N) r_batch[g_row*N + g_col] = static_cast<T>(c_ptr0[i]);
             }
 
             #pragma unroll
-            for (int i=lane; i < 256; i += 32) {
-                int r = i>>4;
-                int c = i&15;
-                int g_row = tile_m + (warp_m1<<4) + r;
-                int g_col = tile_n + (warp_n1<<4) + c;
-                if (g_row < M && g_col < N)
-                    r_batch[g_row*N + g_col] = static_cast<T>(c_ptr1[i]);
+            for (int i=lane<<1; i < 256; i += 64) {
+                int row = i>>4;
+                int col = i&15;
+                int g_row = tile_m + (warp_m1 << 4) + row;
+                int g_col = tile_n + (warp_n1 << 4) + col;
+                if (g_row >= M) continue;
+                if (g_col+1 < N) store_f32x2<T>(r_batch + (g_row*N + g_col), c_ptr1[i], c_ptr1[i+1]);
+                else if (g_col < N) r_batch[g_row * N + g_col] = static_cast<T>(c_ptr1[i]);
             }
         }
     }
