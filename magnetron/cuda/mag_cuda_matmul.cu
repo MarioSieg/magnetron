@@ -209,8 +209,8 @@ namespace mag {
         auto issue_tma_stage = [&](int stage, int ktile) -> void {
             if (!is_producer || lane != 0) return;
 
-            auto* a_buf = a_smem + stage*A_SIZE;
-            auto* b_buf = b_smem + stage*B_SIZE;
+            auto *a_buf = a_smem + stage*A_SIZE;
+            auto *b_buf = b_smem + stage*B_SIZE;
 
             int32_t a_coords[3] = { ktile*BK, tile_m, batch };
             int32_t b_coords[3] = { tile_n, ktile*BK, batch };
