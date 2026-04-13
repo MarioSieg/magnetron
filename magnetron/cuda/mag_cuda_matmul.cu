@@ -11,6 +11,7 @@
 
 #include "mag_cuda_matmul.cuh"
 
+#include <algorithm>
 #include <core/mag_prng_philox4x32.h>
 
 #include <cudaTypedefs.h>
@@ -41,68 +42,7 @@ namespace mag {
         [[nodiscard]] static mat_layout_info_t detect(const mag_tensor_t *tensor);
     };
 
-    [[nodiscard]] static PFN_cuTensorMapEncodeTiled_v12000 getProcAddress_cuTensorMapEncodeTiled() {
-        static PFN_cuTensorMapEncodeTiled_v12000 fn = nullptr;
-        if (fn) return fn;
-        cudaDriverEntryPointQueryResult stat;
-        auto res = cudaGetDriverEntryPointByVersion("cuTensorMapEncodeTiled", reinterpret_cast<void **>(&fn), 12000, cudaEnableDefault, &stat);
-        if (mag_unlikely(res != cudaSuccess || stat != cudaDriverEntryPointSuccess))
-            throw std::runtime_error {"Failed to get address of cuTensorMapEncodeTiled: " + std::string{cudaGetErrorString(res)}};
-        return fn;
-    }
-
-    template <typename T>
-    [[nodiscard]] static CUtensorMap make_tma_3d_map(
-        const T* base,
-        uint64_t dim0,           // fastest-moving dimension
-        uint64_t dim1,           // next dimension
-        uint64_t dim2,           // batch dimension
-        uint64_t stride1_bytes,  // stride for dim1
-        uint64_t stride2_bytes,  // stride for dim2
-        uint32_t box0,
-        uint32_t box1,
-        uint32_t box2
-    ) {
-        if (!base)
-            throw std::invalid_argument("make_tma_3d_map: base is null");
-        if (dim0 < 1 || dim1 < 1 || dim2 < 1)
-            throw std::invalid_argument("make_tma_3d_map: dimensions must be >= 1");
-        if ((stride1_bytes & 15) != 0 || (stride2_bytes & 15) != 0)
-            throw std::invalid_argument("make_tma_3d_map: strides must be multiples of 16 for TMA");
-
-        static constexpr uint32_t rank = 3;
-
-        uint64_t global_dim[rank] = { dim0, dim1, dim2 };
-        uint64_t global_stride[rank - 1] = { stride1_bytes, stride2_bytes };
-        uint32_t box_dim[rank] = { box0, box1, box2 };
-        uint32_t elem_stride[rank] = { 1, 1, 1 };
-
-        CUtensorMap map{};
-        CUtensorMapDataType dtype{};
-        if constexpr (std::is_same_v<T, __nv_bfloat16>) dtype = CU_TENSOR_MAP_DATA_TYPE_BFLOAT16;
-        else if constexpr (std::is_same_v<T, half>) dtype = CU_TENSOR_MAP_DATA_TYPE_FLOAT16;
-        else throw std::runtime_error("unsupported dtype for TMA map");
-
-        auto* cuTensorMapEncodeTiled = getProcAddress_cuTensorMapEncodeTiled();
-        CUresult rc = (*cuTensorMapEncodeTiled)(
-            &map,
-            dtype,
-            rank,
-            const_cast<T*>(base),
-            global_dim,
-            global_stride,
-            box_dim,
-            elem_stride,
-            CU_TENSOR_MAP_INTERLEAVE_NONE,
-            CU_TENSOR_MAP_SWIZZLE_NONE,
-            CU_TENSOR_MAP_L2_PROMOTION_NONE,
-            CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
-        );
-        if (rc != CUDA_SUCCESS)
-            throw std::runtime_error("cuTensorMapEncodeTiled failed");
-
-        return map;
-    }
+#if MAG_CUDA_MATMUL_USE_WMMA /* WMMA + TMA fast kernel */
 
     [[nodiscard]] static int64_t tensor_batch_total(const mag_tensor_t *tensor) {
         int64_t ra = tensor->coords.rank;
@@ -114,83 +54,99 @@ namespace mag {
         return batch;
     }
 
-    template <typename T>
-    [[nodiscard]] static CUtensorMap make_map_from_batched_2d_view(
-        const T* base,
-        int64_t rows,
-        int64_t cols,
-        int64_t row_stride_elems,
-        int64_t batch_total,
-        int64_t batch_stride_elems,
-        uint32_t box_fast,
-        uint32_t box_slow
-    ) {
-        return make_tma_3d_map<T>(
-            base,
-            static_cast<uint64_t>(cols),                         // dim0
-            static_cast<uint64_t>(rows),                         // dim1
-            static_cast<uint64_t>(batch_total),                  // dim2
-            static_cast<uint64_t>(row_stride_elems) * sizeof(T), // stride1
-            static_cast<uint64_t>(batch_stride_elems) * sizeof(T), // stride2
-            box_fast,
-            box_slow,
-            1
-        );
+     [[nodiscard]] static PFN_cuTensorMapEncodeTiled_v12000 lookup_proc_address_encode_tmap() {
+        static PFN_cuTensorMapEncodeTiled_v12000 fn = nullptr;
+        if (fn) return fn;
+        cudaDriverEntryPointQueryResult stat;
+        auto res = cudaGetDriverEntryPointByVersion("cuTensorMapEncodeTiled", reinterpret_cast<void **>(&fn), 12000, cudaEnableDefault, &stat);
+        if (mag_unlikely(res != cudaSuccess || stat != cudaDriverEntryPointSuccess))
+            throw std::runtime_error {"Failed to get address of cuTensorMapEncodeTiled: " + std::string{cudaGetErrorString(res)}};
+        return fn;
     }
 
-    template <typename T, int BM, int BK>
-    CUtensorMap make_map_A_from_tensor(
-        const mag_tensor_t* x,
-        const T* base
+    template <typename T, const size_t rank>
+    [[nodiscard]] static CUtensorMap init_tmap_nd(
+        void *base,
+        const std::array<int64_t, rank> &dims,
+        const std::array<int64_t, rank-1> &strides,
+        const std::array<int32_t, rank> &box
     ) {
-        const int r = x->coords.rank;
-        const int64_t rows = (r == 1) ? 1 : x->coords.shape[r - 2];
-        const int64_t cols = x->coords.shape[r - 1];
-        const int64_t row_stride = (r == 1) ? 1 : x->coords.strides[r - 2];
-        const int64_t batch_total = tensor_batch_total(x);
-        const int64_t batch_stride = rows * cols;
+        if (!base)
+            throw std::invalid_argument("make_tma_3d_map: base is null");
+        for (auto dim : dims)
+            if (dim < 1) throw std::invalid_argument("make_tma_3d_map: dimensions must be >= 1");
+        for (auto stride : strides)
+            if (stride & 15) throw std::invalid_argument("make_tma_3d_map: strides must be multiples of 16 for TMA");
 
-        return make_map_from_batched_2d_view<T>(
+        std::array<uint64_t, rank> global_dims = {};
+        std::transform(dims.begin(), dims.end(), global_dims.begin(), [](auto x) noexcept { return static_cast<uint64_t>(x); });
+        std::array<uint64_t, rank-1> global_stride = {};
+        std::transform(strides.begin(), strides.end(), global_stride.begin(), [](auto x) noexcept { return static_cast<uint64_t>(x); });
+        std::array<uint32_t, rank> box_dim = {};
+        std::transform(box.begin(), box.end(), box_dim.begin(), [](auto x) noexcept { return static_cast<uint32_t>(x); });
+        std::array<uint32_t, rank> elem_stride = {};
+        std::fill(elem_stride.begin(), elem_stride.end(), 1);
+
+        CUtensorMap map{};
+        CUtensorMapDataType dtype{};
+        if constexpr (std::is_same_v<T, __nv_bfloat16>) dtype = CU_TENSOR_MAP_DATA_TYPE_BFLOAT16;
+        else if constexpr (std::is_same_v<T, half>) dtype = CU_TENSOR_MAP_DATA_TYPE_FLOAT16;
+        else throw std::runtime_error("unsupported dtype for TMA map");
+
+        auto *encode = lookup_proc_address_encode_tmap();
+        CUresult rc = (*encode)(
+            &map,
+            dtype,
+            rank,
             base,
-            rows,
-            cols,
-            row_stride,
-            batch_total,
-            batch_stride,
-            BK,  // fast dimension tile
-            BM   // slow dimension tile
+            global_dims.data(),
+            global_stride.data(),
+            box_dim.data(),
+            elem_stride.data(),
+            CU_TENSOR_MAP_INTERLEAVE_NONE,
+            CU_TENSOR_MAP_SWIZZLE_NONE,
+            CU_TENSOR_MAP_L2_PROMOTION_NONE,
+            CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
+        );
+        if (rc != CUDA_SUCCESS)
+            throw std::runtime_error("cuTensorMapEncodeTiled failed");
+        return map;
+    }
+
+
+    template <typename T, int BM, int BK>
+    [[nodiscard]] static CUtensorMap init_tmap_x(const mag_tensor_t *x) {
+        int64_t ra = x->coords.rank;
+        int64_t rows = ra == 1 ? 1 : x->coords.shape[ra-2];
+        int64_t cols = x->coords.shape[ra-1];
+        int64_t row_stride = ra == 1 ? 1 : x->coords.strides[ra-2];
+        int64_t batch_total = tensor_batch_total(x);
+        int64_t batch_stride = rows*cols;
+        return init_tmap_nd<T, 3>(
+            reinterpret_cast<void *>(mag_tensor_data_ptr(x)),
+            {cols, rows, batch_total},
+            {row_stride*static_cast<int64_t>(sizeof(T)), batch_stride*static_cast<int64_t>(sizeof(T))},
+            {BK, BM, 1}
         );
     }
 
     template <typename T, int BK, int BN>
-    CUtensorMap make_map_B_from_tensor(
-        const mag_tensor_t* y,
-        const T* base
-    ) {
-        const int r = y->coords.rank;
-
-        const int64_t rows = (r == 1) ? y->coords.shape[0] : y->coords.shape[r - 2];
-        const int64_t cols = (r == 1) ? 1 : y->coords.shape[r - 1];
-
-        const int64_t row_stride = (r == 1) ? 1 : y->coords.strides[r - 2];
-
-        const int64_t batch_total = tensor_batch_total(y);
-        const int64_t batch_stride = rows * cols;
-
-        return make_map_from_batched_2d_view<T>(
-            base,
-            rows,
-            cols,
-            row_stride,
-            batch_total,
-            batch_stride,
-            BN,  // fast dimension tile
-            BK   // slow dimension tile
+    [[nodiscard]] static CUtensorMap init_tmap_y(const mag_tensor_t *y) {
+        int64_t ra = y->coords.rank;
+        int64_t rows = ra == 1 ? y->coords.shape[0] : y->coords.shape[ra-2];
+        int64_t cols = ra == 1 ? 1 : y->coords.shape[ra-1];
+        int64_t row_stride = ra == 1 ? 1 : y->coords.strides[ra-2];
+        int64_t batch_total = tensor_batch_total(y);
+        int64_t batch_stride = rows*cols;
+        return init_tmap_nd<T, 3>(
+          reinterpret_cast<void *>(mag_tensor_data_ptr(y)),
+          {cols, rows, batch_total},
+          {row_stride*static_cast<int64_t>(sizeof(T)), batch_stride*static_cast<int64_t>(sizeof(T))},
+          {BN, BK, 1}
         );
     }
 
-#if MAG_CUDA_MATMUL_USE_WMMA
-    template <typename T, bool TA, bool TB, int BM, int BN, int STAGES>
+   template <typename T, bool TA, bool TB, int BM, int BN, int STAGES>
     __global__ static void matmul_kernel_wmma(
         int64_t M,
         int64_t N,
@@ -203,139 +159,182 @@ namespace mag {
         using namespace nvcuda;
 
         static constexpr int BK = 16;
-        static_assert(BK==16);
-        static_assert(!(BM&15), "BM must be multiple of 16");
-        static_assert(!(BN&15), "BN must be multiple of 16");
-
-        static constexpr int WARPS_M = BM>>4;
-        static constexpr int WARPS_N = BN>>4;
-        static constexpr int WARPS_PER_BLOCK = WARPS_M*WARPS_N;
-        static constexpr int BLOCK_THREADS = WARPS_PER_BLOCK<<5;
+        static_assert(BK == 16);
+        static_assert(!(BM&15));
+        static_assert(!(BN&15));
+        static constexpr int WM = BM>>4;
+        static constexpr int WN = BN>>4;
+        static constexpr int WARP_TILES_OUT = WM*WN;
+        static constexpr int PRODUCER_WARPS = 1;
+        static constexpr int CONSUMER_WARPS = WARP_TILES_OUT>>1;
+        static constexpr int TOTAL_WARPS = PRODUCER_WARPS + CONSUMER_WARPS;
+        static constexpr int BLOCK_THREADS = TOTAL_WARPS<<5;
         static constexpr int A_SIZE = BM*BK;
         static constexpr int B_SIZE = BK*BN;
+        static_assert(!(WARP_TILES_OUT&1));
+        static_assert(BLOCK_THREADS<=1024);
 
         int batch = blockIdx.z;
         if (batch >= batch_total) return;
-        int tile_m = blockIdx.y * BM;
-        int tile_n = blockIdx.x * BN;
+
+        int tile_m = blockIdx.y*BM;
+        int tile_n = blockIdx.x*BN;
+
         int tid = threadIdx.x;
+        int lane = tid&31;
         int warp_id = tid>>5;
 
-        T *__restrict__ r_batch = br + batch*M*N;
+        bool is_producer = warp_id == 0;
+        int consumer_warp = warp_id - 1;
+
+        auto *__restrict__ r_batch = br + batch*M*N;
 
         extern __shared__ __align__(128) uint8_t smem_raw[];
         __shared__ uint64_t a_bar[STAGES];
         __shared__ uint64_t b_bar[STAGES];
+        __shared__ volatile int stage_epoch[STAGES];
 
-        auto *a_smem = reinterpret_cast<T *>(smem_raw);
-        auto *b_smem = a_smem + STAGES*A_SIZE;
-        auto *c_smem = reinterpret_cast<float *>(b_smem + STAGES*B_SIZE);
+        auto *a_smem = reinterpret_cast<T*>(smem_raw);
+        auto *b_smem = a_smem + STAGES * A_SIZE;
+        auto *c_smem = reinterpret_cast<float*>(b_smem + STAGES * B_SIZE);
 
         if (tid == 0) {
-           for (int stage=0; stage < STAGES; ++stage) {
-               cuda::ptx::mbarrier_init(a_bar+stage, 1);
-               cuda::ptx::mbarrier_init(b_bar+stage, 1);
-           }
+            #pragma unroll
+            for (int s=0; s < STAGES; ++s) {
+                cuda::ptx::mbarrier_init(&a_bar[s], 1);
+                cuda::ptx::mbarrier_init(&b_bar[s], 1);
+                stage_epoch[s] = -1;
+            }
         }
         __syncthreads();
 
-        wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag;
-        wmma::fill_fragment(c_frag, 0.f);
-
         auto issue_tma_stage = [&](int stage, int ktile) -> void {
-            if (tid != 0) return;
-            auto *a_buf = a_smem + stage*A_SIZE;
-            auto *b_buf = b_smem + stage*B_SIZE;
-            int32_t a_coords[3] = {ktile*BK, tile_m, batch};
-            int32_t b_coords[3] = {tile_n, ktile*BK, batch};
+            if (!is_producer || lane != 0) return;
+
+            auto* a_buf = a_smem + stage*A_SIZE;
+            auto* b_buf = b_smem + stage*B_SIZE;
+
+            int32_t a_coords[3] = { ktile*BK, tile_m, batch };
+            int32_t b_coords[3] = { tile_n, ktile*BK, batch };
+
             cuda::ptx::cp_async_bulk_tensor(
                 cuda::ptx::space_cluster,
                 cuda::ptx::space_global,
-                a_buf, &map_a, a_coords, a_bar+stage
+                a_buf, &map_a, a_coords, &a_bar[stage]
             );
             cuda::ptx::mbarrier_arrive_expect_tx(
                 cuda::ptx::sem_release,
                 cuda::ptx::scope_cta,
                 cuda::ptx::space_shared,
-                a_bar+stage,
+                &a_bar[stage],
                 sizeof(T)*A_SIZE
             );
+
             cuda::ptx::cp_async_bulk_tensor(
                 cuda::ptx::space_cluster,
                 cuda::ptx::space_global,
-                b_buf, &map_b, b_coords, b_bar+stage
+                b_buf, &map_b, b_coords, &b_bar[stage]
             );
             cuda::ptx::mbarrier_arrive_expect_tx(
                 cuda::ptx::sem_release,
                 cuda::ptx::scope_cta,
                 cuda::ptx::space_shared,
-                b_bar+stage,
+                &b_bar[stage],
                 sizeof(T)*B_SIZE
             );
+
+            __threadfence_block();
+            stage_epoch[stage] = ktile;
         };
 
-        auto await_stage_ready = [&](int stage, int parity) -> void {
-            while (!cuda::ptx::mbarrier_try_wait_parity(a_bar+stage, parity));
-            while (!cuda::ptx::mbarrier_try_wait_parity(b_bar+stage, parity));
+        auto await_stage_ready = [&](int stage, int phase) -> void {
+            while (!cuda::ptx::mbarrier_try_wait_parity(&a_bar[stage], phase)) {}
+            while (!cuda::ptx::mbarrier_try_wait_parity(&b_bar[stage], phase)) {}
         };
 
-        int warp_m = warp_id / WARPS_N;
-        int warp_n = warp_id % WARPS_N;
+        wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag0;
+        wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag1;
+        if (!is_producer) {
+            wmma::fill_fragment(c_frag0, 0.0f);
+            wmma::fill_fragment(c_frag1, 0.0f);
+        }
+
+        int warp_m0 = 0, warp_n0 = 0;
+        int warp_m1 = 0, warp_n1 = 0;
+        if (!is_producer) {
+            int tile0 = consumer_warp;
+            int tile1 = consumer_warp + CONSUMER_WARPS;
+            warp_m0 = tile0 / WN;
+            warp_n0 = tile0 % WN;
+            warp_m1 = tile1 / WN;
+            warp_n1 = tile1 % WN;
+        }
+
         auto compute_stage = [&](int stage) -> void {
-            if (warp_id >= WARPS_PER_BLOCK) return;
+            if (is_producer) return;
             auto *a_buf = a_smem + stage*A_SIZE;
             auto *b_buf = b_smem + stage*B_SIZE;
-
-            wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag;
-            wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
-
-            const auto *a_ptr = a_buf + (warp_m<<4) * BK;
-            const auto *b_ptr = b_buf + (warp_n<<4);
-            wmma::load_matrix_sync(a_frag, a_ptr, BK);
-            wmma::load_matrix_sync(b_frag, b_ptr, BN);
-            wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+            wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag0;
+            wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag1;
+            wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag0;
+            wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag1;
+            const auto *__restrict__ a_ptr0 = a_buf + (warp_m0<<4)*BK;
+            const auto *__restrict__ a_ptr1 = a_buf + (warp_m1<<4)*BK;
+            const auto *__restrict__ b_ptr0 = b_buf + (warp_n0<<4);
+            const auto *__restrict__ b_ptr1 = b_buf + (warp_n1<<4);
+            wmma::load_matrix_sync(a_frag0, a_ptr0, BK);
+            wmma::load_matrix_sync(a_frag1, a_ptr1, BK);
+            wmma::load_matrix_sync(b_frag0, b_ptr0, BN);
+            wmma::load_matrix_sync(b_frag1, b_ptr1, BN);
+            wmma::mma_sync(c_frag0, a_frag0, b_frag0, c_frag0);
+            wmma::mma_sync(c_frag1, a_frag1, b_frag1, c_frag1);
         };
 
-        int k_tiles = (K + BK - 1) / BK;
+        int k_tiles = (K + BK - 1)/BK;
         int prefetch = k_tiles < STAGES ? k_tiles : STAGES;
-        for (int s=0; s < prefetch; ++s)
-            issue_tma_stage(s, s);
-        __syncthreads();
+        if (is_producer)
+            for (int s=0; s < prefetch; ++s)
+                issue_tma_stage(s, s);
 
         for (int kt=0; kt < k_tiles; ++kt) {
             int stage = kt % STAGES;
             int phase = 1 & (kt / STAGES);
             int next_kt = kt + STAGES;
-
-            await_stage_ready(stage, phase);
-            compute_stage(stage);
+            if (!is_producer) {
+                await_stage_ready(stage, phase);
+                compute_stage(stage);
+            }
             __syncthreads();
-
-            if (next_kt < k_tiles)
+            if (is_producer && next_kt < k_tiles)
                 issue_tma_stage(stage, next_kt);
             __syncthreads();
         }
 
-        if (warp_id < WARPS_PER_BLOCK) {
-            float *c_ptr = c_smem + (warp_id<<8);
-            wmma::store_matrix_sync(c_ptr, c_frag, 16, wmma::mem_row_major);
+        int tile0 = consumer_warp;
+        int tile1 = consumer_warp + CONSUMER_WARPS;
+
+        auto *c_ptr0 = c_smem + (tile0 << 8);
+        auto *c_ptr1 = c_smem + (tile1 << 8);
+
+        if (!is_producer) {
+            wmma::store_matrix_sync(c_ptr0, c_frag0, 16, wmma::mem_row_major);
+            wmma::store_matrix_sync(c_ptr1, c_frag1, 16, wmma::mem_row_major);
         }
         __syncthreads();
 
-        #pragma unroll
-        for (int i=tid; i < BM*BN; i += BLOCK_THREADS) {
+        for (int i=tid; i < BM * BN; i += BLOCK_THREADS) {
             int row = i / BN;
             int col = i % BN;
             int g_row = tile_m + row;
             int g_col = tile_n + col;
             if (g_row < M && g_col < N) {
-                int warp_store_m = row>>4;
-                int warp_store_n = col>>4;
-                int warp_store = warp_store_m*WARPS_N + warp_store_n;
-                int row_in_warp = row&15;
-                int col_in_warp = col&15;
+                int warp_store_m = row >> 4;
+                int warp_store_n = col >> 4;
+                int warp_store = warp_store_m * WN + warp_store_n;
+                int row_in_warp = row & 15;
+                int col_in_warp = col & 15;
                 float v = c_smem[(warp_store<<8) + (row_in_warp<<4) + col_in_warp];
-                r_batch[g_row*N + g_col] = static_cast<T>(v);
+                r_batch[g_row * N + g_col] = static_cast<T>(v);
             }
         }
     }
@@ -345,10 +344,7 @@ namespace mag {
         int64_t M, int64_t N, int64_t K,
         int64_t batch_total,
         T *__restrict__ br,
-        const T *__restrict__ bx,
-        const T *__restrict__ by,
-        mag_tensor_t *x,
-        mag_tensor_t *y,
+        mag_tensor_t *x, mag_tensor_t *y,
         bool xT, bool yT
     ) {
         static_assert(std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>);
@@ -356,28 +352,26 @@ namespace mag {
         static constexpr int BM = 128;
         static constexpr int BN = 64;
         static constexpr int BK = 16;
-        static_assert(BK == 16);
-        static constexpr int WARPS_M = BM>>4;
-        static constexpr int WARPS_N = BN>>4;
-        static constexpr int STAGES = 4;
-        static constexpr int BLOCK_THREADS = WARPS_M * (WARPS_N<<5);
-        static_assert((BM>>4) * ((BN>>4)<<5) <= 1024);
+        static constexpr int STAGES = 3;
+        static constexpr int BLOCK_THREADS = (1 + ((BM / 16) * (BN / 16)) / 2) * 32;
 
         int max_smem_real;
         int device;
         cudaGetDevice(&device);
         cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
-        size_t smem = sizeof(T)*(STAGES*(BM*BK + BN*BK)) + sizeof(float)*(WARPS_M*WARPS_N*16*16);
-        mag_assert(smem <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
+
+        size_t smem = sizeof(T)*(STAGES * (BM*BK + BN*BK)) + sizeof(float)*((BM>>4)*(BN>>4)<<8);
+        mag_assert(smem <= (unsigned)max_smem_real,"Required shared memory size for matmul kernel exceeds device limit");
+
         auto set_kernel_smem_size = [&](auto kernel, size_t size) -> void {
             mag_assert2(size <= INT32_MAX);
             cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(size));
         };
 
-        CUtensorMap map_a = make_map_A_from_tensor<T, BM, BK>(x, bx);
-        CUtensorMap map_b = make_map_B_from_tensor<T, BK, BN>(y, by);
+        CUtensorMap map_a = init_tmap_x<T, BM, BK>(x);
+        CUtensorMap map_b = init_tmap_y<T, BK, BN>(y);
 
-        dim3 grid_dim((N + BN - 1)/BN, (M + BM - 1)/BM,batch_total);
+        dim3 grid_dim((N + BN - 1) / BN, (M + BM - 1) / BM, batch_total);
         dim3 block_dim(BLOCK_THREADS, 1, 1);
 
         if (!xT && !yT) {
@@ -621,7 +615,7 @@ namespace mag {
 
         #if MAG_CUDA_MATMUL_USE_WMMA
             if constexpr (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>) {
-                launch_matmul_kernel_wmma(M, N, K, batch_total, br, bx, by, x, y, xT, yT);
+                launch_matmul_kernel_wmma(M, N, K, batch_total, br, x, y, xT, yT);
                 goto end;
             }
         #endif
