@@ -72,12 +72,10 @@ namespace mag {
         const std::array<int32_t, rank> &box,
         CUtensorMapSwizzle swizzle = CU_TENSOR_MAP_SWIZZLE_NONE
     ) {
-        if (!base)
-            throw std::invalid_argument("make_tma_3d_map: base is null");
         for (auto dim : dims)
-            if (dim < 1) throw std::invalid_argument("make_tma_3d_map: dimensions must be >= 1");
+            if (dim < 1) throw std::invalid_argument("dimensions must be >= 1");
         for (auto stride : strides)
-            if (stride & 15) throw std::invalid_argument("make_tma_3d_map: strides must be multiples of 16 for TMA");
+            if (stride & 15) throw std::invalid_argument("strides must be multiples of 16 for TMA");
 
         std::array<uint64_t, rank> global_dims = {};
         std::transform(dims.begin(), dims.end(), global_dims.begin(), [](auto x) noexcept { return static_cast<uint64_t>(x); });
@@ -666,6 +664,22 @@ namespace mag {
     }
 
     template <typename T>
+    [[nodiscard]] static bool is_tensor_tma_compat(const mag_tensor_t *t) {
+        int64_t r = t->coords.rank;
+        int64_t rows = r == 1 ? 1 : t->coords.shape[r-2];
+        int64_t cols = t->coords.shape[r-1];
+        int64_t row_stride = r == 1 ? 1 : t->coords.strides[r-2];
+        int64_t batch_stride = rows*cols;
+        auto strides_aligned = [](int64_t elems) -> bool {
+            return !(15 & (elems*static_cast<int64_t>(sizeof T{})));
+        };
+        if (!strides_aligned(row_stride)) return false;
+        if (!strides_aligned(batch_stride)) return false;
+        if ((mag_tensor_data_ptr(t) & 15) != 0) return false;
+        return true;
+    }
+
+    template <typename T>
     static void launch_matmul(const mag_command_t &cmd) {
         mag_tensor_t *r = cmd.out[0];
         mag_tensor_t *x = cmd.in[0];
@@ -712,8 +726,11 @@ namespace mag {
 
         #if MAG_CUDA_MATMUL_USE_WMMA
             if constexpr (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>) {
-                launch_matmul_kernel_wmma(M, N, K, batch_total, br, x, y, xT, yT);
-                goto end;
+                bool can_use_wmma_tma_kernel = is_tensor_tma_compat<T>(x) && is_tensor_tma_compat<T>(y);
+                if (can_use_wmma_tma_kernel) {
+                    launch_matmul_kernel_wmma(M, N, K, batch_total, br, x, y, xT, yT);
+                    goto end;
+                }
             }
         #endif
 
