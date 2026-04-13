@@ -192,7 +192,6 @@ namespace mag {
         extern __shared__ __align__(128) uint8_t smem_raw[];
         __shared__ uint64_t a_bar[STAGES];
         __shared__ uint64_t b_bar[STAGES];
-        __shared__ volatile int stage_epoch[STAGES];
 
         auto *a_smem = reinterpret_cast<T*>(smem_raw);
         auto *b_smem = a_smem + STAGES * A_SIZE;
@@ -203,7 +202,6 @@ namespace mag {
             for (int s=0; s < STAGES; ++s) {
                 cuda::ptx::mbarrier_init(&a_bar[s], 1);
                 cuda::ptx::mbarrier_init(&b_bar[s], 1);
-                stage_epoch[s] = -1;
             }
         }
         __syncthreads();
@@ -244,7 +242,6 @@ namespace mag {
             );
 
             __threadfence_block();
-            stage_epoch[stage] = ktile;
         };
 
         auto await_stage_ready = [&](int stage, int phase) -> void {
@@ -276,18 +273,15 @@ namespace mag {
             auto *b_buf = b_smem + stage*B_SIZE;
             wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag0;
             wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag1;
-            wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag0;
-            wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag1;
+            wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
             const auto *__restrict__ a_ptr0 = a_buf + (warp_m0<<4)*BK;
             const auto *__restrict__ a_ptr1 = a_buf + (warp_m1<<4)*BK;
-            const auto *__restrict__ b_ptr0 = b_buf + (warp_n0<<4);
-            const auto *__restrict__ b_ptr1 = b_buf + (warp_n1<<4);
+            const auto *__restrict__ b_ptr = b_buf + (warp_n0<<4);
             wmma::load_matrix_sync(a_frag0, a_ptr0, BK);
             wmma::load_matrix_sync(a_frag1, a_ptr1, BK);
-            wmma::load_matrix_sync(b_frag0, b_ptr0, BN);
-            wmma::load_matrix_sync(b_frag1, b_ptr1, BN);
-            wmma::mma_sync(c_frag0, a_frag0, b_frag0, c_frag0);
-            wmma::mma_sync(c_frag1, a_frag1, b_frag1, c_frag1);
+            wmma::load_matrix_sync(b_frag, b_ptr, BN);
+            wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
+            wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
         };
 
         int k_tiles = (K + BK - 1)/BK;
