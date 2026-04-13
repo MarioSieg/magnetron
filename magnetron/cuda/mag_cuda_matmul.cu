@@ -69,7 +69,8 @@ namespace mag {
         void *base,
         const std::array<int64_t, rank> &dims,
         const std::array<int64_t, rank-1> &strides,
-        const std::array<int32_t, rank> &box
+        const std::array<int32_t, rank> &box,
+        CUtensorMapSwizzle swizzle = CU_TENSOR_MAP_SWIZZLE_NONE
     ) {
         if (!base)
             throw std::invalid_argument("make_tma_3d_map: base is null");
@@ -104,7 +105,7 @@ namespace mag {
             box_dim.data(),
             elem_stride.data(),
             CU_TENSOR_MAP_INTERLEAVE_NONE,
-            CU_TENSOR_MAP_SWIZZLE_NONE,
+            swizzle,
             CU_TENSOR_MAP_L2_PROMOTION_NONE,
             CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
         );
