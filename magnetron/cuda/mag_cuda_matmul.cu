@@ -150,12 +150,12 @@ namespace mag {
     static __device__ __forceinline__ void store_f32x2(T *o, float x, float y);
 
     template <>
-    static __device__ __forceinline__ void store_f32x2<half>(half *o, float x, float y) {
+    __device__ __forceinline__ void store_f32x2<half>(half *o, float x, float y) {
         *reinterpret_cast<half2 *>(o) = __halves2half2(__float2half_rn(x), __float2half_rn(y));
     }
 
     template <>
-    static __device__ __forceinline__ void store_f32x2<__nv_bfloat16>(__nv_bfloat16 *o, float x, float y) {
+    __device__ __forceinline__ void store_f32x2<__nv_bfloat16>(__nv_bfloat16 *o, float x, float y) {
         *reinterpret_cast<__nv_bfloat162 *>(o) = __halves2bfloat162(__float2bfloat16(x), __float2bfloat16(y));
     }
 
