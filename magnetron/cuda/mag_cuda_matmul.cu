@@ -114,37 +114,50 @@ namespace mag {
         return map;
     }
 
-
-    template <typename T, int BM, int BK>
+   template <typename T, bool TA, int BM, int BK>
     [[nodiscard]] static CUtensorMap init_tmap_x(const mag_tensor_t *x) {
         int64_t ra = x->coords.rank;
-        int64_t rows = ra == 1 ? 1 : x->coords.shape[ra-2];
-        int64_t cols = x->coords.shape[ra-1];
-        int64_t row_stride = ra == 1 ? 1 : x->coords.strides[ra-2];
         int64_t batch_total = tensor_batch_total(x);
-        int64_t batch_stride = rows*cols;
-        return init_tmap_nd<T, 3>(
-            reinterpret_cast<void *>(mag_tensor_data_ptr(x)),
-            {cols, rows, batch_total},
-            {row_stride*static_cast<int64_t>(sizeof(T)), batch_stride*static_cast<int64_t>(sizeof(T))},
-            {BK, BM, 1}
-        );
+        int64_t M = ra == 1 ? 1 : x->coords.shape[ra-2];
+        int64_t K = x->coords.shape[ra-1];
+        if constexpr (!TA) {
+            return init_tmap_nd<T, 3>(
+                reinterpret_cast<void *>(mag_tensor_data_ptr(x)),
+                { K, M, batch_total },
+                { K*static_cast<int64_t>(sizeof(T)), M*K*static_cast<int64_t>(sizeof(T)) },
+                { BK, BM, 1 }
+            );
+        } else {
+            return init_tmap_nd<T, 3>(
+                reinterpret_cast<void *>(mag_tensor_data_ptr(x)),
+                { M, K, batch_total },
+                { M*static_cast<int64_t>(sizeof(T)), M*K*static_cast<int64_t>(sizeof(T)) },
+                { BM, BK, 1 }
+            );
+        }
     }
 
-    template <typename T, int BK, int BN>
+    template <typename T, bool TB, int BK, int BN>
     [[nodiscard]] static CUtensorMap init_tmap_y(const mag_tensor_t *y) {
         int64_t ra = y->coords.rank;
-        int64_t rows = ra == 1 ? y->coords.shape[0] : y->coords.shape[ra-2];
-        int64_t cols = ra == 1 ? 1 : y->coords.shape[ra-1];
-        int64_t row_stride = ra == 1 ? 1 : y->coords.strides[ra-2];
         int64_t batch_total = tensor_batch_total(y);
-        int64_t batch_stride = rows*cols;
-        return init_tmap_nd<T, 3>(
-          reinterpret_cast<void *>(mag_tensor_data_ptr(y)),
-          {cols, rows, batch_total},
-          {row_stride*static_cast<int64_t>(sizeof(T)), batch_stride*static_cast<int64_t>(sizeof(T))},
-          {BN, BK, 1}
-        );
+        int64_t K = ra == 1 ? y->coords.shape[0] : y->coords.shape[ra-2];
+        int64_t N = ra == 1 ? 1 : y->coords.shape[ra-1];
+        if constexpr (!TB) {
+            return init_tmap_nd<T, 3>(
+                reinterpret_cast<void *>(mag_tensor_data_ptr(y)),
+                { N, K, batch_total },
+                { N*static_cast<int64_t>(sizeof(T)), K*N*static_cast<int64_t>(sizeof(T)) },
+                { BN, BK, 1 }
+            );
+        } else {
+            return init_tmap_nd<T, 3>(
+                reinterpret_cast<void *>(mag_tensor_data_ptr(y)),
+                { K, N, batch_total },
+                { K*static_cast<int64_t>(sizeof(T)), K*N*static_cast<int64_t>(sizeof(T)) },
+                { BK, BN, 1 }
+            );
+        }
     }
 
     template <typename T>
@@ -226,8 +239,26 @@ namespace mag {
             auto *a_buf = a_smem + stage*A_SIZE;
             auto *b_buf = b_smem + stage*B_SIZE;
 
-            int32_t a_coords[3] = { ktile*BK, tile_m, batch };
-            int32_t b_coords[3] = { tile_n, ktile*BK, batch };
+            int32_t a_coords[3];
+            int32_t b_coords[3];
+            if constexpr (!TA) { // dims {K, M, batch}, box {BK, BM, 1}
+                a_coords[0] = ktile * BK;
+                a_coords[1] = tile_m;
+                a_coords[2] = batch;
+            } else { // dims {M, K, batch}, box {BM, BK, 1}
+                a_coords[0] = tile_m;
+                a_coords[1] = ktile * BK;
+                a_coords[2] = batch;
+            }
+            if constexpr (!TB) { // dims {N, K, batch}, box {BN, BK, 1}
+                b_coords[0] = tile_n;
+                b_coords[1] = ktile * BK;
+                b_coords[2] = batch;
+            } else { // dims {K, N, batch}, box {BK, BN, 1}
+                b_coords[0] = ktile * BK;
+                b_coords[1] = tile_n;
+                b_coords[2] = batch;
+            }
 
             cuda::ptx::cp_async_bulk_tensor(
                 cuda::ptx::space_cluster,
@@ -283,19 +314,67 @@ namespace mag {
 
         auto compute_stage = [&](int stage) -> void {
             if (is_producer) return;
-            auto *a_buf = a_smem + stage*A_SIZE;
-            auto *b_buf = b_smem + stage*B_SIZE;
-            wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag0;
-            wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag1;
-            wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
-            const auto *__restrict__ a_ptr0 = a_buf + (warp_m0<<4)*BK;
-            const auto *__restrict__ a_ptr1 = a_buf + (warp_m1<<4)*BK;
-            const auto *__restrict__ b_ptr = b_buf + (warp_n0<<4);
-            wmma::load_matrix_sync(a_frag0, a_ptr0, BK);
-            wmma::load_matrix_sync(a_frag1, a_ptr1, BK);
-            wmma::load_matrix_sync(b_frag, b_ptr, BN);
-            wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
-            wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
+
+            T *a_buf = a_smem + stage * A_SIZE;
+            T *b_buf = b_smem + stage * B_SIZE;
+
+            if constexpr (!TA && !TB) {
+                wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag0, a_frag1;
+                wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
+
+                const T *a_ptr0 = a_buf + (warp_m0 << 4) * BK;
+                const T *a_ptr1 = a_buf + (warp_m1 << 4) * BK;
+                const T *b_ptr  = b_buf + (warp_n0 << 4);
+
+                wmma::load_matrix_sync(a_frag0, a_ptr0, BK);
+                wmma::load_matrix_sync(a_frag1, a_ptr1, BK);
+                wmma::load_matrix_sync(b_frag,  b_ptr,  BN);
+
+                wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
+                wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
+            } else if constexpr (TA && !TB) {
+                wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a_frag0, a_frag1;
+                wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
+
+                const T *a_ptr0 = a_buf + (warp_m0 << 4);
+                const T *a_ptr1 = a_buf + (warp_m1 << 4);
+                const T *b_ptr  = b_buf + (warp_n0 << 4);
+
+                wmma::load_matrix_sync(a_frag0, a_ptr0, BM);
+                wmma::load_matrix_sync(a_frag1, a_ptr1, BM);
+                wmma::load_matrix_sync(b_frag,  b_ptr,  BN);
+
+                wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
+                wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
+            } else if constexpr (!TA && TB) {
+                wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag0, a_frag1;
+                wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
+
+                const T *a_ptr0 = a_buf + (warp_m0 << 4) * BK;
+                const T *a_ptr1 = a_buf + (warp_m1 << 4) * BK;
+                const T *b_ptr  = b_buf + (warp_n0 << 4) * BK;
+
+                wmma::load_matrix_sync(a_frag0, a_ptr0, BK);
+                wmma::load_matrix_sync(a_frag1, a_ptr1, BK);
+                wmma::load_matrix_sync(b_frag,  b_ptr,  BK);
+
+                wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
+                wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
+            } else { // TA && TB
+                wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a_frag0, a_frag1;
+                wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
+
+                const T *a_ptr0 = a_buf + (warp_m0 << 4);
+                const T *a_ptr1 = a_buf + (warp_m1 << 4);
+                const T *b_ptr  = b_buf + (warp_n0 << 4) * BK;
+
+                wmma::load_matrix_sync(a_frag0, a_ptr0, BM);
+                wmma::load_matrix_sync(a_frag1, a_ptr1, BM);
+                wmma::load_matrix_sync(b_frag,  b_ptr,  BK);
+
+                wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
+                wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
+            }
         };
 
         int k_tiles = (K + BK - 1)/BK;
@@ -381,25 +460,30 @@ namespace mag {
             cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(size));
         };
 
-        CUtensorMap map_a = init_tmap_x<T, BM, BK>(x);
-        CUtensorMap map_b = init_tmap_y<T, BK, BN>(y);
-
         dim3 grid_dim((N + BN - 1) / BN, (M + BM - 1) / BM, batch_total);
         dim3 block_dim(BLOCK_THREADS, 1, 1);
 
         if (!xT && !yT) {
+            CUtensorMap map_a = init_tmap_x<T, false, BM, BK>(x);
+            CUtensorMap map_b = init_tmap_y<T, false, BK, BN>(y);
             auto *kernel = matmul_kernel_wmma<T, false, false, BM, BN, STAGES>;
             set_kernel_smem_size(kernel, smem);
             kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
         } else if (!xT && yT) {
+            CUtensorMap map_a = init_tmap_x<T, false, BM, BK>(x);
+            CUtensorMap map_b = init_tmap_y<T, true, BK, BN>(y);
             auto *kernel = matmul_kernel_wmma<T, false, true, BM, BN, STAGES>;
             set_kernel_smem_size(kernel, smem);
             kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
         } else if (xT && !yT) {
+            CUtensorMap map_a = init_tmap_x<T, true, BM, BK>(x);
+            CUtensorMap map_b = init_tmap_y<T, false, BK, BN>(y);
             auto *kernel = matmul_kernel_wmma<T, true, false, BM, BN, STAGES>;
             set_kernel_smem_size(kernel, smem);
             kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
         } else {
+            CUtensorMap map_a = init_tmap_x<T, true, BM, BK>(x);
+            CUtensorMap map_b = init_tmap_y<T, true, BK, BN>(y);
             auto *kernel = matmul_kernel_wmma<T, true, true, BM, BN, STAGES>;
             set_kernel_smem_size(kernel, smem);
             kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
