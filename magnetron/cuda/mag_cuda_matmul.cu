@@ -147,16 +147,16 @@ namespace mag {
     }
 
     template <typename T>
-    __device__ __forceinline__ void store_f32x2(T *dst, float a, float b);
+    static __device__ __forceinline__ void store_f32x2(T *o, float x, float y);
 
     template <>
-    __device__ __forceinline__ void store_f32x2<half>(half *dst, float a, float b) {
-        *reinterpret_cast<half2 *>(dst) = __halves2half2(__float2half_rn(a), __float2half_rn(b));
+    static __device__ __forceinline__ void store_f32x2<half>(half *o, float x, float y) {
+        *reinterpret_cast<half2 *>(o) = __halves2half2(__float2half_rn(x), __float2half_rn(y));
     }
 
     template <>
-    __device__ __forceinline__ void store_f32x2<__nv_bfloat16>(__nv_bfloat16* dst, float a, float b) {
-        *reinterpret_cast<__nv_bfloat162 *>(dst) = __halves2bfloat162(__float2bfloat16(a), __float2bfloat16(b));
+    static __device__ __forceinline__ void store_f32x2<__nv_bfloat16>(__nv_bfloat16 *o, float x, float y) {
+        *reinterpret_cast<__nv_bfloat162 *>(o) = __halves2bfloat162(__float2bfloat16(x), __float2bfloat16(y));
     }
 
    template <typename T, bool TA, bool TB, int BM, int BN, int STAGES>
