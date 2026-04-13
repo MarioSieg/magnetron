@@ -352,7 +352,7 @@ namespace mag {
         static constexpr int BM = 128;
         static constexpr int BN = 64;
         static constexpr int BK = 16;
-        static constexpr int STAGES = 3;
+        static constexpr int STAGES = 2;
         static constexpr int BLOCK_THREADS = (1 + ((BM / 16) * (BN / 16)) / 2) * 32;
 
         int max_smem_real;
