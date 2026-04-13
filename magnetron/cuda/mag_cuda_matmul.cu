@@ -305,36 +305,39 @@ namespace mag {
                 compute_stage(stage);
             }
             __syncthreads();
+
             if (is_producer && next_kt < k_tiles)
                 issue_tma_stage(stage, next_kt);
             __syncthreads();
         }
 
-        int tile0 = consumer_warp;
-        int tile1 = consumer_warp + CONSUMER_WARPS;
-
-        auto *c_ptr0 = c_smem + (tile0 << 8);
-        auto *c_ptr1 = c_smem + (tile1 << 8);
-
         if (!is_producer) {
+            int tile0 = consumer_warp;
+            int tile1 = consumer_warp + CONSUMER_WARPS;
+            auto *c_ptr0 = c_smem + (tile0<<8);
+            auto *c_ptr1 = c_smem + (tile1<<8);
             wmma::store_matrix_sync(c_ptr0, c_frag0, 16, wmma::mem_row_major);
             wmma::store_matrix_sync(c_ptr1, c_frag1, 16, wmma::mem_row_major);
-        }
-        __syncthreads();
+            __syncwarp();
 
-        for (int i=tid; i < BM * BN; i += BLOCK_THREADS) {
-            int row = i / BN;
-            int col = i % BN;
-            int g_row = tile_m + row;
-            int g_col = tile_n + col;
-            if (g_row < M && g_col < N) {
-                int warp_store_m = row >> 4;
-                int warp_store_n = col >> 4;
-                int warp_store = warp_store_m * WN + warp_store_n;
-                int row_in_warp = row & 15;
-                int col_in_warp = col & 15;
-                float v = c_smem[(warp_store<<8) + (row_in_warp<<4) + col_in_warp];
-                r_batch[g_row * N + g_col] = static_cast<T>(v);
+            #pragma unroll
+            for (int i=lane; i < 256; i += 32) {
+                int row = i>>4;
+                int col = i&15;
+                int g_row = tile_m + (warp_m0<<4) + row;
+                int g_col = tile_n + (warp_n0<<4) + col;
+                if (g_row < M && g_col < N)
+                    r_batch[g_row*N + g_col] = static_cast<T>(c_ptr0[i]);
+            }
+
+            #pragma unroll
+            for (int i=lane; i < 256; i += 32) {
+                int r = i>>4;
+                int c = i&15;
+                int g_row = tile_m + (warp_m1<<4) + r;
+                int g_col = tile_n + (warp_n1<<4) + c;
+                if (g_row < M && g_col < N)
+                    r_batch[g_row*N + g_col] = static_cast<T>(c_ptr1[i]);
             }
         }
     }
