@@ -171,6 +171,54 @@ namespace mag {
         *reinterpret_cast<__nv_bfloat162 *>(o) = __halves2bfloat162(__float2bfloat16(x), __float2bfloat16(y));
     }
 
+    template <typename T>
+    static __device__ __forceinline__ void store_tile_16x16(
+        T *__restrict__ r_batch,
+        int M,
+        int N,
+        int base_row,
+        int base_col,
+        const float *__restrict__ c_ptr,
+        int lane
+    ) {
+        bool full_tile = base_row+16 <= M && base_col+16 <= N;
+        auto can_store_x2 = [](const void *p) -> bool {
+            return !(3&reinterpret_cast<uintptr_t>(p));
+        };
+        if (full_tile) {
+            #pragma unroll
+            for (int i=lane<<1; i < 256; i += 64) {
+                int row = i>>4;
+                int col = i&15;
+                int out_idx = (base_row + row)*N + (base_col + col);
+                auto *dst = r_batch + out_idx;
+                if (can_store_x2(dst)) {
+                    store_f32x2<T>(dst, c_ptr[i], c_ptr[i+1]);
+                } else {
+                    dst[0] = static_cast<T>(c_ptr[i]);
+                    dst[1] = static_cast<T>(c_ptr[i+1]);
+                }
+            }
+        } else {
+            #pragma unroll
+            for (int i=lane<<1; i < 256; i += 64) {
+                int row = i>>4;
+                int col = i&15;
+                int g_row = base_row + row;
+                int g_col = base_col + col;
+                if (g_row >= M) continue;
+                int out_idx = g_row*N + g_col;
+                auto *dst = r_batch + out_idx;
+                if (g_col+1 < N && can_store_x2(dst)) {
+                    store_f32x2<T>(dst, c_ptr[i], c_ptr[i+1]);
+                } else {
+                    if (g_col < N) dst[0] = static_cast<T>(c_ptr[i]);
+                    if (g_col+1 < N) dst[1] = static_cast<T>(c_ptr[i+1]);
+                }
+            }
+        }
+    }
+
    template <typename T, bool TA, bool TB, int BM, int BN, int STAGES>
     __global__ static void matmul_kernel_wmma(
         int64_t M,
@@ -405,27 +453,18 @@ namespace mag {
             wmma::store_matrix_sync(c_ptr1, c_frag1, 16, wmma::mem_row_major);
             __syncwarp();
 
-            #pragma unroll
-            for (int i=lane<<1; i < 256; i += 64) {
-                int row = i>>4;
-                int col = i&15;
-                int g_row = tile_m+(warp_m0 << 4) + row;
-                int g_col = tile_n+(warp_n0 << 4) + col;
-                if (g_row >= M) continue;
-                if (g_col+1 < N) store_f32x2<T>(r_batch + (g_row*N + g_col), c_ptr0[i], c_ptr0[i+1]);
-                else if (g_col < N) r_batch[g_row*N + g_col] = static_cast<T>(c_ptr0[i]);
-            }
-
-            #pragma unroll
-            for (int i=lane<<1; i < 256; i += 64) {
-                int row = i>>4;
-                int col = i&15;
-                int g_row = tile_m + (warp_m1 << 4) + row;
-                int g_col = tile_n + (warp_n1 << 4) + col;
-                if (g_row >= M) continue;
-                if (g_col+1 < N) store_f32x2<T>(r_batch + (g_row*N + g_col), c_ptr1[i], c_ptr1[i+1]);
-                else if (g_col < N) r_batch[g_row * N + g_col] = static_cast<T>(c_ptr1[i]);
-            }
+            store_tile_16x16<T>(
+                r_batch, M, N,
+                tile_m + (warp_m0<<4),
+                tile_n + (warp_n0<<4),
+                c_ptr0, lane
+            );
+            store_tile_16x16<T>(
+                r_batch, M, N,
+                tile_m + (warp_m1<<4),
+                tile_n + (warp_n1<<4),
+                c_ptr1, lane
+            );
         }
     }
 
@@ -664,19 +703,56 @@ namespace mag {
     }
 
     template <typename T>
-    [[nodiscard]] static bool is_tensor_tma_compat(const mag_tensor_t *t) {
-        int64_t r = t->coords.rank;
-        int64_t rows = r == 1 ? 1 : t->coords.shape[r-2];
-        int64_t cols = t->coords.shape[r-1];
-        int64_t row_stride = r == 1 ? 1 : t->coords.strides[r-2];
-        int64_t batch_stride = rows*cols;
-        auto strides_aligned = [](int64_t elems) -> bool {
-            return !(15 & (elems*static_cast<int64_t>(sizeof T{})));
-        };
-        if (!strides_aligned(row_stride)) return false;
-        if (!strides_aligned(batch_stride)) return false;
-        if ((mag_tensor_data_ptr(t) & 15) != 0) return false;
-        return true;
+    [[nodiscard]] static bool tma_aligned_bytes(int64_t elems) {
+        return ((elems * static_cast<int64_t>(sizeof(T))) & 15) == 0;
+    }
+
+    template <typename T>
+    [[nodiscard]] static bool is_tensor_tma_compat_x(const mag_tensor_t *x, bool TA) {
+        const int64_t r = x->coords.rank;
+        const int64_t batch_total = tensor_batch_total(x);
+        const int64_t M = (r == 1) ? 1 : x->coords.shape[r - 2];
+        const int64_t K = x->coords.shape[r - 1];
+
+        if ((15&mag_tensor_data_ptr(x))) return false;
+        if (batch_total < 1) return false;
+
+        if (!TA) {
+            // Physical layout: M x K
+            const int64_t row_stride = K;
+            const int64_t batch_stride = M * K;
+            return tma_aligned_bytes<T>(row_stride) &&
+                   tma_aligned_bytes<T>(batch_stride);
+        } else {
+            // Physical layout: K x M
+            const int64_t row_stride = M;
+            const int64_t batch_stride = M * K;
+            return tma_aligned_bytes<T>(row_stride) &&
+                   tma_aligned_bytes<T>(batch_stride);
+        }
+    }
+
+    template <typename T>
+    [[nodiscard]] static bool is_tensor_tma_compat_y(const mag_tensor_t *y, bool TB) {
+        const int64_t r = y->coords.rank;
+        const int64_t batch_total = tensor_batch_total(y);
+        const int64_t K = (r == 1) ? y->coords.shape[0] : y->coords.shape[r - 2];
+        const int64_t N = (r == 1) ? 1 : y->coords.shape[r - 1];
+
+        if (15&mag_tensor_data_ptr(y)) return false;
+        if (batch_total < 1) return false;
+
+        if (!TB) {
+            const int64_t row_stride = N;
+            const int64_t batch_stride = K * N;
+            return tma_aligned_bytes<T>(row_stride) && tma_aligned_bytes<T>(batch_stride);
+        } else {
+            // Physical layout: N x K
+            const int64_t row_stride = K;
+            const int64_t batch_stride = K * N;
+            return tma_aligned_bytes<T>(row_stride) &&
+                   tma_aligned_bytes<T>(batch_stride);
+        }
     }
 
     template <typename T>
@@ -726,7 +802,7 @@ namespace mag {
 
         #if MAG_CUDA_MATMUL_USE_WMMA
             if constexpr (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>) {
-                bool can_use_wmma_tma_kernel = is_tensor_tma_compat<T>(x) && is_tensor_tma_compat<T>(y);
+                bool can_use_wmma_tma_kernel = is_tensor_tma_compat_x<T>(x, xT) && is_tensor_tma_compat_y<T>(y, yT);
                 if (can_use_wmma_tma_kernel) {
                     launch_matmul_kernel_wmma(M, N, K, batch_total, br, x, y, xT, yT);
                     goto end;
