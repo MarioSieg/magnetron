@@ -219,7 +219,7 @@ namespace mag {
         }
     }
 
-   template <typename T, bool TA, bool TB, int BM, int BN, int STAGES>
+    template <typename T, bool TA, bool TB, int BM, int BN, int STAGES>
     __global__ static void matmul_kernel_wmma(
         int64_t M,
         int64_t N,
@@ -233,65 +233,71 @@ namespace mag {
 
         static constexpr int BK = 16;
         static_assert(BK == 16);
-        static_assert(!(BM&15));
-        static_assert(!(BN&15));
-        static constexpr int WM = BM>>4;
-        static constexpr int WN = BN>>4;
-        static constexpr int WARP_TILES_OUT = WM*WN;
-        static constexpr int PRODUCER_WARPS = 1;
-        static constexpr int CONSUMER_WARPS = WARP_TILES_OUT>>1;
-        static constexpr int TOTAL_WARPS = PRODUCER_WARPS + CONSUMER_WARPS;
-        static constexpr int BLOCK_THREADS = TOTAL_WARPS<<5;
-        static constexpr int A_SIZE = BM*BK;
-        static constexpr int B_SIZE = BK*BN;
-        static_assert(!(WARP_TILES_OUT&1));
-        static_assert(BLOCK_THREADS<=1024);
+        static_assert((BM & 15) == 0);
+        static_assert((BN & 15) == 0);
 
-        int batch = blockIdx.z;
+        static constexpr int WM = BM >> 4;
+        static constexpr int WN = BN >> 4;
+        static constexpr int WARP_TILES_OUT = WM * WN;
+
+        static constexpr int PRODUCER_WARPS = 1;
+        static constexpr int CONSUMER_WARPS = WARP_TILES_OUT >> 1;
+        static constexpr int TOTAL_WARPS    = PRODUCER_WARPS + CONSUMER_WARPS;
+        static constexpr int BLOCK_THREADS  = TOTAL_WARPS << 5;
+
+        static constexpr int A_SIZE = BM * BK;
+        static constexpr int B_SIZE = BK * BN;
+
+        static_assert((WARP_TILES_OUT & 1) == 0);
+        static_assert(BLOCK_THREADS <= 1024);
+        static_assert(CONSUMER_WARPS > 0);
+
+        const int batch = blockIdx.z;
         if (batch >= batch_total) return;
 
-        int tile_m = blockIdx.y*BM;
-        int tile_n = blockIdx.x*BN;
+        const int tile_m = blockIdx.y * BM;
+        const int tile_n = blockIdx.x * BN;
 
-        int tid = threadIdx.x;
-        int lane = tid&31;
-        int warp_id = tid>>5;
+        const int tid     = threadIdx.x;
+        const int lane    = tid & 31;
+        const int warp_id = tid >> 5;
 
-        bool is_producer = warp_id == 0;
-        int consumer_warp = warp_id - 1;
+        const bool is_producer   = (warp_id == 0);
+        const int  consumer_warp = warp_id - 1;
 
-        auto *__restrict__ r_batch = br + batch*M*N;
+        T *__restrict__ r_batch = br + static_cast<int64_t>(batch) * M * N;
 
         extern __shared__ __align__(128) uint8_t smem_raw[];
+
         __shared__ uint64_t a_bar[STAGES];
         __shared__ uint64_t b_bar[STAGES];
+        __shared__ uint64_t done_bar[STAGES];
 
-        auto *a_smem = reinterpret_cast<T*>(smem_raw);
-        auto *b_smem = a_smem + STAGES * A_SIZE;
-        auto *c_smem = reinterpret_cast<float*>(b_smem + STAGES * B_SIZE);
+        T *a_smem = reinterpret_cast<T *>(smem_raw);
+        T *b_smem = a_smem + STAGES*A_SIZE;
+        float *c_smem = reinterpret_cast<float *>(b_smem + STAGES*B_SIZE);
 
         if (tid == 0) {
             #pragma unroll
-            for (int s=0; s < STAGES; ++s) {
-                cuda::ptx::mbarrier_init(&a_bar[s], 1);
-                cuda::ptx::mbarrier_init(&b_bar[s], 1);
+            for (int s = 0; s < STAGES; ++s) {
+                cuda::ptx::mbarrier_init(a_bar+s, 1);
+                cuda::ptx::mbarrier_init(b_bar+s, 1);
+                cuda::ptx::mbarrier_init(done_bar+s, CONSUMER_WARPS);
             }
         }
         __syncthreads();
-
-        auto issue_tma_stage = [&](int stage, int ktile) -> void {
+        auto issue_tma_stage = [&](int stage, int ktile) {
             if (!is_producer || lane != 0) return;
 
-            auto *a_buf = a_smem + stage*A_SIZE;
-            auto *b_buf = b_smem + stage*B_SIZE;
-
+            T *a_buf = a_smem + stage * A_SIZE;
+            T *b_buf = b_smem + stage * B_SIZE;
             int32_t a_coords[3];
             int32_t b_coords[3];
             if constexpr (!TA) { // dims {K, M, batch}, box {BK, BM, 1}
                 a_coords[0] = ktile * BK;
                 a_coords[1] = tile_m;
                 a_coords[2] = batch;
-            } else { // dims {M, K, batch}, box {BM, BK, 1}
+            } else {             // dims {M, K, batch}, box {BM, BK, 1}
                 a_coords[0] = tile_m;
                 a_coords[1] = ktile * BK;
                 a_coords[2] = batch;
@@ -300,7 +306,7 @@ namespace mag {
                 b_coords[0] = tile_n;
                 b_coords[1] = ktile * BK;
                 b_coords[2] = batch;
-            } else { // dims {K, N, batch}, box {BK, BN, 1}
+            } else {             // dims {K, N, batch}, box {BK, BN, 1}
                 b_coords[0] = ktile * BK;
                 b_coords[1] = tile_n;
                 b_coords[2] = batch;
@@ -309,47 +315,65 @@ namespace mag {
             cuda::ptx::cp_async_bulk_tensor(
                 cuda::ptx::space_cluster,
                 cuda::ptx::space_global,
-                a_buf, &map_a, a_coords, &a_bar[stage]
+                a_buf,
+                &map_a,
+                a_coords,
+                &a_bar[stage]
             );
             cuda::ptx::mbarrier_arrive_expect_tx(
                 cuda::ptx::sem_release,
                 cuda::ptx::scope_cta,
                 cuda::ptx::space_shared,
                 &a_bar[stage],
-                sizeof(T)*A_SIZE
+                sizeof(T) * A_SIZE
             );
 
             cuda::ptx::cp_async_bulk_tensor(
                 cuda::ptx::space_cluster,
                 cuda::ptx::space_global,
-                b_buf, &map_b, b_coords, &b_bar[stage]
+                b_buf,
+                &map_b,
+                b_coords,
+                &b_bar[stage]
             );
             cuda::ptx::mbarrier_arrive_expect_tx(
                 cuda::ptx::sem_release,
                 cuda::ptx::scope_cta,
                 cuda::ptx::space_shared,
                 &b_bar[stage],
-                sizeof(T)*B_SIZE
+                sizeof(T) * B_SIZE
             );
-
-            __threadfence_block();
         };
 
-        auto await_stage_ready = [&](int stage, int phase) -> void {
+        auto wait_stage_ready = [&](int stage, int phase) {
             while (!cuda::ptx::mbarrier_try_wait_parity(&a_bar[stage], phase)) {}
             while (!cuda::ptx::mbarrier_try_wait_parity(&b_bar[stage], phase)) {}
         };
 
+        auto producer_wait_stage_reusable = [&](int stage, int phase) {
+            if (!is_producer || lane != 0) return;
+            while (!cuda::ptx::mbarrier_try_wait_parity(&done_bar[stage], phase)) {}
+        };
+
+        auto consumer_mark_stage_done = [&](int stage) {
+            if (is_producer || lane != 0) return;
+            cuda::ptx::mbarrier_arrive(
+                cuda::ptx::sem_release,
+                cuda::ptx::scope_cta,
+                cuda::ptx::space_shared,
+                &done_bar[stage]
+            );
+        };
+
         wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag0;
         wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag1;
-        if (!is_producer) {
-            wmma::fill_fragment(c_frag0, 0.0f);
-            wmma::fill_fragment(c_frag1, 0.0f);
-        }
 
         int warp_m0 = 0, warp_n0 = 0;
         int warp_m1 = 0, warp_n1 = 0;
+
         if (!is_producer) {
+            wmma::fill_fragment(c_frag0, 0.0f);
+            wmma::fill_fragment(c_frag1, 0.0f);
             int tile0 = consumer_warp;
             int tile1 = consumer_warp + CONSUMER_WARPS;
             warp_m0 = tile0 / WN;
@@ -358,112 +382,110 @@ namespace mag {
             warp_n1 = tile1 % WN;
         }
 
-        auto compute_stage = [&](int stage) -> void {
+        auto compute_stage = [&](int stage) {
             if (is_producer) return;
-
-            T *a_buf = a_smem + stage * A_SIZE;
-            T *b_buf = b_smem + stage * B_SIZE;
-
+            auto *a_buf = a_smem + stage * A_SIZE;
+            auto *b_buf = b_smem + stage * B_SIZE;
             if constexpr (!TA && !TB) {
                 wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag0, a_frag1;
                 wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
-
-                const T *a_ptr0 = a_buf + (warp_m0 << 4) * BK;
-                const T *a_ptr1 = a_buf + (warp_m1 << 4) * BK;
-                const T *b_ptr  = b_buf + (warp_n0 << 4);
-
+                const auto *a_ptr0 = a_buf + (warp_m0<<4)*BK;
+                const auto *a_ptr1 = a_buf + (warp_m1<<4)*BK;
+                const auto *b_ptr = b_buf + (warp_n0<<4);
                 wmma::load_matrix_sync(a_frag0, a_ptr0, BK);
                 wmma::load_matrix_sync(a_frag1, a_ptr1, BK);
-                wmma::load_matrix_sync(b_frag,  b_ptr,  BN);
-
+                wmma::load_matrix_sync(b_frag, b_ptr, BN);
                 wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
                 wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
             } else if constexpr (TA && !TB) {
                 wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a_frag0, a_frag1;
                 wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
-
-                const T *a_ptr0 = a_buf + (warp_m0 << 4);
-                const T *a_ptr1 = a_buf + (warp_m1 << 4);
-                const T *b_ptr  = b_buf + (warp_n0 << 4);
-
+                const auto *a_ptr0 = a_buf + (warp_m0<<4);
+                const auto *a_ptr1 = a_buf + (warp_m1<<4);
+                const auto *b_ptr = b_buf + (warp_n0<<4);
                 wmma::load_matrix_sync(a_frag0, a_ptr0, BM);
                 wmma::load_matrix_sync(a_frag1, a_ptr1, BM);
-                wmma::load_matrix_sync(b_frag,  b_ptr,  BN);
-
+                wmma::load_matrix_sync(b_frag, b_ptr, BN);
                 wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
                 wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
             } else if constexpr (!TA && TB) {
                 wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag0, a_frag1;
                 wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
-
-                const T *a_ptr0 = a_buf + (warp_m0 << 4) * BK;
-                const T *a_ptr1 = a_buf + (warp_m1 << 4) * BK;
-                const T *b_ptr  = b_buf + (warp_n0 << 4) * BK;
-
+                const auto *a_ptr0 = a_buf + (warp_m0<<4)*BK;
+                const auto *a_ptr1 = a_buf + (warp_m1<<4)*BK;
+                const auto *b_ptr = b_buf + (warp_n0<<4)*BK;
                 wmma::load_matrix_sync(a_frag0, a_ptr0, BK);
                 wmma::load_matrix_sync(a_frag1, a_ptr1, BK);
-                wmma::load_matrix_sync(b_frag,  b_ptr,  BK);
+                wmma::load_matrix_sync(b_frag, b_ptr, BK);
 
                 wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
                 wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
-            } else { // TA && TB
+            } else {
                 wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a_frag0, a_frag1;
                 wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
-
-                const T *a_ptr0 = a_buf + (warp_m0 << 4);
-                const T *a_ptr1 = a_buf + (warp_m1 << 4);
-                const T *b_ptr  = b_buf + (warp_n0 << 4) * BK;
-
+                const auto *a_ptr0 = a_buf + (warp_m0<<4);
+                const auto *a_ptr1 = a_buf + (warp_m1<<4);
+                const auto *b_ptr = b_buf + (warp_n0<<4)*BK;
                 wmma::load_matrix_sync(a_frag0, a_ptr0, BM);
                 wmma::load_matrix_sync(a_frag1, a_ptr1, BM);
-                wmma::load_matrix_sync(b_frag,  b_ptr,  BK);
-
+                wmma::load_matrix_sync(b_frag, b_ptr, BK);
                 wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
                 wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
             }
         };
 
-        int k_tiles = (K + BK - 1)/BK;
-        int prefetch = k_tiles < STAGES ? k_tiles : STAGES;
-        if (is_producer)
-            for (int s=0; s < prefetch; ++s)
-                issue_tma_stage(s, s);
+        const int k_tiles  = static_cast<int>((K + BK - 1) / BK);
+        const int prefetch = (k_tiles < STAGES) ? k_tiles : STAGES;
 
+        if (is_producer && lane == 0) {
+            #pragma unroll
+            for (int s=0; s < STAGES; ++s) {
+                if (s < prefetch) issue_tma_stage(s, s);
+            }
+        }
         for (int kt=0; kt < k_tiles; ++kt) {
             int stage = kt % STAGES;
-            int phase = 1 & (kt / STAGES);
+            int phase = (kt / STAGES) & 1;
             int next_kt = kt + STAGES;
             if (!is_producer) {
-                await_stage_ready(stage, phase);
+                wait_stage_ready(stage, phase);
                 compute_stage(stage);
+                __syncwarp();
+                consumer_mark_stage_done(stage);
             }
-            __syncthreads();
-
-            if (is_producer && next_kt < k_tiles)
+            if (is_producer && lane == 0 && next_kt < k_tiles) {
+                producer_wait_stage_reusable(stage, phase);
                 issue_tma_stage(stage, next_kt);
-            __syncthreads();
+            }
         }
 
         if (!is_producer) {
             int tile0 = consumer_warp;
             int tile1 = consumer_warp + CONSUMER_WARPS;
-            auto *c_ptr0 = c_smem + (tile0<<8);
-            auto *c_ptr1 = c_smem + (tile1<<8);
+            float *c_ptr0 = c_smem + (tile0<<8);
+            float *c_ptr1 = c_smem + (tile1<<8);
+
             wmma::store_matrix_sync(c_ptr0, c_frag0, 16, wmma::mem_row_major);
             wmma::store_matrix_sync(c_ptr1, c_frag1, 16, wmma::mem_row_major);
-            __syncwarp();
 
+            __syncwarp();
             store_tile_16x16<T>(
-                r_batch, M, N,
-                tile_m + (warp_m0<<4),
-                tile_n + (warp_n0<<4),
-                c_ptr0, lane
+                r_batch,
+                static_cast<int>(M),
+                static_cast<int>(N),
+                tile_m + (warp_m0 << 4),
+                tile_n + (warp_n0 << 4),
+                c_ptr0,
+                lane
             );
             store_tile_16x16<T>(
-                r_batch, M, N,
-                tile_m + (warp_m1<<4),
-                tile_n + (warp_n1<<4),
-                c_ptr1, lane
+                r_batch,
+                static_cast<int>(M),
+                static_cast<int>(N),
+                tile_m + (warp_m1 << 4),
+                tile_n + (warp_n1 << 4),
+                c_ptr1,
+                lane
             );
         }
     }
