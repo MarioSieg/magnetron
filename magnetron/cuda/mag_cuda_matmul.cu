@@ -753,62 +753,8 @@ namespace mag {
         return !TB ? !(15 & (N*sizeof(T))) && !(15 & (K*N*sizeof(T))) : !(15 & (K*sizeof(T))) && !(15 & (K*N*sizeof(T)));
     }
 
-    template <typename T, bool TA, int K_TILE, int COLS_PER_THREAD>
-    __global__ static void gemv_m1_kernel_nt(
-      int N,
-      int K,
-      int batch_total,
-      T *br,
-      const T *bx,
-      const T *by
-    ) {
-        extern __shared__ float x_smem[];
-        int batch = blockIdx.y;
-        if (batch >= batch_total) return;
-        bx += batch * K;
-        by += batch * K * N;
-        br += batch * N;
-        int tid = threadIdx.x;
-        int col0 = blockIdx.x * (blockDim.x * COLS_PER_THREAD) + tid;
-        int x_row_stride = TA ? 1 : K;
-        int x_col_stride = TA ? 1 : 1;
-        (void)x_row_stride;
-        (void)x_col_stride;
-        float acc[COLS_PER_THREAD] = {};
-        for (int k0 = 0; k0 < K; k0 += K_TILE) {
-            int tile_k = min(K_TILE, K - k0);
-            for (int i = tid; i < tile_k; i += blockDim.x) {
-                x_smem[i] = static_cast<float>(bx[k0 + i]);
-            }
-            __syncthreads();
-            #pragma unroll 4
-            for (int kk = 0; kk < K_TILE; ++kk) {
-                if (kk >= tile_k) break;
-                float xv = x_smem[kk];
-                int w_row = (k0 + kk) * N;
-
-                #pragma unroll
-                for (int c = 0; c < COLS_PER_THREAD; ++c) {
-                    int col = col0 + c * blockDim.x;
-                    if (col < N) {
-                        acc[c] += xv * static_cast<float>(by[w_row + col]);
-                    }
-                }
-            }
-            __syncthreads();
-        }
-
-        #pragma unroll
-        for (int c = 0; c < COLS_PER_THREAD; ++c) {
-            int col = col0 + c * blockDim.x;
-            if (col < N) {
-                br[col] = static_cast<T>(acc[c]);
-            }
-        }
-    }
-
-    template <typename T, int ROWS_PER_WARP>
-    __global__ static void gemv_m1(
+    template <typename T, bool YT, int THREADS_X, int OUTS_PER_BLOCK>
+    __global__ static void gemv_m1_kernel(
         int N,
         int K,
         int batch_total,
@@ -816,6 +762,11 @@ namespace mag {
         const T *__restrict__ bx,
         const T *__restrict__ by
     ) {
+        static_assert(!(THREADS_X&31));
+        static_assert(THREADS_X*OUTS_PER_BLOCK <= 1024);
+
+        static constexpr int WARPS_X = THREADS_X>>5;
+
         int batch = blockIdx.y;
         if (batch >= batch_total) return;
 
@@ -823,143 +774,93 @@ namespace mag {
         by += batch*K*N;
         br += batch*N;
 
-        const int tid  = threadIdx.x;
-        const int lane = tid & 31;
-        const int warp = tid >> 5;
-        const int warps_per_block = blockDim.x >> 5;
+        int tx = threadIdx.x;
+        int ty = threadIdx.y;
+        int lane = tx & 31;
+        int warp_x = tx >> 5;
 
-        const int row_base = (blockIdx.x * warps_per_block + warp) * ROWS_PER_WARP;
-        if (row_base >= N) return;
+        int out = blockIdx.x*OUTS_PER_BLOCK + ty;
+        if (out >= N) return;
 
-        float acc[ROWS_PER_WARP];
-        #pragma unroll
-        for (int r = 0; r < ROWS_PER_WARP; ++r)
-            acc[r] = 0.0f;
-        const int K2 = K >> 1;
-        if constexpr (std::is_same_v<T, half>) {
-            const half2 *bx2 = reinterpret_cast<const half2 *>(bx);
-
-            for (int k2 = lane; k2 < K2; k2 += 32) {
-                const float2 xv2 = __half22float2(bx2[k2]);
-                const int k = k2 << 1;
-
-                #pragma unroll
-                for (int r = 0; r < ROWS_PER_WARP; ++r) {
-                    const int row = row_base + r;
-                    if (row < N) {
-                        const half2 *w2 = reinterpret_cast<const half2 *>(by + row * K);
-                        const float2 wv2 = __half22float2(w2[k2]);
-                        acc[r] += xv2.x * wv2.x + xv2.y * wv2.y;
-                    }
+        float sum = 0.0f;
+        if constexpr (YT) {
+            if constexpr (std::is_same_v<T, half>) {
+                int K2 = K >> 1;
+                const auto *__restrict__ x2 = reinterpret_cast<const half2 *>(bx);
+                const auto *__restrict__ w2 = reinterpret_cast<const half2 *>(by + out * K);
+                for (int k2 = tx; k2 < K2; k2 += THREADS_X) {
+                    const float2 xv = __half22float2(x2[k2]);
+                    const float2 wv = __half22float2(w2[k2]);
+                    sum += xv.x * wv.x + xv.y * wv.y;
                 }
-            }
-        } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
-            const __nv_bfloat162 *bx2 = reinterpret_cast<const __nv_bfloat162 *>(bx);
-
-            for (int k2 = lane; k2 < K2; k2 += 32) {
-                const float2 xv2 = __bfloat1622float2(bx2[k2]);
-
-                #pragma unroll
-                for (int r = 0; r < ROWS_PER_WARP; ++r) {
-                    const int row = row_base + r;
-                    if (row < N) {
-                        const __nv_bfloat162 *w2 =
-                            reinterpret_cast<const __nv_bfloat162 *>(by + row * K);
-                        const float2 wv2 = __bfloat1622float2(w2[k2]);
-                        acc[r] += xv2.x * wv2.x + xv2.y * wv2.y;
-                    }
+                if ((K & 1) && tx == 0) {
+                    int k = K - 1;
+                    sum += static_cast<float>(bx[k]) * static_cast<float>(by[out * K + k]);
+                }
+            } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
+                int K2 = K >> 1;
+                const auto *__restrict__ x2 = reinterpret_cast<const __nv_bfloat162 *>(bx);
+                const auto *__restrict__ w2 = reinterpret_cast<const __nv_bfloat162 *>(by + out * K);
+                for (int k2 = tx; k2 < K2; k2 += THREADS_X) {
+                    const float2 xv = __bfloat1622float2(x2[k2]);
+                    const float2 wv = __bfloat1622float2(w2[k2]);
+                    sum += xv.x * wv.x + xv.y * wv.y;
+                }
+                if ((K & 1) && tx == 0) {
+                    int k = K - 1;
+                    sum += static_cast<float>(bx[k])*static_cast<float>(by[out * K + k]);
+                }
+            } else {
+                for (int k = tx; k < K; k += THREADS_X) {
+                    sum += static_cast<float>(bx[k])*static_cast<float>(by[out * K + k]);
                 }
             }
         } else {
-            for (int k = lane; k < K; k += 32) {
-                const float xv = static_cast<float>(bx[k]);
-
-                #pragma unroll
-                for (int r = 0; r < ROWS_PER_WARP; ++r) {
-                    const int row = row_base + r;
-                    if (row < N) {
-                        acc[r] += xv * static_cast<float>(by[row * K + k]);
-                    }
-                }
+            for (int k = tx; k < K; k += THREADS_X) {
+                sum += static_cast<float>(bx[k]) * static_cast<float>(by[k * N + out]);
             }
         }
-
-        if ((K & 1) && lane == 0) {
-            const int k = K - 1;
-            const float xv = static_cast<float>(bx[k]);
-
-            #pragma unroll
-            for (int r = 0; r < ROWS_PER_WARP; ++r) {
-                const int row = row_base + r;
-                if (row < N) {
-                    acc[r] += xv * static_cast<float>(by[row * K + k]);
-                }
-            }
-        }
-
         #pragma unroll
-        for (int offset = 16; offset > 0; offset >>= 1) {
-            #pragma unroll
-            for (int r = 0; r < ROWS_PER_WARP; ++r) {
-                acc[r] += __shfl_down_sync(0xffffffff, acc[r], offset);
-            }
-        }
-
+        for (int offset=16; offset > 0; offset >>= 1)
+            sum += __shfl_down_sync(0xffffffff, sum, offset);
+        __shared__ float warp_sums[OUTS_PER_BLOCK][WARPS_X];
         if (lane == 0) {
+            warp_sums[ty][warp_x] = sum;
+        }
+        __syncthreads();
+
+        if (warp_x == 0) {
+            sum = lane < WARPS_X ? warp_sums[ty][lane] : 0.0f;
             #pragma unroll
-            for (int r = 0; r < ROWS_PER_WARP; ++r) {
-                const int row = row_base + r;
-                if (row < N) {
-                    br[row] = static_cast<T>(acc[r]);
-                }
-            }
+            for (int offset=16; offset > 0; offset >>= 1)
+                sum += __shfl_down_sync(0xffffffff, sum, offset);
+            if (lane == 0)
+                br[out] = static_cast<T>(sum);
         }
     }
 
     template <typename T>
-    static void launch_gemv_m1_kernel_fallback(
+    static void launch_gemv_m1_kernel(
         int64_t N,
         int64_t K,
         int64_t batch_total,
         T *__restrict__ br,
-        const T *bx,
-        const T *by,
+        const T *__restrict__ bx,
+        const T *__restrict__ by,
         bool xT,
         bool yT
     ) {
-        if (!yT) {
-            static constexpr int BLOCK_THREADS   = 256;
-            static constexpr int COLS_PER_THREAD = 4;
-            static constexpr int K_TILE = 256;
-            dim3 block_dim(BLOCK_THREADS, 1, 1);
-            dim3 grid_dim(
-                (N + BLOCK_THREADS * COLS_PER_THREAD - 1) / (BLOCK_THREADS * COLS_PER_THREAD),
-                batch_total,
-                1
-            );
-            size_t smem = K_TILE * sizeof(float);
-            if (!xT) {
-                auto *kernel = gemv_m1_kernel_nt<T, false, K_TILE, COLS_PER_THREAD>;
-                kernel<<<grid_dim, block_dim, smem>>>(N, K, batch_total, br, bx, by);
-            } else {
-                auto *kernel = gemv_m1_kernel_nt<T, true, K_TILE, COLS_PER_THREAD>;
-                kernel<<<grid_dim, block_dim, smem>>>(N, K, batch_total, br, bx, by);
-            }
+        (void)xT; // for M=1 vector input, xT does not matter after contiguity
+        static constexpr int THREADS_X = 64;
+        static constexpr int OUTS_PER_BLOCK = 8;
+
+        dim3 block_dim(THREADS_X, OUTS_PER_BLOCK, 1);
+        dim3 grid_dim((N + OUTS_PER_BLOCK - 1)/OUTS_PER_BLOCK,batch_total,1);
+        if (yT) {
+            auto *kernel = gemv_m1_kernel<T, true, THREADS_X, OUTS_PER_BLOCK>;
+            kernel<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
         } else {
-            static constexpr int BLOCK_THREADS = 64;
-            static constexpr int ROWS_PER_WARP = 2;
-
-            const int warps_per_block = BLOCK_THREADS / 32;
-            const int rows_per_block  = warps_per_block * ROWS_PER_WARP;
-
-            dim3 block_dim(BLOCK_THREADS, 1, 1);
-            dim3 grid_dim(
-                (N + rows_per_block - 1) / rows_per_block,
-                batch_total,
-                1
-            );
-
-            auto *kernel = gemv_m1<T, ROWS_PER_WARP>;
+            auto *kernel = gemv_m1_kernel<T, false, THREADS_X, OUTS_PER_BLOCK>;
             kernel<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
         }
     }
@@ -1009,7 +910,7 @@ namespace mag {
         const auto *__restrict__ bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
         const auto *__restrict__ by = reinterpret_cast<const T *>(mag_tensor_data_ptr(y));
         if (M == 1) { // GEMV
-            launch_gemv_m1_kernel_fallback(N, K, batch_total, br, bx, by, xT, yT);
+            launch_gemv_m1_kernel(N, K, batch_total, br, bx, by, xT, yT);
             goto end;
         }
 
