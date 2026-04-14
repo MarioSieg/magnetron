@@ -23,9 +23,10 @@
 
 #include <array>
 #include <cmath>
-#include <stdexcept>
 #include <cstdint>
+#include <mutex>
 #include <numeric>
+#include <stdexcept>
 
 #define MAG_CUDA_MATMUL_USE_WMMA 1
 
@@ -54,14 +55,24 @@ namespace mag {
         return batch;
     }
 
-     [[nodiscard]] static PFN_cuTensorMapEncodeTiled_v12000 lookup_proc_address_encode_tmap() {
-        static PFN_cuTensorMapEncodeTiled_v12000 fn = nullptr;
-        if (fn) return fn;
-        cudaDriverEntryPointQueryResult stat;
-        auto res = cudaGetDriverEntryPointByVersion("cuTensorMapEncodeTiled", reinterpret_cast<void **>(&fn), 12000, cudaEnableDefault, &stat);
-        if (mag_unlikely(res != cudaSuccess || stat != cudaDriverEntryPointSuccess))
-            throw std::runtime_error {"Failed to get address of cuTensorMapEncodeTiled: " + std::string{cudaGetErrorString(res)}};
-        return fn;
+    static std::once_flag g_dlsym_once;
+    static std::atomic<PFN_cuTensorMapEncodeTiled_v12000> g_tmap_encode_fn = nullptr;
+    [[nodiscard]] static PFN_cuTensorMapEncodeTiled_v12000 lookup_proc_address_encode_tmap() {
+        std::call_once(g_dlsym_once, [] {
+            cudaDriverEntryPointQueryResult stat;
+            PFN_cuTensorMapEncodeTiled_v12000 pfn = nullptr;
+            auto res = cudaGetDriverEntryPointByVersion(
+                "cuTensorMapEncodeTiled",
+                reinterpret_cast<void **>(&pfn),
+                12000,
+                cudaEnableDefault,
+                &stat
+            );
+            if (mag_unlikely(res != cudaSuccess || stat != cudaDriverEntryPointSuccess))
+                throw std::runtime_error {"Failed to get address of cuTensorMapEncodeTiled: " + std::string{cudaGetErrorString(res)}};
+            g_tmap_encode_fn.store(pfn, std::memory_order_release);
+        });
+        return g_tmap_encode_fn.load(std::memory_order_acquire);
     }
 
     template <typename T, const size_t rank>
@@ -280,6 +291,7 @@ namespace mag {
             }
         }
         __syncthreads();
+
         auto issue_tma_stage = [&](int stage, int ktile) -> void {
             if (!is_producer || lane != 0) return;
 
@@ -719,56 +731,25 @@ namespace mag {
     }
 
     template <typename T>
-    [[nodiscard]] static bool tma_aligned_bytes(int64_t elems) {
-        return ((elems * static_cast<int64_t>(sizeof(T))) & 15) == 0;
-    }
-
-    template <typename T>
     [[nodiscard]] static bool is_tensor_tma_compat_x(const mag_tensor_t *x, bool TA) {
-        const int64_t r = x->coords.rank;
-        const int64_t batch_total = tensor_batch_total(x);
-        const int64_t M = (r == 1) ? 1 : x->coords.shape[r - 2];
-        const int64_t K = x->coords.shape[r - 1];
-
-        if ((15&mag_tensor_data_ptr(x))) return false;
+        int64_t r = x->coords.rank;
+        int64_t batch_total = tensor_batch_total(x);
+        int64_t M = r == 1 ? 1 : x->coords.shape[r-2];
+        int64_t K = x->coords.shape[r-1];
         if (batch_total < 1) return false;
-
-        if (!TA) {
-            // Physical layout: M x K
-            const int64_t row_stride = K;
-            const int64_t batch_stride = M * K;
-            return tma_aligned_bytes<T>(row_stride) &&
-                   tma_aligned_bytes<T>(batch_stride);
-        } else {
-            // Physical layout: K x M
-            const int64_t row_stride = M;
-            const int64_t batch_stride = M * K;
-            return tma_aligned_bytes<T>(row_stride) &&
-                   tma_aligned_bytes<T>(batch_stride);
-        }
+        if (15 & mag_tensor_data_ptr(x)) return false;
+        return !TA ? !(15 & (K*sizeof(T))) && !(15 & (M*K*sizeof(T))) : !(15 & (M*sizeof(T))) && !(15 & (M*K*sizeof(T)));
     }
 
     template <typename T>
     [[nodiscard]] static bool is_tensor_tma_compat_y(const mag_tensor_t *y, bool TB) {
-        const int64_t r = y->coords.rank;
-        const int64_t batch_total = tensor_batch_total(y);
-        const int64_t K = (r == 1) ? y->coords.shape[0] : y->coords.shape[r - 2];
-        const int64_t N = (r == 1) ? 1 : y->coords.shape[r - 1];
-
-        if (15&mag_tensor_data_ptr(y)) return false;
+        int64_t r = y->coords.rank;
+        int64_t batch_total = tensor_batch_total(y);
+        int64_t K = r == 1 ? y->coords.shape[0] : y->coords.shape[r-2];
+        int64_t N = r == 1 ? 1 : y->coords.shape[r-1];
         if (batch_total < 1) return false;
-
-        if (!TB) {
-            const int64_t row_stride = N;
-            const int64_t batch_stride = K * N;
-            return tma_aligned_bytes<T>(row_stride) && tma_aligned_bytes<T>(batch_stride);
-        } else {
-            // Physical layout: N x K
-            const int64_t row_stride = K;
-            const int64_t batch_stride = K * N;
-            return tma_aligned_bytes<T>(row_stride) &&
-                   tma_aligned_bytes<T>(batch_stride);
-        }
+        if (15 & mag_tensor_data_ptr(y)) return false;
+        return !TB ? !(15 & (N*sizeof(T))) && !(15 & (K*N*sizeof(T))) : !(15 & (K*sizeof(T))) && !(15 & (K*N*sizeof(T)));
     }
 
     template <typename T>
