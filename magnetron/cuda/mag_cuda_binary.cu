@@ -283,19 +283,19 @@ namespace mag {
         const mag_tensor_t *x = cmd.in[0];
         const mag_tensor_t *y = cmd.in[1];
         mag_assert2(r->dtype == MAG_DTYPE_BOOLEAN && x->dtype == y->dtype);
-        switch (r->dtype) {
+        switch (x->dtype) {
             case MAG_DTYPE_FLOAT32: launch_binary_op<op_t<float, uint8_t>>(r, x, y); break;
             case MAG_DTYPE_FLOAT16: launch_binary_op<op_t<half, uint8_t>>(r, x, y); break;
             case MAG_DTYPE_BFLOAT16: launch_binary_op<op_t<__nv_bfloat16, uint8_t>>(r, x, y); break;
             case MAG_DTYPE_BOOLEAN:
             case MAG_DTYPE_UINT8: launch_binary_op<op_t<uint8_t, uint8_t>>(r, x, y); break;
-            case MAG_DTYPE_INT8: launch_binary_op<op_t<int8_t, int8_t>>(r, x, y); break;
-            case MAG_DTYPE_UINT16: launch_binary_op<op_t<uint16_t, uint16_t>>(r, x, y); break;
-            case MAG_DTYPE_INT16: launch_binary_op<op_t<int16_t, int16_t>>(r, x, y); break;
-            case MAG_DTYPE_UINT32: launch_binary_op<op_t<uint32_t, uint32_t>>(r, x, y); break;
-            case MAG_DTYPE_INT32: launch_binary_op<op_t<int32_t, int32_t>>(r, x, y); break;
-            case MAG_DTYPE_UINT64: launch_binary_op<op_t<uint64_t, uint64_t>>(r, x, y); break;
-            case MAG_DTYPE_INT64: launch_binary_op<op_t<int64_t, int64_t>>(r, x, y); break;
+            case MAG_DTYPE_INT8: launch_binary_op<op_t<int8_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_UINT16: launch_binary_op<op_t<uint16_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_INT16: launch_binary_op<op_t<int16_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_UINT32: launch_binary_op<op_t<uint32_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_INT32: launch_binary_op<op_t<int32_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_UINT64: launch_binary_op<op_t<uint64_t, uint8_t>>(r, x, y); break;
+            case MAG_DTYPE_INT64: launch_binary_op<op_t<int64_t, uint8_t>>(r, x, y); break;
             default: mag_assert(false, "Unsupported data type in binary operation: %s", mag_type_trait(r->dtype)->name);
         }
     }

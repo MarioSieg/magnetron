@@ -853,11 +853,8 @@ namespace mag {
             if (v > maxv) maxv = v;
         }
         double sum = 0.0;
-        for (int64_t i = 0; i < last_dim; ++i) {
-            float e = __expf(to_f32(row_in[i]) - maxv);
-            row_out[i] = from_f32<scalar_t>(e);
-            sum += e;
-        }
+        for (int64_t i = 0; i < last_dim; ++i)
+            sum += static_cast<double>(__expf(to_f32(row_in[i]) - maxv));
         if (!isfinite(sum) || sum <= 0.0) {
             float inv = 1.0f / static_cast<float>(last_dim);
             for (int64_t i = 0; i < last_dim; ++i)
@@ -865,7 +862,7 @@ namespace mag {
         } else {
             float inv = static_cast<float>(1.0 / sum);
             for (int64_t i = 0; i < last_dim; ++i)
-                row_out[i] = from_f32<scalar_t>(to_f32(row_out[i]) * inv);
+                row_out[i] = from_f32<scalar_t>(__expf(to_f32(row_in[i]) - maxv) * inv);
         }
     }
 
