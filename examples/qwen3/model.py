@@ -15,7 +15,8 @@ from typing import Any
 from magnetron import Tensor, Snapshot, nn, dtype, context
 from dataclasses import dataclass
 
-context.set_default_device('cuda')
+if context.is_device_available('cuda'):
+    context.set_default_device('cuda')
 
 _EOS: set[int] = {151645, 151643}
 
@@ -182,7 +183,10 @@ class Qwen3Model(nn.Module):
                     raise RuntimeError(f'Shape mismatch for {name}: {tensor.shape} != {param.shape}')
                 if tensor.dtype != param.dtype:
                     raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.dtype}')
-                param.data = tensor.transfer('cuda')
+                if context.get_default_device() != 'cpu:0':
+                    param.data = tensor.transfer(context.get_default_device())
+                else:
+                    param.data = tensor
 
     @staticmethod
     def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen3Model':
