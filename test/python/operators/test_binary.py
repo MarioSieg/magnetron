@@ -37,14 +37,15 @@ _BINARY_OPS_INTEGER: tuple[tuple[str, Callable], ...] = (
 )
 
 def binary_unary_op_np(
+    device: str,
     dtype: dtype.DType,
     avoid_zero_in_y: bool,
     mag_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray],
     np_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray]
 ) -> None:
     def test(shape: tuple[int, ...]) -> None:
-        x = random_tensor(shape, dt=dtype)
-        y = random_tensor(shape, dt=dtype)
+        x = random_tensor(shape, dt=dtype, device=device)
+        y = random_tensor(shape, dt=dtype, device=device)
         if avoid_zero_in_y: # For division and similar operations
             y = y + (y == 0).cast(dtype) # Removes zeros from y to avoid division by zero
         r = mag_callback(x.clone(), y.clone())
@@ -54,14 +55,15 @@ def binary_unary_op_np(
 
 
 def binary_unary_op_torch(
+    device: str,
     dtype: dtype.DType,
     op: str,
     mag_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray],
     np_callback: Callable[[Tensor | np.ndarray, Tensor | np.ndarray], Tensor | np.ndarray]
 ) -> None:
     def test(shape: tuple[int, ...]) -> None:
-        x = random_tensor(shape, dtype)
-        y = random_tensor(shape, dtype)
+        x = random_tensor(shape, dt=dtype, device=device)
+        y = random_tensor(shape, dt=dtype, device=device)
         if op in ('div', 'mod'): # For division and similar operations
             y = y + (y == 0).cast(dtype) # Removes zeros from y to avoid division by zero
         elif op == 'pow':
@@ -71,26 +73,30 @@ def binary_unary_op_torch(
 
     for_all_shapes(test)
 
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 @pytest.mark.parametrize('dtype', dtype.floating)
 @pytest.mark.parametrize('op', _BINARY_OPS_NUMERIC)
-def test_binary_op_numeric_fp(dtype: dtype.DType, op: tuple[str, Callable]) -> None:
+def test_binary_op_numeric_fp(device: str, dtype: dtype.DType, op: tuple[str, Callable]) -> None:
     callback = op[1]
-    binary_unary_op_torch(dtype, op, callback, callback)
+    binary_unary_op_torch(device, dtype, op, callback, callback)
 
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 @pytest.mark.parametrize('dtype', dtype.integer)
 @pytest.mark.parametrize('op', _BINARY_OPS_NUMERIC)
-def test_binary_op_numeric_integers(dtype: dtype.DType, op: tuple[str, Callable]) -> None:
+def test_binary_op_numeric_integers(device: str, dtype: dtype.DType, op: tuple[str, Callable]) -> None:
     callback = op[1]
-    binary_unary_op_np(dtype, True, callback, callback)
+    binary_unary_op_np(device, dtype, True, callback, callback)
 
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 @pytest.mark.parametrize('dtype', dtype.integral)
 @pytest.mark.parametrize('op', _BINARY_OPS_BITWISE_INTEGRAL)
-def test_binary_op_integral(dtype: dtype.DType, op: tuple[str, Callable]) -> None:
+def test_binary_op_integral(device: str, dtype: dtype.DType, op: tuple[str, Callable]) -> None:
     callback = op[1]
-    binary_unary_op_np(dtype, False, callback, callback)
+    binary_unary_op_np(device, dtype, False, callback, callback)
 
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 @pytest.mark.parametrize('dtype', dtype.integer)
 @pytest.mark.parametrize('op', _BINARY_OPS_INTEGER)
-def test_binary_op_integer(dtype: dtype.DType, op: tuple[str, Callable]) -> None:
+def test_binary_op_integer(device: str, dtype: dtype.DType, op: tuple[str, Callable]) -> None:
     callback = op[1]
-    binary_unary_op_np(dtype, True, callback, callback)
+    binary_unary_op_np(device, dtype, True, callback, callback)
