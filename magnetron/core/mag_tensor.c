@@ -381,7 +381,7 @@ bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {
     if (mag_unlikely(!tensors || !n)) return false;
     const mag_tensor_t *t0 = *tensors;
     if (mag_unlikely(!t0)) return false;
-    if (!mag_tensor_is_contiguous(t0)) false;
+    if (!mag_tensor_is_contiguous(t0)) return false;
     const int64_t rank = t0->coords.rank;
     const int64_t *shape0 = t0->coords.shape;
     for (size_t i=1; i < n; ++i) {

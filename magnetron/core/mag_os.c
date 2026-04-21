@@ -65,10 +65,11 @@ bool mag_sec_crypto_entropy(void *buf, size_t len) {
     return getentropy(buf, len) == 0;
 #elif defined(_WIN32)
     if (!mag_win32_prgr_fn) {
-        HMODULE lib = LoadLibraryExA("advapi32.dll", NULL, 0);
+        HMODULE lib = LoadLibraryExA("advapi32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (mag_unlikely(!lib)) return false;
-        mag_win32_prgr_fn = (mag_win32_prgr_fn_t)GetProcAddress(lib, "SystemFunction036");
-        if (mag_unlikely(!mag_win32_prgr_fn)) return false;
+        mag_win32_prgr_fn_t fn = (mag_win32_prgr_fn_t)GetProcAddress(lib, "SystemFunction036");
+        if (mag_unlikely(!fn)) return false;
+        mag_win32_prgr_fn = fn; /* assign once fully resolved to avoid partial-init races */
     }
     return (*mag_win32_prgr_fn)(buf, (ULONG)len);
 #else

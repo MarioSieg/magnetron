@@ -349,9 +349,12 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
     union {
         uint64_t u64;
         double n;
-        struct { /* TODO: make endian aware */
-            uint32_t lo, hi;
-        } u32;
+        /* On little-endian the lower word sits at offset 0; on big-endian it sits at offset 4. */
+        #ifdef MAG_BIG_ENDIAN
+        struct { uint32_t hi, lo; } u32;
+        #else
+        struct { uint32_t lo, hi; } u32;
+        #endif
     } t = {.n = n};
     if (mag_unlikely((t.u32.hi << 1) >= 0xffe00000)) {
         /* Handle non-finite values uniformly for %a, %e, %f, %g. */

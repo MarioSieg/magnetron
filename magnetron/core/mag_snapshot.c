@@ -321,7 +321,8 @@ static bool mag_tensor_desc_deserialize(mag_tensor_desc_t *desc, mag_mem_stream_
     mag_snap_verify(desc->key_id < pool_len, return false);
     mag_snap_verify(mag_stream_ru64_le(stream, &desc->numel), return false);
     mag_snap_verify(desc->numel > 0 && desc->numel <= INT64_MAX, return false);
-    mag_snap_verify(mag_stream_ru64_le(stream, &desc->offset), return false);     /* TODO: verify offset */
+    mag_snap_verify(mag_stream_ru64_le(stream, &desc->offset), return false);
+    /* Offset bounds are verified against accumulated storage in mag_snapshot_deserialize's load loop. */
     int64_t numel_prod = 1;
     for (uint8_t i=0; i < desc->rank; ++i) {
         uint64_t dim=0;
