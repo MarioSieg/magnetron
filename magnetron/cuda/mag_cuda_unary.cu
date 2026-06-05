@@ -58,6 +58,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<float, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<float, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<float, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<float, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<float, uint8_t>,   // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<float, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<float, int8_t>,
@@ -72,6 +73,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<half, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<half, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<half, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<half, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<half, uint8_t>,   // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<half, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<half, int8_t>,
@@ -86,6 +88,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<__nv_bfloat16, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<__nv_bfloat16, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<__nv_bfloat16, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<__nv_bfloat16, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<__nv_bfloat16, uint8_t>,   // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<__nv_bfloat16, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<__nv_bfloat16, int8_t>,
@@ -96,10 +99,26 @@ namespace mag {
         [MAG_DTYPE_UINT64] = &mag_cast_launcher<__nv_bfloat16, uint64_t>,
         [MAG_DTYPE_INT64] = &mag_cast_launcher<__nv_bfloat16, int64_t>,
       },
+      [MAG_DTYPE_FLOAT8_E4M3FN] = {
+        [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<__nv_fp8_e4m3, float>,
+        [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<__nv_fp8_e4m3, half>,
+        [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<__nv_fp8_e4m3, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<__nv_fp8_e4m3, __nv_fp8_e4m3>,
+        [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<__nv_fp8_e4m3, uint8_t>,   // bool uses uint8_t kernels
+        [MAG_DTYPE_UINT8] = &mag_cast_launcher<__nv_fp8_e4m3, uint8_t>,
+        [MAG_DTYPE_INT8] = &mag_cast_launcher<__nv_fp8_e4m3, int8_t>,
+        [MAG_DTYPE_UINT16] = &mag_cast_launcher<__nv_fp8_e4m3, uint16_t>,
+        [MAG_DTYPE_INT16] = &mag_cast_launcher<__nv_fp8_e4m3, int16_t>,
+        [MAG_DTYPE_UINT32] = &mag_cast_launcher<__nv_fp8_e4m3, uint32_t>,
+        [MAG_DTYPE_INT32] = &mag_cast_launcher<__nv_fp8_e4m3, int32_t>,
+        [MAG_DTYPE_UINT64] = &mag_cast_launcher<__nv_fp8_e4m3, uint64_t>,
+        [MAG_DTYPE_INT64] = &mag_cast_launcher<__nv_fp8_e4m3, int64_t>,
+      },
       [MAG_DTYPE_BOOLEAN] = {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint8_t, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint8_t, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint8_t, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<uint8_t, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint8_t, uint8_t>,     // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint8_t, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<uint8_t, int8_t>,
@@ -114,6 +133,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint8_t, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint8_t, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint8_t, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<uint8_t, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint8_t, uint8_t>,     // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint8_t, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<uint8_t, int8_t>,
@@ -128,6 +148,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<int8_t, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<int8_t, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<int8_t, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<int8_t, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<int8_t, uint8_t>,      // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<int8_t, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<int8_t, int8_t>,
@@ -142,6 +163,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint16_t, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint16_t, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint16_t, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<uint16_t, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint16_t, uint8_t>,    // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint16_t, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<uint16_t, int8_t>,
@@ -156,6 +178,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<int16_t, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<int16_t, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<int16_t, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<int16_t, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<int16_t, uint8_t>,     // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<int16_t, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<int16_t, int8_t>,
@@ -170,6 +193,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint32_t, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint32_t, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint32_t, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<uint32_t, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint32_t, uint8_t>,    // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint32_t, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<uint32_t, int8_t>,
@@ -184,6 +208,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<int32_t, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<int32_t, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<int32_t, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<int32_t, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<int32_t, uint8_t>,     // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<int32_t, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<int32_t, int8_t>,
@@ -198,6 +223,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<uint64_t, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<uint64_t, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<uint64_t, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<uint64_t, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<uint64_t, uint8_t>,    // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<uint64_t, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<uint64_t, int8_t>,
@@ -212,6 +238,7 @@ namespace mag {
         [MAG_DTYPE_FLOAT32] = &mag_cast_launcher<int64_t, float>,
         [MAG_DTYPE_FLOAT16] = &mag_cast_launcher<int64_t, half>,
         [MAG_DTYPE_BFLOAT16] = &mag_cast_launcher<int64_t, __nv_bfloat16>,
+        [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cast_launcher<int64_t, __nv_fp8_e4m3>,
         [MAG_DTYPE_BOOLEAN] = &mag_cast_launcher<int64_t, uint8_t>,     // bool uses uint8_t kernels
         [MAG_DTYPE_UINT8] = &mag_cast_launcher<int64_t, uint8_t>,
         [MAG_DTYPE_INT8] = &mag_cast_launcher<int64_t, int8_t>,
@@ -276,6 +303,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_clone<float>(r, x); break;
       case MAG_DTYPE_FLOAT16: launch_clone<half>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_clone<__nv_bfloat16>(r, x); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_clone<__nv_fp8_e4m3>(r, x); break;
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_clone<uint8_t>(r, x); break;
       case MAG_DTYPE_INT8: launch_clone<int8_t>(r, x); break;
@@ -296,7 +324,7 @@ namespace mag {
     using in_t = scalar_t;
     using out_t = scalar_t;
     [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x) const {
-      return static_cast<float>(fabsf(static_cast<float>(x)));
+      return static_cast<out_t>(fabsf(static_cast<float>(x)));
     }
   };
 
@@ -766,6 +794,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_unary_op<op_t<float>>(r, x); break;
       case MAG_DTYPE_FLOAT16: launch_unary_op<op_t<half>>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_unary_op<op_t<__nv_bfloat16>>(r, x); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_unary_op<op_t<__nv_fp8_e4m3>>(r, x); break;
       default: mag_assert(false, "Unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
     }
   }
@@ -826,6 +855,7 @@ namespace mag {
   [[nodiscard]] __device__ __forceinline__ float to_f32(T x) {
     if constexpr (std::is_same_v<T, float>) return x;
     else if constexpr (std::is_same_v<T, half>) return __half2float(x);
+    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return static_cast<float>(x);
     else return __bfloat162float(x);
   }
 
@@ -833,6 +863,7 @@ namespace mag {
   [[nodiscard]] __device__ __forceinline__ T from_f32(float x) {
     if constexpr (std::is_same_v<T, float>) return x;
     else if constexpr (std::is_same_v<T, half>) return __float2half(x);
+    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return static_cast<__nv_fp8_e4m3>(x);
     else return __float2bfloat16(x);
   }
 
@@ -889,6 +920,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_softmax_lastdim<float>(r, x); break;
       case MAG_DTYPE_FLOAT16: launch_softmax_lastdim<half>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_softmax_lastdim<__nv_bfloat16>(r, x); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_softmax_lastdim<__nv_fp8_e4m3>(r, x); break;
       default: mag_assert(false, "Unsupported dtype for softmax");
     }
   }

@@ -17,8 +17,8 @@ namespace mag {
   constexpr int REDUCTION_BLOCK_SIZE = 256;
 
   extern void reduce_op_mean(const mag_command_t &cmd);
-  extern void reduce_op_min(const mag_command_t &cmd);
-  extern void reduce_op_max(const mag_command_t &cmd);
+  extern void reduce_op_minima(const mag_command_t &cmd);
+  extern void reduce_op_maxima(const mag_command_t &cmd);
   extern void reduce_op_sum(const mag_command_t &cmd);
   extern void reduce_op_prod(const mag_command_t &cmd);
   extern void reduce_op_all(const mag_command_t &cmd);

@@ -19,28 +19,36 @@ namespace mag {
   struct op_add {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x+y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const {
+      return static_cast<out_t>(static_cast<float>(x)+static_cast<float>(y));
+    }
   };
 
   template <typename scalar_in_t, typename scalar_out_t>
   struct op_sub {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x-y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const {
+      return static_cast<out_t>(static_cast<float>(x)-static_cast<float>(y));
+    }
   };
 
   template <typename scalar_in_t, typename scalar_out_t>
   struct op_mul {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x*y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const {
+      return static_cast<out_t>(static_cast<float>(x)*static_cast<float>(y));
+    }
   };
 
   template <typename scalar_in_t, typename scalar_out_t>
   struct op_div {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x/y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const {
+      return static_cast<out_t>(static_cast<float>(x)/static_cast<float>(y));
+    }
   };
 
   template <typename scalar_in_t, typename scalar_out_t>
@@ -55,7 +63,7 @@ namespace mag {
           return (x - mag_remi(static_cast<int64_t>(x), static_cast<int64_t>(y)))/y;
         }
       } else {
-        return floorf(x/y);
+        return static_cast<out_t>(floorf(static_cast<float>(x)/static_cast<float>(y)));
       }
     }
   };
@@ -95,7 +103,7 @@ namespace mag {
           return static_cast<out_t>(mag_powi(static_cast<int64_t>(x), static_cast<int64_t>(y)));
         }
       } else {
-        return __powf(x, y);
+        return static_cast<out_t>(__powf(static_cast<float>(x), static_cast<float>(y)));
       }
     }
   };
@@ -149,42 +157,42 @@ namespace mag {
   struct op_eq {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x==y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return static_cast<float>(x)==static_cast<float>(y); }
   };
 
   template <typename scalar_in_t, typename scalar_out_t>
   struct op_ne {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x!=y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return static_cast<float>(x)!=static_cast<float>(y); }
   };
 
   template <typename scalar_in_t, typename scalar_out_t>
   struct op_le {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x<=y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return static_cast<float>(x)<=static_cast<float>(y); }
   };
 
   template <typename scalar_in_t, typename scalar_out_t>
   struct op_ge {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x>=y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return static_cast<float>(x)>=static_cast<float>(y); }
   };
 
   template <typename scalar_in_t, typename scalar_out_t>
   struct op_lt {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x<y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return static_cast<float>(x)<static_cast<float>(y); }
   };
 
   template <typename scalar_in_t, typename scalar_out_t>
   struct op_gt {
     using in_t = scalar_in_t;
     using out_t = scalar_out_t;
-    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return x>y; }
+    [[nodiscard]] __device__ __forceinline__ out_t operator()(in_t x, in_t y) const { return static_cast<float>(x)>static_cast<float>(y); }
   };
 
   template <typename op_t, const bool contig>
@@ -245,6 +253,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_binary_op<op_t<float, float>>(r, x, y); break;
       case MAG_DTYPE_FLOAT16: launch_binary_op<op_t<half, half>>(r, x, y); break;
       case MAG_DTYPE_BFLOAT16: launch_binary_op<op_t<__nv_bfloat16, __nv_bfloat16>>(r, x, y); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_binary_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3>>(r, x, y); break;
       case MAG_DTYPE_UINT8: launch_binary_op<op_t<uint8_t, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_INT8: launch_binary_op<op_t<int8_t, int8_t>>(r, x, y); break;
       case MAG_DTYPE_UINT16: launch_binary_op<op_t<uint16_t, uint16_t>>(r, x, y); break;
@@ -287,6 +296,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_binary_op<op_t<float, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_FLOAT16: launch_binary_op<op_t<half, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_BFLOAT16: launch_binary_op<op_t<__nv_bfloat16, uint8_t>>(r, x, y); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_binary_op<op_t<__nv_fp8_e4m3, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_binary_op<op_t<uint8_t, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_INT8: launch_binary_op<op_t<int8_t, uint8_t>>(r, x, y); break;

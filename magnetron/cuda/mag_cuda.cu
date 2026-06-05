@@ -146,8 +146,8 @@ namespace mag {
       [MAG_OP_TRANSPOSE] = op_nop,
       [MAG_OP_PERMUTE] = op_nop,
       [MAG_OP_MEAN] = &reduce_op_mean,
-      [MAG_OP_MIN] = &reduce_op_min,
-      [MAG_OP_MAX] = &reduce_op_max,
+      [MAG_OP_MINIMA] = &reduce_op_minima,
+      [MAG_OP_MAXIMA] = &reduce_op_maxima,
       [MAG_OP_ARGMIN] = &reduce_op_argmin,
       [MAG_OP_ARGMAX] = &reduce_op_argmax,
       [MAG_OP_SUM] = &reduce_op_sum,
@@ -213,6 +213,7 @@ namespace mag {
       [MAG_OP_MOD] = &binary_op_mod,
       [MAG_OP_POW] = &binary_op_pow,
       [MAG_OP_MATMUL] = &misc_op_matmul,
+      [MAG_OP_SCALED_MATMUL] = nullptr,
       [MAG_OP_REPEAT_BACK] = &misc_op_repeat_back,
       [MAG_OP_GATHER] = &misc_op_gather,
       [MAG_OP_AND] = &binary_op_and,
@@ -227,7 +228,10 @@ namespace mag {
       [MAG_OP_GE] = &binary_op_ge,
       [MAG_OP_LT] = &binary_op_lt,
       [MAG_OP_GT] = &binary_op_gt,
-      [MAG_OP_WHERE] = &misc_op_where
+      [MAG_OP_WHERE] = &misc_op_where,
+      [MAG_OP_MIN] = nullptr,
+      [MAG_OP_MAX] = nullptr,
+      [MAG_OP_CLAMP] = nullptr
     };
     static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
     //static_assert([] -> bool {

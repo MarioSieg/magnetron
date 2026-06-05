@@ -18,11 +18,11 @@
 #include <stdint.h>
 
 namespace mag {
-  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_min(T a, T b) { return a < b ? a : b; }
+  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_min(T a, T b) { return static_cast<float>(a) < static_cast<float>(b) ? a : b; }
   template <> [[nodiscard]] __device__ __forceinline__ float fn_min<float>(float a, float b) { return fminf(a, b); }
   template <> [[nodiscard]] __device__ __forceinline__ double fn_min<double>(double a, double b) { return fmin(a, b); }
 
-  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_max(T a, T b) { return a > b ? a : b; }
+  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_max(T a, T b) { return static_cast<float>(a) > static_cast<float>(b) ? a : b; }
   template <> [[nodiscard]] __device__ __forceinline__ float fn_max<float>(float a, float b) { return fmaxf(a, b);}
   template <> [[nodiscard]] __device__ __forceinline__ double fn_max<double>(double a, double b) {return fmax(a, b); }
 
@@ -110,7 +110,9 @@ namespace mag {
     using acc_t = acc_in_t;
 
     [[nodiscard]] __device__ __forceinline__ acc_t init() const { return static_cast<acc_t>(1); }
-    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const { return static_cast<acc_t>(x != in_t{}); }
+    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const {
+      return static_cast<acc_t>(static_cast<float>(x) != static_cast<float>(in_t{}));
+    }
     [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return static_cast<acc_t>(a && b); }
     [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, [[maybe_unused]] int64_t red_prod) const {
       return static_cast<out_t>(acc != 0);
@@ -124,7 +126,9 @@ namespace mag {
     using acc_t = acc_in_t;
 
     [[nodiscard]] __device__ __forceinline__ acc_t init() const { return static_cast<acc_t>(0); }
-    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const { return static_cast<acc_t>(x != in_t{}); }
+    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const {
+      return static_cast<acc_t>(static_cast<float>(x) != static_cast<float>(in_t{}));
+    }
     [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return static_cast<acc_t>(a || b); }
     [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, [[maybe_unused]] int64_t red_prod) const {
       return static_cast<out_t>(acc != 0);
@@ -195,6 +199,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
       default: mag_assert(false, "Unsupported dtype for floating reduction op");
     }
   }
@@ -206,6 +211,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
       case MAG_DTYPE_BOOLEAN: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_UINT8: launch_reduce_op<op_t<uint8_t,  uint64_t, uint64_t>>(cmd); break;
       case MAG_DTYPE_INT8: launch_reduce_op<op_t<int8_t,   int64_t,  int64_t>>(cmd); break;
@@ -228,6 +234,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, float>>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, half>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16>>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3, __nv_fp8_e4m3>>(cmd); break;
       case MAG_DTYPE_BOOLEAN: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_UINT8: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_INT8: launch_reduce_op<op_t<int8_t, int8_t, int8_t>>(cmd); break;
@@ -250,6 +257,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_BOOLEAN: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_UINT8: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_INT8: launch_reduce_op<op_t<int8_t, uint8_t, uint8_t>>(cmd); break;
@@ -315,6 +323,7 @@ namespace mag {
   __device__ __forceinline__ float arg_to_cmp_float(T x) {
     if constexpr (std::is_same_v<T, float>) return x;
     else if constexpr (std::is_same_v<T, half>) return __half2float(x);
+    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return static_cast<float>(x);
     else return __bfloat162float(x);
   }
 
@@ -457,6 +466,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_reduce_arg_op<float, is_max>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_arg_op<half, is_max>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_arg_op<__nv_bfloat16, is_max>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_arg_op<__nv_fp8_e4m3, is_max>(cmd); break;
       default: mag_assert(false, "Unsupported dtype for argmin/argmax fp");
     }
   }

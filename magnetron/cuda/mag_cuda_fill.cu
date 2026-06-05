@@ -101,8 +101,8 @@ namespace mag {
     for (int64_t b=ti; b < nb; b += step) {
       int64_t base = b<<2;
       mag_philox4x32_float32x4_t r;
-      if constexpr (normal) r = mag_philox4x32_next_float32x4_normal(&stream, p0, p1);
-      else r = mag_philox4x32_next_float32x4_uniform(&stream, p0, p1);
+      if constexpr (normal) r = mag_philox4x32_next_float32x4_normal(&stream, static_cast<float>(p0), static_cast<float>(p1));
+      else r = mag_philox4x32_next_float32x4_uniform(&stream, static_cast<float>(p0), static_cast<float>(p1));
       int64_t mk = n-base;
       if (mk > 4) mk = 4;
       if constexpr (is_cont) {
@@ -143,6 +143,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd); break;
       case MAG_DTYPE_FLOAT16: launch_fill_kernel<half>(r, cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_fill_kernel<__nv_bfloat16>(r, cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_fill_kernel<__nv_fp8_e4m3>(r, cmd); break;
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_fill_kernel<uint8_t>(r, cmd); break;
       case MAG_DTYPE_INT8: launch_fill_kernel<int8_t>(r, cmd); break;
@@ -163,6 +164,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd, mask); break;
       case MAG_DTYPE_FLOAT16: launch_fill_kernel<half>(r, cmd, mask); break;
       case MAG_DTYPE_BFLOAT16: launch_fill_kernel<__nv_bfloat16>(r, cmd, mask); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_fill_kernel<__nv_fp8_e4m3>(r, cmd, mask); break;
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_fill_kernel<uint8_t>(r, cmd, mask); break;
       case MAG_DTYPE_INT8: launch_fill_kernel<int8_t>(r, cmd, mask); break;
@@ -182,6 +184,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, false>(r, cmd); break;
       case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, false>(r, cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_rand_fill_kernel<__nv_bfloat16, false>(r, cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_rand_fill_kernel<__nv_fp8_e4m3, false>(r, cmd); break;
       default: mag_assert(false, "Unsupported data type in binary operation");
     }
   }
@@ -192,6 +195,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, true>(r, cmd); break;
       case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, true>(r, cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_rand_fill_kernel<__nv_bfloat16, true>(r, cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_rand_fill_kernel<__nv_fp8_e4m3, true>(r, cmd); break;
       default: mag_assert(false, "Unsupported data type in binary operation");
     }
   }
@@ -340,6 +344,7 @@ namespace mag {
       case MAG_DTYPE_FLOAT32: launch_arange<float>(r, cmd); break;
       case MAG_DTYPE_FLOAT16: launch_arange<half>(r, cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_arange<__nv_bfloat16>(r, cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_arange<__nv_fp8_e4m3>(r, cmd); break;
       case MAG_DTYPE_UINT8: launch_arange<uint8_t>(r, cmd); break;
       case MAG_DTYPE_INT8: launch_arange<int8_t>(r, cmd); break;
       case MAG_DTYPE_UINT16: launch_arange<uint16_t>(r, cmd); break;

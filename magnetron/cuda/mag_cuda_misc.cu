@@ -30,6 +30,7 @@ namespace mag {
 __device__ __forceinline__ float d_mm_to_f32(T x) {
     if constexpr (std::is_same_v<T, float>) return x;
     else if constexpr (std::is_same_v<T, half>) return __half2float(x);
+    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return static_cast<float>(x);
     else return __bfloat162float(x);
   }
 
@@ -37,6 +38,7 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
   __device__ __forceinline__ T d_mm_from_f32(float v) {
     if constexpr (std::is_same_v<T, float>) return v;
     else if constexpr (std::is_same_v<T, half>) return __float2half(v);
+    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return static_cast<__nv_fp8_e4m3>(v);
     else return __float2bfloat16(v);
   }
 
@@ -139,6 +141,7 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
       case MAG_DTYPE_FLOAT32: launch_tri_mask<float, false>(r, x, diag); break;
       case MAG_DTYPE_FLOAT16: launch_tri_mask<half, false>(r, x, diag); break;
       case MAG_DTYPE_BFLOAT16: launch_tri_mask<__nv_bfloat16, false>(r, x, diag); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_tri_mask<__nv_fp8_e4m3, false>(r, x, diag); break;
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_tri_mask<uint8_t, false>(r, x, diag); break;
       case MAG_DTYPE_INT8: launch_tri_mask<int8_t, false>(r, x, diag); break;
@@ -160,6 +163,7 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
       case MAG_DTYPE_FLOAT32: launch_tri_mask<float, true>(r, x, diag); break;
       case MAG_DTYPE_FLOAT16: launch_tri_mask<half, true>(r, x, diag); break;
       case MAG_DTYPE_BFLOAT16: launch_tri_mask<__nv_bfloat16, true>(r, x, diag); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_tri_mask<__nv_fp8_e4m3, true>(r, x, diag); break;
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_tri_mask<uint8_t, true>(r, x, diag); break;
       case MAG_DTYPE_INT8: launch_tri_mask<int8_t, true>(r, x, diag); break;
@@ -173,7 +177,6 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     }
   }
 
-  /* --- where --- */
   template <typename T, const bool contig>
   __global__ static void where_kernel(
     int64_t n,
@@ -230,6 +233,7 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
       case MAG_DTYPE_FLOAT32: launch_where<float>(r, cond, x, y); break;
       case MAG_DTYPE_FLOAT16: launch_where<half>(r, cond, x, y); break;
       case MAG_DTYPE_BFLOAT16: launch_where<__nv_bfloat16>(r, cond, x, y); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_where<__nv_fp8_e4m3>(r, cond, x, y); break;
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_where<uint8_t>(r, cond, x, y); break;
       case MAG_DTYPE_INT8: launch_where<int8_t>(r, cond, x, y); break;
@@ -243,7 +247,6 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     }
   }
 
-  /* --- repeat_back (single-thread; matches CPU accumulation order) --- */
   __global__ static void repeat_back_f32_kernel(
     mag_coords_iter_t cr,
     mag_coords_iter_t cx,
@@ -306,6 +309,27 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     }
   }
 
+  __global__ static void repeat_back_float8_kernel(
+  mag_coords_iter_t cr,
+  mag_coords_iter_t cx,
+  int64_t rn,
+  int64_t xn,
+  __nv_fp8_e4m3 *__restrict__ br,
+  const __nv_fp8_e4m3 *__restrict__ bx
+) {
+    if (blockIdx.x != 0 || threadIdx.x != 0) return;
+    for (int64_t i=0; i < rn; ++i) {
+      int64_t ri = mag_coords_iter_to_offset(&cr, i);
+      br[ri] = static_cast<__nv_fp8_e4m3>(0.f);
+    }
+    for (int64_t i=0; i < xn; ++i) {
+      int64_t xi = mag_coords_iter_to_offset(&cx, i);
+      int64_t ri = mag_coords_iter_repeat(&cr, &cx, i);
+      float s = static_cast<float>(br[ri]) + static_cast<float>(bx[xi]);
+      br[ri] = static_cast<__nv_fp8_e4m3>(s);
+    }
+  }
+
   void misc_op_repeat_back(const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
@@ -329,6 +353,11 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
         repeat_back_bf16_kernel<<<1, 1>>>(cr, cx, rn, xn,
           reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(r)),
           reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)));
+        break;
+      case MAG_DTYPE_FLOAT8_E4M3FN:
+        repeat_back_float8_kernel<<<1, 1>>>(cr, cx, rn, xn,
+          reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(r)),
+          reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)));
         break;
       default: mag_assert(false, "repeat_back: unsupported dtype");
     }
@@ -424,6 +453,7 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
       case MAG_DTYPE_FLOAT32: launch_gather<float>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_gather<half>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_gather<__nv_bfloat16>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_gather<__nv_fp8_e4m3>(cmd); break;
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_gather<uint8_t>(cmd); break;
       case MAG_DTYPE_INT8: launch_gather<int8_t>(cmd); break;
@@ -437,7 +467,6 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     }
   }
 
-  /* --- cat (output contiguous) --- */
   void misc_op_cat(const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(mag_tensor_is_contiguous(r));
@@ -486,10 +515,11 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
   }
 
   template <typename T>
-  __device__ __forceinline__ float topk_cmp_val(T x) {
+  [[nodiscard]] static __device__ __forceinline__ float topk_cmp_val(T x) {
     if constexpr (std::is_same_v<T, float>) return x;
     else if constexpr (std::is_same_v<T, half>) return __half2float(x);
     else if constexpr (std::is_same_v<T, __nv_bfloat16>) return __bfloat162float(x);
+    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return static_cast<float>(x);
     else return static_cast<float>(x);
   }
 
@@ -623,6 +653,7 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
       case MAG_DTYPE_FLOAT32: launch_topk<float>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_topk<half>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_topk<__nv_bfloat16>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_topk<__nv_fp8_e4m3>(cmd); break;
       case MAG_DTYPE_UINT8: launch_topk<uint8_t>(cmd); break;
       case MAG_DTYPE_INT8: launch_topk<int8_t>(cmd); break;
       case MAG_DTYPE_UINT16: launch_topk<uint16_t>(cmd); break;
@@ -635,7 +666,6 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     }
   }
 
-  /* --- multinomial --- */
   struct mag_discrete_sample_pair_d {
     float score;
     int64_t idx;
@@ -730,6 +760,9 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
         break;
       case MAG_DTYPE_BFLOAT16:
         multinomial_rows_kernel<__nv_bfloat16><<<blocks, MISC_BLOCK_SIZE>>>(B, K, num_samples, reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        break;
+      case MAG_DTYPE_FLOAT8_E4M3FN:
+        multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE>>>(B, K, num_samples, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       default: mag_assert(false, "multinomial: unsupported dtype");
     }
