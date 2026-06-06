@@ -16,14 +16,18 @@
 
 #else
 #include <dlfcn.h>
+#include <unistd.h>
 #endif
 
 mag_dylib_t *mag_dylib_open(const char *path) {
 #ifdef _WIN32
 #error "TODO: Windows support"
 #else
-  void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
+  if (mag_unlikely(access(path, F_OK)))   /* Silently ignore missing files. */
+    return NULL;
+  void *handle = dlopen(path, RTLD_LAZY|RTLD_LOCAL);
   if (mag_unlikely(!handle)) {
+    mag_log_error("Failed to load dynamic library '%s': %s", path, dlerror());
     return NULL;
   }
   return handle;

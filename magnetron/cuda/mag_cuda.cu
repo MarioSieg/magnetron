@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cstdio>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -409,6 +410,8 @@ namespace mag {
 uint32_t MAG_BACKEND_SYM_ABI_COOKIE(){
   return mag_pack_abi_cookie('M', 'A', 'G', MAG_BACKEND_MODULE_ABI_VER);
 }
+
+#include <iostream>
 
 mag_backend_t *MAG_BACKEND_SYM_INIT([[maybe_unused]] mag_context_t *ctx)
 try {

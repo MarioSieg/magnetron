@@ -105,9 +105,10 @@ void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) {
   if (level > mag_log_level_var) return;
   FILE *f = stdout;
   const char *color = NULL;
+  bool is_err = false;
   switch (level) {
-    case MAG_LOG_LEVEL_ERROR: color = MAG_CC_RED; break;
-    case MAG_LOG_LEVEL_WARN: color = MAG_CC_YELLOW; break;
+    case MAG_LOG_LEVEL_ERROR: color = MAG_CC_RED; is_err = true; break;
+    case MAG_LOG_LEVEL_WARN: color = MAG_CC_YELLOW; is_err = true; break;
     case MAG_LOG_LEVEL_INFO: color = NULL; break;
     case MAG_LOG_LEVEL_DEBUG: color = MAG_CC_MAGENTA; break;
     default:;
@@ -118,7 +119,7 @@ void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) {
   vfprintf(f, fmt, args);
   va_end(args);
   fprintf(f, "%s\n", color ? MAG_CC_RESET : "");
-  if (level == MAG_LOG_LEVEL_ERROR) fflush(f);
+  if (is_err) fflush(f);
 }
 
 void MAG_COLDPROC mag_print_separator(FILE *f) {

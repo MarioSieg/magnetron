@@ -40,9 +40,8 @@ static mag_backend_module_t *mag_backend_module_load(const char *file, mag_conte
   mag_log_info("Loading backend module: '%s'", file);
   mag_assert(mag_utf8_validate((const uint8_t *)file, strlen(file)), "Path is not valid UTF-8");
   mag_dylib_t *handle = mag_dylib_open(file); /* Open the dynamic library */
-  if (mag_unlikely(!handle)) {
+  if (mag_unlikely(!handle))
     return NULL;
-  }
   /* Try to get function pointers to the required symbols */
   void *fn_abi_cookie = NULL;
   void *fn_init = NULL;

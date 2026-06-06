@@ -226,7 +226,7 @@ namespace mag {
   }
 
   template <template <typename, typename, typename> typename op_t>
-  static void impl_reduce_op_minmax(const mag_command_t &cmd) {
+  static void impl_reduce_op_extrema(const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->dtype == x->dtype);
@@ -274,8 +274,8 @@ namespace mag {
   void reduce_op_mean(const mag_command_t &cmd) { impl_reduce_op_fp<op_mean>(cmd); }
   void reduce_op_sum (const mag_command_t &cmd) { impl_reduce_op_sumprod<op_sum>(cmd); }
   void reduce_op_prod(const mag_command_t &cmd) { impl_reduce_op_sumprod<op_prod>(cmd); }
-  void reduce_op_min (const mag_command_t &cmd) { impl_reduce_op_minmax<op_min>(cmd); }
-  void reduce_op_max (const mag_command_t &cmd) { impl_reduce_op_minmax<op_max>(cmd); }
+  void reduce_op_minima (const mag_command_t &cmd) { impl_reduce_op_extrema<op_min>(cmd); }
+  void reduce_op_maxima (const mag_command_t &cmd) { impl_reduce_op_extrema<op_max>(cmd); }
   void reduce_op_all (const mag_command_t &cmd) { impl_reduce_op_logical<op_all>(cmd); }
   void reduce_op_any (const mag_command_t &cmd) { impl_reduce_op_logical<op_any>(cmd); }
 
