@@ -90,9 +90,9 @@ class MLP(nn.Module):
         super().__init__()
         self.hidden_size: int = cfg.hidden_size
         self.inter_size: int = cfg.intermediate_size
-        self.gate_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.down_proj = nn.Linear(self.inter_size, self.hidden_size, bias=False, dtype=cfg.quant_dtype, init=False)
+        self.gate_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
+        self.up_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
+        self.down_proj = nn.Linear(self.inter_size, self.hidden_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
 
     def forward(self, x: Tensor) -> Tensor:
         return self.down_proj(self.gate_proj(x).silu() * self.up_proj(x))
@@ -145,12 +145,12 @@ class SlidingWindowAttention(nn.Module):
         self.num_kv_heads = cfg.num_key_value_heads
         self.n_rep = self.num_heads // self.num_kv_heads
         self.sliding_window = cfg.sliding_window
-        self.q_proj = nn.Linear(cfg.hidden_size, self.num_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.k_proj = nn.Linear(cfg.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.v_proj = nn.Linear(cfg.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, cfg.hidden_size, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.q_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, init=False)
-        self.k_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, init=False)
+        self.q_proj = nn.Linear(cfg.hidden_size, self.num_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
+        self.k_proj = nn.Linear(cfg.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
+        self.v_proj = nn.Linear(cfg.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
+        self.o_proj = nn.Linear(self.num_heads * self.head_dim, cfg.hidden_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
+        self.q_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
+        self.k_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
 
     def forward(self, x: Tensor, cos_freq: Tensor, sin_freq: Tensor, idx: Tensor, cache: KVLayerCache | None = None) -> Tensor:
         B, T, _ = x.shape
@@ -182,8 +182,8 @@ class Block(nn.Module):
         super().__init__()
         self.self_attn = SlidingWindowAttention(cfg)
         self.mlp = MLP(cfg)
-        self.input_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps, init=False)
-        self.post_attention_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps, init=False)
+        self.input_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
+        self.post_attention_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
 
     def forward(self, x: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: Tensor, cache: KVLayerCache | None = None) -> Tensor:
         h = x + self.self_attn(
@@ -200,13 +200,13 @@ class Qwen3Model(nn.Module):
     def __init__(self, cfg: Qwen3HyperParams) -> None:
         super().__init__()
         self.cfg = cfg
-        self.embed_tokens = nn.Embedding(cfg.vocab_size, cfg.hidden_size, init=False)
+        self.embed_tokens = nn.Embedding(cfg.vocab_size, cfg.hidden_size, weight_init=nn.init.EmptyInitStrategy())
         self.layers = nn.ModuleList([Block(cfg) for _ in range(cfg.num_hidden_layers)])
-        self.norm = nn.RMSNorm(cfg.hidden_size, cfg.rms_norm_eps, init=False)
+        self.norm = nn.RMSNorm(cfg.hidden_size, cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
         if cfg.tie_word_embeddings:
             self.lm_head = None
         else:
-            self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False, dtype=cfg.quant_dtype, init=False)
+            self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
         cos_cache, sin_cache = _precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.cos_cache = cos_cache
         self.sin_cache = sin_cache

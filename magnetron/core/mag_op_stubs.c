@@ -1580,8 +1580,12 @@ mag_status_t mag_copy_raw_(mag_error_t *err, mag_tensor_t *tensor, const void *d
   return MAG_STATUS_OK;
 }
 
-mag_status_t mag_zero_(mag_error_t *err, mag_tensor_t *tensor) {
+mag_status_t mag_zeros_(mag_error_t *err, mag_tensor_t *tensor) {
   return mag_fill_(err, tensor, mag_scalar_from_u64(0));
+}
+
+mag_status_t mag_ones_(mag_error_t *err, mag_tensor_t *tensor) {
+  return mag_fill_(err, tensor, mag_scalar_from_u64(1));
 }
 
 mag_status_t mag_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t value) {

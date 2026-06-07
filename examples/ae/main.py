@@ -14,6 +14,7 @@ import argparse
 from magnetron import nn, optim, context, Tensor, no_grad, dtype
 import matplotlib.pyplot as plt
 
+
 class AE(nn.Module):
     def __init__(self, w: int, h: int, latent_dim: int = 16) -> None:
         super().__init__()
@@ -22,17 +23,28 @@ class AE(nn.Module):
         self.h = h
         self.encoder = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(3 * w * h, latent_dim),
+            nn.Linear(
+                3 * w * h,
+                latent_dim,
+                weight_init=nn.init.XavierNormalInitStrategy(),
+                bias_init=nn.init.ZerosInitStrategy(),
+            ),
             nn.ReLU(),
         )
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, 3 * w * h),
+            nn.Linear(
+                latent_dim,
+                3 * w * h,
+                weight_init=nn.init.XavierNormalInitStrategy(),
+                bias_init=nn.init.ZerosInitStrategy(),
+            ),
             nn.Sigmoid(),
         )
 
     def forward(self, x: Tensor) -> Tensor:
         y2 = self.decoder(self.encoder(x))
         return y2.view(x.shape[0], 3, self.w, self.h)
+
 
 def _main() -> None:
     args = argparse.ArgumentParser(description='Autoencoder Example')
@@ -50,12 +62,14 @@ def _main() -> None:
 
     context.manual_seed(args.seed)
     context.set_default_dtype(dtype.bfloat16)
-    if context.is_device_available(args.device): # Use specified device (e.g. GPU) if available
+    if context.is_device_available(args.device):  # Use specified device (e.g. GPU) if available
         context.set_default_device(args.device)
 
     # Load and preprocess image
     image = Tensor.load_image(args.image, channels='RGB', resize_to=(args.width, args.height))  # Load image into uint8 CxHxW tensor
-    image = (image.cast(context.get_default_dtype()) / 255)[None, ...]  # Convert uint8 -> float tensor and normalize [0, 255) to [0, 1) and insert batch dim
+    image = (image.cast(context.get_default_dtype()) / 255)[
+        None, ...
+    ]  # Convert uint8 -> float tensor and normalize [0, 255) to [0, 1) and insert batch dim
 
     # Initialize model, loss function, and optimizer
     model = AE(w=args.width, h=args.height, latent_dim=args.latent)

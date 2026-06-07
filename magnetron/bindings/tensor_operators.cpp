@@ -145,6 +145,24 @@ namespace mag::bindings {
       "value"_a,
       "Fill the tensor with a scalar value."
     )
+    .def("zeros_",
+      [](tensor_wrapper &self) -> tensor_wrapper& {
+        std::lock_guard lock {get_global_mutex()};
+        mag_error_t err {};
+        throw_if_error(mag_zeros_(&err, *self), err);
+        return self;
+      },
+      "Fill the tensor with 0."
+    )
+    .def("ones_",
+      [](tensor_wrapper &self) -> tensor_wrapper& {
+        std::lock_guard lock {get_global_mutex()};
+        mag_error_t err {};
+        throw_if_error(mag_ones_(&err, *self), err);
+        return self;
+      },
+      "Fill the tensor with 1."
+    )
     .def("masked_fill_",
       [](tensor_wrapper &self, const tensor_wrapper &mask, nb::handle value) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};

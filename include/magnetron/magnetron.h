@@ -261,7 +261,8 @@ extern MAG_EXPORT mag_status_t mag_borrow_cpu_buffer(
 
 extern MAG_EXPORT mag_status_t mag_copy_(mag_error_t *err, mag_tensor_t *dst, mag_tensor_t *src);
 extern MAG_EXPORT mag_status_t mag_copy_raw_(mag_error_t *err, mag_tensor_t *tensor, const void *data, size_t size_bytes);
-extern MAG_EXPORT mag_status_t mag_zero_(mag_error_t *err, mag_tensor_t *tensor);
+extern MAG_EXPORT mag_status_t mag_zeros_(mag_error_t *err, mag_tensor_t *tensor);
+extern MAG_EXPORT mag_status_t mag_ones_(mag_error_t *err, mag_tensor_t *tensor);
 extern MAG_EXPORT mag_status_t mag_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t value);
 extern MAG_EXPORT mag_status_t mag_masked_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_tensor_t *mask, mag_scalar_t value);
 extern MAG_EXPORT mag_status_t mag_uniform_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t min, mag_scalar_t max);
