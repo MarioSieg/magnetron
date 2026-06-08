@@ -28,7 +28,6 @@ typedef struct mag_kernel_payload_t {
   int64_t thread_idx;
   mag_philox4x32_stream_t *prng;
   volatile mag_atomic64_t *mm_next_tile;
-  mag_matmul_block_params_t mm_params;
 } mag_kernel_payload_t;
 
 /*

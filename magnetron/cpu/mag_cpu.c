@@ -72,14 +72,12 @@ static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_device_t *device, mag_error_t
   uint32_t intraop_workers = mag_cpu_tune_heuristics_intraop_workers(cmd, device); /* Determine number of intra-op workers */
   if (intraop_workers <= 1) { /* Main thread does the work (single threaded mode). */
     volatile mag_atomic64_t next_tile = 0; /* Tile index for the next tile to process. */
-    mag_kernel_payload_t *yy = &cpu_dvc->pool->workers[0].payload; /* TODO: Ugly */
     mag_kernel_payload_t payload = {
       .cmd = cmd,
       .thread_idx = 0,
       .thread_num = 1,
       .prng = &cpu_dvc->primary_prng,
       .mm_next_tile = &next_tile,
-      .mm_params = yy->mm_params
     };
     return mag_worker_exec_thread_local(err, &cpu_dvc->kernels, &payload);
   }
