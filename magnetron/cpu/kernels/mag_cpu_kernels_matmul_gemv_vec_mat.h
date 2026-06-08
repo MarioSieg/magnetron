@@ -17,9 +17,8 @@ typedef void (mag_gemv_vec_mat_kernel_contig_t)(int64_t K, int64_t N, void *r, c
     const dtype *y = (const dtype *)py; \
     for (int64_t j=0; j < N; ++j) { \
       float acc = 0.f; \
-      for (int64_t i=0; i < K; ++i) { \
+      for (int64_t i=0; i < K; ++i) \
         acc += TtoF32(x[i])*TtoF32(y[i*N + j]); \
-      } \
       r[j] = F32toT(acc); \
     } \
   }
@@ -27,7 +26,7 @@ mag_gemv_vec_mat_kernel_contig_impl(float, mag_cvt_nop, mag_cvt_nop)
 mag_gemv_vec_mat_kernel_contig_impl(mag_float16_t, mag_float16_to_float32, mag_float32_to_float16)
 mag_gemv_vec_mat_kernel_contig_impl(mag_bfloat16_t, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
 mag_gemv_vec_mat_kernel_contig_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
-#undef mag_dot_kernel_contig_impl
+#undef mag_gemv_vec_mat_kernel_contig_impl
 
 typedef void (mag_gemv_vec_mat_kernel_strided_t)(int64_t K, int64_t N, void *r, const void *px, const void *py, int64_t sx, int64_t sy0, int64_t sy1);
 #define mag_gemv_vec_mat_kernel_strided_impl(dtype, TtoF32, F32toT) \
@@ -37,9 +36,8 @@ typedef void (mag_gemv_vec_mat_kernel_strided_t)(int64_t K, int64_t N, void *r, 
     const dtype *y = (const dtype *)py; \
     for (int64_t j=0; j < N; ++j) { \
       float acc = 0.f; \
-      for (int64_t i=0; i < K; ++i) { \
+      for (int64_t i=0; i < K; ++i) \
         acc += TtoF32(x[i*sx])*TtoF32(y[i*sy0 + j*sy1]); \
-      } \
       r[j] = F32toT(acc); \
     } \
   }
@@ -47,7 +45,7 @@ mag_gemv_vec_mat_kernel_strided_impl(float, mag_cvt_nop, mag_cvt_nop)
 mag_gemv_vec_mat_kernel_strided_impl(mag_float16_t, mag_float16_to_float32, mag_float32_to_float16)
 mag_gemv_vec_mat_kernel_strided_impl(mag_bfloat16_t, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
 mag_gemv_vec_mat_kernel_strided_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
-#undef mag_dot_kernel_strided_impl
+#undef mag_gemv_vec_mat_kernel_strided_impl
 
 static void mag_matmul_gemv_vec_mat(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y) {
   static mag_gemv_vec_mat_kernel_contig_t *const kernel_lut_contig[4] = {

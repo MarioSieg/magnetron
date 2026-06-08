@@ -11,6 +11,7 @@
 
 #include "mag_cpu_kernels_matmul_dot.h"
 #include "mag_cpu_kernels_matmul_gemv_vec_mat.h"
+#include "mag_cpu_kernels_matmul_gemv_mat_vec.h"
 
 static mag_status_t mag_matmul_generic(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err;
@@ -29,7 +30,7 @@ static mag_status_t mag_matmul_generic(mag_error_t *err, const mag_kernel_payloa
       mag_matmul_gemv_vec_mat(r, x, y);
       break;
     case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
-      mag_panic("NYI!");
+      mag_matmul_gemv_mat_vec(r, x, y);
       break;
     case MAG_MATMUL_TYPE_GEMM:
       mag_panic("NYI!");
