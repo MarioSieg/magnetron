@@ -119,7 +119,7 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #include "mag_cpu_kernels_cast.h"
 #include "mag_cpu_kernels_binary.h"
 #include "mag_cpu_kernels_fill.h"
-#include "mag_cpu_kernels_matmul.h"
+#include "mag_cpu_kernels_matmul_core.h"
 #include "mag_cpu_kernels_misc.h"
 #include "mag_cpu_kernels_reduction.h"
 
@@ -891,15 +891,15 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT64] = &mag_pow_int64,
   },
   [MAG_OP_MATMUL] = {
-    [MAG_DTYPE_FLOAT32] = &mag_matmul_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_matmul_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_matmul_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_matmul_float8_e4m3fn,
+    [MAG_DTYPE_FLOAT32] = &mag_matmul_generic,
+    [MAG_DTYPE_FLOAT16] = &mag_matmul_generic,
+    [MAG_DTYPE_BFLOAT16] = &mag_matmul_generic,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_matmul_generic,
   },
   [MAG_OP_SCALED_MATMUL] = {
-    [MAG_DTYPE_FLOAT32] = &mag_matmul_fp8w_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_matmul_fp8w_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_matmul_fp8w_bfloat16,
+    [MAG_DTYPE_FLOAT32] = &mag_matmul_generic, // TODO
+    [MAG_DTYPE_FLOAT16] = &mag_matmul_generic,
+    [MAG_DTYPE_BFLOAT16] = &mag_matmul_generic,
   },
   [MAG_OP_REPEAT_BACK] = {
     [MAG_DTYPE_FLOAT32] = &mag_repeat_back_float32,
