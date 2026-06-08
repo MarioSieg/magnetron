@@ -1382,8 +1382,8 @@ mag_status_t mag_clamp(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
 
 mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
   *out_result = NULL;
-  mag_contract(err, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(x) && mag_tensor_is_floating_point_typed(y), "matmul: both tensors must be floating-point typed.");
-  mag_contract(err, ERR_INVALID_PARAM, {}, x->coords.rank >= 1 && y->coords.rank >= 1, "matmul: both tensors must have rank at least 1.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(x) && mag_tensor_is_floating_point_typed(y), "both tensors must be floating-point typed but are %s and %s", mag_type_trait(x->dtype)->name, mag_type_trait(y->dtype)->name);
+  mag_contract(err, ERR_INVALID_PARAM, {}, x->coords.rank >= 1 && y->coords.rank >= 1, "Both tensors must have rank at least 1 but have rank %" PRIi64 " and %" PRIi64, x->coords.rank, y->coords.rank);
   mag_tensor_t *result = NULL;
   mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_MATMUL, (mag_tensor_t *[]){x, y}, 0));
   int64_t kx = x->coords.shape[x->coords.rank-1];
@@ -1395,8 +1395,8 @@ mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
     mag_fmt_shape(&sy, &y->coords.shape, y->coords.rank);
     mag_contract(
       err, ERR_OPERATOR_IMPOSSIBLE, {}, 0,
-      "Cannot perform matmul on tensors with shapes %s and %s: "
-      "last dimension of first tensor (%" PRIi64 ") does not match second tensor (%" PRIi64 ").\n"
+      "Cannot matrix multiply tensors with shapes %s and %s: "
+      "Last dimension of first tensor (%" PRIi64 ") does not match second tensor (%" PRIi64 ").\n"
       "    Hint: ensure that the last dimension of the first tensor matches the second-to-last dimension of the second tensor.\n",
       sx, sy, kx, ky
     );
@@ -1422,23 +1422,42 @@ mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
       );
     }
   }
-  if (x->coords.rank == 1 && y->coords.rank == 1) mag_try(mag_empty_scalar(err, &result, x->ctx, x->dtype, mag_tensor_device_id(x))); /* (K)x(K) -> () */
-  else if (x->coords.rank == 1 && y->coords.rank == 2) mag_try(mag_empty(err, &result, x->ctx, x->dtype, 1, y->coords.shape+1, mag_tensor_device_id(x))); /* (K)x(K,N) -> (N) */
-  else if (x->coords.rank == 2 && y->coords.rank == 1) mag_try(mag_empty(err, &result, x->ctx, x->dtype, 1, x->coords.shape, mag_tensor_device_id(x))); /* (M,K)x(K) -> (M) */
-  else { /* Batched ND version */
-    xbd = x->coords.rank-2;
-    ybd = y->coords.rank-2;
-    int64_t shape[MAG_MAX_DIMS] = {0};
-    for (int64_t i=0; i < rbd; ++i) {
-      int64_t da = i < rbd-xbd ? 1 : x->coords.shape[i-(rbd-xbd)];
-      int64_t db = i < rbd-ybd ? 1 : y->coords.shape[i-(rbd-ybd)];
-      shape[i] = da > db ? da : db;
-    }
-    shape[rbd] = x->coords.shape[x->coords.rank-2];
-    shape[rbd+1] = y->coords.shape[y->coords.rank-1];
-    mag_try(mag_empty(err, &result,x->ctx, x->dtype, rbd+2, shape, mag_tensor_device_id(x)));
+  mag_matmul_type_t type = mag_matmul_type_detect(x, y);
+  switch (type) {
+    case MAG_MATMUL_TYPE_INVALID:
+      mag_contract(err, ERR_OPERATOR_IMPOSSIBLE, {}, 0, "Unsupported shapes for matmul"); /* We already catch this (rank of x and y must be >=1) in the beginning of the function */
+      break;
+    case MAG_MATMUL_TYPE_DOT:
+      mag_try(mag_empty_scalar(err, &result, x->ctx, x->dtype, mag_tensor_device_id(x)));
+      break;
+    case MAG_MATMUL_TYPE_GEMV_VEC_MAT: {
+      int64_t N = y->coords.shape[1];
+      mag_try(mag_empty(err, &result, x->ctx, x->dtype, 1, (int64_t[1]){N}, mag_tensor_device_id(x)));
+    } break;
+    case MAG_MATMUL_TYPE_GEMV_MAT_VEC: {
+      int64_t M = x->coords.shape[0];
+      mag_try(mag_empty(err, &result, x->ctx, x->dtype, 1, (int64_t[1]){M}, mag_tensor_device_id(x)));
+    } break;
+    case MAG_MATMUL_TYPE_GEMM: {
+      int64_t M = x->coords.shape[0];
+      int64_t N = y->coords.shape[1];
+      mag_try(mag_empty(err, &result, x->ctx, x->dtype, 2, (int64_t[2]){M, N}, mag_tensor_device_id(x)));
+    } break;
+    case MAG_MATMUL_TYPE_BMM: {
+      xbd = x->coords.rank-2;
+      ybd = y->coords.rank-2;
+      int64_t shape[MAG_MAX_DIMS] = {0};
+      for (int64_t i=0; i < rbd; ++i) {
+        int64_t da = i < rbd-xbd ? 1 : x->coords.shape[i-(rbd-xbd)];
+        int64_t db = i < rbd-ybd ? 1 : y->coords.shape[i-(rbd-ybd)];
+        shape[i] = da > db ? da : db;
+      }
+      shape[rbd] = x->coords.shape[x->coords.rank-2];
+      shape[rbd+1] = y->coords.shape[y->coords.rank-1];
+      mag_try(mag_empty(err, &result,x->ctx, x->dtype, rbd+2, shape, mag_tensor_device_id(x)));
+    } break;
   }
-  mag_try(mag_dispatch(err, MAG_OP_MATMUL, false, NULL, (mag_tensor_t *[2]) {x, y}, 2, &result, 1));
+  mag_try(mag_dispatch(err, MAG_OP_MATMUL, false, NULL, (mag_tensor_t *[2]){x, y}, 2, &result, 1));
   *out_result = result;
   return MAG_STATUS_OK;
 }

@@ -221,3 +221,14 @@ mag_mat_layout_type_t mag_mat_layout_detect(const mag_coords_t *coords, bool *ou
   *out_batch_packed = true;
   return layout;
 }
+
+mag_matmul_type_t mag_matmul_type_detect(const mag_tensor_t *x, const mag_tensor_t *y) {
+  int64_t xra = x->coords.rank;
+  int64_t yra = y->coords.rank;
+  if (xra < 1 || yra < 1) return MAG_MATMUL_TYPE_INVALID;
+  if (xra == 1 && yra == 1) return MAG_MATMUL_TYPE_DOT;
+  if (xra == 1 && yra == 2) return MAG_MATMUL_TYPE_GEMV_VEC_MAT;
+  if (xra == 2 && yra == 1) return MAG_MATMUL_TYPE_GEMV_MAT_VEC;
+  if (xra == 2 && yra == 2) return MAG_MATMUL_TYPE_GEMM;
+  return MAG_MATMUL_TYPE_BMM;
+}

@@ -45,6 +45,16 @@ typedef enum mag_mat_layout_type_t {
 } mag_mat_layout_type_t;
 extern MAG_EXPORT mag_mat_layout_type_t mag_mat_layout_detect(const mag_coords_t *coords, bool *out_batch_packed);
 
+typedef enum mag_matmul_type_t {
+  MAG_MATMUL_TYPE_INVALID,
+  MAG_MATMUL_TYPE_DOT,
+  MAG_MATMUL_TYPE_GEMV_VEC_MAT,
+  MAG_MATMUL_TYPE_GEMV_MAT_VEC,
+  MAG_MATMUL_TYPE_GEMM,
+  MAG_MATMUL_TYPE_BMM
+} mag_matmul_type_t;
+extern MAG_EXPORT mag_matmul_type_t mag_matmul_type_detect(const mag_tensor_t *x, const mag_tensor_t *y);
+
 #ifdef __cplusplus
 }
 #endif
