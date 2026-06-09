@@ -41,7 +41,7 @@ mag_dot_kernel_strided_impl(mag_bfloat16_t, mag_bfloat16_to_float32, mag_float32
 mag_dot_kernel_strided_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
 #undef mag_dot_kernel_strided_impl
 
-static void mag_matmul_dot(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y) {
+static void mag_matmul_dot(const mag_kernel_payload_t *payload) {
   static mag_dot_kernel_contig_t *const kernel_lut_contig[4] = {
     [MAG_DTYPE_FLOAT32] = &mag_dot_kernel_contig_float,
     [MAG_DTYPE_FLOAT16] = &mag_dot_kernel_contig_mag_float16_t,
@@ -54,6 +54,9 @@ static void mag_matmul_dot(mag_tensor_t *r, const mag_tensor_t *x, const mag_ten
     [MAG_DTYPE_BFLOAT16] = &mag_dot_kernel_strided_mag_bfloat16_t,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_dot_kernel_strided_mag_float8_e4m3fn_t
   };
+  mag_tensor_t *r = payload->cmd->out[0];
+  const mag_tensor_t *x = payload->cmd->in[0];
+  const mag_tensor_t *y = payload->cmd->in[1];
   void *pr = (void *)mag_tensor_data_ptr_mut(r);
   const void *px = (const void *)mag_tensor_data_ptr(x);
   const void *py = (const void *)mag_tensor_data_ptr(y);

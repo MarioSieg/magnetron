@@ -47,7 +47,7 @@ mag_gemv_mat_vec_kernel_strided_impl(mag_bfloat16_t, mag_bfloat16_to_float32, ma
 mag_gemv_mat_vec_kernel_strided_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
 #undef mag_gemv_mat_vec_kernel_strided_impl
 
-static void mag_matmul_gemv_mat_vec(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y) {
+static void mag_matmul_gemv_mat_vec(const mag_kernel_payload_t *payload) {
   static mag_gemv_mat_vec_kernel_contig_t *const kernel_lut_contig[4] = {
     [MAG_DTYPE_FLOAT32] = &mag_gemv_mat_vec_kernel_contig_float,
     [MAG_DTYPE_FLOAT16] = &mag_gemv_mat_vec_kernel_contig_mag_float16_t,
@@ -60,16 +60,27 @@ static void mag_matmul_gemv_mat_vec(mag_tensor_t *r, const mag_tensor_t *x, cons
     [MAG_DTYPE_BFLOAT16] = &mag_gemv_mat_vec_kernel_strided_mag_bfloat16_t,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gemv_mat_vec_kernel_strided_mag_float8_e4m3fn_t
   };
-  void *pr = (void *)mag_tensor_data_ptr_mut(r);
-  const void *px = (const void *)mag_tensor_data_ptr(x);
-  const void *py = (const void *)mag_tensor_data_ptr(y);
+  mag_tensor_t *r = payload->cmd->out[0];
+  const mag_tensor_t *x = payload->cmd->in[0];
+  const mag_tensor_t *y = payload->cmd->in[1];
+  int64_t M = x->coords.shape[0];
+  int64_t K = x->coords.shape[1];
   int64_t sx0 = x->coords.strides[0];
   int64_t sx1 = x->coords.strides[1];
   int64_t sy = y->coords.strides[0];
-  int64_t M = x->coords.shape[0];
-  int64_t K = x->coords.shape[1];
+  int64_t ti = payload->thread_idx;
+  int64_t tc = payload->thread_num;
+  int64_t chunk = (M+tc-1)/tc;
+  int64_t start = ti*chunk;
+  int64_t end = mag_xmin(M, start+chunk);
+  if (mag_unlikely(start >= end)) return;
+  int64_t Mt = end-start;
+  int64_t el = (int64_t)mag_type_trait(r->dtype)->size;
+  void *pr = (uint8_t *)mag_tensor_data_ptr_mut(r) + start*el;
+  const void *px = (const uint8_t *)mag_tensor_data_ptr(x) + start*sx0*el;
+  const void *py = (const void *)mag_tensor_data_ptr(y);
   if (sx0 == K && sx1 == 1 && sy == 1) /* Contig fast path */
-    (*kernel_lut_contig[r->dtype])(M, K, pr, px, py);
+    (*kernel_lut_contig[r->dtype])(Mt, K, pr, px, py);
   else
-    (*kernel_lut_strided[r->dtype])(M, K, pr, px, py, sx0, sx1, sy);
+    (*kernel_lut_strided[r->dtype])(Mt, K, pr, px, py, sx0, sx1, sy);
 }

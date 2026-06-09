@@ -223,12 +223,25 @@ mag_mat_layout_type_t mag_mat_layout_detect(const mag_coords_t *coords, bool *ou
 }
 
 mag_matmul_type_t mag_matmul_type_detect(const mag_tensor_t *x, const mag_tensor_t *y) {
-  int64_t xra = x->coords.rank;
-  int64_t yra = y->coords.rank;
-  if (xra < 1 || yra < 1) return MAG_MATMUL_TYPE_INVALID;
-  if (xra == 1 && yra == 1) return MAG_MATMUL_TYPE_DOT;
-  if (xra == 1 && yra == 2) return MAG_MATMUL_TYPE_GEMV_VEC_MAT;
-  if (xra == 2 && yra == 1) return MAG_MATMUL_TYPE_GEMV_MAT_VEC;
-  if (xra == 2 && yra == 2) return MAG_MATMUL_TYPE_GEMM;
-  return MAG_MATMUL_TYPE_BMM;
+  int64_t xra = x->coords.rank&255;
+  int64_t yra = y->coords.rank&255;
+  if (mag_unlikely(xra < 1 || yra < 1)) return MAG_MATMUL_TYPE_INVALID;
+  switch ((xra<<8)|yra) {
+    case ((1<<8)|1): return MAG_MATMUL_TYPE_DOT;
+    case ((1<<8)|2): return MAG_MATMUL_TYPE_GEMV_VEC_MAT;
+    case ((2<<8)|1): return MAG_MATMUL_TYPE_GEMV_MAT_VEC;
+    case ((2<<8)|2): return MAG_MATMUL_TYPE_GEMM;
+    default: return MAG_MATMUL_TYPE_BMM;
+  }
+}
+
+const char *mag_matmul_type_name(mag_matmul_type_t type) {
+  switch (type) {
+    case MAG_MATMUL_TYPE_INVALID: return "invalid";
+    case MAG_MATMUL_TYPE_DOT: return "dot vec@vec";
+    case MAG_MATMUL_TYPE_GEMV_VEC_MAT: return "gemv vec@cmat";
+    case MAG_MATMUL_TYPE_GEMV_MAT_VEC: return "gemv mat@vec";
+    case MAG_MATMUL_TYPE_GEMM: return "gemm mat@mat";
+    case MAG_MATMUL_TYPE_BMM: return "bmm batch mat@mat";
+  }
 }
