@@ -35,9 +35,10 @@ print(AVAILABLE_DEVICES)
 SHAPE_TEST_FAST: bool = True
 
 DTYPE_TORCH_MAP: dict[dtype.DType, torch.dtype] = {
+    dtype.float32: torch.float32,
     dtype.float16: torch.float16,
     dtype.bfloat16: torch.bfloat16,
-    dtype.float32: torch.float32,
+    dtype.float8_e4m3fn: torch.float8_e4m3fn,
     dtype.boolean: torch.bool,
     dtype.uint8: torch.uint8,
     dtype.int8: torch.int8,

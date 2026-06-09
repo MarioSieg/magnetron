@@ -9,7 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-static mag_status_t mag_matmul_generic(mag_error_t *err, const mag_kernel_payload_t *payload) {
+static MAG_HOTPROC mag_status_t mag_matmul_generic(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err;
   mag_matmul_type_t type = mag_matmul_type_detect(payload->cmd->in[0], payload->cmd->in[1]);
   switch (type) {
@@ -18,7 +18,7 @@ static mag_status_t mag_matmul_generic(mag_error_t *err, const mag_kernel_payloa
     case MAG_MATMUL_TYPE_GEMV_VEC_MAT: mag_matmul_gemv_vec_mat(payload); break;
     case MAG_MATMUL_TYPE_GEMV_MAT_VEC: mag_matmul_gemv_mat_vec(payload); break;
     case MAG_MATMUL_TYPE_GEMM: mag_matmul_gemm(payload); break;
-    case MAG_MATMUL_TYPE_BMM: mag_panic("NYI!"); break;
+    case MAG_MATMUL_TYPE_BMM: mag_matmul_bmm(payload); break;
     default: mag_panic("NYI!");
   }
   return MAG_STATUS_OK;

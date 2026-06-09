@@ -1,4 +1,5 @@
 # (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
+
 import torch
 
 from ..common import *
@@ -8,16 +9,12 @@ _TOLS = {
     dtype.float16: (1e-2, 1e-3),
     dtype.bfloat16: (1e-2, 1e-3),
     dtype.float32: (1e-5, 1e-5),
+    dtype.float8_e4m3fn: (0, 0),
 }
 
 
 def _atol_rtol(dtype: dtype.DType) -> tuple[float, float]:
     return _TOLS.get(dtype, (1e-5, 1e-5))
-
-
-#@pytest.mark.parametrize('dtype', dtype.floating)
-#def test_matmul_squared(dtype: dtype.DType) -> None:
-#    binary_op_square(dtype, lambda x, y: x + y, kind=BinaryOpParamKind.TENSOR)
 
 
 @pytest.mark.parametrize('dtype', dtype.floating)

@@ -243,5 +243,6 @@ const char *mag_matmul_type_name(mag_matmul_type_t type) {
     case MAG_MATMUL_TYPE_GEMV_MAT_VEC: return "gemv mat@vec";
     case MAG_MATMUL_TYPE_GEMM: return "gemm mat@mat";
     case MAG_MATMUL_TYPE_BMM: return "bmm batch mat@mat";
+    default: return "unknown";
   }
 }
