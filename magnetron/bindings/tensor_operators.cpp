@@ -10,6 +10,7 @@
 */
 
 #include "prelude.hpp"
+#include "op_recorder.hpp"
 
 #include <algorithm>
 
@@ -839,7 +840,13 @@ namespace mag::bindings {
       tensor_wrapper b = normalize_rhs_to_tensor(self, rhs);
       mag_tensor_t *out = nullptr;
       mag_error_t err{};
-      throw_if_error(mag_matmul(&err, &out, *self, *b), err);
+      if constexpr (record_matmul_profile) {
+        op_recorder::singleton().profile(*self, *b, [&] () -> void {
+          throw_if_error(mag_matmul(&err, &out, *self, *b), err);
+        });
+      } else {
+        throw_if_error(mag_matmul(&err, &out, *self, *b), err);
+      }
       return tensor_wrapper{out};
     };
 

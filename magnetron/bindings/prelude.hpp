@@ -30,6 +30,8 @@
 #include <nanobind/stl/vector.h>
 
 namespace mag::bindings {
+  constexpr bool record_matmul_profile = true; // set to true to record all matmul times and shapes and dump them into a .csv file
+
   namespace nb = nanobind;
   using namespace nb::literals;
 

@@ -238,11 +238,11 @@ mag_matmul_type_t mag_matmul_type_detect(const mag_tensor_t *x, const mag_tensor
 const char *mag_matmul_type_name(mag_matmul_type_t type) {
   switch (type) {
     case MAG_MATMUL_TYPE_INVALID: return "invalid";
-    case MAG_MATMUL_TYPE_DOT: return "dot vec@vec";
-    case MAG_MATMUL_TYPE_GEMV_VEC_MAT: return "gemv vec@cmat";
-    case MAG_MATMUL_TYPE_GEMV_MAT_VEC: return "gemv mat@vec";
-    case MAG_MATMUL_TYPE_GEMM: return "gemm mat@mat";
-    case MAG_MATMUL_TYPE_BMM: return "bmm batch mat@mat";
+    case MAG_MATMUL_TYPE_DOT: return "DOT";
+    case MAG_MATMUL_TYPE_GEMV_VEC_MAT: return "VGEM";
+    case MAG_MATMUL_TYPE_GEMV_MAT_VEC: return "GEMV";
+    case MAG_MATMUL_TYPE_GEMM: return "GEMM";
+    case MAG_MATMUL_TYPE_BMM: return "BMM";
     default: return "unknown";
   }
 }
