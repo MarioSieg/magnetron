@@ -50,7 +50,8 @@ class Linear(Module):
                 inplace_init(self.bias, UniformInitStrategy(-bound, bound))
             else:
                 inplace_init(self.bias, bias_init)
-        self.weight_scale: Parameter | None = Parameter(Tensor.ones(1, dtype=_dtype.float32)) if self.is_scaled else None
+        if self.is_scaled:
+            setattr(self, 'weight_scale', Parameter(Tensor.ones(1, dtype=_dtype.float32)))
 
     def forward(self, x: Tensor) -> Tensor:
         w = self.weight.T

@@ -229,8 +229,8 @@ class Qwen3Model(nn.Module):
                     param.data = tensor
 
     @staticmethod
-    def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen3Model':
-        model = Qwen3Model(Qwen3HyperParams())
+    def from_pretrained_snapshot(snapshot_file: str, params: Qwen3HyperParams) -> 'Qwen3Model':
+        model = Qwen3Model(params)
         model._load_from_snapshot(snapshot_file)
         gc.collect()
         return model

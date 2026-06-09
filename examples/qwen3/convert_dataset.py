@@ -119,12 +119,15 @@ def _convert_model(
     repo_dir = snapshot_download(repo_id=repo)
     cfg = Qwen3HyperParams()
     fp8w_mode = mag_dtype == dtype.float8_e4m3fn
+    print(f'fp8 mode: {fp8w_mode}')
     if fp8w_mode:
         context.set_default_dtype(dtype.bfloat16)
         activation_torch_dtype = torch.bfloat16
+        cfg.quant_dtype = dtype.float8_e4m3fn
     else:
         context.set_default_dtype(mag_dtype)
         activation_torch_dtype = torch_dtype
+        cfg.quant_dtype = None
     mag_model = Qwen3Model(cfg)
     if not fp8w_mode:
         mag_model = mag_model.cast(mag_dtype)
@@ -150,14 +153,14 @@ def _convert_model(
             hf_state_dict: dict[str, torch.Tensor] = load_file(shard_path, device='cpu')
             processed_stack: list[str] = []
             for key, tensor in remaining.items():
-                if key in scale_keys:
+                if fp8w_mode and key in scale_keys:
                     continue
                 hf_key: str = hf_key_for(key)
                 torch_tensor: torch.Tensor | None = hf_state_dict.get(hf_key)
                 if torch_tensor is None:
                     continue
                 scaled_quant: bool = key.endswith('.weight') and (f'{key}_scale' in scale_keys)
-                if scaled_quant:
+                if fp8w_mode and scaled_quant:
                     mag_tensor = Tensor(torch_tensor.to('cpu').contiguous()).cast(dtype.bfloat16)
                     quantized, scale = _quantize(mag_tensor)
                     print(f'Quantized {hf_key} -> {key}, Shape={tuple(torch_tensor.shape)}, Scale={scale.item()}')
@@ -201,7 +204,7 @@ def _convert_model(
                     snap.put_tensor(key, tensor)
                     tensor_manifest.append((key, tuple(tensor.shape), tensor.dtype.short_name))
                     remaining.pop(key)
-                elif key.endswith('.weight_scale'):
+                elif fp8w_mode and key.endswith('.weight_scale'):
                     raise KeyError(f'Orphan weight_scale entry: {key}')
                 else:
                     raise KeyError(f'Missing HF weight for magnetron key: {key}')

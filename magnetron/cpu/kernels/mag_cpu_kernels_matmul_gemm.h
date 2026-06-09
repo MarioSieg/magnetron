@@ -101,10 +101,10 @@ static void mag_bmm_compute_result_idx(int64_t br, int64_t batch, int64_t (*out)
   }
 }
 
-static int64_t mag_bmm_flattened_batch_offset(int64_t br, int64_t bx, const int64_t (*idx)[MAG_MAX_DIMS], const mag_coords_t *co) {
+static int64_t mag_bmm_flattened_batch_offset(int64_t br, int64_t bb, const int64_t (*idx)[MAG_MAX_DIMS], const mag_coords_t *co) {
   int64_t moff=0;
-  for (int64_t dim=0; dim < bx; ++dim)
-    moff += (co->shape[dim] == 1 ? 0 : (*idx)[br-bx+dim])*co->strides[dim];
+  for (int64_t dim=0; dim < bb; ++dim)
+    moff += (co->shape[dim] == 1 ? 0 : (*idx)[br-bb+dim])*co->strides[dim];
   return moff;
 }
 
@@ -147,7 +147,7 @@ static MAG_HOTPROC void mag_matmul_bmm(const mag_kernel_payload_t *payload) {
     mag_bmm_compute_result_idx(br, batch, &idx, &r->coords);
     int64_t mox = mag_bmm_flattened_batch_offset(br, bx, &idx, &x->coords);
     int64_t moy = mag_bmm_flattened_batch_offset(br, by, &idx, &y->coords);
-    void *ppr = pr + ((batch*M + i0)*N)*el;
+    void *ppr = pr + (batch*M + i0)*N*el;
     const void *ppx = px + (mox + i0*sx0)*el;
     const void *ppy = py + moy*el;
     if (contig)

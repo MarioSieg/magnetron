@@ -133,10 +133,6 @@ uint32_t mag_cpu_dynamic_work_scaling(uint32_t allocated_workers, mag_opcode_t o
 
 uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t *cmd, mag_device_t *dvc) {
   mag_cpu_device_t *cpu_dvc = dvc->impl;
-  if (cmd->op == MAG_OP_MATMUL || cmd->op == MAG_OP_SCALED_MATMUL) {
-    mag_matmul_type_t type = mag_matmul_type_detect(cmd->in[0], cmd->in[1]);
-    if (type == MAG_MATMUL_TYPE_DOT) return 1; /* Dot is ST */
-  }
   int64_t max_numel = INT64_MIN;
   for (uint32_t i=0; i < cmd->num_in; ++i) max_numel = mag_xmax(max_numel, cmd->in[i]->numel);
   for (uint32_t i=0; i < cmd->num_out; ++i) max_numel = mag_xmax(max_numel, cmd->out[i]->numel);
