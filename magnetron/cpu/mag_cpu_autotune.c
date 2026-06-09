@@ -121,7 +121,7 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
 ** TODO: This can be improved by using a more sophisticated heuristic and a benchmarked, numerical approach.
 */
 uint32_t mag_cpu_dynamic_work_scaling(uint32_t allocated_workers, mag_opcode_t op, int64_t numel) {
-  const mag_op_traits_t *meta = mag_op_traits(op);
+  const mag_op_traits_t *meta = mag_op_trait(op);
   mag_op_thread_scaling_info info = mag_cpu_get_op_thread_scaling_info(op);
   if (allocated_workers <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel < info.thread_treshold)  /* Use a single worker (main thread). */
     return 1;

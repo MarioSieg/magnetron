@@ -170,7 +170,7 @@ typedef struct mag_op_traits_t {
   mag_status_t (*const backward)(mag_error_t *, mag_au_state_t *, mag_tensor_t **);
 } mag_op_traits_t;
 
-extern MAG_EXPORT const mag_op_traits_t *mag_op_traits(mag_opcode_t op); /* Get operation metadata for a specific opcode. */
+extern MAG_EXPORT const mag_op_traits_t *mag_op_trait(mag_opcode_t op); /* Get operation metadata for a specific opcode. */
 
 #ifdef __cplusplus
 }

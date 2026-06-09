@@ -89,7 +89,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
   for (size_t id=0; id < post_order.size; ++id) {
     mag_tensor_t *child = post_order.data[id];
     mag_contract(err, ERR_INVALID_STATE, { stat = MAG_STATUS_ERR_INVALID_STATE; goto cleanup; }, child && child->au_state, "Autodiff state missing for tensor");
-    const mag_op_traits_t *meta = mag_op_traits(child->au_state->op);
+    const mag_op_traits_t *meta = mag_op_trait(child->au_state->op);
     if (!child->au_state->grad) {
       mag_tensor_t *grad = NULL;
       stat = mag_full_like(err, &grad, child, mag_scalar_from_f64(1.0));

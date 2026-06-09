@@ -40,7 +40,7 @@ mag_status_t mag_worker_exec_thread_local(mag_error_t *err, const mag_kernel_reg
   mag_assert2(op >= 0 && op < MAG_OP__NUM);
   mag_assert2(dtype >= 0 && dtype < MAG_DTYPE__NUM);
   mag_status_t (*kernel)(mag_error_t *, const mag_kernel_payload_t *) = kernels->operators[op][dtype];
-  mag_contract(err, ERR_MISSING_COMPUTE_KERNEL, {}, kernel != NULL, "No kernel found for op '%s' with dtype %s", mag_op_traits(op)->mnemonic, mag_type_trait(dtype)->name);
+  mag_contract(err, ERR_MISSING_COMPUTE_KERNEL, {}, kernel != NULL, "No kernel found for op '%s' with dtype %s", mag_op_trait(op)->mnemonic, mag_type_trait(dtype)->name);
   mag_status_t stat = (*kernel)(err, payload);
   payload->cmd = NULL;
   return stat;

@@ -840,10 +840,10 @@ namespace mag::bindings {
       tensor_wrapper b = normalize_rhs_to_tensor(self, rhs);
       mag_tensor_t *out = nullptr;
       mag_error_t err{};
-      if constexpr (record_matmul_profile) {
-        op_recorder::singleton().profile(*self, *b, [&] () -> void {
+      if constexpr (enable_op_recorder) {
+        op_recorder::singleton().profile(MAG_OP_MATMUL, [&] () -> void {
           throw_if_error(mag_matmul(&err, &out, *self, *b), err);
-        });
+        }, *self, *b);
       } else {
         throw_if_error(mag_matmul(&err, &out, *self, *b), err);
       }

@@ -94,7 +94,7 @@ void mag_topo_sort(mag_tensor_t *root, mag_topo_set_t *out_sorted) {
       top_t->au_state->op = MAG_OP_NOP;  // no parents
     }
     mag_au_state_t *au = top_t->au_state;
-    uint32_t num_children = mag_op_traits(au->op)->in;
+    uint32_t num_children = mag_op_trait(au->op)->in;
     if (top->next_child_idx >= num_children) { /* All children processed */
       mag_topo_stack_pop(&stack);
       mag_topo_set_push(out_sorted, top_t);

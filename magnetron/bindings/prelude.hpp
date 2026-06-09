@@ -30,8 +30,6 @@
 #include <nanobind/stl/vector.h>
 
 namespace mag::bindings {
-  constexpr bool record_matmul_profile = true; // set to true to record all matmul times and shapes and dump them into a .csv file
-
   namespace nb = nanobind;
   using namespace nb::literals;
 
@@ -40,6 +38,9 @@ namespace mag::bindings {
   [[nodiscard]] extern std::mutex &get_global_mutex();
   [[nodiscard]] extern const std::string &get_default_device_unlocked();
   [[nodiscard]] extern std::string get_default_device();
+
+  // Set to 1 to enable record and profile all executed operators and export them to a CSV
+  constexpr bool enable_op_recorder = true;
 
   struct dtype_wrapper final {
     mag_dtype_t v;

@@ -18,9 +18,6 @@
 #include <iostream>
 #include <vector>
 
-#include "core/mag_coords.h"
-#include "core/mag_tensor.h"
-
 namespace mag::bindings {
   bool op_recorder::key::operator==(const key &other) const {
     return shape == other.shape && dtype == other.dtype && kind  == other.kind;
@@ -28,8 +25,8 @@ namespace mag::bindings {
 
   size_t op_recorder::key_hash::operator()(const key &k) const {
     size_t h = std::hash<std::string>{}(k.shape);
-    h ^= std::hash<std::string>{}(k.dtype) << 1;
-    h ^= std::hash<std::string>{}(k.kind)  << 2;
+    h ^= std::hash<std::string>{}(k.dtype)<<1;
+    h ^= std::hash<std::string>{}(k.kind)<<2;
     return h;
   }
 
@@ -38,29 +35,15 @@ namespace mag::bindings {
     return recorder;
   }
 
-  void op_recorder::profile(mag_tensor_t *x, mag_tensor_t *y, std::function<void()> &&callback) {
-    char shape_x[MAG_FMT_DIM_BUF_SIZE];
-    mag_fmt_shape(&shape_x, &x->coords.shape, x->coords.rank);
-    char shape_y[MAG_FMT_DIM_BUF_SIZE];
-    mag_fmt_shape(&shape_y, &y->coords.shape, y->coords.rank);
-    std::string shape = std::string{shape_x} + " @ " + std::string{shape_y};
-    std::string dtype = std::string{mag_type_trait(x->dtype)->short_name};
-    std::string kind = mag_matmul_type_name(mag_matmul_type_detect(x, y));
-    auto start = std::chrono::high_resolution_clock::now();
-    std::invoke(callback);
-    auto end = std::chrono::high_resolution_clock::now();
-    record_matmul_data(shape, dtype, kind, end - start);
-  }
-
-  void op_recorder::record_matmul_data(
-    const std::string &shape,
-    const std::string &dtype,
-    const std::string &kind,
+  void op_recorder::record_op_entry(
+    std::string &&opcode,
+    std::string &&shape,
+    std::string &&dtype,
+    std::string &&kind,
     std::chrono::nanoseconds ns
   ) {
-
     std::lock_guard<std::mutex> lock {m_mtx};
-    auto &entry = m_profiles[{shape, dtype, kind}];
+    profile_record &entry = m_profiles[{std::move(opcode), std::move(shape), std::move(dtype), std::move(kind)}];
     ++entry.calls;
     entry.total += ns;
     entry.max = std::max(entry.max, ns);
@@ -92,16 +75,16 @@ namespace mag::bindings {
     std::cout << "Writing OP Recorder CSV: " << full_path << std::endl;
     struct row {
       key k;
-      matmul_profile p;
+      profile_record p;
     };
     std::vector<row> rows {};
     rows.reserve(m_profiles.size());
     for (auto &&[k, v] : m_profiles)
       rows.emplace_back(row{k, v});
-    std::sort(rows.begin(), rows.end(), [](const row &a, const row &b) -> bool { return a.p.total > b.p.total; });
+    std::sort(rows.begin(), rows.end(), [](const row &a, const row &b) noexcept -> bool { return a.p.total > b.p.total; });
     std::ofstream file {full_path};
-    file << "calls,shape,kind,dtype,total_ms,avg_us,max_us\n";
-    for (const auto &row : rows) {
+    file << "calls,op,shapes,kind,dtype,total_ms,avg_us,max_us\n";
+    for (auto &&row : rows) {
       double total_ms = std::chrono::duration<double, std::milli>(row.p.total).count();
       double max_us = std::chrono::duration<double, std::micro>(row.p.max).count();
       std::chrono::nanoseconds avg{};
@@ -109,6 +92,7 @@ namespace mag::bindings {
       double avg_us = std::chrono::duration<double, std::micro>(avg).count();
       file
         << row.p.calls << ','
+        << row.k.opcode << ','
         << '"' << row.k.shape << '"' << ','
         << row.k.kind << ','
         << row.k.dtype << ','

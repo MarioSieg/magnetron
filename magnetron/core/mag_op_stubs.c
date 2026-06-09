@@ -77,7 +77,7 @@ static void mag_norm_axis(int64_t *ax, int64_t ra) {
 }
 
 static bool mag_op_requires_op_params(mag_opcode_t op) { /* Returns true if the op requires any op params and thus requires validation of them. */
-  const mag_op_traits_t *meta = mag_op_traits(op);
+  const mag_op_traits_t *meta = mag_op_trait(op);
   for (int i=0; i < MAG_MAX_OP_PARAMS; ++i) {
     if (meta->op_attr_types[i] != MAG_OP_ATTR_TYPE_EMPTY) {
       return true;
@@ -96,7 +96,7 @@ static void mag_assert_correct_op_data(
   uint32_t num_op_params
 ) {
   mag_assert(op != MAG_OP_NOP, "invalid operation: %d", op);
-  const mag_op_traits_t *meta = mag_op_traits(op);
+  const mag_op_traits_t *meta = mag_op_trait(op);
 
   /* Check input/output tensors */
   if (meta->in) mag_assert(in != NULL, "input tensors for operation '%s' are NULL", meta->mnemonic);
@@ -134,7 +134,7 @@ static mag_status_t mag_tensor_strided_view(mag_error_t *err, mag_tensor_t **out
 }
 
 static void MAG_COLDPROC mag_dbg_trace_op_ir(mag_opcode_t op, bool inplace, mag_tensor_t **in,  uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
-  const mag_op_traits_t *meta = mag_op_traits(op);
+  const mag_op_traits_t *meta = mag_op_trait(op);
   const mag_device_id_t *dvc = in && num_in ? &in[0]->storage->device->id : &out[0]->storage->device->id;
   bool cont = true;
   for (uint32_t i=0; i < num_in;  ++i) cont &= mag_tensor_is_contiguous(in[i]);
@@ -181,7 +181,7 @@ static void MAG_COLDPROC mag_dbg_trace_op_ir(mag_opcode_t op, bool inplace, mag_
 
 /* Execute an operator on the active compute device and return result tensor. */
 static mag_status_t mag_dispatch(mag_error_t *err, mag_opcode_t op, bool inplace, const mag_op_attr_registry_t *layout, mag_tensor_t **in, uint32_t num_in, mag_tensor_t **out, uint32_t num_out) {
-  const mag_op_traits_t *meta = mag_op_traits(op);
+  const mag_op_traits_t *meta = mag_op_trait(op);
   mag_assert2((in && num_in) || (out && num_out));
   mag_assert2(op != MAG_OP_NOP);
 #if 0 /* Debug: print dispatched ops */
@@ -226,7 +226,7 @@ static mag_status_t mag_dispatch(mag_error_t *err, mag_opcode_t op, bool inplace
 
 /* num_in_dyn: for MAG_OP_INOUT_DYN (e.g. CAT) pass the runtime input count else 0 */
 static mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op, mag_tensor_t **inputs, uint32_t num_in_dyn) {
-  const mag_op_traits_t *meta = mag_op_traits(op);
+  const mag_op_traits_t *meta = mag_op_trait(op);
   uint32_t n;
   if (meta->in == MAG_OP_INOUT_DYN) {
     n = num_in_dyn;
@@ -1188,7 +1188,7 @@ static mag_status_t mag_op_stub_binary(mag_error_t *err, mag_tensor_t **out_resu
       default: { /* Inplace ops must keep x's dtype */
         mag_dtype_t prom;
         bool prom_ok = mag_promote_type(&prom, x->dtype, y->dtype);
-        mag_contract(err, ERR_INVALID_PARAM, {},  prom_ok && prom == x->dtype,  "In-place binary op '%s' would change the dtype from %s to %s.", mag_op_traits(op)->mnemonic, mag_type_trait(x->dtype)->name, mag_type_trait(prom)->name);
+        mag_contract(err, ERR_INVALID_PARAM, {},  prom_ok && prom == x->dtype,  "In-place binary op '%s' would change the dtype from %s to %s.", mag_op_trait(op)->mnemonic, mag_type_trait(x->dtype)->name, mag_type_trait(prom)->name);
       } break;
     }
     prom_type = x->dtype;
@@ -1196,7 +1196,7 @@ static mag_status_t mag_op_stub_binary(mag_error_t *err, mag_tensor_t **out_resu
   } else if (flags & MAG_BINOP_LOGICAL) { /* Inplace keeps x's dtype, but cast y to x's dtype if needed */
     bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
     mag_contract(err, ERR_INVALID_PARAM, {}, prom_ok, "Logical binary operator '%s' is not supported for dtypes %s and %s.",
-      mag_op_traits(op)->mnemonic,
+      mag_op_trait(op)->mnemonic,
       mag_type_trait(x->dtype)->name,
       mag_type_trait(y->dtype)->name
     );
@@ -1211,7 +1211,7 @@ static mag_status_t mag_op_stub_binary(mag_error_t *err, mag_tensor_t **out_resu
           bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
           mag_contract(err, ERR_INVALID_PARAM, {}, prom_ok,
             "Binary operator '%s' is not supported for dtypes %s and %s.",
-            mag_op_traits(op)->mnemonic,
+            mag_op_trait(op)->mnemonic,
             mag_type_trait(x->dtype)->name,
             mag_type_trait(y->dtype)->name
           );
@@ -1221,7 +1221,7 @@ static mag_status_t mag_op_stub_binary(mag_error_t *err, mag_tensor_t **out_resu
       case MAG_OP_FLOORDIV: {
         bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
         mag_contract(err, ERR_INVALID_PARAM, {}, prom_ok, "Binary operator '%s' is not supported for dtypes %s and %s.",
-          mag_op_traits(op)->mnemonic,
+          mag_op_trait(op)->mnemonic,
           mag_type_trait(x->dtype)->name,
           mag_type_trait(y->dtype)->name
         );
@@ -1236,7 +1236,7 @@ static mag_status_t mag_op_stub_binary(mag_error_t *err, mag_tensor_t **out_resu
       default: {
         bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
         mag_contract(err, ERR_INVALID_PARAM, {}, prom_ok, "Binary operator '%s' is not supported for dtypes %s and %s.",
-          mag_op_traits(op)->mnemonic,
+          mag_op_trait(op)->mnemonic,
           mag_type_trait(x->dtype)->name,
           mag_type_trait(y->dtype)->name
         );
@@ -1259,7 +1259,7 @@ static mag_status_t mag_op_stub_binary(mag_error_t *err, mag_tensor_t **out_resu
       mag_contract(err, ERR_BROADCAST_IMPOSSIBLE, {}, 0,
         "Cannot broadcast tensors with shapes %s and %s for operator '%s'.\n"
         "    Hint: ensure that the shapes are compatible for broadcasting.\n",
-        sx, sy, mag_op_traits(op)->mnemonic
+        sx, sy, mag_op_trait(op)->mnemonic
       );
     }
     mag_try(rank ? mag_empty(err, &result, x->ctx, res_type, rank, dims, mag_tensor_device_id(x)) : mag_empty_scalar(err, &result, x->ctx, res_type, mag_tensor_device_id(x)));
