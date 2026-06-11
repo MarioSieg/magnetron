@@ -1449,7 +1449,7 @@ static mag_status_t mag_matmul_alloc_res(mag_error_t *err, mag_tensor_t **res, i
       shape[rb] = x->coords.shape[x->coords.rank-2];
       shape[rb+1] = y->coords.shape[y->coords.rank-1];
       return mag_empty(err, res, x->ctx, x->dtype, rb+2, shape, mag_tensor_device_id(x));
-    } default: mag_panic("invalid matmul type");
+    } default: mag_panic("Invalid BMM matmul type: %s", mag_matmul_type_name(type)); return MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE;
   }
 }
 
