@@ -41,8 +41,15 @@ mag_dot_kernel_strided_impl(mag_bfloat16_t, mag_bfloat16_to_float32, mag_float32
 mag_dot_kernel_strided_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
 #undef mag_dot_kernel_strided_impl
 
-static MAG_HOTPROC void mag_matmul_dot(const mag_kernel_payload_t *payload) {
-  if (payload->thread_idx != 0) return;
+static MAG_HOTPROC void mag_matmul_dot_impl(
+  mag_dtype_t dtype,
+  int64_t ti,
+  int64_t N,
+  void *pr,
+  const void *px, int64_t sx,
+  const void *py, int64_t sy
+) {
+  if (ti != 0) return;
   static mag_dot_kernel_contig_t *const kernel_lut_contig[4] = {
     [MAG_DTYPE_FLOAT32] = &mag_dot_kernel_contig_float,
     [MAG_DTYPE_FLOAT16] = &mag_dot_kernel_contig_mag_float16_t,
@@ -55,6 +62,13 @@ static MAG_HOTPROC void mag_matmul_dot(const mag_kernel_payload_t *payload) {
     [MAG_DTYPE_BFLOAT16] = &mag_dot_kernel_strided_mag_bfloat16_t,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_dot_kernel_strided_mag_float8_e4m3fn_t
   };
+  if (sx == 1 && sy == 1) /* Contig fast path */
+    (*kernel_lut_contig[dtype])(N, pr, px, py);
+  else
+    (*kernel_lut_strided[dtype])(N, pr, px, py, sx, sy);
+}
+
+static MAG_HOTPROC void mag_matmul_dot(const mag_kernel_payload_t *payload) {
   mag_tensor_t *r = payload->cmd->out[0];
   const mag_tensor_t *x = payload->cmd->in[0];
   const mag_tensor_t *y = payload->cmd->in[1];
@@ -64,10 +78,7 @@ static MAG_HOTPROC void mag_matmul_dot(const mag_kernel_payload_t *payload) {
   int64_t sx = x->coords.strides[0];
   int64_t sy = y->coords.strides[0];
   int64_t N = x->coords.shape[0];
-  if (sx == 1 && sy == 1) /* Contig fast path */
-    (*kernel_lut_contig[r->dtype])(N, pr, px, py);
-  else
-    (*kernel_lut_strided[r->dtype])(N, pr, px, py, sx, sy);
+  mag_matmul_dot_impl(r->dtype, payload->thread_idx, N, pr, px, sx, py, sy);
 }
 
 typedef void (mag_dot_fp8w_scaled_kernel_contig_t)(int64_t numel, void *r, const void *px, const void *py);

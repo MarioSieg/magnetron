@@ -47,7 +47,16 @@ mag_gemv_vec_mat_kernel_strided_impl(mag_bfloat16_t, mag_bfloat16_to_float32, ma
 mag_gemv_vec_mat_kernel_strided_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
 #undef mag_gemv_vec_mat_kernel_strided_impl
 
-static MAG_HOTPROC void mag_matmul_gemv_vec_mat(const mag_kernel_payload_t *payload) {
+static MAG_HOTPROC void mag_matmul_gemv_vec_mat_impl(
+  mag_dtype_t dtype,
+  int64_t ti,
+  int64_t tc,
+  int64_t N,
+  int64_t K,
+  void *pr,
+  const void *px, int64_t sx,
+  const void *py, int64_t sy0, int64_t sy1
+) {
   static mag_gemv_vec_mat_kernel_contig_t *const kernel_lut_contig[4] = {
     [MAG_DTYPE_FLOAT32] = &mag_gemv_vec_mat_kernel_contig_float,
     [MAG_DTYPE_FLOAT16] = &mag_gemv_vec_mat_kernel_contig_mag_float16_t,
@@ -60,6 +69,21 @@ static MAG_HOTPROC void mag_matmul_gemv_vec_mat(const mag_kernel_payload_t *payl
     [MAG_DTYPE_BFLOAT16] = &mag_gemv_vec_mat_kernel_strided_mag_bfloat16_t,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gemv_vec_mat_kernel_strided_mag_float8_e4m3fn_t
   };
+  int64_t chunk = (N+tc-1)/tc;
+  int64_t start = ti*chunk;
+  int64_t end = mag_xmin(N, start+chunk);
+  if (mag_unlikely(start >= end)) return;
+  int64_t Nt = end-start;
+  int64_t el = (int64_t)mag_type_trait(dtype)->size;
+  pr = (uint8_t *)pr + start*el;
+  py = (const uint8_t *)py + start*sy1*el;
+  if (sx == 1 && sy0 == N && sy1 == 1) /* Contig fast path */
+    (*kernel_lut_contig[dtype])(K, Nt, pr, px, py, N);
+  else
+    (*kernel_lut_strided[dtype])(K, Nt, pr, px, py, sx, sy0, sy1);
+}
+
+static MAG_HOTPROC void mag_matmul_gemv_vec_mat(const mag_kernel_payload_t *payload) {
   mag_tensor_t *r = payload->cmd->out[0];
   const mag_tensor_t *x = payload->cmd->in[0];
   const mag_tensor_t *y = payload->cmd->in[1];
@@ -68,19 +92,8 @@ static MAG_HOTPROC void mag_matmul_gemv_vec_mat(const mag_kernel_payload_t *payl
   int64_t sy1 = y->coords.strides[1];
   int64_t K = x->coords.shape[0];
   int64_t N = y->coords.shape[1];
-  int64_t ti = payload->thread_idx;
-  int64_t tc = payload->thread_num;
-  int64_t chunk = (N+tc-1)/tc;
-  int64_t start = ti*chunk;
-  int64_t end = mag_xmin(N, start+chunk);
-  if (mag_unlikely(start >= end)) return;
-  int64_t Nt = end-start;
-  int64_t el = (int64_t)mag_type_trait(r->dtype)->size;
-  void *pr = (uint8_t *)mag_tensor_data_ptr_mut(r) + start*el;
+  void *pr = (void *)mag_tensor_data_ptr_mut(r);
   const void *px = (const void *)mag_tensor_data_ptr(x);
-  const void *py = (const uint8_t *)mag_tensor_data_ptr(y) + start*sy1*el;
-  if (sx == 1 && sy0 == N && sy1 == 1) /* Contig fast path */
-    (*kernel_lut_contig[r->dtype])(K, Nt, pr, px, py, N);
-  else
-    (*kernel_lut_strided[r->dtype])(K, Nt, pr, px, py, sx, sy0, sy1);
+  const void *py = (const void *)mag_tensor_data_ptr(y);
+  mag_matmul_gemv_vec_mat_impl(r->dtype, payload->thread_idx, payload->thread_num, N, K, pr, px, sx, py, sy0, sy1);
 }

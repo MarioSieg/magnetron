@@ -123,6 +123,7 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #include "mag_cpu_kernels_matmul_gemv_vec_mat.h"
 #include "mag_cpu_kernels_matmul_gemv_mat_vec.h"
 #include "mag_cpu_kernels_matmul_gemm.h"
+#include "mag_cpu_kernels_matmul_bmm.h"
 #include "mag_cpu_kernels_matmul_core.h"
 #include "mag_cpu_kernels_misc.h"
 #include "mag_cpu_kernels_reduction.h"
