@@ -1434,7 +1434,10 @@ static mag_status_t mag_matmul_alloc_res(mag_error_t *err, mag_tensor_t **res, i
       int64_t M = x->coords.shape[0];
       int64_t N = y->coords.shape[1];
       return mag_empty(err, res, x->ctx, x->dtype, 2, (int64_t[2]){M, N}, mag_tensor_device_id(x));
-    } case MAG_MATMUL_TYPE_BMM: {
+    } case MAG_MATMUL_TYPE_BMM_DOT:
+      case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
+      case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
+      case MAG_MATMUL_TYPE_BMM_GEMM: {
       *xb = x->coords.rank-2;
       *yb = y->coords.rank-2;
       int64_t shape[MAG_MAX_DIMS] = {0};

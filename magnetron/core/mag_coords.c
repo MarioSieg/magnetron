@@ -231,7 +231,14 @@ mag_matmul_type_t mag_matmul_type_detect(const mag_tensor_t *x, const mag_tensor
     case ((1<<8)|2): return MAG_MATMUL_TYPE_GEMV_VEC_MAT;
     case ((2<<8)|1): return MAG_MATMUL_TYPE_GEMV_MAT_VEC;
     case ((2<<8)|2): return MAG_MATMUL_TYPE_GEMM;
-    default: return MAG_MATMUL_TYPE_BMM;
+    default: {
+      int64_t M = x->coords.shape[xra-2];
+      int64_t N = y->coords.shape[yra-1];
+      if (M == 1 && N == 1) return MAG_MATMUL_TYPE_BMM_DOT;
+      if (M == 1) return MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT;
+      if (N == 1) return MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC;
+      return MAG_MATMUL_TYPE_BMM_GEMM;
+    }
   }
 }
 
@@ -242,7 +249,10 @@ const char *mag_matmul_type_name(mag_matmul_type_t type) {
     case MAG_MATMUL_TYPE_GEMV_VEC_MAT: return "VGEM";
     case MAG_MATMUL_TYPE_GEMV_MAT_VEC: return "GEMV";
     case MAG_MATMUL_TYPE_GEMM: return "GEMM";
-    case MAG_MATMUL_TYPE_BMM: return "BMM";
+    case MAG_MATMUL_TYPE_BMM_DOT: return "BMM_DOT";
+    case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT: return "BMM_VGEM";
+    case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: return "BMM_GEMV";
+    case MAG_MATMUL_TYPE_BMM_GEMM: return "BMM_GEMM";
     default: return "unknown";
   }
 }
