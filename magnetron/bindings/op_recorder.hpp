@@ -53,13 +53,14 @@ namespace mag::bindings {
       std::string dtype = sizeof...(Args) ? std::string{mag_type_trait(tensors[0]->dtype)->short_name} : "?";
       std::string kind {};
       if (opcode == MAG_OP_MATMUL && 2 == sizeof...(Args)) { // Matmul type for matmul
-        bool all_cont = mag_all_shapes_equal_and_contig(tensors.data(), tensors.size());
-        kind = mag_matmul_type_name(mag_matmul_type_detect(tensors[0], tensors[1]));
+        auto mmt = mag_matmul_type_detect(tensors[0], tensors[1]);
+        bool contig = mag_matmul_type_is_micro_kernel_contig(mmt, tensors[0], tensors[1]);
+        kind = mag_matmul_type_name(mmt);
         kind += " ";
-        kind += all_cont ? "C" : "S";
+        kind += contig ? "C" : "S";
       } else { // Else contig or strided kernel invocation
-        bool all_cont = mag_all_shapes_equal_and_contig(tensors.data(), tensors.size());
-        kind = all_cont ? "C" : "S";
+        bool contig = mag_all_shapes_equal_and_contig(tensors.data(), tensors.size());
+        kind = contig ? "C" : "S";
       }
       auto start = std::chrono::high_resolution_clock::now();
       std::invoke(f);

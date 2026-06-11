@@ -57,6 +57,7 @@ typedef enum mag_matmul_type_t {
   MAG_MATMUL_TYPE_BMM_GEMM
 } mag_matmul_type_t;
 extern MAG_EXPORT mag_matmul_type_t mag_matmul_type_detect(const mag_tensor_t *x, const mag_tensor_t *y);
+extern MAG_EXPORT bool mag_matmul_type_is_micro_kernel_contig(mag_matmul_type_t type, const mag_tensor_t *x, const mag_tensor_t *y);
 extern MAG_EXPORT const char *mag_matmul_type_name(mag_matmul_type_t type);
 
 #ifdef __cplusplus
