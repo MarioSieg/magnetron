@@ -25,8 +25,7 @@ typedef struct mag_op_thread_scaling_info {
 } mag_op_thread_scaling_info;
 extern mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op);
 
-extern uint32_t mag_cpu_dynamic_work_scaling(uint32_t allocated_workers, mag_opcode_t op, int64_t numel);
-extern uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t *cmd, mag_device_t *dvc);
+extern uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_device_t *dvc);
 
 #ifdef __cplusplus
 }

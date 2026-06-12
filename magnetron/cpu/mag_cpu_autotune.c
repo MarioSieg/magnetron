@@ -115,26 +115,27 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
   return scaling_table[op];
 }
 
-/*
-** Computes how many workers to use for intra-op parallelism depending on the number of elements.
-** A logarithmic scaling is used, see: https://www.desmos.com/calculator/xiunrskpwu
-** TODO: This can be improved by using a more sophisticated heuristic and a benchmarked, numerical approach.
-*/
-uint32_t mag_cpu_dynamic_work_scaling(uint32_t allocated_workers, mag_opcode_t op, int64_t numel) {
-  const mag_op_traits_t *meta = mag_op_trait(op);
-  mag_op_thread_scaling_info info = mag_cpu_get_op_thread_scaling_info(op);
-  if (allocated_workers <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel < info.thread_treshold)  /* Use a single worker (main thread). */
-    return 1;
-  numel -= info.thread_treshold;                                                             /* Saturate threshold */
-  uint32_t workers = (uint32_t)ceil(info.growth * log2((double)numel));         /* Logarithmic scaling */
-  workers = mag_xmin(allocated_workers, mag_xmax(1, workers));
-  return workers;
-}
-
-uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t *cmd, mag_device_t *dvc) {
+uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_device_t *dvc) {
   mag_cpu_device_t *cpu_dvc = dvc->impl;
   int64_t max_numel = INT64_MIN;
   for (uint32_t i=0; i < cmd->num_in; ++i) max_numel = mag_xmax(max_numel, cmd->in[i]->numel);
   for (uint32_t i=0; i < cmd->num_out; ++i) max_numel = mag_xmax(max_numel, cmd->out[i]->numel);
-  return mag_cpu_dynamic_work_scaling(cpu_dvc->num_allocated_workers, cmd->op, max_numel);
+  mag_opcode_t op = cmd->op;
+  uint32_t allocated_workers = cpu_dvc->num_allocated_workers;
+  const mag_op_traits_t *meta = mag_op_trait(op);
+  mag_op_thread_scaling_info info = mag_cpu_get_op_thread_scaling_info(op);
+  if (allocated_workers <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || max_numel < info.thread_treshold)  /* Use a single worker (main thread). */
+    return 1;
+  if (op == MAG_OP_MATMUL || op == MAG_OP_SCALED_MATMUL) { /* Special case for matmul */
+    mag_matmul_type_t matmul_type = mag_matmul_type_detect(cmd->in[0], cmd->in[1]);
+    switch (matmul_type) {
+      case MAG_MATMUL_TYPE_DOT:
+      case MAG_MATMUL_TYPE_BMM_DOT: return 1;
+      default: return allocated_workers;
+    }
+  }
+  max_numel -= info.thread_treshold;
+  uint32_t workers = (uint32_t)ceil(info.growth * log2((double)max_numel)); /* Logarithmic scaling */
+  workers = mag_xmin(allocated_workers, mag_xmax(1, workers));
+  return workers;
 }

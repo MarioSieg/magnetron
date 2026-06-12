@@ -69,7 +69,7 @@ const uint32_t mag_crc32c_lut[256] = {
 
 static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_device_t *device, mag_error_t *err, const mag_command_t *cmd) {
   mag_cpu_device_t *cpu_dvc = device->impl;
-  uint32_t intraop_workers = mag_cpu_tune_heuristics_intraop_workers(cmd, device); /* Determine number of intra-op workers */
+  uint32_t intraop_workers = mag_cpu_tune_eager_intra_op_worker_count(cmd, device); /* Determine number of intra-op workers */
   if (intraop_workers <= 1) { /* Main thread does the work (single threaded mode). */
     volatile mag_atomic64_t next_tile = 0; /* Tile index for the next tile to process. */
     mag_kernel_payload_t payload = {

@@ -10,22 +10,21 @@
 
 using namespace magnetron;
 
-auto main() -> int {
+int main() {
     ankerl::nanobench::Bench bench {};
-    auto type = dtype::float32;
+    auto type = dtype::bfloat16;
     bench.title("add " + std::string{dtype_name(type)})
         .unit("add " + std::string{dtype_name(type)})
         .warmup(100)
         .performanceCounters(true);
         context ctx {};
-        tensor x {ctx, type, 2048, 2048};
+        tensor x {ctx, type, 1, 1, 2560};
         x.fill_(1.0f);
-        tensor y {ctx, type, 2048, 2048};
+        tensor y {ctx, type, 9728, 2560};
         y.fill_(3.0f);
-
-        tensor yT = y.permute({3, 2, 1});
-        bench.run("add (non-cont)", [&] {
-            tensor r {x + yT};
+        tensor yT = y.transpose();
+        bench.run("BMM_GEMM S", [&] {
+            tensor r {x%yT};
             ankerl::nanobench::doNotOptimizeAway(r);
         });
     return 0;
