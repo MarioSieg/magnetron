@@ -293,7 +293,7 @@ class Qwen3Model(nn.Module):
             layer_cache = self.cache[i] if self.cache is not None else None
             h = layer(h, self.cos_cache, self.sin_cache, idx, cache=layer_cache)
         h = self.norm(h)
-        return Tensor.einsum('bth,vh->btv', h, self.embed_tokens.weight) if self.cfg.tie_word_embeddings else self.lm_head(h)
+        return Tensor.einsum('...h,vh->...v', h, self.embed_tokens.weight) if self.cfg.tie_word_embeddings else self.lm_head(h)
 
     def generate_stream(
         self,
