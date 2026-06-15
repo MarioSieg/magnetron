@@ -164,7 +164,7 @@ class SlidingWindowAttention(nn.Module):
             k, v = curr_k, curr_v
         k = _repeat_kv(k, self.n_rep)
         v = _repeat_kv(v, self.n_rep)
-        scores: Tensor = (q @ k.transpose(2, 3)) * (1.0 / math.sqrt(self.head_dim))
+        scores: Tensor = Tensor.einsum('bhtd,bhsd->bhts', q, k) * (1.0 / math.sqrt(self.head_dim))
         q_len: int = q.shape[2]
         k_len: int = k.shape[2]
         if q_len == 1:
@@ -174,7 +174,7 @@ class SlidingWindowAttention(nn.Module):
             q_pos_indices: Tensor = Tensor.arange(start=(k_len - q_len), stop=k_len).reshape(-1, 1)
             mask = Tensor.where(k_pos_indices <= q_pos_indices, 0.0, -1e4).cast(scores.dtype).reshape(1, 1, q_len, k_len)
             attn = (scores + mask).softmax(dim=-1)
-        return self.o_proj((attn @ v).transpose(1, 2).reshape(B, T, -1))
+        return self.o_proj(Tensor.einsum('bhts,bhsd->bthd', attn, v).reshape(B, T, -1))
 
 
 class Block(nn.Module):
@@ -245,7 +245,7 @@ class Qwen3Model(nn.Module):
             layer_cache = self.cache[i] if self.cache is not None else None
             h = layer(h, self.cos_cache, self.sin_cache, idx, cache=layer_cache)
         h = self.norm(h)
-        return h @ self.embed_tokens.weight.T if self.cfg.tie_word_embeddings else self.lm_head(h)
+        return Tensor.einsum('bth,vh->btv', h, self.embed_tokens.weight) if self.cfg.tie_word_embeddings else self.lm_head(h)
 
     def generate_stream(
         self,

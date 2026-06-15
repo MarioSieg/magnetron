@@ -233,7 +233,7 @@ static void mag_einsum_compute_cost_and_scaling(
   size_t *out_scaling
 ) {
   mag_einsum_charset_t contractions = 0;
-  for (uint32_t i = 0; i < num_inputs; ++i)
+  for (uint32_t i=0; i < num_inputs; ++i)
     contractions |= inputs[i].charset;
   bool inner = false;
   for (int id=0; id < 52; ++id) {
@@ -326,7 +326,7 @@ static mag_status_t mag_einsum_compute_path(
         char c = in[j];
         int id = mag_einsum_label_id(c);
         int64_t dim = args[i]->coords.shape[j];
-        if (local_present & (1ull << id)) {
+        if (local_present&(1ull<<id)) {
           mag_contract(err, ERR_EINSUM, {}, local_dims[id] == dim,
             "Dimensions of repeated subscripts do not have the same size (%lld != %lld).",
             (long long)local_dims[id],
@@ -341,7 +341,7 @@ static mag_status_t mag_einsum_compute_path(
       char c = in[j];
       int id = mag_einsum_label_id(c);
       int64_t dim = args[i]->coords.shape[j];
-      if (dim_map.present & (1ull << id)) {
+      if (dim_map.present&(1ull<<id)) {
         int64_t old = dim_map.dims[id];
         mag_contract(err, ERR_EINSUM, {},
           dim == 1 || old == 1 || old == dim,
@@ -361,7 +361,7 @@ static mag_status_t mag_einsum_compute_path(
       "Output subscript '%c' does not appear in any input.", out_str[i]);
   }
   size_t max_size = mag_einsum_term_size(parsed.output.buf, &dim_map);
-  for (size_t i = 0; i < parsed.num_inputs; ++i) {
+  for (size_t i=0; i < parsed.num_inputs; ++i) {
     size_t s = mag_einsum_term_size(parsed.inputs[i].buf, &dim_map);
     if (s > max_size)
       max_size = s;
@@ -384,12 +384,223 @@ static mag_status_t mag_einsum_compute_path(
   out_heuristics->opt_scaling = out_heuristics->naive_scaling;
   memset(out_nodes, 0, sizeof(out_nodes[0]));
   out_nodes[0].num_inputs = parsed.num_inputs;
-  for (size_t i = 0; i < parsed.num_inputs; ++i) {
+  for (size_t i=0; i < parsed.num_inputs; ++i) {
     out_nodes[0].inputs[i] = inputs[i];
     out_nodes[0].positions[i] = (uint32_t)i;
   }
   out_nodes[0].output = output;
   *out_num_nodes = 1;
+  return MAG_STATUS_OK;
+}
+
+typedef struct mag_einsum_char_axis_t {
+  char c;
+  int64_t ax;
+} mag_einsum_char_axis_t;
+
+static int mag_einsum_pair_cmp_by_canonical_axis(const void *a, const void *b, void *usr) {
+  const mag_einsum_char_axis_t *x = a;
+  const mag_einsum_char_axis_t *y = b;
+  int64_t ax = ((const int64_t *)usr)[mag_einsum_label_id(x->c)];
+  int64_t ay = ((const int64_t *)usr)[mag_einsum_label_id(y->c)];
+  return (ax>ay) - (ax<ay);
+}
+
+static bool mag_einsum_axes_sorted_by_original_axis(const mag_einsum_char_axis_t *xs, int64_t n) {
+  for (int64_t i=1; i < n; ++i)
+    if (xs[i-1].ax > xs[i].ax)
+      return false;
+  return true;
+}
+
+static void mag_einsum_sort_str_ax(mag_einsum_char_axis_t *xs, int64_t n, const int64_t char_to_ax[52]) {
+  for (int64_t i=1; i < n; ++i) {
+    mag_einsum_char_axis_t v = xs[i];
+    int64_t vkey = char_to_ax[mag_einsum_label_id(v.c)];
+    int64_t j = i - 1;
+    while (j >= 0) {
+      int64_t jkey = char_to_ax[mag_einsum_label_id(xs[j].c)];
+      if (jkey <= vkey)
+        break;
+      xs[j+1] = xs[j];
+      --j;
+    }
+    xs[j+1] = v;
+  }
+}
+
+static mag_status_t mag_einsum_collapse_repeats(
+  mag_error_t *err,
+  mag_tensor_t **out,
+  mag_einsum_subscript_t *subscript,
+  mag_tensor_t *x
+) {
+  const char *str = subscript->str.buf;
+  int64_t rank = mag_tensor_rank(x);
+  const int64_t *shape = mag_tensor_shape_ptr(x);
+  const int64_t *strides = mag_tensor_strides_ptr(x);
+  int64_t new_shape[MAG_EINSUM_MAX_SPEC];
+  int64_t new_strides[MAG_EINSUM_MAX_SPEC];
+  char new_str[MAG_EINSUM_MAX_SPEC];
+  uint64_t seen = 0;
+  int64_t new_rank = 0;
+  for (int64_t i=0; i < rank; ++i) {
+    int id = mag_einsum_label_id(str[i]);
+    if (seen & (1ull<<id)) continue;
+    seen|=(1ull<<id);
+    int64_t dim = shape[i];
+    int64_t stride_sum = 0;
+    for (int64_t j=i; j < rank; ++j) {
+      if (str[j] == str[i]) {
+        mag_contract(err, ERR_EINSUM, {}, shape[j] == dim, "Dimensions of repeated subscripts do not have the same size.");
+        stride_sum += strides[j];
+      }
+    }
+    new_shape[new_rank] = dim;
+    new_strides[new_rank] = stride_sum;
+    new_str[new_rank] = str[i];
+    ++new_rank;
+  }
+  new_str[new_rank] = '\0';
+  mag_try(mag_as_strided(
+    err,
+    out,
+    x->ctx,
+    x,
+    new_rank,
+    new_shape,
+    new_strides,
+    (int64_t)mag_tensor_data_offset(x)
+  ));
+  snprintf(subscript->str.buf, sizeof(subscript->str.buf), "%s", new_str);
+  subscript->charset = seen;
+  return MAG_STATUS_OK;
+}
+
+static mag_status_t mag_einsum_naive(mag_error_t *err, mag_tensor_t **out_result, mag_einsum_path_node_t *node, mag_tensor_t **operands) {
+  for (uint32_t i=0; i < node->num_inputs; ++i) {
+    uint32_t pos = node->positions[i];
+    if ((size_t)mag_popcnt64(node->inputs[i].charset) <
+        strlen(node->inputs[i].str.buf)) {
+      mag_tensor_t *collapsed = NULL;
+      mag_try(mag_einsum_collapse_repeats(
+        err,
+        &collapsed,
+        &node->inputs[i],
+        operands[pos]
+      ));
+      mag_tensor_decref(operands[pos]);
+      operands[pos] = collapsed;
+    }
+  }
+  int64_t char_to_ax[52];
+  for (int i=0; i < 52; ++i)
+    char_to_ax[i] = -1;
+  int64_t num_axes = 0;
+  for (uint32_t i=0; i < node->num_inputs; ++i) {
+    const char *s = node->inputs[i].str.buf;
+    for (const char *p=s; *p; ++p) {
+      int id = mag_einsum_label_id(*p);
+      if (char_to_ax[id] < 0) char_to_ax[id] = num_axes++;
+    }
+  }
+  for (uint32_t i=0; i < node->num_inputs; ++i) {
+    uint32_t pos = node->positions[i];
+    mag_tensor_t *op = operands[pos];
+    int64_t op_rank = op->coords.rank;
+    if (op_rank != num_axes) {
+      const int64_t *old_shape = mag_tensor_shape_ptr(op);
+      int64_t shape[MAG_EINSUM_MAX_SPEC];
+      for (int64_t ax=0; ax < op_rank; ++ax)
+        shape[ax] = old_shape[ax];
+      for (int64_t ax=op_rank; ax < num_axes; ++ax)
+        shape[ax] = 1;
+      mag_tensor_t *tmp = NULL;
+      mag_try(mag_reshape(err, &tmp, op, shape, num_axes));
+      mag_tensor_decref(operands[pos]);
+      operands[pos] = tmp;
+      op = tmp;
+    }
+    mag_einsum_char_axis_t str_ax[MAG_EINSUM_MAX_SPEC];
+    int64_t str_ax_len = 0;
+    const char *str = node->inputs[i].str.buf;
+    for (const char *p=str; *p; ++p) {
+      int64_t ax = str_ax_len;
+      str_ax[str_ax_len++] = (mag_einsum_char_axis_t){.c = *p, .ax = ax,};
+    }
+    for (int id=0; id < 52; ++id) {
+      if (char_to_ax[id] < 0)
+        continue;
+      char c = id < 26 ? (char)('a' + id) : (char)('A' + id - 26);
+      if (!(node->inputs[i].charset&(1ull<<id))) {
+        int64_t ax = str_ax_len;
+        str_ax[str_ax_len++] = (mag_einsum_char_axis_t){.c = c, .ax = ax,};
+      }
+    }
+    mag_einsum_sort_str_ax(str_ax, str_ax_len, char_to_ax);
+    if (mag_einsum_axes_sorted_by_original_axis(str_ax, str_ax_len))
+      continue;
+    int64_t reorder[MAG_EINSUM_MAX_SPEC];
+    for (int64_t ax=0; ax < str_ax_len; ++ax)
+      reorder[ax] = str_ax[ax].ax;
+    mag_tensor_t *tmp = NULL;
+    mag_try(mag_permute(err, &tmp, op, reorder, str_ax_len));
+    mag_tensor_decref(operands[pos]);
+    operands[pos] = tmp;
+  }
+  mag_tensor_t *out = operands[node->positions[0]];
+  mag_tensor_incref(out);
+  for (uint32_t i=1; i < node->num_inputs; ++i) {
+    mag_tensor_t *tmp = NULL;
+    mag_try(mag_mul(err, &tmp, out, operands[node->positions[i]]));
+    mag_tensor_decref(out);
+    out = tmp;
+  }
+  int64_t sum_axes[MAG_EINSUM_MAX_SPEC];
+  int64_t num_sum_axes = 0;
+  for (int id=0; id < 52; ++id) {
+    if (char_to_ax[id] < 0)
+      continue;
+    if (!(node->output.charset&(1ull<<id)))
+      sum_axes[num_sum_axes++] = char_to_ax[id];
+  }
+  if (num_sum_axes > 0) {
+    mag_tensor_t *tmp = NULL;
+    mag_try(mag_sum(err, &tmp, out, sum_axes, num_sum_axes, false));
+    mag_tensor_decref(out);
+    out = tmp;
+  }
+  const char *out_str = node->output.str.buf;
+  int64_t out_rank = (int64_t)strlen(out_str);
+  if (out_rank <= 1) {
+    *out_result = out;
+    return MAG_STATUS_OK;
+  }
+  int64_t reorder[MAG_EINSUM_MAX_SPEC];
+  for (int64_t i=0; i < out_rank; ++i) {
+    int id = mag_einsum_label_id(out_str[i]);
+    reorder[i] = char_to_ax[id];
+    int64_t offset = 0;
+    for (int64_t j = 0; j < num_sum_axes; ++j)
+      if (reorder[i] > sum_axes[j])
+        ++offset;
+    reorder[i] -= offset;
+  }
+  bool identity = true;
+  for (int64_t i=0; i < out_rank; ++i) {
+    if (reorder[i] != i) {
+      identity = false;
+      break;
+    }
+  }
+  if (identity) {
+    *out_result = out;
+  } else {
+    mag_tensor_t *tmp = NULL;
+    mag_try(mag_permute(err, &tmp, out, reorder, out_rank));
+    mag_tensor_decref(out);
+    *out_result = tmp;
+  }
   return MAG_STATUS_OK;
 }
 
@@ -447,7 +658,17 @@ mag_status_t mag_einsum_eval(
     (*mag_alloc)(cloned, 0, 0);
     return st;
   }
-  mag_einsum_debug_print_path(equation, &heuristics, nodes, num_nodes);
+  #if MAG_DEBUG
+    mag_einsum_debug_print_path(...);
+  #endif
+  mag_tensor_t *operands[MAG_EINSUM_MAX_INPUTS];
+  for (size_t i=0; i < num_args; ++i) {
+    operands[i] = (mag_tensor_t *)args[i];
+    mag_tensor_incref(operands[i]);
+  }
+  st = mag_einsum_naive(err, out_result, &nodes[0], operands);
+  for (size_t i=0; i < num_args; ++i)
+    mag_tensor_decref(operands[i]);
   (*mag_alloc)(cloned, 0, 0);
-  return mag_empty(err, out_result, args[0]->ctx, MAG_DTYPE_FLOAT32, 2, (int64_t [2]){4,4}, args[0]->storage->device->id);
+  return st;
 }
