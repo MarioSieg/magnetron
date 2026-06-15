@@ -118,8 +118,8 @@ def main() -> None:
 
     views = [
         ('total_ms', 'Total time [ms]', 'total time'),
-        #('avg_us', 'Average latency [µs]', 'average latency'),
-        #('max_us', 'Max latency [µs]', 'max latency'),
+        # ('avg_us', 'Average latency [µs]', 'average latency'),
+        # ('max_us', 'Max latency [µs]', 'max latency'),
     ]
 
     for col, xlabel, name in views:

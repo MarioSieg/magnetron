@@ -17,16 +17,10 @@ from collections import deque
 torch.set_num_threads(max(4, multiprocessing.cpu_count() // 8))
 torch.set_num_interop_threads(max(4, multiprocessing.cpu_count() // 8))
 
-AVAILABLE_DEVICES: set[str] = {
-    'cpu',
-    'cuda'
-}
+AVAILABLE_DEVICES: set[str] = {'cpu', 'cuda'}
 
 # Filter by which are actually available
-AVAILABLE_DEVICES = {
-    device for device in AVAILABLE_DEVICES
-    if context.is_device_available(device)
-}
+AVAILABLE_DEVICES = {device for device in AVAILABLE_DEVICES if context.is_device_available(device)}
 print(AVAILABLE_DEVICES)
 
 # The operator tests test many many shape permutations.
@@ -64,10 +58,12 @@ NUMPY_DTYPE_MAP: dict[dtype.DType, np.dtype] = {
     dtype.int64: np.int64,
 }
 
+
 def totorch_dtype(dtype: dtype.DType) -> torch.dtype:
     if dtype not in DTYPE_TORCH_MAP:
         raise ValueError(f'Unsupported dtype: {dtype}')
     return DTYPE_TORCH_MAP[dtype]
+
 
 def tonumpy_dtype(dtype: dtype.DType) -> np.dtype:
     if dtype not in NUMPY_DTYPE_MAP:
@@ -88,6 +84,7 @@ def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) 
     t = torch.tensor(obj.tolist(), dtype=dtype)
     return t.reshape(obj.shape)
 
+
 def tonumpy(obj: Tensor | int | float | bool, dtype: np.dtype | None = None) -> np.array:
     if isinstance(obj, np.ndarray):
         return obj.astype(dtype) if dtype is not None else obj
@@ -97,6 +94,7 @@ def tonumpy(obj: Tensor | int | float | bool, dtype: np.dtype | None = None) -> 
         dtype = tonumpy_dtype(obj.dtype)
     a = np.array(obj.tolist(), dtype=dtype)
     return a.reshape(obj.shape)
+
 
 def broadcastable(a: tuple[int, ...], b: tuple[int, ...]) -> bool:
     for x, y in zip(a[::-1], b[::-1]):
@@ -129,6 +127,7 @@ def iter_shapes(rank: int, lim: int) -> Iterator[tuple[int, ...]]:
             break
         tup[i] += 1
 
+
 def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tuple[int, ...], tuple[int, ...]]]:
     max_batch_rank = max_total_rank - 2
     rng = range(1, lim + 1)
@@ -145,12 +144,14 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             shape_B = (*batched, K, N)
                             yield shape_A, shape_B
 
-def random_tensor(shape: tuple[int, ...], dt: dtype.DType, device: str ='cpu') -> Tensor:
+
+def random_tensor(shape: tuple[int, ...], dt: dtype.DType, device: str = 'cpu') -> Tensor:
     if dt == dtype.boolean:
         return Tensor.bernoulli(shape)
     else:
         lim = 100 if dt.is_integer else 1.0
         return Tensor.uniform(shape, low=-lim, high=lim, dtype=dt, device=device)
+
 
 DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
     (),
@@ -263,13 +264,13 @@ DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
     (1, 1, 1024, 1024),  # smaller
     (512, 512),
     (1024, 1024),
-    (2048, 512),          # smaller
-    (512, 2048),          # smaller
-    (2048, 512),          # smaller
-    (512, 2048),          # smaller
+    (2048, 512),  # smaller
+    (512, 2048),  # smaller
+    (2048, 512),  # smaller
+    (512, 2048),  # smaller
     (6, 66, 666),
-    (4, 4, 256, 256),     # smaller
-    (2, 8, 256, 256),     # smaller
+    (4, 4, 256, 256),  # smaller
+    (2, 8, 256, 256),  # smaller
     (5,),
     (7,),
     (9,),
@@ -448,10 +449,12 @@ BASE_TEST_SHAPES: tuple[tuple[int, ...], ...] = (
     (21, 5),
 )
 
+
 def for_all_shapes(f: Callable[[tuple[int, ...]], None]) -> None:
     shapes = BASE_TEST_SHAPES if SHAPE_TEST_FAST else DETAILED_TEST_SHAPES
     for shape in shapes:
         f(shape)
+
 
 def nested_len(obj: list[Any]) -> int:
     total = 0
@@ -470,6 +473,7 @@ def nested_len(obj: list[Any]) -> int:
                 total += 1
     return total
 
+
 def random_dim(shape: tuple[int, ...]) -> int | None:
     if len(shape) == 0:
         return None
@@ -477,6 +481,7 @@ def random_dim(shape: tuple[int, ...]) -> int | None:
         return 0
     else:
         return random.randrange(len(shape))
+
 
 def flatten(nested: Any) -> list[Any]:
     out: list[Any] = []

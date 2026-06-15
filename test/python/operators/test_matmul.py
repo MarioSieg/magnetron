@@ -29,6 +29,7 @@ def test_matmul_full(dtype: dtype.DType) -> None:
         assert r.shape == rt.shape, f'Expected shape {rt.shape}, got {r.shape}'
         assert torch.allclose(totorch(r), rt, atol=atol, rtol=rtol)
 
+
 @pytest.mark.parametrize('dtype', dtype.floating)
 def test_matmul_squared(dtype: dtype.DType) -> None:
     shapes = [4, 8, 16, 32, 64, 128, 256, 512, 1024]
@@ -153,6 +154,7 @@ def test_matmul_x_transposed(dtype: dtype.DType) -> None:
     assert mag_result.shape == np_result.shape
     assert mag_result.shape == (2, 4)
     torch.testing.assert_close(totorch(mag_result), np_result, atol=atol, rtol=rtol)
+
 
 def test_matmul_simple_mlp() -> None:
     truth_table = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]

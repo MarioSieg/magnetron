@@ -90,24 +90,33 @@ class MLP(nn.Module):
         super().__init__()
         self.hidden_size: int = cfg.hidden_size
         self.inter_size: int = cfg.intermediate_size
-        self.gate_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
-        self.up_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
-        self.down_proj = nn.Linear(self.inter_size, self.hidden_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
+        self.gate_proj = nn.Linear(
+            self.hidden_size,
+            self.inter_size,
+            bias=False,
+            dtype=cfg.quant_dtype,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.up_proj = nn.Linear(
+            self.hidden_size,
+            self.inter_size,
+            bias=False,
+            dtype=cfg.quant_dtype,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.down_proj = nn.Linear(
+            self.inter_size,
+            self.hidden_size,
+            bias=False,
+            dtype=cfg.quant_dtype,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         return self.down_proj(self.gate_proj(x).silu() * self.up_proj(x))
-
-
-def _repeat_kv(x: Tensor, n_rep: int) -> Tensor:
-    if n_rep == 1:
-        return x
-    B, n_kv, T, D = x.shape
-    chunks: list[Tensor] = []
-    for h in range(n_kv):  # TODO: repeat
-        xh: Tensor = x[:, h : h + 1, :, :]
-        for _ in range(n_rep):
-            chunks.append(xh)
-    return Tensor.cat(chunks, dim=1)
 
 
 def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Tensor, Tensor]:
@@ -123,17 +132,17 @@ def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Te
 def _apply_rope(q: Tensor, k: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: Tensor) -> tuple[Tensor, Tensor]:
     def _rot_half(x: Tensor) -> Tensor:
         half: int = x.shape[-1] >> 1
-        x1: Tensor = x[:, :, :, :half]
-        x2: Tensor = x[:, :, :, half:]
+        x1 = x[:, :, :, :half]
+        x2 = x[:, :, :, half:]
         return Tensor.cat([-x2, x1], dim=-1)
 
-    cos: Tensor = freq_cos[idx]
-    sin: Tensor = freq_sin[idx]
+    cos = freq_cos[idx]
+    sin = freq_sin[idx]
     batch_size, seq_len, head_size = cos.shape
     cos = cos.reshape(batch_size, 1, seq_len, head_size)
     sin = sin.reshape(batch_size, 1, seq_len, head_size)
-    q_embed: Tensor = (q * cos) + (_rot_half(q) * sin)
-    k_embed: Tensor = (k * cos) + (_rot_half(k) * sin)
+    q_embed = (q * cos) + (_rot_half(q) * sin)
+    k_embed = (k * cos) + (_rot_half(k) * sin)
     return q_embed, k_embed
 
 
@@ -145,10 +154,38 @@ class SlidingWindowAttention(nn.Module):
         self.num_kv_heads = cfg.num_key_value_heads
         self.n_rep = self.num_heads // self.num_kv_heads
         self.sliding_window = cfg.sliding_window
-        self.q_proj = nn.Linear(cfg.hidden_size, self.num_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
-        self.k_proj = nn.Linear(cfg.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
-        self.v_proj = nn.Linear(cfg.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, cfg.hidden_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
+        self.q_proj = nn.Linear(
+            cfg.hidden_size,
+            self.num_heads * self.head_dim,
+            bias=False,
+            dtype=cfg.quant_dtype,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.k_proj = nn.Linear(
+            cfg.hidden_size,
+            self.num_kv_heads * self.head_dim,
+            bias=False,
+            dtype=cfg.quant_dtype,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.v_proj = nn.Linear(
+            cfg.hidden_size,
+            self.num_kv_heads * self.head_dim,
+            bias=False,
+            dtype=cfg.quant_dtype,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.o_proj = nn.Linear(
+            self.num_heads * self.head_dim,
+            cfg.hidden_size,
+            bias=False,
+            dtype=cfg.quant_dtype,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
         self.q_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
         self.k_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
 
@@ -162,19 +199,23 @@ class SlidingWindowAttention(nn.Module):
             k, v = cache.append(curr_k, curr_v, self.sliding_window)
         else:
             k, v = curr_k, curr_v
-        k = _repeat_kv(k, self.n_rep)
-        v = _repeat_kv(v, self.n_rep)
-        scores: Tensor = Tensor.einsum('bhtd,bhsd->bhts', q, k) * (1.0 / math.sqrt(self.head_dim))
+        qg = q.reshape(B, self.num_kv_heads, self.n_rep, T, self.head_dim)
+        scores = Tensor.einsum('bkgtd,bksd->bkgts', qg, k)
+        scores *= 1.0 / math.sqrt(self.head_dim)
         q_len: int = q.shape[2]
         k_len: int = k.shape[2]
         if q_len == 1:
             attn = scores.softmax(dim=-1)
         else:
-            k_pos_indices: Tensor = Tensor.arange(k_len).reshape(1, -1)
-            q_pos_indices: Tensor = Tensor.arange(start=(k_len - q_len), stop=k_len).reshape(-1, 1)
-            mask = Tensor.where(k_pos_indices <= q_pos_indices, 0.0, -1e4).cast(scores.dtype).reshape(1, 1, q_len, k_len)
+            k_pos_indices = Tensor.arange(k_len).reshape(1, -1)
+            q_pos_indices = Tensor.arange(start=(k_len - q_len), stop=k_len).reshape(-1, 1)
+            mask = Tensor.where(k_pos_indices <= q_pos_indices, 0.0, -1e4)
+            mask = mask.cast(scores.dtype).reshape(1, 1, 1, q_len, k_len)
             attn = (scores + mask).softmax(dim=-1)
-        return self.o_proj(Tensor.einsum('bhts,bhsd->bthd', attn, v).reshape(B, T, -1))
+        out = Tensor.einsum('bkgts,bksd->bkgtd', attn, v)
+        out = out.reshape(B, self.num_heads, T, self.head_dim)
+        out = out.transpose(1, 2).reshape(B, T, -1)
+        return self.o_proj(out)
 
 
 class Block(nn.Module):
@@ -206,7 +247,14 @@ class Qwen3Model(nn.Module):
         if cfg.tie_word_embeddings:
             self.lm_head = None
         else:
-            self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False, dtype=cfg.quant_dtype, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy())
+            self.lm_head = nn.Linear(
+                cfg.hidden_size,
+                cfg.vocab_size,
+                bias=False,
+                dtype=cfg.quant_dtype,
+                weight_init=nn.init.EmptyInitStrategy(),
+                bias_init=nn.init.EmptyInitStrategy(),
+            )
         cos_cache, sin_cache = _precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.cos_cache = cos_cache
         self.sin_cache = sin_cache
@@ -271,7 +319,7 @@ class Qwen3Model(nn.Module):
         idx = idx.reshape(1, -1)
         idl: int = idx.shape[1]
         logits = self(idx, idx=Tensor.arange(stop=idl).reshape(1, -1))
-        next_logits: Tensor = logits[:, -1, :] / temp
+        next_logits = logits[:, -1, :] / temp
         curr_len: int = idl
         pending: list[int] = []
 

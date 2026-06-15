@@ -71,7 +71,7 @@ class InferenceConfig:
             top_k=args.top_k,
             seed=args.seed,
             snapshot=args.snapshot,
-            quant_dtype=dtype_map.get(args.dtype, dtype.bfloat16)
+            quant_dtype=dtype_map.get(args.dtype, dtype.bfloat16),
         )
 
 

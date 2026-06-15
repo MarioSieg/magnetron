@@ -8,6 +8,7 @@ import torch.nn.functional
 
 from ..common import *
 
+
 @dataclass
 class UnaryOpTestCase:
     name: str
@@ -15,16 +16,17 @@ class UnaryOpTestCase:
     rank_min: int = 0
     inplace: bool = True
 
+
 _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
     UnaryOpTestCase('clone', None, 0, False),
-    #UnaryOpTestCase('not', None),
+    # UnaryOpTestCase('not', None),
     UnaryOpTestCase('abs', None),
     UnaryOpTestCase('neg', None),
     UnaryOpTestCase('log', None),
     UnaryOpTestCase('log10', None),
     UnaryOpTestCase('log1p', None),
     UnaryOpTestCase('log2', None),
-    UnaryOpTestCase('sqr', lambda x: x*x),
+    UnaryOpTestCase('sqr', lambda x: x * x),
     UnaryOpTestCase('rcp', lambda x: torch.reciprocal(x)),
     UnaryOpTestCase('sqrt', None),
     UnaryOpTestCase('rsqrt', None),
@@ -57,15 +59,16 @@ _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
     UnaryOpTestCase('tanh', None),
     UnaryOpTestCase('gelu', None),
     UnaryOpTestCase('tril', None, 2),
-    UnaryOpTestCase('triu', None, 2)
+    UnaryOpTestCase('triu', None, 2),
 )
+
 
 def unary_op(
     device: str,
     dtype: dtype.DType,
     rank_min: int,
     mag_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
-    torch_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor]
+    torch_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
 ) -> None:
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) < rank_min:
@@ -75,6 +78,7 @@ def unary_op(
         torch.testing.assert_close(totorch(r), torch_callback(totorch(x)), equal_nan=True)
 
     for_all_shapes(test)
+
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 @pytest.mark.parametrize('dtype', dtype.floating)
@@ -88,7 +92,7 @@ def test_unary_op(device: str, dtype: dtype.DType, op: UnaryOpTestCase) -> None:
     elif hasattr(torch.nn.functional, name):
         torch_op = getattr(torch.nn.functional, name)
     else:
-        raise RuntimeError(f"No reference torch op found for unary op {name!r}")
+        raise RuntimeError(f'No reference torch op found for unary op {name!r}')
     unary_op(device, dtype, op.rank_min, lambda x: getattr(x, name)(), lambda x: torch_op(x))
     if op.inplace:
         unary_op(device, dtype, op.rank_min, lambda x: getattr(x, name + '_')(), lambda x: torch_op(x))

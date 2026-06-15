@@ -6,6 +6,7 @@ import torch.nn.functional
 
 from ..common import *
 
+
 @pytest.mark.parametrize('src_dtype', dtype.all)
 @pytest.mark.parametrize('dst_dtype', dtype.all)
 def test_cast_op(src_dtype: dtype.DType, dst_dtype: dtype.DType) -> None:

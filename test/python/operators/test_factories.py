@@ -6,6 +6,7 @@ import torch.nn.functional
 
 from ..common import *
 
+
 @pytest.mark.parametrize('dtype', dtype.all)
 def test_factory_full(dtype: dtype.DType) -> None:
     # We only test full here because Tensor.full_like, Tensor.ones etc. are just wrappers around Tensor.full
@@ -18,6 +19,7 @@ def test_factory_full(dtype: dtype.DType) -> None:
         torch.testing.assert_close(totorch(x), totorch(y))
 
     for_all_shapes(test)
+
 
 @pytest.mark.parametrize('dtype', dtype.numeric)
 def test_factory_arange(dtype: dtype.DType) -> None:
