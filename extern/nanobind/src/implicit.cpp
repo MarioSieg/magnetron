@@ -13,6 +13,10 @@
 NAMESPACE_BEGIN(NB_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 
+// Note: nb_type_get_implicit() reads the conversion arrays grown below without
+// holding the internals lock. This is safe because conversions are registered
+// while binding a type, which never overlaps with concurrent use of that type.
+
 void implicitly_convertible(const std::type_info *src,
                             const std::type_info *dst) noexcept {
     nb_internals *internals_ = internals;
@@ -33,6 +37,7 @@ void implicitly_convertible(const std::type_info *src,
     }
 
     void **data = (void **) PyMem_Malloc(sizeof(void *) * (size + 2));
+    check(data, "nanobind::detail::implicitly_convertible(): out of memory!");
 
     if (size)
         memcpy(data, t->implicit.cpp, size * sizeof(void *));
@@ -63,6 +68,8 @@ void implicitly_convertible(bool (*predicate)(PyTypeObject *, PyObject *,
     }
 
     void **data = (void **) PyMem_Malloc(sizeof(void *) * (size + 2));
+    check(data, "nanobind::detail::implicitly_convertible(): out of memory!");
+
     if (size)
         memcpy(data, t->implicit.py, size * sizeof(void *));
     data[size] = (void *) predicate;

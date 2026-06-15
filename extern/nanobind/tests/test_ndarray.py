@@ -15,8 +15,14 @@ try:
     import torch
     def needs_torch(x):
         return x
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        def needs_torch_mps(x):
+            return x
+    else:
+        needs_torch_mps = pytest.mark.skip(reason="PyTorch MPS is required")
 except:
     needs_torch = pytest.mark.skip(reason="PyTorch is required")
+    needs_torch_mps = pytest.mark.skip(reason="PyTorch MPS is required")
 
 try:
     import cupy as cp
@@ -211,6 +217,24 @@ def test10_implicit_conversion():
         t.noimplicit(np.zeros((2, 2, 10), dtype=np.float32)[:, :, 4])
 
 
+@needs_numpy
+def test10b_implicit_conversion_unusual_module():
+    # The implicit-conversion path in ndarray_import() inspects the array
+    # type's '__module__' attribute. Make sure it deals gracefully with an
+    # attribute whose value is computed dynamically (so that the underlying
+    # string is a freshly created temporary), matching a known framework.
+    class DynMeta(type):
+        @property
+        def __module__(cls):
+            return "".join(["nu", "mpy", ".dyn"])  # fresh 'numpy*' string
+
+    class DynModArray(np.ndarray, metaclass=DynMeta):
+        pass
+
+    a = np.zeros((2, 2), dtype=np.uint32).view(DynModArray)
+    assert t.implicit(a) == 0
+
+
 @needs_torch
 def test11_implicit_conversion_pytorch():
     with warnings.catch_warnings():
@@ -358,6 +382,55 @@ def test19_return_memview():
     assert t.destruct_count() - dc == 1
 
 
+@skip_on_pypy
+def test19b_buffer_protocol_flags():
+    import struct
+    import tempfile
+    import os
+
+    # The buffer-protocol exporter must honor the request flags.
+
+    # (a) A writable request against a read-only ndarray must be refused.
+    ro = t.ret_memview_ro().obj
+    assert memoryview(ro).readonly
+    assert memoryview(ro).tolist() == [[1, 2, 3, 4], [5, 6, 7, 8]]
+
+    data = struct.pack("8f", 100, 200, 300, 400, 500, 600, 700, 800)
+    fd, path = tempfile.mkstemp()
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        # readinto() requests a writable buffer; this must not mutate the
+        # read-only array (the request is rejected during getbuffer()).
+        with open(path, "rb") as f:
+            with pytest.raises((BufferError, TypeError)):
+                f.readinto(ro)
+    finally:
+        os.remove(path)
+    assert memoryview(ro).tolist() == [[1, 2, 3, 4], [5, 6, 7, 8]]
+
+    # (b) A non-strided request against an F-contiguous (non-C-contiguous)
+    # ndarray must be refused -- otherwise the consumer reads wrong elements.
+    fobj = t.ret_memview_f().obj
+    assert memoryview(fobj).tolist() == [[1, 3, 5, 7], [2, 4, 6, 8]]
+    with pytest.raises(BufferError):
+        struct.unpack_from("8f", fobj)
+
+    # A non-strided request on C-contiguous data still works.
+    cobj = t.ret_memview().obj
+    assert struct.unpack_from("8d", cobj) == (1, 2, 3, 4, 5, 6, 7, 8)
+
+
+def test19c_export_ownerless_refused():
+    # Returning an ownerless ndarray under a policy that requires a copy is
+    # refused for frameworks without a copy method, instead of silently
+    # returning a view of freed memory.
+    for fn in (t.ret_memview_noowner, t.ret_array_api_noowner,
+               t.ret_noframework_noowner):
+        with pytest.raises(RuntimeError, match="not supported for this framework"):
+            fn()
+
+
 @needs_numpy
 def test20_return_array_api():
     collect()
@@ -400,6 +473,9 @@ def test20_return_array_api():
     if (hasattr(np, '__array_api_version__') and
         np.__array_api_version__ >= '2024'):
         obj = t.ret_array_api()
+        # copy=True is surfaced as a BufferError by NumPy
+        with pytest.raises(BufferError):
+            np.from_dlpack(obj, copy=True)
         x = np.from_dlpack(obj)
         del obj
         collect()
@@ -410,6 +486,106 @@ def test20_return_array_api():
         del x
         collect()
         assert t.destruct_count() - dc == 1
+        dc += 1
+
+    obj = t.ret_array_api_byte_offset()
+    assert t.inspect_byte_offset(obj) == (1, 0, 2, 2, 4, 8)
+    mv = memoryview(obj)
+    assert mv.tolist() == [[2, 3, 4, 5], [6, 7, 8, 9]]
+    del obj
+    collect()
+    assert t.destruct_count() == dc
+    del mv
+    collect()
+    assert t.destruct_count() - dc == 1
+    dc += 1
+
+    if (hasattr(np, '__array_api_version__') and
+        np.__array_api_version__ >= '2024'):
+        obj = t.ret_array_api_byte_offset()
+        x = np.from_dlpack(obj)
+        del obj
+        collect()
+        assert t.destruct_count() == dc
+        assert x.shape == (2, 4)
+        assert np.all(x == [[2, 3, 4, 5], [6, 7, 8, 9]])
+        del x
+        collect()
+        assert t.destruct_count() - dc == 1
+
+
+def test20a_dlpack_copy_device_kwargs():
+    obj = t.ret_array_api()
+
+    # copy=False/None are honored, copy=True cannot be satisfied (aliasing)
+    assert 'dltensor' in repr(obj.__dlpack__(copy=False))
+    assert 'dltensor' in repr(obj.__dlpack__(copy=None))
+    with pytest.raises(BufferError):
+        obj.__dlpack__(copy=True)
+    with pytest.raises(BufferError):
+        obj.__dlpack__(max_version=(1, 0), copy=True)
+
+    # malformed max_version values are rejected
+    with pytest.raises(TypeError) as excinfo:
+        obj.__dlpack__(max_version=("1", "0"))  # not an integer
+    assert 'max_version must be None or tuple[int, int]' in str(excinfo.value)
+
+    # dl_device matching the array's own device is fine, others are rejected
+    assert 'dltensor' in repr(obj.__dlpack__(dl_device=None))
+    assert 'dltensor' in repr(obj.__dlpack__(dl_device=(1, 0)))
+    with pytest.raises(BufferError):
+        obj.__dlpack__(dl_device=(99, 0))
+
+    # stream=None is fine, other values are rejected
+    assert 'dltensor' in repr(obj.__dlpack__(stream=None))
+    with pytest.raises(RuntimeError):
+        obj.__dlpack__(stream=0)
+
+    # Keyword names passed via f(**d) need not be interned/identical to the
+    # internal references; equal-but-distinct strings must behave identically.
+    with pytest.raises(BufferError):
+        obj.__dlpack__(**{''.join(['co', 'py']): True})
+    with pytest.raises(BufferError):
+        obj.__dlpack__(**{''.join(['dl_', 'device']): (99, 0)})
+    with pytest.raises(RuntimeError):
+        obj.__dlpack__(**{''.join(['str', 'eam']): "0"})
+    assert 'dltensor' in repr(obj.__dlpack__(**{''.join(['co', 'py']): False}))
+
+    # Unrecognized keyword names (e.g., misspellings) are rejected
+    with pytest.raises(TypeError):
+        obj.__dlpack__(version=1)
+
+
+def test20b_import_metal_dlpack():
+    obj = t.ret_array_api_metal()
+    assert obj.__dlpack_device__() == (8, 0)
+
+    class Recorder:
+        def __init__(self, wrapped):
+            self.wrapped = wrapped
+            self.kwargs = None
+
+        def __dlpack_device__(self):
+            return self.wrapped.__dlpack_device__()
+
+        def __dlpack__(self, *args, **kwargs):
+            assert not args
+            self.kwargs = kwargs
+            return self.wrapped.__dlpack__(**kwargs)
+
+    rec = Recorder(obj)
+    assert t.check_metal_contig(rec) == (8, 0, 2, 2, 4, True, 0)
+    assert "max_version" in rec.kwargs
+
+    obj = t.ret_array_api_metal_byte_offset()
+    assert t.check_metal_contig(obj) == (8, 0, 2, 2, 3, True, 4)
+
+
+@needs_torch_mps
+def test20c_import_torch_mps_dlpack():
+    x = torch.arange(12, device="mps", dtype=torch.float32).reshape(3, 4)
+    assert x.__dlpack_device__()[0] == 8
+    assert t.inspect_metal_contig(x) == (8, 0, 2, 3, 4, True, True, 0)
 
 
 @needs_numpy
@@ -532,6 +708,21 @@ def test27_python_array():
     assert t.check_ro_by_value_ro(mv)
     assert t.check_ro_by_value_const_float64(mv)
 
+    x = t.passthrough(a)
+    assert x is a
+
+
+def test27c_python_complex_array():
+    import array
+    try:
+        a = array.array('Zf', [1.0+2.0j, 3.0+4.0j])
+    except:
+        pytest.skip('your python does not support complex arrays')
+    assert t.check(a)
+    t.pass_complex64(a)
+    mv = memoryview(a)
+    assert t.check(mv)
+    t.pass_complex64(mv)
     x = t.passthrough(a)
     assert x is a
 
@@ -945,7 +1136,7 @@ def test46_implicit_conversion_contiguous_complex():
 
 
 @needs_numpy
-def test_47_ret_infer():
+def test47_ret_infer():
     assert np.all(t.ret_infer_c() == [[1, 2, 3, 4], [5, 6, 7, 8]])
     assert np.all(t.ret_infer_f() == [[1, 3, 5, 7], [2, 4, 6, 8]])
 

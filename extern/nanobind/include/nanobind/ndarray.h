@@ -27,7 +27,8 @@ enum class dtype_code : uint8_t {
     Float8_E4M3FN = 10, Float8_E4M3FNUZ = 11, Float8_E5M2 = 12,
     Float8_E5M2FNUZ = 13, Float8_E8M0FNU = 14,
     Float6_E2M3FN = 15, Float6_E3M2FN = 16,
-    Float4_E2M1FN = 17
+    Float4_E2M1FN = 17,
+    Bcomplex = 18
 };
 
 struct device {
@@ -165,10 +166,12 @@ template <ssize_t... Is> struct shape {
     }
 
     static void put(size_t *out) {
-        if constexpr (((Is == -1) || ...))
+        if constexpr (((Is == -1) || ...)) {
             detail::fail("Negative ndarray sizes are not allowed here!");
-        size_t ctr = 0;
-        ((out[ctr++] = (size_t) Is), ...);
+        } else {
+            size_t ctr = 0;
+            ((out[ctr++] = (size_t) Is), ...);
+        }
     }
 };
 
@@ -351,11 +354,12 @@ public:
             dlpack::dtype dtype = nanobind::dtype<Scalar>(),
             int device_type = DeviceType,
             int device_id = 0,
-            char order = Order) {
+            char order = Order,
+            uint64_t byte_offset = 0) {
 
         m_handle = detail::ndarray_create(
             (void *) data, ndim, shape, owner.ptr(), strides, dtype,
-            ReadOnly, device_type, device_id, order);
+            ReadOnly, device_type, device_id, order, byte_offset);
 
         m_dltensor = *detail::ndarray_inc_ref(m_handle);
     }
@@ -367,7 +371,8 @@ public:
             dlpack::dtype dtype = nanobind::dtype<Scalar>(),
             int device_type = DeviceType,
             int device_id = 0,
-            char order = Order) {
+            char order = Order,
+            uint64_t byte_offset = 0) {
 
         size_t shape_size = shape.size();
 
@@ -390,7 +395,7 @@ public:
         m_handle = detail::ndarray_create(
             (void *) data, shape_size, shape_ptr, owner.ptr(),
             (strides.size() == 0) ? nullptr : strides.begin(), dtype,
-            ReadOnly, device_type, device_id, order);
+            ReadOnly, device_type, device_id, order, byte_offset);
 
         m_dltensor = *detail::ndarray_inc_ref(m_handle);
     }
@@ -434,6 +439,8 @@ public:
     bool is_valid() const { return m_handle != nullptr; }
     int device_type() const { return (int) m_dltensor.device.device_type; }
     int device_id() const { return (int) m_dltensor.device.device_id; }
+    void *data_handle() const { return m_dltensor.data; }
+    uint64_t byte_offset() const { return m_dltensor.byte_offset; }
     detail::ndarray_handle *handle() const { return m_handle; }
 
     size_t size() const {
@@ -454,7 +461,7 @@ public:
     template <typename... Args2>
     NB_INLINE auto& operator()(Args2... indices) const {
         return *(Scalar *) ((uint8_t *) m_dltensor.data +
-                            byte_offset(indices...));
+                            compute_byte_offset(indices...));
     }
 
     template <typename... Args2> NB_INLINE auto view() const {
@@ -490,7 +497,7 @@ public:
 
 private:
     template <typename... Args2>
-    NB_INLINE int64_t byte_offset(Args2... indices) const {
+    NB_INLINE int64_t compute_byte_offset(Args2... indices) const {
         constexpr bool has_scalar = !std::is_void_v<Scalar>,
                        has_shape  = Config::N != -1;
 

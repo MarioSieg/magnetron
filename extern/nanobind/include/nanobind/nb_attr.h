@@ -119,11 +119,17 @@ struct is_implicit {};
 struct is_operator {};
 struct is_arithmetic {};
 struct is_flag {};
+struct is_str {};
 struct is_final {};
 struct is_generic {};
 struct kw_only {};
 struct lock_self {};
 struct never_destruct {};
+
+struct pooled {
+    explicit pooled(uint32_t capacity = 128) : capacity(capacity) {}
+    uint32_t capacity;
+};
 
 template <size_t /* Nurse */, size_t /* Patient */> struct keep_alive {};
 template <typename T> struct supplement {};
@@ -204,11 +210,19 @@ enum cast_flags : uint8_t {
     // Indicates that the function dispatcher should accept 'None' arguments
     accepts_none = (1 << 2),
 
+    /// The target binds the value by reference or value (not as a pointer), so
+    /// a 'None' argument has no valid mapping.
+    none_disallowed = (1 << 3),
+
     // Indicates that this cast is performed by nb::cast or nb::try_cast.
     // This implies that objects added to the cleanup list may be
     // released immediately after the caster's final output value is
     // obtained, i.e., before it is used.
-    manual = (1 << 3)
+    manual = (1 << 4),
+
+    /// Indicate that a type is being constructed by nb_type_vectorcall. The
+    /// call dispatcher uses this hint to avoid type-checking ``self``
+    trusted = (1 << 5)
 };
 
 
@@ -397,6 +411,11 @@ struct func_extra_info<call_policy<Policy>, Ts...> : func_extra_info<Ts...> {
 
 template <typename... Ts>
 struct func_extra_info<arg_locked, Ts...> : func_extra_info<Ts...> {
+    static constexpr size_t nargs_locked = 1 + func_extra_info<Ts...>::nargs_locked;
+};
+
+template <typename... Ts>
+struct func_extra_info<arg_locked_v, Ts...> : func_extra_info<Ts...> {
     static constexpr size_t nargs_locked = 1 + func_extra_info<Ts...>::nargs_locked;
 };
 

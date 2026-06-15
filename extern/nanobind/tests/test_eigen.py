@@ -1,5 +1,4 @@
 import pytest
-import gc
 import itertools
 import re
 import sys
@@ -216,8 +215,6 @@ def test06_map():
             assert dm[i, j] == i*3+j
     del dm
     del b
-    gc.collect()
-    gc.collect()
     for i in range(10):
         for j in range(3):
             assert m[i, j] == i*3+j
@@ -291,6 +288,26 @@ def test08_sparse():
 
 
 @needs_numpy_and_eigen
+def test08b_sparse_noconvert():
+    scipy = pytest.importorskip("scipy")
+    import scipy.sparse
+
+    dense = np.asfortranarray(np.eye(3, dtype=np.float32))
+
+    # A '.noconvert()' sparse parameter must reject a dense array, but still
+    # accept an exact csc_matrix instance.
+    with pytest.raises(TypeError):
+        t.sparse_noconvert_c(dense)
+    csc = scipy.sparse.csc_matrix(dense)
+    assert_array_equal(t.sparse_noconvert_c(csc).toarray(), dense)
+
+    # A dense array must not be greedily claimed by an earlier sparse overload
+    # during the dispatcher's no-convert pass; it should reach the dense one.
+    assert t.sparse_or_dense(dense) == 2
+    assert t.sparse_or_dense(csc) == 1
+
+
+@needs_numpy_and_eigen
 def test09_sparse_failures():
     sp = pytest.importorskip("scipy.sparse")
 
@@ -344,15 +361,11 @@ def test11_prop():
                 ref[0, 0] = 10
             assert_array_equal(member, ref)
             del member
-            gc.collect()
-            gc.collect()
 
         member = c.member
         assert_array_equal(c.member_ro_ref, ref)
         assert_array_equal(c.member_ro_copy, ref)
         del c
-        gc.collect()
-        gc.collect()
         assert_array_equal(member, ref)
 
 @needs_numpy_and_eigen
@@ -379,6 +392,13 @@ def test12_cast():
     for v in vec, vec2, vecf:
         with pytest.raises(RuntimeError, match='bad[_ ]cast'):
             t.castToRef03CnstVXi(v)
+
+@needs_numpy_and_eigen
+def test12b_cast_reference_internal_no_parent():
+    # Single-argument nb::cast() with reference_internal lacks a parent;
+    # this must fail gracefully rather than crash.
+    with pytest.raises(RuntimeError, match='bad[_ ]cast'):
+        t.castRefInternalNoParent()
 
 @needs_numpy_and_eigen
 def test13_mutate_python():
@@ -482,4 +502,41 @@ def test18_zero_size_vec():
     c = np.zeros(0, dtype=np.int32)
     assert_array_equal(t.castToRefVXi(c), c)
     assert_array_equal(t.castToMapCnstVXi(c), c)
+    assert_array_equal(t.castToDRefCnstVXi(c), c)
+
+    # Empty 1-D arrays with a dynamic-stride Map/Ref caster must not produce an
+    # invalid (Eigen::Dynamic) inner stride.
+    d = np.zeros(0, dtype=np.float32)
+    assert_array_equal(t.passDMapCnstVXf(d), d)
+    assert_array_equal(t.passDMapCnstVXf(np.array([1, 2, 3], dtype=np.float32)),
+                       np.array([1, 2, 3], dtype=np.float32))
+
+
+@needs_numpy_and_eigen
+def test19_sparse_move():
+    # Returning a sparse matrix by value should move (steal) its buffers into
+    # the resulting scipy array rather than performing a deep copy.
+    pytest.importorskip("scipy")
+
+    h = t.SparseHolder()
+    ptr = h.data_ptr()
+    mat = h.move_out()
+    assert mat.data.__array_interface__["data"][0] == ptr
+
+
+@needs_numpy_and_eigen
+def test20_sparse_bad_attr():
+    # An object whose 'has_sorted_indices' is not a strict bool must be rejected
+    # cleanly (TypeError) rather than aborting the process. nb::cast<bool>()
+    # raises cast_error, which the noexcept from_python() must also handle.
+    scipy = pytest.importorskip("scipy")
+
+    m = scipy.sparse.csr_matrix(np.eye(2, dtype=np.float32))
+    orig = type(m).has_sorted_indices
+    type(m).has_sorted_indices = property(lambda self: np.bool_(True))
+    try:
+        with pytest.raises(TypeError):
+            t.sparse_map_r(m)
+    finally:
+        type(m).has_sorted_indices = orig
 

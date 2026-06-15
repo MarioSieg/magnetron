@@ -108,9 +108,6 @@ NB_CORE void fail(const char *fmt, ...) noexcept;
 /// Raise nanobind::python_error after an error condition was found
 [[noreturn]] NB_CORE void raise_python_error();
 
-/// Raise nanobind::next_overload
-NB_CORE void raise_next_overload_if_null(void *p);
-
 /// Raise nanobind::cast_error
 [[noreturn]] NB_CORE void raise_python_or_cast_error();
 
@@ -400,7 +397,7 @@ NB_CORE bool nb_inst_python_derived(PyObject *o) noexcept;
 NB_CORE void nb_inst_set_state(PyObject *o, bool ready, bool destruct) noexcept;
 
 /// Query the 'ready' and 'destruct' flags of an instance
-NB_CORE std::pair<bool, bool> nb_inst_state(PyObject *o) noexcept;
+NB_CORE std::pair<bool, bool> nb_inst_state_read(PyObject *o) noexcept;
 
 // ========================================================================
 
@@ -446,9 +443,10 @@ struct enum_init_data;
 /// Create a new enumeration type
 NB_CORE PyObject *enum_create(enum_init_data *) noexcept;
 
-/// Append an entry to an enumeration
-NB_CORE void enum_append(PyObject *tp, const char *name,
-                         int64_t value, const char *doc) noexcept;
+/// Append an entry to an enumeration. For StrEnum members, 'str_value' carries
+/// the string value; for all other enumerations it must be nullptr.
+NB_CORE void enum_append(PyObject *tp, const char *name, int64_t value,
+                         const char *str_value, const char *doc) noexcept;
 
 // Query an enumeration's Python object -> integer value map
 NB_CORE bool enum_from_python(const std::type_info *, PyObject *, int64_t *,
@@ -487,7 +485,7 @@ NB_CORE ndarray_handle *ndarray_create(void *data, size_t ndim,
                                        const int64_t *strides,
                                        dlpack::dtype dtype, bool ro,
                                        int device, int device_id,
-                                       char order);
+                                       char order, uint64_t byte_offset);
 
 /// Increase the reference count of the given ndarray object; returns a pointer
 /// to the underlying DLTensor
@@ -573,7 +571,16 @@ NB_CORE void *type_get_slot(PyTypeObject *t, int slot_id);
 
 NB_CORE PyObject *dict_get_item_ref_or_fail(PyObject *d, PyObject *k);
 
+#if PY_VERSION_HEX < 0x030D00A1 || (defined(Py_LIMITED_API) && Py_LIMITED_API < 0x030D0000)
+/// Emulates PyDict_GetItemRef() when targeting Python < 3.13
+NB_CORE int dict_get_item_ref(PyObject *d, PyObject *k, PyObject **value);
+#endif
+
 NB_CORE const char *abi_tag();
+
+NB_INLINE PyObject *none_ref() noexcept { Py_RETURN_NONE; }
+NB_INLINE PyObject *true_ref() noexcept { Py_RETURN_TRUE; }
+NB_INLINE PyObject *false_ref() noexcept { Py_RETURN_FALSE; }
 
 NAMESPACE_END(detail)
 

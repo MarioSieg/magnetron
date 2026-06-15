@@ -104,6 +104,20 @@ def test06_signature_error():
     )
 
 
+def test06_signature_error_unencodable_kwarg():
+    # A keyword name that cannot be encoded to UTF-8 (lone surrogate) must not
+    # crash the error message formatter; it is rendered as a placeholder.
+    with pytest.raises(TypeError) as excinfo:
+        t.test_05("x", **{"\udc80": 4})
+    assert str(excinfo.value) == (
+        "test_05(): incompatible function arguments. The "
+        "following argument types are supported:\n"
+        "    1. test_05(arg: int, /) -> int\n"
+        "    2. test_05(arg: float, /) -> int\n\n"
+        "Invoked with types: str, kwargs = { ?: int }"
+    )
+
+
 def test07_raises():
     with pytest.raises(RuntimeError) as excinfo:
         t.test_06()
@@ -296,6 +310,12 @@ def test25_int():
     assert type(t.test_21_g()) is int
     assert t.test_21_h() == int(1e50)
     assert type(t.test_21_h()) is int
+    # nb::int_ of character types must yield an integer, not a 1-char string
+    for f in (t.test_21_char, t.test_21_schar, t.test_21_uchar):
+        assert f() == 97
+        assert type(f()) is int
+    assert t.test_21_short() == -5 and type(t.test_21_short()) is int
+    assert t.test_21_bool() is True
     assert t.test_19.__doc__ == "test_19(arg: int, /) -> object"
 
 
@@ -336,6 +356,23 @@ def test29_traceback():
     regexp = r'Traceback \(most recent call last\):\n.*\n  File "[^"]*", line [0-9]*, in fail_fn\n.*RuntimeError: Foo'
     matches = re.findall(regexp, result, re.MULTILINE | re.DOTALL)
     assert len(matches) == 1
+
+
+def test29_traceback_surrogate_filename():
+    # A traceback frame whose filename/function name contains lone surrogates
+    # (e.g. a script on a path with bytes undecodable in the filesystem
+    # encoding) must not crash python_error::what().
+    code = compile("def g():\n raise RuntimeError('Foo')\ng()",
+                   "bad\udc80name.py", "exec")
+
+    def fn():
+        exec(code, {})
+
+    result = t.test_30(fn)
+    # Default builds substitute a placeholder for the affected frame fields;
+    # stable-ABI/PyPy builds give up on formatting the traceback altogether
+    assert ("RuntimeError: Foo" in result and "unencodable" in result) or \
+           result == "<error while formatting exception>"
 
 
 def test30_noexcept():
@@ -431,12 +468,22 @@ def test35_return_capture():
 def test36_test_char():
     assert t.test_cast_char("c") == "c"
     assert t.test_cast_char("\x00") == "\x00"
-    with pytest.raises(TypeError):
+    # A failing nb::cast<char>() must raise cast_error (a RuntimeError),
+    # not leak the internal 'next_overload' exception as a bogus TypeError.
+    with pytest.raises(RuntimeError):
         assert t.test_cast_char("abc")
-    with pytest.raises(TypeError):
+    with pytest.raises(RuntimeError):
         assert t.test_cast_char("")
     with pytest.raises(RuntimeError):
         assert t.test_cast_char(123)
+
+
+def test36b_test_cast_failure():
+    # A failing nb::cast<>() inside an overloaded function body must surface
+    # as cast_error and must not silently re-dispatch to another overload.
+    assert t.test_cast_redispatch("x") == "x"
+    with pytest.raises(RuntimeError):
+        t.test_cast_redispatch("abc")
 
 
 def test37_test_str():
@@ -587,6 +634,11 @@ def test41_kw_only():
 
     val = t.kw_only_methods(v=42)
     assert val.v == 42
+
+    # The implicit 'self' of a constructor may be passed as a keyword argument
+    val2 = t.kw_only_methods.__new__(t.kw_only_methods)
+    t.kw_only_methods.__init__(self=val2, v=43)
+    assert val2.v == 43
 
     # (self, *, i, j)
     assert val.method_2k() == (1, 2)
@@ -790,6 +842,11 @@ def test53_fallback():
 def test54_dict_default():
     assert t.test_get_dict_default({'key': 100}) == 100
     assert t.test_get_dict_default({'key2': 100}) == 123
+    assert t.test_get_dict_default_2({'key': 100}, 'key') == 100
+    assert t.test_get_dict_default_2({'key2': 100}, 'key') == 123
+    # An unhashable key must raise TypeError, matching Python's dict.get
+    with pytest.raises(TypeError):
+        t.test_get_dict_default_2({'key': 100}, [1, 2, 3])
 
 def test_55_memoryview():
     memview = t.test_memoryview()
@@ -797,3 +854,48 @@ def test_55_memoryview():
     assert bytes(memview[0:3]) == b'123'
     with pytest.raises(TypeError):
         t.test_bad_memview()
+
+
+def test_56_unusual_module_in_overload_error():
+    # Formatting an overload-dispatch error must not crash when an argument's
+    # type has a non-string or raising '__module__' (nb_type_name fallback).
+    class BadNone:
+        __module__ = None
+
+    with pytest.raises(TypeError, match="BadNone"):
+        t.test_05(BadNone())
+
+    class Meta(type):
+        @property
+        def __module__(cls):
+            raise RuntimeError("boom")
+
+    class BadRaise(metaclass=Meta):
+        pass
+
+    with pytest.raises(TypeError):
+        t.test_05(BadRaise())
+
+
+@pytest.mark.skipif(not hasattr(sys, "getrefcount"),
+                    reason="No reference counting")
+def test_57_accessor_inplace_refleak():
+    class C:
+        pass
+
+    o = C()
+    o.x = []
+    lst = o.x
+    refs_before = sys.getrefcount(lst)
+    for _ in range(5):
+        t.test_accessor_inplace_attr(o, [1])
+    assert sys.getrefcount(lst) == refs_before
+    assert o.x == [1, 1, 1, 1, 1]
+
+    d = {"x": []}
+    lst = d["x"]
+    refs_before = sys.getrefcount(lst)
+    for _ in range(5):
+        t.test_accessor_inplace_item(d, [1])
+    assert sys.getrefcount(lst) == refs_before
+    assert d["x"] == [1, 1, 1, 1, 1]

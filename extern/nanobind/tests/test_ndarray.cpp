@@ -189,6 +189,42 @@ NB_MODULE(test_ndarray_ext, m) {
     m.def("check_device", [](nb::ndarray<nb::device::cpu>) -> const char * { return "cpu"; });
     m.def("check_device", [](nb::ndarray<nb::device::cuda>) -> const char * { return "cuda"; });
 
+    m.def("check_metal_contig",
+          [](nb::ndarray<nb::ro, nb::c_contig, nb::device::metal> a) {
+              return nb::make_tuple(
+                  a.device_type(),
+                  a.device_id(),
+                  a.ndim(),
+                  a.shape(0),
+                  a.shape(1),
+                  a.data_handle() == (void *) f_global,
+                  a.byte_offset());
+          });
+
+    m.def("inspect_metal_contig",
+          [](nb::ndarray<nb::ro, nb::c_contig, nb::device::metal> a) {
+              return nb::make_tuple(
+                  a.device_type(),
+                  a.device_id(),
+                  a.ndim(),
+                  a.shape(0),
+                  a.shape(1),
+                  a.dtype() == nb::dtype<float>(),
+                  a.data_handle() != nullptr,
+                  a.byte_offset());
+          });
+
+    m.def("inspect_byte_offset",
+          [](nb::ndarray<nb::ro> a) {
+              return nb::make_tuple(
+                  a.device_type(),
+                  a.device_id(),
+                  a.ndim(),
+                  a.shape(0),
+                  a.shape(1),
+                  a.byte_offset());
+          });
+
     m.def("initialize",
           [](nb::ndarray<unsigned char, nb::shape<10>, nb::device::cpu> &t) {
               for (size_t i = 0; i < 10; ++i)
@@ -260,6 +296,33 @@ NB_MODULE(test_ndarray_ext, m) {
         return nb::ndarray<float, nb::shape<2, 4>>(f, 2, shape, deleter);
     });
 
+    m.def("ret_memview_ro", []() {
+        float *f = new float[8] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        size_t shape[2] = { 2, 4 };
+
+        nb::capsule deleter(f, [](void *data) noexcept {
+            destruct_count++;
+            delete[] (float *) data;
+        });
+
+        return nb::ndarray<nb::memview, const float, nb::shape<2, 4>>(
+            f, 2, shape, deleter);
+    });
+
+    m.def("ret_memview_f", []() {
+        float *f = new float[8] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        size_t shape[2] = { 2, 4 };
+        int64_t strides[2] = { 1, 2 };
+
+        nb::capsule deleter(f, [](void *data) noexcept {
+            destruct_count++;
+            delete[] (float *) data;
+        });
+
+        return nb::ndarray<nb::memview, float, nb::shape<2, 4>, nb::f_contig>(
+            f, 2, shape, deleter, strides);
+    });
+
     m.def("passthrough", [](nb::ndarray<> a) { return a; }, nb::rv_policy::none);
     m.def("passthrough_copy", [](nb::ndarray<> a) { return a; }, nb::rv_policy::copy);
 
@@ -320,6 +383,27 @@ NB_MODULE(test_ndarray_ext, m) {
                                                                  deleter);
     });
 
+    // No owner and automatic policy: the requested copy is unsupported for
+    // these frameworks, so the export must refuse (rather than return a view
+    // aliasing the soon-to-be-freed local buffer).
+    m.def("ret_memview_noowner", []() {
+        double d[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+        size_t shape[2] = { 2, 4 };
+        return nb::ndarray<nb::memview, double, nb::shape<2, 4>>(d, 2, shape);
+    });
+
+    m.def("ret_array_api_noowner", []() {
+        double d[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+        size_t shape[2] = { 2, 4 };
+        return nb::ndarray<nb::array_api, double, nb::shape<2, 4>>(d, 2, shape);
+    });
+
+    m.def("ret_noframework_noowner", []() {
+        double d[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+        size_t shape[2] = { 2, 4 };
+        return nb::ndarray<double, nb::shape<2, 4>>(d, 2, shape);
+    });
+
     m.def("ret_array_api", []() {
         double *d = new double[8] { 1, 2, 3, 4, 5, 6, 7, 8 };
         size_t shape[2] = { 2, 4 };
@@ -331,6 +415,33 @@ NB_MODULE(test_ndarray_ext, m) {
 
         return nb::ndarray<nb::array_api, double, nb::shape<2, 4>>(d, 2, shape,
                                                                    deleter);
+    });
+
+    m.def("ret_array_api_byte_offset", []() {
+        double *d = new double[9] { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+        size_t shape[2] = { 2, 4 };
+
+        nb::capsule deleter(d, [](void *data) noexcept {
+           destruct_count++;
+           delete[] (double *) data;
+        });
+
+        return nb::ndarray<nb::array_api, double, nb::shape<2, 4>>(
+            d, 2, shape, deleter, nullptr, nb::dtype<double>(),
+            nb::device::cpu::value, 0, 'C', sizeof(double));
+    });
+
+    m.def("ret_array_api_metal", []() {
+        return nb::ndarray<nb::array_api, float, nb::shape<2, 4>,
+                           nb::device::metal, nb::c_contig>(
+            f_global, { 2, 4 }, nb::none());
+    });
+
+    m.def("ret_array_api_metal_byte_offset", []() {
+        return nb::ndarray<nb::array_api, float, nb::shape<2, 3>,
+                           nb::device::metal, nb::c_contig>(
+            f_global, { 2, 3 }, nb::none(), { }, nb::dtype<float>(),
+            nb::device::metal::value, 0, 'C', sizeof(float));
     });
 
     m.def("ret_array_scalar", []() {

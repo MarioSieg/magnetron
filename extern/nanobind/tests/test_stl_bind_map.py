@@ -3,6 +3,7 @@ import sys
 import platform
 
 import test_stl_bind_map_ext as t
+from common import collect
 
 
 def test_map_string_double(capfd):
@@ -197,6 +198,20 @@ def test_maps_with_noncopyable_values():
     assert vsum == 7500
 
 
+def test_map_self_update():
+    # Regression: m.update(m) must be a correct no-op even for a
+    # non-copy-assignable value type ('double const' exercises the
+    # emplace/erase/re-emplace path in map_set and previously dangled).
+    m = t.MapStringDoubleConst()
+    for i in range(1, 6):
+        m[str(i)] = 10.0 * i
+
+    m.update(m)
+    assert sorted(k for k in m) == ["1", "2", "3", "4", "5"]
+    for i in range(1, 6):
+        assert m[str(i)] == 10.0 * i
+
+
 def test_map_delitem():
     mm = t.MapStringDouble()
     mm["a"] = 1
@@ -217,3 +232,17 @@ def test_map_delitem():
     del um["ua"]
     assert sorted(list(um)) == ["ub"]
     assert sorted(list(um.items())) == [("ub", 2.6)]
+
+
+def test_map_init_partial_cleanup():
+    # When the dict constructor throws partway through, the partially
+    # constructed map must still be destroyed (no leaked elements).
+    keep = t.MapCnt()
+    collect()
+    base = t.cnt_alive()
+    for _ in range(100):
+        with pytest.raises(Exception):
+            t.MapIntCnt({1: t.MapCnt(), 2: t.MapCnt(), 3: "not a MapCnt"})
+    collect()
+    assert t.cnt_alive() == base
+    del keep

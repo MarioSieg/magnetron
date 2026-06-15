@@ -64,9 +64,6 @@ endif()
 # Installation rules
 # ---------------------------------------------------------------------------
 if(NB_CREATE_INSTALL_RULES AND NOT CMAKE_SKIP_INSTALL_RULES)
-  # Silence warning in GNUInstallDirs due to no enabled languages
-  set(CMAKE_INSTALL_LIBDIR "")
-  include(GNUInstallDirs)
   set(NB_INSTALL_DATADIR "nanobind"
     CACHE PATH "Installation path for read-only architecture-independent nanobind data files")
 
@@ -136,7 +133,7 @@ endif()
 # Find the Python interpreter and development libraries
 # ---------------------------------------------------------------------------
 
-if (NOT TARGET Python::Module OR NOT TARGET Python::Interpreter)
+if (NOT TARGET Python::Module AND NOT TARGET Python::Interpreter)
   set(Python_FIND_FRAMEWORK LAST) # Prefer Brew/Conda to Apple framework python
 
   if (CMAKE_VERSION VERSION_LESS 3.18)

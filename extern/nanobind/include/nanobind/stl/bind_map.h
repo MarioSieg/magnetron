@@ -108,8 +108,13 @@ class_<Map> bind_map(handle scope, const char *name, Args &&...args) {
 
         cl.def("__init__", [](Map *m, typed<dict, Key, Value> d) {
             new (m) Map();
-            for (auto [k, v] : borrow<dict>(std::move(d)))
-                m->emplace(cast<Key>(k), cast<Value>(v));
+            try {
+                for (auto [k, v] : borrow<dict>(std::move(d)))
+                    m->emplace(cast<Key>(k), cast<Value>(v));
+            } catch (...) {
+                m->~Map();
+                throw;
+            }
         }, "Construct from a dictionary");
 
         implicitly_convertible<dict, Map>();
@@ -123,6 +128,12 @@ class_<Map> bind_map(handle scope, const char *name, Args &&...args) {
         });
 
         cl.def("update", [](Map &m, const Map &m2) {
+            // Updating a map with itself would be a no-op, but the underlying
+            // map_set() may erase and re-emplace nodes; doing so while
+            // iterating m2 == m leaves kv referencing freed storage (a
+            // dangling-reference for non-copy-assignable values). Skip it.
+            if (&m2 == &m)
+                return;
             for (auto &kv : m2)
                 detail::map_set<Map, Key, Value>(m, kv.first, kv.second);
         },

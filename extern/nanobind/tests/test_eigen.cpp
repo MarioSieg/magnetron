@@ -171,6 +171,23 @@ NB_MODULE(test_eigen_ext, m) {
     m.def("sparse_complex", [](Eigen::SparseMatrix<std::complex<double>> x) -> Eigen::SparseMatrix<std::complex<double>> { return x; });
     m.def("sparse_complex_map_c", [](Eigen::Map<Eigen::SparseMatrix<std::complex<double>>> x) { return x; });
 
+    // A holder owning a sparse matrix. `data_ptr()` reports the address of its
+    // value buffer; `move_out()` returns the matrix by value (move path). The
+    // test verifies that the buffer is *moved* into the resulting scipy array
+    // (its data pointer matches data_ptr()) rather than deep-copied.
+    struct SparseHolder {
+        SparseMatrixR mat;
+        SparseHolder() : mat(Eigen::SparseView<Eigen::MatrixXf>(Eigen::MatrixXf::Identity(64, 64))) {
+            mat.makeCompressed();
+        }
+        uintptr_t data_ptr() const { return (uintptr_t) mat.valuePtr(); }
+        SparseMatrixR move_out() { return mat.markAsRValue(); }
+    };
+    nb::class_<SparseHolder>(m, "SparseHolder")
+        .def(nb::init<>())
+        .def("data_ptr", &SparseHolder::data_ptr)
+        .def("move_out", &SparseHolder::move_out);
+
     m.def("sparse_map_c", [](const Eigen::Map<const SparseMatrixC> &c) { return c; }, nb::rv_policy::reference);
     m.def("sparse_map_r", [](const Eigen::Map<const SparseMatrixR> &r) { return r; }, nb::rv_policy::reference);
 
@@ -182,6 +199,15 @@ NB_MODULE(test_eigen_ext, m) {
         Eigen::Map<SparseMatrixR> r = nb::cast<Eigen::Map<SparseMatrixR>>(obj);
         for (int i = 0; i < r.nonZeros(); ++i) { r.valuePtr()[i] = 0; }
     });
+
+    // A sparse-matrix parameter that disallows implicit conversion
+    m.def("sparse_noconvert_c", [](const SparseMatrixC &m) -> SparseMatrixC { return m; },
+          nb::arg().noconvert());
+
+    // Two overloads: a dense argument must not be claimed by the sparse
+    // overload during the dispatcher's no-convert pass
+    m.def("sparse_or_dense", [](const SparseMatrixC &) { return 1; });
+    m.def("sparse_or_dense", [](const Eigen::MatrixXf &) { return 2; });
 
     /// issue #166
     using Matrix1d = Eigen::Matrix<double,1,1>;
@@ -236,8 +262,19 @@ NB_MODULE(test_eigen_ext, m) {
     m.def("castToDRefCnstVXi", [](nb::object obj) -> Eigen::VectorXi {
         return nb::cast<nb::DRef<const Eigen::VectorXi>>(obj);
     });
+    m.def("passDMapCnstVXf", [](nb::DMap<const Eigen::VectorXf> a) -> Eigen::VectorXf {
+        return a;
+    });
     m.def("castToRef03CnstVXi", [](nb::object obj) -> Eigen::VectorXi {
         return nb::cast<Eigen::Ref<const Eigen::VectorXi, Eigen::Unaligned, Eigen::InnerStride<3>>>(obj);
+    });
+
+    // Single-argument nb::cast() with reference_internal has no parent/cleanup;
+    // this must fail gracefully instead of crashing.
+    m.def("castRefInternalNoParent", []() -> nb::object {
+        Eigen::MatrixXf m(2, 2);
+        m << 1, 2, 3, 4;
+        return nb::cast(m, nb::rv_policy::reference_internal);
     });
 
     struct Base {

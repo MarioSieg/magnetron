@@ -395,7 +395,8 @@ class bool_ : public object {
         : object(detail::bool_from_obj(h.ptr()), detail::borrow_t{}) { }
 
     explicit bool_(bool value)
-        : object(value ? Py_True : Py_False, detail::borrow_t{}) { }
+        : object(value ? detail::true_ref() : detail::false_ref(),
+                 detail::steal_t{}) { }
 
     explicit operator bool() const {
         return m_ptr == Py_True;
@@ -412,6 +413,10 @@ class int_ : public object {
     explicit int_(T value) {
         if constexpr (std::is_floating_point_v<T>)
             m_ptr = PyLong_FromDouble((double) value);
+        else if constexpr (detail::is_std_char_v<T>)
+            // Treat character types as integers rather than (single-char) strings
+            m_ptr = detail::type_caster<std::make_signed_t<T>>::from_cpp(
+                (std::make_signed_t<T>) value, rv_policy::copy, nullptr).ptr();
         else
             m_ptr = detail::type_caster<T>::from_cpp(value, rv_policy::copy, nullptr).ptr();
 
@@ -567,7 +572,7 @@ class list : public object {
             raise_python_error();
     }
 
-#if !defined(Py_LIMITED_API) && !defined(PYPY_VERSION)
+#if !defined(Py_LIMITED_API) && !defined(PYPY_VERSION) && !defined(NB_FREE_THREADED)
     detail::fast_iterator begin() const;
     detail::fast_iterator end() const;
 #endif
@@ -584,16 +589,24 @@ class dict : public object {
     list values() const { return steal<list>(detail::obj_op_1(m_ptr, PyDict_Values)); }
     list items() const { return steal<list>(detail::obj_op_1(m_ptr, PyDict_Items)); }
     object get(handle key, handle def) const {
-        PyObject *o = PyDict_GetItem(m_ptr, key.ptr());
-        if (!o)
-            o = def.ptr();
-        return borrow(o);
+        PyObject *value;
+#if PY_VERSION_HEX < 0x030D00A1 || (defined(Py_LIMITED_API) && Py_LIMITED_API < 0x030D0000)
+        int rv = detail::dict_get_item_ref(m_ptr, key.ptr(), &value);
+#else
+        int rv = PyDict_GetItemRef(m_ptr, key.ptr(), &value);
+#endif
+        if (rv < 0)
+            detail::raise_python_error();
+        if (rv == 0)
+            return borrow(def);
+        return steal(value);
     }
     object get(const char *key, handle def) const {
-        PyObject *o = PyDict_GetItemString(m_ptr, key);
-        if (!o)
-            o = def.ptr();
-        return borrow(o);
+        PyObject *k = PyUnicode_FromString(key);
+        if (!k)
+            detail::raise_python_error();
+        object key_o = steal(k);
+        return get(key_o, def);
     }
     template <typename T> bool contains(T&& key) const;
     void clear() { PyDict_Clear(m_ptr); }
@@ -1002,6 +1015,7 @@ inline detail::fast_iterator tuple::end() const {
     PyTupleObject *v = (PyTupleObject *) m_ptr;
     return v->ob_item + v->ob_base.ob_size;
 }
+#if !defined(NB_FREE_THREADED)
 inline detail::fast_iterator list::begin() const {
     return ((PyListObject *) m_ptr)->ob_item;
 }
@@ -1009,6 +1023,7 @@ inline detail::fast_iterator list::end() const {
     PyListObject *v = (PyListObject *) m_ptr;
     return v->ob_item + v->ob_base.ob_size;
 }
+#endif
 #endif
 
 template <typename T> void del(detail::accessor<T> &a) { a.del(); }
