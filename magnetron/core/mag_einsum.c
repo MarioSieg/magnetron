@@ -620,17 +620,17 @@ static mag_status_t mag_einsum_greedy_path(
   size_t *out_scaling
 ) {
   mag_einsum_subscript_t inputs[MAG_EINSUM_MAX_INPUTS];
-  memcpy(inputs, inputs_src, (size_t)num_inputs_src * sizeof(inputs[0]));
+  memcpy(inputs, inputs_src, (size_t)num_inputs_src*sizeof(*inputs));
   uint32_t num_inputs = num_inputs_src;
   size_t path_cost = 0;
   size_t path_scaling = 0;
   size_t num_nodes = 0;
-  for (uint32_t step=0; step < num_inputs_src - 1; ++step) {
+  for (uint32_t step=0; step < num_inputs_src-1; ++step) {
     mag_einsum_contraction_t possible[1024];
     uint32_t num_possible = 0;
     for (uint32_t i=0; i < num_inputs; ++i) {
       for (uint32_t j=i+1; j < num_inputs; ++j) {
-        if ((inputs[i].charset & inputs[j].charset) == 0)
+        if ((inputs[i].charset&inputs[j].charset)==0)
           continue;
         mag_einsum_add_contraction(
           possible,
@@ -669,7 +669,7 @@ static mag_status_t mag_einsum_greedy_path(
       }
     }
     if (num_possible == 0) {
-      mag_einsum_path_node_t *node = &out_nodes[num_nodes++];
+      mag_einsum_path_node_t *node = out_nodes+num_nodes++;
       memset(node, 0, sizeof(*node));
       node->num_inputs = num_inputs;
       for (uint32_t i=0; i < num_inputs; ++i) {
@@ -952,21 +952,15 @@ static mag_status_t mag_einsum_collapse_repeats(
   return MAG_STATUS_OK;
 }
 
-static bool mag_einsum_can_dot(
-  const mag_einsum_path_node_t *node
-) {
+static bool mag_einsum_can_dot(const mag_einsum_path_node_t *node) {
   if (node->num_inputs != 2)
     return false;
-
-  const mag_einsum_subscript_t *a = &node->inputs[0];
-
-  for (const char *p = a->str.buf; *p; ++p) {
+  const mag_einsum_subscript_t *a = node->inputs;
+  for (const char *p=a->str.buf; *p; ++p) {
     int id = mag_einsum_label_id(*p);
-
-    if (!(node->output.charset & (1ull << id)))
+    if (!(node->output.charset&(1ull<<id)))
       return true;
   }
-
   return false;
 }
 
