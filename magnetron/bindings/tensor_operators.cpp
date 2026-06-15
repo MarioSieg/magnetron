@@ -307,6 +307,31 @@ namespace mag::bindings {
       "dims"_a,
       "Reorder dimensions by the given permutation."
     )
+    .def("broadcast_to", [](const tensor_wrapper &self, nb::args shape_args) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        std::vector<int64_t> shape = parse_i64_dims(shape_args, "broadcast_to");
+        if (shape.empty())
+          throw nb::value_error("broadcast_to: shape must not be empty");
+        int64_t self_rank = mag_tensor_rank(*self);
+        if (static_cast<int64_t>(shape.size()) < self_rank)
+          throw nb::value_error("broadcast_to: target shape must have rank >= tensor rank");
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(
+          mag_broadcast_to(
+            &err,
+            &out,
+            *self,
+            static_cast<int64_t>(shape.size()),
+            shape.data()
+          ),
+          err
+        );
+        return tensor_wrapper{out};
+      },
+      "shape"_a,
+      "Broadcast tensor to a target shape without copying when possible."
+    )
     .def("contiguous",
       [](const tensor_wrapper &self) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};

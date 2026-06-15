@@ -88,7 +88,7 @@ static mag_status_t mag_einsum_parse(
   for (; tok; (tok=strtok_r(NULL, ",", &save)), ++idx) {
     mag_contract(err, ERR_EINSUM, {}, idx < num_inputs, "Einsum parse error");
     size_t len = strlen(tok);
-    mag_contract(err, ERR_EINSUM, {}, len <= MAG_EINSUM_MAX_SPEC, "einsum: input spec too long");
+    mag_contract(err, ERR_EINSUM, {}, len < MAG_EINSUM_MAX_SPEC, "einsum: input spec too long");
     mag_einsum_str_t *input = out->inputs+idx;
     snprintf(input->buf, sizeof(input->buf), "%s", tok);
   }
@@ -143,7 +143,7 @@ static mag_status_t mag_einsum_check_alnum_and_expand_ellipsis(
   const char *str = subscript->buf;
   size_t len = strlen(str);
   for (size_t i=0; i < len; ++i) {
-    if (!isalpha(str[i])) {
+    if (!isalpha((unsigned char)str[i])) {
       mag_contract(err, ERR_EINSUM, {},
         !(i+2 >= len || str[i] != '.' || str[i+1] != '.' || str[i+2] != '.'),
         "Subscripts must be letters, but got: %c", str[i]
@@ -179,6 +179,7 @@ static mag_status_t mag_einsum_check_alnum_and_expand_ellipsis(
   size_t suffix_start = prefix_len+3;
   size_t suffix_len = len - suffix_start;
   mag_contract(err, ERR_EINSUM, {}, prefix_len+repl_len+suffix_len < sizeof(subscript->buf), "Expanded subscript too long");
+  mag_contract(err, ERR_EINSUM, {}, repl_len <= remaining_len, "einsum: too many dimensions for ellipsis expansion");
   const char *replacement = remaining_chars + remaining_len - repl_len;
   char tmp[sizeof(subscript->buf)];
   memcpy(tmp, str, prefix_len);
@@ -195,13 +196,6 @@ typedef struct mag_einsum_dim_map_t {
 } mag_einsum_dim_map_t;
 
 static size_t mag_einsum_term_size(const char *term, const mag_einsum_dim_map_t *dim_map) {
-  size_t size=1;
-  for (const char *p=term; *p; ++p)
-    size *= (size_t)dim_map->dims[mag_einsum_label_id(*p)];
-  return size;
-}
-
-static size_t mag_einsum_term_size_str(const char *term, const mag_einsum_dim_map_t *dim_map) {
   size_t size=1;
   for (const char *p=term; *p; ++p)
     size *= (size_t)dim_map->dims[mag_einsum_label_id(*p)];
@@ -251,6 +245,478 @@ static void mag_einsum_compute_cost_and_scaling(
   *out_scaling = (size_t)mag_popcnt64(contractions);
 }
 
+typedef struct mag_einsum_axes_t {
+  int64_t v[MAG_EINSUM_MAX_SPEC];
+  int64_t n;
+} mag_einsum_axes_t;
+
+static void mag_einsum_axes_push(mag_einsum_axes_t *xs, int64_t v) { xs->v[xs->n++] = v; }
+static int64_t mag_einsum_find_axis(const char *s, char c) {
+  const char *p = strchr(s, c);
+  return p ? p-s : -1;
+}
+
+static int64_t mag_einsum_shape_prod(
+  const mag_tensor_t *x,
+  const mag_einsum_axes_t *axes
+) {
+  int64_t r=1;
+  const int64_t *shape = x->coords.shape;
+  for (int64_t i=0; i < axes->n; ++i)
+    r *= shape[axes->v[i]];
+  return r;
+}
+
+static mag_status_t mag_einsum_transpose_reshape_for_dot(
+  mag_error_t *err,
+  mag_tensor_t **out,
+  mag_tensor_t *x,
+  const mag_einsum_axes_t *i_axes,
+  const mag_einsum_axes_t *j_axes,
+  const mag_einsum_axes_t *k_axes
+) {
+  int64_t reorder[MAG_EINSUM_MAX_SPEC];
+  int64_t reorder_n = 0;
+  for (int64_t i=0; i < i_axes->n; ++i)
+    reorder[reorder_n++] = i_axes->v[i];
+  for (int64_t i=0; i < j_axes->n; ++i)
+    reorder[reorder_n++] = j_axes->v[i];
+  for (int64_t i=0; i < k_axes->n; ++i)
+    reorder[reorder_n++] = k_axes->v[i];
+  mag_tensor_t *xt = NULL;
+  mag_try(mag_permute(err, &xt, x, reorder, reorder_n));
+  int64_t size1 = mag_einsum_shape_prod(x, j_axes);
+  int64_t size2 = mag_einsum_shape_prod(x, k_axes);
+  int64_t shape[MAG_EINSUM_MAX_SPEC];
+  int64_t rank = 0;
+  const int64_t *x_shape = x->coords.shape;
+  for (int64_t i=0; i < i_axes->n; ++i)
+    shape[rank++] = x_shape[i_axes->v[i]];
+  shape[rank++] = size1;
+  shape[rank++] = size2;
+  mag_tensor_t *xr = NULL;
+  mag_status_t stat = mag_reshape(err, &xr, xt, shape, rank);
+  mag_tensor_decref(xt);
+  if (mag_iserr(stat)) return stat;
+  *out = xr;
+  return MAG_STATUS_OK;
+}
+
+static mag_status_t mag_einsum_broadcast_contract_dims(
+  mag_error_t *err,
+  mag_tensor_t **out_a,
+  mag_tensor_t **out_b,
+  mag_tensor_t *a,
+  mag_tensor_t *b,
+  const mag_einsum_axes_t *a_contract,
+  const mag_einsum_axes_t *b_contract
+) {
+  int64_t a_rank = mag_tensor_rank(a);
+  int64_t b_rank = mag_tensor_rank(b);
+  const int64_t *a_shape_old = a->coords.shape;
+  const int64_t *b_shape_old = b->coords.shape;
+  int64_t a_shape[MAG_EINSUM_MAX_SPEC];
+  int64_t b_shape[MAG_EINSUM_MAX_SPEC];
+  memcpy(a_shape, a_shape_old, (size_t)a_rank * sizeof(a_shape[0]));
+  memcpy(b_shape, b_shape_old, (size_t)b_rank * sizeof(b_shape[0]));
+  mag_contract(err, ERR_EINSUM, {}, a_contract->n == b_contract->n, "einsum: internal contract axis mismatch");
+  for (int64_t i=0; i < a_contract->n; ++i) {
+    int64_t aa = a_contract->v[i];
+    int64_t ba = b_contract->v[i];
+    int64_t da = a_shape[aa];
+    int64_t db = b_shape[ba];
+    mag_contract(err, ERR_EINSUM, {}, da == db || da == 1 || db == 1, "einsum: cannot broadcast contracting dimensions %" PRIi64 " and %" PRIi64, da, db);
+    int64_t d = da > db ? da : db;
+    a_shape[aa] = d;
+    b_shape[ba] = d;
+  }
+  mag_tensor_t *ab = NULL;
+  mag_tensor_t *bb = NULL;
+  mag_try(mag_broadcast_to(err, &ab, a, a_rank, a_shape));
+  mag_status_t stat = mag_broadcast_to(err, &bb, b, b_rank, b_shape);
+  if (mag_iserr(stat)) {
+    mag_tensor_decref(ab);
+    return stat;
+  }
+  *out_a = ab;
+  *out_b = bb;
+  return MAG_STATUS_OK;
+}
+
+static mag_status_t mag_einsum_batch_tensordot(
+  mag_error_t *err,
+  mag_tensor_t **out,
+  mag_tensor_t *a,
+  mag_tensor_t *b,
+  const mag_einsum_axes_t *a_contract,
+  const mag_einsum_axes_t *a_batch,
+  const mag_einsum_axes_t *a_concat,
+  const mag_einsum_axes_t *b_contract,
+  const mag_einsum_axes_t *b_batch,
+  const mag_einsum_axes_t *b_concat
+) {
+  mag_tensor_t *a_bcast = NULL;
+  mag_tensor_t *b_bcast = NULL;
+  mag_try(mag_einsum_broadcast_contract_dims(
+    err,
+    &a_bcast,
+    &b_bcast,
+    a,
+    b,
+    a_contract,
+    b_contract
+  ));
+  mag_tensor_t *ar = NULL;
+  mag_tensor_t *br = NULL;
+  mag_status_t stat = mag_einsum_transpose_reshape_for_dot(
+    err,
+    &ar,
+    a_bcast,
+    a_batch,
+    a_concat,
+    a_contract
+  );
+  if (mag_iserr(stat)) {
+    mag_tensor_decref(a_bcast);
+    mag_tensor_decref(b_bcast);
+    return stat;
+  }
+  stat = mag_einsum_transpose_reshape_for_dot(
+    err,
+    &br,
+    b_bcast,
+    b_batch,
+    b_contract,
+    b_concat
+  );
+  if (mag_iserr(stat)) {
+    mag_tensor_decref(ar);
+    mag_tensor_decref(a_bcast);
+    mag_tensor_decref(b_bcast);
+    return stat;
+  }
+  mag_tensor_t *mm = NULL;
+  stat = mag_matmul(err, &mm, ar, br);
+  mag_tensor_decref(ar);
+  mag_tensor_decref(br);
+  if (mag_iserr(stat)) {
+    mag_tensor_decref(a_bcast);
+    mag_tensor_decref(b_bcast);
+    return stat;
+  }
+  int64_t out_shape[MAG_EINSUM_MAX_SPEC];
+  int64_t out_rank = 0;
+  const int64_t *sa = a_bcast->coords.shape;
+  const int64_t *sb = b_bcast->coords.shape;
+  for (int64_t i=0; i < a_batch->n; ++i)
+    out_shape[out_rank++] = sa[a_batch->v[i]];
+  for (int64_t i=0; i < a_concat->n; ++i)
+    out_shape[out_rank++] = sa[a_concat->v[i]];
+  for (int64_t i=0; i < b_concat->n; ++i)
+    out_shape[out_rank++] = sb[b_concat->v[i]];
+  mag_tensor_t *reshaped = NULL;
+  stat = mag_reshape(err, &reshaped, mm, out_shape, out_rank);
+  mag_tensor_decref(mm);
+  mag_tensor_decref(a_bcast);
+  mag_tensor_decref(b_bcast);
+  if (mag_iserr(stat))
+    return stat;
+  *out = reshaped;
+  return MAG_STATUS_OK;
+}
+
+static mag_status_t mag_einsum_dot_node(mag_error_t *err, mag_tensor_t **out, mag_einsum_path_node_t *node, mag_tensor_t **operands) {
+  mag_einsum_subscript_t *in_a = node->inputs;
+  mag_einsum_subscript_t *in_b = node->inputs+1;
+  mag_einsum_axes_t a_contract = {0};
+  mag_einsum_axes_t a_batch = {0};
+  mag_einsum_axes_t a_concat = {0};
+  mag_einsum_axes_t b_contract = {0};
+  mag_einsum_axes_t b_batch = {0};
+  mag_einsum_axes_t b_concat = {0};
+  for (int64_t i=0; in_a->str.buf[i]; ++i) {
+    char c=in_a->str.buf[i];
+    int id = mag_einsum_label_id(c);
+    if (!(node->output.charset&(1ull<<id))) mag_einsum_axes_push(&a_contract, i);
+    else if (in_b->charset&(1ull<<id)) mag_einsum_axes_push(&a_batch, i);
+    else  mag_einsum_axes_push(&a_concat, i);
+  }
+  for (int64_t i=0; i < a_contract.n; ++i) {
+    char c = in_a->str.buf[a_contract.v[i]];
+    int64_t ax = mag_einsum_find_axis(in_b->str.buf, c);
+    mag_contract(err, ERR_EINSUM, {}, ax >= 0, "einsum: internal contract axis not found");
+    mag_einsum_axes_push(&b_contract, ax);
+  }
+  for (int64_t i=0; i < a_batch.n; ++i) {
+    char c = in_a->str.buf[a_batch.v[i]];
+    int64_t ax = mag_einsum_find_axis(in_b->str.buf, c);
+    mag_contract(err, ERR_EINSUM, {}, ax >= 0, "einsum: internal batch axis not found");
+    mag_einsum_axes_push(&b_batch, ax);
+  }
+  for (int64_t i=0; in_b->str.buf[i]; ++i) {
+    char c = in_b->str.buf[i];
+    int id = mag_einsum_label_id(c);
+    if ((node->output.charset&(1ull<<id)) && !(in_a->charset&(1ull<<id)))
+      mag_einsum_axes_push(&b_concat, i);
+  }
+  mag_tensor_t *a = operands[node->positions[0]];
+  mag_tensor_t *b = operands[node->positions[1]];
+  int64_t char_map[52];
+  for (int i=0; i < 52; ++i)
+    char_map[i] = -1;
+  int64_t out_axis = 0;
+  for (int64_t i=0; i < a_batch.n; ++i)
+    char_map[mag_einsum_label_id(in_a->str.buf[a_batch.v[i]])] = out_axis++;
+  for (int64_t i=0; i < a_concat.n; ++i)
+    char_map[mag_einsum_label_id(in_a->str.buf[a_concat.v[i]])] = out_axis++;
+  for (int64_t i=0; i < b_concat.n; ++i)
+    char_map[mag_einsum_label_id(in_b->str.buf[b_concat.v[i]])] = out_axis++;
+  mag_tensor_t *td = NULL;
+  mag_try(mag_einsum_batch_tensordot(err, &td, a, b, &a_contract, &a_batch, &a_concat, &b_contract, &b_batch, &b_concat));
+  int64_t out_rank = (int64_t)strlen(node->output.str.buf);
+  if (out_rank <= 1) {
+    *out = td;
+    return MAG_STATUS_OK;
+  }
+  int64_t reorder[MAG_EINSUM_MAX_SPEC];
+  for (int64_t i=0; i < out_rank; ++i) {
+    int id = mag_einsum_label_id(node->output.str.buf[i]);
+    mag_contract(err, ERR_EINSUM, {}, char_map[id] >= 0, "einsum: internal output reorder label missing");
+    reorder[i] = char_map[id];
+  }
+  bool identity = true;
+  for (int64_t i=0; i < out_rank; ++i) {
+    if (reorder[i] != i) {
+      identity = false;
+      break;
+    }
+  }
+  if (identity) {
+    *out = td;
+  } else {
+    mag_tensor_t *tmp = NULL;
+    mag_status_t stat = mag_permute(err, &tmp, td, reorder, out_rank);
+    mag_tensor_decref(td);
+    if (mag_iserr(stat))
+      return stat;
+    *out = tmp;
+  }
+  return MAG_STATUS_OK;
+}
+
+typedef struct mag_einsum_contraction_t {
+  size_t size;
+  size_t cost;
+  uint32_t dims;
+  uint32_t x;
+  uint32_t y;
+  mag_einsum_charset_t output;
+} mag_einsum_contraction_t;
+
+static void mag_einsum_subscript_from_set_sorted_by_dim(mag_einsum_subscript_t *out, mag_einsum_charset_t set, const mag_einsum_dim_map_t *dim_map) {
+  int ids[52];
+  int n = 0;
+  for (int id=0; id < 52; ++id)
+    if (set&(1ull<<id))
+      ids[n++] = id;
+  for (int i=1; i < n; ++i) {
+    int v = ids[i];
+    int64_t vd = dim_map->dims[v];
+    int j=i - 1;
+    while (j >= 0 && dim_map->dims[ids[j]] > vd) {
+      ids[j+1] = ids[j];
+      --j;
+    }
+    ids[j+1] = v;
+  }
+  for (int i=0; i < n; ++i) {
+    int id = ids[i];
+    out->str.buf[i] = id < 26 ? (char)('a'+id) : (char)('A'+id-26);
+  }
+  out->str.buf[n] = '\0';
+  out->charset = set;
+}
+
+static void mag_einsum_remove_inputs_2(mag_einsum_subscript_t *inputs, uint32_t *num_inputs, uint32_t x, uint32_t y) {
+  if (x > y) mag_swap(uint32_t, x,y);
+  memmove(inputs+y, inputs+y+1, (size_t)(*num_inputs-y-1)*sizeof(*inputs));
+  --*num_inputs;
+  memmove(inputs+x, inputs+x+1, (size_t)(*num_inputs-x-1)*sizeof(*inputs));
+  --*num_inputs;
+}
+
+static void mag_einsum_remove_operand_at(mag_tensor_t **operands, size_t *num_operands, uint32_t pos) {
+  mag_tensor_decref(operands[pos]);
+  memmove(operands+pos, operands+pos+1, (*num_operands-(size_t)pos-1)*sizeof(*operands));
+  --*num_operands;
+}
+
+static bool mag_einsum_add_contraction(
+  mag_einsum_contraction_t *possible,
+  uint32_t *num_possible,
+  uint32_t max_possible,
+  const mag_einsum_subscript_t *inputs,
+  uint32_t num_inputs,
+  const mag_einsum_subscript_t *output,
+  const mag_einsum_dim_map_t *dim_map,
+  uint32_t p1,
+  uint32_t p2,
+  size_t path_cost,
+  size_t cost_limit,
+  size_t memory_limit
+) {
+  mag_einsum_charset_t contractions = inputs[p1].charset | inputs[p2].charset;
+  mag_einsum_charset_t new_term = 0;
+  for (uint32_t i=0; i < num_inputs; ++i) {
+    if (i == p1 || i == p2) continue;
+    new_term|=inputs[i].charset&contractions;
+  }
+  new_term|=output->charset&contractions;
+  size_t new_size = mag_einsum_term_size_set(new_term, dim_map);
+  if (new_size > memory_limit)
+    return false;
+  size_t removed_size = mag_einsum_term_size_set(inputs[p1].charset, dim_map) + mag_einsum_term_size_set(inputs[p2].charset, dim_map) - new_size;
+  bool inner = mag_popcnt64(contractions) > mag_popcnt64(new_term);
+  size_t cost = mag_einsum_flop_count(contractions, inner, 2, dim_map);
+  if (path_cost+cost > cost_limit) return false;
+  if (*num_possible >= max_possible) return false;
+  possible[*num_possible] = (mag_einsum_contraction_t){
+    .size = removed_size,
+    .cost = cost,
+    .output = new_term,
+    .dims = (uint32_t)mag_popcnt64(contractions),
+    .x = p1,
+    .y = p2,
+  };
+  ++*num_possible;
+  return true;
+}
+
+static uint32_t mag_einsum_find_best_contraction(
+  const mag_einsum_contraction_t *possible,
+  uint32_t num_possible
+) {
+  uint32_t best = 0;
+  for (uint32_t i=1; i < num_possible; ++i) {
+    const mag_einsum_contraction_t *x = possible+i;
+    const mag_einsum_contraction_t *y = possible+best;
+    if (x->size > y->size || (x->size == y->size && x->cost < y->cost))
+      best = i;
+  }
+  return best;
+}
+
+static mag_status_t mag_einsum_greedy_path(
+  mag_error_t *err,
+  const mag_einsum_subscript_t *inputs_src,
+  uint32_t num_inputs_src,
+  const mag_einsum_subscript_t *output,
+  const mag_einsum_dim_map_t *dim_map,
+  size_t cost_limit,
+  size_t memory_limit,
+  mag_einsum_path_node_t *out_nodes,
+  size_t *out_num_nodes,
+  size_t *out_cost,
+  size_t *out_scaling
+) {
+  mag_einsum_subscript_t inputs[MAG_EINSUM_MAX_INPUTS];
+  memcpy(inputs, inputs_src, (size_t)num_inputs_src * sizeof(inputs[0]));
+  uint32_t num_inputs = num_inputs_src;
+  size_t path_cost = 0;
+  size_t path_scaling = 0;
+  size_t num_nodes = 0;
+  for (uint32_t step=0; step < num_inputs_src - 1; ++step) {
+    mag_einsum_contraction_t possible[1024];
+    uint32_t num_possible = 0;
+    for (uint32_t i=0; i < num_inputs; ++i) {
+      for (uint32_t j=i+1; j < num_inputs; ++j) {
+        if ((inputs[i].charset & inputs[j].charset) == 0)
+          continue;
+        mag_einsum_add_contraction(
+          possible,
+          &num_possible,
+          sizeof(possible)/sizeof(*possible),
+          inputs,
+          num_inputs,
+          output,
+          dim_map,
+          i,
+          j,
+          path_cost,
+          cost_limit,
+          memory_limit
+        );
+      }
+    }
+    if (num_possible == 0) {
+      for (uint32_t i=0; i < num_inputs; ++i) {
+        for (uint32_t j=i+1; j < num_inputs; ++j) {
+          mag_einsum_add_contraction(
+            possible,
+            &num_possible,
+            sizeof(possible)/sizeof(*possible),
+            inputs,
+            num_inputs,
+            output,
+            dim_map,
+            i,
+            j,
+            path_cost,
+            cost_limit,
+            memory_limit
+          );
+        }
+      }
+    }
+    if (num_possible == 0) {
+      mag_einsum_path_node_t *node = &out_nodes[num_nodes++];
+      memset(node, 0, sizeof(*node));
+      node->num_inputs = num_inputs;
+      for (uint32_t i=0; i < num_inputs; ++i) {
+        node->inputs[i] = inputs[i];
+        node->positions[i] = i;
+      }
+      node->output = *output;
+      size_t cost = 0;
+      size_t scaling = 0;
+      mag_einsum_compute_cost_and_scaling(inputs, num_inputs, output, dim_map, &cost, &scaling);
+      path_cost += cost;
+      if (scaling > path_scaling)
+        path_scaling = scaling;
+      break;
+    }
+    uint32_t best_i = mag_einsum_find_best_contraction(possible, num_possible);
+    mag_einsum_contraction_t best = possible[best_i];
+    if (best.dims > path_scaling)
+      path_scaling = best.dims;
+    mag_einsum_subscript_t new_output;
+    mag_einsum_subscript_from_set_sorted_by_dim(
+      &new_output,
+      best.output,
+      dim_map
+    );
+    mag_contract(err, ERR_EINSUM, {}, num_nodes < MAG_EINSUM_MAX_INPUTS, "einsum: path too long: %zu >= %d", num_nodes, MAG_EINSUM_MAX_INPUTS);
+    {
+      mag_einsum_path_node_t *node = out_nodes+num_nodes++;
+      memset(node, 0, sizeof(*node));
+      node->num_inputs = 2;
+      node->inputs[0] = inputs[best.x];
+      node->inputs[1] = inputs[best.y];
+      node->positions[0] = best.x;
+      node->positions[1] = best.y;
+      node->output = new_output;
+    }
+    mag_einsum_remove_inputs_2(inputs, &num_inputs, best.x, best.y);
+    mag_contract(err, ERR_EINSUM, {}, num_inputs < MAG_EINSUM_MAX_INPUTS, "einsum: too many intermediate inputs: %u >= %d", num_inputs, MAG_EINSUM_MAX_INPUTS);
+    inputs[num_inputs++] = new_output;
+    path_cost += best.cost;
+  }
+  *out_num_nodes = num_nodes;
+  *out_cost = path_cost;
+  *out_scaling = path_scaling;
+  return MAG_STATUS_OK;
+}
+
 static mag_status_t mag_einsum_compute_path(
   mag_error_t *err,
   char *equation,
@@ -264,16 +730,19 @@ static mag_status_t mag_einsum_compute_path(
   mag_try(mag_einsum_parse(err, equation, &parsed));
   mag_contract(err, ERR_EINSUM, {}, parsed.num_inputs == num_args, "Number of operands does not match number of input subscripts: %u != %zu", parsed.num_inputs, num_args);
   mag_einsum_charset_t used_chars = 0;
-  for (const char *p = equation; *p; ++p) {
+  for (size_t i=0; i < parsed.num_inputs; ++i)
+    for (const char *p = parsed.inputs[i].buf; *p; ++p)
+      if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z'))
+        used_chars|=1ull << mag_einsum_label_id(*p);
+  for (const char *p=parsed.output.buf; *p; ++p)
     if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z'))
       used_chars|=1ull<<mag_einsum_label_id(*p);
-  }
   char rem_chars[53];
   size_t rem_len = 0;
-  for (char c = 'a'; c <= 'z'; ++c)
+  for (char c='a'; c <= 'z'; ++c)
     if (!(used_chars&(1ull<<mag_einsum_label_id(c))))
       rem_chars[rem_len++] = c;
-  for (char c = 'A'; c <= 'Z'; ++c)
+  for (char c='A'; c <= 'Z'; ++c)
     if (!(used_chars&(1ull<<mag_einsum_label_id(c))))
       rem_chars[rem_len++] = c;
   rem_chars[rem_len] = '\0';
@@ -314,7 +783,7 @@ static mag_status_t mag_einsum_compute_path(
     size_t in_len = strlen(in);
     int64_t ndim = args[i]->coords.rank;
     mag_einsum_charset_t in_set = 0;
-    for (size_t j = 0; j < in_len; ++j)
+    for (size_t j=0; j < in_len; ++j)
       in_set |= 1ull << mag_einsum_label_id(in[j]);
     inputs[i].str = parsed.inputs[i];
     inputs[i].charset = in_set;
@@ -322,7 +791,7 @@ static mag_status_t mag_einsum_compute_path(
     if (mag_popcnt64(in_set) < in_len) {
       int64_t local_dims[52] = {0};
       mag_einsum_charset_t local_present = 0;
-      for (size_t j = 0; j < in_len; ++j) {
+      for (size_t j=0; j < in_len; ++j) {
         char c = in[j];
         int id = mag_einsum_label_id(c);
         int64_t dim = args[i]->coords.shape[j];
@@ -337,18 +806,14 @@ static mag_status_t mag_einsum_compute_path(
         }
       }
     }
-    for (size_t j = 0; j < in_len; ++j) {
+    for (size_t j=0; j < in_len; ++j) {
       char c = in[j];
       int id = mag_einsum_label_id(c);
       int64_t dim = args[i]->coords.shape[j];
       if (dim_map.present&(1ull<<id)) {
         int64_t old = dim_map.dims[id];
-        mag_contract(err, ERR_EINSUM, {},
-          dim == 1 || old == 1 || old == dim,
-          "Cannot broadcast dimension %zu of input %zu to size %" PRIi64 ".",
-          j, i, old);
-        if (dim > old)
-          dim_map.dims[id] = dim;
+        mag_contract(err, ERR_EINSUM, {}, dim == 1 || old == 1 || old == dim, "Cannot broadcast dimension %zu of input %zu to size %" PRIi64 ".", j, i, old);
+        if (dim > old) dim_map.dims[id] = dim;
       } else {
         dim_map.present |= 1ull << id;
         dim_map.dims[id] = dim;
@@ -380,16 +845,34 @@ static mag_status_t mag_einsum_compute_path(
     &out_heuristics->naive_cost,
     &out_heuristics->naive_scaling
   );
-  out_heuristics->opt_cost = out_heuristics->naive_cost;
-  out_heuristics->opt_scaling = out_heuristics->naive_scaling;
-  memset(out_nodes, 0, sizeof(out_nodes[0]));
-  out_nodes[0].num_inputs = parsed.num_inputs;
-  for (size_t i=0; i < parsed.num_inputs; ++i) {
-    out_nodes[0].inputs[i] = inputs[i];
-    out_nodes[0].positions[i] = (uint32_t)i;
+  memset(out_nodes, 0, sizeof(out_nodes[0]) * MAG_EINSUM_MAX_INPUTS);
+  if (parsed.num_inputs <= 2) {
+    out_nodes[0].num_inputs = parsed.num_inputs;
+    for (size_t i=0; i < parsed.num_inputs; ++i) {
+      out_nodes[0].inputs[i] = inputs[i];
+      out_nodes[0].positions[i] = (uint32_t)i;
+    }
+    out_nodes[0].output = output;
+    *out_num_nodes = 1;
+    out_heuristics->opt_cost = out_heuristics->naive_cost;
+    out_heuristics->opt_scaling = out_heuristics->naive_scaling;
+  } else {
+    mag_try(mag_einsum_greedy_path(
+      err,
+      inputs,
+      parsed.num_inputs,
+      &output,
+      &dim_map,
+      out_heuristics->naive_cost,
+      max_size,
+      out_nodes,
+      out_num_nodes,
+      &out_heuristics->opt_cost,
+      &out_heuristics->opt_scaling
+    ));
+    mag_contract(err, ERR_EINSUM, {}, *out_num_nodes > 0, "einsum: empty path");
+    out_nodes[*out_num_nodes - 1].output = output;
   }
-  out_nodes[0].output = output;
-  *out_num_nodes = 1;
   return MAG_STATUS_OK;
 }
 
@@ -397,14 +880,6 @@ typedef struct mag_einsum_char_axis_t {
   char c;
   int64_t ax;
 } mag_einsum_char_axis_t;
-
-static int mag_einsum_pair_cmp_by_canonical_axis(const void *a, const void *b, void *usr) {
-  const mag_einsum_char_axis_t *x = a;
-  const mag_einsum_char_axis_t *y = b;
-  int64_t ax = ((const int64_t *)usr)[mag_einsum_label_id(x->c)];
-  int64_t ay = ((const int64_t *)usr)[mag_einsum_label_id(y->c)];
-  return (ax>ay) - (ax<ay);
-}
 
 static bool mag_einsum_axes_sorted_by_original_axis(const mag_einsum_char_axis_t *xs, int64_t n) {
   for (int64_t i=1; i < n; ++i)
@@ -417,7 +892,7 @@ static void mag_einsum_sort_str_ax(mag_einsum_char_axis_t *xs, int64_t n, const 
   for (int64_t i=1; i < n; ++i) {
     mag_einsum_char_axis_t v = xs[i];
     int64_t vkey = char_to_ax[mag_einsum_label_id(v.c)];
-    int64_t j = i - 1;
+    int64_t j=i - 1;
     while (j >= 0) {
       int64_t jkey = char_to_ax[mag_einsum_label_id(xs[j].c)];
       if (jkey <= vkey)
@@ -437,8 +912,8 @@ static mag_status_t mag_einsum_collapse_repeats(
 ) {
   const char *str = subscript->str.buf;
   int64_t rank = mag_tensor_rank(x);
-  const int64_t *shape = mag_tensor_shape_ptr(x);
-  const int64_t *strides = mag_tensor_strides_ptr(x);
+  const int64_t *shape = x->coords.shape;
+  const int64_t *strides = x->coords.strides;
   int64_t new_shape[MAG_EINSUM_MAX_SPEC];
   int64_t new_strides[MAG_EINSUM_MAX_SPEC];
   char new_str[MAG_EINSUM_MAX_SPEC];
@@ -477,22 +952,25 @@ static mag_status_t mag_einsum_collapse_repeats(
   return MAG_STATUS_OK;
 }
 
-static mag_status_t mag_einsum_naive(mag_error_t *err, mag_tensor_t **out_result, mag_einsum_path_node_t *node, mag_tensor_t **operands) {
-  for (uint32_t i=0; i < node->num_inputs; ++i) {
-    uint32_t pos = node->positions[i];
-    if ((size_t)mag_popcnt64(node->inputs[i].charset) <
-        strlen(node->inputs[i].str.buf)) {
-      mag_tensor_t *collapsed = NULL;
-      mag_try(mag_einsum_collapse_repeats(
-        err,
-        &collapsed,
-        &node->inputs[i],
-        operands[pos]
-      ));
-      mag_tensor_decref(operands[pos]);
-      operands[pos] = collapsed;
-    }
+static bool mag_einsum_can_dot(
+  const mag_einsum_path_node_t *node
+) {
+  if (node->num_inputs != 2)
+    return false;
+
+  const mag_einsum_subscript_t *a = &node->inputs[0];
+
+  for (const char *p = a->str.buf; *p; ++p) {
+    int id = mag_einsum_label_id(*p);
+
+    if (!(node->output.charset & (1ull << id)))
+      return true;
   }
+
+  return false;
+}
+
+static mag_status_t mag_einsum_naive(mag_error_t *err, mag_tensor_t **out_result, mag_einsum_path_node_t *node, mag_tensor_t **operands) {
   int64_t char_to_ax[52];
   for (int i=0; i < 52; ++i)
     char_to_ax[i] = -1;
@@ -581,7 +1059,7 @@ static mag_status_t mag_einsum_naive(mag_error_t *err, mag_tensor_t **out_result
     int id = mag_einsum_label_id(out_str[i]);
     reorder[i] = char_to_ax[id];
     int64_t offset = 0;
-    for (int64_t j = 0; j < num_sum_axes; ++j)
+    for (int64_t j=0; j < num_sum_axes; ++j)
       if (reorder[i] > sum_axes[j])
         ++offset;
     reorder[i] -= offset;
@@ -604,12 +1082,112 @@ static mag_status_t mag_einsum_naive(mag_error_t *err, mag_tensor_t **out_result
   return MAG_STATUS_OK;
 }
 
-static MAG_COLDPROC void mag_einsum_debug_print_path(
-  const char *equation,
-  const mag_einsum_path_heuristics_t *h,
-  const mag_einsum_path_node_t *nodes,
-  size_t num_nodes
+static mag_status_t mag_einsum_preprocess_node(
+  mag_error_t *err,
+  mag_einsum_path_node_t *node,
+  mag_tensor_t **operands
 ) {
+  for (uint32_t i=0; i < node->num_inputs; ++i) {
+    uint32_t pos = node->positions[i];
+    if ((size_t)mag_popcnt64(node->inputs[i].charset) < strlen(node->inputs[i].str.buf)) {
+      mag_tensor_t *collapsed = NULL;
+      mag_try(mag_einsum_collapse_repeats(
+        err,
+        &collapsed,
+        &node->inputs[i],
+        operands[pos]
+      ));
+      mag_tensor_decref(operands[pos]);
+      operands[pos] = collapsed;
+    }
+  }
+  int counts[52] = {0};
+  for (uint32_t i=0; i < node->num_inputs; ++i) {
+    mag_einsum_charset_t s = node->inputs[i].charset;
+    for (int id=0; id < 52; ++id)
+      if (s&(1ull<<id))
+        counts[id]++;
+  }
+  for (int id=0; id < 52; ++id)
+    if (node->output.charset&(1ull<<id))
+      counts[id]++;
+  for (uint32_t i=0; i < node->num_inputs; ++i) {
+    mag_einsum_subscript_t *in = &node->inputs[i];
+    uint32_t pos = node->positions[i];
+    int64_t sum_axes[MAG_EINSUM_MAX_SPEC];
+    int64_t num_sum_axes = 0;
+    for (int64_t ax=0; in->str.buf[ax]; ++ax) {
+      int id = mag_einsum_label_id(in->str.buf[ax]);
+      if (counts[id] == 1)
+        sum_axes[num_sum_axes++] = ax;
+    }
+    if (num_sum_axes == 0)
+      continue;
+    mag_tensor_t *summed = NULL;
+    mag_try(mag_sum(err, &summed, operands[pos], sum_axes, num_sum_axes, false));
+    mag_tensor_decref(operands[pos]);
+    operands[pos] = summed;
+    char new_str[MAG_EINSUM_MAX_SPEC];
+    int64_t w = 0;
+    for (int64_t ax=0; in->str.buf[ax]; ++ax) {
+      bool remove = false;
+      for (int64_t j=0; j < num_sum_axes; ++j) {
+        if (sum_axes[j] == ax) {
+          remove = true;
+          break;
+        }
+      }
+      if (!remove)
+        new_str[w++] = in->str.buf[ax];
+    }
+    new_str[w] = '\0';
+    snprintf(in->str.buf, sizeof(in->str.buf), "%s", new_str);
+    in->charset = 0;
+    for (int64_t ax=0; in->str.buf[ax]; ++ax)
+      in->charset|=1ull<<mag_einsum_label_id(in->str.buf[ax]);
+  }
+  return MAG_STATUS_OK;
+}
+
+static mag_status_t mag_einsum_execute_path(
+  mag_error_t *err,
+  mag_tensor_t **out_result,
+  mag_einsum_path_node_t *nodes,
+  size_t num_nodes,
+  const mag_tensor_t **args,
+  size_t num_args
+) {
+  mag_tensor_t *operands[MAG_EINSUM_MAX_INPUTS * 2];
+  size_t num_operands = num_args;
+  for (size_t i=0; i < num_args; ++i) {
+    operands[i] = (mag_tensor_t *)args[i];
+    mag_tensor_incref(operands[i]);
+  }
+  for (size_t n=0; n < num_nodes; ++n) {
+    mag_tensor_t *result = NULL;
+    mag_try(mag_einsum_preprocess_node(err, &nodes[n], operands));
+    mag_status_t stat;
+    if (mag_einsum_can_dot(&nodes[n])) stat = mag_einsum_dot_node(err, &result, &nodes[n], operands);
+    else stat = mag_einsum_naive(err, &result, &nodes[n], operands);
+    if (mag_iserr(stat)) {
+      for (size_t i=0; i < num_operands; ++i)
+        mag_tensor_decref(operands[i]);
+      return stat;
+    }
+    mag_contract(err, ERR_EINSUM, {}, num_operands < MAG_EINSUM_MAX_INPUTS * 2, "einsum: too many intermediate operands");
+    operands[num_operands++] = result;
+    for (int64_t i=(int64_t)nodes[n].num_inputs-1; i >= 0; --i) {
+      uint32_t pos = nodes[n].positions[i];
+      mag_contract(err, ERR_EINSUM, {}, pos < num_operands, "einsum: invalid path operand position");
+      mag_einsum_remove_operand_at(operands, &num_operands, pos);
+    }
+  }
+  mag_contract(err, ERR_EINSUM, {}, num_operands == 1, "einsum: internal path execution error, expected one final operand but got %zu", num_operands);
+  *out_result = *operands;
+  return MAG_STATUS_OK;
+}
+
+static MAG_COLDPROC void mag_einsum_debug_print_path(const char *equation, const mag_einsum_path_heuristics_t *h, const mag_einsum_path_node_t *nodes, size_t num_nodes) {
   printf("einsum: %s\n", equation);
   printf("  naive cost:       %zu\n", h->naive_cost);
   printf("  naive scaling:    %zu\n", h->naive_scaling);
@@ -645,7 +1223,7 @@ mag_status_t mag_einsum_eval(
   mag_einsum_path_heuristics_t heuristics = {0};
   mag_einsum_path_node_t nodes[MAG_EINSUM_MAX_INPUTS] = {0};
   size_t num_nodes = 0;
-  mag_status_t st = mag_einsum_compute_path(
+  mag_status_t stat = mag_einsum_compute_path(
     err,
     cloned,
     args,
@@ -654,21 +1232,21 @@ mag_status_t mag_einsum_eval(
     nodes,
     &num_nodes
   );
-  if (st != MAG_STATUS_OK) {
+  if (mag_iserr(stat)) {
     (*mag_alloc)(cloned, 0, 0);
-    return st;
+    return stat;
   }
   #if MAG_DEBUG
-    mag_einsum_debug_print_path(...);
+    mag_einsum_debug_print_path(cloned, &heuristics, nodes, num_nodes);
   #endif
-  mag_tensor_t *operands[MAG_EINSUM_MAX_INPUTS];
-  for (size_t i=0; i < num_args; ++i) {
-    operands[i] = (mag_tensor_t *)args[i];
-    mag_tensor_incref(operands[i]);
-  }
-  st = mag_einsum_naive(err, out_result, &nodes[0], operands);
-  for (size_t i=0; i < num_args; ++i)
-    mag_tensor_decref(operands[i]);
+  stat = mag_einsum_execute_path(
+    err,
+    out_result,
+    nodes,
+    num_nodes,
+    args,
+    num_args
+  );
   (*mag_alloc)(cloned, 0, 0);
-  return st;
+  return stat;
 }

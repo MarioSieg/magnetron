@@ -168,6 +168,37 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   return MAG_STATUS_OK;
 }
 
+mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
+  int64_t old_rank = x->coords.rank;
+  const int64_t *old_shape = x->coords.shape;
+  const int64_t *old_strides = x->coords.strides;
+  int64_t new_strides[MAG_MAX_DIMS];
+  mag_contract(err, ERR_INVALID_RANK, {}, rank >= old_rank, "Rank must be within [0, %" PRIi64 "]", old_rank);
+  for (int64_t i=0; i < rank; ++i) {
+    int64_t new_ax = rank-1-i;
+    int64_t old_ax = old_rank-1-i;
+    int64_t new_dim = shape[new_ax];
+    if (old_ax < 0) {
+      new_strides[new_ax] = 0;
+      continue;
+    }
+    int64_t old_dim = old_shape[old_ax];
+    int64_t old_stride = old_strides[old_ax];
+    mag_contract(err, ERR_INVALID_RANK, {}, old_dim == new_dim || old_dim == 1, "Cannot broadcast dimension %" PRIi64 " to %" PRIi64, old_dim, new_dim);
+    new_strides[new_ax] = old_dim == new_dim ? old_stride : 0;
+  }
+  return mag_as_strided(
+    err,
+    out,
+    mag_tensor_context(x),
+    x,
+    rank,
+    shape,
+    new_strides,
+    (int64_t)mag_tensor_data_offset(x)
+  );
+}
+
 static mag_status_t mag_tensor_dtor(void *self) {
   mag_tensor_t *t = self;
   mag_context_t *ctx = t->ctx;

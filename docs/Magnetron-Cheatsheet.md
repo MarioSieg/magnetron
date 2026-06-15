@@ -105,26 +105,27 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 
 ## Shape, Views & Indexing
 
-| Method              | Description                                  | Math                  | Example               |
-|---------------------|----------------------------------------------|-----------------------|-----------------------|
-| `clone()`           | Create a deep copy of the tensor             | N/A                   | `y = x.clone()`       |
-| `copy_(src)`        | Copy data from src into this tensor in-place | $self \leftarrow src$ | `x.copy_(y)`          |
-| `view(shape)`       | Create a view with new shape                 | N/A                   | `x.view(2, -1)`       |
-| `view_slice(d,s,l)` | Slice tensor without copying                 | $x[s:s+l]$            | `x.view_slice(0,0,4)` |
-| `reshape(shape)`    | Reshape tensor (may copy)                    | N/A                   | `x.reshape(4,3)`      |
-| `transpose(a,b)`    | Swap two dimensions                          | $x^T$                 | `x.transpose(0,1)`    |
-| `permute(dims)`     | Reorder dimensions arbitrarily               | N/A                   | `x.permute(1,0,2)`    |
-| `contiguous()`      | Ensure tensor is contiguous in memory        | N/A                   | `x = x.contiguous()`  |
-| `squeeze()`         | Remove dimensions of size 1                  | N/A                   | `x.squeeze()`         |
-| `unsqueeze(d)`      | Insert new dimension                         | N/A                   | `x.unsqueeze(0)`      |
-| `flatten(a,b)`      | Flatten a range of dimensions                | N/A                   | `x.flatten(1)`        |
-| `unflatten(s)`      | Expand flattened dimension                   | N/A                   | `x.unflatten((2,3))`  |
-| `narrow(d,s,l)`     | Take slice along dimension                   | N/A                   | `x.narrow(1,0,4)`     |
-| `movedim(a,b)`      | Move dimension to new position               | N/A                   | `x.movedim(0,-1)`     |
-| `select(d,i)`       | Select single index along dim                | $x[...,i]$            | `x.select(1,2)`       |
-| `split(n,d)`        | Split tensor into chunks                     | N/A                   | `x.split(4,1)`        |
-| `cat(xs,d)`         | Concatenate tensors                          | N/A                   | `Tensor.cat([a,b],1)` |
-| `gather(d,idx)`     | Gather elements by index tensor              | $y_i=x_{idx_i}$       | `x.gather(1,idx)`     |
+| Method                | Description                                                | Math                  | Example                   |
+|-----------------------|------------------------------------------------------------|-----------------------|---------------------------|
+| `clone()`             | Create a deep copy of the tensor                           | N/A                   | `y = x.clone()`           |
+| `copy_(src)`          | Copy data from src into this tensor in-place               | $self \leftarrow src$ | `x.copy_(y)`              |
+| `view(shape)`         | Create a view with new shape                               | N/A                   | `x.view(2, -1)`           |
+| `view_slice(d,s,l)`   | Slice tensor without copying                               | $x[s:s+l]$            | `x.view_slice(0,0,4)`     |
+| `reshape(shape)`      | Reshape tensor (may copy)                                  | N/A                   | `x.reshape(4,3)`          |
+| `broadcast_to(shape)` | Broadcast tensor to a target shape as a view when possible | N/A                   | `x.broadcast_to(2, 3, 4)` |
+| `transpose(a,b)`      | Swap two dimensions                                        | $x^T$                 | `x.transpose(0,1)`        |
+| `permute(dims)`       | Reorder dimensions arbitrarily                             | N/A                   | `x.permute(1,0,2)`        |
+| `contiguous()`        | Ensure tensor is contiguous in memory                      | N/A                   | `x = x.contiguous()`      |
+| `squeeze()`           | Remove dimensions of size 1                                | N/A                   | `x.squeeze()`             |
+| `unsqueeze(d)`        | Insert new dimension                                       | N/A                   | `x.unsqueeze(0)`          |
+| `flatten(a,b)`        | Flatten a range of dimensions                              | N/A                   | `x.flatten(1)`            |
+| `unflatten(s)`        | Expand flattened dimension                                 | N/A                   | `x.unflatten((2,3))`      |
+| `narrow(d,s,l)`       | Take slice along dimension                                 | N/A                   | `x.narrow(1,0,4)`         |
+| `movedim(a,b)`        | Move dimension to new position                             | N/A                   | `x.movedim(0,-1)`         |
+| `select(d,i)`         | Select single index along dim                              | $x[...,i]$            | `x.select(1,2)`           |
+| `split(n,d)`          | Split tensor into chunks                                   | N/A                   | `x.split(4,1)`            |
+| `cat(xs,d)`           | Concatenate tensors                                        | N/A                   | `Tensor.cat([a,b],1)`     |
+| `gather(d,idx)`       | Gather elements by index tensor                            | $y_i=x_{idx_i}$       | `x.gather(1,idx)`         |
 
 ---
 
@@ -193,19 +194,20 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 
 ## Binary Arithmetic
 
-| Method                    | Operator | Description                                   | Math                                              | Example                     |
-|---------------------------|----------|-----------------------------------------------|---------------------------------------------------|-----------------------------|
-| `add()`                   | `+`      | Elementwise addition                          | $x+y$                                             | `x + y`                     |
-| `sub()`                   | `-`      | Elementwise subtraction                       | $x-y$                                             | `x - y`                     |
-| `mul()`                   | `*`      | Elementwise multiplication                    | $x\cdot y$                                        | `x * y`                     |
-| `div()`                   | `/`      | Elementwise division                          | $\frac{x}{y}$                                     | `x / y`                     |
-| `floordiv()`              | `//`     | Elementwise floor division                    | $\lfloor\frac{x}{y}\rfloor$                       | `x // y`                    |
-| `mod()`                   | `%`      | Elementwise modulus                           | $x\bmod y$                                        | `x % y`                     |
-| `pow()`                   | `**`     | Elementwise exponentiation                    | $x^y$                                             | `x ** y`                    |
-| `matmul()`                | `@`      | Matrix multiplication                         | $XY$                                              | `x @ y`                     |
-| `scaled_matmul(w, scale)` | N/A      | Matrix multiplication with output/input scale | $XY\cdot s$ or implementation-defined scaled GEMM | `x.scaled_matmul(w, scale)` |
-| `min(y)`                  | N/A      | Elementwise minimum                           | $\min(x,y)$                                       | `x.min(y)`                  |
-| `max(y)`                  | N/A      | Elementwise maximum                           | $\max(x,y)$                                       | `x.max(y)`                  |
+| Method                    | Operator | Description                                   | Math                                              | Example                            |
+|---------------------------|----------|-----------------------------------------------|---------------------------------------------------|------------------------------------|
+| `add()`                   | `+`      | Elementwise addition                          | $x+y$                                             | `x + y`                            |
+| `sub()`                   | `-`      | Elementwise subtraction                       | $x-y$                                             | `x - y`                            |
+| `mul()`                   | `*`      | Elementwise multiplication                    | $x\cdot y$                                        | `x * y`                            |
+| `div()`                   | `/`      | Elementwise division                          | $\frac{x}{y}$                                     | `x / y`                            |
+| `floordiv()`              | `//`     | Elementwise floor division                    | $\lfloor\frac{x}{y}\rfloor$                       | `x // y`                           |
+| `mod()`                   | `%`      | Elementwise modulus                           | $x\bmod y$                                        | `x % y`                            |
+| `pow()`                   | `**`     | Elementwise exponentiation                    | $x^y$                                             | `x ** y`                           |
+| `matmul()`                | `@`      | Matrix multiplication                         | $XY$                                              | `x @ y`                            |
+| `Tensor.einsum(eq, *xs)`  | N/A      | Einstein summation over one or more tensors   | equation-defined contractions                     | `Tensor.einsum("ij,jk->ik", a, b)` |
+| `scaled_matmul(w, scale)` | N/A      | Matrix multiplication with output/input scale | $XY\cdot s$ or implementation-defined scaled GEMM | `x.scaled_matmul(w, scale)`        |
+| `min(y)`                  | N/A      | Elementwise minimum                           | $\min(x,y)$                                       | `x.min(y)`                         |
+| `max(y)`                  | N/A      | Elementwise maximum                           | $\max(x,y)$                                       | `x.max(y)`                         |
 
 ## Comparison
 
