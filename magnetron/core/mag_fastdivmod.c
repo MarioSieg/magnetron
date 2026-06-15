@@ -50,7 +50,7 @@ static uint64_t mag_u128_div_64(uint64_t hi, uint64_t lo, uint64_t d, uint64_t *
 }
 
 mag_fastdiv_t mag_fastdiv_init(uint64_t d) {
-  mag_assert(d != 0, "x/0 is now allowed");
+  mag_assert(d != 0, "fastdivmod: division by zero in precompute.");
   mag_fastdiv_t result;
   uint32_t fl2d = mag_fls64(d);
   if (!(d & (d-1))) {

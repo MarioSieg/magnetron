@@ -102,7 +102,7 @@ void mag_topo_sort(mag_tensor_t *root, mag_topo_set_t *out_sorted) {
     }
     mag_tensor_t *child = au->op_inputs[top->next_child_idx++];
     if (child && child->flags & MAG_TFLAG_REQUIRES_GRAD && !mag_hashset_contains_key(&visited, child)) {
-      mag_assert(mag_hashset_insert(&visited, child) != MAG_HASHSET_FULL, "Hashset exhausted");
+      mag_assert(mag_hashset_insert(&visited, child) != MAG_HASHSET_FULL, "toposort: hash set is full during topological sort.");
       mag_topo_stack_push(&stack, child);
     }
   }

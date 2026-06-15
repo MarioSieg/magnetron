@@ -87,7 +87,7 @@ static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_device_t *device, mag_error_t
 static mag_status_t mag_cpu_storage_dtor(void *self) {
   mag_storage_buffer_t *buf = self;
   mag_context_t *ctx = buf->ctx;
-  mag_assert(ctx->telemetry.num_alive_storages > 0, "double freed storage");
+  mag_assert(ctx->telemetry.num_alive_storages > 0, "cpu: double free detected on CPU storage buffer.");
   --ctx->telemetry.num_alive_storages;
   if (!(buf->flags & MAG_STORAGE_FLAG_BORROWED))
     (*mag_try_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
@@ -114,7 +114,7 @@ static mag_status_t mag_cpu_alloc_storage(mag_device_t *device, mag_error_t *err
     void *base = (*mag_try_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
     mag_contract(err, ERR_MEMORY_ALLOCATION_FAILED, {
       mag_slab_free(&ctx->storage_slab, buf);
-    }, base != NULL, "Failed to allocate CPU storage buffer of size %zu bytes", size);
+    }, base != NULL, "cpu: failed to allocate CPU storage buffer of %zu bytes.", size);
     buf->base = (uintptr_t)base;
   }
   mag_assert2(!(buf->base&(MAG_CPU_BUF_ALIGN-1))); /* Ensure alignment */

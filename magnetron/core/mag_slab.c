@@ -111,8 +111,8 @@ void mag_slab_free(mag_slab_alloc_t *pool, void *blk) {
   mag_assert2(pool);
   mag_assert2(blk);
 #ifdef MAG_DEBUG
-  mag_assert(((uintptr_t)blk & (pool->block_align-1)) == 0, "invalid alignment");
-  mag_assert(mag_fixed_pool_owns_ptr(pool, blk), "pointer not owned by pool");
+  mag_assert(((uintptr_t)blk & (pool->block_align-1)) == 0, "slab: block %p is not aligned to %zu bytes.", blk, (size_t)pool->block_align);
+  mag_assert(mag_fixed_pool_owns_ptr(pool, blk), "slab: block %p is not owned by this fixed pool.", blk);
 #endif
   *(void **)blk = pool->free_list;
   pool->free_list = blk;

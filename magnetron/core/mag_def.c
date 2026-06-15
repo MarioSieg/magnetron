@@ -220,7 +220,7 @@ extern __declspec(dllimport) int __stdcall WideCharToMultiByte(
 
 /* Open file. Basically fopen but with UTF-8 support on Windows. */
 FILE *mag_fopen(const char *file, const char *mode) {
-  mag_assert(file && *file && mode && *mode, "Invalid file name or mode");
+  mag_assert(file && *file && mode && *mode, "fopen: invalid file name or mode.");
   FILE *f = NULL;
 #ifdef _WIN32
   wchar_t w_mode[64];

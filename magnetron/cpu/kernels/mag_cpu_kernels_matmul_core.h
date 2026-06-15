@@ -21,7 +21,7 @@ static MAG_HOTPROC mag_status_t mag_matmul_generic(mag_error_t *err, const mag_k
     case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
     case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
     case MAG_MATMUL_TYPE_BMM_GEMM: mag_matmul_bmm(payload, type); break;
-    default: mag_panic("NYI!");
+    default: mag_panic("matmul: unsupported kernel type %d.", (int)type);
   }
   return MAG_STATUS_OK;
 }
@@ -36,7 +36,7 @@ static MAG_HOTPROC mag_status_t mag_matmul_fp8w_scaled(mag_error_t *err, const m
     case MAG_MATMUL_TYPE_GEMV_MAT_VEC: mag_matmul_fp8w_scaled_gemv_mat_vec(payload); break;
     case MAG_MATMUL_TYPE_GEMM: mag_matmul_fp8w_scaled_gemm(payload); break;
     case MAG_MATMUL_TYPE_BMM: mag_matmul_fp8w_scaled_bmm(payload); break;
-    default: mag_panic("NYI!");
+    default: mag_panic("scaled_matmul: unsupported FP8 kernel type %d.", (int)type);
   }*/
   return MAG_STATUS_OK;
 }

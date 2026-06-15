@@ -54,7 +54,7 @@ static inline mag_op_attr_t mag_op_attr_int64(int64_t v) { return (mag_op_attr_t
 static inline mag_op_attr_t mag_op_attr_float64(double v) { return (mag_op_attr_t){.tag=MAG_OP_ATTR_TYPE_FLOAT64, .value={.float64=v}}; }
 static inline mag_op_attr_t mag_op_attr_ptr(void *v) { return (mag_op_attr_t){.tag=MAG_OP_ATTR_TYPE_PTR, .value={.ptr=v}}; }
 
-#define mag_check_tag(T) mag_assert(opt.tag==MAG_OP_ATTR_TYPE_##T, "Op attribute stores wrong type code: %d", opt.tag);
+#define mag_check_tag(T) mag_assert(opt.tag==MAG_OP_ATTR_TYPE_##T, "op_attr: unexpected type tag %d.", opt.tag);
 static inline bool mag_op_attr_unwrap_bool(mag_op_attr_t opt) { mag_check_tag(BOOL);  return opt.value.b; }
 static inline uint64_t mag_op_attr_unwrap_uint64(mag_op_attr_t opt) { mag_check_tag(U64) ;return opt.value.uint64_t; }
 static inline int64_t mag_op_attr_unwrap_int64(mag_op_attr_t opt) { mag_check_tag(I64); return opt.value.int64_t; }
@@ -75,14 +75,14 @@ static inline void mag_op_attr_registry_init(mag_op_attr_registry_t *set) {
 }
 
 static inline size_t mag_op_attr_registry_insert(mag_op_attr_registry_t *set, mag_op_attr_t param) {
-  mag_assert(set->count < MAG_MAX_OP_PARAMS, "too many operation parameters: %u, max=%d", set->count, MAG_MAX_OP_PARAMS);
+  mag_assert(set->count < MAG_MAX_OP_PARAMS, "op_attr: too many operator parameters (%u, max %d).", set->count, MAG_MAX_OP_PARAMS);
   set->slots[set->count] = param;
   return set->count++;
 }
 
 static inline void mag_op_attr_registry_store(mag_op_attr_registry_t *set, size_t i, mag_op_attr_t param) {
-  mag_assert(i < set->count, "Invalid operation parameter index: #%zu", i);
-  mag_assert(mag_op_attr_is_empty(set->slots[i]), "Operation parameter at #%zu already set", i);
+  mag_assert(i < set->count, "op_attr: parameter index %zu is out of range (count %u).", i, set->count);
+  mag_assert(mag_op_attr_is_empty(set->slots[i]), "op_attr: parameter at index %zu is already set.", i);
   set->slots[i] = param;
 }
 

@@ -209,7 +209,7 @@ static MAG_HOTPROC void mag_matmul_bmm(const mag_kernel_payload_t *payload, mag_
     case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT: mag_matmul_bmm_vec_mat(payload); return;
     case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: mag_matmul_bmm_mat_vec(payload); return;
     case MAG_MATMUL_TYPE_BMM_GEMM: mag_matmul_bmm_gemm(payload); return;
-    default: mag_panic("Invalid BMM matmul type: %s", mag_matmul_type_name(type)); return;
+    default: mag_panic("matmul: invalid BMM matmul type '%s'.", mag_matmul_type_name(type)); return;
   }
 }
 

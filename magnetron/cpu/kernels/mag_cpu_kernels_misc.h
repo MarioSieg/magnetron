@@ -164,7 +164,7 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
       for (int64_t flat=ra; flat < rb; ++flat) { \
         int64_t g = bi[flat]; \
         if (g < 0) g += ax; \
-        mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "Invalid gather axis, g must be within [0, %" PRIi64 ")", ax); \
+        mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
         int64_t k = flat%inner; \
         int64_t t = flat/inner; \
         int64_t o = t/out_ax; \
@@ -174,7 +174,7 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
     } \
     if (mag_likely(src_contig && r_contig && i_contig && index->coords.rank == 1)) { \
       int64_t idx_len = index->coords.shape[0]; \
-      mag_contract(err, ERR_KERNEL_FAILURE, {}, r->coords.shape[axis] == idx_len, "Invalid shape permutation length. %" PRIi64 " != %" PRIi64, r->coords.shape[axis], idx_len); \
+      mag_contract(err, ERR_KERNEL_FAILURE, {}, r->coords.shape[axis] == idx_len, "gather: output shape along axis %" PRIi64 " (%" PRIi64 ") does not match index length %" PRIi64 ".", (int64_t)axis, r->coords.shape[axis], idx_len); \
       int64_t block = inner; \
       int64_t groups = outer*idx_len; \
       int64_t gra = ra/block; \
@@ -184,7 +184,7 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
         int64_t j = group%idx_len; \
         int64_t g = bi[j]; \
         if (g < 0) g += ax; \
-        mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "Invalid gather axis: %" PRIi64 " must be within [0, %" PRIi64 ")", g, ax); \
+        mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
         int64_t dst_base = (o*idx_len + j)*inner; \
         int64_t src_base = (o*ax + g)*inner; \
         int64_t a = 0; \
@@ -225,7 +225,7 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
         gather_idx = bi[index_offset]; \
       } else if (index->coords.rank == 1) { \
         int64_t idx_pos = oc[axis]; \
-        mag_contract(err, ERR_KERNEL_FAILURE, {}, idx_pos >= 0 && idx_pos < index->coords.shape[0], "Index position: %" PRIi64 " must be within [0, %" PRIi64 ")", idx_pos, index->coords.shape[0]); \
+        mag_contract(err, ERR_KERNEL_FAILURE, {}, idx_pos >= 0 && idx_pos < index->coords.shape[0], "gather: index position %" PRIi64 " is out of range [0, %" PRIi64 ").", idx_pos, index->coords.shape[0]); \
         gather_idx = bi[idx_pos * index->coords.strides[0]]; \
       } else { \
         int64_t index_offset = 0; \
@@ -234,7 +234,7 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
         gather_idx = bi[index_offset]; \
       } \
       if (gather_idx < 0) gather_idx += ax; \
-      mag_contract(err, ERR_KERNEL_FAILURE, {}, gather_idx >= 0 && gather_idx < ax, "Gather index: %" PRIi64 " must be within [0, %" PRIi64 ")", gather_idx, ax); \
+      mag_contract(err, ERR_KERNEL_FAILURE, {}, gather_idx >= 0 && gather_idx < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", gather_idx, ax); \
       if (full || index->coords.rank == 1) { \
         for (int64_t dim=0; dim < src->coords.rank; ++dim) sc[dim] = oc[dim]; \
         sc[axis] = gather_idx; \

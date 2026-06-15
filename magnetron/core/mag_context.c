@@ -157,11 +157,10 @@ mag_context_t *mag_ctx_create() {
   /* Create selected compute device. */
   ctx->backend_registry = mag_backend_registry_init(ctx);
   mag_assert(ctx->backend_registry != NULL,
-    "\nNo magnetron compute backends found!"
-    "\nBackends are loaded dynamically as shared libraries in the directory containing the magnetron_core library, but none were found."
-    "\nMake sure you have at least one backend (e.g. magnetron_cpu) next to the magnetron_core library within the venv or installation path."
-    "\nThe backend shared library must be named magnetron_<backend>.{so|dylib|dll}"
-    "\nCheck the searched path manually to see if any backends were found."
+    "context: no magnetron compute backends found.\n"
+    "Backends are loaded as shared libraries next to libmagnetron_core, but none were located.\n"
+    "Ensure at least one backend (e.g. magnetron_cpu) is installed alongside libmagnetron_core,\n"
+    "and that the file is named magnetron_<backend>.{so,dylib,dll}."
   );
 
   /* Seed prng once with secure system entropy */
@@ -188,7 +187,7 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
   bool leaks_detected = ctx->telemetry.num_alive_tensors || ctx->telemetry.num_alive_storages;
   if (mag_unlikely(leaks_detected)) {
     char msg[256] = {0};
-    snprintf(msg, sizeof(msg), "magnetron context destroyed with %zu leaked tensors and %zu leaked storages", ctx->telemetry.num_alive_tensors, ctx->telemetry.num_alive_storages);
+    snprintf(msg, sizeof(msg), "context: destroyed with %zu leaked tensors and %zu leaked storage buffers.", ctx->telemetry.num_alive_tensors, ctx->telemetry.num_alive_storages);
     if (suppress_leak_detection) mag_log_warn("%s", msg);
     else mag_panic("%s", msg);
   }

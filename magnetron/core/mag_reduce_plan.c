@@ -35,9 +35,9 @@ mag_status_t mag_reduce_plan_init(
   }
   int64_t ax[MAG_MAX_DIMS];
   int64_t rank = rank_in;
-  mag_contract(err, ERR_INVALID_RANK, {}, dims_in != NULL || rank == 0, "Either dims must be non-NULL or rank must be 0");
-  mag_contract(err, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "Invalid dimensions rank, must be [0, %d], but is %" PRIi64, MAG_MAX_DIMS, rank);
-  mag_contract(err, ERR_INVALID_RANK, {}, xr >= rank, "Cannot reduce over more dimensions than tensor has: rank=%" PRIi64 ", dims=%" PRIi64, xr, rank);
+  mag_contract(err, ERR_INVALID_RANK, {}, dims_in != NULL || rank == 0, "reduce: dims must be non-NULL when rank is non-zero.");
+  mag_contract(err, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "reduce: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
+  mag_contract(err, ERR_INVALID_RANK, {}, xr >= rank, "reduce: cannot reduce over %" PRIi64 " dimensions of a tensor with rank %" PRIi64 ".", rank, xr);
   if (!dims_in && !rank) { /* canonicalize dims (global reduce, negatives, sort, unique) */
     rank = xr;
     for (int64_t i=0; i < rank; ++i) ax[i] = i;
@@ -45,7 +45,7 @@ mag_status_t mag_reduce_plan_init(
     for (int64_t i=0; i < rank; ++i) {
       int64_t a = dims_in[i];
       if (a < 0) a += xr;
-      mag_contract(err, ERR_INVALID_DIM, {}, 0 <= a && a < xr, "Axis out of bounds: %" PRIi64 " for rank %" PRIi64, a, xr);
+      mag_contract(err, ERR_INVALID_DIM, {}, 0 <= a && a < xr, "reduce: axis %" PRIi64 " is out of bounds for tensor of rank %" PRIi64 ".", a, xr);
       ax[i] = a;
     }
     qsort(ax, (size_t)rank, sizeof(int64_t), &mag_cmp_axis);
@@ -58,8 +58,8 @@ mag_status_t mag_reduce_plan_init(
   int64_t prev=-1;
   for (int64_t i=0; i < rank; ++i) {
     int64_t a = ax[i];
-    mag_contract(err, ERR_INVALID_DIM, {}, 0 <= a && a < xr, "Axis out of bounds: %" PRIi64 " for rank %" PRIi64, a, xr);
-    mag_contract(err, ERR_INVALID_DIM, {}, a > prev, "Axes must be strictly increasing and unique");
+    mag_contract(err, ERR_INVALID_DIM, {}, 0 <= a && a < xr, "reduce: axis %" PRIi64 " is out of bounds for tensor of rank %" PRIi64 ".", a, xr);
+    mag_contract(err, ERR_INVALID_DIM, {}, a > prev, "reduce: axes must be strictly increasing and unique.");
     prev = a;
   }
   plan->rank = rank;

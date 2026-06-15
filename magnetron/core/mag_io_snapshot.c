@@ -84,7 +84,7 @@ typedef struct mag_mem_stream_t {
 
 static mag_status_t mag_stream_from_mapped_file(mag_error_t *err, mag_mem_stream_t *s, mag_mmap_owner_t *owner, bool write) {
   memset(s, 0, sizeof(*s));
-  mag_contract(err, ERR_FAILED_TO_MAP_FILE, {}, owner && owner->file.map && owner->file.fs, "Invalid mmap owner");
+  mag_contract(err, ERR_FAILED_TO_MAP_FILE, {}, owner && owner->file.map && owner->file.fs, "snapshot: invalid memory-mapped file owner.");
   s->base = s->pos = owner->file.map;
   s->end = s->base + owner->file.fs;
   if (write) s->flags|=MAG_MEM_STREAM_FLAGS_WRITE;
@@ -98,9 +98,9 @@ static void mag_stream_close(mag_mem_stream_t *stream) {
 
 static mag_status_t mag_stream_mmap_file_w(mag_error_t *err, mag_mem_stream_t *stream, mag_mapped_file_t *map, const char *path, size_t size) {
   memset(stream, 0, sizeof(*stream));
-  mag_contract(err, ERR_FAILED_TO_MAP_FILE, {}, path != NULL && *path, "Invalid mmap path");
-  mag_contract(err, ERR_FAILED_TO_MAP_FILE, {}, size > 0, "Invalid mmap size");
-  mag_contract(err, ERR_FAILED_TO_MAP_FILE, {}, mag_map_file(map, path, size, MAG_MAP_WRITE), "Failed to map file");
+  mag_contract(err, ERR_FAILED_TO_MAP_FILE, {}, path != NULL && *path, "snapshot: file path for memory mapping must not be empty.");
+  mag_contract(err, ERR_FAILED_TO_MAP_FILE, {}, size > 0, "snapshot: file size for memory mapping must be > 0.");
+  mag_contract(err, ERR_FAILED_TO_MAP_FILE, {}, mag_map_file(map, path, size, MAG_MAP_WRITE), "snapshot: failed to memory-map file '%s'.", path);
   stream->base = stream->pos = map->map;
   stream->end = stream->base + map->fs;
   stream->flags|=MAG_MEM_STREAM_FLAGS_WRITE;
@@ -111,8 +111,8 @@ static size_t mag_stream_needle(const mag_mem_stream_t *stream) { return (size_t
 static size_t mag_stream_remaining(const mag_mem_stream_t *stream) { return (size_t)(stream->end - stream->pos); }
 
 static mag_status_t mag_stream_wu32_le(mag_error_t *err, mag_mem_stream_t *stream, uint32_t val) {
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= sizeof(val), "Not enough space to write uint32");
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "Stream is not writable");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= sizeof(val), "snapshot: stream has insufficient capacity to write a uint32.");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "snapshot: stream is read-only.");
   #ifdef MAG_BIG_ENDIAN
     val = mag_bswap32(val);
   #endif
@@ -122,7 +122,7 @@ static mag_status_t mag_stream_wu32_le(mag_error_t *err, mag_mem_stream_t *strea
 }
 
 static mag_status_t mag_stream_ru32_le(mag_error_t *err, mag_mem_stream_t *stream, uint32_t *val) {
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= sizeof(*val), "Not enough space to read uint32");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= sizeof(*val), "snapshot: stream has insufficient data to read a uint32.");
   memcpy(val, stream->pos, sizeof(*val));
   stream->pos += sizeof(*val);
   #ifdef MAG_BIG_ENDIAN
@@ -132,8 +132,8 @@ static mag_status_t mag_stream_ru32_le(mag_error_t *err, mag_mem_stream_t *strea
 }
 
 static mag_status_t mag_stream_wu64_le(mag_error_t *err, mag_mem_stream_t *stream, uint64_t val) {
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= sizeof(val), "Not enough space to write uint64");
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "Stream is not writable");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= sizeof(val), "snapshot: stream has insufficient capacity to write a uint64.");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "snapshot: stream is read-only.");
   #ifdef MAG_BIG_ENDIAN
     val = mag_bswap64(val);
   #endif
@@ -143,7 +143,7 @@ static mag_status_t mag_stream_wu64_le(mag_error_t *err, mag_mem_stream_t *strea
 }
 
 static mag_status_t mag_stream_ru64_le(mag_error_t *err, mag_mem_stream_t *stream, uint64_t *val) {
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= sizeof(*val), "Not enough space to read uint64");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= sizeof(*val), "snapshot: stream has insufficient data to read a uint64.");
   memcpy(val, stream->pos, sizeof(*val));
   stream->pos += sizeof(*val);
   #ifdef MAG_BIG_ENDIAN
@@ -153,12 +153,12 @@ static mag_status_t mag_stream_ru64_le(mag_error_t *err, mag_mem_stream_t *strea
 }
 
 static mag_status_t mag_stream_wstr(mag_error_t *err, mag_mem_stream_t *stream, const uint8_t *str) {
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "Stream is not writable");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "snapshot: stream is read-only.");
   size_t len = strlen((const char *)str);
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, len <= MAG_SNAP_MAX_STRLEN && len <= UINT32_MAX, "String len exceeds limit, max len is: %u, actual len is: %zu", MAG_SNAP_MAX_STRLEN, len);
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, mag_utf8_validate(str, len), "Invalid UTF-8 in string");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, len <= MAG_SNAP_MAX_STRLEN && len <= UINT32_MAX, "snapshot: string length %zu exceeds the maximum of %u.", len, MAG_SNAP_MAX_STRLEN);
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, mag_utf8_validate(str, len), "snapshot: string contains invalid UTF-8.");
   mag_try(mag_stream_wu32_le(err, stream, (uint32_t)len));
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "Not enough space to write string data");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "snapshot: stream has insufficient capacity to write string data.");
   memcpy(stream->pos, str, len);
   stream->pos += len;
   return MAG_STATUS_OK;
@@ -167,23 +167,23 @@ static mag_status_t mag_stream_wstr(mag_error_t *err, mag_mem_stream_t *stream, 
 static mag_status_t mag_stream_rstr(mag_error_t *err, mag_mem_stream_t *stream, uint8_t **out_str) {
   uint32_t len = 0;
   mag_try(mag_stream_ru32_le(err, stream, &len));
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, len <= MAG_SNAP_MAX_STRLEN, "String length in stream exceeds limit, max len is: %u, actual len is: %u", MAG_SNAP_MAX_STRLEN, len);
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "Not enough data to read string");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, len <= MAG_SNAP_MAX_STRLEN, "snapshot: string length %u in stream exceeds the maximum of %u.", len, MAG_SNAP_MAX_STRLEN);
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "snapshot: stream has insufficient data to read the string.");
   uint8_t *str = (*mag_alloc)(NULL, len+1, 0);
   memcpy(str, stream->pos, len);
   str[len] = '\0';
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, mag_utf8_validate(str, len), "Invalid UTF-8 in string");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, mag_utf8_validate(str, len), "snapshot: string in stream contains invalid UTF-8.");
   stream->pos += len;
   *out_str = str;
   return MAG_STATUS_OK;
 }
 
 static mag_status_t mag_stream_wbuf(mag_error_t *err, mag_mem_stream_t *stream, const void *buf, size_t len) {
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "Stream is not writable");
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, buf != NULL || len == 0, "Invalid buffer pointer");
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, len <= UINT32_MAX, "Buffer size exceeds limit, max len is: %u, actual buf len is: %zu", UINT32_MAX, len);
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "snapshot: stream is read-only.");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, buf != NULL || len == 0, "snapshot: buffer pointer must not be NULL when length is non-zero.");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, len <= UINT32_MAX, "snapshot: buffer size %zu exceeds the maximum of %u.", len, UINT32_MAX);
   mag_try(mag_stream_wu32_le(err, stream, (uint32_t)len));
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "Not enough space to write buffer data");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "snapshot: stream has insufficient capacity to write buffer data.");
   if (len) {
     memcpy(stream->pos, buf, len);
     stream->pos += len;
@@ -192,16 +192,16 @@ static mag_status_t mag_stream_wbuf(mag_error_t *err, mag_mem_stream_t *stream, 
 }
 
 static mag_status_t mag_stream_wbytes(mag_error_t *err, mag_mem_stream_t *stream, const void *buf, size_t len) {
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "Stream is not writable");
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "Not enough space to write bytes");
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, buf != NULL || len == 0, "Invalid buffer pointer");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "snapshot: stream is read-only.");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "snapshot: stream has insufficient capacity to write %zu bytes.", len);
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, buf != NULL || len == 0, "snapshot: buffer pointer must not be NULL when length is non-zero.");
   if (len) memcpy(stream->pos, buf, len);
   stream->pos += len;
   return MAG_STATUS_OK;
 }
 
 static mag_status_t mag_stream_rbytes_view(mag_error_t *err, mag_mem_stream_t *stream, const uint8_t **out, size_t len) {
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "Not enough data to read bytes");
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, (size_t)(stream->end - stream->pos) >= len, "snapshot: stream has insufficient data to read %zu bytes.", len);
   *out = stream->pos;
   stream->pos += len;
   return MAG_STATUS_OK;
@@ -237,9 +237,9 @@ mag_static_assert(!(sizeof(mag_file_header_t)&3));
 mag_static_assert(sizeof(mag_file_header_t) == MAG_FILE_HEADER_SIZE);
 
 static mag_status_t mag_file_header_serialize(mag_error_t *err, const mag_file_header_t *header, mag_mem_stream_t *stream, uint8_t **u32_chk_patch_needle) {
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, header->magic == MAG_SNAP_FILE_MAGIC, "Invalid file header magic! Actual: 0x%x, expected: 0x%x", header->magic, MAG_SNAP_FILE_MAGIC);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, header->magic == MAG_SNAP_FILE_MAGIC, "snapshot: invalid file magic (got 0x%x, expected 0x%x).", header->magic, MAG_SNAP_FILE_MAGIC);
   mag_try(mag_stream_wu32_le(err, stream, header->magic));
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, header->version == MAG_SNAPSHOT_VERSION, "Unsupported snapshot version! Actual: %u, expected: %u", header->version, MAG_SNAPSHOT_VERSION);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, header->version == MAG_SNAPSHOT_VERSION, "snapshot: unsupported version (got %u, expected %u).", header->version, MAG_SNAPSHOT_VERSION);
   mag_try(mag_stream_wu32_le(err, stream, header->version));
   mag_try(mag_stream_wu64_le(err, stream, header->timestamp));
   *u32_chk_patch_needle = stream->pos; /* Needle where the checksum is overwritten later */
@@ -252,13 +252,13 @@ static mag_status_t mag_file_header_serialize(mag_error_t *err, const mag_file_h
 
 static mag_status_t mag_file_header_deserialize(mag_error_t *err, mag_file_header_t *header, mag_mem_stream_t *stream) {
   mag_try(mag_stream_ru32_le(err, stream, &header->magic));
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, header->magic == MAG_SNAP_FILE_MAGIC, "Invalid file header magic! Actual: 0x%x, expected: 0x%x", header->magic, MAG_SNAP_FILE_MAGIC);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, header->magic == MAG_SNAP_FILE_MAGIC, "snapshot: invalid file magic (got 0x%x, expected 0x%x).", header->magic, MAG_SNAP_FILE_MAGIC);
   mag_try(mag_stream_ru32_le(err, stream, &header->version));
   /* Cleanly handle if file version is too new or too old. Right now we don't support backwards compat (: */
   if (mag_unlikely(header->version != MAG_SNAPSHOT_VERSION)) {
-    if (header->version < MAG_SNAPSHOT_VERSION) mag_log_error("Snapshot file version is older than library version. Actual: %u, expected: %u. Update Magnetron or recreate the file", header->version, MAG_SNAPSHOT_VERSION);
-    else mag_log_error("Snapshot file version is newer than library version. Actual: %u, expected: %u. Update Magnetron to read this file", header->version, MAG_SNAPSHOT_VERSION);
-    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, header->version == MAG_SNAPSHOT_VERSION, "Unsupported snapshot version! Actual: %u, expected: %u", header->version, MAG_SNAPSHOT_VERSION);
+    if (header->version < MAG_SNAPSHOT_VERSION) mag_log_error("Snapshot file version %u is older than library version %u; recreate the file or downgrade Magnetron.", header->version, MAG_SNAPSHOT_VERSION);
+    else mag_log_error("Snapshot file version %u is newer than library version %u; upgrade Magnetron to read this file.", header->version, MAG_SNAPSHOT_VERSION);
+    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, header->version == MAG_SNAPSHOT_VERSION, "snapshot: unsupported version (got %u, expected %u).", header->version, MAG_SNAPSHOT_VERSION);
   }
   mag_try(mag_stream_ru64_le(err, stream, &header->timestamp));
   mag_try(mag_stream_ru32_le(err, stream, &header->checksum));
@@ -306,24 +306,24 @@ static mag_status_t mag_tensor_desc_deserialize(mag_error_t *err, mag_tensor_des
   mag_try(mag_stream_ru32_le(err, stream, &packed));
   uint8_t dtype;
   mag_unpack4xu8_le(packed, &desc->rank, &dtype, &desc->aux0, &desc->aux1);
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, desc->rank < MAG_SNAP_MAX_RANK, "Invalid tensor rank in stream: %u, max supported rank is: %u", desc->rank, MAG_SNAP_MAX_RANK);
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, dtype < MAG_DTYPE__NUM, "Invalid tensor dtype in stream: %d", (int)dtype);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, desc->rank < MAG_SNAP_MAX_RANK, "snapshot: invalid tensor rank %u (maximum is %u).", desc->rank, MAG_SNAP_MAX_RANK);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, dtype < MAG_DTYPE__NUM, "snapshot: invalid tensor dtype %d.", (int)dtype);
   desc->dtype = dtype;
   mag_try(mag_stream_ru32_le(err, stream, &desc->key_id));
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, desc->key_id < pool_len, "Invalid key id in stream: %u, pool len is: %u", desc->key_id, pool_len);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, desc->key_id < pool_len, "snapshot: tensor key id %u is out of range (pool size %u).", desc->key_id, pool_len);
   mag_try(mag_stream_ru64_le(err, stream, &desc->numel));
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, desc->numel > 0 && desc->numel <= INT64_MAX, "Invalid numel in stream: %zu", (size_t)desc->numel);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, desc->numel > 0 && desc->numel <= INT64_MAX, "snapshot: invalid tensor numel %zu.", (size_t)desc->numel);
   mag_try(mag_stream_ru64_le(err, stream, &desc->offset));
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, !(desc->offset&(MAG_CPU_BUF_ALIGN-1)), "Tensor data offset in stream is not properly aligned: %zu, required alignment is: %u", (size_t)desc->offset, MAG_CPU_BUF_ALIGN);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, !(desc->offset&(MAG_CPU_BUF_ALIGN-1)), "snapshot: tensor data offset %zu is not aligned to %u bytes.", (size_t)desc->offset, MAG_CPU_BUF_ALIGN);
   int64_t prod = 1;
   for (uint8_t i=0; i < desc->rank; ++i) {
     uint64_t dim=0;
     mag_try(mag_stream_ru64_le(err, stream, &dim));
-    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, dim <= INT64_MAX, "Invalid dimension size in stream: %zu", (size_t)dim);
-    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, !mag_mulov64(dim, prod, &prod), "Dim overflow: dim: %zu, prod: %zu", (size_t)dim, (size_t)prod);
+    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, dim <= INT64_MAX, "snapshot: invalid tensor dimension size %zu.", (size_t)dim);
+    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, !mag_mulov64(dim, prod, &prod), "snapshot: tensor element count overflowed at dim %u (size %zu).", (unsigned)i, (size_t)dim);
     desc->shape[i] = dim;
   }
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, prod <= INT64_MAX && prod == desc->numel, "Numel mismatch in stream: numel: %zu, product of dims: %zu", (size_t)desc->numel, (size_t)prod);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, prod <= INT64_MAX && prod == desc->numel, "snapshot: tensor numel %zu does not match the product of its dimensions (%zu).", (size_t)desc->numel, (size_t)prod);
   return MAG_STATUS_OK;
 }
 
@@ -376,15 +376,15 @@ static bool mag_pool_intern(mag_string_pool_t *pool, const uint8_t *buf, size_t 
 }
 
 static mag_status_t mag_pool_serialize(mag_error_t *err, const mag_string_pool_t *pool, mag_mem_stream_t *stream) {
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "Stream is not writable");
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, pool && pool->len <= UINT32_MAX, "Invalid string pool, max supported strings is: %u, actual count is: %zu", UINT32_MAX, pool ? pool->len : 0);
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, stream->flags & MAG_MEM_STREAM_FLAGS_WRITE, "snapshot: stream is read-only.");
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, pool && pool->len <= UINT32_MAX, "snapshot: string pool size %zu exceeds the maximum of %u.", pool ? pool->len : 0, UINT32_MAX);
   mag_try(mag_stream_wu32_le(err, stream, (uint32_t)pool->len));
   mag_try(mag_stream_wu32_le(err, stream, 0)); /* offsets[0] = 0, for monotonically and clean O(1) offsets */
   uint32_t offs = 0;
   for (size_t i=0; i < pool->len; ++i) { /* Offset array */
     mag_pool_record_t *rec = pool->records+i;
-    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, (rec->ptr || !rec->len) && rec->len <= UINT32_MAX, "Invalid string pool record at index %zu", i);
-    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, UINT32_MAX-offs >= rec->len, "String pool blob size exceeds limit when adding string at index %zu, max supported size is: %u, current offset is: %u, record len is: %u", i, UINT32_MAX, offs, rec->len);
+    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, (rec->ptr || !rec->len) && rec->len <= UINT32_MAX, "snapshot: invalid string pool record at index %zu.", i);
+    mag_contract(err, ERR_SERIALIZATION_ERROR, {}, UINT32_MAX-offs >= rec->len, "snapshot: string pool blob size overflowed at index %zu (offset %u + length %u > %u).", i, offs, rec->len, UINT32_MAX);
     offs += rec->len;
     mag_try(mag_stream_wu32_le(err, stream, offs));
   }
@@ -402,39 +402,39 @@ static mag_status_t mag_pool_deserialize(mag_error_t *err, mag_string_pool_t *po
   uint32_t count = 0;
   mag_try(mag_stream_ru32_le(err, stream, &count));
   size_t num_offsets = (size_t)count+1;
-  mag_contract(err, ERR_STREAM_IO_ERROR, {}, num_offsets <= MAG_SNAP_MAX_OFFSETS, "Too many strings in string pool, max supported is: %u, actual count is: %u", MAG_SNAP_MAX_OFFSETS-1, count);
+  mag_contract(err, ERR_STREAM_IO_ERROR, {}, num_offsets <= MAG_SNAP_MAX_OFFSETS, "snapshot: string pool contains %u entries (maximum is %u).", count, MAG_SNAP_MAX_OFFSETS-1);
   uint32_t *offs = (*mag_alloc)(NULL, num_offsets*sizeof(*offs), 0);
   for (size_t i=0; i < num_offsets; ++i) {     /* Read in offsets */
     mag_contract(err, ERR_STREAM_IO_ERROR, {
       (*mag_alloc)(offs, 0, 0);
       mag_pool_free(pool);
       mag_pool_init(pool);
-    }, mag_isok(mag_stream_ru32_le(err, stream, offs+i)), "Failed to read offset %zu for string pool", i);
+    }, mag_isok(mag_stream_ru32_le(err, stream, offs+i)), "snapshot: failed to read string pool offset at index %zu.", i);
   }
   mag_contract(err, ERR_STREAM_IO_ERROR, {
     (*mag_alloc)(offs, 0, 0);
     mag_pool_free(pool);
     mag_pool_init(pool);
-  }, *offs == 0, "First offset in string pool is not 0");
+  }, *offs == 0, "snapshot: string pool's first offset must be 0.");
   for (size_t i=1; i < num_offsets; ++i) { /* Verify that offsets are monotonically increasing */
     mag_contract(err, ERR_STREAM_IO_ERROR, {
       (*mag_alloc)(offs, 0, 0);
       mag_pool_free(pool);
       mag_pool_init(pool);
-    }, (offs[i] >= offs[i-1]), "Offsets in string pool are not monotonically increasing at index %zu: offs[i-1]: %u, offs[i]: %u", i, offs[i-1], offs[i]);
+    }, (offs[i] >= offs[i-1]), "snapshot: string pool offsets are not monotonic at index %zu (%u < %u).", i, offs[i], offs[i-1]);
   }
   uint32_t blob_size = offs[count];
   mag_contract(err, ERR_STREAM_IO_ERROR, {
     (*mag_alloc)(offs, 0, 0);
     mag_pool_free(pool);
     mag_pool_init(pool);
-  }, blob_size <= MAG_SNAP_MAX_STR_POOL_BLOB_SIZE, "String pool blob size exceeds limit, max supported is: %zu, actual size is: %u", (size_t)MAG_SNAP_MAX_STR_POOL_BLOB_SIZE, blob_size);
+  }, blob_size <= MAG_SNAP_MAX_STR_POOL_BLOB_SIZE, "snapshot: string pool blob size %u exceeds the maximum of %zu.", blob_size, (size_t)MAG_SNAP_MAX_STR_POOL_BLOB_SIZE);
   const uint8_t *blob = NULL;
   mag_contract(err, ERR_STREAM_IO_ERROR, {
     (*mag_alloc)(offs, 0, 0);
     mag_pool_free(pool);
     mag_pool_init(pool);
-  }, mag_isok(mag_stream_rbytes_view(err, stream, &blob, blob_size)), "Failed to read string pool blob");
+  }, mag_isok(mag_stream_rbytes_view(err, stream, &blob, blob_size)), "snapshot: failed to read string pool blob from stream.");
   for (uint32_t id=0; id < count; ++id) {
     uint32_t a = offs[id];
     uint32_t b = offs[id+1];
@@ -442,30 +442,30 @@ static mag_status_t mag_pool_deserialize(mag_error_t *err, mag_string_pool_t *po
       (*mag_alloc)(offs, 0, 0);
       mag_pool_free(pool);
       mag_pool_init(pool);
-    }, a <= b && b <= blob_size, "Invalid offsets for string id %u in string pool: a: %u, b: %u, blob size: %u", id, a, b, blob_size);
+    }, a <= b && b <= blob_size, "snapshot: invalid string pool offsets for id %u: [%u, %u) within blob of size %u.", id, a, b, blob_size);
     const uint8_t *str = blob+a;
     uint32_t delta = b-a;
     mag_contract(err, ERR_STREAM_IO_ERROR, {
       (*mag_alloc)(offs, 0, 0);
       mag_pool_free(pool);
       mag_pool_init(pool);
-    }, delta, "Empty string at id %u in string pool", id);
+    }, delta, "snapshot: string pool contains an empty entry at id %u.", id);
     mag_contract(err, ERR_STREAM_IO_ERROR, {
       (*mag_alloc)(offs, 0, 0);
       mag_pool_free(pool);
       mag_pool_init(pool);
-    }, mag_utf8_validate(str, delta), "Invalid UTF-8 for string id %u in string pool", id);
+    }, mag_utf8_validate(str, delta), "snapshot: string pool entry at id %u contains invalid UTF-8.", id);
     uint32_t len = 0;
     mag_contract(err, ERR_STREAM_IO_ERROR, {
       (*mag_alloc)(offs, 0, 0);
       mag_pool_free(pool);
       mag_pool_init(pool);
-    }, mag_pool_intern(pool, str, delta, &len), "Failed to intern string id %u in string pool", id);
+    }, mag_pool_intern(pool, str, delta, &len), "snapshot: failed to intern string pool entry %u.", id);
     mag_contract(err, ERR_STREAM_IO_ERROR, {
     (*mag_alloc)(offs, 0, 0);
       mag_pool_free(pool);
       mag_pool_init(pool);
-    }, len == id, "String id mismatch when interning string id %u in string pool, expected id: %u, actual id: %u", id, id, len);
+    }, len == id, "snapshot: string pool id mismatch (expected %u, got %u).", id, len);
   }
   (*mag_alloc)(offs, 0, 0);
   return MAG_STATUS_OK;
@@ -571,21 +571,21 @@ static void mag_snapshot_mmap_borrow_release(void *usr) {
 }
 
 mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_snap, mag_context_t *ctx, const char *filename) {
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, filename && *filename, "Invalid filename: %s", filename);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, filename && *filename, "snapshot: file path must not be empty.");
   const char *ext = strrchr(filename, '.'); /* check that the file extension is .mag */
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, ext != NULL && strcmp(ext, ".mag") == 0, "Invalid file extension for snapshot file: %s, expected: .mag", filename);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, ext != NULL && strcmp(ext, ".mag") == 0, "snapshot: file '%s' must have a '.mag' extension.", filename);
 
   mag_tensor_desc_t *stable = NULL;
   mag_snapshot_t *snap = NULL;
   mag_try(mag_snapshot_new(err, &snap, ctx));
   mag_mem_stream_t *stream = &snap->stream;
   snap->mmap_owner = mag_mmap_owner_open(filename);
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, snap->mmap_owner != NULL, "Failed to open snapshot file: %s", filename);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, snap->mmap_owner != NULL, "snapshot: failed to open file '%s'.", filename);
   mag_try(mag_stream_from_mapped_file(err, stream, snap->mmap_owner, false));
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, mag_stream_remaining(stream) >= MAG_FILE_HEADER_SIZE + 4*MAG_SNAP_SECTION_MARKERS_COUNT, "Snapshot file is too small to contain required sections, file size: %zu, minimum required size: %d", mag_stream_remaining(stream), MAG_FILE_HEADER_SIZE + 4*MAG_SNAP_SECTION_MARKERS_COUNT);
+  }, mag_stream_remaining(stream) >= MAG_FILE_HEADER_SIZE + 4*MAG_SNAP_SECTION_MARKERS_COUNT, "snapshot: file '%s' is truncated (size %zu < required %d).", filename, mag_stream_remaining(stream), MAG_FILE_HEADER_SIZE + 4*MAG_SNAP_SECTION_MARKERS_COUNT);
 
   snap->nb_total = mag_stream_remaining(stream);
   size_t marker = mag_stream_needle(stream);
@@ -595,7 +595,7 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
    if (stable) (*mag_alloc)(stable, 0, 0);
    mag_snapshot_free(snap);
-  }, mag_isok(mag_file_header_deserialize(err, &header, stream)), "Failed to deserialize file header from snapshot file: %s", filename);
+  }, mag_isok(mag_file_header_deserialize(err, &header, stream)), "snapshot: failed to read the file header from '%s'.", filename);
   mag_assert2(mag_stream_needle(stream)-marker == MAG_FILE_HEADER_SIZE); /* Verify exact file header bytes written */
 
   /* String pool */
@@ -604,25 +604,25 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, mag_isok(mag_stream_ru32_le(err, stream, &section_marker)), "Failed to read section marker for string pool from snapshot file: %s", filename);
+  }, mag_isok(mag_stream_ru32_le(err, stream, &section_marker)), "snapshot: failed to read the string pool section marker in '%s'.", filename);
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, section_marker == MAG_SNAP_SECTION_STR_POOL, "Invalid section marker for string pool in snapshot file: %s, expected: 0x%08x, actual: 0x%08x", filename, MAG_SNAP_SECTION_STR_POOL, section_marker);
+  }, section_marker == MAG_SNAP_SECTION_STR_POOL, "snapshot: invalid string pool section marker in '%s' (got 0x%08x, expected 0x%08x).", filename, section_marker, MAG_SNAP_SECTION_STR_POOL);
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, mag_isok(mag_pool_deserialize(err, &snap->str_pool, stream)), "Failed to deserialize string pool from snapshot file: %s", filename);
+  }, mag_isok(mag_pool_deserialize(err, &snap->str_pool, stream)), "snapshot: failed to read the string pool from '%s'.", filename);
   mag_assert2(mag_stream_needle(stream)-marker == 4+mag_pool_compute_size(&snap->str_pool)); /* Verify exact section marker + pool bytes written */
 
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, mag_isok(mag_stream_ru32_le(err, stream, &section_marker)), "Failed to read section marker for metadata from snapshot file: %s", filename);
+  }, mag_isok(mag_stream_ru32_le(err, stream, &section_marker)), "snapshot: failed to read the metadata section marker in '%s'.", filename);
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, section_marker == MAG_SNAP_SECTION_META_DATA, "Invalid section marker for metadata in snapshot file: %s, expected: 0x%08x, actual: 0x%08x", filename, MAG_SNAP_SECTION_META_DATA, section_marker);
+  }, section_marker == MAG_SNAP_SECTION_META_DATA, "snapshot: invalid metadata section marker in '%s' (got 0x%08x, expected 0x%08x).", filename, section_marker, MAG_SNAP_SECTION_META_DATA);
   /* TODO: metadata */
 
   size_t nt = header.tensor_header_count;
@@ -631,27 +631,27 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, mag_isok(mag_stream_ru32_le(err, stream, &section_marker)), "Failed to read section marker for tensor descriptors from snapshot file: %s", filename);
+  }, mag_isok(mag_stream_ru32_le(err, stream, &section_marker)), "snapshot: failed to read the tensor descriptor section marker in '%s'.", filename);
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, section_marker == MAG_SNAP_SECTION_TENSOR_DESC, "Invalid section marker for tensor descriptors in snapshot file: %s, expected: 0x%08x, actual: 0x%08x", filename, MAG_SNAP_SECTION_TENSOR_DESC, section_marker);
+  }, section_marker == MAG_SNAP_SECTION_TENSOR_DESC, "snapshot: invalid tensor descriptor section marker in '%s' (got 0x%08x, expected 0x%08x).", filename, section_marker, MAG_SNAP_SECTION_TENSOR_DESC);
   for (uint32_t i=0; i < nt; ++i) {
     mag_tensor_desc_t *desc = stable+i;
     mag_contract(err, ERR_SERIALIZATION_ERROR, {
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_snapshot_free(snap);
-    }, mag_isok(mag_tensor_desc_deserialize(err, desc, stream, snap->str_pool.len)), "Failed to deserialize tensor descriptor %u from snapshot file: %s", i, filename);
+    }, mag_isok(mag_tensor_desc_deserialize(err, desc, stream, snap->str_pool.len)), "snapshot: failed to read tensor descriptor %u from '%s'.", i, filename);
   }
   /* Read data */
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, mag_isok(mag_stream_ru32_le(err, stream, &section_marker)), "Failed to read section marker for tensor data from snapshot file: %s", filename);
+  }, mag_isok(mag_stream_ru32_le(err, stream, &section_marker)), "snapshot: failed to read the tensor data section marker in '%s'.", filename);
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, section_marker == MAG_SNAP_SECTION_TENSOR_DATA, "Invalid section marker for tensor data in snapshot file: %s, expected: 0x%08x, actual: 0x%08x", filename, MAG_SNAP_SECTION_TENSOR_DATA, section_marker);
+  }, section_marker == MAG_SNAP_SECTION_TENSOR_DATA, "snapshot: invalid tensor data section marker in '%s' (got 0x%08x, expected 0x%08x).", filename, section_marker, MAG_SNAP_SECTION_TENSOR_DATA);
   size_t db = mag_stream_needle(stream);
   size_t al = MAG_SNAP_TBUF_ALIGN-1;
   size_t db_al = (db+al)&~al;
@@ -659,13 +659,13 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, mag_isok(mag_stream_rbytes_view(err, stream, &ignored, db_al - db)), "Failed to read padding bytes for tensor data section in snapshot file: %s", filename);
+  }, mag_isok(mag_stream_rbytes_view(err, stream, &ignored, db_al - db)), "snapshot: failed to read tensor data section padding in '%s'.", filename);
   snap->nb_meta = mag_stream_needle(stream); /* Everything up to here is metadata */
   mag_device_t *cpu_device=NULL;
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, mag_backend_registry_get_backend_and_device_by_id(snap->ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device), "Failed to get CPU device for deserializing tensor data from snapshot file: %s", filename);
+  }, mag_backend_registry_get_backend_and_device_by_id(snap->ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device), "snapshot: cannot deserialize '%s' (CPU backend is not available).", filename);
 
   uint64_t offset=0;
   for (size_t i=0; i < nt; ++i) {
@@ -683,27 +683,27 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
     mag_contract(err, ERR_SERIALIZATION_ERROR, {
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_snapshot_free(snap);
-    }, mag_isok(mag_stream_rbytes_view(err, stream, &ignored, pad)), "Failed to read padding bytes for tensor data in snapshot file: %s", filename);
+    }, mag_isok(mag_stream_rbytes_view(err, stream, &ignored, pad)), "snapshot: failed to read tensor padding in '%s'.", filename);
     offset = delta;
     mag_contract(err, ERR_SERIALIZATION_ERROR, {
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_snapshot_free(snap);
-    }, mag_isok(mag_stream_rbytes_view(err, stream, &blob, nb)), "Failed to read data bytes for tensor from snapshot file: %s", filename);
+    }, mag_isok(mag_stream_rbytes_view(err, stream, &blob, nb)), "snapshot: failed to read tensor data in '%s'.", filename);
     mag_contract(err, ERR_SERIALIZATION_ERROR, {
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_snapshot_free(snap);
-    }, !(al&(uintptr_t)blob), "Tensor data for tensor %zu in snapshot file: %s is not properly aligned, required alignment is: %u, actual address is: %p", i, filename, MAG_SNAP_TBUF_ALIGN, (void *)blob);
+    }, !(al&(uintptr_t)blob), "snapshot: tensor %zu data in '%s' is not aligned to %u bytes (address %p).", i, filename, MAG_SNAP_TBUF_ALIGN, (void *)blob);
     mag_tensor_t *tensor = NULL;
     mag_contract(err, ERR_SERIALIZATION_ERROR, {
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_snapshot_free(snap);
-    }, mag_isok(mag_borrow_cpu_buffer(err, &tensor, ctx, (void *)blob, nb, desc->dtype, desc->rank, shape, false, &mag_snapshot_mmap_borrow_release, snap->mmap_owner)), "Failed to create borrowed CPU buffer for tensor %zu from snapshot file: %s", i, filename);
+    }, mag_isok(mag_borrow_cpu_buffer(err, &tensor, ctx, (void *)blob, nb, desc->dtype, desc->rank, shape, false, &mag_snapshot_mmap_borrow_release, snap->mmap_owner)), "snapshot: failed to borrow CPU buffer for tensor %zu in '%s'.", i, filename);
     mag_rc_incref(snap->mmap_owner);
     mag_contract(err, ERR_SERIALIZATION_ERROR, {
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_tensor_decref(tensor);
       mag_snapshot_free(snap);
-    }, mag_snapshot_insert_tensor_by_id(snap, desc->key_id, tensor), "Failed to insert tensor with key id %u into snapshot from snapshot file: %s", desc->key_id, filename);
+    }, mag_snapshot_insert_tensor_by_id(snap, desc->key_id, tensor), "snapshot: failed to insert tensor with key id %u into '%s'.", desc->key_id, filename);
     mag_tensor_decref(tensor); /* Decref as the snapshot now holds a reference */
     offset += nb;
   }
@@ -711,20 +711,20 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     if (stable) (*mag_alloc)(stable, 0, 0);
     mag_snapshot_free(snap);
-  }, snap->nb_total == snap->nb_meta + snap->nb_storage, "Total bytes mismatch in snapshot file: %s, total bytes in file: %zu, sum of metadata and storage bytes: %zu", filename, snap->nb_total, snap->nb_meta+snap->nb_storage);
+  }, snap->nb_total == snap->nb_meta + snap->nb_storage, "snapshot: '%s' size mismatch (file has %zu bytes, but metadata + storage sum to %zu).", filename, snap->nb_total, snap->nb_meta+snap->nb_storage);
   (*mag_alloc)(stable, 0, 0);
   *out_snap = snap;
   return MAG_STATUS_OK;
 }
 
 mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, const char *filename) {
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, filename && *filename, "Invalid filename: %s", filename);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, filename && *filename, "snapshot: file path must not be empty.");
   const char *ext = strrchr(filename, '.'); /* check that the file extension is .mag */
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, ext != NULL && strcmp(ext, ".mag") == 0, "Invalid file extension for snapshot file: %s, expected: .mag", filename);
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, snap->tensor_map.nitems <= UINT32_MAX, "Too many tensors in snapshot, max supported is: %u, actual count is: %zu", UINT32_MAX, snap->tensor_map.nitems);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, ext != NULL && strcmp(ext, ".mag") == 0, "snapshot: file '%s' must have a '.mag' extension.", filename);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, snap->tensor_map.nitems <= UINT32_MAX, "snapshot: contains %zu tensors (maximum is %u).", snap->tensor_map.nitems, UINT32_MAX);
   mag_mem_stream_t stream = {0};
   mag_mapped_file_t map = {0};
-  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, mag_isok(mag_stream_mmap_file_w(err, &stream, &map, filename, mag_snap_compute_size(snap))), "Failed to memory map snapshot file for writing: %s", filename);
+  mag_contract(err, ERR_SERIALIZATION_ERROR, {}, mag_isok(mag_stream_mmap_file_w(err, &stream, &map, filename, mag_snap_compute_size(snap))), "snapshot: failed to memory-map file '%s' for writing.", filename);
   mag_file_header_t header = (mag_file_header_t) {
     .magic = MAG_SNAP_FILE_MAGIC,
     .version = MAG_SNAPSHOT_VERSION,
@@ -744,7 +744,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
     mag_stream_close(&stream);
     mag_unmap_file(&map);
     if (stable) (*mag_alloc)(stable, 0, 0);
-  }, mag_isok(mag_file_header_serialize(err, &header, &stream, &u32_chk_patch_needle)), "Failed to serialize file header for snapshot file: %s", filename);
+  }, mag_isok(mag_file_header_serialize(err, &header, &stream, &u32_chk_patch_needle)), "snapshot: failed to write the file header to '%s'.", filename);
   const uint8_t *chk_start = u32_chk_patch_needle+sizeof(uint32_t); /* Checksum start region, excluding checksum field itself */
   mag_assert2(mag_stream_needle(&stream)-marker == MAG_FILE_HEADER_SIZE); /* Verify exact file header bytes written */
 
@@ -754,19 +754,19 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
     mag_stream_close(&stream);
     mag_unmap_file(&map);
     if (stable) (*mag_alloc)(stable, 0, 0);
-  }, mag_isok(mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_STR_POOL)), "Failed to write section marker for string pool to snapshot file: %s", filename);
+  }, mag_isok(mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_STR_POOL)), "snapshot: failed to write the string pool section marker to '%s'.", filename);
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     mag_stream_close(&stream);
     mag_unmap_file(&map);
     if (stable) (*mag_alloc)(stable, 0, 0);
-  }, mag_isok(mag_pool_serialize(err, &snap->str_pool, &stream)), "Failed to serialize string pool to snapshot file: %s", filename);
+  }, mag_isok(mag_pool_serialize(err, &snap->str_pool, &stream)), "snapshot: failed to write the string pool to '%s'.", filename);
   mag_assert2(mag_stream_needle(&stream)-marker == 4+mag_pool_compute_size(&snap->str_pool)); /* Verify exact section marker + pool bytes written */
 
   mag_contract(err, ERR_SERIALIZATION_ERROR, {
     mag_stream_close(&stream);
     mag_unmap_file(&map);
     if (stable) (*mag_alloc)(stable, 0, 0);
-  }, mag_isok(mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_META_DATA)), "Failed to write section marker for metadata to snapshot file: %s", filename);
+  }, mag_isok(mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_META_DATA)), "snapshot: failed to write the metadata section marker to '%s'.", filename);
 
   stable = (*mag_alloc)(NULL, snap->tensor_map.nitems*sizeof(*stable), 0);
   uint64_t offs = 0;
@@ -777,7 +777,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
     mag_stream_close(&stream);
     mag_unmap_file(&map);
     if (stable) (*mag_alloc)(stable, 0, 0);
-  }, mag_isok(mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_TENSOR_DESC)), "Failed to write section marker for tensor descriptors to snapshot file: %s", filename);
+  }, mag_isok(mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_TENSOR_DESC)), "snapshot: failed to write the tensor descriptor section marker to '%s'.", filename);
   for (k=0; k < snap->tensor_map.nitems && (key = mag_map_next(&snap->tensor_map, &iter, &klen, &val)); ++k) {  /* Tensor descriptors */
     mag_assert2(klen == sizeof(uint32_t));
     uint32_t key_id = *(const uint32_t *)key;
@@ -797,7 +797,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
       mag_stream_close(&stream);
       mag_unmap_file(&map);
       if (stable) (*mag_alloc)(stable, 0, 0);
-    }, tensor->coords.rank >= 0 && tensor->coords.rank <= MAG_SNAP_MAX_RANK, "Invalid rank for tensor with key id %u in snapshot, max supported rank is: %d, actual rank is: %d", key_id, MAG_SNAP_MAX_RANK, (int)tensor->coords.rank);
+    }, tensor->coords.rank >= 0 && tensor->coords.rank <= MAG_SNAP_MAX_RANK, "snapshot: tensor with key id %u has unsupported rank %d (maximum is %d).", key_id, (int)tensor->coords.rank, MAG_SNAP_MAX_RANK);
     for (int64_t i=0; i < tensor->coords.rank; ++i) {
       mag_assert2(tensor->coords.shape[i] >= 0);
       desc.shape[i] = (uint64_t)tensor->coords.shape[i];
@@ -807,7 +807,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
       mag_stream_close(&stream);
       mag_unmap_file(&map);
       if (stable) (*mag_alloc)(stable, 0, 0);
-    }, mag_isok(mag_tensor_desc_serialize(err, &desc, &stream)), "Failed to serialize tensor descriptor for tensor with key id %u in snapshot file: %s", key_id, filename);
+    }, mag_isok(mag_tensor_desc_serialize(err, &desc, &stream)), "snapshot: failed to write tensor descriptor for key id %u to '%s'.", key_id, filename);
     mag_assert2(mag_stream_needle(&stream)-marker == MAG_TENSOR_DESC_SIZE(tensor->coords.rank));
     offs += mag_tensor_numbytes(tensor);
     stable[k] = tensor;
@@ -836,7 +836,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
    mag_stream_close(&stream);
    mag_unmap_file(&map);
    if (stable) (*mag_alloc)(stable, 0, 0);
-  }, mag_isok(mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_TENSOR_DATA)), "Failed to write section marker for tensor data to snapshot file: %s", filename);
+  }, mag_isok(mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_TENSOR_DATA)), "snapshot: failed to write the tensor data section marker to '%s'.", filename);
   size_t db = mag_stream_needle(&stream);
   size_t align = MAG_SNAP_TBUF_ALIGN-1;
   size_t db_al = (db+align)&~align;
@@ -844,7 +844,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
     mag_stream_close(&stream);
     mag_unmap_file(&map);
     if (stable) (*mag_alloc)(stable, 0, 0);
-  }, mag_isok(mag_stream_wzeros(err, &stream, db_al-db)), "Failed to write padding bytes for tensor data section in snapshot file: %s", filename);
+  }, mag_isok(mag_stream_wzeros(err, &stream, db_al-db)), "snapshot: failed to write tensor data section padding to '%s'.", filename);
   marker = db_al;
   size_t data_offs = 0;
   for (size_t i=0; i < snap->tensor_map.nitems; ++i) { /* Tensor data */
@@ -855,20 +855,20 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
       mag_unmap_file(&map);
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_tensor_decref(tensor);
-    }, mag_isok(mag_stream_wzeros(err, &stream, al-data_offs)), "Failed to write padding bytes for tensor data in snapshot file: %s", filename);
+    }, mag_isok(mag_stream_wzeros(err, &stream, al-data_offs)), "snapshot: failed to write tensor padding to '%s'.", filename);
     data_offs = al;
     mag_contract(err, ERR_SERIALIZATION_ERROR, {
       mag_stream_close(&stream);
       mag_unmap_file(&map);
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_tensor_decref(tensor);
-   }, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "Tensor with key id %zu in snapshot has non-CPU storage, only CPU tensors are supported for serialization, file: %s", i, filename);
+   }, tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU, "snapshot: only CPU tensors can be serialized, but tensor %zu in '%s' resides on a non-CPU device.", i, filename);
     mag_contract(err, ERR_SERIALIZATION_ERROR, {
       mag_stream_close(&stream);
       mag_unmap_file(&map);
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_tensor_decref(tensor);
-   }, mag_isok(mag_contiguous(err, &tensor, tensor)), "Tensor with key id %zu in snapshot is not contiguous, only contiguous tensors are supported for serialization, file: %s", i, filename);
+   }, mag_isok(mag_contiguous(err, &tensor, tensor)), "snapshot: failed to make tensor %zu contiguous for serialization to '%s'.", i, filename);
     size_t nb = mag_tensor_numbytes(tensor);
     data_offs += nb;
     mag_contract(err, ERR_SERIALIZATION_ERROR, {
@@ -876,7 +876,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
       mag_unmap_file(&map);
       if (stable) (*mag_alloc)(stable, 0, 0);
       mag_tensor_decref(tensor);
-   }, mag_isok(mag_stream_wbytes(err, &stream, (const void *)mag_tensor_data_ptr(tensor), nb)), "Failed to write data bytes for tensor with key id %zu to snapshot file: %s", i, filename);
+   }, mag_isok(mag_stream_wbytes(err, &stream, (const void *)mag_tensor_data_ptr(tensor), nb)), "snapshot: failed to write tensor %zu data to '%s'.", i, filename);
     mag_tensor_decref(tensor);
   }
   mag_assert2(mag_stream_needle(&stream)-marker == data_offs); /* total bytes */

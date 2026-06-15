@@ -41,15 +41,15 @@ static const drmp3_allocation_callbacks mp3_alloc_hooks = {
 };
 
 mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, const char *file, uint32_t *out_sample_rate, mag_device_id_t device) {
-  mag_contract(err, ERR_INVALID_PARAM, {}, out != NULL, "out is NULL");
-  mag_contract(err, ERR_INVALID_PARAM, {}, ctx != NULL, "ctx is NULL");
-  mag_contract(err, ERR_INVALID_PARAM, {}, file != NULL, "file is NULL");
+  mag_contract(err, ERR_INVALID_PARAM, {}, out != NULL, "load_audio: output tensor pointer must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, ctx != NULL, "load_audio: context must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, file != NULL, "load_audio: file path must not be NULL.");
   uint32_t c = 0;
   uint32_t sample_rate = 0;
   uint64_t frames = 0;
   float *restrict samples = NULL;
   const char *ext = strrchr(file, '.');
-  mag_contract(err, ERR_INVALID_PARAM, {}, ext != NULL, "file has no extension");
+  mag_contract(err, ERR_INVALID_PARAM, {}, ext != NULL, "load_audio: file '%s' has no extension.", file);
 
   enum {
     AUDIO_NONE,
@@ -82,7 +82,7 @@ mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t 
     return MAG_STATUS_ERR_INVALID_PARAM;
   }
 
-  mag_contract(err, ERR_IMAGE_ERROR, {}, samples != NULL, "Failed to decode audio");
+  mag_contract(err, ERR_IMAGE_ERROR, {}, samples != NULL, "load_audio: failed to decode '%s'.", file);
   mag_contract(err, ERR_IMAGE_ERROR, {
     switch (fmt) {
       case AUDIO_WAV: drwav_free(samples, &wav_alloc_hooks); break;
@@ -90,7 +90,7 @@ mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t 
       case AUDIO_MP3: drmp3_free(samples, &mp3_alloc_hooks); break;
       default: break;
     }
-  }, c > 0, "Invalid channel count");
+  }, c > 0, "load_audio: '%s' has no audio channels.", file);
   mag_contract(err, ERR_IMAGE_ERROR, {
     switch (fmt) {
       case AUDIO_WAV: drwav_free(samples, &wav_alloc_hooks); break;
@@ -98,7 +98,7 @@ mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t 
       case AUDIO_MP3: drmp3_free(samples, &mp3_alloc_hooks); break;
       default: break;
     }
-  }, sample_rate > 0, "Invalid sample rate");
+  }, sample_rate > 0, "load_audio: '%s' has an invalid sample rate.", file);
   mag_contract(err, ERR_IMAGE_ERROR, {
     switch (fmt) {
       case AUDIO_WAV: drwav_free(samples, &wav_alloc_hooks); break;
@@ -106,7 +106,7 @@ mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t 
       case AUDIO_MP3: drmp3_free(samples, &mp3_alloc_hooks); break;
       default: break;
     }
-  }, frames > 0, "Invalid frame count");
+  }, frames > 0, "load_audio: '%s' contains no audio frames.", file);
 
   mag_tensor_t *tensor;
   mag_try_or(mag_empty(err, &tensor, ctx, MAG_DTYPE_FLOAT32, 2, (int64_t[2]){(int64_t)c, (int64_t)frames}, mag_device(CPU, 0)), {
@@ -144,17 +144,17 @@ mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t 
 }
 
 mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *file, uint32_t sample_rate) {
-  mag_contract(err, ERR_INVALID_PARAM, {}, tensor != NULL, "tensor is NULL");
-  mag_contract(err, ERR_INVALID_PARAM, {}, file != NULL, "file is NULL");
-  mag_contract(err, ERR_INVALID_PARAM, {}, sample_rate > 0, "sample_rate must be > 0");
-  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->dtype == MAG_DTYPE_FLOAT32, "Expected float32 tensor");
-  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.rank == 2, "Expected 2D tensor (C,T)");
-  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.shape[0] > 0, "Invalid channel count");
-  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.shape[1] > 0, "Invalid frame count");
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensor != NULL, "save_audio: tensor must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, file != NULL, "save_audio: file path must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, sample_rate > 0, "save_audio: sample_rate must be > 0.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->dtype == MAG_DTYPE_FLOAT32, "save_audio: requires a float32 tensor, but got %s.", mag_type_trait(tensor->dtype)->name);
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.rank == 2, "save_audio: requires a 2D tensor of shape (channels, frames), but got rank %" PRIi64 ".", tensor->coords.rank);
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.shape[0] > 0, "save_audio: tensor must have at least one channel.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.shape[1] > 0, "save_audio: tensor must have at least one frame.");
 
   const char *ext = strrchr(file, '.');
-  mag_contract(err, ERR_INVALID_PARAM, {}, ext != NULL, "file has no extension");
-  mag_contract(err, ERR_INVALID_PARAM, {}, !strcmp(ext, ".wav"), "Only .wav writing is currently supported");
+  mag_contract(err, ERR_INVALID_PARAM, {}, ext != NULL, "save_audio: file '%s' has no extension.", file);
+  mag_contract(err, ERR_INVALID_PARAM, {}, !strcmp(ext, ".wav"), "save_audio: only the '.wav' format is supported.");
 
   mag_tensor_t *host = NULL;
   mag_try(mag_transfer(err, &host, tensor, mag_device(CPU, 0)));
@@ -188,7 +188,7 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   mag_contract(err, ERR_IMAGE_ERROR, {
     (*mag_alloc)(samples, 0, 0);
     mag_tensor_decref(contig);
-  }, drwav_init_file_write(&wav, file, &fmt, NULL), "Failed to open WAV file for writing");
+  }, drwav_init_file_write(&wav, file, &fmt, NULL), "save_audio: failed to open WAV file '%s' for writing.", file);
 
   drwav_uint64 written = drwav_write_pcm_frames(&wav, (drwav_uint64)frames, samples);
   drwav_uninit(&wav);
@@ -196,7 +196,7 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   (*mag_alloc)(samples, 0, 0);
   mag_tensor_decref(contig);
 
-  mag_contract(err, ERR_IMAGE_ERROR, {}, written == (drwav_uint64)frames, "Failed to write all WAV frames");
+  mag_contract(err, ERR_IMAGE_ERROR, {}, written == (drwav_uint64)frames, "save_audio: wrote %" PRIu64 " of %" PRIu64 " WAV frames.", (uint64_t)written, (uint64_t)frames);
   return MAG_STATUS_OK;
 }
 

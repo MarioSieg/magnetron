@@ -60,7 +60,7 @@ static mag_status_t mag_einsum_parse(
     for (const char *p=subscripts; *p; ++p) {
       if (*p == ',') continue;
       if (*p == '.') {
-        mag_contract(err, ERR_EINSUM, {}, p[1] == '.' && p[2] == '.', "Malformed ellipsis in einsum equation string");
+        mag_contract(err, ERR_EINSUM, {}, p[1] == '.' && p[2] == '.', "einsum: malformed ellipsis in equation; expected '...'.");
         if (!has_ellipsis) has_ellipsis = true;
         p += 2;
         continue;
@@ -86,15 +86,15 @@ static mag_status_t mag_einsum_parse(
   char *save = NULL;
   char *tok = strtok_r(lhs, ",", &save);
   for (; tok; (tok=strtok_r(NULL, ",", &save)), ++idx) {
-    mag_contract(err, ERR_EINSUM, {}, idx < num_inputs, "Einsum parse error");
+    mag_contract(err, ERR_EINSUM, {}, idx < num_inputs, "einsum: failed to parse input subscripts.");
     size_t len = strlen(tok);
-    mag_contract(err, ERR_EINSUM, {}, len < MAG_EINSUM_MAX_SPEC, "einsum: input spec too long");
+    mag_contract(err, ERR_EINSUM, {}, len < MAG_EINSUM_MAX_SPEC, "einsum: input subscript too long (max %d characters).", MAG_EINSUM_MAX_SPEC);
     mag_einsum_str_t *input = out->inputs+idx;
     snprintf(input->buf, sizeof(input->buf), "%s", tok);
   }
-  mag_contract(err, ERR_EINSUM, {}, num_inputs < UINT32_MAX, "Too many einsum inputs");
+  mag_contract(err, ERR_EINSUM, {}, num_inputs < UINT32_MAX, "einsum: too many input subscripts.");
   out->num_inputs = (uint32_t)num_inputs;
-  mag_contract(err, ERR_EINSUM, {}, idx == num_inputs, "Empty einsum input index");
+  mag_contract(err, ERR_EINSUM, {}, idx == num_inputs, "einsum: input subscript list contains an empty entry.");
   out->has_output = arrow != NULL;
   return MAG_STATUS_OK;
 }
@@ -102,7 +102,7 @@ static mag_status_t mag_einsum_parse(
 static int mag_einsum_label_id(char c) {
   if (c >= 'a' && c <= 'z') return c-'a';
   if (c >= 'A' && c <= 'Z') return 26+(c-'A');
-  mag_panic("Invalid label character in einsum equation string: '%c'", c);
+  mag_panic("einsum: invalid label character '%c'; expected an ASCII letter.", c);
   return -1;
 }
 
@@ -146,11 +146,11 @@ static mag_status_t mag_einsum_check_alnum_and_expand_ellipsis(
     if (!isalpha((unsigned char)str[i])) {
       mag_contract(err, ERR_EINSUM, {},
         !(i+2 >= len || str[i] != '.' || str[i+1] != '.' || str[i+2] != '.'),
-        "Subscripts must be letters, but got: %c", str[i]
+        "einsum: subscripts must be letters, but got '%c'.", str[i]
       );
       mag_contract(err, ERR_EINSUM, {},
         !ellipsis,
-        "Only one ellipsis per subscript is allowed but found more in: %s", str
+        "einsum: only one ellipsis is allowed per subscript, but found more in '%s'.", str
       );
       ellipsis = true;
       i += 2;
@@ -168,8 +168,7 @@ static mag_status_t mag_einsum_check_alnum_and_expand_ellipsis(
       mag_fmt_shape(&shape_fmt, &operand->coords.shape, operand->coords.rank);
     mag_contract(err, ERR_EINSUM, {},
       ellipsis_len >= 0,
-      "Operand %zu with shape %s has insufficient dimensions for subscript %s. "
-      "The ellipsis requires at least %d dimensions but the operand has %d dimensions.",
+      "einsum: operand %zu with shape %s has too few dimensions for subscript '%s' (needs at least %d, got %d).",
       operand_idx, shape_fmt, subscript->buf, pre_count+post_count, (int)operand->coords.rank
     );
     *max_ellipsis_len = mag_xmax(*max_ellipsis_len, ellipsis_len);
@@ -178,8 +177,8 @@ static mag_status_t mag_einsum_check_alnum_and_expand_ellipsis(
   size_t repl_len = (size_t)ellipsis_len;
   size_t suffix_start = prefix_len+3;
   size_t suffix_len = len - suffix_start;
-  mag_contract(err, ERR_EINSUM, {}, prefix_len+repl_len+suffix_len < sizeof(subscript->buf), "Expanded subscript too long");
-  mag_contract(err, ERR_EINSUM, {}, repl_len <= remaining_len, "einsum: too many dimensions for ellipsis expansion");
+  mag_contract(err, ERR_EINSUM, {}, prefix_len+repl_len+suffix_len < sizeof(subscript->buf), "einsum: subscript is too long after ellipsis expansion.");
+  mag_contract(err, ERR_EINSUM, {}, repl_len <= remaining_len, "einsum: too many dimensions for ellipsis expansion.");
   const char *replacement = remaining_chars + remaining_len - repl_len;
   char tmp[sizeof(subscript->buf)];
   memcpy(tmp, str, prefix_len);
@@ -319,13 +318,13 @@ static mag_status_t mag_einsum_broadcast_contract_dims(
   int64_t b_shape[MAG_EINSUM_MAX_SPEC];
   memcpy(a_shape, a_shape_old, (size_t)a_rank * sizeof(a_shape[0]));
   memcpy(b_shape, b_shape_old, (size_t)b_rank * sizeof(b_shape[0]));
-  mag_contract(err, ERR_EINSUM, {}, a_contract->n == b_contract->n, "einsum: internal contract axis mismatch");
+  mag_contract(err, ERR_EINSUM, {}, a_contract->n == b_contract->n, "einsum: internal error, contract axis count mismatch.");
   for (int64_t i=0; i < a_contract->n; ++i) {
     int64_t aa = a_contract->v[i];
     int64_t ba = b_contract->v[i];
     int64_t da = a_shape[aa];
     int64_t db = b_shape[ba];
-    mag_contract(err, ERR_EINSUM, {}, da == db || da == 1 || db == 1, "einsum: cannot broadcast contracting dimensions %" PRIi64 " and %" PRIi64, da, db);
+    mag_contract(err, ERR_EINSUM, {}, da == db || da == 1 || db == 1, "einsum: cannot broadcast contracting dimensions of size %" PRIi64 " and %" PRIi64 ".", da, db);
     int64_t d = da > db ? da : db;
     a_shape[aa] = d;
     b_shape[ba] = d;
@@ -444,13 +443,13 @@ static mag_status_t mag_einsum_dot_node(mag_error_t *err, mag_tensor_t **out, ma
   for (int64_t i=0; i < a_contract.n; ++i) {
     char c = in_a->str.buf[a_contract.v[i]];
     int64_t ax = mag_einsum_find_axis(in_b->str.buf, c);
-    mag_contract(err, ERR_EINSUM, {}, ax >= 0, "einsum: internal contract axis not found");
+    mag_contract(err, ERR_EINSUM, {}, ax >= 0, "einsum: internal error, contract axis not found.");
     mag_einsum_axes_push(&b_contract, ax);
   }
   for (int64_t i=0; i < a_batch.n; ++i) {
     char c = in_a->str.buf[a_batch.v[i]];
     int64_t ax = mag_einsum_find_axis(in_b->str.buf, c);
-    mag_contract(err, ERR_EINSUM, {}, ax >= 0, "einsum: internal batch axis not found");
+    mag_contract(err, ERR_EINSUM, {}, ax >= 0, "einsum: internal error, batch axis not found.");
     mag_einsum_axes_push(&b_batch, ax);
   }
   for (int64_t i=0; in_b->str.buf[i]; ++i) {
@@ -481,7 +480,7 @@ static mag_status_t mag_einsum_dot_node(mag_error_t *err, mag_tensor_t **out, ma
   int64_t reorder[MAG_EINSUM_MAX_SPEC];
   for (int64_t i=0; i < out_rank; ++i) {
     int id = mag_einsum_label_id(node->output.str.buf[i]);
-    mag_contract(err, ERR_EINSUM, {}, char_map[id] >= 0, "einsum: internal output reorder label missing");
+    mag_contract(err, ERR_EINSUM, {}, char_map[id] >= 0, "einsum: internal error, output reorder label missing.");
     reorder[i] = char_map[id];
   }
   bool identity = true;
@@ -695,7 +694,7 @@ static mag_status_t mag_einsum_greedy_path(
       best.output,
       dim_map
     );
-    mag_contract(err, ERR_EINSUM, {}, num_nodes < MAG_EINSUM_MAX_INPUTS, "einsum: path too long: %zu >= %d", num_nodes, MAG_EINSUM_MAX_INPUTS);
+    mag_contract(err, ERR_EINSUM, {}, num_nodes < MAG_EINSUM_MAX_INPUTS, "einsum: contraction path is too long (%zu >= %d).", num_nodes, MAG_EINSUM_MAX_INPUTS);
     {
       mag_einsum_path_node_t *node = out_nodes+num_nodes++;
       memset(node, 0, sizeof(*node));
@@ -707,7 +706,7 @@ static mag_status_t mag_einsum_greedy_path(
       node->output = new_output;
     }
     mag_einsum_remove_inputs_2(inputs, &num_inputs, best.x, best.y);
-    mag_contract(err, ERR_EINSUM, {}, num_inputs < MAG_EINSUM_MAX_INPUTS, "einsum: too many intermediate inputs: %u >= %d", num_inputs, MAG_EINSUM_MAX_INPUTS);
+    mag_contract(err, ERR_EINSUM, {}, num_inputs < MAG_EINSUM_MAX_INPUTS, "einsum: too many intermediate inputs (%u >= %d).", num_inputs, MAG_EINSUM_MAX_INPUTS);
     inputs[num_inputs++] = new_output;
     path_cost += best.cost;
   }
@@ -728,7 +727,7 @@ static mag_status_t mag_einsum_compute_path(
 ) {
   mag_parsed_einsum_t parsed = {0};
   mag_try(mag_einsum_parse(err, equation, &parsed));
-  mag_contract(err, ERR_EINSUM, {}, parsed.num_inputs == num_args, "Number of operands does not match number of input subscripts: %u != %zu", parsed.num_inputs, num_args);
+  mag_contract(err, ERR_EINSUM, {}, parsed.num_inputs == num_args, "einsum: equation has %u input subscripts but got %zu operands.", parsed.num_inputs, num_args);
   mag_einsum_charset_t used_chars = 0;
   for (size_t i=0; i < parsed.num_inputs; ++i)
     for (const char *p = parsed.inputs[i].buf; *p; ++p)
@@ -772,10 +771,10 @@ static mag_status_t mag_einsum_compute_path(
   size_t out_len = strlen(out_str);
   for (size_t i=0; i < out_len; ++i) {
     char c = out_str[i];
-    mag_contract(err, ERR_EINSUM, {}, isalpha((unsigned char)c), "Subscripts must be letters, but got: %c", c);
+    mag_contract(err, ERR_EINSUM, {}, isalpha((unsigned char)c), "einsum: subscripts must be letters, but got '%c'.", c);
     out_set|=1ull<<mag_einsum_label_id(c);
   }
-  mag_contract(err, ERR_EINSUM, {}, (size_t)mag_popcnt64(out_set) == out_len, "Repeat indices not allowed in output.");
+  mag_contract(err, ERR_EINSUM, {}, (size_t)mag_popcnt64(out_set) == out_len, "einsum: repeated indices are not allowed in the output subscript.");
   mag_einsum_dim_map_t dim_map = {0};
   mag_einsum_subscript_t inputs[MAG_EINSUM_MAX_INPUTS];
   for (size_t i=0; i < parsed.num_inputs; ++i) {
@@ -787,7 +786,7 @@ static mag_status_t mag_einsum_compute_path(
       in_set |= 1ull << mag_einsum_label_id(in[j]);
     inputs[i].str = parsed.inputs[i];
     inputs[i].charset = in_set;
-    mag_contract(err, ERR_EINSUM, {}, in_len == (size_t)ndim, "Invalid number of subscripts %zu for input %zu with %d dimensions.", in_len, i, (int)ndim);
+    mag_contract(err, ERR_EINSUM, {}, in_len == (size_t)ndim, "einsum: input %zu has %d dimensions but its subscript has %zu labels.", i, (int)ndim, in_len);
     if (mag_popcnt64(in_set) < in_len) {
       int64_t local_dims[52] = {0};
       mag_einsum_charset_t local_present = 0;
@@ -797,7 +796,7 @@ static mag_status_t mag_einsum_compute_path(
         int64_t dim = args[i]->coords.shape[j];
         if (local_present&(1ull<<id)) {
           mag_contract(err, ERR_EINSUM, {}, local_dims[id] == dim,
-            "Dimensions of repeated subscripts do not have the same size (%lld != %lld).",
+            "einsum: repeated subscript dimensions must have the same size, but got %lld and %lld.",
             (long long)local_dims[id],
             (long long)dim);
         } else {
@@ -812,7 +811,7 @@ static mag_status_t mag_einsum_compute_path(
       int64_t dim = args[i]->coords.shape[j];
       if (dim_map.present&(1ull<<id)) {
         int64_t old = dim_map.dims[id];
-        mag_contract(err, ERR_EINSUM, {}, dim == 1 || old == 1 || old == dim, "Cannot broadcast dimension %zu of input %zu to size %" PRIi64 ".", j, i, old);
+        mag_contract(err, ERR_EINSUM, {}, dim == 1 || old == 1 || old == dim, "einsum: cannot broadcast dim %zu of input %zu (size %" PRIi64 ") with previously seen size %" PRIi64 ".", j, i, dim, old);
         if (dim > old) dim_map.dims[id] = dim;
       } else {
         dim_map.present |= 1ull << id;
@@ -823,7 +822,7 @@ static mag_status_t mag_einsum_compute_path(
   for (size_t i=0; i < out_len; ++i) {
     mag_contract(err, ERR_EINSUM, {},
       dim_map.present & (1ull << mag_einsum_label_id(out_str[i])),
-      "Output subscript '%c' does not appear in any input.", out_str[i]);
+      "einsum: output subscript '%c' does not appear in any input.", out_str[i]);
   }
   size_t max_size = mag_einsum_term_size(parsed.output.buf, &dim_map);
   for (size_t i=0; i < parsed.num_inputs; ++i) {
@@ -870,7 +869,7 @@ static mag_status_t mag_einsum_compute_path(
       &out_heuristics->opt_cost,
       &out_heuristics->opt_scaling
     ));
-    mag_contract(err, ERR_EINSUM, {}, *out_num_nodes > 0, "einsum: empty path");
+    mag_contract(err, ERR_EINSUM, {}, *out_num_nodes > 0, "einsum: failed to produce a contraction path.");
     out_nodes[*out_num_nodes - 1].output = output;
   }
   return MAG_STATUS_OK;
@@ -927,7 +926,7 @@ static mag_status_t mag_einsum_collapse_repeats(
     int64_t stride_sum = 0;
     for (int64_t j=i; j < rank; ++j) {
       if (str[j] == str[i]) {
-        mag_contract(err, ERR_EINSUM, {}, shape[j] == dim, "Dimensions of repeated subscripts do not have the same size.");
+        mag_contract(err, ERR_EINSUM, {}, shape[j] == dim, "einsum: repeated subscript dimensions must have the same size.");
         stride_sum += strides[j];
       }
     }
@@ -1168,15 +1167,15 @@ static mag_status_t mag_einsum_execute_path(
         mag_tensor_decref(operands[i]);
       return stat;
     }
-    mag_contract(err, ERR_EINSUM, {}, num_operands < MAG_EINSUM_MAX_INPUTS * 2, "einsum: too many intermediate operands");
+    mag_contract(err, ERR_EINSUM, {}, num_operands < MAG_EINSUM_MAX_INPUTS * 2, "einsum: too many intermediate operands.");
     operands[num_operands++] = result;
     for (int64_t i=(int64_t)nodes[n].num_inputs-1; i >= 0; --i) {
       uint32_t pos = nodes[n].positions[i];
-      mag_contract(err, ERR_EINSUM, {}, pos < num_operands, "einsum: invalid path operand position");
+      mag_contract(err, ERR_EINSUM, {}, pos < num_operands, "einsum: internal error, invalid path operand position.");
       mag_einsum_remove_operand_at(operands, &num_operands, pos);
     }
   }
-  mag_contract(err, ERR_EINSUM, {}, num_operands == 1, "einsum: internal path execution error, expected one final operand but got %zu", num_operands);
+  mag_contract(err, ERR_EINSUM, {}, num_operands == 1, "einsum: internal error, expected a single final operand but got %zu.", num_operands);
   *out_result = *operands;
   return MAG_STATUS_OK;
 }
@@ -1208,12 +1207,12 @@ mag_status_t mag_einsum_eval(
   size_t num_args
 ) {
   size_t len = strlen(equation);
-  mag_contract(err, ERR_EINSUM, {}, mag_utf8_validate((const uint8_t *)equation, len), "Invalid UTF-8 in equation string");
-  mag_contract(err, ERR_EINSUM, {}, num_args > 0, "At least one input tensor is required");
+  mag_contract(err, ERR_EINSUM, {}, mag_utf8_validate((const uint8_t *)equation, len), "einsum: equation string contains invalid UTF-8.");
+  mag_contract(err, ERR_EINSUM, {}, num_args > 0, "einsum: requires at least one input tensor.");
   char *cloned = mag_strdup(equation);
   mag_einsum_remove_spaces(cloned);
   len = strlen(cloned);
-  mag_contract(err, ERR_EINSUM, {}, len > 0, "Empty equation string");
+  mag_contract(err, ERR_EINSUM, {}, len > 0, "einsum: equation string is empty.");
   mag_einsum_path_heuristics_t heuristics = {0};
   mag_einsum_path_node_t nodes[MAG_EINSUM_MAX_INPUTS] = {0};
   size_t num_nodes = 0;

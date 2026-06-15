@@ -339,7 +339,7 @@ static bool nd_similar(uint32_t *nd, uint32_t ndhi, uint32_t* ref, size_t hilen,
   } else {
     prec -= hilen - 9;
   }
-  mag_assert(prec < 9, "bad precision %zu", prec);
+  mag_assert(prec < 9, "fmt: float formatting precision %zu is out of range (max 8).", prec);
   mag_wuint9(nd9, nd[ndhi]);
   mag_wuint9(ref9, *ref);
   return !memcmp(nd9, ref9, prec) && (nd9[prec] < '5') == (ref9[prec] < '5');
@@ -502,7 +502,7 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
         int32_t eidx = e + 70 + (MAG_ND_MUL2K_MAX_SHIFT < 29)
                  + (t.u32.lo >= 0xfffffffe && !(~t.u32.hi << 12));
         const int8_t *m_e = mag_four_ulp_m_e + eidx * 2;
-        mag_assert(0 <= eidx && eidx < 128, "bad eidx %d", eidx);
+        mag_assert(0 <= eidx && eidx < 128, "fmt: float formatting exponent index %d is out of range.", eidx);
         nd[33] = nd[ndhi];
         nd[32] = nd[(ndhi - 1) & 0x3f];
         nd[31] = nd[(ndhi - 2) & 0x3f];
@@ -701,7 +701,7 @@ static char *mag_fmt_scalar(char (*fmt)[MAG_FMT_BUF_MAX], const void *buf, int64
     case MAG_DTYPE_INT32: return mag_fmt_int64(*fmt, *(const int32_t *)val);
     case MAG_DTYPE_UINT64: return mag_fmt_uint64(*fmt, *(const uint64_t *)val);
     case MAG_DTYPE_INT64: return mag_fmt_int64(*fmt, *(const int64_t *)val);
-    default: mag_panic("Unknown dtype for formatting: %d", type);
+    default: mag_panic("fmt: unknown dtype %d.", type);
   }
 }
 

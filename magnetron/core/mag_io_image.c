@@ -37,7 +37,7 @@
 
 mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, const char *file, const char *channels, uint32_t resize_width, uint32_t resize_height, mag_device_id_t device) {
   int c = !strcmp(channels, "GRAY") ? 1 : !strcmp(channels, "GRAY_ALPHA") ? 2 : !strcmp(channels, "RGB") ? 3 : !strcmp(channels, "RGBA") ? 4 : -1;
-  mag_contract(err, ERR_INVALID_PARAM, {}, (unsigned)c-1 < 4u, "c must be in {1,2,3,4}, got %d", c);
+  mag_contract(err, ERR_INVALID_PARAM, {}, (unsigned)c-1 < 4u, "load_image: channels must be in [1, 4], but got %d.", c);
   int w, h, cf;
   stbi_uc *restrict pixels = stbi_load(file, &w, &h, &cf, c);
   if (mag_unlikely(!pixels || w <= 0 || h <= 0 || c <= 0)) {
@@ -71,7 +71,7 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
       for (int64_t i=0; i < w; ++i)
         dst[i + w*j + w*h*k] = pixels[k + c*i + c*w*j];
 
-  mag_contract(err, ERR_IMAGE_ERROR, { stbi_image_free(pixels); }, w*h*c == mag_tensor_numel(tensor), "Buffer size mismatch: %d != %zu", w*h*c, (size_t)mag_tensor_numel(tensor));
+  mag_contract(err, ERR_IMAGE_ERROR, { stbi_image_free(pixels); }, w*h*c == mag_tensor_numel(tensor), "load_image: decoded pixel count (%d) does not match the tensor element count (%zu).", w*h*c, (size_t)mag_tensor_numel(tensor));
   stbi_image_free(pixels);
 
   mag_tensor_t *transferred = NULL;
@@ -84,14 +84,14 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
 }
 
 mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *file) {
-  mag_contract(err, ERR_INVALID_PARAM, {}, tensor != NULL, "tensor is NULL");
-  mag_contract(err, ERR_INVALID_PARAM, {}, file != NULL, "file is NULL");
-  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->dtype == MAG_DTYPE_UINT8, "Expected uint8 tensor");
-  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.rank == 3, "Expected 3D tensor (C,H,W)");
-  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.shape[0] >= 1 && tensor->coords.shape[0] <= 4, "Channels must be in [1,4], got %" PRIi64, tensor->coords.shape[0]);
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensor != NULL, "save_image: tensor must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, file != NULL, "save_image: file path must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->dtype == MAG_DTYPE_UINT8, "save_image: requires a uint8 tensor, but got %s.", mag_type_trait(tensor->dtype)->name);
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.rank == 3, "save_image: requires a 3D tensor of shape (channels, height, width), but got rank %" PRIi64 ".", tensor->coords.rank);
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.shape[0] >= 1 && tensor->coords.shape[0] <= 4, "save_image: channels must be in [1, 4], but got %" PRIi64 ".", tensor->coords.shape[0]);
 
   const char *ext = strrchr(file, '.');
-  mag_contract(err, ERR_INVALID_PARAM, {}, ext && *ext, "File extension is required");
+  mag_contract(err, ERR_INVALID_PARAM, {}, ext && *ext, "save_image: file '%s' has no extension.", file);
 
   mag_tensor_t *host = NULL;
   mag_try(mag_transfer(err, &host, tensor, mag_device(CPU, 0)));
@@ -118,7 +118,7 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
     mag_contract(err, ERR_INVALID_PARAM, {
       (*mag_alloc)(pixels, 0, 0);
       mag_tensor_decref(contig);
-    }, c == 1 || c == 3, "JPEG only supports 1 or 3 channels, got %" PRIi64, c);
+    }, c == 1 || c == 3, "save_image: JPEG only supports 1 or 3 channels, but got %" PRIi64 ".", c);
     ok = stbi_write_jpg(file, (int)w, (int)h, (int)c, pixels, 100);
   } else if (!strcmp(ext, ".bmp")) {
     ok = stbi_write_bmp(file, (int)w, (int)h, (int)c, pixels);
@@ -132,6 +132,6 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
 
   (*mag_alloc)(pixels, 0, 0);
   mag_tensor_decref(contig);
-  mag_contract(err, ERR_IMAGE_ERROR, {}, ok != 0, "Failed to write image");
+  mag_contract(err, ERR_IMAGE_ERROR, {}, ok != 0, "save_image: failed to write '%s'.", file);
   return MAG_STATUS_OK;
 }

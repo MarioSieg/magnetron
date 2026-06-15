@@ -511,7 +511,7 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 /* Panics if ptr ∉ [base, base+N). */
 #define mag_bnd_chk(ptr, base, N) \
   mag_assert((char*)(ptr) >= (char*)(base) && (char*)(ptr) < (char*)(base)+(N), \
-    "\nBound check failed: %p not in [%p, %p), base+0x%x, end+0x%x", \
+    "bnd_chk: %p not in [%p, %p), base+0x%x, end+0x%x.", \
     (void *)(ptr), \
     (void *)(base), \
     (void *)((char *)(base)+(N)), \
