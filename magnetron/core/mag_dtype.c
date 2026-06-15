@@ -232,7 +232,7 @@ bool mag_type_category_is_numeric(mag_dtype_t type) {
 }
 
 bool mag_promote_type(mag_dtype_t *out, mag_dtype_t lhs, mag_dtype_t rhs) {
-  static const mag_dtype_t mag_type_promotion_rules[MAG_DTYPE__NUM][MAG_DTYPE__NUM] = {
+  static const uint8_t mag_type_promotion_rules[MAG_DTYPE__NUM][MAG_DTYPE__NUM] = {
     [MAG_DTYPE_FLOAT32] = {
       [MAG_DTYPE_FLOAT32] = MAG_DTYPE_FLOAT32,
       [MAG_DTYPE_FLOAT16] = MAG_DTYPE_FLOAT32,
@@ -430,6 +430,6 @@ bool mag_promote_type(mag_dtype_t *out, mag_dtype_t lhs, mag_dtype_t rhs) {
     },
   };
   if (mag_unlikely(lhs >= MAG_DTYPE__NUM || rhs >= MAG_DTYPE__NUM)) return false;
-  *out = mag_type_promotion_rules[lhs][rhs];
+  *out = (mag_dtype_t)mag_type_promotion_rules[lhs][rhs];
   return *out < MAG_DTYPE__NUM;
 }

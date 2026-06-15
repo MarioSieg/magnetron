@@ -460,6 +460,19 @@ static MAG_AINLINE uint64_t mag_mulhilo64(uint64_t x, uint64_t y) {
 #endif
 }
 
+static MAG_AINLINE int mag_popcnt64(uint64_t x) {
+#if defined(__GNUC__) || defined(__clang__)
+  return __builtin_popcountll((unsigned long long)x);
+#elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM 64))
+  return __popcnt64(x);
+#else
+  x -= (x>>1)&0x5555555555555555ull;
+  x = (x&0x3333333333333333ull)+((x>>2)&0x3333333333333333ull);
+  x = (x+(x>>4))&0x0f0f0f0f0f0f0f0full;
+  return (x*0x0101010101010101ull)>>56;
+#endif
+}
+
 /* Logging and panic utilities. */
 
 extern MAG_EXPORT MAG_NORET MAG_COLDPROC void mag_panic(const char *fmt, ...) mag_printf_fmt(1, 2); /* Print error message and abort. */

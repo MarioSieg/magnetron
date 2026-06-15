@@ -103,6 +103,7 @@ namespace mag::bindings {
     explicit constexpr operator bool() const noexcept { return p != nullptr; }
     constexpr mag_tensor_t *operator * () const noexcept { return p; }
   };
+  static_assert(sizeof(tensor_wrapper) == sizeof(mag_tensor_t *), "tensor_wrapper should have the same size as a raw pointer.");
 
   struct reduction_axes final {
     std::vector<int64_t> storage {};

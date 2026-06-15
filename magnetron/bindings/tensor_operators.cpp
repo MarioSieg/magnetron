@@ -671,18 +671,20 @@ namespace mag::bindings {
     cls.attr("cat") = nb::cpp_function(
       [](nb::handle tensors_h, int64_t dim = 0) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
+        if (nb::isinstance<tensor_wrapper>(tensors_h))
+          throw nb::type_error("cat: expected sequence of Tensor, got single Tensor; use Tensor.cat([x])");
         if (!nb::isinstance<nb::sequence>(tensors_h))
           throw nb::type_error("cat: 'tensors' must be a sequence of Tensor");
         auto seq = nb::cast<nb::sequence>(tensors_h);
         size_t n = nb::len(seq);
         if (n == 0)
           throw nb::value_error("cat: at least one tensor is required");
-        std::vector<tensor_wrapper> tensors;
+        std::vector<tensor_wrapper> tensors {};
         tensors.reserve(n);
-        for (nb::handle h : seq) {
-          auto tw = nb::cast<tensor_wrapper>(h);
-          if (!tw) throw nb::value_error("cat: encountered a null Tensor");
-          tensors.emplace_back(tw);
+        for (auto &&handle : seq) {
+          auto wrapper = nb::cast<tensor_wrapper>(handle);
+          if (!wrapper) throw nb::value_error("cat: encountered a null Tensor");
+          tensors.emplace_back(wrapper);
         }
         int64_t rank = mag_tensor_rank(*tensors[0]);
         if (rank <= 0)
@@ -719,6 +721,31 @@ namespace mag::bindings {
       },
       "condition"_a, "x"_a, "y"_a,
       "Return elements from x where condition is True, otherwise from y."
+    );
+
+    cls.def_static("einsum", [](const std::string &equation, nb::args operands) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        size_t n = operands.size();
+        if (n == 0)
+          throw nb::value_error("einsum: at least one tensor is required");
+        std::vector<tensor_wrapper> tensors {};
+        tensors.reserve(n);
+        std::vector<mag_tensor_t *> ptrs {};
+        ptrs.reserve(n);
+        for (auto &&handle : operands) {
+          auto wrapper = nb::cast<tensor_wrapper>(handle);
+          if (!wrapper)
+            throw nb::value_error("einsum: encountered a null Tensor");
+          ptrs.emplace_back(*tensors.emplace_back(wrapper));
+        }
+        mag_error_t err {};
+        mag_tensor_t *out = nullptr;
+        throw_if_error(mag_einsum(&err, &out, equation.c_str(), ptrs.data(), ptrs.size()), err);
+        return tensor_wrapper{out};
+      },
+      "equation"_a,
+      "*operands"_a,
+      "Einstein summation over the given operands."
     );
 
     // Unary operators

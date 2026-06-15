@@ -78,6 +78,7 @@ extern MAG_EXPORT mag_log_level_t mag_log_level(void); /* Get current global log
     _(MAG_STATUS_ERR_SERIALIZATION_ERROR, "De/serialization error") \
     _(MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "Missing compute kernel for requested operation") \
     _(MAG_STATUS_ERR_KERNEL_FAILURE, "Error while executing compute kernel") \
+    _(MAG_STATUS_ERR_EINSUM, "Error while executing einsum operation") \
     _(MAG_STATUS_ERR_UNKNOWN, "Unknown error")
 
 typedef enum mag_status_t {
@@ -436,6 +437,7 @@ extern MAG_EXPORT mag_status_t mag_triu(mag_error_t *err, mag_tensor_t **out_res
 extern MAG_EXPORT mag_status_t mag_triu_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int32_t diag);
 extern MAG_EXPORT mag_status_t mag_multinomial(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t num_samples, bool replacement);
 extern MAG_EXPORT mag_status_t mag_cat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t **tensors, size_t count, int64_t dim);
+extern MAG_EXPORT mag_status_t mag_einsum(mag_error_t *err, mag_tensor_t **out_result, const char *equation, mag_tensor_t **args, size_t num_args);
 
 extern MAG_EXPORT int64_t mag_tensor_rank(const mag_tensor_t *tensor);
 extern MAG_EXPORT const int64_t *mag_tensor_shape_ptr(const mag_tensor_t *tensor);

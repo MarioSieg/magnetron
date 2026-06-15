@@ -12,6 +12,7 @@
 #include "mag_autodiff.h"
 #include "mag_context.h"
 #include "mag_reduce_plan.h"
+#include "mag_einsum.h"
 
 #include <string.h>
 
@@ -1124,6 +1125,10 @@ mag_status_t mag_cat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
   mag_try(mag_dispatch(err, MAG_OP_CAT, false, &layout, tensors, count, &result, 1));
   *out_result = result;
   return MAG_STATUS_OK;
+}
+
+mag_status_t mag_einsum(mag_error_t *err, mag_tensor_t **out_result, const char *equation, mag_tensor_t **args, size_t num_args) {
+  return mag_einsum_eval(err, out_result, equation, (const mag_tensor_t **)args, num_args);
 }
 
 mag_status_t mag_one_hot(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *indices, int64_t num_classes) {
