@@ -18,16 +18,7 @@
 extern "C" {
 #endif
 
-#define MAG_EINSUM_MAX_INPUTS 64
-#define MAG_EINSUM_MAX_SPEC 128
-
-extern MAG_EXPORT mag_status_t mag_einsum_eval(
-  mag_error_t *err,
-  mag_tensor_t **out_result,
-  const char *equation,
-  const mag_tensor_t **args,
-  size_t num_args
-);
+extern MAG_EXPORT mag_status_t mag_einsum_eval(mag_error_t *err, mag_tensor_t **out_result, const char *equation, const mag_tensor_t **args, size_t num_args);
 
 #ifdef __cplusplus
 }
