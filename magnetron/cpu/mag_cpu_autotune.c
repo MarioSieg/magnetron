@@ -137,18 +137,16 @@ uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_
       case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
       case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
       case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: {
-        /*
         int64_t K = x->coords.shape[x->coords.rank-1];
         int64_t N = y->coords.shape[y->coords.rank-1];
         int64_t work_bytes = N*K*mag_type_trait(x->dtype)->size;
         int64_t workers = 1;
-        if (work_bytes >= 4LL   <<20) workers = 4;
-        if (work_bytes >= 16LL  <<20) workers = 8;
-        if (work_bytes >= 32LL  <<20) workers = 16;
-        if (work_bytes >= 96LL  <<20) workers = 32;
-        if (work_bytes >= 256LL <<20) workers = 64;
-        return mag_xmin(workers, allocated_workers);*/
-        return allocated_workers;
+        if (work_bytes >= 4LL   << 20) workers = 4;
+        if (work_bytes >= 16LL  << 20) workers = 8;
+        if (work_bytes >= 32LL  << 20) workers = 16;
+        if (work_bytes >= 96LL  << 20) workers = 32;
+        if (work_bytes >= 256LL << 20) workers = 64;
+        return mag_xmin(workers, allocated_workers);
       }
       default: return allocated_workers;
     }
