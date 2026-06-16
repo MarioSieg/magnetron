@@ -40,8 +40,10 @@ def render_table(df, title: str, out_path: Path) -> None:
     shown = df.copy()
     shown.insert(0, 'idx', [f'#{i:02d}' for i in range(len(shown))])
     shown['shapes'] = shown['shapes'].map(compact_shapes)
+    shown['strides'] = shown['strides'].map(compact_shapes)
 
-    cols = ['idx', 'op', 'calls', 'dtype', 'kind', 'shapes', 'total_ms', 'avg_us', 'max_us']
+
+    cols = ['idx', 'op', 'calls', 'dtype', 'kind', 'shapes', 'strides', 'total_ms', 'avg_us', 'max_us']
     shown = shown[cols]
 
     fig_h = max(3, 0.38 * len(shown) + 1.2)
@@ -78,6 +80,7 @@ def load_profile_csv(csv_path: Path) -> pd.DataFrame:
         'kind',
         'dtype',
         'shapes',
+        'strides',
         'total_ms',
         'avg_us',
         'max_us',
@@ -98,6 +101,7 @@ def load_profile_csv(csv_path: Path) -> pd.DataFrame:
     df['kind'] = df['kind'].astype(str)
     df['dtype'] = df['dtype'].astype(str)
     df['shapes'] = df['shapes'].astype(str)
+    df['strides'] = df['strides'].astype(str)
 
     return df
 

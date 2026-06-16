@@ -43,12 +43,17 @@ namespace mag::bindings {
       static_assert(std::is_same_v<std::common_type_t<std::decay_t<Args>...>, mag_tensor_t *>);
       static_assert(std::is_invocable_v<F>);
       std::stringstream shape_ss {};
+      std::stringstream strides_ss {};
       std::array<const mag_tensor_t *, sizeof...(Args)> tensors {tensor_args...};
       for (size_t i=0; i < tensors.size(); ++i) {
         auto *tensor = tensors[i];
-        char shape_buf[MAG_FMT_DIM_BUF_SIZE];
-        mag_fmt_shape(&shape_buf, &tensor->coords.shape, tensor->coords.rank);
-        shape_ss << shape_buf << (i < tensors.size() - 1 ? ", " : "");
+        auto fmt_shape_tuple = [&](std::stringstream &ss, const int64_t (&dims)[MAG_MAX_DIMS]) {
+          char shape_buf[MAG_FMT_DIM_BUF_SIZE];
+          mag_fmt_shape(&shape_buf, &dims, tensor->coords.rank);
+          ss << shape_buf << (i < tensors.size() - 1 ? ", " : "");
+        };
+        fmt_shape_tuple(shape_ss, tensor->coords.shape);
+        fmt_shape_tuple(strides_ss, tensor->coords.strides);
       }
       std::string dtype = sizeof...(Args) ? std::string{mag_type_trait(tensors[0]->dtype)->short_name} : "?";
       std::string kind {};
@@ -66,13 +71,14 @@ namespace mag::bindings {
       std::invoke(f);
       auto end = std::chrono::high_resolution_clock::now();
       std::string opname = mag_op_trait(opcode)->mnemonic;
-      record_op_entry(std::move(opname), shape_ss.str(), std::move(dtype), std::move(kind), end - start);
+      record_op_entry(std::move(opname), shape_ss.str(), strides_ss.str(), std::move(dtype), std::move(kind), end - start);
     }
 
   private:
     void record_op_entry(
       std::string &&opcode,
       std::string &&shape,
+      std::string &&strides,
       std::string &&dtype,
       std::string &&kind,
       std::chrono::nanoseconds ns
@@ -84,6 +90,7 @@ namespace mag::bindings {
     struct key {
       std::string opcode {};
       std::string shape {};
+      std::string shapes {};
       std::string dtype {};
       std::string kind {};
       bool operator == (const key &other) const;

@@ -38,12 +38,13 @@ namespace mag::bindings {
   void op_recorder::record_op_entry(
     std::string &&opcode,
     std::string &&shape,
+    std::string &&strides,
     std::string &&dtype,
     std::string &&kind,
     std::chrono::nanoseconds ns
   ) {
     std::lock_guard<std::mutex> lock {m_mtx};
-    profile_record &entry = m_profiles[{std::move(opcode), std::move(shape), std::move(dtype), std::move(kind)}];
+    profile_record &entry = m_profiles[{std::move(opcode), std::move(shape), std::move(strides), std::move(dtype), std::move(kind)}];
     ++entry.calls;
     entry.total += ns;
     entry.max = std::max(entry.max, ns);
@@ -83,7 +84,7 @@ namespace mag::bindings {
       rows.emplace_back(row{k, v});
     std::sort(rows.begin(), rows.end(), [](const row &a, const row &b) noexcept -> bool { return a.p.total > b.p.total; });
     std::ofstream file {full_path};
-    file << "calls,op,shapes,kind,dtype,total_ms,avg_us,max_us\n";
+    file << "calls,op,shapes,strides,kind,dtype,total_ms,avg_us,max_us\n";
     for (auto &&row : rows) {
       double total_ms = std::chrono::duration<double, std::milli>(row.p.total).count();
       double max_us = std::chrono::duration<double, std::micro>(row.p.max).count();
@@ -94,6 +95,7 @@ namespace mag::bindings {
         << row.p.calls << ','
         << row.k.opcode << ','
         << '"' << row.k.shape << '"' << ','
+        << '"' << row.k.shapes << '"' << ','
         << row.k.kind << ','
         << row.k.dtype << ','
         << total_ms << ','
