@@ -13,9 +13,10 @@ using namespace magnetron;
 int main() {
     ankerl::nanobench::Bench bench {};
     auto type = dtype::bfloat16;
-    bench.title("add " + std::string{dtype_name(type)})
-        .unit("add " + std::string{dtype_name(type)})
-        .warmup(100)
+    bench.title("BMM_VGEM " + std::string{dtype_name(type)})
+        .unit("BMM_VGEM " + std::string{dtype_name(type)})
+        .warmup(200)
+        .minEpochIterations(200)
         .performanceCounters(true);
         context ctx {};
         tensor x {ctx, type, 1, 1, 2560};
@@ -23,7 +24,7 @@ int main() {
         tensor y {ctx, type, 9728, 2560};
         y.fill_(3.0f);
         tensor yT = y.transpose();
-        bench.run("BMM_GEMM S", [&] {
+        bench.run("BMM_VGEM S", [&] {
             tensor r {x%yT};
             ankerl::nanobench::doNotOptimizeAway(r);
         });

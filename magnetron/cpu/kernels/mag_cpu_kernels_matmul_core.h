@@ -9,6 +9,9 @@
 ** +---------------------------------------------------------------------+
 */
 
+mag_static_assert(MAG_DTYPE_FLOAT32 == 0); /* We use LUTs for the dtype kernels from 0..=3 */
+mag_static_assert(MAG_DTYPE_FLOAT8_E4M3FN == 3);
+
 static MAG_HOTPROC mag_status_t mag_matmul_generic(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err;
   mag_matmul_type_t type = mag_matmul_type_detect(payload->cmd->in[0], payload->cmd->in[1]);

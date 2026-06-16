@@ -167,7 +167,6 @@ static MAG_HOTPROC void mag_matmul_bmm_gemm(const mag_kernel_payload_t *payload)
   int64_t sx1 = x->coords.strides[xr-1];
   int64_t sy0 = y->coords.strides[yr-2];
   int64_t sy1 = y->coords.strides[yr-1];
-  bool contig = sx0 == K && sx1 == 1 && sy0 == N && sy1 == 1;
   int64_t bx = xr-2;
   int64_t by = yr-2;
   int64_t br = rr-2;
@@ -195,10 +194,7 @@ static MAG_HOTPROC void mag_matmul_bmm_gemm(const mag_kernel_payload_t *payload)
     void *ppr = pr + (batch*M + i0)*N*el;
     const void *ppx = px + (mox + i0*sx0)*el;
     const void *ppy = py + moy*el;
-    if (contig)
-      (*mag_gemm_kernel_lut_contig[r->dtype])(Mt, N, K, ppr, ppx, ppy);
-    else
-      (*mag_gemm_kernel_lut_strided[r->dtype])(Mt, N, K, ppr, ppx, ppy, sx0, sx1, sy0, sy1);
+    mag_matmul_gemm_impl(r->dtype, 0, 1, Mt, N, K, ppr, ppx, sx0, sx1, ppy, sy0, sy1);
     i += Mt;
   }
 }

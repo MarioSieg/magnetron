@@ -127,10 +127,27 @@ uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_
   if (allocated_workers <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || max_numel < info.thread_treshold)  /* Use a single worker (main thread). */
     return 1;
   if (op == MAG_OP_MATMUL || op == MAG_OP_SCALED_MATMUL) { /* Special case for matmul */
-    mag_matmul_type_t matmul_type = mag_matmul_type_detect(cmd->in[0], cmd->in[1]);
+    const mag_tensor_t *x = cmd->in[0];
+    const mag_tensor_t *y = cmd->in[1];
+    mag_matmul_type_t matmul_type = mag_matmul_type_detect(x, y);
     switch (matmul_type) {
       case MAG_MATMUL_TYPE_DOT:
       case MAG_MATMUL_TYPE_BMM_DOT: return 1;
+      case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
+      case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
+      case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
+      case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: {
+        int64_t K = x->coords.shape[x->coords.rank-1];
+        int64_t N = y->coords.shape[y->coords.rank-1];
+        int64_t work_bytes = N*K*mag_type_trait(x->dtype)->size;
+        int64_t workers = 1;
+        if (work_bytes >= 4LL   <<20) workers = 4;
+        if (work_bytes >= 16LL  <<20) workers = 8;
+        if (work_bytes >= 32LL  <<20) workers = 16;
+        if (work_bytes >= 96LL  <<20) workers = 32;
+        if (work_bytes >= 256LL <<20) workers = 64;
+        return mag_xmin(workers, allocated_workers);
+      }
       default: return allocated_workers;
     }
   }
