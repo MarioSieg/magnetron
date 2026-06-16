@@ -895,7 +895,7 @@ namespace mag::bindings {
       if constexpr (enable_op_recorder) {
         op_recorder::singleton().profile(MAG_OP_MATMUL, [&] () -> void {
           throw_if_error(mag_matmul(&err, &out, *self, *b), err);
-        }, *self, *b);
+        }, {*self, *b});
       } else {
         throw_if_error(mag_matmul(&err, &out, *self, *b), err);
       }

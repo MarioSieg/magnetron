@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <sstream>
 #include <functional>
+#include <filesystem>
 #include <mutex>
 
 #include "prelude.hpp"
@@ -36,43 +37,9 @@ namespace mag::bindings {
   public:
     [[nodiscard]] static op_recorder &singleton();
 
-    void dump_csv(const std::string& base_name = "magnetron_profile");
+    void dump_csv(const std::filesystem::path &base_name = "magnetron_profile");
 
-    template <typename F, typename... Args>
-    void profile(mag_opcode_t opcode, F &&f, Args &&...tensor_args) {
-      static_assert(std::is_same_v<std::common_type_t<std::decay_t<Args>...>, mag_tensor_t *>);
-      static_assert(std::is_invocable_v<F>);
-      std::stringstream shape_ss {};
-      std::stringstream strides_ss {};
-      std::array<const mag_tensor_t *, sizeof...(Args)> tensors {tensor_args...};
-      for (size_t i=0; i < tensors.size(); ++i) {
-        auto *tensor = tensors[i];
-        auto fmt_shape_tuple = [&](std::stringstream &ss, const int64_t (&dims)[MAG_MAX_DIMS]) {
-          char shape_buf[MAG_FMT_DIM_BUF_SIZE];
-          mag_fmt_shape(&shape_buf, &dims, tensor->coords.rank);
-          ss << shape_buf << (i < tensors.size() - 1 ? ", " : "");
-        };
-        fmt_shape_tuple(shape_ss, tensor->coords.shape);
-        fmt_shape_tuple(strides_ss, tensor->coords.strides);
-      }
-      std::string dtype = sizeof...(Args) ? std::string{mag_type_trait(tensors[0]->dtype)->short_name} : "?";
-      std::string kind {};
-      if (opcode == MAG_OP_MATMUL && 2 == sizeof...(Args)) { // Matmul type for matmul
-        auto mmt = mag_matmul_type_detect(tensors[0], tensors[1]);
-        bool contig = mag_matmul_type_is_micro_kernel_contig(mmt, tensors[0], tensors[1]);
-        kind = mag_matmul_type_name(mmt);
-        kind += " ";
-        kind += contig ? "C" : "S";
-      } else { // Else contig or strided kernel invocation
-        bool contig = mag_all_shapes_equal_and_contig(tensors.data(), tensors.size());
-        kind = contig ? "C" : "S";
-      }
-      auto start = std::chrono::high_resolution_clock::now();
-      std::invoke(f);
-      auto end = std::chrono::high_resolution_clock::now();
-      std::string opname = mag_op_trait(opcode)->mnemonic;
-      record_op_entry(std::move(opname), shape_ss.str(), strides_ss.str(), std::move(dtype), std::move(kind), end - start);
-    }
+    void profile(mag_opcode_t opcode, std::function<void()> &&f, std::initializer_list<mag_tensor_t *> tensors);
 
   private:
     void record_op_entry(
