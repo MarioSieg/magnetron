@@ -257,7 +257,7 @@ extern MAG_EXPORT mag_status_t mag_borrow_cpu_buffer(
     int64_t rank,
     const int64_t *shape,
     bool is_writeable,
-    void (*release_callback)(void *usr),
+    void (*release_cb)(void *usr),
     void *usr
 );
 

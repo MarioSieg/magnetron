@@ -85,18 +85,19 @@ mag_status_t mag_tensor_init(
   mag_contract(err, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "tensor: must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   mag_contract(err, ERR_INVALID_RANK, {}, rank >= 0 && rank <= MAG_MAX_DIMS, "tensor: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   if (rank > 0) mag_contract(err, ERR_INVALID_PARAM, {}, shape != NULL, "tensor: shape must not be NULL when rank > 0.");
-  int64_t dts = (int64_t)mag_type_trait(type)->size;
+  int64_t el = (int64_t)mag_type_trait(type)->size;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
     mag_contract(err, ERR_INVALID_DIM, {}, shape[i] > 0, "tensor: all shape dimensions must be > 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
     mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i], numel, &numel), "tensor: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
   }
   int64_t numbytes;
-  mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(numel, dts, &numbytes), "tensor: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, dts);
+  mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(numel, el, &numbytes), "tensor: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, el);
   mag_device_t *target_device=NULL;
+  bool has_rquested_device = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, device, NULL, &target_device);
   char device_name[32];
-  mag_device_id_to_str(device, &device_name);
-  mag_contract(err, ERR_INVALID_DEVICE, {}, mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, device, NULL, &target_device), "tensor: device '%s' is not available; the backend may not be enabled.", device_name);
+  if (mag_unlikely(!has_rquested_device)) mag_device_id_to_str(device, &device_name);
+  mag_contract(err, ERR_INVALID_DEVICE, {}, has_rquested_device, "tensor: device '%s' is not available; the backend may not be enabled.", device_name);
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel); /* Alloc tensor header. */
   if (!storage) {
     mag_status_t (*allocator)(mag_device_t *, mag_error_t *, mag_storage_buffer_t **, size_t) = target_device->alloc_storage;
@@ -237,20 +238,20 @@ static mag_status_t mag_borrowed_storage_dtor(void *self) {
 }
 
 mag_status_t mag_borrow_cpu_buffer(
-    mag_error_t *err,
-    mag_tensor_t **out,
-    mag_context_t *ctx,
-    void *data,
-    size_t num_bytes,
-    mag_dtype_t dtype,
-    int64_t rank,
-    const int64_t *shape,
-    bool is_writeable,
-    void (*release_callback)(void *usr),
-    void *usr
+  mag_error_t *err,
+  mag_tensor_t **out,
+  mag_context_t *ctx,
+  void *data,
+  size_t num_bytes,
+  mag_dtype_t dtype,
+  int64_t rank,
+  const int64_t *shape,
+  bool is_writeable,
+  void (*release_cb)(void *usr),
+  void *usr
 ) {
   *out = NULL;
-  mag_contract(err, ERR_INVALID_PARAM, {}, release_callback != NULL, "borrow_cpu_buffer: release callback must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, release_cb != NULL, "borrow_cpu_buffer: release callback must not be NULL.");
   mag_contract(err, ERR_INVALID_PARAM, {}, data != NULL, "borrow_cpu_buffer: data pointer must not be NULL.");
   mag_contract(err, ERR_INVALID_PARAM, {}, num_bytes > 0, "borrow_cpu_buffer: num_bytes must be > 0.");
   mag_contract(err, ERR_THREAD_MISMATCH, {}, mag_thread_id() == ctx->tr_id, "borrow_cpu_buffer: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
@@ -266,7 +267,7 @@ mag_status_t mag_borrow_cpu_buffer(
   mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(numel, dts, &need_bytes), "borrow_cpu_buffer: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, dts);
   mag_contract(err, ERR_INVALID_PARAM, {}, (size_t)need_bytes <= num_bytes, "borrow_cpu_buffer: buffer is too small (need at least %zu bytes, but got %zu).", (size_t)need_bytes, num_bytes);
   mag_borrow_cookie_t *cookie = (*mag_alloc)(NULL, sizeof(*cookie), 0);
-  cookie->fn = release_callback;
+  cookie->fn = release_cb;
   cookie->usr = usr;
   mag_device_t *cpu_device = NULL;
   mag_contract(err, ERR_INVALID_DEVICE, { (*mag_alloc)(cookie, 0, 0); }, mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device), "borrow_cpu_buffer: CPU backend is not available.");

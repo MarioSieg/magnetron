@@ -1427,30 +1427,30 @@ static mag_status_t mag_matmul_alloc_res(mag_error_t *err, mag_tensor_t **res, i
     case MAG_MATMUL_TYPE_INVALID: mag_contract(err, ERR_OPERATOR_IMPOSSIBLE, {}, 0, "matmul: unsupported tensor shapes."); return MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE;
     case MAG_MATMUL_TYPE_DOT: return mag_empty_scalar(err, res, x->ctx, x->dtype, mag_tensor_device_id(x));
     case MAG_MATMUL_TYPE_GEMV_VEC_MAT: {
-      int64_t N = y->coords.shape[1];
+        int64_t N = y->coords.shape[1];
       return mag_empty(err, res, x->ctx, x->dtype, 1, (int64_t[1]){N}, mag_tensor_device_id(x));
     } case MAG_MATMUL_TYPE_GEMV_MAT_VEC: {
-      int64_t M = x->coords.shape[0];
+        int64_t M = x->coords.shape[0];
       return mag_empty(err, res, x->ctx, x->dtype, 1, (int64_t[1]){M}, mag_tensor_device_id(x));
     } case MAG_MATMUL_TYPE_GEMM: {
-      int64_t M = x->coords.shape[0];
-      int64_t N = y->coords.shape[1];
+        int64_t M = x->coords.shape[0];
+        int64_t N = y->coords.shape[1];
       return mag_empty(err, res, x->ctx, x->dtype, 2, (int64_t[2]){M, N}, mag_tensor_device_id(x));
     } case MAG_MATMUL_TYPE_BMM_DOT:
       case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
       case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
       case MAG_MATMUL_TYPE_BMM_GEMM: {
-      *xb = x->coords.rank-2;
-      *yb = y->coords.rank-2;
-      int64_t shape[MAG_MAX_DIMS] = {0};
-      for (int64_t i=0; i < rb; ++i) {
-        int64_t da = i < rb-*xb ? 1 : x->coords.shape[i-(rb-*xb)];
-        int64_t db = i < rb-*yb ? 1 : y->coords.shape[i-(rb-*yb)];
-        shape[i] = da > db ? da : db;
-      }
-      shape[rb] = x->coords.shape[x->coords.rank-2];
-      shape[rb+1] = y->coords.shape[y->coords.rank-1];
-      return mag_empty(err, res, x->ctx, x->dtype, rb+2, shape, mag_tensor_device_id(x));
+        *xb = x->coords.rank-2;
+        *yb = y->coords.rank-2;
+        int64_t shape[MAG_MAX_DIMS] = {0};
+        for (int64_t i=0; i < rb; ++i) {
+          int64_t da = i < rb-*xb ? 1 : x->coords.shape[i-(rb-*xb)];
+          int64_t db = i < rb-*yb ? 1 : y->coords.shape[i-(rb-*yb)];
+          shape[i] = da > db ? da : db;
+        }
+        shape[rb] = x->coords.shape[x->coords.rank-2];
+        shape[rb+1] = y->coords.shape[y->coords.rank-1];
+        return mag_empty(err, res, x->ctx, x->dtype, rb+2, shape, mag_tensor_device_id(x));
     } default: mag_panic("matmul: invalid BMM matmul type '%s'.", mag_matmul_type_name(type)); return MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE;
   }
 }
