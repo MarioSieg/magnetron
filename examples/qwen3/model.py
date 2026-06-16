@@ -323,7 +323,7 @@ class Qwen3Model(nn.Module):
         if reset_cache:
             self.cache.clear()
         idx = idx.reshape(1, -1)
-        start_pos: int = self.cache.cache_pos()
+        start_pos: int = self.cache.cache_pos
         T: int = idx.shape[1]
         logits = self(
             idx,
