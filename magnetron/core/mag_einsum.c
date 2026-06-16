@@ -1166,7 +1166,7 @@ mag_status_t mag_einsum_eval(mag_error_t *err, mag_tensor_t **out_result, const 
     (*mag_alloc)(cloned, 0, 0);
     return stat;
   }
-  #if MAG_DEBUG
+  #ifdef MAG_DEBUG
     mag_ein_debug_print_path(cloned, &heuristics, nodes, num_nodes);
   #endif
   stat = mag_ein_execute_path(err, out_result, nodes, num_nodes, args, num_args);
