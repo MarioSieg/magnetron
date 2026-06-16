@@ -66,6 +66,7 @@ static MAG_AINLINE MAG_CUDA_DEVICE mag_float8_e4m3fn_t mag_float8_e4m3fn_from_fl
 }
 
 static MAG_AINLINE MAG_CUDA_DEVICE float mag_float8_e4m3fn_to_float32_soft_fp(mag_float8_e4m3fn_t x) {
+  /* LUT lookup is actually much slower than scalar conversion on x86-64
   static const uint32_t mag_float8_e4m3fn_lut[256] = {
     0x00000000, 0x3b000000, 0x3b800000, 0x3bc00000, 0x3c000000, 0x3c200000, 0x3c400000, 0x3c600000,
     0x3c800000, 0x3c900000, 0x3ca00000, 0x3cb00000, 0x3cc00000, 0x3cd00000, 0x3ce00000, 0x3cf00000,
@@ -104,7 +105,7 @@ static MAG_AINLINE MAG_CUDA_DEVICE float mag_float8_e4m3fn_to_float32_soft_fp(ma
   float r;
   memcpy(&r, &bits, sizeof r);
   return r;
-  /*
+  */
   uint32_t w = (uint32_t)x.bits<<24;
   uint32_t sgn = w & 0x80000000u;
   uint32_t dat = w & 0x7fffffffu;
@@ -123,7 +124,6 @@ static MAG_AINLINE MAG_CUDA_DEVICE float mag_float8_e4m3fn_to_float32_soft_fp(ma
   float rf;
   memcpy(&rf, &r, sizeof(rf));
   return rf;
-  */
 }
 
 #ifdef __cplusplus
