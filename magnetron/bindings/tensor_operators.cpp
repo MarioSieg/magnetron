@@ -915,7 +915,13 @@ namespace mag::bindings {
       std::lock_guard lock{get_global_mutex()};
       mag_tensor_t *out = nullptr;
       mag_error_t err{};
-      throw_if_error(mag_scaled_matmul(&err, &out, *self, *fp8_w, *scale_scalar), err);
+      if constexpr (enable_op_recorder) {
+        op_recorder::singleton().profile(MAG_OP_MATMUL, [&] () -> void {
+          throw_if_error(mag_scaled_matmul(&err, &out, *self, *fp8_w, *scale_scalar), err);
+        }, {*self, *fp8_w});
+      } else {
+        throw_if_error(mag_scaled_matmul(&err, &out, *self, *fp8_w, *scale_scalar), err);
+      }
       return tensor_wrapper{out};
     }, "fp8_w"_a, "scale_scalar"_a);
   }

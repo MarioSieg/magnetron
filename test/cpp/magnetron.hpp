@@ -61,6 +61,7 @@ namespace magnetron {
         float32 = MAG_DTYPE_FLOAT32,
         float16 = MAG_DTYPE_FLOAT16,
         bfloat16 = MAG_DTYPE_BFLOAT16,
+        float8_e4m3fn = MAG_DTYPE_FLOAT8_E4M3FN,
         boolean = MAG_DTYPE_BOOLEAN,
         u8 = MAG_DTYPE_UINT8,
         i8 = MAG_DTYPE_INT8,
@@ -765,6 +766,12 @@ namespace magnetron {
             mag_tensor_t *out = nullptr;
             handle_error(mag_shr_(&g_error,  &out, m_tensor, &*other));
             return tensor{out};
+        }
+
+        [[nodiscard]] auto scaled_mm(tensor w, tensor scale) -> tensor {
+          mag_tensor_t *out = nullptr;
+          handle_error(mag_scaled_matmul(&g_error,  &out, m_tensor, &*w, &*scale));
+          return tensor{out};
         }
 
         [[nodiscard]] auto operator + (tensor other) const noexcept -> tensor { return add(other); }
