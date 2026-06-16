@@ -76,9 +76,14 @@ class KVCache:
             KVLayerCache(batch_size=batch_size, num_kv_heads=cfg.num_key_value_heads, max_seq_len=max_seq_len, head_dim=cfg.head_dim)
             for _ in range(cfg.num_hidden_layers)
         ]
+        assert all(layer.pos == self.cache_pos for layer in self.layers)
 
     def __getitem__(self, idx: int) -> KVLayerCache:
         return self.layers[idx]
+
+    @property
+    def cache_pos(self) -> int:
+        return self.layers[0].pos
 
     def clear(self) -> None:
         for layer in self.layers:
@@ -302,6 +307,7 @@ class Qwen3Model(nn.Module):
         max_tokens: int,
         temp: float = 1.0,
         top_k: int = 10,
+        reset_cache: bool = False,
     ) -> Iterator[str]:
 
         def sample(logits: Tensor, strategy: SamplingStrategy) -> int:  # Sample according to strategy
@@ -314,13 +320,17 @@ class Qwen3Model(nn.Module):
                 case _:
                     raise RuntimeError(f'Invalid sampling strategy: {strategy}')
 
-        self.cache.clear()
-
+        if reset_cache:
+            self.cache.clear()
         idx = idx.reshape(1, -1)
-        idl: int = idx.shape[1]
-        logits = self(idx, idx=Tensor.arange(stop=idl).reshape(1, -1))
+        start_pos: int = self.cache.cache_pos()
+        T: int = idx.shape[1]
+        logits = self(
+            idx,
+            idx=Tensor.arange(start=start_pos, stop=start_pos + T).reshape(1, -1),
+        )
         next_logits = logits[:, -1, :] / temp
-        curr_len: int = idl
+        curr_len: int = start_pos + T
         pending: list[int] = []
 
         for _ in range(max_tokens):

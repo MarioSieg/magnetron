@@ -1,6 +1,10 @@
 # +---------------------------------------------------------------------+
 # | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
 # | Licensed under the Apache License, Version 2.0                      |
+# |                                                                     |
+# | Website : https://mariosieg.com                                     |
+# | GitHub  : https://github.com/MarioSieg                              |
+# | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
 
 import argparse
@@ -59,6 +63,7 @@ def _quantize(x: Tensor) -> tuple[Tensor, Tensor]:
     scale = 1.0 if amax < 1e-12 or not (amax == amax) else amax / fp8max
     inv_scale = 1.0 / scale if scale != 0.0 else 1.0
     q = (highp * inv_scale).clamp(-fp8max, fp8max).cast(qtype)
+    del highp
     return q, Tensor([scale], dtype=dtype.float32)
 
 
@@ -152,13 +157,16 @@ def _convert_model(
         for shard_path in _iter_safetensor_shards(repo_dir):
             hf_state_dict: dict[str, torch.Tensor] = load_file(shard_path, device='cpu')
             processed_stack: list[str] = []
-            for key, tensor in remaining.items():
+            for key in list(remaining.keys()):
+                if key not in remaining:
+                    continue
                 if fp8w_mode and key in scale_keys:
                     continue
                 hf_key: str = hf_key_for(key)
                 torch_tensor: torch.Tensor | None = hf_state_dict.get(hf_key)
                 if torch_tensor is None:
                     continue
+                target_tensor = remaining[key]
                 scaled_quant: bool = key.endswith('.weight') and (f'{key}_scale' in scale_keys)
                 if fp8w_mode and scaled_quant:
                     mag_tensor = Tensor(torch_tensor.to('cpu').contiguous()).cast(dtype.bfloat16)
@@ -166,13 +174,20 @@ def _convert_model(
                     print(f'Quantized {hf_key} -> {key}, Shape={tuple(torch_tensor.shape)}, Scale={scale.item()}')
                     snap.put_tensor(key, quantized)
                     tensor_manifest.append((key, tuple(quantized.shape), quantized.dtype.short_name))
+
                     scale_key: str = f'{key}_scale'
                     snap.put_tensor(scale_key, scale)
                     tensor_manifest.append((scale_key, tuple(scale.shape), scale.dtype.short_name))
+
                     processed_stack.append(key)
-                    processed_stack.append(scale_key)
+                    if scale_key in remaining:
+                        processed_stack.append(scale_key)
+
+                    del quantized
+                    del scale
+                    gc.collect()
                 else:
-                    target_dtype = tensor.dtype
+                    target_dtype = target_tensor.dtype
                     print(f'Converting {hf_key} -> {key} shape={tuple(torch_tensor.shape)} dtype={target_dtype.short_name}')
                     if target_dtype == dtype.float32:
                         tt = torch_tensor.to(torch.float32)
@@ -186,16 +201,16 @@ def _convert_model(
                         tt = torch_tensor.to(activation_torch_dtype)
                     tt = tt.to('cpu').contiguous()
                     out_tensor = Tensor(tt, dtype=target_dtype)
+                    del tt
                     snap.put_tensor(key, out_tensor)
                     tensor_manifest.append((key, tuple(out_tensor.shape), out_tensor.dtype.short_name))
                     processed_stack.append(key)
-
+                    del out_tensor
+                    gc.collect()
             for k in processed_stack:
-                remaining.pop(k)
+                remaining.pop(k, None)
             del hf_state_dict
             gc.collect()
-            if not remaining:
-                break
         if remaining:
             for key, tensor in list(remaining.items()):
                 if key.endswith('.bias'):

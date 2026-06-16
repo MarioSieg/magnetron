@@ -98,7 +98,14 @@ class InferenceEngine:
         console.print(f'Ready in {end - start:.2f}s', style='dim')
         gc.collect()
 
-    def gen_stream(self, prompt: str, max_tokens: int | None = None, temp: float | None = None, top_k: int | None = None) -> Iterator[str]:
+    def gen_stream(
+        self,
+        prompt: str,
+        max_tokens: int | None = None,
+        temp: float | None = None,
+        top_k: int | None = None,
+        reset_cache: bool = False,
+    ) -> Iterator[str]:
         if max_tokens is None:
             max_tokens = self.config.max_tokens
         if temp is None:
@@ -106,7 +113,14 @@ class InferenceEngine:
         if top_k is None:
             top_k = self.config.top_k
         model_input_ids = Tensor([self.tokenizer.encode(prompt)], dtype=dtype.int64)
-        for chunk in self.model.generate_stream(model_input_ids, self.tokenizer, max_tokens=max_tokens, temp=temp, top_k=top_k):
+        for chunk in self.model.generate_stream(
+            model_input_ids,
+            self.tokenizer,
+            max_tokens=max_tokens,
+            temp=temp,
+            top_k=top_k,
+            reset_cache=reset_cache,
+        ):
             yield chunk
         gc.collect()
 
