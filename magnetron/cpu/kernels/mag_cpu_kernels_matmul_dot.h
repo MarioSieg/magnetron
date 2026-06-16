@@ -10,14 +10,14 @@
 */
 
 typedef void (mag_dot_kernel_contig_t)(int64_t numel, void *r, const void *px, const void *py);
-#define mag_dot_kernel_contig_impl(dtype, TtoF32, F32toT) \
-  static MAG_HOTPROC void mag_dot_kernel_contig_##dtype(int64_t numel, void *pr, const void *px, const void *py) { \
-    const dtype *x = (const dtype *)px; \
-    const dtype *y = (const dtype *)py; \
+#define mag_dot_kernel_contig_impl(T, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_dot_kernel_contig_##T(int64_t numel, void *pr, const void *px, const void *py) { \
+    const T *x = (const T *)px; \
+    const T *y = (const T *)py; \
     float acc=0.f; \
     for (int64_t i=0; i < numel; ++i) \
       acc += TtoF32(x[i])*TtoF32(y[i]); \
-    *(dtype *)pr = F32toT(acc); \
+    *(T *)pr = F32toT(acc); \
   }
 mag_dot_kernel_contig_impl(float, mag_cvt_nop, mag_cvt_nop)
 mag_dot_kernel_contig_impl(mag_float16_t, mag_float16_to_float32, mag_float32_to_float16)
@@ -26,14 +26,14 @@ mag_dot_kernel_contig_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, ma
 #undef mag_dot_kernel_contig_impl
 
 typedef void (mag_dot_kernel_strided_t)(int64_t numel, void *r, const void *px, const void *py, int64_t sx, int64_t sy);
-#define mag_dot_kernel_strided_impl(dtype, TtoF32, F32toT) \
-  static MAG_HOTPROC void mag_dot_kernel_strided_##dtype(int64_t numel, void *pr, const void *px, const void *py, int64_t sx, int64_t sy) { \
-    const dtype *x = (const dtype *)px; \
-    const dtype *y = (const dtype *)py; \
+#define mag_dot_kernel_strided_impl(T, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_dot_kernel_strided_##T(int64_t numel, void *pr, const void *px, const void *py, int64_t sx, int64_t sy) { \
+    const T *x = (const T *)px; \
+    const T *y = (const T *)py; \
     float acc=0.f; \
     for (int64_t i=0; i < numel; ++i) \
       acc += TtoF32(x[i*sx])*TtoF32(y[i*sy]); \
-    *(dtype *)pr = F32toT(acc); \
+    *(T *)pr = F32toT(acc); \
   }
 mag_dot_kernel_strided_impl(float, mag_cvt_nop, mag_cvt_nop)
 mag_dot_kernel_strided_impl(mag_float16_t, mag_float16_to_float32, mag_float32_to_float16)
@@ -82,14 +82,14 @@ static MAG_HOTPROC void mag_matmul_dot(const mag_kernel_payload_t *payload) {
 }
 
 typedef void (mag_dot_fp8w_scaled_kernel_contig_t)(int64_t numel, void *r, const void *px, const void *py);
-#define mag_dot_fp8w_scaled_kernel_contig_impl(dtype, TtoF32, F32toT) \
-  static MAG_HOTPROC void mag_dot_fp8w_scaled_kernel_contig_##dtype(int64_t numel, void *pr, const void *px, const void *py) { \
-    const dtype *x = (const dtype *)px; \
-    const dtype *y = (const dtype *)py; \
+#define mag_dot_fp8w_scaled_kernel_contig_impl(T, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_dot_fp8w_scaled_kernel_contig_##T(int64_t numel, void *pr, const void *px, const void *py) { \
+    const T *x = (const T *)px; \
+    const T *y = (const T *)py; \
     float acc=0.f; \
     for (int64_t i=0; i < numel; ++i) \
       acc += TtoF32(x[i])*TtoF32(y[i]); \
-    *(dtype *)pr = F32toT(acc); \
+    *(T *)pr = F32toT(acc); \
   }
 mag_dot_fp8w_scaled_kernel_contig_impl(float, mag_cvt_nop, mag_cvt_nop)
 mag_dot_fp8w_scaled_kernel_contig_impl(mag_float16_t, mag_float16_to_float32, mag_float32_to_float16)
@@ -98,14 +98,14 @@ mag_dot_fp8w_scaled_kernel_contig_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to
 #undef mag_dot_fp8w_scaled_kernel_contig_impl
 
 typedef void (mag_dot_fp8w_scaled_kernel_strided_t)(int64_t numel, void *r, const void *px, const void *py, int64_t sx, int64_t sy);
-#define mag_dot_fp8w_scaled_kernel_strided_impl(dtype, TtoF32, F32toT) \
-  static MAG_HOTPROC void mag_dot_fp8w_scaled_kernel_strided_##dtype(int64_t numel, void *pr, const void *px, const void *py, int64_t sx, int64_t sy) { \
-    const dtype *x = (const dtype *)px; \
-    const dtype *y = (const dtype *)py; \
+#define mag_dot_fp8w_scaled_kernel_strided_impl(T, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_dot_fp8w_scaled_kernel_strided_##T(int64_t numel, void *pr, const void *px, const void *py, int64_t sx, int64_t sy) { \
+    const T *x = (const T *)px; \
+    const T *y = (const T *)py; \
     float acc=0.f; \
     for (int64_t i=0; i < numel; ++i) \
       acc += TtoF32(x[i*sx])*TtoF32(y[i*sy]); \
-    *(dtype *)pr = F32toT(acc); \
+    *(T *)pr = F32toT(acc); \
   }
 mag_dot_fp8w_scaled_kernel_strided_impl(float, mag_cvt_nop, mag_cvt_nop)
 mag_dot_fp8w_scaled_kernel_strided_impl(mag_float16_t, mag_float16_to_float32, mag_float32_to_float16)

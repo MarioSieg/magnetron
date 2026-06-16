@@ -9,12 +9,12 @@
 ** +---------------------------------------------------------------------+
 */
 
-typedef void (mag_gemv_vec_mat_kernel_contig_t)(int64_t K, int64_t N, void *r, const void *px, const void *py, int64_t sy);
-#define mag_gemv_vec_mat_kernel_contig_impl(dtype, TtoF32, F32toT) \
-  static MAG_HOTPROC void mag_gemv_vec_mat_kernel_contig_##dtype(int64_t K, int64_t N, void *pr, const void *px, const void *py, int64_t sy) { \
-    dtype *r = (dtype *)pr; \
-    const dtype *x = (const dtype *)px; \
-    const dtype *y = (const dtype *)py; \
+typedef void (mag_gemv_vec_mat_kernel_contig_t)(int64_t K, int64_t N, void *pr, const void *px, const void *py, int64_t sy);
+#define mag_gemv_vec_mat_kernel_contig_impl(T, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_gemv_vec_mat_kernel_contig_##T(int64_t K, int64_t N, void *pr, const void *px, const void *py, int64_t sy) { \
+    T *restrict r = (T *)pr; \
+    const T *x = (const T *)px; \
+    const T *y = (const T *)py; \
     for (int64_t j=0; j < N; ++j) { \
       float acc = 0.f; \
       for (int64_t i=0; i < K; ++i) \
@@ -28,12 +28,66 @@ mag_gemv_vec_mat_kernel_contig_impl(mag_bfloat16_t, mag_bfloat16_to_float32, mag
 mag_gemv_vec_mat_kernel_contig_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
 #undef mag_gemv_vec_mat_kernel_contig_impl
 
+typedef void (mag_gemv_vec_mat_kernel_rhs_transposed_contig_t)(int64_t K, int64_t N, void *pr, const void *px, const void *py);
+#define mag_gemv_vec_mat_kernel_rhs_transposed_contig_impl(T, TtoF32, F32toT, LoadTtoF32) \
+  static MAG_HOTPROC void mag_gemv_vec_mat_kernel_rhs_transposed_contig_##T(int64_t K, int64_t N, void *pr, const void *px, const void *py) { \
+    T *restrict r = (T *)pr; \
+    const T *x = (const T *)px; \
+    const T *y = (const T *)py; \
+    int64_t j=0; \
+    for (; j+3 < N; j += 4) { \
+      const T *w0 = y + (j+0)*K; \
+      const T *w1 = y + (j+1)*K; \
+      const T *w2 = y + (j+2)*K; \
+      const T *w3 = y + (j+3)*K; \
+      mag_vf32_t vacc0 = mag_vf32_zero(); \
+      mag_vf32_t vacc1 = mag_vf32_zero(); \
+      mag_vf32_t vacc2 = mag_vf32_zero(); \
+      mag_vf32_t vacc3 = mag_vf32_zero(); \
+      int64_t i=0; \
+      for (; i+MAG_VF32_LANES-1 < K; i += MAG_VF32_LANES) { \
+        mag_vf32_t xi = LoadTtoF32(x+i); \
+        vacc0 = mag_vf32_fmadd(xi, LoadTtoF32(w0+i), vacc0); \
+        vacc1 = mag_vf32_fmadd(xi, LoadTtoF32(w1+i), vacc1); \
+        vacc2 = mag_vf32_fmadd(xi, LoadTtoF32(w2+i), vacc2); \
+        vacc3 = mag_vf32_fmadd(xi, LoadTtoF32(w3+i), vacc3); \
+      } \
+      float sacc0 = mag_vf32_reduce_add(vacc0); \
+      float sacc1 = mag_vf32_reduce_add(vacc1); \
+      float sacc2 = mag_vf32_reduce_add(vacc2); \
+      float sacc3 = mag_vf32_reduce_add(vacc3); \
+      for (; i < K; ++i) { \
+        float xi = TtoF32(x[i]); \
+        sacc0 += xi*TtoF32(w0[i]); \
+        sacc1 += xi*TtoF32(w1[i]); \
+        sacc2 += xi*TtoF32(w2[i]); \
+        sacc3 += xi*TtoF32(w3[i]); \
+      } \
+      r[j+0] = F32toT(sacc0); \
+      r[j+1] = F32toT(sacc1); \
+      r[j+2] = F32toT(sacc2); \
+      r[j+3] = F32toT(sacc3); \
+    } \
+    for (; j < N; ++j) { \
+      const T *restrict wy = y + j*K; \
+      float acc = 0.f; \
+      for (int64_t i=0; i < K; ++i) \
+        acc += TtoF32(x[i])*TtoF32(wy[i]); \
+      r[j] = F32toT(acc); \
+    } \
+  }
+mag_gemv_vec_mat_kernel_rhs_transposed_contig_impl(float, mag_cvt_nop, mag_cvt_nop, mag_vf32_loadu)
+mag_gemv_vec_mat_kernel_rhs_transposed_contig_impl(mag_float16_t, mag_float16_to_float32, mag_float32_to_float16, mag_vf32_loadu_f16)
+mag_gemv_vec_mat_kernel_rhs_transposed_contig_impl(mag_bfloat16_t, mag_bfloat16_to_float32, mag_float32_to_bfloat16, mag_vf32_loadu_bf16)
+mag_gemv_vec_mat_kernel_rhs_transposed_contig_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn)
+#undef mag_gemv_vec_mat_kernel_rhs_transposed_contig_impl
+
 typedef void (mag_gemv_vec_mat_kernel_strided_t)(int64_t K, int64_t N, void *r, const void *px, const void *py, int64_t sx, int64_t sy0, int64_t sy1);
-#define mag_gemv_vec_mat_kernel_strided_impl(dtype, TtoF32, F32toT) \
-  static MAG_HOTPROC void mag_gemv_vec_mat_kernel_strided_##dtype(int64_t K, int64_t N, void *pr, const void *px, const void *py, int64_t sx, int64_t sy0, int64_t sy1) { \
-    dtype *r = (dtype *)pr; \
-    const dtype *x = (const dtype *)px; \
-    const dtype *y = (const dtype *)py; \
+#define mag_gemv_vec_mat_kernel_strided_impl(T, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_gemv_vec_mat_kernel_strided_##T(int64_t K, int64_t N, void *pr, const void *px, const void *py, int64_t sx, int64_t sy0, int64_t sy1) { \
+    T *restrict r = (T *)pr; \
+    const T *x = (const T *)px; \
+    const T *y = (const T *)py; \
     for (int64_t j=0; j < N; ++j) { \
       float acc = 0.f; \
       for (int64_t i=0; i < K; ++i) \
@@ -53,7 +107,7 @@ static MAG_HOTPROC void mag_matmul_gemv_vec_mat_impl(
   int64_t tc,
   int64_t N,
   int64_t K,
-  void *pr,
+  void *restrict pr,
   const void *px, int64_t sx,
   const void *py, int64_t sy0, int64_t sy1
 ) {
@@ -62,6 +116,12 @@ static MAG_HOTPROC void mag_matmul_gemv_vec_mat_impl(
     [MAG_DTYPE_FLOAT16] = &mag_gemv_vec_mat_kernel_contig_mag_float16_t,
     [MAG_DTYPE_BFLOAT16] = &mag_gemv_vec_mat_kernel_contig_mag_bfloat16_t,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gemv_vec_mat_kernel_contig_mag_float8_e4m3fn_t
+  };
+  static mag_gemv_vec_mat_kernel_rhs_transposed_contig_t *const kernel_lut_rhs_transposed_contig[4] = {
+    [MAG_DTYPE_FLOAT32] = &mag_gemv_vec_mat_kernel_rhs_transposed_contig_float,
+    [MAG_DTYPE_FLOAT16] = &mag_gemv_vec_mat_kernel_rhs_transposed_contig_mag_float16_t,
+    [MAG_DTYPE_BFLOAT16] = &mag_gemv_vec_mat_kernel_rhs_transposed_contig_mag_bfloat16_t,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gemv_vec_mat_kernel_rhs_transposed_contig_mag_float8_e4m3fn_t
   };
   static mag_gemv_vec_mat_kernel_strided_t *const kernel_lut_strided[4] = {
     [MAG_DTYPE_FLOAT32] = &mag_gemv_vec_mat_kernel_strided_float,
@@ -79,6 +139,8 @@ static MAG_HOTPROC void mag_matmul_gemv_vec_mat_impl(
   py = (const uint8_t *)py + start*sy1*el;
   if (sx == 1 && sy0 == N && sy1 == 1) /* Contig fast path */
     (*kernel_lut_contig[dtype])(K, Nt, pr, px, py, N);
+  else if (sx == 1 && sy0 == 1 && sy1 == K)
+    (*kernel_lut_rhs_transposed_contig[dtype])(K, Nt, pr, px, py);
   else
     (*kernel_lut_strided[dtype])(K, Nt, pr, px, py, sx, sy0, sy1);
 }
@@ -92,7 +154,7 @@ static MAG_HOTPROC void mag_matmul_gemv_vec_mat(const mag_kernel_payload_t *payl
   int64_t sy1 = y->coords.strides[1];
   int64_t K = x->coords.shape[0];
   int64_t N = y->coords.shape[1];
-  void *pr = (void *)mag_tensor_data_ptr_mut(r);
+  void *restrict pr = (void *)mag_tensor_data_ptr_mut(r);
   const void *px = (const void *)mag_tensor_data_ptr(x);
   const void *py = (const void *)mag_tensor_data_ptr(y);
   mag_matmul_gemv_vec_mat_impl(r->dtype, payload->thread_idx, payload->thread_num, N, K, pr, px, sx, py, sy0, sy1);

@@ -10,11 +10,11 @@
 */
 
 typedef void (mag_gemv_mat_vec_kernel_contig_t)(int64_t M, int64_t K, void *r, const void *px, const void *py);
-#define mag_gemv_mat_vec_kernel_contig_impl(dtype, TtoF32, F32toT) \
-  static MAG_HOTPROC void mag_gemv_mat_vec_kernel_contig_##dtype(int64_t M, int64_t K, void *pr, const void *px, const void *py) { \
-    dtype *r = (dtype *)pr; \
-    const dtype *x = (const dtype *)px; \
-    const dtype *y = (const dtype *)py; \
+#define mag_gemv_mat_vec_kernel_contig_impl(T, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_gemv_mat_vec_kernel_contig_##T(int64_t M, int64_t K, void *pr, const void *px, const void *py) { \
+    T *restrict r = (T *)pr; \
+    const T *x = (const T *)px; \
+    const T *y = (const T *)py; \
     for (int64_t i=0; i < M; ++i) { \
       float acc = 0.f; \
       for (int64_t j=0; j < K; ++j) \
@@ -29,11 +29,11 @@ mag_gemv_mat_vec_kernel_contig_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_fl
 #undef mag_gemv_mat_vec_kernel_contig_impl
 
 typedef void (mag_gemv_mat_vec_kernel_strided_t)(int64_t M, int64_t K, void *r, const void *px, const void *py, int64_t sx0, int64_t sx1, int64_t sy);
-#define mag_gemv_mat_vec_kernel_strided_impl(dtype, TtoF32, F32toT) \
-  static MAG_HOTPROC void mag_gemv_mat_vec_kernel_strided_##dtype(int64_t M, int64_t K, void *pr, const void *px, const void *py, int64_t sx0, int64_t sx1, int64_t sy) { \
-    dtype *r = (dtype *)pr; \
-    const dtype *x = (const dtype *)px; \
-    const dtype *y = (const dtype *)py; \
+#define mag_gemv_mat_vec_kernel_strided_impl(T, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_gemv_mat_vec_kernel_strided_##T(int64_t M, int64_t K, void *pr, const void *px, const void *py, int64_t sx0, int64_t sx1, int64_t sy) { \
+    T *restrict r = (T *)pr; \
+    const T *x = (const T *)px; \
+    const T *y = (const T *)py; \
     for (int64_t i=0; i < M; ++i) { \
       float acc = 0.f; \
       for (int64_t j=0; j < K; ++j) \
