@@ -131,13 +131,13 @@ void mag_threadpool_destroy(mag_thread_pool_t *pool) {
 }
 
 /* Submits work payload and awakens all threads */
-static void mag_threadpool_kickoff(mag_thread_pool_t *pool, const mag_command_t *cmd, uint32_t num_active_workers, volatile mag_atomic64_t *next_tile) {
+static void mag_threadpool_kickoff(mag_thread_pool_t *pool, const mag_command_t *cmd, uint32_t num_active_workers, mag_tile_sched_t *tile_sched) {
   pool->num_active_workers = num_active_workers;
   for (uint32_t i=0; i < pool->num_allocated_workers; ++i) { /* Set up payload */
     mag_kernel_payload_t *payload = &pool->workers[i].payload;
     payload->cmd = cmd;
     payload->thread_num = num_active_workers;
-    payload->mm_next_tile = next_tile;
+    payload->tile_sched = tile_sched;
   }
   mag_phase_fence_kick(&pool->fence, pool->num_allocated_workers);
 }
@@ -171,8 +171,8 @@ mag_status_t mag_threadpool_parallel_compute(mag_error_t *err, mag_thread_pool_t
   mag_assert2(pool != NULL);
   if (err) memset(err, 0, sizeof(*err));
   mag_threadpool_clear_worker_status(pool);
-  volatile mag_atomic64_t next_tile = 0;
-  mag_threadpool_kickoff(pool, cmd, num_active_workers, &next_tile); /* Kick off workers */
+  mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) mag_tile_sched_t tile_sched = {0};
+  mag_threadpool_kickoff(pool, cmd, num_active_workers, &tile_sched); /* Kick off workers */
   pool->workers[0].stat = mag_worker_exec_and_broadcast(err, pool, pool->kernels, &pool->workers->payload); /* Main thread does work too */
   mag_threadpool_barrier(pool); /* Wait for all workers to finish */
   return mag_threadpool_collect_status(err, pool);
