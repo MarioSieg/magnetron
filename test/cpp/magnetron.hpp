@@ -768,12 +768,6 @@ namespace magnetron {
             return tensor{out};
         }
 
-        [[nodiscard]] auto scaled_mm(tensor w, tensor scale) -> tensor {
-          mag_tensor_t *out = nullptr;
-          handle_error(mag_scaled_matmul(&g_error,  &out, m_tensor, &*w, &*scale));
-          return tensor{out};
-        }
-
         [[nodiscard]] auto operator + (tensor other) const noexcept -> tensor { return add(other); }
         [[nodiscard]] auto operator + (float other) const noexcept -> tensor { return add(other); }
         auto operator += (tensor other) const noexcept -> tensor { return add_(other); }

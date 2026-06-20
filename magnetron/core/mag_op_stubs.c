@@ -1469,24 +1469,6 @@ mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   return MAG_STATUS_OK;
 }
 
-mag_status_t mag_scaled_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *w, mag_tensor_t *scale_scalar) {
-  *out_result = NULL;
-  mag_contract(err, ERR_INVALID_PARAM, {}, mag_tensor_is_floating_point_typed(x), "scaled_matmul: x must be a floating-point tensor.");
-  mag_contract(err, ERR_INVALID_PARAM, {}, w->dtype == MAG_DTYPE_FLOAT8_E4M3FN, "scaled_matmul: w must have dtype %s, but got %s.", mag_type_trait(MAG_DTYPE_FLOAT8_E4M3FN)->name, mag_type_trait(w->dtype)->name);
-  mag_contract(err, ERR_INVALID_PARAM, {}, scale_scalar->dtype == MAG_DTYPE_FLOAT32, "scaled_matmul: scale must have dtype %s, but got %s.", mag_type_trait(MAG_DTYPE_FLOAT32)->name, mag_type_trait(scale_scalar->dtype)->name);
-  mag_contract(err, ERR_INVALID_PARAM, {}, scale_scalar->numel == 1, "scaled_matmul: scale must be a scalar tensor, but has %" PRIi64 " elements.", scale_scalar->numel);
-  mag_contract(err, ERR_INVALID_PARAM, {}, x->coords.rank >= 1 && w->coords.rank >= 1, "scaled_matmul: x and w must have rank >= 1.");
-  mag_contract(err, ERR_INVALID_PARAM, {}, x->dtype == MAG_DTYPE_FLOAT32 || x->dtype == MAG_DTYPE_FLOAT16 || x->dtype == MAG_DTYPE_BFLOAT16, "scaled_matmul: x must have dtype float32, float16 or bfloat16, but got %s.", mag_type_trait(x->dtype)->name);
-  mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_SCALED_MATMUL, (mag_tensor_t *[3]){x, w, scale_scalar}, 0));
-  mag_tensor_t *result = NULL;
-  int64_t rb, xb, yb;
-  mag_try(mag_matmul_verify_shapes(err, &rb, &xb, &yb, x, w));
-  mag_try(mag_matmul_alloc_res(err, &result, rb, &xb, &yb, &result, x, w));
-  mag_try(mag_dispatch(err, MAG_OP_SCALED_MATMUL, false, NULL, (mag_tensor_t *[3]) {x, w, scale_scalar}, 3, &result, 1));
-  *out_result = result;
-  return MAG_STATUS_OK;
-}
-
 mag_status_t mag_repeat_back(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
   *out_result = NULL;
   mag_tensor_t *result = NULL;

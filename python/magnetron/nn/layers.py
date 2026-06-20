@@ -32,7 +32,6 @@ class Linear(Module):
             dtype = context.get_default_dtype()
         self.in_features: int = in_features
         self.out_features: int = out_features
-        self.is_scaled: bool = dtype == _dtype.float8_e4m3fn
         self.weight: Parameter = Parameter(Tensor.empty(out_features, in_features, dtype=dtype))
         if weight_init is None:
             weight_init = KaimingUniformInitStrategy(
@@ -50,12 +49,9 @@ class Linear(Module):
                 inplace_init(self.bias, UniformInitStrategy(-bound, bound))
             else:
                 inplace_init(self.bias, bias_init)
-        if self.is_scaled:
-            setattr(self, 'weight_scale', Parameter(Tensor.ones(1, dtype=_dtype.float32)))
 
     def forward(self, x: Tensor) -> Tensor:
-        w = self.weight.T
-        x = x.scaled_matmul(w, self.weight_scale) if self.is_scaled else x.matmul(w)
+        x = x @ self.weight.T
         if self.bias is not None:
             x = x + self.bias
         return x

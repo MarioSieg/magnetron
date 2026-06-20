@@ -214,7 +214,6 @@ namespace mag {
       [MAG_OP_MOD] = &binary_op_mod,
       [MAG_OP_POW] = &binary_op_pow,
       [MAG_OP_MATMUL] = &misc_op_matmul,
-      [MAG_OP_SCALED_MATMUL] = nullptr,
       [MAG_OP_REPEAT_BACK] = &misc_op_repeat_back,
       [MAG_OP_GATHER] = &misc_op_gather,
       [MAG_OP_AND] = &binary_op_and,

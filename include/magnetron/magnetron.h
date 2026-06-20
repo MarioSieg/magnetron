@@ -407,7 +407,6 @@ extern MAG_EXPORT mag_status_t mag_mod_(mag_error_t *err, mag_tensor_t **out_res
 extern MAG_EXPORT mag_status_t mag_pow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_pow_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);
-extern MAG_EXPORT mag_status_t mag_scaled_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *w, mag_tensor_t *scale_scalar);
 extern MAG_EXPORT mag_status_t mag_repeat_back(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);
 extern MAG_EXPORT mag_status_t mag_gather(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t dim, mag_tensor_t *idx);
 extern MAG_EXPORT mag_status_t mag_and(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);

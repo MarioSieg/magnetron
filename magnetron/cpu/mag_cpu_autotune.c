@@ -96,7 +96,6 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_DIV] = {3.5, 10000},
     [MAG_OP_MOD] = {3.5, 10000},
     [MAG_OP_MATMUL] = {0.4, 1000},
-    [MAG_OP_SCALED_MATMUL] = {0.4, 1000},
     [MAG_OP_REPEAT_BACK] = {0.5, 25000},
     [MAG_OP_GATHER] = {0.0, 0},
     [MAG_OP_AND] = {3.5, 10000},
@@ -126,7 +125,7 @@ uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_
   mag_op_thread_scaling_info info = mag_cpu_get_op_thread_scaling_info(op);
   if (allocated_workers <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || max_numel < info.thread_treshold)  /* Use a single worker (main thread). */
     return 1;
-  if (op == MAG_OP_MATMUL || op == MAG_OP_SCALED_MATMUL) { /* Special case for matmul */
+  if (op == MAG_OP_MATMUL) { /* Special case for matmul */
     const mag_tensor_t *x = cmd->in[0];
     const mag_tensor_t *y = cmd->in[1];
     mag_matmul_type_t matmul_type = mag_matmul_type_detect(x, y);

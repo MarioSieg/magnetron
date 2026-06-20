@@ -901,11 +901,6 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_BFLOAT16] = &mag_matmul_generic,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_matmul_generic,
   },
-  [MAG_OP_SCALED_MATMUL] = {
-    [MAG_DTYPE_FLOAT32] = &mag_matmul_fp8w_scaled,
-    [MAG_DTYPE_FLOAT16] = &mag_matmul_fp8w_scaled,
-    [MAG_DTYPE_BFLOAT16] = &mag_matmul_fp8w_scaled,
-  },
   [MAG_OP_REPEAT_BACK] = {
     [MAG_DTYPE_FLOAT32] = &mag_repeat_back_float32,
     [MAG_DTYPE_FLOAT16] = &mag_repeat_back_float16,
