@@ -19,55 +19,32 @@
 
 #include <array>
 #include <cmath>
-#include <cstdint>
 #include <type_traits>
 
 namespace mag {
 
   constexpr int MISC_BLOCK_SIZE = 256;
 
-  template <typename T>
-__device__ __forceinline__ float d_mm_to_f32(T x) {
-    if constexpr (std::is_same_v<T, float>) return x;
-    else if constexpr (std::is_same_v<T, half>) return __half2float(x);
-    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return static_cast<float>(x);
-    else return __bfloat162float(x);
-  }
-
-  template <typename T>
-  __device__ __forceinline__ T d_mm_from_f32(float v) {
-    if constexpr (std::is_same_v<T, float>) return v;
-    else if constexpr (std::is_same_v<T, half>) return __float2half(v);
-    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return static_cast<__nv_fp8_e4m3>(v);
-    else return __float2bfloat16(v);
-  }
-
   static void cuda_check(cudaError_t e, const char *what) {
     if (mag_unlikely(e != cudaSuccess))
       mag_panic("%s: %s", what, cudaGetErrorString(e));
   }
 
-  /* --- one_hot --- */
-  template <const bool same_layout>
-  __global__ static void one_hot_kernel2(
-    int64_t total,
-    int64_t nc,
+  template <const bool SameLayout>
+  __global__ static void one_hot_kernel(
+    int total,
+    int nc,
     int64_t *__restrict__ pr,
-    const int64_t *__restrict__ pidx,
+    const int64_t *__restrict__ pi,
     mag_coords_iter_t it
   ) {
-    int64_t t = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
-    int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
-    for (; t < total; t += step) {
-      int64_t cls;
-      if constexpr (same_layout)
-        cls = pidx[t];
-      else {
-        int64_t ridx = mag_coords_iter_to_offset(&it, t);
-        cls = pidx[ridx];
-      }
-      if ((uint64_t)cls < (uint64_t)nc) {
-        int64_t off = t*nc + cls;
+    int i = blockIdx.x*blockDim.x + threadIdx.x;
+    int step = blockDim.x*gridDim.x;
+    for (; i < total; i += step) {
+      int pir = SameLayout ? i : mag_coords_iter_to_offset(&it, i);
+      int cls = pi[pir];
+      if (static_cast<unsigned>(cls) < static_cast<unsigned>(nc)) {
+        int off = i*nc + cls;
         pr[off] = 1;
       }
     }
@@ -77,20 +54,20 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *idx = cmd.in[0];
     mag_assert2(r->dtype == MAG_DTYPE_INT64 && idx->dtype == MAG_DTYPE_INT64);
-    int64_t nc = mag_op_attr_unwrap_int64(cmd.attrs[0]);
-    int64_t total = idx->numel;
+    int nc = static_cast<int>(mag_op_attr_unwrap_int64(cmd.attrs[0]));
+    int n = numel_i32(idx);
     auto *pr = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     const auto *pidx = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(idx));
-    int64_t blocks = (total + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
-    mag_coords_iter_t it;
-    mag_coords_iter_init(&it, &idx->coords);
-    if (std::array<const mag_tensor_t *, 2> tensors{r, idx}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size()))
-      one_hot_kernel2<true><<<blocks, MISC_BLOCK_SIZE>>>(total, nc, pr, pidx, it);
-    else
-      one_hot_kernel2<false><<<blocks, MISC_BLOCK_SIZE>>>(total, nc, pr, pidx, it);
+    int blocks = (n+MISC_BLOCK_SIZE-1)/MISC_BLOCK_SIZE;
+    if (std::array<const mag_tensor_t *, 2> tensors{r, idx}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
+      one_hot_kernel<true><<<blocks, MISC_BLOCK_SIZE>>>(n, nc, pr, pidx, {});
+    } else {
+      mag_coords_iter_t it;
+      mag_coords_iter_init(&it, &idx->coords);
+      one_hot_kernel<false><<<blocks, MISC_BLOCK_SIZE>>>(n, nc, pr, pidx, it);
+    }
   }
 
-  /* --- tril / triu --- */
   template <typename T, const bool upper>
   __global__ static void tri_mask_kernel(
     int64_t total,
@@ -114,7 +91,7 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
       int64_t inner = ti % mat;
       int64_t row = inner / cols;
       int64_t col = inner - row*cols;
-      int64_t ri, xi;
+      int ri, xi;
       mag_coords_iter_offset2(&cr, &cx, ti, &ri, &xi);
       bool keep = upper ? (col - row) >= diag : (col - row) <= diag;
       br[ri] = keep ? bx[xi] : z;
@@ -177,27 +154,27 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     }
   }
 
-  template <typename T, const bool contig>
+  template <typename T, const bool C>
   __global__ static void where_kernel(
-    int64_t n,
+    int n,
     T *__restrict__ br,
     const uint8_t *__restrict__ bc,
     const T *__restrict__ bx,
     const T *__restrict__ by,
-    mag_coords_iter_t cr,
-    mag_coords_iter_t cc,
-    mag_coords_iter_t cx,
-    mag_coords_iter_t cy
+    [[maybe_unused]] mag_coords_iter_t cr,
+    [[maybe_unused]] mag_coords_iter_t cc,
+    [[maybe_unused]] mag_coords_iter_t cx,
+    [[maybe_unused]] mag_coords_iter_t cy
   ) {
-    int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
-    int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
-    if constexpr (contig) {
+    int i = blockDim.x*blockIdx.x + threadIdx.x;
+    int step = blockDim.x*gridDim.x;
+    if constexpr (C) {
       for (; i < n; i += step) {
         br[i] = bc[i] ? bx[i] : by[i];
       }
     } else {
       for (; i < n; i += step) {
-        int64_t ri, ci, xi, yi;
+        int ri, ci, xi, yi;
         mag_coords_iter_offset4(&cr, &cc, &cx, &cy, i, &ri, &ci, &xi, &yi);
         br[ri] = bc[ci] ? bx[xi] : by[yi];
       }
@@ -206,21 +183,22 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
 
   template <typename T>
   static void launch_where(mag_tensor_t *r, const mag_tensor_t *cond, const mag_tensor_t *x, const mag_tensor_t *y) {
-    int64_t n = mag_tensor_numel(r);
-    int64_t blocks = (n + UNARY_BLOCK_SIZE - 1) / UNARY_BLOCK_SIZE;
-    mag_coords_iter_t cr, cc, cx, cy;
-    mag_coords_iter_init(&cr, &r->coords);
-    mag_coords_iter_init(&cc, &cond->coords);
-    mag_coords_iter_init(&cx, &x->coords);
-    mag_coords_iter_init(&cy, &y->coords);
+    int n = numel_i32(r);
+    int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bc = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(cond));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     const auto *by = reinterpret_cast<const T *>(mag_tensor_data_ptr(y));
-    if (std::array<const mag_tensor_t *, 4> tensors{r, cond, x, y}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size()))
-      where_kernel<T, true><<<blocks, UNARY_BLOCK_SIZE>>>(n, br, bc, bx, by, cr, cc, cx, cy);
-    else
+    if (std::array<const mag_tensor_t *, 4> tensors{r, cond, x, y}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
+      where_kernel<T, true><<<blocks, UNARY_BLOCK_SIZE>>>(n, br, bc, bx, by, {}, {}, {}, {});
+    } else {
+      mag_coords_iter_t cr, cc, cx, cy;
+      mag_coords_iter_init(&cr, &r->coords);
+      mag_coords_iter_init(&cc, &cond->coords);
+      mag_coords_iter_init(&cx, &x->coords);
+      mag_coords_iter_init(&cy, &y->coords);
       where_kernel<T, false><<<blocks, UNARY_BLOCK_SIZE>>>(n, br, bc, bx, by, cr, cc, cx, cy);
+    }
   }
 
   void misc_op_where(const mag_command_t &cmd) {
@@ -247,86 +225,23 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     }
   }
 
-  __global__ static void repeat_back_f32_kernel(
+  template <typename T>
+  __global__ static void repeat_back_kernel(
+    int rn,
+    int xn,
+    T *__restrict__ br,
+    const T *__restrict__ bx,
     mag_coords_iter_t cr,
-    mag_coords_iter_t cx,
-    int64_t rn,
-    int64_t xn,
-    float *__restrict__ br,
-    const float *__restrict__ bx
+    mag_coords_iter_t cx
   ) {
-    if (blockIdx.x != 0 || threadIdx.x != 0) return;
     for (int64_t i=0; i < rn; ++i) {
-      int64_t ri = mag_coords_iter_to_offset(&cr, i);
-      br[ri] = 0.f;
+      int ri = mag_coords_iter_to_offset(&cr, i);
+      br[ri] = static_cast<T>(0.f);
     }
-    for (int64_t i=0; i < xn; ++i) {
-      int64_t xi = mag_coords_iter_to_offset(&cx, i);
-      int64_t ri = mag_coords_iter_repeat(&cr, &cx, i);
-      br[ri] = br[ri] + bx[xi];
-    }
-  }
-
-  __global__ static void repeat_back_f16_kernel(
-    mag_coords_iter_t cr,
-    mag_coords_iter_t cx,
-    int64_t rn,
-    int64_t xn,
-    half *__restrict__ br,
-    const half *__restrict__ bx
-  ) {
-    if (blockIdx.x != 0 || threadIdx.x != 0) return;
-    for (int64_t i=0; i < rn; ++i) {
-      int64_t ri = mag_coords_iter_to_offset(&cr, i);
-      br[ri] = __float2half(0.f);
-    }
-    for (int64_t i=0; i < xn; ++i) {
-      int64_t xi = mag_coords_iter_to_offset(&cx, i);
-      int64_t ri = mag_coords_iter_repeat(&cr, &cx, i);
-      float s = __half2float(br[ri]) + __half2float(bx[xi]);
-      br[ri] = __float2half(s);
-    }
-  }
-
-  __global__ static void repeat_back_bf16_kernel(
-    mag_coords_iter_t cr,
-    mag_coords_iter_t cx,
-    int64_t rn,
-    int64_t xn,
-    __nv_bfloat16 *__restrict__ br,
-    const __nv_bfloat16 *__restrict__ bx
-  ) {
-    if (blockIdx.x != 0 || threadIdx.x != 0) return;
-    for (int64_t i=0; i < rn; ++i) {
-      int64_t ri = mag_coords_iter_to_offset(&cr, i);
-      br[ri] = __float2bfloat16(0.f);
-    }
-    for (int64_t i=0; i < xn; ++i) {
-      int64_t xi = mag_coords_iter_to_offset(&cx, i);
-      int64_t ri = mag_coords_iter_repeat(&cr, &cx, i);
-      float s = __bfloat162float(br[ri]) + __bfloat162float(bx[xi]);
-      br[ri] = __float2bfloat16(s);
-    }
-  }
-
-  __global__ static void repeat_back_float8_kernel(
-  mag_coords_iter_t cr,
-  mag_coords_iter_t cx,
-  int64_t rn,
-  int64_t xn,
-  __nv_fp8_e4m3 *__restrict__ br,
-  const __nv_fp8_e4m3 *__restrict__ bx
-) {
-    if (blockIdx.x != 0 || threadIdx.x != 0) return;
-    for (int64_t i=0; i < rn; ++i) {
-      int64_t ri = mag_coords_iter_to_offset(&cr, i);
-      br[ri] = static_cast<__nv_fp8_e4m3>(0.f);
-    }
-    for (int64_t i=0; i < xn; ++i) {
-      int64_t xi = mag_coords_iter_to_offset(&cx, i);
-      int64_t ri = mag_coords_iter_repeat(&cr, &cx, i);
-      float s = static_cast<float>(br[ri]) + static_cast<float>(bx[xi]);
-      br[ri] = static_cast<__nv_fp8_e4m3>(s);
+    for (int i=0; i < xn; ++i) {
+      int xi = mag_coords_iter_to_offset(&cx, i);
+      int ri = mag_coords_iter_repeat(&cr, &cx, i);
+      br[ri] = static_cast<T>(static_cast<float>(br[ri]) + static_cast<float>(bx[xi]));
     }
   }
 
@@ -336,34 +251,37 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     mag_coords_iter_t cr, cx;
     mag_coords_iter_init(&cr, &r->coords);
     mag_coords_iter_init(&cx, &x->coords);
-    int64_t rn = r->numel;
-    int64_t xn = x->numel;
+    int rn = numel_i32(r);
+    int xn = numel_i32(x);
     switch (r->dtype) {
-      case MAG_DTYPE_FLOAT32:
-        repeat_back_f32_kernel<<<1, 1>>>(cr, cx, rn, xn,
-          reinterpret_cast<float *>(mag_tensor_data_ptr_mut(r)),
-          reinterpret_cast<const float *>(mag_tensor_data_ptr(x)));
-        break;
-      case MAG_DTYPE_FLOAT16:
-        repeat_back_f16_kernel<<<1, 1>>>(cr, cx, rn, xn,
-          reinterpret_cast<half *>(mag_tensor_data_ptr_mut(r)),
-          reinterpret_cast<const half *>(mag_tensor_data_ptr(x)));
-        break;
-      case MAG_DTYPE_BFLOAT16:
-        repeat_back_bf16_kernel<<<1, 1>>>(cr, cx, rn, xn,
-          reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(r)),
-          reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)));
-        break;
-      case MAG_DTYPE_FLOAT8_E4M3FN:
-        repeat_back_float8_kernel<<<1, 1>>>(cr, cx, rn, xn,
-          reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(r)),
-          reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)));
-        break;
+      case MAG_DTYPE_FLOAT32: repeat_back_kernel<float><<<1, 1>>>(
+        rn, xn,
+        reinterpret_cast<float *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const float *>(mag_tensor_data_ptr(x)),
+        cr, cx
+      ); return;
+      case MAG_DTYPE_FLOAT16: repeat_back_kernel<half><<<1, 1>>>(
+        rn, xn,
+        reinterpret_cast<half *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const half *>(mag_tensor_data_ptr(x)),
+        cr, cx
+      ); return;
+      case MAG_DTYPE_BFLOAT16: repeat_back_kernel<__nv_bfloat16><<<1, 1>>>(
+        rn, xn,
+        reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)),
+        cr, cx
+      ); return;
+        case MAG_DTYPE_FLOAT8_E4M3FN: repeat_back_kernel<__nv_fp8_e4m3><<<1, 1>>>(
+        rn, xn,
+        reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)),
+        cr, cx
+      ); return;
       default: mag_assert(false, "repeat_back: unsupported dtype");
     }
   }
 
-  /* --- gather --- */
   template <typename T>
   __global__ static void gather_kernel(
     int64_t on,
@@ -703,7 +621,7 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     float sumw = 0.f;
     int64_t nnz = 0;
     for (int64_t i=0; i < K; ++i) {
-      float wi = d_mm_to_f32(w[i]);
+      auto wi = static_cast<float>(w[i]);
       if (!isfinite(wi) || wi <= 0.f) wi = 0.f;
       sumw += wi;
       if (wi > 0.f) ++nnz;
@@ -721,7 +639,7 @@ __device__ __forceinline__ float d_mm_to_f32(T x) {
     }
     int64_t m = 0;
     for (int64_t i=0; i < K; ++i) {
-      float wi = d_mm_to_f32(w[i]);
+      auto wi = static_cast<float>(w[i]);
       if (!isfinite(wi) || wi <= 0.f) continue;
       float u = mag_philox4x32_next_float32(&stream);
       u = fmaxf(u, 1e-37f);

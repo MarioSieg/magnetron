@@ -13,6 +13,9 @@
 
 #include <atomic>
 
+/* Use int instead of int64 for indexing iterators as int64 is much slower on CUA */
+#define MAG_COORDS_ITER_INTEGRAL_TYPE int
+
 #include <core/mag_backend.h>
 #include <core/mag_context.h>
 #include <core/mag_tensor.h>
@@ -33,14 +36,20 @@ namespace mag {
   static inline std::atomic_uint64_t global_seed = 0;
   static inline std::atomic_uint64_t global_subseq = 0;
 
-  template <typename scalar_t>
-  [[nodiscard]] scalar_t unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
-  if constexpr (std::is_same_v<scalar_t, float> || std::is_same_v<scalar_t, half> || std::is_same_v<scalar_t, __nv_bfloat16>) {
-    return static_cast<scalar_t>(mag_op_attr_unwrap_float64(params[i]));
-  } else if constexpr (std::is_signed_v<scalar_t>) {
-    return static_cast<scalar_t>(mag_op_attr_unwrap_int64(params[i]));
-  } else {
-    return static_cast<scalar_t>(mag_op_attr_unwrap_uint64(params[i]));
+  [[nodiscard]] inline int numel_i32(const mag_tensor_t *x) {
+    int64_t numel = x->numel;
+    assert(num <= INT_MAX);
+    return static_cast<int>(numel);
   }
+
+  template <typename T>
+  [[nodiscard]] T unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
+    if constexpr (std::is_same_v<T, float> || std::is_same_v<T, half> || std::is_same_v<T, __nv_bfloat16>) {
+      return static_cast<T>(mag_op_attr_unwrap_float64(params[i]));
+    } else if constexpr (std::is_signed_v<T>) {
+      return static_cast<T>(mag_op_attr_unwrap_int64(params[i]));
+    } else {
+      return static_cast<T>(mag_op_attr_unwrap_uint64(params[i]));
+    }
   }
 }
