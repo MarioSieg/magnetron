@@ -55,7 +55,6 @@ class InferenceConfig:
     top_k: int = 200
     seed: int = 3407
     snapshot: str | None = None
-    quant_dtype: dtype.DType = dtype.float8_e4m3fn
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> 'InferenceConfig':
@@ -71,7 +70,6 @@ class InferenceConfig:
             top_k=args.top_k,
             seed=args.seed,
             snapshot=args.snapshot,
-            quant_dtype=dtype_map.get(args.dtype, dtype.bfloat16),
         )
 
 
@@ -81,7 +79,7 @@ class InferenceEngine:
         if snapshot is None:
             snapshot = _download_or_ensure_hf_file(
                 repo_id=REPO_ID,
-                filename='qwen3-4b-instruct-2507-f8e4m3fn.mag',
+                filename='qwen3-4b-instruct-2507-bf16.mag',
             )
         assert snapshot is not None
         start = time.perf_counter()
@@ -91,7 +89,7 @@ class InferenceEngine:
         if context.is_device_available(config.device):
             context.set_default_device(config.device)
         console.print(f'Loading model from snapshot: {snapshot}', style='dim')
-        self.model = Qwen3Model.from_pretrained_snapshot(snapshot, Qwen3HyperParams(quant_dtype=config.quant_dtype))
+        self.model = Qwen3Model.from_pretrained_snapshot(snapshot, Qwen3HyperParams())
         self.tokenizer = HFTokenizer(REPO_ID)
         self.config = config
         end = time.perf_counter()

@@ -42,7 +42,6 @@ class Qwen3HyperParams:
     bos_token_id: int = 151643
     eos_token_id: int = 151645
     sampling_strategy: SamplingStrategy = SamplingStrategy.GREEDY
-    quant_dtype: dtype.DType | None = dtype.float8_e4m3fn
 
 
 class KVLayerCache:
@@ -99,7 +98,6 @@ class MLP(nn.Module):
             self.hidden_size,
             self.inter_size,
             bias=False,
-            dtype=cfg.quant_dtype,
             weight_init=nn.init.EmptyInitStrategy(),
             bias_init=nn.init.EmptyInitStrategy(),
         )
@@ -107,7 +105,6 @@ class MLP(nn.Module):
             self.hidden_size,
             self.inter_size,
             bias=False,
-            dtype=cfg.quant_dtype,
             weight_init=nn.init.EmptyInitStrategy(),
             bias_init=nn.init.EmptyInitStrategy(),
         )
@@ -115,7 +112,6 @@ class MLP(nn.Module):
             self.inter_size,
             self.hidden_size,
             bias=False,
-            dtype=cfg.quant_dtype,
             weight_init=nn.init.EmptyInitStrategy(),
             bias_init=nn.init.EmptyInitStrategy(),
         )
@@ -163,7 +159,6 @@ class SlidingWindowAttention(nn.Module):
             cfg.hidden_size,
             self.num_heads * self.head_dim,
             bias=False,
-            dtype=cfg.quant_dtype,
             weight_init=nn.init.EmptyInitStrategy(),
             bias_init=nn.init.EmptyInitStrategy(),
         )
@@ -171,7 +166,6 @@ class SlidingWindowAttention(nn.Module):
             cfg.hidden_size,
             self.num_kv_heads * self.head_dim,
             bias=False,
-            dtype=cfg.quant_dtype,
             weight_init=nn.init.EmptyInitStrategy(),
             bias_init=nn.init.EmptyInitStrategy(),
         )
@@ -179,7 +173,6 @@ class SlidingWindowAttention(nn.Module):
             cfg.hidden_size,
             self.num_kv_heads * self.head_dim,
             bias=False,
-            dtype=cfg.quant_dtype,
             weight_init=nn.init.EmptyInitStrategy(),
             bias_init=nn.init.EmptyInitStrategy(),
         )
@@ -187,7 +180,6 @@ class SlidingWindowAttention(nn.Module):
             self.num_heads * self.head_dim,
             cfg.hidden_size,
             bias=False,
-            dtype=cfg.quant_dtype,
             weight_init=nn.init.EmptyInitStrategy(),
             bias_init=nn.init.EmptyInitStrategy(),
         )
@@ -256,7 +248,6 @@ class Qwen3Model(nn.Module):
                 cfg.hidden_size,
                 cfg.vocab_size,
                 bias=False,
-                dtype=cfg.quant_dtype,
                 weight_init=nn.init.EmptyInitStrategy(),
                 bias_init=nn.init.EmptyInitStrategy(),
             )

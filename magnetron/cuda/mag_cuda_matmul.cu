@@ -257,7 +257,7 @@ namespace mag {
         : "memory"
       );
       return static_cast<bool>(wait_completed);
-    };
+    }
 
     __device__ void arrive(){
       [[maybe_unused]] uint64_t state;
@@ -267,7 +267,7 @@ namespace mag {
         : "r"(static_cast<uint32_t>(__cvta_generic_to_shared(this)))
         : "memory"
       );
-    };
+    }
   };
   static_assert(sizeof(barrier) == sizeof(uint64_t));
 

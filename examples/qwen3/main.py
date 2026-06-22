@@ -103,8 +103,8 @@ def _main() -> None:
     args.add_argument(
         '--dtype',
         type=str,
-        default='float8_e4m3fn',
-        choices=['float8_e4m3fn', 'float16', 'bfloat16', 'float32'],
+        default='bfloat16',
+        choices=['float16', 'bfloat16', 'float32'],
         help='Data type to run the model in',
     )
     args = args.parse_args()

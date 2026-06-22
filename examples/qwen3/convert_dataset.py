@@ -26,7 +26,6 @@ def _mag_to_torch_dtype(mag_dtype: dtype.DType) -> torch.dtype:
         dtype.float16: torch.float16,
         dtype.bfloat16: torch.bfloat16,
         dtype.float32: torch.float32,
-        dtype.float8_e4m3fn: torch.float8_e4m3fn,
     }[mag_dtype]
 
 
@@ -35,7 +34,6 @@ def _mag_dtype_from_str(dtype_str: str) -> dtype.DType:
         'float16': dtype.float16,
         'bfloat16': dtype.bfloat16,
         'float32': dtype.float32,
-        'mixed_fp8': dtype.float8_e4m3fn,
     }[dtype_str]
 
 
@@ -73,7 +71,6 @@ def _write_model_card(
     repo: str,
     snap_file: str,
     mag_dtype: dtype.DType,
-    fp8w_mode: bool,
     cfg: Qwen3HyperParams,
     tensor_rows: list[tuple[str, tuple[int, ...], str]],
 ) -> None:
@@ -83,19 +80,11 @@ def _write_model_card(
         f.write(f'# {model_name} Magnetron Snapshot\n\n')
         f.write(f'This repository contains a Magnetron snapshot converted from the original Hugging Face model `{repo}`.\n\n')
         f.write('The snapshot is intended for inference with the Magnetron runtime. ')
-        if fp8w_mode:
-            f.write(
-                'Weights are stored in mixed FP8 mode using `float8_e4m3fn` weight tensors '
-                'and per-tensor `float32` scale tensors, while activations/default runtime '
-                'dtype are kept in `bfloat16`.\n\n'
-            )
-        else:
-            f.write(f'All convertible tensors are stored using `{mag_dtype.short_name}` where applicable.\n\n')
+        f.write(f'All convertible tensors are stored using `{mag_dtype.short_name}` where applicable.\n\n')
         f.write('## Model details\n\n')
         f.write(f'- **Source model:** `{repo}`\n')
         f.write(f'- **Snapshot file:** `{snap_file}`\n')
         f.write(f'- **Magnetron dtype mode:** `{mag_dtype.short_name}`\n')
-        f.write(f'- **Mixed FP8 weights:** `{fp8w_mode}`\n')
         f.write(f'- **Tensor count:** `{len(tensor_rows)}`\n\n')
         f.write('## Qwen3 configuration\n\n')
         f.write('| Field | Value |\n')
@@ -123,19 +112,10 @@ def _convert_model(
     print(f'Downloading model {repo} from Hugging Face...')
     repo_dir = snapshot_download(repo_id=repo)
     cfg = Qwen3HyperParams()
-    fp8w_mode = mag_dtype == dtype.float8_e4m3fn
-    print(f'fp8 mode: {fp8w_mode}')
-    if fp8w_mode:
-        context.set_default_dtype(dtype.bfloat16)
-        activation_torch_dtype = torch.bfloat16
-        cfg.quant_dtype = dtype.float8_e4m3fn
-    else:
-        context.set_default_dtype(mag_dtype)
-        activation_torch_dtype = torch_dtype
-        cfg.quant_dtype = None
+    context.set_default_dtype(mag_dtype)
+    cfg.quant_dtype = None
     mag_model = Qwen3Model(cfg)
-    if not fp8w_mode:
-        mag_model = mag_model.cast(mag_dtype)
+    mag_model = mag_model.cast(mag_dtype)
     sd_mag: dict[str, Tensor] = mag_model.state_dict()
     remaining = dict(sd_mag)
     for k in list(remaining.keys()):
@@ -149,7 +129,6 @@ def _convert_model(
             return mag_key
         return 'model.' + mag_key
 
-    scale_keys: set[str] = {k for k in remaining if k.endswith('.weight_scale')}
     snap_file: str = f'{repo.split("/")[1].lower()}-{mag_dtype.short_name}.mag'
     tensor_manifest: list[tuple[str, tuple[int, ...], str]] = []
     print(f'Writing snapshot to {snap_file}...')
@@ -160,53 +139,19 @@ def _convert_model(
             for key in list(remaining.keys()):
                 if key not in remaining:
                     continue
-                if fp8w_mode and key in scale_keys:
-                    continue
                 hf_key: str = hf_key_for(key)
                 torch_tensor: torch.Tensor | None = hf_state_dict.get(hf_key)
                 if torch_tensor is None:
                     continue
                 target_tensor = remaining[key]
-                scaled_quant: bool = key.endswith('.weight') and (f'{key}_scale' in scale_keys)
-                if fp8w_mode and scaled_quant:
-                    mag_tensor = Tensor(torch_tensor.to('cpu').contiguous()).cast(dtype.bfloat16)
-                    quantized, scale = _quantize(mag_tensor)
-                    print(f'Quantized {hf_key} -> {key}, Shape={tuple(torch_tensor.shape)}, Scale={scale.item()}')
-                    snap.put_tensor(key, quantized)
-                    tensor_manifest.append((key, tuple(quantized.shape), quantized.dtype.short_name))
-
-                    scale_key: str = f'{key}_scale'
-                    snap.put_tensor(scale_key, scale)
-                    tensor_manifest.append((scale_key, tuple(scale.shape), scale.dtype.short_name))
-
-                    processed_stack.append(key)
-                    if scale_key in remaining:
-                        processed_stack.append(scale_key)
-
-                    del quantized
-                    del scale
-                    gc.collect()
-                else:
-                    target_dtype = target_tensor.dtype
-                    print(f'Converting {hf_key} -> {key} shape={tuple(torch_tensor.shape)} dtype={target_dtype.short_name}')
-                    if target_dtype == dtype.float32:
-                        tt = torch_tensor.to(torch.float32)
-                    elif target_dtype == dtype.float16:
-                        tt = torch_tensor.to(torch.float16)
-                    elif target_dtype == dtype.bfloat16:
-                        tt = torch_tensor.to(torch.bfloat16)
-                    elif target_dtype == dtype.float8_e4m3fn:
-                        tt = torch_tensor.to(torch.float8_e4m3fn)
-                    else:
-                        tt = torch_tensor.to(activation_torch_dtype)
-                    tt = tt.to('cpu').contiguous()
-                    out_tensor = Tensor(tt, dtype=target_dtype)
-                    del tt
-                    snap.put_tensor(key, out_tensor)
-                    tensor_manifest.append((key, tuple(out_tensor.shape), out_tensor.dtype.short_name))
-                    processed_stack.append(key)
-                    del out_tensor
-                    gc.collect()
+                target_dtype = target_tensor.dtype
+                print(f'Converting {hf_key} -> {key} shape={tuple(torch_tensor.shape)} dtype={target_dtype.short_name}')
+                out_tensor = Tensor(torch_tensor.to(torch_dtype).to('cpu').contiguous(), dtype=target_dtype)
+                snap.put_tensor(key, out_tensor)
+                tensor_manifest.append((key, tuple(out_tensor.shape), out_tensor.dtype.short_name))
+                processed_stack.append(key)
+                del out_tensor
+                gc.collect()
             for k in processed_stack:
                 remaining.pop(k, None)
             del hf_state_dict
@@ -219,8 +164,6 @@ def _convert_model(
                     snap.put_tensor(key, tensor)
                     tensor_manifest.append((key, tuple(tensor.shape), tensor.dtype.short_name))
                     remaining.pop(key)
-                elif fp8w_mode and key.endswith('.weight_scale'):
-                    raise KeyError(f'Orphan weight_scale entry: {key}')
                 else:
                     raise KeyError(f'Missing HF weight for magnetron key: {key}')
         snap.print_info()
@@ -230,7 +173,6 @@ def _convert_model(
             repo=repo,
             snap_file=snap_file,
             mag_dtype=mag_dtype,
-            fp8w_mode=fp8w_mode,
             cfg=cfg,
             tensor_rows=tensor_manifest,
         )
@@ -247,13 +189,6 @@ def _main() -> None:
         help='HF repo model name',
     )
     parser.add_argument(
-        '--dtype',
-        type=str,
-        default='mixed_fp8',
-        choices=['mixed_fp8', 'float16', 'bfloat16', 'float32'],
-        help='Data type for Magnetron tensors',
-    )
-    parser.add_argument(
         '--model-card',
         action='store_true',
         help='Write a Hugging Face-style model_card.md with tensor manifest',
@@ -263,6 +198,13 @@ def _main() -> None:
         type=str,
         default='model_card.md',
         help='Output path for the generated model card',
+    )
+    parser.add_argument(
+        '--dtype',
+        type=str,
+        default='bfloat16',
+        choices=['float16', 'bfloat16', 'float32'],
+        help='Data type for Magnetron tensors',
     )
     args = parser.parse_args()
     mag_dtype = _mag_dtype_from_str(args.dtype)
