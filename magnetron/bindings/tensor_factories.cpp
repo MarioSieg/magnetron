@@ -417,9 +417,9 @@ namespace mag::bindings {
       [](const tensor_wrapper &like, nb::handle fill_value, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
-        mag_scalar_t s = scalar_from_py(fill_value);
+        mag_scalar_t fill_val = scalar_from_py(fill_value);
         mag_error_t err {};
-        throw_if_error(mag_full_like(&err, &out, *like, s), err);
+        throw_if_error(mag_full_like(&err, &out, *like, fill_val), err);
         mag_context_t *ctx = get_ctx();
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         maybe_set_requires_grad(ctx, out, requires_grad);

@@ -89,6 +89,26 @@ namespace mag::bindings {
       throw nb::value_error("Invalid dimension size (must be > 0)");
   }
 
+  void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op) {
+    if (shape.size() > MAG_MAX_DIMS) {
+      auto msg = std::string(op) + ": invalid number of dimensions, must be <= " + std::to_string(MAG_MAX_DIMS);
+      throw nb::value_error(msg.c_str());
+    }
+    int infer = 0;
+    for (int64_t d : shape) {
+      if (d == -1) {
+        ++infer;
+        if (infer > 1) {
+          auto msg = std::string(op) + ": only one dimension can be inferred";
+          throw nb::value_error(msg.c_str());
+        }
+      } else if (d <= 0) {
+        auto msg = std::string(op) + ": dimensions must be > 0 or -1";
+        throw nb::value_error(msg.c_str());
+      }
+    }
+  }
+
   static void flatten_i64_handle(nb::handle h, std::vector<int64_t> &out) {
     if (nb::isinstance<nb::sequence>(h) && !nb::isinstance<nb::str>(h) && !nb::isinstance<tensor_wrapper>(h)) {
       auto seq = nb::cast<nb::sequence>(h);

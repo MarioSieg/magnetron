@@ -760,40 +760,85 @@ mag_status_t mag_flatten(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
 mag_status_t mag_unflatten(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, const int64_t *sizes, int64_t sizes_rank) {
   *out_result = NULL;
   int64_t rank = x->coords.rank;
-  mag_contract(err, ERR_INVALID_PARAM, {}, sizes_rank > 0, "unflatten: sizes must contain at least one dimension.");
+  mag_contract(
+    err, ERR_INVALID_PARAM, {},
+    sizes_rank > 0,
+    "unflatten: sizes must contain at least one dimension."
+  );
+  mag_contract(
+    err, ERR_INVALID_PARAM, {},
+    sizes != NULL,
+    "unflatten: sizes must not be NULL."
+  );
   mag_norm_axis(&dim, rank);
-  mag_contract(err, ERR_INVALID_RANK, {}, 0 <= dim && dim < rank, "unflatten: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
-  int64_t dim_sz = x->coords.shape[dim];
-  int64_t prod = 1;
-  for (int64_t i=0; i < sizes_rank; ++i) {
-    mag_contract(err, ERR_INVALID_PARAM, {}, sizes[i] > 0, "unflatten: sizes[%" PRIi64 "] must be > 0, but got %" PRIi64 ".", i, sizes[i]);
-    prod *= sizes[i];
-  }
-  mag_contract(err, ERR_INVALID_PARAM, {}, prod == dim_sz, "unflatten: sizes product (%" PRIi64 ") does not match the size of dim %" PRIi64 " (%" PRIi64 ").", prod, dim, dim_sz);
+  mag_contract(
+    err, ERR_INVALID_RANK, {},
+    0 <= dim && dim < rank,
+    "unflatten: dim %" PRIi64 " is out of range for rank %" PRIi64 ".",
+    dim, rank
+  );
+  mag_contract(
+    err, ERR_INVALID_RANK, {},
+    sizes_rank <= MAG_MAX_DIMS,
+    "unflatten: sizes rank %" PRIi64 " exceeds the maximum rank of %d.",
+    sizes_rank, MAG_MAX_DIMS
+  );
   int64_t nr = rank - 1 + sizes_rank;
-  mag_contract(err, ERR_INVALID_RANK, {}, nr <= MAG_MAX_DIMS, "unflatten: result rank %" PRIi64 " exceeds the maximum rank of %d.", nr, MAG_MAX_DIMS);
+  mag_contract(
+    err, ERR_INVALID_RANK, {},
+    nr <= MAG_MAX_DIMS,
+    "unflatten: result rank %" PRIi64 " exceeds the maximum rank of %d.",
+    nr, MAG_MAX_DIMS
+  );
+  int64_t resolved[MAG_MAX_DIMS];
+  mag_try(mag_infer_missing_dim(
+    err,
+    &resolved,
+    sizes,
+    sizes_rank,
+    x->coords.shape[dim]
+  ));
   int64_t shape[MAG_MAX_DIMS];
-  int64_t k=0;
-  for (int64_t i=0; i < dim; ++i) shape[k++] = x->coords.shape[i];
-  for (int64_t i=0; i < sizes_rank; ++i) shape[k++] = sizes[i];
-  for (int64_t i=dim+1; i < rank; ++i) shape[k++] = x->coords.shape[i];
-  mag_status_t stat = mag_view(err,out_result, x, shape, nr); /* Try view first */
-  if (mag_iserr(stat))
-    stat = mag_reshape(err, out_result, x, shape, nr);
+  int64_t k = 0;
+  for (int64_t i=0; i < dim; ++i)
+    shape[k++] = x->coords.shape[i];
+  for (int64_t i=0; i < sizes_rank; ++i)
+    shape[k++] = resolved[i];
+  for (int64_t i=dim+1; i < rank; ++i)
+    shape[k++] = x->coords.shape[i];
+  mag_status_t stat = mag_view(err, out_result, x, shape, nr);
+  if (mag_iserr(stat)) {
+    mag_error_t ignored = {0};
+    stat = mag_reshape(&ignored, out_result, x, shape, nr);
+    if (mag_iserr(stat))
+      stat = mag_reshape(err, out_result, x, shape, nr);
+  }
   return stat;
 }
 
 mag_status_t mag_narrow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t start, int64_t length) {
   *out_result = NULL;
   int64_t rank = x->coords.rank;
-  mag_contract(err, ERR_INVALID_RANK, {}, rank > 0, "narrow: cannot narrow a scalar tensor.");
+  mag_contract(err, ERR_INVALID_RANK, {}, rank > 0,
+    "narrow: cannot narrow a scalar tensor.");
   mag_norm_axis(&dim, rank);
-  mag_contract(err, ERR_INVALID_RANK, {}, 0 <= dim && dim < rank, "narrow: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
-  mag_contract(err, ERR_INVALID_PARAM, {}, length >= 0, "narrow: length must be >= 0, but got %" PRIi64 ".", length);
+  mag_contract(err, ERR_INVALID_RANK, {}, 0 <= dim && dim < rank,
+    "narrow: dim %" PRIi64 " is out of range for rank %" PRIi64 ".",
+    dim, rank);
+  mag_contract(err, ERR_INVALID_PARAM, {}, length >= 0,
+    "narrow: length must be >= 0, but got %" PRIi64 ".",
+    length);
+  mag_contract(err, ERR_INVALID_PARAM, {}, length > 0,
+    "narrow: length 0 is not supported.");
   int64_t sz = x->coords.shape[dim];
-  mag_contract(err, ERR_INVALID_PARAM, {}, start >= 0 && start <= sz, "narrow: start %" PRIi64 " is out of bounds for dim of size %" PRIi64 ".", start, sz);
-  mag_contract(err, ERR_INVALID_PARAM, {}, start + length <= sz, "narrow: range [%" PRIi64 ", %" PRIi64 ") exceeds dim size %" PRIi64 ".", start, start + length, sz);
-  mag_contract(err, ERR_INVALID_PARAM, {}, length > 0, "narrow: length 0 is not supported.");
+  mag_norm_axis(&start, sz);
+  mag_contract(err, ERR_INVALID_PARAM, {}, start >= 0 && start <= sz,
+    "narrow: start %" PRIi64 " is out of bounds for dim of size %" PRIi64 ".",
+    start, sz);
+  int64_t end = start+length;
+  mag_contract(err, ERR_INVALID_PARAM, {}, end <= sz,
+    "narrow: range [%" PRIi64 ", %" PRIi64 ") exceeds dim size %" PRIi64 ".",
+    start, end, sz);
   return mag_view_slice(err, out_result, x, dim, start, length, 1);
 }
 

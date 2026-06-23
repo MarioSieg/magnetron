@@ -38,7 +38,7 @@ namespace mag {
 
   [[nodiscard]] inline int numel_i32(const mag_tensor_t *x) {
     int64_t numel = x->numel;
-    assert(num <= INT_MAX);
+    assert(numel <= INT_MAX);
     return static_cast<int>(numel);
   }
 

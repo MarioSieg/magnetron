@@ -115,7 +115,6 @@ namespace mag::bindings {
   [[nodiscard]] extern tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt, mag_device_id_t device);
   [[nodiscard]] extern tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs);
   [[nodiscard]] extern std::vector<int64_t> parse_shape_from_args(const nb::args &args);
-  extern void validate_shape(const std::vector<int64_t> &shape);
   [[nodiscard]] extern std::vector<int64_t> parse_i64_dims(const nb::args &args, const char *what);
   [[nodiscard]] extern std::vector<int64_t> parse_i64_list_handle(nb::handle h, const char *what);
   [[nodiscard]] extern reduction_axes parse_reduction_axes(nb::handle dim_h);
@@ -124,6 +123,9 @@ namespace mag::bindings {
   [[nodiscard]] extern dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h);
   [[nodiscard]] extern std::string format_error_msg(const mag_error_t &err);
   [[nodiscard]] extern std::optional<mag_device_id_t> parse_device_id_str(std::string &&str);
+  extern void validate_shape(const std::vector<int64_t> &shape);
+  extern void validate_shape(const std::vector<int64_t> &shape);
+  extern void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op);;
 
   inline void throw_if_error(mag_status_t st, const mag_error_t &err) {
     if (st == MAG_STATUS_OK) return;

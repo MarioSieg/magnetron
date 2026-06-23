@@ -287,7 +287,7 @@ namespace mag::bindings {
     .def("view", [](const tensor_wrapper &self, nb::args args) -> tensor_wrapper {
       std::lock_guard lock {get_global_mutex()};
       std::vector<int64_t> shape = parse_i64_dims(args, "view");
-      validate_shape(shape);
+      validate_shape_infer_one(shape, "view");
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
       throw_if_error(mag_view(&err, &out, *self, shape.data(), static_cast<int64_t>(shape.size())), err);
@@ -702,15 +702,13 @@ namespace mag::bindings {
     .def("one_hot",
       [](const tensor_wrapper &self, int64_t num_classes) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
-        if (num_classes <= 0)
-          throw nb::value_error("num_classes must be > 0");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         throw_if_error(mag_one_hot(&err, &out, *self, num_classes), err);
         return tensor_wrapper {out};
       },
-      "num_classes"_a,
-      "One-hot encode integer indices. Returns shape (..., num_classes)."
+      "num_classes"_a = -1,
+      "Return one-hot encoding of int64 class indices. If num_classes is -1, infer it from max(input)+1."
     )
     .def("gather",
       [](const tensor_wrapper &self, int64_t dim, const tensor_wrapper &index) -> tensor_wrapper {
