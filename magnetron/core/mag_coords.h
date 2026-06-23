@@ -35,8 +35,24 @@ extern bool mag_coords_transposed(const mag_coords_t *x);
 extern bool mag_coords_permuted(const mag_coords_t *x);
 extern bool mag_coords_contiguous(const mag_coords_t *x);
 extern MAG_EXPORT void mag_fmt_shape(char (*buf)[MAG_FMT_DIM_BUF_SIZE], const int64_t (*dims)[MAG_MAX_DIMS], int64_t rank);
-extern MAG_EXPORT bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t *osz, const int64_t *ost, int64_t ork, const int64_t *nsz, int64_t nrk);
-extern MAG_EXPORT bool mag_infer_missing_dim(int64_t (*out)[MAG_MAX_DIMS], const int64_t *dims, int64_t rank, int64_t numel);
+
+extern MAG_EXPORT mag_status_t mag_solve_view_strides(
+  mag_error_t *err,
+  int64_t (*out_new_strides)[MAG_MAX_DIMS],
+  const int64_t *old_shape,
+  const int64_t *old_strides,
+  int64_t old_rank,
+  const int64_t *new_shape,
+  int64_t new_rank
+);
+
+extern MAG_EXPORT mag_status_t mag_infer_missing_dim(
+  mag_error_t *err,
+  int64_t (*out)[MAG_MAX_DIMS],
+  const int64_t *dims,
+  int64_t rank,
+  int64_t numel
+);
 
 typedef enum mag_mat_layout_type_t {
   MAG_MAT_LAYOUT_TYPE_PACKED,

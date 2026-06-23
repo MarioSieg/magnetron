@@ -104,6 +104,23 @@
       return tensor_wrapper{out}; \
     }, "rhs"_a, doc)
 
+#define bind_stack_alias(py_name, c_fn, doc) \
+  cls.attr(py_name) = nb::cpp_function( \
+    [](nb::handle tensors_h) -> tensor_wrapper { \
+      std::lock_guard lock {get_global_mutex()}; \
+      auto tensors = parse_tensor_sequence(tensors_h, py_name); \
+      auto ptrs = tensor_ptrs(tensors); \
+      mag_tensor_t *out = nullptr; \
+      mag_error_t err {}; \
+      throw_if_error(c_fn(&err, &out, ptrs.data(), ptrs.size()), err); \
+      return tensor_wrapper{out}; \
+    }, \
+    "tensors"_a, \
+    doc \
+  )
+
+#undef MAG_BIND_STACK_ALIAS
+
 namespace mag::bindings {
   [[nodiscard]] static std::pair<tensor_wrapper, tensor_wrapper> normalize_where_operands(const tensor_wrapper &cond, nb::handle xh, nb::handle yh) {
     if (mag_tensor_type(*cond) != MAG_DTYPE_BOOLEAN)
@@ -132,6 +149,34 @@ namespace mag::bindings {
     }
     if (!x || !y) throw nb::value_error("where: x and y must not be null");
     return {x, y};
+  }
+
+  [[nodiscard]] static std::vector<tensor_wrapper> parse_tensor_sequence(nb::handle tensors_h, const char *op) {
+    if (nb::isinstance<tensor_wrapper>(tensors_h))
+      throw nb::type_error((std::string{op} + ": expected sequence of Tensor, got single Tensor").c_str());
+    if (!nb::isinstance<nb::sequence>(tensors_h))
+      throw nb::type_error((std::string{op} + ": 'tensors' must be a sequence of Tensor").c_str());
+    auto seq = nb::cast<nb::sequence>(tensors_h);
+    size_t n = nb::len(seq);
+    if (n == 0)
+      throw nb::value_error((std::string{op} + ": at least one tensor is required").c_str());
+    std::vector<tensor_wrapper> tensors {};
+    tensors.reserve(n);
+    for (auto &&handle : seq) {
+      auto wrapper = nb::cast<tensor_wrapper>(handle);
+      if (!wrapper)
+        throw nb::value_error((std::string{op} + ": encountered a null Tensor").c_str());
+      tensors.emplace_back(wrapper);
+    }
+    return tensors;
+  }
+
+  [[nodiscard]] static std::vector<mag_tensor_t *> tensor_ptrs(std::vector<tensor_wrapper> &tensors) {
+    std::vector<mag_tensor_t *> ptrs {};
+    ptrs.reserve(tensors.size());
+    for (auto &t : tensors)
+      ptrs.emplace_back(*t);
+    return ptrs;
   }
 
   void init_tensor_class_operators(nb::class_<tensor_wrapper> &cls) {
@@ -691,50 +736,55 @@ namespace mag::bindings {
       "min"_a,
       "max"_a,
       "Clamp tensor values elementwise into the interval [min, max]."
+    )
+    .def("expand",
+      [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        std::vector<int64_t> dims = parse_i64_dims(dims_args, "expand");
+        if (dims.empty())
+          throw nb::value_error("expand: shape must not be empty");
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_expand(&err, &out, *self, static_cast<int64_t>(dims.size()), dims.data()), err);
+        return tensor_wrapper{out};
+      },
+      "shape"_a,
+      "Return a view of this tensor expanded to the given shape."
     );
 
     cls.attr("cat") = nb::cpp_function(
+     [](nb::handle tensors_h, int64_t dim = 0) -> tensor_wrapper {
+       std::lock_guard lock {get_global_mutex()};
+       auto tensors = parse_tensor_sequence(tensors_h, "cat");
+       auto ptrs = tensor_ptrs(tensors);
+       mag_tensor_t *out = nullptr;
+       mag_error_t err {};
+       throw_if_error(mag_cat(&err, &out, ptrs.data(), ptrs.size(), dim), err);
+       return tensor_wrapper{out};
+     },
+     "tensors"_a,
+     "dim"_a = 0,
+     "Concatenate tensors along the given dimension."
+    );
+
+    cls.attr("stack") = nb::cpp_function(
       [](nb::handle tensors_h, int64_t dim = 0) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
-        if (nb::isinstance<tensor_wrapper>(tensors_h))
-          throw nb::type_error("cat: expected sequence of Tensor, got single Tensor; use Tensor.cat([x])");
-        if (!nb::isinstance<nb::sequence>(tensors_h))
-          throw nb::type_error("cat: 'tensors' must be a sequence of Tensor");
-        auto seq = nb::cast<nb::sequence>(tensors_h);
-        size_t n = nb::len(seq);
-        if (n == 0)
-          throw nb::value_error("cat: at least one tensor is required");
-        std::vector<tensor_wrapper> tensors {};
-        tensors.reserve(n);
-        for (auto &&handle : seq) {
-          auto wrapper = nb::cast<tensor_wrapper>(handle);
-          if (!wrapper) throw nb::value_error("cat: encountered a null Tensor");
-          tensors.emplace_back(wrapper);
-        }
-        int64_t rank = mag_tensor_rank(*tensors[0]);
-        if (rank <= 0)
-          throw nb::value_error("cat: tensors must have rank > 0");
-        if (dim < 0) dim += rank;
-        if (dim < 0 || dim >= rank)
-          throw nb::index_error("cat: dim out of range");
-        std::vector<tensor_wrapper> contig {};
-        contig.reserve(n);
-        std::vector<mag_tensor_t*> ptrs {};
-        ptrs.reserve(n);
-        mag_error_t err {};
-        for (size_t i=0; i < n; ++i) {
-          mag_tensor_t *ci = nullptr;
-          throw_if_error(mag_contiguous(&err, &ci, *tensors[i]), err);
-          contig.emplace_back(ci);
-          ptrs.emplace_back(*contig.back());
-        }
+        auto tensors = parse_tensor_sequence(tensors_h, "stack");
+        auto ptrs = tensor_ptrs(tensors);
         mag_tensor_t *out = nullptr;
-        throw_if_error(mag_cat(&err, &out, ptrs.data(), ptrs.size(), dim), err);
+        mag_error_t err {};
+        throw_if_error(mag_stack(&err, &out, ptrs.data(), ptrs.size(), dim), err);
         return tensor_wrapper{out};
       },
-      "tensors"_a, "dim"_a = 0,
-      "Concatenate tensors along the given dimension."
+      "tensors"_a,
+      "dim"_a = 0,
+      "Stack tensors along a new dimension."
     );
+
+    bind_stack_alias("hstack", mag_hstack, "Stack tensors horizontally.");
+    bind_stack_alias("vstack", mag_vstack, "Stack tensors vertically.");
+    bind_stack_alias("dstack", mag_dstack, "Stack tensors depthwise.");
 
     cls.attr("where") = nb::cpp_function([](const tensor_wrapper &cond, nb::handle xh, nb::handle yh) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};

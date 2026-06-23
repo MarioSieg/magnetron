@@ -141,10 +141,28 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   int64_t last = offset;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
-    mag_contract(err, ERR_INVALID_DIM, {}, shape[i] > 0 && (shape[i] == 1 ? strides[i] >= 0 : strides[i] > 0), "as_strided: invalid shape/stride at dim %" PRIi64 " (shape=%" PRIi64 ", stride=%" PRIi64 "); dimensions must be > 0 and strides must be positive for non-singleton dims.", i, shape[i], strides[i]);
+    mag_contract(
+      err, ERR_INVALID_DIM, {},
+      shape[i] > 0 && strides[i] >= 0,
+      "as_strided: invalid shape/stride at dim %" PRIi64
+      " (shape=%" PRIi64 ", stride=%" PRIi64
+      "); dimensions must be > 0 and strides must be non-negative.",
+      i, shape[i], strides[i]
+    );
     int64_t span;
-    mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i]-1, strides[i], &span), "as_strided: stride span overflowed at dim %" PRIi64 ".", i);
-    mag_contract(err, ERR_DIM_OVERFLOW, {}, !mag_mulov64(shape[i], numel, &numel), "as_strided: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
+    mag_contract(
+      err, ERR_DIM_OVERFLOW, {},
+      !mag_mulov64(shape[i]-1, strides[i], &span),
+      "as_strided: stride span overflowed at dim %" PRIi64 ".",
+      i
+    );
+    mag_contract(
+      err, ERR_DIM_OVERFLOW, {},
+      !mag_mulov64(shape[i], numel, &numel),
+      "as_strided: element count overflowed at dim %" PRIi64
+      " (size %" PRIi64 ").",
+      i, shape[i]
+    );
     last += span;
   }
   int64_t numel_end = (int64_t)(base->storage->size/mag_type_trait(base->dtype)->size);
@@ -198,6 +216,40 @@ mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t
     new_strides,
     (int64_t)mag_tensor_data_offset(x)
   );
+}
+
+mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
+  int64_t old_rank = x->coords.rank;
+  const int64_t *old_shape = x->coords.shape;
+  mag_contract(
+    err, ERR_INVALID_RANK, {},
+    rank >= old_rank,
+    "expand: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".",
+    rank, old_rank
+  );
+  int64_t resolved[MAG_MAX_DIMS];
+  for (int64_t i=0; i < rank; ++i) {
+    int64_t new_ax = rank-1-i;
+    int64_t old_ax = old_rank-1-i;
+    int64_t dim = shape[new_ax];
+    if (dim == -1) {
+      mag_contract(
+        err, ERR_INVALID_PARAM, {},
+        old_ax >= 0,
+        "expand: -1 is not allowed for a newly prepended dimension."
+      );
+      resolved[new_ax] = old_shape[old_ax];
+    } else {
+      mag_contract(
+        err, ERR_INVALID_PARAM, {},
+        dim >= 0,
+        "expand: invalid dimension size %" PRIi64 ".",
+        dim
+      );
+      resolved[new_ax] = dim;
+    }
+  }
+  return mag_broadcast_to(err, out, x, rank, resolved);
 }
 
 static mag_status_t mag_tensor_dtor(void *self) {
@@ -505,7 +557,7 @@ bool mag_tensor_is_contiguous(const mag_tensor_t *tensor) {
 
 bool mag_tensor_can_view(const mag_tensor_t *tensor, const int64_t *dims, int64_t rank) {
   int64_t tmp[MAG_MAX_DIMS];
-  return mag_solve_view_strides(&tmp, tensor->coords.shape, tensor->coords.strides, tensor->coords.rank, dims, rank);
+  return mag_isok(mag_solve_view_strides(NULL, &tmp, tensor->coords.shape, tensor->coords.strides, tensor->coords.rank, dims, rank));
 }
 
 void mag_tensor_incref(mag_tensor_t *tensor) {
