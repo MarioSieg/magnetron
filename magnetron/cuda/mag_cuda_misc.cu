@@ -824,4 +824,298 @@ namespace mag {
       default: mag_assert(false, "pad: unsupported dtype");
     }
   }
+
+  template <typename T, typename ACC, bool is_prod>
+  __global__ static void cu_scan_rows_kernel(
+    int outer_count,
+    int dim_size,
+    int R,
+    int dim,
+    int stride_x_dim,
+    int stride_r_dim,
+    mag_tensor_t x_t, // TODO
+    mag_tensor_t r_t,
+    const T *bx,
+    T *br
+  ) {
+    int row = blockIdx.x;
+    if (row >= outer_count || threadIdx.x != 0) return;
+    const int64_t *shape_x = x_t.coords.shape;
+    const int64_t *str_x = x_t.coords.strides;
+    const int64_t *str_r = r_t.coords.strides;
+    int outer_rank = R - 1;
+    int shape_outer[MAG_MAX_DIMS];
+    int mult_outer[MAG_MAX_DIMS];
+    int outer_to_full[MAG_MAX_DIMS];
+    {
+      int t=0;
+      for (int d=0; d < R; ++d) {
+        if (d == dim) continue;
+        shape_outer[t] = shape_x[d];
+        outer_to_full[t] = d;
+        ++t;
+      }
+      for (int t2=0; t2 < outer_rank; ++t2) {
+        int m=1;
+        for (int k2=t2+1; k2 < outer_rank; ++k2) m *= shape_outer[k2];
+        mult_outer[t2] = m;
+      }
+    }
+    int rtmp = row;
+    int base_idx[MAG_MAX_DIMS] = {0};
+    for (int t=0; t < outer_rank; ++t) {
+      int q = mult_outer[t] == 0 ? 0 : rtmp / mult_outer[t];
+      if (mult_outer[t] != 0) rtmp = rtmp % mult_outer[t];
+      base_idx[outer_to_full[t]] = q;
+    }
+    base_idx[dim] = 0;
+    int off_x0=0;
+    int off_r0=0;
+    for (int d=0; d < R; ++d) {
+      off_x0 += base_idx[d] * str_x[d];
+      off_r0 += base_idx[d] * str_r[d];
+    }
+    auto acc = is_prod ? static_cast<ACC>(1) : static_cast<ACC>(0);
+    for (int p=0; p < dim_size; ++p) {
+      int off_x = off_x0 + p * stride_x_dim;
+      int off_r = off_r0 + p * stride_r_dim;
+      T xv = bx[off_x];
+      if constexpr (std::is_floating_point_v<ACC>) {
+        auto fv = static_cast<float>(xv);
+        if constexpr (is_prod) acc = acc * static_cast<ACC>(fv);
+        else acc = acc + static_cast<ACC>(fv);
+      } else {
+        if constexpr (is_prod) acc = acc * static_cast<ACC>(xv);
+        else acc = acc + static_cast<ACC>(xv);
+      }
+      br[off_r] = static_cast<T>(acc);
+    }
+  }
+
+  template <typename T, bool is_max>
+  __global__ static void cu_ext_rows_kernel(
+    int64_t outer_count,
+    int64_t dim_size,
+    int64_t R,
+    int64_t dim,
+    int64_t stride_x_dim,
+    int64_t stride_v_dim,
+    int64_t stride_i_dim,
+    mag_tensor_t x_t, // TODO
+    mag_tensor_t v_t,
+    mag_tensor_t i_t,
+    const T *bx,
+    T *bv,
+    int64_t *bi
+  ) {
+    int row = blockIdx.x;
+    if (row >= outer_count || threadIdx.x != 0) return;
+    const int64_t *shape_x = x_t.coords.shape;
+    const int64_t *str_x = x_t.coords.strides;
+    const int64_t *str_v = v_t.coords.strides;
+    const int64_t *str_i = i_t.coords.strides;
+    int outer_rank = R - 1;
+    int shape_outer[MAG_MAX_DIMS];
+    int mult_outer[MAG_MAX_DIMS];
+    int outer_to_full[MAG_MAX_DIMS];
+    {
+      int t=0;
+      for (int d=0; d < R; ++d) {
+        if (d == dim) continue;
+        shape_outer[t] = shape_x[d];
+        outer_to_full[t] = d;
+        ++t;
+      }
+      for (int t2=0; t2 < outer_rank; ++t2) {
+        int m=1;
+        for (int k2=t2+1; k2 < outer_rank; ++k2) m *= shape_outer[k2];
+        mult_outer[t2] = m;
+      }
+    }
+    int rtmp = row;
+    int base_idx[MAG_MAX_DIMS] = {0};
+    for (int t=0; t < outer_rank; ++t) {
+      int q = mult_outer[t] == 0 ? 0 : rtmp / mult_outer[t];
+      if (mult_outer[t] != 0) rtmp = rtmp % mult_outer[t];
+      base_idx[outer_to_full[t]] = q;
+    }
+    base_idx[dim] = 0;
+    int off_x0=0;
+    int off_v0=0;
+    int off_i0=0;
+    for (int d=0; d < R; ++d) {
+      off_x0 += base_idx[d]*str_x[d];
+      off_v0 += base_idx[d]*str_v[d];
+      off_i0 += base_idx[d]*str_i[d];
+    }
+    T best{};
+    int best_idx = 0;
+    for (int p=0; p < dim_size; ++p) {
+      int off_x = off_x0 + p*stride_x_dim;
+      int off_v = off_v0 + p*stride_v_dim;
+      int off_i = off_i0 + p*stride_i_dim;
+      T xv = bx[off_x];
+      if (p == 0) {
+        best = xv;
+        best_idx = 0;
+      } else {
+        auto xvc = static_cast<float>(xv);
+        auto bestc = static_cast<float>(best);
+        bool better = is_max ? xvc > bestc : xvc < bestc;
+        if (better) { best = xv; best_idx = p; }
+      }
+      bv[off_v] = best;
+      bi[off_i] = best_idx;
+    }
+  }
+
+  template <typename T, typename ACC, bool is_prod>
+  static void launch_cu_scan(const mag_command_t &cmd) {
+    const mag_tensor_t *x = cmd.in[0];
+    mag_tensor_t *r = cmd.out[0];
+    int dim = static_cast<int>(mag_op_attr_unwrap_int64(cmd.attrs[0]));
+    if (dim < 0) dim += static_cast<int>(x->coords.rank);
+    int R = static_cast<int>(x->coords.rank);
+    int dim_size = static_cast<int>(x->coords.shape[dim]);
+    if (dim_size <= 0) return;
+    int outer_count = numel_i32(x) / dim_size;
+    const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
+    auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
+    cu_scan_rows_kernel<T, ACC, is_prod><<<static_cast<unsigned>(outer_count), 1>>>(outer_count, dim_size, R, dim, x->coords.strides[dim], r->coords.strides[dim], *x, *r, bx, br);
+  }
+
+  template <typename T, bool is_max>
+  static void launch_cu_ext(const mag_command_t &cmd) {
+    const mag_tensor_t *x = cmd.in[0];
+    mag_tensor_t *v = cmd.out[0];
+    mag_tensor_t *idx = cmd.out[1];
+    int dim = static_cast<int>(mag_op_attr_unwrap_int64(cmd.attrs[0]));
+    if (dim < 0) dim += static_cast<int>(x->coords.rank);
+    int R = static_cast<int>(x->coords.rank);
+    int dim_size = static_cast<int>(x->coords.shape[dim]);
+    if (dim_size <= 0) return;
+    int outer_count = numel_i32(x) / dim_size;
+    const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
+    auto *bv = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(v));
+    auto *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
+    cu_ext_rows_kernel<T, is_max><<<static_cast<unsigned>(outer_count), 1>>>(
+      outer_count, dim_size, R, dim, x->coords.strides[dim], v->coords.strides[dim], idx->coords.strides[dim],
+      *x, *v, *idx, bx, bv, bi
+    );
+  }
+
+  static void impl_cu_scan(const mag_command_t &cmd, bool is_prod) {
+    mag_tensor_t *r = cmd.out[0];
+    switch (r->dtype) {
+      case MAG_DTYPE_FLOAT32:
+        if (is_prod) launch_cu_scan<float, double, true>(cmd);
+        else launch_cu_scan<float, double, false>(cmd);
+        break;
+      case MAG_DTYPE_FLOAT16:
+        if (is_prod) launch_cu_scan<half, float, true>(cmd);
+        else launch_cu_scan<half, float, false>(cmd);
+        break;
+      case MAG_DTYPE_BFLOAT16:
+        if (is_prod) launch_cu_scan<__nv_bfloat16, float, true>(cmd);
+        else launch_cu_scan<__nv_bfloat16, float, false>(cmd);
+        break;
+      case MAG_DTYPE_FLOAT8_E4M3FN:
+        if (is_prod) launch_cu_scan<__nv_fp8_e4m3, float, true>(cmd);
+        else launch_cu_scan<__nv_fp8_e4m3, float, false>(cmd);
+        break;
+      case MAG_DTYPE_UINT8:
+        if (is_prod) launch_cu_scan<uint8_t, uint64_t, true>(cmd);
+        else launch_cu_scan<uint8_t, uint64_t, false>(cmd);
+        break;
+      case MAG_DTYPE_INT8:
+        if (is_prod) launch_cu_scan<int8_t, int64_t, true>(cmd);
+        else launch_cu_scan<int8_t, int64_t, false>(cmd);
+        break;
+      case MAG_DTYPE_UINT16:
+        if (is_prod) launch_cu_scan<uint16_t, uint64_t, true>(cmd);
+        else launch_cu_scan<uint16_t, uint64_t, false>(cmd);
+        break;
+      case MAG_DTYPE_INT16:
+        if (is_prod) launch_cu_scan<int16_t, int64_t, true>(cmd);
+        else launch_cu_scan<int16_t, int64_t, false>(cmd);
+        break;
+      case MAG_DTYPE_UINT32:
+        if (is_prod) launch_cu_scan<uint32_t, uint64_t, true>(cmd);
+        else launch_cu_scan<uint32_t, uint64_t, false>(cmd);
+        break;
+      case MAG_DTYPE_INT32:
+        if (is_prod) launch_cu_scan<int32_t, int64_t, true>(cmd);
+        else launch_cu_scan<int32_t, int64_t, false>(cmd);
+        break;
+      case MAG_DTYPE_UINT64:
+        if (is_prod) launch_cu_scan<uint64_t, uint64_t, true>(cmd);
+        else launch_cu_scan<uint64_t, uint64_t, false>(cmd);
+        break;
+      case MAG_DTYPE_INT64:
+        if (is_prod) launch_cu_scan<int64_t, int64_t, true>(cmd);
+        else launch_cu_scan<int64_t, int64_t, false>(cmd);
+        break;
+      default: mag_assert(false, "cu*: unsupported dtype");
+    }
+  }
+
+  static void impl_cu_ext(const mag_command_t &cmd, bool is_max) {
+    mag_tensor_t *v = cmd.out[0];
+    switch (v->dtype) {
+      case MAG_DTYPE_FLOAT32:
+        if (is_max) launch_cu_ext<float, true>(cmd);
+        else launch_cu_ext<float, false>(cmd);
+        break;
+      case MAG_DTYPE_FLOAT16:
+        if (is_max) launch_cu_ext<half, true>(cmd);
+        else launch_cu_ext<half, false>(cmd);
+        break;
+      case MAG_DTYPE_BFLOAT16:
+        if (is_max) launch_cu_ext<__nv_bfloat16, true>(cmd);
+        else launch_cu_ext<__nv_bfloat16, false>(cmd);
+        break;
+      case MAG_DTYPE_FLOAT8_E4M3FN:
+        if (is_max) launch_cu_ext<__nv_fp8_e4m3, true>(cmd);
+        else launch_cu_ext<__nv_fp8_e4m3, false>(cmd);
+        break;
+      case MAG_DTYPE_UINT8:
+        if (is_max) launch_cu_ext<uint8_t, true>(cmd);
+        else launch_cu_ext<uint8_t, false>(cmd);
+        break;
+      case MAG_DTYPE_INT8:
+        if (is_max) launch_cu_ext<int8_t, true>(cmd);
+        else launch_cu_ext<int8_t, false>(cmd);
+        break;
+      case MAG_DTYPE_UINT16:
+        if (is_max) launch_cu_ext<uint16_t, true>(cmd);
+        else launch_cu_ext<uint16_t, false>(cmd);
+        break;
+      case MAG_DTYPE_INT16:
+        if (is_max) launch_cu_ext<int16_t, true>(cmd);
+        else launch_cu_ext<int16_t, false>(cmd);
+        break;
+      case MAG_DTYPE_UINT32:
+        if (is_max) launch_cu_ext<uint32_t, true>(cmd);
+        else launch_cu_ext<uint32_t, false>(cmd);
+        break;
+      case MAG_DTYPE_INT32:
+        if (is_max) launch_cu_ext<int32_t, true>(cmd);
+        else launch_cu_ext<int32_t, false>(cmd);
+        break;
+      case MAG_DTYPE_UINT64:
+        if (is_max) launch_cu_ext<uint64_t, true>(cmd);
+        else launch_cu_ext<uint64_t, false>(cmd);
+        break;
+      case MAG_DTYPE_INT64:
+        if (is_max) launch_cu_ext<int64_t, true>(cmd);
+        else launch_cu_ext<int64_t, false>(cmd);
+        break;
+      default: mag_assert(false, "cu*: unsupported dtype");
+    }
+  }
+
+  void misc_op_cusum(const mag_command_t &cmd) { impl_cu_scan(cmd, false); }
+  void misc_op_cuprod(const mag_command_t &cmd) { impl_cu_scan(cmd, true); }
+  void misc_op_cumax(const mag_command_t &cmd) { impl_cu_ext(cmd, true); }
+  void misc_op_cumin(const mag_command_t &cmd) { impl_cu_ext(cmd, false); }
 }

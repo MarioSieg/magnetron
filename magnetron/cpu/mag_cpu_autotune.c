@@ -25,7 +25,6 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_RAND_BERNOULLI] = {0.0, 0},
     [MAG_OP_RAND_PERM] = {0.0, 0},
     [MAG_OP_ARANGE] = {0.4, 10000},
-    [MAG_OP_EYE] = {0.5, 10000},
     [MAG_OP_ONE_HOT] = {0.4, 10000},
     [MAG_OP_CLONE] = {0.4, 10000},
     [MAG_OP_CAST] = {0.4, 10000},
@@ -91,7 +90,6 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_TRIU] = {0.5, 10000},
     [MAG_OP_MULTINOMIAL] = {0.5, 25000},
     [MAG_OP_CAT] = {0.8, 10000},
-    [MAG_OP_PAD] = {0.5, 10000},
     [MAG_OP_ADD] = {3.5, 10000},
     [MAG_OP_SUB] = {3.5, 10000},
     [MAG_OP_MUL] = {3.5, 10000},
@@ -112,6 +110,13 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_GE] = {3.5, 10000},
     [MAG_OP_LT] = {3.5, 10000},
     [MAG_OP_GT] = {3.5, 10000},
+    [MAG_OP_WHERE] = {3.5, 10000},
+    [MAG_OP_PAD] = {0.5, 10000},
+    [MAG_OP_EYE] = {0.5, 10000},
+    [MAG_OP_CUSUM] = {0.5, 10000},
+    [MAG_OP_CUPROD] = {0.5, 10000},
+    [MAG_OP_CUMAX] = {0.5, 10000},
+    [MAG_OP_CUMIN] = {0.5, 10000},
   };
   return scaling_table[op];
 }

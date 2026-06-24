@@ -607,6 +607,68 @@ namespace mag::bindings {
       "dim"_a = nb::none(), "keepdim"_a = false,
       "Product over dim(s). None = all dims."
     )
+    .def("cusum",
+      [](const tensor_wrapper &self, int64_t dim) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_cusum(&err, &out, *self, dim), err);
+        return tensor_wrapper{out};
+      },
+      "dim"_a,
+      "Cumulative sum along dim."
+    )
+    .def("cuprod",
+      [](const tensor_wrapper &self, int64_t dim) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_cuprod(&err, &out, *self, dim), err);
+        return tensor_wrapper{out};
+      },
+      "dim"_a,
+      "Cumulative product along dim."
+    )
+    .def("cumax",
+      [](const tensor_wrapper &self, int64_t dim) -> nb::tuple {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *values = nullptr;
+        mag_tensor_t *indices = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_cumax(&err, &values, &indices, *self, dim), err);
+        tensor_wrapper v_tw{values};
+        tensor_wrapper i_tw{indices};
+        PyObject *t = PyTuple_New(2);
+        if (!t) throw nb::python_error();
+        nb::object v = nb::cast(v_tw);
+        nb::object i = nb::cast(i_tw);
+        PyTuple_SET_ITEM(t, 0, v.release().ptr());
+        PyTuple_SET_ITEM(t, 1, i.release().ptr());
+        return nb::steal<nb::tuple>(t);
+      },
+      "dim"_a,
+      "Cumulative maximum along dim. Returns (values, indices)."
+    )
+    .def("cumin",
+      [](const tensor_wrapper &self, int64_t dim) -> nb::tuple {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *values = nullptr;
+        mag_tensor_t *indices = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_cumin(&err, &values, &indices, *self, dim), err);
+        tensor_wrapper v_tw{values};
+        tensor_wrapper i_tw{indices};
+        PyObject *t = PyTuple_New(2);
+        if (!t) throw nb::python_error();
+        nb::object v = nb::cast(v_tw);
+        nb::object i = nb::cast(i_tw);
+        PyTuple_SET_ITEM(t, 0, v.release().ptr());
+        PyTuple_SET_ITEM(t, 1, i.release().ptr());
+        return nb::steal<nb::tuple>(t);
+      },
+      "dim"_a,
+      "Cumulative minimum along dim. Returns (values, indices)."
+    )
     .def("all",
       [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};

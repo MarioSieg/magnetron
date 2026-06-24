@@ -1099,6 +1099,59 @@ mag_status_t mag_topk(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t 
   return MAG_STATUS_OK;
 }
 
+static mag_status_t mag_op_stub_unary(mag_error_t *err, mag_tensor_t **out_result, mag_opcode_t op, mag_tensor_t *x, const mag_op_attr_registry_t *layout, bool inplace);
+
+static mag_status_t mag_op_stub_cumulative(mag_error_t *err, mag_tensor_t **out_result, mag_opcode_t op, const char *ext, mag_tensor_t *x, int64_t dim) {
+  *out_result = NULL;
+  mag_contract(err, ERR_INVALID_PARAM, {}, x != NULL, "cu%s: input tensor must not be NULL.", ext);
+  mag_contract(err, ERR_INVALID_RANK, {}, x->coords.rank > 0, "cu%s: requires a tensor with rank > 0.", ext);
+  mag_norm_axis(&dim, x->coords.rank);
+  mag_contract(err, ERR_INVALID_DIM, {}, dim >= 0 && dim < x->coords.rank, "cu%s: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", ext, dim, x->coords.rank);
+  mag_op_attr_registry_t layout;
+  mag_op_attr_registry_init(&layout);
+  mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dim));
+  return mag_op_stub_unary(err, out_result, op, x, &layout, false);
+}
+
+mag_status_t mag_cusum(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim) {
+  return mag_op_stub_cumulative(err, out_result, MAG_OP_CUSUM, "sum", x, dim);
+}
+
+mag_status_t mag_cuprod(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim) {
+  return mag_op_stub_cumulative(err, out_result, MAG_OP_CUPROD, "prod", x, dim);
+}
+
+static mag_status_t mag_op_stub_cumulative_ext(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_opcode_t op, const char *ext, mag_tensor_t *x, int64_t dim) {
+  *out_values = NULL;
+  *out_indices = NULL;
+  mag_contract(err, ERR_INVALID_PARAM, {}, x != NULL, "cu%s: input tensor must not be NULL.", ext);
+  mag_contract(err, ERR_INVALID_RANK, {}, x->coords.rank > 0, "cu%s: requires a tensor with rank > 0.", ext);
+  mag_norm_axis(&dim, x->coords.rank);
+  mag_contract(err, ERR_INVALID_DIM, {}, dim >= 0 && dim < x->coords.rank, "cu%s: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", ext, dim, x->coords.rank);
+  mag_tensor_t *values = NULL;
+  mag_tensor_t *indices = NULL;
+  mag_try(mag_empty_like(err, &values, x));
+  mag_try_or(mag_empty(err, &indices, x->ctx, MAG_DTYPE_INT64, x->coords.rank, x->coords.shape, mag_tensor_device_id(x)), {
+    mag_tensor_decref(values);
+  });
+  mag_op_attr_registry_t layout;
+  mag_op_attr_registry_init(&layout);
+  mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dim));
+  mag_try(mag_check_dtype_and_device_compat(err, op, &x, 0));
+  mag_try(mag_dispatch(err, op, false, &layout, &x, 1, (mag_tensor_t*[2]){values, indices}, 2));
+  *out_values = values;
+  *out_indices = indices;
+  return MAG_STATUS_OK;
+}
+
+mag_status_t mag_cumax(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t dim) {
+  return mag_op_stub_cumulative_ext(err, out_values, out_indices, MAG_OP_CUMAX, "max", x, dim);
+}
+
+mag_status_t mag_cumin(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t dim) {
+  return mag_op_stub_cumulative_ext(err, out_values, out_indices, MAG_OP_CUMIN, "min", x, dim);
+}
+
 static mag_status_t mag_op_stub_unary(mag_error_t *err, mag_tensor_t **out_result, mag_opcode_t op, mag_tensor_t *x, const mag_op_attr_registry_t *layout, bool inplace) {
   *out_result = NULL;
   mag_try(mag_check_dtype_and_device_compat(err, op, &x, 0));

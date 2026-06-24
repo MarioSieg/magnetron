@@ -140,6 +140,7 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #include "mag_cpu_kernels_matmul_core.h"
 #include "mag_cpu_kernels_misc.h"
 #include "mag_cpu_kernels_reduction.h"
+#include "mag_cpu_kernels_scan.h"
 
 static mag_status_t mag_nop(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err, (void)payload;
@@ -1174,6 +1175,62 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT32] = &mag_eye_int32,
     [MAG_DTYPE_UINT64] = &mag_eye_uint64,
     [MAG_DTYPE_INT64] = &mag_eye_int64,
+  },
+  [MAG_OP_CUSUM] = {
+    [MAG_DTYPE_FLOAT32] = &mag_cusum_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_cusum_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_cusum_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cusum_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_cusum_uint8,
+    [MAG_DTYPE_INT8] = &mag_cusum_int8,
+    [MAG_DTYPE_UINT16] = &mag_cusum_uint16,
+    [MAG_DTYPE_INT16] = &mag_cusum_int16,
+    [MAG_DTYPE_UINT32] = &mag_cusum_uint32,
+    [MAG_DTYPE_INT32] = &mag_cusum_int32,
+    [MAG_DTYPE_UINT64] = &mag_cusum_uint64,
+    [MAG_DTYPE_INT64] = &mag_cusum_int64,
+  },
+  [MAG_OP_CUPROD] = {
+    [MAG_DTYPE_FLOAT32] = &mag_cuprod_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_cuprod_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_cuprod_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cuprod_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_cuprod_uint8,
+    [MAG_DTYPE_INT8] = &mag_cuprod_int8,
+    [MAG_DTYPE_UINT16] = &mag_cuprod_uint16,
+    [MAG_DTYPE_INT16] = &mag_cuprod_int16,
+    [MAG_DTYPE_UINT32] = &mag_cuprod_uint32,
+    [MAG_DTYPE_INT32] = &mag_cuprod_int32,
+    [MAG_DTYPE_UINT64] = &mag_cuprod_uint64,
+    [MAG_DTYPE_INT64] = &mag_cuprod_int64,
+  },
+  [MAG_OP_CUMAX] = {
+    [MAG_DTYPE_FLOAT32] = &mag_cumax_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_cumax_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_cumax_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cumax_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_cumax_uint8,
+    [MAG_DTYPE_INT8] = &mag_cumax_int8,
+    [MAG_DTYPE_UINT16] = &mag_cumax_uint16,
+    [MAG_DTYPE_INT16] = &mag_cumax_int16,
+    [MAG_DTYPE_UINT32] = &mag_cumax_uint32,
+    [MAG_DTYPE_INT32] = &mag_cumax_int32,
+    [MAG_DTYPE_UINT64] = &mag_cumax_uint64,
+    [MAG_DTYPE_INT64] = &mag_cumax_int64,
+  },
+  [MAG_OP_CUMIN] = {
+    [MAG_DTYPE_FLOAT32] = &mag_cumin_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_cumin_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_cumin_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cumin_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_cumin_uint8,
+    [MAG_DTYPE_INT8] = &mag_cumin_int8,
+    [MAG_DTYPE_UINT16] = &mag_cumin_uint16,
+    [MAG_DTYPE_INT16] = &mag_cumin_int16,
+    [MAG_DTYPE_UINT32] = &mag_cumin_uint32,
+    [MAG_DTYPE_INT32] = &mag_cumin_int32,
+    [MAG_DTYPE_UINT64] = &mag_cumin_uint64,
+    [MAG_DTYPE_INT64] = &mag_cumin_int64,
   },
 };
 
