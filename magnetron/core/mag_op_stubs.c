@@ -432,6 +432,21 @@ mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context
   return MAG_STATUS_OK;
 }
 
+mag_status_t mag_eye(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, int64_t m, mag_device_id_t device) {
+  *out_result = NULL;
+  mag_contract(err, ERR_INVALID_PARAM, {}, n >= 0, "eye: n must be >= 0, but got %" PRIi64 ".", n);
+  mag_contract(err, ERR_INVALID_PARAM, {}, m >= 0, "eye: m must be >= 0, but got %" PRIi64 ".", m);
+  mag_tensor_t *result = NULL;
+  int64_t shape[2] = {n, m};
+  mag_try(mag_empty(err, &result, ctx, type, 2, shape, device));
+  if (n > 0 && m > 0) {
+    mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_EYE, NULL, 0));
+    mag_try(mag_dispatch(err, MAG_OP_EYE, false, NULL, NULL, 0, &result, 1));
+  }
+  *out_result = result;
+  return MAG_STATUS_OK;
+}
+
 mag_status_t mag_linspace(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t start, mag_scalar_t end, int64_t steps, mag_device_id_t device) {
   *out_result = NULL;
   mag_contract(err, ERR_INVALID_PARAM, {}, steps > 0, "linspace: steps must be > 0, but got %" PRIi64 ".", steps);

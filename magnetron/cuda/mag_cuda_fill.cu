@@ -436,4 +436,61 @@ namespace mag {
       default: mag_assert(false, "Unsupported dtype for arange");
     }
   }
+
+  template <typename T, const bool C>
+  __global__ static void eye_kernel(
+    int total,
+    int cols,
+    T *pr,
+    T one,
+    T zero,
+    [[maybe_unused]] mag_coords_iter_t rc
+  ) {
+    int ti = blockIdx.x*blockDim.x + threadIdx.x;
+    int step = blockDim.x*gridDim.x;
+    for (; ti < total; ti += step) {
+      int row = ti / cols;
+      int col = ti - row*cols;
+      int ri = C ? ti : mag_coords_iter_to_offset(&rc, ti);
+      pr[ri] = row == col ? one : zero;
+    }
+  }
+
+  template <typename T>
+  static void launch_eye(mag_tensor_t *r) {
+    mag_assert2(r->coords.rank == 2);
+    int numel = numel_i32(r);
+    int cols = static_cast<int>(r->coords.shape[1]);
+    int blocks = (numel + FILL_BLOCK_SIZE - 1)/FILL_BLOCK_SIZE;
+    auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
+    auto one = static_cast<T>(1);
+    auto zero = static_cast<T>(0);
+    if (mag_tensor_is_contiguous(r)) {
+      eye_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(numel, cols, pr, one, zero, {});
+    } else {
+      mag_coords_iter_t rc;
+      mag_coords_iter_init(&rc, &r->coords);
+      eye_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(numel, cols, pr, one, zero, {});
+    }
+  }
+
+  void fill_op_eye(const mag_command_t &cmd) {
+    mag_tensor_t *r = cmd.out[0];
+    switch (r->dtype) {
+      case MAG_DTYPE_FLOAT32: launch_eye<float>(r); break;
+      case MAG_DTYPE_FLOAT16: launch_eye<half>(r); break;
+      case MAG_DTYPE_BFLOAT16: launch_eye<__nv_bfloat16>(r); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_eye<__nv_fp8_e4m3>(r); break;
+      case MAG_DTYPE_BOOLEAN:
+      case MAG_DTYPE_UINT8: launch_eye<uint8_t>(r); break;
+      case MAG_DTYPE_INT8: launch_eye<int8_t>(r); break;
+      case MAG_DTYPE_UINT16: launch_eye<uint16_t>(r); break;
+      case MAG_DTYPE_INT16: launch_eye<int16_t>(r); break;
+      case MAG_DTYPE_UINT32: launch_eye<uint32_t>(r); break;
+      case MAG_DTYPE_INT32: launch_eye<int32_t>(r); break;
+      case MAG_DTYPE_UINT64: launch_eye<uint64_t>(r); break;
+      case MAG_DTYPE_INT64: launch_eye<int64_t>(r); break;
+      default: mag_assert(false, "Unsupported dtype for eye");
+    }
+  }
 }

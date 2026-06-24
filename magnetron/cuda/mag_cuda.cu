@@ -233,6 +233,7 @@ namespace mag {
       [MAG_OP_MAX] = nullptr,
       [MAG_OP_CLAMP] = nullptr,
       [MAG_OP_PAD] = &misc_op_pad,
+      [MAG_OP_EYE] = &fill_op_eye,
     };
     static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
     //static_assert([] -> bool {

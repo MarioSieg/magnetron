@@ -1160,6 +1160,21 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_UINT64] = &mag_pad_uint64,
     [MAG_DTYPE_INT64] = &mag_pad_int64,
   },
+  [MAG_OP_EYE] = {
+    [MAG_DTYPE_FLOAT32] = &mag_eye_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_eye_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_eye_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_eye_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_eye_uint8,
+    [MAG_DTYPE_UINT8] = &mag_eye_uint8,
+    [MAG_DTYPE_INT8] = &mag_eye_int8,
+    [MAG_DTYPE_UINT16] = &mag_eye_uint16,
+    [MAG_DTYPE_INT16] = &mag_eye_int16,
+    [MAG_DTYPE_UINT32] = &mag_eye_uint32,
+    [MAG_DTYPE_INT32] = &mag_eye_int32,
+    [MAG_DTYPE_UINT64] = &mag_eye_uint64,
+    [MAG_DTYPE_INT64] = &mag_eye_int64,
+  },
 };
 
 static size_t mag_vreg_width(void) {

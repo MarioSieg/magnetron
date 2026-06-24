@@ -23,4 +23,5 @@ namespace mag {
   extern void fill_op_rand_bernoulli(const mag_command_t &cmd);
   extern void fill_op_rand_perm(const mag_command_t &cmd);
   extern void fill_op_arange(const mag_command_t &cmd);
+  extern void fill_op_eye(const mag_command_t &cmd);
 }

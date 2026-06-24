@@ -667,7 +667,6 @@ namespace mag::bindings {
           steps = nb::cast<int64_t>(steps_h);
         else if (kwargs.contains("steps"))
           steps = nb::cast<int64_t>(kwargs["steps"]);
-        bool any_float = nb::isinstance<nb::float_>(start_h) || nb::isinstance<nb::float_>(end_h);
         dtype_wrapper dtype = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{mag_ctx_default_dtype(get_ctx())};
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = parse_device_id_str(kw_device_or_default(kwargs));
@@ -683,6 +682,34 @@ namespace mag::bindings {
         return tensor_wrapper{out};
       },
       "1D tensor of evenly spaced values from start to end inclusive. Args: start, end, steps=100. Kwargs: dtype, device, requires_grad."
+    );
+    cls.attr("eye") = nb::cpp_function(
+      [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        if (args.size() > 2) {
+          std::ostringstream oss;
+          oss << "eye() takes 1 or 2 positional args, got " << args.size();
+          throw nb::type_error(oss.str().c_str());
+        }
+        if (args.size() == 0 && !kwargs.contains("n"))
+          throw nb::type_error("eye() missing required argument 'n'");
+        int64_t n = args.size() >= 1 ? nb::cast<int64_t>(args[0]) : nb::cast<int64_t>(kwargs["n"]);
+        int64_t m = args.size() >= 2 ? nb::cast<int64_t>(args[1]) : (kwargs.contains("m") ? nb::cast<int64_t>(kwargs["m"]) : n);
+        if (n < 0 || m < 0)
+          throw nb::value_error("eye(): n and m must be >= 0");
+        dtype_wrapper dtype = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{mag_ctx_default_dtype(get_ctx())};
+        bool requires_grad = kw_requires_grad_or(kwargs, false);
+        std::optional<mag_device_id_t> device_id = parse_device_id_str(kw_device_or_default(kwargs));
+        if (!device_id)
+          throw std::runtime_error {"Invalid device id"};
+        mag_context_t *ctx = get_ctx();
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_eye(&err, &out, ctx, dtype.v, n, m, *device_id), err);
+        maybe_set_requires_grad(ctx, out, requires_grad);
+        return tensor_wrapper{out};
+      },
+      "2D identity matrix with ones on the diagonal and zeros elsewhere. Args: n, m=None. Kwargs: dtype, device, requires_grad."
     );
     cls.attr("meshgrid") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> nb::tuple {

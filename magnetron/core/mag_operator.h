@@ -145,7 +145,8 @@ typedef struct mag_pad_plan_t {
   _(MIN, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(MAX, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(CLAMP, 3, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(PAD, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_PTR), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__
+  _(PAD, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_PTR), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(EYE, 0, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -155,7 +156,7 @@ typedef enum mag_opcode_t {
   MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_PAD+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_EYE+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */

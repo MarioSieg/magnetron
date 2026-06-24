@@ -338,6 +338,56 @@ mag_gen_stub_arange(int64_t, int64, mag_cvt_nop)
 
 #undef mag_gen_stub_arange
 
+#define mag_gen_stub_eye(T, TF, ONE, ZERO) \
+  static MAG_HOTPROC mag_status_t mag_eye_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    (void)err; \
+    mag_tensor_t *r = mag_cmd_out(0); \
+    T *br = (T *)mag_tensor_data_ptr_mut(r); \
+    mag_assert2(r->coords.rank == 2); \
+    int64_t cols = r->coords.shape[1]; \
+    int64_t total = r->numel; \
+    int64_t tc = payload->thread_num; \
+    int64_t ti = payload->thread_idx; \
+    int64_t chunk = (total + tc - 1)/tc; \
+    int64_t ra = ti*chunk; \
+    int64_t rb = mag_xmin(ra + chunk, total); \
+    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_tensor_is_contiguous(r)) { \
+      for (int64_t i=ra; i < rb; ++i) { \
+        int64_t row = i / cols; \
+        int64_t col = i - row*cols; \
+        mag_bnd_chk(br+i, br, mag_tensor_numbytes(r)); \
+        br[i] = row == col ? (ONE) : (ZERO); \
+      } \
+      return MAG_STATUS_OK; \
+    } \
+    mag_coords_iter_t cr; \
+    mag_coords_iter_init(&cr, &r->coords); \
+    for (int64_t i=ra; i < rb; ++i) { \
+      int64_t ri = mag_coords_iter_to_offset(&cr, i); \
+      int64_t row = i / cols; \
+      int64_t col = i - row*cols; \
+      mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
+      br[ri] = row == col ? (ONE) : (ZERO); \
+    } \
+    return MAG_STATUS_OK; \
+  }
+
+mag_gen_stub_eye(float, float32, 1.f, 0.f)
+mag_gen_stub_eye(mag_float16_t, float16, MAG_FLOAT16_ONE, MAG_FLOAT16_ZERO)
+mag_gen_stub_eye(mag_bfloat16_t, bfloat16, MAG_BFLOAT16_ONE, MAG_BFLOAT16_ZERO)
+mag_gen_stub_eye(mag_float8_e4m3fn_t, float8_e4m3fn, MAG_FLOAT8_E4M3FN_ONE, MAG_FLOAT8_E4M3FN_ZERO)
+mag_gen_stub_eye(uint8_t, uint8, 1, 0)
+mag_gen_stub_eye(int8_t, int8, 1, 0)
+mag_gen_stub_eye(uint16_t, uint16, 1, 0)
+mag_gen_stub_eye(int16_t, int16, 1, 0)
+mag_gen_stub_eye(uint32_t, uint32, 1, 0)
+mag_gen_stub_eye(int32_t, int32, 1, 0)
+mag_gen_stub_eye(uint64_t, uint64, 1, 0)
+mag_gen_stub_eye(int64_t, int64, 1, 0)
+
+#undef mag_gen_stub_eye
+
 static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err;
   mag_tensor_t *r = mag_cmd_out(0);
