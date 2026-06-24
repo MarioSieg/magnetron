@@ -71,6 +71,8 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 | `Tensor.bernoulli(p)`          | Fill with Bernoulli samples                                               | $x\sim\text{Bern}(p)$         | `x = Tensor.bernoulli(2, 3, p=0.5)`              |
 | `Tensor.bernoulli_like(x, p)`  | Create tensor filled with bernoulli random values and same shape as input | $x\sim\text{Bern}(p)$         | `x = Tensor.bernoulli_like(x, p=0.5)`            |
 | `Tensor.arange(a,b,s)`         | Create evenly spaced values from start to stop                            | $a, a+s, \dots < b$           | `x = Tensor.arange(0, 10, 2)`                    |
+| `Tensor.linspace(a,b,n)`       | Create `n` evenly spaced values from start to end inclusive               | $a,\dots,b$                   | `x = Tensor.linspace(0, 1, steps=5)`             |
+| `Tensor.meshgrid(xs)`          | Create coordinate grids from 1D tensors                                   | N/A                           | `gx, gy = Tensor.meshgrid([x, y])`               |
 | `Tensor.rand_perm(n)`          | Random permutation of integers                                            | permutation of $\{0..n-1\}$   | `x = Tensor.rand_perm(10)`                       |
 | `Tensor.one_hot(c)`            | Convert indices to one-hot vectors                                        | $y_{i,j}=[x_i=j]$             | `x = idx.one_hot(10)`                            |
 | `Tensor.load_image(p)`         | Load image file into tensor                                               | N/A                           | `img = Tensor.load_image("img.png")`             |
@@ -113,6 +115,7 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 | `view_slice(d,s,l)`   | Slice tensor without copying                               | $x[s:s+l]$            | `x.view_slice(0,0,4)`     |
 | `reshape(shape)`      | Reshape tensor (may copy)                                  | N/A                   | `x.reshape(4,3)`          |
 | `broadcast_to(shape)` | Broadcast tensor to a target shape as a view when possible | N/A                   | `x.broadcast_to(2, 3, 4)` |
+| `expand(shape)`       | Expand singleton dimensions as a zero-stride view          | N/A                   | `x.expand(2, 3, 4)`       |
 | `transpose(a,b)`      | Swap two dimensions                                        | $x^T$                 | `x.transpose(0,1)`        |
 | `permute(dims)`       | Reorder dimensions arbitrarily                             | N/A                   | `x.permute(1,0,2)`        |
 | `contiguous()`        | Ensure tensor is contiguous in memory                      | N/A                   | `x = x.contiguous()`      |
@@ -125,6 +128,10 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 | `select(d,i)`         | Select single index along dim                              | $x[...,i]$            | `x.select(1,2)`           |
 | `split(n,d)`          | Split tensor into chunks                                   | N/A                   | `x.split(4,1)`            |
 | `cat(xs,d)`           | Concatenate tensors                                        | N/A                   | `Tensor.cat([a,b],1)`     |
+| `stack(xs,d)`         | Stack tensors along a new dimension                        | N/A                   | `Tensor.stack([a,b],0)`   |
+| `hstack(xs)`          | Stack tensors horizontally                                 | N/A                   | `Tensor.hstack([a,b])`    |
+| `vstack(xs)`          | Stack tensors vertically                                   | N/A                   | `Tensor.vstack([a,b])`    |
+| `dstack(xs)`          | Stack tensors depthwise                                    | N/A                   | `Tensor.dstack([a,b])`    |
 | `gather(d,idx)`       | Gather elements by index tensor                            | $y_i=x_{idx_i}$       | `x.gather(1,idx)`         |
 
 ---
