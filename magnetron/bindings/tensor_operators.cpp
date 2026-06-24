@@ -12,6 +12,8 @@
 #include "prelude.hpp"
 #include "op_recorder.hpp"
 
+#include <core/mag_operator.h>
+
 #include <algorithm>
 
 #define bind_unary_pair(cls, name, doc) \
@@ -185,7 +187,7 @@ namespace mag::bindings {
       [](tensor_wrapper &self, nb::handle value) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
         mag_error_t err {};
-        throw_if_error(mag_fill_(&err, *self, scalar_from_py(value)), err);
+        throw_if_error(mag_fill_(&err, *self, scalar_from_py_number(value)), err);
         return self;
       },
       "value"_a,
@@ -215,7 +217,7 @@ namespace mag::bindings {
         if (mag_tensor_type(*mask) != MAG_DTYPE_BOOLEAN)
           throw nb::type_error("masked_fill_: mask must have dtype boolean");
         mag_error_t err {};
-        throw_if_error(mag_masked_fill_(&err, *self, *mask, scalar_from_py(value)), err);
+        throw_if_error(mag_masked_fill_(&err, *self, *mask, scalar_from_py_number(value)), err);
         return self;
       },
       "mask"_a, "value"_a,
@@ -224,8 +226,8 @@ namespace mag::bindings {
     .def("uniform_",
       [](tensor_wrapper &self, nb::handle low_h = nb::none(), nb::handle high_h = nb::none()) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
-        mag_scalar_t low  = low_h.is_none()  ? mag_scalar_from_f64(0.0) : scalar_from_py(low_h);
-        mag_scalar_t high = high_h.is_none() ? mag_scalar_from_f64(1.0) : scalar_from_py(high_h);
+        mag_scalar_t low = low_h.is_none()  ? mag_scalar_from_f64(0.0) : scalar_from_py_number(low_h);
+        mag_scalar_t high = high_h.is_none() ? mag_scalar_from_f64(1.0) : scalar_from_py_number(high_h);
         mag_error_t err {};
         throw_if_error(mag_uniform_(&err, *self, low, high), err);
         return self;
@@ -235,10 +237,10 @@ namespace mag::bindings {
       "Fill with samples from uniform(low, high). Default [0, 1)."
     )
     .def("normal_",
-      [](tensor_wrapper &self, nb::handle mean_h = nb::float_(0.0), nb::handle std_h  = nb::float_(1.0)) -> tensor_wrapper& {
+      [](tensor_wrapper &self, nb::handle mean = nb::float_(0.0), nb::handle stdd = nb::float_(1.0)) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
         mag_error_t err {};
-        throw_if_error(mag_normal_(&err, *self, scalar_from_py(mean_h), scalar_from_py(std_h)), err);
+        throw_if_error(mag_normal_(&err, *self, scalar_from_py_number(mean), scalar_from_py_number(stdd)), err);
         return self;
       },
       "mean"_a = 0.0,
@@ -246,10 +248,10 @@ namespace mag::bindings {
       "Fill with samples from normal(mean, std)."
     )
     .def("bernoulli_",
-      [](tensor_wrapper &self, nb::handle p_h = nb::float_(0.5)) -> tensor_wrapper& {
+      [](tensor_wrapper &self, nb::handle p = nb::float_(0.5)) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
         mag_error_t err {};
-        throw_if_error(mag_bernoulli_(&err, *self, scalar_from_py(p_h)), err);
+        throw_if_error(mag_bernoulli_(&err, *self, scalar_from_py_number(p)), err);
         return self;
       },
       "p"_a = 0.5,
@@ -748,6 +750,20 @@ namespace mag::bindings {
       },
       "shape"_a,
       "Return a view of this tensor expanded to the given shape."
+    )
+    .def("pad",
+      [](const tensor_wrapper &self, nb::handle pad_h, const std::string &mode = "constant", nb::handle value = nb::float_{0.0}) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        std::vector<int64_t> pad = parse_i64_list_handle(pad_h, "pad");
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), mode.c_str(), scalar_from_py_number(value)), err);
+        return tensor_wrapper{out};
+      },
+      "pad"_a,
+      "mode"_a = "constant",
+      "value"_a = 0.0,
+      "Pad tensor with the given padding."
     );
 
     cls.attr("cat") = nb::cpp_function(

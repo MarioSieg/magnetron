@@ -109,6 +109,19 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #define mag_float32_to_float8_e4m3fn(x) (mag_float8_e4m3fn_from_float32_soft_fp(x)) /* No hardware acceleration here, use soft-fp conversions */
 #define mag_float8_e4m3fn_to_float32(x) (mag_float8_e4m3fn_to_float32_soft_fp(x)) /* No hardware acceleration here, use soft-fp conversions */
 
+#define mag_scalar_to_float32(s) ((float)mag_scalar_as_f64(s))
+#define mag_scalar_to_float16(s) mag_float32_to_float16((float)mag_scalar_as_f64(s))
+#define mag_scalar_to_bfloat16(s) mag_float32_to_bfloat16((float)mag_scalar_as_f64(s))
+#define mag_scalar_to_float8_e4m3fn(s) mag_float32_to_float8_e4m3fn((float)mag_scalar_as_f64(s))
+#define mag_scalar_to_uint8(s) ((uint8_t)mag_scalar_as_u64(s))
+#define mag_scalar_to_int8(s) ((int8_t)mag_scalar_as_i64(s))
+#define mag_scalar_to_uint16(s) ((uint16_t)mag_scalar_as_u64(s))
+#define mag_scalar_to_int16(s) ((int16_t)mag_scalar_as_i64(s))
+#define mag_scalar_to_uint32(s) ((uint32_t)mag_scalar_as_u64(s))
+#define mag_scalar_to_int32(s) ((int32_t)mag_scalar_as_i64(s))
+#define mag_scalar_to_uint64(s) ((uint64_t)mag_scalar_as_u64(s))
+#define mag_scalar_to_int64(s) ((int64_t)mag_scalar_as_i64(s))
+
 #include "mag_cpu_simd.h"
 #include "mag_cpu_simd_functions.h"
 #include "mag_cpu_simd_philox4x32.h"
@@ -1131,6 +1144,21 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT32] = &mag_clamp_int32,
     [MAG_DTYPE_UINT64] = &mag_clamp_uint64,
     [MAG_DTYPE_INT64] = &mag_clamp_int64,
+  },
+  [MAG_OP_PAD] = {
+    [MAG_DTYPE_FLOAT32] = &mag_pad_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_pad_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_pad_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_pad_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_pad_uint8,
+    [MAG_DTYPE_UINT8] = &mag_pad_uint8,
+    [MAG_DTYPE_INT8] = &mag_pad_int8,
+    [MAG_DTYPE_UINT16] = &mag_pad_uint16,
+    [MAG_DTYPE_INT16] = &mag_pad_int16,
+    [MAG_DTYPE_UINT32] = &mag_pad_uint32,
+    [MAG_DTYPE_INT32] = &mag_pad_int32,
+    [MAG_DTYPE_UINT64] = &mag_pad_uint64,
+    [MAG_DTYPE_INT64] = &mag_pad_int64,
   },
 };
 

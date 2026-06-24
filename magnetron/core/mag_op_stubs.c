@@ -1155,6 +1155,45 @@ mag_impl_unary_pair(gelu_dv, GELU_DV)
 
 #undef mag_impl_unary_pair
 
+mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *pad, int64_t pad_len, const char *mode, mag_scalar_t value) {
+  *out_result = NULL;
+  mag_contract(err, ERR_INVALID_PARAM, {}, x != NULL, "pad: input tensor must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, pad != NULL || pad_len == 0, "pad: padding array must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, pad_len >= 0, "pad: pad_len must be >= 0.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, mode && *mode, "pad: invalid mode string");
+  int64_t rank = x->coords.rank;
+  mag_contract(err, ERR_INVALID_PARAM, {}, pad_len <= 2*rank, "pad: expected at most %" PRIi64 " padding values for rank %" PRIi64 ", but got %" PRIi64 ".", 2*rank, rank, pad_len);
+  mag_pad_plan_t plan = {0};
+  plan.rank = rank;
+  if (!strcmp(mode, "constant")) plan.mode = MAG_PAD_MODE_CONSTANT;
+  else if (!strcmp(mode, "reflect")) plan.mode = MAG_PAD_MODE_REFLECT;
+  else if (!strcmp(mode, "replicate")) plan.mode = MAG_PAD_MODE_REPLICATE;
+  else mag_contract(err, ERR_INVALID_PARAM, {}, false, "pad: invalid mode string '%s'.", mode);
+  plan.value = value;
+  for (int64_t d=0; d < rank; ++d) {
+    int64_t idx = (rank - 1 - d)<<1;
+    plan.pad_before[d] = idx < pad_len ? pad[idx] : 0;
+    plan.pad_after[d] = idx + 1 < pad_len ? pad[idx+1] : 0;
+    mag_contract(err, ERR_INVALID_PARAM, {}, plan.pad_before[d] >= 0 && plan.pad_after[d] >= 0, "pad: padding values must be >= 0.");
+    if (plan.mode == MAG_PAD_MODE_REFLECT) {
+      int64_t dim = x->coords.shape[d];
+      mag_contract(err, ERR_INVALID_PARAM, {}, plan.pad_before[d] < dim && plan.pad_after[d] < dim, "pad: reflect padding on dim %" PRIi64 " must be less than input size %" PRIi64 ".", d, dim);
+    }
+  }
+  int64_t shape[MAG_MAX_DIMS];
+  for (int64_t dim=0; dim < rank; ++dim)
+    shape[dim] = x->coords.shape[dim] + plan.pad_before[dim] + plan.pad_after[dim];
+  mag_tensor_t *result = NULL;
+  mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_PAD, &x, 0));
+  mag_try(mag_empty(err, &result, x->ctx, x->dtype, rank, shape, mag_tensor_device_id(x)));
+  mag_op_attr_registry_t layout;
+  mag_op_attr_registry_init(&layout);
+  mag_op_attr_registry_insert(&layout, mag_op_attr_ptr(&plan));
+  mag_try(mag_dispatch(err, MAG_OP_PAD, false, &layout, &x, 1, &result, 1));
+  *out_result = result;
+  return MAG_STATUS_OK;
+}
+
 mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int32_t diag) {
   *out_result = NULL;
   mag_contract(err, ERR_INVALID_PARAM, {}, tensor->coords.rank >= 2, "tril: requires rank >= 2, but got %" PRIi64 ".", tensor->coords.rank);

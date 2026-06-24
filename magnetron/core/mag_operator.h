@@ -29,6 +29,21 @@ typedef enum mag_opflags_t {
 #define MAG_OP_INOUT_DYN (UINT32_MAX-1) /* Flags flexible input/output count. Used for operations that can have arbitrary number of inputs/outputs such as split or cat. */
 #define mag_params(...) { __VA_ARGS__ }
 
+typedef enum mag_pad_mode_t {
+  MAG_PAD_MODE_CONSTANT = 0,
+  MAG_PAD_MODE_REFLECT = 1,
+  MAG_PAD_MODE_REPLICATE = 2,
+  MAG_PAD_MODE_CIRCULAR = 3,
+} mag_pad_mode_t;
+
+typedef struct mag_pad_plan_t {
+  int64_t rank;
+  int64_t pad_before[MAG_MAX_DIMS];
+  int64_t pad_after[MAG_MAX_DIMS];
+  mag_pad_mode_t mode;
+  mag_scalar_t value;
+} mag_pad_plan_t;
+
 #define mag_opdef(_, __)\
   _(NOP, 0, 0, NONE, {}, MAG_OP_FLAG_NONE, NULL)__\
   _(FILL, 0, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
@@ -129,7 +144,8 @@ typedef enum mag_opflags_t {
   _(WHERE, 3, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(MIN, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(MAX, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(CLAMP, 3, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__
+  _(CLAMP, 3, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(PAD, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_PTR), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -139,7 +155,7 @@ typedef enum mag_opcode_t {
   MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_CLAMP+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_PAD+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */

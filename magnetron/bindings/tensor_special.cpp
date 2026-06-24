@@ -237,7 +237,7 @@ namespace mag::bindings {
           return;
       }
       if (nb::isinstance<nb::bool_>(value) || nb::isinstance<nb::int_>(value) || nb::isinstance<nb::float_>(value)) {
-          mag_scalar_t scalar = scalar_from_py(value);
+          mag_scalar_t scalar = scalar_from_py_number(value);
           throw_if_error(mag_fill_(&err, *dst, scalar), err);
           return;
       }

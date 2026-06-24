@@ -689,3 +689,112 @@ mag_gen_stub_multinomial(float, float32, mag_cvt_nop)
 mag_gen_stub_multinomial(mag_float16_t, float16, mag_float16_to_float32)
 mag_gen_stub_multinomial(mag_bfloat16_t, bfloat16, mag_bfloat16_to_float32)
 mag_gen_stub_multinomial(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_to_float32)
+
+#undef mag_gen_stub_multinomial
+
+static int64_t mag_pad_reflect_index(int64_t i, int64_t size) {
+  if (size <= 1) return 0;
+  int64_t period = 2*(size - 1);
+  i %= period;
+  if (i < 0) i += period;
+  if (i >= size) i = period - i;
+  return i;
+}
+
+static int64_t mag_pad_replicate_index(int64_t i, int64_t size) {
+  if (size <= 0) return 0;
+  if (i < 0) return 0;
+  if (i >= size) return size - 1;
+  return i;
+}
+
+static int64_t mag_pad_circular_index(int64_t i, int64_t size) {
+  if (size <= 0) return 0;
+  i %= size;
+  if (i < 0) i += size;
+  return i;
+}
+
+static int64_t mag_pad_map_index(int64_t i, int64_t size, mag_pad_mode_t mode) {
+  switch (mode) {
+    case MAG_PAD_MODE_REFLECT: return mag_pad_reflect_index(i, size);
+    case MAG_PAD_MODE_REPLICATE: return mag_pad_replicate_index(i, size);
+    case MAG_PAD_MODE_CIRCULAR: return mag_pad_circular_index(i, size);
+    default: mag_panic("pad: invalid mode %d.", (int)mode);
+  }
+}
+
+#define mag_gen_stub_pad(T, TF, CVT) \
+  static MAG_HOTPROC mag_status_t mag_pad_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    (void)err; \
+    mag_tensor_t *r = mag_cmd_out(0); \
+    const mag_tensor_t *x = mag_cmd_in(0); \
+    const mag_pad_plan_t *plan = (const mag_pad_plan_t *)mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
+    T fill =(CVT(plan->value)); \
+    T *br = (T *)mag_tensor_data_ptr_mut(r); \
+    const T *bx = (const T *)mag_tensor_data_ptr(x); \
+    int64_t R = plan->rank; \
+    const int64_t *in_shape = x->coords.shape; \
+    const int64_t *in_stride = x->coords.strides; \
+    const int64_t *out_shape = r->coords.shape; \
+    int64_t total = r->numel; \
+    int64_t tc = payload->thread_num; \
+    int64_t ti = payload->thread_idx; \
+    int64_t chunk = (total + tc - 1)/tc; \
+    int64_t ra = ti*chunk; \
+    int64_t rb = mag_xmin(ra + chunk, total); \
+    mag_coords_iter_t cr; \
+    mag_coords_iter_init(&cr, &r->coords); \
+    for (int64_t i=ra; i < rb; ++i) { \
+      int64_t ri = mag_coords_iter_to_offset(&cr, i); \
+      int64_t tmp = i; \
+      int64_t oc[MAG_MAX_DIMS]; \
+      for (int64_t d = R - 1; d >= 0; --d) { \
+        oc[d] = tmp % out_shape[d]; \
+        tmp /= out_shape[d]; \
+      } \
+      bool use_constant = plan->mode == MAG_PAD_MODE_CONSTANT; \
+      int64_t si[MAG_MAX_DIMS]; \
+      if (plan->mode == MAG_PAD_MODE_CONSTANT) { \
+        use_constant = false; \
+        for (int64_t d=0; d < R; ++d) { \
+          int64_t ic = oc[d] - plan->pad_before[d]; \
+          if (ic < 0 || ic >= in_shape[d]) { \
+            use_constant = true; \
+            break; \
+          } \
+          si[d] = ic; \
+        } \
+      } else { \
+        for (int64_t d=0; d < R; ++d) { \
+          int64_t ic = oc[d] - plan->pad_before[d]; \
+          si[d] = mag_pad_map_index(ic, in_shape[d], plan->mode); \
+        } \
+      } \
+      mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
+      if (use_constant) { \
+        br[ri] = fill; \
+      } else { \
+        int64_t xi = 0; \
+        for (int64_t d=0; d < R; ++d) xi += si[d]*in_stride[d]; \
+        mag_bnd_chk(bx+xi, bx, mag_tensor_numbytes(x)); \
+        br[ri] = bx[xi]; \
+      } \
+    } \
+    return MAG_STATUS_OK; \
+  }
+
+mag_gen_stub_pad(float, float32, mag_scalar_to_float32)
+mag_gen_stub_pad(mag_float16_t, float16, mag_scalar_to_float16)
+mag_gen_stub_pad(mag_bfloat16_t, bfloat16, mag_scalar_to_bfloat16)
+mag_gen_stub_pad(mag_float8_e4m3fn_t, float8_e4m3fn, mag_scalar_to_float8_e4m3fn)
+mag_gen_stub_pad(uint8_t, uint8, mag_scalar_to_uint8)
+mag_gen_stub_pad(int8_t, int8, mag_scalar_to_int8)
+mag_gen_stub_pad(uint16_t, uint16, mag_scalar_to_uint16)
+mag_gen_stub_pad(int16_t, int16, mag_scalar_to_int16)
+mag_gen_stub_pad(uint32_t, uint32, mag_scalar_to_uint32)
+mag_gen_stub_pad(int32_t, int32, mag_scalar_to_int32)
+mag_gen_stub_pad(uint64_t, uint64, mag_scalar_to_uint64)
+mag_gen_stub_pad(int64_t, int64, mag_scalar_to_int64)
+
+#undef mag_gen_stub_pad

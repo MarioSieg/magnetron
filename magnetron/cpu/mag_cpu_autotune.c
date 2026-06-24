@@ -90,6 +90,7 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_TRIU] = {0.5, 10000},
     [MAG_OP_MULTINOMIAL] = {0.5, 25000},
     [MAG_OP_CAT] = {0.8, 10000},
+    [MAG_OP_PAD] = {0.5, 10000},
     [MAG_OP_ADD] = {3.5, 10000},
     [MAG_OP_SUB] = {3.5, 10000},
     [MAG_OP_MUL] = {3.5, 10000},

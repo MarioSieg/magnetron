@@ -168,7 +168,7 @@ namespace mag::bindings {
     throw nb::type_error("dim must be None, int, or a sequence of ints");
   }
 
-  mag_scalar_t scalar_from_py(nb::handle h) {
+  mag_scalar_t scalar_from_py_number(nb::handle h) {
     if (nb::isinstance<nb::bool_>(h)) return mag_scalar_from_u64(nb::cast<bool>(h));
     if (nb::isinstance<nb::int_>(h)) return mag_scalar_from_i64(nb::cast<int64_t>(h));
     if (nb::isinstance<nb::float_>(h)) return mag_scalar_from_f64(nb::cast<double>(h));

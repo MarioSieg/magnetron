@@ -22,7 +22,6 @@
 #include <type_traits>
 
 namespace mag {
-
   constexpr int MISC_BLOCK_SIZE = 256;
 
   static void cuda_check(cudaError_t e, const char *what) {
@@ -687,4 +686,142 @@ namespace mag {
     cuda_check(cudaFree(d_ws), "multinomial cudaFree");
   }
 
-} /* namespace mag */
+  [[nodiscard]] __device__ __forceinline__ static int pad_reflect_index(int i, int size) {
+    if (size <= 1) return 0;
+    int period = (size - 1)<<1;
+    i %= period;
+    if (i < 0) i += period;
+    if (i >= size) i = period - i;
+    return i;
+  }
+
+  [[nodiscard]] __device__ __forceinline__ static int pad_replicate_index(int i, int size) {
+    if (size <= 0) return 0;
+    if (i < 0) return 0;
+    if (i >= size) return size - 1;
+    return i;
+  }
+
+  [[nodiscard]] __device__ __forceinline__ static int pad_circular_index(int i, int size) {
+    if (size <= 0) return 0;
+    i %= size;
+    if (i < 0) i += size;
+    return i;
+  }
+
+  template <typename T, int MODE, bool C>
+  __global__ static void pad_kernel(
+    int total,
+    int R,
+    mag_pad_plan_t plan,
+    [[maybe_unused]] mag_coords_iter_t cr,
+    mag_coords_iter_t cx,
+    T *br,
+    const T *bx
+  ) {
+    int ti = blockIdx.x*blockDim.x + threadIdx.x;
+    int step = blockDim.x*gridDim.x;
+    const int *in_shape = cx.shape;
+    const int *in_stride = cx.strides;
+    const int *out_shape = cr.shape;
+    T fill = unpack_scalar<T>(plan.value);
+    for (; ti < total; ti += step) {
+      int ri = C ? ti : mag_coords_iter_to_offset(&cr, ti);
+      int tmp = ti;
+      int oc[MAG_MAX_DIMS];
+      for (int dim = R-1; dim >= 0; --dim) {
+        oc[dim] = tmp % out_shape[dim];
+        tmp /= out_shape[dim];
+      }
+      int si[MAG_MAX_DIMS];
+      if constexpr (MODE == MAG_PAD_MODE_CONSTANT) {
+        bool outside = false;
+        for (int dim = 0; dim < R; ++dim) {
+          int ic = oc[dim] - plan.pad_before[dim];
+          if (ic < 0 || ic >= in_shape[dim]) {
+            outside = true;
+            break;
+          }
+          si[dim] = ic;
+        }
+        if (outside) {
+          br[ri] = fill;
+          continue;
+        }
+      } else {
+        for (int dim=0; dim < R; ++dim) {
+          int ic = oc[dim] - plan.pad_before[dim];
+          if constexpr (MODE == MAG_PAD_MODE_REFLECT)
+            si[dim] = pad_reflect_index(ic, in_shape[dim]);
+          else if constexpr (MODE == MAG_PAD_MODE_REPLICATE)
+            si[dim] = pad_replicate_index(ic, in_shape[dim]);
+          else if constexpr (MODE == MAG_PAD_MODE_CIRCULAR)
+            si[dim] = pad_circular_index(ic, in_shape[dim]);
+        }
+      }
+      int xi = 0;
+      for (int dim=0; dim < R; ++dim)
+        xi += si[dim]*in_stride[dim];
+      br[ri] = bx[xi];
+    }
+  }
+
+  template <typename T, bool C>
+  static void launch_pad_mode(
+    int mode,
+    int blocks,
+    int n,
+    int R,
+    const mag_pad_plan_t &plan,
+    mag_coords_iter_t cr,
+    mag_coords_iter_t cx,
+    T *br,
+    const T *bx
+  ) {
+    switch (mode) {
+      case MAG_PAD_MODE_CONSTANT: pad_kernel<T, MAG_PAD_MODE_CONSTANT, C><<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
+      case MAG_PAD_MODE_REFLECT: pad_kernel<T, MAG_PAD_MODE_REFLECT, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
+      case MAG_PAD_MODE_REPLICATE: pad_kernel<T, MAG_PAD_MODE_REPLICATE, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
+      case MAG_PAD_MODE_CIRCULAR: pad_kernel<T, MAG_PAD_MODE_CIRCULAR, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
+      default: mag_assert(false, "pad: unsupported mode: %d", mode);
+    }
+  }
+
+  template <typename T>
+  static void launch_pad(mag_tensor_t *r, const mag_tensor_t *x, const mag_pad_plan_t &plan) {
+    int n = static_cast<int>(mag_tensor_numel(r));
+    int blocks = (n + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
+    mag_coords_iter_t cr, cx;
+    mag_coords_iter_init(&cr, &r->coords);
+    mag_coords_iter_init(&cx, &x->coords);
+    auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
+    const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
+    if (mag_tensor_is_contiguous(r)) {
+      launch_pad_mode<T, true>(plan.mode, blocks, n, plan.rank, plan, cr, cx, br, bx);
+    } else {
+      launch_pad_mode<T, false>(plan.mode, blocks, n, plan.rank, plan, cr, cx, br, bx);
+    }
+  }
+
+  void misc_op_pad(const mag_command_t &cmd) {
+    mag_tensor_t *r = cmd.out[0];
+    const mag_tensor_t *x = cmd.in[0];
+    const auto &plan = *static_cast<const mag_pad_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
+    switch (r->dtype) {
+      case MAG_DTYPE_FLOAT32: launch_pad<float>(r, x, plan); break;
+      case MAG_DTYPE_FLOAT16: launch_pad<half>(r, x, plan); break;
+      case MAG_DTYPE_BFLOAT16: launch_pad<__nv_bfloat16>(r, x, plan); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_pad<__nv_fp8_e4m3>(r, x, plan); break;
+      case MAG_DTYPE_BOOLEAN:
+      case MAG_DTYPE_UINT8: launch_pad<uint8_t>(r, x, plan); break;
+      case MAG_DTYPE_INT8: launch_pad<int8_t>(r, x, plan); break;
+      case MAG_DTYPE_UINT16: launch_pad<uint16_t>(r, x, plan); break;
+      case MAG_DTYPE_INT16: launch_pad<int16_t>(r, x, plan); break;
+      case MAG_DTYPE_UINT32: launch_pad<uint32_t>(r, x, plan); break;
+      case MAG_DTYPE_INT32: launch_pad<int32_t>(r, x, plan); break;
+      case MAG_DTYPE_UINT64: launch_pad<uint64_t>(r, x, plan); break;
+      case MAG_DTYPE_INT64: launch_pad<int64_t>(r, x, plan); break;
+      default: mag_assert(false, "pad: unsupported dtype");
+    }
+  }
+}
