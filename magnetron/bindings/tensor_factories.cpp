@@ -622,7 +622,7 @@ namespace mag::bindings {
         auto start_obj = start_h.is_valid() ? nb::borrow<nb::object>(start_h) : (any_float ? nb::object{nb::float_{0.0}} : nb::object{nb::int_{0}});
         auto step_obj = step_h.is_valid() ? nb::borrow<nb::object>(step_h) : (any_float ? nb::object{nb::float_{1.0}} : nb::object{nb::int_{1}});
         auto stop_obj = nb::borrow<nb::object>(stop_h);
-        dtype_wrapper dt = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : deduce_dtype_from_py_scalar(any_float ? nb::object{nb::float_{0.0}} : nb::object{nb::int_{0}});
+        dtype_wrapper dtype = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : deduce_dtype_from_py_scalar(any_float ? nb::object{nb::float_{0.0}} : nb::object{nb::int_{0}});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = parse_device_id_str(kw_device_or_default(kwargs));
         if (!device_id) throw std::runtime_error {"Invalid device id"};
@@ -632,11 +632,118 @@ namespace mag::bindings {
         mag_context_t *ctx = get_ctx();
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_arange(&err, &out, ctx, dt.v, start, stop, step, *device_id), err);
+        throw_if_error(mag_arange(&err, &out, ctx, dtype.v, start, stop, step, *device_id), err);
         maybe_set_requires_grad(ctx, out, requires_grad);
         return tensor_wrapper{out};
       },
       "1D tensor of values [start, stop) with step. Use stop only, or start/stop, or start/stop/step. Kwargs: dtype, requires_grad."
+    );
+    cls.attr("linspace") = nb::cpp_function(
+      [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        if (args.size() > 3) {
+          std::ostringstream oss;
+          oss << "linspace() takes at most 3 positional args, got " << args.size();
+          throw nb::type_error(oss.str().c_str());
+        }
+        nb::handle start_h {};
+        nb::handle end_h {};
+        nb::handle steps_h {};
+        if (args.size() >= 1) start_h = args[0];
+        if (args.size() >= 2) end_h = args[1];
+        if (args.size() >= 3) steps_h = args[2];
+        if (!start_h.is_valid()) {
+          if (!kwargs.contains("start"))
+            throw nb::type_error("linspace() missing required argument 'start'");
+          start_h = kwargs["start"];
+        }
+        if (!end_h.is_valid()) {
+          if (!kwargs.contains("end") && !kwargs.contains("stop"))
+            throw nb::type_error("linspace() missing required argument 'end'");
+          end_h = kwargs.contains("end") ? kwargs["end"] : kwargs["stop"];
+        }
+        int64_t steps = 100;
+        if (steps_h.is_valid())
+          steps = nb::cast<int64_t>(steps_h);
+        else if (kwargs.contains("steps"))
+          steps = nb::cast<int64_t>(kwargs["steps"]);
+        bool any_float = nb::isinstance<nb::float_>(start_h) || nb::isinstance<nb::float_>(end_h);
+        dtype_wrapper dtype = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{mag_ctx_default_dtype(get_ctx())};
+        bool requires_grad = kw_requires_grad_or(kwargs, false);
+        std::optional<mag_device_id_t> device_id = parse_device_id_str(kw_device_or_default(kwargs));
+        if (!device_id)
+          throw std::runtime_error {"Invalid device id"};
+        mag_scalar_t start = scalar_from_py(start_h);
+        mag_scalar_t end = scalar_from_py(end_h);
+        mag_context_t *ctx = get_ctx();
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_linspace(&err, &out, ctx, dtype.v, start, end, steps, *device_id), err);
+        maybe_set_requires_grad(ctx, out, requires_grad);
+        return tensor_wrapper{out};
+      },
+      "1D tensor of evenly spaced values from start to end inclusive. Args: start, end, steps=100. Kwargs: dtype, device, requires_grad."
+    );
+    cls.attr("meshgrid") = nb::cpp_function(
+      [](nb::args args, nb::kwargs kwargs) -> nb::tuple {
+        std::lock_guard lock {get_global_mutex()};
+        std::string indexing = "ij";
+        if (kwargs.contains("indexing"))
+          indexing = nb::cast<std::string>(kwargs["indexing"]);
+        if (indexing != "ij")
+          throw nb::value_error("meshgrid: only indexing='ij' is currently supported");
+        std::vector<tensor_wrapper> tensors {};
+        if (args.size() == 0) {
+          if (!kwargs.contains("tensors"))
+            throw nb::type_error("meshgrid() missing tensors");
+          nb::handle tensors_h = kwargs["tensors"];
+          if (nb::isinstance<tensor_wrapper>(tensors_h))
+            throw nb::type_error("meshgrid: expected sequence of Tensor, got single Tensor");
+          if (!nb::isinstance<nb::sequence>(tensors_h))
+            throw nb::type_error("meshgrid: 'tensors' must be a sequence of Tensor");
+          auto seq = nb::cast<nb::sequence>(tensors_h);
+          size_t len = nb::len(seq);
+          tensors.reserve(len);
+          for (auto &&handle : seq) {
+            auto tensor = nb::cast<tensor_wrapper>(handle);
+            if (!tensor) throw nb::value_error("meshgrid: encountered a null Tensor");
+            tensors.emplace_back(tensor);
+          }
+        } else if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0]) && !nb::isinstance<tensor_wrapper>(args[0])) {
+          auto seq = nb::cast<nb::sequence>(args[0]);
+          size_t n = nb::len(seq);
+          tensors.reserve(n);
+          for (auto &&handle : seq) {
+            auto tensor = nb::cast<tensor_wrapper>(handle);
+            if (!tensor) throw nb::value_error("meshgrid: encountered a null Tensor");
+            tensors.emplace_back(tensor);
+          }
+        } else {
+          tensors.reserve(args.size());
+          for (auto &&handle : args) {
+            auto tensor = nb::cast<tensor_wrapper>(handle);
+            if (!tensor) throw nb::value_error("meshgrid: encountered a null Tensor");
+            tensors.emplace_back(tensor);
+          }
+        }
+        size_t nt = tensors.size();
+        if (nt == 0)
+          throw nb::value_error("meshgrid: expected at least one tensor");
+        if (nt > MAG_MAX_DIMS)
+          throw nb::value_error("meshgrid: too many tensors");
+        std::vector<mag_tensor_t *> ptrs {};
+        ptrs.reserve(nt);
+        for (auto &tensor : tensors)
+          ptrs.emplace_back(*tensor);
+        std::vector<mag_tensor_t *> outs(nt, nullptr);
+        mag_error_t err {};
+        throw_if_error(mag_meshgrid(&err, outs.data(), ptrs.data(), nt), err);
+         nb::list ret {};
+        for (auto *tensor : outs)
+          ret.append(tensor_wrapper{tensor});
+        return nb::tuple(ret);
+      },
+      "Create coordinate grids from 1D tensors. Supports Tensor.meshgrid(x, y), Tensor.meshgrid([x, y]), or Tensor.meshgrid(tensors=[x, y]). Kwargs: indexing='ij'."
     );
     cls.attr("rand_perm") = nb::cpp_function(
       [](int64_t n, nb::kwargs kwargs) -> tensor_wrapper {

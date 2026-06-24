@@ -68,6 +68,4 @@ print(
     f'p10={stats.quantiles(gflops, n=10)[0]:.1f}, '
     f'p90={stats.quantiles(gflops, n=10)[-1]:.1f}'
 )
-print(
-    f'Shape: K={K}, N={N}, dtype={args.dtype}, device={args.device}'
-)
+print(f'Shape: K={K}, N={N}, dtype={args.dtype}, device={args.device}')

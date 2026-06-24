@@ -174,6 +174,27 @@ def test_arange() -> None:
     x = Tensor.arange(1.0, 2.5, 0.5)
     assert x.tolist() == [ 1.0000,  1.5000,  2.0000]
 
+def test_linspace() -> None:
+    x = Tensor.linspace(3, 10, steps=5)
+    assert x.tolist() == [  3.0000,   4.7500,   6.5000,   8.2500,  10.0000]
+    x = Tensor.linspace(-10, 10, steps=5)
+    assert x.tolist() == [-10.,  -5.,   0.,   5.,  10.]
+    x = Tensor.linspace(start=-10, end=10, steps=5)
+    assert x.tolist() == [-10.,  -5.,   0.,   5.,  10.]
+    x = Tensor.linspace(start=-10, end=10, steps=1)
+    assert x.tolist() == [-10]
+
+def test_meshgrid() -> None:
+    x = Tensor([1, 2, 3])
+    y = Tensor([4, 5, 6])
+    gx, gy = Tensor.meshgrid(x, y, indexing='ij')
+    assert gx.tolist() == [[1, 1, 1],
+                           [2, 2, 2],
+                           [3, 3, 3]]
+    assert gy.tolist() == [[4, 5, 6],
+                           [4, 5, 6],
+                           [4, 5, 6]]
+
 def test_one_hot() -> None:
     x = (Tensor.arange(0, 5) % 3).one_hot()
     assert x.dtype == dtype.int64

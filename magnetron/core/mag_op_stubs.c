@@ -432,6 +432,83 @@ mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context
   return MAG_STATUS_OK;
 }
 
+mag_status_t mag_linspace(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t start, mag_scalar_t end, int64_t steps, mag_device_id_t device) {
+  *out_result = NULL;
+  mag_contract(err, ERR_INVALID_PARAM, {}, steps > 0, "linspace: steps must be > 0, but got %" PRIi64 ".", steps);
+  mag_contract(err, ERR_INVALID_PARAM, {}, mag_scalar_same_type(start, end), "linspace: start and end must have the same scalar type.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, mag_dtype_bit(type) & MAG_DTYPE_MASK_NUMERIC, "linspace: requires a numeric dtype.");
+  if (steps == 1) return mag_full(err, out_result, ctx, type, 1, &steps, start, device);
+  mag_tensor_t *idx = NULL;
+  mag_tensor_t *scale = NULL;
+  mag_tensor_t *start_t = NULL;
+  mag_tensor_t *tmp = NULL;
+  mag_tensor_t *result = NULL;
+  mag_try(mag_arange(err, &idx, ctx, type, mag_scalar_from_i64(0), mag_scalar_from_i64(steps), mag_scalar_from_i64(1), device));
+  mag_try_or(mag_full(err, &scale, ctx, type, 1, &steps, mag_scalar_from_f64((mag_scalar_as_f64(end) - mag_scalar_as_f64(start))/(double)(steps - 1)), device), {
+    mag_tensor_decref(idx);
+  });
+  mag_try_or(mag_full(err, &start_t, ctx, type, 1, &steps, start, device), {
+    mag_tensor_decref(idx);
+    mag_tensor_decref(scale);
+  });
+  mag_try_or(mag_mul(err, &tmp, idx, scale), {
+    mag_tensor_decref(idx);
+    mag_tensor_decref(scale);
+    mag_tensor_decref(start_t);
+  });
+  mag_try_or(mag_add(err, &result, tmp, start_t), {
+    mag_tensor_decref(idx);
+    mag_tensor_decref(scale);
+    mag_tensor_decref(start_t);
+    mag_tensor_decref(tmp);
+  });
+  mag_tensor_decref(idx);
+  mag_tensor_decref(scale);
+  mag_tensor_decref(start_t);
+  mag_tensor_decref(tmp);
+  *out_result = result;
+  return MAG_STATUS_OK;
+}
+
+mag_status_t mag_meshgrid(mag_error_t *err, mag_tensor_t **out_results, mag_tensor_t **tensors, size_t count) {
+  mag_contract(err, ERR_INVALID_PARAM, {}, out_results != NULL, "meshgrid: out_results must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, tensors != NULL, "meshgrid: tensors must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, count > 0, "meshgrid: expected at least one tensor.");
+  mag_contract(err, ERR_INVALID_RANK, {}, count <= MAG_MAX_DIMS, "meshgrid: tensor count %zu exceeds maximum rank %d.", count, MAG_MAX_DIMS);
+  for (size_t i=0; i < count; ++i) {
+    out_results[i] = NULL;
+    mag_contract(err, ERR_INVALID_PARAM, {}, tensors[i] != NULL, "meshgrid: tensors[%zu] must not be NULL.", i);
+    mag_contract(err, ERR_INVALID_RANK, {}, tensors[i]->coords.rank == 1, "meshgrid: tensors[%zu] must be 1-D, but got rank %" PRIi64 ".", i, tensors[i]->coords.rank);
+  }
+  int64_t full_shape[MAG_MAX_DIMS];
+  for (size_t i=0; i < count; ++i)
+    full_shape[i] = tensors[i]->coords.shape[0];
+  for (size_t i=0; i < count; ++i) {
+    int64_t view_shape[MAG_MAX_DIMS];
+    for (size_t dim=0; dim < count; ++dim)
+      view_shape[dim] = 1;
+    view_shape[i] = tensors[i]->coords.shape[0];
+    mag_tensor_t *view = NULL;
+    mag_tensor_t *expanded = NULL;
+    mag_try_or(mag_view(err, &view, tensors[i], view_shape, (int64_t)count), {
+      for (size_t j=0; j < i; ++j) {
+        mag_tensor_decref(out_results[j]);
+        out_results[j] = NULL;
+      }
+    });
+    mag_try_or(mag_expand(err, &expanded, view, (int64_t)count, full_shape), {
+      mag_tensor_decref(view);
+      for (size_t j=0; j < i; ++j) {
+        mag_tensor_decref(out_results[j]);
+        out_results[j] = NULL;
+      }
+    });
+    mag_tensor_decref(view);
+    out_results[i] = expanded;
+  }
+  return MAG_STATUS_OK;
+}
+
 mag_status_t mag_rand_perm(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, mag_device_id_t device) {
   *out_result = NULL;
   mag_contract(err, ERR_INVALID_PARAM, {}, mag_dtype_bit(type) & MAG_DTYPE_MASK_INTEGER, "rand_perm: requires an integer dtype.");

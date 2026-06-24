@@ -42,7 +42,6 @@ def render_table(df, title: str, out_path: Path) -> None:
     shown['shapes'] = shown['shapes'].map(compact_shapes)
     shown['strides'] = shown['strides'].map(compact_shapes)
 
-
     cols = ['idx', 'op', 'calls', 'dtype', 'kind', 'shapes', 'strides', 'total_ms', 'avg_us', 'max_us']
     shown = shown[cols]
 
