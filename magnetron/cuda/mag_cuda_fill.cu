@@ -12,6 +12,7 @@
 #include "mag_cuda_fill.cuh"
 
 #include <core/mag_prng_philox4x32.h>
+#include <core/mag_u128.h>
 
 #include <type_traits>
 
@@ -124,6 +125,82 @@ namespace mag {
     }
   }
 
+  template <typename T, typename UT>
+  __device__ __forceinline__ T mag_cuda_vrand_uniform_one(
+    mag_philox4x32_stream_t *stream,
+    T min,
+    T max
+  ) {
+    UT umin = static_cast<UT>(min);
+    UT umax = static_cast<UT>(max);
+    uint64_t span64 = static_cast<uint64_t>(static_cast<UT>(umax - umin)) + 1ull;
+    if (!span64) return static_cast<T>(static_cast<UT>(mag_philox4x32_next_uint64(stream)));
+    if constexpr (sizeof(UT) <= 4) {
+      uint32_t span = static_cast<uint32_t>(span64);
+      uint32_t thresh = static_cast<uint32_t>(0u - span) % span;
+      for (;;) {
+        uint32_t x = mag_philox4x32_next_uint32(stream);
+        uint64_t m = static_cast<uint64_t>(x) * static_cast<uint64_t>(span);
+        uint32_t lo = static_cast<uint32_t>(m);
+        if (lo < thresh) continue;
+        uint32_t hi = static_cast<uint32_t>(m >> 32);
+        return static_cast<T>(static_cast<UT>(umin + hi));
+      }
+    } else {
+      uint64_t span = span64;
+      uint64_t thresh = (0ull - span) % span;
+      for (;;) {
+        uint64_t x = mag_philox4x32_next_uint64(stream);
+        mag_uint128_t m = mag_uint128_mul128(x, span);
+        if (m.lo < thresh) continue;
+        return static_cast<T>(static_cast<UT>(umin + static_cast<UT>(m.hi)));
+      }
+    }
+  }
+
+  template <typename T, typename UT, const bool C>
+  __global__ static void fill_random_uniform_int_kernel(
+    int n,
+    T *__restrict__ r,
+    T min,
+    T max,
+    uint64_t seed,
+    uint64_t subseq,
+    [[maybe_unused]] mag_coords_iter_t rc
+  ) {
+    int ti = blockIdx.x * blockDim.x + threadIdx.x;
+    int step = blockDim.x * gridDim.x;
+    mag_philox4x32_stream_t stream;
+    mag_philox4x32_stream_seed(&stream, seed, subseq + static_cast<uint64_t>(ti));
+    if constexpr (C) {
+      for (; ti < n; ti += step)
+        r[ti] = mag_cuda_vrand_uniform_one<T, UT>(&stream, min, max);
+    } else {
+      for (; ti < n; ti += step) {
+        int ri = mag_coords_iter_to_offset(&rc, ti);
+        r[ri] = mag_cuda_vrand_uniform_one<T, UT>(&stream, min, max);
+      }
+    }
+  }
+
+  template <typename T, typename UT>
+  static void launch_rand_fill_uniform_int_kernel(mag_tensor_t *r, const mag_command_t &cmd) {
+    auto *o = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
+    auto min = unpack_param<T>(cmd.attrs, 0);
+    auto max = unpack_param<T>(cmd.attrs, 1);
+    int n = numel_i32(r);
+    int blocks = (n + FILL_BLOCK_SIZE - 1) / FILL_BLOCK_SIZE;
+    uint64_t seed = global_seed.load(std::memory_order_relaxed);
+    uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
+    if (mag_tensor_is_contiguous(r)) {
+      fill_random_uniform_int_kernel<T, UT, true><<<blocks, FILL_BLOCK_SIZE>>>(n, o, min, max, seed, subseq, {});
+    } else {
+      mag_coords_iter_t rc;
+      mag_coords_iter_init(&rc, &r->coords);
+      fill_random_uniform_int_kernel<T, UT, false><<<blocks, FILL_BLOCK_SIZE>>>(n, o, min, max, seed, subseq, rc);
+    }
+  }
+
   template <typename T, const bool NormDist>
   static void launch_rand_fill_kernel(mag_tensor_t *r, const mag_command_t &cmd) {
     auto *o = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
@@ -190,6 +267,15 @@ namespace mag {
       case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, false>(r, cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_rand_fill_kernel<__nv_bfloat16, false>(r, cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_rand_fill_kernel<__nv_fp8_e4m3, false>(r, cmd); break;
+      case MAG_DTYPE_BOOLEAN:
+      case MAG_DTYPE_UINT8: launch_rand_fill_uniform_int_kernel<uint8_t, uint8_t>(r, cmd); break;
+      case MAG_DTYPE_INT8: launch_rand_fill_uniform_int_kernel<int8_t, uint8_t>(r, cmd); break;
+      case MAG_DTYPE_UINT16: launch_rand_fill_uniform_int_kernel<uint16_t, uint16_t>(r, cmd); break;
+      case MAG_DTYPE_INT16: launch_rand_fill_uniform_int_kernel<int16_t, uint16_t>(r, cmd); break;
+      case MAG_DTYPE_UINT32: launch_rand_fill_uniform_int_kernel<uint32_t, uint32_t>(r, cmd); break;
+      case MAG_DTYPE_INT32: launch_rand_fill_uniform_int_kernel<int32_t, uint32_t>(r, cmd); break;
+      case MAG_DTYPE_UINT64: launch_rand_fill_uniform_int_kernel<uint64_t, uint64_t>(r, cmd); break;
+      case MAG_DTYPE_INT64: launch_rand_fill_uniform_int_kernel<int64_t, uint64_t>(r, cmd); break;
       default: mag_assert(false, "Unsupported data type in binary operation");
     }
   }

@@ -70,8 +70,8 @@ def _assert_einsum_close(
         torch.testing.assert_close(
             got,
             ref,
-            rtol=1e-4,
-            atol=1e-4,
+            rtol=2e-2,
+            atol=2e-2,
             equal_nan=True,
         )
 

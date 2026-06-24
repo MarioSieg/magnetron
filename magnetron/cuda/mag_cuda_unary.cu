@@ -316,6 +316,16 @@ namespace mag {
   };
 
   template <typename T>
+  struct op_abs_int {
+    static_assert(std::is_integral_v<T>);
+    using In = T;
+    using Out = T;
+    [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
+      return x < T(0) ? static_cast<Out>(-x) : x;
+    }
+  };
+
+  template <typename T>
   struct op_sgn {
     using In = T;
     using Out = T;
@@ -800,7 +810,12 @@ namespace mag {
     }
   }
 
-  void unary_op_abs(const mag_command_t &cmd) { impl_unary_op_fp<op_abs>(cmd.out[0], cmd.in[0]); }
+  void unary_op_abs(const mag_command_t &cmd) {
+    mag_tensor_t *r = cmd.out[0];
+    mag_tensor_t *x = cmd.in[0];
+    if (mag_type_category_is_integral(r->dtype)) impl_unary_op_int<op_abs_int>(r, x);
+    else impl_unary_op_fp<op_abs>(r, x);
+  }
   void unary_op_sgn(const mag_command_t &cmd) { impl_unary_op_fp<op_sgn>(cmd.out[0], cmd.in[0]); }
   void unary_op_neg(const mag_command_t &cmd) { impl_unary_op_fp<op_neg>(cmd.out[0], cmd.in[0]); }
   void unary_op_not(const mag_command_t &cmd) { impl_unary_op_int<op_not>(cmd.out[0], cmd.in[0]); }

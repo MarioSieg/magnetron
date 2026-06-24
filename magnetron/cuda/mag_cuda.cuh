@@ -44,7 +44,7 @@ namespace mag {
 
   template <typename T>
   [[nodiscard]] T unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
-    if constexpr (std::is_same_v<T, float> || std::is_same_v<T, half> || std::is_same_v<T, __nv_bfloat16>) {
+    if constexpr (std::is_same_v<T, float> || std::is_same_v<T, half> || std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, __nv_fp8_e4m3>) {
       return static_cast<T>(mag_op_attr_unwrap_float64(params[i]));
     } else if constexpr (std::is_signed_v<T>) {
       return static_cast<T>(mag_op_attr_unwrap_int64(params[i]));

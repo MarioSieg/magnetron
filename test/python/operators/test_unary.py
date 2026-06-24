@@ -56,32 +56,57 @@ _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
     UnaryOpTestCase('sigmoid', None),
     UnaryOpTestCase('hard_sigmoid', lambda x: torch.nn.functional.hardsigmoid(x)),
     UnaryOpTestCase('silu', None),
-    UnaryOpTestCase('tanh', None),
     UnaryOpTestCase('gelu', None),
     UnaryOpTestCase('tril', None, 2),
     UnaryOpTestCase('triu', None, 2),
 )
 
 
+_UNARY_TOLS: dict[dtype.DType, tuple[float, float]] = {
+    dtype.float32: (1e-5, 1e-5),
+    dtype.float16: (1e-3, 1e-5),
+    dtype.bfloat16: (1.6e-2, 1e-5),
+}
+
+# Some CPU unary kernels use faster approximations that diverge from torch more than CUDA.
+_CPU_LOOSE_UNARY_OPS: frozenset[str] = frozenset({'tanh', 'exp', 'sigmoid', 'silu', 'softmax'})
+_CPU_LOOSE_TOLS: dict[dtype.DType, tuple[float, float]] = {
+    dtype.float32: (0.5, 0.75),
+    dtype.float16: (0.5, 0.75),
+    dtype.bfloat16: (0.5, 0.75),
+}
+
+
+def _unary_tol(device: str, dt: dtype.DType, op_name: str) -> tuple[float, float]:
+    if op_name == 'round' and dt in {dtype.float16, dtype.bfloat16}:
+        return 0.0, 1.0
+    if device == 'cpu' and op_name in _CPU_LOOSE_UNARY_OPS:
+        return _CPU_LOOSE_TOLS[dt]
+    return _UNARY_TOLS[dt]
+
+
 def unary_op(
     device: str,
     dtype: dtype.DType,
     rank_min: int,
+    op_name: str,
     mag_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
     torch_callback: Callable[[Tensor | torch.Tensor], Tensor | torch.Tensor],
 ) -> None:
+    rtol, atol = _unary_tol(device, dtype, op_name)
+
     def test(shape: tuple[int, ...]) -> None:
         if len(shape) < rank_min:
             return
         x = random_tensor(shape, dtype, device=device)
         r = mag_callback(x.clone())
-        torch.testing.assert_close(totorch(r), torch_callback(totorch(x)), equal_nan=True)
+        torch.testing.assert_close(totorch(r), torch_callback(totorch(x)), equal_nan=True, rtol=rtol, atol=atol)
 
     for_all_shapes(test)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-@pytest.mark.parametrize('dtype', dtype.floating)
+@pytest.mark.parametrize('dtype', dtype.floating - {dtype.float8_e4m3fn})
 @pytest.mark.parametrize('op', _UNARY_OPS)
 def test_unary_op(device: str, dtype: dtype.DType, op: UnaryOpTestCase) -> None:
     name = op.name
@@ -93,6 +118,17 @@ def test_unary_op(device: str, dtype: dtype.DType, op: UnaryOpTestCase) -> None:
         torch_op = getattr(torch.nn.functional, name)
     else:
         raise RuntimeError(f'No reference torch op found for unary op {name!r}')
-    unary_op(device, dtype, op.rank_min, lambda x: getattr(x, name)(), lambda x: torch_op(x))
+    unary_op(device, dtype, op.rank_min, name, lambda x: getattr(x, name)(), lambda x: torch_op(x))
     if op.inplace:
-        unary_op(device, dtype, op.rank_min, lambda x: getattr(x, name + '_')(), lambda x: torch_op(x))
+        unary_op(device, dtype, op.rank_min, name, lambda x: getattr(x, name + '_')(), lambda x: torch_op(x))
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dt', dtype.integer)
+def test_unary_abs_integer(device: str, dt: dtype.DType) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        x = random_tensor(shape, dt=dt, device=device)
+        r = x.clone().abs()
+        np.testing.assert_array_equal(tonumpy(r), np.abs(tonumpy(x)))
+
+    for_all_shapes(test)

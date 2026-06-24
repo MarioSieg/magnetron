@@ -13,6 +13,7 @@
 #define MAG_U128_H
 
 #include <stdint.h>
+#include <core/mag_def.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,10 +28,10 @@ static inline mag_uint128_t *mag_uint128_add(mag_uint128_t *lhs, uint64_t rhs) {
   return lhs;
 }
 
-static inline uint64_t mag_uint128_mul64(uint32_t x, uint32_t y) { return x*(uint64_t)y; }
+static MAG_CUDA_DEVICE inline uint64_t mag_uint128_mul64(uint32_t x, uint32_t y) { return x*(uint64_t)y; }
 
-static inline mag_uint128_t mag_uint128_mul128(uint64_t x, uint64_t y) {
-#ifdef __SIZEOF_INT128__
+static MAG_CUDA_DEVICE inline mag_uint128_t mag_uint128_mul128(uint64_t x, uint64_t y) {
+#if defined(__SIZEOF_INT128__) && !defined(__CUDA_ARCH__)
   unsigned __int128 r = (unsigned __int128)x*(unsigned __int128)y;
   return (mag_uint128_t){(uint64_t)(r>>64), (uint64_t)r};
 #else

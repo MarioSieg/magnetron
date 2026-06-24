@@ -12,6 +12,7 @@
 #include "mag_cuda_binary.cuh"
 
 #include <array>
+#include <cmath>
 #include <cuda/std/tuple>
 
 namespace mag {
@@ -20,7 +21,8 @@ namespace mag {
     using InT = In;
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
-      return static_cast<OutT>(static_cast<float>(x)+static_cast<float>(y));
+      if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x + y);
+      return static_cast<OutT>(static_cast<float>(x) + static_cast<float>(y));
     }
   };
 
@@ -29,7 +31,8 @@ namespace mag {
     using InT = In;
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
-      return static_cast<OutT>(static_cast<float>(x)-static_cast<float>(y));
+      if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x - y);
+      return static_cast<OutT>(static_cast<float>(x) - static_cast<float>(y));
     }
   };
 
@@ -38,7 +41,8 @@ namespace mag {
     using InT = In;
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
-      return static_cast<OutT>(static_cast<float>(x)*static_cast<float>(y));
+      if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x * y);
+      return static_cast<OutT>(static_cast<float>(x) * static_cast<float>(y));
     }
   };
 
@@ -47,7 +51,8 @@ namespace mag {
     using InT = In;
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
-      return static_cast<OutT>(static_cast<float>(x)/static_cast<float>(y));
+      if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x / y);
+      return static_cast<OutT>(static_cast<float>(x) / static_cast<float>(y));
     }
   };
 
@@ -103,7 +108,7 @@ namespace mag {
           return static_cast<OutT>(mag_powi(static_cast<int64_t>(x), static_cast<int64_t>(y)));
         }
       } else {
-        return static_cast<OutT>(__powf(static_cast<float>(x), static_cast<float>(y)));
+        return static_cast<OutT>(pow(static_cast<double>(x), static_cast<double>(y)));
       }
     }
   };
@@ -157,42 +162,60 @@ namespace mag {
   struct op_eq {
     using InT = In;
     using OutT = Out;
-    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const { return static_cast<float>(x)==static_cast<float>(y); }
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return x == y;
+      return static_cast<float>(x) == static_cast<float>(y);
+    }
   };
 
   template <typename In, typename Out>
   struct op_ne {
     using InT = In;
     using OutT = Out;
-    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const { return static_cast<float>(x)!=static_cast<float>(y); }
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return x != y;
+      return static_cast<float>(x) != static_cast<float>(y);
+    }
   };
 
   template <typename In, typename Out>
   struct op_le {
     using InT = In;
     using OutT = Out;
-    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const { return static_cast<float>(x)<=static_cast<float>(y); }
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return x <= y;
+      return static_cast<float>(x) <= static_cast<float>(y);
+    }
   };
 
   template <typename In, typename Out>
   struct op_ge {
     using InT = In;
     using OutT = Out;
-    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const { return static_cast<float>(x)>=static_cast<float>(y); }
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return x >= y;
+      return static_cast<float>(x) >= static_cast<float>(y);
+    }
   };
 
   template <typename In, typename Out>
   struct op_lt {
     using InT = In;
     using OutT = Out;
-    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const { return static_cast<float>(x)<static_cast<float>(y); }
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return x < y;
+      return static_cast<float>(x) < static_cast<float>(y);
+    }
   };
 
   template <typename In, typename Out>
   struct op_gt {
     using InT = In;
     using OutT = Out;
-    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const { return static_cast<float>(x)>static_cast<float>(y); }
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return x > y;
+      return static_cast<float>(x) > static_cast<float>(y);
+    }
   };
 
   template <typename Op, const bool C>

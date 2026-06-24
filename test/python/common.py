@@ -58,6 +58,73 @@ NUMPY_DTYPE_MAP: dict[dtype.DType, np.dtype] = {
     dtype.int64: np.int64,
 }
 
+# Torch lacks elementwise float8 ops.
+FLOATING_NO_FLOAT8: set[dtype.DType] = dtype.floating - {dtype.float8_e4m3fn}
+
+_SHIFT_BITS: dict[dtype.DType, int] = {
+    dtype.uint8: 8,
+    dtype.int8: 8,
+    dtype.uint16: 16,
+    dtype.int16: 16,
+    dtype.uint32: 32,
+    dtype.int32: 32,
+    dtype.uint64: 64,
+    dtype.int64: 64,
+}
+
+_COMPARE_TOLS: dict[dtype.DType, tuple[float, float]] = {
+    dtype.float32: (1e-5, 1e-4),
+    dtype.float16: (1e-3, 1e-3),
+    dtype.bfloat16: (1.6e-2, 1e-2),
+}
+
+
+def device_spec(device: str) -> str:
+    return device if ':' in device else f'{device}:0'
+
+
+def compare_tol(dt: dtype.DType) -> tuple[float, float]:
+    return _COMPARE_TOLS.get(dt, (1e-5, 1e-5))
+
+
+def assert_close_mag_torch(
+    got: Tensor | torch.Tensor,
+    expected: Tensor | torch.Tensor,
+    dt: dtype.DType,
+    *,
+    equal_nan: bool = True,
+    rtol: float | None = None,
+    atol: float | None = None,
+) -> None:
+    default_rtol, default_atol = compare_tol(dt)
+    torch.testing.assert_close(
+        totorch(got),
+        totorch(expected) if isinstance(expected, Tensor) else expected,
+        rtol=default_rtol if rtol is None else rtol,
+        atol=default_atol if atol is None else atol,
+        equal_nan=equal_nan,
+    )
+
+
+def totorch_for_reference(obj: Tensor, dt: dtype.DType) -> torch.Tensor:
+    t = totorch(obj)
+    if dt == dtype.float8_e4m3fn:
+        return t.float()
+    return t
+
+
+def call_reduction(tensor: Tensor, op_name: str, dim: int | None, keepdim: bool) -> Tensor:
+    op = getattr(tensor, op_name)
+    if dim is None:
+        return op()
+    if op_name in ('min', 'max'):
+        return op(dim, keepdim=keepdim)
+    return op(dim=dim, keepdim=keepdim)
+
+
+def clamp_shift_amount(y: Tensor, dt: dtype.DType) -> Tensor:
+    return y.abs() % _SHIFT_BITS[dt]
+
 
 def totorch_dtype(dtype: dtype.DType) -> torch.dtype:
     if dtype not in DTYPE_TORCH_MAP:
@@ -147,10 +214,9 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
 
 def random_tensor(shape: tuple[int, ...], dt: dtype.DType, device: str = 'cpu') -> Tensor:
     if dt == dtype.boolean:
-        return Tensor.bernoulli(shape)
-    else:
-        lim = 100 if dt.is_integer else 1.0
-        return Tensor.uniform(shape, low=-lim, high=lim, dtype=dt, device=device)
+        return Tensor.bernoulli(shape, device=device)
+    lim = 100 if dt.is_integer() else 1.0
+    return Tensor.uniform(shape, low=-lim, high=lim, dtype=dt, device=device)
 
 
 DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (

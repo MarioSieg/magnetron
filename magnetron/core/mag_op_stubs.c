@@ -1163,7 +1163,7 @@ mag_status_t mag_cat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
       for (size_t j=0; j < i; ++j)
         mag_tensor_decref(tmp[j]);
       (*mag_alloc)(tmp, 0, 0);
-    }, mag_isok(mag_contiguous(err, tmp+i, tensor)), "cat: failed to make tensor contgious"); /* TODO: kernel requires all tensors to be contgious for now, add strided path */
+    }, mag_isok(mag_contiguous(err, tmp+i, tensor)), "cat: failed to make tensor contiguous"); /* TODO: kernel requires all tensors to be contiguous for now, add strided path */
     shape[dim] += tensor->coords.shape[dim];
   }
   mag_op_attr_registry_t layout;
