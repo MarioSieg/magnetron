@@ -141,9 +141,9 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
 #define mag_gen_stub_masked_fill(T, TF, G, UT, CVT) \
   static MAG_HOTPROC mag_status_t mag_masked_fill_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
+    const mag_tensor_t *mask = mag_cmd_in(0); \
     mag_tensor_t *r = mag_cmd_out(0); \
     T val = (T)CVT(mag_op_attr_unwrap_##UT(mag_cmd_attr(0))); \
-    const mag_tensor_t *mask = mag_op_attr_unwrap_ptr(mag_cmd_attr(1)); \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const uint8_t *bm = (const uint8_t *)mag_tensor_data_ptr(mask); \
     mag_coords_iter_t cr, cm; \

@@ -1855,14 +1855,19 @@ mag_status_t mag_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t valu
   return mag_dispatch(err, MAG_OP_FILL, false, &layout, NULL, 0, &tensor, 1);
 }
 
+mag_status_t mag_masked_fill(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, mag_tensor_t *mask, mag_scalar_t value) {
+  *out_result = NULL;
+  mag_try(mag_clone(err, out_result, tensor));
+  return mag_masked_fill_(err, *out_result, mask, value);
+}
+
 mag_status_t mag_masked_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_tensor_t *mask, mag_scalar_t value) {
   mag_contract(err, ERR_INVALID_PARAM, {}, mask->dtype == MAG_DTYPE_BOOLEAN, "masked_fill: mask must have dtype bool, but got %s.", mag_type_trait(mask->dtype)->name);
   mag_op_attr_registry_t layout;
   mag_op_attr_registry_init(&layout);
   mag_op_attr_registry_insert(&layout, mag_scalar_to_op_attr(tensor->dtype, value));
-  mag_op_attr_registry_insert(&layout, mag_op_attr_ptr(mask));
-  mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_MASKED_FILL, NULL, 0));
-  return mag_dispatch(err, MAG_OP_MASKED_FILL, false, &layout, NULL, 0, &tensor, 1);
+  mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_MASKED_FILL, &mask, 1));
+  return mag_dispatch(err, MAG_OP_MASKED_FILL, false, &layout, &mask, 1, &tensor, 1);
 }
 
 mag_status_t mag_uniform_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t min, mag_scalar_t max) {

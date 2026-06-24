@@ -48,17 +48,10 @@ namespace mag {
   ) {
     int ti = blockIdx.x*blockDim.x + threadIdx.x;
     int step = blockDim.x*gridDim.x;
-    if constexpr (C) {
-      for (; ti < n; ti += step) {
-        int mi = mag_coords_iter_broadcast(&rc, &mc, ti);
-        if (m[mi]) r[ti] = v;
-      }
-    } else {
-      for (; ti < n; ti += step) {
-        int ri = mag_coords_iter_to_offset(&rc, ti);
-        int mi = mag_coords_iter_broadcast(&rc, &mc, ti);
-        if (m[mi]) r[ri] = v;
-      }
+    for (; ti < n; ti += step) {
+      int ri = C ? ti : mag_coords_iter_to_offset(&rc, ti);
+      int mi = mag_coords_iter_broadcast(&rc, &mc, ti);
+      if (m[mi]) r[ri] = v;
     }
   }
 
@@ -75,8 +68,11 @@ namespace mag {
       mag_coords_iter_init(&mc, &mask->coords);
       mag_coords_iter_t rc;
       mag_coords_iter_init(&rc, &r->coords);
-      if (cont) masked_fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, pm, v, rc, mc);
-      else masked_fill_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, pm, v, rc, mc);
+      if (cont) {
+        masked_fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, pm, v, rc, mc);
+      } else {
+        masked_fill_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, pm, v, rc, mc);
+      }
     } else {
       if (cont) {
         fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, v, {});
@@ -240,8 +236,8 @@ namespace mag {
   }
 
   void fill_op_masked_fill(const mag_command_t &cmd) {
+    mag_tensor_t *mask = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
-    auto *mask = static_cast<mag_tensor_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0])); // TODO: pass in cmd in why the fuck are these here
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd, mask); break;
       case MAG_DTYPE_FLOAT16: launch_fill_kernel<half>(r, cmd, mask); break;

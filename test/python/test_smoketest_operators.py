@@ -244,6 +244,12 @@ def test_inplace_fill() -> None:
     x.fill_(3.1415)
     assert (x == 3.1415).all()
 
+def test_outplace_masked_fill() -> None:
+    x = Tensor.uniform(2, 4, 6)
+    mask = Tensor.ones_like(x).tril().cast(dtype.boolean)
+    x = x.masked_fill(mask, 3.1415)
+    assert (x == 3.1415).any()
+
 def test_inplace_masked_fill() -> None:
     x = Tensor.uniform(2, 4, 6)
     mask = Tensor.ones_like(x).tril().cast(dtype.boolean)

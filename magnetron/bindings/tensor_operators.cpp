@@ -211,6 +211,19 @@ namespace mag::bindings {
       },
       "Fill the tensor with 1."
     )
+    .def("masked_fill",
+      [](tensor_wrapper &self, const tensor_wrapper &mask, nb::handle value) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        if (mag_tensor_type(*mask) != MAG_DTYPE_BOOLEAN)
+          throw nb::type_error("masked_fill_: mask must have dtype boolean");
+        mag_error_t err {};
+        mag_tensor_t *result = nullptr;
+        throw_if_error(mag_masked_fill(&err, &result, *self, *mask, scalar_from_py_number(value)), err);
+        return tensor_wrapper{result};
+      },
+      "mask"_a, "value"_a,
+      "Fill elements where mask is True with value - out of place version of masked_fill_."
+    )
     .def("masked_fill_",
       [](tensor_wrapper &self, const tensor_wrapper &mask, nb::handle value) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
