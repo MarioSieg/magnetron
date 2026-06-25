@@ -796,7 +796,19 @@ namespace mag::bindings {
         return tensor_wrapper{out};
       },
       "dim"_a = 0,
-      "index"_a
+      "index"_a,
+      "Gather values along dim using index. index must have the same rank as self (torch.gather semantics)."
+    )
+    .def("embedding",
+      [](const tensor_wrapper &self, const tensor_wrapper &indices) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_embedding(&err, &out, *self, *indices), err);
+        return tensor_wrapper{out};
+      },
+      "indices"_a,
+      "Embedding lookup: self is the weight matrix [vocab_size, ...], indices is an int64 tensor of any shape. Returns indices.shape + self.shape[1:]."
     )
     .def("index_add_",
       [](tensor_wrapper &self, int64_t dim, const tensor_wrapper &index, const tensor_wrapper &source, double alpha = 1.0) -> tensor_wrapper& {

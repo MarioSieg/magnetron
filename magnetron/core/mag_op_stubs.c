@@ -265,12 +265,19 @@ static mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opco
       }
     }
   }
-  if (op == MAG_OP_GATHER) {
+  if (op == MAG_OP_GATHER || op == MAG_OP_EMBEDDING) {
     mag_contract(err, ERR_INVALID_PARAM, {}, inputs[1]->dtype == MAG_DTYPE_INT64,
       "op_validate: index tensor for operator '%s' must have dtype int64, but got '%s'.\n"
       "    Hint: cast the indices to int64.",
       meta->mnemonic, mag_type_trait(inputs[1]->dtype)->name
     );
+    if (op == MAG_OP_EMBEDDING) {
+      mag_dtype_mask_t fp_mask = MAG_DTYPE_MASK_FP;
+      mag_contract(err, ERR_INVALID_PARAM, {}, (fp_mask & mag_dtype_bit(inputs[0]->dtype)) != 0,
+        "op_validate: weight tensor for 'embedding' must have a floating-point dtype, but got '%s'.",
+        mag_type_trait(inputs[0]->dtype)->name
+      );
+    }
     return MAG_STATUS_OK;
   }
   if (mag_unlikely(meta->in == 2 && n == 2 && inputs[0]->dtype != inputs[1]->dtype)) { /* For binary operators, check that both inputs have the same data type. */
@@ -1908,41 +1915,42 @@ mag_status_t mag_gather(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   mag_tensor_t *result = NULL;
   mag_contract(err, ERR_INVALID_PARAM, {}, idx->dtype == MAG_DTYPE_INT64, "gather: index tensor must have dtype int64, but got %s.", mag_type_trait(idx->dtype)->name);
   mag_contract(err, ERR_INVALID_PARAM, {}, dim >= 0 && dim < tensor->coords.rank, "gather: dim must be in [0, %" PRIi64 "), but got %" PRIi64 ".", tensor->coords.rank, dim);
-  mag_contract(err, ERR_INVALID_PARAM, {}, idx->coords.rank <= tensor->coords.rank, "gather: index rank (%" PRIi64 ") must be <= input rank (%" PRIi64 ").", idx->coords.rank, tensor->coords.rank);
-  mag_contract(err, ERR_INVALID_PARAM, {}, idx->coords.rank >= 1, "gather: index tensor must have rank >= 1.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, idx->coords.rank == tensor->coords.rank, "gather: index rank (%" PRIi64 ") must equal input rank (%" PRIi64 "). Use embedding() for row-select indexing.", idx->coords.rank, tensor->coords.rank);
   mag_norm_axis(&dim, tensor->coords.rank);
   mag_assert2(dim >= 0 && dim < tensor->coords.rank);
+  /* Output shape equals index shape (same as torch.gather). */
+  int64_t ork = idx->coords.rank;
   int64_t ax[MAG_MAX_DIMS];
-  int64_t ork = 0;
-  bool full = false;
-  if (idx->coords.rank == tensor->coords.rank) {
-    full = true;
-    for (int64_t i=0; i < tensor->coords.rank; ++i) {
-      if (i == dim) continue;
-      if (idx->coords.shape[i] != tensor->coords.shape[i]) {
-        full = false;
-        break;
-      }
-    }
-  }
-  if (full)
-    for (int64_t i=0; i < tensor->coords.rank; ++i)
-      ax[ork++] = idx->coords.shape[i];
-  else if (idx->coords.rank == 1)
-    for (int64_t i=0; i < tensor->coords.rank; ++i)
-      ax[ork++] = i == dim ? idx->coords.shape[0] : tensor->coords.shape[i];
-  else {
-    for (int64_t i=0; i < dim; ++i) ax[ork++] = tensor->coords.shape[i];
-    for (int64_t i=0; i < idx->coords.rank; ++i) ax[ork++] = idx->coords.shape[i];
-    for (int64_t i=dim+1; i < tensor->coords.rank; ++i) ax[ork++] = tensor->coords.shape[i];
-  }
-  mag_contract(err, ERR_INVALID_RANK, {}, ork >= 1 && ork <= MAG_MAX_DIMS, "gather: output rank must be in [1, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, ork);
+  for (int64_t i = 0; i < ork; ++i) ax[i] = idx->coords.shape[i];
   mag_try(mag_empty(err, &result, tensor->ctx, tensor->dtype, ork, ax, mag_tensor_device_id(tensor)));
   mag_op_attr_registry_t layout;
   mag_op_attr_registry_init(&layout);
-  mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dim)); /* Store dimension in op_params[0] */
+  mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dim));
   mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_GATHER, (mag_tensor_t *[2]){tensor, idx}, 0));
   mag_try(mag_dispatch(err, MAG_OP_GATHER, false, &layout, (mag_tensor_t *[2]) {tensor, idx}, 2, &result, 1));
+  *out_result = result;
+  return MAG_STATUS_OK;
+}
+
+mag_status_t mag_embedding(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *weight, mag_tensor_t *indices) {
+  *out_result = NULL;
+  mag_tensor_t *result = NULL;
+  mag_contract(err, ERR_INVALID_PARAM, {}, indices->dtype == MAG_DTYPE_INT64, "embedding: indices tensor must have dtype int64, but got %s.", mag_type_trait(indices->dtype)->name);
+  mag_dtype_mask_t fp_mask = MAG_DTYPE_MASK_FP;
+  mag_contract(err, ERR_INVALID_PARAM, {}, (fp_mask & mag_dtype_bit(weight->dtype)) != 0, "embedding: weight tensor must have a floating-point dtype, but got %s.", mag_type_trait(weight->dtype)->name);
+  mag_contract(err, ERR_INVALID_PARAM, {}, weight->coords.rank >= 1, "embedding: weight must have rank >= 1.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, indices->coords.rank >= 1, "embedding: indices must have rank >= 1.");
+  /* Output shape: indices.shape + weight.shape[1:] */
+  int64_t ork = 0;
+  int64_t ax[MAG_MAX_DIMS];
+  for (int64_t i = 0; i < indices->coords.rank; ++i) ax[ork++] = indices->coords.shape[i];
+  for (int64_t i = 1; i < weight->coords.rank; ++i)  ax[ork++] = weight->coords.shape[i];
+  mag_contract(err, ERR_INVALID_RANK, {}, ork >= 1 && ork <= MAG_MAX_DIMS, "embedding: output rank must be in [1, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, ork);
+  mag_try(mag_empty(err, &result, weight->ctx, weight->dtype, ork, ax, mag_tensor_device_id(weight)));
+  mag_op_attr_registry_t layout;
+  mag_op_attr_registry_init(&layout);
+  mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_EMBEDDING, (mag_tensor_t *[2]){weight, indices}, 0));
+  mag_try(mag_dispatch(err, MAG_OP_EMBEDDING, false, &layout, (mag_tensor_t *[2]) {weight, indices}, 2, &result, 1));
   *out_result = result;
   return MAG_STATUS_OK;
 }

@@ -1278,6 +1278,12 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_UINT64] = &mag_index_add_uint64,
     [MAG_DTYPE_INT64] = &mag_index_add_int64,
   },
+  [MAG_OP_EMBEDDING] = {
+    [MAG_DTYPE_FLOAT32]       = &mag_embedding_float32,
+    [MAG_DTYPE_FLOAT16]       = &mag_embedding_float16,
+    [MAG_DTYPE_BFLOAT16]      = &mag_embedding_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_embedding_float8_e4m3fn,
+  },
 };
 
 static size_t mag_vreg_width(void) {

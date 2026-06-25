@@ -169,7 +169,8 @@ typedef struct mag_repeat_interleave_plan_t {
   _(CUMIN, 1, 2, NUMERIC, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(REPEAT, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_PTR), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(REPEAT_INTERLEAVE, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_PTR), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-  _(INDEX_ADD, 3, 1, NUMERIC, mag_params(MAG_OP_ATTR_TYPE_I64, MAG_OP_ATTR_TYPE_FLOAT64), MAG_OP_FLAG_NONE, NULL)__
+  _(INDEX_ADD, 3, 1, NUMERIC, mag_params(MAG_OP_ATTR_TYPE_I64, MAG_OP_ATTR_TYPE_FLOAT64), MAG_OP_FLAG_NONE, NULL)__\
+  _(EMBEDDING, 2, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -179,7 +180,7 @@ typedef enum mag_opcode_t {
   MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_INDEX_ADD+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_EMBEDDING+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */

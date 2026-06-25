@@ -31,5 +31,6 @@ namespace mag {
   extern void misc_op_matmul(const mag_command_t &cmd);
   extern void misc_op_repeat_back(const mag_command_t &cmd);
   extern void misc_op_gather(const mag_command_t &cmd);
+  extern void misc_op_embedding(const mag_command_t &cmd);
   extern void misc_op_where(const mag_command_t &cmd);
 }

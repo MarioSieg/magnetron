@@ -82,7 +82,7 @@ class Embedding(Module):
         inplace_init(self.weight, weight_init)
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.weight[x]
+        return self.weight.embedding(x)
 
 
 class RMSNorm(Module):

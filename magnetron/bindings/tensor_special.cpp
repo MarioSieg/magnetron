@@ -137,9 +137,14 @@ namespace mag::bindings {
               }
               auto idx_tw = nb::cast<tensor_wrapper>(idx);
               mag_tensor_t *out = nullptr;
-              throw_if_error(mag_gather(&err, &out, *curr, ax, *idx_tw), err);
+              if (ax == 0 && mag_tensor_type(*idx_tw) == MAG_DTYPE_INT64) {
+                  throw_if_error(mag_embedding(&err, &out, *curr, *idx_tw), err);
+                  ax = mag_tensor_rank(out) - (mag_tensor_rank(*curr) - 1);
+              } else {
+                  throw_if_error(mag_gather(&err, &out, *curr, ax, *idx_tw), err);
+                  ++ax;
+              }
               curr = tensor_wrapper{out};
-              ++ax;
           } else if (nb::isinstance<nb::sequence>(idx)) {
               if (!allow_gather) {
                   throw nb::type_error(
@@ -178,9 +183,14 @@ namespace mag::bindings {
                   err
               );
               mag_tensor_t *out = nullptr;
-              throw_if_error(mag_gather(&err, &out, *curr, ax, idx_tensor), err);
+              if (ax == 0) {
+                  throw_if_error(mag_embedding(&err, &out, *curr, idx_tensor), err);
+                  ax = mag_tensor_rank(out) - (mag_tensor_rank(*curr) - 1);
+              } else {
+                  throw_if_error(mag_gather(&err, &out, *curr, ax, idx_tensor), err);
+                  ++ax;
+              }
               curr = tensor_wrapper{out};
-              ++ax;
           } else throw nb::type_error("Invalid index component type");
       }
 

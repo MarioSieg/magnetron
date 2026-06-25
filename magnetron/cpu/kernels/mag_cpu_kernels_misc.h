@@ -9,6 +9,12 @@
 ** +---------------------------------------------------------------------+
 */
 
+/*
+ * Cat fast path: since the output is always contiguous, for each outer position p the destination is
+ * br + p * out_outer_stride (no coordinate decomposition, no division in the hot loop).
+ * For contiguous inputs the source is similarly bx_i + p * xi_outer_stride.
+ * Only non-contiguous inputs fall back to stride-based arithmetic.
+ */
 #define mag_gen_stub_cat(T, TF) \
   static MAG_HOTPROC mag_status_t mag_cat_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
@@ -17,58 +23,69 @@
     const int64_t n = payload->cmd->num_in; \
     mag_assert2(r && n > 0); \
     mag_assert2(dim >= 0 && dim < r->coords.rank); \
-    \
-    int64_t R = r->coords.rank; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     mag_assert2(mag_tensor_is_contiguous(r)); \
-    \
-    int64_t inner_block = 1; \
-    for (int64_t d = dim+1; d < R; ++d) inner_block *= r->coords.shape[d]; \
-    int64_t outer_count = 1; \
-    for (int64_t d=0; d < dim; ++d) outer_count *= r->coords.shape[d]; \
-    \
-    int64_t mult[MAG_MAX_DIMS]; \
-    for (int64_t d = 0; d < dim; ++d) { \
-      int64_t m = 1; \
-      for (int64_t k = d + 1; k < dim; ++k) m *= r->coords.shape[k]; \
-      mult[d] = m; \
-    } \
-    \
+    int64_t inner = 1; \
+    for (int64_t d = dim+1; d < r->coords.rank; ++d) inner *= r->coords.shape[d]; \
+    int64_t outer = 1; \
+    for (int64_t d = 0; d < dim; ++d) outer *= r->coords.shape[d]; \
+    int64_t out_dim = r->coords.shape[dim]; \
+    int64_t out_outer_stride = out_dim * inner; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
-    int64_t chunk = (outer_count + tc - 1)/tc; \
+    int64_t chunk = (outer + tc - 1)/tc; \
     int64_t oa = ti*chunk; \
-    int64_t ob = mag_xmin(oa + chunk, outer_count); \
-    \
-    for (int64_t p=oa; p < ob; ++p) { \
-      int64_t idx_prefix[MAG_MAX_DIMS]; \
-      int64_t rtmp = p; \
-      for (int64_t d = 0; d < dim; ++d) { \
-        int64_t q = !mult[d] ? 0 : rtmp/mult[d]; \
-        if (mult[d] != 0) rtmp = rtmp%mult[d]; \
-        idx_prefix[d] = q; \
-      } \
-      \
-      int64_t moff = 0; \
-      for (int64_t d=0; d < dim; ++d) moff += idx_prefix[d]*r->coords.strides[d]; \
-      int64_t cur = 0; \
-      \
-      for (int64_t i=0; i < n; ++i) { \
+    int64_t ob = mag_xmin(oa + chunk, outer); \
+    /* Check if all inputs are contiguous — enables the division-free fast path. */ \
+    bool all_contig = true; \
+    for (int64_t i = 0; i < n && all_contig; ++i) \
+      if (!mag_tensor_is_contiguous(mag_cmd_in(i))) all_contig = false; \
+    if (mag_likely(all_contig)) { \
+      /* Precompute per-input outer strides (xi_dim * inner) — done once outside the loop. */ \
+      int64_t xi_outer[MAG_MAX_DIMS]; \
+      const T *bxi[MAG_MAX_DIMS]; \
+      for (int64_t i = 0; i < n; ++i) { \
         const mag_tensor_t *x = mag_cmd_in(i); \
-        int64_t smoff=0; \
-        for (int64_t d=0; d < dim; ++d) \
-          smoff += idx_prefix[d]*x->coords.strides[d]; \
-        int64_t cl = x->coords.shape[dim]; \
-        int64_t numel = cl*inner_block; \
-        int64_t oel = moff + cur*r->coords.strides[dim]; \
-        int64_t sel = smoff; \
-        const T *restrict bx = (const T *)mag_tensor_data_ptr(x); \
-        const uint8_t *restrict src_ptr = (const uint8_t *)(bx+sel); \
-        uint8_t *restrict dst_ptr = (uint8_t *)(br+oel); \
-        mag_bnd_chk(bx + sel, bx, mag_tensor_numbytes(x)); \
-        mag_bnd_chk(br + oel, br, mag_tensor_numbytes(r)); \
-        memcpy(dst_ptr, src_ptr, (size_t)numel*sizeof(T)); \
-        cur += cl; \
+        xi_outer[i] = x->coords.shape[dim] * inner; \
+        bxi[i] = (const T *)mag_tensor_data_ptr(x); \
+      } \
+      /* Hot loop: one multiply per (outer × input), zero divisions. */ \
+      for (int64_t p = oa; p < ob; ++p) { \
+        T *dst = br + p * out_outer_stride; \
+        for (int64_t i = 0; i < n; ++i) { \
+          size_t nb = (size_t)xi_outer[i] * sizeof(T); \
+          memcpy(dst, bxi[i] + p * xi_outer[i], nb); \
+          dst += xi_outer[i]; \
+        } \
+      } \
+    } else { \
+      /* Non-contiguous fallback: stride-based source offset per (outer, input). */ \
+      int64_t mult[MAG_MAX_DIMS]; \
+      for (int64_t d = 0; d < dim; ++d) { \
+        int64_t m = 1; \
+        for (int64_t k = d+1; k < dim; ++k) m *= r->coords.shape[k]; \
+        mult[d] = m; \
+      } \
+      for (int64_t p = oa; p < ob; ++p) { \
+        int64_t idx_prefix[MAG_MAX_DIMS]; \
+        int64_t rtmp = p; \
+        for (int64_t d = 0; d < dim; ++d) { \
+          int64_t q = mult[d] ? rtmp/mult[d] : 0; \
+          if (mult[d]) rtmp %= mult[d]; \
+          idx_prefix[d] = q; \
+        } \
+        int64_t moff = 0; \
+        for (int64_t d = 0; d < dim; ++d) moff += idx_prefix[d]*r->coords.strides[d]; \
+        int64_t cur = 0; \
+        for (int64_t i = 0; i < n; ++i) { \
+          const mag_tensor_t *x = mag_cmd_in(i); \
+          int64_t smoff = 0; \
+          for (int64_t d = 0; d < dim; ++d) smoff += idx_prefix[d]*x->coords.strides[d]; \
+          int64_t cl = x->coords.shape[dim]; \
+          const T *bx = (const T *)mag_tensor_data_ptr(x); \
+          memcpy(br + moff + cur*r->coords.strides[dim], bx + smoff, (size_t)(cl*inner)*sizeof(T)); \
+          cur += cl; \
+        } \
       } \
     } \
     return MAG_STATUS_OK; \
@@ -149,108 +166,47 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra + chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
-    bool src_contig = mag_tensor_is_contiguous(src); \
-    bool r_contig = mag_tensor_is_contiguous(r); \
-    bool i_contig = mag_tensor_is_contiguous(index); \
-    int64_t inner=1; \
-    for (int64_t dim=axis+1; dim < src->coords.rank; ++dim) \
-      inner*=src->coords.shape[dim]; \
-    int64_t outer=1; \
-    for (int64_t dim=0; dim < axis; ++dim) \
-      outer*=src->coords.shape[dim]; \
-    bool full_index = index->coords.rank == r->coords.rank && index->numel == r->numel; \
-    if (mag_likely(src_contig && r_contig && i_contig && full_index)) { \
-      int64_t out_ax = r->coords.shape[axis]; \
-      for (int64_t flat=ra; flat < rb; ++flat) { \
-        int64_t g = bi[flat]; \
-        if (g < 0) g += ax; \
-        mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
-        int64_t k = flat%inner; \
-        int64_t t = flat/inner; \
-        int64_t o = t/out_ax; \
-        br[flat] = bx[o*ax*inner + g*inner + k]; \
-      } \
-      return MAG_STATUS_OK; \
-    } \
-    if (mag_likely(src_contig && r_contig && i_contig && index->coords.rank == 1)) { \
-      int64_t idx_len = index->coords.shape[0]; \
-      mag_contract(err, ERR_KERNEL_FAILURE, {}, r->coords.shape[axis] == idx_len, "gather: output shape along axis %" PRIi64 " (%" PRIi64 ") does not match index length %" PRIi64 ".", (int64_t)axis, r->coords.shape[axis], idx_len); \
-      int64_t block = inner; \
-      int64_t groups = outer*idx_len; \
-      int64_t gra = ra/block; \
-      int64_t grb = (rb + block - 1)/block; \
-      for (int64_t group=gra; group < grb && group < groups; ++group) { \
-        int64_t o = group/idx_len; \
-        int64_t j = group%idx_len; \
-        int64_t g = bi[j]; \
-        if (g < 0) g += ax; \
-        mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
-        int64_t dst_base = (o*idx_len + j)*inner; \
-        int64_t src_base = (o*ax + g)*inner; \
-        int64_t a = 0; \
-        int64_t b = inner; \
-        if (group == gra) a = ra - dst_base; \
-        if (group == grb-1) b = rb - dst_base; \
-        a = mag_xmax(a, 0); \
-        b = mag_xmin(b, inner); \
-        if (mag_likely(b > a)) \
-          memcpy(br+dst_base+a, bx+src_base+a, (size_t)(b-a)*sizeof(T)); \
-      } \
-      return MAG_STATUS_OK; \
-    } \
-    int64_t oc[MAG_MAX_DIMS]; \
-    int64_t sc[MAG_MAX_DIMS]; \
-    bool full = true; \
-    if (index->coords.rank != src->coords.rank) full = false; \
-    else { \
-      for (int64_t dim=0; dim < src->coords.rank; ++dim) { \
-        if (dim == axis) continue; \
-        if (index->coords.shape[dim] != src->coords.shape[dim]) { \
-          full = false; \
-          break; \
+    int64_t inner = 1; \
+    for (int64_t d = axis+1; d < src->coords.rank; ++d) inner *= src->coords.shape[d]; \
+    int64_t out_ax = r->coords.shape[axis]; \
+    if (mag_likely(mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(index))) { \
+      /* Counter-based cursors: initialize (o, j, k) once from ra — zero divisions in the hot loop. */ \
+      int64_t cur_k, cur_j, cur_o; \
+      { int64_t tmp = ra; cur_k = tmp % inner; tmp /= inner; cur_j = tmp % out_ax; cur_o = tmp / out_ax; } \
+      if (inner == 1) { \
+        /* Axis is last dim — inner collapses to a scalar fetch per index entry. */ \
+        for (int64_t flat = ra; flat < rb; ++flat) { \
+          int64_t g = bi[flat]; \
+          if (g < 0) g += ax; \
+          mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+          br[flat] = bx[cur_o * ax + g]; \
+          if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } \
+        } \
+      } else { \
+        for (int64_t flat = ra; flat < rb; ++flat) { \
+          int64_t g = bi[flat]; \
+          if (g < 0) g += ax; \
+          mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+          br[flat] = bx[(cur_o * ax + g) * inner + cur_k]; \
+          if (++cur_k == inner) { cur_k = 0; if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } } \
         } \
       } \
+      return MAG_STATUS_OK; \
     } \
-    mag_coords_iter_t ci; \
-    mag_coords_iter_init(&ci, &index->coords); \
+    /* Non-contiguous fallback: coordinate iteration with stride arithmetic. */ \
+    int64_t oc[MAG_MAX_DIMS]; \
     for (int64_t flat = ra; flat < rb; ++flat) { \
       int64_t tmp = flat; \
-      for (int64_t dim = r->coords.rank - 1; dim >= 0; --dim) { \
-        oc[dim] = tmp % r->coords.shape[dim]; \
-        tmp /= r->coords.shape[dim]; \
-      } \
-      int64_t gather_idx; \
-      if (full) { \
-        int64_t index_offset = mag_coords_iter_to_offset(&ci, flat); \
-        gather_idx = bi[index_offset]; \
-      } else if (index->coords.rank == 1) { \
-        int64_t idx_pos = oc[axis]; \
-        mag_contract(err, ERR_KERNEL_FAILURE, {}, idx_pos >= 0 && idx_pos < index->coords.shape[0], "gather: index position %" PRIi64 " is out of range [0, %" PRIi64 ").", idx_pos, index->coords.shape[0]); \
-        gather_idx = bi[idx_pos * index->coords.strides[0]]; \
-      } else { \
-        int64_t index_offset = 0; \
-        for (int64_t dim=0; dim < index->coords.rank; ++dim) \
-          index_offset += oc[axis + dim] * index->coords.strides[dim]; \
-        gather_idx = bi[index_offset]; \
-      } \
-      if (gather_idx < 0) gather_idx += ax; \
-      mag_contract(err, ERR_KERNEL_FAILURE, {}, gather_idx >= 0 && gather_idx < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", gather_idx, ax); \
-      if (full || index->coords.rank == 1) { \
-        for (int64_t dim=0; dim < src->coords.rank; ++dim) sc[dim] = oc[dim]; \
-        sc[axis] = gather_idx; \
-      } else { \
-        for (int64_t dim=0; dim < axis; ++dim) sc[dim] = oc[dim]; \
-        sc[axis] = gather_idx; \
-        for (int64_t dim = axis + 1; dim < src->coords.rank; ++dim) \
-          sc[dim] = oc[index->coords.rank + dim - 1]; \
-      } \
-      int64_t src_offset = 0; \
-      int64_t dst_offset = 0; \
-      for (int64_t dim=0; dim < src->coords.rank; ++dim) \
-        src_offset += sc[dim]*src->coords.strides[dim]; \
-      for (int64_t dim=0; dim < r->coords.rank; ++dim) \
-        dst_offset += oc[dim]*r->coords.strides[dim]; \
-      br[dst_offset] = bx[src_offset]; \
+      for (int64_t d = r->coords.rank-1; d >= 0; --d) { oc[d] = tmp % r->coords.shape[d]; tmp /= r->coords.shape[d]; } \
+      int64_t index_offset = 0; \
+      for (int64_t d = 0; d < index->coords.rank; ++d) index_offset += oc[d] * index->coords.strides[d]; \
+      int64_t g = bi[index_offset]; \
+      if (g < 0) g += ax; \
+      mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+      int64_t src_off = 0, dst_off = 0; \
+      for (int64_t d = 0; d < src->coords.rank; ++d) src_off += (d == axis ? g : oc[d]) * src->coords.strides[d]; \
+      for (int64_t d = 0; d < r->coords.rank; ++d) dst_off += oc[d] * r->coords.strides[d]; \
+      br[dst_off] = bx[src_off]; \
     } \
     return MAG_STATUS_OK; \
   }
@@ -269,6 +225,76 @@ mag_gen_stub_gather(uint64_t, uint64)
 mag_gen_stub_gather(int64_t, int64)
 
 #undef mag_gen_stub_gather
+
+/* Embedding: weight[N-D FP] x indices[any-shape int64] -> output[indices.shape + weight.shape[1:]] */
+#define mag_gen_stub_embedding(T, TF) \
+  static MAG_HOTPROC mag_status_t mag_embedding_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    mag_tensor_t *r = mag_cmd_out(0); \
+    const mag_tensor_t *weight = mag_cmd_in(0); \
+    const mag_tensor_t *indices = mag_cmd_in(1); \
+    T *br = (T *)mag_tensor_data_ptr_mut(r); \
+    const T *bx = (const T *)mag_tensor_data_ptr(weight); \
+    const int64_t *bi = (const int64_t *)mag_tensor_data_ptr(indices); \
+    int64_t vocab_size = weight->coords.shape[0]; \
+    int64_t row_size = weight->numel / vocab_size; \
+    int64_t n_idx = indices->numel; \
+    int64_t total = n_idx * row_size; \
+    int64_t tc = payload->thread_num; \
+    int64_t ti = payload->thread_idx; \
+    int64_t chunk = (total + tc - 1)/tc; \
+    int64_t ra = ti*chunk; \
+    int64_t rb = mag_xmin(ra + chunk, total); \
+    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_likely(mag_tensor_is_contiguous(weight) && mag_tensor_is_contiguous(indices))) { \
+      /* Fast path: memcpy full rows. Thread may own a partial first/last row. */ \
+      int64_t row_start = ra / row_size; \
+      int64_t row_end   = (rb - 1) / row_size; \
+      for (int64_t row = row_start; row <= row_end; ++row) { \
+        int64_t g = bi[row]; \
+        if (g < 0) g += vocab_size; \
+        mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < vocab_size, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, vocab_size); \
+        int64_t dst_off = row * row_size; \
+        int64_t src_off = g  * row_size; \
+        int64_t a = (row == row_start) ? (ra - dst_off) : 0; \
+        int64_t b = (row == row_end)   ? (rb - dst_off) : row_size; \
+        memcpy(br + dst_off + a, bx + src_off + a, (size_t)(b - a) * sizeof(T)); \
+      } \
+      return MAG_STATUS_OK; \
+    } \
+    /* Non-contiguous fallback: counter-based (col, row) cursors — no division in the hot loop. */ \
+    int64_t cur_col = ra % row_size; \
+    int64_t cur_row = ra / row_size; \
+    int64_t cur_g; \
+    { int64_t idx_off = 0, tmp = cur_row; \
+      for (int64_t d = indices->coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->coords.shape[d]) * indices->coords.strides[d]; tmp /= indices->coords.shape[d]; } \
+      cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
+      mag_contract(err, ERR_KERNEL_FAILURE, {}, cur_g >= 0 && cur_g < vocab_size, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
+    } \
+    for (int64_t flat = ra; flat < rb; ++flat) { \
+      int64_t w_off = cur_g * weight->coords.strides[0]; \
+      { int64_t tmp2 = cur_col; \
+        for (int64_t d = weight->coords.rank-1; d >= 1; --d) { w_off += (tmp2 % weight->coords.shape[d]) * weight->coords.strides[d]; tmp2 /= weight->coords.shape[d]; } \
+      } \
+      br[flat] = bx[w_off]; \
+      if (++cur_col == row_size) { \
+        cur_col = 0; ++cur_row; \
+        if (mag_likely(cur_row < n_idx)) { \
+          int64_t idx_off = 0, tmp = cur_row; \
+          for (int64_t d = indices->coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->coords.shape[d]) * indices->coords.strides[d]; tmp /= indices->coords.shape[d]; } \
+          cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
+          mag_contract(err, ERR_KERNEL_FAILURE, {}, cur_g >= 0 && cur_g < vocab_size, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
+        } \
+      } \
+    } \
+    return MAG_STATUS_OK; \
+  }
+
+mag_gen_stub_embedding(float, float32)
+mag_gen_stub_embedding(mag_float16_t, float16)
+mag_gen_stub_embedding(mag_bfloat16_t, bfloat16)
+mag_gen_stub_embedding(mag_float8_e4m3fn_t, float8_e4m3fn)
+
+#undef mag_gen_stub_embedding
 
 #define mag_gen_stub_tri_mask(T, TF, S, Z, CMP) \
   static mag_status_t MAG_HOTPROC mag_tri##S##_##TF(mag_error_t *err,const mag_kernel_payload_t *payload) { \
