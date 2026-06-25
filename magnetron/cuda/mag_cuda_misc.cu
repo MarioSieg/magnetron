@@ -1309,4 +1309,147 @@ namespace mag {
       }
     }
   }
+
+  template <typename T, bool is_int>
+  __global__ static void index_add_kernel(
+    int64_t total,
+    int64_t R,
+    int64_t axis,
+    int64_t self_ax,
+    T *__restrict__ bs,
+    const T *__restrict__ bx,
+    const int64_t *__restrict__ bi,
+    mag_tensor_t self,
+    mag_tensor_t source,
+    mag_tensor_t index,
+    double alpha
+  ) {
+    for (int64_t flat=0; flat < total; ++flat) {
+      int64_t tmp = flat;
+      int64_t sc[MAG_MAX_DIMS];
+      for (int64_t d = R-1; d >= 0; --d) {
+        sc[d] = tmp % source.coords.shape[d];
+        tmp /= source.coords.shape[d];
+      }
+      int64_t j = sc[axis];
+      int64_t idx_off = j*index.coords.strides[0];
+      int64_t g = bi[idx_off];
+      if (g < 0) g += self_ax;
+      int64_t src_off = 0;
+      for (int64_t d=0; d < R; ++d) src_off += sc[d]*source.coords.strides[d];
+      sc[axis] = g;
+      int64_t dst_off = 0;
+      for (int64_t d=0; d < R; ++d) dst_off += sc[d]*self.coords.strides[d];
+      if (is_int) {
+        auto cur = static_cast<int64_t>(bs[dst_off]);
+        auto add = static_cast<int64_t>(bx[src_off])*static_cast<int64_t>(alpha);
+        bs[dst_off] = static_cast<T>(cur + add);
+      } else {
+        auto cur = static_cast<float>(bs[dst_off]);
+        auto add = static_cast<float>(bx[src_off])*static_cast<float>(alpha);
+        bs[dst_off] = static_cast<T>(cur + add);
+      }
+    }
+  }
+
+  static void launch_index_add(const mag_command_t &cmd) {
+    mag_tensor_t *self = cmd.out[0];
+    const mag_tensor_t *source = cmd.in[1];
+    const mag_tensor_t *index = cmd.in[2];
+    int64_t axis = mag_op_attr_unwrap_int64(cmd.attrs[0]);
+    double alpha = mag_op_attr_unwrap_float64(cmd.attrs[1]);
+    if (axis < 0) axis += self->coords.rank;
+    int64_t R = self->coords.rank;
+    int64_t total = source->numel;
+    int64_t self_ax = self->coords.shape[axis];
+    switch (self->dtype) {
+      case MAG_DTYPE_FLOAT32: index_add_kernel<float, false><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<float *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const float *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_FLOAT16: index_add_kernel<half, false><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<half *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const half *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_BFLOAT16: index_add_kernel<__nv_bfloat16, false><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: index_add_kernel<__nv_fp8_e4m3, false><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_UINT8: index_add_kernel<uint8_t, true><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_INT8: index_add_kernel<int8_t, true><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<int8_t *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const int8_t *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_UINT16: index_add_kernel<uint16_t, true><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<uint16_t *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const uint16_t *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_INT16: index_add_kernel<int16_t, true><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<int16_t *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const int16_t *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_UINT32: index_add_kernel<uint32_t, true><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<uint32_t *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const uint32_t *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_INT32: index_add_kernel<int32_t, true><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<int32_t *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const int32_t *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_UINT64: index_add_kernel<uint64_t, true><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<uint64_t *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const uint64_t *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      case MAG_DTYPE_INT64: index_add_kernel<int64_t, true><<<1, 1>>>(
+        total, R, axis, self_ax,
+        reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(self)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(source)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+        *self, *source, *index, alpha
+      ); break;
+      default: mag_assert(false, "index_add_: unsupported dtype");
+    }
+  }
+
+  void misc_op_index_add(const mag_command_t &cmd) { launch_index_add(cmd); }
 }

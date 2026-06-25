@@ -142,6 +142,7 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #include "mag_cpu_kernels_reduction.h"
 #include "mag_cpu_kernels_scan.h"
 #include "mag_cpu_kernels_repeat.h"
+#include "mag_cpu_kernels_index.h"
 
 static mag_status_t mag_nop(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err, (void)payload;
@@ -1262,6 +1263,20 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT32] = &mag_repeat_interleave_int32,
     [MAG_DTYPE_UINT64] = &mag_repeat_interleave_uint64,
     [MAG_DTYPE_INT64] = &mag_repeat_interleave_int64,
+  },
+  [MAG_OP_INDEX_ADD] = {
+    [MAG_DTYPE_FLOAT32] = &mag_index_add_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_index_add_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_index_add_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_index_add_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_index_add_uint8,
+    [MAG_DTYPE_INT8] = &mag_index_add_int8,
+    [MAG_DTYPE_UINT16] = &mag_index_add_uint16,
+    [MAG_DTYPE_INT16] = &mag_index_add_int16,
+    [MAG_DTYPE_UINT32] = &mag_index_add_uint32,
+    [MAG_DTYPE_INT32] = &mag_index_add_int32,
+    [MAG_DTYPE_UINT64] = &mag_index_add_uint64,
+    [MAG_DTYPE_INT64] = &mag_index_add_int64,
   },
 };
 

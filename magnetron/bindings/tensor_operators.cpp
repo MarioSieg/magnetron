@@ -798,6 +798,19 @@ namespace mag::bindings {
       "dim"_a = 0,
       "index"_a
     )
+    .def("index_add_",
+      [](tensor_wrapper &self, int64_t dim, const tensor_wrapper &index, const tensor_wrapper &source, double alpha = 1.0) -> tensor_wrapper& {
+        std::lock_guard lock {get_global_mutex()};
+        mag_error_t err {};
+        throw_if_error(mag_index_add_(&err, *self, dim, *index, *source, alpha), err);
+        return self;
+      },
+      "dim"_a,
+      "index"_a,
+      "source"_a,
+      "alpha"_a = 1.0,
+      "Accumulate source into self along dim at the given indices."
+    )
     .def("clamp",
       [](const tensor_wrapper &self, nb::handle min_h, nb::handle max_h) -> tensor_wrapper {
         std::lock_guard lock{get_global_mutex()};
@@ -867,11 +880,13 @@ namespace mag::bindings {
           mag_tensor_t *tensor = *repeats_tensor;
           if (!tensor || tensor->dtype != MAG_DTYPE_INT64 || tensor->coords.rank != 1)
             throw nb::type_error("repeat_interleave: tensor repeats must be 1-D int64");
-          mag_tensor_t *contig = nullptr;
-          mag_error_t cerr {};
-          throw_if_error(mag_contiguous(&cerr, &contig, tensor), cerr);
-          const auto *data_ptr = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(contig));
-          counts.assign( data_ptr, data_ptr + contig->numel);
+          mag_tensor_t *contig = nullptr, *host = nullptr;
+          mag_error_t err {};
+          throw_if_error(mag_contiguous(&err, &contig, tensor), err);
+          throw_if_error(mag_transfer(&err, &host, contig, mag_device(CPU, 0)), err);
+          const auto *data_ptr = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(host));
+          counts.assign(data_ptr, data_ptr + host->numel);
+          mag_tensor_decref(host);
           mag_tensor_decref(contig);
         } else if (nb::isinstance<nb::int_>(repeats_h) || PyLong_Check(repeats_h.ptr())) {
           counts = { nb::cast<int64_t>(repeats_h) };

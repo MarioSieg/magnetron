@@ -240,6 +240,7 @@ namespace mag {
       [MAG_OP_CUMIN] = &misc_op_cumin,
       [MAG_OP_REPEAT] = &misc_op_repeat,
       [MAG_OP_REPEAT_INTERLEAVE] = &misc_op_repeat_interleave,
+      [MAG_OP_INDEX_ADD] = &misc_op_index_add,
     };
     static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
     //static_assert([] -> bool {

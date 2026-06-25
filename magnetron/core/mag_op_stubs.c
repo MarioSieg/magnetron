@@ -265,14 +265,6 @@ static mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opco
       }
     }
   }
-  if (op == MAG_OP_GATHER) {
-    mag_contract(err, ERR_INVALID_PARAM, {}, inputs[1]->dtype == MAG_DTYPE_INT64,
-      "op_validate: index tensor for operator '%s' must have dtype int64, but got '%s'.\n"
-      "    Hint: cast the indices to int64.",
-      meta->mnemonic, mag_type_trait(inputs[1]->dtype)->name
-    );
-    return MAG_STATUS_OK;
-  }
   if (mag_unlikely(meta->in == 2 && n == 2 && inputs[0]->dtype != inputs[1]->dtype)) { /* For binary operators, check that both inputs have the same data type. */
     const char *dtype_x = mag_type_trait(inputs[0]->dtype)->name;
     const char *dtype_y = mag_type_trait(inputs[1]->dtype)->name;
@@ -1944,6 +1936,34 @@ mag_status_t mag_gather(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_GATHER, (mag_tensor_t *[2]){tensor, idx}, 0));
   mag_try(mag_dispatch(err, MAG_OP_GATHER, false, &layout, (mag_tensor_t *[2]) {tensor, idx}, 2, &result, 1));
   *out_result = result;
+  return MAG_STATUS_OK;
+}
+
+mag_status_t mag_index_add_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *source, double alpha) {
+  mag_contract(err, ERR_INVALID_PARAM, {}, self != NULL && index != NULL && source != NULL, "index_add_: tensors must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, index->dtype == MAG_DTYPE_INT64, "index_add_: index must have dtype int64, but got %s.", mag_type_trait(index->dtype)->name);
+  mag_contract(err, ERR_INVALID_PARAM, {}, index->coords.rank == 1, "index_add_: index must be 1-D, but got rank %" PRIi64 ".", index->coords.rank);
+  mag_contract(err, ERR_INVALID_PARAM, {}, self->coords.rank > 0, "index_add_: self must have rank >= 1.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, source->coords.rank == self->coords.rank, "index_add_: source rank (%" PRIi64 ") must match self rank (%" PRIi64 ").", source->coords.rank, self->coords.rank);
+  mag_contract(err, ERR_INVALID_PARAM, {}, self->dtype == source->dtype, "index_add_: self and source must have the same dtype, but got %s and %s.", mag_type_trait(self->dtype)->name, mag_type_trait(source->dtype)->name);
+  mag_norm_axis(&dim, self->coords.rank);
+  mag_contract(err, ERR_INVALID_DIM, {}, dim >= 0 && dim < self->coords.rank, "index_add_: dim must be in [0, %" PRIi64 "), but got %" PRIi64 ".", self->coords.rank, dim);
+  int64_t idx_len = index->coords.shape[0];
+  for (int64_t d=0; d < self->coords.rank; ++d) {
+    if (d == dim) {
+      mag_contract(err, ERR_INVALID_PARAM, {}, source->coords.shape[d] == idx_len, "index_add_: source size along dim (%" PRIi64 ") must match index length (%" PRIi64 ").", source->coords.shape[d], idx_len);
+    } else {
+      mag_contract(err, ERR_INVALID_PARAM, {}, source->coords.shape[d] == self->coords.shape[d], "index_add_: source shape must match self on non-index dimensions (mismatch on dim %" PRIi64 ").", d);
+    }
+  }
+  mag_try(mag_check_inplace_grad_ok(err, self));
+  mag_op_attr_registry_t layout;
+  mag_op_attr_registry_init(&layout);
+  mag_op_attr_registry_insert(&layout, mag_op_attr_int64(dim));
+  mag_op_attr_registry_insert(&layout, mag_op_attr_float64(alpha));
+  mag_tensor_t *inputs[3] = {self, source, index};
+  mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_INDEX_ADD, inputs, 0));
+  mag_try(mag_dispatch(err, MAG_OP_INDEX_ADD, true, &layout, inputs, 3, &self, 1));
   return MAG_STATUS_OK;
 }
 

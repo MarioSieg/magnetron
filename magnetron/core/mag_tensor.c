@@ -568,6 +568,10 @@ bool mag_tensor_decref(mag_tensor_t *tensor) {
   return mag_rc_decref(tensor);
 }
 
+bool mag_tensor_is_cpu(mag_tensor_t *tensor) {
+  return mag_device_id_eq(tensor->storage->device->id, mag_device(CPU, 0));
+}
+
 bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {
   if (mag_unlikely(!tensors || !n)) return false;
   const mag_tensor_t *t0 = *tensors;
