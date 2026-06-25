@@ -138,24 +138,24 @@ namespace mag {
   template <typename op_t>
   __global__ static void reduce_op_kernel(
     op_t op,
-    int64_t n,
+    int n,
     typename op_t::out_t *__restrict__ o,
     const typename op_t::in_t *__restrict__ x,
     mag_reduce_plan_t plan
   ) {
-    int64_t oi = static_cast<int64_t>(blockIdx.x);
+    int oi = blockIdx.x;
     if (oi >= n) return;
-    const int64_t base = mag_reduce_plan_to_offset(&plan, oi);
+    const int base = mag_reduce_plan_to_offset(&plan, oi);
     typename op_t::acc_t acc = op.init();
-    for (int64_t ri = threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
-      int64_t t = ri;
-      int64_t xi = base;
+    for (int ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
+      int t = ri;
+      int xi = base;
       #pragma unroll
-      for (int64_t k = plan.rank - 1; k >= 0; --k) {
-        const int64_t sz = plan.red_sizes[k];
-        const int64_t j  = t % sz;
+      for (int k=plan.rank-1; k >= 0; --k) {
+        int sz = plan.red_sizes[k];
+        int j = t % sz;
         t /= sz;
-        xi += j * plan.red_strides[k];
+        xi += j*plan.red_strides[k];
       }
       acc = op.reduce(acc, op.transform(x[xi]));
     }
@@ -163,7 +163,7 @@ namespace mag {
     auto *smem = reinterpret_cast<typename op_t::acc_t *>(smem_raw);
     smem[threadIdx.x] = acc;
     __syncthreads();
-    for (uint32_t stride = blockDim.x>>1; stride > 0; stride >>= 1) {   // blockDim.x is guaranteed power-of-two by launcher
+    for (int stride = blockDim.x>>1; stride > 0; stride >>= 1) {   // blockDim.x is guaranteed power-of-two by launcher
       if (threadIdx.x < stride)
         smem[threadIdx.x] = op.reduce(smem[threadIdx.x], smem[threadIdx.x + stride]);
       __syncthreads();
@@ -176,7 +176,7 @@ namespace mag {
   static void launch_reduce_op(const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    int64_t n = mag_tensor_numel(r);
+    int numel = numel_i32(r);
     const auto *plan = static_cast<const mag_reduce_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
     int threads = REDUCTION_BLOCK_SIZE;
     if (threads < 1) threads = 1;
@@ -187,7 +187,7 @@ namespace mag {
     size_t shmem = sizeof(typename op_t::acc_t)*static_cast<size_t>(threads);
     auto *pr = reinterpret_cast<typename op_t::out_t *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
-    reduce_op_kernel<op_t><<<static_cast<unsigned>(n), threads, shmem>>>(op_t{}, n, pr, px, *plan);
+    reduce_op_kernel<op_t><<<static_cast<unsigned>(numel), threads, shmem>>>(op_t{}, numel, pr, px, *plan);
   }
 
   template <template <typename, typename, typename> typename op_t>
