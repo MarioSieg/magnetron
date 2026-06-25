@@ -7,7 +7,6 @@
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
 
-from .activations import *
 from .layers import *
 from .loss import *
 from .module import *

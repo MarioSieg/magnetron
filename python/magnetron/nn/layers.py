@@ -10,11 +10,17 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 from .. import Tensor, dtype, context
 from .. import dtype as _dtype
 from .module import Module, Parameter
 from .init import *
+
+
+class Identity(Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return x
 
 
 class Linear(Module):
@@ -58,8 +64,34 @@ class Linear(Module):
 
 
 class Flatten(Module):
+    def __init__(self, start_dim: int = 1, end_dim: int = -1) -> None:
+        super().__init__()
+        self.start_dim = start_dim
+        self.end_dim = end_dim
+
     def forward(self, x: Tensor) -> Tensor:
-        return x.contiguous().reshape(x.shape[0], -1)
+        return x.flatten(self.start_dim, self.end_dim)
+
+
+class Unflatten(Module):
+    def __init__(self, dim: int, unflattened_size: tuple[int, ...]) -> None:
+        super().__init__()
+        self.dim = dim
+        self.unflattened_size = tuple(unflattened_size)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.unflatten(self.dim, self.unflattened_size)
+
+
+class Pad(Module):
+    def __init__(self, padding, mode: str = 'constant', value: float = 0.0) -> None:
+        super().__init__()
+        self.padding = padding
+        self.mode = mode
+        self.value = value
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.pad(self.padding, self.mode, self.value)
 
 
 class Embedding(Module):
@@ -141,3 +173,60 @@ class LayerNorm(Module):
         if self.bias is not None:
             y = y + self.bias
         return y
+
+
+class Softmax(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.softmax()
+
+
+class Sigmoid(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.sigmoid()
+
+
+class HardSigmoid(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.hardsigmoid()
+
+
+class SiLU(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.silu()
+
+
+class Tanh(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.tanh()
+
+
+class ReLU(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.relu()
+
+
+class GeLU(Module):
+    def __init__(self, use_tanh_approx: bool = False) -> None:
+        super().__init__()
+        self.use_tanh_approx = use_tanh_approx
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.gelu_approx() if self.use_tanh_approx else x.gelu()
