@@ -117,6 +117,8 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_CUPROD] = {0.5, 10000},
     [MAG_OP_CUMAX] = {0.5, 10000},
     [MAG_OP_CUMIN] = {0.5, 10000},
+    [MAG_OP_REPEAT] = {0.5, 10000},
+    [MAG_OP_REPEAT_INTERLEAVE] = {0.5, 10000},
   };
   return scaling_table[op];
 }

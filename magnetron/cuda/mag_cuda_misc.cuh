@@ -25,6 +25,8 @@ namespace mag {
   extern void misc_op_cuprod(const mag_command_t &cmd);
   extern void misc_op_cumax(const mag_command_t &cmd);
   extern void misc_op_cumin(const mag_command_t &cmd);
+  extern void misc_op_repeat(const mag_command_t &cmd);
+  extern void misc_op_repeat_interleave(const mag_command_t &cmd);
   extern void misc_op_matmul(const mag_command_t &cmd);
   extern void misc_op_repeat_back(const mag_command_t &cmd);
   extern void misc_op_gather(const mag_command_t &cmd);

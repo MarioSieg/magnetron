@@ -839,6 +839,53 @@ namespace mag::bindings {
       "mode"_a = "constant",
       "value"_a = 0.0,
       "Pad tensor with the given padding."
+    )
+    .def("repeat",
+      [](const tensor_wrapper &self, nb::args repeats_args) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        std::vector<int64_t> repeats = parse_i64_dims(repeats_args, "repeat");
+        if (repeats.empty())
+          throw nb::value_error("repeat: expected at least one repeat count");
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_repeat(&err, &out, *self, repeats.data(), static_cast<int64_t>(repeats.size())), err);
+        return tensor_wrapper{out};
+      },
+      "*repeats"_a,
+      "Repeat this tensor along each dimension."
+    )
+    .def("repeat_interleave",
+      [](const tensor_wrapper &self, nb::handle repeats_h, nb::object dim_o = nb::none()) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        bool flatten = dim_o.is_none();
+        int64_t dim = 0;
+        if (!flatten)
+          dim = nb::cast<int64_t>(dim_o);
+        std::vector<int64_t> counts {};
+        if (nb::isinstance<tensor_wrapper>(repeats_h)) {
+          auto repeats_tensor = nb::cast<tensor_wrapper>(repeats_h);
+          mag_tensor_t *tensor = *repeats_tensor;
+          if (!tensor || tensor->dtype != MAG_DTYPE_INT64 || tensor->coords.rank != 1)
+            throw nb::type_error("repeat_interleave: tensor repeats must be 1-D int64");
+          mag_tensor_t *contig = nullptr;
+          mag_error_t cerr {};
+          throw_if_error(mag_contiguous(&cerr, &contig, tensor), cerr);
+          const auto *data_ptr = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(contig));
+          counts.assign( data_ptr, data_ptr + contig->numel);
+          mag_tensor_decref(contig);
+        } else if (nb::isinstance<nb::int_>(repeats_h) || PyLong_Check(repeats_h.ptr())) {
+          counts = { nb::cast<int64_t>(repeats_h) };
+        } else {
+          counts = parse_i64_list_handle(repeats_h, "repeat_interleave");
+        }
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_repeat_interleave(&err, &out, *self, flatten, dim, counts.data(), static_cast<int64_t>(counts.size())), err);
+        return tensor_wrapper{out};
+      },
+      "repeats"_a,
+      "dim"_a = nb::none(),
+      "Repeat elements of this tensor interleaved along a dimension."
     );
 
     cls.attr("cat") = nb::cpp_function(

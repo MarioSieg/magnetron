@@ -494,3 +494,22 @@ def test_cummin() -> None:
     should = Tensor([-0.2284, -0.6628, -0.6628, -0.6628, -1.3298, -1.3298, -1.3298, -1.3298, -1.3298, -1.3298])
     assert ((values - should).abs().max()) < 1e-2
     assert indices.tolist() == [0, 1, 1, 1, 4, 4, 4, 4, 4, 4]
+
+
+def test_repeat() -> None:
+    x = Tensor([1, 2, 3])
+    y = x.repeat(4, 2)
+    assert y.tolist() == [[1, 2, 3, 1, 2, 3], [1, 2, 3, 1, 2, 3], [1, 2, 3, 1, 2, 3], [1, 2, 3, 1, 2, 3]]
+    assert x.repeat(4, 2, 1).shape == (4, 2, 3)
+
+
+def test_repeat_interleave() -> None:
+    x = Tensor([1, 2, 3])
+    y = x.repeat_interleave(2)
+    assert y.tolist() == [1, 1, 2, 2, 3, 3]
+    x = Tensor([[1, 2], [3, 4]])
+    y = x.repeat_interleave(2)
+    assert y.tolist() == [1, 1, 2, 2, 3, 3, 4, 4]
+    y = x.repeat_interleave(3, dim=1)
+    assert y.tolist() == [[1, 1, 1, 2, 2, 2], [3, 3, 3, 4, 4, 4]]
+    assert x.repeat_interleave(Tensor([1, 2]), dim=0).tolist() == [[1, 2], [3, 4], [3, 4]]

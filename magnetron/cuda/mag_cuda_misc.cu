@@ -1118,4 +1118,195 @@ namespace mag {
   void misc_op_cuprod(const mag_command_t &cmd) { impl_cu_scan(cmd, true); }
   void misc_op_cumax(const mag_command_t &cmd) { impl_cu_ext(cmd, true); }
   void misc_op_cumin(const mag_command_t &cmd) { impl_cu_ext(cmd, false); }
+
+  [[nodiscard]] __device__ static int repeat_in_elem_offset_dev(
+    int64_t flat_out,
+    const mag_repeat_plan_t *plan,
+    const mag_coords_iter_t *cx
+  ) {
+    int64_t tmp = flat_out;
+    int64_t off = 0;
+    for (int64_t d = plan->rank - 1; d >= 0; --d) {
+      int64_t oc = tmp % plan->out_shape[d];
+      tmp /= plan->out_shape[d];
+      int64_t ic = oc % plan->in_shape[d];
+      int64_t id = d - (plan->rank - plan->in_rank);
+      if (id >= 0)
+        off += ic * cx->strides[id];
+    }
+    return off;
+  }
+
+  template <typename T>
+  __global__ static void repeat_kernel(
+    int64_t on,
+    T *__restrict__ br,
+    const T *__restrict__ bx,
+    mag_repeat_plan_t plan,
+    mag_coords_iter_t cr,
+    mag_coords_iter_t cx
+  ) {
+    int64_t flat = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
+    int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+    for (; flat < on; flat += step) {
+      int64_t ri = mag_coords_iter_to_offset(&cr, flat);
+      int64_t xi = repeat_in_elem_offset_dev(flat, &plan, &cx);
+      br[ri] = bx[xi];
+    }
+  }
+
+  static void launch_repeat(const mag_command_t &cmd) {
+    mag_tensor_t *r = cmd.out[0];
+    const mag_tensor_t *x = cmd.in[0];
+    const mag_repeat_plan_t *plan = static_cast<const mag_repeat_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
+    mag_coords_iter_t cr, cx;
+    mag_coords_iter_init(&cr, &r->coords);
+    mag_coords_iter_init(&cx, &x->coords);
+    int64_t on = r->numel;
+    unsigned block = 256;
+    unsigned grid = static_cast<unsigned>((on + block - 1)/block);
+    switch (r->dtype) {
+      case MAG_DTYPE_FLOAT32: repeat_kernel<float><<<grid, block>>>(
+        on,
+        reinterpret_cast<float *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const float *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_FLOAT16: repeat_kernel<half><<<grid, block>>>(
+        on,
+        reinterpret_cast<half *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const half *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_BFLOAT16: repeat_kernel<__nv_bfloat16><<<grid, block>>>(
+        on,
+        reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: repeat_kernel<__nv_fp8_e4m3><<<grid, block>>>(
+        on,
+        reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_BOOLEAN:
+      case MAG_DTYPE_UINT8: repeat_kernel<uint8_t><<<grid, block>>>(
+        on,
+        reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_INT8: repeat_kernel<int8_t><<<grid, block>>>(
+        on,
+        reinterpret_cast<int8_t *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const int8_t *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_UINT16: repeat_kernel<uint16_t><<<grid, block>>>(
+        on,
+        reinterpret_cast<uint16_t *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const uint16_t *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_INT16: repeat_kernel<int16_t><<<grid, block>>>(
+        on,
+        reinterpret_cast<int16_t *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const int16_t *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_UINT32: repeat_kernel<uint32_t><<<grid, block>>>(
+        on,
+        reinterpret_cast<uint32_t *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const uint32_t *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_INT32: repeat_kernel<int32_t><<<grid, block>>>(
+        on,
+        reinterpret_cast<int32_t *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const int32_t *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_UINT64: repeat_kernel<uint64_t><<<grid, block>>>(
+        on,
+        reinterpret_cast<uint64_t *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const uint64_t *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      case MAG_DTYPE_INT64: repeat_kernel<int64_t><<<grid, block>>>(
+        on,
+        reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r)),
+        reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(x)),
+        *plan, cr, cx
+      ); break;
+      default: mag_assert(false, "repeat: unsupported dtype");
+    }
+  }
+
+  void misc_op_repeat(const mag_command_t &cmd) { launch_repeat(cmd); }
+
+  void misc_op_repeat_interleave(const mag_command_t &cmd) {
+    mag_tensor_t *r = cmd.out[0];
+    const mag_tensor_t *x = cmd.in[0];
+    const mag_repeat_interleave_plan_t *plan = static_cast<const mag_repeat_interleave_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
+    mag_assert2(mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(x));
+    size_t elsz = static_cast<size_t>(mag_tensor_numbytes(r) / mag_tensor_numel(r));
+    if (plan->flatten) {
+      int64_t n = x->numel;
+      int64_t out_i = 0;
+      for (int64_t i=0; i < n; ++i) {
+        int64_t rep = plan->count_len == 1 ? plan->counts[0] : plan->counts[i];
+        for (int64_t k=0; k < rep; ++k) {
+          const uint8_t *src = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(x)) + i*static_cast<int64_t>(elsz);
+          uint8_t *dst = reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r)) + out_i*static_cast<int64_t>(elsz);
+          cudaMemcpy(dst, src, elsz, cudaMemcpyDeviceToDevice);
+          ++out_i;
+        }
+      }
+      return;
+    }
+    int64_t dim = plan->dim;
+    int64_t R = x->coords.rank;
+    int64_t inner_block = 1;
+    for (int64_t d = dim+1; d < R; ++d) inner_block *= x->coords.shape[d];
+    int64_t outer_count = 1;
+    for (int64_t d=0; d < dim; ++d) outer_count *= x->coords.shape[d];
+    int64_t axis_len = x->coords.shape[dim];
+    int64_t mult[MAG_MAX_DIMS];
+    for (int64_t d = 0; d < dim; ++d) {
+      int64_t m = 1;
+      for (int64_t k = d + 1; k < dim; ++k) m *= x->coords.shape[k];
+      mult[d] = m;
+    }
+    for (int64_t p=0; p < outer_count; ++p) {
+      int64_t idx_prefix[MAG_MAX_DIMS];
+      int64_t rtmp = p;
+      for (int64_t d = 0; d < dim; ++d) {
+        int64_t q = !mult[d] ? 0 : rtmp/mult[d];
+        if (mult[d] != 0) rtmp = rtmp%mult[d];
+        idx_prefix[d] = q;
+      }
+      int64_t moff = 0;
+      for (int64_t d=0; d < dim; ++d) moff += idx_prefix[d]*r->coords.strides[d];
+      int64_t smoff = 0;
+      for (int64_t d=0; d < dim; ++d) smoff += idx_prefix[d]*x->coords.strides[d];
+      int64_t cur = 0;
+      for (int64_t a=0; a < axis_len; ++a) {
+        int64_t rep = plan->count_len == 1 ? plan->counts[0] : plan->counts[a];
+        int64_t oel = moff + cur*r->coords.strides[dim];
+        int64_t sel = smoff + a*x->coords.strides[dim];
+        const uint8_t *src_ptr = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(x)) + sel*static_cast<int64_t>(elsz);
+        uint8_t *dst_ptr = reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r)) + oel*static_cast<int64_t>(elsz);
+        for (int64_t k=0; k < rep; ++k) {
+          cudaMemcpy(
+            dst_ptr + k*inner_block*static_cast<int64_t>(elsz),
+            src_ptr,
+            static_cast<size_t>(inner_block)*elsz,
+            cudaMemcpyDeviceToDevice
+          );
+        }
+        cur += rep;
+      }
+    }
+  }
 }

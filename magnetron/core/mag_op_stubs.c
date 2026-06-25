@@ -1820,6 +1820,89 @@ mag_status_t mag_repeat_back(mag_error_t *err, mag_tensor_t **out_result, mag_te
   return MAG_STATUS_OK;
 }
 
+mag_status_t mag_repeat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *repeats, int64_t repeats_len) {
+  *out_result = NULL;
+  mag_contract(err, ERR_INVALID_PARAM, {}, x != NULL, "repeat: input tensor must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, repeats != NULL && repeats_len > 0, "repeat: repeats must be a non-empty sequence.");
+  int64_t in_rank = x->coords.rank;
+  int64_t out_rank = in_rank > repeats_len ? in_rank : repeats_len;
+  mag_contract(err, ERR_INVALID_PARAM, {}, out_rank <= MAG_MAX_DIMS, "repeat: result rank would exceed MAG_MAX_DIMS.");
+  mag_repeat_plan_t plan = {0};
+  plan.in_rank = in_rank;
+  plan.rank = out_rank;
+  int64_t lead_x = out_rank - in_rank;
+  int64_t lead_r = out_rank - repeats_len;
+  for (int64_t d=0; d < out_rank; ++d) {
+    int64_t is = d >= lead_x ? x->coords.shape[d - lead_x] : 1;
+    int64_t rs = d >= lead_r ? repeats[d - lead_r] : 1;
+    mag_contract(err, ERR_INVALID_PARAM, {}, rs >= 0, "repeat: repeat counts must be >= 0.");
+    plan.in_shape[d] = is;
+    plan.out_shape[d] = is*rs;
+  }
+  mag_tensor_t *result = NULL;
+  mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT, &x, 0));
+  mag_try(mag_empty(err, &result, x->ctx, x->dtype, out_rank, plan.out_shape, mag_tensor_device_id(x)));
+  mag_op_attr_registry_t layout;
+  mag_op_attr_registry_init(&layout);
+  mag_op_attr_registry_insert(&layout, mag_op_attr_ptr(&plan));
+  mag_try(mag_dispatch(err, MAG_OP_REPEAT, false, &layout, &x, 1, &result, 1));
+  *out_result = result;
+  return MAG_STATUS_OK;
+}
+
+mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, bool flatten, int64_t dim, const int64_t *counts, int64_t count_len) {
+  *out_result = NULL;
+  mag_contract(err, ERR_INVALID_PARAM, {}, x != NULL, "repeat_interleave: input tensor must not be NULL.");
+  mag_contract(err, ERR_INVALID_PARAM, {}, counts != NULL && count_len > 0, "repeat_interleave: counts must be a non-empty sequence.");
+  for (int64_t i=0; i < count_len; ++i)
+    mag_contract(err, ERR_INVALID_PARAM, {}, counts[i] >= 0, "repeat_interleave: counts must be >= 0.");
+  mag_repeat_interleave_plan_t plan = {0};
+  plan.flatten = flatten;
+  plan.counts = counts;
+  plan.count_len = count_len;
+  mag_tensor_t *xin = NULL;
+  int64_t shape[MAG_MAX_DIMS];
+  if (flatten) {
+    mag_contract(err, ERR_INVALID_PARAM, {}, count_len == 1 || count_len == x->numel, "repeat_interleave: counts length (%" PRIi64 ") must match input numel (%" PRIi64 ") when dim is None.", count_len, x->numel);
+    int64_t out_n = 0;
+    if (count_len == 1)
+      out_n = x->numel*counts[0];
+    else
+      for (int64_t i=0; i < count_len; ++i) out_n += counts[i];
+    plan.rank = 1;
+    plan.out_shape[0] = out_n;
+    mag_try(mag_contiguous(err, &xin, x));
+  } else {
+    mag_contract(err, ERR_INVALID_DIM, {}, x->coords.rank > 0, "repeat_interleave: input must have rank >= 1.");
+    mag_norm_axis(&dim, x->coords.rank);
+    mag_contract(err, ERR_INVALID_DIM, {}, dim >= 0 && dim < x->coords.rank, "repeat_interleave: dim must be in [0, %" PRIi64 "), but got %" PRIi64 ".", x->coords.rank, dim);
+    plan.dim = dim;
+    plan.rank = x->coords.rank;
+    memcpy(shape, x->coords.shape, plan.rank*sizeof(*shape));
+    int64_t axis_len = x->coords.shape[dim];
+    mag_contract(err, ERR_INVALID_PARAM, {}, count_len == 1 || count_len == axis_len, "repeat_interleave: counts length (%" PRIi64 ") must match size of dim (%" PRIi64 ").", count_len, axis_len);
+    if (count_len == 1)
+      shape[dim] *= counts[0];
+    else {
+      int64_t sum = 0;
+      for (int64_t i=0; i < count_len; ++i) sum += counts[i];
+      shape[dim] = sum;
+    }
+    memcpy(plan.out_shape, shape, plan.rank*sizeof(*plan.out_shape));
+    mag_try(mag_contiguous(err, &xin, x));
+  }
+  mag_tensor_t *result = NULL;
+  mag_try(mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT_INTERLEAVE, &xin, 0));
+  mag_try(mag_empty(err, &result, x->ctx, x->dtype, plan.rank, flatten ? plan.out_shape : shape, mag_tensor_device_id(xin)));
+  mag_op_attr_registry_t layout;
+  mag_op_attr_registry_init(&layout);
+  mag_op_attr_registry_insert(&layout, mag_op_attr_ptr(&plan));
+  mag_try(mag_dispatch(err, MAG_OP_REPEAT_INTERLEAVE, false, &layout, &xin, 1, &result, 1));
+  mag_tensor_decref(xin);
+  *out_result = result;
+  return MAG_STATUS_OK;
+}
+
 mag_status_t mag_gather(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t dim, mag_tensor_t *idx) {
   *out_result = NULL;
   mag_tensor_t *result = NULL;
