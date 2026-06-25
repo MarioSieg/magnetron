@@ -2,6 +2,7 @@ from pathlib import Path
 import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 
 def compact_shapes(s: str) -> str:
@@ -10,7 +11,7 @@ def compact_shapes(s: str) -> str:
 
 def shorten(s: str, n: int = 64) -> str:
     s = str(s)
-    return s if len(s) <= n else s[: n - 3] + '...'
+    return s if len(s) <= n else s[:n - 3] + '...'
 
 
 def make_label(row, i: int) -> str:
@@ -26,12 +27,16 @@ def plot_barh(df, value_col: str, xlabel: str, title: str, out_path: Path) -> No
     df['label'] = [make_label(row, i) for i, row in df.iterrows()]
 
     plt.figure(figsize=(18, max(7, len(df) * 0.45)))
-    plt.barh(df['label'], df[value_col])
+    bars = plt.barh(df['label'], df[value_col])
+    # Annotate bars with values
+    for bar, val in zip(bars, df[value_col]):
+        plt.text(bar.get_width() * 1.005, bar.get_y() + bar.get_height() / 2,
+                 f'{val:.2f}', va='center', fontsize=7)
     plt.xlabel(xlabel)
     plt.ylabel('')
     plt.title(title)
     plt.gca().invert_yaxis()
-    plt.subplots_adjust(left=0.44, right=0.98, top=0.92, bottom=0.08)
+    plt.subplots_adjust(left=0.44, right=0.96, top=0.92, bottom=0.08)
     plt.savefig(out_path, dpi=300)
     plt.close()
 
@@ -70,19 +75,37 @@ def render_table(df, title: str, out_path: Path) -> None:
     plt.close()
 
 
+def render_summary_panel(df_total, df_avg, df_max, out_path: Path, top: int) -> None:
+    """Single figure with three side-by-side horizontal bar charts."""
+    fig = plt.figure(figsize=(28, max(8, top * 0.4 + 2)))
+    gs = gridspec.GridSpec(1, 3, figure=fig, wspace=0.55)
+
+    specs = [
+        (df_total, 'total_ms', 'Total time (ms)', gs[0]),
+        (df_avg,   'avg_us',   'Avg latency (µs)', gs[1]),
+        (df_max,   'max_us',   'Max latency (µs)', gs[2]),
+    ]
+
+    for df, col, xlabel, gslot in specs:
+        ax = fig.add_subplot(gslot)
+        labels = [make_label(row, i) for i, row in df.iterrows()]
+        ax.barh(labels, df[col])
+        ax.set_xlabel(xlabel)
+        ax.invert_yaxis()
+        ax.tick_params(axis='y', labelsize=7)
+        ax.set_title(xlabel)
+
+    fig.suptitle(f'Magnetron Op Profile — top {top}', fontsize=13, y=1.01)
+    plt.savefig(out_path, dpi=200, bbox_inches='tight')
+    plt.close()
+
+
 def load_profile_csv(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
 
     required_cols = [
-        'calls',
-        'op',
-        'kind',
-        'dtype',
-        'shapes',
-        'strides',
-        'total_ms',
-        'avg_us',
-        'max_us',
+        'calls', 'op', 'kind', 'dtype', 'shapes', 'strides',
+        'total_ms', 'avg_us', 'max_us',
     ]
 
     missing = [c for c in required_cols if c not in df.columns]
@@ -118,20 +141,21 @@ def main() -> None:
 
     df = load_profile_csv(csv_path)
     stem = csv_path.stem
+    top = args.top
 
     views = [
         ('total_ms', 'Total time [ms]', 'total time'),
-        # ('avg_us', 'Average latency [µs]', 'average latency'),
-        # ('max_us', 'Max latency [µs]', 'max latency'),
+        ('avg_us',   'Average latency [µs]', 'avg latency'),
+        ('max_us',   'Max latency [µs]', 'max latency'),
     ]
 
+    parts = {}
     for col, xlabel, name in views:
-        part = df.sort_values(col, ascending=False).head(args.top).reset_index(drop=True)
+        part = df.sort_values(col, ascending=False).head(top).reset_index(drop=True)
+        parts[col] = part
 
         plot_barh(
-            part,
-            col,
-            xlabel,
+            part, col, xlabel,
             f'Top {len(part)} Magnetron ops by {name}',
             out_dir / f'{stem}_{col}.png',
         )
@@ -141,6 +165,14 @@ def main() -> None:
             f'Legend/table for top {len(part)} by {name}',
             out_dir / f'{stem}_{col}_table.png',
         )
+
+    render_summary_panel(
+        parts['total_ms'].head(top),
+        parts['avg_us'].head(top),
+        parts['max_us'].head(top),
+        out_dir / f'{stem}_summary.png',
+        min(top, 20),
+    )
 
     print(f'Wrote plots and tables to {out_dir}')
 

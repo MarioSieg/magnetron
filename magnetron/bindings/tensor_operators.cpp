@@ -16,33 +16,51 @@
 
 #include <algorithm>
 
-#define bind_unary_pair(cls, name, doc) \
+#define bind_unary_pair(cls, name, opcode, doc) \
   cls \
     .def(#name, [](const tensor_wrapper &self) -> tensor_wrapper { \
       std::lock_guard lock {get_global_mutex()}; \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
-      throw_if_error(mag_##name(&err, &out, *self), err); \
+      if constexpr (enable_op_recorder) { \
+        op_recorder::singleton().profile(opcode, [&] { \
+          throw_if_error(mag_##name(&err, &out, *self), err); \
+        }, {*self}); \
+      } else { \
+        throw_if_error(mag_##name(&err, &out, *self), err); \
+      } \
       return tensor_wrapper {out}; \
     }, doc) \
     .def(#name "_", [](tensor_wrapper &self) -> tensor_wrapper& { \
       std::lock_guard lock {get_global_mutex()}; \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
-      throw_if_error(mag_##name##_(&err, &out, *self), err); \
+      if constexpr (enable_op_recorder) { \
+        op_recorder::singleton().profile(opcode, [&] { \
+          throw_if_error(mag_##name##_(&err, &out, *self), err); \
+        }, {*self}); \
+      } else { \
+        throw_if_error(mag_##name##_(&err, &out, *self), err); \
+      } \
       if (self.p) mag_tensor_decref(self.p); \
       self.p = out; \
       return self; \
     }, "In-place version.", nb::rv_policy::reference)
 
-#define bind_binary_full_named(cls, dunder_name, c_name, named_name, doc) \
+#define bind_binary_full_named(cls, dunder_name, c_name, named_name, opcode, doc) \
   cls.def("__" #dunder_name "__", \
     [](const tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper { \
       std::lock_guard lock {get_global_mutex()}; \
       tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
-      throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+      if constexpr (enable_op_recorder) { \
+        op_recorder::singleton().profile(opcode, [&] { \
+          throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+        }, {*a, *b}); \
+      } else { \
+        throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+      } \
       return tensor_wrapper{out}; \
     }, "rhs"_a, doc); \
   cls.def("__r" #dunder_name "__", \
@@ -51,7 +69,13 @@
       tensor_wrapper l = normalize_rhs_to_tensor(a, lhs); \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
-      throw_if_error(mag_##c_name(&err, &out, *l, *a), err); \
+      if constexpr (enable_op_recorder) { \
+        op_recorder::singleton().profile(opcode, [&] { \
+          throw_if_error(mag_##c_name(&err, &out, *l, *a), err); \
+        }, {*l, *a}); \
+      } else { \
+        throw_if_error(mag_##c_name(&err, &out, *l, *a), err); \
+      } \
       return tensor_wrapper{out}; \
     }, "lhs"_a, "Right-hand side of " #named_name " (reflected)."); \
   cls.def("__i" #dunder_name "__", \
@@ -60,7 +84,13 @@
       tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
-      throw_if_error(mag_##c_name##_(&err, &out, *a, *b), err); \
+      if constexpr (enable_op_recorder) { \
+        op_recorder::singleton().profile(opcode, [&] { \
+          throw_if_error(mag_##c_name##_(&err, &out, *a, *b), err); \
+        }, {*a, *b}); \
+      } else { \
+        throw_if_error(mag_##c_name##_(&err, &out, *a, *b), err); \
+      } \
       if (a.p) mag_tensor_decref(a.p); \
       a.p = out; \
       return a; \
@@ -71,7 +101,13 @@
       tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
-      throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+      if constexpr (enable_op_recorder) { \
+        op_recorder::singleton().profile(opcode, [&] { \
+          throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+        }, {*a, *b}); \
+      } else { \
+        throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+      } \
       return tensor_wrapper{out}; \
     }, "rhs"_a, doc); \
   cls.def(#named_name "_", \
@@ -86,14 +122,20 @@
       return a; \
     }, "rhs"_a, "In-place version.", nb::rv_policy::reference)
 
-#define bind_compare(cls, dunder_name, c_name, named_name, doc) \
+#define bind_compare(cls, dunder_name, c_name, named_name, opcode, doc) \
   cls.def("__" #dunder_name "__", \
     [](const tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper { \
       std::lock_guard lock {get_global_mutex()}; \
       tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
-      throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+      if constexpr (enable_op_recorder) { \
+        op_recorder::singleton().profile(opcode, [&] { \
+          throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+        }, {*a, *b}); \
+      } else { \
+        throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+      } \
       return tensor_wrapper{out}; \
     }, "rhs"_a, doc); \
   cls.def(#named_name, \
@@ -102,7 +144,13 @@
       tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
-      throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+      if constexpr (enable_op_recorder) { \
+        op_recorder::singleton().profile(opcode, [&] { \
+          throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+        }, {*a, *b}); \
+      } else { \
+        throw_if_error(mag_##c_name(&err, &out, *a, *b), err); \
+      } \
       return tensor_wrapper{out}; \
     }, "rhs"_a, doc)
 
@@ -187,7 +235,14 @@ namespace mag::bindings {
       [](tensor_wrapper &self, nb::handle value) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
         mag_error_t err {};
-        throw_if_error(mag_fill_(&err, *self, scalar_from_py_number(value)), err);
+        mag_scalar_t s = scalar_from_py_number(value);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_FILL, [&] {
+            throw_if_error(mag_fill_(&err, *self, s), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_fill_(&err, *self, s), err);
+        }
         return self;
       },
       "value"_a,
@@ -218,7 +273,14 @@ namespace mag::bindings {
           throw nb::type_error("masked_fill_: mask must have dtype boolean");
         mag_error_t err {};
         mag_tensor_t *result = nullptr;
-        throw_if_error(mag_masked_fill(&err, &result, *self, *mask, scalar_from_py_number(value)), err);
+        mag_scalar_t s = scalar_from_py_number(value);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_MASKED_FILL, [&] {
+            throw_if_error(mag_masked_fill(&err, &result, *self, *mask, s), err);
+          }, {*self, *mask});
+        } else {
+          throw_if_error(mag_masked_fill(&err, &result, *self, *mask, s), err);
+        }
         return tensor_wrapper{result};
       },
       "mask"_a, "value"_a,
@@ -230,7 +292,14 @@ namespace mag::bindings {
         if (mag_tensor_type(*mask) != MAG_DTYPE_BOOLEAN)
           throw nb::type_error("masked_fill_: mask must have dtype boolean");
         mag_error_t err {};
-        throw_if_error(mag_masked_fill_(&err, *self, *mask, scalar_from_py_number(value)), err);
+        mag_scalar_t s = scalar_from_py_number(value);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_MASKED_FILL, [&] {
+            throw_if_error(mag_masked_fill_(&err, *self, *mask, s), err);
+          }, {*self, *mask});
+        } else {
+          throw_if_error(mag_masked_fill_(&err, *self, *mask, s), err);
+        }
         return self;
       },
       "mask"_a, "value"_a,
@@ -239,10 +308,16 @@ namespace mag::bindings {
     .def("uniform_",
       [](tensor_wrapper &self, nb::handle low_h = nb::none(), nb::handle high_h = nb::none()) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
-        mag_scalar_t low = low_h.is_none()  ? mag_scalar_from_f64(0.0) : scalar_from_py_number(low_h);
+        mag_scalar_t low = low_h.is_none() ? mag_scalar_from_f64(0.0) : scalar_from_py_number(low_h);
         mag_scalar_t high = high_h.is_none() ? mag_scalar_from_f64(1.0) : scalar_from_py_number(high_h);
         mag_error_t err {};
-        throw_if_error(mag_uniform_(&err, *self, low, high), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_RAND_UNIFORM, [&] {
+            throw_if_error(mag_uniform_(&err, *self, low, high), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_uniform_(&err, *self, low, high), err);
+        }
         return self;
       },
       "low"_a = nb::none(),
@@ -252,19 +327,34 @@ namespace mag::bindings {
     .def("normal_",
       [](tensor_wrapper &self, nb::handle mean = nb::float_(0.0), nb::handle stdd = nb::float_(1.0)) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
+        mag_scalar_t m = scalar_from_py_number(mean);
+        mag_scalar_t s = scalar_from_py_number(stdd);
         mag_error_t err {};
-        throw_if_error(mag_normal_(&err, *self, scalar_from_py_number(mean), scalar_from_py_number(stdd)), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_RAND_NORMAL, [&] {
+            throw_if_error(mag_normal_(&err, *self, m, s), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_normal_(&err, *self, m, s), err);
+        }
         return self;
       },
       "mean"_a = 0.0,
-      "std"_a  = 1.0,
+      "std"_a = 1.0,
       "Fill with samples from normal(mean, std)."
     )
     .def("bernoulli_",
       [](tensor_wrapper &self, nb::handle p = nb::float_(0.5)) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
+        mag_scalar_t pv = scalar_from_py_number(p);
         mag_error_t err {};
-        throw_if_error(mag_bernoulli_(&err, *self, scalar_from_py_number(p)), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_RAND_BERNOULLI, [&] {
+            throw_if_error(mag_bernoulli_(&err, *self, pv), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_bernoulli_(&err, *self, pv), err);
+        }
         return self;
       },
       "p"_a = 0.5,
@@ -274,7 +364,13 @@ namespace mag::bindings {
       std::lock_guard lock {get_global_mutex()};
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
-      throw_if_error(mag_clone(&err, &out, *self), err);
+      if constexpr (enable_op_recorder) {
+        op_recorder::singleton().profile(MAG_OP_CLONE, [&] {
+          throw_if_error(mag_clone(&err, &out, *self), err);
+        }, {*self});
+      } else {
+        throw_if_error(mag_clone(&err, &out, *self), err);
+      }
       return tensor_wrapper{out};
     }, "Return a copy with the same data and dtype.")
     .def("copy_", [](tensor_wrapper &self, const tensor_wrapper &src) -> tensor_wrapper& {
@@ -287,7 +383,13 @@ namespace mag::bindings {
       std::lock_guard lock {get_global_mutex()};
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
-      throw_if_error(mag_cast(&err, &out, *self, dt.v), err);
+      if constexpr (enable_op_recorder) {
+        op_recorder::singleton().profile(MAG_OP_CAST, [&] {
+          throw_if_error(mag_cast(&err, &out, *self, dt.v), err);
+        }, {*self});
+      } else {
+        throw_if_error(mag_cast(&err, &out, *self, dt.v), err);
+      }
       return tensor_wrapper{out};
     }, "dtype"_a, "Return a copy with the given dtype.")
     .def("transfer", [](const tensor_wrapper &self, const std::string &device_str) -> tensor_wrapper {
@@ -517,7 +619,13 @@ namespace mag::bindings {
         auto ax = parse_reduction_axes(dim);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_mean(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_MEAN, [&] {
+            throw_if_error(mag_mean(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_mean(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a = nb::none(), "keepdim"_a = false,
@@ -530,11 +638,23 @@ namespace mag::bindings {
         mag_error_t err{};
         if (!arg.is_none() && nb::isinstance<tensor_wrapper>(arg)) {
           auto rhs = nb::cast<tensor_wrapper>(arg);
-          throw_if_error(mag_max(&err, &out, *self, *rhs), err);
+          if constexpr (enable_op_recorder) {
+            op_recorder::singleton().profile(MAG_OP_MAX, [&] {
+              throw_if_error(mag_max(&err, &out, *self, *rhs), err);
+            }, {*self, *rhs});
+          } else {
+            throw_if_error(mag_max(&err, &out, *self, *rhs), err);
+          }
           return tensor_wrapper{out};
         }
         auto ax = parse_reduction_axes(arg);
-        throw_if_error(mag_maxima(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_MAXIMA, [&] {
+            throw_if_error(mag_maxima(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_maxima(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim_or_other"_a = nb::none(),
@@ -548,11 +668,23 @@ namespace mag::bindings {
         mag_error_t err{};
         if (!arg.is_none() && nb::isinstance<tensor_wrapper>(arg)) {
           auto rhs = nb::cast<tensor_wrapper>(arg);
-          throw_if_error(mag_min(&err, &out, *self, *rhs), err);
+          if constexpr (enable_op_recorder) {
+            op_recorder::singleton().profile(MAG_OP_MIN, [&] {
+              throw_if_error(mag_min(&err, &out, *self, *rhs), err);
+            }, {*self, *rhs});
+          } else {
+            throw_if_error(mag_min(&err, &out, *self, *rhs), err);
+          }
           return tensor_wrapper{out};
         }
         auto ax = parse_reduction_axes(arg);
-        throw_if_error(mag_minima(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_MINIMA, [&] {
+            throw_if_error(mag_minima(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_minima(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim_or_other"_a = nb::none(),
@@ -565,7 +697,13 @@ namespace mag::bindings {
         auto ax = parse_reduction_axes(dim);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_argmin(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_ARGMIN, [&] {
+            throw_if_error(mag_argmin(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_argmin(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a = nb::none(), "keepdim"_a = false,
@@ -577,7 +715,13 @@ namespace mag::bindings {
         auto ax = parse_reduction_axes(dim);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_argmax(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_ARGMAX, [&] {
+            throw_if_error(mag_argmax(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_argmax(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a = nb::none(), "keepdim"_a = false,
@@ -589,7 +733,13 @@ namespace mag::bindings {
         auto ax = parse_reduction_axes(dim);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_sum(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_SUM, [&] {
+            throw_if_error(mag_sum(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_sum(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a = nb::none(), "keepdim"_a = false,
@@ -601,7 +751,13 @@ namespace mag::bindings {
         auto ax = parse_reduction_axes(dim);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_prod(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_PROD, [&] {
+            throw_if_error(mag_prod(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_prod(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a = nb::none(), "keepdim"_a = false,
@@ -612,7 +768,13 @@ namespace mag::bindings {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_cusum(&err, &out, *self, dim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_CUSUM, [&] {
+            throw_if_error(mag_cusum(&err, &out, *self, dim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_cusum(&err, &out, *self, dim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a,
@@ -623,7 +785,13 @@ namespace mag::bindings {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_cuprod(&err, &out, *self, dim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_CUPROD, [&] {
+            throw_if_error(mag_cuprod(&err, &out, *self, dim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_cuprod(&err, &out, *self, dim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a,
@@ -635,7 +803,13 @@ namespace mag::bindings {
         mag_tensor_t *values = nullptr;
         mag_tensor_t *indices = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_cumax(&err, &values, &indices, *self, dim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_CUMAX, [&] {
+            throw_if_error(mag_cumax(&err, &values, &indices, *self, dim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_cumax(&err, &values, &indices, *self, dim), err);
+        }
         tensor_wrapper v_tw{values};
         tensor_wrapper i_tw{indices};
         PyObject *t = PyTuple_New(2);
@@ -655,7 +829,13 @@ namespace mag::bindings {
         mag_tensor_t *values = nullptr;
         mag_tensor_t *indices = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_cumin(&err, &values, &indices, *self, dim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_CUMIN, [&] {
+            throw_if_error(mag_cumin(&err, &values, &indices, *self, dim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_cumin(&err, &values, &indices, *self, dim), err);
+        }
         tensor_wrapper v_tw{values};
         tensor_wrapper i_tw{indices};
         PyObject *t = PyTuple_New(2);
@@ -675,7 +855,13 @@ namespace mag::bindings {
         auto ax = parse_reduction_axes(dim);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_all(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_ALL, [&] {
+            throw_if_error(mag_all(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_all(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a = nb::none(), "keepdim"_a = false,
@@ -687,7 +873,13 @@ namespace mag::bindings {
         auto ax = parse_reduction_axes(dim);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_any(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_ANY, [&] {
+            throw_if_error(mag_any(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_any(&err, &out, *self, ax.ptr, ax.rank, keepdim), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a = nb::none(), "keepdim"_a = false,
@@ -699,7 +891,13 @@ namespace mag::bindings {
         mag_tensor_t *values = nullptr;
         mag_tensor_t *indices = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_topk(&err, &values, &indices, *self, k, dim, largest, sorted), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_TOPK, [&] {
+            throw_if_error(mag_topk(&err, &values, &indices, *self, k, dim, largest, sorted), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_topk(&err, &values, &indices, *self, k, dim, largest, sorted), err);
+        }
         tensor_wrapper v_tw{values};
         tensor_wrapper i_tw{indices};
         PyObject *t = PyTuple_New(2);
@@ -718,7 +916,13 @@ namespace mag::bindings {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_tril(&err, &out, *self, diagonal), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_TRIL, [&] {
+            throw_if_error(mag_tril(&err, &out, *self, diagonal), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_tril(&err, &out, *self, diagonal), err);
+        }
         return tensor_wrapper{out};
       },
       "diagonal"_a = 0,
@@ -729,32 +933,50 @@ namespace mag::bindings {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_triu(&err, &out, *self, diagonal), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_TRIU, [&] {
+            throw_if_error(mag_triu(&err, &out, *self, diagonal), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_triu(&err, &out, *self, diagonal), err);
+        }
         return tensor_wrapper{out};
       },
       "diagonal"_a = 0,
       "Upper triangular part; elements below diagonal set to 0."
     )
     .def("tril_",
-    [](tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper& {
-      std::lock_guard lock {get_global_mutex()};
-      mag_tensor_t *out = nullptr;
-      mag_error_t err {};
-      throw_if_error(mag_tril_(&err, &out, *self, diagonal), err);
-      if (self.p) mag_tensor_decref(self.p);
-      self.p = out;
-      return self;
-    },
-    "diagonal"_a = 0,
-    "In-place lower triangular.",
-    nb::rv_policy::reference
-  )
-  .def("triu_",
       [](tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_triu_(&err, &out, *self, diagonal), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_TRIL, [&] {
+            throw_if_error(mag_tril_(&err, &out, *self, diagonal), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_tril_(&err, &out, *self, diagonal), err);
+        }
+        if (self.p) mag_tensor_decref(self.p);
+        self.p = out;
+        return self;
+      },
+      "diagonal"_a = 0,
+      "In-place lower triangular.",
+      nb::rv_policy::reference
+    )
+    .def("triu_",
+      [](tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper& {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_TRIU, [&] {
+            throw_if_error(mag_triu_(&err, &out, *self, diagonal), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_triu_(&err, &out, *self, diagonal), err);
+        }
         if (self.p) mag_tensor_decref(self.p);
         self.p = out;
         return self;
@@ -770,19 +992,31 @@ namespace mag::bindings {
           throw nb::value_error("multinomial: num_samples must be > 0");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_multinomial(&err, &out, *self, num_samples, replacement), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_MULTINOMIAL, [&] {
+            throw_if_error(mag_multinomial(&err, &out, *self, num_samples, replacement), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_multinomial(&err, &out, *self, num_samples, replacement), err);
+        }
         return tensor_wrapper{out};
       },
       "num_samples"_a = 1, "replacement"_a = false,
       "Sample indices from probabilities (last dim). Returns shape (..., num_samples)."
-      )
+    )
     .def("one_hot",
       [](const tensor_wrapper &self, int64_t num_classes) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_one_hot(&err, &out, *self, num_classes), err);
-        return tensor_wrapper {out};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_ONE_HOT, [&] {
+            throw_if_error(mag_one_hot(&err, &out, *self, num_classes), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_one_hot(&err, &out, *self, num_classes), err);
+        }
+        return tensor_wrapper{out};
       },
       "num_classes"_a = -1,
       "Return one-hot encoding of int64 class indices. If num_classes is -1, infer it from max(input)+1."
@@ -792,7 +1026,13 @@ namespace mag::bindings {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_gather(&err, &out, *self, dim, *index), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_GATHER, [&] {
+            throw_if_error(mag_gather(&err, &out, *self, dim, *index), err);
+          }, {*self, *index});
+        } else {
+          throw_if_error(mag_gather(&err, &out, *self, dim, *index), err);
+        }
         return tensor_wrapper{out};
       },
       "dim"_a = 0,
@@ -804,7 +1044,13 @@ namespace mag::bindings {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_embedding(&err, &out, *self, *indices), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_EMBEDDING, [&] {
+            throw_if_error(mag_embedding(&err, &out, *self, *indices), err);
+          }, {*self, *indices});
+        } else {
+          throw_if_error(mag_embedding(&err, &out, *self, *indices), err);
+        }
         return tensor_wrapper{out};
       },
       "indices"_a,
@@ -814,7 +1060,13 @@ namespace mag::bindings {
       [](tensor_wrapper &self, int64_t dim, const tensor_wrapper &index, const tensor_wrapper &source, double alpha = 1.0) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
         mag_error_t err {};
-        throw_if_error(mag_index_add_(&err, *self, dim, *index, *source, alpha), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_INDEX_ADD, [&] {
+            throw_if_error(mag_index_add_(&err, *self, dim, *index, *source, alpha), err);
+          }, {*self, *index, *source});
+        } else {
+          throw_if_error(mag_index_add_(&err, *self, dim, *index, *source, alpha), err);
+        }
         return self;
       },
       "dim"_a,
@@ -826,11 +1078,17 @@ namespace mag::bindings {
     .def("clamp",
       [](const tensor_wrapper &self, nb::handle min_h, nb::handle max_h) -> tensor_wrapper {
         std::lock_guard lock{get_global_mutex()};
-        tensor_wrapper min = normalize_rhs_to_tensor(self, min_h);
-        tensor_wrapper max = normalize_rhs_to_tensor(self, max_h);
+        tensor_wrapper mn = normalize_rhs_to_tensor(self, min_h);
+        tensor_wrapper mx = normalize_rhs_to_tensor(self, max_h);
         mag_tensor_t *out = nullptr;
         mag_error_t err{};
-        throw_if_error(mag_clamp(&err, &out, *self, *min, *max), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_CLAMP, [&] {
+            throw_if_error(mag_clamp(&err, &out, *self, *mn, *mx), err);
+          }, {*self, *mn, *mx});
+        } else {
+          throw_if_error(mag_clamp(&err, &out, *self, *mn, *mx), err);
+        }
         return tensor_wrapper{out};
       },
       "min"_a,
@@ -855,9 +1113,16 @@ namespace mag::bindings {
       [](const tensor_wrapper &self, nb::handle pad_h, const std::string &mode = "constant", nb::handle value = nb::float_{0.0}) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
         std::vector<int64_t> pad = parse_i64_list_handle(pad_h, "pad");
+        mag_scalar_t sv = scalar_from_py_number(value);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), mode.c_str(), scalar_from_py_number(value)), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_PAD, [&] {
+            throw_if_error(mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), mode.c_str(), sv), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), mode.c_str(), sv), err);
+        }
         return tensor_wrapper{out};
       },
       "pad"_a,
@@ -873,7 +1138,13 @@ namespace mag::bindings {
           throw nb::value_error("repeat: expected at least one repeat count");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_repeat(&err, &out, *self, repeats.data(), static_cast<int64_t>(repeats.size())), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_REPEAT, [&] {
+            throw_if_error(mag_repeat(&err, &out, *self, repeats.data(), static_cast<int64_t>(repeats.size())), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_repeat(&err, &out, *self, repeats.data(), static_cast<int64_t>(repeats.size())), err);
+        }
         return tensor_wrapper{out};
       },
       "*repeats"_a,
@@ -907,7 +1178,13 @@ namespace mag::bindings {
         }
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_repeat_interleave(&err, &out, *self, flatten, dim, counts.data(), static_cast<int64_t>(counts.size())), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_REPEAT_INTERLEAVE, [&] {
+            throw_if_error(mag_repeat_interleave(&err, &out, *self, flatten, dim, counts.data(), static_cast<int64_t>(counts.size())), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_repeat_interleave(&err, &out, *self, flatten, dim, counts.data(), static_cast<int64_t>(counts.size())), err);
+        }
         return tensor_wrapper{out};
       },
       "repeats"_a,
@@ -922,7 +1199,13 @@ namespace mag::bindings {
        auto ptrs = tensor_ptrs(tensors);
        mag_tensor_t *out = nullptr;
        mag_error_t err {};
-       throw_if_error(mag_cat(&err, &out, ptrs.data(), ptrs.size(), dim), err);
+       if constexpr (enable_op_recorder) {
+         op_recorder::singleton().profile(MAG_OP_CAT, [&] {
+           throw_if_error(mag_cat(&err, &out, ptrs.data(), ptrs.size(), dim), err);
+         }, ptrs);
+       } else {
+         throw_if_error(mag_cat(&err, &out, ptrs.data(), ptrs.size(), dim), err);
+       }
        return tensor_wrapper{out};
      },
      "tensors"_a,
@@ -954,7 +1237,13 @@ namespace mag::bindings {
         auto [x, y] = normalize_where_operands(cond, xh, yh);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_where(&err, &out, *cond, *x, *y), err);
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_WHERE, [&] {
+            throw_if_error(mag_where(&err, &out, *cond, *x, *y), err);
+          }, {*cond, *x, *y});
+        } else {
+          throw_if_error(mag_where(&err, &out, *cond, *x, *y), err);
+        }
         return tensor_wrapper{out};
       },
       "condition"_a, "x"_a, "y"_a,
@@ -987,39 +1276,39 @@ namespace mag::bindings {
     );
 
     // Unary operators
-    bind_unary_pair(cls, abs, "Element-wise absolute value.");
-    bind_unary_pair(cls, sgn, "Element-wise sign (-1, 0, or 1).");
-    bind_unary_pair(cls, neg, "Element-wise negation.");
-    bind_unary_pair(cls, log, "Natural logarithm.");
-    bind_unary_pair(cls, log10, "Base-10 logarithm.");
-    bind_unary_pair(cls, log1p, "log(1 + x).");
-    bind_unary_pair(cls, log2, "Base-2 logarithm.");
-    bind_unary_pair(cls, sqr, "Element-wise square.");
-    bind_unary_pair(cls, rcp, "Reciprocal 1/x.");
-    bind_unary_pair(cls, sqrt, "Element-wise square root.");
-    bind_unary_pair(cls, rsqrt, "Reciprocal square root 1/sqrt(x).");
-    bind_unary_pair(cls, sin, "Element-wise sine.");
-    bind_unary_pair(cls, cos, "Element-wise cosine.");
-    bind_unary_pair(cls, tan, "Element-wise tangent.");
-    bind_unary_pair(cls, sinh, "Element-wise hyperbolic sine.");
-    bind_unary_pair(cls, cosh, "Element-wise hyperbolic cosine.");
-    bind_unary_pair(cls, tanh, "Element-wise hyperbolic tangent.");
-    bind_unary_pair(cls, asin, "Element-wise arc sine.");
-    bind_unary_pair(cls, acos, "Element-wise arc cosine.");
-    bind_unary_pair(cls, atan, "Element-wise arc tangent.");
-    bind_unary_pair(cls, asinh, "Element-wise inverse hyperbolic sine.");
-    bind_unary_pair(cls, acosh, "Element-wise inverse hyperbolic cosine.");
-    bind_unary_pair(cls, atanh, "Element-wise inverse hyperbolic tangent.");
-    bind_unary_pair(cls, step, "Heaviside step (0 if x < 0 else 1).");
-    bind_unary_pair(cls, erf, "Error function.");
-    bind_unary_pair(cls, erfc, "Complementary error function.");
-    bind_unary_pair(cls, exp, "Element-wise exp(x).");
-    bind_unary_pair(cls, exp2, "Element-wise base-2 exponential.");
-    bind_unary_pair(cls, expm1, "exp(x) - 1.");
-    bind_unary_pair(cls, floor, "Round down to integer.");
-    bind_unary_pair(cls, ceil, "Round up to integer.");
-    bind_unary_pair(cls, round, "Round to nearest integer.");
-    bind_unary_pair(cls, trunc, "Truncate toward zero.");
+    bind_unary_pair(cls, abs, MAG_OP_ABS, "Element-wise absolute value.");
+    bind_unary_pair(cls, sgn, MAG_OP_SGN, "Element-wise sign (-1, 0, or 1).");
+    bind_unary_pair(cls, neg, MAG_OP_NEG, "Element-wise negation.");
+    bind_unary_pair(cls, log, MAG_OP_LOG, "Natural logarithm.");
+    bind_unary_pair(cls, log10, MAG_OP_LOG10, "Base-10 logarithm.");
+    bind_unary_pair(cls, log1p, MAG_OP_LOG1P, "log(1 + x).");
+    bind_unary_pair(cls, log2, MAG_OP_LOG2, "Base-2 logarithm.");
+    bind_unary_pair(cls, sqr, MAG_OP_SQR, "Element-wise square.");
+    bind_unary_pair(cls, rcp, MAG_OP_RCP, "Reciprocal 1/x.");
+    bind_unary_pair(cls, sqrt, MAG_OP_SQRT, "Element-wise square root.");
+    bind_unary_pair(cls, rsqrt, MAG_OP_RSQRT, "Reciprocal square root 1/sqrt(x).");
+    bind_unary_pair(cls, sin, MAG_OP_SIN, "Element-wise sine.");
+    bind_unary_pair(cls, cos, MAG_OP_COS, "Element-wise cosine.");
+    bind_unary_pair(cls, tan, MAG_OP_TAN, "Element-wise tangent.");
+    bind_unary_pair(cls, sinh, MAG_OP_SINH, "Element-wise hyperbolic sine.");
+    bind_unary_pair(cls, cosh, MAG_OP_COSH, "Element-wise hyperbolic cosine.");
+    bind_unary_pair(cls, tanh, MAG_OP_TANH, "Element-wise hyperbolic tangent.");
+    bind_unary_pair(cls, asin, MAG_OP_ASIN, "Element-wise arc sine.");
+    bind_unary_pair(cls, acos, MAG_OP_ACOS, "Element-wise arc cosine.");
+    bind_unary_pair(cls, atan, MAG_OP_ATAN, "Element-wise arc tangent.");
+    bind_unary_pair(cls, asinh, MAG_OP_ASINH, "Element-wise inverse hyperbolic sine.");
+    bind_unary_pair(cls, acosh, MAG_OP_ACOSH, "Element-wise inverse hyperbolic cosine.");
+    bind_unary_pair(cls, atanh, MAG_OP_ATANH, "Element-wise inverse hyperbolic tangent.");
+    bind_unary_pair(cls, step, MAG_OP_STEP, "Heaviside step (0 if x < 0 else 1).");
+    bind_unary_pair(cls, erf, MAG_OP_ERF, "Error function.");
+    bind_unary_pair(cls, erfc, MAG_OP_ERFC, "Complementary error function.");
+    bind_unary_pair(cls, exp, MAG_OP_EXP, "Element-wise exp(x).");
+    bind_unary_pair(cls, exp2, MAG_OP_EXP2, "Element-wise base-2 exponential.");
+    bind_unary_pair(cls, expm1, MAG_OP_EXPM1, "exp(x) - 1.");
+    bind_unary_pair(cls, floor, MAG_OP_FLOOR, "Round down to integer.");
+    bind_unary_pair(cls, ceil, MAG_OP_CEIL, "Round up to integer.");
+    bind_unary_pair(cls, round, MAG_OP_ROUND, "Round to nearest integer.");
+    bind_unary_pair(cls, trunc, MAG_OP_TRUNC, "Truncate toward zero.");
 
     // Softmax has params and required a specialized binding
     cls.def("softmax",
@@ -1027,7 +1316,13 @@ namespace mag::bindings {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_softmax(&err, &out, *self), err); // TODO: respect dim
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_SOFTMAX, [&] {
+            throw_if_error(mag_softmax(&err, &out, *self), err); // TODO: respect dim
+          }, {*self});
+        } else {
+          throw_if_error(mag_softmax(&err, &out, *self), err); // TODO: respect dim
+        }
         return tensor_wrapper{out};
       },
       "dim"_a = -1,
@@ -1038,7 +1333,13 @@ namespace mag::bindings {
         std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(mag_softmax_(&err, &out, *self), err); // TODO: respect dim
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_SOFTMAX, [&] {
+            throw_if_error(mag_softmax_(&err, &out, *self), err); // TODO: respect dim
+          }, {*self});
+        } else {
+          throw_if_error(mag_softmax_(&err, &out, *self), err); // TODO: respect dim
+        }
         if (self.p) mag_tensor_decref(self.p);
         self.p = out;
         return self;
@@ -1048,18 +1349,18 @@ namespace mag::bindings {
       nb::rv_policy::reference
     );
 
-    bind_unary_pair(cls, softmax_dv, "Softmax derivative (for autodiff).");
-    bind_unary_pair(cls, sigmoid, "Sigmoid 1/(1+exp(-x)).");
-    bind_unary_pair(cls, sigmoid_dv, "Sigmoid derivative.");
-    bind_unary_pair(cls, hard_sigmoid, "Hard sigmoid approximation.");
-    bind_unary_pair(cls, silu, "SiLU (Swish) x*sigmoid(x).");
-    bind_unary_pair(cls, silu_dv, "SiLU derivative.");
-    bind_unary_pair(cls, tanh_dv, "Tanh derivative.");
-    bind_unary_pair(cls, relu, "ReLU max(0, x).");
-    bind_unary_pair(cls, relu_dv, "ReLU derivative.");
-    bind_unary_pair(cls, gelu, "GELU activation.");
-    bind_unary_pair(cls, gelu_approx, "GELU approximate form.");
-    bind_unary_pair(cls, gelu_dv, "GELU derivative.");
+    bind_unary_pair(cls, softmax_dv, MAG_OP_SOFTMAX_DV, "Softmax derivative (for autodiff).");
+    bind_unary_pair(cls, sigmoid, MAG_OP_SIGMOID, "Sigmoid 1/(1+exp(-x)).");
+    bind_unary_pair(cls, sigmoid_dv, MAG_OP_SIGMOID_DV, "Sigmoid derivative.");
+    bind_unary_pair(cls, hard_sigmoid, MAG_OP_HARD_SIGMOID, "Hard sigmoid approximation.");
+    bind_unary_pair(cls, silu, MAG_OP_SILU, "SiLU (Swish) x*sigmoid(x).");
+    bind_unary_pair(cls, silu_dv, MAG_OP_SILU_DV, "SiLU derivative.");
+    bind_unary_pair(cls, tanh_dv, MAG_OP_TANH_DV, "Tanh derivative.");
+    bind_unary_pair(cls, relu, MAG_OP_RELU, "ReLU max(0, x).");
+    bind_unary_pair(cls, relu_dv, MAG_OP_RELU_DV, "ReLU derivative.");
+    bind_unary_pair(cls, gelu, MAG_OP_GELU, "GELU activation.");
+    bind_unary_pair(cls, gelu_approx, MAG_OP_GELU_APPROX, "GELU approximate form.");
+    bind_unary_pair(cls, gelu_dv, MAG_OP_GELU_DV, "GELU derivative.");
     cls
     .def("__neg__", [](const tensor_wrapper &self) -> tensor_wrapper {
       std::lock_guard lock {get_global_mutex()};
@@ -1081,24 +1382,24 @@ namespace mag::bindings {
     }, "Element-wise absolute value.");
 
     // Binary operators
-    bind_binary_full_named(cls, add, add, add, "Element-wise addition.");
-    bind_binary_full_named(cls, sub, sub, sub, "Element-wise subtraction.");
-    bind_binary_full_named(cls, mul, mul, mul, "Element-wise multiplication.");
-    bind_binary_full_named(cls, mod, mod, mod, "Element-wise modulo.");
-    bind_binary_full_named(cls, pow, pow, pow, "Element-wise exponentiation.");
-    bind_binary_full_named(cls, truediv, div, truediv, "Element-wise true division.");
-    bind_binary_full_named(cls, floordiv, floordiv, floordiv, "Element-wise floor division.");
-    bind_binary_full_named(cls, and, and, logical_and, "Element-wise logical AND.");
-    bind_binary_full_named(cls, or,  or,  logical_or, "Element-wise logical OR.");
-    bind_binary_full_named(cls, xor, xor, logical_xor, "Element-wise logical XOR.");
-    bind_binary_full_named(cls, lshift, shl, lshift, "Element-wise left shift.");
-    bind_binary_full_named(cls, rshift, shr, rshift, "Element-wise right shift.");
-    bind_compare(cls, lt, lt, lt, "Element-wise less than. Returns boolean tensor.");
-    bind_compare(cls, le, le, le, "Element-wise less or equal.");
-    bind_compare(cls, gt, gt, gt, "Element-wise greater than.");
-    bind_compare(cls, ge, ge, ge, "Element-wise greater or equal.");
-    bind_compare(cls, eq, eq, eq, "Element-wise equality.");
-    bind_compare(cls, ne, ne, ne, "Element-wise not equal.");
+    bind_binary_full_named(cls, add, add, add, MAG_OP_ADD, "Element-wise addition.");
+    bind_binary_full_named(cls, sub, sub, sub, MAG_OP_SUB, "Element-wise subtraction.");
+    bind_binary_full_named(cls, mul, mul, mul, MAG_OP_MUL, "Element-wise multiplication.");
+    bind_binary_full_named(cls, mod, mod, mod, MAG_OP_MOD, "Element-wise modulo.");
+    bind_binary_full_named(cls, pow, pow, pow, MAG_OP_POW, "Element-wise exponentiation.");
+    bind_binary_full_named(cls, truediv, div, truediv, MAG_OP_DIV, "Element-wise true division.");
+    bind_binary_full_named(cls, floordiv, floordiv, floordiv, MAG_OP_FLOORDIV, "Element-wise floor division.");
+    bind_binary_full_named(cls, and, and, logical_and, MAG_OP_AND, "Element-wise logical AND.");
+    bind_binary_full_named(cls, or, or, logical_or, MAG_OP_OR, "Element-wise logical OR.");
+    bind_binary_full_named(cls, xor, xor, logical_xor, MAG_OP_XOR, "Element-wise logical XOR.");
+    bind_binary_full_named(cls, lshift, shl, lshift, MAG_OP_SHL, "Element-wise left shift.");
+    bind_binary_full_named(cls, rshift, shr, rshift, MAG_OP_SHR, "Element-wise right shift.");
+    bind_compare(cls, lt, lt, lt, MAG_OP_LT, "Element-wise less than. Returns boolean tensor.");
+    bind_compare(cls, le, le, le, MAG_OP_LE, "Element-wise less or equal.");
+    bind_compare(cls, gt, gt, gt, MAG_OP_GT, "Element-wise greater than.");
+    bind_compare(cls, ge, ge, ge, MAG_OP_GE, "Element-wise greater or equal.");
+    bind_compare(cls, eq, eq, eq, MAG_OP_EQ, "Element-wise equality.");
+    bind_compare(cls, ne, ne, ne, MAG_OP_NE, "Element-wise not equal.");
 
     auto matmul_impl = [](const tensor_wrapper &self, nb::handle rhs) -> tensor_wrapper {
       std::lock_guard lock{get_global_mutex()};

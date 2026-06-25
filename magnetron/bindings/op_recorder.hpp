@@ -20,6 +20,7 @@
 #include <functional>
 #include <filesystem>
 #include <mutex>
+#include <vector>
 
 #include "prelude.hpp"
 
@@ -40,8 +41,11 @@ namespace mag::bindings {
     void dump_csv(const std::filesystem::path &base_name = "magnetron_profile");
 
     void profile(mag_opcode_t opcode, std::function<void()> &&f, std::initializer_list<mag_tensor_t *> tensors);
+    void profile(mag_opcode_t opcode, std::function<void()> &&f, std::vector<mag_tensor_t *> const& tensors);
 
   private:
+    static void do_profile(op_recorder &rec, mag_opcode_t opcode, std::function<void()> &&f, mag_tensor_t * const *data, size_t count);
+
     void record_op_entry(
       std::string &&opcode,
       std::string &&shape,

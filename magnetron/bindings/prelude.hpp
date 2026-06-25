@@ -40,7 +40,7 @@ namespace mag::bindings {
   [[nodiscard]] extern std::string get_default_device();
 
   // Set to 1 to enable record and profile all executed operators and export them to a CSV
-  constexpr bool enable_op_recorder = false;
+  constexpr bool enable_op_recorder = true;
 
   struct dtype_wrapper final {
     mag_dtype_t v;
