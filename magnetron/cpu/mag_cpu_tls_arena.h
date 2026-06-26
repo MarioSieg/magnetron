@@ -30,7 +30,7 @@ typedef struct mag_scratch_arena_t {
 
 #define MAG_SCRATCH_ARENA_INIT(keep) { NULL, 0, 0, 0, (keep) }
 
-extern void mag_scratch_arena_reserve(mag_scratch_arena_t *arena, size_t nb);
+extern bool mag_scratch_arena_reserve(mag_scratch_arena_t *arena, size_t nb); /* Returns false on OOM. */
 extern size_t mag_scratch_arena_mark(mag_scratch_arena_t *arena);
 extern void mag_scratch_arena_reset(mag_scratch_arena_t *arena, size_t mark);
 extern void *mag_scratch_arena_alloc(mag_scratch_arena_t *arena, size_t nb);

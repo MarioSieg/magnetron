@@ -35,7 +35,7 @@ mag_static_assert(MAG_EIN_STR_BUF_LEN >= MAG_EIN_NUM_LETTERS+sizeof("...")-1+1);
 static int mag_ein_label_id(char c) {
   if (c >= 'a' && c <= 'z') return c - 'a';
   if (c >= 'A' && c <= 'Z') return 26 + (c - 'A');
-  mag_panic("ein: invalid label character '%c'.", c);
+  mag_assert(false, "ein: invalid label character '%c'.", c);
   return -1;
 }
 
@@ -1183,6 +1183,8 @@ mag_status_t mag_einsum_eval(mag_error_t *err, mag_tensor_t **out_result, const 
   if (mag_unlikely(!(num_args > 0)))
     return mag_set_error(err, MAG_STATUS_ERR_EINSUM, "ein: requires at least one input tensor.");
   char *cloned = mag_strdup(equation);
+  if (mag_unlikely(!cloned))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "ein: failed to allocate %zu bytes for equation string.", len+1);
   mag_ein_remove_spaces(cloned);
   len = strlen(cloned);
   if (mag_unlikely(!(len > 0)))

@@ -60,7 +60,8 @@ static mag_status_t mag_mmap_owner_dtor(void *self) {
 }
 
 static mag_mmap_owner_t *mag_mmap_owner_open(const char *path) {
-  mag_mmap_owner_t *o = (*mag_alloc)(NULL, sizeof(*o), 0);
+  mag_mmap_owner_t *o = (*mag_try_alloc)(NULL, sizeof(*o), 0);
+  if (mag_unlikely(!o)) return NULL;
   memset(o, 0, sizeof(*o));
   if (!mag_map_file(&o->file, path, 0, MAG_MAP_READ)) {
     (*mag_alloc)(o, 0, 0);
@@ -207,7 +208,10 @@ static mag_status_t mag_stream_rstr(mag_error_t *err, mag_mem_stream_t *stream, 
   if (mag_unlikely(!((size_t)(stream->end - stream->pos) >= len))) {
     return mag_set_error(err, MAG_STATUS_ERR_STREAM_IO_ERROR, "snapshot: stream has insufficient data to read the string.");
   }
-  uint8_t *str = (*mag_alloc)(NULL, len+1, 0);
+  uint8_t *str = (*mag_try_alloc)(NULL, len+1, 0);
+  if (mag_unlikely(!str)) {
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "snapshot: failed to allocate %u bytes for string.", len+1);
+  }
   memcpy(str, stream->pos, len);
   str[len] = '\0';
   if (mag_unlikely(!mag_utf8_validate(str, len))) {
@@ -453,9 +457,9 @@ typedef struct mag_string_pool_t {
   size_t cap;
 } mag_string_pool_t;
 
-static void mag_pool_init(mag_string_pool_t *pool) {
+static bool mag_pool_init(mag_string_pool_t *pool) {
   memset(pool, 0, sizeof(*pool));
-  mag_map_init(&pool->map, 256, true); /* TODO: we don't want this */
+  return mag_map_init(&pool->map, 256, true); /* TODO: we don't want this */
 }
 
 static void mag_pool_free(mag_string_pool_t *pool) {
@@ -477,10 +481,12 @@ static bool mag_pool_intern(mag_string_pool_t *pool, const uint8_t *buf, size_t 
   if (pool->len > pool->cap) {
     size_t cap = pool->cap ? pool->cap : 32;
     while (cap < pool->len) cap <<= 1;
-    pool->records = (*mag_alloc)(pool->records, cap*sizeof(*pool->records), 0);
+    void *nr = (*mag_try_alloc)(pool->records, cap*sizeof(*pool->records), 0);
+    if (mag_unlikely(!nr)) return false;
+    pool->records = nr;
     pool->cap = cap;
   }
-  mag_map_insert_if_absent(&pool->map, buf, len, (void *)(uintptr_t)(1+*out_id)/*🐱*/); /* bias by 1 to distinguish from NULL */
+  if (mag_unlikely(!mag_map_insert_if_absent(&pool->map, buf, len, (void *)(uintptr_t)(1+*out_id)/*🐱*/))) return false; /* bias by 1 to distinguish from NULL */
   const uint8_t *owned = mag_map_lookup_key_ptr(&pool->map, buf, len);
   if (mag_unlikely(!owned)) return false;
   mag_pool_record_t *rec = pool->records+*out_id;
@@ -524,7 +530,8 @@ static mag_status_t mag_pool_serialize(mag_error_t *err, const mag_string_pool_t
 
 static mag_status_t mag_pool_deserialize(mag_error_t *err, mag_string_pool_t *pool, mag_mem_stream_t *stream) {
   mag_pool_free(pool);
-  mag_pool_init(pool);
+  if (mag_unlikely(!mag_pool_init(pool)))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "snapshot: failed to allocate string pool during deserialization.");
   mag_assert2(pool->len == 0); /*Pool must be fresh */
   mag_status_t status = MAG_STATUS_OK;
   uint32_t *offs = NULL;
@@ -535,7 +542,11 @@ static mag_status_t mag_pool_deserialize(mag_error_t *err, mag_string_pool_t *po
   if (mag_unlikely(!(num_offsets <= MAG_SNAP_MAX_OFFSETS))) {
     return mag_set_error(err, MAG_STATUS_ERR_STREAM_IO_ERROR, "snapshot: string pool contains %u entries (maximum is %u).", count, MAG_SNAP_MAX_OFFSETS-1);
   }
-  offs = (*mag_alloc)(NULL, num_offsets*sizeof(*offs), 0);
+  offs = (*mag_try_alloc)(NULL, num_offsets*sizeof(*offs), 0);
+  if (mag_unlikely(!offs)) {
+    status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "snapshot: failed to allocate string pool offset table (%zu entries).", num_offsets);
+    goto cleanup;
+  }
   for (size_t i=0; i < num_offsets; ++i) {     /* Read in offsets */
     status = mag_stream_ru32_le(err, stream, offs+i);
     if (mag_unlikely(status != MAG_STATUS_OK)) {
@@ -598,7 +609,7 @@ static mag_status_t mag_pool_deserialize(mag_error_t *err, mag_string_pool_t *po
 cleanup:
   (*mag_alloc)(offs, 0, 0);
   mag_pool_free(pool);
-  mag_pool_init(pool);
+  (void)mag_pool_init(pool); /* Best-effort reset on an already-failing path; a zeroed pool is safe to free later. */
   return status;
 }
 
@@ -666,11 +677,21 @@ static size_t mag_snap_compute_size(mag_snapshot_t *snap) {
 }
 
 mag_status_t mag_snapshot_new(mag_error_t *err, mag_snapshot_t **out_snap, mag_context_t *ctx) {
-  mag_snapshot_t *snap = (*mag_alloc)(NULL, sizeof(*snap), 0);
+  mag_snapshot_t *snap = (*mag_try_alloc)(NULL, sizeof(*snap), 0);
+  if (mag_unlikely(!snap)) {
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "snapshot: failed to allocate snapshot object.");
+  }
   memset(snap, 0, sizeof(*snap));
   snap->ctx = ctx;
-  mag_pool_init(&snap->str_pool);
-  mag_map_init(&snap->tensor_map, MAG_SNAPSHOT_META_MAP_DEFAULT_CAP, true);
+  if (mag_unlikely(!mag_pool_init(&snap->str_pool))) {
+    (*mag_alloc)(snap, 0, 0);
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "snapshot: failed to allocate the string pool.");
+  }
+  if (mag_unlikely(!mag_map_init(&snap->tensor_map, MAG_SNAPSHOT_META_MAP_DEFAULT_CAP, true))) {
+    mag_pool_free(&snap->str_pool);
+    (*mag_alloc)(snap, 0, 0);
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "snapshot: failed to allocate the tensor map.");
+  }
   *out_snap = snap;
   return MAG_STATUS_OK;
 }
@@ -692,7 +713,7 @@ static bool mag_snapshot_insert_tensor_by_id(mag_snapshot_t *snap, uint32_t key_
   if (mag_unlikely(!(snap && tensor))) return false;
   if (mag_unlikely(!(key_id < snap->str_pool.len))) return false;
   if (mag_unlikely(mag_map_lookup(&snap->tensor_map, &key_id, sizeof(key_id)))) return false; /* Already exists */
-  mag_map_insert_if_absent(&snap->tensor_map, &key_id, sizeof(key_id), tensor);
+  if (mag_unlikely(!mag_map_insert_if_absent(&snap->tensor_map, &key_id, sizeof(key_id), tensor))) return false;
   mag_tensor_incref(tensor);
   return true;
 }
@@ -776,7 +797,11 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   /* TODO: metadata */
 
   size_t nt = header.tensor_header_count;
-  stable = (*mag_alloc)(NULL, nt*sizeof(*stable), 0);
+  stable = (*mag_try_alloc)(NULL, nt*sizeof(*stable), 0);
+  if (mag_unlikely(nt && !stable)) {
+    status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "snapshot: failed to allocate tensor descriptor table for %zu tensors in '%s'.", nt, filename);
+    goto cleanup;
+  }
 
   status = mag_stream_ru32_le(err, stream, &section_marker);
   if (mag_unlikely(status != MAG_STATUS_OK)) {
@@ -833,7 +858,10 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
       for (uint8_t j=0; j < desc->rank && j < sizeof(shape)/sizeof(*shape); ++j) shape[j] = (int64_t)desc->shape[j];
       size_t nb = numel*elsize;
       const uint8_t *blob = NULL;
-      mag_assert2(((int64_t)delta-(int64_t)offset)>=0);
+      if (mag_unlikely((int64_t)delta-(int64_t)offset < 0)) {
+        status = mag_set_error(err, MAG_STATUS_ERR_SERIALIZATION_ERROR, "snapshot: tensor %zu data offset %zu in '%s' is before the current stream position %zu (offsets not monotonic).", i, (size_t)delta, filename, (size_t)offset);
+        goto cleanup;
+      }
       uint64_t pad = delta-offset;
       ignored = NULL;
       status = mag_stream_rbytes_view(err, stream, &ignored, pad);
@@ -943,7 +971,11 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
     goto cleanup;
   }
 
-  stable = (*mag_alloc)(NULL, snap->tensor_map.nitems*sizeof(*stable), 0);
+  stable = (*mag_try_alloc)(NULL, snap->tensor_map.nitems*sizeof(*stable), 0);
+  if (mag_unlikely(snap->tensor_map.nitems && !stable)) {
+    status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "snapshot: failed to allocate tensor descriptor table for %zu tensors in '%s'.", snap->tensor_map.nitems, filename);
+    goto cleanup;
+  }
   uint64_t offs = 0;
   size_t iter = 0, klen = 0; /* Write tensor headers */
   void *key = NULL, *val = NULL;
@@ -1096,7 +1128,7 @@ const char **mag_snapshot_get_tensor_keys(mag_snapshot_t *snap, size_t *out_num_
   if (!snap) return NULL;
   size_t n = snap->tensor_map.nitems;
   if (mag_unlikely(!n)) return NULL;
-  char **keys = (*mag_alloc)(NULL, n*sizeof(*keys), 0);
+  char **keys = (*mag_try_alloc)(NULL, n*sizeof(*keys), 0);
   if (mag_unlikely(!keys)) return NULL;
   size_t iter = 0, klen = 0, idx = 0;
   void *keyp = NULL, *valp = NULL;
@@ -1106,7 +1138,7 @@ const char **mag_snapshot_get_tensor_keys(mag_snapshot_t *snap, size_t *out_num_
     if (mag_unlikely(key_id >= snap->str_pool.len)) goto fail;
     const mag_pool_record_t *rec = snap->str_pool.records + key_id;
     if (!rec->ptr || rec->len == 0) goto fail;
-    char *name = (*mag_alloc)(NULL, (size_t)rec->len + 1, 0);
+    char *name = (*mag_try_alloc)(NULL, (size_t)rec->len + 1, 0);
     if (mag_unlikely(!name)) goto fail;
     memcpy(name, rec->ptr, rec->len);
     name[rec->len] = '\0';

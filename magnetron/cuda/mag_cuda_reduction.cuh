@@ -16,13 +16,13 @@
 namespace mag {
   constexpr int REDUCTION_BLOCK_SIZE = 256;
 
-  extern void reduce_op_mean(const mag_command_t &cmd);
-  extern void reduce_op_minima(const mag_command_t &cmd);
-  extern void reduce_op_maxima(const mag_command_t &cmd);
-  extern void reduce_op_sum(const mag_command_t &cmd);
-  extern void reduce_op_prod(const mag_command_t &cmd);
-  extern void reduce_op_all(const mag_command_t &cmd);
-  extern void reduce_op_any(const mag_command_t &cmd);
-  extern void reduce_op_argmin(const mag_command_t &cmd);
-  extern void reduce_op_argmax(const mag_command_t &cmd);
+  extern mag_status_t reduce_op_mean(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t reduce_op_minima(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t reduce_op_maxima(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t reduce_op_sum(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t reduce_op_prod(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t reduce_op_all(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t reduce_op_any(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t reduce_op_argmin(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t reduce_op_argmax(mag_error_t *err, const mag_command_t &cmd);
 }

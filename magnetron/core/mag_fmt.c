@@ -884,7 +884,7 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
     bool use_ell = head_e + tail_e < last_dim;
     int64_t tails_e = use_ell ? tail_e : 0;
     ncol = (size_t)(head_e + tails_e + (use_ell ? 1 : 0));
-    col_widths = ncol ? (*mag_alloc)(NULL, ncol*sizeof(*col_widths), 0) : NULL;
+    col_widths = ncol ? (*mag_try_alloc)(NULL, ncol*sizeof(*col_widths), 0) : NULL;
     if (col_widths) memset(col_widths, 0, ncol*sizeof(*col_widths));
   }
   mag_tensor_format_context_t fmt = {

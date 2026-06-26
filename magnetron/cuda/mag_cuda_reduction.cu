@@ -192,7 +192,7 @@ namespace mag {
   }
 
   template <template <typename, typename, typename> typename op_t>
-  static void impl_reduce_op_fp(const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_fp(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->dtype == x->dtype);
@@ -201,12 +201,13 @@ namespace mag {
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
-      default: mag_assert(false, "Unsupported dtype for floating reduction op");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in floating reduction op: %s", mag_type_trait(x->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <template <typename, typename, typename> typename op_t>
-  static void impl_reduce_op_sumprod(const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_sumprod(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     switch (x->dtype) {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
@@ -222,12 +223,13 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t,  int64_t,  int64_t>>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint64_t, uint64_t>>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t,  int64_t,  int64_t>>(cmd); break;
-      default: mag_assert(false, "Unsupported dtype for sum/prod reduction op");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in sum/prod reduction op: %s", mag_type_trait(x->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <template <typename, typename, typename> typename op_t>
-  static void impl_reduce_op_extrema(const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_extrema(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->dtype == x->dtype);
@@ -245,12 +247,13 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t, int32_t, int32_t>>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint64_t, uint64_t>>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t, int64_t, int64_t>>(cmd); break;
-      default: mag_assert(false, "Unsupported dtype for min/max reduction op");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in min/max reduction op: %s", mag_type_trait(x->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <template <typename, typename, typename> typename op_t>
-  static void impl_reduce_op_logical(const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_logical(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->dtype == MAG_DTYPE_BOOLEAN);
@@ -268,17 +271,18 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t, uint8_t, uint8_t>>(cmd); break;
-      default: mag_assert(false, "Unsupported dtype for logical reduction op");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in logical reduction op: %s", mag_type_trait(x->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void reduce_op_mean(const mag_command_t &cmd) { impl_reduce_op_fp<op_mean>(cmd); }
-  void reduce_op_sum (const mag_command_t &cmd) { impl_reduce_op_sumprod<op_sum>(cmd); }
-  void reduce_op_prod(const mag_command_t &cmd) { impl_reduce_op_sumprod<op_prod>(cmd); }
-  void reduce_op_minima (const mag_command_t &cmd) { impl_reduce_op_extrema<op_min>(cmd); }
-  void reduce_op_maxima (const mag_command_t &cmd) { impl_reduce_op_extrema<op_max>(cmd); }
-  void reduce_op_all (const mag_command_t &cmd) { impl_reduce_op_logical<op_all>(cmd); }
-  void reduce_op_any (const mag_command_t &cmd) { impl_reduce_op_logical<op_any>(cmd); }
+  mag_status_t reduce_op_mean(mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_fp<op_mean>(err, cmd); }
+  mag_status_t reduce_op_sum (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_sumprod<op_sum>(err, cmd); }
+  mag_status_t reduce_op_prod(mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_sumprod<op_prod>(err, cmd); }
+  mag_status_t reduce_op_minima (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_extrema<op_min>(err, cmd); }
+  mag_status_t reduce_op_maxima (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_extrema<op_max>(err, cmd); }
+  mag_status_t reduce_op_all (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_logical<op_all>(err, cmd); }
+  mag_status_t reduce_op_any (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_logical<op_any>(err, cmd); }
 
   struct arg_acc_f32 {
     float val;
@@ -459,7 +463,7 @@ namespace mag {
   }
 
   template <bool is_max>
-  static void impl_reduce_op_arg_fp(const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_arg_fp(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->dtype == MAG_DTYPE_INT64);
@@ -468,12 +472,13 @@ namespace mag {
       case MAG_DTYPE_FLOAT16: launch_reduce_arg_op<half, is_max>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_arg_op<__nv_bfloat16, is_max>(cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_arg_op<__nv_fp8_e4m3, is_max>(cmd); break;
-      default: mag_assert(false, "Unsupported dtype for argmin/argmax fp");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in argmin/argmax fp reduction op: %s", mag_type_trait(x->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <bool is_max>
-  static void impl_reduce_op_arg_int(const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_arg_int(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->dtype == MAG_DTYPE_INT64);
@@ -486,23 +491,24 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_arg_op_int<int32_t, is_max>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_arg_op_int<uint64_t, is_max>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_arg_op_int<int64_t, is_max>(cmd); break;
-      default: mag_assert(false, "Unsupported dtype for argmin/argmax int");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in argmin/argmax int reduction op: %s", mag_type_trait(x->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void reduce_op_argmin(const mag_command_t &cmd) {
+  mag_status_t reduce_op_argmin(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     if (mag_tensor_is_floating_point_typed(x))
-      impl_reduce_op_arg_fp<false>(cmd);
+      return impl_reduce_op_arg_fp<false>(err, cmd);
     else
-      impl_reduce_op_arg_int<false>(cmd);
+      return impl_reduce_op_arg_int<false>(err, cmd);
   }
 
-  void reduce_op_argmax(const mag_command_t &cmd) {
+  mag_status_t reduce_op_argmax(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     if (mag_tensor_is_floating_point_typed(x))
-      impl_reduce_op_arg_fp<true>(cmd);
+      return impl_reduce_op_arg_fp<true>(err, cmd);
     else
-      impl_reduce_op_arg_int<true>(cmd);
+      return impl_reduce_op_arg_int<true>(err, cmd);
   }
 }

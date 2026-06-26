@@ -79,6 +79,7 @@ extern MAG_EXPORT mag_log_level_t mag_log_level(void); /* Get current global log
     _(MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "Missing compute kernel for requested operation") \
     _(MAG_STATUS_ERR_KERNEL_FAILURE, "Error while executing compute kernel") \
     _(MAG_STATUS_ERR_EINSUM, "Error while executing einsum operation") \
+    _(MAG_STATUS_ERR_FILE_NOT_FOUND, "File not found") \
     _(MAG_STATUS_ERR_UNKNOWN, "Unknown error")
 
 typedef enum mag_status_t {
@@ -210,14 +211,14 @@ extern MAG_EXPORT bool mag_type_category_is_numeric(mag_dtype_t type);
 */
 typedef struct mag_context_t mag_context_t;
 
-extern MAG_EXPORT mag_context_t *mag_ctx_create(void);                                                                  /* Create context with default config, and only specify device type. */
+extern MAG_EXPORT mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx);                               /* Create context with default config, and only specify device type. */
 extern MAG_EXPORT bool mag_ctx_is_device_available(mag_context_t *ctx, mag_device_id_t id);                             /* Check if a device is available in the context. */
 extern MAG_EXPORT void mag_ctx_grad_recorder_start(mag_context_t *ctx);                                                 /* Start gradient recording */
 extern MAG_EXPORT void mag_ctx_grad_recorder_stop(mag_context_t *ctx);                                                  /* Stop gradient recording */
 extern MAG_EXPORT bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx);                                      /* Check if gradient recording is running */
 extern MAG_EXPORT void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed);                                          /* Manually seed the PRNG. */
-extern MAG_EXPORT mag_dtype_t mag_ctx_default_dtype(mag_context_t *ctx);                                             /* Get default floating point dtype for the context. This is used by factory functions when the dtype is not specified. */
-extern MAG_EXPORT bool mag_ctx_set_default_dtype(mag_context_t *ctx, mag_dtype_t type);                              /* Set default floating point dtype for the context. This is used by factory functions when the dtype is not specified. Must be a floating point type. */
+extern MAG_EXPORT mag_dtype_t mag_ctx_default_dtype(mag_context_t *ctx);                                                /* Get default floating point dtype for the context. This is used by factory functions when the dtype is not specified. */
+extern MAG_EXPORT bool mag_ctx_set_default_dtype(mag_context_t *ctx, mag_dtype_t type);                                 /* Set default floating point dtype for the context. This is used by factory functions when the dtype is not specified. Must be a floating point type. */
 extern MAG_EXPORT void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection);                               /* Destroy context and free memory */
 
 typedef struct mag_tensor_t mag_tensor_t;

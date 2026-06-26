@@ -29,7 +29,7 @@ typedef struct mag_topo_set_t {
 
 extern void mag_topo_set_init(mag_topo_set_t *ts);
 extern void mag_topo_set_free(mag_topo_set_t *ts);
-extern void mag_topo_sort(mag_tensor_t *root, mag_topo_set_t *out_sorted);
+extern mag_status_t mag_topo_sort(mag_error_t *err, mag_tensor_t *root, mag_topo_set_t *out_sorted);
 
 #ifdef __cplusplus
 }

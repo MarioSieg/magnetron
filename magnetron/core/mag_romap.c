@@ -27,7 +27,7 @@ static uint32_t mag_map_seed32(void) {
   return s ? s : 0x9e3779b9u;
 }
 
-static void mag_map_resize(mag_map_t *map, size_t newsize) {
+static bool mag_map_resize(mag_map_t *map, size_t newsize) {
   mag_assert2(newsize && !(newsize & (newsize-1)));
   mag_assert2(newsize >= map->nitems);
   mag_bucket_t *oldb = map->buckets;
@@ -37,7 +37,8 @@ static void mag_map_resize(mag_map_t *map, size_t newsize) {
     memset(&map->init_bucket, 0, sizeof(map->init_bucket));
     newb = &map->init_bucket;
   } else {
-    newb = (*mag_alloc)(NULL, newsize*sizeof(*newb), 0);
+    newb = (*mag_try_alloc)(NULL, newsize*sizeof(*newb), 0);
+    if (mag_unlikely(!newb)) return false;
     memset(newb, 0, newsize*sizeof(*newb));
   }
   map->buckets = newb;
@@ -67,15 +68,16 @@ static void mag_map_resize(mag_map_t *map, size_t newsize) {
     }
   }
   if (oldb && oldb != &map->init_bucket) (*mag_alloc)(oldb, 0, 0);
+  return true;
 }
 
-void mag_map_init(mag_map_t *map, size_t cap, bool clone_keys) {
+bool mag_map_init(mag_map_t *map, size_t cap, bool clone_keys) {
   mag_assert2(cap >= 1 && !(cap & (cap-1)));
   memset(map, 0, sizeof(*map));
   map->clone_keys = clone_keys;
   map->minsize = cap;
   map->hash_seed = mag_map_seed32();
-  mag_map_resize(map, cap);
+  return mag_map_resize(map, cap);
 }
 
 void *mag_map_lookup(mag_map_t *map, const void *key, size_t len) {
@@ -110,16 +112,17 @@ const void *mag_map_lookup_key_ptr(mag_map_t *map, const void *key, size_t len) 
   }
 }
 
-void *mag_map_insert_if_absent(mag_map_t *map, const void *key, size_t len, void *val) {
+bool mag_map_insert_if_absent(mag_map_t *map, const void *key, size_t len, void *val) {
   mag_assert2(key && len && len <= UINT32_MAX);
   if (map->nitems * 100 >= map->size * 85)
-    mag_map_resize(map, map->size<<1);
+    if (mag_unlikely(!mag_map_resize(map, map->size<<1))) return false;
   uint64_t hash = mag_murmur3_128_reduced_64(key, len, map->hash_seed);
   size_t mask = map->size-1;
   size_t idx = hash & mask;
   mag_bucket_t entry;
   if (map->clone_keys) {
-    entry.key = (*mag_alloc)(NULL, len, 0);
+    entry.key = (*mag_try_alloc)(NULL, len, 0);
+    if (mag_unlikely(!entry.key)) return false;
     memcpy(entry.key, key, len);
   } else {
     entry.key = (void *)(uintptr_t)key;
@@ -133,11 +136,11 @@ void *mag_map_insert_if_absent(mag_map_t *map, const void *key, size_t len, void
     if (!b->key) {
       *b = entry;
       ++map->nitems;
-      return val;
+      return true;
     }
     if (b->hash == hash && b->len  == len && memcmp(b->key, key, len) == 0) {
       if (map->clone_keys) (*mag_alloc)(entry.key, 0, 0);
-      return b->val;
+      return true;
     }
     if (entry.psl > b->psl) {
       mag_bucket_t tmp = *b;

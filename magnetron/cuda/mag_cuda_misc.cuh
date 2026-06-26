@@ -14,23 +14,23 @@
 #include "mag_cuda.cuh"
 
 namespace mag {
-  extern void misc_op_one_hot(const mag_command_t &cmd);
-  extern void misc_op_topk(const mag_command_t &cmd);
-  extern void misc_op_tril(const mag_command_t &cmd);
-  extern void misc_op_triu(const mag_command_t &cmd);
-  extern void misc_op_multinomial(const mag_command_t &cmd);
-  extern void misc_op_cat(const mag_command_t &cmd);
-  extern void misc_op_pad(const mag_command_t &cmd);
-  extern void misc_op_cusum(const mag_command_t &cmd);
-  extern void misc_op_cuprod(const mag_command_t &cmd);
-  extern void misc_op_cumax(const mag_command_t &cmd);
-  extern void misc_op_cumin(const mag_command_t &cmd);
-  extern void misc_op_repeat(const mag_command_t &cmd);
-  extern void misc_op_repeat_interleave(const mag_command_t &cmd);
-  extern void misc_op_index_add(const mag_command_t &cmd);
-  extern void misc_op_matmul(const mag_command_t &cmd);
-  extern void misc_op_repeat_back(const mag_command_t &cmd);
-  extern void misc_op_gather(const mag_command_t &cmd);
-  extern void misc_op_embedding(const mag_command_t &cmd);
-  extern void misc_op_where(const mag_command_t &cmd);
+  extern mag_status_t misc_op_one_hot(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_topk(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_tril(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_triu(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_multinomial(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_cat(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_pad(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_cusum(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_cuprod(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_cumax(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_cumin(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_repeat(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_repeat_interleave(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_index_add(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_repeat_back(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_gather(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_embedding(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_where(mag_error_t *err, const mag_command_t &cmd);
 }

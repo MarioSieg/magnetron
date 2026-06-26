@@ -444,6 +444,8 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
       } \
       T *best_vals = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_vals)); \
       int64_t *best_idx = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_idx)); \
+      if (mag_unlikely(!best_vals || !best_idx)) \
+        return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "topk: failed to allocate scratch buffer for k=%" PRIi64 ".", (int64_t)k); \
       int64_t filled = 0; \
       \
       for (int64_t p=0; p < dim_size; ++p) { \
@@ -705,6 +707,8 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
       } \
       size_t mark = mag_scratch_arena_mark(&mag_tls_arena); \
       mag_discrete_sample_pair_t *arr = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)nnz*sizeof(*arr)); \
+      if (mag_unlikely(!arr)) \
+        return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "multinomial: failed to allocate scratch buffer for %" PRIi64 " entries.", (int64_t)nnz); \
       int64_t m=0; \
       for (int64_t i=0; i < K; ++i) { \
         float wi = CVT(w[i]); \

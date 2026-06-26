@@ -31,6 +31,7 @@ static mag_status_t mag_au_state_dtor(void *p) {
 mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t *ctx) {
   if (*au_state) return *au_state;
   *au_state = mag_slab_alloc(&ctx->au_state_slab);
+  if (mag_unlikely(!*au_state)) return NULL;
   **au_state = (mag_au_state_t) {
     .ctx = ctx,
     .op = MAG_OP_NOP,
@@ -61,7 +62,10 @@ mag_status_t mag_tensor_set_requires_grad(mag_error_t *err, mag_tensor_t *tensor
     if (mag_unlikely(!mag_tensor_is_floating_point_typed(tensor)))
       return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "autograd: gradient tracking requires a floating-point dtype, but tensor has dtype %s.", mag_type_trait(tensor->dtype)->name);
     tensor->flags |= MAG_TFLAG_REQUIRES_GRAD;
-    mag_au_state_lazy_alloc(&tensor->au_state, tensor->ctx);
+    if (mag_unlikely(!mag_au_state_lazy_alloc(&tensor->au_state, tensor->ctx))) {
+      tensor->flags &= ~MAG_TFLAG_REQUIRES_GRAD;
+      return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "autograd: failed to allocate autodiff state.");
+    }
     return MAG_STATUS_OK;
   }
   tensor->flags &= ~MAG_TFLAG_REQUIRES_GRAD;
@@ -86,7 +90,9 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
   mag_ctx_grad_recorder_stop(root->ctx);
   mag_topo_set_init(&post_order);
   topo_init = true;
-  mag_topo_sort(root, &post_order);
+  stat = mag_topo_sort(err, root, &post_order);
+  if (mag_unlikely(mag_iserr(stat)))
+    goto cleanup;
   if (mag_unlikely(!post_order.size))
     goto cleanup;
   for (size_t i=0, j=post_order.size-1; i < j; ++i, --j)

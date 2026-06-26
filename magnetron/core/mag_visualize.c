@@ -17,7 +17,16 @@
 MAG_COLDPROC void mag_tensor_visualize_backprop_graph(mag_tensor_t *tensor, const char *file) {
   mag_topo_set_t post_order;
   mag_topo_set_init(&post_order);
-  mag_topo_sort(tensor, &post_order);
+  mag_error_t verr;
+  if (mag_unlikely(mag_iserr(mag_topo_sort(&verr, tensor, &post_order)))) {
+    mag_log_error("visualize: failed to build backward graph: %s", verr.message);
+    mag_topo_set_free(&post_order);
+    return;
+  }
+  if (mag_unlikely(!post_order.size)) {
+    mag_topo_set_free(&post_order);
+    return;
+  }
   for (size_t i=0, j=post_order.size-1; i < j; ++i, --j) {
     mag_swap(mag_tensor_t *, post_order.data[i], post_order.data[j]);
   }

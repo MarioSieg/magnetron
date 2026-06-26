@@ -13,16 +13,15 @@
 #include "mag_alloc.h"
 #include "mag_tensor.h"
 
-/* Include STB libraries and override their allocator with ours. */
-#define STBI_MALLOC(sz) ((*mag_alloc)(NULL, (sz), 0))
-#define STBI_FREE(ptr) ((*mag_alloc)((ptr), 0, 0))
-#define STBI_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz), 0))
-#define STBIW_MALLOC(sz) ((*mag_alloc)(NULL, (sz), 0))
-#define STBIW_FREE(ptr) ((*mag_alloc)((ptr), 0, 0))
-#define STBIW_REALLOC(ptr, sz) ((*mag_alloc)((ptr), (sz), 0))
-#define STBIR_MALLOC(sz, usr) ((*mag_alloc)(NULL, (sz), 0))
-#define STBIR_FREE(ptr, usr) ((*mag_alloc)((ptr), 0, 0))
-#define STBIR_REALLOC(ptr, sz, usr) ((*mag_alloc)((ptr), (sz), 0))
+#define STBI_MALLOC(sz) ((*mag_try_alloc)(NULL, (sz), 0))
+#define STBI_FREE(ptr) ((*mag_try_alloc)((ptr), 0, 0))
+#define STBI_REALLOC(ptr, sz) ((*mag_try_alloc)((ptr), (sz), 0))
+#define STBIW_MALLOC(sz) ((*mag_try_alloc)(NULL, (sz), 0))
+#define STBIW_FREE(ptr) ((*mag_try_alloc)((ptr), 0, 0))
+#define STBIW_REALLOC(ptr, sz) ((*mag_try_alloc)((ptr), (sz), 0))
+#define STBIR_MALLOC(sz, usr) ((*mag_try_alloc)(NULL, (sz), 0))
+#define STBIR_FREE(ptr, usr) ((*mag_try_alloc)((ptr), 0, 0))
+#define STBIR_REALLOC(ptr, sz, usr) ((*mag_try_alloc)((ptr), (sz), 0))
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
@@ -49,7 +48,7 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   pixels = stbi_load(file, &w, &h, &cf, c);
   if (mag_unlikely(!pixels || w <= 0 || h <= 0 || c <= 0)) {
     if (pixels) stbi_image_free(pixels);
-    return MAG_STATUS_ERR_IMAGE_ERROR;
+    return mag_set_error(err, MAG_STATUS_ERR_IMAGE_ERROR, "load_image: failed to decode image '%s': %s.", file, stbi_failure_reason() ? stbi_failure_reason() : "unsupported or corrupt image");
   }
 
   uint32_t target_w = resize_width > 0 ? resize_width : (uint32_t)w;
@@ -59,7 +58,7 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
     stbi_uc *resized = stbir_resize_uint8_srgb(pixels, w, h, 0, NULL, (int)target_w, (int)target_h, 0, layout);
     if (mag_unlikely(!resized)) {
       stbi_image_free(pixels);
-      return MAG_STATUS_ERR_IMAGE_ERROR;
+      return mag_set_error(err, MAG_STATUS_ERR_IMAGE_ERROR, "load_image: failed to resize image '%s' to %ux%u.", file, target_w, target_h);
     }
     stbi_image_free(pixels);
     pixels = resized;
@@ -135,7 +134,11 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
   int64_t w = contig->coords.shape[2];
 
   const uint8_t *src = (const uint8_t *)mag_tensor_data_ptr(contig);
-  pixels = (*mag_alloc)(NULL, w*h*c, 0);
+  pixels = (*mag_try_alloc)(NULL, w*h*c, 0);
+  if (mag_unlikely(!pixels)) {
+    status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "save_image: failed to allocate %zu bytes for pixel buffer.", (size_t)(w*h*c));
+    goto cleanup;
+  }
 
   for (int64_t j=0; j < h; ++j)
     for (int64_t i=0; i < w; ++i)

@@ -83,9 +83,14 @@ static MAG_HOTPROC void *mag_worker_thread_entry(void *arg) {
 
 /* Create thread pool and allocate threads */
 mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_workers, const mag_kernel_registry_t *kernels, mag_numa_node_controller_t *numa, mag_thread_prio_t prio) { /* Create a thread pool */
-  mag_thread_pool_t *pool = (*mag_alloc)(NULL, sizeof(*pool), __alignof(mag_thread_pool_t));
+  mag_thread_pool_t *pool = (*mag_try_alloc)(NULL, sizeof(*pool), __alignof(mag_thread_pool_t));
+  if (mag_unlikely(!pool)) return NULL;
   memset(pool, 0, sizeof(*pool));
-  mag_worker_t *workers = (*mag_alloc)(NULL, num_workers*sizeof(*workers), __alignof(mag_worker_t));
+  mag_worker_t *workers = (*mag_try_alloc)(NULL, num_workers*sizeof(*workers), __alignof(mag_worker_t));
+  if (mag_unlikely(!workers)) {
+    (*mag_alloc)(pool, 0, __alignof(mag_thread_pool_t));
+    return NULL;
+  }
   memset(workers, 0, num_workers*sizeof(*workers));
   *pool = (mag_thread_pool_t) {
     .interrupt = false,
@@ -114,8 +119,14 @@ mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_w
       .is_async = ti != 0 /* Main thread is worker but without thread */
     };
     worker->payload.prng = &worker->prng;
-    if (worker->is_async)
-      mag_thread_create(&worker->thread, &mag_worker_thread_entry, workers+ti);
+    if (worker->is_async) {
+      if (mag_unlikely(!mag_thread_create(&worker->thread, &mag_worker_thread_entry, workers+ti))) {
+        worker->is_async = false;
+        pool->num_allocated_workers = ti;    /* Only workers [0, ti) may have live threads - reuse the proven teardown. */
+        mag_threadpool_destroy(pool);
+        return NULL;
+      }
+    }
   }
   while (mag_atomic32_load(&pool->num_workers_online, MAG_MO_SEQ_CST) != num_workers-1)  /* Wait for all workers to come online */
     mag_thread_yield();

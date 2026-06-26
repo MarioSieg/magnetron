@@ -16,7 +16,8 @@ void mag_sstream_init(mag_sstream_t *ss) {
   memset(ss, 0, sizeof(*ss));
   ss->cap = 0x200;
   ss->len = 0;
-  ss->buf = (*mag_alloc)(NULL, ss->cap, 0);
+  ss->buf = (*mag_try_alloc)(NULL, ss->cap, 0);
+  if (mag_unlikely(!ss->buf)) { ss->cap = 0; ss->oom = true; return; }
   *ss->buf = '\0';
 }
 
@@ -25,11 +26,17 @@ void mag_sstream_free(mag_sstream_t *ss) {
   memset(ss, 0, sizeof(*ss));
 }
 
-void mag_sstream_reserve_more(mag_sstream_t *ss, size_t extra) {
+bool mag_sstream_reserve_more(mag_sstream_t *ss, size_t extra) {
+  if (mag_unlikely(ss->oom)) return false;
   size_t want = ss->len+extra+1; /* +1 for terminator */
-  if (want <= ss->cap) return;
-  while (ss->cap < want) ss->cap <<= 1; /* geometric growth */
-  ss->buf = (*mag_alloc)(ss->buf, ss->cap, 0);
+  if (want <= ss->cap) return true;
+  size_t ncap = ss->cap ? ss->cap : 0x200;
+  while (ncap < want) ncap <<= 1; /* geometric growth */
+  char *grown = (*mag_try_alloc)(ss->buf, ncap, 0);
+  if (mag_unlikely(!grown)) { ss->oom = true; return false; }
+  ss->buf = grown;
+  ss->cap = ncap;
+  return true;
 }
 
 void mag_sstream_vappend(mag_sstream_t *ss, const char *fmt, va_list ap0) {
@@ -38,11 +45,7 @@ void mag_sstream_vappend(mag_sstream_t *ss, const char *fmt, va_list ap0) {
   int need = vsnprintf(NULL, 0, fmt, ap);
   va_end(ap);
   if (mag_unlikely(need < 0)) return;
-  size_t want = ss->len + (size_t)need+1; /* +1 for terminator */
-  if (want > ss->cap) {
-    while (ss->cap < want) ss->cap <<= 1; /* geometric growth */
-    ss->buf = (*mag_alloc)(ss->buf, ss->cap, 0);
-  }
+  if (mag_unlikely(!mag_sstream_reserve_more(ss, (size_t)need))) return;
   va_copy(ap, ap0);
   vsnprintf(ss->buf + ss->len, ss->cap - ss->len, fmt, ap);
   va_end(ap);
@@ -58,20 +61,20 @@ void mag_sstream_append(mag_sstream_t *ss, const char *fmt, ...) {
 
 void mag_sstream_append_strn(mag_sstream_t *ss, const char *str, size_t len) {
   if (mag_unlikely(!len)) return;
-  mag_sstream_reserve_more(ss, len);
+  if (mag_unlikely(!mag_sstream_reserve_more(ss, len))) return;
   memcpy(ss->buf + ss->len, str, len);
   ss->len += len;
   ss->buf[ss->len] = '\0';
 }
 
 void mag_sstream_putc(mag_sstream_t *ss, char c) {
-  mag_sstream_reserve_more(ss, 1);
+  if (mag_unlikely(!mag_sstream_reserve_more(ss, 1))) return;
   ss->buf[ss->len++] = c;
   ss->buf[ss->len] = '\0';
 }
 
 void mag_sstream_flushf(mag_sstream_t *ss, FILE *f) {
-  fputs(ss->buf, f);
+  if (ss->buf) fputs(ss->buf, f);
 }
 
 bool mag_sstream_flush(mag_sstream_t *ss, const char *file){

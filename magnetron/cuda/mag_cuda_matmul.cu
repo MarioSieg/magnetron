@@ -490,7 +490,8 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_matmul_kernel_wmma(
+  static mag_status_t launch_matmul_kernel_wmma(
+    mag_error_t *err,
     int64_t M, int64_t N, int64_t K,
     int64_t batch_total,
     T *__restrict__ br,
@@ -508,7 +509,8 @@ namespace mag {
     cudaGetDevice(&device);
     cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
     size_t smem = sizeof(T)*STAGES*(BM*BK + BN*BK) + sizeof(float)*((BM>>4)*(BN>>4)<<8);
-    mag_assert(smem <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
+    if (smem > (unsigned)max_smem_real)
+      return mag_set_error(err, MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE, "cuda: matmul shared memory requirement (%u bytes) exceeds device limit (%d bytes).", static_cast<unsigned>(smem), max_smem_real);
     auto set_kernel_smem_size = [&](auto kernel, size_t size) -> void {
       mag_assert2(size <= INT32_MAX);
       cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(size));
@@ -540,6 +542,7 @@ namespace mag {
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
     }
+    return MAG_STATUS_OK;
   }
 
 #endif
@@ -656,7 +659,8 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_matmul_kernel_fallback(
+  static mag_status_t launch_matmul_kernel_fallback(
+    mag_error_t *err,
     int64_t M, int64_t N, int64_t K,
     int64_t batch_total,
     T *__restrict__ br,
@@ -684,7 +688,8 @@ namespace mag {
     cudaGetDevice(&device);
     cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
     size_t smem = STAGES * (BM*BK + BN*BK) * sizeof(T);
-    mag_assert(smem <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
+    if (smem > (unsigned)max_smem_real)
+      return mag_set_error(err, MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE, "cuda: matmul shared memory requirement (%u bytes) exceeds device limit (%d bytes).", static_cast<unsigned>(smem), max_smem_real);
     auto set_kernel_smem_size = [&](auto kernel, size_t size) -> void {
       mag_assert2(size <= INT32_MAX);
       cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(size));
@@ -707,6 +712,7 @@ namespace mag {
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T>
@@ -860,7 +866,7 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_matmul(const mag_command_t &cmd) {
+  static mag_status_t launch_matmul(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *y = cmd.in[1];
@@ -896,6 +902,7 @@ namespace mag {
     const auto *__restrict__ bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     const auto *__restrict__ by = reinterpret_cast<const T *>(mag_tensor_data_ptr(y));
     mag_matmul_type_t mm_type = mag_matmul_type_detect(x, y);
+    mag_status_t st = MAG_STATUS_OK;
     switch (mm_type) {
       case MAG_MATMUL_TYPE_DOT:
       case MAG_MATMUL_TYPE_BMM_DOT:
@@ -912,24 +919,25 @@ namespace mag {
     #if MAG_CUDA_MATMUL_USE_WMMA
       if constexpr (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>) {
         if (is_tensor_tma_compat_x<T>(x, xT) && is_tensor_tma_compat_y<T>(y, yT)) {
-          launch_matmul_kernel_wmma(M, N, K, batch_total, br, x, y, xT, yT);
+          st = launch_matmul_kernel_wmma(err, M, N, K, batch_total, br, x, y, xT, yT);
           goto end;
         }
       }
     #endif
-    launch_matmul_kernel_fallback(M, N, K, batch_total, br, bx, by, xT, yT);
+    st = launch_matmul_kernel_fallback(err, M, N, K, batch_total, br, bx, by, xT, yT);
     [[maybe_unused]] end:
       if (cloned_x) mag_tensor_decref(x);
       if (cloned_y) mag_tensor_decref(y);
+    return st;
   }
 
-  void misc_op_matmul(const mag_command_t &cmd) {
+  mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     switch (x->dtype) {
-      case MAG_DTYPE_FLOAT32: launch_matmul<float>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_matmul<half>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_matmul<__nv_bfloat16>(cmd); break;
-      default: mag_assert(false, "matmul: unsupported dtype");
+      case MAG_DTYPE_FLOAT32: return launch_matmul<float>(err, cmd);
+      case MAG_DTYPE_FLOAT16: return launch_matmul<half>(err, cmd);
+      case MAG_DTYPE_BFLOAT16: return launch_matmul<__nv_bfloat16>(err, cmd);
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: matmul: unsupported dtype %s.", mag_type_trait(x->dtype)->name);
     }
   }
 }

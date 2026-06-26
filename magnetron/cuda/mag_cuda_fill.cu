@@ -215,7 +215,7 @@ namespace mag {
     }
   }
 
-  void fill_op_fill(const mag_command_t &cmd) {
+  mag_status_t fill_op_fill(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd); break;
@@ -231,11 +231,12 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_fill_kernel<int32_t>(r, cmd); break;
       case MAG_DTYPE_UINT64: launch_fill_kernel<uint64_t>(r, cmd); break;
       case MAG_DTYPE_INT64: launch_fill_kernel<int64_t>(r, cmd); break;
-      default: mag_assert(false, "Unsupported data type in binary operation");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in fill operation: %s", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void fill_op_masked_fill(const mag_command_t &cmd) {
+  mag_status_t fill_op_masked_fill(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *mask = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
@@ -252,11 +253,12 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_fill_kernel<int32_t>(r, cmd, mask); break;
       case MAG_DTYPE_UINT64: launch_fill_kernel<uint64_t>(r, cmd, mask); break;
       case MAG_DTYPE_INT64: launch_fill_kernel<int64_t>(r, cmd, mask); break;
-      default: mag_assert(false, "Unsupported data type in binary operation");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in masked_fill operation: %s", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void fill_op_fill_rand_uniform(const mag_command_t &cmd) {
+  mag_status_t fill_op_fill_rand_uniform(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, false>(r, cmd); break;
@@ -272,19 +274,21 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_rand_fill_uniform_int_kernel<int32_t, uint32_t>(r, cmd); break;
       case MAG_DTYPE_UINT64: launch_rand_fill_uniform_int_kernel<uint64_t, uint64_t>(r, cmd); break;
       case MAG_DTYPE_INT64: launch_rand_fill_uniform_int_kernel<int64_t, uint64_t>(r, cmd); break;
-      default: mag_assert(false, "Unsupported data type in binary operation");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in rand_uniform operation: %s", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void fill_op_fill_rand_normal(const mag_command_t &cmd) {
+  mag_status_t fill_op_fill_rand_normal(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_rand_fill_kernel<float, true>(r, cmd); break;
       case MAG_DTYPE_FLOAT16: launch_rand_fill_kernel<half, true>(r, cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_rand_fill_kernel<__nv_bfloat16, true>(r, cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_rand_fill_kernel<__nv_fp8_e4m3, true>(r, cmd); break;
-      default: mag_assert(false, "Unsupported data type in binary operation");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in rand_normal operation: %s", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <const bool C>
@@ -308,7 +312,8 @@ namespace mag {
     }
   }
 
-  void fill_op_rand_bernoulli(const mag_command_t &cmd) {
+  mag_status_t fill_op_rand_bernoulli(mag_error_t *err, const mag_command_t &cmd) {
+    (void)err;
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->dtype == MAG_DTYPE_BOOLEAN);
     auto p = static_cast<float>(mag_op_attr_unwrap_float64(cmd.attrs[0]));
@@ -324,6 +329,7 @@ namespace mag {
       mag_coords_iter_init(&rc, &r->coords);
       bernoulli_kernel<false><<<blocks, FILL_BLOCK_SIZE>>>(n, o, p, seed, subseq, rc);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T, const bool C>
@@ -366,7 +372,7 @@ namespace mag {
     }
   }
 
-  void fill_op_rand_perm(const mag_command_t &cmd) {
+  mag_status_t fill_op_rand_perm(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_UINT8: launch_rand_perm_kernel<uint8_t>(r, cmd); break;
@@ -377,8 +383,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_rand_perm_kernel<int32_t>(r, cmd); break;
       case MAG_DTYPE_UINT64: launch_rand_perm_kernel<uint64_t>(r, cmd); break;
       case MAG_DTYPE_INT64: launch_rand_perm_kernel<int64_t>(r, cmd); break;
-      default: mag_assert(false, "Unsupported dtype for rand_perm");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type for rand_perm: %s", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T, const bool C>
@@ -414,7 +421,7 @@ namespace mag {
     }
   }
 
-  void fill_op_arange(const mag_command_t &cmd) {
+  mag_status_t fill_op_arange(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_arange<float>(r, cmd); break;
@@ -429,8 +436,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_arange<int32_t>(r, cmd); break;
       case MAG_DTYPE_UINT64: launch_arange<uint64_t>(r, cmd); break;
       case MAG_DTYPE_INT64: launch_arange<int64_t>(r, cmd); break;
-      default: mag_assert(false, "Unsupported dtype for arange");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type for arange: %s", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T, const bool C>
@@ -470,7 +478,7 @@ namespace mag {
     }
   }
 
-  void fill_op_eye(const mag_command_t &cmd) {
+  mag_status_t fill_op_eye(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_eye<float>(r); break;
@@ -486,7 +494,8 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_eye<int32_t>(r); break;
       case MAG_DTYPE_UINT64: launch_eye<uint64_t>(r); break;
       case MAG_DTYPE_INT64: launch_eye<int64_t>(r); break;
-      default: mag_assert(false, "Unsupported dtype for eye");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type for eye: %s", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 }

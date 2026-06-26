@@ -28,6 +28,7 @@ static mag_status_t mag_view_meta_dtor(void *p) {
 
 mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
   mag_view_meta_t *vm = mag_slab_alloc(&base->ctx->view_meta_slab);
+  if (mag_unlikely(!vm)) return NULL;
   mag_rc_init_object(vm, &mag_view_meta_dtor);
   vm->base = base;
   mag_rc_incref(base);
@@ -39,6 +40,7 @@ static mag_status_t mag_tensor_dtor(void *self); /* Destructor forward declarati
 
 static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel) {
   mag_tensor_t *hdr = mag_slab_alloc(&ctx->tensor_slab); /* Allocate tensor header. */
+  if (mag_unlikely(!hdr)) return NULL;
   memset(hdr, 0, sizeof(*hdr));
   *hdr = (mag_tensor_t) { /* Initialize tensor header. */
     .ctx = ctx,
@@ -118,6 +120,8 @@ mag_status_t mag_tensor_init(
   /* Tensor header allocated — use goto cleanup from here on. */
   mag_status_t status = MAG_STATUS_OK;
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel);
+  if (mag_unlikely(!tensor))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "tensor: failed to allocate tensor header.");
   if (!storage) {
     mag_status_t (*allocator)(mag_device_t *, mag_error_t *, mag_storage_buffer_t **, size_t) = target_device->alloc_storage;
     status = (*allocator)(target_device, err, &tensor->storage, numbytes);
@@ -217,6 +221,8 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
     return mag_set_error(err, MAG_STATUS_ERR_OUT_OF_BOUNDS, "as_strided: view exceeds base tensor storage (end index %" PRIi64 " >= storage capacity %" PRIi64 ").", last, numel_end);
   }
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
+  if (mag_unlikely(!tensor))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "as_strided: failed to allocate tensor header.");
   for (int i=0; i < MAG_MAX_DIMS; ++i) {
     tensor->coords.shape[i] = i < rank && shape ? shape[i] : 1;
     tensor->coords.strides[i] = i < rank && strides ? strides[i] : 1;
@@ -225,9 +231,13 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   mag_rc_incref(base->storage); /* Retain base storage */
   tensor->storage_offset = offset;
   tensor->version = base->version;
-  if (!(base->flags & MAG_TFLAG_IS_VIEW)) /* first view */
+  if (!(base->flags & MAG_TFLAG_IS_VIEW)) { /* first view */
     tensor->view_meta = mag_view_meta_alloc(base);
-  else {
+    if (mag_unlikely(!tensor->view_meta)) { /* OOM: dtor decrefs the retained base storage and frees the header */
+      mag_tensor_decref(tensor);
+      return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "as_strided: failed to allocate view metadata.");
+    }
+  } else {
     tensor->view_meta = base->view_meta;
     mag_rc_incref(tensor->view_meta); /* Retain view meta */
   }
@@ -399,7 +409,9 @@ mag_status_t mag_borrow_cpu_buffer(
   }
   /* Cookie allocated — use goto cleanup from here on. */
   mag_status_t status = MAG_STATUS_OK;
-  mag_borrow_cookie_t *cookie = (*mag_alloc)(NULL, sizeof(*cookie), 0);
+  mag_borrow_cookie_t *cookie = (*mag_try_alloc)(NULL, sizeof(*cookie), 0);
+  if (mag_unlikely(!cookie))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "borrow_cpu_buffer: failed to allocate borrow cookie.");
   cookie->fn = release_cb;
   cookie->usr = usr;
   mag_device_t *cpu_device = NULL;
@@ -411,6 +423,10 @@ mag_status_t mag_borrow_cpu_buffer(
     mag_storage_flags_t flags = MAG_STORAGE_FLAG_BORROWED|MAG_STORAGE_FLAG_HOST_VISIBLE;
     if (is_writeable) flags |= MAG_STORAGE_FLAG_ACCESS_W;
     mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
+    if (mag_unlikely(!buf)) { /* OOM: cookie still owned here; cleanup frees it. */
+      status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "borrow_cpu_buffer: failed to allocate storage buffer header.");
+      goto cleanup;
+    }
     *buf = (mag_storage_buffer_t) {
       .ctx=ctx,
       .flags=flags,
@@ -517,8 +533,15 @@ mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void *
 
   {
     size_t size = mag_tensor_numbytes(cont);
-    mag_assert2(size);
-    void *dst = (*mag_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
+    if (mag_unlikely(!size)) {
+      status = mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "copy_data: tensor has zero size; nothing to copy.");
+      goto cleanup;
+    }
+    void *dst = (*mag_try_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
+    if (mag_unlikely(!dst)) {
+      status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "copy_data: failed to allocate %zu bytes for host copy.", size);
+      goto cleanup;
+    }
     const void *src = (const void *)mag_tensor_data_ptr(cont);
     memcpy(dst, src, size);
     mag_tensor_decref(cont);

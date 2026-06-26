@@ -36,10 +36,11 @@ typedef DWORD mag_thread_ret_t;
 
 typedef HANDLE mag_thread_t;
 
-static void mag_thread_create(mag_thread_t *out, mag_thread_ret_t (*f)(void *), void *arg) { /* WIN32 -> pthread style wrapper. */
+static bool mag_thread_create(mag_thread_t *out, mag_thread_ret_t (*f)(void *), void *arg) { /* WIN32 -> pthread style wrapper. Returns false on failure (e.g. resource exhaustion). */
   HANDLE handle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)f, arg, 0, NULL);
-  mag_assert2(handle != 0);
+  if (mag_unlikely(!handle)) return false;
   *out = handle;
+  return true;
 }
 
 static void mag_thread_join(mag_thread_t th) { /* WIN32 -> pthread style wrapper. */
@@ -67,7 +68,7 @@ typedef void *mag_thread_ret_t;
 #define MAG_THREAD_RET_NONE NULL
 
 typedef pthread_t mag_thread_t;
-#define mag_thread_create(out, fn, arg) mag_assert2(pthread_create((out), NULL, (fn), (arg)) == 0)
+#define mag_thread_create(out, fn, arg) (pthread_create((out), NULL, (fn), (arg)) == 0) /* Returns true on success, false on failure (e.g. EAGAIN). */
 #define mag_thread_join(th) mag_assert2(pthread_join((th), NULL) == 0)
 
 typedef pthread_mutex_t mag_mutex_t;

@@ -38,9 +38,15 @@ mag_status_t mag_pgroup_init_tcp(
   if (mag_unlikely(rank >= world_size))
     return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "process_group: rank (%u) must be in [0, %u).", rank, world_size);
 
-  mag_tcp_socket_t **peers = (*mag_alloc)(0, sizeof(*peers)*world_size, 0);
+  mag_tcp_socket_t **peers = (*mag_try_alloc)(NULL, sizeof(*peers)*world_size, 0);
+  if (mag_unlikely(peers == NULL))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "process_group: failed to allocate %zu bytes.", sizeof(*peers)*world_size);
   memset(peers, 0, sizeof(*peers)*world_size);
-  mag_process_group_t *pgroup = (*mag_alloc)(0, sizeof(*pgroup), 0);
+  mag_process_group_t *pgroup = (*mag_try_alloc)(NULL, sizeof(*pgroup), 0);
+  if (mag_unlikely(pgroup == NULL)) {
+    (*mag_alloc)(peers, 0, 0);
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "process_group: failed to allocate %zu bytes.", sizeof(*pgroup));
+  }
   *pgroup = (mag_process_group_t){.rank=rank, .world_size=world_size, .peers=peers};
 
   if (world_size == 1) { *out = pgroup; return MAG_STATUS_OK; }
@@ -65,7 +71,7 @@ mag_status_t mag_pgroup_init_tcp(
       }
       if (mag_unlikely(!(peer_rank > 0 && peer_rank < world_size && peers[peer_rank] == NULL))) {
         mag_tcp_socket_close(sock);
-        status = mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "Error meow");
+        status = mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "process_group: received invalid or duplicate peer rank %u (expected a unique rank in [1, %u)).", peer_rank, world_size);
         goto cleanup;
       }
       peers[peer_rank] = sock;

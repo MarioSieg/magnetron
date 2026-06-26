@@ -200,6 +200,8 @@ static mag_status_t mag_dispatch(mag_error_t *err, mag_opcode_t op, bool inplace
     for (uint32_t i=0; i < num_out; ++i) {
       mag_tensor_t *r = out[i];
       mag_au_state_t *au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
+      if (mag_unlikely(!au))
+        return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "dispatch: failed to allocate autodiff state for gradient recording.");
       au->op = op;
       for (uint32_t j=0; j < num_in; ++j) {
         mag_tensor_t *input = in[j];
@@ -747,8 +749,12 @@ mag_status_t mag_reshape(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
   if (mag_iserr(status)) return status;
   int64_t strides[MAG_MAX_DIMS];
   strides[rank-1] = 1;
-  for (int64_t i=rank-2; i >= 0; --i)
-    mag_assert2(!mag_mulov64(shape[i+1], strides[i+1], strides+i));
+  for (int64_t i=rank-2; i >= 0; --i) {
+    if (mag_unlikely(mag_mulov64(shape[i+1], strides[i+1], strides+i))) {
+      mag_rc_decref(result);
+      return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW, "reshape: stride computation overflowed at dim %" PRIi64 ".", i);
+    }
+  }
   mag_tensor_t *reshaped;
   status = mag_as_strided(err, &reshaped, result->ctx, result, rank, shape, strides, result->storage_offset);
   if (mag_iserr(status)) {
@@ -1507,7 +1513,9 @@ mag_status_t mag_cat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
   int64_t shape[MAG_MAX_DIMS];
   memcpy(shape, t0->coords.shape, rank*sizeof(*shape));
   shape[dim] = 0;
-  mag_tensor_t **tmp = (*mag_alloc)(NULL, count*sizeof(*tmp), 0);
+  mag_tensor_t **tmp = (*mag_try_alloc)(NULL, count*sizeof(*tmp), 0);
+  if (mag_unlikely(!tmp))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cat: failed to allocate temporary array for %zu tensors.", count);
   for (size_t i=0; i < count; ++i) {
     mag_tensor_t *tensor = tensors[i];
     if (mag_unlikely(!(tensor != NULL))) {
@@ -1570,7 +1578,9 @@ mag_status_t mag_stack(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
       return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM, "stack: dim must be in [0, %" PRIi64 "], but got %" PRIi64 ".", rank, dim);
   if (mag_unlikely(!(rank + 1 <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM, "stack: result rank would exceed MAG_MAX_DIMS.");
-  mag_tensor_t **tmp = (*mag_alloc)(NULL, count*sizeof(*tmp), 0);
+  mag_tensor_t **tmp = (*mag_try_alloc)(NULL, count*sizeof(*tmp), 0);
+  if (mag_unlikely(!tmp))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "stack: failed to allocate temporary array for %zu tensors.", count);
   for (size_t i=0; i < count; ++i) {
     tmp[i] = NULL;
     mag_status_t st = mag_unsqueeze(err, &tmp[i], tensors[i], dim);
@@ -1622,7 +1632,9 @@ mag_status_t mag_dstack(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   int64_t rank = tensors[0]->coords.rank;
   if (rank >= 3)
     return mag_cat(err, out_result, tensors, count, 2);
-  mag_tensor_t **tmp = (*mag_alloc)(NULL, count*sizeof(*tmp), 0);
+  mag_tensor_t **tmp = (*mag_try_alloc)(NULL, count*sizeof(*tmp), 0);
+  if (mag_unlikely(!tmp))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "dstack: failed to allocate temporary array for %zu tensors.", count);
   for (size_t i = 0; i < count; ++i) {
     tmp[i] = NULL;
     if (rank == 1) {
@@ -1678,7 +1690,9 @@ mag_status_t mag_chunk(mag_error_t *err, mag_tensor_t ***out_chunks, size_t *out
   }
   int64_t chunk_size = (n+chunks-1)/chunks;
   int64_t actual = (n+chunk_size-1)/chunk_size;
-  mag_tensor_t **res = (*mag_alloc)(NULL, (size_t)actual*sizeof(*res), 0);
+  mag_tensor_t **res = (*mag_try_alloc)(NULL, (size_t)actual*sizeof(*res), 0);
+  if (mag_unlikely(!res))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "chunk: failed to allocate result array for %" PRIi64 " chunks.", actual);
   memset(res, 0, (size_t)actual*sizeof(*res));
   for (int64_t i=0; i < actual; ++i) {
     int64_t start = i * chunk_size;
@@ -2056,7 +2070,7 @@ static mag_status_t mag_matmul_alloc_res(mag_error_t *err, mag_tensor_t **res, i
         shape[rb] = x->coords.shape[x->coords.rank-2];
         shape[rb+1] = y->coords.shape[y->coords.rank-1];
         return mag_empty(err, res, x->ctx, x->dtype, rb+2, shape, mag_tensor_device_id(x));
-    } default: mag_panic("matmul: invalid BMM matmul type '%s'.", mag_matmul_type_name(type)); return MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE;
+    } default: return mag_set_error(err, MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE, "matmul: invalid BMM matmul type '%s'.", mag_matmul_type_name(type));
   }
 }
 
@@ -2207,7 +2221,8 @@ mag_status_t mag_gather(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   if (mag_unlikely(!(idx->coords.rank == tensor->coords.rank)))
       return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "gather: index rank (%" PRIi64 ") must equal input rank (%" PRIi64 "). Use embedding() for row-select indexing.", idx->coords.rank, tensor->coords.rank);
   mag_norm_axis(&dim, tensor->coords.rank);
-  mag_assert2(dim >= 0 && dim < tensor->coords.rank);
+  if (mag_unlikely(!(dim >= 0 && dim < tensor->coords.rank)))
+      return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM, "gather: normalized dim %" PRIi64 " is out of range [0, %" PRIi64 ").", dim, tensor->coords.rank);
   /* Output shape equals index shape (same as torch.gather). */
   int64_t ork = idx->coords.rank;
   int64_t ax[MAG_MAX_DIMS];

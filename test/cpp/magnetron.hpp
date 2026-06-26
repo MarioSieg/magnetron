@@ -34,7 +34,9 @@ namespace magnetron {
     class context final {
     public:
         context() noexcept {
-            m_ctx = mag_ctx_create();
+           if (mag_iserr(mag_ctx_create(nullptr, &m_ctx))) {
+             throw std::runtime_error("mag_ctx_create() failed");
+           }
         }
 
         context(context&&) = default;

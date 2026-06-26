@@ -136,12 +136,13 @@ namespace mag {
     }
   }
 
-  [[nodiscard]] static mag_status_t submit(mag_device_t *dvc, [[maybe_unused]] mag_error_t *err, const mag_command_t *cmd) {
-    mag_cuda_check(cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)));
+  [[nodiscard]] static mag_status_t submit(mag_device_t *dvc, mag_error_t *err, const mag_command_t *cmd) {
+    if (cudaError_t ce = cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_STATUS_ERR_INVALID_DEVICE, "cuda: failed to select device %d: %s.", static_cast<int>(dvc->id.device_ordinal), cudaGetErrorString(ce));
 
-    static constexpr auto *op_nop = +[](const mag_command_t &) -> void { };
+    static constexpr auto *op_nop = +[](mag_error_t *, const mag_command_t &) -> mag_status_t { return MAG_STATUS_OK; };
 
-    static constexpr void(*dispatch_table[])(const mag_command_t &) = {
+    static constexpr mag_status_t(*dispatch_table[])(mag_error_t *, const mag_command_t &) = {
       [MAG_OP_NOP] = op_nop,
       [MAG_OP_FILL] = &fill_op_fill,
       [MAG_OP_MASKED_FILL] = &fill_op_masked_fill,
@@ -260,19 +261,24 @@ namespace mag {
     //    return true;
     //}());
     auto *kernel = dispatch_table[cmd->op];
-    mag_assert(kernel != nullptr, "Operator %s not implemented in CUDA backend", mag_op_trait(cmd->op)->mnemonic);
-    (*kernel)(*cmd);
-    cudaDeviceSynchronize();
+    if (mag_unlikely(kernel == nullptr))
+      return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: operator %s not implemented in CUDA backend.", mag_op_trait(cmd->op)->mnemonic);
+    if (mag_status_t st = (*kernel)(err, *cmd); mag_unlikely(mag_iserr(st)))
+      return st;
+    if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "cuda: kernel launch failed for operator %s: %s.", mag_op_trait(cmd->op)->mnemonic, cudaGetErrorString(ce));
+    if (cudaError_t ce = cudaDeviceSynchronize(); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "cuda: kernel execution failed for operator %s: %s.", mag_op_trait(cmd->op)->mnemonic, cudaGetErrorString(ce));
     return MAG_STATUS_OK;
   }
 
-  [[nodiscard]] static mag_status_t alloc_storage_buffer(mag_device_t *dvc, [[maybe_unused]] mag_error_t *err, mag_storage_buffer_t **out, size_t size) {
+  [[nodiscard]] static mag_status_t alloc_storage_buffer(mag_device_t *dvc, mag_error_t *err, mag_storage_buffer_t **out, size_t size) {
     mag_context_t *ctx = dvc->ctx;
     uintptr_t base;
-    if (cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)) != cudaSuccess)
-      return MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED;
-    if (cudaMalloc(reinterpret_cast<void **>(&base), size) != cudaSuccess)
-      return MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED;
+    if (cudaError_t ce = cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cuda: failed to select device %d for allocation: %s.", static_cast<int>(dvc->id.device_ordinal), cudaGetErrorString(ce));
+    if (cudaError_t ce = cudaMalloc(reinterpret_cast<void **>(&base), size); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cuda: failed to allocate %zu bytes of device memory: %s.", size, cudaGetErrorString(ce));
     *out = static_cast<mag_storage_buffer_t *>(mag_slab_alloc(&ctx->storage_slab));
     new (*out) mag_storage_buffer_t {
       .__rcb = {},

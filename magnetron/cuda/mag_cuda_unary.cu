@@ -42,7 +42,7 @@ namespace mag {
     }
   }
 
-  void unary_op_cast(const mag_command_t &cmd) {
+  mag_status_t unary_op_cast(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     using cast_fn = void (mag_tensor_t *, const mag_tensor_t *);
@@ -251,8 +251,9 @@ namespace mag {
     mag_dtype_t src = x->dtype;
     mag_dtype_t dst = r->dtype;
     cast_fn *kernel = cast_table_2D[src][dst];
-    mag_assert(kernel, "No kernel found for type cast: %s -> %s", mag_type_trait(src)->name, mag_type_trait(dst)->name);
+    if (!kernel) return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: no kernel found for type cast: %s -> %s", mag_type_trait(src)->name, mag_type_trait(dst)->name);
     (*kernel)(r, x);
+    return MAG_STATUS_OK;
   }
 
   template <typename T>
@@ -282,7 +283,7 @@ namespace mag {
     clone_strided_kernel<T><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, rc, xc);
   }
 
-  void unary_op_clone(const mag_command_t &cmd) {
+  mag_status_t unary_op_clone(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     mag_assert2(r->dtype == x->dtype);
@@ -300,8 +301,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_clone<int32_t>(r, x); break;
       case MAG_DTYPE_UINT64: launch_clone<uint64_t>(r, x); break;
       case MAG_DTYPE_INT64: launch_clone<int64_t>(r, x); break;
-      default: mag_assert(false, "Unsupported dtype for unary op");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported dtype for unary op.");
     }
+    return MAG_STATUS_OK;
   }
 
   constexpr float INVSQRT2 = 0.707106781186547524400844362104849039284835937f /* 1/√2 */;
@@ -782,19 +784,20 @@ namespace mag {
   }
 
   template <template <typename> typename Op>
-  static void impl_unary_op_fp(mag_tensor_t *r, mag_tensor_t *x) {
+  static mag_status_t impl_unary_op_fp(mag_error_t *err, mag_tensor_t *r, mag_tensor_t *x) {
     mag_assert2(r->dtype == x->dtype);
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_unary_op<Op<float>>(r, x); break;
       case MAG_DTYPE_FLOAT16: launch_unary_op<Op<half>>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_unary_op<Op<__nv_bfloat16>>(r, x); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_unary_op<Op<__nv_fp8_e4m3>>(r, x); break;
-      default: mag_assert(false, "Unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <template <typename> typename Op>
-  static void impl_unary_op_int(mag_tensor_t *r, mag_tensor_t *x) {
+  static mag_status_t impl_unary_op_int(mag_error_t *err, mag_tensor_t *r, mag_tensor_t *x) {
     mag_assert2(r->dtype == x->dtype);
     switch (r->dtype) {
       case MAG_DTYPE_BOOLEAN:
@@ -806,49 +809,50 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_unary_op<Op<int32_t>>(r, x); break;
       case MAG_DTYPE_UINT64: launch_unary_op<Op<uint64_t>>(r, x); break;
       case MAG_DTYPE_INT64: launch_unary_op<Op<int64_t>>(r, x); break;
-      default: mag_assert(false, "Unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void unary_op_abs(const mag_command_t &cmd) {
+  mag_status_t unary_op_abs(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *x = cmd.in[0];
-    if (mag_type_category_is_integral(r->dtype)) impl_unary_op_int<op_abs_int>(r, x);
-    else impl_unary_op_fp<op_abs>(r, x);
+    if (mag_type_category_is_integral(r->dtype)) return impl_unary_op_int<op_abs_int>(err, r, x);
+    else return impl_unary_op_fp<op_abs>(err, r, x);
   }
-  void unary_op_sgn(const mag_command_t &cmd) { impl_unary_op_fp<op_sgn>(cmd.out[0], cmd.in[0]); }
-  void unary_op_neg(const mag_command_t &cmd) { impl_unary_op_fp<op_neg>(cmd.out[0], cmd.in[0]); }
-  void unary_op_not(const mag_command_t &cmd) { impl_unary_op_int<op_not>(cmd.out[0], cmd.in[0]); }
-  void unary_op_log(const mag_command_t &cmd) { impl_unary_op_fp<op_log>(cmd.out[0], cmd.in[0]); }
-  void unary_op_log10(const mag_command_t &cmd) { impl_unary_op_fp<op_log10>(cmd.out[0], cmd.in[0]); }
-  void unary_op_log1p(const mag_command_t &cmd) { impl_unary_op_fp<op_log1p>(cmd.out[0], cmd.in[0]); }
-  void unary_op_log2(const mag_command_t &cmd) { impl_unary_op_fp<op_log2>(cmd.out[0], cmd.in[0]); }
-  void unary_op_sqr(const mag_command_t &cmd) { impl_unary_op_fp<op_sqr>(cmd.out[0], cmd.in[0]); }
-  void unary_op_rcp(const mag_command_t &cmd) { impl_unary_op_fp<op_rcp>(cmd.out[0], cmd.in[0]); }
-  void unary_op_sqrt(const mag_command_t &cmd) { impl_unary_op_fp<op_sqrt>(cmd.out[0], cmd.in[0]); }
-  void unary_op_rsqrt(const mag_command_t &cmd) { impl_unary_op_fp<op_rsqrt>(cmd.out[0], cmd.in[0]); }
-  void unary_op_sin(const mag_command_t &cmd) { impl_unary_op_fp<op_sin>(cmd.out[0], cmd.in[0]); }
-  void unary_op_cos(const mag_command_t &cmd) { impl_unary_op_fp<op_cos>(cmd.out[0], cmd.in[0]); }
-  void unary_op_tan(const mag_command_t &cmd) { impl_unary_op_fp<op_tan>(cmd.out[0], cmd.in[0]); }
-  void unary_op_asin(const mag_command_t &cmd) { impl_unary_op_fp<op_asin>(cmd.out[0], cmd.in[0]); }
-  void unary_op_acos(const mag_command_t &cmd) { impl_unary_op_fp<op_acos>(cmd.out[0], cmd.in[0]); }
-  void unary_op_atan(const mag_command_t &cmd) { impl_unary_op_fp<op_atan>(cmd.out[0], cmd.in[0]); }
-  void unary_op_sinh(const mag_command_t &cmd) { impl_unary_op_fp<op_sinh>(cmd.out[0], cmd.in[0]); }
-  void unary_op_cosh(const mag_command_t &cmd) { impl_unary_op_fp<op_cosh>(cmd.out[0], cmd.in[0]); }
-  void unary_op_tanh(const mag_command_t &cmd) { impl_unary_op_fp<op_tanh>(cmd.out[0], cmd.in[0]); }
-  void unary_op_asinh(const mag_command_t &cmd) { impl_unary_op_fp<op_asinh>(cmd.out[0], cmd.in[0]); }
-  void unary_op_acosh(const mag_command_t &cmd) { impl_unary_op_fp<op_acosh>(cmd.out[0], cmd.in[0]); }
-  void unary_op_atanh(const mag_command_t &cmd) { impl_unary_op_fp<op_atanh>(cmd.out[0], cmd.in[0]); }
-  void unary_op_step(const mag_command_t &cmd) { impl_unary_op_fp<op_step>(cmd.out[0], cmd.in[0]); }
-  void unary_op_erf(const mag_command_t &cmd) { impl_unary_op_fp<op_erf>(cmd.out[0], cmd.in[0]); }
-  void unary_op_erfc(const mag_command_t &cmd) { impl_unary_op_fp<op_erfc>(cmd.out[0], cmd.in[0]); }
-  void unary_op_exp(const mag_command_t &cmd) { impl_unary_op_fp<op_exp>(cmd.out[0], cmd.in[0]); }
-  void unary_op_exp2(const mag_command_t &cmd) { impl_unary_op_fp<op_exp2>(cmd.out[0], cmd.in[0]); }
-  void unary_op_expm1(const mag_command_t &cmd) { impl_unary_op_fp<op_expm1>(cmd.out[0], cmd.in[0]); }
-  void unary_op_floor(const mag_command_t &cmd) { impl_unary_op_fp<op_floor>(cmd.out[0], cmd.in[0]); }
-  void unary_op_ceil(const mag_command_t &cmd) { impl_unary_op_fp<op_ceil>(cmd.out[0], cmd.in[0]); }
-  void unary_op_round(const mag_command_t &cmd) { impl_unary_op_fp<op_round>(cmd.out[0], cmd.in[0]); }
-  void unary_op_trunc(const mag_command_t &cmd) { impl_unary_op_fp<op_trunc>(cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_sgn(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_sgn>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_neg(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_neg>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_not(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_int<op_not>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_log(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_log>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_log10(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_log10>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_log1p(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_log1p>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_log2(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_log2>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_sqr(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_sqr>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_rcp(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_rcp>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_sqrt(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_sqrt>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_rsqrt(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_rsqrt>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_sin(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_sin>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_cos(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_cos>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_tan(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_tan>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_asin(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_asin>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_acos(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_acos>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_atan(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_atan>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_sinh(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_sinh>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_cosh(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_cosh>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_tanh(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_tanh>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_asinh(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_asinh>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_acosh(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_acosh>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_atanh(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_atanh>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_step(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_step>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_erf(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_erf>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_erfc(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_erfc>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_exp(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_exp>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_exp2(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_exp2>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_expm1(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_expm1>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_floor(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_floor>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_ceil(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_ceil>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_round(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_round>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_trunc(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_trunc>(err, cmd.out[0], cmd.in[0]); }
 
   template <typename T>
   __global__ static void softmax_kernel(int rows, int last_dim, T *__restrict__ r, const T *__restrict__ x) {
@@ -888,7 +892,7 @@ namespace mag {
     softmax_kernel<T><<<blocks, UNARY_BLOCK_SIZE>>>(rows, last_dim, pr, px);
   }
 
-  void unary_op_softmax(const mag_command_t &cmd) {
+  mag_status_t unary_op_softmax(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *x = cmd.in[0];
     mag_assert2(mag_tensor_is_contiguous(r));
@@ -899,19 +903,20 @@ namespace mag {
       case MAG_DTYPE_FLOAT16: launch_softmax<half>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_softmax<__nv_bfloat16>(r, x); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_softmax<__nv_fp8_e4m3>(r, x); break;
-      default: mag_assert(false, "Unsupported dtype for softmax");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported dtype for softmax.");
     }
     mag_tensor_decref(x);
+    return MAG_STATUS_OK;
   }
-  void unary_op_softmax_dv(const mag_command_t &cmd) { impl_unary_op_fp<op_softmax_dv>(cmd.out[0], cmd.in[0]); }
-  void unary_op_sigmoid(const mag_command_t &cmd) { impl_unary_op_fp<op_sigmoid>(cmd.out[0], cmd.in[0]); }
-  void unary_op_sigmoid_dv(const mag_command_t &cmd) { impl_unary_op_fp<op_sigmoid_dv>(cmd.out[0], cmd.in[0]); }
-  void unary_op_hard_sigmoid(const mag_command_t &cmd) { impl_unary_op_fp<op_hard_sigmoid>(cmd.out[0], cmd.in[0]); }
-  void unary_op_silu(const mag_command_t &cmd) { impl_unary_op_fp<op_silu>(cmd.out[0], cmd.in[0]); }
-  void unary_op_silu_dv(const mag_command_t &cmd) { impl_unary_op_fp<op_silu_dv>(cmd.out[0], cmd.in[0]); }
-  void unary_op_tanh_dv(const mag_command_t &cmd) { impl_unary_op_fp<op_tanh_dv>(cmd.out[0], cmd.in[0]); }
-  void unary_op_relu(const mag_command_t &cmd) { impl_unary_op_fp<op_relu>(cmd.out[0], cmd.in[0]); }
-  void unary_op_relu_dv(const mag_command_t &cmd) { impl_unary_op_fp<op_relu_dv>(cmd.out[0], cmd.in[0]); }
-  void unary_op_gelu(const mag_command_t &cmd) { impl_unary_op_fp<op_gelu>(cmd.out[0], cmd.in[0]); }
-  void unary_op_gelu_dv(const mag_command_t &cmd) { impl_unary_op_fp<op_gelu_dv>(cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_softmax_dv(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_softmax_dv>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_sigmoid(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_sigmoid>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_sigmoid_dv(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_sigmoid_dv>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_hard_sigmoid(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_hard_sigmoid>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_silu(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_silu>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_silu_dv(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_silu_dv>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_tanh_dv(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_tanh_dv>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_relu(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_relu>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_relu_dv(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_relu_dv>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_gelu(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_gelu>(err, cmd.out[0], cmd.in[0]); }
+  mag_status_t unary_op_gelu_dv(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_gelu_dv>(err, cmd.out[0], cmd.in[0]); }
 }

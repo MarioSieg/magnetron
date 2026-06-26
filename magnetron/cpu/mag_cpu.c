@@ -99,6 +99,8 @@ static mag_status_t mag_cpu_alloc_storage(mag_device_t *device, mag_error_t *err
   mag_context_t *ctx = device->ctx;
   mag_status_t status = MAG_STATUS_OK;
   mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
+  if (mag_unlikely(!buf))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate storage buffer header.");
   *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
     .ctx = ctx,
     .aux = {},
@@ -143,7 +145,8 @@ static void mag_cpu_manual_seed(mag_device_t *dvc, mag_error_t *err, uint64_t se
 
 static mag_cpu_device_t *mag_cpu_init_device(mag_context_t *ctx, uint32_t num_threads) {
   mag_thread_prio_t sched_prio = MAG_THREAD_PRIO_HIGH;
-  mag_cpu_device_t *dvc = (*mag_alloc)(NULL, sizeof(*dvc), 0);
+  mag_cpu_device_t *dvc = (*mag_try_alloc)(NULL, sizeof(*dvc), 0);
+  if (mag_unlikely(!dvc)) return NULL;
   memset(dvc, 0, sizeof(*dvc));
   *dvc = (mag_cpu_device_t) {
     .ctx = ctx,
@@ -156,6 +159,10 @@ static mag_cpu_device_t *mag_cpu_init_device(mag_context_t *ctx, uint32_t num_th
   mag_blas_detect_optimal_specialization(ctx, &dvc->kernels);
   if (num_threads > 1) {
     dvc->pool = mag_threadpool_create(ctx, num_threads, &dvc->kernels, &dvc->numa_ctrl, sched_prio);
+    if (mag_unlikely(!dvc->pool)) { /* OOM during threadpool creation: free partials and bail out. */
+      (*mag_alloc)(dvc, 0, 0);
+      return NULL;
+    }
     dvc->num_allocated_workers = num_threads;
   }
   if (*dvc->kernels.init) (*dvc->kernels.init)();
@@ -170,7 +177,12 @@ static void mag_cpu_destroy_device(mag_cpu_device_t *dvc) {
 
 static mag_device_t *mag_cpu_init_interface(mag_context_t *ctx, uint32_t num_threads) {
   mag_cpu_device_t *cpu_dvc = mag_cpu_init_device(ctx, num_threads);
-  mag_device_t *device = (*mag_alloc)(NULL, sizeof(*device), 0);
+  if (mag_unlikely(!cpu_dvc)) return NULL;
+  mag_device_t *device = (*mag_try_alloc)(NULL, sizeof(*device), 0);
+  if (mag_unlikely(!device)) {
+    mag_cpu_destroy_device(cpu_dvc);
+    return NULL;
+  }
   *device = (mag_device_t) { /* Initialize device interface */
     .ctx = ctx,
     .id = mag_device(CPU, 0),
@@ -198,6 +210,7 @@ static bool mag_cpu_init(mag_backend_t *self, mag_context_t *ctx) {
   uint32_t nt = ctx->machine.cpu_virtual_cores;
   nt = nt ? nt : hwc;
   self->impl = mag_cpu_init_interface(ctx, nt);
+  if (mag_unlikely(!self->impl)) return false;
   return true;
 }
 static bool mag_cpu_shutdown(mag_backend_t *self) {
@@ -220,7 +233,8 @@ uint32_t MAG_BACKEND_SYM_ABI_COOKIE(void){
 }
 
 mag_backend_t *MAG_BACKEND_SYM_INIT(mag_context_t *ctx) { /* Create and return interface struct */
-  mag_backend_t *backend = (*mag_alloc)(NULL, sizeof(*backend)+sizeof(mag_device_t *), 0);
+  mag_backend_t *backend = (*mag_try_alloc)(NULL, sizeof(*backend)+sizeof(mag_device_t *), 0);
+  if (mag_unlikely(!backend)) return NULL;
   memset(backend, 0, sizeof(*backend)+sizeof(mag_device_t *));
   *backend = (mag_backend_t){
     .impl = NULL,

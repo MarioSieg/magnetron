@@ -49,7 +49,8 @@ namespace mag {
     }
   }
 
-  void misc_op_one_hot(const mag_command_t &cmd) {
+  mag_status_t misc_op_one_hot(mag_error_t *err, const mag_command_t &cmd) {
+    (void)err;
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *idx = cmd.in[0];
     mag_assert2(r->dtype == MAG_DTYPE_INT64 && idx->dtype == MAG_DTYPE_INT64);
@@ -65,6 +66,7 @@ namespace mag {
       mag_coords_iter_init(&it, &idx->coords);
       one_hot_kernel<false><<<blocks, MISC_BLOCK_SIZE>>>(n, nc, pr, pidx, it);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T, const bool upper>
@@ -109,7 +111,7 @@ namespace mag {
     tri_mask_kernel<T, upper><<<blocks, MISC_BLOCK_SIZE>>>(n, br, bx, cr, cx, diag);
   }
 
-  void misc_op_tril(const mag_command_t &cmd) {
+  mag_status_t misc_op_tril(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t diag = mag_op_attr_unwrap_int64(cmd.attrs[0]);
@@ -127,11 +129,12 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_tri_mask<int32_t, false>(r, x, diag); break;
       case MAG_DTYPE_UINT64: launch_tri_mask<uint64_t, false>(r, x, diag); break;
       case MAG_DTYPE_INT64: launch_tri_mask<int64_t, false>(r, x, diag); break;
-      default: mag_assert(false, "tril: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: tril: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void misc_op_triu(const mag_command_t &cmd) {
+  mag_status_t misc_op_triu(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t diag = mag_op_attr_unwrap_int64(cmd.attrs[0]);
@@ -149,8 +152,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_tri_mask<int32_t, true>(r, x, diag); break;
       case MAG_DTYPE_UINT64: launch_tri_mask<uint64_t, true>(r, x, diag); break;
       case MAG_DTYPE_INT64: launch_tri_mask<int64_t, true>(r, x, diag); break;
-      default: mag_assert(false, "triu: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: triu: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T, const bool C>
@@ -200,7 +204,7 @@ namespace mag {
     }
   }
 
-  void misc_op_where(const mag_command_t &cmd) {
+  mag_status_t misc_op_where(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *cond = cmd.in[0];
     const mag_tensor_t *x = cmd.in[1];
@@ -220,8 +224,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_where<int32_t>(r, cond, x, y); break;
       case MAG_DTYPE_UINT64: launch_where<uint64_t>(r, cond, x, y); break;
       case MAG_DTYPE_INT64: launch_where<int64_t>(r, cond, x, y); break;
-      default: mag_assert(false, "where: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: where: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T>
@@ -244,7 +249,7 @@ namespace mag {
     }
   }
 
-  void misc_op_repeat_back(const mag_command_t &cmd) {
+  mag_status_t misc_op_repeat_back(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     mag_coords_iter_t cr, cx;
@@ -258,26 +263,26 @@ namespace mag {
         reinterpret_cast<float *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const float *>(mag_tensor_data_ptr(x)),
         cr, cx
-      ); return;
+      ); return MAG_STATUS_OK;
       case MAG_DTYPE_FLOAT16: repeat_back_kernel<half><<<1, 1>>>(
         rn, xn,
         reinterpret_cast<half *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const half *>(mag_tensor_data_ptr(x)),
         cr, cx
-      ); return;
+      ); return MAG_STATUS_OK;
       case MAG_DTYPE_BFLOAT16: repeat_back_kernel<__nv_bfloat16><<<1, 1>>>(
         rn, xn,
         reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)),
         cr, cx
-      ); return;
+      ); return MAG_STATUS_OK;
         case MAG_DTYPE_FLOAT8_E4M3FN: repeat_back_kernel<__nv_fp8_e4m3><<<1, 1>>>(
         rn, xn,
         reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)),
         cr, cx
-      ); return;
-      default: mag_assert(false, "repeat_back: unsupported dtype");
+      ); return MAG_STATUS_OK;
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: repeat_back: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
   }
 
@@ -392,7 +397,7 @@ namespace mag {
     }
   }
 
-  void misc_op_gather(const mag_command_t &cmd) {
+  mag_status_t misc_op_gather(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_gather<float>(cmd); break;
@@ -408,8 +413,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_gather<int32_t>(cmd); break;
       case MAG_DTYPE_UINT64: launch_gather<uint64_t>(cmd); break;
       case MAG_DTYPE_INT64: launch_gather<int64_t>(cmd); break;
-      default: mag_assert(false, "gather: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: gather: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T>
@@ -474,15 +480,16 @@ namespace mag {
     }
   }
 
-  void misc_op_embedding(const mag_command_t &cmd) {
+  mag_status_t misc_op_embedding(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32:       launch_embedding<float>(cmd); break;
       case MAG_DTYPE_FLOAT16:       launch_embedding<half>(cmd); break;
       case MAG_DTYPE_BFLOAT16:      launch_embedding<__nv_bfloat16>(cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_embedding<__nv_fp8_e4m3>(cmd); break;
-      default: mag_assert(false, "embedding: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: embedding: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T>
@@ -576,7 +583,7 @@ namespace mag {
     }
   }
 
-  void misc_op_cat(const mag_command_t &cmd) {
+  mag_status_t misc_op_cat(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32:       launch_cat<float>(cmd); break;
@@ -592,8 +599,9 @@ namespace mag {
       case MAG_DTYPE_INT32:         launch_cat<int32_t>(cmd); break;
       case MAG_DTYPE_UINT64:        launch_cat<uint64_t>(cmd); break;
       case MAG_DTYPE_INT64:         launch_cat<int64_t>(cmd); break;
-      default: mag_assert(false, "cat: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: cat: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T>
@@ -701,7 +709,7 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_topk(const mag_command_t &cmd) {
+  static mag_status_t launch_topk(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *v = cmd.out[0];
     mag_tensor_t *idx = cmd.out[1];
@@ -714,10 +722,11 @@ namespace mag {
     const int64_t dim_size = x->coords.shape[dim];
     mag_assert2(k > 0 && k <= dim_size);
     int64_t outer_count = x->numel / dim_size;
-    if (outer_count <= 0) return;
+    if (outer_count <= 0) return MAG_STATUS_OK;
     size_t row_bytes = static_cast<size_t>(dim_size)*(sizeof(T) + sizeof(int64_t));
+    size_t scratch_bytes = row_bytes*static_cast<size_t>(outer_count);
     void *d_scratch = nullptr;
-    cuda_check(cudaMalloc(&d_scratch, row_bytes*static_cast<size_t>(outer_count)), "topk cudaMalloc");
+    if (cudaError_t ce = cudaMalloc(&d_scratch, scratch_bytes); mag_unlikely(ce != cudaSuccess)) return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cuda: topk device allocation of %zu bytes failed: %s.", scratch_bytes, cudaGetErrorString(ce));
     const T *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     T *bv = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(v));
     int64_t *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
@@ -727,24 +736,25 @@ namespace mag {
       outer_count, dim_size, k, largest, R, dim, stride_x_dim, stride_v_dim,
       *x, *v, *idx, bx, bv, bi, reinterpret_cast<char *>(d_scratch), row_bytes);
     cuda_check(cudaFree(d_scratch), "topk cudaFree");
+    return MAG_STATUS_OK;
   }
 
-  void misc_op_topk(const mag_command_t &cmd) {
+  mag_status_t misc_op_topk(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     switch (x->dtype) {
-      case MAG_DTYPE_FLOAT32: launch_topk<float>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_topk<half>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_topk<__nv_bfloat16>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_topk<__nv_fp8_e4m3>(cmd); break;
-      case MAG_DTYPE_UINT8: launch_topk<uint8_t>(cmd); break;
-      case MAG_DTYPE_INT8: launch_topk<int8_t>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_topk<uint16_t>(cmd); break;
-      case MAG_DTYPE_INT16: launch_topk<int16_t>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_topk<uint32_t>(cmd); break;
-      case MAG_DTYPE_INT32: launch_topk<int32_t>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_topk<uint64_t>(cmd); break;
-      case MAG_DTYPE_INT64: launch_topk<int64_t>(cmd); break;
-      default: mag_assert(false, "topk: unsupported dtype");
+      case MAG_DTYPE_FLOAT32: return launch_topk<float>(err, cmd);
+      case MAG_DTYPE_FLOAT16: return launch_topk<half>(err, cmd);
+      case MAG_DTYPE_BFLOAT16: return launch_topk<__nv_bfloat16>(err, cmd);
+      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_topk<__nv_fp8_e4m3>(err, cmd);
+      case MAG_DTYPE_UINT8: return launch_topk<uint8_t>(err, cmd);
+      case MAG_DTYPE_INT8: return launch_topk<int8_t>(err, cmd);
+      case MAG_DTYPE_UINT16: return launch_topk<uint16_t>(err, cmd);
+      case MAG_DTYPE_INT16: return launch_topk<int16_t>(err, cmd);
+      case MAG_DTYPE_UINT32: return launch_topk<uint32_t>(err, cmd);
+      case MAG_DTYPE_INT32: return launch_topk<int32_t>(err, cmd);
+      case MAG_DTYPE_UINT64: return launch_topk<uint64_t>(err, cmd);
+      case MAG_DTYPE_INT64: return launch_topk<int64_t>(err, cmd);
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: topk: unsupported dtype: %s.", mag_type_trait(x->dtype)->name);
     }
   }
 
@@ -817,18 +827,18 @@ namespace mag {
     for (int64_t s=kout; s < num_samples; ++s) o[s] = -1;
   }
 
-  void misc_op_multinomial(const mag_command_t &cmd) {
+  mag_status_t misc_op_multinomial(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     mag_assert2(r->dtype == MAG_DTYPE_INT64);
     int64_t num_samples = mag_op_attr_unwrap_int64(cmd.attrs[0]);
     int64_t K = x->coords.shape[x->coords.rank-1];
-    if (K <= 0) return;
+    if (K <= 0) return MAG_STATUS_OK;
     int64_t B = x->numel / K;
-    if (B <= 0) return;
+    if (B <= 0) return MAG_STATUS_OK;
     size_t ws = static_cast<size_t>(B)*static_cast<size_t>(K)*sizeof(mag_discrete_sample_pair_d);
     void *d_ws = nullptr;
-    cuda_check(cudaMalloc(&d_ws, ws), "multinomial cudaMalloc");
+    if (cudaError_t ce = cudaMalloc(&d_ws, ws); mag_unlikely(ce != cudaSuccess)) return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cuda: multinomial device allocation of %zu bytes failed: %s.", ws, cudaGetErrorString(ce));
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
     uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
     int64_t *br = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
@@ -846,9 +856,12 @@ namespace mag {
       case MAG_DTYPE_FLOAT8_E4M3FN:
         multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE>>>(B, K, num_samples, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
-      default: mag_assert(false, "multinomial: unsupported dtype");
+      default:
+        cuda_check(cudaFree(d_ws), "multinomial cudaFree");
+        return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: multinomial: unsupported dtype: %s.", mag_type_trait(x->dtype)->name);
     }
     cuda_check(cudaFree(d_ws), "multinomial cudaFree");
+    return MAG_STATUS_OK;
   }
 
   [[nodiscard]] __device__ __forceinline__ static int pad_reflect_index(int i, int size) {
@@ -932,7 +945,8 @@ namespace mag {
   }
 
   template <typename T, bool C>
-  static void launch_pad_mode(
+  static mag_status_t launch_pad_mode(
+    mag_error_t *err,
     int mode,
     int blocks,
     int n,
@@ -948,12 +962,13 @@ namespace mag {
       case MAG_PAD_MODE_REFLECT: pad_kernel<T, MAG_PAD_MODE_REFLECT, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
       case MAG_PAD_MODE_REPLICATE: pad_kernel<T, MAG_PAD_MODE_REPLICATE, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
       case MAG_PAD_MODE_CIRCULAR: pad_kernel<T, MAG_PAD_MODE_CIRCULAR, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
-      default: mag_assert(false, "pad: unsupported mode: %d", mode);
+      default: return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "cuda: pad: unsupported mode: %d.", mode);
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T>
-  static void launch_pad(mag_tensor_t *r, const mag_tensor_t *x, const mag_pad_plan_t &plan) {
+  static mag_status_t launch_pad(mag_error_t *err, mag_tensor_t *r, const mag_tensor_t *x, const mag_pad_plan_t &plan) {
     int n = static_cast<int>(mag_tensor_numel(r));
     int blocks = (n + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
     mag_coords_iter_t cr, cx;
@@ -962,31 +977,31 @@ namespace mag {
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     if (mag_tensor_is_contiguous(r)) {
-      launch_pad_mode<T, true>(plan.mode, blocks, n, plan.rank, plan, cr, cx, br, bx);
+      return launch_pad_mode<T, true>(err, plan.mode, blocks, n, plan.rank, plan, cr, cx, br, bx);
     } else {
-      launch_pad_mode<T, false>(plan.mode, blocks, n, plan.rank, plan, cr, cx, br, bx);
+      return launch_pad_mode<T, false>(err, plan.mode, blocks, n, plan.rank, plan, cr, cx, br, bx);
     }
   }
 
-  void misc_op_pad(const mag_command_t &cmd) {
+  mag_status_t misc_op_pad(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const auto &plan = *static_cast<const mag_pad_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
     switch (r->dtype) {
-      case MAG_DTYPE_FLOAT32: launch_pad<float>(r, x, plan); break;
-      case MAG_DTYPE_FLOAT16: launch_pad<half>(r, x, plan); break;
-      case MAG_DTYPE_BFLOAT16: launch_pad<__nv_bfloat16>(r, x, plan); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_pad<__nv_fp8_e4m3>(r, x, plan); break;
+      case MAG_DTYPE_FLOAT32: return launch_pad<float>(err, r, x, plan);
+      case MAG_DTYPE_FLOAT16: return launch_pad<half>(err, r, x, plan);
+      case MAG_DTYPE_BFLOAT16: return launch_pad<__nv_bfloat16>(err, r, x, plan);
+      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_pad<__nv_fp8_e4m3>(err, r, x, plan);
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: launch_pad<uint8_t>(r, x, plan); break;
-      case MAG_DTYPE_INT8: launch_pad<int8_t>(r, x, plan); break;
-      case MAG_DTYPE_UINT16: launch_pad<uint16_t>(r, x, plan); break;
-      case MAG_DTYPE_INT16: launch_pad<int16_t>(r, x, plan); break;
-      case MAG_DTYPE_UINT32: launch_pad<uint32_t>(r, x, plan); break;
-      case MAG_DTYPE_INT32: launch_pad<int32_t>(r, x, plan); break;
-      case MAG_DTYPE_UINT64: launch_pad<uint64_t>(r, x, plan); break;
-      case MAG_DTYPE_INT64: launch_pad<int64_t>(r, x, plan); break;
-      default: mag_assert(false, "pad: unsupported dtype");
+      case MAG_DTYPE_UINT8: return launch_pad<uint8_t>(err, r, x, plan);
+      case MAG_DTYPE_INT8: return launch_pad<int8_t>(err, r, x, plan);
+      case MAG_DTYPE_UINT16: return launch_pad<uint16_t>(err, r, x, plan);
+      case MAG_DTYPE_INT16: return launch_pad<int16_t>(err, r, x, plan);
+      case MAG_DTYPE_UINT32: return launch_pad<uint32_t>(err, r, x, plan);
+      case MAG_DTYPE_INT32: return launch_pad<int32_t>(err, r, x, plan);
+      case MAG_DTYPE_UINT64: return launch_pad<uint64_t>(err, r, x, plan);
+      case MAG_DTYPE_INT64: return launch_pad<int64_t>(err, r, x, plan);
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: pad: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
   }
 
@@ -1169,7 +1184,7 @@ namespace mag {
     );
   }
 
-  static void impl_cu_scan(const mag_command_t &cmd, bool is_prod) {
+  static mag_status_t impl_cu_scan(mag_error_t *err, const mag_command_t &cmd, bool is_prod) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32:
@@ -1220,11 +1235,12 @@ namespace mag {
         if (is_prod) launch_cu_scan<int64_t, int64_t, true>(cmd);
         else launch_cu_scan<int64_t, int64_t, false>(cmd);
         break;
-      default: mag_assert(false, "cu*: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: cu*: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  static void impl_cu_ext(const mag_command_t &cmd, bool is_max) {
+  static mag_status_t impl_cu_ext(mag_error_t *err, const mag_command_t &cmd, bool is_max) {
     mag_tensor_t *v = cmd.out[0];
     switch (v->dtype) {
       case MAG_DTYPE_FLOAT32:
@@ -1275,14 +1291,15 @@ namespace mag {
         if (is_max) launch_cu_ext<int64_t, true>(cmd);
         else launch_cu_ext<int64_t, false>(cmd);
         break;
-      default: mag_assert(false, "cu*: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: cu*: unsupported dtype: %s.", mag_type_trait(v->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void misc_op_cusum(const mag_command_t &cmd) { impl_cu_scan(cmd, false); }
-  void misc_op_cuprod(const mag_command_t &cmd) { impl_cu_scan(cmd, true); }
-  void misc_op_cumax(const mag_command_t &cmd) { impl_cu_ext(cmd, true); }
-  void misc_op_cumin(const mag_command_t &cmd) { impl_cu_ext(cmd, false); }
+  mag_status_t misc_op_cusum(mag_error_t *err, const mag_command_t &cmd) { return impl_cu_scan(err, cmd, false); }
+  mag_status_t misc_op_cuprod(mag_error_t *err, const mag_command_t &cmd) { return impl_cu_scan(err, cmd, true); }
+  mag_status_t misc_op_cumax(mag_error_t *err, const mag_command_t &cmd) { return impl_cu_ext(err, cmd, true); }
+  mag_status_t misc_op_cumin(mag_error_t *err, const mag_command_t &cmd) { return impl_cu_ext(err, cmd, false); }
 
   [[nodiscard]] __device__ static int repeat_in_elem_offset_dev(
     int64_t flat_out,
@@ -1320,7 +1337,7 @@ namespace mag {
     }
   }
 
-  static void launch_repeat(const mag_command_t &cmd) {
+  static mag_status_t launch_repeat(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const mag_repeat_plan_t *plan = static_cast<const mag_repeat_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
@@ -1404,13 +1421,15 @@ namespace mag {
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      default: mag_assert(false, "repeat: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: repeat: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void misc_op_repeat(const mag_command_t &cmd) { launch_repeat(cmd); }
+  mag_status_t misc_op_repeat(mag_error_t *err, const mag_command_t &cmd) { return launch_repeat(err, cmd); }
 
-  void misc_op_repeat_interleave(const mag_command_t &cmd) {
+  mag_status_t misc_op_repeat_interleave(mag_error_t *err, const mag_command_t &cmd) {
+    (void)err;
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const mag_repeat_interleave_plan_t *plan = static_cast<const mag_repeat_interleave_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
@@ -1428,7 +1447,7 @@ namespace mag {
           ++out_i;
         }
       }
-      return;
+      return MAG_STATUS_OK;
     }
     int64_t dim = plan->dim;
     int64_t R = x->coords.rank;
@@ -1473,6 +1492,7 @@ namespace mag {
         cur += rep;
       }
     }
+    return MAG_STATUS_OK;
   }
 
   template <typename T, bool is_int>
@@ -1517,7 +1537,7 @@ namespace mag {
     }
   }
 
-  static void launch_index_add(const mag_command_t &cmd) {
+  static mag_status_t launch_index_add(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *self = cmd.out[0];
     const mag_tensor_t *source = cmd.in[1];
     const mag_tensor_t *index = cmd.in[2];
@@ -1612,9 +1632,10 @@ namespace mag {
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      default: mag_assert(false, "index_add_: unsupported dtype");
+      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: index_add_: unsupported dtype: %s.", mag_type_trait(self->dtype)->name);
     }
+    return MAG_STATUS_OK;
   }
 
-  void misc_op_index_add(const mag_command_t &cmd) { launch_index_add(cmd); }
+  mag_status_t misc_op_index_add(mag_error_t *err, const mag_command_t &cmd) { return launch_index_add(err, cmd); }
 }

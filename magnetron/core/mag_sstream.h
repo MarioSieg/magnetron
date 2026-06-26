@@ -23,11 +23,12 @@ typedef struct mag_sstream_t {
   char *buf;
   size_t len;
   size_t cap;
+  bool oom; /* Set if a (re)allocation failed; further appends become no-ops instead of aborting. */
 } mag_sstream_t;
 
 extern void mag_sstream_init(mag_sstream_t *ss);
 extern void mag_sstream_free(mag_sstream_t *ss);
-extern void mag_sstream_reserve_more(mag_sstream_t *ss, size_t extra);
+extern bool mag_sstream_reserve_more(mag_sstream_t *ss, size_t extra); /* Returns false on OOM. */
 extern void mag_sstream_vappend(mag_sstream_t *ss, const char *fmt, va_list ap);
 extern void mag_sstream_append(mag_sstream_t *ss, const char *fmt, ...);
 extern void mag_sstream_append_strn(mag_sstream_t *ss, const char *str, size_t len);

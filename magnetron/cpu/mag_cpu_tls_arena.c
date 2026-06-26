@@ -13,16 +13,19 @@
 
 #include <core/mag_alloc.h>
 
-void mag_scratch_arena_reserve(mag_scratch_arena_t *arena, size_t nb) {
-  if (nb <= arena->cap) return;
+bool mag_scratch_arena_reserve(mag_scratch_arena_t *arena, size_t nb) {
+  if (nb <= arena->cap) return true;
   size_t nc = arena->cap ? arena->cap : 4096;
   while (nc < nb) nc = nc < 1<<20 ? nc<<1 : nc+(nc>>1);
   nc = (nc + 4095)&~4095;
-  arena->base = (*mag_alloc)(arena->base, nc, MAG_MM_SCRATCH_ALIGN);
+  uint8_t *grown = (*mag_try_alloc)(arena->base, nc, MAG_MM_SCRATCH_ALIGN);
+  if (mag_unlikely(!grown)) return false; /* OOM: keep the existing buffer intact. */
+  arena->base = grown;
   #ifndef _MSC_VER
     arena->base = __builtin_assume_aligned(arena->base, MAG_MM_SCRATCH_ALIGN);
   #endif
   arena->cap = nc;
+  return true;
 }
 
 size_t mag_scratch_arena_mark(mag_scratch_arena_t *arena) {
@@ -39,7 +42,7 @@ void *mag_scratch_arena_alloc(mag_scratch_arena_t *arena, size_t nb) {
   size_t n = (nb+(MAG_MM_SCRATCH_ALIGN-1)) & ~(MAG_MM_SCRATCH_ALIGN-1);
   size_t end = pos + n;
   if (mag_unlikely(end > arena->cap))
-    mag_scratch_arena_reserve(arena, end);
+    if (mag_unlikely(!mag_scratch_arena_reserve(arena, end))) return NULL;
   void *p = arena->base + pos;
   arena->pos = end;
   arena->hi = mag_xmax(end, arena->hi);

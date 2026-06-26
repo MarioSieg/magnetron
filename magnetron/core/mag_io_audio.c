@@ -21,8 +21,8 @@
 #include <dr_wav.h>
 #include <dr_mp3.h>
 
-static void *dr_lib_malloc(size_t sz, void *usr) { (void)usr; return (*mag_alloc)(NULL, sz, 0); }
-static void *dr_lib_realloc(void *p, size_t sz, void *usr) { (void)usr; return (*mag_alloc)(p, sz, 0); }
+static void *dr_lib_malloc(size_t sz, void *usr) { (void)usr; return (*mag_try_alloc)(NULL, sz, 0); }
+static void *dr_lib_realloc(void *p, size_t sz, void *usr) { (void)usr; return (*mag_try_alloc)(p, sz, 0); }
 static void dr_lib_free(void *p, void *usr) { (void)usr; (*mag_alloc)(p, 0, 0); }
 static const drwav_allocation_callbacks wav_alloc_hooks = {
   .onMalloc = &dr_lib_malloc,
@@ -86,7 +86,7 @@ mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t 
     }
     fmt = AUDIO_MP3;
   } else {
-    return MAG_STATUS_ERR_INVALID_PARAM;
+    return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "load_audio: unsupported audio format '%s' (supported: .wav, .flac, .mp3).", ext);
   }
 
   if (mag_unlikely(samples == NULL)) {
@@ -196,7 +196,11 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   const float *restrict src = (const float *)mag_tensor_data_ptr(contig);
 
   size_t n = (size_t)c * (size_t)frames;
-  samples = (*mag_alloc)(NULL, n*sizeof(*samples), 0);
+  samples = (*mag_try_alloc)(NULL, n*sizeof(*samples), 0);
+  if (mag_unlikely(!samples)) {
+    status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "save_audio: failed to allocate %zu bytes for interleaved samples.", n*sizeof(*samples));
+    goto cleanup;
+  }
 
   /* (C,T) planar -> (T,C) interleaved */
   for (int64_t k=0; k < c; ++k)
