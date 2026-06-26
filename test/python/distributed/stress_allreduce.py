@@ -27,7 +27,7 @@ def main() -> None:
 
     pg = distributed.ProcessGroup(args.ip, args.port, args.rank, args.world_size)
     scalar_type = dtype.bfloat16
-    x = Tensor.full((args.numel,), float(args.rank + 1), dtype=scalar_type)
+    x = Tensor.full((args.numel,), fill_value=float(args.rank + 1), dtype=scalar_type)
     expected = args.world_size * (args.world_size + 1) / 2
     tensor_mib = args.numel * scalar_type.size / 1024 / 1024
     wire_mib = tensor_mib * 2
