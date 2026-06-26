@@ -44,25 +44,25 @@ mag_status_t mag_pgroup_init_tcp(
     return MAG_STATUS_OK;
   }
   if (rank == 0) { /* Master node */
-    mag_tcp_socket_t listener;
-    mag_try_or(mag_tcp_socket_listen(&listener, master_port, 128), {
-      (*mag_alloc)(peers, 0, 0);
-      (*mag_alloc)(pgroup, 0, 0);
-    });
+      mag_tcp_socket_t listener;
+      mag_contract(err, ERR_STREAM_IO_ERROR, {
+        (*mag_alloc)(peers, 0, 0);
+        (*mag_alloc)(pgroup, 0, 0);
+      }, mag_tcp_socket_listen(&listener, master_port, 128), "process_group: rank 0 failed to listen on port %u.", master_port);
     for (uint32_t ra=1; ra < world_size; ++ra) {
       mag_tcp_socket_t sock;
-      mag_try_or(mag_tcp_socket_accept(&sock, listener), {
+      mag_contract(err, ERR_STREAM_IO_ERROR, {
         (*mag_alloc)(peers, 0, 0);
         (*mag_alloc)(pgroup, 0, 0);
         mag_tcp_socket_close(listener);
-      });
+      }, mag_tcp_socket_accept(&sock, listener), "process_group: rank 0 failed to accept peer.");
       uint32_t peer_rank = UINT32_MAX;
-      mag_try_or(mag_tcp_socket_recv_all(sock, &peer_rank, sizeof(peer_rank)), {
+      mag_contract(err, ERR_STREAM_IO_ERROR, {
         (*mag_alloc)(peers, 0, 0);
         (*mag_alloc)(pgroup, 0, 0);
         mag_tcp_socket_close(listener);
         mag_tcp_socket_close(sock);
-      });
+      }, mag_tcp_socket_recv_all(sock, &peer_rank, sizeof(peer_rank)), "process_group: rank 0 failed to receive peer rank.");
       mag_contract(err, ERR_INVALID_PARAM, {
         (*mag_alloc)(peers, 0, 0);
         (*mag_alloc)(pgroup, 0, 0);
@@ -74,15 +74,15 @@ mag_status_t mag_pgroup_init_tcp(
     mag_tcp_socket_close(listener);
   } else {
     mag_tcp_socket_t sock;
-    mag_try_or(mag_tcp_socket_connect(&sock, master_addr, master_port), {
+    mag_contract(err, ERR_STREAM_IO_ERROR, {
       (*mag_alloc)(peers, 0, 0);
       (*mag_alloc)(pgroup, 0, 0);
-    });
-    mag_try_or(mag_tcp_socket_send_all(sock, &rank, sizeof(rank)), {
-      (*mag_alloc)(peers, 0, 0);
-      (*mag_alloc)(pgroup, 0, 0);
-      mag_tcp_socket_close(sock);
-    });
+    }, mag_tcp_socket_connect(&sock, master_addr, master_port), "process_group: rank %u failed to connect to %s:%u.", rank, master_addr, master_port);
+    mag_contract(err, ERR_STREAM_IO_ERROR, {
+       (*mag_alloc)(peers, 0, 0);
+       (*mag_alloc)(pgroup, 0, 0);
+       mag_tcp_socket_close(sock);
+     }, mag_tcp_socket_send_all(sock, &rank, sizeof(rank)), "process_group: rank %u failed to send rank id.", rank);
     *peers = sock;
   }
   *out = pgroup;
