@@ -74,34 +74,37 @@ namespace mag::bindings {
     bool m_active {};
   };
 
-  struct tensor_wrapper final {
-    mag_tensor_t *p = nullptr;
-
+  class tensor_wrapper final {
+  public:
     constexpr tensor_wrapper() noexcept = default;
-    explicit tensor_wrapper(mag_tensor_t *ptr) noexcept : p{ptr} {}
-    tensor_wrapper(const tensor_wrapper &other) noexcept : p{other.p} { if (p) mag_tensor_incref(p); }
-    constexpr tensor_wrapper(tensor_wrapper &&other) noexcept : p{other.p} { other.p = nullptr; }
+    explicit tensor_wrapper(mag_tensor_t *ptr) noexcept : m_tensor{ptr} {}
+    tensor_wrapper(const tensor_wrapper &other) noexcept : m_tensor{other.m_tensor} { if (m_tensor) mag_tensor_incref(m_tensor); }
+    constexpr tensor_wrapper(tensor_wrapper &&other) noexcept : m_tensor{other.m_tensor} { other.m_tensor = nullptr; }
     tensor_wrapper &operator=(const tensor_wrapper &other) noexcept {
       if (this != &other) {
-        if (other.p) mag_tensor_incref(other.p);
-        if (p) mag_tensor_decref(p);
-        p = other.p;
+        if (other.m_tensor) mag_tensor_incref(other.m_tensor);
+        if (m_tensor) mag_tensor_decref(m_tensor);
+        m_tensor = other.m_tensor;
       }
       return *this;
     }
     tensor_wrapper &operator=(tensor_wrapper &&other) noexcept {
       if (this != &other) {
-        if (p) mag_tensor_decref(p);
-        p = other.p;
-        other.p = nullptr;
+        if (m_tensor) mag_tensor_decref(m_tensor);
+        m_tensor = other.m_tensor;
+        other.m_tensor = nullptr;
       }
       return *this;
     }
     ~tensor_wrapper() {
-      if (p) mag_tensor_decref(p);
+      if (m_tensor) mag_tensor_decref(m_tensor);
     }
-    explicit constexpr operator bool() const noexcept { return p != nullptr; }
-    constexpr mag_tensor_t *operator * () const noexcept { return p; }
+    explicit constexpr operator bool() const noexcept { return m_tensor != nullptr; }
+    constexpr mag_tensor_t *operator * () const noexcept { return m_tensor; }
+    constexpr mag_tensor_t *&operator * () noexcept { return m_tensor; }
+
+  private:
+    mag_tensor_t *m_tensor = nullptr;
   };
   static_assert(sizeof(tensor_wrapper) == sizeof(mag_tensor_t *), "tensor_wrapper should have the same size as a raw pointer.");
 

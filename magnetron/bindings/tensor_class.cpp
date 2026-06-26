@@ -65,7 +65,7 @@ namespace mag::bindings {
       strides[i] = p_strides[i];
     }
     mag_dtype_t dtype = mag_tensor_type(tensor);
-    nb::object owner = host.p ? nb::cast(host) : nb::cast(self);
+    nb::object owner = *host ? nb::cast(host) : nb::cast(self);
     switch (dtype) {
       /* MAG_DTYPE_FLOAT64 not yet in magnetron; float64 arrays rejected below */
       case MAG_DTYPE_FLOAT32: return ndarray_f32(base, rank, shape, strides, owner);

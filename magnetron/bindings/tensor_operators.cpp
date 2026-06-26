@@ -42,8 +42,8 @@
       } else { \
         throw_if_error(mag_##name##_(&err, &out, *self), err); \
       } \
-      if (self.p) mag_tensor_decref(self.p); \
-      self.p = out; \
+      if (self) mag_tensor_decref(*self); \
+      *self = out; \
       return self; \
     }, "In-place version.", nb::rv_policy::reference)
 
@@ -91,8 +91,8 @@
       } else { \
         throw_if_error(mag_##c_name##_(&err, &out, *a, *b), err); \
       } \
-      if (a.p) mag_tensor_decref(a.p); \
-      a.p = out; \
+      if (a) mag_tensor_decref(*a); \
+      *a = out; \
       return a; \
     }, "rhs"_a, "In-place " #named_name ".", nb::rv_policy::reference); \
   cls.def(#named_name, \
@@ -117,8 +117,8 @@
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
       throw_if_error(mag_##c_name##_(&err, &out, *a, *b), err); \
-      if (a.p) mag_tensor_decref(a.p); \
-      a.p = out; \
+      if (a) mag_tensor_decref(*a); \
+      *a = out; \
       return a; \
     }, "rhs"_a, "In-place version.", nb::rv_policy::reference)
 
@@ -957,8 +957,8 @@ namespace mag::bindings {
         } else {
           throw_if_error(mag_tril_(&err, &out, *self, diagonal), err);
         }
-        if (self.p) mag_tensor_decref(self.p);
-        self.p = out;
+        if (self) mag_tensor_decref(*self);
+        *self = out;
         return self;
       },
       "diagonal"_a = 0,
@@ -977,8 +977,8 @@ namespace mag::bindings {
         } else {
           throw_if_error(mag_triu_(&err, &out, *self, diagonal), err);
         }
-        if (self.p) mag_tensor_decref(self.p);
-        self.p = out;
+        if (self) mag_tensor_decref(*self);
+        *self = out;
         return self;
       },
       "diagonal"_a = 0,
@@ -1340,8 +1340,8 @@ namespace mag::bindings {
         } else {
           throw_if_error(mag_softmax_(&err, &out, *self), err); // TODO: respect dim
         }
-        if (self.p) mag_tensor_decref(self.p);
-        self.p = out;
+        if (self) mag_tensor_decref(*self);
+        *self = out;
         return self;
       },
       "dim"_a = -1,

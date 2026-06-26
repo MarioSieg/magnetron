@@ -515,6 +515,27 @@ extern MAG_EXPORT void mag_snapshot_free_tensor_keys(const char **keys, size_t n
 extern MAG_EXPORT void mag_snapshot_print_info(mag_snapshot_t *snap);
 extern MAG_EXPORT void mag_snapshot_free(mag_snapshot_t *snap);
 
+typedef struct mag_process_group_t mag_process_group_t;
+
+extern MAG_EXPORT mag_status_t mag_pgroup_init_tcp(
+    mag_error_t *err,
+    mag_process_group_t **out,
+    const char *master_addr,
+    uint16_t master_port,
+    uint32_t rank,
+    uint32_t world_size
+);
+extern MAG_EXPORT void mag_pgroup_destroy(mag_process_group_t *pgroup);
+extern MAG_EXPORT uint32_t mag_pgroup_rank(const mag_process_group_t *pgroup);
+extern MAG_EXPORT uint32_t mag_pgroup_world_size(const mag_process_group_t *pgroup);
+extern MAG_EXPORT mag_status_t mag_pgroup_validate(mag_error_t *err, mag_process_group_t *pgroup);
+extern MAG_EXPORT mag_status_t mag_pgroup_verify_tensor_is_wireable(mag_error_t *err, mag_tensor_t *tensor);
+extern MAG_EXPORT mag_status_t mag_pgroup_send_bytes(mag_error_t *err, mag_process_group_t *pgroup, uint32_t dst_rank, const void *buf, size_t nb);
+extern MAG_EXPORT mag_status_t mag_pgroup_recv_bytes(mag_error_t *err, mag_process_group_t *pgroup, uint32_t src_rank, void *buf, size_t nb);
+extern MAG_EXPORT mag_status_t mag_pgroup_barrier(mag_error_t *err, mag_process_group_t *pgroup);
+extern MAG_EXPORT mag_status_t mag_pgroup_broadcast_(mag_error_t *err, mag_process_group_t *pgroup, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_pgroup_all_reduce_sum_(mag_error_t *err, mag_process_group_t *pgroup, mag_tensor_t *x);
+
 #ifdef __cplusplus
 }
 #endif
