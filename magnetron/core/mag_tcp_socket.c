@@ -35,7 +35,7 @@ void mag_tcp_socket_close(mag_tcp_socket_t sock) {
     close(sock);
 }
 
-bool mag_tcp_socket_set_ops(mag_tcp_socket_t sock) {
+static bool mag_tcp_socket_set_options(mag_tcp_socket_t sock) {
   volatile int yes = 1;
   if (mag_unlikely(setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&yes, sizeof(yes)) < 0)) return false;
   if (mag_unlikely(setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (const char *)&yes, sizeof(yes)) < 0)) return false;
@@ -71,7 +71,7 @@ bool mag_tcp_socket_accept(mag_tcp_socket_t *out_sock, mag_tcp_socket_t listener
     if (errno == EINTR) continue;
     return false;
   }
-  if (mag_unlikely(!mag_tcp_socket_set_ops(sock))) {
+  if (mag_unlikely(!mag_tcp_socket_set_options(sock))) {
     mag_tcp_socket_close(sock);
     return false;
   }
@@ -91,7 +91,7 @@ bool mag_tcp_socket_connect(mag_tcp_socket_t *out_sock, const char *host, uint16
     if (mag_unlikely(!mag_tcp_socket_is_open(sock)))
       return false;
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-      if (mag_unlikely(!mag_tcp_socket_set_ops(sock))) {
+      if (mag_unlikely(!mag_tcp_socket_set_options(sock))) {
         mag_tcp_socket_close(sock);
         return false;
       }
