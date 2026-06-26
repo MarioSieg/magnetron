@@ -23,7 +23,7 @@ install(TARGETS _magnetron_bindings
 message(STATUS "Generating .pyi stubs for _magnetron_bindings...")
 nanobind_add_stub(magnetron_stubs
     INSTALL_TIME
-    MODULE _magnetron_bindings
+    MODULE magnetron._magnetron_bindings
     OUTPUT magnetron/_magnetron_bindings.pyi
     PYTHON_PATH magnetron
     MARKER_FILE py.typed
