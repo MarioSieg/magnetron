@@ -533,44 +533,16 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 #define mag_iserr(stat) (mag_unlikely((stat) != MAG_STATUS_OK))
 #define mag_isok(stat) (!mag_iserr((stat)))
 
-/*
-'* If 'expr' is false, set the last error in the given context to 'status' and
-'* return 'status'. Optionally perform 'cleanup' code before returning.
-'* The 'msg' is a printf-style format string with optional arguments.
-*/
-#define mag_contract(E, status, cleanup, expr, msg, ...) \
-  do { \
-    if (mag_unlikely(!(expr))) { \
-      if ((E) != NULL && (E)->code == MAG_STATUS_OK) { \
-        *(E) = (mag_error_t){ \
-          .code = MAG_STATUS_##status, \
-          .message = "", \
-          .file = MAG_SRC_NAME, \
-          .line = __LINE__, \
-          .func = __func__, \
-        }; \
-        snprintf((E)->message, sizeof((E)->message), (msg), ##__VA_ARGS__); \
-      } \
-      cleanup; \
-      return MAG_STATUS_##status; \
-    } \
-  } while (0)
-
-
-#define mag_try(call) \
-  do { \
-    mag_status_t status____ = (call); \
-    if (mag_iserr(status____)) return status____; \
-  } while (0)
-
-#define mag_try_or(call, cleanup) \
-  do { \
-    mag_status_t status____ = (call); \
-    if (mag_iserr(status____)) { \
-      cleanup; \
-      return status____; \
-    } \
-  } while (0)
+extern MAG_COLDPROC mag_printf_fmt(6,7) mag_status_t mag_set_error_impl(
+  mag_error_t *err,
+  mag_status_t code,
+  const char *file,
+  int line,
+  const char *func,
+  const char *fmt,
+  ...
+);
+#define mag_set_error(err, code, fmt, ...) mag_set_error_impl((err), (code), MAG_SRC_NAME, __LINE__, __func__, (fmt), ##__VA_ARGS__)
 
 extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
 

@@ -62,8 +62,10 @@ namespace mag {
 
   [[nodiscard]] static mag_status_t cuda_transfer(mag_device_t *dvc, mag_error_t *err, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst) {
     const size_t nb = mag_tensor_numbytes(src);
-    mag_contract(err, ERR_INVALID_PARAM, {}, nb == mag_tensor_numbytes(dst), "Transfer: source and destination byte sizes differ.");
-    mag_contract(err, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(dst), "Transfer requires contiguous tensors.");
+    if (mag_unlikely(nb != mag_tensor_numbytes(dst)))
+      return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "Transfer: source and destination byte sizes differ.");
+    if (mag_unlikely(!(mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(dst))))
+      return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "Transfer requires contiguous tensors.");
 
     const int my_dev = static_cast<int>(dvc->id.device_ordinal);
 
@@ -83,9 +85,12 @@ namespace mag {
 
     switch (dir) {
     case MAG_TRANSFER_DIR_H2D: {
-      mag_contract(err, ERR_INVALID_PARAM, {}, src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE, "H2D: source storage must be host-visible.");
-      mag_contract(err, ERR_INVALID_PARAM, {}, !(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE), "H2D: destination storage must be device-local.");
-      mag_contract(err, ERR_INVALID_PARAM, {}, dst->storage->device == dvc, "H2D: destination device mismatch.");
+      if (mag_unlikely(!(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "H2D: source storage must be host-visible.");
+      if (mag_unlikely(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "H2D: destination storage must be device-local.");
+      if (mag_unlikely(dst->storage->device != dvc))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "H2D: destination device mismatch.");
       cudaError_t ce = cudaSetDevice(my_dev);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaSetDevice (H2D)");
@@ -95,9 +100,12 @@ namespace mag {
       return MAG_STATUS_OK;
     }
     case MAG_TRANSFER_DIR_D2H: {
-      mag_contract(err, ERR_INVALID_PARAM, {}, !(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE), "D2H: source storage must be device-local.");
-      mag_contract(err, ERR_INVALID_PARAM, {}, src->storage->device == dvc, "D2H: source device mismatch.");
-      mag_contract(err, ERR_INVALID_PARAM, {}, dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE, "D2H: destination storage must be host-visible.");
+      if (mag_unlikely(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "D2H: source storage must be device-local.");
+      if (mag_unlikely(src->storage->device != dvc))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "D2H: source device mismatch.");
+      if (mag_unlikely(!(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "D2H: destination storage must be host-visible.");
       cudaError_t ce = cudaSetDevice(my_dev);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaSetDevice (D2H)");
@@ -107,10 +115,12 @@ namespace mag {
       return MAG_STATUS_OK;
     }
     case MAG_TRANSFER_DIR_D2D: {
-      mag_contract(err, ERR_INVALID_PARAM, {}, !(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE) && !(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE), "D2D: both storages must be device-local.");
+      if (mag_unlikely((src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE) || (dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "D2D: both storages must be device-local.");
       const int src_ord = static_cast<int>(src->storage->device->id.device_ordinal);
       const int dst_ord = static_cast<int>(dst->storage->device->id.device_ordinal);
-      mag_contract(err, ERR_INVALID_PARAM, {}, dst->storage->device == dvc, "D2D: destination device mismatch.");
+      if (mag_unlikely(dst->storage->device != dvc))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "D2D: destination device mismatch.");
       cudaError_t ce = cudaSetDevice(dst_ord);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaSetDevice (D2D)");
@@ -122,7 +132,7 @@ namespace mag {
       return MAG_STATUS_OK;
     }
     default:
-      mag_contract(err, ERR_INVALID_PARAM, {}, false, "Invalid transfer direction.");
+      return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "Invalid transfer direction.");
     }
   }
 

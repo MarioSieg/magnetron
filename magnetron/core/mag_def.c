@@ -369,3 +369,25 @@ int mag_casecmp(const char *a, const char *b) {
       return 0;
   return *a == 0 && *b == 0;
 }
+
+MAG_COLDPROC mag_status_t mag_set_error_impl(
+  mag_error_t *err,
+  mag_status_t code,
+  const char *file,
+  int line,
+  const char *func,
+  const char *fmt,
+  ...
+) {
+  if (err != NULL && err->code == MAG_STATUS_OK) {
+    err->code = code;
+    err->file = file;
+    err->line = line;
+    err->func = func;
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(err->message, sizeof(err->message), fmt, ap);
+    va_end(ap);
+  }
+  return code;
+}

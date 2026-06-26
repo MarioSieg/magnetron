@@ -22,29 +22,21 @@
 #include <errno.h>
 #endif
 
-mag_tcp_socket_t mag_tcp_socket_invalid(void) {
-  return -1;
+void mag_tcp_socket_close(mag_tcp_socket_t *sock) {
+  if (sock)
+    close((int)(intptr_t)sock);
 }
 
-bool mag_tcp_socket_is_open(mag_tcp_socket_t sock) {
-  return sock >= 0;
-}
-
-void mag_tcp_socket_close(mag_tcp_socket_t sock) {
-  if (mag_tcp_socket_is_open(sock))
-    close(sock);
-}
-
-static bool mag_tcp_socket_set_options(mag_tcp_socket_t sock) {
+static bool mag_tcp_socket_set_options(mag_tcp_socket_t *sock) {
   volatile int yes = 1;
-  if (mag_unlikely(setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&yes, sizeof(yes)) < 0)) return false;
-  if (mag_unlikely(setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (const char *)&yes, sizeof(yes)) < 0)) return false;
+  if (mag_unlikely(setsockopt((int)(intptr_t)sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&yes, sizeof(yes)) < 0)) return false;
+  if (mag_unlikely(setsockopt((int)(intptr_t)sock, SOL_SOCKET, SO_KEEPALIVE, (const char *)&yes, sizeof(yes)) < 0)) return false;
   return true;
 }
 
-bool mag_tcp_socket_listen(mag_tcp_socket_t *out_sock, uint16_t port, int backlog) {
-  mag_tcp_socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (mag_unlikely(!mag_tcp_socket_is_open(sock))) return false;
+bool mag_tcp_socket_listen(mag_tcp_socket_t **out_sock, uint16_t port, int backlog) {
+  int sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (mag_unlikely(sock < 0)) return false;
   volatile int yes = 1;
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof(yes));
   struct sockaddr_in addr = {0};
@@ -52,34 +44,34 @@ bool mag_tcp_socket_listen(mag_tcp_socket_t *out_sock, uint16_t port, int backlo
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   addr.sin_port = htons(port);
   if (mag_unlikely(bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)) {
-    mag_tcp_socket_close(sock);
+    close(sock);
     return false;
   }
   if (mag_unlikely(listen(sock, backlog)) < 0) {
-    mag_tcp_socket_close(sock);
+    close(sock);
     return false;
   }
-  *out_sock = sock;
+  *out_sock = (void *)(intptr_t)sock;
   return true;
 }
 
-bool mag_tcp_socket_accept(mag_tcp_socket_t *out_sock, mag_tcp_socket_t listener) {
-  mag_tcp_socket_t sock;
+bool mag_tcp_socket_accept(mag_tcp_socket_t **out_sock, mag_tcp_socket_t *listener) {
+  int sock;
   for (;;) {
-    sock = accept(listener, NULL, NULL);
-    if (mag_tcp_socket_is_open(sock)) break;
+    sock = accept((int)(intptr_t)listener, NULL, NULL);
+    if (sock >= 0) break;
     if (errno == EINTR) continue;
     return false;
   }
-  if (mag_unlikely(!mag_tcp_socket_set_options(sock))) {
-    mag_tcp_socket_close(sock);
+  if (mag_unlikely(!mag_tcp_socket_set_options((void *)(intptr_t)sock))) {
+    mag_tcp_socket_close((void *)(intptr_t)sock);
     return false;
   }
-  *out_sock = sock;
+  *out_sock = (void *)(intptr_t)sock;
   return true;
 }
 
-bool mag_tcp_socket_connect(mag_tcp_socket_t *out_sock, const char *host, uint16_t port) {
+bool mag_tcp_socket_connect(mag_tcp_socket_t **out_sock, const char *host, uint16_t port) {
   struct sockaddr_in addr = {0};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port);
@@ -87,19 +79,18 @@ bool mag_tcp_socket_connect(mag_tcp_socket_t *out_sock, const char *host, uint16
     return false;
   uint32_t retries=0;
   for (;;) {
-    mag_tcp_socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (mag_unlikely(!mag_tcp_socket_is_open(sock)))
-      return false;
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (mag_unlikely(sock < 0)) return false;
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-      if (mag_unlikely(!mag_tcp_socket_set_options(sock))) {
-        mag_tcp_socket_close(sock);
+      if (mag_unlikely(!mag_tcp_socket_set_options((void *)(intptr_t)sock))) {
+        close(sock);
         return false;
       }
-      *out_sock = sock;
+      *out_sock = (void *)(intptr_t)sock;
       return true;
     }
     int e = errno;
-    mag_tcp_socket_close(sock);
+    close(sock);
     if ((retries++ % 10) == 0) {
       printf("[magnetron] Waiting for %s:%u (%s)\n", host, port, strerror(e));
       fflush(stdout);
@@ -108,10 +99,10 @@ bool mag_tcp_socket_connect(mag_tcp_socket_t *out_sock, const char *host, uint16
   }
 }
 
-bool mag_tcp_socket_send_all(mag_tcp_socket_t sock, const void *buf, size_t nb) {
+bool mag_tcp_socket_send_all(mag_tcp_socket_t *sock, const void *buf, size_t nb) {
   const uint8_t *p = buf;
   while (nb > 0) {
-    ssize_t r = send(sock, p, nb, MSG_NOSIGNAL);
+    ssize_t r = send((int)(intptr_t)sock, p, nb, MSG_NOSIGNAL);
     if (mag_unlikely(r < 0)) {
       if (errno == EINTR) continue;
       return false;
@@ -123,10 +114,10 @@ bool mag_tcp_socket_send_all(mag_tcp_socket_t sock, const void *buf, size_t nb) 
   return true;
 }
 
-bool mag_tcp_socket_recv_all(mag_tcp_socket_t sock, void *buf, size_t nb) {
+bool mag_tcp_socket_recv_all(mag_tcp_socket_t *sock, void *buf, size_t nb) {
   uint8_t *p = buf;
   while (nb > 0) {
-    ssize_t r = recv(sock, p, nb, 0);
+    ssize_t r = recv((int)(intptr_t)sock, p, nb, 0);
     if (mag_unlikely(r < 0)) {
       if (errno == EINTR) continue;
       return false;

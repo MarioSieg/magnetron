@@ -37,7 +37,9 @@
       int64_t idx_off = j*idx->coords.strides[0]; \
       int64_t g = bi[idx_off]; \
       if (g < 0) g += rra; \
-      mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < rra, "index_add_: idx %" PRIi64 " is out of range [0, %" PRIi64 ").", g, rra); \
+      if (mag_unlikely(!(g >= 0 && g < rra))) { \
+        return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "index_add_: idx %" PRIi64 " is out of range [0, %" PRIi64 ").", g, rra); \
+      } \
       int64_t src_off = 0; \
       for (int64_t dx=0; dx < ra; ++dx) src_off += sc[dx]*src->coords.strides[dx]; \
       sc[ax] = g; \

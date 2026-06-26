@@ -97,6 +97,7 @@ static mag_status_t mag_cpu_storage_dtor(void *self) {
 
 static mag_status_t mag_cpu_alloc_storage(mag_device_t *device, mag_error_t *err, mag_storage_buffer_t **out, size_t size) {
   mag_context_t *ctx = device->ctx;
+  mag_status_t status = MAG_STATUS_OK;
   mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
   *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
     .ctx = ctx,
@@ -112,9 +113,10 @@ static mag_status_t mag_cpu_alloc_storage(mag_device_t *device, mag_error_t *err
     buf->flags|=MAG_STORAGE_FLAG_BORROWED;
   } else {
     void *base = (*mag_try_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
-    mag_contract(err, ERR_MEMORY_ALLOCATION_FAILED, {
-      mag_slab_free(&ctx->storage_slab, buf);
-    }, base != NULL, "cpu: failed to allocate CPU storage buffer of %zu bytes.", size);
+    if (mag_unlikely(!(base != NULL))) {
+      status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate CPU storage buffer of %zu bytes.", size);
+      goto cleanup;
+    }
     buf->base = (uintptr_t)base;
   }
   mag_assert2(!(buf->base&(MAG_CPU_BUF_ALIGN-1))); /* Ensure alignment */
@@ -122,6 +124,9 @@ static mag_status_t mag_cpu_alloc_storage(mag_device_t *device, mag_error_t *err
   ++device->ctx->telemetry.num_alive_storages;
   *out = buf;
   return MAG_STATUS_OK;
+cleanup:
+  mag_slab_free(&ctx->storage_slab, buf);
+  return status;
 }
 
 static void mag_cpu_manual_seed(mag_device_t *dvc, mag_error_t *err, uint64_t seed) {

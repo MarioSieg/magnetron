@@ -507,7 +507,9 @@ static MAG_HOTPROC mag_status_t mag_cast_generic(mag_error_t *err, const mag_ker
   const mag_type_traits_t *msrc = mag_type_trait(src);
   const mag_type_traits_t *mdst = mag_type_trait(dst);
   mag_vcast_fn_t *kernel = mag_cast_table_2D[src][dst];
-  mag_contract(err, ERR_MISSING_COMPUTE_KERNEL, {}, kernel != NULL, "cast: no kernel found for type cast from '%s' to '%s'.", msrc->name, mdst->name);
+  if (mag_unlikely(!(kernel != NULL))) {
+    return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cast: no kernel found for type cast from '%s' to '%s'.", msrc->name, mdst->name);
+  }
   uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r);
   const uint8_t *bx = (const uint8_t *)mag_tensor_data_ptr(x);
   int64_t nbs = (int64_t)msrc->size;

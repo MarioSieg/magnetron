@@ -35,13 +35,17 @@ static mag_dtype_t mag_command_dispatch_dtype(const mag_command_t *cmd) {
 
 /* Execute the operation on the current thread */
 mag_status_t mag_worker_exec_thread_local(mag_error_t *err, const mag_kernel_registry_t *kernels, mag_kernel_payload_t *payload) {
-  mag_contract(err, ERR_MISSING_COMPUTE_KERNEL, {}, payload->cmd != NULL, "cpu: missing kernel command descriptor.");
+  if (mag_unlikely(!(payload->cmd != NULL))) {
+    return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cpu: missing kernel command descriptor.");
+  }
   mag_opcode_t op = payload->cmd->op;
   mag_dtype_t dtype = mag_command_dispatch_dtype(payload->cmd);
   mag_assert2(op >= 0 && op < MAG_OP__NUM);
   mag_assert2(dtype >= 0 && dtype < MAG_DTYPE__NUM);
   mag_status_t (*kernel)(mag_error_t *, const mag_kernel_payload_t *) = kernels->operators[op][dtype];
-  mag_contract(err, ERR_MISSING_COMPUTE_KERNEL, {}, kernel != NULL, "cpu: no kernel found for operator '%s' with dtype '%s'.", mag_op_trait(op)->mnemonic, mag_type_trait(dtype)->name);
+  if (mag_unlikely(!(kernel != NULL))) {
+    return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cpu: no kernel found for operator '%s' with dtype '%s'.", mag_op_trait(op)->mnemonic, mag_type_trait(dtype)->name);
+  }
   mag_status_t stat = (*kernel)(err, payload);
   payload->cmd = NULL;
   return stat;

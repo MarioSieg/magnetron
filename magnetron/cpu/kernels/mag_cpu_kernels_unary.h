@@ -366,7 +366,9 @@ mag_gen_int_unary(sqr)
   static mag_status_t MAG_HOTPROC mag_softmax_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     mag_tensor_t *r = mag_cmd_out(0); \
     const mag_tensor_t *x = mag_cmd_in(0); \
-    mag_contract(err, ERR_KERNEL_FAILURE, {}, mag_tensor_is_contiguous(x), "softmax: input tensor must be contiguous."); \
+    if (mag_unlikely(!(mag_tensor_is_contiguous(x)))) { \
+      return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "softmax: input tensor must be contiguous."); \
+    } \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     int64_t rank = r->coords.rank; \

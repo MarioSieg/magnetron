@@ -127,13 +127,11 @@ mag_status_t mag_solve_view_strides(
 ) {
   int64_t numel=1;
   for (int64_t i=0; i < old_rank; ++i) {
-    mag_contract(
-      err, ERR_DIM_OVERFLOW, {},
-      !mag_mulov64(numel, old_shape[i], &numel),
-      "view: source element count overflowed at dim %" PRIi64
-      " (size %" PRIi64 ").",
-      i, old_shape[i]
-    );
+    if (mag_unlikely(mag_mulov64(numel, old_shape[i], &numel)))
+      return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW,
+        "view: source element count overflowed at dim %" PRIi64
+        " (size %" PRIi64 ").",
+        i, old_shape[i]);
   }
   int64_t oi = old_rank-1;
   int64_t ni = new_rank-1;
@@ -144,13 +142,11 @@ mag_status_t mag_solve_view_strides(
       continue;
     }
     for (; oi >= 0 && old_shape[oi] == 1; --oi);
-    mag_contract(
-      err, ERR_STRIDE_SOLVER_FAILED, {},
-      oi >= 0,
-      "view: tensor memory layout is incompatible with the requested view; "
-      "ran out of source dimensions while matching target dim %" PRIi64 ".",
-      ni
-    );
+    if (mag_unlikely(oi < 0))
+      return mag_set_error(err, MAG_STATUS_ERR_STRIDE_SOLVER_FAILED,
+        "view: tensor memory layout is incompatible with the requested view; "
+        "ran out of source dimensions while matching target dim %" PRIi64 ".",
+        ni);
     if (new_shape[ni] == old_shape[oi]) {
       (*out_new_strides)[ni] = old_strides[oi];
       --ni;
@@ -164,63 +160,49 @@ mag_status_t mag_solve_view_strides(
     while (nc != oc) {
       if (nc < oc) {
         --ni;
-        mag_contract(
-          err, ERR_STRIDE_SOLVER_FAILED, {},
-          ni >= 0,
-          "view: cannot split source dim %" PRIi64
-          " of size %" PRIi64 " into requested target shape.",
-          oi, old_shape[oi]
-        );
-        mag_contract(
-          err, ERR_DIM_OVERFLOW, {},
-          !mag_mulov64(nc, new_shape[ni], &nc),
-          "view: target chunk size overflowed while merging dim %" PRIi64
-          " (size %" PRIi64 ").",
-          ni, new_shape[ni]
-        );
+        if (mag_unlikely(ni < 0))
+          return mag_set_error(err, MAG_STATUS_ERR_STRIDE_SOLVER_FAILED,
+            "view: cannot split source dim %" PRIi64
+            " of size %" PRIi64 " into requested target shape.",
+            oi, old_shape[oi]);
+        if (mag_unlikely(mag_mulov64(nc, new_shape[ni], &nc)))
+          return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW,
+            "view: target chunk size overflowed while merging dim %" PRIi64
+            " (size %" PRIi64 ").",
+            ni, new_shape[ni]);
       } else {
         --oi;
         for (; oi >= 0 && old_shape[oi] == 1; --oi);
-        mag_contract(
-          err, ERR_STRIDE_SOLVER_FAILED, {},
-          oi >= 0,
-          "view: cannot merge target dims into source layout; "
-          "ran out of source dimensions."
-        );
+        if (mag_unlikely(oi < 0))
+          return mag_set_error(err, MAG_STATUS_ERR_STRIDE_SOLVER_FAILED,
+            "view: cannot merge target dims into source layout; "
+            "ran out of source dimensions.");
         int64_t expected_stride;
-        mag_contract(
-          err, ERR_DIM_OVERFLOW, {},
-          !mag_mulov64(old_shape[oi + 1], old_strides[oi + 1], &expected_stride),
-          "view: expected contiguous stride computation overflowed at source dim %" PRIi64 ".",
-          oi
-        );
-        mag_contract(
-          err, ERR_STRIDE_SOLVER_FAILED, {},
-          old_strides[oi] == expected_stride,
-          "view: source dims %" PRIi64 " and %" PRIi64
-          " are not contiguous enough to merge "
-          "(stride[%" PRIi64 "]=%" PRIi64 ", expected %" PRIi64 ").",
-          oi, oi + 1,
-          oi, old_strides[oi], expected_stride
-        );
-        mag_contract(
-          err, ERR_DIM_OVERFLOW, {},
-          !mag_mulov64(oc, old_shape[oi], &oc),
-          "view: source chunk size overflowed while merging dim %" PRIi64
-          " (size %" PRIi64 ").",
-          oi, old_shape[oi]
-        );
+        if (mag_unlikely(mag_mulov64(old_shape[oi + 1], old_strides[oi + 1], &expected_stride)))
+          return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW,
+            "view: expected contiguous stride computation overflowed at source dim %" PRIi64 ".",
+            oi);
+        if (mag_unlikely(old_strides[oi] != expected_stride))
+          return mag_set_error(err, MAG_STATUS_ERR_STRIDE_SOLVER_FAILED,
+            "view: source dims %" PRIi64 " and %" PRIi64
+            " are not contiguous enough to merge "
+            "(stride[%" PRIi64 "]=%" PRIi64 ", expected %" PRIi64 ").",
+            oi, oi + 1,
+            oi, old_strides[oi], expected_stride);
+        if (mag_unlikely(mag_mulov64(oc, old_shape[oi], &oc)))
+          return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW,
+            "view: source chunk size overflowed while merging dim %" PRIi64
+            " (size %" PRIi64 ").",
+            oi, old_shape[oi]);
       }
     }
     int64_t stride = cs;
     for (int64_t k=ni; k <= nkf; ++k) {
       (*out_new_strides)[k] = stride;
-      mag_contract(
-        err, ERR_DIM_OVERFLOW, {},
-        !mag_mulov64(stride, new_shape[k], &stride),
-        "view: output stride computation overflowed at target dim %" PRIi64 ".",
-        k
-      );
+      if (mag_unlikely(mag_mulov64(stride, new_shape[k], &stride)))
+        return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW,
+          "view: output stride computation overflowed at target dim %" PRIi64 ".",
+          k);
     }
     --ni;
     --oi;
@@ -230,13 +212,11 @@ mag_status_t mag_solve_view_strides(
     --ni;
   }
   for (; oi >= 0 && old_shape[oi] == 1; --oi);
-  mag_contract(
-    err, ERR_STRIDE_SOLVER_FAILED, {},
-    oi < 0,
-    "view: tensor memory layout is incompatible with the requested view; "
-    "source dim %" PRIi64 " of size %" PRIi64 " remains unmatched.",
-    oi, old_shape[oi]
-  );
+  if (mag_unlikely(oi >= 0))
+    return mag_set_error(err, MAG_STATUS_ERR_STRIDE_SOLVER_FAILED,
+      "view: tensor memory layout is incompatible with the requested view; "
+      "source dim %" PRIi64 " of size %" PRIi64 " remains unmatched.",
+      oi, old_shape[oi]);
   return MAG_STATUS_OK;
 }
 
@@ -252,51 +232,40 @@ mag_status_t mag_infer_missing_dim(
   for (int64_t i = 0; i < rank; ++i) {
     int64_t ax = dims[i];
     if (ax == -1) {
-      mag_contract(
-        err, ERR_INVALID_DIM, {},
-        infer == -1,
-        "view: only one dimension can be inferred, but found another -1 at dim %" PRIi64 ".",
-        i
-      );
+      if (mag_unlikely(infer != -1))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM,
+          "view: only one dimension can be inferred, but found another -1 at dim %" PRIi64 ".",
+          i);
       infer = i;
       (*out)[i] = 1;
     } else {
-      mag_contract(
-        err, ERR_INVALID_DIM, {},
-        ax > 0,
-        "view: invalid dimension at dim %" PRIi64
-        " (size %" PRIi64 "); expected positive size or -1.",
-        i, ax
-      );
+      if (mag_unlikely(ax <= 0))
+        return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM,
+          "view: invalid dimension at dim %" PRIi64
+          " (size %" PRIi64 "); expected positive size or -1.",
+          i, ax);
       (*out)[i] = ax;
-      mag_contract(
-        err, ERR_DIM_OVERFLOW, {},
-        !mag_mulov64(prod, ax, &prod),
-        "view: requested shape element count overflowed at dim %" PRIi64
-        " (size %" PRIi64 ").",
-        i, ax
-      );
+      if (mag_unlikely(mag_mulov64(prod, ax, &prod)))
+        return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW,
+          "view: requested shape element count overflowed at dim %" PRIi64
+          " (size %" PRIi64 ").",
+          i, ax);
     }
   }
   if (infer >= 0) {
-    mag_contract(
-      err, ERR_INVALID_DIM, {},
-      prod != 0 && numel % prod == 0,
-      "view: cannot infer dimension at dim %" PRIi64
-      " because tensor with %" PRIi64
-      " elements is not divisible by known product %" PRIi64 ".",
-      infer, numel, prod
-    );
-
+    if (mag_unlikely(!(prod != 0 && numel % prod == 0)))
+      return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM,
+        "view: cannot infer dimension at dim %" PRIi64
+        " because tensor with %" PRIi64
+        " elements is not divisible by known product %" PRIi64 ".",
+        infer, numel, prod);
     (*out)[infer] = numel / prod;
   } else {
-    mag_contract(
-      err, ERR_INVALID_DIM, {},
-      prod == numel,
-      "view: requested shape has %" PRIi64
-      " elements, but input tensor has %" PRIi64 " elements.",
-      prod, numel
-    );
+    if (mag_unlikely(prod != numel))
+      return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM,
+        "view: requested shape has %" PRIi64
+        " elements, but input tensor has %" PRIi64 " elements.",
+        prod, numel);
   }
   return MAG_STATUS_OK;
 }

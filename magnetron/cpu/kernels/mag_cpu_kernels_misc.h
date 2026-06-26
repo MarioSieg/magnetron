@@ -178,7 +178,9 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
         for (int64_t flat = ra; flat < rb; ++flat) { \
           int64_t g = bi[flat]; \
           if (g < 0) g += ax; \
-          mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+          if (mag_unlikely(!(g >= 0 && g < ax))) { \
+            return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+          } \
           br[flat] = bx[cur_o * ax + g]; \
           if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } \
         } \
@@ -186,7 +188,9 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
         for (int64_t flat = ra; flat < rb; ++flat) { \
           int64_t g = bi[flat]; \
           if (g < 0) g += ax; \
-          mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+          if (mag_unlikely(!(g >= 0 && g < ax))) { \
+            return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+          } \
           br[flat] = bx[(cur_o * ax + g) * inner + cur_k]; \
           if (++cur_k == inner) { cur_k = 0; if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } } \
         } \
@@ -202,7 +206,9 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
       for (int64_t d = 0; d < index->coords.rank; ++d) index_offset += oc[d] * index->coords.strides[d]; \
       int64_t g = bi[index_offset]; \
       if (g < 0) g += ax; \
-      mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < ax, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+      if (mag_unlikely(!(g >= 0 && g < ax))) { \
+        return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+      } \
       int64_t src_off = 0, dst_off = 0; \
       for (int64_t d = 0; d < src->coords.rank; ++d) src_off += (d == axis ? g : oc[d]) * src->coords.strides[d]; \
       for (int64_t d = 0; d < r->coords.rank; ++d) dst_off += oc[d] * r->coords.strides[d]; \
@@ -252,7 +258,9 @@ mag_gen_stub_gather(int64_t, int64)
       for (int64_t row = row_start; row <= row_end; ++row) { \
         int64_t g = bi[row]; \
         if (g < 0) g += vocab_size; \
-        mag_contract(err, ERR_KERNEL_FAILURE, {}, g >= 0 && g < vocab_size, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, vocab_size); \
+        if (mag_unlikely(!(g >= 0 && g < vocab_size))) { \
+          return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, vocab_size); \
+        } \
         int64_t dst_off = row * row_size; \
         int64_t src_off = g  * row_size; \
         int64_t a = (row == row_start) ? (ra - dst_off) : 0; \
@@ -268,7 +276,9 @@ mag_gen_stub_gather(int64_t, int64)
     { int64_t idx_off = 0, tmp = cur_row; \
       for (int64_t d = indices->coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->coords.shape[d]) * indices->coords.strides[d]; tmp /= indices->coords.shape[d]; } \
       cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
-      mag_contract(err, ERR_KERNEL_FAILURE, {}, cur_g >= 0 && cur_g < vocab_size, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
+      if (mag_unlikely(!(cur_g >= 0 && cur_g < vocab_size))) { \
+        return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
+      } \
     } \
     for (int64_t flat = ra; flat < rb; ++flat) { \
       int64_t w_off = cur_g * weight->coords.strides[0]; \
@@ -282,7 +292,9 @@ mag_gen_stub_gather(int64_t, int64)
           int64_t idx_off = 0, tmp = cur_row; \
           for (int64_t d = indices->coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->coords.shape[d]) * indices->coords.strides[d]; tmp /= indices->coords.shape[d]; } \
           cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
-          mag_contract(err, ERR_KERNEL_FAILURE, {}, cur_g >= 0 && cur_g < vocab_size, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
+          if (mag_unlikely(!(cur_g >= 0 && cur_g < vocab_size))) { \
+        return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
+      } \
         } \
       } \
     } \
