@@ -67,7 +67,7 @@ bool mag_tcp_socket_accept(mag_tcp_socket_t *out_sock, mag_tcp_socket_t listener
   mag_tcp_socket_t sock;
   for (;;) {
     sock = accept(listener, NULL, NULL);
-    if (!mag_tcp_socket_is_open(sock)) break;
+    if (mag_tcp_socket_is_open(sock)) break;
     if (errno == EINTR) continue;
     return false;
   }
