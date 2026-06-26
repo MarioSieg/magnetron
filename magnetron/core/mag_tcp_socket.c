@@ -89,9 +89,16 @@ bool mag_tcp_socket_connect(mag_tcp_socket_t *out_sock, const char *host, uint16
     mag_tcp_socket_close(sock);
     return false;
   }
-  for (;;) {
+  for (uint32_t retries=0;;) {
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0) break;
     if (errno == EINTR) continue;
+    if ((retries++ % 10) == 0) {
+      mag_log_level_t log_level_before = mag_log_level();
+      mag_set_log_level(MAG_LOG_LEVEL_INFO);
+      mag_log_info("Waiting for %s:%u (%s)\n", host, port, strerror(errno));
+      fflush(stdout);
+      mag_set_log_level(log_level_before);
+    }
     mag_tcp_socket_sleep_ms(100);
   }
   if (mag_unlikely(!mag_tcp_socket_set_ops(sock))) {
