@@ -89,7 +89,43 @@ class Adam(Optimizer):
             if grad is None:
                 continue
             self.m[i] = self.betas[0] * self.m[i] + (1.0 - self.betas[0]) * grad
-            self.v[i] = self.betas[1] * self.v[i] + (1.0 - self.betas[1]) * grad.sqr_()
+            self.v[i] = self.betas[1] * self.v[i] + (1.0 - self.betas[1]) * grad.sqr()
             m_hat: Tensor = self.m[i] / (1.0 - self.betas[0] ** self.t)
             v_hat: Tensor = self.v[i] / (1.0 - self.betas[1] ** self.t)
-            p -= self.lr * m_hat / (v_hat.sqrt_() + self.eps)
+            p -= self.lr * m_hat / (v_hat.sqrt() + self.eps)
+
+
+class AdamW(Optimizer):
+    """Adam with decoupled weight decay."""
+
+    def __init__(
+        self,
+        params: Iterable[Parameter],
+        lr: float = 1e-3,
+        betas: tuple[float, float] = (0.9, 0.999),
+        eps: float = 1e-8,
+        weight_decay: float = 0.0,
+    ) -> None:
+        super().__init__(params, lr)
+        self.betas = betas
+        self.eps = eps
+        self.weight_decay = weight_decay
+        self.t = 0
+        self.m = [Tensor.zeros(p.shape) for p in self.params]
+        self.v = [Tensor.zeros(p.shape) for p in self.params]
+
+    @no_grad()
+    def step(self) -> None:
+        self.t += 1
+        beta1, beta2 = self.betas
+        for i, p in enumerate(self.params):
+            grad = p.grad
+            if grad is None:
+                continue
+            if self.weight_decay != 0.0:
+                p -= self.lr * self.weight_decay * p
+            self.m[i] = beta1 * self.m[i] + (1.0 - beta1) * grad
+            self.v[i] = beta2 * self.v[i] + (1.0 - beta2) * grad.sqr()
+            m_hat = self.m[i] / (1.0 - beta1**self.t)
+            v_hat = self.v[i] / (1.0 - beta2**self.t)
+            p -= self.lr * m_hat / (v_hat.sqrt() + self.eps)
