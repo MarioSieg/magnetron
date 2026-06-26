@@ -183,6 +183,7 @@ namespace mag {
     if (plan->red_prod < threads)
       threads = static_cast<int>(mag_next_pow2_u32(static_cast<uint32_t>(plan->red_prod > 0 ? plan->red_prod : 1)));
     if (threads > REDUCTION_BLOCK_SIZE) threads = REDUCTION_BLOCK_SIZE;
+    if (threads > REDUCTION_BLOCK_SIZE) threads = REDUCTION_BLOCK_SIZE;
     if (threads < 1) threads = 1;
     size_t shmem = sizeof(typename op_t::acc_t)*static_cast<size_t>(threads);
     auto *pr = reinterpret_cast<typename op_t::out_t *>(mag_tensor_data_ptr_mut(r));
