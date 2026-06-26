@@ -533,7 +533,7 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 #define mag_iserr(stat) (mag_unlikely((stat) != MAG_STATUS_OK))
 #define mag_isok(stat) (!mag_iserr((stat)))
 
-extern MAG_COLDPROC mag_printf_fmt(6,7) mag_status_t mag_set_error_impl(
+extern MAG_EXPORT MAG_COLDPROC mag_printf_fmt(6,7) mag_status_t mag_set_error_impl(
   mag_error_t *err,
   mag_status_t code,
   const char *file,
