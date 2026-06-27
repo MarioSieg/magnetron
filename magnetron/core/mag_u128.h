@@ -111,7 +111,7 @@ MAG_CUDA_DEVICE static MAG_CUDA_DEVICE inline mag_uint128_t mag_uint128_mul128(u
     uint64_t ad = a*(uint64_t)d;
     uint64_t bd = b*(uint64_t)d;
     uint64_t imm = (bd>>32) + (uint32_t)ad + (uint32_t)bc;
-    return mag_uint128_make( ac + (imm>>32) + (ad>>32) + (bc>>32), (imm<<32) + (uint32_t)bd);
+    return mag_uint128_make(ac + (imm>>32) + (ad>>32) + (bc>>32), (imm<<32) + (uint32_t)bd);
   #endif
 #endif
 }
