@@ -13,10 +13,16 @@
 #include "mag_context.h"
 #include "mag_reduce_plan.h"
 #include "mag_einsum.h"
+#include "mag_u128.h"
 
 #include <string.h>
 
 #include "mag_alloc.h"
+
+static uint64_t mag_ceil_div_u128(uint64_t a, uint64_t b) {
+  mag_uint128_t num = mag_uint128_add(mag_uint128_make(0, a), b-1);
+  return mag_uint128_lo(mag_uint128_div(num, b));
+}
 
 mag_scalar_t mag_scalar_from_f64(double value) {
   return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.f64 = value};
@@ -387,27 +393,36 @@ mag_status_t mag_bernoulli_like(mag_error_t *err, mag_tensor_t **out_result, mag
   return mag_bernoulli_(err, *out_result, p);
 }
 
-static bool mag_arange_numel_int(int64_t start, int64_t stop, int64_t step, int64_t *numel) {
+static bool mag_arange_numel_i64(int64_t start, int64_t stop, int64_t step, int64_t *numel) {
   if (step == 0) {
     *numel = 0;
     return false;
   }
-  int64_t delta = stop - start;
-  if (step > 0) {
-    if (delta <= 0) {
-      *numel = 0;
-      return true;
-    }
-    *numel = (delta + step - 1)/step;
-    return true;
-  }
-  if (delta >= 0) {
+  bool ascending = step > 0;
+  if ((ascending && stop <= start) || (!ascending && stop >= start)) {
     *numel = 0;
     return true;
   }
-  int64_t step_pos = -step;
-  int64_t diff_pos = -delta;
-  *numel = (diff_pos + step_pos - 1)/step_pos;
+  uint64_t delta = ascending ? (uint64_t)stop-(uint64_t)start : (uint64_t)start-(uint64_t)stop;
+  uint64_t step_mag = ascending ? (uint64_t)step : 0-(uint64_t)step;
+  uint64_t count = mag_ceil_div_u128(delta, step_mag);
+  if (mag_unlikely(count > (uint64_t)INT64_MAX)) return false;
+  *numel = (int64_t)count;
+  return true;
+}
+
+static bool mag_arange_numel_u64(uint64_t start, uint64_t stop, uint64_t step, int64_t *numel) {
+  if (step == 0) {
+    *numel = 0;
+    return false;
+  }
+  if (stop <= start) {
+    *numel = 0;
+    return true;
+  }
+  uint64_t count = mag_ceil_div_u128(stop-start, step);
+  if (mag_unlikely(count > (uint64_t)INT64_MAX)) return false;
+  *numel = (int64_t)count;
   return true;
 }
 
@@ -440,7 +455,11 @@ mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context
   mag_tensor_t *result;
   int64_t numel = 0;
   bool ok = false;
-  if (mag_dtype_bit(type) & MAG_DTYPE_MASK_INTEGER) ok = mag_arange_numel_int(mag_scalar_as_i64(start), mag_scalar_as_i64(end), mag_scalar_as_i64(step), &numel);
+  /* start/step are passed to the kernel using the widest type of the dtype family (i64/u64/f64) so no precision is lost for full-range int64/uint64 spans. */
+  bool is_signed = mag_type_category_is_signed_integer(type);
+  bool is_unsigned = mag_type_category_is_unsigned_integer(type);
+  if (is_signed) ok = mag_arange_numel_i64(mag_scalar_as_i64(start), mag_scalar_as_i64(end), mag_scalar_as_i64(step), &numel);
+  else if (is_unsigned) ok = mag_arange_numel_u64(mag_scalar_as_u64(start), mag_scalar_as_u64(end), mag_scalar_as_u64(step), &numel);
   else ok = mag_arange_numel_float(mag_scalar_as_f64(start), mag_scalar_as_f64(end), mag_scalar_as_f64(step), &numel);
   if (mag_unlikely(!ok) || numel <= 0)
       return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "arange: invalid start, end or step (produces an empty or invalid range).");
@@ -448,8 +467,16 @@ mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context
   if (mag_iserr(status)) return status;
   mag_op_attr_registry_t layout;
   mag_op_attr_registry_init(&layout);
-  mag_op_attr_registry_insert(&layout, mag_op_attr_float64(mag_scalar_as_f64(start))); /* TODO: this looses information for int64/uint64 ranges that exceed f64 precision */
-  mag_op_attr_registry_insert(&layout, mag_op_attr_float64(mag_scalar_as_f64(step)));
+  if (is_signed) {
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(mag_scalar_as_i64(start)));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_int64(mag_scalar_as_i64(step)));
+  } else if (is_unsigned) {
+    mag_op_attr_registry_insert(&layout, mag_op_attr_uint64(mag_scalar_as_u64(start)));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_uint64(mag_scalar_as_u64(step)));
+  } else {
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float64(mag_scalar_as_f64(start)));
+    mag_op_attr_registry_insert(&layout, mag_op_attr_float64(mag_scalar_as_f64(step)));
+  }
   status = mag_check_dtype_and_device_compat(err, MAG_OP_ARANGE, NULL, 0);
   if (mag_iserr(status)) return status;
   status = mag_dispatch(err, MAG_OP_ARANGE, false, &layout, NULL, 0, &result, 1);
@@ -780,7 +807,7 @@ mag_status_t mag_view_slice(mag_error_t *err, mag_tensor_t **out_result, mag_ten
   mag_norm_axis(&start, sz);
   if (mag_unlikely(!(0 <= start && start < sz)))
       return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "slice: start %" PRIi64 " is out of bounds for dim %" PRIi64 " of size %" PRIi64 ".", start, dim, sz);
-  if (len < 0) len = (sz - start + step - 1)/step;
+  if (len < 0) len = (int64_t)mag_ceil_div_u128((uint64_t)(sz-start), (uint64_t)step);
   if (mag_unlikely(!(len > 0)))
       return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "slice: length must be > 0, but got %" PRIi64 ".", len);
   int64_t last = start + (len - 1)*step;
@@ -1102,7 +1129,7 @@ mag_status_t mag_split(mag_error_t *err, mag_tensor_t **outs, int64_t num_splits
       return mag_set_error(err, MAG_STATUS_ERR_INVALID_RANK, "split: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
   int64_t sz = x->coords.shape[dim];
   int64_t expected_chunks = 0;
-  if (sz > 0) expected_chunks = (sz + split_size-1)/split_size;
+  if (sz > 0) expected_chunks = (int64_t)mag_ceil_div_u128((uint64_t)sz, (uint64_t)split_size);
   if (mag_unlikely(!(num_splits >= 0)))
       return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "split: number of splits must be >= 0, but got %" PRIi64 ".", num_splits);
   if (mag_unlikely(!(num_splits == expected_chunks)))
@@ -1688,8 +1715,8 @@ mag_status_t mag_chunk(mag_error_t *err, mag_tensor_t ***out_chunks, size_t *out
     *out_count = 0;
     return MAG_STATUS_OK;
   }
-  int64_t chunk_size = (n+chunks-1)/chunks;
-  int64_t actual = (n+chunk_size-1)/chunk_size;
+  int64_t chunk_size = (int64_t)mag_ceil_div_u128((uint64_t)n, (uint64_t)chunks);
+  int64_t actual = (int64_t)mag_ceil_div_u128((uint64_t)n, (uint64_t)chunk_size);
   mag_tensor_t **res = (*mag_try_alloc)(NULL, (size_t)actual*sizeof(*res), 0);
   if (mag_unlikely(!res))
     return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "chunk: failed to allocate result array for %" PRIi64 " chunks.", actual);

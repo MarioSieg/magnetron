@@ -69,7 +69,7 @@ static void MAG_AINLINE mag_vrand_bernoulli_bool(mag_philox4x32_stream_t *prng, 
         for (;;) { \
           uint64_t x = mag_philox4x32_next_uint64(prng); \
           mag_uint128_t m = mag_uint128_mul128(x, span); \
-          uint64_t lo = m.lo, hi = m.hi; \
+          uint64_t lo = mag_uint128_lo(m), hi = mag_uint128_hi(m); \
           if (mag_unlikely(lo < thresh)) continue; \
           UT v = (UT)(umin + hi); \
           o[i] = (T)v; \
@@ -292,13 +292,14 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float16_t, float, float64, float
 mag_gen_stub_fill_rand_fp_simd_only(normal, mag_bfloat16_t, float, float64, bfloat16)
 mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64, float8_e4m3fn)
 
-#define mag_gen_stub_arange(T, TF, CVT) \
+
+#define mag_gen_stub_arange(T, TF, PT, UNWRAP, AT, CVT) \
   static MAG_HOTPROC mag_status_t mag_arange_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
     mag_tensor_t *r = mag_cmd_out(0); \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
-    double start = mag_op_attr_unwrap_float64(mag_cmd_attr(0));  /* TODO: this looses information for int64/uint64 ranges that exceed f64 precision */\
-    double step = mag_op_attr_unwrap_float64(mag_cmd_attr(1)); \
+    PT start = UNWRAP(mag_cmd_attr(0)); \
+    PT step = UNWRAP(mag_cmd_attr(1)); \
     int64_t total = r->numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
@@ -309,7 +310,7 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
         mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
-        br[ri] = CVT(start + (double)ri*step); \
+        br[ri] = CVT((AT)start + (AT)ri*(AT)step); \
       } \
       return MAG_STATUS_OK; \
     } \
@@ -318,23 +319,23 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
       mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
-      br[ri] = CVT(start + (double)i*step); \
+      br[ri] = CVT((AT)start + (AT)i*(AT)step); \
     } \
     return MAG_STATUS_OK; \
   }
 
-mag_gen_stub_arange(float, float32, mag_cvt_nop)
-mag_gen_stub_arange(mag_float16_t, float16, mag_float32_to_float16)
-mag_gen_stub_arange(mag_bfloat16_t, bfloat16, mag_float32_to_bfloat16)
-mag_gen_stub_arange(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float32_to_float8_e4m3fn)
-mag_gen_stub_arange(uint8_t, uint8, mag_cvt_int32_to_int64)
-mag_gen_stub_arange(int8_t, int8, mag_cvt_int32_to_int64)
-mag_gen_stub_arange(uint16_t, uint16, mag_cvt_int32_to_int64)
-mag_gen_stub_arange(int16_t, int16, mag_cvt_int32_to_int64)
-mag_gen_stub_arange(uint32_t, uint32, mag_cvt_int32_to_int64)
-mag_gen_stub_arange(int32_t, int32, mag_cvt_int32_to_int64)
-mag_gen_stub_arange(uint64_t, uint64, mag_cvt_nop)
-mag_gen_stub_arange(int64_t, int64, mag_cvt_nop)
+mag_gen_stub_arange(float, float32, double, mag_op_attr_unwrap_float64, double, mag_cvt_nop)
+mag_gen_stub_arange(mag_float16_t, float16, double, mag_op_attr_unwrap_float64, double, mag_float32_to_float16)
+mag_gen_stub_arange(mag_bfloat16_t, bfloat16, double, mag_op_attr_unwrap_float64, double, mag_float32_to_bfloat16)
+mag_gen_stub_arange(mag_float8_e4m3fn_t, float8_e4m3fn, double, mag_op_attr_unwrap_float64, double, mag_float32_to_float8_e4m3fn)
+mag_gen_stub_arange(uint8_t, uint8, uint64_t, mag_op_attr_unwrap_uint64, uint64_t, mag_cvt_nop)
+mag_gen_stub_arange(int8_t, int8, int64_t, mag_op_attr_unwrap_int64, uint64_t, mag_cvt_nop)
+mag_gen_stub_arange(uint16_t, uint16, uint64_t, mag_op_attr_unwrap_uint64, uint64_t, mag_cvt_nop)
+mag_gen_stub_arange(int16_t, int16, int64_t, mag_op_attr_unwrap_int64, uint64_t, mag_cvt_nop)
+mag_gen_stub_arange(uint32_t, uint32, uint64_t, mag_op_attr_unwrap_uint64, uint64_t, mag_cvt_nop)
+mag_gen_stub_arange(int32_t, int32, int64_t, mag_op_attr_unwrap_int64, uint64_t, mag_cvt_nop)
+mag_gen_stub_arange(uint64_t, uint64, uint64_t, mag_op_attr_unwrap_uint64, uint64_t, mag_cvt_nop)
+mag_gen_stub_arange(int64_t, int64, int64_t, mag_op_attr_unwrap_int64, uint64_t, mag_cvt_nop)
 
 #undef mag_gen_stub_arange
 

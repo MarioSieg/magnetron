@@ -148,8 +148,8 @@ namespace mag {
       for (;;) {
         uint64_t x = mag_philox4x32_next_uint64(stream);
         mag_uint128_t m = mag_uint128_mul128(x, span);
-        if (m.lo < thresh) continue;
-        return static_cast<T>(static_cast<UT>(umin + static_cast<UT>(m.hi)));
+        if (mag_uint128_lo(m) < thresh) continue;
+        return static_cast<T>(static_cast<UT>(umin + static_cast<UT>(mag_uint128_hi(m))));
       }
     }
   }
@@ -388,54 +388,54 @@ namespace mag {
     return MAG_STATUS_OK;
   }
 
-  template <typename T, const bool C>
+  template <typename T, typename PT, typename AT, const bool C>
   __global__ static void arange_kernel(
     int n,
     T *__restrict__ r,
-    float start,
-    float step,
+    PT start,
+    PT step,
     [[maybe_unused]] mag_coords_iter_t rc
   ) {
     int ti = blockIdx.x*blockDim.x + threadIdx.x;
     int istep = blockDim.x*gridDim.x;
     for (; ti < n; ti += istep) {
-      auto v = start + static_cast<float>(ti)*step;
+      AT v = static_cast<AT>(start) + static_cast<AT>(ti)*static_cast<AT>(step);
       int ri = C ? ti : mag_coords_iter_to_offset(&rc, ti);
       r[ri] = static_cast<T>(v);
     }
   }
 
-  template <typename T>
+  template <typename T, typename PT, typename AT>
   static void launch_arange(mag_tensor_t *r, const mag_command_t &cmd) {
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
-    auto start = static_cast<float>(mag_op_attr_unwrap_float64(cmd.attrs[0]));
-    auto step = static_cast<float>(mag_op_attr_unwrap_float64(cmd.attrs[1]));
+    PT start = unpack_param<PT>(cmd.attrs, 0);
+    PT step = unpack_param<PT>(cmd.attrs, 1);
     int n = numel_i32(r);
     int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     if (mag_tensor_is_contiguous(r)) {
-      arange_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, start, step, {});
+      arange_kernel<T, PT, AT, true><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, start, step, {});
     } else {
       mag_coords_iter_t rc;
       mag_coords_iter_init(&rc, &r->coords);
-      arange_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, start, step, rc);
+      arange_kernel<T, PT, AT, false><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, start, step, rc);
     }
   }
 
   mag_status_t fill_op_arange(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
-      case MAG_DTYPE_FLOAT32: launch_arange<float>(r, cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_arange<half>(r, cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_arange<__nv_bfloat16>(r, cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_arange<__nv_fp8_e4m3>(r, cmd); break;
-      case MAG_DTYPE_UINT8: launch_arange<uint8_t>(r, cmd); break;
-      case MAG_DTYPE_INT8: launch_arange<int8_t>(r, cmd); break;
-      case MAG_DTYPE_UINT16: launch_arange<uint16_t>(r, cmd); break;
-      case MAG_DTYPE_INT16: launch_arange<int16_t>(r, cmd); break;
-      case MAG_DTYPE_UINT32: launch_arange<uint32_t>(r, cmd); break;
-      case MAG_DTYPE_INT32: launch_arange<int32_t>(r, cmd); break;
-      case MAG_DTYPE_UINT64: launch_arange<uint64_t>(r, cmd); break;
-      case MAG_DTYPE_INT64: launch_arange<int64_t>(r, cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_arange<float, float, float>(r, cmd); break;
+      case MAG_DTYPE_FLOAT16: launch_arange<half, float, float>(r, cmd); break;
+      case MAG_DTYPE_BFLOAT16: launch_arange<__nv_bfloat16, float, float>(r, cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_arange<__nv_fp8_e4m3, float, float>(r, cmd); break;
+      case MAG_DTYPE_UINT8: launch_arange<uint8_t, uint64_t, uint64_t>(r, cmd); break;
+      case MAG_DTYPE_INT8: launch_arange<int8_t, int64_t, uint64_t>(r, cmd); break;
+      case MAG_DTYPE_UINT16: launch_arange<uint16_t, uint64_t, uint64_t>(r, cmd); break;
+      case MAG_DTYPE_INT16: launch_arange<int16_t, int64_t, uint64_t>(r, cmd); break;
+      case MAG_DTYPE_UINT32: launch_arange<uint32_t, uint64_t, uint64_t>(r, cmd); break;
+      case MAG_DTYPE_INT32: launch_arange<int32_t, int64_t, uint64_t>(r, cmd); break;
+      case MAG_DTYPE_UINT64: launch_arange<uint64_t, uint64_t, uint64_t>(r, cmd); break;
+      case MAG_DTYPE_INT64: launch_arange<int64_t, int64_t, uint64_t>(r, cmd); break;
       default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type for arange: %s", mag_type_trait(r->dtype)->name);
     }
     return MAG_STATUS_OK;
