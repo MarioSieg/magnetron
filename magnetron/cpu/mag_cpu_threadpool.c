@@ -61,7 +61,7 @@ static mag_status_t mag_worker_exec_and_broadcast(mag_error_t *err, mag_thread_p
 }
 
 /* Worker thread entry point */
-static MAG_HOTPROC void *mag_worker_thread_entry(void *arg) {
+static MAG_HOTPROC void mag_worker_thread_entry(void *arg) {
   mag_worker_t *worker = arg;
   mag_thread_pool_t *pool = worker->pool;
   mag_kernel_payload_t *payload = &worker->payload;
@@ -69,8 +69,8 @@ static MAG_HOTPROC void *mag_worker_thread_entry(void *arg) {
   mag_status_t *stat = &worker->stat;
   const mag_kernel_registry_t *kernels = pool->kernels;
   char name[32];
-  snprintf(name, sizeof(name), "mag_worker_%" PRIx64, payload->thread_idx);
-  mag_thread_set_name(name);
+  snprintf(name, sizeof(name), "mag_worker_thread_%" PRIx64, payload->thread_idx);
+  mag_curr_thread_set_name(name);
   /*mag_thread_set_prio(pool->sched_prio);*/
   if (mag_numa_is_numa(pool->numa_ctrl)) /* Pin numa affinity if numa system */
     mag_numa_pin_thread_affinity(pool->numa_ctrl, payload->thread_idx);
@@ -78,28 +78,36 @@ static MAG_HOTPROC void *mag_worker_thread_entry(void *arg) {
   while (mag_likely(mag_worker_await_work(worker, pool)))  /* Main work loop: wait, work, signal status */
     *stat = mag_worker_exec_and_broadcast(err, pool, kernels, payload);
   mag_atomic32_fetch_sub(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
-  return MAG_THREAD_RET_NONE;
 }
 
 /* Create thread pool and allocate threads */
-mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_workers, const mag_kernel_registry_t *kernels, mag_numa_node_controller_t *numa, mag_thread_prio_t prio) { /* Create a thread pool */
+mag_status_t mag_threadpool_create(
+  mag_error_t *err,
+  mag_thread_pool_t **out_pool,
+  mag_context_t *host_ctx,
+  uint32_t num_workers,
+  const mag_kernel_registry_t *kernels,
+  mag_numa_node_controller_t *numa,
+  mag_thread_prio_t sched_prio
+) {
+  *out_pool = NULL;
   mag_thread_pool_t *pool = (*mag_try_alloc)(NULL, sizeof(*pool), __alignof(mag_thread_pool_t));
-  if (mag_unlikely(!pool)) return NULL;
+  if (mag_unlikely(!pool))
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate thread pool.");
   memset(pool, 0, sizeof(*pool));
   mag_worker_t *workers = (*mag_try_alloc)(NULL, num_workers*sizeof(*workers), __alignof(mag_worker_t));
   if (mag_unlikely(!workers)) {
-    (*mag_alloc)(pool, 0, __alignof(mag_thread_pool_t));
-    return NULL;
+    (*mag_try_alloc)(pool, 0, __alignof(mag_thread_pool_t));
+    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate %u worker threads.", num_workers);
   }
   memset(workers, 0, num_workers*sizeof(*workers));
   *pool = (mag_thread_pool_t) {
     .interrupt = false,
-    .num_allocated_workers = num_workers,
+    .num_allocated_workers = (int32_t)num_workers,
     .num_active_workers = num_workers,
     .num_workers_online = 0,  /* Main thread as worker 0 */
     .workers = workers,
     .kernels = kernels,
-    .sched_prio = prio,
     .host_ctx = host_ctx,
     .numa_ctrl = numa
   };
@@ -116,21 +124,28 @@ mag_thread_pool_t *mag_threadpool_create(mag_context_t *host_ctx, uint32_t num_w
         .prng = NULL
       },
       .pool = pool,
-      .is_async = ti != 0 /* Main thread is worker but without thread */
     };
     worker->payload.prng = &worker->prng;
-    if (worker->is_async) {
-      if (mag_unlikely(!mag_thread_create(&worker->thread, &mag_worker_thread_entry, workers+ti))) {
-        worker->is_async = false;
-        pool->num_allocated_workers = ti;    /* Only workers [0, ti) may have live threads - reuse the proven teardown. */
-        mag_threadpool_destroy(pool);
-        return NULL;
+    bool is_main = ti == 0;
+    if (is_main) {
+      if (mag_iserr(mag_thread_create(
+          err,
+          &worker->thread,
+          &mag_worker_thread_entry,
+          sched_prio,
+          NULL,
+          worker
+        ))) {
+          pool->num_allocated_workers = (int32_t)ti;    /* Only workers [0, ti) may have live threads - reuse the proven teardown. */
+          mag_threadpool_destroy(pool);
+          return err->code;
       }
     }
   }
   while (mag_atomic32_load(&pool->num_workers_online, MAG_MO_SEQ_CST) != num_workers-1)  /* Wait for all workers to come online */
-    mag_thread_yield();
-  return pool;
+    mag_curr_thread_yield();
+  *out_pool = pool;
+  return MAG_STATUS_OK;
 }
 
 /* Destroy thread pool */
@@ -138,10 +153,10 @@ void mag_threadpool_destroy(mag_thread_pool_t *pool) {
   pool->interrupt = true;
   mag_phase_fence_kick(&pool->fence, pool->num_allocated_workers);
   while (mag_atomic32_load(&pool->num_workers_online, MAG_MO_SEQ_CST))  /* Wait for all workers to exit */
-    mag_thread_yield();
+    mag_curr_thread_yield();
   for (uint32_t i=0; i < pool->num_allocated_workers; ++i) /* Join all worker threads */
-    if (pool->workers[i].is_async)
-      mag_thread_join(pool->workers[i].thread);
+    if (pool->workers[i].thread)
+      mag_thread_join(NULL, pool->workers[i].thread);
   (*mag_alloc)(pool->workers, 0, __alignof(mag_worker_t));
   (*mag_alloc)(pool, 0, __alignof(mag_thread_pool_t));
 }

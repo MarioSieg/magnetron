@@ -230,8 +230,8 @@ static mag_status_t mag_dispatch(mag_error_t *err, mag_opcode_t op, bool inplace
     .num_out = num_out,
   };
   if (params) memcpy(cmd.attrs, params, num_params*sizeof(*params));
-  mag_status_t (*submit)(mag_device_t *, mag_error_t *, const mag_command_t *) = device->submit;
-  mag_status_t stat = (*submit)(device, err, &cmd);
+  mag_status_t (*submit)(mag_error_t *, mag_device_t *, const mag_command_t *) = device->submit;
+  mag_status_t stat = (*submit)(err, device, &cmd);
   for (uint32_t i=0; i < num_out; ++i)
     if (inplace) mag_bump_version(out[i]);  /* Result aliases the modified storage */
   ++ctx->telemetry.ops_dispatched;
@@ -683,7 +683,7 @@ mag_status_t mag_transfer(mag_error_t *err, mag_tensor_t **out_result, mag_tenso
       status = mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "transfer: target device does not implement tensor transfer.");
       goto cleanup;
     }
-    status = (*exec->transfer)(exec, err, dir, xc, out);
+    status = (*exec->transfer)(err, exec, dir, xc, out);
     if (mag_iserr(status))
         goto cleanup;
   }

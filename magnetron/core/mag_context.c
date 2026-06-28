@@ -213,7 +213,7 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
   mag_slab_destroy(&ctx->view_meta_slab);
   mag_slab_destroy(&ctx->tensor_slab);
   mag_slab_destroy(&ctx->storage_slab);
-  mag_backend_registry_free(ctx->backend_registry);
+  mag_backend_registry_shutdown(NULL, ctx->backend_registry); /* TODO: propagate error */
   size_t num_created_tensors = ctx->telemetry.num_created_tensors;
   size_t storage_bytes = ctx->telemetry.storage_bytes_allocated;
   size_t ops_dispatched = ctx->telemetry.ops_dispatched;
@@ -244,7 +244,7 @@ bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx) {
 }
 
 static void mag_seed_callback(mag_backend_t *bck, mag_device_t *dvc, void *usr) {
-  (*dvc->manual_seed)(dvc, NULL, *(const uint64_t *)usr);
+  (*dvc->manual_seed)(NULL, dvc, *(const uint64_t *)usr);
 }
 
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {

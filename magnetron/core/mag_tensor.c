@@ -123,8 +123,8 @@ mag_status_t mag_tensor_init(
   if (mag_unlikely(!tensor))
     return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "tensor: failed to allocate tensor header.");
   if (!storage) {
-    mag_status_t (*allocator)(mag_device_t *, mag_error_t *, mag_storage_buffer_t **, size_t) = target_device->alloc_storage;
-    status = (*allocator)(target_device, err, &tensor->storage, numbytes);
+    mag_status_t (*allocator)(mag_error_t *, mag_device_t *, mag_storage_buffer_t **, size_t) = target_device->alloc_storage;
+    status = (*allocator)(err, target_device, &tensor->storage, numbytes);
     if (mag_unlikely(status != MAG_STATUS_OK))
       goto cleanup;
   } else {

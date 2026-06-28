@@ -16,6 +16,7 @@
 #include "mag_hash.h"
 
 #include <ctype.h>
+#include <sys/stat.h>
 
 typedef struct mag_backend_module_t {
   mag_dylib_t *handle;
@@ -64,15 +65,13 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
   }
 
   /* Init backend */
-  mag_backend_t *backend = (*(MAG_BACKEND_SYM_FN_INIT*)fn_init)(ctx); /* Call the function to initialize the backend */
-  if (mag_unlikely(!backend)) {
-    mag_dylib_close(handle);
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "backend: shared library '%s' failed to initialize its interface (the backend reported no usable device or an internal init error).", file);
-  }
+  mag_backend_t *backend=NULL;
+  status = (*(MAG_BACKEND_SYM_FN_INIT*)(fn_init))(err, &backend, ctx);
+  if (mag_iserr(status)) return status;
 
   /* Check that all function pointers are provided */
   bool fn_ok = true;
-  mag_assert2(MAG_BACKEND_MODULE_ABI_VER == 1); /* Ensure this code is updated if ABI changes */
+  mag_assert2(MAG_BACKEND_MODULE_ABI_VER == 2); /* Ensure this code is updated if ABI changes */
   mag_assert2(MAG_BACKEND_VTABLE_SIZE == 8); /* Ensure this code is updated if vtable size changes */
   fn_ok &= !!backend->init;
   fn_ok &= !!backend->shutdown;
@@ -96,7 +95,7 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
   }
 
   /* Invoke init hook */
-  if (mag_unlikely(!(*backend->init)(backend, ctx))) {
+  if (mag_iserr((*backend->init)(err, backend, ctx))) {
     mag_dylib_close(handle);
     return mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "backend: shared library '%s' init hook failed (device driver/runtime may be missing or the device failed to initialize).", file);
   }
@@ -104,8 +103,8 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
   /* Create backend module */
   mag_backend_module_t *module = (*mag_try_alloc)(NULL, sizeof(*module), 0);
   if (mag_unlikely(!module)) {
-    (void)(*backend->shutdown)(backend);
-    (*(MAG_BACKEND_SYM_FN_SHUTDOWN*)fn_shutdown)(backend);
+    (void)(*backend->shutdown)(NULL, backend);
+    (*(MAG_BACKEND_SYM_FN_SHUTDOWN*)fn_shutdown)(NULL, backend);
     mag_dylib_close(handle);
     return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "backend: failed to allocate backend module for '%s'.", file);
   }
@@ -118,23 +117,24 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
     .fn_init = fn_init,
     .fn_shutdown = fn_shutdown
   };
-
-  char id[64];
-  snprintf(id, sizeof(id), "%s", (*backend->id)(backend));
-  for (char *p = id; *p; ++p)
-    if (*p >= 'a' && *p <= 'z')
-      *p = (char)(*p - ('a' - 'A'));
   *out_mod = module;
   return MAG_STATUS_OK;
 }
 
-static void mag_backend_module_shutdown(mag_backend_module_t *mod) {
-  if (!mod) return;
-  if (mag_unlikely(!(*mod->backend->shutdown)(mod->backend))) {
-    mag_log_error("Backend shutdown hook failed");
-  }
-  if (mod->fn_shutdown && mod->backend) {
-    (*mod->fn_shutdown)(mod->backend);
+static mag_status_t mag_backend_module_shutdown(mag_error_t *err, mag_backend_module_t *mod) {
+  mag_status_t status = MAG_STATUS_OK;
+  if (!mod) return status;
+  if (mod->backend) {
+    if (mod->backend->shutdown) {
+      mag_status_t stat = (*mod->backend->shutdown)(err, mod->backend);
+      if (mag_iserr(stat) && !mag_iserr(status))
+        status = stat;
+    }
+    if (mod->fn_shutdown) {
+      mag_status_t st = (*mod->fn_shutdown)(err, mod->backend);
+      if (mag_iserr(st) && !mag_iserr(status))
+        status = st;
+    }
     mod->backend = NULL;
   }
   if (mod->handle) {
@@ -142,6 +142,7 @@ static void mag_backend_module_shutdown(mag_backend_module_t *mod) {
     mod->handle = NULL;
   }
   (*mag_alloc)(mod, 0, 0);
+  return status;
 }
 
 struct mag_backend_registry_t {
@@ -241,7 +242,7 @@ error:
   if (modpath) (*mag_alloc)(modpath, 0, 0);
   for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) /* Shut down any backends already loaded before the failure. */
     if (reg->backends[type])
-      mag_backend_module_shutdown(reg->backends[type]);
+      mag_backend_module_shutdown(NULL, reg->backends[type]);
   (*mag_alloc)(reg, 0, 0);
   return status;
 }
@@ -278,9 +279,16 @@ void mag_backend_registry_iter_devices(mag_backend_registry_t *reg, void(*callba
   }
 }
 
-void mag_backend_registry_free(mag_backend_registry_t *reg) {
-  for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type)
-    if (reg->backends[type])
-      mag_backend_module_shutdown(reg->backends[type]);
+mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registry_t *reg) {
+  for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
+    if (reg->backends[type]) {
+      mag_status_t status = mag_backend_module_shutdown(err, reg->backends[type]);
+      if (mag_iserr(status)) {
+        (*mag_alloc)(reg, 0, 0);
+        return status;
+      }
+    }
+  }
   (*mag_alloc)(reg, 0, 0);
+  return MAG_STATUS_OK;
 }

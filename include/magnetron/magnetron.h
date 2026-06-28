@@ -80,6 +80,7 @@ extern MAG_EXPORT mag_log_level_t mag_log_level(void); /* Get current global log
     _(MAG_STATUS_ERR_KERNEL_FAILURE, "Error while executing compute kernel") \
     _(MAG_STATUS_ERR_EINSUM, "Error while executing einsum operation") \
     _(MAG_STATUS_ERR_FILE_NOT_FOUND, "File not found") \
+    _(MAG_STATUS_ERR_OS_ERROR, "Error while invoking OS system call") \
     _(MAG_STATUS_ERR_UNKNOWN, "Unknown error")
 
 typedef enum mag_status_t {
