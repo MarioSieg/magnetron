@@ -2060,6 +2060,50 @@ mag_status_t mag_clamp(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
   return MAG_OK;
 }
 
+mag_status_t mag_clamp_min(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *min) {
+  return mag_max(err, out_result, x, min);
+}
+
+mag_status_t mag_clamp_max(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *max) {
+  return mag_min(err, out_result, x, max);
+}
+
+mag_status_t mag_lerp(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *start, mag_tensor_t *end, mag_tensor_t *weight) { /* TODO: this op deserves dedicated kernel */
+  *out_result = NULL;
+  mag_tensor_t *delta = NULL;
+  mag_tensor_t *scaled = NULL;
+  mag_tensor_t *result = NULL;
+  mag_status_t status = mag_sub(err, &delta, end, start);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_mul(err, &scaled, delta, weight);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_add(err, &result, start, scaled);
+  if (mag_iserr(status)) goto cleanup;
+  *out_result = result;
+  result = NULL; /* ownership transferred */
+  cleanup:
+    if (delta) mag_tensor_decref(delta);
+  if (scaled) mag_tensor_decref(scaled);
+  if (result) mag_tensor_decref(result);
+  return status;
+}
+
+mag_status_t mag_lerp_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *start, mag_tensor_t *end, mag_tensor_t *weight) { /* TODO: this op deserves dedicated kernel */
+  *out_result = NULL;
+  mag_tensor_t *delta = NULL;
+  mag_tensor_t *scaled = NULL;
+  mag_status_t status = mag_sub(err, &delta, end, start);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_mul(err, &scaled, delta, weight);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_add_(err, out_result, start, scaled);
+  cleanup:
+    if (delta) mag_tensor_decref(delta);
+    if (scaled) mag_tensor_decref(scaled);
+  return status;
+
+}
+
 static mag_status_t mag_matmul_verify_shapes(mag_error_t *err, int64_t *rb, int64_t *xb, int64_t *yb, const mag_tensor_t *x, const mag_tensor_t *y) {
   int64_t kx = x->coords.shape[x->coords.rank-1];
   int64_t ky = y->coords.rank == 1 ? *y->coords.shape : y->coords.rank == 2 && x->coords.rank == 1 ? *y->coords.shape : y->coords.shape[y->coords.rank-2];

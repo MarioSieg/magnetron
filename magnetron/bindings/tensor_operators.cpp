@@ -1111,6 +1111,56 @@ namespace mag::bindings {
       "max"_a,
       "Clamp tensor values elementwise into the interval [min, max]."
     )
+    .def("clamp_min",
+      [](const tensor_wrapper &self, nb::handle min_h) -> tensor_wrapper {
+        std::lock_guard lock{get_global_mutex()};
+        tensor_wrapper min = normalize_rhs_to_tensor(self, min_h);
+        mag_tensor_t *out = nullptr;
+        mag_error_t err{};
+        throw_if_error(mag_clamp_min(&err, &out, *self, *min), err);
+        return tensor_wrapper{out};
+      },
+      "min"_a,
+      "Clamp tensor values elementwise to be at least min."
+    )
+    .def("clamp_max",
+      [](const tensor_wrapper &self, nb::handle max_h) -> tensor_wrapper {
+        std::lock_guard lock{get_global_mutex()};
+        tensor_wrapper max = normalize_rhs_to_tensor(self, max_h);
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_clamp_max(&err, &out, *self, *max), err);
+        return tensor_wrapper{out};
+      },
+      "max"_a,
+      "Clamp tensor values elementwise to be at most max."
+    )
+    .def("lerp",
+      [](const tensor_wrapper &self, const tensor_wrapper &end, nb::handle weight_h) -> tensor_wrapper {
+        std::lock_guard lock{get_global_mutex()};
+        tensor_wrapper weight = normalize_rhs_to_tensor(self, weight_h);
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_lerp(&err, &out, *self, *end, *weight), err);
+        return tensor_wrapper{out};
+      },
+      "end"_a,
+      "weight"_a,
+      "Linearly interpolate between this tensor and end by weight."
+    )
+    .def("lerp_",
+      [](tensor_wrapper &self, const tensor_wrapper &end, nb::handle weight_h) -> tensor_wrapper {
+        std::lock_guard lock{get_global_mutex()};
+        tensor_wrapper weight = normalize_rhs_to_tensor(self, weight_h);
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_lerp_(&err, &out, *self, *end, *weight), err);
+        return tensor_wrapper{out};
+      },
+      "end"_a,
+      "weight"_a,
+      "In-place linear interpolation between this tensor and end by weight."
+    )
     .def("expand",
       [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};

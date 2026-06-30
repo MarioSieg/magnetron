@@ -281,7 +281,7 @@ def test_inplace_fill(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-def test_outplace_masked_fill(device: str) -> None:
+def test_masked_fill_outplace(device: str) -> None:
     x = Tensor.uniform(2, 4, 6, device=device)
     mask = Tensor.ones_like(x).tril().cast(dtype.boolean)
     x = x.masked_fill(mask, 3.1415)
@@ -289,7 +289,7 @@ def test_outplace_masked_fill(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-def test_inplace_masked_fill(device: str) -> None:
+def test_masked_fill_inplace(device: str) -> None:
     x = Tensor.uniform(2, 4, 6, device=device)
     mask = Tensor.ones_like(x).tril().cast(dtype.boolean)
     x.masked_fill_(mask, 3.1415)
@@ -592,3 +592,12 @@ def test_outer(device: str) -> None:
                                    [  2.,   4.,   6.],
                                    [  3.,   6.,   9.],
                                    [  4.,   8.,  12.]]
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_lerp_outplace(device: str) -> None:
+    start = Tensor.arange(1., 5., device=device)
+    end = Tensor.full(4, fill_value=10.0, device=device)
+    y = start.lerp(end, 0.5)
+    assert y.tolist() == [5.5000,  6.0000,  6.5000,  7.0000]
+    y = start.lerp(end, Tensor.full_like(start, 0.5))
+    assert y.tolist() == [5.5000,  6.0000,  6.5000,  7.0000]
