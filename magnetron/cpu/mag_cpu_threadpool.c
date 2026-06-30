@@ -36,7 +36,7 @@ static mag_dtype_t mag_command_dispatch_dtype(const mag_command_t *cmd) {
 /* Execute the operation on the current thread */
 mag_status_t mag_worker_exec_thread_local(mag_error_t *err, const mag_kernel_registry_t *kernels, mag_kernel_payload_t *payload) {
   if (mag_unlikely(!(payload->cmd != NULL))) {
-    return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cpu: missing kernel command descriptor.");
+    return mag_set_error(err, MAG_ERR_KERNEL, "cpu: missing kernel command descriptor.");
   }
   mag_opcode_t op = payload->cmd->op;
   mag_dtype_t dtype = mag_command_dispatch_dtype(payload->cmd);
@@ -44,7 +44,7 @@ mag_status_t mag_worker_exec_thread_local(mag_error_t *err, const mag_kernel_reg
   mag_assert2(dtype >= 0 && dtype < MAG_DTYPE__NUM);
   mag_status_t (*kernel)(mag_error_t *, const mag_kernel_payload_t *) = kernels->operators[op][dtype];
   if (mag_unlikely(!(kernel != NULL))) {
-    return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cpu: no kernel found for operator '%s' with dtype '%s'.", mag_op_trait(op)->mnemonic, mag_type_trait(dtype)->name);
+    return mag_set_error(err, MAG_ERR_KERNEL, "cpu: no kernel found for operator '%s' with dtype '%s'.", mag_op_trait(op)->mnemonic, mag_type_trait(dtype)->name);
   }
   mag_status_t stat = (*kernel)(err, payload);
   payload->cmd = NULL;
@@ -53,7 +53,7 @@ mag_status_t mag_worker_exec_thread_local(mag_error_t *err, const mag_kernel_reg
 
 /* Execute the operation and broadcast completion if last chunk was done */
 static mag_status_t mag_worker_exec_and_broadcast(mag_error_t *err, mag_thread_pool_t *pool, const mag_kernel_registry_t *kernels, mag_kernel_payload_t *payload) {
-  mag_status_t stat = MAG_STATUS_OK;
+  mag_status_t stat = MAG_OK;
   if (mag_likely(payload->thread_idx < pool->num_active_workers))
     stat = mag_worker_exec_thread_local(err, kernels, payload);
   mag_phase_fence_done(&pool->fence);   /* signal completion to master */
@@ -93,12 +93,12 @@ mag_status_t mag_threadpool_create(
   *out_pool = NULL;
   mag_thread_pool_t *pool = (*mag_try_alloc)(NULL, sizeof(*pool), __alignof(mag_thread_pool_t));
   if (mag_unlikely(!pool))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate thread pool.");
+    return mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate thread pool.");
   memset(pool, 0, sizeof(*pool));
   mag_worker_t *workers = (*mag_try_alloc)(NULL, num_workers*sizeof(*workers), __alignof(mag_worker_t));
   if (mag_unlikely(!workers)) {
     (*mag_try_alloc)(pool, 0, __alignof(mag_thread_pool_t));
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate %u worker threads.", num_workers);
+    return mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate %u worker threads.", num_workers);
   }
   memset(workers, 0, num_workers*sizeof(*workers));
   *pool = (mag_thread_pool_t) {
@@ -127,7 +127,7 @@ mag_status_t mag_threadpool_create(
     };
     worker->payload.prng = &worker->prng;
     bool is_main = ti == 0;
-    if (is_main) {
+    if (!is_main) { /* Main thread is worker 0 but runs inline without its own thread */
       if (mag_iserr(mag_thread_create(
           err,
           &worker->thread,
@@ -145,7 +145,7 @@ mag_status_t mag_threadpool_create(
   while (mag_atomic32_load(&pool->num_workers_online, MAG_MO_SEQ_CST) != num_workers-1)  /* Wait for all workers to come online */
     mag_curr_thread_yield();
   *out_pool = pool;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 /* Destroy thread pool */
@@ -180,7 +180,7 @@ static void mag_threadpool_barrier(mag_thread_pool_t *pool) {
 
 static void mag_threadpool_clear_worker_status(mag_thread_pool_t *pool) {
   for (uint32_t i=0; i < pool->num_allocated_workers; ++i) {
-    pool->workers[i].stat = MAG_STATUS_OK;
+    pool->workers[i].stat = MAG_OK;
     memset(&pool->workers[i].err, 0, sizeof(pool->workers[i].err));
   }
 }
@@ -188,13 +188,13 @@ static void mag_threadpool_clear_worker_status(mag_thread_pool_t *pool) {
 static mag_status_t mag_threadpool_collect_status(mag_error_t *err, mag_thread_pool_t *pool) {
   for (uint32_t i=0; i < pool->num_active_workers; ++i) {
     mag_worker_t *w = &pool->workers[i];
-    if (mag_unlikely(w->stat != MAG_STATUS_OK)) {
-      if (err && err->code == MAG_STATUS_OK)
+    if (mag_unlikely(w->stat != MAG_OK)) {
+      if (err && err->code == MAG_OK)
         *err = w->err;
       return w->stat;
     }
   }
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 /* Execute an operator tensor on the CPU */

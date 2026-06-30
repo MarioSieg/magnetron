@@ -92,15 +92,15 @@ static mag_status_t mag_cpu_storage_dtor(void *self) {
   if (!(buf->flags & MAG_STORAGE_FLAG_BORROWED))
     (*mag_try_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
   mag_slab_free(&ctx->storage_slab, buf);
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device, mag_storage_buffer_t **out, size_t size) {
   mag_context_t *ctx = device->ctx;
-  mag_status_t status = MAG_STATUS_OK;
+  mag_status_t status = MAG_OK;
   mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
   if (mag_unlikely(!buf))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate storage buffer header.");
+    return mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate storage buffer header.");
   *buf = (mag_storage_buffer_t) { /* Set up storage buffer. */
     .ctx = ctx,
     .aux = {},
@@ -116,7 +116,7 @@ static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device
   } else {
     void *base = (*mag_try_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
     if (mag_unlikely(!(base != NULL))) {
-      status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate CPU storage buffer of %zu bytes.", size);
+      status = mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate CPU storage buffer of %zu bytes.", size);
       goto cleanup;
     }
     buf->base = (uintptr_t)base;
@@ -125,15 +125,15 @@ static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device
   mag_rc_init_object(buf, &mag_cpu_storage_dtor);
   ++device->ctx->telemetry.num_alive_storages;
   *out = buf;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 cleanup:
   mag_slab_free(&ctx->storage_slab, buf);
   return status;
 }
 
-static void mag_cpu_manual_seed(mag_error_t *err, mag_device_t *dvc, uint64_t seed) {
+static void mag_cpu_manual_seed(mag_error_t *err, mag_device_t *device, uint64_t seed) {
   (void)err;
-  mag_cpu_device_t *cpu_dvc = dvc->impl;
+  mag_cpu_device_t *cpu_dvc = device->impl;
   mag_philox4x32_stream_seed(&cpu_dvc->primary_prng, seed, 0);
   if (cpu_dvc->pool) {
     for (uint32_t i=0; i < cpu_dvc->pool->num_allocated_workers; ++i) {
@@ -143,38 +143,39 @@ static void mag_cpu_manual_seed(mag_error_t *err, mag_device_t *dvc, uint64_t se
   }
 }
 
-static mag_status_t smag_cpu_init_device(mag_error_t *err, mag_cpu_device_t **out, mag_context_t *ctx, uint32_t num_threads) {
-  mag_thread_prio_t sched_prio = MAG_THREAD_PRIO_HIGH;
+static mag_status_t mag_cpu_init_device(mag_error_t *err, mag_cpu_device_t **out, mag_context_t *ctx, uint32_t num_threads) {
+  mag_thread_prio_t sched_prio = MAG_THREAD_PRIO_NORMAL; /* TODO: make configureable */
   *out = NULL;
-  mag_cpu_device_t *dvc = (*mag_try_alloc)(NULL, sizeof(*dvc), 0);
-  if (mag_unlikely(!dvc))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate CPU device struct.");
-  memset(dvc, 0, sizeof(*dvc));
-  *dvc = (mag_cpu_device_t) {
+  mag_cpu_device_t *device = (*mag_try_alloc)(NULL, sizeof(*device), 0);
+  if (mag_unlikely(!device))
+    return mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate CPU device struct.");
+  memset(device, 0, sizeof(*device));
+  *device = (mag_cpu_device_t) {
     .ctx = ctx,
     .pool = NULL,
     .num_allocated_workers = 0,
     .kernels = {},
     .primary_prng = {}
   };
-  mag_numa_init(&dvc->numa_ctrl, MAG_NUMA_STRATEGY_DISTRIBUTE); /* TODO: make configureable */
-  mag_blas_detect_optimal_specialization(ctx, &dvc->kernels);
+  mag_numa_init(&device->numa_ctrl, MAG_NUMA_STRATEGY_DISTRIBUTE); /* TODO: make configureable */
+  mag_blas_detect_optimal_specialization(ctx, &device->kernels);
   if (num_threads > 1) {
-    mag_status_t status = mag_threadpool_create(err, &dvc->pool, ctx, num_threads, &dvc->kernels, &dvc->numa_ctrl, sched_prio);
+    mag_status_t status = mag_threadpool_create(err, &device->pool, ctx, num_threads, &device->kernels, &device->numa_ctrl, sched_prio);
     if (mag_iserr(status)) {
-      (*mag_alloc)(dvc, 0, 0);
+      (*mag_alloc)(device, 0, 0);
       return status;
     }
-    dvc->num_allocated_workers = num_threads;
+    device->num_allocated_workers = num_threads;
   }
-  if (*dvc->kernels.init) (*dvc->kernels.init)();
-  return MAG_STATUS_OK;
+  if (*device->kernels.init) (*device->kernels.init)();
+  *out = device;
+  return MAG_OK;
 }
 
-static void mag_cpu_destroy_device(mag_cpu_device_t *dvc) {
-  if (*dvc->kernels.deinit) (*dvc->kernels.deinit)();
-  if (dvc->pool) mag_threadpool_destroy(dvc->pool);
-  (*mag_try_alloc)(dvc, 0, 0);
+static void mag_cpu_destroy_device(mag_cpu_device_t *device) {
+  if (*device->kernels.deinit) (*device->kernels.deinit)();
+  if (device->pool) mag_threadpool_destroy(device->pool);
+  (*mag_try_alloc)(device, 0, 0);
 }
 
 static mag_status_t mag_cpu_init_interface(mag_error_t *err, mag_device_t **out, mag_context_t *ctx, uint32_t num_threads) {
@@ -200,7 +201,7 @@ static mag_status_t mag_cpu_init_interface(mag_error_t *err, mag_device_t **out,
   };
   snprintf(device->physical_device_name, sizeof(device->physical_device_name), "%s", ctx->machine.cpu_name);
   *out = device;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 static void mag_cpu_release_interface(mag_device_t *ctx) {
@@ -220,18 +221,18 @@ static mag_status_t mag_cpu_shutdown(mag_error_t *err, mag_backend_t *self) {
   mag_assert2(self->impl);
   mag_cpu_release_interface(self->impl);
   self->impl = NULL;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
-static uint32_t mag_cpu_backend_version(mag_backend_t *bck) { return MAG_CPU_BACKEND_VERSION; }
-static uint32_t mag_cpu_backend_runtime_version(mag_backend_t *bck) { return MAG_VERSION; }
-static const char* mag_cpu_backend_id(mag_backend_t *bck) { return "cpu"; }
-static uint32_t mag_cpu_backend_num_devices(mag_backend_t *bck) { return 1; }
-static uint32_t mag_cpu_backend_best_device_idx(mag_backend_t *bck) { return 0; }
-mag_device_t *mag_cpu_backend_get_device(mag_backend_t *bck, uint32_t idx) {
-  return bck->impl;
+static uint32_t mag_cpu_backend_version(mag_backend_t *backend) { return MAG_CPU_BACKEND_VERSION; }
+static uint32_t mag_cpu_backend_runtime_version(mag_backend_t *backend) { return MAG_VERSION; }
+static const char* mag_cpu_backend_id(mag_backend_t *backend) { return "cpu"; }
+static uint32_t mag_cpu_backend_num_devices(mag_backend_t *backend) { return 1; }
+static uint32_t mag_cpu_backend_best_device_idx(mag_backend_t *backend) { return 0; }
+mag_device_t *mag_cpu_backend_get_device(mag_backend_t *backend, uint32_t idx) {
+  return backend->impl;
 }
 
-uint32_t MAG_BACKEND_SYM_ABI_COOKIE(void){
+uint32_t MAG_BACKEND_SYM_ABI_COOKIE(void) {
   return mag_pack_abi_cookie('M', 'A', 'G', MAG_BACKEND_MODULE_ABI_VER);
 }
 
@@ -239,7 +240,7 @@ mag_status_t MAG_BACKEND_SYM_INIT(mag_error_t *err, mag_backend_t **out, mag_con
   *out = NULL;
   mag_backend_t *backend = (*mag_try_alloc)(NULL, sizeof(*backend)+sizeof(mag_device_t *), 0);
   if (mag_unlikely(!backend))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "cpu: failed to allocate backend interface struct.");
+    return mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate backend interface struct.");
   memset(backend, 0, sizeof(*backend)+sizeof(mag_device_t *));
   *backend = (mag_backend_t){
     .impl = NULL,
@@ -253,11 +254,11 @@ mag_status_t MAG_BACKEND_SYM_INIT(mag_error_t *err, mag_backend_t **out, mag_con
     .get_device = &mag_cpu_backend_get_device,
   };
   *out = backend;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 mag_status_t MAG_BACKEND_SYM_SHUTDOWN(mag_error_t *err, mag_backend_t *backend) { /* Free interface struct */
   (*mag_alloc)(backend, 0, 0);
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 

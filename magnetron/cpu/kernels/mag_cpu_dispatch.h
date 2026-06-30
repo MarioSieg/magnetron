@@ -146,7 +146,7 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 
 static mag_status_t mag_nop(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err, (void)payload;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(mag_error_t *, const mag_kernel_payload_t *) = {

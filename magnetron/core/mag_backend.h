@@ -81,7 +81,9 @@ struct mag_device_t {
 #define MAG_BACKEND_MODULE_ABI_VER 2 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */
 typedef struct mag_backend_t mag_backend_t;
 struct mag_backend_t {
+  mag_context_t *ctx;
   void *impl;
+  /* !!! VTABLE - only function pointers below till end end, respect/update AG_BACKEND_VTABLE_* on changes */
   mag_status_t (*init)(mag_error_t *err, mag_backend_t *self, mag_context_t *ctx);
   mag_status_t (*shutdown)(mag_error_t *err, mag_backend_t *self);
   uint32_t (*backend_version)(mag_backend_t *bck);
@@ -91,8 +93,11 @@ struct mag_backend_t {
   uint32_t (*best_device_id)(mag_backend_t *bck);
   mag_device_t *(*get_device)(mag_backend_t *bck, uint32_t idx);
 };
-#define MAG_BACKEND_VTABLE_SIZE 8 /* Number of function pointers in mag_backend_t struct. */
-mag_static_assert((sizeof(mag_backend_t)/sizeof(void *))-1 == MAG_BACKEND_VTABLE_SIZE);
+#define MAG_BACKEND_VTABLE_START offsetof(mag_backend_t, init)
+#define MAG_BACKEND_VTABLE_SIZE ((sizeof(mag_backend_t) - MAG_BACKEND_VTABLE_START)/sizeof(void *))
+mag_static_assert(MAG_BACKEND_VTABLE_START % sizeof(void *) == 0);
+mag_static_assert(sizeof(mag_backend_t) % sizeof(void *) == 0);
+mag_static_assert((MAG_BACKEND_VTABLE_START/sizeof(void *)) + MAG_BACKEND_VTABLE_SIZE == sizeof(mag_backend_t)/sizeof(void *));
 
 #define mag_backend_cat_name(x,y) x##y
 #define mag_backend_sym_fn_name(x) mag_backend_cat_name(x, _t)

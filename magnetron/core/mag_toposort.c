@@ -85,25 +85,25 @@ static void mag_topo_stack_free(mag_topo_stack_t *ts) {
 }
 
 mag_status_t mag_topo_sort(mag_error_t *err, mag_tensor_t *root, mag_topo_set_t *out_sorted) {
-  if (mag_unlikely(!(root->flags & MAG_TFLAG_REQUIRES_GRAD))) return MAG_STATUS_OK;
+  if (mag_unlikely(!(root->flags & MAG_TFLAG_REQUIRES_GRAD))) return MAG_OK;
   mag_hashset_t visited;
   if (mag_unlikely(!mag_hashset_init(&visited, MAG_TOPOSORT_HASHSET_INIT_CAP)))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "toposort: failed to allocate visited set.");
+    return mag_set_error(err, MAG_ERR_OOM, "toposort: failed to allocate visited set.");
   mag_topo_stack_t stack;
   if (mag_unlikely(!mag_topo_stack_init(&stack, MAG_TOPOSORT_STACK_INIT_CAP))) {
     mag_hashset_free(&visited);
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "toposort: failed to allocate traversal stack.");
+    return mag_set_error(err, MAG_ERR_OOM, "toposort: failed to allocate traversal stack.");
   }
-  mag_status_t status = MAG_STATUS_OK;
+  mag_status_t status = MAG_OK;
   if (!root->au_state) {
     if (mag_unlikely(!mag_au_state_lazy_alloc(&root->au_state, root->ctx))) {
-      status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "toposort: failed to allocate autodiff state.");
+      status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to allocate autodiff state.");
       goto cleanup;
     }
     root->au_state->op = MAG_OP_NOP;
   }
   if (mag_unlikely(!mag_topo_stack_push(&stack, root))) {
-    status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "toposort: failed to grow traversal stack.");
+    status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow traversal stack.");
     goto cleanup;
   }
   while (stack.len) { /* Iterative DFS */
@@ -111,7 +111,7 @@ mag_status_t mag_topo_sort(mag_error_t *err, mag_tensor_t *root, mag_topo_set_t 
     mag_tensor_t *top_t = top->tensor;
     if (!top_t->au_state && (top_t->flags & MAG_TFLAG_REQUIRES_GRAD)) {
       if (mag_unlikely(!mag_au_state_lazy_alloc(&top_t->au_state, top_t->ctx))) {
-        status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "toposort: failed to allocate autodiff state.");
+        status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to allocate autodiff state.");
         goto cleanup;
       }
       top_t->au_state->op = MAG_OP_NOP;  // no parents
@@ -121,7 +121,7 @@ mag_status_t mag_topo_sort(mag_error_t *err, mag_tensor_t *root, mag_topo_set_t 
     if (top->next_child_idx >= num_children) { /* All children processed */
       mag_topo_stack_pop(&stack);
       if (mag_unlikely(!mag_topo_set_push(out_sorted, top_t))) {
-        status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "toposort: failed to grow output set.");
+        status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow output set.");
         goto cleanup;
       }
       continue;
@@ -129,11 +129,11 @@ mag_status_t mag_topo_sort(mag_error_t *err, mag_tensor_t *root, mag_topo_set_t 
     mag_tensor_t *child = au->op_inputs[top->next_child_idx++];
     if (child && child->flags & MAG_TFLAG_REQUIRES_GRAD && !mag_hashset_contains_key(&visited, child)) {
       if (mag_unlikely(mag_hashset_insert(&visited, child) == MAG_HASHSET_FULL)) {
-        status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "toposort: failed to grow visited set.");
+        status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow visited set.");
         goto cleanup;
       }
       if (mag_unlikely(!mag_topo_stack_push(&stack, child))) {
-        status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "toposort: failed to grow traversal stack.");
+        status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow traversal stack.");
         goto cleanup;
       }
     }

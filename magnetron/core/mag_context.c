@@ -130,7 +130,7 @@ static void mag_ctx_dump_banner(void) {
 /* Create context with compute device descriptor. */
 mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   if (mag_unlikely(!out_ctx))
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "context: out_ctx pointer is NULL.");
+    return mag_set_error(err, MAG_ERR_PARAM, "context: out_ctx pointer is NULL.");
   *out_ctx = NULL;
 
   mag_setup_environ(); /* Parse and apply environment variables. */
@@ -143,7 +143,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   /* Initialize context with default values or from context info. */
   mag_context_t *ctx = (*mag_try_alloc)(NULL, sizeof(*ctx), 0); /* Allocate context. */
   if (mag_unlikely(!ctx))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "context: failed to allocate context structure.");
+    return mag_set_error(err, MAG_ERR_OOM, "context: failed to allocate context structure.");
   memset(ctx, 0, sizeof(*ctx));
 
   /* Init memory pools. */
@@ -158,7 +158,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
     mag_slab_destroy(&ctx->tensor_slab);
     mag_slab_destroy(&ctx->storage_slab);
     (*mag_alloc)(ctx, 0, 0);
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "context: failed to initialize context memory pools.");
+    return mag_set_error(err, MAG_ERR_OOM, "context: failed to initialize context memory pools.");
   }
 
   ctx->tr_id = mag_thread_id(); /* Get thread ID. */
@@ -189,7 +189,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   /* Print context initialization time. */
   mag_log_info("magnetron context initialized in %.05f ms", mag_hpc_clock_elapsed_ms(time_stamp_start));
   *out_ctx = ctx;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 bool mag_ctx_is_device_available(mag_context_t *ctx, mag_device_id_t id) {

@@ -583,3 +583,12 @@ def test_index_add_(device: str) -> None:
     assert x.tolist() == [[2.0, 3.0, 4.0], [1.0, 1.0, 1.0], [8.0, 9.0, 10.0], [1.0, 1.0, 1.0], [5.0, 6.0, 7.0]]
     x.index_add_(0, idx, t, alpha=-1)
     assert x.tolist() == [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_outer(device: str) -> None:
+    x = Tensor.arange(1., 5., device=device)
+    y = Tensor.arange(1., 4., device=device)
+    assert x.outer(y).tolist() == [[  1.,   2.,   3.],
+                                   [  2.,   4.,   6.],
+                                   [  3.,   6.,   9.],
+                                   [  4.,   8.,  12.]]

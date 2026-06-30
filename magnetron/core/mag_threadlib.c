@@ -69,9 +69,9 @@ mag_status_t mag_thread_create(
   const char *name,
   void *arg
 ) {
-  mag_thread_entry_params_t *params = (*mag_try_alloc)(err, sizeof(mag_thread_entry_params_t), 0);
+  mag_thread_entry_params_t *params = (*mag_try_alloc)(NULL, sizeof(mag_thread_entry_params_t), 0);
   if (mag_unlikely(!params))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "mag_threadlib: failed to allocate thread entry params.");
+    return mag_set_error(err, MAG_ERR_OOM, "mag_threadlib: failed to allocate thread entry params.");
   *params = (mag_thread_entry_params_t){
     .entry = entry,
     .arg = arg,
@@ -81,85 +81,87 @@ mag_status_t mag_thread_create(
   if (name && *name) snprintf(params->name, sizeof(params->name), "%s", name);
 #ifdef _WIN32
 #else
-  pthread_t tr;
-  if (mag_unlikely(pthread_create(&tr, NULL, &mag_thread_entry_stub, params) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to create thread.");
+  pthread_t *thread = (*mag_try_alloc)(NULL, sizeof(pthread_t), __alignof(pthread_mutex_t));
+  if (mag_unlikely(!thread))
+    return mag_set_error(err, MAG_ERR_OOM, "mag_threadlib: failed to allocate thread.");
+  if (mag_unlikely(pthread_create(thread, NULL, &mag_thread_entry_stub, params) != 0))
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to create thread.");
 #endif
-  *out = tr;
-  return MAG_STATUS_OK;
+  *out = thread;
+  return MAG_OK;
 }
 
 mag_status_t mag_thread_join(mag_error_t *err, mag_thread_t *thr) {
 #ifdef _WIN32
 #else
-  if (mag_unlikely(pthread_join(thr, NULL) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: Failed to join thread.");
+  if (mag_unlikely(pthread_join(*(pthread_t *)thr, NULL) != 0))
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: Failed to join thread.");
 #endif
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 mag_status_t mag_mutex_create(mag_error_t *err, mag_mutex_t **out) {
-  pthread_mutex_t *mtx = (*mag_try_alloc)(NULL, sizeof(pthread_mutex_t), __alignof(pthread_mutex_t));
+  pthread_mutex_t *mtx = (*mag_try_alloc)(NULL, sizeof(*mtx), __alignof(*mtx));
   if (mag_unlikely(!mtx))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "mag_threadlib: failed to allocate mutex");
+    return mag_set_error(err, MAG_ERR_OOM, "mag_threadlib: failed to allocate mutex.");
   if (mag_unlikely(pthread_mutex_init(mtx, NULL) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to create mutex");
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to create mutex.");
   *out = mtx;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 mag_status_t mag_mutex_destroy(mag_error_t *err, mag_mutex_t *mtx) {
-  if (mag_unlikely(pthread_mutex_destroy(mtx) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to destroy mutex");
+  if (mag_unlikely(pthread_mutex_destroy((pthread_mutex_t *)mtx) != 0))
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to destroy mutex.");
   (*mag_try_alloc)(mtx, 0, 0);
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 mag_status_t mag_mutex_lock(mag_error_t *err, mag_mutex_t *mtx) {
-  if (mag_unlikely(pthread_mutex_lock(mtx) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to lock mutex.");
-  return MAG_STATUS_OK;
+  if (mag_unlikely(pthread_mutex_lock((pthread_mutex_t *)mtx) != 0))
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to lock mutex.");
+  return MAG_OK;
 }
 
 mag_status_t mag_mutex_unlock(mag_error_t *err, mag_mutex_t *mtx) {
-  if (mag_unlikely(pthread_mutex_unlock(mtx) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to unlock mutex.");
-  return MAG_STATUS_OK;
+  if (mag_unlikely(pthread_mutex_unlock((pthread_mutex_t *)mtx) != 0))
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to unlock mutex.");
+  return MAG_OK;
 }
 
 mag_status_t mag_condvar_create(mag_error_t *err, mag_condvar_t **out) {
-  pthread_cond_t *cv = (*mag_try_alloc)(NULL, sizeof(pthread_cond_t), __alignof(pthread_cond_t));
+  pthread_cond_t *cv = (*mag_try_alloc)(NULL, sizeof(*cv), __alignof(*cv));
   if (mag_unlikely(!cv))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "mag_threadlib: failed to allocate condvar");
+    return mag_set_error(err, MAG_ERR_OOM, "mag_threadlib: failed to allocate condvar.");
   if (mag_unlikely(pthread_cond_init(cv, NULL) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to create condvar");
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to create condvar.");
   *out = cv;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 mag_status_t mag_condvar_destroy(mag_error_t *err, mag_condvar_t *cv) {
-  if (mag_unlikely(pthread_cond_destroy(cv) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to destroy condvar");
+  if (mag_unlikely(pthread_cond_destroy((mag_condvar_t *)cv) != 0))
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to destroy condvar.");
   (*mag_try_alloc)(cv, 0, 0);
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 mag_status_t mag_condvar_wait(mag_error_t *err, mag_condvar_t *cv, mag_mutex_t *mtx) {
-  if (mag_unlikely(pthread_cond_wait(cv, mtx) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to wait on condvar.");
-  return MAG_STATUS_OK;
+  if (mag_unlikely(pthread_cond_wait((mag_condvar_t *)cv, (pthread_mutex_t *)mtx) != 0))
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to wait on condvar.");
+  return MAG_OK;
 }
 
 mag_status_t mag_condvar_signal(mag_error_t *err, mag_condvar_t *cv) {
-  if (mag_unlikely(pthread_cond_signal(cv) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to signal condvar.");
-  return MAG_STATUS_OK;
+  if (mag_unlikely(pthread_cond_signal((mag_condvar_t *)cv) != 0))
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to signal condvar.");
+  return MAG_OK;
 }
 
 mag_status_t mag_condvar_broadcast(mag_error_t *err, mag_condvar_t *cv) {
-  if (mag_unlikely(pthread_cond_broadcast(cv) != 0))
-    return mag_set_error(err, MAG_STATUS_ERR_OS_ERROR, "mag_threadlib: failed to broadcast condvar.");
-  return MAG_STATUS_OK;
+  if (mag_unlikely(pthread_cond_broadcast((mag_condvar_t *)cv) != 0))
+    return mag_set_error(err, MAG_ERR_OS, "mag_threadlib: failed to broadcast condvar.");
+  return MAG_OK;
 }
 
 /* Set scheduling priority for current thread. */

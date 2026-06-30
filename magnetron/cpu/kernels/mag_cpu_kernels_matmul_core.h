@@ -26,5 +26,5 @@ static MAG_HOTPROC mag_status_t mag_matmul_generic(mag_error_t *err, const mag_k
     case MAG_MATMUL_TYPE_BMM_GEMM: mag_matmul_bmm(payload, type); break;
     default: mag_panic("matmul: unsupported kernel type %d.", (int)type);
   }
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }

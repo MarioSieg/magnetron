@@ -31,16 +31,16 @@ static mag_status_t mag_backend_module_dlym(mag_error_t *err, mag_dylib_t *handl
   *fn = mag_dylib_sym(handle, sym);
   if (mag_unlikely(!*fn)) {
     mag_dylib_close(handle);
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "backend: shared library '%s' is missing required symbol '%s' (incompatible or corrupt backend module).", fname, sym);
+    return mag_set_error(err, MAG_ERR_STATE, "backend: shared library '%s' is missing required symbol '%s' (incompatible or corrupt backend module).", fname, sym);
   }
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module_t **out_mod, const char *file, mag_context_t *ctx) {
   *out_mod = NULL;
   mag_log_info("Loading backend module: '%s'", file);
   if (mag_unlikely(!mag_utf8_validate((const uint8_t *)file, strlen(file))))
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "backend: module path is not valid UTF-8.");
+    return mag_set_error(err, MAG_ERR_PARAM, "backend: module path is not valid UTF-8.");
   mag_status_t status;
   mag_dylib_t *handle = NULL;
   status = mag_dylib_open(err, &handle, file); /* Open the dynamic library */
@@ -61,7 +61,7 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
   uint32_t curr_cookie = mag_pack_abi_cookie('M', 'A', 'G', MAG_BACKEND_MODULE_ABI_VER);
   if (mag_unlikely(abi_cookie != curr_cookie)) {
     mag_dylib_close(handle);
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "backend: shared library '%s' has an incompatible ABI version (got 0x%08x, expected 0x%08x). Rebuild the backend against this magnetron version.", file, abi_cookie, curr_cookie);
+    return mag_set_error(err, MAG_ERR_STATE, "backend: shared library '%s' has an incompatible ABI version (got 0x%08x, expected 0x%08x). Rebuild the backend against this magnetron version.", file, abi_cookie, curr_cookie);
   }
 
   /* Init backend */
@@ -69,21 +69,14 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
   status = (*(MAG_BACKEND_SYM_FN_INIT*)(fn_init))(err, &backend, ctx);
   if (mag_iserr(status)) return status;
 
-  /* Check that all function pointers are provided */
-  bool fn_ok = true;
+  /* Verify vtable */
+  bool vtab = true;
   mag_assert2(MAG_BACKEND_MODULE_ABI_VER == 2); /* Ensure this code is updated if ABI changes */
-  mag_assert2(MAG_BACKEND_VTABLE_SIZE == 8); /* Ensure this code is updated if vtable size changes */
-  fn_ok &= !!backend->init;
-  fn_ok &= !!backend->shutdown;
-  fn_ok &= !!backend->backend_version;
-  fn_ok &= !!backend->runtime_version;
-  fn_ok &= !!backend->id;
-  fn_ok &= !!backend->num_devices;
-  fn_ok &= !!backend->best_device_id;
-  fn_ok &= !!backend->get_device;
-  if (mag_unlikely(!fn_ok)) {
+  for (size_t i=0; i < MAG_BACKEND_VTABLE_SIZE; ++i)
+    vtab &= !!*(void **)((uint8_t *)backend + MAG_BACKEND_VTABLE_START + i*sizeof(void *));
+  if (mag_unlikely(!vtab)) {
     mag_dylib_close(handle);
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "backend: shared library '%s' is missing required vtable function pointers (incompatible backend ABI).", file);
+    return mag_set_error(err, MAG_ERR_STATE, "backend: shared library '%s' is missing required vtable function pointers (incompatible backend ABI).", file);
   }
   /* Verify runtime versions match */
   uint32_t backend_ver = (*backend->runtime_version)(backend);
@@ -91,13 +84,13 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
     uint32_t b_maj = mag_ver_major(backend_ver), b_min = mag_ver_minor(backend_ver), b_pat = mag_ver_patch(backend_ver);
     uint32_t rt_maj = mag_ver_major(MAG_VERSION), rt_min = mag_ver_minor(MAG_VERSION), rt_pat = mag_ver_patch(MAG_VERSION);
     mag_dylib_close(handle);
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "backend: shared library '%s' has an incompatible runtime version (got %d.%d.%d, expected %d.%d.%d).", file, b_maj, b_min, b_pat, rt_maj, rt_min, rt_pat);
+    return mag_set_error(err, MAG_ERR_STATE, "backend: shared library '%s' has an incompatible runtime version (got %d.%d.%d, expected %d.%d.%d).", file, b_maj, b_min, b_pat, rt_maj, rt_min, rt_pat);
   }
 
   /* Invoke init hook */
   if (mag_iserr((*backend->init)(err, backend, ctx))) {
     mag_dylib_close(handle);
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "backend: shared library '%s' init hook failed (device driver/runtime may be missing or the device failed to initialize).", file);
+    return mag_set_error(err, MAG_ERR_STATE, "backend: shared library '%s' init hook failed (device driver/runtime may be missing or the device failed to initialize).", file);
   }
 
   /* Create backend module */
@@ -106,7 +99,7 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
     (void)(*backend->shutdown)(NULL, backend);
     (*(MAG_BACKEND_SYM_FN_SHUTDOWN*)fn_shutdown)(NULL, backend);
     mag_dylib_close(handle);
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "backend: failed to allocate backend module for '%s'.", file);
+    return mag_set_error(err, MAG_ERR_OOM, "backend: failed to allocate backend module for '%s'.", file);
   }
   memset(module, 0, sizeof(*module));
   *module = (mag_backend_module_t) {
@@ -118,11 +111,11 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
     .fn_shutdown = fn_shutdown
   };
   *out_mod = module;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 static mag_status_t mag_backend_module_shutdown(mag_error_t *err, mag_backend_module_t *mod) {
-  mag_status_t status = MAG_STATUS_OK;
+  mag_status_t status = MAG_OK;
   if (!mod) return status;
   if (mod->backend) {
     if (mod->backend->shutdown) {
@@ -182,13 +175,13 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
   *out_reg = NULL;
   mag_backend_registry_t *reg = (*mag_try_alloc)(NULL, sizeof(*reg), 0);
   if (mag_unlikely(!reg))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "backend: failed to allocate backend registry (%zu bytes).", sizeof(*reg));
+    return mag_set_error(err, MAG_ERR_OOM, "backend: failed to allocate backend registry (%zu bytes).", sizeof(*reg));
   memset(reg, 0, sizeof(*reg));
   reg->ctx = ctx;
-  mag_status_t status = MAG_STATUS_OK;
+  mag_status_t status = MAG_OK;
   char *modpath = mag_current_module_path();
   if (mag_unlikely(!modpath)) {
-    status = mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "backend: failed to determine the magnetron module path needed to locate backend libraries.");
+    status = mag_set_error(err, MAG_ERR_STATE, "backend: failed to determine the magnetron module path needed to locate backend libraries.");
     goto error;
   }
   char *module_dir, *file;
@@ -199,21 +192,21 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
   for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
     snprintf(pathbuf, sizeof(pathbuf), "%s/%smagnetron_%s.%s", module_dir, MAG_DYLIB_PREFIX, mag_backend_type_to_str(type), MAG_DYLIB_EXT);
     mag_backend_module_t *mod = NULL;
-    mag_status_t lst = mag_backend_module_load(err, &mod, pathbuf, reg->ctx);
-    if (mag_iserr(lst)) {
+    mag_status_t status2 = mag_backend_module_load(err, &mod, pathbuf, reg->ctx);
+    if (mag_iserr(status2)) {
       if (mag_backend_type_is_required(type)) { /* A required backend (e.g. CPU) failed: propagate its detailed reason to the caller. */
-        status = lst; /* 'err' already holds the specific failure message. */
+        status = status2; /* 'err' already holds the specific failure message. */
         goto error;
       }
       mag_log_info("Optional backend '%s' not available: %s", mag_backend_type_to_str(type), err ? err->message : "(not present)"); /* Non-fatal. */
-      if (err) err->code = MAG_STATUS_OK; /* Consume the non-fatal failure: clear the sticky error so a later real error can be recorded and the returned 'err' stays clean. */
+      if (err) err->code = MAG_OK; /* Consume the non-fatal failure: clear the sticky error so a later real error can be recorded and the returned 'err' stays clean. */
       continue;
     }
     reg->backends[type] = mod;
     ++reg->backends_num;
   }
   if (mag_unlikely(!reg->backends_num)) { /* Defensive: no usable backend at all. */
-    status = mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE,
+    status = mag_set_error(err, MAG_ERR_STATE,
       "backend: no magnetron compute backends could be loaded.\n"
       "Backends are loaded as shared libraries next to libmagnetron_core, but none were located or usable.\n"
       "Ensure at least one backend (e.g. magnetron_cpu) is installed alongside libmagnetron_core,\n"
@@ -237,7 +230,7 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
     }
   }
   *out_reg = reg;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 error:
   if (modpath) (*mag_alloc)(modpath, 0, 0);
   for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) /* Shut down any backends already loaded before the failure. */
@@ -290,5 +283,5 @@ mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registr
     }
   }
   (*mag_alloc)(reg, 0, 0);
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }

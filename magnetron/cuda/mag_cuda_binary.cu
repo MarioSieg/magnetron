@@ -281,9 +281,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
       case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
       case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   template <template <typename, typename> typename Op>
@@ -302,9 +302,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
       case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
       case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   template <template <typename, typename> typename Op>
@@ -327,9 +327,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, uint8_t>>(r, x, y); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(x->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   mag_status_t binary_op_add(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_numeric<op_add>(err, cmd); }

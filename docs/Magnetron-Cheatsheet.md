@@ -220,6 +220,7 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 | `mod()`                   | `%`      | Elementwise modulus                           | $x\bmod y$                                        | `x % y`                            |
 | `pow()`                   | `**`     | Elementwise exponentiation                    | $x^y$                                             | `x ** y`                           |
 | `matmul()`                | `@`      | Matrix multiplication                         | $XY$                                              | `x @ y`                            |
+| `outer(y)`                | N/A      | Outer product of two 1D tensors               | $z_{ij}=x_i y_j$                                  | `z = x.outer(y)`                   |
 | `Tensor.einsum(eq, *xs)`  | N/A      | Einstein summation over one or more tensors   | equation-defined contractions                     | `Tensor.einsum("ij,jk->ik", a, b)` |
 | `scaled_matmul(w, scale)` | N/A      | Matrix multiplication with output/input scale | $XY\cdot s$ or implementation-defined scaled GEMM | `x.scaled_matmul(w, scale)`        |
 | `min(y)`                  | N/A      | Elementwise minimum                           | $\min(x,y)$                                       | `x.min(y)`                         |

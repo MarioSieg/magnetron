@@ -55,33 +55,37 @@ extern MAG_EXPORT mag_log_level_t mag_log_level(void); /* Get current global log
 /**
  * Status return codes for magnetron library functions.
  */
+
+/**
+ * Status return codes for magnetron library functions.
+ */
 #define mag_statusdef(_) \
-    _(MAG_STATUS_OK, "OK") \
-    _(MAG_STATUS_ERR_PENDING, "Operation already pending") \
-    _(MAG_STATUS_ERR_THREAD_MISMATCH, "Thread mismatch") \
-    _(MAG_STATUS_ERR_INVALID_RANK, "Invalid tensor rank") \
-    _(MAG_STATUS_ERR_INVALID_DIM, "Invalid dimension") \
-    _(MAG_STATUS_ERR_DIM_OVERFLOW, "Dimension overflow") \
-    _(MAG_STATUS_ERR_INVALID_INDEX, "Invalid index") \
-    _(MAG_STATUS_ERR_INVALID_DEVICE, "Invalid device id") \
-    _(MAG_STATUS_ERR_OUT_OF_BOUNDS, "Index out of bounds") \
-    _(MAG_STATUS_ERR_INVALID_PARAM, "Invalid parameter") \
-    _(MAG_STATUS_ERR_STRIDE_SOLVER_FAILED, "Stride solver failed") \
-    _(MAG_STATUS_ERR_BROADCAST_IMPOSSIBLE, "Broadcast not possible") \
-    _(MAG_STATUS_ERR_OPERATOR_IMPOSSIBLE, "Operator cannot be applied to given tensors") \
-    _(MAG_STATUS_ERR_INVALID_STATE, "Invalid state") \
-    _(MAG_STATUS_ERR_IMAGE_ERROR, "Image processing error") \
-    _(MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "Memory allocation failed") \
-    _(MAG_STATUS_ERR_MEMORY_DEALLOCATION_FAILED, "Memory deallocation failed") \
-    _(MAG_STATUS_ERR_FAILED_TO_MAP_FILE, "Failed to memory map file") \
-    _(MAG_STATUS_ERR_STREAM_IO_ERROR, "Stream IO processing error") \
-    _(MAG_STATUS_ERR_SERIALIZATION_ERROR, "De/serialization error") \
-    _(MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "Missing compute kernel for requested operation") \
-    _(MAG_STATUS_ERR_KERNEL_FAILURE, "Error while executing compute kernel") \
-    _(MAG_STATUS_ERR_EINSUM, "Error while executing einsum operation") \
-    _(MAG_STATUS_ERR_FILE_NOT_FOUND, "File not found") \
-    _(MAG_STATUS_ERR_OS_ERROR, "Error while invoking OS system call") \
-    _(MAG_STATUS_ERR_UNKNOWN, "Unknown error")
+  _(MAG_OK, "Success") \
+  _(MAG_ERR_PENDING, "Operation already in progress") \
+  _(MAG_ERR_THREAD, "Called from the wrong thread") \
+  _(MAG_ERR_RANK, "Invalid tensor rank") \
+  _(MAG_ERR_DIM, "Invalid tensor dimension") \
+  _(MAG_ERR_SHAPE, "Invalid tensor shape") \
+  _(MAG_ERR_INDEX, "Invalid index") \
+  _(MAG_ERR_DEVICE, "Invalid device") \
+  _(MAG_ERR_BOUNDS, "Index out of bounds") \
+  _(MAG_ERR_PARAM, "Invalid argument") \
+  _(MAG_ERR_STRIDES, "Failed to compute tensor strides") \
+  _(MAG_ERR_BROADCAST, "Broadcasting is not possible") \
+  _(MAG_ERR_OP, "Operation is not supported for the given operands") \
+  _(MAG_ERR_STATE, "Invalid object state") \
+  _(MAG_ERR_IMAGE, "Image processing failed") \
+  _(MAG_ERR_OOM, "Out of memory") \
+  _(MAG_ERR_FREE, "Memory deallocation failed") \
+  _(MAG_ERR_MMAP, "Failed to memory-map file") \
+  _(MAG_ERR_IO, "I/O error") \
+  _(MAG_ERR_SERIALIZE, "Serialization failed") \
+  _(MAG_ERR_KERNEL, "Compute kernel execution failed") \
+  _(MAG_ERR_EINSUM, "Einsum operation failed") \
+  _(MAG_ERR_NOFILE, "File not found") \
+  _(MAG_ERR_OS, "Operating system error") \
+  _(MAG_ERR_BACKEND, "Backend error") \
+  _(MAG_ERR_UNKNOWN, "Unknown error")
 
 typedef enum mag_status_t {
 #define _(code, msg) code,
@@ -311,6 +315,7 @@ extern MAG_EXPORT mag_status_t mag_cusum(mag_error_t *err, mag_tensor_t **out_re
 extern MAG_EXPORT mag_status_t mag_cuprod(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim);
 extern MAG_EXPORT mag_status_t mag_cumax(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t dim);
 extern MAG_EXPORT mag_status_t mag_cumin(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t dim);
+extern MAG_EXPORT mag_status_t mag_outer(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *a, mag_tensor_t *b);
 extern MAG_EXPORT mag_status_t mag_abs(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_abs_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_sgn(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);

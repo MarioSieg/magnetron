@@ -42,7 +42,7 @@ TEST(snapshot, read_write_tensors) {
         for (auto&& [name, t] : tensors)
             ASSERT_TRUE(mag_snapshot_put_tensor(snap, name.c_str(), &*t));
         mag_error_t err {};
-        ASSERT_EQ(mag_snapshot_serialize(&err, snap, "snap.mag"), MAG_STATUS_OK) << err.message;
+        ASSERT_EQ(mag_snapshot_serialize(&err, snap, "snap.mag"), MAG_OK) << err.message;
     }
     ASSERT_TRUE(std::filesystem::exists("snap.mag"));
     { // read

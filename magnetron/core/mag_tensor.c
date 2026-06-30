@@ -23,7 +23,7 @@ static mag_status_t mag_view_meta_dtor(void *p) {
     vm->base->view_meta = NULL;
   mag_rc_decref(vm->base);
   mag_slab_free(&ctx->view_meta_slab, vm);
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
@@ -86,58 +86,58 @@ mag_status_t mag_tensor_init(
   *out = NULL;
   /* Early param checks — no resources allocated yet, return directly. */
   if (mag_unlikely(mag_thread_id() != ctx->tr_id)) {
-    return mag_set_error(err, MAG_STATUS_ERR_THREAD_MISMATCH, "tensor: must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
+    return mag_set_error(err, MAG_ERR_THREAD, "tensor: must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   }
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_RANK, "tensor: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
+    return mag_set_error(err, MAG_ERR_RANK, "tensor: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   }
   if (rank > 0) {
     if (mag_unlikely(shape == NULL)) {
-      return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "tensor: shape must not be NULL when rank > 0.");
+      return mag_set_error(err, MAG_ERR_PARAM, "tensor: shape must not be NULL when rank > 0.");
     }
   }
   int64_t el = (int64_t)mag_type_trait(type)->size;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
     if (mag_unlikely(!(shape[i] > 0))) {
-      return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM, "tensor: all shape dimensions must be > 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
+      return mag_set_error(err, MAG_ERR_DIM, "tensor: all shape dimensions must be > 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
     }
     if (mag_unlikely(mag_mulov64(shape[i], numel, &numel))) {
-      return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW, "tensor: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
+      return mag_set_error(err, MAG_ERR_DIM, "tensor: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
     }
   }
   int64_t numbytes;
   if (mag_unlikely(mag_mulov64(numel, el, &numbytes))) {
-    return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW, "tensor: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, el);
+    return mag_set_error(err, MAG_ERR_DIM, "tensor: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, el);
   }
   mag_device_t *target_device = NULL;
   bool has_rquested_device = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, device, NULL, &target_device);
   char device_name[32];
   if (mag_unlikely(!has_rquested_device)) mag_device_id_to_str(device, &device_name);
   if (mag_unlikely(!has_rquested_device)) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_DEVICE, "tensor: device '%s' is not available; the backend may not be enabled.", device_name);
+    return mag_set_error(err, MAG_ERR_DEVICE, "tensor: device '%s' is not available; the backend may not be enabled.", device_name);
   }
   /* Tensor header allocated — use goto cleanup from here on. */
-  mag_status_t status = MAG_STATUS_OK;
+  mag_status_t status = MAG_OK;
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel);
   if (mag_unlikely(!tensor))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "tensor: failed to allocate tensor header.");
+    return mag_set_error(err, MAG_ERR_OOM, "tensor: failed to allocate tensor header.");
   if (!storage) {
     mag_status_t (*allocator)(mag_error_t *, mag_device_t *, mag_storage_buffer_t **, size_t) = target_device->alloc_storage;
     status = (*allocator)(err, target_device, &tensor->storage, numbytes);
-    if (mag_unlikely(status != MAG_STATUS_OK))
+    if (mag_unlikely(status != MAG_OK))
       goto cleanup;
   } else {
     if (mag_unlikely(!(storage->device == target_device))) {
-      status = mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "tensor: storage device mismatch (tensor is on '%s' but storage is on '%s').", mag_backend_type_to_str(target_device->id.type), mag_backend_type_to_str(storage->device->id.type));
+      status = mag_set_error(err, MAG_ERR_PARAM, "tensor: storage device mismatch (tensor is on '%s' but storage is on '%s').", mag_backend_type_to_str(target_device->id.type), mag_backend_type_to_str(storage->device->id.type));
       goto cleanup;
     }
     if (mag_unlikely(!(storage->size >= (size_t)numbytes))) {
-      status = mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "tensor: provided storage is too small (need %" PRIi64 " bytes, have %zu).", numbytes, storage->size);
+      status = mag_set_error(err, MAG_ERR_PARAM, "tensor: provided storage is too small (need %" PRIi64 " bytes, have %zu).", numbytes, storage->size);
       goto cleanup;
     }
     if (mag_unlikely(!(storage->base != 0 || storage->size == 0))) {
-      status = mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "tensor: provided storage has a NULL base pointer.");
+      status = mag_set_error(err, MAG_ERR_PARAM, "tensor: provided storage has a NULL base pointer.");
       goto cleanup;
     }
     tensor->storage = storage;
@@ -152,14 +152,14 @@ mag_status_t mag_tensor_init(
     tensor->coords.strides[rank-1] = 1;
     for (int64_t i=rank-2; i >= 0; --i) {
       if (mag_unlikely(mag_mulov64(tensor->coords.strides[i+1], tensor->coords.shape[i+1], tensor->coords.strides+i))) {
-        status = mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW, "tensor: stride computation overflowed at dim %" PRIi64 ".", i);
+        status = mag_set_error(err, MAG_ERR_DIM, "tensor: stride computation overflowed at dim %" PRIi64 ".", i);
         goto cleanup;
       }
     }
   }
   ++ctx->telemetry.num_created_tensors;
   *out = tensor;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 cleanup:
   mag_tensor_free_header(tensor);
   return status;
@@ -173,17 +173,17 @@ mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx,
 mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
   *out = NULL;
   if (mag_unlikely(mag_thread_id() != ctx->tr_id)) {
-    return mag_set_error(err, MAG_STATUS_ERR_THREAD_MISMATCH, "as_strided: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
+    return mag_set_error(err, MAG_ERR_THREAD, "as_strided: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   }
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_RANK, "as_strided: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
+    return mag_set_error(err, MAG_ERR_RANK, "as_strided: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   }
   if (mag_unlikely(!(offset >= 0))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_INDEX, "as_strided: storage offset must be non-negative, but got %" PRIi64 ".", offset);
+    return mag_set_error(err, MAG_ERR_INDEX, "as_strided: storage offset must be non-negative, but got %" PRIi64 ".", offset);
   }
   if (rank > 0) {
     if (mag_unlikely(!(shape && strides))) {
-      return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "as_strided: shape and strides must not be NULL when rank > 0.");
+      return mag_set_error(err, MAG_ERR_PARAM, "as_strided: shape and strides must not be NULL when rank > 0.");
     }
   }
   int64_t last = offset;
@@ -191,7 +191,7 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   for (int64_t i=0; i < rank; ++i) {
     if (mag_unlikely(!(shape[i] > 0 && strides[i] >= 0))) {
       return mag_set_error(
-        err, MAG_STATUS_ERR_INVALID_DIM,
+        err, MAG_ERR_DIM,
         "as_strided: invalid shape/stride at dim %" PRIi64
         " (shape=%" PRIi64 ", stride=%" PRIi64
         "); dimensions must be > 0 and strides must be non-negative.",
@@ -201,14 +201,14 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
     int64_t span;
     if (mag_unlikely(mag_mulov64(shape[i]-1, strides[i], &span))) {
       return mag_set_error(
-        err, MAG_STATUS_ERR_DIM_OVERFLOW,
+        err, MAG_ERR_DIM,
         "as_strided: stride span overflowed at dim %" PRIi64 ".",
         i
       );
     }
     if (mag_unlikely(mag_mulov64(shape[i], numel, &numel))) {
       return mag_set_error(
-        err, MAG_STATUS_ERR_DIM_OVERFLOW,
+        err, MAG_ERR_DIM,
         "as_strided: element count overflowed at dim %" PRIi64
         " (size %" PRIi64 ").",
         i, shape[i]
@@ -218,11 +218,11 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   }
   int64_t numel_end = (int64_t)(base->storage->size/mag_type_trait(base->dtype)->size);
   if (mag_unlikely(!(last < numel_end))) {
-    return mag_set_error(err, MAG_STATUS_ERR_OUT_OF_BOUNDS, "as_strided: view exceeds base tensor storage (end index %" PRIi64 " >= storage capacity %" PRIi64 ").", last, numel_end);
+    return mag_set_error(err, MAG_ERR_BOUNDS, "as_strided: view exceeds base tensor storage (end index %" PRIi64 " >= storage capacity %" PRIi64 ").", last, numel_end);
   }
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
   if (mag_unlikely(!tensor))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "as_strided: failed to allocate tensor header.");
+    return mag_set_error(err, MAG_ERR_OOM, "as_strided: failed to allocate tensor header.");
   for (int i=0; i < MAG_MAX_DIMS; ++i) {
     tensor->coords.shape[i] = i < rank && shape ? shape[i] : 1;
     tensor->coords.strides[i] = i < rank && strides ? strides[i] : 1;
@@ -235,7 +235,7 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
     tensor->view_meta = mag_view_meta_alloc(base);
     if (mag_unlikely(!tensor->view_meta)) { /* OOM: dtor decrefs the retained base storage and frees the header */
       mag_tensor_decref(tensor);
-      return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "as_strided: failed to allocate view metadata.");
+      return mag_set_error(err, MAG_ERR_OOM, "as_strided: failed to allocate view metadata.");
     }
   } else {
     tensor->view_meta = base->view_meta;
@@ -243,7 +243,7 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   }
   tensor->flags = base->flags | MAG_TFLAG_IS_VIEW; /* Set view flag */
   *out = tensor;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
@@ -252,7 +252,7 @@ mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t
   const int64_t *old_strides = x->coords.strides;
   int64_t new_strides[MAG_MAX_DIMS];
   if (mag_unlikely(!(rank >= old_rank))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_RANK, "broadcast_to: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".", rank, old_rank);
+    return mag_set_error(err, MAG_ERR_RANK, "broadcast_to: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".", rank, old_rank);
   }
   for (int64_t i=0; i < rank; ++i) {
     int64_t new_ax = rank-1-i;
@@ -265,7 +265,7 @@ mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t
     int64_t old_dim = old_shape[old_ax];
     int64_t old_stride = old_strides[old_ax];
     if (mag_unlikely(!(old_dim == new_dim || old_dim == 1))) {
-      return mag_set_error(err, MAG_STATUS_ERR_INVALID_RANK, "broadcast_to: cannot broadcast dim of size %" PRIi64 " to %" PRIi64 "; only size-1 dims are broadcastable.", old_dim, new_dim);
+      return mag_set_error(err, MAG_ERR_RANK, "broadcast_to: cannot broadcast dim of size %" PRIi64 " to %" PRIi64 "; only size-1 dims are broadcastable.", old_dim, new_dim);
     }
     new_strides[new_ax] = old_dim == new_dim ? old_stride : 0;
   }
@@ -286,7 +286,7 @@ mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, i
   const int64_t *old_shape = x->coords.shape;
   if (mag_unlikely(!(rank >= old_rank))) {
     return mag_set_error(
-      err, MAG_STATUS_ERR_INVALID_RANK,
+      err, MAG_ERR_RANK,
       "expand: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".",
       rank, old_rank
     );
@@ -299,7 +299,7 @@ mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, i
     if (dim == -1) {
       if (mag_unlikely(!(old_ax >= 0))) {
         return mag_set_error(
-          err, MAG_STATUS_ERR_INVALID_PARAM,
+          err, MAG_ERR_PARAM,
           "expand: -1 is not allowed for a newly prepended dimension."
         );
       }
@@ -307,7 +307,7 @@ mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, i
     } else {
       if (mag_unlikely(!(dim >= 0))) {
         return mag_set_error(
-          err, MAG_STATUS_ERR_INVALID_PARAM,
+          err, MAG_ERR_PARAM,
           "expand: invalid dimension size %" PRIi64 ".",
           dim
         );
@@ -333,7 +333,7 @@ static mag_status_t mag_tensor_dtor(void *self) {
   }
   mag_rc_decref(t->storage);
   mag_tensor_free_header(t);
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 typedef struct mag_borrow_cookie_t {
@@ -352,7 +352,7 @@ static mag_status_t mag_borrowed_storage_dtor(void *self) {
     (*mag_alloc)(cookie, 0, 0);
   }
   mag_slab_free(&ctx->storage_slab, buf);
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 mag_status_t mag_borrow_cpu_buffer(
@@ -371,52 +371,52 @@ mag_status_t mag_borrow_cpu_buffer(
   *out = NULL;
   /* Early param checks — no resources allocated yet, return directly. */
   if (mag_unlikely(release_cb == NULL)) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "borrow_cpu_buffer: release callback must not be NULL.");
+    return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: release callback must not be NULL.");
   }
   if (mag_unlikely(data == NULL)) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "borrow_cpu_buffer: data pointer must not be NULL.");
+    return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: data pointer must not be NULL.");
   }
   if (mag_unlikely(!(num_bytes > 0))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "borrow_cpu_buffer: num_bytes must be > 0.");
+    return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: num_bytes must be > 0.");
   }
   if (mag_unlikely(mag_thread_id() != ctx->tr_id)) {
-    return mag_set_error(err, MAG_STATUS_ERR_THREAD_MISMATCH, "borrow_cpu_buffer: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
+    return mag_set_error(err, MAG_ERR_THREAD, "borrow_cpu_buffer: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   }
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_RANK, "borrow_cpu_buffer: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
+    return mag_set_error(err, MAG_ERR_RANK, "borrow_cpu_buffer: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   }
   if (rank > 0) {
     if (mag_unlikely(shape == NULL)) {
-      return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "borrow_cpu_buffer: shape must not be NULL when rank > 0.");
+      return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: shape must not be NULL when rank > 0.");
     }
   }
   int64_t dts = (int64_t)mag_type_trait(dtype)->size;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
     if (mag_unlikely(!(shape[i] > 0))) {
-      return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM, "borrow_cpu_buffer: all shape dimensions must be > 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
+      return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: all shape dimensions must be > 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
     }
     if (mag_unlikely(mag_mulov64(shape[i], numel, &numel))) {
-      return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW, "borrow_cpu_buffer: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
+      return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
     }
   }
   int64_t need_bytes;
   if (mag_unlikely(mag_mulov64(numel, dts, &need_bytes))) {
-    return mag_set_error(err, MAG_STATUS_ERR_DIM_OVERFLOW, "borrow_cpu_buffer: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, dts);
+    return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, dts);
   }
   if (mag_unlikely(!((size_t)need_bytes <= num_bytes))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "borrow_cpu_buffer: buffer is too small (need at least %zu bytes, but got %zu).", (size_t)need_bytes, num_bytes);
+    return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: buffer is too small (need at least %zu bytes, but got %zu).", (size_t)need_bytes, num_bytes);
   }
   /* Cookie allocated — use goto cleanup from here on. */
-  mag_status_t status = MAG_STATUS_OK;
+  mag_status_t status = MAG_OK;
   mag_borrow_cookie_t *cookie = (*mag_try_alloc)(NULL, sizeof(*cookie), 0);
   if (mag_unlikely(!cookie))
-    return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "borrow_cpu_buffer: failed to allocate borrow cookie.");
+    return mag_set_error(err, MAG_ERR_OOM, "borrow_cpu_buffer: failed to allocate borrow cookie.");
   cookie->fn = release_cb;
   cookie->usr = usr;
   mag_device_t *cpu_device = NULL;
   if (mag_unlikely(!mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device))) {
-    status = mag_set_error(err, MAG_STATUS_ERR_INVALID_DEVICE, "borrow_cpu_buffer: CPU backend is not available.");
+    status = mag_set_error(err, MAG_ERR_DEVICE, "borrow_cpu_buffer: CPU backend is not available.");
     goto cleanup;
   }
   {
@@ -424,7 +424,7 @@ mag_status_t mag_borrow_cpu_buffer(
     if (is_writeable) flags |= MAG_STORAGE_FLAG_ACCESS_W;
     mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
     if (mag_unlikely(!buf)) { /* OOM: cookie still owned here; cleanup frees it. */
-      status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "borrow_cpu_buffer: failed to allocate storage buffer header.");
+      status = mag_set_error(err, MAG_ERR_OOM, "borrow_cpu_buffer: failed to allocate storage buffer header.");
       goto cleanup;
     }
     *buf = (mag_storage_buffer_t) {
@@ -447,7 +447,7 @@ mag_status_t mag_borrow_cpu_buffer(
       return status;
     }
     *out = tensor;
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 cleanup:
   if (cookie) (*mag_alloc)(cookie, 0, 0);
@@ -519,27 +519,27 @@ mag_device_id_t mag_tensor_device_id(const mag_tensor_t *tensor) {
 mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void **out_buf, size_t *out_size_bytes) {
   *out_buf = NULL;
   *out_size_bytes = 0;
-  mag_status_t status = MAG_STATUS_OK;
+  mag_status_t status = MAG_OK;
   mag_tensor_t *host = NULL;
   mag_tensor_t *cont = NULL;
 
   status = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
-  if (mag_unlikely(status != MAG_STATUS_OK))
+  if (mag_unlikely(status != MAG_OK))
     goto cleanup;
 
   status = mag_contiguous(err, &cont, host);
-  if (mag_unlikely(status != MAG_STATUS_OK))
+  if (mag_unlikely(status != MAG_OK))
     goto cleanup;
 
   {
     size_t size = mag_tensor_numbytes(cont);
     if (mag_unlikely(!size)) {
-      status = mag_set_error(err, MAG_STATUS_ERR_INVALID_STATE, "copy_data: tensor has zero size; nothing to copy.");
+      status = mag_set_error(err, MAG_ERR_STATE, "copy_data: tensor has zero size; nothing to copy.");
       goto cleanup;
     }
     void *dst = (*mag_try_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     if (mag_unlikely(!dst)) {
-      status = mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "copy_data: failed to allocate %zu bytes for host copy.", size);
+      status = mag_set_error(err, MAG_ERR_OOM, "copy_data: failed to allocate %zu bytes for host copy.", size);
       goto cleanup;
     }
     const void *src = (const void *)mag_tensor_data_ptr(cont);
@@ -548,7 +548,7 @@ mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void *
     mag_tensor_decref(host);
     *out_buf = dst;
     *out_size_bytes = size;
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
 cleanup:
@@ -564,12 +564,12 @@ void mag_tensor_copy_data_free(void *ret_val) {
 mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t *out_value) {
   /* Early param checks — no resources allocated yet, return directly. */
   if (mag_unlikely(tensor->numel != 1)) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "item: can only be called on a single-element tensor, but this tensor has %" PRIi64 " elements.", tensor->numel);
+    return mag_set_error(err, MAG_ERR_PARAM, "item: can only be called on a single-element tensor, but this tensor has %" PRIi64 " elements.", tensor->numel);
   }
   if (mag_unlikely(out_value == NULL)) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "item: output value pointer must not be NULL.");
+    return mag_set_error(err, MAG_ERR_PARAM, "item: output value pointer must not be NULL.");
   }
-  mag_status_t status = MAG_STATUS_OK;
+  mag_status_t status = MAG_OK;
   mag_tensor_t *host   = NULL;
   mag_tensor_t *scalar = NULL;
   mag_tensor_t *wide   = NULL;
@@ -579,7 +579,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
   bool wide_is_scalar = false;
 
   status = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
-  if (mag_unlikely(status != MAG_STATUS_OK))
+  if (mag_unlikely(status != MAG_OK))
     goto cleanup;
 
   if (host->coords.rank == 0) {
@@ -587,7 +587,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
     scalar_is_host = true;
   } else {
     status = mag_view(err, &scalar, host, NULL, 0);
-    if (mag_unlikely(status != MAG_STATUS_OK))
+    if (mag_unlikely(status != MAG_OK))
       goto cleanup;
   }
 
@@ -599,7 +599,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
     if (mask & MAG_DTYPE_MASK_FP) {
       if (dt != MAG_DTYPE_FLOAT32) {
         status = mag_cast(err, &wide, scalar, MAG_DTYPE_FLOAT32);
-        if (mag_unlikely(status != MAG_STATUS_OK))
+        if (mag_unlikely(status != MAG_OK))
           goto cleanup;
       } else {
         wide = scalar;
@@ -610,13 +610,13 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
       if (!scalar_is_host) mag_tensor_decref(scalar);
       mag_tensor_decref(host);
       *out_value = res;
-      return MAG_STATUS_OK;
+      return MAG_OK;
     }
 
     if (mask & MAG_DTYPE_MASK_SINT) {
       if (dt != MAG_DTYPE_INT64) {
         status = mag_cast(err, &wide, scalar, MAG_DTYPE_INT64);
-        if (mag_unlikely(status != MAG_STATUS_OK))
+        if (mag_unlikely(status != MAG_OK))
           goto cleanup;
       } else {
         wide = scalar;
@@ -627,13 +627,13 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
       if (!scalar_is_host) mag_tensor_decref(scalar);
       mag_tensor_decref(host);
       *out_value = res;
-      return MAG_STATUS_OK;
+      return MAG_OK;
     }
 
     if ((mask & MAG_DTYPE_MASK_UINT) || dt == MAG_DTYPE_BOOLEAN) {
       if (dt != MAG_DTYPE_UINT64) {
         status = mag_cast(err, &wide, scalar, MAG_DTYPE_UINT64);
-        if (mag_unlikely(status != MAG_STATUS_OK))
+        if (mag_unlikely(status != MAG_OK))
           goto cleanup;
       } else {
         wide = scalar;
@@ -644,11 +644,11 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
       if (!scalar_is_host) mag_tensor_decref(scalar);
       mag_tensor_decref(host);
       *out_value = res;
-      return MAG_STATUS_OK;
+      return MAG_OK;
     }
 
     /* Unsupported dtype — fall through to cleanup. */
-    status = mag_set_error(err, MAG_STATUS_ERR_INVALID_PARAM, "item: does not support dtype %s.", mag_type_trait(dt)->name);
+    status = mag_set_error(err, MAG_ERR_PARAM, "item: does not support dtype %s.", mag_type_trait(dt)->name);
   }
 
 cleanup:

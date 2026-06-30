@@ -251,9 +251,9 @@ namespace mag {
     mag_dtype_t src = x->dtype;
     mag_dtype_t dst = r->dtype;
     cast_fn *kernel = cast_table_2D[src][dst];
-    if (!kernel) return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: no kernel found for type cast: %s -> %s", mag_type_trait(src)->name, mag_type_trait(dst)->name);
+    if (!kernel) return mag_set_error(err, MAG_ERR_KERNEL, "cuda: no kernel found for type cast: %s -> %s", mag_type_trait(src)->name, mag_type_trait(dst)->name);
     (*kernel)(r, x);
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   template <typename T>
@@ -301,9 +301,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_clone<int32_t>(r, x); break;
       case MAG_DTYPE_UINT64: launch_clone<uint64_t>(r, x); break;
       case MAG_DTYPE_INT64: launch_clone<int64_t>(r, x); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported dtype for unary op.");
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported dtype for unary op.");
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   constexpr float INVSQRT2 = 0.707106781186547524400844362104849039284835937f /* 1/√2 */;
@@ -791,9 +791,9 @@ namespace mag {
       case MAG_DTYPE_FLOAT16: launch_unary_op<Op<half>>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_unary_op<Op<__nv_bfloat16>>(r, x); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_unary_op<Op<__nv_fp8_e4m3>>(r, x); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   template <template <typename> typename Op>
@@ -809,9 +809,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_unary_op<Op<int32_t>>(r, x); break;
       case MAG_DTYPE_UINT64: launch_unary_op<Op<uint64_t>>(r, x); break;
       case MAG_DTYPE_INT64: launch_unary_op<Op<int64_t>>(r, x); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   mag_status_t unary_op_abs(mag_error_t *err, const mag_command_t &cmd) {
@@ -903,10 +903,10 @@ namespace mag {
       case MAG_DTYPE_FLOAT16: launch_softmax<half>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_softmax<__nv_bfloat16>(r, x); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_softmax<__nv_fp8_e4m3>(r, x); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported dtype for softmax.");
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported dtype for softmax.");
     }
     mag_tensor_decref(x);
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
   mag_status_t unary_op_softmax_dv(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_softmax_dv>(err, cmd.out[0], cmd.in[0]); }
   mag_status_t unary_op_sigmoid(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_sigmoid>(err, cmd.out[0], cmd.in[0]); }

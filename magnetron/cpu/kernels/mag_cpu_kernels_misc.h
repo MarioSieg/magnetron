@@ -88,7 +88,7 @@
         } \
       } \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_cat(float, float32)
@@ -109,7 +109,7 @@ mag_gen_stub_cat(int64_t, int64)
 #define mag_gen_stub_repeat_back(T, TF, Z, CVT, RCVT) \
   static mag_status_t MAG_HOTPROC mag_repeat_back_##TF(mag_error_t *err,const mag_kernel_payload_t *payload) { \
     (void)err; \
-    if (payload->thread_idx != 0) return MAG_STATUS_OK; \
+    if (payload->thread_idx != 0) return MAG_OK; \
     mag_tensor_t *r = mag_cmd_out(0); \
     const mag_tensor_t *x = mag_cmd_in(0); \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
@@ -129,7 +129,7 @@ mag_gen_stub_cat(int64_t, int64)
       mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
       br[ri] = RCVT(CVT(br[ri]) + CVT(bx[xi])); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_repeat_back(float, float32, .0f, mag_cvt_nop, mag_cvt_nop)
@@ -165,7 +165,7 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra + chunk, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     int64_t inner = 1; \
     for (int64_t d = axis+1; d < src->coords.rank; ++d) inner *= src->coords.shape[d]; \
     int64_t out_ax = r->coords.shape[axis]; \
@@ -179,7 +179,7 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
           int64_t g = bi[flat]; \
           if (g < 0) g += ax; \
           if (mag_unlikely(!(g >= 0 && g < ax))) { \
-            return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+            return mag_set_error(err, MAG_ERR_KERNEL, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
           } \
           br[flat] = bx[cur_o * ax + g]; \
           if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } \
@@ -189,13 +189,13 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
           int64_t g = bi[flat]; \
           if (g < 0) g += ax; \
           if (mag_unlikely(!(g >= 0 && g < ax))) { \
-            return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+            return mag_set_error(err, MAG_ERR_KERNEL, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
           } \
           br[flat] = bx[(cur_o * ax + g) * inner + cur_k]; \
           if (++cur_k == inner) { cur_k = 0; if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } } \
         } \
       } \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     /* Non-contiguous fallback: coordinate iteration with stride arithmetic. */ \
     int64_t oc[MAG_MAX_DIMS]; \
@@ -207,14 +207,14 @@ static inline bool mag_coords_is_contig_dense(const mag_coords_t *c) {
       int64_t g = bi[index_offset]; \
       if (g < 0) g += ax; \
       if (mag_unlikely(!(g >= 0 && g < ax))) { \
-        return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
+        return mag_set_error(err, MAG_ERR_KERNEL, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
       } \
       int64_t src_off = 0, dst_off = 0; \
       for (int64_t d = 0; d < src->coords.rank; ++d) src_off += (d == axis ? g : oc[d]) * src->coords.strides[d]; \
       for (int64_t d = 0; d < r->coords.rank; ++d) dst_off += oc[d] * r->coords.strides[d]; \
       br[dst_off] = bx[src_off]; \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_gather(float, float32)
@@ -250,7 +250,7 @@ mag_gen_stub_gather(int64_t, int64)
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra + chunk, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_likely(mag_tensor_is_contiguous(weight) && mag_tensor_is_contiguous(indices))) { \
       /* Fast path: memcpy full rows. Thread may own a partial first/last row. */ \
       int64_t row_start = ra / row_size; \
@@ -259,7 +259,7 @@ mag_gen_stub_gather(int64_t, int64)
         int64_t g = bi[row]; \
         if (g < 0) g += vocab_size; \
         if (mag_unlikely(!(g >= 0 && g < vocab_size))) { \
-          return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, vocab_size); \
+          return mag_set_error(err, MAG_ERR_KERNEL, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, vocab_size); \
         } \
         int64_t dst_off = row * row_size; \
         int64_t src_off = g  * row_size; \
@@ -267,7 +267,7 @@ mag_gen_stub_gather(int64_t, int64)
         int64_t b = (row == row_end)   ? (rb - dst_off) : row_size; \
         memcpy(br + dst_off + a, bx + src_off + a, (size_t)(b - a) * sizeof(T)); \
       } \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     /* Non-contiguous fallback: counter-based (col, row) cursors — no division in the hot loop. */ \
     int64_t cur_col = ra % row_size; \
@@ -277,7 +277,7 @@ mag_gen_stub_gather(int64_t, int64)
       for (int64_t d = indices->coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->coords.shape[d]) * indices->coords.strides[d]; tmp /= indices->coords.shape[d]; } \
       cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
       if (mag_unlikely(!(cur_g >= 0 && cur_g < vocab_size))) { \
-        return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
+        return mag_set_error(err, MAG_ERR_KERNEL, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
       } \
     } \
     for (int64_t flat = ra; flat < rb; ++flat) { \
@@ -293,12 +293,12 @@ mag_gen_stub_gather(int64_t, int64)
           for (int64_t d = indices->coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->coords.shape[d]) * indices->coords.strides[d]; tmp /= indices->coords.shape[d]; } \
           cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
           if (mag_unlikely(!(cur_g >= 0 && cur_g < vocab_size))) { \
-        return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
+        return mag_set_error(err, MAG_ERR_KERNEL, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
       } \
         } \
       } \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_embedding(float, float32)
@@ -338,7 +338,7 @@ mag_gen_stub_embedding(mag_float8_e4m3fn_t, float8_e4m3fn)
       mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
       br[ri] = ((col-row) CMP diag) ? bx[xi] : (Z); \
     }  \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_tri_mask(float, float32, l, 0.f, <=)
@@ -399,7 +399,7 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
     const int64_t tc = payload->thread_num; \
     const int64_t ti = payload->thread_idx; \
     const int64_t outer_count = x->numel / dim_size; \
-    if (outer_count <= 0) return MAG_STATUS_OK; \
+    if (outer_count <= 0) return MAG_OK; \
     const int64_t stride_x_dim = x->coords.strides[dim]; \
     const int64_t stride_v_dim = v->coords.strides[dim]; \
     const int64_t outer_rank = R - 1; \
@@ -445,7 +445,7 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
       T *best_vals = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_vals)); \
       int64_t *best_idx = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_idx)); \
       if (mag_unlikely(!best_vals || !best_idx)) \
-        return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "topk: failed to allocate scratch buffer for k=%" PRIi64 ".", (int64_t)k); \
+        return mag_set_error(err, MAG_ERR_OOM, "topk: failed to allocate scratch buffer for k=%" PRIi64 ".", (int64_t)k); \
       int64_t filled = 0; \
       \
       for (int64_t p=0; p < dim_size; ++p) { \
@@ -504,7 +504,7 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
       } \
       mag_scratch_arena_reset(&mag_tls_arena, mark); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_topk(float, float32, mag_cvt_nop)
@@ -554,7 +554,7 @@ mag_gen_stub_topk(int64_t, int64, mag_cvt_nop)
       mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
       br[ri] = bc[ci] ? bx[xi] : by[yi]; \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_where(float, float32)
@@ -603,7 +603,7 @@ mag_gen_stub_where(int64_t, int64)
       float o = v < lo ? lo : (v > hi ? hi : v); \
       br[ri] = FROMF32(o); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_clamp_cvt(float, float32, mag_cvt_nop, mag_cvt_nop)
@@ -643,7 +643,7 @@ mag_gen_stub_clamp_cvt(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_to_
       T hi = bmx[mxi]; \
       br[ri] = v < lo ? lo : (v > hi ? hi : v); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_clamp_ord(uint8_t, uint8)
@@ -677,7 +677,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
     int64_t num_samples = mag_op_attr_unwrap_int64(mag_cmd_attr(0)); \
     mag_philox4x32_stream_t *rng = payload->prng; \
     int64_t K = x->coords.shape[x->coords.rank-1]; \
-    if (mag_unlikely(K <= 0)) return MAG_STATUS_OK; \
+    if (mag_unlikely(K <= 0)) return MAG_OK; \
     int64_t B = x->numel / K; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
@@ -708,7 +708,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
       size_t mark = mag_scratch_arena_mark(&mag_tls_arena); \
       mag_discrete_sample_pair_t *arr = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)nnz*sizeof(*arr)); \
       if (mag_unlikely(!arr)) \
-        return mag_set_error(err, MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED, "multinomial: failed to allocate scratch buffer for %" PRIi64 " entries.", (int64_t)nnz); \
+        return mag_set_error(err, MAG_ERR_OOM, "multinomial: failed to allocate scratch buffer for %" PRIi64 " entries.", (int64_t)nnz); \
       int64_t m=0; \
       for (int64_t i=0; i < K; ++i) { \
         float wi = CVT(w[i]); \
@@ -724,7 +724,7 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
       for (int64_t s=k; s < num_samples; ++s) o[s] = -1; \
       mag_scratch_arena_reset(&mag_tls_arena, mark); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_multinomial(float, float32, mag_cvt_nop)
@@ -823,7 +823,7 @@ static int64_t mag_pad_map_index(int64_t i, int64_t size, mag_pad_mode_t mode) {
         br[ri] = bx[xi]; \
       } \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_pad(float, float32, mag_scalar_to_float32)

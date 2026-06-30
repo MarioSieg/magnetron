@@ -39,7 +39,7 @@
       OT *o = br + oi; \
       { FINAL_STMT } \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_cpu_impl_reduce_axes(float, float, float32, mean, double, 0.0, acc += (double)bx[roff];, acc /= (double)red_prod; *o = (float)acc; )
@@ -344,7 +344,7 @@ mag_cpu_impl_argminmax_int(int64_t,  int64);
       } \
       br[oi] = acc; \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 

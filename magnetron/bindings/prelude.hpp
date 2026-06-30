@@ -131,7 +131,7 @@ namespace mag::bindings {
   extern void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op);;
 
   inline void throw_if_error(mag_status_t st, const mag_error_t &err) {
-    if (st == MAG_STATUS_OK) return;
+    if (st == MAG_OK) return;
     std::string msg = format_error_msg(err);
     throw std::runtime_error {msg.c_str()};
   }

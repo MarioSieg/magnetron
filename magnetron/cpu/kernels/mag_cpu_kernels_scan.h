@@ -14,7 +14,7 @@
   if (dim_var < 0) dim_var += (x)->coords.rank; \
   mag_assert2(dim_var >= 0 && dim_var < (x)->coords.rank); \
   const int64_t dim_size_var = (x)->coords.shape[dim_var]; \
-  if (dim_size_var <= 0) return MAG_STATUS_OK; \
+  if (dim_size_var <= 0) return MAG_OK; \
   int64_t outer_count_var = (x)->numel / dim_size_var; \
   int64_t stride_x_dim_var = (x)->coords.strides[dim_var]; \
   int64_t outer_rank_var = (x)->coords.rank - 1; \
@@ -98,7 +98,7 @@
         br[off_r] = FROM_ACC(acc); \
       } \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_cusum(float, float32, mag_cvt_nop, double, 0.0, mag_cvt_nop)
@@ -142,7 +142,7 @@ mag_gen_stub_cusum(int64_t, int64, mag_cvt_nop, int64_t, 0, mag_cvt_nop)
         br[off_r] = FROM_ACC(acc); \
       } \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_cuprod(float, float32, mag_cvt_nop, double, 1.0, mag_cvt_nop)
@@ -202,7 +202,7 @@ mag_gen_stub_cuprod(int64_t, int64, mag_cvt_nop, int64_t, 1, mag_cvt_nop)
         bi[off_i] = best_idx; \
       } \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_cuext(float, float32, mag_cvt_nop, cumax, true)

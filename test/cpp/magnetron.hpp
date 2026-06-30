@@ -86,7 +86,7 @@ namespace magnetron {
     inline mag_error_t g_error; // Suboptimal, but only for tests for now. Can be improved but no time for this rn
 
     inline auto handle_error(mag_status_t status, mag_context_t * = nullptr) -> void {
-        if (status != MAG_STATUS_OK) [[unlikely]] {
+        if (status != MAG_OK) [[unlikely]] {
             std::printf("%s - %s", mag_status_get_name(status), g_error.message); // Not the best solution as we discord all info of mag_error_t, but it's for tests only so yeah
             std::fflush(stdout);
             std::abort();
@@ -941,7 +941,7 @@ namespace magnetron {
         [[nodiscard]] auto grad() const noexcept -> std::optional<tensor> {
             mag_tensor_t *grad;
             mag_status_t stat = mag_tensor_grad(nullptr, m_tensor, &grad);
-            if (stat != MAG_STATUS_OK) return std::nullopt;
+            if (stat != MAG_OK) return std::nullopt;
             return tensor{grad};
         }
         [[nodiscard]] auto requires_grad() const noexcept -> bool { return mag_tensor_requires_grad(m_tensor); }

@@ -849,6 +849,22 @@ namespace mag::bindings {
       "dim"_a,
       "Cumulative minimum along dim. Returns (values, indices)."
     )
+    .def("outer",
+      [](const tensor_wrapper &self, const tensor_wrapper &rhs) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *result = nullptr;
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_CUMIN, [&] {
+            throw_if_error(mag_outer(&err, &result, *self, *rhs), err);
+          }, {*self});
+        } else {
+          throw_if_error(mag_outer(&err, &result, *self, *rhs), err);
+        }
+        return tensor_wrapper{result};
+      },
+      "rhs"_a
+    )
     .def("all",
       [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};

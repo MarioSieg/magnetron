@@ -31,10 +31,26 @@ class Parameter(Tensor):
         self._replace(v)
 
 
+class Buffer(Tensor):
+    """A tensor that is registered as non-parameter module state."""
+
+    def __init__(self, x: Tensor, persistent: bool = True) -> None:
+        Tensor.__init__(self, x)
+        self.persistent = persistent
+
+    @property
+    def data(self) -> Tensor:
+        return self
+
+    @data.setter
+    def data(self, v: Tensor) -> None:
+        self._replace(v)
+
+
 class Module:
     def __init__(self) -> None:
         self.training = True
-        self._buffers: dict[str, Tensor] = {}
+        self._buffers: dict[str, Buffer] = {}
         self._fwd_hooks: list[Callable[[Module, tuple[Any, ...], Tensor], None]] = []
         self._fwd_pre_hooks: list[Callable[[Module, tuple[Any, ...]], None]] = []
 
@@ -84,10 +100,11 @@ class Module:
         for _, p in self.named_parameters():
             yield p
 
-    def register_buffer(self, name: str, tensor: Tensor) -> None:
+    def register_buffer(self, name: str, tensor: Tensor, persistent: bool = True) -> None:
         if not isinstance(tensor, Tensor):
             raise TypeError(f'buffer must be Tensor, got {type(tensor)}')
-        buf = tensor
+        buf = tensor if isinstance(tensor, Buffer) else Buffer(tensor, persistent)
+        buf.persistent = persistent
         self._buffers[name] = buf
         setattr(self, name, buf)
 
@@ -95,14 +112,17 @@ class Module:
         self,
         prefix: str = '',
         memo: set[int] | None = None,
-    ) -> Iterator[tuple[str, Tensor]]:
+        persistent: bool | None = None,
+    ) -> Iterator[tuple[str, Buffer]]:
         memo = set() if memo is None else memo
         for name, buf in self._buffers.items():
+            if persistent is not None and buf.persistent != persistent:
+                continue
             if id(buf) not in memo:
                 memo.add(id(buf))
                 yield prefix + name, buf
         for child_name, child in self.named_children():
-            yield from child.named_buffers(prefix + child_name + '.', memo)
+            yield from child.named_buffers(prefix + child_name + '.', memo, persistent)
 
     def buffers(self) -> Iterator[Tensor]:
         for _, b in self.named_buffers():
@@ -110,7 +130,7 @@ class Module:
 
     def state_items(self) -> Iterator[tuple[str, Tensor]]:
         yield from self.named_parameters()
-        yield from self.named_buffers()
+        yield from self.named_buffers(persistent=True)
 
     def state_dict(self) -> OrderedDict[str, Tensor]:
         return OrderedDict((k, v.clone()) for k, v in self.state_items())
@@ -153,7 +173,7 @@ class Module:
             p._replace(y)
         for name, buf in self.named_buffers():
             parent, leaf = self._resolve_parent(name)
-            casted = buf.cast(dt)
+            casted = Buffer(buf.cast(dt), persistent=buf.persistent)
             setattr(parent, leaf, casted)
             parent._buffers[leaf] = casted
         return self

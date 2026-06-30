@@ -50,7 +50,7 @@ static MAG_AINLINE int64_t mag_repeat_in_elem_offset(
       mag_bnd_chk(bx+xi, bx, mag_tensor_numbytes(x)); \
       br[ri] = bx[xi]; \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_repeat(float, float32)
@@ -91,7 +91,7 @@ mag_gen_stub_repeat(int64_t, int64)
         } \
       } \
       mag_assert2(out_i == r->numel); \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     int64_t dim = plan->dim; \
     int64_t R = x->coords.rank; \
@@ -141,7 +141,7 @@ mag_gen_stub_repeat(int64_t, int64)
         cur += rep; \
       } \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_repeat_interleave(float, float32)

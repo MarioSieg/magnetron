@@ -105,13 +105,13 @@ mag_gen_vrand_uniform_int(int64_t, uint64_t)
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra+chunk, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
         mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
         br[ri] = val; \
       } \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     mag_coords_iter_t cr; \
     mag_coords_iter_init(&cr, &r->coords); \
@@ -120,7 +120,7 @@ mag_gen_vrand_uniform_int(int64_t, uint64_t)
       mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
       br[ri] = val; \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_fill(float, float32, mag_G, float64, mag_cvt_nop)
@@ -155,7 +155,7 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra+chunk, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
         int64_t mi = mag_coords_iter_broadcast(&cr, &cm, ri); \
@@ -163,7 +163,7 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
         mag_bnd_chk(bm+mi, bm, mag_tensor_numbytes(mask)); \
         if (bm[mi]) br[ri] = val; \
       } \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri, mi; \
@@ -172,7 +172,7 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
       mag_bnd_chk(bm+mi, bm, mag_tensor_numbytes(mask)); \
       if (bm[mi]) br[ri] = val; \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_masked_fill(float, float32, mag_G, float64, mag_cvt_nop)
@@ -206,17 +206,17 @@ mag_gen_stub_masked_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra + chunk, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       mag_vrand_##D##_##T(prng, rb-ra, br+ra, min, max); \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
       mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
       mag_vrand_##D##_##T(prng, 1, br+ri, min, max); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_fill_rand(uniform, uint8_t, uint64_t, uint64, uint8)
@@ -254,7 +254,7 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
     int64_t ra = ba * block;                                                     \
     int64_t rb = mag_xmin(bb * block, total);                                    \
                                                                                 \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK;                            \
+    if (mag_unlikely(rb <= ra)) return MAG_OK;                            \
                                                                                 \
     uint64_t seed = ((uint64_t)prng->key.v[1] << 32) | prng->key.v[0];            \
     uint64_t subseq = ((uint64_t)prng->ctr.v[3] << 32) | prng->ctr.v[2];          \
@@ -262,7 +262,7 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
                                                                                 \
     if (mag_tensor_is_contiguous(r)) {                                           \
       mag_vrand_##D##_##T##_simd(seed, subseq, counter, rb - ra, br + ra, min, max); \
-      return MAG_STATUS_OK;                                                      \
+      return MAG_OK;                                                      \
     }                                                                           \
                                                                                 \
     mag_coords_iter_t cr;                                                        \
@@ -279,7 +279,7 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
       );                                                                         \
       br[ri] = tmp[elem_off];                                                    \
     }                                                                           \
-    return MAG_STATUS_OK;                                                        \
+    return MAG_OK;                                                        \
   }
 
 mag_gen_stub_fill_rand_fp_simd_only(uniform, float, float, float64, float32)
@@ -306,13 +306,13 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra + chunk, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
         mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
         br[ri] = CVT((AT)start + (AT)ri*(AT)step); \
       } \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     mag_coords_iter_t cr; \
     mag_coords_iter_init(&cr, &r->coords); \
@@ -321,7 +321,7 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
       mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
       br[ri] = CVT((AT)start + (AT)i*(AT)step); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_arange(float, float32, double, mag_op_attr_unwrap_float64, double, mag_cvt_nop)
@@ -352,7 +352,7 @@ mag_gen_stub_arange(int64_t, int64, int64_t, mag_op_attr_unwrap_int64, uint64_t,
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra + chunk, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t i=ra; i < rb; ++i) { \
         int64_t row = i / cols; \
@@ -360,7 +360,7 @@ mag_gen_stub_arange(int64_t, int64, int64_t, mag_op_attr_unwrap_int64, uint64_t,
         mag_bnd_chk(br+i, br, mag_tensor_numbytes(r)); \
         br[i] = row == col ? (ONE) : (ZERO); \
       } \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     mag_coords_iter_t cr; \
     mag_coords_iter_init(&cr, &r->coords); \
@@ -371,7 +371,7 @@ mag_gen_stub_arange(int64_t, int64, int64_t, mag_op_attr_unwrap_int64, uint64_t,
       mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
       br[ri] = row == col ? (ONE) : (ZERO); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_eye(float, float32, 1.f, 0.f)
@@ -402,7 +402,7 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
   int64_t chunk = (total + tc - 1)/tc;
   int64_t ra = ti*chunk;
   int64_t rb = mag_xmin(ra + chunk, total);
-  if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK;
+  if (mag_unlikely(rb <= ra)) return MAG_OK;
   if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, idx}, 2)) {
     for (int64_t i=ra; i < rb; ++i) {
       int64_t cls = pidx[i];
@@ -412,7 +412,7 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
         pr[off] = 1;
       }
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
   mag_coords_iter_t it;
   mag_coords_iter_init(&it, &idx->coords);
@@ -426,7 +426,7 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
       pr[off] = 1;
     }
   }
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 #undef mag_G
@@ -439,7 +439,7 @@ static MAG_HOTPROC mag_status_t mag_fill_rand_bernoulli_bool(mag_error_t *err, c
   uint8_t *b_r = (uint8_t *)mag_tensor_data_ptr_mut(r);
   int64_t numel = r->numel;
   mag_vrand_bernoulli_bool(payload->prng, numel, b_r, p);
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 #define mag_gen_stub_rand_perm(T, TF, CVT) \
@@ -461,7 +461,7 @@ static MAG_HOTPROC mag_status_t mag_fill_rand_bernoulli_bool(mag_error_t *err, c
         br[i] = br[j]; \
         br[j] = tmp; \
       } \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     mag_coords_iter_t it; \
     mag_coords_iter_init(&it, &r->coords); \
@@ -480,7 +480,7 @@ static MAG_HOTPROC mag_status_t mag_fill_rand_bernoulli_bool(mag_error_t *err, c
       br[off_i] = br[off_j]; \
       br[off_j] = tmp; \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 mag_gen_stub_rand_perm(uint8_t, uint8, mag_cvt_int32_to_int64)

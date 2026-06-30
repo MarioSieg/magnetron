@@ -37,7 +37,7 @@ const char *mag_status_get_name(mag_status_t op){
     mag_statusdef(_)
     #undef _
   };
-  mag_static_assert(sizeof(names)/sizeof(*names)-1 == MAG_STATUS_ERR_UNKNOWN);
+  mag_static_assert(sizeof(names)/sizeof(*names)-1 == MAG_ERR_UNKNOWN);
   return names[op];
 }
 
@@ -47,7 +47,7 @@ const char *mag_status_get_message(mag_status_t op) {
     mag_statusdef(_)
     #undef _
   };
-  mag_static_assert(sizeof(messages)/sizeof(*messages)-1 == MAG_STATUS_ERR_UNKNOWN);
+  mag_static_assert(sizeof(messages)/sizeof(*messages)-1 == MAG_ERR_UNKNOWN);
   return messages[op];
 }
 
@@ -380,7 +380,7 @@ MAG_COLDPROC mag_status_t mag_set_error_impl(
   const char *fmt,
   ...
 ) {
-  if (err != NULL && err->code == MAG_STATUS_OK) {
+  if (mag_likely(err != NULL && err->code == MAG_OK)) {
     err->code = code;
     err->file = file;
     err->line = line;

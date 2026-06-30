@@ -36,13 +36,13 @@ mag_status_t mag_reduce_plan_init(
   int64_t ax[MAG_MAX_DIMS];
   int64_t rank = rank_in;
   if (mag_unlikely(!(dims_in != NULL || rank == 0))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_RANK, "reduce: dims must be non-NULL when rank is non-zero.");
+    return mag_set_error(err, MAG_ERR_RANK, "reduce: dims must be non-NULL when rank is non-zero.");
   }
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_RANK, "reduce: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
+    return mag_set_error(err, MAG_ERR_RANK, "reduce: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   }
   if (mag_unlikely(!(xr >= rank))) {
-    return mag_set_error(err, MAG_STATUS_ERR_INVALID_RANK, "reduce: cannot reduce over %" PRIi64 " dimensions of a tensor with rank %" PRIi64 ".", rank, xr);
+    return mag_set_error(err, MAG_ERR_RANK, "reduce: cannot reduce over %" PRIi64 " dimensions of a tensor with rank %" PRIi64 ".", rank, xr);
   }
   if (!dims_in && !rank) { /* canonicalize dims (global reduce, negatives, sort, unique) */
     rank = xr;
@@ -52,7 +52,7 @@ mag_status_t mag_reduce_plan_init(
       int64_t a = dims_in[i];
       if (a < 0) a += xr;
       if (mag_unlikely(!(0 <= a && a < xr))) {
-        return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM, "reduce: axis %" PRIi64 " is out of bounds for tensor of rank %" PRIi64 ".", a, xr);
+        return mag_set_error(err, MAG_ERR_DIM, "reduce: axis %" PRIi64 " is out of bounds for tensor of rank %" PRIi64 ".", a, xr);
       }
       ax[i] = a;
     }
@@ -67,10 +67,10 @@ mag_status_t mag_reduce_plan_init(
   for (int64_t i=0; i < rank; ++i) {
     int64_t a = ax[i];
     if (mag_unlikely(!(0 <= a && a < xr))) {
-      return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM, "reduce: axis %" PRIi64 " is out of bounds for tensor of rank %" PRIi64 ".", a, xr);
+      return mag_set_error(err, MAG_ERR_DIM, "reduce: axis %" PRIi64 " is out of bounds for tensor of rank %" PRIi64 ".", a, xr);
     }
     if (mag_unlikely(!(a > prev))) {
-      return mag_set_error(err, MAG_STATUS_ERR_INVALID_DIM, "reduce: axes must be strictly increasing and unique.");
+      return mag_set_error(err, MAG_ERR_DIM, "reduce: axes must be strictly increasing and unique.");
     }
     prev = a;
   }
@@ -110,5 +110,5 @@ mag_status_t mag_reduce_plan_init(
     plan->red_strides[k2] = coords->strides[axd];
     plan->red_prod *= sz;
   }
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }

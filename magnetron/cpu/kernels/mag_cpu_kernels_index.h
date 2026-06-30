@@ -25,7 +25,7 @@
     int64_t ra = r->coords.rank; \
     int64_t rra = r->coords.shape[ax]; \
     int64_t total = src->numel; \
-    if (payload->thread_idx != 0) return MAG_STATUS_OK; \
+    if (payload->thread_idx != 0) return MAG_OK; \
     for (int64_t flat=0; flat < total; ++flat) { \
       int64_t tmp = flat; \
       int64_t sc[MAG_MAX_DIMS]; \
@@ -38,7 +38,7 @@
       int64_t g = bi[idx_off]; \
       if (g < 0) g += rra; \
       if (mag_unlikely(!(g >= 0 && g < rra))) { \
-        return mag_set_error(err, MAG_STATUS_ERR_KERNEL_FAILURE, "index_add_: idx %" PRIi64 " is out of range [0, %" PRIi64 ").", g, rra); \
+        return mag_set_error(err, MAG_ERR_KERNEL, "index_add_: idx %" PRIi64 " is out of range [0, %" PRIi64 ").", g, rra); \
       } \
       int64_t src_off = 0; \
       for (int64_t dx=0; dx < ra; ++dx) src_off += sc[dx]*src->coords.strides[dx]; \
@@ -49,7 +49,7 @@
       mag_bnd_chk(bx+src_off, bx, mag_tensor_numbytes(src)); \
       bs[dst_off] = FROM_ACC((ACC_T)(CVT(bs[dst_off])) + (ACC_T)(MUL(CVT(bx[src_off]), alpha))); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 #define mag_index_add_mul_float(x, a) ((double)(x)*(a))

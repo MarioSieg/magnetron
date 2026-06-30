@@ -201,9 +201,9 @@ namespace mag {
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in floating reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in floating reduction op: %s", mag_type_trait(x->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   template <template <typename, typename, typename> typename op_t>
@@ -223,9 +223,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t,  int64_t,  int64_t>>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint64_t, uint64_t>>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t,  int64_t,  int64_t>>(cmd); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in sum/prod reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in sum/prod reduction op: %s", mag_type_trait(x->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   template <template <typename, typename, typename> typename op_t>
@@ -247,9 +247,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t, int32_t, int32_t>>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint64_t, uint64_t>>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t, int64_t, int64_t>>(cmd); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in min/max reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in min/max reduction op: %s", mag_type_trait(x->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   template <template <typename, typename, typename> typename op_t>
@@ -271,9 +271,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t, uint8_t, uint8_t>>(cmd); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in logical reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in logical reduction op: %s", mag_type_trait(x->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   mag_status_t reduce_op_mean(mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_fp<op_mean>(err, cmd); }
@@ -472,9 +472,9 @@ namespace mag {
       case MAG_DTYPE_FLOAT16: launch_reduce_arg_op<half, is_max>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_arg_op<__nv_bfloat16, is_max>(cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_arg_op<__nv_fp8_e4m3, is_max>(cmd); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in argmin/argmax fp reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in argmin/argmax fp reduction op: %s", mag_type_trait(x->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   template <bool is_max>
@@ -491,9 +491,9 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_arg_op_int<int32_t, is_max>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_arg_op_int<uint64_t, is_max>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_arg_op_int<int64_t, is_max>(cmd); break;
-      default: return mag_set_error(err, MAG_STATUS_ERR_MISSING_COMPUTE_KERNEL, "cuda: unsupported data type in argmin/argmax int reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in argmin/argmax int reduction op: %s", mag_type_trait(x->dtype)->name);
     }
-    return MAG_STATUS_OK;
+    return MAG_OK;
   }
 
   mag_status_t reduce_op_argmin(mag_error_t *err, const mag_command_t &cmd) {
