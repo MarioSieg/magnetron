@@ -653,6 +653,16 @@ char *mag_fmt_e11m52(char *p, double n, mag_format_flags_t sf) {
   return p;
 }
 
+typedef enum mag_fmt_state_t {
+  MAG_FMT_STATE_NONE = 0,
+  MAG_FMT_STATE_TRUNC = 1u<<0,
+  MAG_FMT_STATE_FLT = 1u<<1,
+  MAG_FMT_STATE_INT_MODE = 1u<<2,
+  MAG_FMT_STATE_SCI_MODE = 1u<<3,
+  MAG_FMT_STATE_ALL_INT = 1u<<4,
+  MAG_FMT_STATE_ANY_FINITE = 1u<<5,
+} mag_fmt_state_t;
+
 typedef struct mag_tensor_format_context_t {
   mag_sstream_t *ss;
   const void *buf;
@@ -661,13 +671,14 @@ typedef struct mag_tensor_format_context_t {
   int64_t idx[MAG_MAX_DIMS];
   int64_t head;
   int64_t tail;
-  bool trunc;
   size_t pad;
   size_t linewidth;
   size_t col;
-  /* Per-column max width for last dimension (PyTorch-style alignment across rows) */
-  size_t *col_widths;
-  size_t ncol;
+  mag_fmt_state_t state;     /* MAG_FMT_STATE_* bit flags */
+  mag_format_flags_t fflags; /* fixed/scientific float format flags (carries the precision) */
+  size_t width;              /* uniform cell width across the whole tensor */
+  double max_abs;
+  double min_abs;
 } mag_tensor_format_context_t;
 
 static void mag_fmt_putc(mag_tensor_format_context_t *fmt, char c) {
@@ -705,6 +716,69 @@ static char *mag_fmt_scalar(char (*fmt)[MAG_FMT_BUF_MAX], const void *buf, int64
   }
 }
 
+/* Decode a single floating-point element to double (widening soft-float types). */
+static double mag_tensor_scalar_f64(const void *buf, int64_t i, mag_dtype_t type) {
+  int64_t nb = (int64_t)mag_type_trait(type)->size;
+  const void *val = (const uint8_t *)buf + i*nb;
+  switch (type) {
+    case MAG_DTYPE_FLOAT32: return *(const float *)val;
+    case MAG_DTYPE_FLOAT16: return mag_float16_to_float32_soft_fp(*(const mag_float16_t *)val);
+    case MAG_DTYPE_BFLOAT16: return mag_bfloat16_to_float32_soft_fp(*(const mag_bfloat16_t *)val);
+    case MAG_DTYPE_FLOAT8_E4M3FN: return mag_float8_e4m3fn_to_float32_soft_fp(*(const mag_float8_e4m3fn_t *)val);
+    default: return 0.0;
+  }
+}
+
+static char *mag_fmt_tensor_scalar(const mag_tensor_format_context_t *fmt, char (*out)[MAG_FMT_BUF_MAX], int64_t off) {
+  if (!(fmt->state & MAG_FMT_STATE_FLT)) return mag_fmt_scalar(out, fmt->buf, off, fmt->dtype);
+  double v = mag_tensor_scalar_f64(fmt->buf, off, fmt->dtype);
+  if (mag_unlikely(!isfinite(v))) return mag_fmt_e11m52(*out, v, MAG_FMT_F); /* nan / inf / -inf */
+  if (fmt->state & MAG_FMT_STATE_INT_MODE) {
+    char *e = mag_fmt_e11m52(*out, v, MAG_FMT_F | MAG_FMT_PREC0); /* "%.0f" */
+    if (mag_likely((size_t)(e-*out) < sizeof(*out))) *e++ = '.';
+    return e;
+  }
+  return mag_fmt_e11m52(*out, v, fmt->fflags); /* "%.*f" or "%.*e" */
+}
+
+/* Fold one finite element into the display-plan statistics. */
+static void mag_fmt_scan_value(mag_tensor_format_context_t *fmt, int64_t off) {
+  double v = mag_tensor_scalar_f64(fmt->buf, off, fmt->dtype);
+  if (!isfinite(v)) return; /* nan/inf don't constrain precision/scale */
+  fmt->state|=MAG_FMT_STATE_ANY_FINITE;
+  double a = v < 0.0 ? -v : v;
+  if (a != 0.0) {
+    if (a > fmt->max_abs) fmt->max_abs = a;
+    if (fmt->min_abs == 0.0 || a < fmt->min_abs) fmt->min_abs = a;
+  }
+  bool is_int = a >= 9007199254740992.0 || v == (double)(int64_t)v; /* Beyond 2^53 every representable double is already integral. */
+  if (!is_int) fmt->state&=~MAG_FMT_STATE_ALL_INT;
+}
+
+static void mag_fmt_visible_span(
+  int64_t dim,
+  int64_t head,
+  int64_t tail,
+  bool trunc,
+  int64_t *out_head,
+  int64_t *out_tail,
+  bool *out_ellipsis,
+  int64_t *out_total
+) {
+  if (!trunc || head+tail >= dim) { head = dim; tail = 0; }
+  bool use_ellipsis = head+tail < dim;
+  int64_t tails = use_ellipsis ? tail : 0;
+  *out_head = head;
+  *out_tail = tails;
+  *out_ellipsis = use_ellipsis;
+  *out_total = head + tails + !!use_ellipsis;
+}
+
+static bool mag_fmt_visible_is_ellipsis(int64_t k, int64_t head, bool use_ellipsis) { return use_ellipsis && k == head; }
+static int64_t mag_fmt_visible_index(int64_t k, int64_t dim, int64_t head, int64_t tail, bool use_ellipsis) {
+  return k < head ? k : dim - tail + (k - head - (use_ellipsis ? 1 : 0));
+}
+
 static bool mag_fmt_lastdim_elem(
   mag_tensor_format_context_t *fmt,
   int depth,
@@ -718,41 +792,40 @@ static bool mag_fmt_lastdim_elem(
   size_t *out_elen
 );
 
-static void mag_tensor_fmt_col_widths(mag_tensor_format_context_t *fmt, int depth) {
+static void mag_tensor_fmt_scan_stats(mag_tensor_format_context_t *fmt, int depth) {
   const mag_coords_iter_t *iter = fmt->iter;
-  char tmp[MAG_FMT_BUF_MAX];
+  int64_t dim = iter->shape[depth];
+  int64_t head, tails, total;
+  bool use_ellipsis;
+  mag_fmt_visible_span(dim, fmt->head, fmt->tail, fmt->state & MAG_FMT_STATE_TRUNC, &head, &tails, &use_ellipsis, &total);
+  for (int64_t k=0; k < total; ++k) {
+    if (mag_fmt_visible_is_ellipsis(k, head, use_ellipsis)) continue; /* ellipsis carries no value */
+    fmt->idx[depth] = mag_fmt_visible_index(k, dim, head, tails, use_ellipsis);
+    if (depth == iter->rank - 1) mag_fmt_scan_value(fmt, mag_coords_iter_offset_at(iter, fmt->idx));
+    else mag_tensor_fmt_scan_stats(fmt, depth + 1);
+  }
+}
+
+static void mag_tensor_fmt_scan_width(mag_tensor_format_context_t *fmt, int depth) {
+  const mag_coords_iter_t *iter = fmt->iter;
+  int64_t dim = iter->shape[depth];
+  int64_t head, tails, total;
+  bool use_ellipsis;
+  mag_fmt_visible_span(dim, fmt->head, fmt->tail, fmt->state & MAG_FMT_STATE_TRUNC, &head, &tails, &use_ellipsis, &total);
   if (depth == iter->rank - 1) {
-    int64_t dim = iter->shape[depth];
-    int64_t head = fmt->head;
-    int64_t tail = fmt->tail;
-    if (!fmt->trunc || head + tail >= dim) {
-      head = dim;
-      tail = 0;
-    }
-    bool use_ellipsis = head + tail < dim;
-    int64_t tails = use_ellipsis ? tail : 0;
-    int64_t total = head + tails + (use_ellipsis ? 1 : 0);
-    for (int64_t k=0; k < total && (size_t)k < fmt->ncol; ++k) {
+    char tmp[MAG_FMT_BUF_MAX];
+    for (int64_t k=0; k < total; ++k) {
       bool ellipsis;
       size_t elen = 0;
       if (mag_fmt_lastdim_elem(fmt, depth, k, head, tails, dim, use_ellipsis, &tmp, &ellipsis, &elen))
-        fmt->col_widths[k] = mag_xmax(fmt->col_widths[k], elen + (k < total - 1 ? 2 : 0));
+        fmt->width = mag_xmax(fmt->width, elen); /* one width shared by every column */
     }
     return;
   }
-  int64_t dim = iter->shape[depth];
-  int64_t head = fmt->head;
-  int64_t tail = fmt->tail;
-  if (!fmt->trunc || head + tail >= dim) {
-    head = dim;
-    tail = 0;
-  }
-  bool use_ellipsis = head + tail < dim;
-  int64_t tails = use_ellipsis ? tail : 0;
-  int64_t total = head + tails + (use_ellipsis ? 1 : 0);
   for (int64_t k=0; k < total; ++k) {
-    fmt->idx[depth] = k < head ? k : dim - tails + (k - head - (use_ellipsis ? 1 : 0));
-    mag_tensor_fmt_col_widths(fmt, depth + 1);
+    if (mag_fmt_visible_is_ellipsis(k, head, use_ellipsis)) continue;
+    fmt->idx[depth] = mag_fmt_visible_index(k, dim, head, tails, use_ellipsis);
+    mag_tensor_fmt_scan_width(fmt, depth + 1);
   }
 }
 
@@ -769,15 +842,15 @@ static bool mag_fmt_lastdim_elem(
   size_t *out_elen
 ) {
   const mag_coords_iter_t *iter = fmt->iter;
-  bool ellipsis = use_ellipsis && k == heads;
+  bool ellipsis = mag_fmt_visible_is_ellipsis(k, heads, use_ellipsis);
   *out_ellipsis = ellipsis;
   if (ellipsis) {
     *out_elen = 3; /* "..." */
     return true;
   }
-  fmt->idx[depth] = k < heads ? k : dim_size - tails + (k - heads - (use_ellipsis ? 1 : 0));
+  fmt->idx[depth] = mag_fmt_visible_index(k, dim_size, heads, tails, use_ellipsis);
   int64_t off = mag_coords_iter_offset_at(iter, fmt->idx);
-  char *e = mag_fmt_scalar(tmp, fmt->buf, off, fmt->dtype);
+  char *e = mag_fmt_tensor_scalar(fmt, tmp, off);
   if (mag_unlikely(!e)) return false;
   ptrdiff_t len = e-*tmp;
   if (mag_unlikely(len <= 0)) {
@@ -793,23 +866,17 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
   char tmp[MAG_FMT_BUF_MAX];
   if (depth == iter->rank) { /* scalar leaf */
     int64_t off = mag_coords_iter_offset_at(iter, fmt->idx);
-    char *e = mag_fmt_scalar(&tmp, fmt->buf, off, fmt->dtype);
+    char *e = mag_fmt_tensor_scalar(fmt, &tmp, off);
     if (mag_unlikely(!e)) return;
     ptrdiff_t len = e - tmp;
-    if (mag_likely(len > 0)) mag_sstream_append_strn(fmt->ss, tmp, (size_t)len);
+    for (ptrdiff_t i=0; i < len; ++i) mag_fmt_putc(fmt, tmp[i]); /* keep fmt->col in sync */
     return;
   }
   int64_t dim = iter->shape[depth];
   bool last_dim = iter->rank - depth == 1;
-  int64_t head = fmt->head;
-  int64_t tail = fmt->tail;
-  if (!fmt->trunc || head + tail >= dim) {
-    head = dim;
-    tail = 0;
-  }
-  bool use_ellipsis = head + tail < dim;
-  int64_t tails = use_ellipsis ? tail : 0;
-  int64_t total = head + tails + (use_ellipsis ? 1 : 0);
+  int64_t head, tails, total;
+  bool use_ellipsis;
+  mag_fmt_visible_span(dim, fmt->head, fmt->tail, fmt->state & MAG_FMT_STATE_TRUNC, &head, &tails, &use_ellipsis, &total);
   mag_fmt_putc(fmt, '[');
   if (last_dim) {
     for (int64_t k=0; k < total; ++k) {
@@ -817,12 +884,14 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
       size_t elen = 0;
       if (mag_unlikely(!mag_fmt_lastdim_elem(fmt, depth, k, head, tails, dim, use_ellipsis, &tmp, &ellipsis, &elen)))
         continue;
-      size_t w = fmt->col_widths && (size_t)k < fmt->ncol ? fmt->col_widths[k] : (elen + (k < total - 1 ? 2 : 0));
-      if (k > 0 && fmt->linewidth > 0 && fmt->col + w > fmt->linewidth) {
+      size_t elem_w = mag_xmax(fmt->width, elen);
+      size_t sep = k < total - 1 ? 2 : 0; /* ", " between elements */
+      if (k > 0 && fmt->linewidth > 0 && fmt->col + elem_w + sep > fmt->linewidth) {
         mag_fmt_putc(fmt, '\n');
         mag_fmt_indent(fmt, depth);
       }
-      /* Number, then ", " (one space after comma), then space-pad to column width. */
+      for (size_t i=elen; i < elem_w; ++i)
+        mag_fmt_putc(fmt, ' ');
       if (ellipsis) {
         mag_fmt_putc(fmt, '.');
         mag_fmt_putc(fmt, '.');
@@ -831,19 +900,19 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
         for (size_t i=0; i < elen; ++i)
           mag_fmt_putc(fmt, tmp[i]);
       }
-      if (k < total - 1) {
+      if (sep) {
         mag_fmt_putc(fmt, ',');
         mag_fmt_putc(fmt, ' ');
       }
-      size_t pad = w > elen + (k < total - 1 ? 2 : 0) ? w - elen - (k < total - 1 ? 2 : 0) : 0;
-      for (size_t i=0; i < pad; ++i)
-        mag_fmt_putc(fmt, ' ');
     }
   } else {
     for (int64_t k=0; k < total; ++k) {
-      if (use_ellipsis && k == head) mag_sstream_append(fmt->ss, "...");
-      else {
-        fmt->idx[depth] = k < head ? k : dim - tails + (k - head - (use_ellipsis ? 1 : 0));
+      if (mag_fmt_visible_is_ellipsis(k, head, use_ellipsis)) {
+        mag_fmt_putc(fmt, '.');
+        mag_fmt_putc(fmt, '.');
+        mag_fmt_putc(fmt, '.');
+      } else {
+        fmt->idx[depth] = mag_fmt_visible_index(k, dim, head, tails, use_ellipsis);
         mag_tensor_fmt_recursive(fmt, depth + 1);
       }
       if (k != total - 1) {
@@ -872,21 +941,6 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
   mag_sstream_append(&ss, prefix);
   mag_coords_iter_t iter;
   mag_coords_iter_init(&iter, &host->coords);
-  size_t ncol = 0;
-  size_t *col_widths = NULL;
-  if (iter.rank > 0) {
-    int64_t last_dim = iter.shape[iter.rank - 1];
-    int64_t head_e = head, tail_e = tail;
-    if (!(host->numel > threshold) || head_e + tail_e >= last_dim) {
-      head_e = last_dim;
-      tail_e = 0;
-    }
-    bool use_ell = head_e + tail_e < last_dim;
-    int64_t tails_e = use_ell ? tail_e : 0;
-    ncol = (size_t)(head_e + tails_e + (use_ell ? 1 : 0));
-    col_widths = ncol ? (*mag_try_alloc)(NULL, ncol*sizeof(*col_widths), 0) : NULL;
-    if (col_widths) memset(col_widths, 0, ncol*sizeof(*col_widths));
-  }
   mag_tensor_format_context_t fmt = {
     .ss = &ss,
     .buf = (const void *)mag_tensor_data_ptr(host),
@@ -895,17 +949,30 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
     .idx = {0},
     .head = head,
     .tail = tail,
-    .trunc = host->numel > threshold,
     .pad = pad,
     .linewidth = MAG_FMT_TENSOR_DEFAULT_LINE_WIDTH,
     .col = pad,
-    .col_widths = col_widths,
-    .ncol = ncol
+    .state = MAG_FMT_STATE_ALL_INT
+      |(host->numel > threshold ? MAG_FMT_STATE_TRUNC : MAG_FMT_STATE_NONE)
+      |((mag_dtype_bit(host->dtype) & MAG_DTYPE_MASK_FP) ? MAG_FMT_STATE_FLT : MAG_FMT_STATE_NONE),
   };
+  if (fmt.state & MAG_FMT_STATE_FLT) {
+    memset(fmt.idx, 0, sizeof(fmt.idx));
+    if (iter.rank > 0) mag_tensor_fmt_scan_stats(&fmt, 0);
+    else mag_fmt_scan_value(&fmt, mag_coords_iter_offset_at(&iter, fmt.idx));
+    if (fmt.state & MAG_FMT_STATE_ALL_INT) {
+      fmt.state|=MAG_FMT_STATE_INT_MODE;
+    } else if (fmt.max_abs >= 1.0e8 || (fmt.min_abs > 0.0 && (fmt.max_abs/fmt.min_abs > 1.0e3 || fmt.min_abs < 1.0e-4))) {
+      fmt.state|=MAG_FMT_STATE_SCI_MODE;
+    }
+    fmt.fflags = ((fmt.state & MAG_FMT_STATE_SCI_MODE) ? MAG_FMT_E : MAG_FMT_F) | (((4u+1u) & 0xffu) << MAG_FMT_SH_PREC);
+  }
+  if (iter.rank > 0) {
+    memset(fmt.idx, 0, sizeof(fmt.idx));
+    mag_tensor_fmt_scan_width(&fmt, 0);
+  }
   memset(fmt.idx, 0, sizeof(fmt.idx));
-  if (col_widths) mag_tensor_fmt_col_widths(&fmt, 0);
   mag_tensor_fmt_recursive(&fmt, 0); /* Recursive format */
-  if (col_widths) (*mag_alloc)(col_widths, 0, 0);
   char device_str[32];
   mag_device_id_to_str(tensor->storage->device->id, &device_str);
   mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_type_trait(tensor->dtype)->name, device_str);
