@@ -182,7 +182,12 @@ class Module:
         parts = key.split('.')
         target: Module = self
         for p in parts[:-1]:
-            target = getattr(target, p)
+            if isinstance(target, ModuleDict):
+                target = target[p]
+            elif isinstance(target, ModuleList):
+                target = target[int(p)]
+            else:
+                target = getattr(target, p)
         return target, parts[-1]
 
     def register_forward_hook(
@@ -261,6 +266,23 @@ class ModuleDict(Module, MutableMapping[str, Module]):
 
     def __len__(self) -> int:
         return len(self._modules)
+
+    def __getattr__(self, name: str) -> Module:
+        if self._modules is not None and name in self._modules:
+            return self._modules[name]
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def keys(self):
+        return self._modules.keys()
+
+    def items(self):
+        return self._modules.items()
+
+    def values(self):
+        return self._modules.values()
+
+    def __contains__(self, name: object) -> bool:
+        return name in self._modules
 
     def named_children(self) -> Iterator[tuple[str, Module]]:
         yield from self._modules.items()
