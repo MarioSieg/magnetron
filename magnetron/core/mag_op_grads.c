@@ -9,7 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include "mag_gradients.h"
+#include "mag_op_grads.h"
 
 mag_status_t mag_op_backward_clone(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   return mag_clone(err, grads, node->grad);

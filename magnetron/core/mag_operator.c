@@ -10,7 +10,7 @@
 */
 
 #include "mag_operator.h"
-#include "mag_gradients.h"
+#include "mag_op_grads.h"
 
 const mag_op_traits_t *mag_op_trait(mag_opcode_t op) {
   static const mag_op_traits_t infos[MAG_OP__NUM] = {
