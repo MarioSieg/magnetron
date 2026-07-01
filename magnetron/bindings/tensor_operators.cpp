@@ -248,7 +248,7 @@ namespace mag::bindings {
       "value"_a,
       "Fill the tensor with a scalar value."
     )
-    .def("zeros_",
+    .def("zero_",
       [](tensor_wrapper &self) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
         mag_error_t err {};
@@ -257,7 +257,7 @@ namespace mag::bindings {
       },
       "Fill the tensor with 0."
     )
-    .def("ones_",
+    .def("one_",
       [](tensor_wrapper &self) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
         mag_error_t err {};

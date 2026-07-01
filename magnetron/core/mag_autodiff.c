@@ -43,19 +43,39 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t
   return *au_state;
 }
 
-mag_status_t mag_tensor_grad(mag_error_t *err, const mag_tensor_t *tensor, mag_tensor_t **out_grad) {
-  if (mag_unlikely(!(tensor->flags & MAG_TFLAG_REQUIRES_GRAD)))
-    return mag_set_error(err, MAG_ERR_PARAM, "autograd: tensor does not require gradient; enable requires_grad to access its gradient.");
-  if (mag_unlikely(!tensor->au_state))
-    return mag_set_error(err, MAG_ERR_STATE, "autograd: autodiff state is missing for this tensor.");
-  if (tensor->au_state->grad) mag_rc_incref(tensor->au_state->grad);
-  *out_grad = tensor->au_state->grad;
+mag_tensor_t *mag_tensor_grad(const mag_tensor_t *tensor) {
+  if (!(tensor->flags & MAG_TFLAG_REQUIRES_GRAD)) return NULL;
+  if (!tensor->au_state) return NULL;
+  mag_tensor_t *gra = tensor->au_state->grad;
+  if (gra) mag_rc_incref(gra);
+  return gra;
+}
+
+mag_status_t mag_tensor_set_grad(mag_error_t *err, mag_tensor_t *tensor, mag_tensor_t *grad) {
+  if (!grad) {
+    if (tensor->au_state && tensor->au_state->grad) {
+      mag_rc_decref(tensor->au_state->grad);
+      tensor->au_state->grad = NULL;
+    }
+    return MAG_OK;
+  }
+  if (!(tensor->flags & MAG_TFLAG_REQUIRES_GRAD)) {
+    mag_status_t status = mag_tensor_set_requires_grad(err, tensor, true);
+    if (mag_iserr(status)) return status;
+  }
+  if (!tensor->au_state) {
+    if (!mag_au_state_lazy_alloc(&tensor->au_state, tensor->ctx))
+      return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate autodiff state for grad assignment.");
+  }
+  if (tensor->au_state->grad)
+    mag_rc_decref(tensor->au_state->grad);
+  mag_rc_incref(grad);
+  grad->flags = (grad->flags|MAG_TFLAG_IS_GRAD)&~MAG_TFLAG_REQUIRES_GRAD;
+  tensor->au_state->grad = grad;
   return MAG_OK;
 }
 
-bool mag_tensor_requires_grad(const mag_tensor_t *tensor) {
-  return tensor->flags & MAG_TFLAG_REQUIRES_GRAD;
-}
+bool mag_tensor_requires_grad(const mag_tensor_t *tensor) { return tensor->flags & MAG_TFLAG_REQUIRES_GRAD; }
 
 mag_status_t mag_tensor_set_requires_grad(mag_error_t *err, mag_tensor_t *tensor, bool requires_grad) {
   if (requires_grad) {

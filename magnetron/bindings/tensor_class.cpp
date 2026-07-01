@@ -190,14 +190,23 @@ namespace mag::bindings {
       mag_error_t err {};
       throw_if_error(mag_tensor_set_requires_grad(&err, *self, req), err);
     }, "If True, gradients are recorded for autodiff.")
-    .def_prop_ro("grad", [](const tensor_wrapper &self) -> nb::object {
-      std::lock_guard lock {get_global_mutex()};
-      mag_tensor_t *grad = nullptr;
-      mag_error_t err {};
-      throw_if_error(mag_tensor_grad(&err, *self, &grad), err);
-      if (!grad) return nb::none();
-      return nb::cast(tensor_wrapper {grad});
-    }, "Gradient accumulated for this tensor (None if not computed).")
+   .def_prop_rw("grad", [](const tensor_wrapper &self) -> nb::object {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *grad = mag_tensor_grad(*self);
+        if (!grad) return nb::none();
+        return nb::cast(tensor_wrapper {grad});
+      }, [](tensor_wrapper &self, nb::handle value) -> void {
+        std::lock_guard lock {get_global_mutex()};
+        mag_error_t err {};
+        if (value.is_none()) {
+          throw_if_error(mag_tensor_set_grad(&err, *self, nullptr), err);
+          return;
+        }
+        auto grad = nb::cast<tensor_wrapper>(value);
+        throw_if_error(mag_tensor_set_grad(&err, *self, *grad), err);
+      },
+      "Gradient accumulated for this tensor."
+    )
     .def("backward", [](const tensor_wrapper &self) -> void {
       std::lock_guard lock {get_global_mutex()};
       mag_error_t err {};

@@ -146,9 +146,9 @@ def inplace_init(w: Tensor, init: InitStrategy) -> None:
         case ConstantInitStrategy(value=v):
             w.fill_(v)
         case ZerosInitStrategy():
-            w.zeros_()
+            w.zero_()
         case OnesInitStrategy():
-            w.ones_()
+            w.one_()
         case UniformInitStrategy(low=a, high=b):
             w.uniform_(a, b)
         case NormalInitStrategy(mean=m, std=s):

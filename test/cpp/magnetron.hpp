@@ -940,7 +940,7 @@ namespace magnetron {
 
         [[nodiscard]] auto grad() const noexcept -> std::optional<tensor> {
             mag_tensor_t *grad;
-            mag_status_t stat = mag_tensor_grad(nullptr, m_tensor, &grad);
+            mag_status_t stat = mag_tensor_get_grad(nullptr, m_tensor, &grad);
             if (stat != MAG_OK) return std::nullopt;
             return tensor{grad};
         }

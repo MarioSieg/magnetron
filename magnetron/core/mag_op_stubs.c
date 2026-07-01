@@ -1912,8 +1912,8 @@ static mag_status_t mag_op_stub_binary(mag_error_t *err, mag_tensor_t **out_resu
     mag_assert2(!(flags & MAG_BINOP_LOGICAL));
     status = mag_check_inplace_grad_ok(err, x);
     if (mag_iserr(status)) return status;
-    status = mag_tensor_strided_view(err, &result, x);
-    if (mag_iserr(status)) return status;
+    result = x;
+    mag_tensor_incref(result);
   } else {
     int64_t dims[MAG_MAX_DIMS];
     int64_t rank;
