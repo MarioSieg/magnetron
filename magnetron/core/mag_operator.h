@@ -89,31 +89,31 @@ typedef struct mag_repeat_interleave_plan_t {
   _(SGN, 1, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(NEG, 1, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, neg)__\
   _(LOG, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, log)__\
-  _(LOG10, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(LOG1P, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(LOG2, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(LOG10, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, log10)__\
+  _(LOG1P, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, log1p)__\
+  _(LOG2, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, log2)__\
   _(SQR, 1, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, sqr)__\
-  _(RCP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(RCP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, rcp)__\
   _(SQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sqrt)__\
-  _(RSQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(RSQRT, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, rsqrt)__\
   _(SIN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sin)__\
   _(COS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, cos)__\
-  _(TAN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(SINH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(COSH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(TAN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, tan)__\
+  _(SINH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sinh)__\
+  _(COSH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, cosh)__\
   _(TANH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, tanh)__\
-  _(ASIN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(ACOS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(ATAN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(ASINH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(ACOSH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(ATANH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(ASIN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, asin)__\
+  _(ACOS, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, acos)__\
+  _(ATAN, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, atan)__\
+  _(ASINH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, asinh)__\
+  _(ACOSH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, acosh)__\
+  _(ATANH, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, atanh)__\
   _(STEP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(ERF, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(ERFC, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(ERF, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, erf)__\
+  _(ERFC, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, erfc)__\
   _(EXP, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, exp)__\
-  _(EXP2, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(EXPM1, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(EXP2, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, exp2)__\
+  _(EXPM1, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, expm1)__\
   _(FLOOR, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(CEIL, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(ROUND, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
@@ -122,7 +122,7 @@ typedef struct mag_repeat_interleave_plan_t {
   _(SOFTMAX_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, sigmoid)__\
   _(SIGMOID_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(HARD_SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(HARD_SIGMOID, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, hard_sigmoid)__\
   _(SILU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, silu)__\
   _(SILU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(TANH_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
@@ -131,8 +131,8 @@ typedef struct mag_repeat_interleave_plan_t {
   _(GELU, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, gelu)__\
   _(GELU_APPROX, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, gelu)__\
   _(GELU_DV, 1, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(TRIL, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-  _(TRIU, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(TRIL, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, tril)__\
+  _(TRIU, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, triu)__\
   _(MULTINOMIAL, 1, 1, FP, mag_params(MAG_OP_ATTR_TYPE_I64, MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
   _(CAT, MAG_OP_INOUT_DYN, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAGS_COMMON, NULL)__\
   _(ADD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, add)__\
@@ -141,7 +141,7 @@ typedef struct mag_repeat_interleave_plan_t {
   _(DIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, div)__\
   _(FLOORDIV, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(MOD, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(POW, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(POW, 2, 1, NUMERIC, {}, MAG_OP_FLAGS_COMMON, pow)__\
   _(MATMUL, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, matmul)__\
   _(REPEAT_BACK, 2, 1, FP, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(GATHER, 2, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_NONE, NULL)__\
@@ -157,20 +157,20 @@ typedef struct mag_repeat_interleave_plan_t {
   _(GE, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(LT, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
   _(GT, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(WHERE, 3, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(MIN, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(MAX, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(CLAMP, 3, 1, ALL, {}, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(WHERE, 3, 1, ALL, {}, MAG_OP_FLAGS_COMMON, where)__\
+  _(MIN, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, min)__\
+  _(MAX, 2, 1, ALL, {}, MAG_OP_FLAGS_COMMON, max)__\
+  _(CLAMP, 3, 1, ALL, {}, MAG_OP_FLAGS_COMMON, clamp)__\
   _(PAD, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_PTR), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(EYE, 0, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(CUSUM, 1, 1, NUMERIC, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(CUPROD, 1, 1, NUMERIC, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(CUMAX, 1, 2, NUMERIC, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(CUMIN, 1, 2, NUMERIC, mag_params(MAG_OP_ATTR_TYPE_I64), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-  _(REPEAT, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_PTR), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(REPEAT, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_PTR), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, repeat)__\
   _(REPEAT_INTERLEAVE, 1, 1, ALL, mag_params(MAG_OP_ATTR_TYPE_PTR), MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(INDEX_ADD, 3, 1, NUMERIC, mag_params(MAG_OP_ATTR_TYPE_I64, MAG_OP_ATTR_TYPE_FLOAT64), MAG_OP_FLAG_NONE, NULL)__\
-  _(EMBEDDING, 2, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__
+  _(EMBEDDING, 2, 1, ALL, {}, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, embedding)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
