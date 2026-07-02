@@ -246,78 +246,6 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   return MAG_OK;
 }
 
-mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
-  int64_t old_rank = x->coords.rank;
-  const int64_t *old_shape = x->coords.shape;
-  const int64_t *old_strides = x->coords.strides;
-  int64_t new_strides[MAG_MAX_DIMS];
-  if (mag_unlikely(!(rank >= old_rank))) {
-    return mag_set_error(err, MAG_ERR_RANK, "broadcast_to: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".", rank, old_rank);
-  }
-  for (int64_t i=0; i < rank; ++i) {
-    int64_t new_ax = rank-1-i;
-    int64_t old_ax = old_rank-1-i;
-    int64_t new_dim = shape[new_ax];
-    if (old_ax < 0) {
-      new_strides[new_ax] = 0;
-      continue;
-    }
-    int64_t old_dim = old_shape[old_ax];
-    int64_t old_stride = old_strides[old_ax];
-    if (mag_unlikely(!(old_dim == new_dim || old_dim == 1))) {
-      return mag_set_error(err, MAG_ERR_RANK, "broadcast_to: cannot broadcast dim of size %" PRIi64 " to %" PRIi64 "; only size-1 dims are broadcastable.", old_dim, new_dim);
-    }
-    new_strides[new_ax] = old_dim == new_dim ? old_stride : 0;
-  }
-  return mag_as_strided(
-    err,
-    out,
-    mag_tensor_context(x),
-    x,
-    rank,
-    shape,
-    new_strides,
-    (int64_t)mag_tensor_data_offset(x)
-  );
-}
-
-mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
-  int64_t old_rank = x->coords.rank;
-  const int64_t *old_shape = x->coords.shape;
-  if (mag_unlikely(!(rank >= old_rank))) {
-    return mag_set_error(
-      err, MAG_ERR_RANK,
-      "expand: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".",
-      rank, old_rank
-    );
-  }
-  int64_t resolved[MAG_MAX_DIMS];
-  for (int64_t i=0; i < rank; ++i) {
-    int64_t new_ax = rank-1-i;
-    int64_t old_ax = old_rank-1-i;
-    int64_t dim = shape[new_ax];
-    if (dim == -1) {
-      if (mag_unlikely(!(old_ax >= 0))) {
-        return mag_set_error(
-          err, MAG_ERR_PARAM,
-          "expand: -1 is not allowed for a newly prepended dimension."
-        );
-      }
-      resolved[new_ax] = old_shape[old_ax];
-    } else {
-      if (mag_unlikely(!(dim >= 0))) {
-        return mag_set_error(
-          err, MAG_ERR_PARAM,
-          "expand: invalid dimension size %" PRIi64 ".",
-          dim
-        );
-      }
-      resolved[new_ax] = dim;
-    }
-  }
-  return mag_broadcast_to(err, out, x, rank, resolved);
-}
-
 static mag_status_t mag_tensor_dtor(void *self) {
   mag_tensor_t *t = self;
   mag_context_t *ctx = t->ctx;
@@ -459,30 +387,6 @@ size_t mag_tensor_numbytes(const mag_tensor_t *t) {
 }
 int64_t mag_tensor_numel(const mag_tensor_t *tensor) {
   return tensor->numel;
-}
-
-void mag_tensor_detach_inplace(mag_tensor_t *target) {
-  mag_au_state_t *au = target->au_state;
-  if (au) {
-    au->op = MAG_OP_NOP; /* Detach from operations */
-    if (au->in) {
-      for (uint32_t i=0; i < au->num_in; ++i) {
-        if (au->in[i]) mag_tensor_decref(au->in[i]);
-        au->in[i] = NULL;
-      }
-      (*mag_alloc)(au->in, 0, 0);
-      au->in = NULL;
-    }
-    au->num_in = 0;
-    au->cap_in = 0;
-    memset(&au->params, 0, sizeof(au->params));
-  }
-}
-
-mag_tensor_t *mag_tensor_detach(mag_tensor_t *tensor) {
-  mag_tensor_detach_inplace(tensor);
-  mag_tensor_incref(tensor);
-  return tensor;
 }
 
 int64_t mag_tensor_rank(const mag_tensor_t *tensor) {

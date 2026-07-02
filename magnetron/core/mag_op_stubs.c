@@ -96,6 +96,78 @@ mag_status_t mag_bernoulli_like(mag_error_t *err, mag_tensor_t **out_result, mag
   return mag_bernoulli_(err, *out_result, p);
 }
 
+mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
+  int64_t old_rank = x->coords.rank;
+  const int64_t *old_shape = x->coords.shape;
+  const int64_t *old_strides = x->coords.strides;
+  int64_t new_strides[MAG_MAX_DIMS];
+  if (mag_unlikely(!(rank >= old_rank))) {
+    return mag_set_error(err, MAG_ERR_RANK, "broadcast_to: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".", rank, old_rank);
+  }
+  for (int64_t i=0; i < rank; ++i) {
+    int64_t new_ax = rank-1-i;
+    int64_t old_ax = old_rank-1-i;
+    int64_t new_dim = shape[new_ax];
+    if (old_ax < 0) {
+      new_strides[new_ax] = 0;
+      continue;
+    }
+    int64_t old_dim = old_shape[old_ax];
+    int64_t old_stride = old_strides[old_ax];
+    if (mag_unlikely(!(old_dim == new_dim || old_dim == 1))) {
+      return mag_set_error(err, MAG_ERR_RANK, "broadcast_to: cannot broadcast dim of size %" PRIi64 " to %" PRIi64 "; only size-1 dims are broadcastable.", old_dim, new_dim);
+    }
+    new_strides[new_ax] = old_dim == new_dim ? old_stride : 0;
+  }
+  return mag_as_strided(
+    err,
+    out,
+    mag_tensor_context(x),
+    x,
+    rank,
+    shape,
+    new_strides,
+    (int64_t)mag_tensor_data_offset(x)
+  );
+}
+
+mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
+  int64_t old_rank = x->coords.rank;
+  const int64_t *old_shape = x->coords.shape;
+  if (mag_unlikely(!(rank >= old_rank))) {
+    return mag_set_error(
+      err, MAG_ERR_RANK,
+      "expand: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".",
+      rank, old_rank
+    );
+  }
+  int64_t resolved[MAG_MAX_DIMS];
+  for (int64_t i=0; i < rank; ++i) {
+    int64_t new_ax = rank-1-i;
+    int64_t old_ax = old_rank-1-i;
+    int64_t dim = shape[new_ax];
+    if (dim == -1) {
+      if (mag_unlikely(!(old_ax >= 0))) {
+        return mag_set_error(
+          err, MAG_ERR_PARAM,
+          "expand: -1 is not allowed for a newly prepended dimension."
+        );
+      }
+      resolved[new_ax] = old_shape[old_ax];
+    } else {
+      if (mag_unlikely(!(dim >= 0))) {
+        return mag_set_error(
+          err, MAG_ERR_PARAM,
+          "expand: invalid dimension size %" PRIi64 ".",
+          dim
+        );
+      }
+      resolved[new_ax] = dim;
+    }
+  }
+  return mag_broadcast_to(err, out, x, rank, resolved);
+}
+
 mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t start, mag_scalar_t end, mag_scalar_t step, mag_device_id_t device) {
   *out_result = NULL;
   if (mag_unlikely(!(mag_scalar_same_type(start, end) && mag_scalar_same_type(start, step))))
@@ -1824,4 +1896,16 @@ mag_status_t mag_bernoulli_(mag_error_t *err, mag_tensor_t *tensor, double p) {
   mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_RAND_BERNOULLI, NULL, 0);
   if (mag_iserr(status)) return status;
   return mag_dispatch(err, MAG_OP_RAND_BERNOULLI, false, NULL, 0, &tensor, 1, &params);
+}
+
+mag_status_t mag_detach(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor) {
+  *out_result = NULL;
+  mag_status_t status = mag_view(err, out_result, tensor, tensor->coords.shape, tensor->coords.rank);
+  if (mag_iserr(status)) return status;
+  mag_tensor_t *target = *out_result;
+  if (target->au_state) {
+    mag_rc_decref(target->au_state);
+    target->au_state = NULL;
+  }
+  return MAG_OK;
 }
