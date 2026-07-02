@@ -603,6 +603,15 @@ def test_lerp_outplace(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_index_add(device: str) -> None:
+    x = Tensor.ones(5, 3)
+    t = Tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=dtype.float32)
+    index = Tensor([0, 4, 2])
+    x.index_add_(0, index, t)
+    assert x.tolist() == [[2.0, 3.0, 4.0], [1.0, 1.0, 1.0], [8.0, 9.0, 10.0], [1.0, 1.0, 1.0], [5.0, 6.0, 7.0]]
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_gather(device: str) -> None:
     x = Tensor([[1, 2], [3, 4]])
     ga = x.gather(1, Tensor([[0, 0], [1, 0]]))
