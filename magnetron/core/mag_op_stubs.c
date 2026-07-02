@@ -136,10 +136,9 @@ mag_status_t mag_eye(mag_error_t *err, mag_tensor_t **out_result, mag_context_t 
   if (mag_unlikely(!(m >= 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "eye: m must be >= 0, but got %" PRIi64 ".", m);
   mag_tensor_t *result = NULL;
-  int64_t shape[2] = {n, m};
-  mag_status_t status = mag_empty(err, &result, ctx, type, 2, shape, device);
+  mag_status_t status = mag_empty(err, &result, ctx, type, 2, (int64_t[2]){n, m}, device);
   if (mag_iserr(status)) return status;
-  if (n > 0 && m > 0) {
+  if (mag_likely(n > 0 && m > 0)) {
     status = mag_check_dtype_and_device_compat(err, MAG_OP_EYE, NULL, 0);
     if (mag_iserr(status)) return status;
     status = mag_dispatch(err, MAG_OP_EYE, false, NULL, 0, &result, 1, NULL);
@@ -159,22 +158,21 @@ mag_status_t mag_linspace(mag_error_t *err, mag_tensor_t **out_result, mag_conte
       return mag_set_error(err, MAG_ERR_PARAM, "linspace: requires a numeric dtype.");
   if (steps == 1) return mag_full(err, out_result, ctx, type, 1, &steps, start, device);
   mag_status_t status = MAG_OK;
-  mag_tensor_t *idx = NULL, *scale = NULL, *start_t = NULL, *tmp = NULL, *result = NULL;
+  mag_tensor_t *idx = NULL;
+  mag_tensor_t *scale = NULL;
+  mag_tensor_t *start_t = NULL;
+  mag_tensor_t *tmp = NULL;
+  mag_tensor_t *result = NULL;
   status = mag_arange(err, &idx, ctx, type, mag_scalar_from_int64(0), mag_scalar_from_int64(steps), mag_scalar_from_int64(1), device);
-  if (mag_iserr(status))
-      goto cleanup;
+  if (mag_iserr(status)) goto cleanup;
   status = mag_full(err, &scale, ctx, type, 1, &steps, mag_scalar_from_float64((mag_scalar_as_float64(end) - mag_scalar_as_float64(start))/(double)(steps - 1)), device);
-  if (mag_iserr(status))
-      goto cleanup;
+  if (mag_iserr(status)) goto cleanup;
   status = mag_full(err, &start_t, ctx, type, 1, &steps, start, device);
-  if (mag_iserr(status))
-      goto cleanup;
+  if (mag_iserr(status)) goto cleanup;
   status = mag_mul(err, &tmp, idx, scale);
-  if (mag_iserr(status))
-      goto cleanup;
+  if (mag_iserr(status)) goto cleanup;
   status = mag_add(err, &result, tmp, start_t);
-  if (mag_iserr(status))
-      goto cleanup;
+  if (mag_iserr(status)) goto cleanup;
   *out_result = result;
   result = NULL;
 cleanup:
@@ -286,8 +284,7 @@ mag_status_t mag_transfer(mag_error_t *err, mag_tensor_t **out_result, mag_tenso
   mag_tensor_t *xc = NULL;
   mag_tensor_t *out = NULL;
   status = mag_contiguous(err, &xc, x);
-  if (mag_iserr(status))
-      goto cleanup;
+  if (mag_iserr(status)) goto cleanup;
   status = mag_empty(err, &out, x->ctx, xc->dtype, xc->coords.rank, xc->coords.shape, device);
   if (mag_iserr(status)) goto cleanup;
   {
@@ -402,7 +399,7 @@ mag_status_t mag_reshape(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
     strides[rank-1] = 1;
     for (int64_t i=rank-2; i >= 0; --i) {
       if (mag_unlikely(mag_mulov64(shape[i+1], strides[i+1], strides+i)))
-          return mag_set_error(err, MAG_ERR_DIM, "reshape: stride computation overflowed at dim %" PRIi64 ".", i);
+        return mag_set_error(err, MAG_ERR_DIM, "reshape: stride computation overflowed at dim %" PRIi64 ".", i);
     }
     status = mag_as_strided(err, &result, x->ctx, x, rank, shape, strides, x->storage_offset);
     if (mag_iserr(status)) return status;
@@ -523,8 +520,7 @@ mag_status_t mag_permute(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_ERR_RANK, "permute: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   int64_t axes[MAG_MAX_DIMS];
-  for (int64_t i=0; i < rank; ++i)
-    axes[i] = dims[i];
+  for (int64_t i=0; i < rank; ++i) axes[i] = dims[i];
 
   for (int64_t i=0; i < rank; ++i)
   for (int64_t j=i+1; j < rank; ++j)
@@ -617,14 +613,11 @@ mag_status_t mag_flatten(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
       return mag_set_error(err, MAG_ERR_PARAM, "flatten: start_dim must be <= end_dim, but got %" PRIi64 " > %" PRIi64 ".", start_dim, end_dim);
   int64_t shape[MAG_MAX_DIMS];
   int64_t nrank = 0;
-  for (int64_t i=0; i < start_dim; ++i)
-    shape[nrank++] = x->coords.shape[i];
+  for (int64_t i=0; i < start_dim; ++i) shape[nrank++] = x->coords.shape[i];
   int64_t sz=1;
-  for (int64_t i=start_dim; i <= end_dim; ++i)
-    sz *= x->coords.shape[i];
+  for (int64_t i=start_dim; i <= end_dim; ++i) sz *= x->coords.shape[i];
   shape[nrank++] = sz;
-  for (int64_t i=end_dim+1; i < rank; ++i)
-    shape[nrank++] = x->coords.shape[i];
+  for (int64_t i=end_dim+1; i < rank; ++i) shape[nrank++] = x->coords.shape[i];
   if (mag_unlikely(!(nrank <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_ERR_RANK, "flatten: result rank %" PRIi64 " exceeds the maximum rank of %d.", nrank, MAG_MAX_DIMS);
   mag_status_t stat = mag_view(err, out_result, x, shape, nrank); /* Try view first */
@@ -642,21 +635,12 @@ mag_status_t mag_unflatten(mag_error_t *err, mag_tensor_t **out_result, mag_tens
       return mag_set_error(err, MAG_ERR_PARAM, "unflatten: sizes must not be NULL.");
   mag_norm_axis(&dim, rank);
   if (mag_unlikely(!(0 <= dim && dim < rank)))
-      return mag_set_error(err, MAG_ERR_RANK,
-        "unflatten: dim %" PRIi64 " is out of range for rank %" PRIi64 ".",
-        dim, rank
-      );
+      return mag_set_error(err, MAG_ERR_RANK, "unflatten: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
   if (mag_unlikely(!(sizes_rank <= MAG_MAX_DIMS)))
-      return mag_set_error(err, MAG_ERR_RANK,
-        "unflatten: sizes rank %" PRIi64 " exceeds the maximum rank of %d.",
-        sizes_rank, MAG_MAX_DIMS
-      );
-  int64_t nr = rank - 1 + sizes_rank;
+      return mag_set_error(err, MAG_ERR_RANK, "unflatten: sizes rank %" PRIi64 " exceeds the maximum rank of %d.", sizes_rank, MAG_MAX_DIMS);
+  int64_t nr = rank-1+sizes_rank;
   if (mag_unlikely(!(nr <= MAG_MAX_DIMS)))
-      return mag_set_error(err, MAG_ERR_RANK,
-        "unflatten: result rank %" PRIi64 " exceeds the maximum rank of %d.",
-        nr, MAG_MAX_DIMS
-      );
+      return mag_set_error(err, MAG_ERR_RANK, "unflatten: result rank %" PRIi64 " exceeds the maximum rank of %d.", nr, MAG_MAX_DIMS);
   int64_t resolved[MAG_MAX_DIMS];
   mag_status_t status = mag_infer_missing_dim(
     err,
@@ -668,12 +652,9 @@ mag_status_t mag_unflatten(mag_error_t *err, mag_tensor_t **out_result, mag_tens
   if (mag_iserr(status)) return status;
   int64_t shape[MAG_MAX_DIMS];
   int64_t k=0;
-  for (int64_t i=0; i < dim; ++i)
-    shape[k++] = x->coords.shape[i];
-  for (int64_t i=0; i < sizes_rank; ++i)
-    shape[k++] = resolved[i];
-  for (int64_t i=dim+1; i < rank; ++i)
-    shape[k++] = x->coords.shape[i];
+  for (int64_t i=0; i < dim; ++i) shape[k++] = x->coords.shape[i];
+  for (int64_t i=0; i < sizes_rank; ++i) shape[k++] = resolved[i];
+  for (int64_t i=dim+1; i < rank; ++i) shape[k++] = x->coords.shape[i];
   mag_status_t stat = mag_view(err, out_result, x, shape, nr);
   if (mag_iserr(stat)) {
     mag_error_t ignored = {0};
@@ -691,26 +672,18 @@ mag_status_t mag_narrow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
       return mag_set_error(err, MAG_ERR_RANK, "narrow: cannot narrow a scalar tensor.");
   mag_norm_axis(&dim, rank);
   if (mag_unlikely(!(0 <= dim && dim < rank)))
-      return mag_set_error(err, MAG_ERR_RANK,
-        "narrow: dim %" PRIi64 " is out of range for rank %" PRIi64 ".",
-        dim, rank);
+      return mag_set_error(err, MAG_ERR_RANK, "narrow: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
   if (mag_unlikely(!(length >= 0)))
-      return mag_set_error(err, MAG_ERR_PARAM,
-        "narrow: length must be >= 0, but got %" PRIi64 ".",
-        length);
+      return mag_set_error(err, MAG_ERR_PARAM, "narrow: length must be >= 0, but got %" PRIi64 ".", length);
   if (mag_unlikely(!(length > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "narrow: length 0 is not supported.");
   int64_t sz = x->coords.shape[dim];
   mag_norm_axis(&start, sz);
   if (mag_unlikely(!(start >= 0 && start <= sz)))
-      return mag_set_error(err, MAG_ERR_PARAM,
-        "narrow: start %" PRIi64 " is out of bounds for dim of size %" PRIi64 ".",
-        start, sz);
+      return mag_set_error(err, MAG_ERR_PARAM, "narrow: start %" PRIi64 " is out of bounds for dim of size %" PRIi64 ".", start, sz);
   int64_t end = start+length;
   if (mag_unlikely(!(end <= sz)))
-      return mag_set_error(err, MAG_ERR_PARAM,
-        "narrow: range [%" PRIi64 ", %" PRIi64 ") exceeds dim size %" PRIi64 ".",
-        start, end, sz);
+      return mag_set_error(err, MAG_ERR_PARAM, "narrow: range [%" PRIi64 ", %" PRIi64 ") exceeds dim size %" PRIi64 ".", start, end, sz);
   return mag_view_slice(err, out_result, x, dim, start, length, 1);
 }
 
