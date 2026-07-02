@@ -31,11 +31,11 @@ static mag_status_t mag_au_state_dtor(void *p) {
   return MAG_OK;
 }
 
-mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t *ctx) {
-  if (*au_state) return *au_state;
-  *au_state = mag_slab_alloc(&ctx->au_state_slab);
-  if (mag_unlikely(!*au_state)) return NULL;
-  **au_state = (mag_au_state_t) {
+mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au, mag_context_t *ctx) {
+  if (*au) return *au;
+  *au = mag_slab_alloc(&ctx->au_state_slab);
+  if (mag_unlikely(!*au)) return NULL;
+  **au = (mag_au_state_t) {
     .ctx = ctx,
     .op = MAG_OP_NOP,
     .in = NULL,
@@ -43,8 +43,30 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t
     .cap_in = 0,
     .grad = NULL,
   };
-  mag_rc_init_object(*au_state, &mag_au_state_dtor);
-  return *au_state;
+  mag_rc_init_object(*au, &mag_au_state_dtor);
+  return *au;
+}
+
+#define MAG_AU_STATE_INPUTS_DEF_CAP 4 /* since most ops have inputs <= 4 */
+
+bool mag_au_state_reserve_more_input_cap(mag_au_state_t *au, uint32_t extra) {
+  size_t want = au->num_in+extra+1; /* +1 for terminator */
+  if (want <= au->cap_in) return true;
+  size_t cap = au->cap_in ? au->cap_in : MAG_AU_STATE_INPUTS_DEF_CAP;
+  while (cap < want) cap <<= 1; /* geometric growth */
+  void *block = (*mag_try_alloc)(au->in, sizeof(au->in)*cap, 0);
+  if (mag_unlikely(!block)) return false;
+  au->in = block;
+  au->cap_in = cap;
+  return true;
+}
+
+bool mag_au_state_append_input(mag_au_state_t *au, mag_tensor_t *x) {
+  if (mag_unlikely(!mag_au_state_reserve_more_input_cap(au, 1)))
+    return false;
+  mag_rc_incref(x);
+  au->in[au->num_in++] = x;
+  return true;
 }
 
 mag_tensor_t *mag_tensor_grad(const mag_tensor_t *tensor) {
@@ -106,14 +128,12 @@ static void mag_tensor_patch_grad(mag_tensor_t *dst, mag_tensor_t *grad) {
 mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
   mag_status_t stat = MAG_OK;
   mag_topo_set_t post_order;
-  bool topo_init = false;
   if (mag_unlikely(!(root->flags & MAG_TFLAG_REQUIRES_GRAD)))
     return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: cannot backpropagate from a tensor that does not require gradients; create it with requires_grad=True.");
   if (mag_unlikely(!(root->coords.rank == 0 && root->numel == 1)))
     return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backpropagation requires a scalar root tensor (rank 0, numel 1).");
   mag_ctx_grad_recorder_stop(root->ctx);
   mag_topo_set_init(&post_order);
-  topo_init = true;
   stat = mag_topo_sort(err, root, &post_order);
   if (mag_unlikely(mag_iserr(stat)))
     goto cleanup;
@@ -175,8 +195,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
     }
   }
 cleanup:
-  if (topo_init)
-    mag_topo_set_free(&post_order);
+  mag_topo_set_free(&post_order);
   mag_ctx_grad_recorder_start(root->ctx);
   return stat;
 }

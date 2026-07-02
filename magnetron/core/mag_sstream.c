@@ -30,12 +30,12 @@ bool mag_sstream_reserve_more(mag_sstream_t *ss, size_t extra) {
   if (mag_unlikely(ss->oom)) return false;
   size_t want = ss->len+extra+1; /* +1 for terminator */
   if (want <= ss->cap) return true;
-  size_t ncap = ss->cap ? ss->cap : 0x200;
-  while (ncap < want) ncap <<= 1; /* geometric growth */
-  char *grown = (*mag_try_alloc)(ss->buf, ncap, 0);
-  if (mag_unlikely(!grown)) { ss->oom = true; return false; }
-  ss->buf = grown;
-  ss->cap = ncap;
+  size_t cap = ss->cap ? ss->cap : 0x200;
+  while (cap < want) cap <<= 1; /* geometric growth */
+  char *block = (*mag_try_alloc)(ss->buf, cap, 0);
+  if (mag_unlikely(!block)) { ss->oom = true; return false; }
+  ss->buf = block;
+  ss->cap = cap;
   return true;
 }
 

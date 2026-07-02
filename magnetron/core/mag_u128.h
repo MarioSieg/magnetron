@@ -187,6 +187,10 @@ MAG_CUDA_DEVICE static inline uint64_t mag_uint128_mulhi96(uint32_t x, uint64_t 
 #endif
 }
 
+MAG_CUDA_DEVICE static inline uint64_t mag_uint128_ceildiv(uint64_t a, uint64_t b) {
+  return mag_uint128_lo(mag_uint128_div(mag_uint128_add(mag_uint128_make(0, a), b-1), b));
+}
+
 #ifdef __cplusplus
 }
 #endif

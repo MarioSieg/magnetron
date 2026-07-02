@@ -166,6 +166,8 @@ extern MAG_EXPORT bool mag_scalar_is_uint64(mag_scalar_t s);
 extern MAG_EXPORT double mag_scalar_as_float64(mag_scalar_t s);
 extern MAG_EXPORT int64_t mag_scalar_as_int64(mag_scalar_t s);
 extern MAG_EXPORT uint64_t mag_scalar_as_uint64(mag_scalar_t s);
+extern MAG_EXPORT bool mag_scalar_same_type(mag_scalar_t a, mag_scalar_t b);
+extern MAG_EXPORT bool mag_scalar_same_type_and_value(mag_scalar_t a, mag_scalar_t b);
 
 /**
  * @brief Data types for tensors.

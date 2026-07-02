@@ -9,35 +9,28 @@
 ** +---------------------------------------------------------------------+
 */
 
-#ifndef MAG_AUTODIFF_H
-#define MAG_AUTODIFF_H
+#ifndef MAG_OP_DISPATCH_H
+#define MAG_OP_DISPATCH_H
 
-#include "mag_tensor.h"
+#include "mag_def.h"
+#include "mag_operator.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Autodiff state for parameters */
-struct mag_au_state_t {
-  MAG_RC_INJECT_HEADER; /* RC Control block must be first */
-
-  mag_context_t *ctx;
-  mag_opcode_t op;
-  mag_tensor_t **in;
-  uint32_t num_in;
-  uint32_t cap_in;
-  mag_op_params_t params;
-  mag_tensor_t *grad;
-};
-MAG_RC_OBJECT_IS_VALID(mag_au_state_t);
-
-extern mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au, mag_context_t *ctx);
-extern bool mag_au_state_reserve_more_input_cap(mag_au_state_t *au, uint32_t extra);
-extern bool mag_au_state_append_input(mag_au_state_t *au, mag_tensor_t *x);
+extern mag_status_t mag_dispatch(
+  mag_error_t *err,
+  mag_opcode_t op,
+  bool inplace,
+  mag_tensor_t **in,
+  uint32_t num_in,
+  mag_tensor_t **out,
+  uint32_t num_out,
+  const mag_op_params_t *params
+);
 
 #ifdef __cplusplus
 }
 #endif
-
 #endif
