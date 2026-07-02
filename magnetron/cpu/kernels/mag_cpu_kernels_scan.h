@@ -10,7 +10,7 @@
 */
 
 #define mag_scan_dim_setup(x, dim_var, dim_size_var, outer_count_var, stride_x_dim_var, outer_rank_var, shape_outer_var, mult_outer_var, outer_to_full_var) \
-  int64_t dim_var = mag_op_attr_unwrap_int64(mag_cmd_attr(0)); \
+  int64_t dim_var = payload->cmd->params->cumu.dim; \
   if (dim_var < 0) dim_var += (x)->coords.rank; \
   mag_assert2(dim_var >= 0 && dim_var < (x)->coords.rank); \
   const int64_t dim_size_var = (x)->coords.shape[dim_var]; \
@@ -75,8 +75,8 @@
 #define mag_gen_stub_cusum(T, TF, CVT, ACC_T, ZERO, FROM_ACC) \
   static MAG_HOTPROC mag_status_t mag_cusum_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    mag_tensor_t *r = mag_cmd_out(0); \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    mag_tensor_t *r = payload->cmd->out[0]; \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     mag_scan_dim_setup(x, dim, dim_size, outer_count, stride_x_dim, outer_rank, shape_outer, mult_outer, outer_to_full); \
@@ -119,8 +119,8 @@ mag_gen_stub_cusum(int64_t, int64, mag_cvt_nop, int64_t, 0, mag_cvt_nop)
 #define mag_gen_stub_cuprod(T, TF, CVT, ACC_T, ONE, FROM_ACC) \
   static MAG_HOTPROC mag_status_t mag_cuprod_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    mag_tensor_t *r = mag_cmd_out(0); \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    mag_tensor_t *r = payload->cmd->out[0]; \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     mag_scan_dim_setup(x, dim, dim_size, outer_count, stride_x_dim, outer_rank, shape_outer, mult_outer, outer_to_full); \
@@ -163,9 +163,9 @@ mag_gen_stub_cuprod(int64_t, int64, mag_cvt_nop, int64_t, 1, mag_cvt_nop)
 #define mag_gen_stub_cuext(T, TF, CVT, NAME, IS_MAX) \
   static MAG_HOTPROC mag_status_t mag_##NAME##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    mag_tensor_t *v = mag_cmd_out(0); \
-    mag_tensor_t *idx = mag_cmd_out(1); \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    mag_tensor_t *v = payload->cmd->out[0]; \
+    mag_tensor_t *idx = payload->cmd->out[1]; \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     T *bv = (T *)mag_tensor_data_ptr_mut(v); \
     int64_t *bi = (int64_t *)mag_tensor_data_ptr_mut(idx); \

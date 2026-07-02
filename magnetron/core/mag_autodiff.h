@@ -24,8 +24,10 @@ struct mag_au_state_t {
 
   mag_context_t *ctx;
   mag_opcode_t op;
-  mag_tensor_t *op_inputs[MAG_MAX_OP_INPUTS];
-  mag_op_attr_t op_attrs[MAG_MAX_OP_PARAMS];
+  mag_tensor_t **in;
+  uint32_t num_in;
+  uint32_t cap_in;
+  mag_op_params_t params;
   mag_tensor_t *grad;
 };
 MAG_RC_OBJECT_IS_VALID(mag_au_state_t);

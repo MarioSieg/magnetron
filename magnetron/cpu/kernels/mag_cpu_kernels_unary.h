@@ -12,8 +12,8 @@
 #define mag_gen_stub_clone(T, TF) \
   static MAG_HOTPROC mag_status_t mag_clone_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     int64_t total = r->numel; \
@@ -212,8 +212,8 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
 #define mag_gen_unary_scalar(T, TF, name, suffix) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     int64_t total = r->numel; \
@@ -242,8 +242,8 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
 #define mag_gen_unary_simd(T, TF, suffix, ld, st, name) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     int64_t total = r->numel; \
@@ -364,8 +364,8 @@ mag_gen_int_unary(sqr)
 
 #define mag_gen_softmax_simd(T, TF, ONE, LOAD, STORE, TO_F32, FROM_F32) \
   static mag_status_t MAG_HOTPROC mag_softmax_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
     if (mag_unlikely(!(mag_tensor_is_contiguous(x)))) { \
       return mag_set_error(err, MAG_ERR_KERNEL, "softmax: input tensor must be contiguous."); \
     } \

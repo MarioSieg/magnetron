@@ -51,9 +51,10 @@ MAG_COLDPROC void mag_tensor_visualize_backprop_graph(mag_tensor_t *tensor, cons
     mag_tensor_t *node = post_order.data[i];
     const mag_op_traits_t *meta = mag_op_trait(node->au_state->op);
     for (uint32_t j = 0; j < meta->in; ++j) {
-      mag_tensor_t *input = node->au_state->op_inputs[j];
-      if (input) {
-        mag_sstream_append(&out, "    \"%p\" -> \"%p\" [label=\"input %u\"];\n", node, input, j);
+      if (node->au_state) {
+        mag_tensor_t *input = node->au_state->in[j];
+        if (input)
+          mag_sstream_append(&out, "    \"%p\" -> \"%p\" [label=\"input %u\"];\n", node, input, j);
       }
     }
   }

@@ -462,10 +462,18 @@ int64_t mag_tensor_numel(const mag_tensor_t *tensor) {
 }
 
 void mag_tensor_detach_inplace(mag_tensor_t *target) {
-  if (target->au_state) {
-    target->au_state->op = MAG_OP_NOP; /* Detach from operations */
-    memset(target->au_state->op_inputs, 0, sizeof(target->au_state->op_inputs)); /* Clear op inputs */
-    memset(target->au_state->op_attrs, 0, sizeof(target->au_state->op_attrs));
+  mag_au_state_t *au = target->au_state;
+  if (au) {
+    au->op = MAG_OP_NOP; /* Detach from operations */
+    if (au->in) {
+      for (uint32_t i=0; i < au->num_in; ++i) {
+        if (au->in[i]) mag_tensor_decref(au->in[i]);
+        au->in[i] = NULL;
+      }
+      (*mag_alloc)(au->in, 0, 0);
+      au->in = NULL;
+    }
+    memset(&au->params, 0, sizeof(au->params));
   }
 }
 
@@ -605,7 +613,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         wide = scalar;
         wide_is_scalar = true;
       }
-      res = mag_scalar_from_f64(*(const float *)mag_tensor_data_ptr(wide));
+      res = mag_scalar_from_float64(*(const float *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
       if (!scalar_is_host) mag_tensor_decref(scalar);
       mag_tensor_decref(host);
@@ -622,7 +630,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         wide = scalar;
         wide_is_scalar = true;
       }
-      res = mag_scalar_from_i64(*(const int64_t *)mag_tensor_data_ptr(wide));
+      res = mag_scalar_from_int64(*(const int64_t *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
       if (!scalar_is_host) mag_tensor_decref(scalar);
       mag_tensor_decref(host);
@@ -639,7 +647,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         wide = scalar;
         wide_is_scalar = true;
       }
-      res = mag_scalar_from_u64(*(const uint64_t *)mag_tensor_data_ptr(wide));
+      res = mag_scalar_from_uint64(*(const uint64_t *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
       if (!scalar_is_host) mag_tensor_decref(scalar);
       mag_tensor_decref(host);

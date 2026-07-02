@@ -497,8 +497,8 @@ namespace mag::bindings {
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = parse_device_id_str(kw_device_or_default(kwargs));
         if (!device_id) throw std::runtime_error {"Invalid device id"};
-        mag_scalar_t low = kwargs.contains("low") ? scalar_from_py_number(kwargs["low"]) : mag_scalar_from_f64(0.0);
-        mag_scalar_t high = kwargs.contains("high") ? scalar_from_py_number(kwargs["high"]) : mag_scalar_from_f64(1.0);
+        mag_scalar_t low = kwargs.contains("low") ? scalar_from_py_number(kwargs["low"]) : mag_scalar_from_float64(0.0);
+        mag_scalar_t high = kwargs.contains("high") ? scalar_from_py_number(kwargs["high"]) : mag_scalar_from_float64(1.0);
         std::vector<int64_t> shape = parse_shape_from_args(args);
         validate_shape(shape);
         mag_tensor_t *out = nullptr;
@@ -512,8 +512,8 @@ namespace mag::bindings {
     cls.attr("uniform_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
-        mag_scalar_t low = kwargs.contains("low") ? scalar_from_py_number(kwargs["low"]) : mag_scalar_from_f64(0.0);
-        mag_scalar_t high = kwargs.contains("high") ? scalar_from_py_number(kwargs["high"]) : mag_scalar_from_f64(1.0);
+        mag_scalar_t low = kwargs.contains("low") ? scalar_from_py_number(kwargs["low"]) : mag_scalar_from_float64(0.0);
+        mag_scalar_t high = kwargs.contains("high") ? scalar_from_py_number(kwargs["high"]) : mag_scalar_from_float64(1.0);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         throw_if_error(mag_uniform_like(&err, &out, *like, low, high), err);
@@ -532,8 +532,8 @@ namespace mag::bindings {
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = parse_device_id_str(kw_device_or_default(kwargs));
         if (!device_id) throw std::runtime_error {"Invalid device id"};
-        mag_scalar_t mean = kwargs.contains("mean") ? scalar_from_py_number(kwargs["mean"]) : mag_scalar_from_f64(0.0);
-        mag_scalar_t std = kwargs.contains("std") ? scalar_from_py_number(kwargs["std"]) : mag_scalar_from_f64(1.0);
+        mag_scalar_t mean = kwargs.contains("mean") ? scalar_from_py_number(kwargs["mean"]) : mag_scalar_from_float64(0.0);
+        mag_scalar_t std = kwargs.contains("std") ? scalar_from_py_number(kwargs["std"]) : mag_scalar_from_float64(1.0);
         std::vector<int64_t> shape = parse_shape_from_args(args);
         validate_shape(shape);
         mag_tensor_t *out = nullptr;
@@ -547,8 +547,8 @@ namespace mag::bindings {
     cls.attr("normal_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
-        mag_scalar_t mean = kwargs.contains("mean") ? scalar_from_py_number(kwargs["mean"]) : mag_scalar_from_f64(0.0);
-        mag_scalar_t std = kwargs.contains("std") ? scalar_from_py_number(kwargs["std"]) : mag_scalar_from_f64(1.0);
+        mag_scalar_t mean = kwargs.contains("mean") ? scalar_from_py_number(kwargs["mean"]) : mag_scalar_from_float64(0.0);
+        mag_scalar_t std = kwargs.contains("std") ? scalar_from_py_number(kwargs["std"]) : mag_scalar_from_float64(1.0);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         throw_if_error(mag_normal_like(&err, &out, *like, mean, std), err);
@@ -562,7 +562,7 @@ namespace mag::bindings {
     cls.attr("bernoulli") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
-        mag_scalar_t p = kwargs.contains("p") ? scalar_from_py_number(kwargs["p"]) : mag_scalar_from_f64(0.5);
+        auto p = kwargs.contains("p") ? nb::cast<double>(kwargs["p"]) : 0.5;
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = parse_device_id_str(kw_device_or_default(kwargs));
         if (!device_id) throw std::runtime_error {"Invalid device id"};
@@ -580,7 +580,7 @@ namespace mag::bindings {
     cls.attr("bernoulli_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
-        mag_scalar_t p = kwargs.contains("p") ? scalar_from_py_number(kwargs["p"]) : mag_scalar_from_f64(0.5);
+        double p = kwargs.contains("p") ? nb::cast<double>(kwargs["p"]) : 0.5;
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         throw_if_error(mag_bernoulli_like(&err, &out, *like, p), err);

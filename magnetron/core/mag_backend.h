@@ -59,10 +59,10 @@ mag_static_assert(offsetof(mag_storage_buffer_t, aux) % MAG_CPU_BUF_ALIGN == 0);
 typedef struct mag_command_t {
   mag_opcode_t op;
   mag_tensor_t **in;
-  mag_tensor_t **out;
   uint32_t num_in;
+  mag_tensor_t **out;
   uint32_t num_out;
-  mag_op_attr_t attrs[MAG_MAX_OP_PARAMS];
+  const mag_op_params_t *params;
 } mag_command_t;
 
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */

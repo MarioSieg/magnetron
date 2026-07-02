@@ -228,9 +228,9 @@ namespace mag::bindings {
       mag_scalar_t s {};
       mag_error_t err {};
       throw_if_error(mag_tensor_item(&err, *self, &s), err);
-      if (mag_scalar_is_f64(s)) return mag_scalar_as_f64(s) != 0.0;
-      if (mag_scalar_is_i64(s)) return mag_scalar_as_i64(s) != 0;
-      if (mag_scalar_is_u64(s)) return mag_scalar_as_u64(s) != 0;
+      if (mag_scalar_is_float64(s)) return mag_scalar_as_float64(s) != 0.0;
+      if (mag_scalar_is_int64(s)) return mag_scalar_as_int64(s) != 0;
+      if (mag_scalar_is_uint64(s)) return mag_scalar_as_uint64(s) != 0;
       throw nb::type_error("Unsupported scalar type for __bool__()");
     }, "True if single element is non-zero (only for 0-dim or 1-element tensors).")
     .def("__getitem__", [](const tensor_wrapper &self, nb::object index) -> tensor_wrapper {

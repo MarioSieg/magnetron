@@ -308,8 +308,8 @@ namespace mag::bindings {
     .def("uniform_",
       [](tensor_wrapper &self, nb::handle low_h = nb::none(), nb::handle high_h = nb::none()) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
-        mag_scalar_t low = low_h.is_none() ? mag_scalar_from_f64(0.0) : scalar_from_py_number(low_h);
-        mag_scalar_t high = high_h.is_none() ? mag_scalar_from_f64(1.0) : scalar_from_py_number(high_h);
+        mag_scalar_t low = low_h.is_none() ? mag_scalar_from_float64(0.0) : scalar_from_py_number(low_h);
+        mag_scalar_t high = high_h.is_none() ? mag_scalar_from_float64(1.0) : scalar_from_py_number(high_h);
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_RAND_UNIFORM, [&] {
@@ -346,7 +346,7 @@ namespace mag::bindings {
     .def("bernoulli_",
       [](tensor_wrapper &self, nb::handle p = nb::float_(0.5)) -> tensor_wrapper& {
         std::lock_guard lock {get_global_mutex()};
-        mag_scalar_t pv = scalar_from_py_number(p);
+        auto pv = nb::cast<double>(p);
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_RAND_BERNOULLI, [&] {

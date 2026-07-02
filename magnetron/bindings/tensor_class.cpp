@@ -228,10 +228,10 @@ namespace mag::bindings {
       mag_scalar_t s {};
       mag_error_t err {};
       throw_if_error(mag_tensor_item(&err, *self, &s), err);
-      if (mag_scalar_is_f64(s)) return nb::float_(mag_scalar_as_f64(s));
-      if (mag_scalar_is_i64(s)) return nb::int_(mag_scalar_as_i64(s));
-      if (mag_scalar_is_u64(s)) {
-        uint64_t v = mag_scalar_as_u64(s);
+      if (mag_scalar_is_float64(s)) return nb::float_(mag_scalar_as_float64(s));
+      if (mag_scalar_is_int64(s)) return nb::int_(mag_scalar_as_int64(s));
+      if (mag_scalar_is_uint64(s)) {
+        uint64_t v = mag_scalar_as_uint64(s);
         if (mag_tensor_type(*self) == MAG_DTYPE_BOOLEAN)
           return nb::bool_{v != 0};
         return nb::int_{v};

@@ -500,8 +500,8 @@ static mag_vcast_fn_t *const mag_cast_table_2D[MAG_DTYPE__NUM][MAG_DTYPE__NUM] =
 };
 
 static MAG_HOTPROC mag_status_t mag_cast_generic(mag_error_t *err, const mag_kernel_payload_t *payload) {
-  mag_tensor_t *r = mag_cmd_out(0);
-  const mag_tensor_t *x = mag_cmd_in(0);
+  mag_tensor_t *r = payload->cmd->out[0];
+  const mag_tensor_t *x = payload->cmd->in[0];
   mag_dtype_t src = x->dtype;
   mag_dtype_t dst = r->dtype;
   const mag_type_traits_t *msrc = mag_type_trait(src);

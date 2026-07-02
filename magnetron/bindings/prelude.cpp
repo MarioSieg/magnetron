@@ -38,21 +38,21 @@ namespace mag::bindings {
     mag_tensor_t *out = nullptr;
     if (nb::isinstance<nb::bool_>(obj)) { // Prefer bool first: in Python, bool is a subclass of int.
       bool b = nb::cast<bool>(obj);
-      mag_scalar_t s = mag_scalar_from_u64(!!b);
+      mag_scalar_t s = mag_scalar_from_uint64(!!b);
       mag_error_t err {};
       throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
       return tensor_wrapper{out};
     }
     if (nb::isinstance<nb::int_>(obj)) { // Python int is arbitrary precision; nb::cast<int64_t> will throw if too big.
       auto v = nb::cast<int64_t>(obj);
-      mag_scalar_t s = mag_scalar_from_i64(v);
+      mag_scalar_t s = mag_scalar_from_int64(v);
       mag_error_t err {};
       throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
       return tensor_wrapper{out};
     }
     if (nb::isinstance<nb::float_>(obj)) {
       auto v = nb::cast<double>(obj);
-      mag_scalar_t s = mag_scalar_from_f64(v);
+      mag_scalar_t s = mag_scalar_from_float64(v);
       mag_error_t err {};
       throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
       return tensor_wrapper{out};
@@ -169,17 +169,17 @@ namespace mag::bindings {
   }
 
   mag_scalar_t scalar_from_py_number(nb::handle h) {
-    if (nb::isinstance<nb::bool_>(h)) return mag_scalar_from_u64(nb::cast<bool>(h));
-    if (nb::isinstance<nb::int_>(h)) return mag_scalar_from_i64(nb::cast<int64_t>(h));
-    if (nb::isinstance<nb::float_>(h)) return mag_scalar_from_f64(nb::cast<double>(h));
+    if (nb::isinstance<nb::bool_>(h)) return mag_scalar_from_uint64(nb::cast<bool>(h));
+    if (nb::isinstance<nb::int_>(h)) return mag_scalar_from_int64(nb::cast<int64_t>(h));
+    if (nb::isinstance<nb::float_>(h)) return mag_scalar_from_float64(nb::cast<double>(h));
     throw nb::type_error("Expected scalar (bool|int|float)");
   }
 
   nb::object py_scalar_from_mag_scalar(const mag_scalar_t &scalar) {
     switch (scalar.type) {
-      case MAG_SCALAR_TYPE_I64: return nb::cast<int64_t>(mag_scalar_as_i64(scalar));
-      case MAG_SCALAR_TYPE_U64: return nb::cast<uint64_t>(mag_scalar_as_u64(scalar));
-      case MAG_SCALAR_TYPE_F64: return nb::cast<double>(mag_scalar_as_f64(scalar));
+      case MAG_SCALAR_TYPE_I64: return nb::cast<int64_t>(mag_scalar_as_int64(scalar));
+      case MAG_SCALAR_TYPE_U64: return nb::cast<uint64_t>(mag_scalar_as_uint64(scalar));
+      case MAG_SCALAR_TYPE_F64: return nb::cast<double>(mag_scalar_as_float64(scalar));
       default: throw nb::type_error("Unsupported scalar type");
     }
   }

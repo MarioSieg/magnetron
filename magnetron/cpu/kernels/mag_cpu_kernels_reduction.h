@@ -14,11 +14,11 @@
 #define mag_cpu_impl_reduce_axes(T, OT, TF, FUNC, ACC_T, INIT_EXPR, UPDATE_STMT, FINAL_STMT) \
   static mag_status_t MAG_HOTPROC mag_##FUNC##_##TF(mag_error_t *err,const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
     OT *br = (OT *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
-    mag_reduce_plan_t *plan = mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
+    const mag_reduce_plan_t *plan = &payload->cmd->params->reduction.red_plan; \
     int64_t numel = r->numel; \
     int64_t red_prod = plan->red_prod; \
     for (int64_t oi=0; oi < numel; ++oi) { \
@@ -315,11 +315,11 @@ mag_cpu_impl_argminmax_int(int64_t,  int64);
 #define mag_cpu_impl_reduce_axes_logical(T, TF, FUNC, IDENTITY, UPDATE_STMT, BREAK_COND) \
   static mag_status_t MAG_HOTPROC mag_##FUNC##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
     uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
-    mag_reduce_plan_t *plan = mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
+    const mag_reduce_plan_t *plan = &payload->cmd->params->reduction.red_plan; \
     int64_t numel = r->numel; \
     int64_t red_prod = plan->red_prod; \
     for (int64_t oi=0; oi < numel; ++oi) { \

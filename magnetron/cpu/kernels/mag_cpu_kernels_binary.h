@@ -64,9 +64,9 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
 #define mag_gen_bin_scalar(T, TF, name, suffix) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_tensor_t *y = mag_cmd_in(1); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *y = payload->cmd->in[1]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
@@ -96,9 +96,9 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
 #define mag_gen_bin_simd(T, TF, suffix, LOAD, STORE, name) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_tensor_t *y = mag_cmd_in(1); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *y = payload->cmd->in[1]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
@@ -191,9 +191,9 @@ mag_gen_int_signed_unsigned(pow)
 #define mag_gen_shift(T, TF, name, sign) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_tensor_t *y = mag_cmd_in(1); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *y = payload->cmd->in[1]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
@@ -236,9 +236,9 @@ mag_gen_shift_all(shr)
 #define mag_gen_cmp(T, TF, name, OP, CVT) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_tensor_t *y = mag_cmd_in(1); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *y = payload->cmd->in[1]; \
     uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \

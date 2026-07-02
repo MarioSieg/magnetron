@@ -12,14 +12,14 @@
 #define mag_gen_stub_index_add(T, TF, CVT, ACC_T, MUL, FROM_ACC) \
   static MAG_HOTPROC mag_status_t mag_index_add_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)payload; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *src = mag_cmd_in(1); \
-    const mag_tensor_t *idx = mag_cmd_in(2); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *src = payload->cmd->in[1]; \
+    const mag_tensor_t *idx = payload->cmd->in[2]; \
     T *bs = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(src); \
     const int64_t *bi = (const int64_t *)mag_tensor_data_ptr(idx); \
-    int64_t ax = mag_op_attr_unwrap_int64(mag_cmd_attr(0)); \
-    double alpha = mag_op_attr_unwrap_float64(mag_cmd_attr(1)); \
+    int64_t ax = payload->cmd->params->index_add.dim; \
+    double alpha = payload->cmd->params->index_add.alpha; \
     if (ax < 0) ax += r->coords.rank; \
     mag_assert2(ax >= 0 && ax < r->coords.rank); \
     int64_t ra = r->coords.rank; \

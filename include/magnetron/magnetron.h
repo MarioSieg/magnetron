@@ -85,6 +85,7 @@ extern MAG_EXPORT mag_log_level_t mag_log_level(void); /* Get current global log
   _(MAG_ERR_NOFILE, "File not found") \
   _(MAG_ERR_OS, "Operating system error") \
   _(MAG_ERR_BACKEND, "Backend error") \
+  _(MAG_ERR_AUTOGRAD, "Autograd error") \
   _(MAG_ERR_UNKNOWN, "Unknown error")
 
 typedef enum mag_status_t {
@@ -150,21 +151,21 @@ typedef enum mag_scalar_type_t {
 typedef struct mag_scalar_t {
     mag_scalar_type_t type;
     union {
-        double f64;
-        int64_t i64;
-        uint64_t u64;
+        double float64;
+        int64_t int64;
+        uint64_t uint64;
     } value;
 } mag_scalar_t;
 
-extern MAG_EXPORT mag_scalar_t mag_scalar_from_f64(double value);
-extern MAG_EXPORT mag_scalar_t mag_scalar_from_i64(int64_t value);
-extern MAG_EXPORT mag_scalar_t mag_scalar_from_u64(uint64_t value);
-extern MAG_EXPORT bool mag_scalar_is_f64(mag_scalar_t s);
-extern MAG_EXPORT bool mag_scalar_is_i64(mag_scalar_t s);
-extern MAG_EXPORT bool mag_scalar_is_u64(mag_scalar_t s);
-extern MAG_EXPORT double mag_scalar_as_f64(mag_scalar_t s);
-extern MAG_EXPORT int64_t mag_scalar_as_i64(mag_scalar_t s);
-extern MAG_EXPORT uint64_t mag_scalar_as_u64(mag_scalar_t s);
+extern MAG_EXPORT mag_scalar_t mag_scalar_from_float64(double value);
+extern MAG_EXPORT mag_scalar_t mag_scalar_from_int64(int64_t value);
+extern MAG_EXPORT mag_scalar_t mag_scalar_from_uint64(uint64_t value);
+extern MAG_EXPORT bool mag_scalar_is_float64(mag_scalar_t s);
+extern MAG_EXPORT bool mag_scalar_is_int64(mag_scalar_t s);
+extern MAG_EXPORT bool mag_scalar_is_uint64(mag_scalar_t s);
+extern MAG_EXPORT double mag_scalar_as_float64(mag_scalar_t s);
+extern MAG_EXPORT int64_t mag_scalar_as_int64(mag_scalar_t s);
+extern MAG_EXPORT uint64_t mag_scalar_as_uint64(mag_scalar_t s);
 
 /**
  * @brief Data types for tensors.
@@ -245,8 +246,8 @@ extern MAG_EXPORT mag_status_t mag_uniform(mag_error_t *err, mag_tensor_t **out_
 extern MAG_EXPORT mag_status_t mag_uniform_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like, mag_scalar_t min, mag_scalar_t max);
 extern MAG_EXPORT mag_status_t mag_normal(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_scalar_t mean, mag_scalar_t stddev, mag_device_id_t device);
 extern MAG_EXPORT mag_status_t mag_normal_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like, mag_scalar_t mean, mag_scalar_t stddev);
-extern MAG_EXPORT mag_status_t mag_bernoulli(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, int64_t rank, const int64_t *shape, mag_scalar_t p, mag_device_id_t device);
-extern MAG_EXPORT mag_status_t mag_bernoulli_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like, mag_scalar_t p);
+extern MAG_EXPORT mag_status_t mag_bernoulli(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, int64_t rank, const int64_t *shape, double p, mag_device_id_t device);
+extern MAG_EXPORT mag_status_t mag_bernoulli_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like, double p);
 extern MAG_EXPORT mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t start, mag_scalar_t end, mag_scalar_t step, mag_device_id_t device);
 extern MAG_EXPORT mag_status_t mag_linspace(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t start, mag_scalar_t end, int64_t steps, mag_device_id_t device);
 extern MAG_EXPORT mag_status_t mag_eye(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, int64_t m, mag_device_id_t device);
@@ -278,9 +279,9 @@ extern MAG_EXPORT mag_status_t mag_ones_(mag_error_t *err, mag_tensor_t *tensor)
 extern MAG_EXPORT mag_status_t mag_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t value);
 extern MAG_EXPORT mag_status_t mag_masked_fill(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, mag_tensor_t *mask, mag_scalar_t value);
 extern MAG_EXPORT mag_status_t mag_masked_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_tensor_t *mask, mag_scalar_t value);
-extern MAG_EXPORT mag_status_t mag_uniform_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t min, mag_scalar_t max);
+extern MAG_EXPORT mag_status_t mag_uniform_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t low, mag_scalar_t high);
 extern MAG_EXPORT mag_status_t mag_normal_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t mean, mag_scalar_t stddev);
-extern MAG_EXPORT mag_status_t mag_bernoulli_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t p);
+extern MAG_EXPORT mag_status_t mag_bernoulli_(mag_error_t *err, mag_tensor_t *tensor, double p);
 
 extern MAG_EXPORT mag_status_t mag_clone(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 extern MAG_EXPORT mag_status_t mag_cast(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_dtype_t dst_type);
@@ -456,10 +457,10 @@ extern MAG_EXPORT mag_status_t mag_clamp_max(mag_error_t *err, mag_tensor_t **ou
 extern MAG_EXPORT mag_status_t mag_lerp(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *start, mag_tensor_t *end, mag_tensor_t *weight);
 extern MAG_EXPORT mag_status_t mag_lerp_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *start, mag_tensor_t *end, mag_tensor_t *weight);
 extern MAG_EXPORT mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *pad, int64_t pad_len, const char *mode,  mag_scalar_t value);
-extern MAG_EXPORT mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int32_t diag);
-extern MAG_EXPORT mag_status_t mag_tril_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int32_t diag);
-extern MAG_EXPORT mag_status_t mag_triu(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int32_t diag);
-extern MAG_EXPORT mag_status_t mag_triu_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int32_t diag);
+extern MAG_EXPORT mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag);
+extern MAG_EXPORT mag_status_t mag_tril_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag);
+extern MAG_EXPORT mag_status_t mag_triu(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag);
+extern MAG_EXPORT mag_status_t mag_triu_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag);
 extern MAG_EXPORT mag_status_t mag_multinomial(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t num_samples, bool replacement);
 extern MAG_EXPORT mag_status_t mag_cat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t **tensors, size_t count, int64_t dim);
 extern MAG_EXPORT mag_status_t mag_stack(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t **tensors, size_t count, int64_t dim);

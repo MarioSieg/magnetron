@@ -28,11 +28,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(float),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_F64,
-        .value = {.f64 = -FLT_MAX}
+        .value = {.float64 = -FLT_MAX}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_F64,
-        .value = {.f64 = FLT_MAX}
+        .value = {.float64 = FLT_MAX}
       },
     },
     [MAG_DTYPE_FLOAT16] = {
@@ -42,11 +42,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(mag_float16_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_F64,
-        .value = {.f64 = -65504.0}
+        .value = {.float64 = -65504.0}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_F64,
-        .value = {.f64 = 65504.0}
+        .value = {.float64 = 65504.0}
       },
     },
     [MAG_DTYPE_BFLOAT16] = {
@@ -56,11 +56,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(mag_bfloat16_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_F64,
-        .value = {.f64 = -3.3895313892515355e38}
+        .value = {.float64 = -3.3895313892515355e38}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_F64,
-        .value = {.f64 = 3.3895313892515355e38}
+        .value = {.float64 = 3.3895313892515355e38}
       },
     },
     [MAG_DTYPE_FLOAT8_E4M3FN] = {
@@ -70,11 +70,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(mag_float8_e4m3fn_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_F64,
-        .value = {.f64 = -448.0}
+        .value = {.float64 = -448.0}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_F64,
-        .value = {.f64 = 448.0}
+        .value = {.float64 = 448.0}
       },
     },
     [MAG_DTYPE_BOOLEAN] = {
@@ -84,11 +84,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(uint8_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = 0}
+        .value = {.uint64 = 0}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = 1}
+        .value = {.uint64 = 1}
       },
     },
     [MAG_DTYPE_UINT8] = {
@@ -98,11 +98,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(uint8_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = 0}
+        .value = {.uint64 = 0}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = UINT8_MAX}
+        .value = {.uint64 = UINT8_MAX}
       },
     },
     [MAG_DTYPE_INT8] = {
@@ -112,11 +112,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(int8_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_I64,
-        .value = {.i64 = INT8_MIN}
+        .value = {.int64 = INT8_MIN}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_I64,
-        .value = {.i64 = INT8_MAX}
+        .value = {.int64 = INT8_MAX}
       },
     },
     [MAG_DTYPE_UINT16] = {
@@ -126,11 +126,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(uint16_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = 0}
+        .value = {.uint64 = 0}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = UINT16_MAX}
+        .value = {.uint64 = UINT16_MAX}
       },
     },
     [MAG_DTYPE_INT16] = {
@@ -140,11 +140,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(int16_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_I64,
-        .value = {.i64 = INT16_MIN}
+        .value = {.int64 = INT16_MIN}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_I64,
-        .value = {.i64 = INT16_MAX}
+        .value = {.int64 = INT16_MAX}
       },
     },
     [MAG_DTYPE_UINT32] = {
@@ -154,11 +154,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(uint32_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = 0}
+        .value = {.uint64 = 0}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = UINT32_MAX}
+        .value = {.uint64 = UINT32_MAX}
       },
     },
     [MAG_DTYPE_INT32] = {
@@ -168,11 +168,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(int32_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_I64,
-        .value = {.i64 = INT32_MIN}
+        .value = {.int64 = INT32_MIN}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_I64,
-        .value = {.i64 = INT32_MAX}
+        .value = {.int64 = INT32_MAX}
       },
     },
     [MAG_DTYPE_UINT64] = {
@@ -182,11 +182,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(uint64_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = 0}
+        .value = {.uint64 = 0}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_U64,
-        .value = {.u64 = UINT64_MAX}
+        .value = {.uint64 = UINT64_MAX}
       },
     },
     [MAG_DTYPE_INT64] = {
@@ -196,11 +196,11 @@ const mag_type_traits_t *mag_type_trait(mag_dtype_t type) {
       .alignment = __alignof(int64_t),
       .min_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_I64,
-        .value = {.i64 = INT64_MIN}
+        .value = {.int64 = INT64_MIN}
       },
       .max_val = (mag_scalar_t) {
         .type = MAG_SCALAR_TYPE_I64,
-        .value = {.i64 = INT64_MAX}
+        .value = {.int64 = INT64_MAX}
       },
     },
   };

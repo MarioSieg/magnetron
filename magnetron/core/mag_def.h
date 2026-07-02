@@ -43,8 +43,6 @@ extern "C" {
 #define MAG_DEBUG
 #endif
 
-#define MAG_MAX_OP_INPUTS 4 /* Maximum number of input tensors for an operation */
-
 #define MAG_SEP ,
 #define MAG_GELU_COEFF 0.044715f /* Coefficient for GELU approximation. */
 

@@ -77,7 +77,6 @@ mag_status_t mag_reduce_plan_init(
   plan->rank = rank;
   for (int64_t i=0; i < rank; ++i)
     plan->axes[i] = ax[i];
-  /* build output shape (+ out_rank) */
   int64_t shape[MAG_MAX_DIMS] = {0};
   int64_t j=0, k=0;
   for (int64_t d=0; d < xr; ++d) {
@@ -89,7 +88,6 @@ mag_status_t mag_reduce_plan_init(
   plan->out_rank = keepdim ? xr : xr - rank;
   for (int64_t i=0; i < plan->out_rank; ++i)
     plan->out_shape[i] = shape[i];
-  /* keep_axes */
   plan->nk = 0;
   for (int64_t d = 0; d < xr; ++d) {
     bool red = false;
@@ -101,7 +99,6 @@ mag_status_t mag_reduce_plan_init(
     }
     if (!red) plan->keep_axes[plan->nk++] = d;
   }
-  /* red_sizes / strides / red_prod */
   plan->red_prod = 1;
   for (int64_t k2=0; k2 < rank; ++k2) {
     int64_t axd = ax[k2];

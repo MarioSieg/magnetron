@@ -114,7 +114,7 @@ mag_status_t mag_topo_sort(mag_error_t *err, mag_tensor_t *root, mag_topo_set_t 
         status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to allocate autodiff state.");
         goto cleanup;
       }
-      top_t->au_state->op = MAG_OP_NOP;  // no parents
+      top_t->au_state->op = MAG_OP_NOP;
     }
     mag_au_state_t *au = top_t->au_state;
     uint32_t num_children = mag_op_trait(au->op)->in;
@@ -126,7 +126,7 @@ mag_status_t mag_topo_sort(mag_error_t *err, mag_tensor_t *root, mag_topo_set_t 
       }
       continue;
     }
-    mag_tensor_t *child = au->op_inputs[top->next_child_idx++];
+    mag_tensor_t *child = au->in[top->next_child_idx++];
     if (child && child->flags & MAG_TFLAG_REQUIRES_GRAD && !mag_hashset_contains_key(&visited, child)) {
       if (mag_unlikely(mag_hashset_insert(&visited, child) == MAG_HASHSET_FULL)) {
         status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow visited set.");

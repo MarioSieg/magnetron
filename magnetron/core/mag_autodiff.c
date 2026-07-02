@@ -22,8 +22,11 @@ static mag_status_t mag_au_state_dtor(void *p) {
     mag_rc_decref(au->grad);
     au->grad = NULL;
   }
-  for (size_t i=0; i < sizeof(au->op_inputs)/sizeof(*au->op_inputs); ++i)
-    if (au->op_inputs[i]) mag_rc_decref(au->op_inputs[i]);
+  if (au->in) {
+    for (size_t i=0; i < au->num_in; ++i)
+      if (au->in[i]) mag_rc_decref(au->in[i]);
+    (*mag_alloc)(au->in, 0, 0);
+  }
   mag_slab_free(&au->ctx->au_state_slab, au);
   return MAG_OK;
 }
@@ -35,8 +38,9 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t
   **au_state = (mag_au_state_t) {
     .ctx = ctx,
     .op = MAG_OP_NOP,
-    .op_inputs = {},
-    .op_attrs = {},
+    .in = NULL,
+    .num_in = 0,
+    .cap_in = 0,
     .grad = NULL,
   };
   mag_rc_init_object(*au_state, &mag_au_state_dtor);
@@ -104,9 +108,9 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
   mag_topo_set_t post_order;
   bool topo_init = false;
   if (mag_unlikely(!(root->flags & MAG_TFLAG_REQUIRES_GRAD)))
-    return mag_set_error(err, MAG_ERR_PARAM, "autograd: cannot backpropagate from a tensor that does not require gradients; create it with requires_grad=True.");
+    return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: cannot backpropagate from a tensor that does not require gradients; create it with requires_grad=True.");
   if (mag_unlikely(!(root->coords.rank == 0 && root->numel == 1)))
-    return mag_set_error(err, MAG_ERR_PARAM, "autograd: backpropagation requires a scalar root tensor (rank 0, numel 1).");
+    return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backpropagation requires a scalar root tensor (rank 0, numel 1).");
   mag_ctx_grad_recorder_stop(root->ctx);
   mag_topo_set_init(&post_order);
   topo_init = true;
@@ -120,37 +124,42 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
   for (size_t id=0; id < post_order.size; ++id) {
     mag_tensor_t *child = post_order.data[id];
     if (mag_unlikely(!(child && child->au_state))) {
-      stat = mag_set_error(err, MAG_ERR_STATE, "autograd: autodiff state is missing for a tensor in the computation graph.");
+      stat = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: autodiff state is missing for a tensor in the computation graph.");
       goto cleanup;
     }
     const mag_op_traits_t *meta = mag_op_trait(child->au_state->op);
     if (!child->au_state->grad) {
       mag_tensor_t *grad = NULL;
-      stat = mag_full_like(err, &grad, child, mag_scalar_from_f64(1.0));
+      stat = mag_full_like(err, &grad, child, mag_scalar_from_float64(1.0));
       if (mag_unlikely(stat != MAG_OK))
         goto cleanup;
       mag_tensor_patch_grad(child, grad);
     }
     if (mag_unlikely(child->au_state->op == MAG_OP_NOP))
       continue;
-    mag_tensor_t *grads[MAG_MAX_OP_INPUTS] = {0};
+    mag_tensor_t *grads[child->au_state->num_in];
     mag_status_t (*backward)(mag_error_t *, mag_au_state_t *, mag_tensor_t **) = meta->backward;
     if (mag_unlikely(backward == NULL)) {
-      stat = mag_set_error(err, MAG_ERR_STATE, "autograd: operator '%s' has no backward implementation.", meta->mnemonic);
+      stat = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' has no backward implementation.", meta->mnemonic);
       goto cleanup;
     }
-    stat = backward(err, child->au_state, grads);
+    stat = (*backward)(err, child->au_state, grads);
     if (mag_unlikely(stat != MAG_OK))
       goto cleanup;
     uint32_t numin = meta->in;
-    mag_assert(numin <= MAG_MAX_OP_INPUTS, "autograd: operator '%s' has too many inputs (%u > %d).", meta->mnemonic, numin, MAG_MAX_OP_INPUTS);
+    if (mag_unlikely(child->au_state->num_in != meta->in)) {
+      stat = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' input count is invalid, required: %u, got: %u", meta->mnemonic, meta->in, child->au_state->num_in);
+      goto cleanup;
+    }
     for (uint32_t i=0; i < numin; ++i) {
-      mag_tensor_t *input = child->au_state->op_inputs[i];
-      mag_assert2(input);
-      if (!(input->flags & MAG_TFLAG_REQUIRES_GRAD))
+      mag_tensor_t *input = child->au_state->in[i];
+      if (mag_unlikely(!input) || !(input->flags & MAG_TFLAG_REQUIRES_GRAD))
         continue;
       mag_tensor_t *gri = grads[i];
-      mag_assert(gri, "autograd: backward of operator '%s' did not produce a gradient for input %d.", meta->mnemonic, i);
+      if (mag_unlikely(!gri)) {
+        stat = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backward of operator '%s' did not produce a valid gradient for input %d.", meta->mnemonic, i);
+        goto cleanup;
+      }
       if (!input->au_state->grad) {
         mag_tensor_patch_grad(input, gri);
       } else {

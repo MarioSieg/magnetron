@@ -11,16 +11,16 @@
 
 static MAG_AINLINE int64_t mag_repeat_in_elem_offset(
   int64_t flat_out,
-  const mag_repeat_plan_t *plan,
+  const mag_op_params_t *plan,
   const mag_coords_t *in_coords
 ) {
   int64_t tmp = flat_out;
   int64_t off = 0;
-  for (int64_t d = plan->rank - 1; d >= 0; --d) {
-    int64_t oc = tmp % plan->out_shape[d];
-    tmp /= plan->out_shape[d];
-    int64_t ic = oc % plan->in_shape[d];
-    int64_t id = d - (plan->rank - plan->in_rank);
+  for (int64_t d = plan->repeat.rank - 1; d >= 0; --d) {
+    int64_t oc = tmp % plan->repeat.out_shape[d];
+    tmp /= plan->repeat.out_shape[d];
+    int64_t ic = oc % plan->repeat.in_shape[d];
+    int64_t id = d - (plan->repeat.rank - plan->repeat.in_rank);
     if (id >= 0)
       off += ic * in_coords->strides[id];
   }
@@ -30,9 +30,8 @@ static MAG_AINLINE int64_t mag_repeat_in_elem_offset(
 #define mag_gen_stub_repeat(T, TF) \
   static MAG_HOTPROC mag_status_t mag_repeat_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_repeat_plan_t *plan = (const mag_repeat_plan_t *)mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     int64_t total = r->numel; \
@@ -45,7 +44,7 @@ static MAG_AINLINE int64_t mag_repeat_in_elem_offset(
     mag_coords_iter_init(&cr, &r->coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
-      int64_t xi = mag_repeat_in_elem_offset(i, plan, &x->coords); \
+      int64_t xi = mag_repeat_in_elem_offset(i, payload->cmd->params, &x->coords); \
       mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
       mag_bnd_chk(bx+xi, bx, mag_tensor_numbytes(x)); \
       br[ri] = bx[xi]; \
@@ -71,18 +70,17 @@ mag_gen_stub_repeat(int64_t, int64)
 #define mag_gen_stub_repeat_interleave(T, TF) \
   static MAG_HOTPROC mag_status_t mag_repeat_interleave_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_repeat_interleave_plan_t *plan = (const mag_repeat_interleave_plan_t *)mag_op_attr_unwrap_ptr(mag_cmd_attr(0)); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     mag_assert2(mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(x)); \
-    if (plan->flatten) { \
+    if (payload->cmd->params->repeat_interleave.flatten) { \
       int64_t n = x->numel; \
-      mag_assert2(plan->count_len == 1 || plan->count_len == n); \
+      mag_assert2(payload->cmd->params->repeat_interleave.count_len == 1 || payload->cmd->params->repeat_interleave.count_len == n); \
       int64_t out_i = 0; \
       for (int64_t i=0; i < n; ++i) { \
-        int64_t rep = plan->count_len == 1 ? plan->counts[0] : plan->counts[i]; \
+        int64_t rep = payload->cmd->params->repeat_interleave.count_len == 1 ? payload->cmd->params->repeat_interleave.counts[0] : payload->cmd->params->repeat_interleave.counts[i]; \
         mag_assert2(rep >= 0); \
         for (int64_t k=0; k < rep; ++k) { \
           mag_bnd_chk(br+out_i, br, mag_tensor_numbytes(r)); \
@@ -93,14 +91,14 @@ mag_gen_stub_repeat(int64_t, int64)
       mag_assert2(out_i == r->numel); \
       return MAG_OK; \
     } \
-    int64_t dim = plan->dim; \
+    int64_t dim = payload->cmd->params->repeat_interleave.dim; \
     int64_t R = x->coords.rank; \
     int64_t inner_block = 1; \
     for (int64_t d = dim+1; d < R; ++d) inner_block *= x->coords.shape[d]; \
     int64_t outer_count = 1; \
     for (int64_t d=0; d < dim; ++d) outer_count *= x->coords.shape[d]; \
     int64_t axis_len = x->coords.shape[dim]; \
-    mag_assert2(plan->count_len == 1 || plan->count_len == axis_len); \
+    mag_assert2(payload->cmd->params->repeat_interleave.count_len == 1 || payload->cmd->params->repeat_interleave.count_len == axis_len); \
     int64_t mult[MAG_MAX_DIMS]; \
     for (int64_t d = 0; d < dim; ++d) { \
       int64_t m = 1; \
@@ -126,7 +124,7 @@ mag_gen_stub_repeat(int64_t, int64)
       for (int64_t d=0; d < dim; ++d) smoff += idx_prefix[d]*x->coords.strides[d]; \
       int64_t cur = 0; \
       for (int64_t a=0; a < axis_len; ++a) { \
-        int64_t rep = plan->count_len == 1 ? plan->counts[0] : plan->counts[a]; \
+        int64_t rep = payload->cmd->params->repeat_interleave.count_len == 1 ? payload->cmd->params->repeat_interleave.counts[0] : payload->cmd->params->repeat_interleave.counts[a]; \
         mag_assert2(rep >= 0); \
         int64_t oel = moff + cur*r->coords.strides[dim]; \
         int64_t sel = smoff + a*x->coords.strides[dim]; \
