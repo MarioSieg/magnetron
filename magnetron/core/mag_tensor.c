@@ -473,12 +473,15 @@ void mag_tensor_detach_inplace(mag_tensor_t *target) {
       (*mag_alloc)(au->in, 0, 0);
       au->in = NULL;
     }
+    au->num_in = 0;
+    au->cap_in = 0;
     memset(&au->params, 0, sizeof(au->params));
   }
 }
 
 mag_tensor_t *mag_tensor_detach(mag_tensor_t *tensor) {
   mag_tensor_detach_inplace(tensor);
+  mag_tensor_incref(tensor);
   return tensor;
 }
 
