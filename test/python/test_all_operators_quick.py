@@ -621,11 +621,12 @@ def test_scatter(device: str) -> None:
     assert y.tolist() == [[1, 2, 3, 0, 0], [6, 7, 0, 0, 8], [0, 0, 0, 0, 0]]
 
 
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_scatter_add(device: str) -> None:
-    src = Tensor.ones((2, 5))
-    idx = Tensor([[0, 1, 2, 0, 0]])
-    y = Tensor.zeros(3, 5, dtype=src.dtype).scatter_add_(0, idx, src)
+    src = Tensor.ones(2, 5, device=device)
+    idx = Tensor([[0, 1, 2, 0, 0]], device=device)
+    y = Tensor.zeros(3, 5, dtype=src.dtype, device=device).scatter_add_(0, idx, src)
     assert y.tolist() == [[1.0, 0.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0, 0.0]]
-    idx = Tensor([[0, 1, 2, 0, 0], [0, 1, 2, 2, 2]])
-    y = Tensor.zeros(3, 5, dtype=src.dtype).scatter_add_(0, idx, src)
+    idx = Tensor([[0, 1, 2, 0, 0], [0, 1, 2, 2, 2]], device=device)
+    y = Tensor.zeros(3, 5, dtype=src.dtype, device=device).scatter_add_(0, idx, src)
     assert y.tolist() == [[2.0, 0.0, 0.0, 1.0, 1.0], [0.0, 2.0, 0.0, 0.0, 0.0], [0.0, 0.0, 2.0, 1.0, 1.0]]
