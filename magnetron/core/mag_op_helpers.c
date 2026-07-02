@@ -85,19 +85,13 @@ mag_status_t mag_op_stub_reduction(
   status = mag_reduce_plan_init(err, plan, &x->coords, dims, rank, keepdim);
   if (mag_iserr(status)) return status;
   mag_tensor_t *result = NULL;
-  mag_dtype_t otype;
-  if ((op == MAG_OP_SUM || op == MAG_OP_PROD) && mag_tensor_is_integer_typed(x)) {
-    /* For integral types sum/prod use wide int64/uint64 */
-    otype = mag_dtype_bit(x->dtype) & MAG_DTYPE_MASK_UINT ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64;
-  } else if (op == MAG_OP_ANY || op == MAG_OP_ALL) { /* For logical reductions, use boolean dtype */
-    otype = MAG_DTYPE_BOOLEAN;
-  } else if (op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX) { /* For argmin/argmax, use int64 dtype */
-    otype = MAG_DTYPE_INT64;
-  } else { /* For other reductions, use same dtype as input */
-    otype = x->dtype;
-  }
-  if (!keepdim && !plan->out_rank) status = mag_empty_scalar(err, &result, x->ctx, otype, mag_tensor_device_id(x));
-  else status = mag_empty(err, &result, x->ctx, otype, plan->out_rank, plan->out_shape, mag_tensor_device_id(x));
+  mag_dtype_t type= x->dtype;
+  if ((op == MAG_OP_SUM || op == MAG_OP_PROD) && mag_tensor_is_integer_typed(x))
+    type = mag_dtype_bit(x->dtype) & MAG_DTYPE_MASK_UINT ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64;  /* For integral types sum/prod use wide int64/uint64 */
+  else if (op == MAG_OP_ANY || op == MAG_OP_ALL) type = MAG_DTYPE_BOOLEAN; /* For logical reductions, use boolean dtype */
+  else if (op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX) type = MAG_DTYPE_INT64; /* For argmin/argmax, use int64 dtype */
+  if (!keepdim && !plan->out_rank) status = mag_empty_scalar(err, &result, x->ctx, type, mag_tensor_device_id(x));
+  else status = mag_empty(err, &result, x->ctx, type, plan->out_rank, plan->out_shape, mag_tensor_device_id(x));
   if (mag_iserr(status)) return status;
   status = mag_dispatch(err, op, false, &x, 1, &result, 1, &params);
   if (mag_iserr(status)) return status;

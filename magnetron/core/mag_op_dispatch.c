@@ -103,8 +103,9 @@ mag_status_t MAG_HOTPROC mag_dispatch(
   };
   mag_status_t (*submit)(mag_error_t *, mag_device_t *, const mag_command_t *) = device->submit;
   mag_status_t stat = (*submit)(err, device, &cmd);
-  for (uint32_t i=0; i < num_out; ++i)
-    if (inplace) mag_bump_version(out[i]);  /* Result aliases the modified storage */
+  if (inplace)
+    for (uint32_t i=0; i < num_out; ++i)
+      mag_bump_version(out[i]);
   ++ctx->telemetry.ops_dispatched;
   return stat;
 }
