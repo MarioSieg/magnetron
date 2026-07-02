@@ -58,7 +58,7 @@ namespace mag {
   template <typename T>
   static void launch_fill_kernel(mag_tensor_t *r, const mag_command_t &cmd, const mag_tensor_t *mask = nullptr) {
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
-    auto v = unpack_param<T>(cmd.attrs, 0);
+    auto v = unpack_scalar<T>(cmd.params->fill.value);
     bool cont = mag_tensor_is_contiguous(r);
     int n = numel_i32(r);
     int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
@@ -182,8 +182,8 @@ namespace mag {
   template <typename T, typename UT>
   static void launch_rand_fill_uniform_int_kernel(mag_tensor_t *r, const mag_command_t &cmd) {
     auto *o = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
-    auto min = unpack_param<T>(cmd.attrs, 0);
-    auto max = unpack_param<T>(cmd.attrs, 1);
+    auto min = unpack_scalar<T>(cmd.params->uniform.low);
+    auto max = unpack_scalar<T>(cmd.params->uniform.high);
     int n = numel_i32(r);
     int blocks = (n + FILL_BLOCK_SIZE - 1) / FILL_BLOCK_SIZE;
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
@@ -200,8 +200,8 @@ namespace mag {
   template <typename T, const bool NormDist>
   static void launch_rand_fill_kernel(mag_tensor_t *r, const mag_command_t &cmd) {
     auto *o = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
-    auto p0 = unpack_param<T>(cmd.attrs, 0);
-    auto p1 = unpack_param<T>(cmd.attrs, 1);
+    auto p0 = unpack_scalar<T>(cmd.params->uniform.low);
+    auto p1 = unpack_scalar<T>(cmd.params->uniform.high);
     int n = numel_i32(r);
     int blocks = (((n+3)>>2)+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
@@ -316,7 +316,7 @@ namespace mag {
     (void)err;
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->dtype == MAG_DTYPE_BOOLEAN);
-    auto p = static_cast<float>(mag_op_attr_unwrap_float64(cmd.attrs[0]));
+    auto p = cmd.params->bernoulli.p;
     auto *o = reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r));
     int n = numel_i32(r);
     int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
@@ -408,8 +408,8 @@ namespace mag {
   template <typename T, typename PT, typename AT>
   static void launch_arange(mag_tensor_t *r, const mag_command_t &cmd) {
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
-    PT start = unpack_param<PT>(cmd.attrs, 0);
-    PT step = unpack_param<PT>(cmd.attrs, 1);
+    PT start = unpack_scalar<PT>(cmd.params->arange.start);
+    PT step = unpack_scalar<PT>(cmd.params->arange.step);
     int n = numel_i32(r);
     int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     if (mag_tensor_is_contiguous(r)) {

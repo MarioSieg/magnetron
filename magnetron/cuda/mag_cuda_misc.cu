@@ -54,7 +54,7 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *idx = cmd.in[0];
     mag_assert2(r->dtype == MAG_DTYPE_INT64 && idx->dtype == MAG_DTYPE_INT64);
-    int nc = static_cast<int>(mag_op_attr_unwrap_int64(cmd.attrs[0]));
+    int nc = cmd.params->one_hot.num_classes;
     int n = numel_i32(idx);
     auto *pr = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     const auto *pidx = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(idx));
@@ -114,7 +114,7 @@ namespace mag {
   mag_status_t misc_op_tril(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    int64_t diag = mag_op_attr_unwrap_int64(cmd.attrs[0]);
+    int64_t diag = cmd.params->trilu.diag;
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_tri_mask<float, false>(r, x, diag); break;
       case MAG_DTYPE_FLOAT16: launch_tri_mask<half, false>(r, x, diag); break;
@@ -137,7 +137,7 @@ namespace mag {
   mag_status_t misc_op_triu(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    int64_t diag = mag_op_attr_unwrap_int64(cmd.attrs[0]);
+    int64_t diag = cmd.params->trilu.diag;
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_tri_mask<float, true>(r, x, diag); break;
       case MAG_DTYPE_FLOAT16: launch_tri_mask<half, true>(r, x, diag); break;
@@ -364,7 +364,7 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *src = cmd.in[0];
     const mag_tensor_t *index = cmd.in[1];
-    int64_t axis = mag_op_attr_unwrap_int64(cmd.attrs[0]);
+    int64_t axis = cmd.params->gather.dim;
     if (axis < 0) axis += src->coords.rank;
     mag_assert2(axis >= 0 && axis < src->coords.rank);
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
@@ -547,7 +547,7 @@ namespace mag {
   static void launch_cat(const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(mag_tensor_is_contiguous(r));
-    const int64_t dim = mag_op_attr_unwrap_int64(cmd.attrs[0]);
+    const int64_t dim = cmd.params->cat.dim;
     const int64_t R = r->coords.rank;
     T *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     int64_t inner = 1;
@@ -713,10 +713,9 @@ namespace mag {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *v = cmd.out[0];
     mag_tensor_t *idx = cmd.out[1];
-    const int64_t k = mag_op_attr_unwrap_int64(cmd.attrs[0]);
-    int64_t dim = mag_op_attr_unwrap_int64(cmd.attrs[1]);
-    bool largest = mag_op_attr_unwrap_bool(cmd.attrs[2]);
-    (void)mag_op_attr_unwrap_bool(cmd.attrs[3]);
+    const int64_t k = cmd.params->topk.k;
+    int64_t dim = cmd.params->topk.dim;
+    bool largest = cmd.params->topk.largest;
     int64_t R = x->coords.rank;
     mag_assert2(dim >= 0 && dim < R);
     const int64_t dim_size = x->coords.shape[dim];
@@ -831,7 +830,7 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     mag_assert2(r->dtype == MAG_DTYPE_INT64);
-    int64_t num_samples = mag_op_attr_unwrap_int64(cmd.attrs[0]);
+    int64_t num_samples = cmd.params->multinomial.samples;
     int64_t K = x->coords.shape[x->coords.rank-1];
     if (K <= 0) return MAG_OK;
     int64_t B = x->numel / K;
@@ -891,7 +890,7 @@ namespace mag {
   __global__ static void pad_kernel(
     int total,
     int R,
-    mag_pad_plan_t plan,
+    mag_op_params_t plan,
     [[maybe_unused]] mag_coords_iter_t cr,
     mag_coords_iter_t cx,
     T *br,
@@ -902,7 +901,7 @@ namespace mag {
     const int *in_shape = cx.shape;
     const int *in_stride = cx.strides;
     const int *out_shape = cr.shape;
-    T fill = unpack_scalar<T>(plan.value);
+    T fill = unpack_scalar<T>(plan.pad.value);
     for (; ti < total; ti += step) {
       int ri = C ? ti : mag_coords_iter_to_offset(&cr, ti);
       int tmp = ti;
@@ -915,7 +914,7 @@ namespace mag {
       if constexpr (MODE == MAG_PAD_MODE_CONSTANT) {
         bool outside = false;
         for (int dim = 0; dim < R; ++dim) {
-          int ic = oc[dim] - plan.pad_before[dim];
+          int ic = oc[dim] - plan.pad.pad_before[dim];
           if (ic < 0 || ic >= in_shape[dim]) {
             outside = true;
             break;
@@ -928,7 +927,7 @@ namespace mag {
         }
       } else {
         for (int dim=0; dim < R; ++dim) {
-          int ic = oc[dim] - plan.pad_before[dim];
+          int ic = oc[dim] - plan.pad.pad_before[dim];
           if constexpr (MODE == MAG_PAD_MODE_REFLECT)
             si[dim] = pad_reflect_index(ic, in_shape[dim]);
           else if constexpr (MODE == MAG_PAD_MODE_REPLICATE)
@@ -947,28 +946,27 @@ namespace mag {
   template <typename T, bool C>
   static mag_status_t launch_pad_mode(
     mag_error_t *err,
-    int mode,
     int blocks,
     int n,
     int R,
-    const mag_pad_plan_t &plan,
+    const mag_op_params_t &plan,
     mag_coords_iter_t cr,
     mag_coords_iter_t cx,
     T *br,
     const T *bx
   ) {
-    switch (mode) {
+    switch (plan.pad.mode) {
       case MAG_PAD_MODE_CONSTANT: pad_kernel<T, MAG_PAD_MODE_CONSTANT, C><<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
       case MAG_PAD_MODE_REFLECT: pad_kernel<T, MAG_PAD_MODE_REFLECT, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
       case MAG_PAD_MODE_REPLICATE: pad_kernel<T, MAG_PAD_MODE_REPLICATE, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
       case MAG_PAD_MODE_CIRCULAR: pad_kernel<T, MAG_PAD_MODE_CIRCULAR, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
-      default: return mag_set_error(err, MAG_ERR_PARAM, "cuda: pad: unsupported mode: %d.", mode);
+      default: return mag_set_error(err, MAG_ERR_PARAM, "cuda: pad: unsupported mode: %d.", plan.pad.mode);
     }
     return MAG_OK;
   }
 
   template <typename T>
-  static mag_status_t launch_pad(mag_error_t *err, mag_tensor_t *r, const mag_tensor_t *x, const mag_pad_plan_t &plan) {
+  static mag_status_t launch_pad(mag_error_t *err, mag_tensor_t *r, const mag_tensor_t *x, const mag_op_params_t &plan) {
     int n = static_cast<int>(mag_tensor_numel(r));
     int blocks = (n + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
     mag_coords_iter_t cr, cx;
@@ -977,16 +975,16 @@ namespace mag {
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     if (mag_tensor_is_contiguous(r)) {
-      return launch_pad_mode<T, true>(err, plan.mode, blocks, n, plan.rank, plan, cr, cx, br, bx);
+      return launch_pad_mode<T, true>(err, blocks, n, plan.pad.rank, plan, cr, cx, br, bx);
     } else {
-      return launch_pad_mode<T, false>(err, plan.mode, blocks, n, plan.rank, plan, cr, cx, br, bx);
+      return launch_pad_mode<T, false>(err, blocks, n, plan.pad.rank, plan, cr, cx, br, bx);
     }
   }
 
   mag_status_t misc_op_pad(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    const auto &plan = *static_cast<const mag_pad_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
+    const auto &plan = *cmd.params;
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: return launch_pad<float>(err, r, x, plan);
       case MAG_DTYPE_FLOAT16: return launch_pad<half>(err, r, x, plan);
@@ -1153,7 +1151,7 @@ namespace mag {
   static void launch_cu_scan(const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
-    int dim = static_cast<int>(mag_op_attr_unwrap_int64(cmd.attrs[0]));
+    int dim = cmd.params->cumu.dim;
     if (dim < 0) dim += static_cast<int>(x->coords.rank);
     int R = static_cast<int>(x->coords.rank);
     int dim_size = static_cast<int>(x->coords.shape[dim]);
@@ -1169,7 +1167,7 @@ namespace mag {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *v = cmd.out[0];
     mag_tensor_t *idx = cmd.out[1];
-    int dim = static_cast<int>(mag_op_attr_unwrap_int64(cmd.attrs[0]));
+    int dim = cmd.params->cumu.dim;
     if (dim < 0) dim += static_cast<int>(x->coords.rank);
     int R = static_cast<int>(x->coords.rank);
     int dim_size = static_cast<int>(x->coords.shape[dim]);
@@ -1303,16 +1301,16 @@ namespace mag {
 
   [[nodiscard]] __device__ static int repeat_in_elem_offset_dev(
     int64_t flat_out,
-    const mag_repeat_plan_t *plan,
+    const mag_op_params_t *plan,
     const mag_coords_iter_t *cx
   ) {
     int64_t tmp = flat_out;
     int64_t off = 0;
-    for (int64_t d = plan->rank - 1; d >= 0; --d) {
-      int64_t oc = tmp % plan->out_shape[d];
-      tmp /= plan->out_shape[d];
-      int64_t ic = oc % plan->in_shape[d];
-      int64_t id = d - (plan->rank - plan->in_rank);
+    for (int64_t d = plan->repeat.rank - 1; d >= 0; --d) {
+      int64_t oc = tmp % plan->repeat.out_shape[d];
+      tmp /= plan->repeat.out_shape[d];
+      int64_t ic = oc % plan->repeat.in_shape[d];
+      int64_t id = d - (plan->repeat.rank - plan->repeat.in_rank);
       if (id >= 0)
         off += ic*cx->strides[id];
     }
@@ -1324,7 +1322,7 @@ namespace mag {
     int64_t on,
     T *__restrict__ br,
     const T *__restrict__ bx,
-    mag_repeat_plan_t plan,
+    mag_op_params_t plan,
     mag_coords_iter_t cr,
     mag_coords_iter_t cx
   ) {
@@ -1340,7 +1338,7 @@ namespace mag {
   static mag_status_t launch_repeat(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    const mag_repeat_plan_t *plan = static_cast<const mag_repeat_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
+    const auto *plan = cmd.params;
     mag_coords_iter_t cr, cx;
     mag_coords_iter_init(&cr, &r->coords);
     mag_coords_iter_init(&cx, &x->coords);
@@ -1432,14 +1430,14 @@ namespace mag {
     (void)err;
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    const mag_repeat_interleave_plan_t *plan = static_cast<const mag_repeat_interleave_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
+    const auto *plan = cmd.params;
     mag_assert2(mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(x));
     size_t elsz = static_cast<size_t>(mag_tensor_numbytes(r) / mag_tensor_numel(r));
-    if (plan->flatten) {
+    if (plan->repeat_interleave.flatten) {
       int64_t n = x->numel;
       int64_t out_i = 0;
       for (int64_t i=0; i < n; ++i) {
-        int64_t rep = plan->count_len == 1 ? plan->counts[0] : plan->counts[i];
+        int64_t rep = plan->repeat_interleave.count_len == 1 ? plan->repeat_interleave.counts[0] : plan->repeat_interleave.counts[i];
         for (int64_t k=0; k < rep; ++k) {
           const uint8_t *src = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(x)) + i*static_cast<int64_t>(elsz);
           uint8_t *dst = reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r)) + out_i*static_cast<int64_t>(elsz);
@@ -1449,7 +1447,7 @@ namespace mag {
       }
       return MAG_OK;
     }
-    int64_t dim = plan->dim;
+    int64_t dim = plan->repeat_interleave.dim;
     int64_t R = x->coords.rank;
     int64_t inner_block = 1;
     for (int64_t d = dim+1; d < R; ++d) inner_block *= x->coords.shape[d];
@@ -1476,7 +1474,7 @@ namespace mag {
       for (int64_t d=0; d < dim; ++d) smoff += idx_prefix[d]*x->coords.strides[d];
       int64_t cur = 0;
       for (int64_t a=0; a < axis_len; ++a) {
-        int64_t rep = plan->count_len == 1 ? plan->counts[0] : plan->counts[a];
+        int64_t rep = plan->repeat_interleave.count_len == 1 ? plan->repeat_interleave.counts[0] : plan->repeat_interleave.counts[a];
         int64_t oel = moff + cur*r->coords.strides[dim];
         int64_t sel = smoff + a*x->coords.strides[dim];
         const uint8_t *src_ptr = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(x)) + sel*static_cast<int64_t>(elsz);
@@ -1541,8 +1539,8 @@ namespace mag {
     mag_tensor_t *self = cmd.out[0];
     const mag_tensor_t *source = cmd.in[1];
     const mag_tensor_t *index = cmd.in[2];
-    int64_t axis = mag_op_attr_unwrap_int64(cmd.attrs[0]);
-    double alpha = mag_op_attr_unwrap_float64(cmd.attrs[1]);
+    int64_t axis = cmd.params->index_add.dim;
+    double alpha = cmd.params->index_add.alpha;
     if (axis < 0) axis += self->coords.rank;
     int64_t R = self->coords.rank;
     int64_t total = source->numel;

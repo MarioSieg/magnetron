@@ -177,7 +177,7 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int numel = numel_i32(r);
-    const auto *plan = static_cast<const mag_reduce_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
+    const auto *plan = &cmd.params->reduction.red_plan;
     int threads = REDUCTION_BLOCK_SIZE;
     if (threads < 1) threads = 1;
     if (plan->red_prod < threads)
@@ -431,7 +431,7 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t n = mag_tensor_numel(r);
-    const auto *plan = static_cast<const mag_reduce_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
+    const auto *plan = &cmd.params->reduction.red_plan;
     int threads = REDUCTION_BLOCK_SIZE;
     if (threads < 1) threads = 1;
     if (plan->red_prod < threads)
@@ -449,7 +449,7 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t n = mag_tensor_numel(r);
-    const auto *plan = static_cast<const mag_reduce_plan_t *>(mag_op_attr_unwrap_ptr(cmd.attrs[0]));
+    const auto *plan = &cmd.params->reduction.red_plan;
     int threads = REDUCTION_BLOCK_SIZE;
     if (threads < 1) threads = 1;
     if (plan->red_prod < threads)

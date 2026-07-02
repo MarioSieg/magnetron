@@ -43,20 +43,12 @@ namespace mag {
   }
 
   template <typename T>
-  [[nodiscard]] __host__ __device__ __forceinline__ static T unpack_scalar(mag_scalar_t s) {
-    if (s.type == MAG_SCALAR_TYPE_F64) return static_cast<T>(s.value.f64);
-    if (s.type == MAG_SCALAR_TYPE_I64) return static_cast<T>(s.value.i64);
-    return static_cast<T>(s.value.u64);
-  }
-
-  template <typename T>
-  [[nodiscard]] T unpack_param(const mag_op_attr_t (&params)[MAG_MAX_OP_PARAMS], size_t i) {
-    if constexpr (std::is_same_v<T, float> || std::is_same_v<T, half> || std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, __nv_fp8_e4m3>) {
-      return static_cast<T>(mag_op_attr_unwrap_float64(params[i]));
-    } else if constexpr (std::is_signed_v<T>) {
-      return static_cast<T>(mag_op_attr_unwrap_int64(params[i]));
-    } else {
-      return static_cast<T>(mag_op_attr_unwrap_uint64(params[i]));
+  [[nodiscard]] __host__ __device__ __forceinline__ static T unpack_scalar(mag_scalar_t scalar) {
+    switch (scalar.type) {
+      case MAG_SCALAR_TYPE_F64: return static_cast<T>(scalar.value.float64);
+      case MAG_SCALAR_TYPE_I64: return static_cast<T>(scalar.value.int64);
+      default:
+      case MAG_SCALAR_TYPE_U64: return static_cast<T>(scalar.value.uint64);
     }
   }
 }
