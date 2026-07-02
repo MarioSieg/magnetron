@@ -240,7 +240,10 @@ namespace mag::bindings {
     }, "Return the value of a single-element tensor as a Python scalar.")
     .def("detach", [](const tensor_wrapper &self) -> tensor_wrapper {
       std::lock_guard lock {get_global_mutex()};
-      return tensor_wrapper{mag_tensor_detach(*self)};
+      mag_error_t err {};
+      mag_tensor_t *result = nullptr;
+      throw_if_error(mag_detach(&err, &result, *self), err);
+      return tensor_wrapper{result};
     }, "Return a new tensor detached from the autodiff graph.")
     .def("tolist", [](const tensor_wrapper &self) -> nb::object {
       std::lock_guard lock {get_global_mutex()};
