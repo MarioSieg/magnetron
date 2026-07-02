@@ -262,14 +262,14 @@ def test_inplace_copy(device: str) -> None:
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_inplace_zeros(device: str) -> None:
     x = Tensor.uniform(2, 4, 6, device=device)
-    x.zeros_()
+    x.zero_()
     assert (x == 0).all()
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_inplace_ones(device: str) -> None:
     x = Tensor.uniform(2, 4, 6, device=device)
-    x.ones_()
+    x.one_()
     assert (x == 1).all()
 
 
@@ -584,20 +584,48 @@ def test_index_add_(device: str) -> None:
     x.index_add_(0, idx, t, alpha=-1)
     assert x.tolist() == [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
 
+
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_outer(device: str) -> None:
-    x = Tensor.arange(1., 5., device=device)
-    y = Tensor.arange(1., 4., device=device)
-    assert x.outer(y).tolist() == [[  1.,   2.,   3.],
-                                   [  2.,   4.,   6.],
-                                   [  3.,   6.,   9.],
-                                   [  4.,   8.,  12.]]
+    x = Tensor.arange(1.0, 5.0, device=device)
+    y = Tensor.arange(1.0, 4.0, device=device)
+    assert x.outer(y).tolist() == [[1.0, 2.0, 3.0], [2.0, 4.0, 6.0], [3.0, 6.0, 9.0], [4.0, 8.0, 12.0]]
+
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_lerp_outplace(device: str) -> None:
-    start = Tensor.arange(1., 5., device=device)
+    start = Tensor.arange(1.0, 5.0, device=device)
     end = Tensor.full(4, fill_value=10.0, device=device)
     y = start.lerp(end, 0.5)
-    assert y.tolist() == [5.5000,  6.0000,  6.5000,  7.0000]
+    assert y.tolist() == [5.5000, 6.0000, 6.5000, 7.0000]
     y = start.lerp(end, Tensor.full_like(start, 0.5))
-    assert y.tolist() == [5.5000,  6.0000,  6.5000,  7.0000]
+    assert y.tolist() == [5.5000, 6.0000, 6.5000, 7.0000]
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_gather(device: str) -> None:
+    x = Tensor([[1, 2], [3, 4]])
+    ga = x.gather(1, Tensor([[0, 0], [1, 0]]))
+    assert ga.tolist() == [[1, 1], [4, 3]]
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_scatter(device: str) -> None:
+    x = Tensor.arange(1, 11).reshape(2, 5)
+    assert x.tolist() == [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]]
+    idx = Tensor([[0, 1, 2, 0]])
+    y = Tensor.zeros(3, 5, dtype=x.dtype).scatter_(0, idx, x)
+    assert y.tolist() == [[1, 0, 0, 4, 0], [0, 2, 0, 0, 0], [0, 0, 3, 0, 0]]
+    idx = Tensor([[0, 1, 2], [0, 1, 4]])
+    y = Tensor.zeros(3, 5, dtype=x.dtype).scatter_(1, idx, x)
+    assert y.tolist() == [[1, 2, 3, 0, 0], [6, 7, 0, 0, 8], [0, 0, 0, 0, 0]]
+
+
+def test_scatter_add(device: str) -> None:
+    src = Tensor.ones((2, 5))
+    idx = Tensor([[0, 1, 2, 0, 0]])
+    y = Tensor.zeros(3, 5, dtype=src.dtype).scatter_add_(0, idx, src)
+    assert y.tolist() == [[1.0, 0.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0, 0.0]]
+    idx = Tensor([[0, 1, 2, 0, 0], [0, 1, 2, 2, 2]])
+    y = Tensor.zeros(3, 5, dtype=src.dtype).scatter_add_(0, idx, src)
+    assert y.tolist() == [[2.0, 0.0, 0.0, 1.0, 1.0], [0.0, 2.0, 0.0, 0.0, 0.0], [0.0, 0.0, 2.0, 1.0, 1.0]]

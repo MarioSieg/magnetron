@@ -1091,6 +1091,80 @@ namespace mag::bindings {
       "alpha"_a = 1.0,
       "Accumulate source into self along dim at the given indices."
     )
+    .def("scatter",
+      [](const tensor_wrapper &self, int64_t dim, const tensor_wrapper &index, const tensor_wrapper &src) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_SCATTER, [&] {
+            throw_if_error(mag_scatter(&err, &out, *self, dim, *index, *src), err);
+          }, {*self, *index, *src});
+        } else {
+          throw_if_error(mag_scatter(&err, &out, *self, dim, *index, *src), err);
+        }
+        return tensor_wrapper{out};
+      },
+      "dim"_a,
+      "index"_a,
+      "src"_a,
+      "Out-of-place scatter: write src into a copy of self along dim at the given indices (torch.Tensor.scatter)."
+    )
+    .def("scatter_",
+      [](tensor_wrapper &self, int64_t dim, const tensor_wrapper &index, const tensor_wrapper &src) -> tensor_wrapper& {
+        std::lock_guard lock {get_global_mutex()};
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_SCATTER, [&] {
+            throw_if_error(mag_scatter_(&err, *self, dim, *index, *src), err);
+          }, {*self, *index, *src});
+        } else {
+          throw_if_error(mag_scatter_(&err, *self, dim, *index, *src), err);
+        }
+        return self;
+      },
+      "dim"_a,
+      "index"_a,
+      "src"_a,
+      "In-place scatter: write src into self along dim at the given indices (torch.Tensor.scatter_)."
+    )
+    .def("scatter_add",
+      [](const tensor_wrapper &self, int64_t dim, const tensor_wrapper &index, const tensor_wrapper &src) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_SCATTER_ADD, [&] {
+            throw_if_error(mag_scatter_add(&err, &out, *self, dim, *index, *src), err);
+          }, {*self, *index, *src});
+        } else {
+          throw_if_error(mag_scatter_add(&err, &out, *self, dim, *index, *src), err);
+        }
+        return tensor_wrapper{out};
+      },
+      "dim"_a,
+      "index"_a,
+      "src"_a,
+      "Out-of-place scatter-add: accumulate src into a copy of self along dim at the given indices (torch.Tensor.scatter_add)."
+    )
+    .def("scatter_add_",
+      [](tensor_wrapper &self, int64_t dim, const tensor_wrapper &index, const tensor_wrapper &src) -> tensor_wrapper& {
+        std::lock_guard lock {get_global_mutex()};
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_SCATTER_ADD, [&] {
+            throw_if_error(mag_scatter_add_(&err, *self, dim, *index, *src), err);
+          }, {*self, *index, *src});
+        } else {
+          throw_if_error(mag_scatter_add_(&err, *self, dim, *index, *src), err);
+        }
+        return self;
+      },
+      "dim"_a,
+      "index"_a,
+      "src"_a,
+      "In-place scatter-add: accumulate src into self along dim at the given indices (torch.Tensor.scatter_add_)."
+    )
     .def("clamp",
       [](const tensor_wrapper &self, nb::handle min_h, nb::handle max_h) -> tensor_wrapper {
         std::lock_guard lock{get_global_mutex()};

@@ -129,9 +129,9 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
   mag_status_t stat = MAG_OK;
   mag_topo_set_t post_order;
   if (mag_unlikely(!(root->flags & MAG_TFLAG_REQUIRES_GRAD)))
-    return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: cannot backpropagate from a tensor that does not require gradients; create it with requires_grad=True.");
+    return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: missing backward info for tensor - it does not require gradients.");
   if (mag_unlikely(!(root->coords.rank == 0 && root->numel == 1)))
-    return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backpropagation requires a scalar root tensor (rank 0, numel 1).");
+    return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backpropagation requires a scalar root tensor.");
   mag_ctx_grad_recorder_stop(root->ctx);
   mag_topo_set_init(&post_order);
   stat = mag_topo_sort(err, root, &post_order);

@@ -26,6 +26,14 @@ mag_status_t mag_op_backward_transpose(mag_error_t *err, mag_au_state_t *node, m
   return mag_transpose(err, grads, node->grad, ax0, ax1);
 }
 
+mag_status_t mag_op_backward_permute(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  int64_t rank = node->params.permute.rank;
+  const int64_t *axes = node->params.permute.axes;
+  int64_t inv[MAG_MAX_DIMS];
+  for (int64_t i=0; i < rank; ++i) inv[axes[i]] = i;
+  return mag_permute(err, grads, node->grad, inv, rank);
+}
+
 mag_status_t mag_op_backward_mean(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_status_t status = MAG_OK;
@@ -228,7 +236,11 @@ mag_status_t mag_op_backward_softmax(mag_error_t *err, mag_au_state_t *node, mag
   status = mag_mul(err, &tmp, node->grad, y);
   if (mag_unlikely(status != MAG_OK))
     goto cleanup;
-  status = mag_sum(err, &sum_tmp, tmp, NULL, 0, false);
+  /* softmax is computed over the last axis, so its Jacobian couples only elements within a row:
+   * dx = y * (grad - sum(grad*y, axis=-1, keepdim=True)). Reduce along the last axis (keepdim so it
+   * broadcasts back), not globally. */
+  int64_t axis = x->coords.rank - 1;
+  status = mag_sum(err, &sum_tmp, tmp, &axis, 1, true);
   if (mag_unlikely(status != MAG_OK))
     goto cleanup;
   status = mag_sub(err, &diff, node->grad, sum_tmp);
@@ -331,61 +343,63 @@ cleanup:
   return status;
 }
 
+/* Sum-reduce a gradient back to the shape of a (possibly broadcast) input. Defined below; forward-declared
+ * here so the broadcasting binary-op backwards can reduce BOTH operands, not just the second one. */
+static mag_status_t mag_grad_reduce_to(mag_error_t *err, mag_tensor_t **io, mag_tensor_t *like);
+
 mag_status_t mag_op_backward_add(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
-  mag_status_t status;
+  mag_status_t status = MAG_OK;
+  mag_tensor_t *g = NULL;
 
   if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    status = mag_clone(err, grads, node->grad);
-    if (mag_unlikely(status != MAG_OK))
-      return status;
+    status = mag_clone(err, &g, node->grad);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, x);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[0] = g;
+    g = NULL;
   }
   if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    mag_tensor_t *grad = NULL;
-    if (!mag_tensor_is_shape_eq(x, y)) {
-      status = mag_repeat_back(err, &grad, node->grad, y);
-      if (mag_unlikely(status != MAG_OK))
-        return status;
-    } else {
-      status = mag_clone(err, &grad, node->grad);
-      if (mag_unlikely(status != MAG_OK))
-        return status;
-    }
-    grads[1] = grad;
+    status = mag_clone(err, &g, node->grad);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, y);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[1] = g;
+    g = NULL;
   }
-  return MAG_OK;
+
+cleanup:
+  if (g) mag_rc_decref(g);
+  return status;
 }
 
 mag_status_t mag_op_backward_sub(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_status_t status = MAG_OK;
-  mag_tensor_t *mg = NULL;
+  mag_tensor_t *g = NULL;
 
   if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    status = mag_clone(err, grads, node->grad);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
+    status = mag_clone(err, &g, node->grad);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, x);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[0] = g;
+    g = NULL;
   }
   if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    status = mag_neg(err, &mg, node->grad);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
-    if (!mag_tensor_is_shape_eq(x, y)) {
-      mag_tensor_t *pmg = mg;
-      mg = NULL;
-      status = mag_repeat_back(err, &mg, pmg, y);
-      mag_rc_decref(pmg);
-      if (mag_unlikely(status != MAG_OK))
-        goto cleanup;
-    }
-    grads[1] = mg;
-    mg = NULL;
+    status = mag_neg(err, &g, node->grad);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, y);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[1] = g;
+    g = NULL;
   }
 
 cleanup:
-  if (mg) mag_rc_decref(mg);
+  if (g) mag_rc_decref(g);
   return status;
 }
 
@@ -393,31 +407,27 @@ mag_status_t mag_op_backward_mul(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_status_t status = MAG_OK;
-  mag_tensor_t *xg = NULL;
+  mag_tensor_t *g = NULL;
 
   if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    status = mag_mul(err, grads, node->grad, y);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
+    status = mag_mul(err, &g, node->grad, y);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, x);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[0] = g;
+    g = NULL;
   }
   if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    status = mag_mul(err, &xg, x, node->grad);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
-    if (!mag_tensor_is_shape_eq(x, y)) {
-      mag_tensor_t *pxg = xg;
-      xg = NULL;
-      status = mag_repeat_back(err, &xg, pxg, y);
-      mag_rc_decref(pxg);
-      if (mag_unlikely(status != MAG_OK))
-        goto cleanup;
-    }
-    grads[1] = xg;
-    xg = NULL;
+    status = mag_mul(err, &g, x, node->grad);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, y);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[1] = g;
+    g = NULL;
   }
 
 cleanup:
-  if (xg) mag_rc_decref(xg);
+  if (g) mag_rc_decref(g);
   return status;
 }
 
@@ -425,43 +435,36 @@ mag_status_t mag_op_backward_div(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_status_t status = MAG_OK;
+  mag_tensor_t *g = NULL;
   mag_tensor_t *gx = NULL;
   mag_tensor_t *yy = NULL;
   mag_tensor_t *gxyy = NULL;
-  mag_tensor_t *mgxyy = NULL;
 
   if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    status = mag_div(err, grads, node->grad, y);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
+    status = mag_div(err, &g, node->grad, y);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, x);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[0] = g;
+    g = NULL;
   }
   if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_mul(err, &gx, node->grad, x);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
     status = mag_mul(err, &yy, y, y);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
     status = mag_div(err, &gxyy, gx, yy);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
-    status = mag_neg(err, &mgxyy, gxyy);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
-    if (!mag_tensor_is_shape_eq(x, y)) {
-      mag_tensor_t *pmgxyy = mgxyy;
-      mgxyy = NULL;
-      status = mag_repeat_back(err, &mgxyy, pmgxyy, y);
-      mag_rc_decref(pmgxyy);
-      if (mag_unlikely(status != MAG_OK))
-        goto cleanup;
-    }
-    grads[1] = mgxyy;
-    mgxyy = NULL;
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_neg(err, &g, gxyy);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, y);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[1] = g;
+    g = NULL;
   }
 
 cleanup:
-  if (mgxyy) mag_rc_decref(mgxyy);
+  if (g) mag_rc_decref(g);
   if (gxyy) mag_rc_decref(gxyy);
   if (yy) mag_rc_decref(yy);
   if (gx) mag_rc_decref(gx);
@@ -474,29 +477,41 @@ mag_status_t mag_op_backward_matmul(mag_error_t *err, mag_au_state_t *node, mag_
   mag_status_t status = MAG_OK;
   mag_tensor_t *yT = NULL;
   mag_tensor_t *xT = NULL;
+  mag_tensor_t *g = NULL;
+  int64_t rx = x->coords.rank;
+  int64_t ry = y->coords.rank;
 
+  /* out = x @ y contracts the last two dims and broadcasts the leading batch dims.
+   * grad_x = grad @ yᵀ, grad_y = xᵀ @ grad, where ᵀ swaps the last two dims (not 0,1 — that is only
+   * correct for 2-D). Any batch dims that were broadcast in the forward are then summed back to each
+   * operand's own shape via mag_grad_reduce_to. */
   if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    status = mag_transpose(err, &yT, y, 0, 1);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
-    status = mag_matmul(err, grads, node->grad, yT);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
+    status = mag_transpose(err, &yT, y, ry-2, ry-1);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_matmul(err, &g, node->grad, yT);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, x);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[0] = g;
+    g = NULL;
     mag_rc_decref(yT);
     yT = NULL;
   }
   if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    status = mag_transpose(err, &xT, x, 0, 1);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
-    status = mag_matmul(err, grads + 1, xT, node->grad);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
+    status = mag_transpose(err, &xT, x, rx-2, rx-1);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_matmul(err, &g, xT, node->grad);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    status = mag_grad_reduce_to(err, &g, y);
+    if (mag_unlikely(status != MAG_OK)) goto cleanup;
+    grads[1] = g;
+    g = NULL;
     mag_rc_decref(xT);
     xT = NULL;
   }
 
 cleanup:
+  if (g) mag_rc_decref(g);
   if (xT) mag_rc_decref(xT);
   if (yT) mag_rc_decref(yT);
   return status;
@@ -1151,6 +1166,22 @@ mag_status_t mag_op_backward_triu(mag_error_t *err, mag_au_state_t *node, mag_te
 mag_status_t mag_op_backward_repeat(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   return mag_repeat_back(err, grads, node->grad, x);
+}
+
+mag_status_t mag_op_backward_gather(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  mag_tensor_t *x = node->in[0];
+  mag_tensor_t *idx = node->in[1];
+  if (!(x->flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK; /* index (in[1]) is int64, not differentiable. */
+  int64_t dim = node->params.gather.dim;
+  mag_tensor_t *gx = NULL;
+  /* out = gather(x, dim, idx)  =>  grad_x = zeros_like(x).scatter_add_(dim, idx, grad_out).
+   * scatter_add accumulates so duplicate gathered indices sum their upstream gradients. */
+  mag_status_t status = mag_zeros_like(err, &gx, x);
+  if (mag_iserr(status)) return status;
+  status = mag_scatter_add_(err, gx, dim, idx, node->grad);
+  if (mag_iserr(status)) { mag_rc_decref(gx); return status; }
+  grads[0] = gx;
+  return MAG_OK;
 }
 
 mag_status_t mag_op_backward_embedding(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {

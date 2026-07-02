@@ -607,9 +607,13 @@ mag_status_t mag_permute(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
   }
   mag_status_t status = mag_as_strided(err, &result, x->ctx, x, x->coords.rank, shape, stride, x->storage_offset);
   if (mag_iserr(status)) return status;
+  mag_op_params_t params = {
+    .permute = {.rank = rank}
+  };
+  for (int64_t i=0; i < rank; ++i) params.permute.axes[i] = axes[i];
   status = mag_check_dtype_and_device_compat(err, MAG_OP_PERMUTE, &x, 0);
   if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_PERMUTE, false, &x, 1, &result, 1, NULL);
+  status = mag_dispatch(err, MAG_OP_PERMUTE, false, &x, 1, &result, 1, &params);
   if (mag_iserr(status)) return status;
   *out_result = result;
   return MAG_OK;
@@ -1776,6 +1780,67 @@ mag_status_t mag_index_add_(mag_error_t *err, mag_tensor_t *self, int64_t dim, m
   status = mag_dispatch(err, MAG_OP_INDEX_ADD, true, inputs, 3, &self, 1, &params);
   if (mag_iserr(status)) return status;
   return MAG_OK;
+}
+
+static mag_status_t mag_scatter_validate(mag_error_t *err, const char *name, mag_tensor_t *self, int64_t *dim, mag_tensor_t *index, mag_tensor_t *src) {
+  if (mag_unlikely(!(self != NULL && index != NULL && src != NULL)))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: tensors must not be NULL.", name);
+  if (mag_unlikely(index->dtype != MAG_DTYPE_INT64))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: index must have dtype int64, but got %s.", name, mag_type_trait(index->dtype)->name);
+  if (mag_unlikely(self->dtype != src->dtype))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: self and src must have the same dtype, but got %s and %s.", name, mag_type_trait(self->dtype)->name, mag_type_trait(src->dtype)->name);
+  if (mag_unlikely(self->coords.rank <= 0))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: self must have rank >= 1.", name);
+  if (mag_unlikely(index->coords.rank != self->coords.rank || src->coords.rank != self->coords.rank))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: self, index and src must have the same rank (got %" PRIi64 ", %" PRIi64 ", %" PRIi64 ").", name, self->coords.rank, index->coords.rank, src->coords.rank);
+  mag_norm_axis(dim, self->coords.rank);
+  if (mag_unlikely(!(*dim >= 0 && *dim < self->coords.rank)))
+      return mag_set_error(err, MAG_ERR_DIM, "%s: dim must be in [0, %" PRIi64 "), but got %" PRIi64 ".", name, self->coords.rank, *dim);
+  for (int64_t d=0; d < self->coords.rank; ++d) {
+    if (mag_unlikely(index->coords.shape[d] > src->coords.shape[d]))
+        return mag_set_error(err, MAG_ERR_PARAM, "%s: index size (%" PRIi64 ") must be <= src size (%" PRIi64 ") on dim %" PRIi64 ".", name, index->coords.shape[d], src->coords.shape[d], d);
+    if (d != *dim && mag_unlikely(index->coords.shape[d] > self->coords.shape[d]))
+        return mag_set_error(err, MAG_ERR_PARAM, "%s: index size (%" PRIi64 ") must be <= self size (%" PRIi64 ") on dim %" PRIi64 ".", name, index->coords.shape[d], self->coords.shape[d], d);
+  }
+  return MAG_OK;
+}
+
+static mag_status_t mag_scatter_impl(mag_error_t *err, mag_opcode_t op, const char *name, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
+  mag_status_t status = mag_scatter_validate(err, name, self, &dim, index, src);
+  if (mag_iserr(status)) return status;
+  mag_op_params_t params = {
+    .scatter = {.dim = dim}
+  };
+  mag_tensor_t *inputs[3] = {self, src, index};
+  status = mag_check_dtype_and_device_compat(err, op, inputs, 0);
+  if (mag_iserr(status)) return status;
+  return mag_dispatch(err, op, true, inputs, 3, &self, 1, &params);
+}
+
+mag_status_t mag_scatter_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
+  mag_status_t status = mag_check_inplace_grad_ok(err, self);
+  if (mag_iserr(status)) return status;
+  return mag_scatter_impl(err, MAG_OP_SCATTER, "scatter_", self, dim, index, src);
+}
+
+mag_status_t mag_scatter(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
+  *out_result = NULL;
+  mag_status_t status = mag_clone(err, out_result, self);
+  if (mag_iserr(status)) return status;
+  return mag_scatter_impl(err, MAG_OP_SCATTER, "scatter", *out_result, dim, index, src);
+}
+
+mag_status_t mag_scatter_add_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
+  mag_status_t status = mag_check_inplace_grad_ok(err, self);
+  if (mag_iserr(status)) return status;
+  return mag_scatter_impl(err, MAG_OP_SCATTER_ADD, "scatter_add_", self, dim, index, src);
+}
+
+mag_status_t mag_scatter_add(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
+  *out_result = NULL;
+  mag_status_t status = mag_clone(err, out_result, self);
+  if (mag_iserr(status)) return status;
+  return mag_scatter_impl(err, MAG_OP_SCATTER_ADD, "scatter_add", *out_result, dim, index, src);
 }
 
 mag_status_t mag_copy_(mag_error_t *err, mag_tensor_t *dst, mag_tensor_t *src) {

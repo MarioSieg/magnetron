@@ -1636,4 +1636,165 @@ namespace mag {
   }
 
   mag_status_t misc_op_index_add(mag_error_t *err, const mag_command_t &cmd) { return launch_index_add(err, cmd); }
+
+  template <typename T>
+  __global__ static void scatter_kernel(
+    int64_t total,
+    int64_t rank,
+    int64_t axis,
+    int64_t self_ax,
+    T *__restrict__ bs,
+    const T *__restrict__ bx,
+    const int64_t *__restrict__ bi,
+    mag_tensor_t self,
+    mag_tensor_t src,
+    mag_tensor_t index
+  ) {
+    int64_t flat = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
+    int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+    for (; flat < total; flat += step) {
+      int64_t ic[MAG_MAX_DIMS];
+      int64_t tmp = flat;
+      for (int64_t d = rank-1; d >= 0; --d) { ic[d] = tmp % index.coords.shape[d]; tmp /= index.coords.shape[d]; }
+      int64_t idx_off = 0, src_off = 0, dst_off = 0;
+      for (int64_t d=0; d < rank; ++d) {
+        idx_off += ic[d]*index.coords.strides[d];
+        src_off += ic[d]*src.coords.strides[d];
+        if (d != axis) dst_off += ic[d]*self.coords.strides[d];
+      }
+      int64_t g = __ldg(bi + idx_off);
+      if (g < 0) g += self_ax;
+      dst_off += g*self.coords.strides[axis];
+      bs[dst_off] = bx[src_off];
+    }
+  }
+
+  template <typename T>
+  static void launch_scatter(const mag_command_t &cmd) {
+    mag_tensor_t *self = cmd.out[0];
+    const mag_tensor_t *src = cmd.in[1];
+    const mag_tensor_t *index = cmd.in[2];
+    int64_t axis = cmd.params->scatter.dim;
+    if (axis < 0) axis += self->coords.rank;
+    mag_assert2(axis >= 0 && axis < self->coords.rank);
+    int64_t rank = index->coords.rank;
+    int64_t total = index->numel;
+    if (total <= 0) return;
+    int64_t self_ax = self->coords.shape[axis];
+    int64_t blocks = (total + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
+    scatter_kernel<T><<<blocks, MISC_BLOCK_SIZE>>>(
+      total, rank, axis, self_ax,
+      reinterpret_cast<T *>(mag_tensor_data_ptr_mut(self)),
+      reinterpret_cast<const T *>(mag_tensor_data_ptr(src)),
+      reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+      *self, *src, *index
+    );
+  }
+
+  mag_status_t misc_op_scatter(mag_error_t *err, const mag_command_t &cmd) {
+    mag_tensor_t *self = cmd.out[0];
+    switch (self->dtype) {
+      case MAG_DTYPE_FLOAT32: launch_scatter<float>(cmd); break;
+      case MAG_DTYPE_FLOAT16: launch_scatter<half>(cmd); break;
+      case MAG_DTYPE_BFLOAT16: launch_scatter<__nv_bfloat16>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_scatter<__nv_fp8_e4m3>(cmd); break;
+      case MAG_DTYPE_BOOLEAN:
+      case MAG_DTYPE_UINT8: launch_scatter<uint8_t>(cmd); break;
+      case MAG_DTYPE_INT8: launch_scatter<int8_t>(cmd); break;
+      case MAG_DTYPE_UINT16: launch_scatter<uint16_t>(cmd); break;
+      case MAG_DTYPE_INT16: launch_scatter<int16_t>(cmd); break;
+      case MAG_DTYPE_UINT32: launch_scatter<uint32_t>(cmd); break;
+      case MAG_DTYPE_INT32: launch_scatter<int32_t>(cmd); break;
+      case MAG_DTYPE_UINT64: launch_scatter<uint64_t>(cmd); break;
+      case MAG_DTYPE_INT64: launch_scatter<int64_t>(cmd); break;
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: scatter: unsupported dtype: %s.", mag_type_trait(self->dtype)->name);
+    }
+    return MAG_OK;
+  }
+
+  template <typename T, bool is_int>
+  __global__ static void scatter_add_kernel(
+    int64_t num_rows,
+    int64_t rank,
+    int64_t axis,
+    int64_t self_ax,
+    int64_t s_axis,
+    T *__restrict__ bs,
+    const T *__restrict__ bx,
+    const int64_t *__restrict__ bi,
+    mag_tensor_t self,
+    mag_tensor_t src,
+    mag_tensor_t index
+  ) {
+    int64_t row = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
+    int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+    int64_t ist = index.coords.strides[axis];
+    int64_t xst = src.coords.strides[axis];
+    int64_t rst = self.coords.strides[axis];
+    for (; row < num_rows; row += step) {
+      int64_t c[MAG_MAX_DIMS];
+      int64_t rem = row;
+      for (int64_t d = rank-1; d >= 0; --d) { if (d == axis) continue; c[d] = rem % index.coords.shape[d]; rem /= index.coords.shape[d]; }
+      int64_t idx_row = 0, src_row = 0, dst_row = 0;
+      for (int64_t d=0; d < rank; ++d) { if (d == axis) continue; idx_row += c[d]*index.coords.strides[d]; src_row += c[d]*src.coords.strides[d]; dst_row += c[d]*self.coords.strides[d]; }
+      for (int64_t j=0; j < s_axis; ++j) {
+        int64_t g = bi[idx_row + j*ist];
+        if (g < 0) g += self_ax;
+        int64_t dst_off = dst_row + g*rst;
+        int64_t src_off = src_row + j*xst;
+        if (is_int) {
+          auto cur = static_cast<int64_t>(bs[dst_off]);
+          auto add = static_cast<int64_t>(bx[src_off]);
+          bs[dst_off] = static_cast<T>(cur + add);
+        } else {
+          auto cur = static_cast<float>(bs[dst_off]);
+          auto add = static_cast<float>(bx[src_off]);
+          bs[dst_off] = static_cast<T>(cur + add);
+        }
+      }
+    }
+  }
+
+  template <typename T, bool is_int>
+  static void launch_scatter_add_typed(const mag_command_t &cmd) {
+    mag_tensor_t *self = cmd.out[0];
+    const mag_tensor_t *src = cmd.in[1];
+    const mag_tensor_t *index = cmd.in[2];
+    int64_t axis = cmd.params->scatter.dim;
+    if (axis < 0) axis += self->coords.rank;
+    int64_t rank = index->coords.rank;
+    int64_t total = index->numel;
+    if (total <= 0) return;
+    int64_t s_axis = index->coords.shape[axis];
+    int64_t self_ax = self->coords.shape[axis];
+    int64_t num_rows = total/s_axis;
+    int64_t blocks = (num_rows + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
+    scatter_add_kernel<T, is_int><<<blocks, MISC_BLOCK_SIZE>>>(
+      num_rows, rank, axis, self_ax, s_axis,
+      reinterpret_cast<T *>(mag_tensor_data_ptr_mut(self)),
+      reinterpret_cast<const T *>(mag_tensor_data_ptr(src)),
+      reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
+      *self, *src, *index
+    );
+  }
+
+  mag_status_t misc_op_scatter_add(mag_error_t *err, const mag_command_t &cmd) {
+    mag_tensor_t *self = cmd.out[0];
+    switch (self->dtype) {
+      case MAG_DTYPE_FLOAT32: launch_scatter_add_typed<float, false>(cmd); break;
+      case MAG_DTYPE_FLOAT16: launch_scatter_add_typed<half, false>(cmd); break;
+      case MAG_DTYPE_BFLOAT16: launch_scatter_add_typed<__nv_bfloat16, false>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_scatter_add_typed<__nv_fp8_e4m3, false>(cmd); break;
+      case MAG_DTYPE_UINT8: launch_scatter_add_typed<uint8_t, true>(cmd); break;
+      case MAG_DTYPE_INT8: launch_scatter_add_typed<int8_t, true>(cmd); break;
+      case MAG_DTYPE_UINT16: launch_scatter_add_typed<uint16_t, true>(cmd); break;
+      case MAG_DTYPE_INT16: launch_scatter_add_typed<int16_t, true>(cmd); break;
+      case MAG_DTYPE_UINT32: launch_scatter_add_typed<uint32_t, true>(cmd); break;
+      case MAG_DTYPE_INT32: launch_scatter_add_typed<int32_t, true>(cmd); break;
+      case MAG_DTYPE_UINT64: launch_scatter_add_typed<uint64_t, true>(cmd); break;
+      case MAG_DTYPE_INT64: launch_scatter_add_typed<int64_t, true>(cmd); break;
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: scatter_add: unsupported dtype: %s.", mag_type_trait(self->dtype)->name);
+    }
+    return MAG_OK;
+  }
 }

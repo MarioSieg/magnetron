@@ -28,6 +28,8 @@ namespace mag {
   extern mag_status_t misc_op_repeat(mag_error_t *err, const mag_command_t &cmd);
   extern mag_status_t misc_op_repeat_interleave(mag_error_t *err, const mag_command_t &cmd);
   extern mag_status_t misc_op_index_add(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_scatter(mag_error_t *err, const mag_command_t &cmd);
+  extern mag_status_t misc_op_scatter_add(mag_error_t *err, const mag_command_t &cmd);
   extern mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd);
   extern mag_status_t misc_op_repeat_back(mag_error_t *err, const mag_command_t &cmd);
   extern mag_status_t misc_op_gather(mag_error_t *err, const mag_command_t &cmd);

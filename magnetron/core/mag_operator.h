@@ -40,6 +40,10 @@ typedef union mag_op_params_t {
     int64_t original_axes[MAG_MAX_DIMS];
   } transpose;
   struct {
+    int64_t rank;
+    int64_t axes[MAG_MAX_DIMS];
+  } permute;
+  struct {
     int64_t diag;
   } trilu;
   struct {
@@ -97,6 +101,9 @@ typedef union mag_op_params_t {
     double alpha;
   } index_add;
   struct {
+    int64_t dim;
+  } scatter;
+  struct {
     mag_scalar_t value;
   } fill;
   struct {
@@ -126,7 +133,7 @@ typedef union mag_op_params_t {
   _(CAST, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, clone)__\
   _(VIEW, 1, 1, ALL, MAG_OP_FLAG_NONE, view)__\
   _(TRANSPOSE, 1, 1, ALL, MAG_OP_FLAG_NONE, transpose)__\
-  _(PERMUTE, 1, 1, ALL, MAG_OP_FLAG_NONE, NULL)__\
+  _(PERMUTE, 1, 1, ALL, MAG_OP_FLAG_NONE, permute)__\
   _(MEAN, 1, 1, FP, MAG_OP_FLAG_NONE, mean)__\
   _(MINIMA, 1, 1, NUMERIC, MAG_OP_FLAG_NONE, NULL)__\
   _(MAXIMA, 1, 1, NUMERIC, MAG_OP_FLAG_NONE, NULL)__\
@@ -196,7 +203,7 @@ typedef union mag_op_params_t {
   _(POW, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, pow)__\
   _(MATMUL, 2, 1, FP, MAG_OP_FLAGS_COMMON, matmul)__\
   _(REPEAT_BACK, 2, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(GATHER, 2, 1, ALL, MAG_OP_FLAG_NONE, NULL)__\
+  _(GATHER, 2, 1, ALL, MAG_OP_FLAG_NONE, gather)__\
   _(AND, 2, 1, INTEGRAL, MAG_OP_FLAGS_COMMON, NULL)__\
   _(OR, 2, 1, INTEGRAL, MAG_OP_FLAGS_COMMON, NULL)__\
   _(XOR, 2, 1, INTEGRAL, MAG_OP_FLAGS_COMMON, NULL)__\
@@ -222,7 +229,9 @@ typedef union mag_op_params_t {
   _(REPEAT, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, repeat)__\
   _(REPEAT_INTERLEAVE, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(INDEX_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_NONE, NULL)__\
-  _(EMBEDDING, 2, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, embedding)__
+  _(EMBEDDING, 2, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, embedding)__\
+  _(SCATTER, 3, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(SCATTER_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -232,7 +241,7 @@ typedef enum mag_opcode_t {
   MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_EMBEDDING+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_SCATTER_ADD+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */
