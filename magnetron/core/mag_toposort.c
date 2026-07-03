@@ -118,6 +118,8 @@ mag_status_t mag_topo_sort(mag_error_t *err, mag_tensor_t *root, mag_topo_set_t 
     }
     mag_au_state_t *au = top_t->au_state;
     uint32_t num_children = mag_op_trait(au->op)->in;
+    if (num_children == MAG_OP_INOUT_DYN)
+      num_children = au->num_in;
     if (top->next_child_idx >= num_children) { /* All children processed */
       mag_topo_stack_pop(&stack);
       if (mag_unlikely(!mag_topo_set_push(out_sorted, top_t))) {
