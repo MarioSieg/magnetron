@@ -33,7 +33,7 @@
           tmp /= sz; \
           roff += idx*plan->red_strides[k]; \
         } \
-        mag_bnd_chk(bx + roff, bx, mag_tensor_numbytes(x)); \
+        mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
         { UPDATE_STMT } \
       } \
       OT *o = br + oi; \
@@ -338,7 +338,7 @@ mag_cpu_impl_argminmax_int(int64_t,  int64);
           tmp /= sz; \
           roff += idx*plan->red_strides[k]; \
         } \
-        mag_bnd_chk(bx + roff, bx, mag_tensor_numbytes(x)); \
+        mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
         { UPDATE_STMT } \
         if (BREAK_COND) break; \
       } \

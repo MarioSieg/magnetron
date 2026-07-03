@@ -469,6 +469,18 @@ namespace mag::bindings {
       "dims"_a,
       "Reorder dimensions by the given permutation."
     )
+    .def("flip",
+      [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        std::vector<int64_t> dims = parse_i64_dims(dims_args, "flip");
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(mag_flip(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())), err);
+        return tensor_wrapper{out};
+      },
+      "dims"_a,
+      "Reverse the order of elements along the given dimensions (a negative-strided view)."
+    )
     .def("broadcast_to", [](const tensor_wrapper &self, nb::args shape_args) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
         std::vector<int64_t> shape = parse_i64_dims(shape_args, "broadcast_to");

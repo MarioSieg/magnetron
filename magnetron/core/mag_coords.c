@@ -239,10 +239,10 @@ mag_status_t mag_infer_missing_dim(
       infer = i;
       (*out)[i] = 1;
     } else {
-      if (mag_unlikely(ax <= 0))
+      if (mag_unlikely(ax < 0))
         return mag_set_error(err, MAG_ERR_DIM,
           "view: invalid dimension at dim %" PRIi64
-          " (size %" PRIi64 "); expected positive size or -1.",
+          " (size %" PRIi64 "); expected non-negative size or -1.",
           i, ax);
       (*out)[i] = ax;
       if (mag_unlikely(mag_mulov64(prod, ax, &prod)))

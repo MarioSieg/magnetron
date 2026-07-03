@@ -167,7 +167,9 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
     if (mag_unlikely(stat != MAG_OK))
       goto cleanup;
     uint32_t numin = meta->in;
-    if (mag_unlikely(child->au_state->num_in != meta->in)) {
+    if (meta->in == MAG_OP_INOUT_DYN) { /* Variadic ops (e.g. cat) carry their real input count on the node. */
+      numin = child->au_state->num_in;
+    } else if (mag_unlikely(child->au_state->num_in != meta->in)) {
       stat = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' input count is invalid, required: %u, got: %u", meta->mnemonic, meta->in, child->au_state->num_in);
       goto cleanup;
     }

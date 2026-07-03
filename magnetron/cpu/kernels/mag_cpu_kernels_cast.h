@@ -524,8 +524,8 @@ static MAG_HOTPROC mag_status_t mag_cast_generic(mag_error_t *err, const mag_ker
   if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { /* TODO: can be relaxed to non-shape equality */
     void *pr = br + ra*nbd;
     const void *px = bx + ra*nbs;
-    mag_bnd_chk(px, bx, mag_tensor_numbytes(x));
-    mag_bnd_chk(pr, br, mag_tensor_numbytes(r));
+    mag_bnd_chk(px, x->storage->base, mag_tensor_numbytes(x));
+    mag_bnd_chk(pr, r->storage->base, mag_tensor_numbytes(r));
     (*kernel)(rb-ra, pr, px);
     return MAG_OK;
   }
@@ -538,8 +538,8 @@ static MAG_HOTPROC mag_status_t mag_cast_generic(mag_error_t *err, const mag_ker
     mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi);
     void *pr = br + ri*nbd;
     const void *px = bx + xi*nbs;
-    mag_bnd_chk(px, bx, mag_tensor_numbytes(x));
-    mag_bnd_chk(pr, br, mag_tensor_numbytes(r));
+    mag_bnd_chk(px, x->storage->base, mag_tensor_numbytes(x));
+    mag_bnd_chk(pr, r->storage->base, mag_tensor_numbytes(r));
     (*kernel)(1, pr, px);
   }
   return MAG_OK;

@@ -35,7 +35,7 @@ static inline void mag_coords_iter_init(mag_coords_iter_t *ci, const mag_coords_
   ci->rank = co->rank;
   for (mag_codim_t k=0; k < ci->rank; ++k) {
     mag_codim_t dim = co->shape[k];
-    mag_assert(dim > 0, "coords_iter: dimension size must be > 0 (got %" PRIi64 ").", (int64_t)dim);
+    mag_assert(dim >= 0, "coords_iter: dimension size must be >= 0 (got %" PRIi64 ").", (int64_t)dim);
     ci->shape[k] = dim;
     ci->strides[k] = co->strides[k];
   }

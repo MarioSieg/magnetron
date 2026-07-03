@@ -619,6 +619,49 @@ mag_status_t mag_permute(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
   return MAG_OK;
 }
 
+mag_status_t mag_flip(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t ndims) {
+  *out_result = NULL;
+  mag_tensor_t *result = NULL;
+  int64_t ra = x->coords.rank;
+  if (mag_unlikely(!(ndims >= 0 && ndims <= ra)))
+      return mag_set_error(err, MAG_ERR_PARAM, "flip: number of axes must be in [0, %" PRIi64 "], but got %" PRIi64 ".", ra, ndims);
+  int64_t axes[MAG_MAX_DIMS];
+  bool seen[MAG_MAX_DIMS] = {0};
+  for (int64_t i=0; i < ndims; ++i) {
+    int64_t ax = dims[i];
+    mag_norm_axis(&ax, ra);
+    if (mag_unlikely(!(ax >= 0 && ax < ra)))
+      return mag_set_error(err, MAG_ERR_PARAM, "flip: axis %" PRIi64 " is out of range for rank %" PRIi64 ".", dims[i], ra);
+    if (mag_unlikely(seen[ax]))
+      return mag_set_error(err, MAG_ERR_PARAM, "flip: axis %" PRIi64 " appears more than once.", ax);
+    seen[ax] = true;
+    axes[i] = ax;
+  }
+  int64_t shape[MAG_MAX_DIMS];
+  int64_t stride[MAG_MAX_DIMS];
+  memcpy(shape, x->coords.shape, sizeof shape);
+  memcpy(stride, x->coords.strides, sizeof stride);
+  int64_t offset = x->storage_offset;
+  for (int64_t i=0; i < ndims; ++i) {
+    int64_t ax = axes[i];
+    if (x->coords.shape[ax] > 0)
+      offset += (x->coords.shape[ax]-1)*x->coords.strides[ax];
+    stride[ax] = -x->coords.strides[ax];
+  }
+  mag_status_t status = mag_as_strided(err, &result, x->ctx, x, ra, shape, stride, offset);
+  if (mag_iserr(status)) return status;
+  mag_op_params_t params = {
+    .flip = {.ndims = ndims}
+  };
+  for (int64_t i=0; i < ndims; ++i) params.flip.dims[i] = axes[i];
+  status = mag_check_dtype_and_device_compat(err, MAG_OP_FLIP, &x, 0);
+  if (mag_iserr(status)) return status;
+  status = mag_dispatch(err, MAG_OP_FLIP, false, &x, 1, &result, 1, &params);
+  if (mag_iserr(status)) return status;
+  *out_result = result;
+  return MAG_OK;
+}
+
 mag_status_t mag_contiguous(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) {
   if (!x->storage_offset && mag_tensor_is_contiguous(x)) {
     mag_rc_incref(x); /* Borrow +1 ref for caller; *out may alias x — caller must mag_tensor_decref(*out) once */

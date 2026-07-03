@@ -99,8 +99,8 @@ mag_status_t mag_tensor_init(
   int64_t el = (int64_t)mag_type_trait(type)->size;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(!(shape[i] > 0))) {
-      return mag_set_error(err, MAG_ERR_DIM, "tensor: all shape dimensions must be > 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
+    if (mag_unlikely(!(shape[i] >= 0))) {
+      return mag_set_error(err, MAG_ERR_DIM, "tensor: all shape dimensions must be >= 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
     }
     if (mag_unlikely(mag_mulov64(shape[i], numel, &numel))) {
       return mag_set_error(err, MAG_ERR_DIM, "tensor: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
@@ -186,19 +186,21 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
       return mag_set_error(err, MAG_ERR_PARAM, "as_strided: shape and strides must not be NULL when rank > 0.");
     }
   }
-  int64_t last = offset;
+  /* Track the lowest and highest element offset the view can reach. Negative strides walk below
+  ** the storage offset, so we must bound both ends, not just the maximum as for contiguous views. */
+  int64_t lo = offset;
+  int64_t hi = offset;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(!(shape[i] > 0 && strides[i] >= 0))) {
+    if (mag_unlikely(!(shape[i] >= 0))) {
       return mag_set_error(
         err, MAG_ERR_DIM,
-        "as_strided: invalid shape/stride at dim %" PRIi64
-        " (shape=%" PRIi64 ", stride=%" PRIi64
-        "); dimensions must be > 0 and strides must be non-negative.",
-        i, shape[i], strides[i]
+        "as_strided: invalid shape at dim %" PRIi64
+        " (shape=%" PRIi64 "); dimensions must be >= 0.",
+        i, shape[i]
       );
     }
-    int64_t span;
+    int64_t span; /* (shape-1)*stride: signed displacement of the last index along this axis. */
     if (mag_unlikely(mag_mulov64(shape[i]-1, strides[i], &span))) {
       return mag_set_error(
         err, MAG_ERR_DIM,
@@ -214,11 +216,18 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
         i, shape[i]
       );
     }
-    last += span;
+    if (span >= 0) hi += span;
+    else lo += span;
   }
-  int64_t numel_end = (int64_t)(base->storage->size/mag_type_trait(base->dtype)->size);
-  if (mag_unlikely(!(last < numel_end))) {
-    return mag_set_error(err, MAG_ERR_BOUNDS, "as_strided: view exceeds base tensor storage (end index %" PRIi64 " >= storage capacity %" PRIi64 ").", last, numel_end);
+  /* An empty view (any zero-sized dim) addresses no elements, so its stride span is irrelevant. */
+  if (numel > 0) {
+    int64_t numel_end = (int64_t)(base->storage->size/mag_type_trait(base->dtype)->size);
+    if (mag_unlikely(!(lo >= 0))) {
+      return mag_set_error(err, MAG_ERR_BOUNDS, "as_strided: view underflows base tensor storage (start index %" PRIi64 " < 0).", lo);
+    }
+    if (mag_unlikely(!(hi < numel_end))) {
+      return mag_set_error(err, MAG_ERR_BOUNDS, "as_strided: view exceeds base tensor storage (end index %" PRIi64 " >= storage capacity %" PRIi64 ").", hi, numel_end);
+    }
   }
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
   if (mag_unlikely(!tensor))
@@ -321,8 +330,8 @@ mag_status_t mag_borrow_cpu_buffer(
   int64_t dts = (int64_t)mag_type_trait(dtype)->size;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(!(shape[i] > 0))) {
-      return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: all shape dimensions must be > 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
+    if (mag_unlikely(!(shape[i] >= 0))) {
+      return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: all shape dimensions must be >= 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
     }
     if (mag_unlikely(mag_mulov64(shape[i], numel, &numel))) {
       return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);

@@ -33,8 +33,8 @@
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri, xi; \
       mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi); \
-      mag_bnd_chk(bx+xi, bx, mag_tensor_numbytes(x)); \
-      mag_bnd_chk(br+ri, br, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(bx+xi, x->storage->base, mag_tensor_numbytes(x)); \
+      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
       br[ri] = bx[xi]; \
     } \
     return MAG_OK; \

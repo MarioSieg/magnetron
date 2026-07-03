@@ -34,6 +34,10 @@ mag_status_t mag_op_backward_permute(mag_error_t *err, mag_au_state_t *node, mag
   return mag_permute(err, grads, node->grad, inv, rank);
 }
 
+mag_status_t mag_op_backward_flip(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  return mag_flip(err, grads, node->grad, node->params.flip.dims, node->params.flip.ndims);
+}
+
 mag_status_t mag_op_backward_mean(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_status_t status = MAG_OK;
@@ -399,6 +403,31 @@ mag_status_t mag_op_backward_sub(mag_error_t *err, mag_au_state_t *node, mag_ten
   }
 
 cleanup:
+  if (g) mag_rc_decref(g);
+  return status;
+}
+
+mag_status_t mag_op_backward_cat(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  int64_t dim = node->params.cat.dim;
+  mag_status_t status = MAG_OK;
+  mag_tensor_t *slice = NULL, *g = NULL;
+  int64_t offset = 0;
+  for (uint32_t i=0; i < node->num_in; ++i) {
+    mag_tensor_t *xi = node->in[i];
+    int64_t len = xi->coords.shape[dim];
+    if (xi->flags & MAG_TFLAG_REQUIRES_GRAD) {
+      status = mag_narrow(err, &slice, node->grad, dim, offset, len);
+      if (mag_unlikely(status != MAG_OK)) goto cleanup;
+      status = mag_clone(err, &g, slice);
+      mag_rc_decref(slice); slice = NULL;
+      if (mag_unlikely(status != MAG_OK)) goto cleanup;
+      grads[i] = g;
+      g = NULL;
+    }
+    offset += len;
+  }
+cleanup:
+  if (slice) mag_rc_decref(slice);
   if (g) mag_rc_decref(g);
   return status;
 }

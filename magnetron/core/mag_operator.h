@@ -44,6 +44,10 @@ typedef union mag_op_params_t {
     int64_t axes[MAG_MAX_DIMS];
   } permute;
   struct {
+    int64_t ndims;               /* Number of flipped axes. */
+    int64_t dims[MAG_MAX_DIMS];  /* Normalized axes that were reversed. */
+  } flip;
+  struct {
     int64_t diag;
   } trilu;
   struct {
@@ -193,7 +197,7 @@ typedef union mag_op_params_t {
   _(TRIL, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, tril)__\
   _(TRIU, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, triu)__\
   _(MULTINOMIAL, 1, 1, FP, MAG_OP_FLAG_NONE, NULL)__\
-  _(CAT, MAG_OP_INOUT_DYN, 1, ALL, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(CAT, MAG_OP_INOUT_DYN, 1, ALL, MAG_OP_FLAGS_COMMON, cat)__\
   _(ADD, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, add)__\
   _(SUB, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, sub)__\
   _(MUL, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, mul)__\
@@ -231,7 +235,8 @@ typedef union mag_op_params_t {
   _(INDEX_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_NONE, NULL)__\
   _(EMBEDDING, 2, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, embedding)__\
   _(SCATTER, 3, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-  _(SCATTER_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__
+  _(SCATTER_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(FLIP, 1, 1, ALL, MAG_OP_FLAG_NONE, flip)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -241,7 +246,7 @@ typedef enum mag_opcode_t {
   MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_SCATTER_ADD+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_FLIP+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */

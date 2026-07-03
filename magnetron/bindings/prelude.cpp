@@ -85,8 +85,8 @@ namespace mag::bindings {
       auto msg = "Invalid number of dimensions, must be <= " + std::to_string(MAG_MAX_DIMS);
       throw nb::value_error(msg.c_str());
     }
-    if (std::any_of(shape.begin(), shape.end(), [](int64_t d) { return d <= 0; }))
-      throw nb::value_error("Invalid dimension size (must be > 0)");
+    if (std::any_of(shape.begin(), shape.end(), [](int64_t d) { return d < 0; }))
+      throw nb::value_error("Invalid dimension size (must be >= 0)");
   }
 
   void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op) {
@@ -102,8 +102,8 @@ namespace mag::bindings {
           auto msg = std::string(op) + ": only one dimension can be inferred";
           throw nb::value_error(msg.c_str());
         }
-      } else if (d <= 0) {
-        auto msg = std::string(op) + ": dimensions must be > 0 or -1";
+      } else if (d < 0) {
+        auto msg = std::string(op) + ": dimensions must be >= 0 or -1";
         throw nb::value_error(msg.c_str());
       }
     }
@@ -115,7 +115,10 @@ namespace mag::bindings {
       for (auto &&child : seq)
         flatten_i64_handle(child, out);
     } else {
-      out.emplace_back(nb::cast<int64_t>(h));
+      int64_t v;
+      if (!nb::try_cast<int64_t>(h, v))
+        throw nb::type_error("expected integer dimensions (or a sequence of integers)");
+      out.emplace_back(v);
     }
   }
 

@@ -11,7 +11,7 @@ def compact_shapes(s: str) -> str:
 
 def shorten(s: str, n: int = 64) -> str:
     s = str(s)
-    return s if len(s) <= n else s[:n - 3] + '...'
+    return s if len(s) <= n else s[: n - 3] + '...'
 
 
 def make_label(row, i: int) -> str:
@@ -30,8 +30,7 @@ def plot_barh(df, value_col: str, xlabel: str, title: str, out_path: Path) -> No
     bars = plt.barh(df['label'], df[value_col])
     # Annotate bars with values
     for bar, val in zip(bars, df[value_col]):
-        plt.text(bar.get_width() * 1.005, bar.get_y() + bar.get_height() / 2,
-                 f'{val:.2f}', va='center', fontsize=7)
+        plt.text(bar.get_width() * 1.005, bar.get_y() + bar.get_height() / 2, f'{val:.2f}', va='center', fontsize=7)
     plt.xlabel(xlabel)
     plt.ylabel('')
     plt.title(title)
@@ -82,8 +81,8 @@ def render_summary_panel(df_total, df_avg, df_max, out_path: Path, top: int) -> 
 
     specs = [
         (df_total, 'total_ms', 'Total time (ms)', gs[0]),
-        (df_avg,   'avg_us',   'Avg latency (µs)', gs[1]),
-        (df_max,   'max_us',   'Max latency (µs)', gs[2]),
+        (df_avg, 'avg_us', 'Avg latency (µs)', gs[1]),
+        (df_max, 'max_us', 'Max latency (µs)', gs[2]),
     ]
 
     for df, col, xlabel, gslot in specs:
@@ -104,8 +103,15 @@ def load_profile_csv(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
 
     required_cols = [
-        'calls', 'op', 'kind', 'dtype', 'shapes', 'strides',
-        'total_ms', 'avg_us', 'max_us',
+        'calls',
+        'op',
+        'kind',
+        'dtype',
+        'shapes',
+        'strides',
+        'total_ms',
+        'avg_us',
+        'max_us',
     ]
 
     missing = [c for c in required_cols if c not in df.columns]
@@ -145,8 +151,8 @@ def main() -> None:
 
     views = [
         ('total_ms', 'Total time [ms]', 'total time'),
-        ('avg_us',   'Average latency [µs]', 'avg latency'),
-        ('max_us',   'Max latency [µs]', 'max latency'),
+        ('avg_us', 'Average latency [µs]', 'avg latency'),
+        ('max_us', 'Max latency [µs]', 'max latency'),
     ]
 
     parts = {}
@@ -155,7 +161,9 @@ def main() -> None:
         parts[col] = part
 
         plot_barh(
-            part, col, xlabel,
+            part,
+            col,
+            xlabel,
             f'Top {len(part)} Magnetron ops by {name}',
             out_dir / f'{stem}_{col}.png',
         )
