@@ -81,6 +81,12 @@ typedef union mag_op_params_t {
     int64_t dim;
   } cat;
   struct {
+    int64_t dim;
+    int64_t start;
+    int64_t len;
+    int64_t step;
+  } slice;
+  struct {
     int64_t num_classes;
   } one_hot;
   struct {
@@ -236,7 +242,8 @@ typedef union mag_op_params_t {
   _(EMBEDDING, 2, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, embedding)__\
   _(SCATTER, 3, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(SCATTER_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-  _(FLIP, 1, 1, ALL, MAG_OP_FLAG_NONE, flip)__
+  _(FLIP, 1, 1, ALL, MAG_OP_FLAG_NONE, flip)__\
+  _(SLICE, 1, 1, ALL, MAG_OP_FLAG_NONE, slice)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -246,7 +253,7 @@ typedef enum mag_opcode_t {
   MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_FLIP+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_SLICE+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */

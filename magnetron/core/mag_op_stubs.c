@@ -532,7 +532,18 @@ mag_status_t mag_view_slice(mag_error_t *err, mag_tensor_t **out_result, mag_ten
   shape[dim] = len;
   strides[dim] = x->coords.strides[dim] * step;
   int64_t offset = x->storage_offset + start*x->coords.strides[dim];
-  return mag_as_strided(err, out_result, x->ctx, x, rank, shape, strides, offset);
+  mag_tensor_t *result = NULL;
+  mag_status_t status = mag_as_strided(err, &result, x->ctx, x, rank, shape, strides, offset);
+  if (mag_iserr(status)) return status;
+  mag_op_params_t params = {
+    .slice = {.dim = dim, .start = start, .len = len, .step = step}
+  };
+  status = mag_check_dtype_and_device_compat(err, MAG_OP_SLICE, &x, 0);
+  if (mag_iserr(status)) { mag_tensor_decref(result); return status; }
+  status = mag_dispatch(err, MAG_OP_SLICE, false, &x, 1, &result, 1, &params);
+  if (mag_iserr(status)) { mag_tensor_decref(result); return status; }
+  *out_result = result;
+  return MAG_OK;
 }
 
 mag_status_t mag_transpose(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim1, int64_t dim2) {

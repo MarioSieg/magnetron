@@ -432,6 +432,29 @@ cleanup:
   return status;
 }
 
+mag_status_t mag_op_backward_slice(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  mag_tensor_t *x = node->in[0];
+  int64_t dim = node->params.slice.dim;
+  int64_t start = node->params.slice.start;
+  int64_t len = node->params.slice.len;
+  int64_t step = node->params.slice.step;
+  mag_status_t status = MAG_OK;
+  mag_tensor_t *gbase = NULL, *gview = NULL;
+  status = mag_zeros_like(err, &gbase, x);
+  if (mag_unlikely(status != MAG_OK)) goto cleanup;
+  status = mag_view_slice(err, &gview, gbase, dim, start, len, step);
+  if (mag_unlikely(status != MAG_OK)) goto cleanup;
+  status = mag_copy_(err, gview, node->grad);
+  if (mag_unlikely(status != MAG_OK)) goto cleanup;
+  grads[0] = gbase;
+  gbase = NULL;
+
+cleanup:
+  if (gview) mag_rc_decref(gview);
+  if (gbase) mag_rc_decref(gbase);
+  return status;
+}
+
 mag_status_t mag_op_backward_mul(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
