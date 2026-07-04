@@ -640,18 +640,10 @@ def test_scatter_add(device: str) -> None:
     y = Tensor.zeros(3, 5, dtype=src.dtype, device=device).scatter_add_(0, idx, src)
     assert y.tolist() == [[2.0, 0.0, 0.0, 1.0, 1.0], [0.0, 2.0, 0.0, 0.0, 0.0], [0.0, 0.0, 2.0, 1.0, 1.0]]
 
+
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_flip(device: str) -> None:
     x = Tensor.arange(8).view(2, 2, 2)
-    assert x.tolist() == [[[ 0,  1],
-                           [ 2,  3]],
-
-                          [[ 4,  5],
-                           [ 6,  7]]]
+    assert x.tolist() == [[[0, 1], [2, 3]], [[4, 5], [6, 7]]]
     y = x.flip([0, 1])
-    assert y.tolist() == [[[ 6,  7],
-                           [ 4,  5]],
-
-                          [[ 2,  3],
-                           [ 0,  1]]]
-
+    assert y.tolist() == [[[6, 7], [4, 5]], [[2, 3], [0, 1]]]

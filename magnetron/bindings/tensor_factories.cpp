@@ -846,33 +846,40 @@ namespace mag::bindings {
       "Load audio from path. Kwargs: device. "
       "Returns (audio, sample_rate), where audio is float32 with shape (C, T)."
     );
-    cls.attr("as_strided") = nb::cpp_function(
-      [](const tensor_wrapper &base, nb::handle shape_h, nb::handle strides_h, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
-        auto shape_seq = nb::cast<nb::sequence>(shape_h);
-        auto strides_seq = nb::cast<nb::sequence>(strides_h);
-        if (nb::len(shape_seq) != nb::len(strides_seq)) {
-          std::ostringstream oss;
-          oss << "shape (len " << nb::len(shape_seq) << ") and strides (len " << nb::len(strides_seq) << ") length mismatch";
-          throw nb::value_error(oss.str().c_str());
-        }
-        std::vector<int64_t> shape {};
-        std::vector<int64_t> strides {};
-        shape.reserve(nb::len(shape_seq));
-        strides.reserve(nb::len(strides_seq));
-        for (auto &&h : shape_seq) shape.emplace_back(nb::cast<int64_t>(h));
-        for (auto &&h : strides_seq) strides.emplace_back(nb::cast<int64_t>(h));
-        validate_shape(shape);
-        int64_t offset = 0;
-        if (kwargs.contains("offset"))
-          offset = nb::cast<int64_t>(kwargs["offset"]);
-        mag_context_t *ctx = get_ctx();
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_as_strided(&err, &out, ctx, *base, static_cast<int64_t>(shape.size()), shape.data(), strides.data(), offset), err);
-        return tensor_wrapper{out};
-      },
-      "View of base with given shape and strides. Kwargs: offset."
-    );
+    cls.def(
+     "as_strided", [](const tensor_wrapper &base, nb::handle shape_h, nb::handle strides_h, nb::kwargs kwargs) -> tensor_wrapper {
+       std::lock_guard lock {get_global_mutex()};
+       auto shape_seq = nb::cast<nb::sequence>(shape_h);
+       auto strides_seq = nb::cast<nb::sequence>(strides_h);
+       if (nb::len(shape_seq) != nb::len(strides_seq))
+         throw nb::value_error("shape and strides length mismatch");
+       std::vector<int64_t> shape, strides;
+       shape.reserve(nb::len(shape_seq));
+       strides.reserve(nb::len(strides_seq));
+       for (auto &&h : shape_seq) shape.emplace_back(nb::cast<int64_t>(h));
+       for (auto &&h : strides_seq) strides.emplace_back(nb::cast<int64_t>(h));
+       validate_shape(shape);
+       int64_t offset = 0;
+       if (kwargs.contains("offset"))
+         offset = nb::cast<int64_t>(kwargs["offset"]);
+       if (kwargs.contains("storage_offset"))
+         offset = nb::cast<int64_t>(kwargs["storage_offset"]);
+       mag_context_t *ctx = get_ctx();
+       mag_tensor_t *out = nullptr;
+       mag_error_t err {};
+       throw_if_error(
+         mag_as_strided(
+           &err, &out, ctx, *base,
+           static_cast<int64_t>(shape.size()),
+           shape.data(),
+           strides.data(),
+           offset
+         ),
+         err
+       );
+       return tensor_wrapper{out};
+     },
+     "View of base with given shape and strides. Kwargs: offset/storage_offset."
+   );
   }
 }

@@ -79,7 +79,6 @@ namespace mag::bindings {
     return out;
   }
 
-  template <const bool allow_gather> // TODO: always allow gather, this can be removed when scatter is implemented
   [[nodiscard]] static tensor_wrapper tensor_index_impl(const tensor_wrapper &self, const nb::object &index) {
       nb::tuple idxs_in = nb::isinstance<nb::tuple>(index) ? nb::cast<nb::tuple>(index) : nb::make_tuple(index);
       tensor_wrapper curr = self;
@@ -130,11 +129,6 @@ namespace mag::bindings {
               curr = tensor_wrapper{out};
               ++ax;
           } else if (nb::isinstance<tensor_wrapper>(idx)) {
-              if (!allow_gather) {
-                  throw nb::type_error(
-                      "Advanced indexing assignment with Tensor indices is not supported yet"
-                  );
-              }
               auto idx_tw = nb::cast<tensor_wrapper>(idx);
               mag_tensor_t *out = nullptr;
               if (ax == 0 && mag_tensor_type(*idx_tw) == MAG_DTYPE_INT64) {
@@ -146,11 +140,6 @@ namespace mag::bindings {
               }
               curr = tensor_wrapper{out};
           } else if (nb::isinstance<nb::sequence>(idx)) {
-              if (!allow_gather) {
-                  throw nb::type_error(
-                      "Advanced indexing assignment with sequence indices is not supported yet"
-                  );
-              }
               auto seq = nb::cast<nb::sequence>(idx);
               std::vector<int64_t> data {};
               data.reserve(nb::len(seq));
@@ -235,11 +224,11 @@ namespace mag::bindings {
     }, "True if single element is non-zero (only for 0-dim or 1-element tensors).")
     .def("__getitem__", [](const tensor_wrapper &self, nb::object index) -> tensor_wrapper {
        std::lock_guard lock {get_global_mutex()};
-       return tensor_index_impl<true>(self, index);
+       return tensor_index_impl(self, index);
     }, "Index with int, slice, ellipsis, or boolean/int index tensor. Supports NumPy-style indexing.")
     .def("__setitem__", [](tensor_wrapper &self, nb::object index, nb::object value) {
       std::lock_guard lock {get_global_mutex()};
-      tensor_wrapper dst = tensor_index_impl<false>(self, index);
+      tensor_wrapper dst = tensor_index_impl(self, index);
       mag_error_t err {};
       if (nb::isinstance<tensor_wrapper>(value)) {
           auto src = nb::cast<tensor_wrapper>(value);
