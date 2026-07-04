@@ -21,6 +21,32 @@ __author_email__ = _magnetron_bindings.__author_email__
 __license__ = _magnetron_bindings.__license__
 __url__ = _magnetron_bindings.__url__
 
+from contextlib import ContextDecorator
+from types import TracebackType
+
+
+class device(ContextDecorator):
+    """Sets the default device within a function or block."""
+
+    def __init__(self, device_name: str) -> None:
+        self.device_name = device_name
+        self.prev_dev: str | None = None
+
+    def __enter__(self) -> None:
+        self.prev_dev = context.get_default_device()
+        if not context.is_device_available(self.device_name):
+            raise RuntimeError(f'Requested device {self.device_name} not available')
+        context.set_default_device(self.device_name)
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        assert self.prev_dev is not None
+        context.set_default_device(self.prev_dev)
+
 
 class no_grad(ContextDecorator):
     """Disables gradient recording within a function or block."""
