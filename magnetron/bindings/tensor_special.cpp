@@ -131,13 +131,8 @@ namespace mag::bindings {
           } else if (nb::isinstance<tensor_wrapper>(idx)) {
               auto idx_tw = nb::cast<tensor_wrapper>(idx);
               mag_tensor_t *out = nullptr;
-              if (ax == 0 && mag_tensor_type(*idx_tw) == MAG_DTYPE_INT64) {
-                  throw_if_error(mag_embedding(&err, &out, *curr, *idx_tw), err);
-                  ax = mag_tensor_rank(out) - (mag_tensor_rank(*curr) - 1);
-              } else {
-                  throw_if_error(mag_gather(&err, &out, *curr, ax, *idx_tw), err);
-                  ++ax;
-              }
+              throw_if_error(mag_gather(&err, &out, *curr, ax, *idx_tw), err);
+              ++ax;
               curr = tensor_wrapper{out};
           } else if (nb::isinstance<nb::sequence>(idx)) {
               auto seq = nb::cast<nb::sequence>(idx);
