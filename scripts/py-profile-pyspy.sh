@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 py-spy record \
   --native \
   --gil \

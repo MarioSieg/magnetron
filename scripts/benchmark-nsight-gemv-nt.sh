@@ -1,1 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 sudo "$(which ncu)" "$(which python)" benchmark/python/gemv_nt_mag.py --device=cuda --dtype=bfloat16 --B=1 --K=2560 --N=9728 --warmup=3 --iters=5

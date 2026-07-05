@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -euo pipefail
+
 set -e
 cores=$( (command -v nproc >/dev/null && nproc) || sysctl -n hw.ncpu )
 div=$([ "$(uname)" = Darwin ] && echo 2 || echo 1)
