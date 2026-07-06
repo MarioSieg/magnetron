@@ -15,6 +15,10 @@ mag_status_t mag_op_backward_clone(mag_error_t *err, mag_au_state_t *node, mag_t
   return mag_clone(err, grads, node->grad);
 }
 
+mag_status_t mag_op_backward_cast(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  return mag_cast(err, grads, node->grad, node->in[0]->dtype);
+}
+
 mag_status_t mag_op_backward_view(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   return mag_reshape(err, grads, node->grad, x->coords.shape, x->coords.rank);

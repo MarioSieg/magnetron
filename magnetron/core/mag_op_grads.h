@@ -19,6 +19,7 @@ extern "C" {
 #endif
 
 mag_status_t mag_op_backward_clone(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
+mag_status_t mag_op_backward_cast(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 mag_status_t mag_op_backward_view(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 mag_status_t mag_op_backward_transpose(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 mag_status_t mag_op_backward_permute(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
