@@ -36,13 +36,13 @@ mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
   return vm;
 }
 
-static mag_status_t mag_tensor_dtor(void *self); /* Destructor forward declaration. */
+static mag_status_t mag_tensor_dtor(void *self);
 
 static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel) {
-  mag_tensor_t *hdr = mag_slab_alloc(&ctx->tensor_slab); /* Allocate tensor header. */
+  mag_tensor_t *hdr = mag_slab_alloc(&ctx->tensor_slab);
   if (mag_unlikely(!hdr)) return NULL;
   memset(hdr, 0, sizeof(*hdr));
-  *hdr = (mag_tensor_t) { /* Initialize tensor header. */
+  *hdr = (mag_tensor_t) {
     .ctx = ctx,
     .coords = {.rank=rank},
     .dtype = type,
@@ -59,14 +59,14 @@ static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type
   hdr->alive_next = NULL;
   mag_leak_detector_enqueue(hdr);
 #endif
-  ++ctx->telemetry.num_alive_tensors; /* Increase tensor count in context. */
+  ++ctx->telemetry.num_alive_tensors;
   return hdr;
 }
 
 static void mag_tensor_free_header(mag_tensor_t *t) {
   mag_context_t *ctx = t->ctx;
 #ifdef MAG_DEBUG
-  mag_leak_detector_dequeue(t); /* Pop from alive list */
+  mag_leak_detector_dequeue(t);
   memset(t, 0, sizeof(*t));
 #endif
   mag_slab_free(&ctx->tensor_slab, t);
@@ -84,40 +84,29 @@ mag_status_t mag_tensor_init(
   mag_device_id_t device
 ) {
   *out = NULL;
-  /* Early param checks — no resources allocated yet, return directly. */
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id)) {
+  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
     return mag_set_error(err, MAG_ERR_THREAD, "tensor: must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
-  }
-  if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS))) {
+  if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "tensor: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
-  }
-  if (rank > 0) {
-    if (mag_unlikely(shape == NULL)) {
+  if (rank > 0 && !shape)
       return mag_set_error(err, MAG_ERR_PARAM, "tensor: shape must not be NULL when rank > 0.");
-    }
-  }
   int64_t el = (int64_t)mag_type_trait(type)->size;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(!(shape[i] >= 0))) {
+    if (mag_unlikely(!(shape[i] >= 0)))
       return mag_set_error(err, MAG_ERR_DIM, "tensor: all shape dimensions must be >= 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
-    }
-    if (mag_unlikely(mag_mulov64(shape[i], numel, &numel))) {
+    if (mag_unlikely(mag_mulov64(shape[i], numel, &numel)))
       return mag_set_error(err, MAG_ERR_DIM, "tensor: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
-    }
   }
   int64_t numbytes;
-  if (mag_unlikely(mag_mulov64(numel, el, &numbytes))) {
+  if (mag_unlikely(mag_mulov64(numel, el, &numbytes)))
     return mag_set_error(err, MAG_ERR_DIM, "tensor: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, el);
-  }
   mag_device_t *target_device = NULL;
   bool has_rquested_device = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, device, NULL, &target_device);
   char device_name[32];
   if (mag_unlikely(!has_rquested_device)) mag_device_id_to_str(device, &device_name);
-  if (mag_unlikely(!has_rquested_device)) {
+  if (mag_unlikely(!has_rquested_device))
     return mag_set_error(err, MAG_ERR_DEVICE, "tensor: device '%s' is not available; the backend may not be enabled.", device_name);
-  }
-  /* Tensor header allocated — use goto cleanup from here on. */
   mag_status_t status = MAG_OK;
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel);
   if (mag_unlikely(!tensor))
@@ -125,14 +114,13 @@ mag_status_t mag_tensor_init(
   if (!storage) {
     mag_status_t (*allocator)(mag_error_t *, mag_device_t *, mag_storage_buffer_t **, size_t) = target_device->alloc_storage;
     status = (*allocator)(err, target_device, &tensor->storage, numbytes);
-    if (mag_unlikely(status != MAG_OK))
-      goto cleanup;
+    if (mag_iserr(status)) goto cleanup;
   } else {
-    if (mag_unlikely(!(storage->device == target_device))) {
+    if (mag_unlikely(storage->device != target_device)) {
       status = mag_set_error(err, MAG_ERR_PARAM, "tensor: storage device mismatch (tensor is on '%s' but storage is on '%s').", mag_backend_type_to_str(target_device->id.type), mag_backend_type_to_str(storage->device->id.type));
       goto cleanup;
     }
-    if (mag_unlikely(!(storage->size >= (size_t)numbytes))) {
+    if (mag_unlikely(storage->size < (size_t)numbytes)) {
       status = mag_set_error(err, MAG_ERR_PARAM, "tensor: provided storage is too small (need %" PRIi64 " bytes, have %zu).", numbytes, storage->size);
       goto cleanup;
     }
@@ -141,7 +129,7 @@ mag_status_t mag_tensor_init(
       goto cleanup;
     }
     tensor->storage = storage;
-    mag_rc_incref(storage); /* Retain provided storage */
+    mag_rc_incref(storage);
   }
   ctx->telemetry.storage_bytes_allocated += numbytes;
   for (int i=0; i < MAG_MAX_DIMS; ++i) {
@@ -172,62 +160,34 @@ mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx,
 
 mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
   *out = NULL;
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id)) {
+  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
     return mag_set_error(err, MAG_ERR_THREAD, "as_strided: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
-  }
-  if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS))) {
+  if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "as_strided: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
-  }
-  if (mag_unlikely(!(offset >= 0))) {
+  if (mag_unlikely(!(offset >= 0)))
     return mag_set_error(err, MAG_ERR_INDEX, "as_strided: storage offset must be non-negative, but got %" PRIi64 ".", offset);
-  }
-  if (rank > 0) {
-    if (mag_unlikely(!(shape && strides))) {
-      return mag_set_error(err, MAG_ERR_PARAM, "as_strided: shape and strides must not be NULL when rank > 0.");
-    }
-  }
-  /* Track the lowest and highest element offset the view can reach. Negative strides walk below
-  ** the storage offset, so we must bound both ends, not just the maximum as for contiguous views. */
-  int64_t lo = offset;
-  int64_t hi = offset;
-  int64_t numel = 1;
+  if (mag_unlikely(rank > 0 && !(shape && strides)))
+    return mag_set_error(err, MAG_ERR_PARAM, "as_strided: shape and strides must not be NULL when rank > 0.");
+  int64_t lo=offset;
+  int64_t hi=offset;
+  int64_t numel=1;
   for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(!(shape[i] >= 0))) {
-      return mag_set_error(
-        err, MAG_ERR_DIM,
-        "as_strided: invalid shape at dim %" PRIi64
-        " (shape=%" PRIi64 "); dimensions must be >= 0.",
-        i, shape[i]
-      );
-    }
-    int64_t span; /* (shape-1)*stride: signed displacement of the last index along this axis. */
-    if (mag_unlikely(mag_mulov64(shape[i]-1, strides[i], &span))) {
-      return mag_set_error(
-        err, MAG_ERR_DIM,
-        "as_strided: stride span overflowed at dim %" PRIi64 ".",
-        i
-      );
-    }
-    if (mag_unlikely(mag_mulov64(shape[i], numel, &numel))) {
-      return mag_set_error(
-        err, MAG_ERR_DIM,
-        "as_strided: element count overflowed at dim %" PRIi64
-        " (size %" PRIi64 ").",
-        i, shape[i]
-      );
-    }
+    if (mag_unlikely(shape[i] < 0))
+      return mag_set_error(err, MAG_ERR_DIM, "as_strided: invalid shape at dim %" PRIi64 " (shape=%" PRIi64 "); dimensions must be >= 0.", i, shape[i]);
+    int64_t span;
+    if (mag_unlikely(mag_mulov64(shape[i]-1, strides[i], &span)))
+      return mag_set_error(err, MAG_ERR_DIM, "as_strided: stride span overflowed at dim %" PRIi64 ".", i);
+    if (mag_unlikely(mag_mulov64(shape[i], numel, &numel)))
+      return mag_set_error(err, MAG_ERR_DIM, "as_strided: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
     if (span >= 0) hi += span;
     else lo += span;
   }
-  /* An empty view (any zero-sized dim) addresses no elements, so its stride span is irrelevant. */
   if (numel > 0) {
     int64_t numel_end = (int64_t)(base->storage->size/mag_type_trait(base->dtype)->size);
-    if (mag_unlikely(!(lo >= 0))) {
+    if (mag_unlikely(lo < 0))
       return mag_set_error(err, MAG_ERR_BOUNDS, "as_strided: view underflows base tensor storage (start index %" PRIi64 " < 0).", lo);
-    }
-    if (mag_unlikely(!(hi < numel_end))) {
+    if (mag_unlikely(hi >= numel_end))
       return mag_set_error(err, MAG_ERR_BOUNDS, "as_strided: view exceeds base tensor storage (end index %" PRIi64 " >= storage capacity %" PRIi64 ").", hi, numel_end);
-    }
   }
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
   if (mag_unlikely(!tensor))
@@ -237,20 +197,20 @@ mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t 
     tensor->coords.strides[i] = i < rank && strides ? strides[i] : 1;
   }
   tensor->storage = base->storage;
-  mag_rc_incref(base->storage); /* Retain base storage */
+  mag_rc_incref(base->storage);
   tensor->storage_offset = offset;
   tensor->version = base->version;
-  if (!(base->flags & MAG_TFLAG_IS_VIEW)) { /* first view */
+  if (!(base->flags & MAG_TFLAG_IS_VIEW)) {
     tensor->view_meta = mag_view_meta_alloc(base);
-    if (mag_unlikely(!tensor->view_meta)) { /* OOM: dtor decrefs the retained base storage and frees the header */
+    if (mag_unlikely(!tensor->view_meta)) {
       mag_tensor_decref(tensor);
       return mag_set_error(err, MAG_ERR_OOM, "as_strided: failed to allocate view metadata.");
     }
   } else {
     tensor->view_meta = base->view_meta;
-    mag_rc_incref(tensor->view_meta); /* Retain view meta */
+    mag_rc_incref(tensor->view_meta);
   }
-  tensor->flags = base->flags | MAG_TFLAG_IS_VIEW; /* Set view flag */
+  tensor->flags = base->flags|MAG_TFLAG_IS_VIEW;
   *out = tensor;
   return MAG_OK;
 }
@@ -306,45 +266,31 @@ mag_status_t mag_borrow_cpu_buffer(
   void *usr
 ) {
   *out = NULL;
-  /* Early param checks — no resources allocated yet, return directly. */
-  if (mag_unlikely(release_cb == NULL)) {
+  if (mag_unlikely(release_cb == NULL))
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: release callback must not be NULL.");
-  }
-  if (mag_unlikely(data == NULL)) {
+  if (mag_unlikely(data == NULL))
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: data pointer must not be NULL.");
-  }
-  if (mag_unlikely(!(num_bytes > 0))) {
+  if (mag_unlikely(!(num_bytes > 0)))
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: num_bytes must be > 0.");
-  }
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id)) {
+  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
     return mag_set_error(err, MAG_ERR_THREAD, "borrow_cpu_buffer: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
-  }
-  if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS))) {
+  if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "borrow_cpu_buffer: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
-  }
-  if (rank > 0) {
-    if (mag_unlikely(shape == NULL)) {
+  if (rank > 0 && !shape)
       return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: shape must not be NULL when rank > 0.");
-    }
-  }
   int64_t dts = (int64_t)mag_type_trait(dtype)->size;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(!(shape[i] >= 0))) {
+    if (mag_unlikely(!(shape[i] >= 0)))
       return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: all shape dimensions must be >= 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
-    }
-    if (mag_unlikely(mag_mulov64(shape[i], numel, &numel))) {
+    if (mag_unlikely(mag_mulov64(shape[i], numel, &numel)))
       return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
-    }
   }
   int64_t need_bytes;
-  if (mag_unlikely(mag_mulov64(numel, dts, &need_bytes))) {
+  if (mag_unlikely(mag_mulov64(numel, dts, &need_bytes)))
     return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, dts);
-  }
-  if (mag_unlikely(!((size_t)need_bytes <= num_bytes))) {
+  if (mag_unlikely(!((size_t)need_bytes <= num_bytes)))
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: buffer is too small (need at least %zu bytes, but got %zu).", (size_t)need_bytes, num_bytes);
-  }
-  /* Cookie allocated — use goto cleanup from here on. */
   mag_status_t status = MAG_OK;
   mag_borrow_cookie_t *cookie = (*mag_try_alloc)(NULL, sizeof(*cookie), 0);
   if (mag_unlikely(!cookie))
@@ -360,7 +306,7 @@ mag_status_t mag_borrow_cpu_buffer(
     mag_storage_flags_t flags = MAG_STORAGE_FLAG_BORROWED|MAG_STORAGE_FLAG_HOST_VISIBLE;
     if (is_writeable) flags |= MAG_STORAGE_FLAG_ACCESS_W;
     mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
-    if (mag_unlikely(!buf)) { /* OOM: cookie still owned here; cleanup frees it. */
+    if (mag_unlikely(!buf)) {
       status = mag_set_error(err, MAG_ERR_OOM, "borrow_cpu_buffer: failed to allocate storage buffer header.");
       goto cleanup;
     }
@@ -373,7 +319,7 @@ mag_status_t mag_borrow_cpu_buffer(
       .device=cpu_device,
     };
     buf->aux.impl = cookie;
-    cookie = NULL; /* Ownership transferred to buf — dtor will free it. */
+    cookie = NULL;
     mag_rc_init_object(buf, &mag_borrowed_storage_dtor);
     ++ctx->telemetry.num_alive_storages;
     mag_tensor_t *tensor = NULL;
@@ -448,11 +394,11 @@ mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void *
   mag_tensor_t *cont = NULL;
 
   status = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
-  if (mag_unlikely(status != MAG_OK))
+  if (mag_iserr(status))
     goto cleanup;
 
   status = mag_contiguous(err, &cont, host);
-  if (mag_unlikely(status != MAG_OK))
+  if (mag_iserr(status))
     goto cleanup;
 
   {
@@ -486,44 +432,35 @@ void mag_tensor_copy_data_free(void *ret_val) {
 }
 
 mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t *out_value) {
-  /* Early param checks — no resources allocated yet, return directly. */
-  if (mag_unlikely(tensor->numel != 1)) {
+  if (mag_unlikely(tensor->numel != 1))
     return mag_set_error(err, MAG_ERR_PARAM, "item: can only be called on a single-element tensor, but this tensor has %" PRIi64 " elements.", tensor->numel);
-  }
-  if (mag_unlikely(out_value == NULL)) {
+  if (mag_unlikely(out_value == NULL))
     return mag_set_error(err, MAG_ERR_PARAM, "item: output value pointer must not be NULL.");
-  }
   mag_status_t status = MAG_OK;
-  mag_tensor_t *host   = NULL;
+  mag_tensor_t *host = NULL;
   mag_tensor_t *scalar = NULL;
-  mag_tensor_t *wide   = NULL;
-  /* scalar_is_host: scalar and host point to the same object (rank-0 tensor). */
+  mag_tensor_t *wide = NULL;
   bool scalar_is_host = false;
-  /* wide_is_scalar: no cast was needed; wide and scalar point to the same object. */
   bool wide_is_scalar = false;
-
   status = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
-  if (mag_unlikely(status != MAG_OK))
+  if (mag_iserr(status))
     goto cleanup;
-
   if (host->coords.rank == 0) {
     scalar = host;
     scalar_is_host = true;
   } else {
     status = mag_view(err, &scalar, host, NULL, 0);
-    if (mag_unlikely(status != MAG_OK))
+    if (mag_iserr(status))
       goto cleanup;
   }
-
   {
     mag_dtype_t dt = scalar->dtype;
     mag_dtype_mask_t mask = mag_dtype_bit(dt);
     mag_scalar_t res;
-
     if (mask & MAG_DTYPE_MASK_FP) {
       if (dt != MAG_DTYPE_FLOAT32) {
         status = mag_cast(err, &wide, scalar, MAG_DTYPE_FLOAT32);
-        if (mag_unlikely(status != MAG_OK))
+        if (mag_iserr(status))
           goto cleanup;
       } else {
         wide = scalar;
@@ -536,11 +473,10 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
       *out_value = res;
       return MAG_OK;
     }
-
     if (mask & MAG_DTYPE_MASK_SINT) {
       if (dt != MAG_DTYPE_INT64) {
         status = mag_cast(err, &wide, scalar, MAG_DTYPE_INT64);
-        if (mag_unlikely(status != MAG_OK))
+        if (mag_iserr(status))
           goto cleanup;
       } else {
         wide = scalar;
@@ -553,11 +489,10 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
       *out_value = res;
       return MAG_OK;
     }
-
     if ((mask & MAG_DTYPE_MASK_UINT) || dt == MAG_DTYPE_BOOLEAN) {
       if (dt != MAG_DTYPE_UINT64) {
         status = mag_cast(err, &wide, scalar, MAG_DTYPE_UINT64);
-        if (mag_unlikely(status != MAG_OK))
+        if (mag_iserr(status))
           goto cleanup;
       } else {
         wide = scalar;
@@ -570,15 +505,12 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
       *out_value = res;
       return MAG_OK;
     }
-
-    /* Unsupported dtype — fall through to cleanup. */
     status = mag_set_error(err, MAG_ERR_PARAM, "item: does not support dtype %s.", mag_type_trait(dt)->name);
   }
-
 cleanup:
-  if (wide && !wide_is_scalar)   mag_tensor_decref(wide);
+  if (wide && !wide_is_scalar) mag_tensor_decref(wide);
   if (scalar && !scalar_is_host) mag_tensor_decref(scalar);
-  if (host)                      mag_tensor_decref(host);
+  if (host) mag_tensor_decref(host);
   return status;
 }
 
@@ -665,11 +597,11 @@ bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {
   for (size_t i=1; i < n; ++i) {
     const mag_tensor_t *t = tensors[i];
     if (mag_unlikely(!t)) return false;
-    if (!mag_tensor_is_contiguous(t)) return false;
     if (t->coords.rank != rank) return false;
+    if (!mag_tensor_is_contiguous(t)) return false;
     const int64_t *shape = t->coords.shape;
-    for (int64_t d = 0; d < rank; ++d) {
-      if (shape[d] != shape0[d])
+    for (int64_t dim=0; dim < rank; ++dim) {
+      if (shape[dim] != shape0[dim])
         return false;
     }
   }

@@ -309,35 +309,35 @@ static mag_status_t mag_file_header_serialize(mag_error_t *err, const mag_file_h
   }
   mag_status_t status = MAG_OK;
   status = mag_stream_wu32_le(err, stream, header->magic);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   if (mag_unlikely(!(header->version == MAG_SNAPSHOT_VERSION))) {
     return mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: unsupported version (got %u, expected %u).", header->version, MAG_SNAPSHOT_VERSION);
   }
   status = mag_stream_wu32_le(err, stream, header->version);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_wu64_le(err, stream, header->timestamp);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   *u32_chk_patch_needle = stream->pos; /* Needle where the checksum is overwritten later */
   status = mag_stream_wu32_le(err, stream, header->checksum);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_wu32_le(err, stream, header->aux);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_wu32_le(err, stream, header->metadata_map_len);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_wu32_le(err, stream, header->tensor_header_count);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   return MAG_OK;
 }
 
 static mag_status_t mag_file_header_deserialize(mag_error_t *err, mag_file_header_t *header, mag_mem_stream_t *stream) {
   mag_status_t status = MAG_OK;
   status = mag_stream_ru32_le(err, stream, &header->magic);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   if (mag_unlikely(!(header->magic == MAG_SNAP_FILE_MAGIC))) {
     return mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: invalid file magic (got 0x%x, expected 0x%x).", header->magic, MAG_SNAP_FILE_MAGIC);
   }
   status = mag_stream_ru32_le(err, stream, &header->version);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   /* Cleanly handle if file version is too new or too old. Right now we don't support backwards compat (: */
   if (mag_unlikely(header->version != MAG_SNAPSHOT_VERSION)) {
     if (header->version < MAG_SNAPSHOT_VERSION) mag_log_error("Snapshot file version %u is older than library version %u; recreate the file or downgrade Magnetron.", header->version, MAG_SNAPSHOT_VERSION);
@@ -345,15 +345,15 @@ static mag_status_t mag_file_header_deserialize(mag_error_t *err, mag_file_heade
     return mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: unsupported version (got %u, expected %u).", header->version, MAG_SNAPSHOT_VERSION);
   }
   status = mag_stream_ru64_le(err, stream, &header->timestamp);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_ru32_le(err, stream, &header->checksum);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_ru32_le(err, stream, &header->aux);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_ru32_le(err, stream, &header->metadata_map_len);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_ru32_le(err, stream, &header->tensor_header_count);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   return MAG_OK;
 }
 
@@ -383,16 +383,16 @@ typedef struct mag_tensor_desc_t {
 static mag_status_t mag_tensor_desc_serialize(mag_error_t *err, const mag_tensor_desc_t *desc, mag_mem_stream_t *stream) {
   mag_status_t status = MAG_OK;
   status = mag_stream_wu32_le(err, stream, mag_pack4xu8_le(desc->rank, desc->dtype, desc->aux0, desc->aux1));
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_wu32_le(err, stream, desc->key_id);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_wu64_le(err, stream, desc->numel);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_wu64_le(err, stream, desc->offset);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   for (uint8_t i=0; i < desc->rank; ++i) {
     status = mag_stream_wu64_le(err, stream, desc->shape[i]);
-    if (mag_unlikely(status != MAG_OK)) return status;
+    if (mag_iserr(status)) return status;
   }
   return MAG_OK;
 }
@@ -401,7 +401,7 @@ static mag_status_t mag_tensor_desc_deserialize(mag_error_t *err, mag_tensor_des
   mag_status_t status = MAG_OK;
   uint32_t packed = 0;
   status = mag_stream_ru32_le(err, stream, &packed);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   uint8_t dtype;
   mag_unpack4xu8_le(packed, &desc->rank, &dtype, &desc->aux0, &desc->aux1);
   if (mag_unlikely(!(desc->rank < MAG_SNAP_MAX_RANK))) {
@@ -412,17 +412,17 @@ static mag_status_t mag_tensor_desc_deserialize(mag_error_t *err, mag_tensor_des
   }
   desc->dtype = dtype;
   status = mag_stream_ru32_le(err, stream, &desc->key_id);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   if (mag_unlikely(!(desc->key_id < pool_len))) {
     return mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: tensor key id %u is out of range (pool size %u).", desc->key_id, pool_len);
   }
   status = mag_stream_ru64_le(err, stream, &desc->numel);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   if (mag_unlikely(!(desc->numel > 0 && desc->numel <= INT64_MAX))) {
     return mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: invalid tensor numel %zu.", (size_t)desc->numel);
   }
   status = mag_stream_ru64_le(err, stream, &desc->offset);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   if (mag_unlikely(desc->offset & (MAG_CPU_BUF_ALIGN-1))) {
     return mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: tensor data offset %zu is not aligned to %u bytes.", (size_t)desc->offset, MAG_CPU_BUF_ALIGN);
   }
@@ -430,7 +430,7 @@ static mag_status_t mag_tensor_desc_deserialize(mag_error_t *err, mag_tensor_des
   for (uint8_t i=0; i < desc->rank; ++i) {
     uint64_t dim=0;
     status = mag_stream_ru64_le(err, stream, &dim);
-    if (mag_unlikely(status != MAG_OK)) return status;
+    if (mag_iserr(status)) return status;
     if (mag_unlikely(!(dim <= INT64_MAX))) {
       return mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: invalid tensor dimension size %zu.", (size_t)dim);
     }
@@ -504,9 +504,9 @@ static mag_status_t mag_pool_serialize(mag_error_t *err, const mag_string_pool_t
   }
   mag_status_t status = MAG_OK;
   status = mag_stream_wu32_le(err, stream, (uint32_t)pool->len);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   status = mag_stream_wu32_le(err, stream, 0); /* offsets[0] = 0, for monotonically and clean O(1) offsets */
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   uint32_t offs = 0;
   for (size_t i=0; i < pool->len; ++i) { /* Offset array */
     mag_pool_record_t *rec = pool->records+i;
@@ -518,12 +518,12 @@ static mag_status_t mag_pool_serialize(mag_error_t *err, const mag_string_pool_t
     }
     offs += rec->len;
     status = mag_stream_wu32_le(err, stream, offs);
-    if (mag_unlikely(status != MAG_OK)) return status;
+    if (mag_iserr(status)) return status;
   }
   for (size_t i=0; i < pool->len; ++i) { /* String blob */
     mag_pool_record_t *rec = pool->records+i;
     status = mag_stream_wbytes(err, stream, rec->ptr, rec->len);
-    if (mag_unlikely(status != MAG_OK)) return status;
+    if (mag_iserr(status)) return status;
   }
   return MAG_OK;
 }
@@ -537,7 +537,7 @@ static mag_status_t mag_pool_deserialize(mag_error_t *err, mag_string_pool_t *po
   uint32_t *offs = NULL;
   uint32_t count = 0;
   status = mag_stream_ru32_le(err, stream, &count);
-  if (mag_unlikely(status != MAG_OK)) return status;
+  if (mag_iserr(status)) return status;
   size_t num_offsets = (size_t)count+1;
   if (mag_unlikely(!(num_offsets <= MAG_SNAP_MAX_OFFSETS))) {
     return mag_set_error(err, MAG_ERR_IO, "snapshot: string pool contains %u entries (maximum is %u).", count, MAG_SNAP_MAX_OFFSETS-1);
@@ -549,7 +549,7 @@ static mag_status_t mag_pool_deserialize(mag_error_t *err, mag_string_pool_t *po
   }
   for (size_t i=0; i < num_offsets; ++i) {     /* Read in offsets */
     status = mag_stream_ru32_le(err, stream, offs+i);
-    if (mag_unlikely(status != MAG_OK)) {
+    if (mag_iserr(status)) {
       status = mag_set_error(err, MAG_ERR_IO, "snapshot: failed to read string pool offset at index %zu.", i);
       goto cleanup;
     }
@@ -572,7 +572,7 @@ static mag_status_t mag_pool_deserialize(mag_error_t *err, mag_string_pool_t *po
     }
     const uint8_t *blob = NULL;
     status = mag_stream_rbytes_view(err, stream, &blob, blob_size);
-    if (mag_unlikely(status != MAG_OK)) {
+    if (mag_iserr(status)) {
       status = mag_set_error(err, MAG_ERR_IO, "snapshot: failed to read string pool blob from stream.");
       goto cleanup;
     }
@@ -760,7 +760,7 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   /* File header */
   mag_file_header_t header = {0};
   status = mag_file_header_deserialize(err, &header, stream);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read the file header from '%s'.", filename);
     goto cleanup;
   }
@@ -770,7 +770,7 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   marker = mag_stream_needle(stream);
   uint32_t section_marker = 0;
   status = mag_stream_ru32_le(err, stream, &section_marker);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read the string pool section marker in '%s'.", filename);
     goto cleanup;
   }
@@ -779,14 +779,14 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
     goto cleanup;
   }
   status = mag_pool_deserialize(err, &snap->str_pool, stream);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read the string pool from '%s'.", filename);
     goto cleanup;
   }
   mag_assert2(mag_stream_needle(stream)-marker == 4+mag_pool_compute_size(&snap->str_pool)); /* Verify exact section marker + pool bytes written */
 
   status = mag_stream_ru32_le(err, stream, &section_marker);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read the metadata section marker in '%s'.", filename);
     goto cleanup;
   }
@@ -804,7 +804,7 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   }
 
   status = mag_stream_ru32_le(err, stream, &section_marker);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read the tensor descriptor section marker in '%s'.", filename);
     goto cleanup;
   }
@@ -815,14 +815,14 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
   for (uint32_t i=0; i < nt; ++i) {
     mag_tensor_desc_t *desc = stable+i;
     status = mag_tensor_desc_deserialize(err, desc, stream, snap->str_pool.len);
-    if (mag_unlikely(status != MAG_OK)) {
+    if (mag_iserr(status)) {
       status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read tensor descriptor %u from '%s'.", i, filename);
       goto cleanup;
     }
   }
   /* Read data */
   status = mag_stream_ru32_le(err, stream, &section_marker);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read the tensor data section marker in '%s'.", filename);
     goto cleanup;
   }
@@ -836,7 +836,7 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
     size_t db_al = (db+al)&~al;
     const uint8_t *ignored = NULL;
     status = mag_stream_rbytes_view(err, stream, &ignored, db_al - db);
-    if (mag_unlikely(status != MAG_OK)) {
+    if (mag_iserr(status)) {
       status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read tensor data section padding in '%s'.", filename);
       goto cleanup;
     }
@@ -865,13 +865,13 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
       uint64_t pad = delta-offset;
       ignored = NULL;
       status = mag_stream_rbytes_view(err, stream, &ignored, pad);
-      if (mag_unlikely(status != MAG_OK)) {
+      if (mag_iserr(status)) {
         status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read tensor padding in '%s'.", filename);
         goto cleanup;
       }
       offset = delta;
       status = mag_stream_rbytes_view(err, stream, &blob, nb);
-      if (mag_unlikely(status != MAG_OK)) {
+      if (mag_iserr(status)) {
         status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to read tensor data in '%s'.", filename);
         goto cleanup;
       }
@@ -881,7 +881,7 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
       }
       tensor = NULL;
       status = mag_borrow_cpu_buffer(err, &tensor, ctx, (void *)blob, nb, desc->dtype, desc->rank, shape, false, &mag_snapshot_mmap_borrow_release, snap->mmap_owner);
-      if (mag_unlikely(status != MAG_OK)) {
+      if (mag_iserr(status)) {
         status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to borrow CPU buffer for tensor %zu in '%s'.", i, filename);
         goto cleanup;
       }
@@ -944,7 +944,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
   marker = mag_stream_needle(&stream);
   uint8_t *u32_chk_patch_needle; /* Where to patch the checksum */
   status = mag_file_header_serialize(err, &header, &stream, &u32_chk_patch_needle);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write the file header to '%s'.", filename);
     goto cleanup;
   }
@@ -954,19 +954,19 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
   /* String pool */
   marker = mag_stream_needle(&stream);
   status = mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_STR_POOL);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write the string pool section marker to '%s'.", filename);
     goto cleanup;
   }
   status = mag_pool_serialize(err, &snap->str_pool, &stream);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write the string pool to '%s'.", filename);
     goto cleanup;
   }
   mag_assert2(mag_stream_needle(&stream)-marker == 4+mag_pool_compute_size(&snap->str_pool)); /* Verify exact section marker + pool bytes written */
 
   status = mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_META_DATA);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write the metadata section marker to '%s'.", filename);
     goto cleanup;
   }
@@ -981,7 +981,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
   void *key = NULL, *val = NULL;
   size_t k;
   status = mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_TENSOR_DESC);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write the tensor descriptor section marker to '%s'.", filename);
     goto cleanup;
   }
@@ -1010,7 +1010,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
     }
     marker = mag_stream_needle(&stream);
     status = mag_tensor_desc_serialize(err, &desc, &stream);
-    if (mag_unlikely(status != MAG_OK)) {
+    if (mag_iserr(status)) {
       status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write tensor descriptor for key id %u to '%s'.", key_id, filename);
       goto cleanup;
     }
@@ -1041,7 +1041,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
 
   /* Tensor data section */
   status = mag_stream_wu32_le(err, &stream, MAG_SNAP_SECTION_TENSOR_DATA);
-  if (mag_unlikely(status != MAG_OK)) {
+  if (mag_iserr(status)) {
     status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write the tensor data section marker to '%s'.", filename);
     goto cleanup;
   }
@@ -1050,7 +1050,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
     size_t align = MAG_SNAP_TBUF_ALIGN-1;
     size_t db_al = (db+align)&~align;
     status = mag_stream_wzeros(err, &stream, db_al-db);
-    if (mag_unlikely(status != MAG_OK)) {
+    if (mag_iserr(status)) {
       status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write tensor data section padding to '%s'.", filename);
       goto cleanup;
     }
@@ -1061,7 +1061,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
       tensor = stable[i];
       size_t al = (data_offs+align)&~align;
       status = mag_stream_wzeros(err, &stream, al-data_offs);
-      if (mag_unlikely(status != MAG_OK)) {
+      if (mag_iserr(status)) {
         status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write tensor padding to '%s'.", filename);
         mag_tensor_decref(tensor);
         goto cleanup;
@@ -1073,7 +1073,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
         goto cleanup;
       }
       status = mag_contiguous(err, &tensor, tensor);
-      if (mag_unlikely(status != MAG_OK)) {
+      if (mag_iserr(status)) {
         status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to make tensor %zu contiguous for serialization to '%s'.", i, filename);
         mag_tensor_decref(tensor);
         goto cleanup;
@@ -1081,7 +1081,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
       size_t nb = mag_tensor_numbytes(tensor);
       data_offs += nb;
       status = mag_stream_wbytes(err, &stream, (const void *)mag_tensor_data_ptr(tensor), nb);
-      if (mag_unlikely(status != MAG_OK)) {
+      if (mag_iserr(status)) {
         status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write tensor %zu data to '%s'.", i, filename);
         mag_tensor_decref(tensor);
         goto cleanup;

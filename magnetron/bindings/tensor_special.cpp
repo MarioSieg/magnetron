@@ -22,7 +22,6 @@ namespace mag::bindings {
         ++ellipsis_occ;
         if (ellipsis_pos < 0) ellipsis_pos = static_cast<int64_t>(i);
       } else if (x.is_none()) {
-        // does not consume
       } else { ++consuming; }
     }
     if (ellipsis_occ > 1)

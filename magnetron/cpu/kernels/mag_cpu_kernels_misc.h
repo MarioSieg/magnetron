@@ -9,12 +9,6 @@
 ** +---------------------------------------------------------------------+
 */
 
-/*
- * Cat fast path: since the output is always contiguous, for each outer position p the destination is
- * br + p * out_outer_stride (no coordinate decomposition, no division in the hot loop).
- * For contiguous inputs the source is similarly bx_i + p * xi_outer_stride.
- * Only non-contiguous inputs fall back to stride-based arithmetic.
- */
 #define mag_gen_stub_cat(T, TF) \
   static MAG_HOTPROC mag_status_t mag_cat_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
@@ -40,9 +34,9 @@
     for (int64_t i = 0; i < n && all_contig; ++i) \
       if (!mag_tensor_is_contiguous(payload->cmd->in[i])) all_contig = false; \
     if (mag_likely(all_contig)) { \
-      int64_t xi_outer[MAG_MAX_DIMS]; \
-      const T *bxi[MAG_MAX_DIMS]; \
-      for (int64_t i = 0; i < n; ++i) { \
+      int64_t *xi_outer = mag_scratch_arena_alloc(&mag_tls_arena, n*sizeof(*xi_outer)); \
+      const T **bxi = mag_scratch_arena_alloc(&mag_tls_arena, n*sizeof(*bxi)); \
+      for (int64_t i=0; i < n; ++i) { \
         const mag_tensor_t *x = payload->cmd->in[i]; \
         xi_outer[i] = x->coords.shape[dim] * inner; \
         bxi[i] = (const T *)mag_tensor_data_ptr(x); \
@@ -51,10 +45,11 @@
         T *dst = br + p * out_outer_stride; \
         for (int64_t i = 0; i < n; ++i) { \
           size_t nb = (size_t)xi_outer[i] * sizeof(T); \
-          memcpy(dst, bxi[i] + p * xi_outer[i], nb); \
+          memcpy(dst, bxi[i] + p*xi_outer[i], nb); \
           dst += xi_outer[i]; \
         } \
       } \
+      mag_scratch_arena_clear(&mag_tls_arena); \
     } else { \
       int64_t mult[MAG_MAX_DIMS]; \
       for (int64_t d = 0; d < dim; ++d) { \
