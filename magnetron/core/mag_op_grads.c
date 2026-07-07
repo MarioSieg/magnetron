@@ -1227,11 +1227,9 @@ mag_status_t mag_op_backward_repeat(mag_error_t *err, mag_au_state_t *node, mag_
 mag_status_t mag_op_backward_gather(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *idx = node->in[1];
-  if (!(x->flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK; /* index (in[1]) is int64, not differentiable. */
+  if (!(x->flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
   int64_t dim = node->params.gather.dim;
   mag_tensor_t *gx = NULL;
-  /* out = gather(x, dim, idx)  =>  grad_x = zeros_like(x).scatter_add_(dim, idx, grad_out).
-   * scatter_add accumulates so duplicate gathered indices sum their upstream gradients. */
   mag_status_t status = mag_zeros_like(err, &gx, x);
   if (mag_iserr(status)) return status;
   status = mag_scatter_add_(err, gx, dim, idx, node->grad);
@@ -1265,4 +1263,12 @@ cleanup:
   if (g2) mag_rc_decref(g2);
   if (gw) mag_rc_decref(gw);
   return status;
+}
+
+mag_status_t mag_op_backward_masked_fill(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  mag_tensor_t *x = node->in[0];    /* the filled operand */
+  mag_tensor_t *mask = node->in[1]; /* boolean mask (non-differentiable) */
+  if (!(x->flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
+  /* out = where(mask, value, x)  =>  dx = where(mask, 0, grad): filled positions do not depend on x. */
+  return mag_masked_fill(err, &grads[0], node->grad, mask, mag_scalar_from_float64(0.0));
 }

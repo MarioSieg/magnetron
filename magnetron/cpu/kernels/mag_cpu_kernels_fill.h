@@ -141,13 +141,16 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
 #define mag_gen_stub_masked_fill(T, TF, G, UT, CVT) \
   static MAG_HOTPROC mag_status_t mag_masked_fill_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    const mag_tensor_t *mask = payload->cmd->in[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *mask = payload->cmd->in[1]; \
     mag_tensor_t *r = payload->cmd->out[0]; \
     T val = (T)CVT(mag_scalar_as_##UT(payload->cmd->params->fill.value)); \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
+    const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const uint8_t *bm = (const uint8_t *)mag_tensor_data_ptr(mask); \
-    mag_coords_iter_t cr, cm; \
+    mag_coords_iter_t cr, cx, cm; \
     mag_coords_iter_init(&cr, &r->coords); \
+    mag_coords_iter_init(&cx, &x->coords); \
     mag_coords_iter_init(&cm, &mask->coords); \
     int64_t total = r->numel; \
     int64_t tc = payload->thread_num; \
@@ -156,21 +159,23 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
-    if (mag_tensor_is_contiguous(r)) { \
+    if (mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(x)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
         int64_t mi = mag_coords_iter_broadcast(&cr, &cm, ri); \
         mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(bx+ri, x->storage->base, mag_tensor_numbytes(x)); \
         mag_bnd_chk(bm+mi, mask->storage->base, mag_tensor_numbytes(mask)); \
-        if (bm[mi]) br[ri] = val; \
+        br[ri] = bm[mi] ? val : bx[ri]; \
       } \
       return MAG_OK; \
     } \
     for (int64_t i=ra; i < rb; ++i) { \
-      int64_t ri, mi; \
-      mag_coords_iter_offset2(&cr, &cm, i, &ri, &mi); \
+      int64_t ri, xi, mi; \
+      mag_coords_iter_offset3(&cr, &cx, &cm, i, &ri, &xi, &mi); \
       mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(bx+xi, x->storage->base, mag_tensor_numbytes(x)); \
       mag_bnd_chk(bm+mi, mask->storage->base, mag_tensor_numbytes(mask)); \
-      if (bm[mi]) br[ri] = val; \
+      br[ri] = bm[mi] ? val : bx[xi]; \
     } \
     return MAG_OK; \
   }

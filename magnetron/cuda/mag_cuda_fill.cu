@@ -41,17 +41,20 @@ namespace mag {
   __global__ static void masked_fill_kernel(
     int n,
     T *__restrict__ r,
+    const T *__restrict__ x,
     const uint8_t *__restrict__ m,
     T v,
-    [[maybe_unused]] mag_coords_iter_t rc,
+    mag_coords_iter_t rc,
+    mag_coords_iter_t xc,
     mag_coords_iter_t mc
   ) {
     int ti = blockIdx.x*blockDim.x + threadIdx.x;
     int step = blockDim.x*gridDim.x;
     for (; ti < n; ti += step) {
       int ri = C ? ti : mag_coords_iter_to_offset(&rc, ti);
+      int xi = C ? ti : mag_coords_iter_broadcast(&rc, &xc, ti);
       int mi = mag_coords_iter_broadcast(&rc, &mc, ti);
-      if (m[mi]) r[ri] = v;
+      r[ri] = m[mi] ? v : x[xi];
     }
   }
 
@@ -63,15 +66,19 @@ namespace mag {
     int n = numel_i32(r);
     int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     if (mask) {
+      const mag_tensor_t *xt = cmd.in[0];
+      const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(xt));
       const auto *pm = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(mask));
       mag_coords_iter_t mc;
       mag_coords_iter_init(&mc, &mask->coords);
+      mag_coords_iter_t xc;
+      mag_coords_iter_init(&xc, &xt->coords);
       mag_coords_iter_t rc;
       mag_coords_iter_init(&rc, &r->coords);
-      if (cont) {
-        masked_fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, pm, v, rc, mc);
+      if (cont && mag_tensor_is_contiguous(xt)) {
+        masked_fill_kernel<T, true><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, px, pm, v, rc, xc, mc);
       } else {
-        masked_fill_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, pm, v, rc, mc);
+        masked_fill_kernel<T, false><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, px, pm, v, rc, xc, mc);
       }
     } else {
       if (cont) {
@@ -237,7 +244,7 @@ namespace mag {
   }
 
   mag_status_t fill_op_masked_fill(mag_error_t *err, const mag_command_t &cmd) {
-    mag_tensor_t *mask = cmd.in[0];
+    mag_tensor_t *mask = cmd.in[1];
     mag_tensor_t *r = cmd.out[0];
     switch (r->dtype) {
       case MAG_DTYPE_FLOAT32: launch_fill_kernel<float>(r, cmd, mask); break;

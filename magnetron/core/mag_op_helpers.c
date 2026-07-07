@@ -526,6 +526,15 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
     }
     return MAG_OK;
   }
+  if (op == MAG_OP_MASKED_FILL) {
+    if (mag_unlikely(!(inputs[1]->dtype == MAG_DTYPE_BOOLEAN)))
+        return mag_set_error(err, MAG_ERR_PARAM,
+          "op_validate: mask tensor for operator '%s' must have dtype bool, but got '%s'.\n"
+          "    Hint: cast the mask to bool.",
+          meta->mnemonic, mag_type_trait(inputs[1]->dtype)->name
+        );
+    return MAG_OK;
+  }
   if (mag_unlikely(meta->in == 2 && n == 2 && inputs[0]->dtype != inputs[1]->dtype)) { /* For binary operators, check that both inputs have the same data type. */
     const char *dtype_x = mag_type_trait(inputs[0]->dtype)->name;
     const char *dtype_y = mag_type_trait(inputs[1]->dtype)->name;

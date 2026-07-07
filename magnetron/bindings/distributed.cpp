@@ -83,11 +83,11 @@ namespace mag::bindings {
         mag_error_t err {};
         throw_if_error(mag_pgroup_barrier(&err, *self), err);
       }, "Synchronize all processes in the group.")
-      .def("broadcast_", [](process_group_wrapper &self, const tensor_wrapper &tensor) {
+      .def("broadcast_", [](process_group_wrapper &self, const tensor_wrapper &tensor) -> void {
         mag_error_t err {};
         throw_if_error(mag_pgroup_broadcast_(&err, *self, *tensor), err);
       }, "tensor"_a, "Broadcast a tensor from rank 0 to all other ranks in the group.")
-      .def("all_reduce_sum_", [](process_group_wrapper &self, const tensor_wrapper &tensor) {
+      .def("all_reduce_sum_", [](process_group_wrapper &self, const tensor_wrapper &tensor) -> void {
         mag_error_t err {};
         throw_if_error(mag_pgroup_all_reduce_sum_(&err, *self, *tensor), err);
       }, "tensor"_a, "Perform an in-place all-reduce sum on the tensor across all ranks in the group.")

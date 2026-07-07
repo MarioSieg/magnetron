@@ -1948,20 +1948,34 @@ mag_status_t mag_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t valu
 
 mag_status_t mag_masked_fill(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, mag_tensor_t *mask, mag_scalar_t value) {
   *out_result = NULL;
-  mag_status_t status = mag_clone(err, out_result, tensor);
-  if (mag_iserr(status)) return status;
-  return mag_masked_fill_(err, *out_result, mask, value);
-}
-
-mag_status_t mag_masked_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_tensor_t *mask, mag_scalar_t value) {
-  if (mag_unlikely(!(mask->dtype == MAG_DTYPE_BOOLEAN)))
-      return mag_set_error(err, MAG_ERR_PARAM, "masked_fill: mask must have dtype bool, but got %s.", mag_type_trait(mask->dtype)->name);
   mag_op_params_t params = {
     .fill = {.value = value}
   };
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_MASKED_FILL, &mask, 1);
+  mag_tensor_t *inputs[2] = {tensor, mask};
+  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_MASKED_FILL, inputs, 2);
   if (mag_iserr(status)) return status;
-  return mag_dispatch(err, MAG_OP_MASKED_FILL, false, &mask, 1, &tensor, 1, &params);
+  mag_tensor_t *result = NULL;
+  status = mag_empty_like(err, &result, tensor);
+  if (mag_iserr(status)) return status;
+  status = mag_dispatch(err, MAG_OP_MASKED_FILL, false, inputs, 2, &result, 1, &params);
+  if (mag_iserr(status)) {
+    mag_tensor_decref(result);
+    return status;
+  }
+  *out_result = result;
+  return MAG_OK;
+}
+
+mag_status_t mag_masked_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_tensor_t *mask, mag_scalar_t value) {
+  mag_op_params_t params = {
+    .fill = {.value = value}
+  };
+  mag_tensor_t *inputs[2] = {tensor, mask};
+  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_MASKED_FILL, inputs, 2);
+  if (mag_iserr(status)) return status;
+  status = mag_check_inplace_grad_ok(err, tensor);
+  if (mag_iserr(status)) return status;
+  return mag_dispatch(err, MAG_OP_MASKED_FILL, true, inputs, 2, &tensor, 1, &params);
 }
 
 mag_status_t mag_uniform_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t low, mag_scalar_t high) {
