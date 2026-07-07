@@ -47,12 +47,10 @@ mag_status_t mag_op_backward_mean(mag_error_t *err, mag_au_state_t *node, mag_te
   mag_status_t status = MAG_OK;
   mag_tensor_t *scale = NULL;
 
-  status = mag_full_like(err, &scale, x, mag_scalar_from_float64(1.0 / (double)x->numel));
+  status = mag_full_like(err, &scale, x, mag_scalar_from_float64((double)node->grad->numel/(double)x->numel));
   if (mag_iserr(status))
     goto cleanup;
   status = mag_mul(err, grads, scale, node->grad);
-  if (mag_iserr(status))
-    goto cleanup;
 
 cleanup:
   if (scale) mag_rc_decref(scale);
@@ -68,8 +66,6 @@ mag_status_t mag_op_backward_sum(mag_error_t *err, mag_au_state_t *node, mag_ten
   if (mag_iserr(status))
     goto cleanup;
   status = mag_mul(err, grads, ones, node->grad);
-  if (mag_iserr(status))
-    goto cleanup;
 
 cleanup:
   if (ones) mag_rc_decref(ones);
@@ -244,9 +240,6 @@ mag_status_t mag_op_backward_softmax(mag_error_t *err, mag_au_state_t *node, mag
   status = mag_mul(err, &tmp, node->grad, y);
   if (mag_iserr(status))
     goto cleanup;
-  /* softmax is computed over the last axis, so its Jacobian couples only elements within a row:
-   * dx = y * (grad - sum(grad*y, axis=-1, keepdim=True)). Reduce along the last axis (keepdim so it
-   * broadcasts back), not globally. */
   int64_t axis = x->coords.rank - 1;
   status = mag_sum(err, &sum_tmp, tmp, &axis, 1, true);
   if (mag_iserr(status))
@@ -351,8 +344,6 @@ cleanup:
   return status;
 }
 
-/* Sum-reduce a gradient back to the shape of a (possibly broadcast) input. Defined below; forward-declared
- * here so the broadcasting binary-op backwards can reduce BOTH operands, not just the second one. */
 static mag_status_t mag_grad_reduce_to(mag_error_t *err, mag_tensor_t **io, mag_tensor_t *like);
 
 mag_status_t mag_op_backward_add(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
@@ -536,11 +527,6 @@ mag_status_t mag_op_backward_matmul(mag_error_t *err, mag_au_state_t *node, mag_
   mag_tensor_t *g = NULL;
   int64_t rx = x->coords.rank;
   int64_t ry = y->coords.rank;
-
-  /* out = x @ y contracts the last two dims and broadcasts the leading batch dims.
-   * grad_x = grad @ yᵀ, grad_y = xᵀ @ grad, where ᵀ swaps the last two dims (not 0,1 — that is only
-   * correct for 2-D). Any batch dims that were broadcast in the forward are then summed back to each
-   * operand's own shape via mag_grad_reduce_to. */
   if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_transpose(err, &yT, y, ry-2, ry-1);
     if (mag_iserr(status)) goto cleanup;
@@ -581,6 +567,21 @@ static mag_status_t mag_grad_reduce_to(mag_error_t *err, mag_tensor_t **io, mag_
   mag_rc_decref(*io);
   *io = r;
   return MAG_OK;
+}
+
+mag_status_t mag_op_backward_broadcast(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  mag_tensor_t *x = node->in[0];
+  mag_status_t status = MAG_OK;
+  mag_tensor_t *g = NULL;
+  status = mag_clone(err, &g, node->grad);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_grad_reduce_to(err, &g, x);
+  if (mag_iserr(status)) goto cleanup;
+  grads[0] = g;
+  g = NULL;
+cleanup:
+  if (g) mag_rc_decref(g);
+  return status;
 }
 
 mag_status_t mag_op_backward_log2(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {

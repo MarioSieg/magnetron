@@ -101,7 +101,7 @@ mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t
   const int64_t *old_shape = x->coords.shape;
   const int64_t *old_strides = x->coords.strides;
   int64_t new_strides[MAG_MAX_DIMS];
-  if (mag_unlikely(!(rank >= old_rank))) {
+  if (mag_unlikely(rank < old_rank)) {
     return mag_set_error(err, MAG_ERR_RANK, "broadcast_to: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".", rank, old_rank);
   }
   for (int64_t i=0; i < rank; ++i) {
@@ -119,9 +119,10 @@ mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t
     }
     new_strides[new_ax] = old_dim == new_dim ? old_stride : 0;
   }
-  return mag_as_strided(
+  mag_tensor_t *result = NULL;
+  mag_status_t status = mag_as_strided(
     err,
-    out,
+    &result,
     mag_tensor_context(x),
     x,
     rank,
@@ -129,12 +130,22 @@ mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t
     new_strides,
     (int64_t)mag_tensor_data_offset(x)
   );
+  if (mag_iserr(status)) return status;
+  /* Record the autograd edge (nop forward - the output was already produced by as_strided above). Its
+     backward sums the gradient back over the broadcast dimensions; without it the broadcast (and thus
+     expand()) would silently drop gradients. */
+  status = mag_check_dtype_and_device_compat(err, MAG_OP_BROADCAST, &x, 0);
+  if (mag_iserr(status)) { mag_tensor_decref(result); return status; }
+  status = mag_dispatch(err, MAG_OP_BROADCAST, false, &x, 1, &result, 1, NULL);
+  if (mag_iserr(status)) { mag_tensor_decref(result); return status; }
+  *out = result;
+  return MAG_OK;
 }
 
 mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
   int64_t old_rank = x->coords.rank;
   const int64_t *old_shape = x->coords.shape;
-  if (mag_unlikely(!(rank >= old_rank))) {
+  if (mag_unlikely(rank < old_rank)) {
     return mag_set_error(
       err, MAG_ERR_RANK,
       "expand: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".",
@@ -147,7 +158,7 @@ mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, i
     int64_t old_ax = old_rank-1-i;
     int64_t dim = shape[new_ax];
     if (dim == -1) {
-      if (mag_unlikely(!(old_ax >= 0))) {
+      if (mag_unlikely(old_ax < 0)) {
         return mag_set_error(
           err, MAG_ERR_PARAM,
           "expand: -1 is not allowed for a newly prepended dimension."
@@ -155,7 +166,7 @@ mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, i
       }
       resolved[new_ax] = old_shape[old_ax];
     } else {
-      if (mag_unlikely(!(dim >= 0))) {
+      if (mag_unlikely(dim < 0)) {
         return mag_set_error(
           err, MAG_ERR_PARAM,
           "expand: invalid dimension size %" PRIi64 ".",
@@ -177,7 +188,6 @@ mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context
   mag_tensor_t *result;
   int64_t numel = 0;
   bool ok = false;
-  /* start/step are passed to the kernel using the widest type of the dtype family (i64/u64/float64) so no precision is lost for full-range int64/uint64 spans. */
   bool is_signed = mag_type_category_is_signed_integer(type);
   bool is_unsigned = mag_type_category_is_unsigned_integer(type);
   if (is_signed) ok = mag_arange_numel_i64(mag_scalar_as_int64(start), mag_scalar_as_int64(end), mag_scalar_as_int64(step), &numel);
@@ -203,9 +213,9 @@ mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context
 
 mag_status_t mag_eye(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, int64_t m, mag_device_id_t device) {
   *out_result = NULL;
-  if (mag_unlikely(!(n >= 0)))
+  if (mag_unlikely(n < 0))
       return mag_set_error(err, MAG_ERR_PARAM, "eye: n must be >= 0, but got %" PRIi64 ".", n);
-  if (mag_unlikely(!(m >= 0)))
+  if (mag_unlikely(m < 0))
       return mag_set_error(err, MAG_ERR_PARAM, "eye: m must be >= 0, but got %" PRIi64 ".", m);
   mag_tensor_t *result = NULL;
   mag_status_t status = mag_empty(err, &result, ctx, type, 2, (int64_t[2]){n, m}, device);
@@ -222,7 +232,7 @@ mag_status_t mag_eye(mag_error_t *err, mag_tensor_t **out_result, mag_context_t 
 
 mag_status_t mag_linspace(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t start, mag_scalar_t end, int64_t steps, mag_device_id_t device) {
   *out_result = NULL;
-  if (mag_unlikely(!(steps > 0)))
+  if (mag_unlikely(steps <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "linspace: steps must be > 0, but got %" PRIi64 ".", steps);
   if (mag_unlikely(!mag_scalar_same_type(start, end)))
       return mag_set_error(err, MAG_ERR_PARAM, "linspace: start and end must have the same scalar type.");
@@ -261,7 +271,7 @@ mag_status_t mag_meshgrid(mag_error_t *err, mag_tensor_t **out_results, mag_tens
       return mag_set_error(err, MAG_ERR_PARAM, "meshgrid: out_results must not be NULL.");
   if (mag_unlikely(!(tensors != NULL)))
       return mag_set_error(err, MAG_ERR_PARAM, "meshgrid: tensors must not be NULL.");
-  if (mag_unlikely(!(count > 0)))
+  if (mag_unlikely(count <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "meshgrid: expected at least one tensor.");
   if (mag_unlikely(!(count <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_ERR_RANK, "meshgrid: tensor count %zu exceeds maximum rank %d.", count, MAG_MAX_DIMS);
@@ -415,7 +425,7 @@ mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
       return mag_set_error(err, MAG_ERR_RANK, "view: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   mag_status_t status;
   if (rank == 0) {
-    if (mag_unlikely(!(x->numel == 1)))
+    if (mag_unlikely(x->numel != 1))
         return mag_set_error(err, MAG_ERR_PARAM, "view: rank-0 view is only allowed on tensors with a single element, but got %" PRIi64 " elements.", x->numel);
     status = mag_as_strided(err, &result, x->ctx, x, 0, NULL, NULL, x->storage_offset);
     if (mag_iserr(status)) return status;
@@ -466,41 +476,14 @@ mag_status_t mag_reshape(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
     *out_result = x;
     return MAG_OK;
   }
-  if (mag_tensor_is_contiguous(x)) {
-    int64_t strides[MAG_MAX_DIMS];
-    strides[rank-1] = 1;
-    for (int64_t i=rank-2; i >= 0; --i) {
-      if (mag_unlikely(mag_mulov64(shape[i+1], strides[i+1], strides+i)))
-        return mag_set_error(err, MAG_ERR_DIM, "reshape: stride computation overflowed at dim %" PRIi64 ".", i);
-    }
-    status = mag_as_strided(err, &result, x->ctx, x, rank, shape, strides, x->storage_offset);
-    if (mag_iserr(status)) return status;
-    *out_result = result;
-    return MAG_OK;
-  }
-  if (mag_tensor_can_view(x, shape, rank)) {
-    status = mag_view(err, &result, x, shape, rank);
-    if (mag_iserr(status)) return status;
-    *out_result = result;
-    return MAG_OK;
-  }
+  if (mag_tensor_is_contiguous(x) || mag_tensor_can_view(x, shape, rank))
+    return mag_view(err, out_result, x, shape, rank);
   status = mag_contiguous(err, &result, x);
   if (mag_iserr(status)) return status;
-  int64_t strides[MAG_MAX_DIMS];
-  strides[rank-1] = 1;
-  for (int64_t i=rank-2; i >= 0; --i) {
-    if (mag_unlikely(mag_mulov64(shape[i+1], strides[i+1], strides+i))) {
-      mag_rc_decref(result);
-      return mag_set_error(err, MAG_ERR_DIM, "reshape: stride computation overflowed at dim %" PRIi64 ".", i);
-    }
-  }
-  mag_tensor_t *reshaped;
-  status = mag_as_strided(err, &reshaped, result->ctx, result, rank, shape, strides, result->storage_offset);
-  if (mag_iserr(status)) {
-    mag_rc_decref(result);
-    return status;
-  }
+  mag_tensor_t *reshaped = NULL;
+  status = mag_view(err, &reshaped, result, shape, rank);
   mag_rc_decref(result);
+  if (mag_iserr(status)) return status;
   *out_result = reshaped;
   return MAG_OK;
 }
@@ -508,19 +491,19 @@ mag_status_t mag_reshape(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
 mag_status_t mag_view_slice(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t start, int64_t len, int64_t step) {
   *out_result = NULL;
   int64_t rank = x->coords.rank;
-  if (mag_unlikely(!(rank > 0)))
+  if (mag_unlikely(rank <= 0))
       return mag_set_error(err, MAG_ERR_RANK, "slice: cannot slice a scalar tensor.");
   mag_norm_axis(&dim, rank);
   if (mag_unlikely(!(0 <= dim && dim < rank)))
       return mag_set_error(err, MAG_ERR_RANK, "slice: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
-  if (mag_unlikely(!(step > 0)))
+  if (mag_unlikely(step <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "slice: step must be > 0, but got %" PRIi64 ".", step);
   int64_t sz = x->coords.shape[dim];
   mag_norm_axis(&start, sz);
   if (mag_unlikely(!(0 <= start && start < sz)))
       return mag_set_error(err, MAG_ERR_PARAM, "slice: start %" PRIi64 " is out of bounds for dim %" PRIi64 " of size %" PRIi64 ".", start, dim, sz);
   if (len < 0) len = (int64_t)mag_uint128_ceildiv((uint64_t)(sz-start), (uint64_t)step);
-  if (mag_unlikely(!(len > 0)))
+  if (mag_unlikely(len <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "slice: length must be > 0, but got %" PRIi64 ".", len);
   int64_t last = start + (len - 1)*step;
   if (mag_unlikely(!(0 <= last && last < sz)))
@@ -549,9 +532,9 @@ mag_status_t mag_view_slice(mag_error_t *err, mag_tensor_t **out_result, mag_ten
 mag_status_t mag_transpose(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim1, int64_t dim2) {
   *out_result = NULL;
   mag_tensor_t *result = NULL;
-  if (mag_unlikely(!(x->coords.rank >= 2)))
+  if (mag_unlikely(x->coords.rank < 2))
       return mag_set_error(err, MAG_ERR_PARAM, "transpose: requires rank >= 2, but got %" PRIi64 ".", x->coords.rank);
-  if (mag_unlikely(!(dim1 != dim2)))
+  if (mag_unlikely(dim1 == dim2))
       return mag_set_error(err, MAG_ERR_PARAM, "transpose: axes must differ, but got dim1 == dim2 == %" PRIi64 ".", dim1);
   int64_t ra = x->coords.rank;
   int64_t ax0 = dim1;
@@ -698,7 +681,7 @@ mag_status_t mag_squeeze_all(mag_error_t *err, mag_tensor_t **out_result, mag_te
 mag_status_t mag_squeeze_dim(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim) {
   *out_result = NULL;
   int64_t rank = x->coords.rank;
-  if (mag_unlikely(!(rank > 0)))
+  if (mag_unlikely(rank <= 0))
       return mag_set_error(err, MAG_ERR_RANK, "squeeze: cannot squeeze a scalar tensor.");
   mag_norm_axis(&dim, rank);
   if (mag_unlikely(!(0 <= dim && dim < rank)))
@@ -739,7 +722,7 @@ mag_status_t mag_flatten(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
       return mag_set_error(err, MAG_ERR_RANK, "flatten: start_dim %" PRIi64 " is out of range for rank %" PRIi64 ".", start_dim, rank);
   if (mag_unlikely(!(0 <= end_dim && end_dim < rank)))
       return mag_set_error(err, MAG_ERR_RANK, "flatten: end_dim %" PRIi64 " is out of range for rank %" PRIi64 ".", end_dim, rank);
-  if (mag_unlikely(!(start_dim <= end_dim)))
+  if (mag_unlikely(start_dim > end_dim))
       return mag_set_error(err, MAG_ERR_PARAM, "flatten: start_dim must be <= end_dim, but got %" PRIi64 " > %" PRIi64 ".", start_dim, end_dim);
   int64_t shape[MAG_MAX_DIMS];
   int64_t nrank = 0;
@@ -750,16 +733,16 @@ mag_status_t mag_flatten(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
   for (int64_t i=end_dim+1; i < rank; ++i) shape[nrank++] = x->coords.shape[i];
   if (mag_unlikely(!(nrank <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_ERR_RANK, "flatten: result rank %" PRIi64 " exceeds the maximum rank of %d.", nrank, MAG_MAX_DIMS);
-  mag_status_t stat = mag_view(err, out_result, x, shape, nrank); /* Try view first */
-  if (mag_iserr(stat))
-    stat = mag_reshape(err, out_result, x, shape, nrank);
-  return stat;
+  mag_status_t status = mag_view(err, out_result, x, shape, nrank); /* Try view first */
+  if (mag_iserr(status))
+    status = mag_reshape(err, out_result, x, shape, nrank);
+  return status;
 }
 
 mag_status_t mag_unflatten(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, const int64_t *sizes, int64_t sizes_rank) {
   *out_result = NULL;
   int64_t rank = x->coords.rank;
-  if (mag_unlikely(!(sizes_rank > 0)))
+  if (mag_unlikely(sizes_rank <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "unflatten: sizes must contain at least one dimension.");
   if (mag_unlikely(!(sizes != NULL)))
       return mag_set_error(err, MAG_ERR_PARAM, "unflatten: sizes must not be NULL.");
@@ -785,27 +768,27 @@ mag_status_t mag_unflatten(mag_error_t *err, mag_tensor_t **out_result, mag_tens
   for (int64_t i=0; i < dim; ++i) shape[k++] = x->coords.shape[i];
   for (int64_t i=0; i < sizes_rank; ++i) shape[k++] = resolved[i];
   for (int64_t i=dim+1; i < rank; ++i) shape[k++] = x->coords.shape[i];
-  mag_status_t stat = mag_view(err, out_result, x, shape, nr);
-  if (mag_iserr(stat)) {
+  status = mag_view(err, out_result, x, shape, nr);
+  if (mag_iserr(status)) {
     mag_error_t ignored = {0};
-    stat = mag_reshape(&ignored, out_result, x, shape, nr);
-    if (mag_iserr(stat))
-      stat = mag_reshape(err, out_result, x, shape, nr);
+    status = mag_reshape(&ignored, out_result, x, shape, nr);
+    if (mag_iserr(status))
+      status = mag_reshape(err, out_result, x, shape, nr);
   }
-  return stat;
+  return status;
 }
 
 mag_status_t mag_narrow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t start, int64_t length) {
   *out_result = NULL;
   int64_t rank = x->coords.rank;
-  if (mag_unlikely(!(rank > 0)))
+  if (mag_unlikely(rank <= 0))
       return mag_set_error(err, MAG_ERR_RANK, "narrow: cannot narrow a scalar tensor.");
   mag_norm_axis(&dim, rank);
   if (mag_unlikely(!(0 <= dim && dim < rank)))
       return mag_set_error(err, MAG_ERR_RANK, "narrow: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
-  if (mag_unlikely(!(length >= 0)))
+  if (mag_unlikely(length < 0))
       return mag_set_error(err, MAG_ERR_PARAM, "narrow: length must be >= 0, but got %" PRIi64 ".", length);
-  if (mag_unlikely(!(length > 0)))
+  if (mag_unlikely(length <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "narrow: length 0 is not supported.");
   int64_t sz = x->coords.shape[dim];
   mag_norm_axis(&start, sz);
@@ -820,7 +803,7 @@ mag_status_t mag_narrow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
 mag_status_t mag_movedim(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t src, int64_t dst) {
   *out_result = NULL;
   int64_t rank = x->coords.rank;
-  if (mag_unlikely(!(rank > 0)))
+  if (mag_unlikely(rank <= 0))
       return mag_set_error(err, MAG_ERR_RANK, "movedim: cannot apply movedim to a scalar tensor.");
   mag_norm_axis(&src, rank);
   mag_norm_axis(&dst, rank);
@@ -846,7 +829,7 @@ mag_status_t mag_movedim(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
 mag_status_t mag_select(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t index) {
   *out_result = NULL;
   int64_t rank = x->coords.rank;
-  if (mag_unlikely(!(rank > 0)))
+  if (mag_unlikely(rank <= 0))
       return mag_set_error(err, MAG_ERR_RANK, "select: cannot select from a scalar tensor.");
   mag_norm_axis(&dim, rank);
   if (mag_unlikely(!(0 <= dim && dim < rank)))
@@ -870,7 +853,7 @@ mag_status_t mag_split(mag_error_t *err, mag_tensor_t **outs, int64_t num_splits
   int64_t rank = x->coords.rank;
   if (mag_unlikely(!(split_size > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "split: split_size must be > 0, but got %" PRIi64 ".", split_size);
-  if (mag_unlikely(!(rank > 0)))
+  if (mag_unlikely(rank <= 0))
       return mag_set_error(err, MAG_ERR_RANK, "split: cannot split a scalar tensor.");
   mag_norm_axis(&dim, rank);
   if (mag_unlikely(!(0 <= dim && dim < rank)))
@@ -943,16 +926,16 @@ mag_status_t mag_topk(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t 
   if (mag_unlikely(!(x != NULL)))
       return mag_set_error(err, MAG_ERR_PARAM, "topk: input tensor must not be NULL.");
   mag_context_t *ctx = x->ctx;
-  if (mag_unlikely(!(k > 0)))
+  if (mag_unlikely(k <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "topk: k must be > 0, but got %" PRIi64 ".", k);
   int64_t rank = x->coords.rank;
-  if (mag_unlikely(!(rank > 0)))
+  if (mag_unlikely(rank <= 0))
       return mag_set_error(err, MAG_ERR_RANK, "topk: requires a tensor with rank > 0.");
   mag_norm_axis(&dim, rank);
   if (mag_unlikely(!(0 <= dim && dim < rank)))
       return mag_set_error(err, MAG_ERR_DIM, "topk: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
   int64_t dim_size = x->coords.shape[dim];
-  if (mag_unlikely(!(k <= dim_size)))
+  if (mag_unlikely(k > dim_size))
       return mag_set_error(err, MAG_ERR_PARAM, "topk: k (%" PRIi64 ") must be <= the size of dim %" PRIi64 " (%" PRIi64 ").", k, dim, dim_size);
   int64_t shape[MAG_MAX_DIMS];
   memcpy(shape, x->coords.shape, sizeof(*shape)*rank);
@@ -1005,9 +988,9 @@ mag_status_t mag_outer(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
     return mag_set_error(err, MAG_ERR_PARAM, "outer: first input tensor must not be NULL.");
   if (mag_unlikely(!(b != NULL)))
     return mag_set_error(err, MAG_ERR_PARAM, "outer: second input tensor must not be NULL.");
-  if (mag_unlikely(!(a->coords.rank == 1)))
+  if (mag_unlikely(a->coords.rank != 1))
     return mag_set_error(err, MAG_ERR_RANK, "outer: first input must be 1D, but got rank %" PRIi64 ".", a->coords.rank);
-  if (mag_unlikely(!(b->coords.rank == 1)))
+  if (mag_unlikely(b->coords.rank != 1))
     return mag_set_error(err, MAG_ERR_RANK, "outer: second input must be 1D, but got rank %" PRIi64 ".", b->coords.rank);
   if (mag_unlikely(!mag_device_id_eq(mag_tensor_device_id(a), mag_tensor_device_id(b))))
     return mag_set_error(err, MAG_ERR_DEVICE, "outer: input tensors must be on the same device.");
@@ -1086,12 +1069,12 @@ mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
       return mag_set_error(err, MAG_ERR_PARAM, "pad: input tensor must not be NULL.");
   if (mag_unlikely(!(pad != NULL || pad_len == 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "pad: padding array must not be NULL.");
-  if (mag_unlikely(!(pad_len >= 0)))
+  if (mag_unlikely(pad_len < 0))
       return mag_set_error(err, MAG_ERR_PARAM, "pad: pad_len must be >= 0.");
   if (mag_unlikely(!(mode && *mode)))
       return mag_set_error(err, MAG_ERR_PARAM, "pad: invalid mode string");
   int64_t rank = x->coords.rank;
-  if (mag_unlikely(!(pad_len <= 2*rank)))
+  if (mag_unlikely(pad_len > (rank<<1)))
       return mag_set_error(err, MAG_ERR_PARAM, "pad: expected at most %" PRIi64 " padding values for rank %" PRIi64 ", but got %" PRIi64 ".", 2*rank, rank, pad_len);
   mag_op_params_t params = {0};
   params.pad.rank = rank;
@@ -1128,7 +1111,7 @@ mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
 
 mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag) {
   *out_result = NULL;
-  if (mag_unlikely(!(tensor->coords.rank >= 2)))
+  if (mag_unlikely(tensor->coords.rank < 2))
       return mag_set_error(err, MAG_ERR_PARAM, "tril: requires rank >= 2, but got %" PRIi64 ".", tensor->coords.rank);
   mag_op_params_t params = {
     .trilu = {.diag = diag}
@@ -1138,7 +1121,7 @@ mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
 
 mag_status_t mag_tril_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag) {
   *out_result = NULL;
-  if (mag_unlikely(!(tensor->coords.rank >= 2)))
+  if (mag_unlikely(tensor->coords.rank < 2))
       return mag_set_error(err, MAG_ERR_PARAM, "tril_: requires rank >= 2, but got %" PRIi64 ".", tensor->coords.rank);
   mag_op_params_t params = {
     .trilu = {.diag = diag}
@@ -1148,7 +1131,7 @@ mag_status_t mag_tril_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
 
 mag_status_t mag_triu(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag) {
   *out_result = NULL;
-  if (mag_unlikely(!(tensor->coords.rank >= 2)))
+  if (mag_unlikely(tensor->coords.rank < 2))
       return mag_set_error(err, MAG_ERR_PARAM, "triu: requires rank >= 2, but got %" PRIi64 ".", tensor->coords.rank);
   mag_op_params_t params = {
     .trilu = {.diag = diag}
@@ -1158,7 +1141,7 @@ mag_status_t mag_triu(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
 
 mag_status_t mag_triu_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag) {
   *out_result = NULL;
-  if (mag_unlikely(!(tensor->coords.rank >= 2)))
+  if (mag_unlikely(tensor->coords.rank < 2))
       return mag_set_error(err, MAG_ERR_PARAM, "triu_: requires rank >= 2, but got %" PRIi64 ".", tensor->coords.rank);
   mag_op_params_t params = {
     .trilu = {.diag = diag}
@@ -1172,7 +1155,7 @@ mag_status_t mag_multinomial(mag_error_t *err, mag_tensor_t **out_result, mag_te
       return mag_set_error(err, MAG_ERR_PARAM, "multinomial: requires rank 1 or 2, but got %" PRIi64 ".", tensor->coords.rank);
   if (mag_unlikely(!mag_tensor_is_contiguous(tensor)))
       return mag_set_error(err, MAG_ERR_PARAM, "multinomial: input tensor must be contiguous row-major.");
-  if (mag_unlikely(!(num_samples > 0)))
+  if (mag_unlikely(num_samples <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "multinomial: num_samples must be > 0, but got %" PRIi64 ".", num_samples);
   mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_MULTINOMIAL, &tensor, 0);
   if (mag_iserr(status)) return status;
@@ -1199,7 +1182,7 @@ mag_status_t mag_cat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
   if (mag_unlikely(!(tensors != NULL)))
       return mag_set_error(err, MAG_ERR_PARAM, "cat: tensors array must not be NULL.");
   mag_tensor_t *result = NULL;
-  if (mag_unlikely(!(count > 0)))
+  if (mag_unlikely(count <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "cat: tensor count must be > 0.");
   mag_tensor_t *t0 = tensors[0];
   if (mag_unlikely(!(t0 != NULL)))
@@ -1224,19 +1207,19 @@ mag_status_t mag_cat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
       (*mag_alloc)(tmp, 0, 0);
       return mag_set_error(err, MAG_ERR_PARAM, "cat: tensor at index %" PRIu64 " is NULL.", (uint64_t)i);
     }
-    if (mag_unlikely(!(tensor->coords.rank == rank))) {
+    if (mag_unlikely(tensor->coords.rank != rank)) {
       for (size_t j=0; j < i; ++j) mag_tensor_decref(tmp[j]);
       (*mag_alloc)(tmp, 0, 0);
       return mag_set_error(err, MAG_ERR_PARAM, "cat: all tensors must have the same rank (got %" PRIi64 " and %" PRIi64 ").", tensor->coords.rank, rank);
     }
-    if (mag_unlikely(!(tensor->dtype == dtype))) {
+    if (mag_unlikely(tensor->dtype != dtype)) {
       for (size_t j=0; j < i; ++j) mag_tensor_decref(tmp[j]);
       (*mag_alloc)(tmp, 0, 0);
       return mag_set_error(err, MAG_ERR_PARAM, "cat: all tensors must have the same dtype (got %s and %s).", mag_type_trait(tensor->dtype)->name, mag_type_trait(dtype)->name);
     }
     for (int64_t j=0; j < rank; ++j) {
       if (j == dim) continue;
-      if (mag_unlikely(!(tensor->coords.shape[j] == t0->coords.shape[j]))) {
+      if (mag_unlikely(tensor->coords.shape[j] != t0->coords.shape[j])) {
         for (size_t k=0; k < i; ++k) mag_tensor_decref(tmp[k]);
         (*mag_alloc)(tmp, 0, 0);
         return mag_set_error(err, MAG_ERR_PARAM, "cat: shapes must match on non-concat dimensions (mismatch on axis %" PRIi64 ").", j);
@@ -1270,7 +1253,7 @@ mag_status_t mag_stack(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
   *out_result = NULL;
   if (mag_unlikely(!(tensors != NULL)))
       return mag_set_error(err, MAG_ERR_PARAM, "stack: tensors array must not be NULL.");
-  if (mag_unlikely(!(count > 0)))
+  if (mag_unlikely(count <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "stack: tensor count must be > 0.");
   if (mag_unlikely(!(tensors[0] != NULL)))
       return mag_set_error(err, MAG_ERR_PARAM, "stack: first tensor must not be NULL.");
@@ -1284,11 +1267,11 @@ mag_status_t mag_stack(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
     return mag_set_error(err, MAG_ERR_OOM, "stack: failed to allocate temporary array for %zu tensors.", count);
   for (size_t i=0; i < count; ++i) {
     tmp[i] = NULL;
-    mag_status_t st = mag_unsqueeze(err, &tmp[i], tensors[i], dim);
-    if (mag_iserr(st)) {
+    mag_status_t status = mag_unsqueeze(err, &tmp[i], tensors[i], dim);
+    if (mag_iserr(status)) {
       for (size_t j=0; j < i; ++j) if (tmp[j]) mag_tensor_decref(tmp[j]);
       (*mag_alloc)(tmp, 0, 0);
-      return st;
+      return status;
     }
   }
   mag_status_t status = mag_cat(err, out_result, tmp, count, dim);
@@ -1379,7 +1362,7 @@ mag_status_t mag_chunk(mag_error_t *err, mag_tensor_t ***out_chunks, size_t *out
   if (mag_unlikely(!(chunks > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "chunk: chunks must be > 0.");
   int64_t rank = x->coords.rank;
-  if (mag_unlikely(!(rank > 0)))
+  if (mag_unlikely(rank <= 0))
       return mag_set_error(err, MAG_ERR_DIM, "chunk: input rank must be > 0.");
   if (mag_unlikely(!(dim >= 0 && dim < rank)))
       return mag_set_error(err, MAG_ERR_DIM, "chunk: dim must be in [0, %" PRIi64 "), but got %" PRIi64 ".", rank, dim);

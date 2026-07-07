@@ -44,8 +44,8 @@ typedef union mag_op_params_t {
     int64_t axes[MAG_MAX_DIMS];
   } permute;
   struct {
-    int64_t ndims;               /* Number of flipped axes. */
-    int64_t dims[MAG_MAX_DIMS];  /* Normalized axes that were reversed. */
+    int64_t ndims;
+    int64_t dims[MAG_MAX_DIMS];
   } flip;
   struct {
     int64_t diag;
@@ -243,7 +243,8 @@ typedef union mag_op_params_t {
   _(SCATTER, 3, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(SCATTER_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(FLIP, 1, 1, ALL, MAG_OP_FLAG_NONE, flip)__\
-  _(SLICE, 1, 1, ALL, MAG_OP_FLAG_NONE, slice)__
+  _(SLICE, 1, 1, ALL, MAG_OP_FLAG_NONE, slice)__\
+  _(BROADCAST, 1, 1, ALL, MAG_OP_FLAG_NONE, broadcast)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -253,7 +254,7 @@ typedef enum mag_opcode_t {
   MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_SLICE+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_BROADCAST+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */

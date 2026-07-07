@@ -33,6 +33,7 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_PERMUTE] = {0.0, 0},
     [MAG_OP_FLIP] = {0.0, 0},
     [MAG_OP_SLICE] = {0.0, 0},
+    [MAG_OP_BROADCAST] = {0.0, 0},
     [MAG_OP_MEAN] = {0.0, 0},
     [MAG_OP_MIN] = {0.0, 0},
     [MAG_OP_MAX] = {0.0, 0},

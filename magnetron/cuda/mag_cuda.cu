@@ -257,6 +257,7 @@ namespace mag {
       [MAG_OP_SCATTER_ADD] = &misc_op_scatter_add,
       [MAG_OP_FLIP] = op_nop,
       [MAG_OP_SLICE] = op_nop,
+      [MAG_OP_BROADCAST] = op_nop,
     };
     static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
     //static_assert([] -> bool {
