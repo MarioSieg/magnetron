@@ -518,7 +518,7 @@ extern MAG_EXPORT void mag_tensor_to_string_free_data(const char *ret_val);
 extern MAG_EXPORT void mag_tensor_incref(mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_is_cpu(mag_tensor_t *tensor);
-extern MAG_EXPORT void mag_tensor_visualize_backprop_graph(mag_tensor_t *tensor, const char *file);
+extern MAG_EXPORT mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, mag_tensor_t *tensor, const char *file);
 
 typedef struct mag_snapshot_t mag_snapshot_t;
 

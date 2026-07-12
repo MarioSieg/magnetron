@@ -308,14 +308,18 @@ namespace mag::bindings {
       mag_error_t err {};
       throw_if_error(mag_save_image(&err, *self, file_name.c_str()), err);
     })
-    .def("save_audio", [](const tensor_wrapper &self, const std::string &path, uint32_t sample_rate) {
+    .def("save_audio", [](const tensor_wrapper &self, const std::string &path, uint32_t sample_rate) -> void {
       std::lock_guard lock {get_global_mutex()};
       mag_error_t err {};
       throw_if_error(mag_save_audio(&err, *self, path.c_str(), sample_rate), err);
     })
     .def("numpy", [](const tensor_wrapper &self) {
       return tensor_from_numpy(self);
-    }, "Return a NumPy ndarray sharing CPU storage when possible. Non-CPU tensors are copied to the host first.");
+    }, "Return a NumPy ndarray sharing CPU storage when possible. Non-CPU tensors are copied to the host first.")
+    .def("visualize_backprop_graph", [](const tensor_wrapper &self, const std::string &graphviz_dot_file_name) -> void {
+      mag_error_t err {};
+      throw_if_error(mag_tensor_visualize_backprop_graph(&err, *self, graphviz_dot_file_name.c_str()), err);
+    });
   }
 
   extern void init_tensor_special_methods(nb::class_<tensor_wrapper> &cls);
