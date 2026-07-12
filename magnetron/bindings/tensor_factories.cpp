@@ -847,7 +847,7 @@ namespace mag::bindings {
       "Returns (audio, sample_rate), where audio is float32 with shape (C, T)."
     );
     cls.def(
-     "as_strided", [](const tensor_wrapper &base, nb::handle shape_h, nb::handle strides_h, nb::kwargs kwargs) -> tensor_wrapper {
+     "strided_view", [](const tensor_wrapper &base, nb::handle shape_h, nb::handle strides_h, nb::kwargs kwargs) -> tensor_wrapper {
        std::lock_guard lock {get_global_mutex()};
        auto shape_seq = nb::cast<nb::sequence>(shape_h);
        auto strides_seq = nb::cast<nb::sequence>(strides_h);
@@ -868,7 +868,7 @@ namespace mag::bindings {
        mag_tensor_t *out = nullptr;
        mag_error_t err {};
        throw_if_error(
-         mag_as_strided(
+         mag_strided_view(
            &err, &out, ctx, *base,
            static_cast<int64_t>(shape.size()),
            shape.data(),

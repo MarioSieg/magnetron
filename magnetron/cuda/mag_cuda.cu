@@ -154,9 +154,6 @@ namespace mag {
       [MAG_OP_ONE_HOT] = &misc_op_one_hot,
       [MAG_OP_CLONE] = &unary_op_clone,
       [MAG_OP_CAST] = &unary_op_cast,
-      [MAG_OP_VIEW] = op_nop,
-      [MAG_OP_TRANSPOSE] = op_nop,
-      [MAG_OP_PERMUTE] = op_nop,
       [MAG_OP_MEAN] = &reduce_op_mean,
       [MAG_OP_MINIMA] = &reduce_op_minima,
       [MAG_OP_MAXIMA] = &reduce_op_maxima,
@@ -255,9 +252,7 @@ namespace mag {
       [MAG_OP_EMBEDDING] = &misc_op_embedding,
       [MAG_OP_SCATTER] = &misc_op_scatter,
       [MAG_OP_SCATTER_ADD] = &misc_op_scatter_add,
-      [MAG_OP_FLIP] = op_nop,
-      [MAG_OP_SLICE] = op_nop,
-      [MAG_OP_BROADCAST] = op_nop,
+      [MAG_OP_STRIDED_VIEW] = op_nop,
     };
     static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
     //static_assert([] -> bool {

@@ -368,9 +368,9 @@ static mag_status_t mag_ein_broadcast_contract_dims(
   }
   mag_tensor_t *ab = NULL;
   mag_tensor_t *bb = NULL;
-  mag_status_t stat = mag_broadcast_to(err, &ab, a, a_rank, a_shape);
+  mag_status_t stat = mag_broadcast(err, &ab, a, a_rank, a_shape);
   if (mag_iserr(stat)) return stat;
-  stat = mag_broadcast_to(err, &bb, b, b_rank, b_shape);
+  stat = mag_broadcast(err, &bb, b, b_rank, b_shape);
   if (mag_iserr(stat)) {
     mag_tensor_decref(ab);
     return stat;
@@ -917,7 +917,7 @@ static mag_status_t mag_ein_collapse_repeats(mag_error_t *err, mag_tensor_t **ou
     ++new_rank;
   }
   new_str[new_rank] = '\0';
-  mag_status_t stat = mag_as_strided(err, out, x->ctx, x, new_rank, new_shape, new_strides, (int64_t)mag_tensor_data_offset(x));
+  mag_status_t stat = mag_strided_view(err, out, x->ctx, x, new_rank, new_shape, new_strides, (int64_t)mag_tensor_data_offset(x));
   if (mag_iserr(stat)) return stat;
   snprintf(subscript->str.buf, sizeof(subscript->str.buf), "%s", new_str);
   subscript->charset = seen;

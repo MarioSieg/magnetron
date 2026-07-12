@@ -481,18 +481,18 @@ namespace mag::bindings {
       "dims"_a,
       "Reverse the order of elements along the given dimensions (a negative-strided view)."
     )
-    .def("broadcast_to", [](const tensor_wrapper &self, nb::args shape_args) -> tensor_wrapper {
+    .def("broadcast", [](const tensor_wrapper &self, nb::args shape_args) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
-        std::vector<int64_t> shape = parse_i64_dims(shape_args, "broadcast_to");
+        std::vector<int64_t> shape = parse_i64_dims(shape_args, "broadcast");
         if (shape.empty())
-          throw nb::value_error("broadcast_to: shape must not be empty");
+          throw nb::value_error("broadcast: shape must not be empty");
         int64_t self_rank = mag_tensor_rank(*self);
         if (static_cast<int64_t>(shape.size()) < self_rank)
-          throw nb::value_error("broadcast_to: target shape must have rank >= tensor rank");
+          throw nb::value_error("broadcast: target shape must have rank >= tensor rank");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         throw_if_error(
-          mag_broadcast_to(
+          mag_broadcast(
             &err,
             &out,
             *self,

@@ -15,9 +15,9 @@ def test_empty(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-def test_as_strided(device: str) -> None:
+def test_strided_view(device: str) -> None:
     x = Tensor.arange(9, device=device).reshape(3, 3)
-    t = Tensor.as_strided(x, (2, 2), (1, 2))
+    t = Tensor.strided_view(x, (2, 2), (1, 2))
     assert t.shape == (2, 2)
     assert t.tolist() == [
         [0, 2],
@@ -26,9 +26,9 @@ def test_as_strided(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-def test_broadcast_to(device: str) -> None:
+def test_broadcast(device: str) -> None:
     x = Tensor([1, 2, 3], device=device)
-    y = x.broadcast_to((3, 3))
+    y = x.broadcast((3, 3))
     assert y.tolist() == [[1, 2, 3], [1, 2, 3], [1, 2, 3]]
 
 

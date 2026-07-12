@@ -37,6 +37,15 @@ typedef enum mag_pad_mode_t {
 
 typedef union mag_op_params_t {
   struct {
+    /* Geometry of a strided view relative to its base tensor's shared storage. Stored so the generic
+       strided_view backward can scatter the output gradient back to the base (handles view/reshape/
+       transpose/permute/slice/flip and, via stride-0 dims, broadcast/expand). */
+    int64_t rank;
+    int64_t shape[MAG_MAX_DIMS];
+    int64_t strides[MAG_MAX_DIMS];
+    int64_t offset;
+  } strided;
+  struct {
     int64_t original_axes[MAG_MAX_DIMS];
   } transpose;
   struct {
@@ -141,9 +150,6 @@ typedef union mag_op_params_t {
   _(ONE_HOT, 1, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(CLONE, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, clone)__\
   _(CAST, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, cast)__\
-  _(VIEW, 1, 1, ALL, MAG_OP_FLAG_NONE, view)__\
-  _(TRANSPOSE, 1, 1, ALL, MAG_OP_FLAG_NONE, transpose)__\
-  _(PERMUTE, 1, 1, ALL, MAG_OP_FLAG_NONE, permute)__\
   _(MEAN, 1, 1, FP, MAG_OP_FLAG_NONE, mean)__\
   _(MINIMA, 1, 1, NUMERIC, MAG_OP_FLAG_NONE, NULL)__\
   _(MAXIMA, 1, 1, NUMERIC, MAG_OP_FLAG_NONE, NULL)__\
@@ -242,9 +248,7 @@ typedef union mag_op_params_t {
   _(EMBEDDING, 2, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, embedding)__\
   _(SCATTER, 3, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(SCATTER_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-  _(FLIP, 1, 1, ALL, MAG_OP_FLAG_NONE, flip)__\
-  _(SLICE, 1, 1, ALL, MAG_OP_FLAG_NONE, slice)__\
-  _(BROADCAST, 1, 1, ALL, MAG_OP_FLAG_NONE, broadcast)__
+  _(STRIDED_VIEW, 1, 1, ALL, MAG_OP_FLAG_NONE, strided_view)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -254,7 +258,7 @@ typedef enum mag_opcode_t {
   MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_BROADCAST+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_STRIDED_VIEW+1 == MAG_OP__NUM);
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */

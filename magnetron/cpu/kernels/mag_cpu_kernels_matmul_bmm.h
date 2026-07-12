@@ -121,7 +121,7 @@ static MAG_HOTPROC void mag_matmul_bmm_mat_vec(const mag_kernel_payload_t *paylo
   int64_t K = x->coords.shape[xr-1];
   int64_t sx0 = x->coords.strides[xr-2];
   int64_t sx1 = x->coords.strides[xr-1];
-  int64_t sy  = y->coords.strides[yr-1];
+  int64_t sy  = y->coords.strides[yr-2];
   int64_t bx = xr-2;
   int64_t by = yr-2;
   int64_t br = rr-2;

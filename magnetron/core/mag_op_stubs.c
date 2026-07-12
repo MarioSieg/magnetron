@@ -18,6 +18,78 @@
 #include "mag_op_dispatch.h"
 #include "mag_op_helpers.h"
 
+/* Create a new tensor. The must be created on the same thread as the context. */
+mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_device_id_t device) {
+  return mag_tensor_init(err, out, ctx, NULL, type, rank, shape, device);
+}
+
+extern mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel);
+mag_status_t mag_strided_view(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
+  *out = NULL;
+  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
+    return mag_set_error(err, MAG_ERR_THREAD, "strided_view: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
+  if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
+    return mag_set_error(err, MAG_ERR_RANK, "strided_view: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
+  if (mag_unlikely(!(offset >= 0)))
+    return mag_set_error(err, MAG_ERR_INDEX, "strided_view: storage offset must be non-negative, but got %" PRIi64 ".", offset);
+  if (mag_unlikely(rank > 0 && !(shape && strides)))
+    return mag_set_error(err, MAG_ERR_PARAM, "strided_view: shape and strides must not be NULL when rank > 0.");
+  int64_t lo=offset;
+  int64_t hi=offset;
+  int64_t numel=1;
+  for (int64_t i=0; i < rank; ++i) {
+    if (mag_unlikely(shape[i] < 0))
+      return mag_set_error(err, MAG_ERR_DIM, "strided_view: invalid shape at dim %" PRIi64 " (shape=%" PRIi64 "); dimensions must be >= 0.", i, shape[i]);
+    int64_t span;
+    if (mag_unlikely(mag_mulov64(shape[i]-1, strides[i], &span)))
+      return mag_set_error(err, MAG_ERR_DIM, "strided_view: stride span overflowed at dim %" PRIi64 ".", i);
+    if (mag_unlikely(mag_mulov64(shape[i], numel, &numel)))
+      return mag_set_error(err, MAG_ERR_DIM, "strided_view: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
+    if (span >= 0) hi += span;
+    else lo += span;
+  }
+  if (numel > 0) {
+    int64_t numel_end = (int64_t)(base->storage->size/mag_type_trait(base->dtype)->size);
+    if (mag_unlikely(lo < 0))
+      return mag_set_error(err, MAG_ERR_BOUNDS, "strided_view: view underflows base tensor storage (start index %" PRIi64 " < 0).", lo);
+    if (mag_unlikely(hi >= numel_end))
+      return mag_set_error(err, MAG_ERR_BOUNDS, "strided_view: view exceeds base tensor storage (end index %" PRIi64 " >= storage capacity %" PRIi64 ").", hi, numel_end);
+  }
+  mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
+  if (mag_unlikely(!tensor))
+    return mag_set_error(err, MAG_ERR_OOM, "strided_view: failed to allocate tensor header.");
+  for (int i=0; i < MAG_MAX_DIMS; ++i) {
+    tensor->coords.shape[i] = i < rank && shape ? shape[i] : 1;
+    tensor->coords.strides[i] = i < rank && strides ? strides[i] : 1;
+  }
+  tensor->storage = base->storage;
+  mag_rc_incref(base->storage);
+  tensor->storage_offset = offset;
+  tensor->version = base->version;
+  if (!(base->flags & MAG_TFLAG_IS_VIEW)) {
+    tensor->view_meta = mag_view_meta_alloc(base);
+    if (mag_unlikely(!tensor->view_meta)) {
+      mag_tensor_decref(tensor);
+      return mag_set_error(err, MAG_ERR_OOM, "strided_view: failed to allocate view metadata.");
+    }
+  } else {
+    tensor->view_meta = base->view_meta;
+    mag_rc_incref(tensor->view_meta);
+  }
+  tensor->flags = base->flags|MAG_TFLAG_IS_VIEW;
+  if (mag_ctx_grad_recorder_is_running(ctx) && (base->flags & MAG_TFLAG_REQUIRES_GRAD)) {
+    mag_op_params_t params = {0};
+    params.strided.rank = rank;
+    params.strided.offset = offset;
+    memcpy(params.strided.shape, shape, rank*sizeof(*shape));
+    memcpy(params.strided.strides, strides, rank*sizeof(*strides));
+    mag_status_t status = mag_dispatch(err, MAG_OP_STRIDED_VIEW, false, &base, 1, &tensor, 1, &params);
+    if (mag_unlikely(mag_iserr(status))) { mag_tensor_decref(tensor); return status; }
+  }
+  *out = tensor;
+  return MAG_OK;
+}
+
 mag_status_t mag_empty_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like) {
   return mag_empty(err, out_result, like->ctx, like->dtype, like->coords.rank, like->coords.shape, mag_tensor_device_id(like));
 }
@@ -96,13 +168,13 @@ mag_status_t mag_bernoulli_like(mag_error_t *err, mag_tensor_t **out_result, mag
   return mag_bernoulli_(err, *out_result, p);
 }
 
-mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
+mag_status_t mag_broadcast(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
   int64_t old_rank = x->coords.rank;
   const int64_t *old_shape = x->coords.shape;
   const int64_t *old_strides = x->coords.strides;
   int64_t new_strides[MAG_MAX_DIMS];
   if (mag_unlikely(rank < old_rank)) {
-    return mag_set_error(err, MAG_ERR_RANK, "broadcast_to: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".", rank, old_rank);
+    return mag_set_error(err, MAG_ERR_RANK, "broadcast: target rank %" PRIi64 " must be >= source rank %" PRIi64 ".", rank, old_rank);
   }
   for (int64_t i=0; i < rank; ++i) {
     int64_t new_ax = rank-1-i;
@@ -115,14 +187,13 @@ mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t
     int64_t old_dim = old_shape[old_ax];
     int64_t old_stride = old_strides[old_ax];
     if (mag_unlikely(!(old_dim == new_dim || old_dim == 1))) {
-      return mag_set_error(err, MAG_ERR_RANK, "broadcast_to: cannot broadcast dim of size %" PRIi64 " to %" PRIi64 "; only size-1 dims are broadcastable.", old_dim, new_dim);
+      return mag_set_error(err, MAG_ERR_RANK, "broadcast: cannot broadcast dim of size %" PRIi64 " to %" PRIi64 "; only size-1 dims are broadcastable.", old_dim, new_dim);
     }
     new_strides[new_ax] = old_dim == new_dim ? old_stride : 0;
   }
-  mag_tensor_t *result = NULL;
-  mag_status_t status = mag_as_strided(
+  return mag_strided_view(
     err,
-    &result,
+    out,
     mag_tensor_context(x),
     x,
     rank,
@@ -130,16 +201,6 @@ mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t
     new_strides,
     (int64_t)mag_tensor_data_offset(x)
   );
-  if (mag_iserr(status)) return status;
-  /* Record the autograd edge (nop forward - the output was already produced by as_strided above). Its
-     backward sums the gradient back over the broadcast dimensions; without it the broadcast (and thus
-     expand()) would silently drop gradients. */
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_BROADCAST, &x, 0);
-  if (mag_iserr(status)) { mag_tensor_decref(result); return status; }
-  status = mag_dispatch(err, MAG_OP_BROADCAST, false, &x, 1, &result, 1, NULL);
-  if (mag_iserr(status)) { mag_tensor_decref(result); return status; }
-  *out = result;
-  return MAG_OK;
 }
 
 mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape) {
@@ -176,7 +237,7 @@ mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, i
       resolved[new_ax] = dim;
     }
   }
-  return mag_broadcast_to(err, out, x, rank, resolved);
+  return mag_broadcast(err, out, x, rank, resolved);
 }
 
 mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t start, mag_scalar_t end, mag_scalar_t step, mag_device_id_t device) {
@@ -427,7 +488,7 @@ mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
   if (rank == 0) {
     if (mag_unlikely(x->numel != 1))
         return mag_set_error(err, MAG_ERR_PARAM, "view: rank-0 view is only allowed on tensors with a single element, but got %" PRIi64 " elements.", x->numel);
-    status = mag_as_strided(err, &result, x->ctx, x, 0, NULL, NULL, x->storage_offset);
+    status = mag_strided_view(err, &result, x->ctx, x, 0, NULL, NULL, x->storage_offset);
     if (mag_iserr(status)) return status;
   } else {
     if (mag_unlikely(!(dims != NULL)))
@@ -454,13 +515,9 @@ mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
       status = mag_solve_view_strides(err, &strides, x->coords.shape, x->coords.strides, x->coords.rank, shape, rank);
       if (mag_iserr(status)) return status;
     }
-    status = mag_as_strided(err, &result, x->ctx, x, rank, shape, strides, x->storage_offset);
+    status = mag_strided_view(err, &result, x->ctx, x, rank, shape, strides, x->storage_offset);
     if (mag_iserr(status)) return status;
   }
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_VIEW, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_VIEW, false, &x, 1, &result, 1, NULL);
-  if (mag_iserr(status)) return status;
   *out_result = result;
   return MAG_OK;
 }
@@ -515,18 +572,7 @@ mag_status_t mag_view_slice(mag_error_t *err, mag_tensor_t **out_result, mag_ten
   shape[dim] = len;
   strides[dim] = x->coords.strides[dim] * step;
   int64_t offset = x->storage_offset + start*x->coords.strides[dim];
-  mag_tensor_t *result = NULL;
-  mag_status_t status = mag_as_strided(err, &result, x->ctx, x, rank, shape, strides, offset);
-  if (mag_iserr(status)) return status;
-  mag_op_params_t params = {
-    .slice = {.dim = dim, .start = start, .len = len, .step = step}
-  };
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_SLICE, &x, 0);
-  if (mag_iserr(status)) { mag_tensor_decref(result); return status; }
-  status = mag_dispatch(err, MAG_OP_SLICE, false, &x, 1, &result, 1, &params);
-  if (mag_iserr(status)) { mag_tensor_decref(result); return status; }
-  *out_result = result;
-  return MAG_OK;
+  return mag_strided_view(err, out_result, x->ctx, x, rank, shape, strides, offset);
 }
 
 mag_status_t mag_transpose(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim1, int64_t dim2) {
@@ -551,19 +597,8 @@ mag_status_t mag_transpose(mag_error_t *err, mag_tensor_t **out_result, mag_tens
   memcpy(stride, x->coords.strides, sizeof stride);
   mag_swap(int64_t, shape[ax0], shape[ax1]);
   mag_swap(int64_t, stride[ax0], stride[ax1]);
-  mag_status_t status = mag_as_strided(err, &result, x->ctx, x, x->coords.rank, shape, stride, x->storage_offset);
-  if (mag_iserr(status)) return status;
-  mag_op_params_t params = {
-    .transpose = {
-      .original_axes = {ax0, ax1} /* TODO: add other axes too (impl T as permute?) */
-    }
-  };
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_TRANSPOSE, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_TRANSPOSE, false, &x, 1, &result, 1, &params);
-  if (mag_iserr(status)) return status;
-  *out_result = result;
-  return MAG_OK;
+  (void)result;
+  return mag_strided_view(err, out_result, x->ctx, x, x->coords.rank, shape, stride, x->storage_offset);
 }
 
 mag_status_t mag_T(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) {
@@ -599,18 +634,8 @@ mag_status_t mag_permute(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
     shape[i] = x->coords.shape[axes[i]];
     stride[i] = x->coords.strides[axes[i]];
   }
-  mag_status_t status = mag_as_strided(err, &result, x->ctx, x, x->coords.rank, shape, stride, x->storage_offset);
-  if (mag_iserr(status)) return status;
-  mag_op_params_t params = {
-    .permute = {.rank = rank}
-  };
-  for (int64_t i=0; i < rank; ++i) params.permute.axes[i] = axes[i];
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_PERMUTE, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_PERMUTE, false, &x, 1, &result, 1, &params);
-  if (mag_iserr(status)) return status;
-  *out_result = result;
-  return MAG_OK;
+  (void)result;
+  return mag_strided_view(err, out_result, x->ctx, x, x->coords.rank, shape, stride, x->storage_offset);
 }
 
 mag_status_t mag_flip(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t ndims) {
@@ -642,18 +667,8 @@ mag_status_t mag_flip(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
       offset += (x->coords.shape[ax]-1)*x->coords.strides[ax];
     stride[ax] = -x->coords.strides[ax];
   }
-  mag_status_t status = mag_as_strided(err, &result, x->ctx, x, ra, shape, stride, offset);
-  if (mag_iserr(status)) return status;
-  mag_op_params_t params = {
-    .flip = {.ndims = ndims}
-  };
-  for (int64_t i=0; i < ndims; ++i) params.flip.dims[i] = axes[i];
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_FLIP, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_FLIP, false, &x, 1, &result, 1, &params);
-  if (mag_iserr(status)) return status;
-  *out_result = result;
-  return MAG_OK;
+  (void)result;
+  return mag_strided_view(err, out_result, x->ctx, x, ra, shape, stride, offset);
 }
 
 mag_status_t mag_contiguous(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) {

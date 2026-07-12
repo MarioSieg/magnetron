@@ -15,6 +15,7 @@
 #include "mag_alloc.h"
 #include "mag_autodiff.h"
 #include "mag_coords_iter.h"
+#include "mag_op_dispatch.h"
 
 static mag_status_t mag_view_meta_dtor(void *p) {
   mag_view_meta_t *vm = p;
@@ -38,7 +39,7 @@ mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
 
 static mag_status_t mag_tensor_dtor(void *self);
 
-static mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel) {
+mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel) {
   mag_tensor_t *hdr = mag_slab_alloc(&ctx->tensor_slab);
   if (mag_unlikely(!hdr)) return NULL;
   memset(hdr, 0, sizeof(*hdr));
@@ -151,68 +152,6 @@ mag_status_t mag_tensor_init(
 cleanup:
   mag_tensor_free_header(tensor);
   return status;
-}
-
-/* Create a new tensor. The must be created on the same thread as the context. */
-mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_device_id_t device) {
-  return mag_tensor_init(err, out, ctx, NULL, type, rank, shape, device);
-}
-
-mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
-  *out = NULL;
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
-    return mag_set_error(err, MAG_ERR_THREAD, "as_strided: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
-  if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
-    return mag_set_error(err, MAG_ERR_RANK, "as_strided: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
-  if (mag_unlikely(!(offset >= 0)))
-    return mag_set_error(err, MAG_ERR_INDEX, "as_strided: storage offset must be non-negative, but got %" PRIi64 ".", offset);
-  if (mag_unlikely(rank > 0 && !(shape && strides)))
-    return mag_set_error(err, MAG_ERR_PARAM, "as_strided: shape and strides must not be NULL when rank > 0.");
-  int64_t lo=offset;
-  int64_t hi=offset;
-  int64_t numel=1;
-  for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(shape[i] < 0))
-      return mag_set_error(err, MAG_ERR_DIM, "as_strided: invalid shape at dim %" PRIi64 " (shape=%" PRIi64 "); dimensions must be >= 0.", i, shape[i]);
-    int64_t span;
-    if (mag_unlikely(mag_mulov64(shape[i]-1, strides[i], &span)))
-      return mag_set_error(err, MAG_ERR_DIM, "as_strided: stride span overflowed at dim %" PRIi64 ".", i);
-    if (mag_unlikely(mag_mulov64(shape[i], numel, &numel)))
-      return mag_set_error(err, MAG_ERR_DIM, "as_strided: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
-    if (span >= 0) hi += span;
-    else lo += span;
-  }
-  if (numel > 0) {
-    int64_t numel_end = (int64_t)(base->storage->size/mag_type_trait(base->dtype)->size);
-    if (mag_unlikely(lo < 0))
-      return mag_set_error(err, MAG_ERR_BOUNDS, "as_strided: view underflows base tensor storage (start index %" PRIi64 " < 0).", lo);
-    if (mag_unlikely(hi >= numel_end))
-      return mag_set_error(err, MAG_ERR_BOUNDS, "as_strided: view exceeds base tensor storage (end index %" PRIi64 " >= storage capacity %" PRIi64 ").", hi, numel_end);
-  }
-  mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
-  if (mag_unlikely(!tensor))
-    return mag_set_error(err, MAG_ERR_OOM, "as_strided: failed to allocate tensor header.");
-  for (int i=0; i < MAG_MAX_DIMS; ++i) {
-    tensor->coords.shape[i] = i < rank && shape ? shape[i] : 1;
-    tensor->coords.strides[i] = i < rank && strides ? strides[i] : 1;
-  }
-  tensor->storage = base->storage;
-  mag_rc_incref(base->storage);
-  tensor->storage_offset = offset;
-  tensor->version = base->version;
-  if (!(base->flags & MAG_TFLAG_IS_VIEW)) {
-    tensor->view_meta = mag_view_meta_alloc(base);
-    if (mag_unlikely(!tensor->view_meta)) {
-      mag_tensor_decref(tensor);
-      return mag_set_error(err, MAG_ERR_OOM, "as_strided: failed to allocate view metadata.");
-    }
-  } else {
-    tensor->view_meta = base->view_meta;
-    mag_rc_incref(tensor->view_meta);
-  }
-  tensor->flags = base->flags|MAG_TFLAG_IS_VIEW;
-  *out = tensor;
-  return MAG_OK;
 }
 
 static mag_status_t mag_tensor_dtor(void *self) {

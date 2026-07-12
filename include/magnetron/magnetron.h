@@ -232,8 +232,8 @@ extern MAG_EXPORT void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_de
 typedef struct mag_tensor_t mag_tensor_t;
 
 extern MAG_EXPORT mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_device_id_t device);
-extern MAG_EXPORT mag_status_t mag_as_strided(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset);
-extern MAG_EXPORT mag_status_t mag_broadcast_to(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape);
+extern MAG_EXPORT mag_status_t mag_strided_view(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset);
+extern MAG_EXPORT mag_status_t mag_broadcast(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape);
 extern MAG_EXPORT mag_status_t mag_expand(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, int64_t rank, const int64_t *shape);
 extern MAG_EXPORT mag_status_t mag_empty_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like);
 extern MAG_EXPORT mag_status_t mag_empty_scalar(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_device_id_t device);
