@@ -22,21 +22,19 @@ MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, 
     mag_topo_set_free(&post_order);
     return status;
   }
-  for (size_t i=0, j=post_order.size-1; i < j; ++i, --j)
-    mag_swap(mag_tensor_t *, post_order.data[i], post_order.data[j]);
   mag_sstream_t out;
   mag_sstream_init(&out);
   mag_sstream_append(&out, "digraph backward_graph {\n");
   mag_sstream_append(&out, "    rankdir=TD;\n");
   mag_sstream_append(&out, "    node [shape=record, style=\"rounded,filled\", fontname=\"Helvetica\"];\n");
-  for (size_t i=0; i < post_order.size; ++i) {
+  for (size_t i=post_order.size; i --> 0;) {
     mag_tensor_t *node = post_order.data[i];
     if (!node->au_state) continue;
     const mag_op_traits_t *meta = mag_op_trait(node->au_state->op);
     mag_sstream_append(&out, "    \"%p\" [label=\"%s\\nShape: (", node, meta->mnemonic);
     for (int64_t r=0; r < node->coords.rank; ++r) {
       mag_sstream_append(&out, "%zu", (size_t)node->coords.shape[r]);
-      if (r < node->coords.rank - 1)
+      if (r < node->coords.rank-1)
         mag_sstream_append(&out, ", ");
     }
     mag_sstream_append(&out, ")\\nGrad: %s\"];\n", node->au_state->grad ? "set" : "none");

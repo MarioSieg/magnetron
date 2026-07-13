@@ -100,7 +100,7 @@ bool mag_hashset_contains_key(mag_hashset_t *set, const mag_tensor_t *key) {
 
 size_t mag_hashset_insert(mag_hashset_t *set, const mag_tensor_t *key) {
   if (set->len+1 > MAG_HASHSET_GROW_THRESHOLD(set->cap)) {
-    size_t t = mag_hashset_compute_hash_size(set->cap);
+    size_t t = mag_hashset_compute_hash_size(set->cap<<1);
     if (mag_unlikely(!mag_hashset_rehash_grow_to(set, t))) return MAG_HASHSET_FULL; /* OOM: cannot grow. */
   }
   size_t k = mag_hashset_hash_fn(key) % set->cap;
