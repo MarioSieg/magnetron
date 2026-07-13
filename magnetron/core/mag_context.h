@@ -16,6 +16,7 @@
 #include "mag_slab.h"
 #include "mag_machine.h"
 #include "mag_backend.h"
+#include "mag_toposort.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,6 +48,9 @@ struct mag_context_t {
   mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
   mag_slab_alloc_t au_state_op_params_slab;   /* Autodiff state op params slab allocator */
   mag_backend_registry_t *backend_registry;   /* Compute backend registry */
+  uint64_t topo_traversal_epoch;              /* Epoch counter for topological traversal of the computation graph */
+  mag_topo_stack_t topo_stack;
+  mag_topo_set_t topo_set;
 #ifdef MAG_DEBUG
   mag_tensor_t *alive_head;                   /* List of alive tensors used for leak detection. */
 #endif

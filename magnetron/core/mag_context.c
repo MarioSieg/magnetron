@@ -146,6 +146,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
     return mag_set_error(err, MAG_ERR_OOM, "context: failed to allocate context structure.");
   memset(ctx, 0, sizeof(*ctx));
 
+  /* Slab allocators */
   bool slab_ok = true;
   slab_ok &= mag_slab_init(&ctx->tensor_slab, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
   slab_ok &= mag_slab_init(&ctx->storage_slab, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000);
@@ -160,6 +161,13 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
     mag_slab_destroy(&ctx->storage_slab);
     (*mag_alloc)(ctx, 0, 0);
     return mag_set_error(err, MAG_ERR_OOM, "context: failed to initialize context memory pools.");
+  }
+
+  /* Toposort stuff */
+  ctx->topo_traversal_epoch = 0;
+  if (mag_unlikely(!mag_topo_set_init(&ctx->topo_set, 0x2000) || !mag_topo_stack_init(&ctx->topo_stack, 0x2000))) {
+    (*mag_alloc)(ctx, 0, 0);
+    return mag_set_error(err, MAG_ERR_OOM, "context: failed to initialize toposort structures.");
   }
 
   ctx->tr_id = mag_thread_id(); /* Get thread ID. */
@@ -210,6 +218,8 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     if (suppress_leak_detection) mag_log_warn("%s", msg);
     else mag_log_error("%s", msg); /* Never abort from Python - report the leak instead of panicking. */
   }
+  mag_topo_set_free(&ctx->topo_set);
+  mag_topo_stack_free(&ctx->topo_stack);
   mag_slab_destroy(&ctx->au_state_op_params_slab);
   mag_slab_destroy(&ctx->au_state_slab);
   mag_slab_destroy(&ctx->view_meta_slab);

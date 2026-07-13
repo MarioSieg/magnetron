@@ -32,6 +32,7 @@ struct mag_au_state_t {
   uint32_t cap_in;
   mag_op_params_t *params;
   mag_tensor_t *grad;
+  uint64_t topo_traversal_epoch; /* Epoch counter for topological traversal of the computation graph, compared to mag_context_t::topo_traversal_epoch */
 };
 MAG_RC_OBJECT_IS_VALID(mag_au_state_t);
 

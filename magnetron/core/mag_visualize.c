@@ -11,24 +11,22 @@
 
 #include "mag_def.h"
 #include "mag_autodiff.h"
+#include "mag_context.h"
 #include "mag_toposort.h"
 #include "mag_sstream.h"
 
 MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, mag_tensor_t *tensor, const char *file) {
-  mag_topo_set_t post_order;
-  mag_topo_set_init(&post_order);
-  mag_status_t status = mag_topo_sort(err, tensor, &post_order);
-  if (mag_unlikely(mag_iserr(status) || !post_order.size)) {
-    mag_topo_set_free(&post_order);
+  mag_topo_set_t *post_order = &tensor->ctx->topo_set;
+  mag_status_t status = mag_topo_sort(err, tensor, &tensor->ctx->topo_stack, post_order);
+  if (mag_unlikely(mag_iserr(status) || !post_order->len))
     return status;
-  }
   mag_sstream_t out;
   mag_sstream_init(&out);
   mag_sstream_append(&out, "digraph backward_graph {\n");
   mag_sstream_append(&out, "    rankdir=TD;\n");
   mag_sstream_append(&out, "    node [shape=record, style=\"rounded,filled\", fontname=\"Helvetica\"];\n");
-  for (size_t i=post_order.size; i --> 0;) {
-    mag_tensor_t *node = post_order.data[i];
+  for (size_t i=post_order->len; i --> 0;) {
+    mag_tensor_t *node = post_order->buf[i];
     if (!node->au_state) continue;
     const mag_op_traits_t *meta = mag_op_trait(node->au_state->op);
     mag_sstream_append(&out, "    \"%p\" [label=\"%s\\nShape: (", node, meta->mnemonic);
@@ -39,8 +37,8 @@ MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, 
     }
     mag_sstream_append(&out, ")\\nGrad: %s\"];\n", node->au_state->grad ? "set" : "none");
   }
-  for (size_t i=0; i < post_order.size; ++i) {
-    mag_tensor_t *node = post_order.data[i];
+  for (size_t i=0; i < post_order->len; ++i) {
+    mag_tensor_t *node = post_order->buf[i];
     if (!node->au_state) continue;
     const mag_op_traits_t *meta = mag_op_trait(node->au_state->op);
     uint32_t numin = meta->in;
@@ -53,7 +51,6 @@ MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, 
     }
   }
   mag_sstream_append(&out, "}\n");
-  mag_topo_set_free(&post_order);
   mag_sstream_flush(&out, file);
   return MAG_OK;
 }
