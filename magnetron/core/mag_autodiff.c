@@ -156,7 +156,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
       goto cleanup;
     }
     status = (*backward)(err, child->au_state, grads);
-    if (mag_unlikely(status != MAG_OK))
+    if (mag_iserr(status))
       goto cleanup;
     uint32_t numin = meta->in;
     if (meta->in == MAG_OP_INOUT_DYN) { /* Variadic ops (e.g. cat) carry their real input count on the node. */
@@ -177,13 +177,9 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
       if (!input->au_state->grad) {
         mag_tensor_patch_grad(input, gri);
       } else {
-        mag_tensor_t *acc = NULL;
-        status = mag_add_(err, &acc, gri, input->au_state->grad);
-        if (mag_unlikely(status != MAG_OK)) {
-          mag_rc_decref(gri);
-          goto cleanup;
-        }
-        mag_tensor_patch_grad(input, acc);
+        status = mag_add_(err, &gri, gri, input->au_state->grad);
+        if (mag_iserr(status)) goto cleanup;
+        mag_tensor_patch_grad(input, gri);
         mag_rc_decref(gri);
       }
     }
