@@ -146,13 +146,14 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
     return mag_set_error(err, MAG_ERR_OOM, "context: failed to allocate context structure.");
   memset(ctx, 0, sizeof(*ctx));
 
-  /* Init memory pools. */
-  if (mag_unlikely(
-    !mag_slab_init(&ctx->tensor_slab, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000) ||
-    !mag_slab_init(&ctx->storage_slab, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000) ||
-    !mag_slab_init(&ctx->view_meta_slab, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000) ||
-    !mag_slab_init(&ctx->au_state_slab, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000)
-  )) {
+  bool slab_ok = true;
+  slab_ok &= mag_slab_init(&ctx->tensor_slab, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->storage_slab, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->view_meta_slab, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->au_state_slab, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->tensor_slab, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->au_state_op_params_slab, sizeof(mag_op_params_t), __alignof(mag_op_params_t), 0x1000);
+  if (mag_unlikely(!slab_ok)) {
     mag_slab_destroy(&ctx->au_state_slab);
     mag_slab_destroy(&ctx->view_meta_slab);
     mag_slab_destroy(&ctx->tensor_slab);
@@ -209,6 +210,7 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     if (suppress_leak_detection) mag_log_warn("%s", msg);
     else mag_log_error("%s", msg); /* Never abort from Python - report the leak instead of panicking. */
   }
+  mag_slab_destroy(&ctx->au_state_op_params_slab);
   mag_slab_destroy(&ctx->au_state_slab);
   mag_slab_destroy(&ctx->view_meta_slab);
   mag_slab_destroy(&ctx->tensor_slab);

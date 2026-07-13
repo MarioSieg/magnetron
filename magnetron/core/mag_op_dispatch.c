@@ -69,8 +69,7 @@ mag_status_t MAG_HOTPROC mag_dispatch(
   mag_context_t *ctx = in ? (*in)->ctx : (*out)->ctx;
   mag_device_t *device = in ? (*in)->storage->device : (*out)->storage->device;
   mag_assert_correct_op_data(op, in, num_in, out, num_out);
-  mag_status_t status;
-  if (!!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward) {
+  if ((ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward) {
     for (uint32_t i=0; i < num_out; ++i) {
       mag_tensor_t *r = out[i];
       mag_au_state_t *au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
@@ -84,13 +83,13 @@ mag_status_t MAG_HOTPROC mag_dispatch(
         if (mag_unlikely(!input))
           return mag_set_error(err, MAG_ERR_OP, "dispatch: input tensor %u is NULL.", j);
         if (input->flags & MAG_TFLAG_REQUIRES_GRAD && !(r->flags & MAG_TFLAG_REQUIRES_GRAD)) {
-          status = mag_tensor_set_requires_grad(err, r, true);
+          mag_status_t status = mag_tensor_set_requires_grad(err, r, true);
           if (mag_iserr(status)) return status;
         }
-        if (mag_unlikely(!mag_au_state_append_input(au, input)))
+        if (mag_unlikely(!mag_au_state_set_input(au, input)))
           return mag_set_error(err, MAG_ERR_OOM, "dispatch: failed to push input into autodiff input array.");
       }
-      if (params) au->params = *params;
+      if (params) mag_au_state_set_op_params(au, params);
     }
   }
   mag_command_t cmd = {

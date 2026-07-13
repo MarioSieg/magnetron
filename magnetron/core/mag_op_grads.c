@@ -381,7 +381,7 @@ cleanup:
 }
 
 mag_status_t mag_op_backward_cat(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
-  int64_t dim = node->params.cat.dim;
+  int64_t dim = node->params->cat.dim;
   mag_status_t status = MAG_OK;
   mag_tensor_t *slice = NULL, *g = NULL;
   int64_t offset = 0;
@@ -529,10 +529,10 @@ mag_status_t mag_op_backward_strided_view(mag_error_t *err, mag_au_state_t *node
   mag_tensor_t *base = node->in[0];
   mag_context_t *ctx = base->ctx;
   mag_device_id_t dev = mag_tensor_device_id(base);
-  int64_t rank = node->params.strided.rank;
-  const int64_t *vshape = node->params.strided.shape;
-  const int64_t *vstride = node->params.strided.strides;
-  int64_t voffset = node->params.strided.offset;
+  int64_t rank = node->params->strided.rank;
+  const int64_t *vshape = node->params->strided.shape;
+  const int64_t *vstride = node->params->strided.strides;
+  int64_t voffset = node->params->strided.offset;
   mag_status_t status = MAG_OK;
   mag_tensor_t *flat=NULL;
   mag_tensor_t *idx=NULL;
@@ -1234,12 +1234,12 @@ cleanup:
 }
 
 mag_status_t mag_op_backward_tril(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
-  int32_t diag = node->params.trilu.diag;
+  int32_t diag = node->params->trilu.diag;
   return mag_tril(err, grads, node->grad, diag);
 }
 
 mag_status_t mag_op_backward_triu(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
-  int32_t diag = node->params.trilu.diag;
+  int32_t diag = node->params->trilu.diag;
   return mag_triu(err, grads, node->grad, diag);
 }
 
@@ -1252,7 +1252,7 @@ mag_status_t mag_op_backward_gather(mag_error_t *err, mag_au_state_t *node, mag_
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *idx = node->in[1];
   if (!(x->flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
-  int64_t dim = node->params.gather.dim;
+  int64_t dim = node->params->gather.dim;
   mag_tensor_t *gx = NULL;
   mag_status_t status = mag_zeros_like(err, &gx, x);
   if (mag_iserr(status)) return status;

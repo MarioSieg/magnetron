@@ -45,6 +45,7 @@ struct mag_context_t {
   mag_slab_alloc_t storage_slab;              /* Storage headers. */
   mag_slab_alloc_t view_meta_slab;            /* View metadata headers. */
   mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
+  mag_slab_alloc_t au_state_op_params_slab;   /* Autodiff state op params slab allocator */
   mag_backend_registry_t *backend_registry;   /* Compute backend registry */
 #ifdef MAG_DEBUG
   mag_tensor_t *alive_head;                   /* List of alive tensors used for leak detection. */
