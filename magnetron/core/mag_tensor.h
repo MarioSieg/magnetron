@@ -44,25 +44,25 @@ MAG_RC_OBJECT_IS_VALID(mag_view_meta_t);
 
 extern mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base);
 
-/*
-** Reference counted tensor header. Stores shape, strides, gradient and other metadata.
-** The actual data buffer is compute-device specific and can be only accessed via the storage buffer.
-** A tensor can be a view, which references the storage buffer of another tensor, but views have their own header too.
-*/
-struct mag_tensor_t {
-  MAG_RC_INJECT_HEADER;                           /* RC Control block must be first */
+typedef struct mag_tensor_meta_t {
+  mag_coords_t coords;          /* Contains shape + strides + rank */
+  mag_device_t *device;         /* Device where the tensor is allocated. */
+  int64_t numel;                /* Number of elements in the tensor. */
+  int64_t storage_offset;       /* Offset in elements in the storage buffer for views. */
+  mag_dtype_t dtype : 8;        /* Data type of the tensor. */
+  mag_tensor_flags_t flags : 8; /* Tensor flags. */
+} mag_tensor_meta_t;
 
-  mag_context_t  *ctx;                            /* Host context. */
-  mag_coords_t coords;                            /* Coords */
-  mag_dtype_t dtype : 8;                          /* Data type of the tensor. */
-  mag_tensor_flags_t flags : 8;                   /* Tensor flags. */
-  mag_storage_buffer_t *storage;                  /* Storage buffer. */
-  mag_device_t *device;                           /* Device where the tensor is allocated. */
-  int64_t numel;                                  /* Number of elements in the tensor. */
-  int64_t storage_offset;                         /* Offset in elements in the storage buffer for views. */
-  mag_view_meta_t *view_meta;                     /* View metadata, if this is a view. */
-  mag_au_state_t *au_state;                       /* Autodiff state, if gradient recording is active. */
-  uint64_t version;                               /* Version of the tensor. Used for views to detect changes in the base tensor. */
+struct mag_tensor_t {
+  MAG_RC_INJECT_HEADER;           /* RC Control block must be first */
+
+  mag_context_t *ctx;             /* Host context. */
+  mag_tensor_meta_t meta;
+  mag_storage_buffer_t *storage;  /* Storage buffer. */
+  mag_view_meta_t *view_meta;     /* View metadata, if this is a view, else NULL. */
+  mag_au_state_t *au_state;       /* Autodiff state, if gradient recording is active, else NULL. */
+  uint64_t version;               /* Version of the tensor. Used for views to detect changes in the base tensor. */
+
 #ifdef MAG_DEBUG
   mag_tensor_t *alive_next;                       /* Next alive tensor used for leak detection. */
 #endif

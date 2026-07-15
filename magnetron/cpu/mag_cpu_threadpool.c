@@ -28,8 +28,8 @@ static bool mag_worker_await_work(mag_worker_t *worker, mag_thread_pool_t *pool)
 static mag_dtype_t mag_command_dispatch_dtype(const mag_command_t *cmd) {
   switch (cmd->op) {
     case MAG_OP_MASKED_FILL:
-    case MAG_OP_WHERE: return cmd->out[0]->dtype; /* Where kernel is determined by output dtype */
-    default: return cmd->in && cmd->in[0] ? cmd->in[0]->dtype : cmd->out[0]->dtype; /* Most ops use input[0] dtype */
+    case MAG_OP_WHERE: return cmd->out[0]->meta.dtype; /* Where kernel is determined by output dtype */
+    default: return cmd->in && cmd->in[0] ? cmd->in[0]->meta.dtype : cmd->out[0]->meta.dtype; /* Most ops use input[0] dtype */
   }
 }
 

@@ -16,7 +16,7 @@ mag_status_t mag_op_backward_clone(mag_error_t *err, mag_au_state_t *node, mag_t
 }
 
 mag_status_t mag_op_backward_cast(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
-  return mag_cast(err, grads, node->grad, node->in[0]->dtype);
+  return mag_cast(err, grads, node->grad, node->in[0]->meta.dtype);
 }
 
 
@@ -25,7 +25,7 @@ mag_status_t mag_op_backward_mean(mag_error_t *err, mag_au_state_t *node, mag_te
   mag_status_t status = MAG_OK;
   mag_tensor_t *scale = NULL;
 
-  status = mag_full_like(err, &scale, x, mag_scalar_from_float64((double)node->grad->numel/(double)x->numel));
+  status = mag_full_like(err, &scale, x, mag_scalar_from_float64((double)node->grad->meta.numel/(double)x->meta.numel));
   if (mag_iserr(status))
     goto cleanup;
   status = mag_mul(err, grads, scale, node->grad);
@@ -60,9 +60,9 @@ mag_status_t mag_op_backward_abs(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *sign = NULL;
   stat = mag_step(err, &step, x);
   if (mag_iserr(stat)) goto cleanup;
-  stat = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
+  stat = mag_scalar(err, &one, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
   if (mag_iserr(stat)) goto cleanup;
-  stat = mag_scalar(err, &two, x->ctx, x->dtype, mag_scalar_from_float64(2.0), mag_tensor_device_id(x));
+  stat = mag_scalar(err, &two, x->ctx, x->meta.dtype, mag_scalar_from_float64(2.0), mag_tensor_device_id(x));
   if (mag_iserr(stat)) goto cleanup;
   stat = mag_mul(err, &step2, step, two);
   if (mag_iserr(stat)) goto cleanup;
@@ -82,7 +82,7 @@ mag_status_t mag_op_backward_neg(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_status_t status = MAG_OK;
   mag_tensor_t *m1 = NULL;
 
-  status = mag_scalar(err, &m1, node->grad->ctx, node->grad->dtype, mag_scalar_from_float64(-1.0), mag_tensor_device_id(node->grad));
+  status = mag_scalar(err, &m1, node->grad->ctx, node->grad->meta.dtype, mag_scalar_from_float64(-1.0), mag_tensor_device_id(node->grad));
   if (mag_iserr(status))
     goto cleanup;
   status = mag_mul(err, grads, node->grad, m1);
@@ -105,7 +105,7 @@ mag_status_t mag_op_backward_sqr(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *two = NULL;
   mag_tensor_t *two_x = NULL;
 
-  status = mag_scalar(err, &two, x->ctx, x->dtype, mag_scalar_from_float64(2.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &two, x->ctx, x->meta.dtype, mag_scalar_from_float64(2.0), mag_tensor_device_id(x));
   if (mag_iserr(status))
     goto cleanup;
   status = mag_mul(err, &two_x, x, two);
@@ -131,7 +131,7 @@ mag_status_t mag_op_backward_sqrt(mag_error_t *err, mag_au_state_t *node, mag_te
   status = mag_sqrt(err, &sqrt_x, x);
   if (mag_iserr(status))
     goto cleanup;
-  status = mag_scalar(err, &two, x->ctx, x->dtype, mag_scalar_from_float64(2.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &two, x->ctx, x->meta.dtype, mag_scalar_from_float64(2.0), mag_tensor_device_id(x));
   if (mag_iserr(status))
     goto cleanup;
   status = mag_mul(err, &denom, sqrt_x, two);
@@ -218,7 +218,7 @@ mag_status_t mag_op_backward_softmax(mag_error_t *err, mag_au_state_t *node, mag
   status = mag_mul(err, &tmp, node->grad, y);
   if (mag_iserr(status))
     goto cleanup;
-  int64_t axis = x->coords.rank - 1;
+  int64_t axis = x->meta.coords.rank - 1;
   status = mag_sum(err, &sum_tmp, tmp, &axis, 1, true);
   if (mag_iserr(status))
     goto cleanup;
@@ -330,7 +330,7 @@ mag_status_t mag_op_backward_add(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_status_t status = MAG_OK;
   mag_tensor_t *g = NULL;
 
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_clone(err, &g, node->grad);
     if (mag_iserr(status)) goto cleanup;
     status = mag_grad_reduce_to(err, &g, x);
@@ -338,7 +338,7 @@ mag_status_t mag_op_backward_add(mag_error_t *err, mag_au_state_t *node, mag_ten
     grads[0] = g;
     g = NULL;
   }
-  if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (y->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_clone(err, &g, node->grad);
     if (mag_iserr(status)) goto cleanup;
     status = mag_grad_reduce_to(err, &g, y);
@@ -358,7 +358,7 @@ mag_status_t mag_op_backward_sub(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_status_t status = MAG_OK;
   mag_tensor_t *g = NULL;
 
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_clone(err, &g, node->grad);
     if (mag_iserr(status)) goto cleanup;
     status = mag_grad_reduce_to(err, &g, x);
@@ -366,7 +366,7 @@ mag_status_t mag_op_backward_sub(mag_error_t *err, mag_au_state_t *node, mag_ten
     grads[0] = g;
     g = NULL;
   }
-  if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (y->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_neg(err, &g, node->grad);
     if (mag_iserr(status)) goto cleanup;
     status = mag_grad_reduce_to(err, &g, y);
@@ -387,8 +387,8 @@ mag_status_t mag_op_backward_cat(mag_error_t *err, mag_au_state_t *node, mag_ten
   int64_t offset = 0;
   for (uint32_t i=0; i < node->num_in; ++i) {
     mag_tensor_t *xi = node->in[i];
-    int64_t len = xi->coords.shape[dim];
-    if (xi->flags & MAG_TFLAG_REQUIRES_GRAD) {
+    int64_t len = xi->meta.coords.shape[dim];
+    if (xi->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
       status = mag_narrow(err, &slice, node->grad, dim, offset, len);
       if (mag_iserr(status)) goto cleanup;
       status = mag_clone(err, &g, slice);
@@ -412,7 +412,7 @@ mag_status_t mag_op_backward_mul(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_status_t status = MAG_OK;
   mag_tensor_t *g = NULL;
 
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_mul(err, &g, node->grad, y);
     if (mag_iserr(status)) goto cleanup;
     status = mag_grad_reduce_to(err, &g, x);
@@ -420,7 +420,7 @@ mag_status_t mag_op_backward_mul(mag_error_t *err, mag_au_state_t *node, mag_ten
     grads[0] = g;
     g = NULL;
   }
-  if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (y->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_mul(err, &g, x, node->grad);
     if (mag_iserr(status)) goto cleanup;
     status = mag_grad_reduce_to(err, &g, y);
@@ -443,7 +443,7 @@ mag_status_t mag_op_backward_div(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *yy = NULL;
   mag_tensor_t *gxyy = NULL;
 
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_div(err, &g, node->grad, y);
     if (mag_iserr(status)) goto cleanup;
     status = mag_grad_reduce_to(err, &g, x);
@@ -451,7 +451,7 @@ mag_status_t mag_op_backward_div(mag_error_t *err, mag_au_state_t *node, mag_ten
     grads[0] = g;
     g = NULL;
   }
-  if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (y->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_mul(err, &gx, node->grad, x);
     if (mag_iserr(status)) goto cleanup;
     status = mag_mul(err, &yy, y, y);
@@ -481,9 +481,9 @@ mag_status_t mag_op_backward_matmul(mag_error_t *err, mag_au_state_t *node, mag_
   mag_tensor_t *yT = NULL;
   mag_tensor_t *xT = NULL;
   mag_tensor_t *g = NULL;
-  int64_t rx = x->coords.rank;
-  int64_t ry = y->coords.rank;
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  int64_t rx = x->meta.coords.rank;
+  int64_t ry = y->meta.coords.rank;
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_transpose(err, &yT, y, ry-2, ry-1);
     if (mag_iserr(status)) goto cleanup;
     status = mag_matmul(err, &g, node->grad, yT);
@@ -495,7 +495,7 @@ mag_status_t mag_op_backward_matmul(mag_error_t *err, mag_au_state_t *node, mag_
     mag_rc_decref(yT);
     yT = NULL;
   }
-  if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (y->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_transpose(err, &xT, x, rx-2, rx-1);
     if (mag_iserr(status)) goto cleanup;
     status = mag_matmul(err, &g, xT, node->grad);
@@ -547,11 +547,11 @@ mag_status_t mag_op_backward_strided_view(mag_error_t *err, mag_au_state_t *node
   mag_tensor_t *scattered=NULL;
   mag_tensor_t *gx_view=NULL;
   mag_tensor_t *gx=NULL;
-  int64_t el = (int64_t)mag_type_trait(base->dtype)->size;
+  int64_t el = (int64_t)mag_type_trait(base->meta.dtype)->size;
   int64_t storel = (int64_t)(base->storage->size / (size_t)el);
   int64_t vnumel=1;
   for (int64_t k=0; k < rank; ++k) vnumel *= vshape[k];
-  status = mag_zeros(err, &flat, ctx, node->grad->dtype, 1, &storel, dev);
+  status = mag_zeros(err, &flat, ctx, node->grad->meta.dtype, 1, &storel, dev);
   if (mag_iserr(status)) goto cleanup;
   status = mag_full(err, &idx, ctx, MAG_DTYPE_INT64, rank, vshape, mag_scalar_from_int64(voffset), dev);
   if (mag_iserr(status)) goto cleanup;
@@ -583,7 +583,7 @@ mag_status_t mag_op_backward_strided_view(mag_error_t *err, mag_au_state_t *node
   if (mag_iserr(status)) goto cleanup;
   status = mag_scatter_add(err, &scattered, flat, 0, idxf, gradf);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_strided_view(err, &gx_view, ctx, scattered, base->coords.rank, base->coords.shape, base->coords.strides, base->storage_offset);
+  status = mag_strided_view(err, &gx_view, ctx, scattered, base->meta.coords.rank, base->meta.coords.shape, base->meta.coords.strides, base->meta.storage_offset);
   if (mag_iserr(status)) goto cleanup;
   status = mag_contiguous(err, &gx, gx_view);
   if (mag_iserr(status)) goto cleanup;
@@ -612,7 +612,7 @@ mag_status_t mag_op_backward_log2(mag_error_t *err, mag_au_state_t *node, mag_te
   mag_status_t status = MAG_OK;
   mag_tensor_t *c = NULL;
   mag_tensor_t *xc = NULL;
-  status = mag_scalar(err, &c, x->ctx, x->dtype, mag_scalar_from_float64(0.6931471805599453), mag_tensor_device_id(x));
+  status = mag_scalar(err, &c, x->ctx, x->meta.dtype, mag_scalar_from_float64(0.6931471805599453), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_mul(err, &xc, x, c);
   if (mag_iserr(status)) goto cleanup;
@@ -628,7 +628,7 @@ mag_status_t mag_op_backward_log10(mag_error_t *err, mag_au_state_t *node, mag_t
   mag_status_t status = MAG_OK;
   mag_tensor_t *c = NULL;
   mag_tensor_t *xc = NULL;
-  status = mag_scalar(err, &c, x->ctx, x->dtype, mag_scalar_from_float64(2.302585092994046), mag_tensor_device_id(x));
+  status = mag_scalar(err, &c, x->ctx, x->meta.dtype, mag_scalar_from_float64(2.302585092994046), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_mul(err, &xc, x, c);
   if (mag_iserr(status)) goto cleanup;
@@ -644,7 +644,7 @@ mag_status_t mag_op_backward_log1p(mag_error_t *err, mag_au_state_t *node, mag_t
   mag_status_t status = MAG_OK;
   mag_tensor_t *one = NULL;
   mag_tensor_t *denom = NULL;
-  status = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &one, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_add(err, &denom, x, one);
   if (mag_iserr(status)) goto cleanup;
@@ -682,7 +682,7 @@ mag_status_t mag_op_backward_rsqrt(mag_error_t *err, mag_au_state_t *node, mag_t
   if (mag_iserr(status)) goto cleanup;
   status = mag_div(err, &yx, y, x);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &half, x->ctx, x->dtype, mag_scalar_from_float64(-0.5), mag_tensor_device_id(x));
+  status = mag_scalar(err, &half, x->ctx, x->meta.dtype, mag_scalar_from_float64(-0.5), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_mul(err, &dv, yx, half);
   if (mag_iserr(status)) goto cleanup;
@@ -742,7 +742,7 @@ static mag_status_t mag_grad_sqrt_1_minus_xx(mag_error_t *err, mag_tensor_t **ou
   mag_tensor_t *d = NULL;
   status = mag_mul(err, &xx, x, x);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &one, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_sub(err, &d, one, xx);
   if (mag_iserr(status)) goto cleanup;
@@ -790,7 +790,7 @@ mag_status_t mag_op_backward_atan(mag_error_t *err, mag_au_state_t *node, mag_te
   mag_tensor_t *denom = NULL;
   status = mag_mul(err, &xx, x, x);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &one, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_add(err, &denom, one, xx);
   if (mag_iserr(status)) goto cleanup;
@@ -811,7 +811,7 @@ mag_status_t mag_op_backward_asinh(mag_error_t *err, mag_au_state_t *node, mag_t
   mag_tensor_t *s = NULL;
   status = mag_mul(err, &xx, x, x);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &one, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_add(err, &d, xx, one);
   if (mag_iserr(status)) goto cleanup;
@@ -835,7 +835,7 @@ mag_status_t mag_op_backward_acosh(mag_error_t *err, mag_au_state_t *node, mag_t
   mag_tensor_t *s = NULL;
   status = mag_mul(err, &xx, x, x);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &one, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_sub(err, &d, xx, one);
   if (mag_iserr(status)) goto cleanup;
@@ -858,7 +858,7 @@ mag_status_t mag_op_backward_atanh(mag_error_t *err, mag_au_state_t *node, mag_t
   mag_tensor_t *denom = NULL;
   status = mag_mul(err, &xx, x, x);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &one, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_sub(err, &denom, one, xx);
   if (mag_iserr(status)) goto cleanup;
@@ -878,7 +878,7 @@ mag_status_t mag_op_backward_exp2(mag_error_t *err, mag_au_state_t *node, mag_te
   mag_tensor_t *dv = NULL;
   status = mag_exp2(err, &y, x);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &c, x->ctx, x->dtype, mag_scalar_from_float64(0.6931471805599453), mag_tensor_device_id(x));
+  status = mag_scalar(err, &c, x->ctx, x->meta.dtype, mag_scalar_from_float64(0.6931471805599453), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_mul(err, &dv, y, c);
   if (mag_iserr(status)) goto cleanup;
@@ -916,7 +916,7 @@ mag_status_t mag_op_backward_erf(mag_error_t *err, mag_au_state_t *node, mag_ten
   if (mag_iserr(status)) goto cleanup;
   status = mag_exp(err, &e, nxx);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &c, x->ctx, x->dtype, mag_scalar_from_float64(1.1283791670955126), mag_tensor_device_id(x));
+  status = mag_scalar(err, &c, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.1283791670955126), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_mul(err, &dv, e, c);
   if (mag_iserr(status)) goto cleanup;
@@ -944,7 +944,7 @@ mag_status_t mag_op_backward_erfc(mag_error_t *err, mag_au_state_t *node, mag_te
   if (mag_iserr(status)) goto cleanup;
   status = mag_exp(err, &e, nxx);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &c, x->ctx, x->dtype, mag_scalar_from_float64(-1.1283791670955126), mag_tensor_device_id(x));
+  status = mag_scalar(err, &c, x->ctx, x->meta.dtype, mag_scalar_from_float64(-1.1283791670955126), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_mul(err, &dv, e, c);
   if (mag_iserr(status)) goto cleanup;
@@ -969,9 +969,9 @@ mag_status_t mag_op_backward_hard_sigmoid(mag_error_t *err, mag_au_state_t *node
   mag_tensor_t *sixth = NULL;
   mag_tensor_t *gs = NULL;
   mag_tensor_t *z = NULL;
-  status = mag_scalar(err, &lo, x->ctx, x->dtype, mag_scalar_from_float64(-3.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &lo, x->ctx, x->meta.dtype, mag_scalar_from_float64(-3.0), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &hi, x->ctx, x->dtype, mag_scalar_from_float64(3.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &hi, x->ctx, x->meta.dtype, mag_scalar_from_float64(3.0), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_gt(err, &m1, x, lo);
   if (mag_iserr(status)) goto cleanup;
@@ -979,7 +979,7 @@ mag_status_t mag_op_backward_hard_sigmoid(mag_error_t *err, mag_au_state_t *node
   if (mag_iserr(status)) goto cleanup;
   status = mag_and(err, &mask, m1, m2);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_scalar(err, &sixth, x->ctx, x->dtype, mag_scalar_from_float64(1.0/6.0), mag_tensor_device_id(x));
+  status = mag_scalar(err, &sixth, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0/6.0), mag_tensor_device_id(x));
   if (mag_iserr(status)) goto cleanup;
   status = mag_mul(err, &gs, node->grad, sixth);
   if (mag_iserr(status)) goto cleanup;
@@ -1011,8 +1011,8 @@ mag_status_t mag_op_backward_pow(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *lnx = NULL;
   mag_tensor_t *t2 = NULL;
   mag_tensor_t *gy = NULL;
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
-    status = mag_scalar(err, &one, x->ctx, x->dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
+    status = mag_scalar(err, &one, x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x));
     if (mag_iserr(status)) goto cleanup;
     status = mag_sub(err, &ym1, y, one);
     if (mag_iserr(status)) goto cleanup;
@@ -1027,7 +1027,7 @@ mag_status_t mag_op_backward_pow(mag_error_t *err, mag_au_state_t *node, mag_ten
     grads[0] = gx;
     gx = NULL;
   }
-  if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (y->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_pow(err, &xpy, x, y);
     if (mag_iserr(status)) goto cleanup;
     status = mag_log(err, &lnx, x);
@@ -1061,7 +1061,7 @@ mag_status_t mag_op_backward_min(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *mask = NULL;
   mag_tensor_t *z = NULL;
   mag_tensor_t *g = NULL;
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_le(err, &mask, x, y);
     if (mag_iserr(status)) goto cleanup;
     status = mag_zeros_like(err, &z, node->grad);
@@ -1075,7 +1075,7 @@ mag_status_t mag_op_backward_min(mag_error_t *err, mag_au_state_t *node, mag_ten
     mag_rc_decref(mask); mask = NULL;
     mag_rc_decref(z); z = NULL;
   }
-  if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (y->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_lt(err, &mask, y, x);
     if (mag_iserr(status)) goto cleanup;
     status = mag_zeros_like(err, &z, node->grad);
@@ -1101,7 +1101,7 @@ mag_status_t mag_op_backward_max(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *mask = NULL;
   mag_tensor_t *z = NULL;
   mag_tensor_t *g = NULL;
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_ge(err, &mask, x, y);
     if (mag_iserr(status)) goto cleanup;
     status = mag_zeros_like(err, &z, node->grad);
@@ -1115,7 +1115,7 @@ mag_status_t mag_op_backward_max(mag_error_t *err, mag_au_state_t *node, mag_ten
     mag_rc_decref(mask); mask = NULL;
     mag_rc_decref(z); z = NULL;
   }
-  if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (y->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_gt(err, &mask, y, x);
     if (mag_iserr(status)) goto cleanup;
     status = mag_zeros_like(err, &z, node->grad);
@@ -1141,7 +1141,7 @@ mag_status_t mag_op_backward_where(mag_error_t *err, mag_au_state_t *node, mag_t
   mag_status_t status = MAG_OK;
   mag_tensor_t *z = NULL;
   mag_tensor_t *g = NULL;
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_zeros_like(err, &z, node->grad);
     if (mag_iserr(status)) goto cleanup;
     status = mag_where(err, &g, cond, node->grad, z);
@@ -1152,7 +1152,7 @@ mag_status_t mag_op_backward_where(mag_error_t *err, mag_au_state_t *node, mag_t
     g = NULL;
     mag_rc_decref(z); z = NULL;
   }
-  if (y->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (y->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_zeros_like(err, &z, node->grad);
     if (mag_iserr(status)) goto cleanup;
     status = mag_where(err, &g, cond, z, node->grad);
@@ -1178,7 +1178,7 @@ mag_status_t mag_op_backward_clamp(mag_error_t *err, mag_au_state_t *node, mag_t
   mag_tensor_t *mask = NULL;
   mag_tensor_t *z = NULL;
   mag_tensor_t *g = NULL;
-  if (x->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_ge(err, &a, x, lo);
     if (mag_iserr(status)) goto cleanup;
     status = mag_le(err, &b, x, hi);
@@ -1198,7 +1198,7 @@ mag_status_t mag_op_backward_clamp(mag_error_t *err, mag_au_state_t *node, mag_t
     mag_rc_decref(mask); mask = NULL;
     mag_rc_decref(z); z = NULL;
   }
-  if (lo->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (lo->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_lt(err, &mask, x, lo);
     if (mag_iserr(status)) goto cleanup;
     status = mag_zeros_like(err, &z, node->grad);
@@ -1212,7 +1212,7 @@ mag_status_t mag_op_backward_clamp(mag_error_t *err, mag_au_state_t *node, mag_t
     mag_rc_decref(mask); mask = NULL;
     mag_rc_decref(z); z = NULL;
   }
-  if (hi->flags & MAG_TFLAG_REQUIRES_GRAD) {
+  if (hi->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
     status = mag_gt(err, &mask, x, hi);
     if (mag_iserr(status)) goto cleanup;
     status = mag_zeros_like(err, &z, node->grad);
@@ -1251,7 +1251,7 @@ mag_status_t mag_op_backward_repeat(mag_error_t *err, mag_au_state_t *node, mag_
 mag_status_t mag_op_backward_gather(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *idx = node->in[1];
-  if (!(x->flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
+  if (!(x->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
   int64_t dim = node->params->gather.dim;
   mag_tensor_t *gx = NULL;
   mag_status_t status = mag_zeros_like(err, &gx, x);
@@ -1269,9 +1269,9 @@ mag_status_t mag_op_backward_embedding(mag_error_t *err, mag_au_state_t *node, m
   mag_tensor_t *gw = NULL;
   mag_tensor_t *g2 = NULL;
   mag_tensor_t *idx1 = NULL;
-  if (!(w->flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
-  int64_t dim = w->coords.shape[w->coords.rank-1];
-  int64_t numel = idx->numel;
+  if (!(w->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
+  int64_t dim = w->meta.coords.shape[w->meta.coords.rank-1];
+  int64_t numel = idx->meta.numel;
   status = mag_zeros_like(err, &gw, w);
   if (mag_iserr(status)) goto cleanup;
   status = mag_reshape(err, &g2, node->grad, (int64_t[2]){numel, dim}, 2);
@@ -1292,7 +1292,7 @@ cleanup:
 mag_status_t mag_op_backward_masked_fill(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];    /* the filled operand */
   mag_tensor_t *mask = node->in[1]; /* boolean mask (non-differentiable) */
-  if (!(x->flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
+  if (!(x->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
   /* out = where(mask, value, x)  =>  dx = where(mask, 0, grad): filled positions do not depend on x. */
   return mag_masked_fill(err, &grads[0], node->grad, mask, mag_scalar_from_float64(0.0));
 }

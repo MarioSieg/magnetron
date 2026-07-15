@@ -18,12 +18,12 @@ namespace magnetron::test {
 
     auto shape_as_vec(tensor t) -> std::vector<int64_t> {
         mag_tensor_t *internal{&*t};
-        return {std::begin(internal->coords.shape), std::end(internal->coords.shape)};
+        return {std::begin(internal->meta.coords.shape), std::end(internal->meta.coords.shape)};
     }
 
     auto strides_as_vec(tensor t) -> std::vector<int64_t> {
         mag_tensor_t *internal{&*t};
-        return {std::begin(internal->coords.strides), std::end(internal->coords.strides)};
+        return {std::begin(internal->meta.coords.strides), std::end(internal->meta.coords.strides)};
     }
 
     auto shape_to_string(const std::vector<int64_t>& shape) -> std::string {

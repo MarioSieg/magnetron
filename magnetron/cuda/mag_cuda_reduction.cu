@@ -195,13 +195,13 @@ namespace mag {
   static mag_status_t impl_reduce_op_fp(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
-    mag_assert2(r->dtype == x->dtype);
-    switch (x->dtype) {
+    mag_assert2(r->meta.dtype == x->meta.dtype);
+    switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in floating reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in floating reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -209,7 +209,7 @@ namespace mag {
   template <template <typename, typename, typename> typename op_t>
   static mag_status_t impl_reduce_op_sumprod(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
-    switch (x->dtype) {
+    switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
@@ -223,7 +223,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t,  int64_t,  int64_t>>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint64_t, uint64_t>>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t,  int64_t,  int64_t>>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in sum/prod reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in sum/prod reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -232,8 +232,8 @@ namespace mag {
   static mag_status_t impl_reduce_op_extrema(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
-    mag_assert2(r->dtype == x->dtype);
-    switch (x->dtype) {
+    mag_assert2(r->meta.dtype == x->meta.dtype);
+    switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, float>>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, half>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16>>(cmd); break;
@@ -247,7 +247,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t, int32_t, int32_t>>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint64_t, uint64_t>>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t, int64_t, int64_t>>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in min/max reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in min/max reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -256,8 +256,8 @@ namespace mag {
   static mag_status_t impl_reduce_op_logical(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
-    mag_assert2(r->dtype == MAG_DTYPE_BOOLEAN);
-    switch (x->dtype) {
+    mag_assert2(r->meta.dtype == MAG_DTYPE_BOOLEAN);
+    switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, uint8_t, uint8_t>>(cmd); break;
@@ -271,7 +271,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint8_t, uint8_t>>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t, uint8_t, uint8_t>>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in logical reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in logical reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -466,13 +466,13 @@ namespace mag {
   static mag_status_t impl_reduce_op_arg_fp(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
-    mag_assert2(r->dtype == MAG_DTYPE_INT64);
-    switch (x->dtype) {
+    mag_assert2(r->meta.dtype == MAG_DTYPE_INT64);
+    switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_reduce_arg_op<float, is_max>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_reduce_arg_op<half, is_max>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_reduce_arg_op<__nv_bfloat16, is_max>(cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_arg_op<__nv_fp8_e4m3, is_max>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in argmin/argmax fp reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in argmin/argmax fp reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -481,8 +481,8 @@ namespace mag {
   static mag_status_t impl_reduce_op_arg_int(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
-    mag_assert2(r->dtype == MAG_DTYPE_INT64);
-    switch (x->dtype) {
+    mag_assert2(r->meta.dtype == MAG_DTYPE_INT64);
+    switch (x->meta.dtype) {
       case MAG_DTYPE_UINT8: launch_reduce_arg_op_int<uint8_t, is_max>(cmd); break;
       case MAG_DTYPE_INT8: launch_reduce_arg_op_int<int8_t, is_max>(cmd); break;
       case MAG_DTYPE_UINT16: launch_reduce_arg_op_int<uint16_t, is_max>(cmd); break;
@@ -491,7 +491,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_reduce_arg_op_int<int32_t, is_max>(cmd); break;
       case MAG_DTYPE_UINT64: launch_reduce_arg_op_int<uint64_t, is_max>(cmd); break;
       case MAG_DTYPE_INT64: launch_reduce_arg_op_int<int64_t, is_max>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in argmin/argmax int reduction op: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in argmin/argmax int reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }

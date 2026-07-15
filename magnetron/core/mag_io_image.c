@@ -104,12 +104,12 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
     return mag_set_error(err, MAG_ERR_PARAM, "save_image: tensor must not be NULL.");
   if (mag_unlikely(file == NULL))
     return mag_set_error(err, MAG_ERR_PARAM, "save_image: file path must not be NULL.");
-  if (mag_unlikely(tensor->dtype != MAG_DTYPE_UINT8))
-    return mag_set_error(err, MAG_ERR_PARAM, "save_image: requires a uint8 tensor, but got %s.", mag_type_trait(tensor->dtype)->name);
-  if (mag_unlikely(tensor->coords.rank != 3))
-    return mag_set_error(err, MAG_ERR_PARAM, "save_image: requires a 3D tensor of shape (channels, height, width), but got rank %" PRIi64 ".", tensor->coords.rank);
-  if (mag_unlikely(!(tensor->coords.shape[0] >= 1 && tensor->coords.shape[0] <= 4)))
-    return mag_set_error(err, MAG_ERR_PARAM, "save_image: channels must be in [1, 4], but got %" PRIi64 ".", tensor->coords.shape[0]);
+  if (mag_unlikely(tensor->meta.dtype != MAG_DTYPE_UINT8))
+    return mag_set_error(err, MAG_ERR_PARAM, "save_image: requires a uint8 tensor, but got %s.", mag_type_trait(tensor->meta.dtype)->name);
+  if (mag_unlikely(tensor->meta.coords.rank != 3))
+    return mag_set_error(err, MAG_ERR_PARAM, "save_image: requires a 3D tensor of shape (channels, height, width), but got rank %" PRIi64 ".", tensor->meta.coords.rank);
+  if (mag_unlikely(!(tensor->meta.coords.shape[0] >= 1 && tensor->meta.coords.shape[0] <= 4)))
+    return mag_set_error(err, MAG_ERR_PARAM, "save_image: channels must be in [1, 4], but got %" PRIi64 ".", tensor->meta.coords.shape[0]);
 
   const char *ext = strrchr(file, '.');
   if (mag_unlikely(!(ext && *ext)))
@@ -129,9 +129,9 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
   mag_tensor_decref(host);
   host = NULL;
 
-  int64_t c = contig->coords.shape[0];
-  int64_t h = contig->coords.shape[1];
-  int64_t w = contig->coords.shape[2];
+  int64_t c = contig->meta.coords.shape[0];
+  int64_t h = contig->meta.coords.shape[1];
+  int64_t w = contig->meta.coords.shape[2];
 
   const uint8_t *src = (const uint8_t *)mag_tensor_data_ptr(contig);
   pixels = (*mag_try_alloc)(NULL, w*h*c, 0);

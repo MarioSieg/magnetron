@@ -44,10 +44,10 @@ static void mag_assert_correct_op_data(
     mag_assert(out[i] != NULL, "op_validate: output tensor %u for operator '%s' is NULL.", i, meta->mnemonic);
 }
 
-static void mag_bump_version(mag_tensor_t *t) {
-  if (t->flags & MAG_TFLAG_IS_VIEW) /* If this is a view, bump the version of the base tensor */
-    t = t->view_meta->base;
-  ++t->version;
+static void mag_bump_version(mag_tensor_t *tensor) {
+  if (tensor->meta.flags & MAG_TFLAG_IS_VIEW) /* If this is a view, bump the version of the base tensor */
+    tensor = tensor->view_meta->base;
+  ++tensor->version;
 }
 
 mag_status_t MAG_HOTPROC mag_dispatch(
@@ -67,7 +67,7 @@ mag_status_t MAG_HOTPROC mag_dispatch(
   mag_dbg_trace_op_ir(op, inplace, in, num_in, out, num_out);
 #endif
   mag_context_t *ctx = in ? (*in)->ctx : (*out)->ctx;
-  mag_device_t *device = in ? (*in)->device : (*out)->device;
+  mag_device_t *device = in ? (*in)->meta.device : (*out)->meta.device;
   mag_assert_correct_op_data(op, in, num_in, out, num_out);
   if ((ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward) {
     for (uint32_t i=0; i < num_out; ++i) {
@@ -82,7 +82,7 @@ mag_status_t MAG_HOTPROC mag_dispatch(
         mag_tensor_t *input = in[j];
         if (mag_unlikely(!input))
           return mag_set_error(err, MAG_ERR_OP, "dispatch: input tensor %u is NULL.", j);
-        if (input->flags & MAG_TFLAG_REQUIRES_GRAD && !(r->flags & MAG_TFLAG_REQUIRES_GRAD)) {
+        if (input->meta.flags & MAG_TFLAG_REQUIRES_GRAD && !(r->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) {
           mag_status_t status = mag_tensor_set_requires_grad(err, r, true);
           if (mag_iserr(status)) return status;
         }

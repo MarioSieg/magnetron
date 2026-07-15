@@ -52,13 +52,15 @@ mag_tensor_t *mag_tensor_init_header(
   memset(hdr, 0, sizeof(*hdr));
   *hdr = (mag_tensor_t) {
     .ctx = ctx,
-    .coords = {.rank=rank},
-    .dtype = type,
+    .meta = {
+      .coords = {.rank=rank},
+      .device = device,
+      .numel = numel,
+      .storage_offset = 0,
+      .dtype = type,
+      .flags = MAG_TFLAG_NONE,
+    },
     .storage = storage,
-    .device = device,
-    .numel = numel,
-    .flags = MAG_TFLAG_NONE,
-    .storage_offset = 0,
     .view_meta = NULL,
     .au_state = NULL,
     .version = 0,
@@ -137,13 +139,13 @@ mag_status_t mag_tensor_init(
   }
   ctx->telemetry.storage_bytes_allocated += numby;
   for (int i=0; i < MAG_MAX_DIMS; ++i) {
-    tensor->coords.shape[i] = shape && i < rank ? shape[i] : 1;
-    tensor->coords.strides[i] = 1;
+    tensor->meta.coords.shape[i] = shape && i < rank ? shape[i] : 1;
+    tensor->meta.coords.strides[i] = 1;
   }
   if (rank > 0) {
-    tensor->coords.strides[rank-1] = 1;
+    tensor->meta.coords.strides[rank-1] = 1;
     for (int64_t i=rank-2; i >= 0; --i) {
-      if (mag_unlikely(mag_mulov64(tensor->coords.strides[i+1], tensor->coords.shape[i+1], tensor->coords.strides+i))) {
+      if (mag_unlikely(mag_mulov64(tensor->meta.coords.strides[i+1], tensor->meta.coords.shape[i+1], tensor->meta.coords.strides+i))) {
         status = mag_set_error(err, MAG_ERR_DIM, "tensor: stride computation overflowed at dim %" PRIi64 ".", i);
         goto cleanup;
       }
@@ -283,27 +285,27 @@ size_t mag_tensor_numbytes(const mag_tensor_t *t) {
   return t->storage->size;
 }
 int64_t mag_tensor_numel(const mag_tensor_t *tensor) {
-  return tensor->numel;
+  return tensor->meta.numel;
 }
 
 int64_t mag_tensor_rank(const mag_tensor_t *tensor) {
-  return tensor->coords.rank;
+  return tensor->meta.coords.rank;
 }
 
 const int64_t *mag_tensor_shape_ptr(const mag_tensor_t *tensor) {
-  return tensor->coords.shape;
+  return tensor->meta.coords.shape;
 }
 
 const int64_t *mag_tensor_strides_ptr(const mag_tensor_t *tensor) {
-  return tensor->coords.strides;
+  return tensor->meta.coords.strides;
 }
 
 mag_dtype_t mag_tensor_type(const mag_tensor_t *tensor) {
-  return tensor->dtype;
+  return tensor->meta.dtype;
 }
 
 size_t mag_tensor_data_offset(const mag_tensor_t *tensor) {
-  return (size_t)tensor->storage_offset*mag_type_trait(tensor->dtype)->size; /* Return offset in bytes */
+  return (size_t)tensor->meta.storage_offset*mag_type_trait(tensor->meta.dtype)->size; /* Return offset in bytes */
 }
 
 uintptr_t mag_tensor_data_ptr(const mag_tensor_t *tensor) {
@@ -325,7 +327,7 @@ uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor) {
 }
 
 mag_device_id_t mag_tensor_device_id(const mag_tensor_t *tensor) {
-  return tensor->device->id;
+  return tensor->meta.device->id;
 }
 
 mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void **out_buf, size_t *out_size_bytes) {
@@ -374,8 +376,8 @@ void mag_tensor_copy_data_free(void *ret_val) {
 }
 
 mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t *out_value) {
-  if (mag_unlikely(tensor->numel != 1))
-    return mag_set_error(err, MAG_ERR_PARAM, "item: can only be called on a single-element tensor, but this tensor has %" PRIi64 " elements.", tensor->numel);
+  if (mag_unlikely(tensor->meta.numel != 1))
+    return mag_set_error(err, MAG_ERR_PARAM, "item: can only be called on a single-element tensor, but this tensor has %" PRIi64 " elements.", tensor->meta.numel);
   if (mag_unlikely(out_value == NULL))
     return mag_set_error(err, MAG_ERR_PARAM, "item: output value pointer must not be NULL.");
   mag_status_t status = MAG_OK;
@@ -387,7 +389,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
   status = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
   if (mag_iserr(status))
     goto cleanup;
-  if (host->coords.rank == 0) {
+  if (host->meta.coords.rank == 0) {
     scalar = host;
     scalar_is_host = true;
   } else {
@@ -396,7 +398,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
       goto cleanup;
   }
   {
-    mag_dtype_t dt = scalar->dtype;
+    mag_dtype_t dt = scalar->meta.dtype;
     mag_dtype_mask_t mask = mag_dtype_bit(dt);
     mag_scalar_t res;
     if (mask & MAG_DTYPE_MASK_FP) {
@@ -461,60 +463,60 @@ mag_context_t *mag_tensor_context(const mag_tensor_t *tensor) {
 }
 
 bool mag_tensor_is_view(const mag_tensor_t *tensor) {
-  return tensor->flags & MAG_TFLAG_IS_VIEW;
+  return tensor->meta.flags & MAG_TFLAG_IS_VIEW;
 }
 
 bool mag_tensor_is_floating_point_typed(const mag_tensor_t *tensor) {
-  return mag_dtype_bit(tensor->dtype) & MAG_DTYPE_MASK_FP;
+  return mag_dtype_bit(tensor->meta.dtype) & MAG_DTYPE_MASK_FP;
 }
 
 bool mag_tensor_is_integral_typed(const mag_tensor_t *tensor) {
-  return mag_dtype_bit(tensor->dtype) & MAG_DTYPE_MASK_INTEGRAL;
+  return mag_dtype_bit(tensor->meta.dtype) & MAG_DTYPE_MASK_INTEGRAL;
 }
 
 bool mag_tensor_is_integer_typed(const mag_tensor_t *tensor) {
-  return mag_dtype_bit(tensor->dtype) & MAG_DTYPE_MASK_INTEGER;
+  return mag_dtype_bit(tensor->meta.dtype) & MAG_DTYPE_MASK_INTEGER;
 }
 
 bool mag_tensor_is_unsigned_integer_typed(const mag_tensor_t *tensor) {
-  return mag_dtype_bit(tensor->dtype) & MAG_DTYPE_MASK_UINT;
+  return mag_dtype_bit(tensor->meta.dtype) & MAG_DTYPE_MASK_UINT;
 }
 
 bool mag_tensor_is_signed_integer_typed(const mag_tensor_t *tensor) {
-  return mag_dtype_bit(tensor->dtype) & MAG_DTYPE_MASK_SINT;
+  return mag_dtype_bit(tensor->meta.dtype) & MAG_DTYPE_MASK_SINT;
 }
 
 bool mag_tensor_is_numeric_typed(const mag_tensor_t *tensor) {
-  return mag_dtype_bit(tensor->dtype) & MAG_DTYPE_MASK_NUMERIC;
+  return mag_dtype_bit(tensor->meta.dtype) & MAG_DTYPE_MASK_NUMERIC;
 }
 
 bool mag_tensor_is_shape_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
-  return mag_coords_shape_cmp(&x->coords, &y->coords);
+  return mag_coords_shape_cmp(&x->meta.coords, &y->meta.coords);
 }
 
 bool mag_tensor_are_strides_eq(const mag_tensor_t *x, const mag_tensor_t *y) {
-  return mag_coords_strides_cmp(&x->coords, &y->coords);
+  return mag_coords_strides_cmp(&x->meta.coords, &y->meta.coords);
 }
 
 bool mag_tensor_can_broadcast(const mag_tensor_t *small, const mag_tensor_t *big) {
-  return mag_coords_can_broadcast(&small->coords, &big->coords);
+  return mag_coords_can_broadcast(&small->meta.coords, &big->meta.coords);
 }
 
 bool mag_tensor_is_transposed(const mag_tensor_t *tensor) {
-  return mag_coords_transposed(&tensor->coords);
+  return mag_coords_transposed(&tensor->meta.coords);
 }
 
 bool mag_tensor_is_permuted(const mag_tensor_t *tensor) {
-  return mag_coords_permuted(&tensor->coords);
+  return mag_coords_permuted(&tensor->meta.coords);
 }
 
 bool mag_tensor_is_contiguous(const mag_tensor_t *tensor) {
-  return mag_coords_contiguous(&tensor->coords);
+  return mag_coords_contiguous(&tensor->meta.coords);
 }
 
 bool mag_tensor_can_view(const mag_tensor_t *tensor, const int64_t *dims, int64_t rank) {
   int64_t tmp[MAG_MAX_DIMS];
-  return mag_isok(mag_solve_view_strides(NULL, &tmp, tensor->coords.shape, tensor->coords.strides, tensor->coords.rank, dims, rank));
+  return mag_isok(mag_solve_view_strides(NULL, &tmp, tensor->meta.coords.shape, tensor->meta.coords.strides, tensor->meta.coords.rank, dims, rank));
 }
 
 void mag_tensor_incref(mag_tensor_t *tensor) {
@@ -526,7 +528,7 @@ bool mag_tensor_decref(mag_tensor_t *tensor) {
 }
 
 bool mag_tensor_is_cpu(mag_tensor_t *tensor) {
-  return mag_device_id_eq(tensor->device->id, mag_device(CPU, 0));
+  return mag_device_id_eq(tensor->meta.device->id, mag_device(CPU, 0));
 }
 
 bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {
@@ -534,14 +536,14 @@ bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {
   const mag_tensor_t *t0 = *tensors;
   if (mag_unlikely(!t0)) return false;
   if (!mag_tensor_is_contiguous(t0)) return false;
-  const int64_t rank = t0->coords.rank;
-  const int64_t *shape0 = t0->coords.shape;
+  const int64_t rank = t0->meta.coords.rank;
+  const int64_t *shape0 = t0->meta.coords.shape;
   for (size_t i=1; i < n; ++i) {
     const mag_tensor_t *t = tensors[i];
     if (mag_unlikely(!t)) return false;
-    if (t->coords.rank != rank) return false;
+    if (t->meta.coords.rank != rank) return false;
     if (!mag_tensor_is_contiguous(t)) return false;
-    const int64_t *shape = t->coords.shape;
+    const int64_t *shape = t->meta.coords.shape;
     for (int64_t dim=0; dim < rank; ++dim) {
       if (shape[dim] != shape0[dim])
         return false;
@@ -571,7 +573,7 @@ void mag_leak_detector_dequeue(mag_tensor_t *t) {
 MAG_COLDPROC void mag_leak_detector_dump_results(mag_context_t *ctx) {
   for (mag_tensor_t *leaked = ctx->alive_head; leaked; leaked = leaked->alive_next) {
     char shape[MAG_FMT_DIM_BUF_SIZE];
-    mag_fmt_shape(&shape, &leaked->coords.shape, leaked->coords.rank);
+    mag_fmt_shape(&shape, &leaked->meta.coords.shape, leaked->meta.coords.rank);
     fprintf(
       stderr,
       MAG_CC_RED "[magnetron] " MAG_CC_RESET "Leaked tensor: %p, Shape: %s\n",

@@ -99,7 +99,7 @@ mag_gen_vrand_uniform_int(int64_t, uint64_t)
     mag_tensor_t *r = payload->cmd->out[0]; \
     T val = (T)CVT(mag_scalar_as_##UT(payload->cmd->params->fill.value)); \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
@@ -114,7 +114,7 @@ mag_gen_vrand_uniform_int(int64_t, uint64_t)
       return MAG_OK; \
     } \
     mag_coords_iter_t cr; \
-    mag_coords_iter_init(&cr, &r->coords); \
+    mag_coords_iter_init(&cr, &r->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
       mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
@@ -149,10 +149,10 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const uint8_t *bm = (const uint8_t *)mag_tensor_data_ptr(mask); \
     mag_coords_iter_t cr, cx, cm; \
-    mag_coords_iter_init(&cr, &r->coords); \
-    mag_coords_iter_init(&cx, &x->coords); \
-    mag_coords_iter_init(&cm, &mask->coords); \
-    int64_t total = r->numel; \
+    mag_coords_iter_init(&cr, &r->meta.coords); \
+    mag_coords_iter_init(&cx, &x->meta.coords); \
+    mag_coords_iter_init(&cm, &mask->meta.coords); \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
@@ -204,8 +204,8 @@ mag_gen_stub_masked_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     mag_philox4x32_stream_t *prng = payload->prng; \
     mag_coords_iter_t cr; \
-    mag_coords_iter_init(&cr, &r->coords); \
-    int64_t total = r->numel; \
+    mag_coords_iter_init(&cr, &r->meta.coords); \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
@@ -246,7 +246,7 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
     T *br = (T *)mag_tensor_data_ptr_mut(r);                                     \
     mag_philox4x32_stream_t *prng = payload->prng;                               \
                                                                                 \
-    int64_t total = r->numel;                                                    \
+    int64_t total = r->meta.numel;                                                    \
     int64_t tc = payload->thread_num;                                            \
     int64_t ti = payload->thread_idx;                                            \
                                                                                 \
@@ -271,7 +271,7 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
     }                                                                           \
                                                                                 \
     mag_coords_iter_t cr;                                                        \
-    mag_coords_iter_init(&cr, &r->coords);                                       \
+    mag_coords_iter_init(&cr, &r->meta.coords);                                       \
     for (int64_t i = ra; i < rb; ++i) {                                          \
       int64_t ri = mag_coords_iter_to_offset(&cr, i);                            \
       mag_bnd_chk(br + ri, r->storage->base, mag_tensor_numbytes(r));                          \
@@ -305,7 +305,7 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     PT start = UNWRAP(payload->cmd->params->arange.start); \
     PT step = UNWRAP(payload->cmd->params->arange.step); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
@@ -320,7 +320,7 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
       return MAG_OK; \
     } \
     mag_coords_iter_t cr; \
-    mag_coords_iter_init(&cr, &r->coords); \
+    mag_coords_iter_init(&cr, &r->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
       mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
@@ -349,9 +349,9 @@ mag_gen_stub_arange(int64_t, int64, int64_t, mag_scalar_as_int64, uint64_t, mag_
     (void)err; \
     mag_tensor_t *r = payload->cmd->out[0]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
-    mag_assert2(r->coords.rank == 2); \
-    int64_t cols = r->coords.shape[1]; \
-    int64_t total = r->numel; \
+    mag_assert2(r->meta.coords.rank == 2); \
+    int64_t cols = r->meta.coords.shape[1]; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
@@ -368,7 +368,7 @@ mag_gen_stub_arange(int64_t, int64, int64_t, mag_scalar_as_int64, uint64_t, mag_
       return MAG_OK; \
     } \
     mag_coords_iter_t cr; \
-    mag_coords_iter_init(&cr, &r->coords); \
+    mag_coords_iter_init(&cr, &r->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
       int64_t row = i / cols; \
@@ -401,7 +401,7 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
   int64_t *restrict pr = (int64_t *)mag_tensor_data_ptr_mut(r);
   const int64_t *restrict pidx = (const int64_t *)mag_tensor_data_ptr(idx);
   int64_t nc = payload->cmd->params->one_hot.num_classes;
-  int64_t total = idx->numel;
+  int64_t total = idx->meta.numel;
   int64_t tc = payload->thread_num;
   int64_t ti = payload->thread_idx;
   int64_t chunk = (total + tc - 1)/tc;
@@ -420,7 +420,7 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
     return MAG_OK;
   }
   mag_coords_iter_t it;
-  mag_coords_iter_init(&it, &idx->coords);
+  mag_coords_iter_init(&it, &idx->meta.coords);
   for (int64_t i=ra; i < rb; ++i) {
     int64_t ridx = mag_coords_iter_to_offset(&it, i);
     mag_bnd_chk(pidx+ridx, idx->storage->base, mag_tensor_numbytes(idx));
@@ -442,7 +442,7 @@ static MAG_HOTPROC mag_status_t mag_fill_rand_bernoulli_bool(mag_error_t *err, c
   mag_tensor_t *r = payload->cmd->out[0];
   float p = (float)payload->cmd->params->bernoulli.p;
   uint8_t *b_r = (uint8_t *)mag_tensor_data_ptr_mut(r);
-  int64_t numel = r->numel;
+  int64_t numel = r->meta.numel;
   mag_vrand_bernoulli_bool(payload->prng, numel, b_r, p);
   return MAG_OK;
 }
@@ -452,7 +452,7 @@ static MAG_HOTPROC mag_status_t mag_fill_rand_bernoulli_bool(mag_error_t *err, c
     (void)err; \
     mag_tensor_t *r = payload->cmd->out[0]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
-    int64_t numel = r->numel; \
+    int64_t numel = r->meta.numel; \
     mag_philox4x32_stream_t *prng = payload->prng; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t i=0; i < numel; ++i) { \
@@ -469,7 +469,7 @@ static MAG_HOTPROC mag_status_t mag_fill_rand_bernoulli_bool(mag_error_t *err, c
       return MAG_OK; \
     } \
     mag_coords_iter_t it; \
-    mag_coords_iter_init(&it, &r->coords); \
+    mag_coords_iter_init(&it, &r->meta.coords); \
     for (int64_t i=0; i < numel; ++i) { \
       int64_t off = mag_coords_iter_to_offset(&it, i); \
       mag_bnd_chk(br+off, r->storage->base, mag_tensor_numbytes(r)); \

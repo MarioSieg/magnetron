@@ -11,21 +11,21 @@
 
 #define mag_scan_dim_setup(x, dim_var, dim_size_var, outer_count_var, stride_x_dim_var, outer_rank_var, shape_outer_var, mult_outer_var, outer_to_full_var) \
   int64_t dim_var = payload->cmd->params->cumu.dim; \
-  if (dim_var < 0) dim_var += (x)->coords.rank; \
-  mag_assert2(dim_var >= 0 && dim_var < (x)->coords.rank); \
-  const int64_t dim_size_var = (x)->coords.shape[dim_var]; \
+  if (dim_var < 0) dim_var += (x)->meta.coords.rank; \
+  mag_assert2(dim_var >= 0 && dim_var < (x)->meta.coords.rank); \
+  const int64_t dim_size_var = (x)->meta.coords.shape[dim_var]; \
   if (dim_size_var <= 0) return MAG_OK; \
-  int64_t outer_count_var = (x)->numel / dim_size_var; \
-  int64_t stride_x_dim_var = (x)->coords.strides[dim_var]; \
-  int64_t outer_rank_var = (x)->coords.rank - 1; \
+  int64_t outer_count_var = (x)->meta.numel / dim_size_var; \
+  int64_t stride_x_dim_var = (x)->meta.coords.strides[dim_var]; \
+  int64_t outer_rank_var = (x)->meta.coords.rank - 1; \
   int64_t shape_outer_var[MAG_MAX_DIMS]; \
   int64_t mult_outer_var[MAG_MAX_DIMS]; \
   int64_t outer_to_full_var[MAG_MAX_DIMS]; \
   { \
     int64_t t = 0; \
-    for (int64_t d=0; d < (x)->coords.rank; ++d) { \
+    for (int64_t d=0; d < (x)->meta.coords.rank; ++d) { \
       if (d == dim_var) continue; \
-      shape_outer_var[t] = (x)->coords.shape[d]; \
+      shape_outer_var[t] = (x)->meta.coords.shape[d]; \
       outer_to_full_var[t] = d; \
       ++t; \
     } \
@@ -38,7 +38,7 @@
 
 #define mag_scan_outer_offsets(row, x, r, dim, outer_rank, mult_outer, outer_to_full, off_x0, off_r0) \
   int64_t base_idx[MAG_MAX_DIMS]; \
-  for (int64_t d=0; d < (x)->coords.rank; ++d) base_idx[d] = 0; \
+  for (int64_t d=0; d < (x)->meta.coords.rank; ++d) base_idx[d] = 0; \
   int64_t rtmp = row; \
   for (int64_t t=0; t < outer_rank; ++t) { \
     const int64_t q = (mult_outer[t] == 0) ? 0 : (rtmp / mult_outer[t]); \
@@ -48,14 +48,14 @@
   base_idx[dim] = 0; \
   int64_t off_x0 = 0; \
   int64_t off_r0 = 0; \
-  for (int64_t d=0; d < (x)->coords.rank; ++d) { \
-    off_x0 += base_idx[d]*(x)->coords.strides[d]; \
-    off_r0 += base_idx[d]*(r)->coords.strides[d]; \
+  for (int64_t d=0; d < (x)->meta.coords.rank; ++d) { \
+    off_x0 += base_idx[d]*(x)->meta.coords.strides[d]; \
+    off_r0 += base_idx[d]*(r)->meta.coords.strides[d]; \
   }
 
 #define mag_scan_outer_offsets2(row, x, v, i, dim, outer_rank, mult_outer, outer_to_full, off_x0, off_v0, off_i0) \
   int64_t base_idx[MAG_MAX_DIMS]; \
-  for (int64_t d=0; d < (x)->coords.rank; ++d) base_idx[d] = 0; \
+  for (int64_t d=0; d < (x)->meta.coords.rank; ++d) base_idx[d] = 0; \
   int64_t rtmp = row; \
   for (int64_t t=0; t < outer_rank; ++t) { \
     const int64_t q = (mult_outer[t] == 0) ? 0 : (rtmp / mult_outer[t]); \
@@ -66,10 +66,10 @@
   int64_t off_x0 = 0; \
   int64_t off_v0 = 0; \
   int64_t off_i0 = 0; \
-  for (int64_t d=0; d < (x)->coords.rank; ++d) { \
-    off_x0 += base_idx[d]*(x)->coords.strides[d]; \
-    off_v0 += base_idx[d]*(v)->coords.strides[d]; \
-    off_i0 += base_idx[d]*(i)->coords.strides[d]; \
+  for (int64_t d=0; d < (x)->meta.coords.rank; ++d) { \
+    off_x0 += base_idx[d]*(x)->meta.coords.strides[d]; \
+    off_v0 += base_idx[d]*(v)->meta.coords.strides[d]; \
+    off_i0 += base_idx[d]*(i)->meta.coords.strides[d]; \
   }
 
 #define mag_gen_stub_cusum(T, TF, CVT, ACC_T, ZERO, FROM_ACC) \
@@ -80,7 +80,7 @@
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     mag_scan_dim_setup(x, dim, dim_size, outer_count, stride_x_dim, outer_rank, shape_outer, mult_outer, outer_to_full); \
-    int64_t stride_r_dim = r->coords.strides[dim]; \
+    int64_t stride_r_dim = r->meta.coords.strides[dim]; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1)/tc; \
@@ -124,7 +124,7 @@ mag_gen_stub_cusum(int64_t, int64, mag_cvt_nop, int64_t, 0, mag_cvt_nop)
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     mag_scan_dim_setup(x, dim, dim_size, outer_count, stride_x_dim, outer_rank, shape_outer, mult_outer, outer_to_full); \
-    int64_t stride_r_dim = r->coords.strides[dim]; \
+    int64_t stride_r_dim = r->meta.coords.strides[dim]; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1)/tc; \
@@ -170,8 +170,8 @@ mag_gen_stub_cuprod(int64_t, int64, mag_cvt_nop, int64_t, 1, mag_cvt_nop)
     T *bv = (T *)mag_tensor_data_ptr_mut(v); \
     int64_t *bi = (int64_t *)mag_tensor_data_ptr_mut(idx); \
     mag_scan_dim_setup(x, dim, dim_size, outer_count, stride_x_dim, outer_rank, shape_outer, mult_outer, outer_to_full); \
-    int64_t stride_v_dim = v->coords.strides[dim]; \
-    int64_t stride_i_dim = idx->coords.strides[dim]; \
+    int64_t stride_v_dim = v->meta.coords.strides[dim]; \
+    int64_t stride_i_dim = idx->meta.coords.strides[dim]; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1) / tc; \

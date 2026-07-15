@@ -292,8 +292,8 @@ mag_mat_layout_type_t mag_mat_layout_detect(const mag_coords_t *coords, bool *ou
 }
 
 mag_matmul_type_t mag_matmul_type_detect(const mag_tensor_t *x, const mag_tensor_t *y) {
-  int64_t xra = x->coords.rank&255;
-  int64_t yra = y->coords.rank&255;
+  int64_t xra = x->meta.coords.rank&255;
+  int64_t yra = y->meta.coords.rank&255;
   if (mag_unlikely(xra < 1 || yra < 1)) return MAG_MATMUL_TYPE_INVALID;
   switch ((xra<<8)|yra) {
     case ((1<<8)|1): return MAG_MATMUL_TYPE_DOT;
@@ -301,8 +301,8 @@ mag_matmul_type_t mag_matmul_type_detect(const mag_tensor_t *x, const mag_tensor
     case ((2<<8)|1): return MAG_MATMUL_TYPE_GEMV_MAT_VEC;
     case ((2<<8)|2): return MAG_MATMUL_TYPE_GEMM;
     default: {
-      int64_t M = x->coords.shape[xra-2];
-      int64_t N = y->coords.shape[yra-1];
+      int64_t M = x->meta.coords.shape[xra-2];
+      int64_t N = y->meta.coords.shape[yra-1];
       if (M == 1 && N == 1) return MAG_MATMUL_TYPE_BMM_DOT;
       if (M == 1) return MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT;
       if (N == 1) return MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC;
@@ -315,34 +315,34 @@ bool mag_matmul_type_is_micro_kernel_contig(mag_matmul_type_t type, const mag_te
   switch (type) {
     case MAG_MATMUL_TYPE_DOT:
     case MAG_MATMUL_TYPE_BMM_DOT: {
-      int64_t sx = x->coords.strides[0];
-      int64_t sy = y->coords.strides[0];
+      int64_t sx = x->meta.coords.strides[0];
+      int64_t sy = y->meta.coords.strides[0];
       return sx == 1 && sy == 1;
     }
     case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
     case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: {
-      int64_t K = x->coords.shape[1];
-      int64_t sx0 = x->coords.strides[0];
-      int64_t sx1 = x->coords.strides[1];
-      int64_t sy = y->coords.strides[0];
+      int64_t K = x->meta.coords.shape[1];
+      int64_t sx0 = x->meta.coords.strides[0];
+      int64_t sx1 = x->meta.coords.strides[1];
+      int64_t sy = y->meta.coords.strides[0];
       return sx0 == K && sx1 == 1 && sy == 1;
     }
     case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
     case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT: {
-      int64_t sx = x->coords.strides[0];
-      int64_t sy0 = y->coords.strides[0];
-      int64_t sy1 = y->coords.strides[1];
-      int64_t N = y->coords.shape[1];
+      int64_t sx = x->meta.coords.strides[0];
+      int64_t sy0 = y->meta.coords.strides[0];
+      int64_t sy1 = y->meta.coords.strides[1];
+      int64_t N = y->meta.coords.shape[1];
       return sx == 1 && sy0 == N && sy1 == 1;
     }
     case MAG_MATMUL_TYPE_GEMM:
     case MAG_MATMUL_TYPE_BMM_GEMM: {
-      int64_t K = x->coords.shape[1];
-      int64_t N = y->coords.shape[1];
-      int64_t sx0 = x->coords.strides[0];
-      int64_t sx1 = x->coords.strides[1];
-      int64_t sy0 = y->coords.strides[0];
-      int64_t sy1 = y->coords.strides[1];
+      int64_t K = x->meta.coords.shape[1];
+      int64_t N = y->meta.coords.shape[1];
+      int64_t sx0 = x->meta.coords.strides[0];
+      int64_t sx1 = x->meta.coords.strides[1];
+      int64_t sy0 = y->meta.coords.strides[0];
+      int64_t sy1 = y->meta.coords.strides[1];
       return sx0 == K && sx1 == 1 && sy0 == N && sy1 == 1;
     }
     default: return false;

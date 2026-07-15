@@ -157,13 +157,13 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
     return mag_set_error(err, MAG_ERR_PARAM, "save_audio: file path must not be NULL.");
   if (mag_unlikely(!(sample_rate > 0)))
     return mag_set_error(err, MAG_ERR_PARAM, "save_audio: sample_rate must be > 0.");
-  if (mag_unlikely(tensor->dtype != MAG_DTYPE_FLOAT32))
-    return mag_set_error(err, MAG_ERR_PARAM, "save_audio: requires a float32 tensor, but got %s.", mag_type_trait(tensor->dtype)->name);
-  if (mag_unlikely(tensor->coords.rank != 2))
-    return mag_set_error(err, MAG_ERR_PARAM, "save_audio: requires a 2D tensor of shape (channels, frames), but got rank %" PRIi64 ".", tensor->coords.rank);
-  if (mag_unlikely(!(tensor->coords.shape[0] > 0)))
+  if (mag_unlikely(tensor->meta.dtype != MAG_DTYPE_FLOAT32))
+    return mag_set_error(err, MAG_ERR_PARAM, "save_audio: requires a float32 tensor, but got %s.", mag_type_trait(tensor->meta.dtype)->name);
+  if (mag_unlikely(tensor->meta.coords.rank != 2))
+    return mag_set_error(err, MAG_ERR_PARAM, "save_audio: requires a 2D tensor of shape (channels, frames), but got rank %" PRIi64 ".", tensor->meta.coords.rank);
+  if (mag_unlikely(!(tensor->meta.coords.shape[0] > 0)))
     return mag_set_error(err, MAG_ERR_PARAM, "save_audio: tensor must have at least one channel.");
-  if (mag_unlikely(!(tensor->coords.shape[1] > 0)))
+  if (mag_unlikely(!(tensor->meta.coords.shape[1] > 0)))
     return mag_set_error(err, MAG_ERR_PARAM, "save_audio: tensor must have at least one frame.");
 
   const char *ext = strrchr(file, '.');
@@ -190,8 +190,8 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   mag_tensor_decref(host);
   host = NULL;
 
-  int64_t c = contig->coords.shape[0];
-  int64_t frames = contig->coords.shape[1];
+  int64_t c = contig->meta.coords.shape[0];
+  int64_t frames = contig->meta.coords.shape[1];
 
   const float *restrict src = (const float *)mag_tensor_data_ptr(contig);
 

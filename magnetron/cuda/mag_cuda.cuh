@@ -37,7 +37,7 @@ namespace mag {
   static inline std::atomic_uint64_t global_subseq = 0;
 
   [[nodiscard]] inline int numel_i32(const mag_tensor_t *x) {
-    int64_t numel = x->numel;
+    int64_t numel = x->meta.numel;
     assert(numel <= INT_MAX);
     return static_cast<int>(numel);
   }

@@ -502,8 +502,8 @@ static mag_vcast_fn_t *const mag_cast_table_2D[MAG_DTYPE__NUM][MAG_DTYPE__NUM] =
 static MAG_HOTPROC mag_status_t mag_cast_generic(mag_error_t *err, const mag_kernel_payload_t *payload) {
   mag_tensor_t *r = payload->cmd->out[0];
   const mag_tensor_t *x = payload->cmd->in[0];
-  mag_dtype_t src = x->dtype;
-  mag_dtype_t dst = r->dtype;
+  mag_dtype_t src = x->meta.dtype;
+  mag_dtype_t dst = r->meta.dtype;
   const mag_type_traits_t *msrc = mag_type_trait(src);
   const mag_type_traits_t *mdst = mag_type_trait(dst);
   mag_vcast_fn_t *kernel = mag_cast_table_2D[src][dst];
@@ -514,7 +514,7 @@ static MAG_HOTPROC mag_status_t mag_cast_generic(mag_error_t *err, const mag_ker
   const uint8_t *bx = (const uint8_t *)mag_tensor_data_ptr(x);
   int64_t nbs = (int64_t)msrc->size;
   int64_t nbd = (int64_t)mdst->size;
-  int64_t total = r->numel;
+  int64_t total = r->meta.numel;
   int64_t tc = payload->thread_num;
   int64_t ti = payload->thread_idx;
   int64_t chunk = (total + tc - 1)/tc;
@@ -531,8 +531,8 @@ static MAG_HOTPROC mag_status_t mag_cast_generic(mag_error_t *err, const mag_ker
   }
   /* We work in byte granularity and compute pointer offsets manually to avoid a generic for this stub function */
   mag_coords_iter_t cr, cx;
-  mag_coords_iter_init(&cr, &r->coords);
-  mag_coords_iter_init(&cx, &x->coords);
+  mag_coords_iter_init(&cr, &r->meta.coords);
+  mag_coords_iter_init(&cx, &x->meta.coords);
   for (int64_t i=ra; i < rb; ++i) { /* TODO: Optimize - Slow with the single indirect call for each element */
     int64_t ri, xi;
     mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi);

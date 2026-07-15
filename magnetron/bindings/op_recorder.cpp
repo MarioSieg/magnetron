@@ -82,13 +82,13 @@ namespace mag::bindings {
       auto *tensor = data[i];
       auto fmt_shape_tuple = [&](std::stringstream &ss, const int64_t (&dims)[MAG_MAX_DIMS]) {
         char shape_buf[MAG_FMT_DIM_BUF_SIZE];
-        mag_fmt_shape(&shape_buf, &dims, tensor->coords.rank);
+        mag_fmt_shape(&shape_buf, &dims, tensor->meta.coords.rank);
         ss << shape_buf << (i < count-1 ? ", " : "");
       };
-      fmt_shape_tuple(shape_ss, tensor->coords.shape);
-      fmt_shape_tuple(strides_ss, tensor->coords.strides);
+      fmt_shape_tuple(shape_ss, tensor->meta.coords.shape);
+      fmt_shape_tuple(strides_ss, tensor->meta.coords.strides);
     }
-    std::string dtype = count ? std::string{mag_type_trait(data[0]->dtype)->short_name} : "?";
+    std::string dtype = count ? std::string{mag_type_trait(data[0]->meta.dtype)->short_name} : "?";
     std::string kind {};
     if (opcode == MAG_OP_MATMUL && count == 2) {
       auto mmt = mag_matmul_type_detect(data[0], data[1]);

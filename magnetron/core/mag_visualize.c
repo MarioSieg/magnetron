@@ -30,9 +30,9 @@ MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, 
     if (!node->au_state) continue;
     const mag_op_traits_t *meta = mag_op_trait(node->au_state->op);
     mag_sstream_append(&out, "    \"%p\" [label=\"%s\\nShape: (", node, meta->mnemonic);
-    for (int64_t r=0; r < node->coords.rank; ++r) {
-      mag_sstream_append(&out, "%zu", (size_t)node->coords.shape[r]);
-      if (r < node->coords.rank-1)
+    for (int64_t r=0; r < node->meta.coords.rank; ++r) {
+      mag_sstream_append(&out, "%zu", (size_t)node->meta.coords.shape[r]);
+      if (r < node->meta.coords.rank-1)
         mag_sstream_append(&out, ", ");
     }
     mag_sstream_append(&out, ")\\nGrad: %s\"];\n", node->au_state->grad ? "set" : "none");

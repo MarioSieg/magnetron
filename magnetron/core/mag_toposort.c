@@ -97,7 +97,7 @@ mag_status_t mag_topo_sort(
 ) {
   mag_topo_stack_reset(tmp_stack);
   mag_topo_set_reset(out_sorted);
-  if (mag_unlikely(!(root->flags & MAG_TFLAG_REQUIRES_GRAD))) return MAG_OK;
+  if (mag_unlikely(!(root->meta.flags & MAG_TFLAG_REQUIRES_GRAD))) return MAG_OK;
   uint64_t traversal_epoch = ++root->ctx->topo_traversal_epoch;
   mag_status_t status = MAG_OK;
   if (!root->au_state) {
@@ -114,7 +114,7 @@ mag_status_t mag_topo_sort(
   while (tmp_stack->len) { /* Iterative DFS */
     mag_topo_stack_record_t *top = mag_topo_stack_peek(tmp_stack);
     mag_tensor_t *top_t = top->tensor;
-    if (!top_t->au_state && (top_t->flags & MAG_TFLAG_REQUIRES_GRAD)) {
+    if (!top_t->au_state && (top_t->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) {
       if (mag_unlikely(!mag_au_state_lazy_alloc(&top_t->au_state, top_t->ctx))) {
         status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to allocate autodiff state.");
         goto cleanup;
@@ -135,7 +135,7 @@ mag_status_t mag_topo_sort(
     }
     mag_tensor_t *child = au->in[top->next_child_idx++];
     if (mag_unlikely(!child || !child->au_state)) continue;
-    if ((child->flags & MAG_TFLAG_REQUIRES_GRAD) && child->au_state->topo_traversal_epoch != traversal_epoch) {
+    if ((child->meta.flags & MAG_TFLAG_REQUIRES_GRAD) && child->au_state->topo_traversal_epoch != traversal_epoch) {
       if (mag_unlikely(!mag_topo_stack_push(tmp_stack, child))) {
         status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow traversal stack.");
         goto cleanup;

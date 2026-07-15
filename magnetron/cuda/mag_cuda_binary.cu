@@ -255,9 +255,9 @@ namespace mag {
       binary_op_kernel<Op, true><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, n, pr, px, py, {}, {}, {});
     } else {
       mag_coords_iter_t rc, xc, yc;
-      mag_coords_iter_init(&rc, &r->coords);
-      mag_coords_iter_init(&xc, &x->coords);
-      mag_coords_iter_init(&yc, &y->coords);
+      mag_coords_iter_init(&rc, &r->meta.coords);
+      mag_coords_iter_init(&xc, &x->meta.coords);
+      mag_coords_iter_init(&yc, &y->meta.coords);
       binary_op_kernel<Op, false><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, n, pr, px, py, rc, xc, yc);
     }
   }
@@ -267,8 +267,8 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const mag_tensor_t *y = cmd.in[1];
-    mag_assert2(r->dtype == x->dtype && r->dtype == y->dtype);
-    switch (r->dtype) {
+    mag_assert2(r->meta.dtype == x->meta.dtype && r->meta.dtype == y->meta.dtype);
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_binary_op<Op<float, float>>(r, x, y); break;
       case MAG_DTYPE_FLOAT16: launch_binary_op<Op<half, half>>(r, x, y); break;
       case MAG_DTYPE_BFLOAT16: launch_binary_op<Op<__nv_bfloat16, __nv_bfloat16>>(r, x, y); break;
@@ -281,7 +281,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
       case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
       case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -291,8 +291,8 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const mag_tensor_t *y = cmd.in[1];
-    mag_assert2(r->dtype == x->dtype && r->dtype == y->dtype);
-    switch (r->dtype) {
+    mag_assert2(r->meta.dtype == x->meta.dtype && r->meta.dtype == y->meta.dtype);
+    switch (r->meta.dtype) {
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_INT8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y); break;
@@ -302,7 +302,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
       case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
       case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -312,8 +312,8 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const mag_tensor_t *y = cmd.in[1];
-    mag_assert2(r->dtype == MAG_DTYPE_BOOLEAN && x->dtype == y->dtype);
-    switch (x->dtype) {
+    mag_assert2(r->meta.dtype == MAG_DTYPE_BOOLEAN && x->meta.dtype == y->meta.dtype);
+    switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_binary_op<Op<float, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_FLOAT16: launch_binary_op<Op<half, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_BFLOAT16: launch_binary_op<Op<__nv_bfloat16, uint8_t>>(r, x, y); break;
@@ -327,7 +327,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint8_t>>(r, x, y); break;
       case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, uint8_t>>(r, x, y); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }

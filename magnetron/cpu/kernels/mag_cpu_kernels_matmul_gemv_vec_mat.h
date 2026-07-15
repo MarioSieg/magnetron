@@ -167,13 +167,13 @@ static MAG_HOTPROC void mag_matmul_gemv_vec_mat(const mag_kernel_payload_t *payl
   mag_tensor_t *r = payload->cmd->out[0];
   const mag_tensor_t *x = payload->cmd->in[0];
   const mag_tensor_t *y = payload->cmd->in[1];
-  int64_t sx = x->coords.strides[0];
-  int64_t sy0 = y->coords.strides[0];
-  int64_t sy1 = y->coords.strides[1];
-  int64_t K = x->coords.shape[0];
-  int64_t N = y->coords.shape[1];
+  int64_t sx = x->meta.coords.strides[0];
+  int64_t sy0 = y->meta.coords.strides[0];
+  int64_t sy1 = y->meta.coords.strides[1];
+  int64_t K = x->meta.coords.shape[0];
+  int64_t N = y->meta.coords.shape[1];
   void *restrict pr = (void *)mag_tensor_data_ptr_mut(r);
   const void *px = (const void *)mag_tensor_data_ptr(x);
   const void *py = (const void *)mag_tensor_data_ptr(y);
-  mag_matmul_gemv_vec_mat_impl(r->dtype, payload->thread_idx, payload->thread_num, N, K, pr, px, sx, py, sy0, sy1);
+  mag_matmul_gemv_vec_mat_impl(r->meta.dtype, payload->thread_idx, payload->thread_num, N, K, pr, px, sx, py, sy0, sy1);
 }

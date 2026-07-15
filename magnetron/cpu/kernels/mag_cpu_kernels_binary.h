@@ -70,7 +70,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
@@ -82,9 +82,9 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       return MAG_OK; \
     } \
     mag_coords_iter_t cr,cx,cy; \
-    mag_coords_iter_init(&cr,&r->coords); \
-    mag_coords_iter_init(&cx,&x->coords); \
-    mag_coords_iter_init(&cy,&y->coords); \
+    mag_coords_iter_init(&cr,&r->meta.coords); \
+    mag_coords_iter_init(&cx,&x->meta.coords); \
+    mag_coords_iter_init(&cy,&y->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri,xi,yi; \
       mag_coords_iter_offset3(&cr,&cx,&cy,i,&ri,&xi,&yi); \
@@ -102,7 +102,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
@@ -121,9 +121,9 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       return MAG_OK; \
     } \
     mag_coords_iter_t cr,cx,cy; \
-    mag_coords_iter_init(&cr,&r->coords); \
-    mag_coords_iter_init(&cx,&x->coords); \
-    mag_coords_iter_init(&cy,&y->coords); \
+    mag_coords_iter_init(&cr,&r->meta.coords); \
+    mag_coords_iter_init(&cx,&x->meta.coords); \
+    mag_coords_iter_init(&cy,&y->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri,xi,yi; \
       mag_coords_iter_offset3(&cr,&cx,&cy,i,&ri,&xi,&yi); \
@@ -197,7 +197,7 @@ mag_gen_int_signed_unsigned(pow)
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
@@ -209,9 +209,9 @@ mag_gen_int_signed_unsigned(pow)
       return MAG_OK; \
     } \
     mag_coords_iter_t cr,cx,cy; \
-    mag_coords_iter_init(&cr,&r->coords); \
-    mag_coords_iter_init(&cx,&x->coords); \
-    mag_coords_iter_init(&cy,&y->coords); \
+    mag_coords_iter_init(&cr,&r->meta.coords); \
+    mag_coords_iter_init(&cx,&x->meta.coords); \
+    mag_coords_iter_init(&cy,&y->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri,xi,yi; \
       mag_coords_iter_offset3(&cr,&cx,&cy,i,&ri,&xi,&yi); \
@@ -242,7 +242,7 @@ mag_gen_shift_all(shr)
     uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
@@ -254,9 +254,9 @@ mag_gen_shift_all(shr)
       return MAG_OK; \
     } \
     mag_coords_iter_t cr,cx,cy; \
-    mag_coords_iter_init(&cr,&r->coords); \
-    mag_coords_iter_init(&cx,&x->coords); \
-    mag_coords_iter_init(&cy,&y->coords); \
+    mag_coords_iter_init(&cr,&r->meta.coords); \
+    mag_coords_iter_init(&cx,&x->meta.coords); \
+    mag_coords_iter_init(&cy,&y->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri,xi,yi; \
       mag_coords_iter_offset3(&cr,&cx,&cy,i,&ri,&xi,&yi); \

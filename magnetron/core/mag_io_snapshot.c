@@ -645,7 +645,7 @@ static size_t mag_snap_compute_tensor_desc_size(mag_map_t *tmap) {
   void *val = NULL;
   while (mag_map_next(tmap, &iter, &len, &val)) {
     mag_tensor_t *tensor = val;
-    nb += MAG_TENSOR_DESC_SIZE(tensor->coords.rank);
+    nb += MAG_TENSOR_DESC_SIZE(tensor->meta.coords.rank);
   }
   return nb;
 }
@@ -991,22 +991,22 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
     offs = mag_snap_alignup(offs, MAG_SNAP_TBUF_ALIGN);
     mag_tensor_t *tensor = val;
     mag_tensor_desc_t desc = {
-      .rank = tensor->coords.rank,
-      .dtype = tensor->dtype,
+      .rank = tensor->meta.coords.rank,
+      .dtype = tensor->meta.dtype,
       .aux0 = 0,
       .aux1 = 0,
       .key_id = key_id,
-      .numel = tensor->numel,
+      .numel = tensor->meta.numel,
       .offset = offs,
       .shape = {}
     };
-    if (mag_unlikely(!(tensor->coords.rank >= 0 && tensor->coords.rank <= MAG_SNAP_MAX_RANK))) {
-      status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: tensor with key id %u has unsupported rank %d (maximum is %d).", key_id, (int)tensor->coords.rank, MAG_SNAP_MAX_RANK);
+    if (mag_unlikely(!(tensor->meta.coords.rank >= 0 && tensor->meta.coords.rank <= MAG_SNAP_MAX_RANK))) {
+      status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: tensor with key id %u has unsupported rank %d (maximum is %d).", key_id, (int)tensor->meta.coords.rank, MAG_SNAP_MAX_RANK);
       goto cleanup;
     }
-    for (int64_t i=0; i < tensor->coords.rank; ++i) {
-      mag_assert2(tensor->coords.shape[i] >= 0);
-      desc.shape[i] = (uint64_t)tensor->coords.shape[i];
+    for (int64_t i=0; i < tensor->meta.coords.rank; ++i) {
+      mag_assert2(tensor->meta.coords.shape[i] >= 0);
+      desc.shape[i] = (uint64_t)tensor->meta.coords.shape[i];
     }
     marker = mag_stream_needle(&stream);
     status = mag_tensor_desc_serialize(err, &desc, &stream);
@@ -1014,7 +1014,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
       status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: failed to write tensor descriptor for key id %u to '%s'.", key_id, filename);
       goto cleanup;
     }
-    mag_assert2(mag_stream_needle(&stream)-marker == MAG_TENSOR_DESC_SIZE(tensor->coords.rank));
+    mag_assert2(mag_stream_needle(&stream)-marker == MAG_TENSOR_DESC_SIZE(tensor->meta.coords.rank));
     offs += mag_tensor_numbytes(tensor);
     stable[k] = tensor;
   }
@@ -1067,7 +1067,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
         goto cleanup;
       }
       data_offs = al;
-      if (mag_unlikely(!(tensor->device->id.type == MAG_BACKEND_TYPE_CPU))) {
+      if (mag_unlikely(!(tensor->meta.device->id.type == MAG_BACKEND_TYPE_CPU))) {
         status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: only CPU tensors can be serialized, but tensor %zu in '%s' resides on a non-CPU device.", i, filename);
         mag_tensor_decref(tensor);
         goto cleanup;
@@ -1200,9 +1200,9 @@ MAG_COLDPROC void mag_snapshot_print_info(mag_snapshot_t *snap) {
       name_len = sizeof("?")-1;
     }
     char shape[MAG_FMT_DIM_BUF_SIZE];
-    mag_fmt_shape(&shape, &tensor->coords.shape, tensor->coords.rank);
+    mag_fmt_shape(&shape, &tensor->meta.coords.shape, tensor->meta.coords.rank);
     mag_humanize_memory_size(mag_tensor_numbytes(tensor), &size, &unit);
-    printf("\t[%zu] Name: \"%.*s\", Shape: %s, Type: %s, Size: %.01f%s\n", slot, (int)name_len, name, shape, mag_type_trait(tensor->dtype)->name, size, unit);
+    printf("\t[%zu] Name: \"%.*s\", Shape: %s, Type: %s, Size: %.01f%s\n", slot, (int)name_len, name, shape, mag_type_trait(tensor->meta.dtype)->name, size, unit);
   }
   printf("--- Stats ---\n");
   mag_humanize_memory_size(snap->nb_meta, &size, &unit);

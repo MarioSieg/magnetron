@@ -914,7 +914,7 @@ namespace magnetron {
         [[nodiscard]] auto to_vector() const -> std::vector<T> {
             static_assert(!std::is_same_v<T, bool>); // use uint8_t for bool
             if (dtype() != generic_to_dtype<T>())
-                throw std::runtime_error {"T and tensor dtype must match: " + std::string{typeid(std::decay_t<T>).name()} + " != " + std::string{mag_type_trait(m_tensor->dtype)->name}};
+                throw std::runtime_error {"T and tensor dtype must match: " + std::string{typeid(std::decay_t<T>).name()} + " != " + std::string{mag_type_trait(m_tensor->meta.dtype)->name}};
             void *data = nullptr;
             size_t nb = 0;
             if (mag_iserr(mag_tensor_copy_data(&g_error, m_tensor, &data, &nb)))

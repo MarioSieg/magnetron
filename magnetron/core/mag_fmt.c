@@ -940,11 +940,11 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
   size_t pad = strlen(prefix);
   mag_sstream_append(&ss, prefix);
   mag_coords_iter_t iter;
-  mag_coords_iter_init(&iter, &host->coords);
+  mag_coords_iter_init(&iter, &host->meta.coords);
   mag_tensor_format_context_t fmt = {
     .ss = &ss,
     .buf = (const void *)mag_tensor_data_ptr(host),
-    .dtype = host->dtype,
+    .dtype = host->meta.dtype,
     .iter = &iter,
     .idx = {0},
     .head = head,
@@ -953,8 +953,8 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
     .linewidth = MAG_FMT_TENSOR_DEFAULT_LINE_WIDTH,
     .col = pad,
     .state = MAG_FMT_STATE_ALL_INT
-      |(host->numel > threshold ? MAG_FMT_STATE_TRUNC : MAG_FMT_STATE_NONE)
-      |((mag_dtype_bit(host->dtype) & MAG_DTYPE_MASK_FP) ? MAG_FMT_STATE_FLT : MAG_FMT_STATE_NONE),
+      |(host->meta.numel > threshold ? MAG_FMT_STATE_TRUNC : MAG_FMT_STATE_NONE)
+      |((mag_dtype_bit(host->meta.dtype) & MAG_DTYPE_MASK_FP) ? MAG_FMT_STATE_FLT : MAG_FMT_STATE_NONE),
   };
   if (fmt.state & MAG_FMT_STATE_FLT) {
     memset(fmt.idx, 0, sizeof(fmt.idx));
@@ -974,8 +974,8 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
   memset(fmt.idx, 0, sizeof(fmt.idx));
   mag_tensor_fmt_recursive(&fmt, 0); /* Recursive format */
   char device_str[32];
-  mag_device_id_to_str(tensor->device->id, &device_str);
-  mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_type_trait(tensor->dtype)->name, device_str);
+  mag_device_id_to_str(tensor->meta.device->id, &device_str);
+  mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_type_trait(tensor->meta.dtype)->name, device_str);
   mag_tensor_decref(host);
   return ss.buf; /* Return the string, must be freed with mag_tensor_to_string_free_data. */
 }

@@ -128,8 +128,8 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
 uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_device_t *dvc) {
   mag_cpu_device_t *cpu_dvc = dvc->impl;
   int64_t max_numel = INT64_MIN;
-  for (uint32_t i=0; i < cmd->num_in; ++i) max_numel = mag_xmax(max_numel, cmd->in[i]->numel);
-  for (uint32_t i=0; i < cmd->num_out; ++i) max_numel = mag_xmax(max_numel, cmd->out[i]->numel);
+  for (uint32_t i=0; i < cmd->num_in; ++i) max_numel = mag_xmax(max_numel, cmd->in[i]->meta.numel);
+  for (uint32_t i=0; i < cmd->num_out; ++i) max_numel = mag_xmax(max_numel, cmd->out[i]->meta.numel);
   mag_opcode_t op = cmd->op;
   uint32_t allocated_workers = cpu_dvc->num_allocated_workers;
   const mag_op_traits_t *meta = mag_op_trait(op);
@@ -147,9 +147,9 @@ uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_
       case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
       case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
       case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: {
-        int64_t K = x->coords.shape[x->coords.rank-1];
-        int64_t N = y->coords.shape[y->coords.rank-1];
-        int64_t work_bytes = N*K*mag_type_trait(x->dtype)->size;
+        int64_t K = x->meta.coords.shape[x->meta.coords.rank-1];
+        int64_t N = y->meta.coords.shape[y->meta.coords.rank-1];
+        int64_t work_bytes = N*K*mag_type_trait(x->meta.dtype)->size;
         int64_t workers = 1;
         if (work_bytes >= 4LL   << 20) workers = 4;
         if (work_bytes >= 16LL  << 20) workers = 8;

@@ -53,7 +53,7 @@ namespace mag {
     (void)err;
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *idx = cmd.in[0];
-    mag_assert2(r->dtype == MAG_DTYPE_INT64 && idx->dtype == MAG_DTYPE_INT64);
+    mag_assert2(r->meta.dtype == MAG_DTYPE_INT64 && idx->meta.dtype == MAG_DTYPE_INT64);
     int nc = cmd.params->one_hot.num_classes;
     int n = numel_i32(idx);
     auto *pr = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
@@ -63,7 +63,7 @@ namespace mag {
       one_hot_kernel<true><<<blocks, MISC_BLOCK_SIZE>>>(n, nc, pr, pidx, {});
     } else {
       mag_coords_iter_t it;
-      mag_coords_iter_init(&it, &idx->coords);
+      mag_coords_iter_init(&it, &idx->meta.coords);
       one_hot_kernel<false><<<blocks, MISC_BLOCK_SIZE>>>(n, nc, pr, pidx, it);
     }
     return MAG_OK;
@@ -104,8 +104,8 @@ namespace mag {
     int64_t n = mag_tensor_numel(r);
     int64_t blocks = (n + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
     mag_coords_iter_t cr, cx;
-    mag_coords_iter_init(&cr, &r->coords);
-    mag_coords_iter_init(&cx, &x->coords);
+    mag_coords_iter_init(&cr, &r->meta.coords);
+    mag_coords_iter_init(&cx, &x->meta.coords);
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     tri_mask_kernel<T, upper><<<blocks, MISC_BLOCK_SIZE>>>(n, br, bx, cr, cx, diag);
@@ -115,7 +115,7 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t diag = cmd.params->trilu.diag;
-    switch (r->dtype) {
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_tri_mask<float, false>(r, x, diag); break;
       case MAG_DTYPE_FLOAT16: launch_tri_mask<half, false>(r, x, diag); break;
       case MAG_DTYPE_BFLOAT16: launch_tri_mask<__nv_bfloat16, false>(r, x, diag); break;
@@ -129,7 +129,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_tri_mask<int32_t, false>(r, x, diag); break;
       case MAG_DTYPE_UINT64: launch_tri_mask<uint64_t, false>(r, x, diag); break;
       case MAG_DTYPE_INT64: launch_tri_mask<int64_t, false>(r, x, diag); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: tril: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: tril: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -138,7 +138,7 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t diag = cmd.params->trilu.diag;
-    switch (r->dtype) {
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_tri_mask<float, true>(r, x, diag); break;
       case MAG_DTYPE_FLOAT16: launch_tri_mask<half, true>(r, x, diag); break;
       case MAG_DTYPE_BFLOAT16: launch_tri_mask<__nv_bfloat16, true>(r, x, diag); break;
@@ -152,7 +152,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_tri_mask<int32_t, true>(r, x, diag); break;
       case MAG_DTYPE_UINT64: launch_tri_mask<uint64_t, true>(r, x, diag); break;
       case MAG_DTYPE_INT64: launch_tri_mask<int64_t, true>(r, x, diag); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: triu: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: triu: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -196,10 +196,10 @@ namespace mag {
       where_kernel<T, true><<<blocks, UNARY_BLOCK_SIZE>>>(n, br, bc, bx, by, {}, {}, {}, {});
     } else {
       mag_coords_iter_t cr, cc, cx, cy;
-      mag_coords_iter_init(&cr, &r->coords);
-      mag_coords_iter_init(&cc, &cond->coords);
-      mag_coords_iter_init(&cx, &x->coords);
-      mag_coords_iter_init(&cy, &y->coords);
+      mag_coords_iter_init(&cr, &r->meta.coords);
+      mag_coords_iter_init(&cc, &cond->meta.coords);
+      mag_coords_iter_init(&cx, &x->meta.coords);
+      mag_coords_iter_init(&cy, &y->meta.coords);
       where_kernel<T, false><<<blocks, UNARY_BLOCK_SIZE>>>(n, br, bc, bx, by, cr, cc, cx, cy);
     }
   }
@@ -209,8 +209,8 @@ namespace mag {
     const mag_tensor_t *cond = cmd.in[0];
     const mag_tensor_t *x = cmd.in[1];
     const mag_tensor_t *y = cmd.in[2];
-    mag_assert2(cond->dtype == MAG_DTYPE_BOOLEAN);
-    switch (r->dtype) {
+    mag_assert2(cond->meta.dtype == MAG_DTYPE_BOOLEAN);
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_where<float>(r, cond, x, y); break;
       case MAG_DTYPE_FLOAT16: launch_where<half>(r, cond, x, y); break;
       case MAG_DTYPE_BFLOAT16: launch_where<__nv_bfloat16>(r, cond, x, y); break;
@@ -224,7 +224,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_where<int32_t>(r, cond, x, y); break;
       case MAG_DTYPE_UINT64: launch_where<uint64_t>(r, cond, x, y); break;
       case MAG_DTYPE_INT64: launch_where<int64_t>(r, cond, x, y); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: where: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: where: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -253,11 +253,11 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     mag_coords_iter_t cr, cx;
-    mag_coords_iter_init(&cr, &r->coords);
-    mag_coords_iter_init(&cx, &x->coords);
+    mag_coords_iter_init(&cr, &r->meta.coords);
+    mag_coords_iter_init(&cx, &x->meta.coords);
     int rn = numel_i32(r);
     int xn = numel_i32(x);
-    switch (r->dtype) {
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: repeat_back_kernel<float><<<1, 1>>>(
         rn, xn,
         reinterpret_cast<float *>(mag_tensor_data_ptr_mut(r)),
@@ -282,7 +282,7 @@ namespace mag {
         reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)),
         cr, cx
       ); return MAG_OK;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: repeat_back: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: repeat_back: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
   }
 
@@ -344,17 +344,17 @@ namespace mag {
     for (; flat < on; flat += step) {
       int64_t oc[MAG_MAX_DIMS];
       int64_t tmp = flat;
-      for (int64_t d = out.coords.rank-1; d >= 0; --d) {
-        oc[d] = tmp % out.coords.shape[d];
-        tmp /= out.coords.shape[d];
+      for (int64_t d = out.meta.coords.rank-1; d >= 0; --d) {
+        oc[d] = tmp % out.meta.coords.shape[d];
+        tmp /= out.meta.coords.shape[d];
       }
       int64_t index_offset = 0;
-      for (int64_t d = 0; d < index.coords.rank; ++d) index_offset += oc[d]*index.coords.strides[d];
+      for (int64_t d = 0; d < index.meta.coords.rank; ++d) index_offset += oc[d]*index.meta.coords.strides[d];
       int64_t g = __ldg(bi + index_offset);
       if (g < 0) g += ax;
       int64_t src_off = 0, dst_off = 0;
-      for (int64_t d = 0; d < src.coords.rank; ++d) src_off += (d == axis_in ? g : oc[d])*src.coords.strides[d];
-      for (int64_t d = 0; d < out.coords.rank; ++d) dst_off += oc[d]*out.coords.strides[d];
+      for (int64_t d = 0; d < src.meta.coords.rank; ++d) src_off += (d == axis_in ? g : oc[d])*src.meta.coords.strides[d];
+      for (int64_t d = 0; d < out.meta.coords.rank; ++d) dst_off += oc[d]*out.meta.coords.strides[d];
       br[dst_off] = bx[src_off];
     }
   }
@@ -365,17 +365,17 @@ namespace mag {
     const mag_tensor_t *src = cmd.in[0];
     const mag_tensor_t *index = cmd.in[1];
     int64_t axis = cmd.params->gather.dim;
-    if (axis < 0) axis += src->coords.rank;
-    mag_assert2(axis >= 0 && axis < src->coords.rank);
+    if (axis < 0) axis += src->meta.coords.rank;
+    mag_assert2(axis >= 0 && axis < src->meta.coords.rank);
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(src));
     const auto *bi = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index));
-    int64_t ax = src->coords.shape[axis];
+    int64_t ax = src->meta.coords.shape[axis];
     if (mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(index)) {
       int64_t inner = 1;
-      for (int64_t d = axis+1; d < src->coords.rank; ++d) inner *= src->coords.shape[d];
-      int64_t out_ax = r->coords.shape[axis];
-      int64_t outer = r->numel / (out_ax*inner);
+      for (int64_t d = axis+1; d < src->meta.coords.rank; ++d) inner *= src->meta.coords.shape[d];
+      int64_t out_ax = r->meta.coords.shape[axis];
+      int64_t outer = r->meta.numel / (out_ax*inner);
       constexpr int64_t MAX_DIM = 65535;
       if (outer <= MAX_DIM && out_ax <= MAX_DIM) {
         dim3 block(MISC_BLOCK_SIZE, 1, 1);
@@ -386,12 +386,12 @@ namespace mag {
         );
         gather_kernel_3d<T><<<grid, block>>>(br, bx, bi, inner, out_ax, ax);
       } else {
-        int64_t on = r->numel;
+        int64_t on = r->meta.numel;
         int64_t blocks = (on + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
         gather_kernel_flat<T><<<blocks, MISC_BLOCK_SIZE>>>(on, br, bx, bi, inner, out_ax, ax);
       }
     } else {
-      int64_t on = r->numel;
+      int64_t on = r->meta.numel;
       int64_t blocks = (on + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
       gather_kernel_strided<T><<<blocks, MISC_BLOCK_SIZE>>>(on, br, bx, bi, *src, *index, *r, axis, ax);
     }
@@ -399,7 +399,7 @@ namespace mag {
 
   mag_status_t misc_op_gather(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
-    switch (r->dtype) {
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_gather<float>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_gather<half>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_gather<__nv_bfloat16>(cmd); break;
@@ -413,7 +413,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_gather<int32_t>(cmd); break;
       case MAG_DTYPE_UINT64: launch_gather<uint64_t>(cmd); break;
       case MAG_DTYPE_INT64: launch_gather<int64_t>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: gather: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: gather: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -459,9 +459,9 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *weight = cmd.in[0];
     const mag_tensor_t *indices = cmd.in[1];
-    int64_t vocab_size = weight->coords.shape[0];
-    int64_t row_size = weight->numel / vocab_size;
-    int64_t n_indices = indices->numel;
+    int64_t vocab_size = weight->meta.coords.shape[0];
+    int64_t row_size = weight->meta.numel / vocab_size;
+    int64_t n_indices = indices->meta.numel;
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(weight));
     const auto *bi = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(indices));
@@ -482,12 +482,12 @@ namespace mag {
 
   mag_status_t misc_op_embedding(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
-    switch (r->dtype) {
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32:       launch_embedding<float>(cmd); break;
       case MAG_DTYPE_FLOAT16:       launch_embedding<half>(cmd); break;
       case MAG_DTYPE_BFLOAT16:      launch_embedding<__nv_bfloat16>(cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_embedding<__nv_fp8_e4m3>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: embedding: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: embedding: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -528,16 +528,16 @@ namespace mag {
       int64_t t = flat / inner;
       int64_t j = t % xi_dim;
       int64_t o = t / xi_dim;
-      int64_t src_off = j*src_t.coords.strides[axis];
+      int64_t src_off = j*src_t.meta.coords.strides[axis];
       int64_t o_rem = o;
       for (int64_t d = axis - 1; d >= 0; --d) {
-        src_off += (o_rem % src_t.coords.shape[d])*src_t.coords.strides[d];
-        o_rem /= src_t.coords.shape[d];
+        src_off += (o_rem % src_t.meta.coords.shape[d])*src_t.meta.coords.strides[d];
+        o_rem /= src_t.meta.coords.shape[d];
       }
       int64_t k_rem = k;
-      for (int64_t d = src_t.coords.rank - 1; d > axis; --d) {
-        src_off += (k_rem % src_t.coords.shape[d])*src_t.coords.strides[d];
-        k_rem /= src_t.coords.shape[d];
+      for (int64_t d = src_t.meta.coords.rank - 1; d > axis; --d) {
+        src_off += (k_rem % src_t.meta.coords.shape[d])*src_t.meta.coords.strides[d];
+        k_rem /= src_t.meta.coords.shape[d];
       }
       br[(o*out_dim + dst_off + j)*inner + k] = bx[src_off];
     }
@@ -548,18 +548,18 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(mag_tensor_is_contiguous(r));
     const int64_t dim = cmd.params->cat.dim;
-    const int64_t R = r->coords.rank;
+    const int64_t R = r->meta.coords.rank;
     T *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     int64_t inner = 1;
-    for (int64_t d = dim+1; d < R; ++d) inner *= r->coords.shape[d];
+    for (int64_t d = dim+1; d < R; ++d) inner *= r->meta.coords.shape[d];
     int64_t outer = 1;
-    for (int64_t d = 0; d < dim; ++d) outer *= r->coords.shape[d];
-    int64_t out_dim = r->coords.shape[dim];
+    for (int64_t d = 0; d < dim; ++d) outer *= r->meta.coords.shape[d];
+    int64_t out_dim = r->meta.coords.shape[dim];
     constexpr int64_t MAX_OUTER = 65535;
     int64_t dst_off = 0;
     for (uint32_t i = 0; i < cmd.num_in; ++i) {
       const mag_tensor_t *x = cmd.in[i];
-      int64_t xi_dim = x->coords.shape[dim];
+      int64_t xi_dim = x->meta.coords.shape[dim];
       const T *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
       if (mag_tensor_is_contiguous(x)) {
         int64_t jk_total    = xi_dim*inner;
@@ -585,7 +585,7 @@ namespace mag {
 
   mag_status_t misc_op_cat(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
-    switch (r->dtype) {
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32:       launch_cat<float>(cmd); break;
       case MAG_DTYPE_FLOAT16:       launch_cat<half>(cmd); break;
       case MAG_DTYPE_BFLOAT16:      launch_cat<__nv_bfloat16>(cmd); break;
@@ -599,7 +599,7 @@ namespace mag {
       case MAG_DTYPE_INT32:         launch_cat<int32_t>(cmd); break;
       case MAG_DTYPE_UINT64:        launch_cat<uint64_t>(cmd); break;
       case MAG_DTYPE_INT64:         launch_cat<int64_t>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: cat: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: cat: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -634,9 +634,9 @@ namespace mag {
   ) {
     int64_t row = static_cast<int64_t>(blockIdx.x);
     if (row >= outer_count || threadIdx.x != 0) return;
-    const int64_t *shape_x = x_t.coords.shape;
-    const int64_t *str_x = x_t.coords.strides;
-    const int64_t *str_v = v_t.coords.strides;
+    const int64_t *shape_x = x_t.meta.coords.shape;
+    const int64_t *str_x = x_t.meta.coords.strides;
+    const int64_t *str_v = v_t.meta.coords.strides;
     (void)i_t;
     T *vals_buf = reinterpret_cast<T *>(scratch_base + static_cast<size_t>(row)*row_bytes);
     int64_t *idx_buf = reinterpret_cast<int64_t *>(vals_buf + dim_size);
@@ -716,11 +716,11 @@ namespace mag {
     const int64_t k = cmd.params->topk.k;
     int64_t dim = cmd.params->topk.dim;
     bool largest = cmd.params->topk.largest;
-    int64_t R = x->coords.rank;
+    int64_t R = x->meta.coords.rank;
     mag_assert2(dim >= 0 && dim < R);
-    const int64_t dim_size = x->coords.shape[dim];
+    const int64_t dim_size = x->meta.coords.shape[dim];
     mag_assert2(k > 0 && k <= dim_size);
-    int64_t outer_count = x->numel / dim_size;
+    int64_t outer_count = x->meta.numel / dim_size;
     if (outer_count <= 0) return MAG_OK;
     size_t row_bytes = static_cast<size_t>(dim_size)*(sizeof(T) + sizeof(int64_t));
     size_t scratch_bytes = row_bytes*static_cast<size_t>(outer_count);
@@ -729,8 +729,8 @@ namespace mag {
     const T *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     T *bv = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(v));
     int64_t *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
-    int64_t stride_x_dim = x->coords.strides[dim];
-    int64_t stride_v_dim = v->coords.strides[dim];
+    int64_t stride_x_dim = x->meta.coords.strides[dim];
+    int64_t stride_v_dim = v->meta.coords.strides[dim];
     topk_rows_kernel<T><<<static_cast<unsigned>(outer_count), 1>>>(
       outer_count, dim_size, k, largest, R, dim, stride_x_dim, stride_v_dim,
       *x, *v, *idx, bx, bv, bi, reinterpret_cast<char *>(d_scratch), row_bytes);
@@ -740,7 +740,7 @@ namespace mag {
 
   mag_status_t misc_op_topk(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
-    switch (x->dtype) {
+    switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: return launch_topk<float>(err, cmd);
       case MAG_DTYPE_FLOAT16: return launch_topk<half>(err, cmd);
       case MAG_DTYPE_BFLOAT16: return launch_topk<__nv_bfloat16>(err, cmd);
@@ -753,7 +753,7 @@ namespace mag {
       case MAG_DTYPE_INT32: return launch_topk<int32_t>(err, cmd);
       case MAG_DTYPE_UINT64: return launch_topk<uint64_t>(err, cmd);
       case MAG_DTYPE_INT64: return launch_topk<int64_t>(err, cmd);
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: topk: unsupported dtype: %s.", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: topk: unsupported dtype: %s.", mag_type_trait(x->meta.dtype)->name);
     }
   }
 
@@ -829,11 +829,11 @@ namespace mag {
   mag_status_t misc_op_multinomial(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    mag_assert2(r->dtype == MAG_DTYPE_INT64);
+    mag_assert2(r->meta.dtype == MAG_DTYPE_INT64);
     int64_t num_samples = cmd.params->multinomial.samples;
-    int64_t K = x->coords.shape[x->coords.rank-1];
+    int64_t K = x->meta.coords.shape[x->meta.coords.rank-1];
     if (K <= 0) return MAG_OK;
-    int64_t B = x->numel / K;
+    int64_t B = x->meta.numel / K;
     if (B <= 0) return MAG_OK;
     size_t ws = static_cast<size_t>(B)*static_cast<size_t>(K)*sizeof(mag_discrete_sample_pair_d);
     void *d_ws = nullptr;
@@ -842,7 +842,7 @@ namespace mag {
     uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
     int64_t *br = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     int64_t blocks = (B + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
-    switch (x->dtype) {
+    switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32:
         multinomial_rows_kernel<float><<<blocks, MISC_BLOCK_SIZE>>>(B, K, num_samples, reinterpret_cast<const float *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
@@ -857,7 +857,7 @@ namespace mag {
         break;
       default:
         cuda_check(cudaFree(d_ws), "multinomial cudaFree");
-        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: multinomial: unsupported dtype: %s.", mag_type_trait(x->dtype)->name);
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: multinomial: unsupported dtype: %s.", mag_type_trait(x->meta.dtype)->name);
     }
     cuda_check(cudaFree(d_ws), "multinomial cudaFree");
     return MAG_OK;
@@ -970,8 +970,8 @@ namespace mag {
     int n = static_cast<int>(mag_tensor_numel(r));
     int blocks = (n + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
     mag_coords_iter_t cr, cx;
-    mag_coords_iter_init(&cr, &r->coords);
-    mag_coords_iter_init(&cx, &x->coords);
+    mag_coords_iter_init(&cr, &r->meta.coords);
+    mag_coords_iter_init(&cx, &x->meta.coords);
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     if (mag_tensor_is_contiguous(r)) {
@@ -985,7 +985,7 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const auto &plan = *cmd.params;
-    switch (r->dtype) {
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: return launch_pad<float>(err, r, x, plan);
       case MAG_DTYPE_FLOAT16: return launch_pad<half>(err, r, x, plan);
       case MAG_DTYPE_BFLOAT16: return launch_pad<__nv_bfloat16>(err, r, x, plan);
@@ -999,7 +999,7 @@ namespace mag {
       case MAG_DTYPE_INT32: return launch_pad<int32_t>(err, r, x, plan);
       case MAG_DTYPE_UINT64: return launch_pad<uint64_t>(err, r, x, plan);
       case MAG_DTYPE_INT64: return launch_pad<int64_t>(err, r, x, plan);
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: pad: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: pad: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
   }
 
@@ -1018,9 +1018,9 @@ namespace mag {
   ) {
     int row = blockIdx.x;
     if (row >= outer_count || threadIdx.x != 0) return;
-    const int64_t *shape_x = x_t.coords.shape;
-    const int64_t *str_x = x_t.coords.strides;
-    const int64_t *str_r = r_t.coords.strides;
+    const int64_t *shape_x = x_t.meta.coords.shape;
+    const int64_t *str_x = x_t.meta.coords.strides;
+    const int64_t *str_r = r_t.meta.coords.strides;
     int outer_rank = R - 1;
     int shape_outer[MAG_MAX_DIMS];
     int mult_outer[MAG_MAX_DIMS];
@@ -1088,10 +1088,10 @@ namespace mag {
   ) {
     int row = blockIdx.x;
     if (row >= outer_count || threadIdx.x != 0) return;
-    const int64_t *shape_x = x_t.coords.shape;
-    const int64_t *str_x = x_t.coords.strides;
-    const int64_t *str_v = v_t.coords.strides;
-    const int64_t *str_i = i_t.coords.strides;
+    const int64_t *shape_x = x_t.meta.coords.shape;
+    const int64_t *str_x = x_t.meta.coords.strides;
+    const int64_t *str_v = v_t.meta.coords.strides;
+    const int64_t *str_i = i_t.meta.coords.strides;
     int outer_rank = R - 1;
     int shape_outer[MAG_MAX_DIMS];
     int mult_outer[MAG_MAX_DIMS];
@@ -1152,14 +1152,14 @@ namespace mag {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     int dim = cmd.params->cumu.dim;
-    if (dim < 0) dim += static_cast<int>(x->coords.rank);
-    int R = static_cast<int>(x->coords.rank);
-    int dim_size = static_cast<int>(x->coords.shape[dim]);
+    if (dim < 0) dim += static_cast<int>(x->meta.coords.rank);
+    int R = static_cast<int>(x->meta.coords.rank);
+    int dim_size = static_cast<int>(x->meta.coords.shape[dim]);
     if (dim_size <= 0) return;
     int outer_count = numel_i32(x) / dim_size;
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
-    cu_scan_rows_kernel<T, ACC, is_prod><<<static_cast<unsigned>(outer_count), 1>>>(outer_count, dim_size, R, dim, x->coords.strides[dim], r->coords.strides[dim], *x, *r, bx, br);
+    cu_scan_rows_kernel<T, ACC, is_prod><<<static_cast<unsigned>(outer_count), 1>>>(outer_count, dim_size, R, dim, x->meta.coords.strides[dim], r->meta.coords.strides[dim], *x, *r, bx, br);
   }
 
   template <typename T, bool is_max>
@@ -1168,23 +1168,23 @@ namespace mag {
     mag_tensor_t *v = cmd.out[0];
     mag_tensor_t *idx = cmd.out[1];
     int dim = cmd.params->cumu.dim;
-    if (dim < 0) dim += static_cast<int>(x->coords.rank);
-    int R = static_cast<int>(x->coords.rank);
-    int dim_size = static_cast<int>(x->coords.shape[dim]);
+    if (dim < 0) dim += static_cast<int>(x->meta.coords.rank);
+    int R = static_cast<int>(x->meta.coords.rank);
+    int dim_size = static_cast<int>(x->meta.coords.shape[dim]);
     if (dim_size <= 0) return;
     int outer_count = numel_i32(x) / dim_size;
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     auto *bv = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(v));
     auto *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
     cu_ext_rows_kernel<T, is_max><<<static_cast<unsigned>(outer_count), 1>>>(
-      outer_count, dim_size, R, dim, x->coords.strides[dim], v->coords.strides[dim], idx->coords.strides[dim],
+      outer_count, dim_size, R, dim, x->meta.coords.strides[dim], v->meta.coords.strides[dim], idx->meta.coords.strides[dim],
       *x, *v, *idx, bx, bv, bi
     );
   }
 
   static mag_status_t impl_cu_scan(mag_error_t *err, const mag_command_t &cmd, bool is_prod) {
     mag_tensor_t *r = cmd.out[0];
-    switch (r->dtype) {
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32:
         if (is_prod) launch_cu_scan<float, double, true>(cmd);
         else launch_cu_scan<float, double, false>(cmd);
@@ -1233,14 +1233,14 @@ namespace mag {
         if (is_prod) launch_cu_scan<int64_t, int64_t, true>(cmd);
         else launch_cu_scan<int64_t, int64_t, false>(cmd);
         break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: cu*: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: cu*: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
   static mag_status_t impl_cu_ext(mag_error_t *err, const mag_command_t &cmd, bool is_max) {
     mag_tensor_t *v = cmd.out[0];
-    switch (v->dtype) {
+    switch (v->meta.dtype) {
       case MAG_DTYPE_FLOAT32:
         if (is_max) launch_cu_ext<float, true>(cmd);
         else launch_cu_ext<float, false>(cmd);
@@ -1289,7 +1289,7 @@ namespace mag {
         if (is_max) launch_cu_ext<int64_t, true>(cmd);
         else launch_cu_ext<int64_t, false>(cmd);
         break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: cu*: unsupported dtype: %s.", mag_type_trait(v->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: cu*: unsupported dtype: %s.", mag_type_trait(v->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -1340,12 +1340,12 @@ namespace mag {
     const mag_tensor_t *x = cmd.in[0];
     const auto *plan = cmd.params;
     mag_coords_iter_t cr, cx;
-    mag_coords_iter_init(&cr, &r->coords);
-    mag_coords_iter_init(&cx, &x->coords);
-    int64_t on = r->numel;
+    mag_coords_iter_init(&cr, &r->meta.coords);
+    mag_coords_iter_init(&cx, &x->meta.coords);
+    int64_t on = r->meta.numel;
     unsigned block = 256;
     unsigned grid = static_cast<unsigned>((on + block - 1)/block);
-    switch (r->dtype) {
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: repeat_kernel<float><<<grid, block>>>(
         on,
         reinterpret_cast<float *>(mag_tensor_data_ptr_mut(r)),
@@ -1419,7 +1419,7 @@ namespace mag {
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: repeat: unsupported dtype: %s.", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: repeat: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -1434,7 +1434,7 @@ namespace mag {
     mag_assert2(mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(x));
     size_t elsz = static_cast<size_t>(mag_tensor_numbytes(r) / mag_tensor_numel(r));
     if (plan->repeat_interleave.flatten) {
-      int64_t n = x->numel;
+      int64_t n = x->meta.numel;
       int64_t out_i = 0;
       for (int64_t i=0; i < n; ++i) {
         int64_t rep = plan->repeat_interleave.count_len == 1 ? plan->repeat_interleave.counts[0] : plan->repeat_interleave.counts[i];
@@ -1448,16 +1448,16 @@ namespace mag {
       return MAG_OK;
     }
     int64_t dim = plan->repeat_interleave.dim;
-    int64_t R = x->coords.rank;
+    int64_t R = x->meta.coords.rank;
     int64_t inner_block = 1;
-    for (int64_t d = dim+1; d < R; ++d) inner_block *= x->coords.shape[d];
+    for (int64_t d = dim+1; d < R; ++d) inner_block *= x->meta.coords.shape[d];
     int64_t outer_count = 1;
-    for (int64_t d=0; d < dim; ++d) outer_count *= x->coords.shape[d];
-    int64_t axis_len = x->coords.shape[dim];
+    for (int64_t d=0; d < dim; ++d) outer_count *= x->meta.coords.shape[d];
+    int64_t axis_len = x->meta.coords.shape[dim];
     int64_t mult[MAG_MAX_DIMS];
     for (int64_t d = 0; d < dim; ++d) {
       int64_t m = 1;
-      for (int64_t k = d + 1; k < dim; ++k) m *= x->coords.shape[k];
+      for (int64_t k = d + 1; k < dim; ++k) m *= x->meta.coords.shape[k];
       mult[d] = m;
     }
     for (int64_t p=0; p < outer_count; ++p) {
@@ -1469,14 +1469,14 @@ namespace mag {
         idx_prefix[d] = q;
       }
       int64_t moff = 0;
-      for (int64_t d=0; d < dim; ++d) moff += idx_prefix[d]*r->coords.strides[d];
+      for (int64_t d=0; d < dim; ++d) moff += idx_prefix[d]*r->meta.coords.strides[d];
       int64_t smoff = 0;
-      for (int64_t d=0; d < dim; ++d) smoff += idx_prefix[d]*x->coords.strides[d];
+      for (int64_t d=0; d < dim; ++d) smoff += idx_prefix[d]*x->meta.coords.strides[d];
       int64_t cur = 0;
       for (int64_t a=0; a < axis_len; ++a) {
         int64_t rep = plan->repeat_interleave.count_len == 1 ? plan->repeat_interleave.counts[0] : plan->repeat_interleave.counts[a];
-        int64_t oel = moff + cur*r->coords.strides[dim];
-        int64_t sel = smoff + a*x->coords.strides[dim];
+        int64_t oel = moff + cur*r->meta.coords.strides[dim];
+        int64_t sel = smoff + a*x->meta.coords.strides[dim];
         const uint8_t *src_ptr = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(x)) + sel*static_cast<int64_t>(elsz);
         uint8_t *dst_ptr = reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r)) + oel*static_cast<int64_t>(elsz);
         for (int64_t k=0; k < rep; ++k) {
@@ -1511,18 +1511,18 @@ namespace mag {
       int64_t tmp = flat;
       int64_t sc[MAG_MAX_DIMS];
       for (int64_t d = R-1; d >= 0; --d) {
-        sc[d] = tmp % source.coords.shape[d];
-        tmp /= source.coords.shape[d];
+        sc[d] = tmp % source.meta.coords.shape[d];
+        tmp /= source.meta.coords.shape[d];
       }
       int64_t j = sc[axis];
-      int64_t idx_off = j*index.coords.strides[0];
+      int64_t idx_off = j*index.meta.coords.strides[0];
       int64_t g = bi[idx_off];
       if (g < 0) g += self_ax;
       int64_t src_off = 0;
-      for (int64_t d=0; d < R; ++d) src_off += sc[d]*source.coords.strides[d];
+      for (int64_t d=0; d < R; ++d) src_off += sc[d]*source.meta.coords.strides[d];
       sc[axis] = g;
       int64_t dst_off = 0;
-      for (int64_t d=0; d < R; ++d) dst_off += sc[d]*self.coords.strides[d];
+      for (int64_t d=0; d < R; ++d) dst_off += sc[d]*self.meta.coords.strides[d];
       if (is_int) {
         auto cur = static_cast<int64_t>(bs[dst_off]);
         auto add = static_cast<int64_t>(bx[src_off])*static_cast<int64_t>(alpha);
@@ -1541,11 +1541,11 @@ namespace mag {
     const mag_tensor_t *index = cmd.in[2];
     int64_t axis = cmd.params->index_add.dim;
     double alpha = cmd.params->index_add.alpha;
-    if (axis < 0) axis += self->coords.rank;
-    int64_t R = self->coords.rank;
-    int64_t total = source->numel;
-    int64_t self_ax = self->coords.shape[axis];
-    switch (self->dtype) {
+    if (axis < 0) axis += self->meta.coords.rank;
+    int64_t R = self->meta.coords.rank;
+    int64_t total = source->meta.numel;
+    int64_t self_ax = self->meta.coords.shape[axis];
+    switch (self->meta.dtype) {
       case MAG_DTYPE_FLOAT32: index_add_kernel<float, false><<<1, 1>>>(
         total, R, axis, self_ax,
         reinterpret_cast<float *>(mag_tensor_data_ptr_mut(self)),
@@ -1630,7 +1630,7 @@ namespace mag {
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: index_add_: unsupported dtype: %s.", mag_type_trait(self->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: index_add_: unsupported dtype: %s.", mag_type_trait(self->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -1655,16 +1655,16 @@ namespace mag {
     for (; flat < total; flat += step) {
       int64_t ic[MAG_MAX_DIMS];
       int64_t tmp = flat;
-      for (int64_t d = rank-1; d >= 0; --d) { ic[d] = tmp % index.coords.shape[d]; tmp /= index.coords.shape[d]; }
+      for (int64_t d = rank-1; d >= 0; --d) { ic[d] = tmp % index.meta.coords.shape[d]; tmp /= index.meta.coords.shape[d]; }
       int64_t idx_off = 0, src_off = 0, dst_off = 0;
       for (int64_t d=0; d < rank; ++d) {
-        idx_off += ic[d]*index.coords.strides[d];
-        src_off += ic[d]*src.coords.strides[d];
-        if (d != axis) dst_off += ic[d]*self.coords.strides[d];
+        idx_off += ic[d]*index.meta.coords.strides[d];
+        src_off += ic[d]*src.meta.coords.strides[d];
+        if (d != axis) dst_off += ic[d]*self.meta.coords.strides[d];
       }
       int64_t g = __ldg(bi + idx_off);
       if (g < 0) g += self_ax;
-      dst_off += g*self.coords.strides[axis];
+      dst_off += g*self.meta.coords.strides[axis];
       bs[dst_off] = bx[src_off];
     }
   }
@@ -1675,12 +1675,12 @@ namespace mag {
     const mag_tensor_t *src = cmd.in[1];
     const mag_tensor_t *index = cmd.in[2];
     int64_t axis = cmd.params->scatter.dim;
-    if (axis < 0) axis += self->coords.rank;
-    mag_assert2(axis >= 0 && axis < self->coords.rank);
-    int64_t rank = index->coords.rank;
-    int64_t total = index->numel;
+    if (axis < 0) axis += self->meta.coords.rank;
+    mag_assert2(axis >= 0 && axis < self->meta.coords.rank);
+    int64_t rank = index->meta.coords.rank;
+    int64_t total = index->meta.numel;
     if (total <= 0) return;
-    int64_t self_ax = self->coords.shape[axis];
+    int64_t self_ax = self->meta.coords.shape[axis];
     int64_t blocks = (total + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
     scatter_kernel<T><<<blocks, MISC_BLOCK_SIZE>>>(
       total, rank, axis, self_ax,
@@ -1693,7 +1693,7 @@ namespace mag {
 
   mag_status_t misc_op_scatter(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *self = cmd.out[0];
-    switch (self->dtype) {
+    switch (self->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_scatter<float>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_scatter<half>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_scatter<__nv_bfloat16>(cmd); break;
@@ -1707,7 +1707,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_scatter<int32_t>(cmd); break;
       case MAG_DTYPE_UINT64: launch_scatter<uint64_t>(cmd); break;
       case MAG_DTYPE_INT64: launch_scatter<int64_t>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: scatter: unsupported dtype: %s.", mag_type_trait(self->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: scatter: unsupported dtype: %s.", mag_type_trait(self->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -1728,15 +1728,15 @@ namespace mag {
   ) {
     int64_t row = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
     int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
-    int64_t ist = index.coords.strides[axis];
-    int64_t xst = src.coords.strides[axis];
-    int64_t rst = self.coords.strides[axis];
+    int64_t ist = index.meta.coords.strides[axis];
+    int64_t xst = src.meta.coords.strides[axis];
+    int64_t rst = self.meta.coords.strides[axis];
     for (; row < num_rows; row += step) {
       int64_t c[MAG_MAX_DIMS];
       int64_t rem = row;
-      for (int64_t d = rank-1; d >= 0; --d) { if (d == axis) continue; c[d] = rem % index.coords.shape[d]; rem /= index.coords.shape[d]; }
+      for (int64_t d = rank-1; d >= 0; --d) { if (d == axis) continue; c[d] = rem % index.meta.coords.shape[d]; rem /= index.meta.coords.shape[d]; }
       int64_t idx_row = 0, src_row = 0, dst_row = 0;
-      for (int64_t d=0; d < rank; ++d) { if (d == axis) continue; idx_row += c[d]*index.coords.strides[d]; src_row += c[d]*src.coords.strides[d]; dst_row += c[d]*self.coords.strides[d]; }
+      for (int64_t d=0; d < rank; ++d) { if (d == axis) continue; idx_row += c[d]*index.meta.coords.strides[d]; src_row += c[d]*src.meta.coords.strides[d]; dst_row += c[d]*self.meta.coords.strides[d]; }
       for (int64_t j=0; j < s_axis; ++j) {
         int64_t g = bi[idx_row + j*ist];
         if (g < 0) g += self_ax;
@@ -1761,12 +1761,12 @@ namespace mag {
     const mag_tensor_t *src = cmd.in[1];
     const mag_tensor_t *index = cmd.in[2];
     int64_t axis = cmd.params->scatter.dim;
-    if (axis < 0) axis += self->coords.rank;
-    int64_t rank = index->coords.rank;
-    int64_t total = index->numel;
+    if (axis < 0) axis += self->meta.coords.rank;
+    int64_t rank = index->meta.coords.rank;
+    int64_t total = index->meta.numel;
     if (total <= 0) return;
-    int64_t s_axis = index->coords.shape[axis];
-    int64_t self_ax = self->coords.shape[axis];
+    int64_t s_axis = index->meta.coords.shape[axis];
+    int64_t self_ax = self->meta.coords.shape[axis];
     int64_t num_rows = total/s_axis;
     int64_t blocks = (num_rows + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
     scatter_add_kernel<T, is_int><<<blocks, MISC_BLOCK_SIZE>>>(
@@ -1780,7 +1780,7 @@ namespace mag {
 
   mag_status_t misc_op_scatter_add(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *self = cmd.out[0];
-    switch (self->dtype) {
+    switch (self->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_scatter_add_typed<float, false>(cmd); break;
       case MAG_DTYPE_FLOAT16: launch_scatter_add_typed<half, false>(cmd); break;
       case MAG_DTYPE_BFLOAT16: launch_scatter_add_typed<__nv_bfloat16, false>(cmd); break;
@@ -1793,7 +1793,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_scatter_add_typed<int32_t, true>(cmd); break;
       case MAG_DTYPE_UINT64: launch_scatter_add_typed<uint64_t, true>(cmd); break;
       case MAG_DTYPE_INT64: launch_scatter_add_typed<int64_t, true>(cmd); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: scatter_add: unsupported dtype: %s.", mag_type_trait(self->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: scatter_add: unsupported dtype: %s.", mag_type_trait(self->meta.dtype)->name);
     }
     return MAG_OK;
   }

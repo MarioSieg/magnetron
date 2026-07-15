@@ -203,14 +203,14 @@ static mag_status_t mag_ein_check_alnum_and_expand_ellipsis(
   if (!ellipsis) return MAG_OK;
   int64_t ellipsis_len;
   if (operand) {
-    ellipsis_len = operand->coords.rank-(int64_t)pre_count-(int64_t)post_count;
+    ellipsis_len = operand->meta.coords.rank-(int64_t)pre_count-(int64_t)post_count;
     char shape_fmt[MAG_FMT_DIM_BUF_SIZE];
     if (mag_unlikely(ellipsis_len < 0))
-      mag_fmt_shape(&shape_fmt, &operand->coords.shape, operand->coords.rank);
+      mag_fmt_shape(&shape_fmt, &operand->meta.coords.shape, operand->meta.coords.rank);
     if (mag_unlikely(!(ellipsis_len >= 0)))
       return mag_set_error(err, MAG_ERR_EINSUM,
         "einsum: operand %zu with shape %s has too few dimensions for subscript '%s' (needs at least %zu, got %zu).",
-        operand_idx, shape_fmt, subscript->buf, pre_count+post_count, (size_t)operand->coords.rank
+        operand_idx, shape_fmt, subscript->buf, pre_count+post_count, (size_t)operand->meta.coords.rank
       );
     *max_ellipsis_len = mag_xmax(*max_ellipsis_len, ellipsis_len);
   } else ellipsis_len = *max_ellipsis_len;
@@ -293,7 +293,7 @@ static int64_t mag_ein_shape_prod(
   const mag_ein_axes_t *axes
 ) {
   int64_t r=1;
-  const int64_t *shape = x->coords.shape;
+  const int64_t *shape = x->meta.coords.shape;
   for (int64_t i=0; i < axes->n; ++i)
     r *= shape[axes->v[i]];
   return r;
@@ -323,7 +323,7 @@ static mag_status_t mag_ein_transpose_reshape_for_dot(
   int64_t size2 = mag_ein_shape_prod(x, k_axes);
   int64_t shape[MAG_EIN_MAX_SPEC];
   int64_t rank = 0;
-  const int64_t *x_shape = x->coords.shape;
+  const int64_t *x_shape = x->meta.coords.shape;
   for (int64_t i=0; i < i_axes->n; ++i)
     shape[rank++] = x_shape[i_axes->v[i]];
   shape[rank++] = size1;
@@ -347,8 +347,8 @@ static mag_status_t mag_ein_broadcast_contract_dims(
 ) {
   int64_t a_rank = mag_tensor_rank(a);
   int64_t b_rank = mag_tensor_rank(b);
-  const int64_t *a_shape_old = a->coords.shape;
-  const int64_t *b_shape_old = b->coords.shape;
+  const int64_t *a_shape_old = a->meta.coords.shape;
+  const int64_t *b_shape_old = b->meta.coords.shape;
   int64_t a_shape[MAG_EIN_MAX_SPEC];
   int64_t b_shape[MAG_EIN_MAX_SPEC];
   memcpy(a_shape, a_shape_old, (size_t)a_rank * sizeof(a_shape[0]));
@@ -422,8 +422,8 @@ static mag_status_t mag_ein_batch_tensordot(
   }
   int64_t out_shape[MAG_EIN_MAX_SPEC];
   int64_t out_rank = 0;
-  const int64_t *sa = a_bcast->coords.shape;
-  const int64_t *sb = b_bcast->coords.shape;
+  const int64_t *sa = a_bcast->meta.coords.shape;
+  const int64_t *sb = b_bcast->meta.coords.shape;
   for (int64_t i=0; i < a_batch->n; ++i)
     out_shape[out_rank++] = sa[a_batch->v[i]];
   for (int64_t i=0; i < a_concat->n; ++i)
@@ -781,7 +781,7 @@ static mag_status_t mag_ein_compute_path(
   for (size_t i=0; i < parsed.num_inputs; ++i) {
     const char *in = parsed.inputs[i].buf;
     size_t in_len = strlen(in);
-    int64_t ndim = args[i]->coords.rank;
+    int64_t ndim = args[i]->meta.coords.rank;
     mag_ein_charset_t in_set = 0;
     for (size_t j=0; j < in_len; ++j)
       mag_ein_charset_add(in_set, in[j]);
@@ -795,7 +795,7 @@ static mag_status_t mag_ein_compute_path(
       for (size_t j=0; j < in_len; ++j) {
         char c = in[j];
         int id = mag_ein_label_id(c);
-        int64_t dim = args[i]->coords.shape[j];
+        int64_t dim = args[i]->meta.coords.shape[j];
         if (mag_ein_charset_has_bit(local_present, id)) {
           if (mag_unlikely(!(local_dims[id] == dim)))
             return mag_set_error(err, MAG_ERR_EINSUM, "einsum: repeated subscript dimensions must have the same size, but got %" PRIi64 " and %" PRIi64 ".", local_dims[id], dim);
@@ -808,7 +808,7 @@ static mag_status_t mag_ein_compute_path(
     for (size_t j=0; j < in_len; ++j) {
       char c = in[j];
       int id = mag_ein_label_id(c);
-      int64_t dim = args[i]->coords.shape[j];
+      int64_t dim = args[i]->meta.coords.shape[j];
       if (mag_ein_charset_has_bit(dim_map.present, id)) {
         int64_t old = dim_map.dims[id];
         if (mag_unlikely(!(dim == 1 || old == 1 || old == dim)))
@@ -891,8 +891,8 @@ static void mag_ein_sort_str_ax(mag_ein_char_axis_t *xs, int64_t n, const int64_
 static mag_status_t mag_ein_collapse_repeats(mag_error_t *err, mag_tensor_t **out, mag_ein_subscript_t *subscript, mag_tensor_t *x) {
   const char *str = subscript->str.buf;
   int64_t rank = mag_tensor_rank(x);
-  const int64_t *shape = x->coords.shape;
-  const int64_t *strides = x->coords.strides;
+  const int64_t *shape = x->meta.coords.shape;
+  const int64_t *strides = x->meta.coords.strides;
   int64_t new_shape[MAG_EIN_MAX_SPEC];
   int64_t new_strides[MAG_EIN_MAX_SPEC];
   char new_str[MAG_EIN_MAX_SPEC];
@@ -951,7 +951,7 @@ static mag_status_t mag_ein_naive(mag_error_t *err, mag_tensor_t **out_result, m
   for (uint32_t i=0; i < node->num_inputs; ++i) {
     uint32_t pos = node->positions[i];
     mag_tensor_t *op = operands[pos];
-    int64_t op_rank = op->coords.rank;
+    int64_t op_rank = op->meta.coords.rank;
     if (op_rank != num_axes) {
       const int64_t *old_shape = mag_tensor_shape_ptr(op);
       int64_t shape[MAG_EIN_MAX_SPEC];

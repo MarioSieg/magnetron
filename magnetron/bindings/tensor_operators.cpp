@@ -1313,14 +1313,14 @@ namespace mag::bindings {
         if (nb::isinstance<tensor_wrapper>(repeats_h)) {
           auto repeats_tensor = nb::cast<tensor_wrapper>(repeats_h);
           mag_tensor_t *tensor = *repeats_tensor;
-          if (!tensor || tensor->dtype != MAG_DTYPE_INT64 || tensor->coords.rank != 1)
+          if (!tensor || tensor->meta.dtype != MAG_DTYPE_INT64 || tensor->meta.coords.rank != 1)
             throw nb::type_error("repeat_interleave: tensor repeats must be 1-D int64");
           mag_tensor_t *contig = nullptr, *host = nullptr;
           mag_error_t err {};
           throw_if_error(mag_contiguous(&err, &contig, tensor), err);
           throw_if_error(mag_transfer(&err, &host, contig, mag_device(CPU, 0)), err);
           const auto *data_ptr = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(host));
-          counts.assign(data_ptr, data_ptr + host->numel);
+          counts.assign(data_ptr, data_ptr + host->meta.numel);
           mag_tensor_decref(host);
           mag_tensor_decref(contig);
         } else if (nb::isinstance<nb::int_>(repeats_h) || PyLong_Check(repeats_h.ptr())) {

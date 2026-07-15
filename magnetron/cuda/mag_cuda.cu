@@ -89,7 +89,7 @@ namespace mag {
         return mag_set_error(err, MAG_ERR_PARAM, "H2D: source storage must be host-visible.");
       if (mag_unlikely(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE))
         return mag_set_error(err, MAG_ERR_PARAM, "H2D: destination storage must be device-local.");
-      if (mag_unlikely(dst->device != dvc))
+      if (mag_unlikely(dst->meta.device != dvc))
         return mag_set_error(err, MAG_ERR_PARAM, "H2D: destination device mismatch.");
       cudaError_t ce = cudaSetDevice(my_dev);
       if (mag_unlikely(ce != cudaSuccess))
@@ -102,7 +102,7 @@ namespace mag {
     case MAG_TRANSFER_DIR_D2H: {
       if (mag_unlikely(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE))
         return mag_set_error(err, MAG_ERR_PARAM, "D2H: source storage must be device-local.");
-      if (mag_unlikely(src->device != dvc))
+      if (mag_unlikely(src->meta.device != dvc))
         return mag_set_error(err, MAG_ERR_PARAM, "D2H: source device mismatch.");
       if (mag_unlikely(!(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))
         return mag_set_error(err, MAG_ERR_PARAM, "D2H: destination storage must be host-visible.");
@@ -117,8 +117,8 @@ namespace mag {
     case MAG_TRANSFER_DIR_D2D: {
       if (mag_unlikely((src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE) || (dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))
         return mag_set_error(err, MAG_ERR_PARAM, "D2D: both storages must be device-local.");
-      const int src_ord = static_cast<int>(src->device->id.device_ordinal);
-      const int dst_ord = static_cast<int>(dst->device->id.device_ordinal);
+      const int src_ord = static_cast<int>(src->meta.device->id.device_ordinal);
+      const int dst_ord = static_cast<int>(dst->meta.device->id.device_ordinal);
       if (mag_unlikely(dst->storage->device != dvc))
         return mag_set_error(err, MAG_ERR_PARAM, "D2D: destination device mismatch.");
       cudaError_t ce = cudaSetDevice(dst_ord);

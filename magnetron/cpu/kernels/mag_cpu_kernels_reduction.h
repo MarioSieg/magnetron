@@ -19,7 +19,7 @@
     OT *br = (OT *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const mag_reduce_plan_t *plan = &payload->cmd->params->reduction.red_plan; \
-    int64_t numel = r->numel; \
+    int64_t numel = r->meta.numel; \
     int64_t red_prod = plan->red_prod; \
     for (int64_t oi=0; oi < numel; ++oi) { \
       int64_t base = mag_reduce_plan_to_offset(plan, oi); \
@@ -320,7 +320,7 @@ mag_cpu_impl_argminmax_int(int64_t,  int64);
     uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const mag_reduce_plan_t *plan = &payload->cmd->params->reduction.red_plan; \
-    int64_t numel = r->numel; \
+    int64_t numel = r->meta.numel; \
     int64_t red_prod = plan->red_prod; \
     for (int64_t oi=0; oi < numel; ++oi) { \
       uint8_t acc = (IDENTITY); \

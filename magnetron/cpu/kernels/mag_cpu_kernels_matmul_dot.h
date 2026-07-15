@@ -75,8 +75,8 @@ static MAG_HOTPROC void mag_matmul_dot(const mag_kernel_payload_t *payload) {
   void *pr = (void *)mag_tensor_data_ptr_mut(r);
   const void *px = (const void *)mag_tensor_data_ptr(x);
   const void *py = (const void *)mag_tensor_data_ptr(y);
-  int64_t sx = x->coords.strides[0];
-  int64_t sy = y->coords.strides[0];
-  int64_t N = x->coords.shape[0];
-  mag_matmul_dot_impl(r->dtype, payload->thread_idx, N, pr, px, sx, py, sy);
+  int64_t sx = x->meta.coords.strides[0];
+  int64_t sy = y->meta.coords.strides[0];
+  int64_t N = x->meta.coords.shape[0];
+  mag_matmul_dot_impl(r->meta.dtype, payload->thread_idx, N, pr, px, sx, py, sy);
 }

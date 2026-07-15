@@ -32,12 +32,12 @@ namespace mag {
 #if MAG_CUDA_MATMUL_USE_WMMA /* WMMA + TMA fast kernel */
 
   [[nodiscard]] static int64_t tensor_batch_total(const mag_tensor_t *tensor) {
-    int64_t ra = tensor->coords.rank;
+    int64_t ra = tensor->meta.coords.rank;
     if (ra <= 2) return 1;
     int64_t batch=1;
     int64_t delta=ra-2;
     for (int64_t i=0; i < delta; ++i)
-      batch *= tensor->coords.shape[i];
+      batch *= tensor->meta.coords.shape[i];
     return batch;
   }
 
@@ -111,10 +111,10 @@ namespace mag {
 
    template <typename T, bool TA, int BM, int BK>
   [[nodiscard]] static CUtensorMap init_tmap_x(const mag_tensor_t *x) {
-    int64_t ra = x->coords.rank;
+    int64_t ra = x->meta.coords.rank;
     int64_t batch_total = tensor_batch_total(x);
-    int64_t M = ra == 1 ? 1 : x->coords.shape[ra-2];
-    int64_t K = x->coords.shape[ra-1];
+    int64_t M = ra == 1 ? 1 : x->meta.coords.shape[ra-2];
+    int64_t K = x->meta.coords.shape[ra-1];
     if constexpr (!TA) {
       return init_tmap_nd<T, 3>(
         reinterpret_cast<void *>(mag_tensor_data_ptr(x)),
@@ -134,10 +134,10 @@ namespace mag {
 
   template <typename T, bool TB, int BK, int BN>
   [[nodiscard]] static CUtensorMap init_tmap_y(const mag_tensor_t *y) {
-    int64_t ra = y->coords.rank;
+    int64_t ra = y->meta.coords.rank;
     int64_t batch_total = tensor_batch_total(y);
-    int64_t K = ra == 1 ? y->coords.shape[0] : y->coords.shape[ra-2];
-    int64_t N = ra == 1 ? 1 : y->coords.shape[ra-1];
+    int64_t K = ra == 1 ? y->meta.coords.shape[0] : y->meta.coords.shape[ra-2];
+    int64_t N = ra == 1 ? 1 : y->meta.coords.shape[ra-1];
     if constexpr (!TB) {
       return init_tmap_nd<T, 3>(
         reinterpret_cast<void *>(mag_tensor_data_ptr(y)),
@@ -717,10 +717,10 @@ namespace mag {
 
   template <typename T>
   [[nodiscard]] static bool is_tensor_tma_compat_x(const mag_tensor_t *x, bool TA) {
-    int64_t r = x->coords.rank;
+    int64_t r = x->meta.coords.rank;
     int64_t batch_total = tensor_batch_total(x);
-    int64_t M = r == 1 ? 1 : x->coords.shape[r-2];
-    int64_t K = x->coords.shape[r-1];
+    int64_t M = r == 1 ? 1 : x->meta.coords.shape[r-2];
+    int64_t K = x->meta.coords.shape[r-1];
     if (batch_total < 1) return false;
     if (15 & mag_tensor_data_ptr(x)) return false;
     return !TA ? !(15 & (K*sizeof(T))) && !(15 & (M*K*sizeof(T))) : !(15 & (M*sizeof(T))) && !(15 & (M*K*sizeof(T)));
@@ -728,10 +728,10 @@ namespace mag {
 
   template <typename T>
   [[nodiscard]] static bool is_tensor_tma_compat_y(const mag_tensor_t *y, bool TB) {
-    int64_t r = y->coords.rank;
+    int64_t r = y->meta.coords.rank;
     int64_t batch_total = tensor_batch_total(y);
-    int64_t K = r == 1 ? y->coords.shape[0] : y->coords.shape[r-2];
-    int64_t N = r == 1 ? 1 : y->coords.shape[r-1];
+    int64_t K = r == 1 ? y->meta.coords.shape[0] : y->meta.coords.shape[r-2];
+    int64_t N = r == 1 ? 1 : y->meta.coords.shape[r-1];
     if (batch_total < 1) return false;
     if (15 & mag_tensor_data_ptr(y)) return false;
     return !TB ? !(15 & (N*sizeof(T))) && !(15 & (K*N*sizeof(T))) : !(15 & (K*sizeof(T))) && !(15 & (K*N*sizeof(T)));
@@ -872,8 +872,8 @@ namespace mag {
     mag_tensor_t *y = cmd.in[1];
     mag_assert2(mag_tensor_is_contiguous(r));
     bool x_batch_packed, y_batch_packed;
-    mag_mat_layout_type_t x_layout = mag_mat_layout_detect(&x->coords, &x_batch_packed);
-    mag_mat_layout_type_t y_layout = mag_mat_layout_detect(&y->coords, &y_batch_packed);
+    mag_mat_layout_type_t x_layout = mag_mat_layout_detect(&x->meta.coords, &x_batch_packed);
+    mag_mat_layout_type_t y_layout = mag_mat_layout_detect(&y->meta.coords, &y_batch_packed);
     bool x_ok = x_layout != MAG_MAT_LAYOUT_TYPE_OTHER && x_batch_packed;
     bool y_ok = y_layout != MAG_MAT_LAYOUT_TYPE_OTHER && y_batch_packed;
     bool xT = x_ok && x_layout == MAG_MAT_LAYOUT_TYPE_TRANSPOSED;
@@ -890,14 +890,14 @@ namespace mag {
       yT = false;
       cloned_y = true;
     }
-    int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank - 2];
-    int64_t Kx = x->coords.shape[x->coords.rank - 1];
-    int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank - 1];
-    int64_t Ky = y->coords.rank == 1 ? y->coords.shape[0] : y->coords.shape[y->coords.rank - 2];
+    int64_t M = x->meta.coords.rank == 1 ? 1 : x->meta.coords.shape[x->meta.coords.rank - 2];
+    int64_t Kx = x->meta.coords.shape[x->meta.coords.rank - 1];
+    int64_t N = y->meta.coords.rank == 1 ? 1 : y->meta.coords.shape[y->meta.coords.rank - 1];
+    int64_t Ky = y->meta.coords.rank == 1 ? y->meta.coords.shape[0] : y->meta.coords.shape[y->meta.coords.rank - 2];
     mag_assert2(Kx == Ky);
     int64_t K = Kx;
-    int64_t batch_rank = r->coords.rank > 2 ? r->coords.rank-2 : 0;
-    int64_t batch_total = std::accumulate(r->coords.shape, r->coords.shape + batch_rank, 1, std::multiplies<int64_t>());
+    int64_t batch_rank = r->meta.coords.rank > 2 ? r->meta.coords.rank-2 : 0;
+    int64_t batch_total = std::accumulate(r->meta.coords.shape, r->meta.coords.shape + batch_rank, 1, std::multiplies<int64_t>());
     auto *__restrict__ br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *__restrict__ bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     const auto *__restrict__ by = reinterpret_cast<const T *>(mag_tensor_data_ptr(y));
@@ -933,11 +933,11 @@ namespace mag {
 
   mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
-    switch (x->dtype) {
+    switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: return launch_matmul<float>(err, cmd);
       case MAG_DTYPE_FLOAT16: return launch_matmul<half>(err, cmd);
       case MAG_DTYPE_BFLOAT16: return launch_matmul<__nv_bfloat16>(err, cmd);
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: matmul: unsupported dtype %s.", mag_type_trait(x->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: matmul: unsupported dtype %s.", mag_type_trait(x->meta.dtype)->name);
     }
   }
 }

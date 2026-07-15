@@ -82,12 +82,12 @@ mag_status_t mag_op_stub_reduction(
   if (mag_iserr(status)) return status;
   mag_op_params_t params = {0};
   mag_reduce_plan_t *plan = &params.reduction.red_plan;
-  status = mag_reduce_plan_init(err, plan, &x->coords, dims, rank, keepdim);
+  status = mag_reduce_plan_init(err, plan, &x->meta.coords, dims, rank, keepdim);
   if (mag_iserr(status)) return status;
   mag_tensor_t *result = NULL;
-  mag_dtype_t type= x->dtype;
+  mag_dtype_t type= x->meta.dtype;
   if ((op == MAG_OP_SUM || op == MAG_OP_PROD) && mag_tensor_is_integer_typed(x))
-    type = mag_dtype_bit(x->dtype) & MAG_DTYPE_MASK_UINT ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64;  /* For integral types sum/prod use wide int64/uint64 */
+    type = mag_dtype_bit(x->meta.dtype) & MAG_DTYPE_MASK_UINT ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64;  /* For integral types sum/prod use wide int64/uint64 */
   else if (op == MAG_OP_ANY || op == MAG_OP_ALL) type = MAG_DTYPE_BOOLEAN; /* For logical reductions, use boolean dtype */
   else if (op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX) type = MAG_DTYPE_INT64; /* For argmin/argmax, use int64 dtype */
   if (!keepdim && !plan->out_rank) status = mag_empty_scalar(err, &result, x->ctx, type, mag_tensor_device_id(x));
@@ -140,11 +140,11 @@ mag_status_t mag_op_stub_cu(
   *out_result = NULL;
   if (mag_unlikely(!(x != NULL)))
       return mag_set_error(err, MAG_ERR_PARAM, "cu%s: input tensor must not be NULL.", ext);
-  if (mag_unlikely(!(x->coords.rank > 0)))
+  if (mag_unlikely(!(x->meta.coords.rank > 0)))
       return mag_set_error(err, MAG_ERR_RANK, "cu%s: requires a tensor with rank > 0.", ext);
-  mag_norm_axis(&dim, x->coords.rank);
-  if (mag_unlikely(!(dim >= 0 && dim < x->coords.rank)))
-      return mag_set_error(err, MAG_ERR_DIM, "cu%s: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", ext, dim, x->coords.rank);
+  mag_norm_axis(&dim, x->meta.coords.rank);
+  if (mag_unlikely(!(dim >= 0 && dim < x->meta.coords.rank)))
+      return mag_set_error(err, MAG_ERR_DIM, "cu%s: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", ext, dim, x->meta.coords.rank);
   mag_op_params_t params = {
     .cumu = {.dim = dim}
   };
@@ -164,16 +164,16 @@ mag_status_t mag_op_stub_cu_ex(
   *out_indices = NULL;
   if (mag_unlikely(!(x != NULL)))
     return mag_set_error(err, MAG_ERR_PARAM, "cu%s: input tensor must not be NULL.", ext);
-  if (mag_unlikely(!(x->coords.rank > 0)))
+  if (mag_unlikely(!(x->meta.coords.rank > 0)))
     return mag_set_error(err, MAG_ERR_RANK, "cu%s: requires a tensor with rank > 0.", ext);
-  mag_norm_axis(&dim, x->coords.rank);
-  if (mag_unlikely(!(dim >= 0 && dim < x->coords.rank)))
-    return mag_set_error(err, MAG_ERR_DIM, "cu%s: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", ext, dim, x->coords.rank);
+  mag_norm_axis(&dim, x->meta.coords.rank);
+  if (mag_unlikely(!(dim >= 0 && dim < x->meta.coords.rank)))
+    return mag_set_error(err, MAG_ERR_DIM, "cu%s: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", ext, dim, x->meta.coords.rank);
   mag_tensor_t *values = NULL;
   mag_tensor_t *indices = NULL;
   mag_status_t status = mag_empty_like(err, &values, x);
   if (mag_iserr(status)) return status;
-  status = mag_empty(err, &indices, x->ctx, MAG_DTYPE_INT64, x->coords.rank, x->coords.shape, mag_tensor_device_id(x));
+  status = mag_empty(err, &indices, x->ctx, MAG_DTYPE_INT64, x->meta.coords.rank, x->meta.coords.shape, mag_tensor_device_id(x));
   if (mag_iserr(status)) {
     mag_tensor_decref(values);
     return status;
@@ -209,28 +209,28 @@ mag_status_t mag_op_stub_binary(
     switch (op) {
       case MAG_OP_DIV: {
         if (mag_unlikely(!(!x_int)))
-            return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place true division is not allowed on integer tensors (got dtype %s).", mag_type_trait(x->dtype)->name);
+            return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place true division is not allowed on integer tensors (got dtype %s).", mag_type_trait(x->meta.dtype)->name);
       } break;
       case MAG_OP_FLOORDIV: {
         if (mag_unlikely(!(x_int && y_int)))
-            return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place floor division requires integer tensors, but got dtypes %s and %s.", mag_type_trait(x->dtype)->name, mag_type_trait(y->dtype)->name);
+            return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place floor division requires integer tensors, but got dtypes %s and %s.", mag_type_trait(x->meta.dtype)->name, mag_type_trait(y->meta.dtype)->name);
       } break;
       default: { /* Inplace ops must keep x's dtype */
         mag_dtype_t prom;
-        bool prom_ok = mag_promote_type(&prom, x->dtype, y->dtype);
-        if (mag_unlikely(!(prom_ok && prom == x->dtype)))
-            return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place '%s' would change the dtype of x from %s to %s.", mag_op_trait(op)->mnemonic, mag_type_trait(x->dtype)->name, mag_type_trait(prom)->name);
+        bool prom_ok = mag_promote_type(&prom, x->meta.dtype, y->meta.dtype);
+        if (mag_unlikely(!(prom_ok && prom == x->meta.dtype)))
+            return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place '%s' would change the dtype of x from %s to %s.", mag_op_trait(op)->mnemonic, mag_type_trait(x->meta.dtype)->name, mag_type_trait(prom)->name);
       } break;
     }
-    prom_type = x->dtype;
-    res_type = x->dtype;
+    prom_type = x->meta.dtype;
+    res_type = x->meta.dtype;
   } else if (flags & MAG_BINOP_LOGICAL) { /* Inplace keeps x's dtype, but cast y to x's dtype if needed */
-    bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
+    bool prom_ok = mag_promote_type(&prom_type, x->meta.dtype, y->meta.dtype);
     if (mag_unlikely(!prom_ok))
         return mag_set_error(err, MAG_ERR_PARAM, "binary_op: logical operator '%s' does not support dtypes %s and %s.",
           mag_op_trait(op)->mnemonic,
-          mag_type_trait(x->dtype)->name,
-          mag_type_trait(y->dtype)->name
+          mag_type_trait(x->meta.dtype)->name,
+          mag_type_trait(y->meta.dtype)->name
         );
     res_type = MAG_DTYPE_BOOLEAN; /* logical ops always yield boolean result */
     mag_assert2(!(flags & MAG_BINOP_INPLACE));
@@ -240,24 +240,24 @@ mag_status_t mag_op_stub_binary(
         if (x_int && y_int) { /* Integer division always promotes to default float dtype */
           prom_type = res_type = ctx->default_dtype;
         } else {
-          bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
+          bool prom_ok = mag_promote_type(&prom_type, x->meta.dtype, y->meta.dtype);
           if (mag_unlikely(!prom_ok))
               return mag_set_error(err, MAG_ERR_PARAM,
                 "binary_op: operator '%s' does not support dtypes %s and %s.",
                 mag_op_trait(op)->mnemonic,
-                mag_type_trait(x->dtype)->name,
-                mag_type_trait(y->dtype)->name
+                mag_type_trait(x->meta.dtype)->name,
+                mag_type_trait(y->meta.dtype)->name
               );
           res_type = prom_type;  /* will be a floating dtype */
         }
       } break;
       case MAG_OP_FLOORDIV: {
-        bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
+        bool prom_ok = mag_promote_type(&prom_type, x->meta.dtype, y->meta.dtype);
         if (mag_unlikely(!prom_ok))
             return mag_set_error(err, MAG_ERR_PARAM, "binary_op: operator '%s' does not support dtypes %s and %s.",
               mag_op_trait(op)->mnemonic,
-              mag_type_trait(x->dtype)->name,
-              mag_type_trait(y->dtype)->name
+              mag_type_trait(x->meta.dtype)->name,
+              mag_type_trait(y->meta.dtype)->name
             );
         if (x_int && y_int) { /* Integer floor division keeps integer dtype */
           res_type = prom_type;
@@ -268,12 +268,12 @@ mag_status_t mag_op_stub_binary(
         }
       } break;
       default: {
-        bool prom_ok = mag_promote_type(&prom_type, x->dtype, y->dtype);
+        bool prom_ok = mag_promote_type(&prom_type, x->meta.dtype, y->meta.dtype);
         if (mag_unlikely(!prom_ok))
             return mag_set_error(err, MAG_ERR_PARAM, "binary_op: operator '%s' does not support dtypes %s and %s.",
               mag_op_trait(op)->mnemonic,
-              mag_type_trait(x->dtype)->name,
-              mag_type_trait(y->dtype)->name
+              mag_type_trait(x->meta.dtype)->name,
+              mag_type_trait(y->meta.dtype)->name
             );
         res_type = prom_type;
       } break;
@@ -289,11 +289,11 @@ mag_status_t mag_op_stub_binary(
   } else {
     int64_t dims[MAG_MAX_DIMS];
     int64_t rank;
-    if (mag_unlikely(!mag_coords_broadcast_shape(&x->coords, &y->coords, dims, &rank))) {
+    if (mag_unlikely(!mag_coords_broadcast_shape(&x->meta.coords, &y->meta.coords, dims, &rank))) {
       char sx[MAG_FMT_DIM_BUF_SIZE];
       char sy[MAG_FMT_DIM_BUF_SIZE];
-      mag_fmt_shape(&sx, &x->coords.shape, x->coords.rank);
-      mag_fmt_shape(&sy, &y->coords.shape, y->coords.rank);
+      mag_fmt_shape(&sx, &x->meta.coords.shape, x->meta.coords.rank);
+      mag_fmt_shape(&sy, &y->meta.coords.shape, y->meta.coords.rank);
       return mag_set_error(err, MAG_ERR_BROADCAST,
         "binary_op: cannot broadcast shapes %s and %s for operator '%s'.\n"
         "    Hint: ensure the shapes are broadcast-compatible.",
@@ -307,15 +307,15 @@ mag_status_t mag_op_stub_binary(
   mag_tensor_t *prom_y = y;
   mag_tensor_t *tmp_x = NULL;
   mag_tensor_t *tmp_y = NULL;
-  if (x->dtype != prom_type) { /* Cast x only if its dtype != promote_dtype and the op semantics say so */
-    status = mag_cast(err, &tmp_x, x, prom_type); /* For inplace, x->dtype == promote_dtype, so this is skipped */
+  if (x->meta.dtype != prom_type) { /* Cast x only if its dtype != promote_dtype and the op semantics say so */
+    status = mag_cast(err, &tmp_x, x, prom_type); /* For inplace, x->meta.dtype == promote_dtype, so this is skipped */
     if (mag_iserr(status)) {
       if (!(flags & MAG_BINOP_INPLACE) && result) mag_tensor_decref(result);
       return status;
     }
     prom_x = tmp_x;
   }
-  if (y->dtype != prom_type) { /* Cast y if needed */
+  if (y->meta.dtype != prom_type) { /* Cast y if needed */
     status = mag_cast(err, &tmp_y, y, prom_type);
     if (mag_iserr(status)) {
       if (tmp_x) mag_tensor_decref(tmp_x);
@@ -343,16 +343,16 @@ mag_status_t mag_matmul_verify_shapes(
   const mag_tensor_t *x,
   const mag_tensor_t *y
 ) {
-  int64_t kx = x->coords.shape[x->coords.rank-1];
-  int64_t ky = y->coords.rank == 1 ? *y->coords.shape : y->coords.rank == 2 && x->coords.rank == 1 ? *y->coords.shape : y->coords.shape[y->coords.rank-2];
-  *xb = x->coords.rank > 2 ? x->coords.rank-2 : 0;
-  *yb = y->coords.rank > 2 ? y->coords.rank-2 : 0;
+  int64_t kx = x->meta.coords.shape[x->meta.coords.rank-1];
+  int64_t ky = y->meta.coords.rank == 1 ? *y->meta.coords.shape : y->meta.coords.rank == 2 && x->meta.coords.rank == 1 ? *y->meta.coords.shape : y->meta.coords.shape[y->meta.coords.rank-2];
+  *xb = x->meta.coords.rank > 2 ? x->meta.coords.rank-2 : 0;
+  *yb = y->meta.coords.rank > 2 ? y->meta.coords.rank-2 : 0;
   *rb = mag_xmax(*xb, *yb);
   if (kx != ky) {
     char sx[MAG_FMT_DIM_BUF_SIZE];
     char sy[MAG_FMT_DIM_BUF_SIZE];
-    mag_fmt_shape(&sx, &x->coords.shape, x->coords.rank);
-    mag_fmt_shape(&sy, &y->coords.shape, y->coords.rank);
+    mag_fmt_shape(&sx, &x->meta.coords.shape, x->meta.coords.rank);
+    mag_fmt_shape(&sy, &y->meta.coords.shape, y->meta.coords.rank);
     return mag_set_error(err, MAG_ERR_OP,
       "matmul: incompatible shapes %s and %s, "
       "last dim of x (%" PRIi64 ") must match dim -2 of y (%" PRIi64 ").",
@@ -360,13 +360,13 @@ mag_status_t mag_matmul_verify_shapes(
     );
   }
   for (int64_t i=0; i < *rb; ++i) {
-    int64_t xd = i < *rb-*xb ? 1 : x->coords.shape[i-(*rb-*xb)];
-    int64_t yd = i < *rb-*yb ? 1 : y->coords.shape[i-(*rb-*yb)];
+    int64_t xd = i < *rb-*xb ? 1 : x->meta.coords.shape[i-(*rb-*xb)];
+    int64_t yd = i < *rb-*yb ? 1 : y->meta.coords.shape[i-(*rb-*yb)];
     if (xd != yd && xd != 1 && yd != 1) {
       char sx[MAG_FMT_DIM_BUF_SIZE];
       char sy[MAG_FMT_DIM_BUF_SIZE];
-      mag_fmt_shape(&sx, &x->coords.shape, x->coords.rank);
-      mag_fmt_shape(&sy, &y->coords.shape, y->coords.rank);
+      mag_fmt_shape(&sx, &x->meta.coords.shape, x->meta.coords.rank);
+      mag_fmt_shape(&sy, &y->meta.coords.shape, y->meta.coords.rank);
       return mag_set_error(err, MAG_ERR_OP,
         "matmul: batch dim %" PRIi64 " (%" PRIi64 ") of x cannot broadcast with y (%" PRIi64 ") for shapes %s and %s.",
         i, xd, yd, sx, sy
@@ -388,32 +388,32 @@ mag_status_t mag_matmul_alloc_res(
   mag_matmul_type_t type = mag_matmul_type_detect(x, y);
   switch (type) {
     case MAG_MATMUL_TYPE_INVALID: return mag_set_error(err, MAG_ERR_OP, "matmul: unsupported tensor shapes.");
-    case MAG_MATMUL_TYPE_DOT: return mag_empty_scalar(err, res, x->ctx, x->dtype, mag_tensor_device_id(x));
+    case MAG_MATMUL_TYPE_DOT: return mag_empty_scalar(err, res, x->ctx, x->meta.dtype, mag_tensor_device_id(x));
     case MAG_MATMUL_TYPE_GEMV_VEC_MAT: {
-        int64_t N = y->coords.shape[1];
-      return mag_empty(err, res, x->ctx, x->dtype, 1, (int64_t[1]){N}, mag_tensor_device_id(x));
+        int64_t N = y->meta.coords.shape[1];
+      return mag_empty(err, res, x->ctx, x->meta.dtype, 1, (int64_t[1]){N}, mag_tensor_device_id(x));
     } case MAG_MATMUL_TYPE_GEMV_MAT_VEC: {
-        int64_t M = x->coords.shape[0];
-      return mag_empty(err, res, x->ctx, x->dtype, 1, (int64_t[1]){M}, mag_tensor_device_id(x));
+        int64_t M = x->meta.coords.shape[0];
+      return mag_empty(err, res, x->ctx, x->meta.dtype, 1, (int64_t[1]){M}, mag_tensor_device_id(x));
     } case MAG_MATMUL_TYPE_GEMM: {
-        int64_t M = x->coords.shape[0];
-        int64_t N = y->coords.shape[1];
-      return mag_empty(err, res, x->ctx, x->dtype, 2, (int64_t[2]){M, N}, mag_tensor_device_id(x));
+        int64_t M = x->meta.coords.shape[0];
+        int64_t N = y->meta.coords.shape[1];
+      return mag_empty(err, res, x->ctx, x->meta.dtype, 2, (int64_t[2]){M, N}, mag_tensor_device_id(x));
     } case MAG_MATMUL_TYPE_BMM_DOT:
       case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
       case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
       case MAG_MATMUL_TYPE_BMM_GEMM: {
-        *xb = x->coords.rank-2;
-        *yb = y->coords.rank-2;
+        *xb = x->meta.coords.rank-2;
+        *yb = y->meta.coords.rank-2;
         int64_t shape[MAG_MAX_DIMS] = {0};
         for (int64_t i=0; i < rb; ++i) {
-          int64_t da = i < rb-*xb ? 1 : x->coords.shape[i-(rb-*xb)];
-          int64_t db = i < rb-*yb ? 1 : y->coords.shape[i-(rb-*yb)];
+          int64_t da = i < rb-*xb ? 1 : x->meta.coords.shape[i-(rb-*xb)];
+          int64_t db = i < rb-*yb ? 1 : y->meta.coords.shape[i-(rb-*yb)];
           shape[i] = da > db ? da : db;
         }
-        shape[rb] = x->coords.shape[x->coords.rank-2];
-        shape[rb+1] = y->coords.shape[y->coords.rank-1];
-        return mag_empty(err, res, x->ctx, x->dtype, rb+2, shape, mag_tensor_device_id(x));
+        shape[rb] = x->meta.coords.shape[x->meta.coords.rank-2];
+        shape[rb+1] = y->meta.coords.shape[y->meta.coords.rank-1];
+        return mag_empty(err, res, x->ctx, x->meta.dtype, rb+2, shape, mag_tensor_device_id(x));
     } default: return mag_set_error(err, MAG_ERR_OP, "matmul: invalid BMM matmul type '%s'.", mag_matmul_type_name(type));
   }
 }
@@ -427,7 +427,7 @@ void MAG_COLDPROC mag_dbg_trace_op_ir(
   uint32_t num_out
 ) {
   const mag_op_traits_t *meta = mag_op_trait(op);
-  const mag_device_id_t *dvc = in && num_in ? &in[0]->device->id : &out[0]->device->id;
+  const mag_device_id_t *dvc = in && num_in ? &in[0]->meta.device->id : &out[0]->meta.device->id;
   bool cont = true;
   for (uint32_t i=0; i < num_in;  ++i) cont &= mag_tensor_is_contiguous(in[i]);
   for (uint32_t i=0; i < num_out; ++i) cont &= mag_tensor_is_contiguous(out[i]);
@@ -439,16 +439,16 @@ void MAG_COLDPROC mag_dbg_trace_op_ir(
   for (char *p = dvcname; *p; ++p) if (*p >= 'A' && *p <= 'Z') *p |= 0x20;
   const mag_tensor_t *tin = num_in ? in[0] : NULL;
   const mag_tensor_t *tout = num_out ? out[0] : NULL;
-  int64_t rank = tin ? tin->coords.rank : tout->coords.rank;
+  int64_t rank = tin ? tin->meta.coords.rank : tout->meta.coords.rank;
   printf("%s.%s:%u.%s%s.", opcode, dvcname, dvc->device_ordinal, cont ? "cont" : "stri", inplace ? ".inl" : "");
   if (op == MAG_OP_CAST && num_in && num_out) {
-    printf("%s.%s.", mag_type_trait(out[0]->dtype)->short_name, mag_type_trait(in[0]->dtype)->short_name);
+    printf("%s.%s.", mag_type_trait(out[0]->meta.dtype)->short_name, mag_type_trait(in[0]->meta.dtype)->short_name);
   } else if (num_out == 1) {
-    printf("%s.", mag_type_trait(out[0]->dtype)->short_name);
+    printf("%s.", mag_type_trait(out[0]->meta.dtype)->short_name);
   } else {
     putchar('(');
     for (uint32_t i=0; i < num_out; ++i) {
-      fputs(mag_type_trait(out[i]->dtype)->short_name, stdout);
+      fputs(mag_type_trait(out[i]->meta.dtype)->short_name, stdout);
       if (i+1 < num_out) putchar(',');
     }
     printf(").");
@@ -456,16 +456,16 @@ void MAG_COLDPROC mag_dbg_trace_op_ir(
   printf("%zud", (size_t)rank);
   if (rank > 0) putchar('.');
   if (tin && rank > 0) {
-    for (int64_t i=0; i < tin->coords.rank; ++i) {
-      printf("%" PRIi64, tin->coords.shape[i]);
-      if (i+1 < tin->coords.rank) putchar('x');
+    for (int64_t i=0; i < tin->meta.coords.rank; ++i) {
+      printf("%" PRIi64, tin->meta.coords.shape[i]);
+      if (i+1 < tin->meta.coords.rank) putchar('x');
     }
   }
   if (tout && rank > 0) {
     putchar('.');
-    for (int64_t i=0; i < tout->coords.rank; ++i) {
-      printf("%" PRIi64, tout->coords.shape[i]);
-      if (i+1 < tout->coords.rank) putchar('x');
+    for (int64_t i=0; i < tout->meta.coords.rank; ++i) {
+      printf("%" PRIi64, tout->meta.coords.shape[i]);
+      if (i+1 < tout->meta.coords.rank) putchar('x');
     }
   }
   putchar('\n');
@@ -484,9 +484,9 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
   }
   mag_device_id_t dev0 = {0};
   for (uint32_t i=0; i < n; ++i) { /* Check dtype support and that all inputs share one device. */
-    bool supported = meta->dtype_mask & mag_dtype_bit(inputs[i]->dtype);
+    bool supported = meta->dtype_mask & mag_dtype_bit(inputs[i]->meta.dtype);
     if (mag_unlikely(!supported)) {
-      const char *dtype = mag_type_trait(inputs[i]->dtype)->name;
+      const char *dtype = mag_type_trait(inputs[i]->meta.dtype)->name;
       return mag_set_error(err, MAG_ERR_PARAM,
         "op_validate: operator '%s' does not support dtype '%s'.\n"
         "    Hint: cast the tensor to a supported dtype.",
@@ -510,34 +510,34 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
     }
   }
   if (op == MAG_OP_GATHER || op == MAG_OP_EMBEDDING) {
-    if (mag_unlikely(!(inputs[1]->dtype == MAG_DTYPE_INT64)))
+    if (mag_unlikely(!(inputs[1]->meta.dtype == MAG_DTYPE_INT64)))
         return mag_set_error(err, MAG_ERR_PARAM,
           "op_validate: index tensor for operator '%s' must have dtype int64, but got '%s'.\n"
           "    Hint: cast the indices to int64.",
-          meta->mnemonic, mag_type_trait(inputs[1]->dtype)->name
+          meta->mnemonic, mag_type_trait(inputs[1]->meta.dtype)->name
         );
     if (op == MAG_OP_EMBEDDING) {
       mag_dtype_mask_t fp_mask = MAG_DTYPE_MASK_FP;
-      if (mag_unlikely(!((fp_mask & mag_dtype_bit(inputs[0]->dtype)) != 0)))
+      if (mag_unlikely(!((fp_mask & mag_dtype_bit(inputs[0]->meta.dtype)) != 0)))
           return mag_set_error(err, MAG_ERR_PARAM,
             "op_validate: weight tensor for 'embedding' must have a floating-point dtype, but got '%s'.",
-            mag_type_trait(inputs[0]->dtype)->name
+            mag_type_trait(inputs[0]->meta.dtype)->name
           );
     }
     return MAG_OK;
   }
   if (op == MAG_OP_MASKED_FILL) {
-    if (mag_unlikely(!(inputs[1]->dtype == MAG_DTYPE_BOOLEAN)))
+    if (mag_unlikely(!(inputs[1]->meta.dtype == MAG_DTYPE_BOOLEAN)))
         return mag_set_error(err, MAG_ERR_PARAM,
           "op_validate: mask tensor for operator '%s' must have dtype bool, but got '%s'.\n"
           "    Hint: cast the mask to bool.",
-          meta->mnemonic, mag_type_trait(inputs[1]->dtype)->name
+          meta->mnemonic, mag_type_trait(inputs[1]->meta.dtype)->name
         );
     return MAG_OK;
   }
-  if (mag_unlikely(meta->in == 2 && n == 2 && inputs[0]->dtype != inputs[1]->dtype)) { /* For binary operators, check that both inputs have the same data type. */
-    const char *dtype_x = mag_type_trait(inputs[0]->dtype)->name;
-    const char *dtype_y = mag_type_trait(inputs[1]->dtype)->name;
+  if (mag_unlikely(meta->in == 2 && n == 2 && inputs[0]->meta.dtype != inputs[1]->meta.dtype)) { /* For binary operators, check that both inputs have the same data type. */
+    const char *dtype_x = mag_type_trait(inputs[0]->meta.dtype)->name;
+    const char *dtype_y = mag_type_trait(inputs[1]->meta.dtype)->name;
     return mag_set_error(err, MAG_ERR_PARAM,
       "op_validate: input dtypes for operator '%s' must match, but got '%s' and '%s'.\n"
       "    Hint: cast both inputs to the same dtype.",
@@ -548,7 +548,7 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
 }
 
 mag_status_t mag_check_inplace_grad_ok(mag_error_t *err, const mag_tensor_t *result) {
-  if (mag_unlikely((result->ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && (result->flags & MAG_TFLAG_REQUIRES_GRAD)))
+  if (mag_unlikely((result->ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && (result->meta.flags & MAG_TFLAG_REQUIRES_GRAD)))
     return mag_set_error(err, MAG_ERR_PARAM,
       "op_validate: in-place operations are not allowed on tensors that require gradients.\n"
       "    Hint: disable gradient tracking or use the out-of-place variant."

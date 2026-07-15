@@ -37,7 +37,7 @@ namespace mag {
       cast_kernel<Src, Dst, true><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, {});
     } else {
       mag_coords_iter_t xc;
-      mag_coords_iter_init(&xc, &x->coords);
+      mag_coords_iter_init(&xc, &x->meta.coords);
       cast_kernel<Src, Dst, false><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, xc);
     }
   }
@@ -248,8 +248,8 @@ namespace mag {
       for (auto *fn : cast_table_2D) if (!fn) return false;
       return true;
     }());
-    mag_dtype_t src = x->dtype;
-    mag_dtype_t dst = r->dtype;
+    mag_dtype_t src = x->meta.dtype;
+    mag_dtype_t dst = r->meta.dtype;
     cast_fn *kernel = cast_table_2D[src][dst];
     if (!kernel) return mag_set_error(err, MAG_ERR_KERNEL, "cuda: no kernel found for type cast: %s -> %s", mag_type_trait(src)->name, mag_type_trait(dst)->name);
     (*kernel)(r, x);
@@ -277,8 +277,8 @@ namespace mag {
       return;
     }
     mag_coords_iter_t rc, xc;
-    mag_coords_iter_init(&rc, &r->coords);
-    mag_coords_iter_init(&xc, &x->coords);
+    mag_coords_iter_init(&rc, &r->meta.coords);
+    mag_coords_iter_init(&xc, &x->meta.coords);
     int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
     clone_strided_kernel<T><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, rc, xc);
   }
@@ -286,8 +286,8 @@ namespace mag {
   mag_status_t unary_op_clone(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    mag_assert2(r->dtype == x->dtype);
-    switch (r->dtype) {
+    mag_assert2(r->meta.dtype == x->meta.dtype);
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_clone<float>(r, x); break;
       case MAG_DTYPE_FLOAT16: launch_clone<half>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_clone<__nv_bfloat16>(r, x); break;
@@ -772,8 +772,8 @@ namespace mag {
     int n = numel_i32(r);
     int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
     mag_coords_iter_t rc, xc;
-    mag_coords_iter_init(&rc, &r->coords);
-    mag_coords_iter_init(&xc, &x->coords);
+    mag_coords_iter_init(&rc, &r->meta.coords);
+    mag_coords_iter_init(&xc, &x->meta.coords);
     auto *pr = reinterpret_cast<typename Op::Out *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename Op::In *>(mag_tensor_data_ptr(x));
     if (std::array<const mag_tensor_t *, 2> tensors {r, x}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
@@ -785,21 +785,21 @@ namespace mag {
 
   template <template <typename> typename Op>
   static mag_status_t impl_unary_op_fp(mag_error_t *err, mag_tensor_t *r, mag_tensor_t *x) {
-    mag_assert2(r->dtype == x->dtype);
-    switch (r->dtype) {
+    mag_assert2(r->meta.dtype == x->meta.dtype);
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_unary_op<Op<float>>(r, x); break;
       case MAG_DTYPE_FLOAT16: launch_unary_op<Op<half>>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_unary_op<Op<__nv_bfloat16>>(r, x); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_unary_op<Op<__nv_fp8_e4m3>>(r, x); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
   template <template <typename> typename Op>
   static mag_status_t impl_unary_op_int(mag_error_t *err, mag_tensor_t *r, mag_tensor_t *x) {
-    mag_assert2(r->dtype == x->dtype);
-    switch (r->dtype) {
+    mag_assert2(r->meta.dtype == x->meta.dtype);
+    switch (r->meta.dtype) {
       case MAG_DTYPE_BOOLEAN:
       case MAG_DTYPE_UINT8: launch_unary_op<Op<uint8_t>>(r, x); break;
       case MAG_DTYPE_INT8: launch_unary_op<Op<int8_t>>(r, x); break;
@@ -809,7 +809,7 @@ namespace mag {
       case MAG_DTYPE_INT32: launch_unary_op<Op<int32_t>>(r, x); break;
       case MAG_DTYPE_UINT64: launch_unary_op<Op<uint64_t>>(r, x); break;
       case MAG_DTYPE_INT64: launch_unary_op<Op<int64_t>>(r, x); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->dtype)->name);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in unary operation: %s", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
@@ -817,7 +817,7 @@ namespace mag {
   mag_status_t unary_op_abs(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *x = cmd.in[0];
-    if (mag_type_category_is_integral(r->dtype)) return impl_unary_op_int<op_abs_int>(err, r, x);
+    if (mag_type_category_is_integral(r->meta.dtype)) return impl_unary_op_int<op_abs_int>(err, r, x);
     else return impl_unary_op_fp<op_abs>(err, r, x);
   }
   mag_status_t unary_op_sgn(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_sgn>(err, cmd.out[0], cmd.in[0]); }
@@ -881,10 +881,10 @@ namespace mag {
 
   template <typename T>
   static void launch_softmax(mag_tensor_t *r, const mag_tensor_t *x) {
-    int rank = static_cast<int>(r->coords.rank);
+    int rank = static_cast<int>(r->meta.coords.rank);
     int n = numel_i32(r);
     if (mag_unlikely(!n)) return;
-    int last_dim = rank == 0 ? 1 : static_cast<int>(r->coords.shape[rank-1]);
+    int last_dim = rank == 0 ? 1 : static_cast<int>(r->meta.coords.shape[rank-1]);
     int rows = rank == 0 ? 1 : n/last_dim;
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
@@ -897,8 +897,8 @@ namespace mag {
     mag_tensor_t *x = cmd.in[0];
     mag_assert2(mag_tensor_is_contiguous(r));
     mag_assert2(mag_isok(mag_contiguous(nullptr, &x, x))); // Softmax requires contig x and r for now
-    mag_assert2(r->dtype == x->dtype);
-    switch (r->dtype) {
+    mag_assert2(r->meta.dtype == x->meta.dtype);
+    switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_softmax<float>(r, x); break;
       case MAG_DTYPE_FLOAT16: launch_softmax<half>(r, x); break;
       case MAG_DTYPE_BFLOAT16: launch_softmax<__nv_bfloat16>(r, x); break;
