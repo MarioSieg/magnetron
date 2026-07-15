@@ -247,7 +247,7 @@ mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag
   return mod->backend;
 }
 
-bool mag_backend_registry_get_backend_and_device_by_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc) {
+bool mag_backend_registry_lookup_device_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc) {
   mag_backend_t *bck = mag_backend_registry_get_backend(reg, id.type);
   if (mag_unlikely(!bck)) return false;
   if (mag_unlikely(id.device_ordinal >= (*bck->num_devices)(bck))) return false;

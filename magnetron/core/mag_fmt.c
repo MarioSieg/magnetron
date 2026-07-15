@@ -974,7 +974,7 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
   memset(fmt.idx, 0, sizeof(fmt.idx));
   mag_tensor_fmt_recursive(&fmt, 0); /* Recursive format */
   char device_str[32];
-  mag_device_id_to_str(tensor->storage->device->id, &device_str);
+  mag_device_id_to_str(tensor->device->id, &device_str);
   mag_sstream_append(&ss, ", dtype=%s, device=%s)", mag_type_trait(tensor->dtype)->name, device_str);
   mag_tensor_decref(host);
   return ss.buf; /* Return the string, must be freed with mag_tensor_to_string_free_data. */

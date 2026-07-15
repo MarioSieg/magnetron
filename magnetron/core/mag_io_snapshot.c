@@ -842,7 +842,7 @@ mag_status_t mag_snapshot_deserialize(mag_error_t *err, mag_snapshot_t **out_sna
     }
     snap->nb_meta = mag_stream_needle(stream); /* Everything up to here is metadata */
     mag_device_t *cpu_device=NULL;
-    if (mag_unlikely(!mag_backend_registry_get_backend_and_device_by_id(snap->ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device))) {
+    if (mag_unlikely(!mag_backend_registry_lookup_device_id(snap->ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device))) {
       status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: cannot deserialize '%s' (CPU backend is not available).", filename);
       goto cleanup;
     }
@@ -1024,7 +1024,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
   {
     const uint8_t *chk_end = stream.pos;
     mag_device_t *dvc_interface;
-    mag_backend_registry_get_backend_and_device_by_id(snap->ctx->backend_registry, mag_device(CPU, 0), NULL, &dvc_interface);
+    mag_backend_registry_lookup_device_id(snap->ctx->backend_registry, mag_device(CPU, 0), NULL, &dvc_interface);
     mag_assert2(dvc_interface);
     mag_cpu_device_t *dvc_impl = dvc_interface->impl;
     mag_assert2(dvc_impl);
@@ -1067,7 +1067,7 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
         goto cleanup;
       }
       data_offs = al;
-      if (mag_unlikely(!(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU))) {
+      if (mag_unlikely(!(tensor->device->id.type == MAG_BACKEND_TYPE_CPU))) {
         status = mag_set_error(err, MAG_ERR_SERIALIZE, "snapshot: only CPU tensors can be serialized, but tensor %zu in '%s' resides on a non-CPU device.", i, filename);
         mag_tensor_decref(tensor);
         goto cleanup;

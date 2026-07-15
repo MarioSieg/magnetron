@@ -23,14 +23,22 @@ mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx,
   return mag_tensor_init(err, out, ctx, NULL, type, rank, shape, device);
 }
 
-extern mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel);
+extern mag_tensor_t *mag_tensor_init_header(
+  mag_context_t *ctx,
+  mag_dtype_t type,
+  int64_t rank,
+  int64_t numel,
+  mag_device_t *device,
+  mag_storage_buffer_t *storage
+);
+
 mag_status_t mag_strided_view(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
   *out = NULL;
   if (mag_unlikely(mag_thread_id() != ctx->tr_id))
     return mag_set_error(err, MAG_ERR_THREAD, "strided_view: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "strided_view: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
-  if (mag_unlikely(!(offset >= 0)))
+  if (mag_unlikely(offset < 0))
     return mag_set_error(err, MAG_ERR_INDEX, "strided_view: storage offset must be non-negative, but got %" PRIi64 ".", offset);
   if (mag_unlikely(rank > 0 && !(shape && strides)))
     return mag_set_error(err, MAG_ERR_PARAM, "strided_view: shape and strides must not be NULL when rank > 0.");
@@ -55,7 +63,7 @@ mag_status_t mag_strided_view(mag_error_t *err, mag_tensor_t **out, mag_context_
     if (mag_unlikely(hi >= numel_end))
       return mag_set_error(err, MAG_ERR_BOUNDS, "strided_view: view exceeds base tensor storage (end index %" PRIi64 " >= storage capacity %" PRIi64 ").", hi, numel_end);
   }
-  mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel); /* Alloc tensor header. */
+  mag_tensor_t *tensor = mag_tensor_init_header(ctx, base->dtype, rank, numel, base->device, NULL); /* Alloc tensor header. */
   if (mag_unlikely(!tensor))
     return mag_set_error(err, MAG_ERR_OOM, "strided_view: failed to allocate tensor header.");
   for (int i=0; i < MAG_MAX_DIMS; ++i) {
@@ -431,13 +439,13 @@ mag_status_t mag_transfer(mag_error_t *err, mag_tensor_t **out_result, mag_tenso
   status = mag_empty(err, &out, x->ctx, xc->dtype, xc->coords.rank, xc->coords.shape, device);
   if (mag_iserr(status)) goto cleanup;
   {
-    mag_device_t *src_dvc = xc->storage->device;
-    mag_device_t *dst_dvc = out->storage->device;
+    mag_device_t *src_dvc = xc->device;
+    mag_device_t *dst_dvc = out->device;
     bool src_hv = xc->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE;
     bool dst_hv = out->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE;
     if (src_hv && dst_hv) {
       size_t nb = mag_tensor_numbytes(xc);
-      if (mag_unlikely(!(nb == mag_tensor_numbytes(out)))) {
+      if (mag_unlikely(nb != mag_tensor_numbytes(out))) {
         status = mag_set_error(err, MAG_ERR_PARAM, "transfer: source and destination tensor sizes do not match.");
         goto cleanup;
       }
@@ -1916,9 +1924,9 @@ mag_status_t mag_copy_(mag_error_t *err, mag_tensor_t *dst, mag_tensor_t *src) {
 mag_status_t mag_copy_raw_(mag_error_t *err, mag_tensor_t *tensor, const void *data, size_t size_bytes) {
   if (mag_unlikely(!(data != NULL && size_bytes > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "copy_raw: data pointer must not be NULL and size_bytes must be > 0.");
-  if (mag_unlikely(!(tensor->storage->device->id.type == MAG_BACKEND_TYPE_CPU)))
-      return mag_set_error(err, MAG_ERR_PARAM, "copy_raw: tensor storage must reside on CPU, but got %s.", mag_backend_type_to_str(tensor->storage->device->id.type));
-  if (mag_unlikely(!(mag_tensor_numbytes(tensor) == size_bytes)))
+  if (mag_unlikely(tensor->device->id.type != MAG_BACKEND_TYPE_CPU))
+      return mag_set_error(err, MAG_ERR_PARAM, "copy_raw: tensor storage must reside on CPU, but got %s.", mag_backend_type_to_str(tensor->device->id.type));
+  if (mag_unlikely(mag_tensor_numbytes(tensor) != size_bytes))
       return mag_set_error(err, MAG_ERR_PARAM, "copy_raw: buffer size (%" PRIu64 " bytes) does not match the tensor size (%" PRIu64 " bytes).", (uint64_t)size_bytes, (uint64_t)mag_tensor_numbytes(tensor));
   if (mag_unlikely(!mag_tensor_is_contiguous(tensor)))
       return mag_set_error(err, MAG_ERR_PARAM, "copy_raw: tensor must be contiguous to load from a raw buffer.");
@@ -1982,7 +1990,7 @@ mag_status_t mag_uniform_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t l
   if (mag_unlikely(!mag_tensor_is_numeric_typed(tensor)))
       return mag_set_error(err, MAG_ERR_PARAM, "uniform_: requires a numeric tensor dtype, but got %s.", mag_type_trait(tensor->dtype)->name);
   if (mag_scalar_is_float64(low)) {
-    if (mag_unlikely(!(mag_scalar_as_float64(low) < mag_scalar_as_float64(high))))
+    if (mag_unlikely(mag_scalar_as_float64(low) >= mag_scalar_as_float64(high)))
         return mag_set_error(err, MAG_ERR_PARAM, "uniform_: low must be less than high (got low=%f, high=%f).", mag_scalar_as_float64(low), mag_scalar_as_float64(high));
   } else if (mag_scalar_is_int64(low)) {
     if (mag_unlikely(mag_scalar_as_int64(low) >= mag_scalar_as_int64(high)))

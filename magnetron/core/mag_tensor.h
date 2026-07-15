@@ -57,6 +57,7 @@ struct mag_tensor_t {
   mag_dtype_t dtype : 8;                          /* Data type of the tensor. */
   mag_tensor_flags_t flags : 8;                   /* Tensor flags. */
   mag_storage_buffer_t *storage;                  /* Storage buffer. */
+  mag_device_t *device;                           /* Device where the tensor is allocated. */
   int64_t numel;                                  /* Number of elements in the tensor. */
   int64_t storage_offset;                         /* Offset in elements in the storage buffer for views. */
   mag_view_meta_t *view_meta;                     /* View metadata, if this is a view. */

@@ -67,7 +67,7 @@ mag_status_t MAG_HOTPROC mag_dispatch(
   mag_dbg_trace_op_ir(op, inplace, in, num_in, out, num_out);
 #endif
   mag_context_t *ctx = in ? (*in)->ctx : (*out)->ctx;
-  mag_device_t *device = in ? (*in)->storage->device : (*out)->storage->device;
+  mag_device_t *device = in ? (*in)->device : (*out)->device;
   mag_assert_correct_op_data(op, in, num_in, out, num_out);
   if ((ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward) {
     for (uint32_t i=0; i < num_out; ++i) {

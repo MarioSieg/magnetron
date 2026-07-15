@@ -427,7 +427,7 @@ void MAG_COLDPROC mag_dbg_trace_op_ir(
   uint32_t num_out
 ) {
   const mag_op_traits_t *meta = mag_op_trait(op);
-  const mag_device_id_t *dvc = in && num_in ? &in[0]->storage->device->id : &out[0]->storage->device->id;
+  const mag_device_id_t *dvc = in && num_in ? &in[0]->device->id : &out[0]->device->id;
   bool cont = true;
   for (uint32_t i=0; i < num_in;  ++i) cont &= mag_tensor_is_contiguous(in[i]);
   for (uint32_t i=0; i < num_out; ++i) cont &= mag_tensor_is_contiguous(out[i]);

@@ -42,11 +42,11 @@ typedef struct mag_storage_buffer_t mag_storage_buffer_t;
 struct mag_storage_buffer_t {
   MAG_RC_INJECT_HEADER;                   /* RC Control block must be first */
   mag_context_t *ctx;
-  mag_storage_flags_t flags;                                  /* Storage buffer flags. */
-  uint32_t alignment;                                         /* Alignment of buffer. */
-  uintptr_t base;                                             /* Pointer to buffer on device. Might point to GPU or any other device memory. */
-  size_t size;                                                /* Size of buffer in bytes. */
-  mag_device_t *device;                                       /* Host device. */
+  mag_device_t *device;         /* Device where the buffer is allocated on */
+  mag_storage_flags_t flags;    /* Storage buffer flags. */
+  uint32_t alignment;           /* Alignment of buffer. */
+  uintptr_t base;               /* Pointer to buffer on device. Might point to GPU or any other device memory. */
+  size_t size;                  /* Size of buffer in bytes. */
   mag_alignas(MAG_CPU_BUF_INTRUSIVE_CAP) union {
     void *impl;                                             /* Backend specific storage buffer implementation, if any. */
     mag_alignas(MAG_CPU_BUF_INTRUSIVE_CAP) uint8_t intrusive_storage[MAG_CPU_BUF_INTRUSIVE_CAP]; /* (CPU only) Intrusive inline st */
@@ -127,7 +127,7 @@ typedef mag_status_t (MAG_BACKEND_SYM_FN_SHUTDOWN)(mag_error_t *, mag_backend_t 
 typedef struct mag_backend_registry_t mag_backend_registry_t;
 
 extern MAG_EXPORT mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag_backend_registry_t **out_reg);
-extern MAG_EXPORT bool mag_backend_registry_get_backend_and_device_by_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
+extern MAG_EXPORT bool mag_backend_registry_lookup_device_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
 extern MAG_EXPORT void mag_backend_registry_iter_devices(mag_backend_registry_t *reg, void (*callback)(mag_backend_t *bck, mag_device_t *dvc, void *usr), void *usr);
 extern MAG_EXPORT mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registry_t *reg);
 

@@ -39,7 +39,14 @@ mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
 
 static mag_status_t mag_tensor_dtor(void *self);
 
-mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64_t rank, int64_t numel) {
+mag_tensor_t *mag_tensor_init_header(
+  mag_context_t *ctx,
+  mag_dtype_t type,
+  int64_t rank,
+  int64_t numel,
+  mag_device_t *device,
+  mag_storage_buffer_t *storage
+) {
   mag_tensor_t *hdr = mag_slab_alloc(&ctx->tensor_slab);
   if (mag_unlikely(!hdr)) return NULL;
   memset(hdr, 0, sizeof(*hdr));
@@ -47,7 +54,8 @@ mag_tensor_t *mag_tensor_init_header(mag_context_t *ctx, mag_dtype_t type, int64
     .ctx = ctx,
     .coords = {.rank=rank},
     .dtype = type,
-    .storage = NULL,
+    .storage = storage,
+    .device = device,
     .numel = numel,
     .flags = MAG_TFLAG_NONE,
     .storage_offset = 0,
@@ -92,47 +100,42 @@ mag_status_t mag_tensor_init(
   if (rank > 0 && !shape)
       return mag_set_error(err, MAG_ERR_PARAM, "tensor: shape must not be NULL when rank > 0.");
   int64_t el = (int64_t)mag_type_trait(type)->size;
-  int64_t numel = 1;
+  int64_t numel=1;
   for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(!(shape[i] >= 0)))
+    if (mag_unlikely(shape[i] < 0))
       return mag_set_error(err, MAG_ERR_DIM, "tensor: all shape dimensions must be >= 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
     if (mag_unlikely(mag_mulov64(shape[i], numel, &numel)))
       return mag_set_error(err, MAG_ERR_DIM, "tensor: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
   }
-  int64_t numbytes;
-  if (mag_unlikely(mag_mulov64(numel, el, &numbytes)))
+  int64_t numby=0;
+  if (mag_unlikely(mag_mulov64(numel, el, &numby)))
     return mag_set_error(err, MAG_ERR_DIM, "tensor: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, el);
   mag_device_t *target_device = NULL;
-  bool has_rquested_device = mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, device, NULL, &target_device);
-  char device_name[32];
-  if (mag_unlikely(!has_rquested_device)) mag_device_id_to_str(device, &device_name);
-  if (mag_unlikely(!has_rquested_device))
+  if (mag_unlikely(!mag_backend_registry_lookup_device_id(ctx->backend_registry, device, NULL, &target_device))) {
+    char device_name[32];
+    mag_device_id_to_str(device, &device_name);
     return mag_set_error(err, MAG_ERR_DEVICE, "tensor: device '%s' is not available; the backend may not be enabled.", device_name);
+  }
   mag_status_t status = MAG_OK;
-  mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel);
-  if (mag_unlikely(!tensor))
-    return mag_set_error(err, MAG_ERR_OOM, "tensor: failed to allocate tensor header.");
   if (!storage) {
     mag_status_t (*allocator)(mag_error_t *, mag_device_t *, mag_storage_buffer_t **, size_t) = target_device->alloc_storage;
-    status = (*allocator)(err, target_device, &tensor->storage, numbytes);
-    if (mag_iserr(status)) goto cleanup;
+    status = (*allocator)(err, target_device, &storage, numby);
+    if (mag_iserr(status)) return status;
   } else {
-    if (mag_unlikely(storage->device != target_device)) {
-      status = mag_set_error(err, MAG_ERR_PARAM, "tensor: storage device mismatch (tensor is on '%s' but storage is on '%s').", mag_backend_type_to_str(target_device->id.type), mag_backend_type_to_str(storage->device->id.type));
-      goto cleanup;
-    }
-    if (mag_unlikely(storage->size < (size_t)numbytes)) {
-      status = mag_set_error(err, MAG_ERR_PARAM, "tensor: provided storage is too small (need %" PRIi64 " bytes, have %zu).", numbytes, storage->size);
-      goto cleanup;
-    }
-    if (mag_unlikely(!(storage->base != 0 || storage->size == 0))) {
-      status = mag_set_error(err, MAG_ERR_PARAM, "tensor: provided storage has a NULL base pointer.");
-      goto cleanup;
-    }
-    tensor->storage = storage;
+    if (mag_unlikely(storage->device != target_device))
+      return mag_set_error(err, MAG_ERR_PARAM, "tensor: storage device mismatch (tensor is on '%s' but storage is on '%s').", mag_backend_type_to_str(target_device->id.type), mag_backend_type_to_str(storage->device->id.type));
+    if (mag_unlikely(storage->size < (size_t)numby))
+      return mag_set_error(err, MAG_ERR_PARAM, "tensor: provided storage is too small (need %" PRIi64 " bytes, have %zu).", numby, storage->size);
+    if (mag_unlikely(!(storage->base != 0 || storage->size == 0)))
+      return mag_set_error(err, MAG_ERR_PARAM, "tensor: provided storage has a NULL base pointer.");
     mag_rc_incref(storage);
   }
-  ctx->telemetry.storage_bytes_allocated += numbytes;
+  mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel, target_device, storage);
+  if (mag_unlikely(!tensor)) {
+    status = mag_set_error(err, MAG_ERR_OOM, "tensor: failed to allocate tensor header.");
+    goto cleanup;
+  }
+  ctx->telemetry.storage_bytes_allocated += numby;
   for (int i=0; i < MAG_MAX_DIMS; ++i) {
     tensor->coords.shape[i] = shape && i < rank ? shape[i] : 1;
     tensor->coords.strides[i] = 1;
@@ -237,7 +240,7 @@ mag_status_t mag_borrow_cpu_buffer(
   cookie->fn = release_cb;
   cookie->usr = usr;
   mag_device_t *cpu_device = NULL;
-  if (mag_unlikely(!mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device))) {
+  if (mag_unlikely(!mag_backend_registry_lookup_device_id(ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device))) {
     status = mag_set_error(err, MAG_ERR_DEVICE, "borrow_cpu_buffer: CPU backend is not available.");
     goto cleanup;
   }
@@ -322,7 +325,7 @@ uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor) {
 }
 
 mag_device_id_t mag_tensor_device_id(const mag_tensor_t *tensor) {
-  return tensor->storage->device->id;
+  return tensor->device->id;
 }
 
 mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void **out_buf, size_t *out_size_bytes) {
@@ -523,7 +526,7 @@ bool mag_tensor_decref(mag_tensor_t *tensor) {
 }
 
 bool mag_tensor_is_cpu(mag_tensor_t *tensor) {
-  return mag_device_id_eq(tensor->storage->device->id, mag_device(CPU, 0));
+  return mag_device_id_eq(tensor->device->id, mag_device(CPU, 0));
 }
 
 bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {

@@ -204,7 +204,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
 bool mag_ctx_is_device_available(mag_context_t *ctx, mag_device_id_t id) {
   mag_device_t *device=NULL;
   mag_backend_t *backend=NULL;
-  return mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, id, &backend, &device) && device && backend;
+  return mag_backend_registry_lookup_device_id(ctx->backend_registry, id, &backend, &device) && device && backend;
 }
 
 void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Destroy magnetron context. */
