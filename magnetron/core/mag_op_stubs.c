@@ -509,7 +509,7 @@ mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
     int64_t strides[MAG_MAX_DIMS];
     if (rank == x->meta.coords.rank && !memcmp(shape, x->meta.coords.shape, rank*sizeof(*shape))) { /* Stride strategy: same shape as base */
       memcpy(strides, x->meta.coords.strides, rank*sizeof(*shape));
-    } else if (rank == x->meta.coords.rank+1 && shape[rank-2]*shape[rank-1] == x->meta.coords.shape[x->meta.coords.rank-1]) { /* Stride strategy: last dim only */
+    } else if (rank >= 2 && rank == x->meta.coords.rank+1 && shape[rank-2]*shape[rank-1] == x->meta.coords.shape[x->meta.coords.rank-1] && !memcmp(shape, x->meta.coords.shape, (rank-2)*sizeof(*shape))) { /* Stride strategy: last dim only. Only valid when the leading dims are untouched and just the last one splits in two, else the base strides below do not carry over. */
       memcpy(strides, x->meta.coords.strides, (rank-2)*sizeof(*strides));
       strides[rank-2] = x->meta.coords.strides[x->meta.coords.rank-1]*shape[rank-1];
       strides[rank-1] = x->meta.coords.strides[x->meta.coords.rank-1];

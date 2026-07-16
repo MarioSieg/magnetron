@@ -9,6 +9,8 @@
 ** +---------------------------------------------------------------------+
 */
 
+#define MAG_SIMD_EXP_MAX_ARG 88.0f
+
 static MAG_AINLINE mag_vf32_t mag_vf32_exp(mag_vf32_t x) {
   mag_vf32_t r = mag_vf32_splat(0x1.8p23f);
   mag_vf32_t z = mag_vf32_fmadd(x, mag_vf32_splat(0x1.715476p+0f), r);
@@ -37,7 +39,7 @@ static MAG_AINLINE mag_vf32_t mag_vf32_exp(mag_vf32_t x) {
 static MAG_AINLINE mag_vf32_t mag_vf32_tanh(mag_vf32_t x) {
   mag_vf32_t k1 = mag_vf32_splat(1.0f);
   mag_vf32_t k2 = mag_vf32_splat(2.0f);
-  mag_vf32_t a = mag_vf32_mul(mag_vf32_splat(-2.f), x);
+  mag_vf32_t a = mag_vf32_min(mag_vf32_mul(mag_vf32_splat(-2.f), x), mag_vf32_splat(MAG_SIMD_EXP_MAX_ARG)); /* x <= -44 would overflow exp; tanh saturates to -1 long before */
   mag_vf32_t b = mag_vf32_exp(a);
   mag_vf32_t c = mag_vf32_add(k1, b);
   mag_vf32_t inv = mag_vf32_rcp_approx(c);
@@ -118,7 +120,8 @@ static MAG_AINLINE mag_vf32_t mag_vf32_log(mag_vf32_t x) {
 
 static MAG_AINLINE mag_vf32_t mag_vf32_sigmoid(mag_vf32_t x) {
   mag_vf32_t one = mag_vf32_splat(1.0f);
-  mag_vf32_t ex = mag_vf32_exp(mag_vf32_sub(mag_vf32_zero(), x));
+  mag_vf32_t xs = mag_vf32_max(x, mag_vf32_splat(-MAG_SIMD_EXP_MAX_ARG)); /* x <= -89 would overflow exp; sigmoid saturates to 0 long before */
+  mag_vf32_t ex = mag_vf32_exp(mag_vf32_sub(mag_vf32_zero(), xs));
   mag_vf32_t d = mag_vf32_add(one, ex);
   mag_vf32_t r = mag_vf32_rcp_approx(d);
   r = mag_vf32_rcp_refine_step(d, r);

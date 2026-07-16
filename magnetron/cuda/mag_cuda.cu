@@ -295,11 +295,14 @@ namespace mag {
       mag_context_t *ctx = buffer->ctx;
       mag_device_t *dvc = buffer->device;
       auto *base = reinterpret_cast<void *>(buffer->base);
+      mag_assert(ctx->telemetry.num_alive_storages > 0, "cuda: double free detected on CUDA storage buffer.");
+      --ctx->telemetry.num_alive_storages;
       mag_slab_free(&ctx->storage_slab, buffer);
       if (cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)) != cudaSuccess)
         return MAG_ERR_FREE;
       return cudaFree(base) == cudaSuccess ? MAG_OK : MAG_ERR_FREE;
     });
+    ++ctx->telemetry.num_alive_storages;
     return MAG_OK;
   }
 

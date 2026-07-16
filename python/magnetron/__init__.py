@@ -51,10 +51,17 @@ class device(ContextDecorator):
 class no_grad(ContextDecorator):
     """Disables gradient recording within a function or block."""
 
+    def __init__(self) -> None:
+        # A ContextDecorator instance is shared by every call of the function it decorates,
+        # so the saved state must be a stack to survive nesting and recursion.
+        self.prev_recording: list[bool] = []
+
     def __enter__(self) -> None:
         """Disable gradient tracking by stopping the active context's recorder."""
+        self.prev_recording.append(context.is_grad_recording())
         context.stop_grad_recorder()
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None) -> None:
-        """Re-enable gradient tracking when exiting the context."""
-        context.start_grad_recorder()
+        """Restore whatever gradient tracking state was active on entry."""
+        if self.prev_recording.pop():
+            context.start_grad_recorder()

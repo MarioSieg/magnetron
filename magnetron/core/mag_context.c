@@ -152,9 +152,9 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   slab_ok &= mag_slab_init(&ctx->storage_slab, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000);
   slab_ok &= mag_slab_init(&ctx->view_meta_slab, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
   slab_ok &= mag_slab_init(&ctx->au_state_slab, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
-  slab_ok &= mag_slab_init(&ctx->tensor_slab, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
   slab_ok &= mag_slab_init(&ctx->au_state_op_params_slab, sizeof(mag_op_params_t), __alignof(mag_op_params_t), 0x1000);
   if (mag_unlikely(!slab_ok)) {
+    mag_slab_destroy(&ctx->au_state_op_params_slab);
     mag_slab_destroy(&ctx->au_state_slab);
     mag_slab_destroy(&ctx->view_meta_slab);
     mag_slab_destroy(&ctx->tensor_slab);
@@ -166,6 +166,13 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   /* Toposort stuff */
   ctx->topo_traversal_epoch = 0;
   if (mag_unlikely(!mag_topo_set_init(&ctx->topo_set, 0x2000) || !mag_topo_stack_init(&ctx->topo_stack, 0x2000))) {
+    mag_topo_set_free(&ctx->topo_set);
+    mag_topo_stack_free(&ctx->topo_stack);
+    mag_slab_destroy(&ctx->au_state_op_params_slab);
+    mag_slab_destroy(&ctx->au_state_slab);
+    mag_slab_destroy(&ctx->view_meta_slab);
+    mag_slab_destroy(&ctx->tensor_slab);
+    mag_slab_destroy(&ctx->storage_slab);
     (*mag_alloc)(ctx, 0, 0);
     return mag_set_error(err, MAG_ERR_OOM, "context: failed to initialize toposort structures.");
   }
@@ -181,6 +188,9 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   /* Create compute backends and devices. On failure 'err' carries the specific reason (e.g. missing .so, ABI mismatch, device init failure). */
   mag_status_t status = mag_backend_registry_init(err, ctx, &ctx->backend_registry);
   if (mag_unlikely(mag_iserr(status))) {
+    mag_topo_set_free(&ctx->topo_set);
+    mag_topo_stack_free(&ctx->topo_stack);
+    mag_slab_destroy(&ctx->au_state_op_params_slab);
     mag_slab_destroy(&ctx->au_state_slab);
     mag_slab_destroy(&ctx->view_meta_slab);
     mag_slab_destroy(&ctx->tensor_slab);
