@@ -1776,9 +1776,6 @@ mag_status_t mag_embedding(mag_error_t *err, mag_tensor_t **out_result, mag_tens
   mag_tensor_t *result = NULL;
   if (mag_unlikely(!(indices->meta.dtype == MAG_DTYPE_INT64)))
       return mag_set_error(err, MAG_ERR_PARAM, "embedding: indices tensor must have dtype int64, but got %s.", mag_type_trait(indices->meta.dtype)->name);
-  mag_dtype_mask_t fp_mask = MAG_DTYPE_MASK_FP;
-  if (mag_unlikely(!((fp_mask & mag_dtype_bit(weight->meta.dtype)) != 0)))
-      return mag_set_error(err, MAG_ERR_PARAM, "embedding: weight tensor must have a floating-point dtype, but got %s.", mag_type_trait(weight->meta.dtype)->name);
   if (mag_unlikely(!(weight->meta.coords.rank >= 1)))
       return mag_set_error(err, MAG_ERR_PARAM, "embedding: weight must have rank >= 1.");
   if (mag_unlikely(!(indices->meta.coords.rank >= 1)))

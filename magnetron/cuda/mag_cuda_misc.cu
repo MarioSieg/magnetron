@@ -487,6 +487,15 @@ namespace mag {
       case MAG_DTYPE_FLOAT16:       launch_embedding<half>(cmd); break;
       case MAG_DTYPE_BFLOAT16:      launch_embedding<__nv_bfloat16>(cmd); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_embedding<__nv_fp8_e4m3>(cmd); break;
+      case MAG_DTYPE_BOOLEAN:
+      case MAG_DTYPE_UINT8:         launch_embedding<uint8_t>(cmd); break;
+      case MAG_DTYPE_INT8:          launch_embedding<int8_t>(cmd); break;
+      case MAG_DTYPE_UINT16:        launch_embedding<uint16_t>(cmd); break;
+      case MAG_DTYPE_INT16:         launch_embedding<int16_t>(cmd); break;
+      case MAG_DTYPE_UINT32:        launch_embedding<uint32_t>(cmd); break;
+      case MAG_DTYPE_INT32:         launch_embedding<int32_t>(cmd); break;
+      case MAG_DTYPE_UINT64:        launch_embedding<uint64_t>(cmd); break;
+      case MAG_DTYPE_INT64:         launch_embedding<int64_t>(cmd); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: embedding: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;

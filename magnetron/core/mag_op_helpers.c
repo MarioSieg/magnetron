@@ -516,14 +516,6 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
           "    Hint: cast the indices to int64.",
           meta->mnemonic, mag_type_trait(inputs[1]->meta.dtype)->name
         );
-    if (op == MAG_OP_EMBEDDING) {
-      mag_dtype_mask_t fp_mask = MAG_DTYPE_MASK_FP;
-      if (mag_unlikely(!((fp_mask & mag_dtype_bit(inputs[0]->meta.dtype)) != 0)))
-          return mag_set_error(err, MAG_ERR_PARAM,
-            "op_validate: weight tensor for 'embedding' must have a floating-point dtype, but got '%s'.",
-            mag_type_trait(inputs[0]->meta.dtype)->name
-          );
-    }
     return MAG_OK;
   }
   if (op == MAG_OP_MASKED_FILL) {

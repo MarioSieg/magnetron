@@ -160,6 +160,14 @@ mag_gen_stub_embedding(float, float32)
 mag_gen_stub_embedding(mag_float16_t, float16)
 mag_gen_stub_embedding(mag_bfloat16_t, bfloat16)
 mag_gen_stub_embedding(mag_float8_e4m3fn_t, float8_e4m3fn)
+mag_gen_stub_embedding(uint8_t, uint8)
+mag_gen_stub_embedding(int8_t, int8)
+mag_gen_stub_embedding(uint16_t, uint16)
+mag_gen_stub_embedding(int16_t, int16)
+mag_gen_stub_embedding(uint32_t, uint32)
+mag_gen_stub_embedding(int32_t, int32)
+mag_gen_stub_embedding(uint64_t, uint64)
+mag_gen_stub_embedding(int64_t, int64)
 
 #undef mag_gen_stub_embedding
 
