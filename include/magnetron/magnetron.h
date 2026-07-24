@@ -42,11 +42,11 @@ extern "C" {
 #define MAG_SNAPSHOT_VERSION mag_ver_encode(0, 2, 0)
 
 typedef enum mag_log_level_t {
-    MAG_LOG_LEVEL_NONE,
-    MAG_LOG_LEVEL_ERROR,
-    MAG_LOG_LEVEL_WARN,
-    MAG_LOG_LEVEL_INFO,
-    MAG_LOG_LEVEL_DEBUG
+  MAG_LOG_LEVEL_NONE,
+  MAG_LOG_LEVEL_ERROR,
+  MAG_LOG_LEVEL_WARN,
+  MAG_LOG_LEVEL_INFO,
+  MAG_LOG_LEVEL_DEBUG
 } mag_log_level_t;
 
 extern MAG_EXPORT void mag_set_log_level(mag_log_level_t level); /* Set global log level. */
@@ -90,7 +90,7 @@ extern MAG_EXPORT mag_log_level_t mag_log_level(void); /* Get current global log
 
 typedef enum mag_status_t {
 #define _(code, msg) code,
-    mag_statusdef(_)
+  mag_statusdef(_)
 #undef _
 } mag_status_t;
 extern MAG_EXPORT const char *mag_status_get_name(mag_status_t op);
@@ -98,14 +98,14 @@ extern MAG_EXPORT const char *mag_status_get_message(mag_status_t op);
 
 /* Name, ID, Required */
 #define mag_backenddef(_)\
-    _(CPU, cpu, true)\
-    _(CUDA, cuda, false)\
-    _(CUSTOM, custom, false)\
+  _(CPU, cpu, true)\
+  _(CUDA, cuda, false)\
+  _(CUSTOM, custom, false)\
 
 typedef enum mag_backend_type_t {
 #define _(name, id, required) MAG_BACKEND_TYPE_##name,
-    mag_backenddef(_)
-    MAG_BACKEND_TYPE__COUNT
+  mag_backenddef(_)
+  MAG_BACKEND_TYPE__COUNT
 #undef _
 } mag_backend_type_t;
 mag_static_assert(MAG_BACKEND_TYPE__COUNT <= 0xff);
@@ -115,9 +115,9 @@ extern MAG_EXPORT bool mag_backend_type_is_required(mag_backend_type_t type);
 #define MAG_DEVICE_ORDINAL_MAX ((1u<<15u)-1u)
 
 typedef struct mag_device_id_t {
-    bool is_virtual : 1;                      /* If true - device is a virtual device (called meta device in PyTorch). */
-    uint32_t device_ordinal : 15;             /* !Ignored if is_virtual=true! 15-bit device index for the given backend type, (e.g. 0 for cuda:0). */
-    mag_backend_type_t type : 8;              /* !Ignored if is_virtual=true! 8-bit backend type, (e.g. CPU, CUDA, etc..) */
+  bool is_virtual : 1;                      /* If true - device is a virtual device (called meta device in PyTorch). */
+  uint32_t device_ordinal : 15;             /* !Ignored if is_virtual=true! 15-bit device index for the given backend type, (e.g. 0 for cuda:0). */
+  mag_backend_type_t type : 8;              /* !Ignored if is_virtual=true! 8-bit backend type, (e.g. CPU, CUDA, etc..) */
 } mag_device_id_t;
 mag_static_assert(sizeof(mag_device_id_t) <= 8); /* We want this compact <= 8B or 4 */
 extern MAG_EXPORT void mag_device_id_to_str(mag_device_id_t id, char (*buf)[32]);
@@ -129,21 +129,20 @@ extern MAG_EXPORT bool mag_device_id_eq(mag_device_id_t a, mag_device_id_t b);
  * @brief Error structure for magnetron library functions.
  */
 typedef struct mag_error_t {
-    mag_status_t code;
-    char message[256];
-    const char *file;
-    int line;
-    const char *func;
+  mag_status_t code;
+  char message[256];
+  const char *file;
+  int line;
+  const char *func;
 } mag_error_t;
-
 
 /**
 * Type tag discriminating between different scalar types.
 */
 typedef enum mag_scalar_type_t {
-    MAG_SCALAR_TYPE_F64,
-    MAG_SCALAR_TYPE_I64,
-    MAG_SCALAR_TYPE_U64,
+  MAG_SCALAR_TYPE_F64,
+  MAG_SCALAR_TYPE_I64,
+  MAG_SCALAR_TYPE_U64,
 } mag_scalar_type_t;
 
 /**
@@ -154,12 +153,12 @@ typedef enum mag_scalar_type_t {
  * Also used for metadata records in snapshots.
  */
 typedef struct mag_scalar_t {
-    mag_scalar_type_t type;
-    union {
-        double float64;
-        int64_t int64;
-        uint64_t uint64;
-    } value;
+  mag_scalar_type_t type;
+  union {
+    double float64;
+    int64_t int64;
+    uint64_t uint64;
+  } value;
 } mag_scalar_t;
 
 extern MAG_EXPORT mag_scalar_t mag_scalar_from_float64(double value);
@@ -178,21 +177,21 @@ extern MAG_EXPORT bool mag_scalar_same_type_and_value(mag_scalar_t a, mag_scalar
  * @brief Data types for tensors.
  */
 typedef enum mag_dtype_t {
-    MAG_DTYPE_FLOAT32,
-    MAG_DTYPE_FLOAT16,
-    MAG_DTYPE_BFLOAT16,
-    MAG_DTYPE_FLOAT8_E4M3FN,
-    MAG_DTYPE_BOOLEAN,
-    MAG_DTYPE_UINT8,
-    MAG_DTYPE_INT8,
-    MAG_DTYPE_UINT16,
-    MAG_DTYPE_INT16,
-    MAG_DTYPE_UINT32,
-    MAG_DTYPE_INT32,
-    MAG_DTYPE_UINT64,
-    MAG_DTYPE_INT64,
+  MAG_DTYPE_FLOAT32,
+  MAG_DTYPE_FLOAT16,
+  MAG_DTYPE_BFLOAT16,
+  MAG_DTYPE_FLOAT8_E4M3FN,
+  MAG_DTYPE_BOOLEAN,
+  MAG_DTYPE_UINT8,
+  MAG_DTYPE_INT8,
+  MAG_DTYPE_UINT16,
+  MAG_DTYPE_INT16,
+  MAG_DTYPE_UINT32,
+  MAG_DTYPE_INT32,
+  MAG_DTYPE_UINT64,
+  MAG_DTYPE_INT64,
 
-    MAG_DTYPE__NUM
+  MAG_DTYPE__NUM
 } mag_dtype_t;
 mag_static_assert(MAG_DTYPE__NUM <= 0xff); /* Must fit in 1 byte */
 
@@ -202,12 +201,12 @@ extern MAG_EXPORT bool mag_promote_type(mag_dtype_t *out, mag_dtype_t lhs, mag_d
 * @brief Contains metadata about a data type such as its name, size, and alignment.
 */
 typedef struct mag_type_traits_t {
-    const char *name;           /* Name of the data type. eg. bfloat16 */
-    const char *short_name;     /* Short name of the data type. eg. bf16 */
-    size_t size;                /* Size of the data type in bytes. Must be a power of two. */
-    size_t alignment;           /* CPU Alignment of the data type in bytes. Must be a power of two. */
-    mag_scalar_t min_val;       /* Minimum finite value representable by this data type, as a scalar. For integer types, this is the smallest integer. For floating point types, this is the smallest normalized positive value. */
-    mag_scalar_t max_val;       /* Maximum finite value representable by this data type, as a scalar. For integer types, this is the largest integer. For floating point types, this is the largest finite value. */
+  const char *name;           /* Name of the data type. eg. bfloat16 */
+  const char *short_name;     /* Short name of the data type. eg. bf16 */
+  size_t size;                /* Size of the data type in bytes. Must be a power of two. */
+  size_t alignment;           /* CPU Alignment of the data type in bytes. Must be a power of two. */
+  mag_scalar_t min_val;       /* Minimum finite value representable by this data type, as a scalar. For integer types, this is the smallest integer. For floating point types, this is the smallest normalized positive value. */
+  mag_scalar_t max_val;       /* Maximum finite value representable by this data type, as a scalar. For integer types, this is the largest integer. For floating point types, this is the largest finite value. */
 } mag_type_traits_t;
 extern MAG_EXPORT const mag_type_traits_t *mag_type_trait(mag_dtype_t type);
 extern MAG_EXPORT bool mag_type_category_is_floating_point(mag_dtype_t type);
@@ -543,12 +542,12 @@ extern MAG_EXPORT void mag_snapshot_free(mag_snapshot_t *snap);
 typedef struct mag_process_group_t mag_process_group_t;
 
 extern MAG_EXPORT mag_status_t mag_pgroup_init_tcp(
-    mag_error_t *err,
-    mag_process_group_t **out,
-    const char *master_addr,
-    uint16_t master_port,
-    uint32_t rank,
-    uint32_t world_size
+  mag_error_t *err,
+  mag_process_group_t **out,
+  const char *master_addr,
+  uint16_t master_port,
+  uint32_t rank,
+  uint32_t world_size
 );
 extern MAG_EXPORT void mag_pgroup_destroy(mag_process_group_t *pgroup);
 extern MAG_EXPORT uint32_t mag_pgroup_rank(const mag_process_group_t *pgroup);
