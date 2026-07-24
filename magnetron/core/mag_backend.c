@@ -164,11 +164,12 @@ bool mag_backend_type_is_required(mag_backend_type_t type) {
 }
 
 void mag_device_id_to_str(mag_device_id_t id, char(*buf)[32]) {
-  snprintf(*buf, sizeof(*buf), "%s:%u", mag_backend_type_to_str(id.type), id.device_ordinal);
+  if (id.is_virtual) snprintf(*buf, sizeof(*buf), "virtual");
+  else snprintf(*buf, sizeof(*buf), "%s:%u", mag_backend_type_to_str(id.type), id.device_ordinal);
 }
 
 bool mag_device_id_eq(mag_device_id_t a, mag_device_id_t b) {
-  return a.type == b.type && a.device_ordinal == b.device_ordinal;
+  return a.is_virtual == b.is_virtual && a.type == b.type && a.device_ordinal == b.device_ordinal;
 }
 
 mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag_backend_registry_t **out_reg) {

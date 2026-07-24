@@ -309,10 +309,17 @@ namespace mag {
   class physical_device final : public mag_device_t {
   public:
     physical_device(mag_context_t *ctx, uint32_t idx) : mag_device_t{} {
+      if (mag_unlikely(idx > MAG_DEVICE_ORDINAL_MAX))
+        throw std::invalid_argument {"Device ordinal exceeds maximum allowed value."};
+
       // Init interface of superclass first
       impl = this;
       this->ctx = ctx;
-      id = {.type=MAG_BACKEND_TYPE_CUDA, .device_ordinal=idx};
+      id = mag_device_id_t {
+        .is_virtual = false,
+        .device_ordinal = idx,
+        .type = MAG_BACKEND_TYPE_CUDA
+      };
       is_async = false;
       submit = &::mag::submit;
       alloc_storage = &::mag::alloc_storage_buffer;

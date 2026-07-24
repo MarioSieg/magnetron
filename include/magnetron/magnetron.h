@@ -108,13 +108,18 @@ typedef enum mag_backend_type_t {
     MAG_BACKEND_TYPE__COUNT
 #undef _
 } mag_backend_type_t;
+mag_static_assert(MAG_BACKEND_TYPE__COUNT <= 0xff);
 extern MAG_EXPORT const char *mag_backend_type_to_str(mag_backend_type_t type);
 extern MAG_EXPORT bool mag_backend_type_is_required(mag_backend_type_t type);
 
+#define MAG_DEVICE_ORDINAL_MAX ((1u<<15u)-1u)
+
 typedef struct mag_device_id_t {
-    mag_backend_type_t type;        /* Backend type, (e.g. CPU, CUDA, etc..) */
-    uint32_t device_ordinal;        /* Device index for the given backend type, (e.g. 0 for cuda:0). */
+    bool is_virtual : 1;                      /* If true - device is a virtual device (called meta device in PyTorch). */
+    uint32_t device_ordinal : 15;             /* !Ignored if is_virtual=true! 15-bit device index for the given backend type, (e.g. 0 for cuda:0). */
+    mag_backend_type_t type : 8;              /* !Ignored if is_virtual=true! 8-bit backend type, (e.g. CPU, CUDA, etc..) */
 } mag_device_id_t;
+mag_static_assert(sizeof(mag_device_id_t) <= 8); /* We want this compact <= 8B or 4 */
 extern MAG_EXPORT void mag_device_id_to_str(mag_device_id_t id, char (*buf)[32]);
 extern MAG_EXPORT bool mag_device_id_eq(mag_device_id_t a, mag_device_id_t b);
 
