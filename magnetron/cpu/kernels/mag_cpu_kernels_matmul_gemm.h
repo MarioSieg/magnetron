@@ -524,10 +524,13 @@ static MAG_HOTPROC void mag_matmul_gemm_impl(
   int64_t n0 = ti%tn*nchunk;
   int64_t n1 = mag_xmin(N, n0+nchunk);
   if (mag_unlikely(m0 >= m1 || n0 >= n1)) return;
-  if (dtype == MAG_DTYPE_BFLOAT16) { /* Specialized native kernel for native bf16 dot prods */
-    mag_gemm_packed_bf16_dp(m0, m1, n0, n1, N, K, pr, px, sx0, sx1, py, sy0, sy1);
-    return;
-  }
+
+  #if MAG_HAS_NATIVE_DPBF16
+    if (dtype == MAG_DTYPE_BFLOAT16) {
+      mag_gemm_packed_bf16_dp(m0, m1, n0, n1, N, K, pr, px, sx0, sx1, py, sy0, sy1);
+      return;
+    }
+  #endif
   int64_t el = (int64_t)mag_type_trait(dtype)->size;
   int64_t KC = mag_xmin((int64_t)MAG_GEMM_KC, K);
   int64_t NC = mag_xmin((int64_t)MAG_GEMM_NC, n1-n0);
