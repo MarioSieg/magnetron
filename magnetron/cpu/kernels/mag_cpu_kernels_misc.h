@@ -97,36 +97,218 @@ mag_gen_stub_cat(int64_t, int64)
 
 #undef mag_gen_stub_cat
 
-#define mag_gen_stub_repeat_back(T, TF, Z, CVT, RCVT) \
+
+typedef struct mag_rb_group_t {
+  int64_t size;      /* number of elements along the collapsed group */
+  int64_t xstride;   /* element stride into x for this group */
+  int64_t rstride;   /* element stride into r (kept groups only, else 0) */
+} mag_rb_group_t;
+
+typedef enum mag_rb_mode_t {
+  MAG_RB_GENERAL = 0,     /* arbitrary strides: strided scatter-free per-output reduction */
+  MAG_RB_INNER_KEPT,      /* contiguous, innermost axis kept -> contiguous output blocks */
+  MAG_RB_INNER_REDUCED    /* contiguous, innermost axis reduced -> contiguous inner runs */
+} mag_rb_mode_t;
+
+typedef struct mag_rb_plan_t {
+  mag_rb_mode_t mode;
+  int64_t red_prod;                    /* total number of reduced elements per output */
+  int64_t inner;                       /* size of the innermost collapsed group (fast paths) */
+  mag_rb_group_t kept[MAG_MAX_DIMS];   /* collapsed kept groups, outer -> inner */
+  int64_t nkept;
+  mag_rb_group_t red[MAG_MAX_DIMS];    /* collapsed reduced groups, outer -> inner */
+  int64_t nred;
+  int64_t g_rank;                      /* general path: r rank */
+  int64_t g_rshape[MAG_MAX_DIMS];      /* general path: r shape */
+  int64_t g_rstride[MAG_MAX_DIMS];     /* general path: r strides */
+  int64_t g_xkept[MAG_MAX_DIMS];       /* general path: x stride if this r axis is kept, else 0 */
+  mag_rb_group_t g_red[MAG_MAX_DIMS];  /* general path: reduced x axes (uncollapsed) */
+  int64_t g_nred;
+} mag_rb_plan_t;
+
+static void mag_rb_build_plan(mag_rb_plan_t *p, const mag_tensor_t *r, const mag_tensor_t *x) {
+  int64_t rr = r->meta.coords.rank;
+  int64_t rx = x->meta.coords.rank;
+  const int64_t *rd = r->meta.coords.shape;
+  const int64_t *rs = r->meta.coords.strides;
+  const int64_t *xd = x->meta.coords.shape;
+  const int64_t *xs = x->meta.coords.strides;
+  int64_t delta = rx - rr;
+
+  p->g_rank = rr;
+  for (int64_t kd=0; kd < rr; ++kd) {
+    p->g_rshape[kd] = rd[kd];
+    p->g_rstride[kd] = rs[kd];
+    p->g_xkept[kd] = (rd[kd] > 1) ? xs[kd+delta] : 0;
+  }
+  p->g_nred = 0;
+  int64_t red_prod = 1;
+  for (int64_t k=0; k < rx; ++k) {
+    int64_t kd = k - delta;
+    bool reduced = (kd < 0) || (rd[kd] == 1);
+    if (reduced && xd[k] > 1) {
+      p->g_red[p->g_nred].size = xd[k];
+      p->g_red[p->g_nred].xstride = xs[k];
+      p->g_red[p->g_nred].rstride = 0;
+      ++p->g_nred;
+      red_prod *= xd[k];
+    }
+  }
+  p->red_prod = red_prod;
+
+  if (!(mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(x))) {
+    p->mode = MAG_RB_GENERAL;
+    return;
+  }
+
+  int64_t gsize[MAG_MAX_DIMS];
+  bool gkept[MAG_MAX_DIMS];
+  int64_t ng = 0;
+  for (int64_t k=0; k < rx; ++k) {
+    int64_t kd = k - delta;
+    bool kept = (kd >= 0) && (rd[kd] > 1);
+    int64_t sz = xd[k];
+    if (sz == 1) continue;
+    if (ng > 0 && gkept[ng-1] == kept) gsize[ng-1] *= sz;
+    else { gsize[ng] = sz; gkept[ng] = kept; ++ng; }
+  }
+  if (ng == 0) {
+    p->mode = MAG_RB_INNER_KEPT;
+    p->inner = 1;
+    p->nkept = 1; p->kept[0].size = 1; p->kept[0].xstride = 1; p->kept[0].rstride = 1;
+    p->nred = 0; p->red_prod = 1;
+    return;
+  }
+  int64_t gxstride[MAG_MAX_DIMS];
+  gxstride[ng-1] = 1;
+  for (int64_t j=ng-2; j >= 0; --j) gxstride[j] = gxstride[j+1]*gsize[j+1];
+  int64_t grstride[MAG_MAX_DIMS];
+  int64_t racc = 1;
+  for (int64_t j=ng-1; j >= 0; --j) {
+    if (gkept[j]) { grstride[j] = racc; racc *= gsize[j]; }
+    else grstride[j] = 0;
+  }
+  p->nkept = 0; p->nred = 0;
+  for (int64_t j=0; j < ng; ++j) {
+    if (gkept[j]) {
+      p->kept[p->nkept].size = gsize[j];
+      p->kept[p->nkept].xstride = gxstride[j];
+      p->kept[p->nkept].rstride = grstride[j];
+      ++p->nkept;
+    } else {
+      p->red[p->nred].size = gsize[j];
+      p->red[p->nred].xstride = gxstride[j];
+      p->red[p->nred].rstride = 0;
+      ++p->nred;
+    }
+  }
+  int64_t rp = 1;
+  for (int64_t j=0; j < p->nred; ++j) rp *= p->red[j].size;
+  p->red_prod = rp;
+  if (gkept[ng-1]) { p->mode = MAG_RB_INNER_KEPT; p->inner = p->kept[p->nkept-1].size; }
+  else { p->mode = MAG_RB_INNER_REDUCED; p->inner = p->red[p->nred-1].size; }
+}
+
+#define mag_gen_stub_repeat_back(T, TF, CVT, RCVT, LDV, STV) \
   static mag_status_t MAG_HOTPROC mag_repeat_back_##TF(mag_error_t *err,const mag_kernel_payload_t *payload) { \
-    (void)err; \
-    if (payload->thread_idx != 0) return MAG_OK; \
     mag_tensor_t *r = payload->cmd->out[0]; \
     const mag_tensor_t *x = payload->cmd->in[0]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
-    mag_coords_iter_t cr, cx; \
-    mag_coords_iter_init(&cr, &r->meta.coords); \
-    mag_coords_iter_init(&cx, &x->meta.coords); \
-    for (int64_t i=0; i < r->meta.numel; ++i) { \
-      int64_t ri = mag_coords_iter_to_offset(&cr, i); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
-      br[ri] = (Z); \
+    int64_t rnumel = r->meta.numel; \
+    if (mag_unlikely(rnumel == 0)) return MAG_OK; \
+    int64_t tc = payload->thread_num; \
+    int64_t ti = payload->thread_idx; \
+    const int64_t LANES = MAG_VF32_LANES; \
+    mag_rb_plan_t plan; \
+    mag_rb_build_plan(&plan, r, x); \
+    if (plan.mode == MAG_RB_INNER_KEPT) { \
+      int64_t chunk = (rnumel + tc - 1)/tc; \
+      int64_t ra = ti*chunk; \
+      int64_t rb = mag_xmin(ra + chunk, rnumel); \
+      if (ra >= rb) return MAG_OK; \
+      if (plan.red_prod == 1) { \
+        for (int64_t i=ra; i < rb; ++i) br[i] = bx[i]; \
+        return MAG_OK; \
+      } \
+      int64_t IN = plan.inner; \
+      size_t mark = mag_scratch_arena_mark(&mag_tls_arena); \
+      float *accf = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)IN*sizeof(float)); \
+      if (mag_unlikely(!accf)) return mag_set_error(err, MAG_ERR_OOM, "repeat_back: failed to allocate %" PRIi64 " f32 accumulators.", (int64_t)IN); \
+      int64_t ob0 = ra / IN; \
+      int64_t ob1 = (rb - 1) / IN; \
+      for (int64_t oo=ob0; oo <= ob1; ++oo) { \
+        int64_t blk_lo = oo*IN; \
+        int64_t c0 = mag_xmax(ra, blk_lo) - blk_lo; \
+        int64_t c1 = mag_xmin(rb, blk_lo + IN) - blk_lo; \
+        int64_t w = c1 - c0; \
+        int64_t x_base = 0; \
+        { int64_t tmp = oo; for (int64_t g=plan.nkept-2; g >= 0; --g) { int64_t idx = tmp % plan.kept[g].size; tmp /= plan.kept[g].size; x_base += idx*plan.kept[g].xstride; } } \
+        for (int64_t c=0; c < w; ++c) accf[c] = .0f; \
+        for (int64_t j=0; j < plan.red_prod; ++j) { \
+          int64_t redoff = 0; \
+          { int64_t rt = j; for (int64_t g=plan.nred-1; g >= 0; --g) { int64_t idx = rt % plan.red[g].size; rt /= plan.red[g].size; redoff += idx*plan.red[g].xstride; } } \
+          const T *restrict xp = bx + x_base + redoff + c0; \
+          int64_t c = 0; \
+          for (; c + LANES <= w; c += LANES) mag_vf32_storeu(accf+c, mag_vf32_add(mag_vf32_loadu(accf+c), LDV(xp+c))); \
+          for (; c < w; ++c) accf[c] += CVT(xp[c]); \
+        } \
+        T *restrict rp = br + blk_lo + c0; \
+        int64_t c = 0; \
+        for (; c + LANES <= w; c += LANES) STV(rp+c, mag_vf32_loadu(accf+c)); \
+        for (; c < w; ++c) rp[c] = RCVT(accf[c]); \
+      } \
+      mag_scratch_arena_reset(&mag_tls_arena, mark); \
+      return MAG_OK; \
     } \
-    for (int64_t i=0; i < x->meta.numel; ++i) { \
-      int64_t xi = mag_coords_iter_to_offset(&cx, i); \
-      int64_t ri = mag_coords_iter_repeat(&cr, &cx, i); \
-      mag_bnd_chk(bx+xi, x->storage->base, mag_tensor_numbytes(x)); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
-      br[ri] = RCVT(CVT(br[ri]) + CVT(bx[xi])); \
+    if (plan.mode == MAG_RB_INNER_REDUCED) { \
+      int64_t IN = plan.inner; \
+      int64_t red_outer = plan.red_prod / IN; \
+      int64_t chunk = (rnumel + tc - 1)/tc; \
+      int64_t ra = ti*chunk; \
+      int64_t rb = mag_xmin(ra + chunk, rnumel); \
+      for (int64_t o=ra; o < rb; ++o) { \
+        int64_t x_base = 0, r_off = 0; \
+        { int64_t tmp = o; for (int64_t g=plan.nkept-1; g >= 0; --g) { int64_t idx = tmp % plan.kept[g].size; tmp /= plan.kept[g].size; x_base += idx*plan.kept[g].xstride; r_off += idx*plan.kept[g].rstride; } } \
+        mag_vf32_t vacc = mag_vf32_zero(); \
+        float sacc = .0f; \
+        for (int64_t jo=0; jo < red_outer; ++jo) { \
+          int64_t redoff = 0; \
+          { int64_t rt = jo; for (int64_t g=plan.nred-2; g >= 0; --g) { int64_t idx = rt % plan.red[g].size; rt /= plan.red[g].size; redoff += idx*plan.red[g].xstride; } } \
+          const T *restrict xp = bx + x_base + redoff; \
+          int64_t c = 0; \
+          for (; c + LANES <= IN; c += LANES) vacc = mag_vf32_add(vacc, LDV(xp+c)); \
+          for (; c < IN; ++c) sacc += CVT(xp[c]); \
+        } \
+        br[r_off] = RCVT(mag_vf32_reduce_add(vacc) + sacc); \
+      } \
+      return MAG_OK; \
     } \
-    return MAG_OK; \
+    { \
+      int64_t chunk = (rnumel + tc - 1)/tc; \
+      int64_t ra = ti*chunk; \
+      int64_t rb = mag_xmin(ra + chunk, rnumel); \
+      for (int64_t oi=ra; oi < rb; ++oi) { \
+        int64_t r_off = 0, x_base = 0; \
+        { int64_t tmp = oi; for (int64_t kd=plan.g_rank-1; kd >= 0; --kd) { int64_t dim = plan.g_rshape[kd]; int64_t ax = tmp % dim; tmp /= dim; r_off += ax*plan.g_rstride[kd]; x_base += ax*plan.g_xkept[kd]; } } \
+        float acc = .0f; \
+        for (int64_t j=0; j < plan.red_prod; ++j) { \
+          int64_t redoff = 0; \
+          { int64_t rt = j; for (int64_t g=plan.g_nred-1; g >= 0; --g) { int64_t idx = rt % plan.g_red[g].size; rt /= plan.g_red[g].size; redoff += idx*plan.g_red[g].xstride; } } \
+          mag_bnd_chk(bx+x_base+redoff, x->storage->base, mag_tensor_numbytes(x)); \
+          acc += CVT(bx[x_base+redoff]); \
+        } \
+        mag_bnd_chk(br+r_off, r->storage->base, mag_tensor_numbytes(r)); \
+        br[r_off] = RCVT(acc); \
+      } \
+      return MAG_OK; \
+    } \
   }
 
-mag_gen_stub_repeat_back(float, float32, .0f, mag_cvt_nop, mag_cvt_nop)
-mag_gen_stub_repeat_back(mag_float16_t, float16, MAG_FLOAT16_ZERO, mag_float16_to_float32, mag_float32_to_float16)
-mag_gen_stub_repeat_back(mag_bfloat16_t, bfloat16, MAG_BFLOAT16_ZERO, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
-mag_gen_stub_repeat_back(mag_float8_e4m3fn_t, float8_e4m3fn, MAG_FLOAT8_E4M3FN_ZERO, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
+mag_gen_stub_repeat_back(float, float32, mag_cvt_nop, mag_cvt_nop, mag_vf32_loadu, mag_vf32_storeu)
+mag_gen_stub_repeat_back(mag_float16_t, float16, mag_float16_to_float32, mag_float32_to_float16, mag_vf32_loadu_f16, mag_vf32_storeu_f16)
+mag_gen_stub_repeat_back(mag_bfloat16_t, bfloat16, mag_bfloat16_to_float32, mag_float32_to_bfloat16, mag_vf32_loadu_bf16, mag_vf32_storeu_bf16)
+mag_gen_stub_repeat_back(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn, mag_vf32_storeu_float8_e4m3fn)
 
 #undef mag_gen_stub_repeat_back
 

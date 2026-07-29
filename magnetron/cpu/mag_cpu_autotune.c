@@ -15,6 +15,10 @@
 #include <core/mag_context.h>
 #include <core/mag_tensor.h>
 
+#ifndef MAG_MATMUL_FLOPS_PER_WORKER /* Flops a GEMM worker must get before adding another one. */
+  #define MAG_MATMUL_FLOPS_PER_WORKER (1<<21)
+#endif
+
 mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
   static const mag_op_thread_scaling_info scaling_table[MAG_OP__NUM] = {
     [MAG_OP_NOP] = {0.0, 0},
@@ -29,15 +33,17 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_CLONE] = {0.4, 10000},
     [MAG_OP_CAST] = {0.4, 10000},
     [MAG_OP_STRIDED_VIEW] = {0.0, 0},
-    [MAG_OP_MEAN] = {0.0, 0},
-    [MAG_OP_MIN] = {0.0, 0},
-    [MAG_OP_MAX] = {0.0, 0},
-    [MAG_OP_ARGMIN] = {0.0, 0},
-    [MAG_OP_ARGMAX] = {0.0, 0},
-    [MAG_OP_SUM] = {0.0, 0},
-    [MAG_OP_PROD] = {0.0, 0},
-    [MAG_OP_ALL] = {0.0, 0},
-    [MAG_OP_ANY] = {0.0, 0},
+    [MAG_OP_MEAN] = {3.5, 10000},
+    [MAG_OP_MINIMA] = {3.5, 10000},
+    [MAG_OP_MAXIMA] = {3.5, 10000},
+    [MAG_OP_MIN] = {3.5, 10000},
+    [MAG_OP_MAX] = {3.5, 10000},
+    [MAG_OP_ARGMIN] = {3.5, 10000},
+    [MAG_OP_ARGMAX] = {3.5, 10000},
+    [MAG_OP_SUM] = {3.5, 10000},
+    [MAG_OP_PROD] = {3.5, 10000},
+    [MAG_OP_ALL] = {3.5, 10000},
+    [MAG_OP_ANY] = {3.5, 10000},
     [MAG_OP_ABS] = {0.5, 25000},
     [MAG_OP_SGN] = {0.5, 25000},
     [MAG_OP_NEG] = {0.5, 25000},
@@ -158,7 +164,12 @@ uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_
         if (work_bytes >= 256LL << 20) workers = 64;
         return mag_xmin(workers, allocated_workers);
       }
-      default: return allocated_workers;
+      default: { /* GEMM/BMM: spread over workers only once the flops amortize the barrier and packing. */
+        int64_t K = x->meta.coords.shape[x->meta.coords.rank-1];
+        double flops = 2.0*(double)cmd->out[0]->meta.numel*(double)K;
+        int64_t workers = (int64_t)(flops/(double)MAG_MATMUL_FLOPS_PER_WORKER);
+        return (uint32_t)mag_xmin((int64_t)allocated_workers, mag_xmax(1, workers));
+      }
     }
   }
   max_numel -= info.thread_treshold;
