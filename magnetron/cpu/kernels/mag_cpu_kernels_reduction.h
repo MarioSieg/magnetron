@@ -21,20 +21,34 @@
     const mag_reduce_plan_t *plan = &payload->cmd->params->reduction.red_plan; \
     int64_t numel = r->meta.numel; \
     int64_t red_prod = plan->red_prod; \
-    for (int64_t oi=0; oi < numel; ++oi) { \
+    int64_t tc = payload->thread_num; \
+    int64_t ti = payload->thread_idx; \
+    int64_t chunk = (numel + tc - 1)/tc; \
+    int64_t oa = ti*chunk; \
+    int64_t ob = mag_xmin(oa + chunk, numel); \
+    bool mag_contig = plan->rank == 1 && plan->red_strides[0] == 1; \
+    for (int64_t oi=oa; oi < ob; ++oi) { \
       int64_t base = mag_reduce_plan_to_offset(plan, oi); \
       ACC_T acc = INIT_EXPR; \
-      for (int64_t ri=0; ri < red_prod; ++ri) { \
-        int64_t tmp = ri; \
-        int64_t roff = base; \
-        for (int64_t k=plan->rank - 1; k >= 0; --k) { \
-          int64_t sz = plan->red_sizes[k]; \
-          int64_t idx = tmp % sz; \
-          tmp /= sz; \
-          roff += idx*plan->red_strides[k]; \
+      if (mag_contig) { \
+        for (int64_t ri=0; ri < red_prod; ++ri) { \
+          int64_t roff = base + ri; \
+          mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
+          { UPDATE_STMT } \
         } \
-        mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
-        { UPDATE_STMT } \
+      } else { \
+        for (int64_t ri=0; ri < red_prod; ++ri) { \
+          int64_t tmp = ri; \
+          int64_t roff = base; \
+          for (int64_t k=plan->rank - 1; k >= 0; --k) { \
+            int64_t sz = plan->red_sizes[k]; \
+            int64_t idx = tmp % sz; \
+            tmp /= sz; \
+            roff += idx*plan->red_strides[k]; \
+          } \
+          mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
+          { UPDATE_STMT } \
+        } \
       } \
       OT *o = br + oi; \
       { FINAL_STMT } \
@@ -42,14 +56,73 @@
     return MAG_OK; \
   }
 
-mag_cpu_impl_reduce_axes(float, float, float32, mean, double, 0.0, acc += (double)bx[roff];, acc /= (double)red_prod; *o = (float)acc; )
-mag_cpu_impl_reduce_axes(mag_float16_t, mag_float16_t, float16, mean, float, 0.0f, acc += mag_float16_to_float32(bx[roff]);, acc /= (float)red_prod; *o = mag_float32_to_float16(acc); )
-mag_cpu_impl_reduce_axes(mag_bfloat16_t, mag_bfloat16_t, bfloat16, mean, float, 0.0f, acc += mag_bfloat16_to_float32(bx[roff]);, acc /= (float)red_prod; *o = mag_float32_to_bfloat16(acc); )
+
+#define mag_add_f32(a, b) ((a)+(b))
+#define mag_cpu_impl_reduce_hfp(T, TF, FUNC, CVT, RCVT, VLOAD, VINIT, VACC, VRED, SINIT, SCOMB, FINAL_ACC) \
+  static mag_status_t MAG_HOTPROC mag_##FUNC##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    (void)err; \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    T *br = (T *)mag_tensor_data_ptr_mut(r); \
+    const T *bx = (const T *)mag_tensor_data_ptr(x); \
+    const mag_reduce_plan_t *plan = &payload->cmd->params->reduction.red_plan; \
+    int64_t numel = r->meta.numel; \
+    int64_t red_prod = plan->red_prod; \
+    int64_t tc = payload->thread_num; \
+    int64_t ti = payload->thread_idx; \
+    int64_t chunk = (numel + tc - 1)/tc; \
+    int64_t oa = ti*chunk; \
+    int64_t ob = mag_xmin(oa + chunk, numel); \
+    bool mag_contig = plan->rank == 1 && plan->red_strides[0] == 1; \
+    for (int64_t oi=oa; oi < ob; ++oi) { \
+      int64_t base = mag_reduce_plan_to_offset(plan, oi); \
+      float acc = (SINIT); \
+      if (mag_contig) { \
+        const T *p = bx + base; \
+        int64_t i = 0; \
+        mag_vf32_t vacc = (VINIT); \
+        for (; i + MAG_VF32_LANES <= red_prod; i += MAG_VF32_LANES) { \
+          mag_bnd_chk(p + i + MAG_VF32_LANES - 1, x->storage->base, mag_tensor_numbytes(x)); \
+          vacc = VACC(vacc, VLOAD(p + i)); \
+        } \
+        acc = SCOMB(acc, VRED(vacc)); \
+        for (; i < red_prod; ++i) { float xv = CVT(p[i]); acc = SCOMB(acc, xv); } \
+      } else { \
+        for (int64_t ri=0; ri < red_prod; ++ri) { \
+          int64_t tmp = ri; \
+          int64_t roff = base; \
+          for (int64_t k=plan->rank - 1; k >= 0; --k) { \
+            int64_t sz = plan->red_sizes[k]; \
+            int64_t idx = tmp % sz; \
+            tmp /= sz; \
+            roff += idx*plan->red_strides[k]; \
+          } \
+          mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
+          float xv = CVT(bx[roff]); acc = SCOMB(acc, xv); \
+        } \
+      } \
+      br[oi] = RCVT(FINAL_ACC(acc)); \
+    } \
+    return MAG_OK; \
+  }
+
+#define mag_final_id(a) (a)
+#define mag_final_mean(a) ((a)/(float)red_prod)
+mag_cpu_impl_reduce_hfp(float,          float32,  sum,    mag_cvt_nop,             mag_cvt_nop,               mag_vf32_loadu,      mag_vf32_zero(),               mag_vf32_add, mag_vf32_reduce_add, 0.0f,      mag_add_f32, mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_float16_t,  float16,  sum,    mag_float16_to_float32,  mag_float32_to_float16,   mag_vf32_loadu_f16,  mag_vf32_zero(),               mag_vf32_add, mag_vf32_reduce_add, 0.0f,      mag_add_f32, mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, sum,    mag_bfloat16_to_float32, mag_float32_to_bfloat16,  mag_vf32_loadu_bf16, mag_vf32_zero(),               mag_vf32_add, mag_vf32_reduce_add, 0.0f,      mag_add_f32, mag_final_id)
+mag_cpu_impl_reduce_hfp(float,          float32,  mean,   mag_cvt_nop,             mag_cvt_nop,               mag_vf32_loadu,      mag_vf32_zero(),               mag_vf32_add, mag_vf32_reduce_add, 0.0f,      mag_add_f32, mag_final_mean)
+mag_cpu_impl_reduce_hfp(mag_float16_t,  float16,  mean,   mag_float16_to_float32,  mag_float32_to_float16,   mag_vf32_loadu_f16,  mag_vf32_zero(),               mag_vf32_add, mag_vf32_reduce_add, 0.0f,      mag_add_f32, mag_final_mean)
+mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float32, mag_float32_to_bfloat16,  mag_vf32_loadu_bf16, mag_vf32_zero(),               mag_vf32_add, mag_vf32_reduce_add, 0.0f,      mag_add_f32, mag_final_mean)
+mag_cpu_impl_reduce_hfp(float,          float32,  maxima, mag_cvt_nop,             mag_cvt_nop,               mag_vf32_loadu,      mag_vf32_splat(-INFINITY),     mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf,       mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_float16_t,  float16,  maxima, mag_float16_to_float32,  mag_float32_to_float16,   mag_vf32_loadu_f16,  mag_vf32_splat(-INFINITY),     mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf,       mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, maxima, mag_bfloat16_to_float32, mag_float32_to_bfloat16,  mag_vf32_loadu_bf16, mag_vf32_splat(-INFINITY),     mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf,       mag_final_id)
+#undef mag_final_id
+#undef mag_final_mean
+
 mag_cpu_impl_reduce_axes(mag_float8_e4m3fn_t, mag_float8_e4m3fn_t, float8_e4m3fn, mean, float, 0.0f, acc += mag_float8_e4m3fn_to_float32(bx[roff]);, acc /= (float)red_prod; *o = mag_float32_to_float8_e4m3fn(acc); )
 
-mag_cpu_impl_reduce_axes(float, float, float32, sum, double, 0.0, acc += (double)bx[roff];, *o = (float)acc; )
-mag_cpu_impl_reduce_axes(mag_float16_t, mag_float16_t, float16, sum, float, 0.0f, acc += mag_float16_to_float32(bx[roff]);, *o = mag_float32_to_float16(acc); )
-mag_cpu_impl_reduce_axes(mag_bfloat16_t, mag_bfloat16_t, bfloat16, sum, float, 0.0f, acc += mag_bfloat16_to_float32(bx[roff]);, *o = mag_float32_to_bfloat16(acc); )
+/* float32/float16/bfloat16 sum are SIMD-specialized above via mag_cpu_impl_reduce_hfp. */
 mag_cpu_impl_reduce_axes(mag_float8_e4m3fn_t, mag_float8_e4m3fn_t, float8_e4m3fn, sum, float, 0.0f, acc += mag_float8_e4m3fn_to_float32(bx[roff]);,*o = mag_float32_to_float8_e4m3fn(acc); )
 mag_cpu_impl_reduce_axes(uint8_t, uint64_t, uint8, sum, uint64_t, 0, acc += (uint64_t)bx[roff];, *o = acc; )
 mag_cpu_impl_reduce_axes(int8_t, int64_t, int8, sum, int64_t, 0, acc += (int64_t)bx[roff];, *o = acc; )
@@ -86,9 +159,7 @@ mag_cpu_impl_reduce_axes(int32_t, int32_t, int32, minima, int32_t, INT32_MAX, ac
 mag_cpu_impl_reduce_axes(uint64_t, uint64_t, uint64, minima, uint64_t, UINT64_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
 mag_cpu_impl_reduce_axes(int64_t, int64_t, int64, minima, int64_t, INT64_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
 
-mag_cpu_impl_reduce_axes(float, float, float32, maxima, float, -INFINITY, acc = fmaxf(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(mag_float16_t, mag_float16_t, float16, maxima, float, -INFINITY, acc = fmaxf(acc, mag_float16_to_float32(bx[roff]));, *o = mag_float32_to_float16(acc); )
-mag_cpu_impl_reduce_axes(mag_bfloat16_t, mag_bfloat16_t, bfloat16, maxima, float, -INFINITY, acc = fmaxf(acc, mag_bfloat16_to_float32(bx[roff]));, *o = mag_float32_to_bfloat16(acc); )
+/* float32/float16/bfloat16 maxima are SIMD-specialized above via mag_cpu_impl_reduce_hfp. */
 mag_cpu_impl_reduce_axes(mag_float8_e4m3fn_t, mag_float8_e4m3fn_t, float8_e4m3fn, maxima, float, -INFINITY, acc = fmaxf(acc, mag_float8_e4m3fn_to_float32(bx[roff]));, *o = mag_float32_to_float8_e4m3fn(acc); )
 mag_cpu_impl_reduce_axes(uint8_t, uint8_t, uint8, maxima, uint8_t, 0, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
 mag_cpu_impl_reduce_axes(int8_t, int8_t, int8, maxima, int8_t, INT8_MIN, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
@@ -322,7 +393,12 @@ mag_cpu_impl_argminmax_int(int64_t,  int64);
     const mag_reduce_plan_t *plan = &payload->cmd->params->reduction.red_plan; \
     int64_t numel = r->meta.numel; \
     int64_t red_prod = plan->red_prod; \
-    for (int64_t oi=0; oi < numel; ++oi) { \
+    int64_t tc = payload->thread_num; \
+    int64_t ti = payload->thread_idx; \
+    int64_t chunk = (numel + tc - 1)/tc; \
+    int64_t oa = ti*chunk; \
+    int64_t ob = mag_xmin(oa + chunk, numel); \
+    for (int64_t oi=oa; oi < ob; ++oi) { \
       uint8_t acc = (IDENTITY); \
       if (red_prod == 0) { \
         br[oi] = acc; \
