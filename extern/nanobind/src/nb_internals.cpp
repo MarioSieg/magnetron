@@ -13,6 +13,14 @@
 #include "nb_abi.h"
 #include <thread>
 
+#if defined(NB_FREE_THREADED)
+#  if defined(_WIN32)
+#    include <windows.h>
+#  else
+#    include <pthread.h>
+#  endif
+#endif
+
 #if defined(__GNUC__) && !defined(__clang__)
 #  pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #endif
@@ -162,18 +170,55 @@ void default_exception_translator(const std::exception_ptr &p, void *) {
 
 // Initialized once when the module is loaded, no locking needed
 nb_internals *internals = nullptr;
-PyTypeObject *nb_meta_cache = nullptr;
+
+#if defined(NB_FREE_THREADED)
+NB_THREAD_LOCAL nb_thread_state *nb_thread_state_tls = nullptr;
+
+// Reclaims a thread's state when it exits (the cleanup-key callback).
+static void nb_thread_state_destroy(void *p) noexcept {
+    nb_thread_state *ts = (nb_thread_state *) p;
+    if (!ts)
+        return;
+
+    // Reclaim this thread's instance pools if the runtime is still alive
+    if (internals && ts->pools) {
+        for (uint32_t i = 0; i < ts->pools_size; ++i)
+            nb_pool_drain(&ts->pools[i], /* can_free = */ true);
+    }
+    PyMem_Free(ts->pools);
+
+    nb_thread_state_tls = nullptr;
+    delete ts;
+}
+
+// Slow path for nb_thread_state_get(): allocate the per-thread state with a cleanup callback
+nb_thread_state *nb_thread_state_alloc() noexcept {
+#if defined(_WIN32)
+    DWORD key = internals->thread_state_key;
+    nb_thread_state *ts = (nb_thread_state *) FlsGetValue(key);
+    if (!ts) {
+        ts = new nb_thread_state();
+        check(FlsSetValue(key, ts), "nanobind: FlsSetValue() failed!");
+    }
+#else
+    pthread_key_t key = internals->thread_state_key;
+    nb_thread_state *ts = (nb_thread_state *) pthread_getspecific(key);
+    if (!ts) {
+        ts = new nb_thread_state();
+        check(pthread_setspecific(key, ts) == 0,
+              "nanobind: pthread_setspecific() failed!");
+    }
+#endif
+    nb_thread_state_tls = ts;
+    return ts;
+}
+#endif
 
 
 static const char* interned_c_strs[pyobj_name::string_count] {
-    "value",
-    "copy",
-    "clone",
-    "array",
-    "from_dlpack",
-    "__dlpack__",
-    "max_version",
-    "dl_device",
+    #define NB_INTERNED_ENTRY(name) #name,
+    NB_INTERNED_STRINGS(NB_INTERNED_ENTRY)
+    #undef NB_INTERNED_ENTRY
 };
 
 PyObject *static_pyobjects[pyobj_name::total_count] = {};
@@ -183,19 +228,26 @@ static void new_constant(nb_internals *p, int index, PyObject *o) {
     new_object(p, o);
 }
 
+/// Lifeline generation against which this library's static_pyobjects[] was
+/// populated; a mismatch indicates stale entries from a destroyed lifeline.
+static uint32_t static_pyobjects_generation = 0;
+
 /// Populate this library's static_pyobjects[]
 static void init_pyobjects(nb_internals *p) {
-    if (static_pyobjects[0])
+    if (static_pyobjects[0] &&
+        static_pyobjects_generation == p->lifeline_generation)
         return;
+
+    static_pyobjects_generation = p->lifeline_generation;
 
     NB_NOUNROLL
     for (int i = 0; i < pyobj_name::string_count; ++i)
         new_constant(p, i, PyUnicode_InternFromString(interned_c_strs[i]));
 
     new_constant(p, pyobj_name::copy_tpl,
-                 PyTuple_Pack(1, static_pyobjects[pyobj_name::copy_str]));
+                 PyTuple_Pack(1, NB_INTERNED(copy)));
     new_constant(p, pyobj_name::max_version_tpl,
-                 PyTuple_Pack(1, static_pyobjects[pyobj_name::max_version_str]));
+                 PyTuple_Pack(1, NB_INTERNED(max_version)));
 
     PyObject *one = PyLong_FromLong(1), *zero = PyLong_FromLong(0);
     new_constant(p, pyobj_name::dl_cpu_tpl, PyTuple_Pack(2, one, zero));
@@ -222,17 +274,15 @@ static void init_internals(nb_internals *p) {
     p->nb_module = PyModule_NewObject(nb_name.ptr());
     new_object(p, p->nb_module);
 
+    // Construct nanobind's meta-meta class
     nb_meta_slots[0].pfunc = (PyObject *) &PyType_Type;
-    p->nb_meta = new_type(p, &nb_meta_spec);
-
-    p->nb_type_dict = PyDict_New();
-    new_object(p, p->nb_type_dict);
+    PyTypeObject *nb_meta = new_type(p, &nb_meta_spec);
 
     p->nb_func         = new_type(p, &nb_func_spec);
     p->nb_method       = new_type(p, &nb_method_spec);
     p->nb_bound_method = new_type(p, &nb_bound_method_spec);
 
-    check(p->nb_module && p->nb_meta && p->nb_type_dict && p->nb_func &&
+    check(p->nb_module && nb_meta && p->nb_func &&
               p->nb_method && p->nb_bound_method,
           "nanobind::detail::nb_module_exec(): initialization failed!");
 
@@ -262,11 +312,17 @@ static void init_internals(nb_internals *p) {
     };
 
     PyObject *dummy = PyType_FromMetaclass(
-        p->nb_meta, p->nb_module, &dummy_spec, nullptr);
+        nb_meta, p->nb_module, &dummy_spec, nullptr);
     p->type_data_offset =
-        (uint8_t *) PyObject_GetTypeData(dummy, p->nb_meta) - (uint8_t *) dummy;
+        (uint8_t *) PyObject_GetTypeData(dummy, nb_meta) - (uint8_t *) dummy;
     Py_DECREF(dummy);
 #endif
+
+    // Create the single metaclass shared by all bound types. This may
+    // access 'type_data_offset' defined just above.
+    p->nb_type = nb_type_create_metaclass(p, nb_meta);
+    check(p->nb_type, "nanobind::detail::nb_module_exec(): "
+                      "nb_type metaclass creation failed!");
 }
 
 void internals_inc_ref() {
@@ -279,18 +335,19 @@ void internals_dec_ref() {
     if (value != 0)
         return;
 
+    // Invalidate every library's cached 'static_pyobjects' array: destroying
+    // the lifeline frees the objects that these arrays reference.
+    p->lifeline_generation++;
+
     Py_CLEAR(p->lifeline);
 
     p->nb_module = nullptr;
-    p->nb_meta = nullptr;
-    p->nb_type_dict = nullptr;
+    p->nb_type = nullptr;
     p->nb_func = nullptr;
     p->nb_method = nullptr;
     p->nb_bound_method = nullptr;
     p->nb_static_property.store_release(nullptr);
     p->nb_ndarray.store_release(nullptr);
-
-    nb_meta_cache = nullptr;
 
     for (int i = 0; i < pyobj_name::total_count; ++i)
         static_pyobjects[i] = nullptr;
@@ -323,6 +380,13 @@ static void internals_cleanup() {
        type objects. This may change in the future. */
 
     bool print_leak_warnings = p->print_leak_warnings;
+
+    // Unmap pooled instances to avoid false leaks (can_free=false: no thread state here).
+    for (const auto &kv : p->type_c2p_slow) {
+        type_data *td = kv.second;
+        if (td->flags & (uint32_t) type_flags::pooled)
+            nb_pool_drain(&td->pool, /* can_free = */ false);
+    }
 
     size_t inst_leaks = 0, keep_alive_leaks = 0;
 
@@ -421,7 +485,7 @@ static void internals_cleanup() {
     }
 
     if (!leak) {
-        nb_translator_seq* t = p->translators.next;
+        nb_translator_seq* t = p->translators.load_relaxed();
         while (t) {
             nb_translator_seq *next = t->next;
             delete t;
@@ -439,7 +503,6 @@ static void internals_cleanup() {
 
         delete p;
         internals = nullptr;
-        nb_meta_cache = nullptr;
     } else {
         if (print_leak_warnings) {
             fprintf(stderr, "nanobind: this is likely caused by a reference "
@@ -458,8 +521,6 @@ NB_NOINLINE void nb_module_exec(const char *name, PyObject *) {
     if (internals) {
         init_internals(internals);
         init_pyobjects(internals);
-        if (nb_meta_cache != internals->nb_meta)
-            nb_meta_cache = internals->nb_meta;
         internals_inc_ref();
         return;
     }
@@ -487,8 +548,6 @@ NB_NOINLINE void nb_module_exec(const char *name, PyObject *) {
 
         init_internals(internals);
         init_pyobjects(internals);
-        if (nb_meta_cache != internals->nb_meta)
-            nb_meta_cache = internals->nb_meta;
         internals_inc_ref();
 
         Py_DECREF(capsule);
@@ -505,6 +564,15 @@ NB_NOINLINE void nb_module_exec(const char *name, PyObject *) {
     shard_count *= 2;
     p->shards = new nb_shard[shard_count];
     p->shard_mask = shard_count - 1;
+
+    // Per-domain key for reclaiming nb_thread_state at thread exit
+#if defined(_WIN32)
+    p->thread_state_key = FlsAlloc((PFLS_CALLBACK_FUNCTION) nb_thread_state_destroy);
+    check(p->thread_state_key != FLS_OUT_OF_INDEXES, "nanobind: FlsAlloc() failed!");
+#else
+    check(pthread_key_create(&p->thread_state_key, nb_thread_state_destroy) == 0,
+          "nanobind: pthread_key_create() failed!");
+#endif
 #endif
     p->shard_count = shard_count;
 
@@ -512,15 +580,14 @@ NB_NOINLINE void nb_module_exec(const char *name, PyObject *) {
 
     init_internals(p);
     init_pyobjects(p);
-    if (nb_meta_cache != p->nb_meta)
-        nb_meta_cache = p->nb_meta;
 
 #if defined(NB_FREE_THREADED)
     p->nb_static_property_disabled = PyThread_tss_alloc();
     PyThread_tss_create(p->nb_static_property_disabled);
 #endif
 
-    p->translators = { default_exception_translator, nullptr, nullptr };
+    p->translators.store_release(
+        new nb_translator_seq{ default_exception_translator, nullptr, nullptr });
 
     is_alive_value = true;
     is_alive_ptr = &is_alive_value;
@@ -571,9 +638,11 @@ NB_NOINLINE void nb_module_exec(const char *name, PyObject *) {
                 "python extension library, you can ignore this warning.");
 
     capsule = PyCapsule_New(p, "nb_internals", nullptr);
-    int rv = PyDict_SetItem(dict, key, capsule);
-    check(!rv && capsule,
+    check(capsule,
           "nanobind::detail::nb_module_exec(): capsule creation failed!");
+    check(PyDict_SetItem(dict, key, capsule) == 0,
+          "nanobind::detail::nb_module_exec(): could not register the "
+          "internals capsule!");
     Py_DECREF(capsule);
     Py_DECREF(key);
 }

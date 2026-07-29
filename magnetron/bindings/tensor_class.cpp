@@ -65,7 +65,7 @@ namespace mag::bindings {
       strides[i] = p_strides[i];
     }
     mag_dtype_t dtype = mag_tensor_type(tensor);
-    nb::object owner = host.p ? nb::cast(host) : nb::cast(self);
+    nb::object owner = *host ? nb::cast(host) : nb::cast(self);
     switch (dtype) {
       /* MAG_DTYPE_FLOAT64 not yet in magnetron; float64 arrays rejected below */
       case MAG_DTYPE_FLOAT32: return ndarray_f32(base, rank, shape, strides, owner);
@@ -190,14 +190,23 @@ namespace mag::bindings {
       mag_error_t err {};
       throw_if_error(mag_tensor_set_requires_grad(&err, *self, req), err);
     }, "If True, gradients are recorded for autodiff.")
-    .def_prop_ro("grad", [](const tensor_wrapper &self) -> nb::object {
-      std::lock_guard lock {get_global_mutex()};
-      mag_tensor_t *grad = nullptr;
-      mag_error_t err {};
-      throw_if_error(mag_tensor_grad(&err, *self, &grad), err);
-      if (!grad) return nb::none();
-      return nb::cast(tensor_wrapper {grad});
-    }, "Gradient accumulated for this tensor (None if not computed).")
+   .def_prop_rw("grad", [](const tensor_wrapper &self) -> nb::object {
+        std::lock_guard lock {get_global_mutex()};
+        mag_tensor_t *grad = mag_tensor_grad(*self);
+        if (!grad) return nb::none();
+        return nb::cast(tensor_wrapper {grad});
+      }, [](tensor_wrapper &self, nb::handle value) -> void {
+        std::lock_guard lock {get_global_mutex()};
+        mag_error_t err {};
+        if (value.is_none()) {
+          throw_if_error(mag_tensor_set_grad(&err, *self, nullptr), err);
+          return;
+        }
+        auto grad = nb::cast<tensor_wrapper>(value);
+        throw_if_error(mag_tensor_set_grad(&err, *self, *grad), err);
+      },
+      "Gradient accumulated for this tensor."
+    )
     .def("backward", [](const tensor_wrapper &self) -> void {
       std::lock_guard lock {get_global_mutex()};
       mag_error_t err {};
@@ -219,10 +228,10 @@ namespace mag::bindings {
       mag_scalar_t s {};
       mag_error_t err {};
       throw_if_error(mag_tensor_item(&err, *self, &s), err);
-      if (mag_scalar_is_f64(s)) return nb::float_(mag_scalar_as_f64(s));
-      if (mag_scalar_is_i64(s)) return nb::int_(mag_scalar_as_i64(s));
-      if (mag_scalar_is_u64(s)) {
-        uint64_t v = mag_scalar_as_u64(s);
+      if (mag_scalar_is_float64(s)) return nb::float_(mag_scalar_as_float64(s));
+      if (mag_scalar_is_int64(s)) return nb::int_(mag_scalar_as_int64(s));
+      if (mag_scalar_is_uint64(s)) {
+        uint64_t v = mag_scalar_as_uint64(s);
         if (mag_tensor_type(*self) == MAG_DTYPE_BOOLEAN)
           return nb::bool_{v != 0};
         return nb::int_{v};
@@ -231,7 +240,10 @@ namespace mag::bindings {
     }, "Return the value of a single-element tensor as a Python scalar.")
     .def("detach", [](const tensor_wrapper &self) -> tensor_wrapper {
       std::lock_guard lock {get_global_mutex()};
-      return tensor_wrapper{mag_tensor_detach(*self)};
+      mag_error_t err {};
+      mag_tensor_t *result = nullptr;
+      throw_if_error(mag_detach(&err, &result, *self), err);
+      return tensor_wrapper{result};
     }, "Return a new tensor detached from the autodiff graph.")
     .def("tolist", [](const tensor_wrapper &self) -> nb::object {
       std::lock_guard lock {get_global_mutex()};
@@ -296,14 +308,18 @@ namespace mag::bindings {
       mag_error_t err {};
       throw_if_error(mag_save_image(&err, *self, file_name.c_str()), err);
     })
-    .def("save_audio", [](const tensor_wrapper &self, const std::string &path, uint32_t sample_rate) {
+    .def("save_audio", [](const tensor_wrapper &self, const std::string &path, uint32_t sample_rate) -> void {
       std::lock_guard lock {get_global_mutex()};
       mag_error_t err {};
       throw_if_error(mag_save_audio(&err, *self, path.c_str(), sample_rate), err);
     })
     .def("numpy", [](const tensor_wrapper &self) {
       return tensor_from_numpy(self);
-    }, "Return a NumPy ndarray sharing CPU storage when possible. Non-CPU tensors are copied to the host first.");
+    }, "Return a NumPy ndarray sharing CPU storage when possible. Non-CPU tensors are copied to the host first.")
+    .def("visualize_backprop_graph", [](const tensor_wrapper &self, const std::string &graphviz_dot_file_name) -> void {
+      mag_error_t err {};
+      throw_if_error(mag_tensor_visualize_backprop_graph(&err, *self, graphviz_dot_file_name.c_str()), err);
+    });
   }
 
   extern void init_tensor_special_methods(nb::class_<tensor_wrapper> &cls);

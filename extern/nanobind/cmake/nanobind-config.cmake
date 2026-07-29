@@ -1,6 +1,6 @@
 include_guard(GLOBAL)
 
-if (NOT TARGET Python::Module)
+if (NOT TARGET Python::Interpreter OR NOT TARGET Python::Module)
   message(FATAL_ERROR "You must invoke 'find_package(Python COMPONENTS Interpreter Development REQUIRED)' prior to including nanobind.")
 endif()
 
@@ -96,12 +96,22 @@ set(NB_SUFFIX_S       ${NB_SUFFIX_S}       CACHE INTERNAL "")
 set(NB_ABI            ${NB_ABI}            CACHE INTERNAL "")
 set(NB_FREE_THREADED  ${NB_FREE_THREADED} CACHE INTERNAL "")
 
-get_filename_component(NB_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+get_filename_component(NB_DIR "${CMAKE_CURRENT_LIST_FILE}" REALPATH)
+get_filename_component(NB_DIR "${NB_DIR}" PATH)
 get_filename_component(NB_DIR "${NB_DIR}" PATH)
 
 set(NB_DIR      ${NB_DIR} CACHE INTERNAL "")
 set(NB_OPT      $<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>> CACHE INTERNAL "")
 set(NB_OPT_SIZE $<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>,$<CONFIG:RelWithDebInfo>> CACHE INTERNAL "")
+
+# ---------------------------------------------------------------------------
+# Probe for the faster TLSDESC thread-local storage ABI (Linux/x86_64)
+# ---------------------------------------------------------------------------
+
+if (NOT (MSVC OR WIN32 OR APPLE))
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag(-mtls-dialect=gnu2 NB_HAS_MTLS_GNU2)
+endif()
 
 # ---------------------------------------------------------------------------
 # Helper function to handle undefined CPython API symbols on macOS
@@ -191,6 +201,7 @@ function (nanobind_build_library TARGET_NAME)
     ${NB_DIR}/include/nanobind/stl/vector.h
     ${NB_DIR}/include/nanobind/eigen/dense.h
     ${NB_DIR}/include/nanobind/eigen/sparse.h
+    ${NB_DIR}/include/nanobind/eigen/tensor.h
 
     ${NB_DIR}/src/buffer.h
     ${NB_DIR}/src/hash.h
@@ -238,6 +249,11 @@ function (nanobind_build_library TARGET_NAME)
   else()
     # Generally needed to handle type punning in Python code
     target_compile_options(${TARGET_NAME} PRIVATE -fno-strict-aliasing)
+  endif()
+
+  # Use the faster TLSDESC model for libnanobind's thread_local accesses
+  if (NB_HAS_MTLS_GNU2)
+    target_compile_options(${TARGET_NAME} PRIVATE -mtls-dialect=gnu2)
   endif()
 
   if (WIN32)
@@ -302,10 +318,12 @@ function(nanobind_opt_size name)
 endfunction()
 
 function(nanobind_disable_stack_protector name)
-  if (NOT MSVC)
-    # The stack protector affects binding size negatively (+8% on Linux in my
-    # benchmarks). Protecting from stack smashing in a Python VM seems in any
-    # case futile, so let's get rid of it by default in optimized modes.
+  # Drop the stack protector in optimized builds (it adds ~9-12% binary size
+  # and 1-2% runtime overheads, see docs/api_cmake.rst for the rationale).
+  # Pass PROTECT_STACK to opt out.
+  if (MSVC)
+    target_compile_options(${name} PRIVATE $<${NB_OPT}:$<$<COMPILE_LANGUAGE:CXX>:/GS->>)
+  else()
     target_compile_options(${name} PRIVATE $<${NB_OPT}:-fno-stack-protector>)
   endif()
 endfunction()
@@ -326,7 +344,10 @@ endfunction()
 
 function (nanobind_compile_options name)
   if (MSVC)
-    target_compile_options(${name} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/bigobj /MP>)
+    target_compile_options(${name} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/bigobj>)
+  endif()
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(${name} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/MP>)
   endif()
 endfunction()
 
@@ -395,6 +416,12 @@ function(nanobind_add_module name)
     set(libname "${libname}-ft")
   endif()
 
+  # The stack protector changes how libnanobind is compiled, so the protected
+  # variant needs its own library (like -abi3 / -ft).
+  if (ARG_PROTECT_STACK)
+    set(libname "${libname}-ps")
+  endif()
+
   if (ARG_NB_DOMAIN AND ARG_NB_SHARED)
     set(libname ${libname}-${ARG_NB_DOMAIN})
   endif()
@@ -424,6 +451,7 @@ function(nanobind_add_module name)
 
   if (NOT ARG_PROTECT_STACK)
     nanobind_disable_stack_protector(${name})
+    nanobind_disable_stack_protector(${libname})
   endif()
 
   if (NOT ARG_NOMINSIZE)

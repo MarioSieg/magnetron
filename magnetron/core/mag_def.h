@@ -43,8 +43,6 @@ extern "C" {
 #define MAG_DEBUG
 #endif
 
-#define MAG_MAX_OP_INPUTS 2 /* Maximum number of input tensors for an operation */
-
 #define MAG_SEP ,
 #define MAG_GELU_COEFF 0.044715f /* Coefficient for GELU approximation. */
 
@@ -460,6 +458,19 @@ static MAG_AINLINE uint64_t mag_mulhilo64(uint64_t x, uint64_t y) {
 #endif
 }
 
+static MAG_AINLINE int mag_popcnt64(uint64_t x) {
+#if defined(__GNUC__) || defined(__clang__)
+  return __builtin_popcountll((unsigned long long)x);
+#elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM 64))
+  return __popcnt64(x);
+#else
+  x -= (x>>1)&0x5555555555555555ull;
+  x = (x&0x3333333333333333ull)+((x>>2)&0x3333333333333333ull);
+  x = (x+(x>>4))&0x0f0f0f0f0f0f0f0full;
+  return (x*0x0101010101010101ull)>>56;
+#endif
+}
+
 /* Logging and panic utilities. */
 
 extern MAG_EXPORT MAG_NORET MAG_COLDPROC void mag_panic(const char *fmt, ...) mag_printf_fmt(1, 2); /* Print error message and abort. */
@@ -498,7 +509,7 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 /* Panics if ptr ∉ [base, base+N). */
 #define mag_bnd_chk(ptr, base, N) \
   mag_assert((char*)(ptr) >= (char*)(base) && (char*)(ptr) < (char*)(base)+(N), \
-    "\nBound check failed: %p not in [%p, %p), base+0x%x, end+0x%x", \
+    "bnd_chk: %p not in [%p, %p), base+0x%x, end+0x%x.", \
     (void *)(ptr), \
     (void *)(base), \
     (void *)((char *)(base)+(N)), \
@@ -517,47 +528,19 @@ extern MAG_EXPORT void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) 
 #define mag_dassert2(...)
 #endif
 
-#define mag_iserr(stat) (mag_unlikely((stat) != MAG_STATUS_OK))
+#define mag_iserr(stat) (mag_unlikely((stat) != MAG_OK))
 #define mag_isok(stat) (!mag_iserr((stat)))
 
-/*
-'* If 'expr' is false, set the last error in the given context to 'status' and
-'* return 'status'. Optionally perform 'cleanup' code before returning.
-'* The 'msg' is a printf-style format string with optional arguments.
-*/
-#define mag_contract(E, status, cleanup, expr, msg, ...) \
-  do { \
-    if (mag_unlikely(!(expr))) { \
-      if ((E) != NULL && (E)->code == MAG_STATUS_OK) { \
-        *(E) = (mag_error_t){ \
-          .code = MAG_STATUS_##status, \
-          .message = "", \
-          .file = MAG_SRC_NAME, \
-          .line = __LINE__, \
-          .func = __func__, \
-        }; \
-        snprintf((E)->message, sizeof((E)->message), (msg), ##__VA_ARGS__); \
-      } \
-      cleanup; \
-      return MAG_STATUS_##status; \
-    } \
-  } while (0)
-
-
-#define mag_try(call) \
-  do { \
-    mag_status_t status____ = (call); \
-    if (mag_iserr(status____)) return status____; \
-  } while (0)
-
-#define mag_try_or(call, cleanup) \
-  do { \
-    mag_status_t status____ = (call); \
-    if (mag_iserr(status____)) { \
-      cleanup; \
-      return status____; \
-    } \
-  } while (0)
+extern MAG_EXPORT MAG_COLDPROC mag_printf_fmt(6,7) mag_status_t mag_set_error_impl(
+  mag_error_t *err,
+  mag_status_t code,
+  const char *file,
+  int line,
+  const char *func,
+  const char *fmt,
+  ...
+);
+#define mag_set_error(err, code, fmt, ...) mag_set_error_impl((err), (code), MAG_SRC_NAME, __LINE__, __func__, (fmt), ##__VA_ARGS__)
 
 extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
 

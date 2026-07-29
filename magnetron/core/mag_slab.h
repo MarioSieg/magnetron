@@ -41,8 +41,8 @@ typedef struct mag_slab_alloc_t {
   uint32_t num_allocs;
 } mag_slab_alloc_t;
 
-extern MAG_EXPORT void mag_slab_init(mag_slab_alloc_t *pool, size_t block_size, size_t block_align, size_t blocks_per_chunk);
-extern MAG_EXPORT void *mag_slab_alloc(mag_slab_alloc_t *pool);
+extern MAG_EXPORT bool mag_slab_init(mag_slab_alloc_t *pool, size_t block_size, size_t block_align, size_t blocks_per_chunk); /* Returns false on OOM. */
+extern MAG_EXPORT void *mag_slab_alloc(mag_slab_alloc_t *pool); /* Returns NULL on OOM. */
 extern MAG_EXPORT void mag_slab_free(mag_slab_alloc_t *pool, void *blk);
 extern MAG_EXPORT void mag_slab_destroy(mag_slab_alloc_t *pool);
 extern MAG_EXPORT void mag_slab_print_info(mag_slab_alloc_t *pool, const char *name);

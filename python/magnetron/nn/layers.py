@@ -10,65 +10,129 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 from .. import Tensor, dtype, context
 from .. import dtype as _dtype
-from magnetron.nn.module import Module, Parameter
+from .module import Module, Parameter
+from .init import *
 
-class Flatten(Module):
+
+class Identity(Module):
     def forward(self, x: Tensor) -> Tensor:
-        return x.contiguous().reshape(x.shape[0], -1)
+        return x
 
 
 class Linear(Module):
-    def __init__(self, in_features: int, out_features: int, bias: bool = True, dtype: dtype.DType | None = None, init: bool = True) -> None:
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        bias_init: InitStrategy | None = None,
+    ) -> None:
         super().__init__()
         if dtype is None:
             dtype = context.get_default_dtype()
         self.in_features: int = in_features
         self.out_features: int = out_features
-        self.is_scaled: bool = dtype == _dtype.float8_e4m3fn
-        if init:
-            self.weight: Parameter = Parameter(Tensor.normal(out_features, in_features, mean=0.0, std=1.0, dtype=dtype) / math.sqrt(in_features + out_features))
-        else:
-            self.weight: Parameter = Parameter(Tensor.empty(out_features, in_features, dtype=dtype))
+        self.weight: Parameter = Parameter(Tensor.empty(out_features, in_features, dtype=dtype))
+        if weight_init is None:
+            weight_init = KaimingUniformInitStrategy(
+                a=math.sqrt(5.0),
+                mode=FanMode.FAN_IN,
+                activation=Activation.LEAKY_RELU,
+            )
+        inplace_init(self.weight, weight_init)
         self.bias: Parameter | None = None
         if bias:
-            self.bias: Parameter | None = Parameter(Tensor.zeros(out_features, dtype=dtype))
-        if self.is_scaled:
-            self.weight_scale: Parameter | None = Parameter(Tensor.ones(1, dtype=_dtype.float32))
+            self.bias: Parameter | None = Parameter(Tensor.empty(out_features, dtype=dtype))
+            if bias_init is None:
+                fan_in, _ = compute_fan_inout(self.weight)
+                bound = 1.0 / math.sqrt(float(fan_in)) if fan_in > 0 else 0.0
+                inplace_init(self.bias, UniformInitStrategy(-bound, bound))
+            else:
+                inplace_init(self.bias, bias_init)
 
     def forward(self, x: Tensor) -> Tensor:
-        w = self.weight.T
-        x = x.scaled_matmul(w, self.weight_scale) if self.is_scaled else x.matmul(w)
+        x = x @ self.weight.T
         if self.bias is not None:
             x = x + self.bias
         return x
 
 
+class Flatten(Module):
+    def __init__(self, start_dim: int = 1, end_dim: int = -1) -> None:
+        super().__init__()
+        self.start_dim = start_dim
+        self.end_dim = end_dim
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.flatten(self.start_dim, self.end_dim)
+
+
+class Unflatten(Module):
+    def __init__(self, dim: int, unflattened_size: tuple[int, ...]) -> None:
+        super().__init__()
+        self.dim = dim
+        self.unflattened_size = tuple(unflattened_size)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.unflatten(self.dim, self.unflattened_size)
+
+
+class Pad(Module):
+    def __init__(self, padding, mode: str = 'constant', value: float = 0.0) -> None:
+        super().__init__()
+        self.padding = padding
+        self.mode = mode
+        self.value = value
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.pad(self.padding, self.mode, self.value)
+
+
 class Embedding(Module):
-    def __init__(self, num_embeddings: int, embedding_dim: int, dtype: dtype.DType | None = None, init: bool = True) -> None:
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+    ) -> None:
         super().__init__()
         if dtype is None:
             dtype = context.get_default_dtype()
-        self.num_embeddings: int = num_embeddings
-        self.embedding_dim: int = embedding_dim
-        if init:
-            self.weight: Parameter = Parameter(Tensor.normal(num_embeddings, embedding_dim, dtype=dtype) / embedding_dim)
-        else:
-            self.weight: Parameter = Parameter(Tensor.empty(num_embeddings, embedding_dim, dtype=dtype))
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.weight = Parameter(Tensor.empty(num_embeddings, embedding_dim, dtype=dtype))
+        if weight_init is None:
+            weight_init = NormalInitStrategy(mean=0.0, std=1.0 / embedding_dim)
+
+        inplace_init(self.weight, weight_init)
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.weight[x]
+        return self.weight.embedding(x)
 
 
 class RMSNorm(Module):
-    def __init__(self, dim: int, eps: float = 1e-5, dtype: dtype.DType | None = None, init: bool = True) -> None:
+    def __init__(
+        self,
+        dim: int,
+        eps: float = 1e-5,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+    ) -> None:
         super().__init__()
         if dtype is None:
             dtype = context.get_default_dtype()
-        self.eps: float = eps
-        self.weight: Parameter = Parameter(Tensor.ones(dim, dtype=dtype) if init else Tensor.empty(dim, dtype=dtype))
+        self.eps = eps
+        self.weight = Parameter(Tensor.empty(dim, dtype=dtype))
+        if weight_init is None:
+            weight_init = OnesInitStrategy()
+        inplace_init(self.weight, weight_init)
 
     def forward(self, x: Tensor) -> Tensor:
         rms = (x.sqr().mean(dim=-1, keepdim=True) + self.eps).sqrt_()
@@ -76,13 +140,29 @@ class RMSNorm(Module):
 
 
 class LayerNorm(Module):
-    def __init__(self, ndim: int, bias: bool = True, eps: float = 1e-5, dtype: dtype.DType | None = None, init: bool = True) -> None:
+    def __init__(
+        self,
+        ndim: int,
+        bias: bool = True,
+        eps: float = 1e-5,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        bias_init: InitStrategy | None = None,
+    ) -> None:
         super().__init__()
         if dtype is None:
             dtype = context.get_default_dtype()
-        self.weight: Parameter = Parameter(Tensor.ones(ndim, dtype=dtype) if init else Tensor.empty(ndim, dtype=dtype))
-        self.bias: Parameter | None = Parameter(Tensor.zeros(ndim, dtype=dtype) if init else Tensor.empty(ndim, dtype=dtype)) if bias else None
-        self.eps: float = eps
+        self.eps = eps
+        self.weight = Parameter(Tensor.empty(ndim, dtype=dtype))
+        if weight_init is None:
+            weight_init = OnesInitStrategy()
+        inplace_init(self.weight, weight_init)
+        self.bias = None
+        if bias:
+            self.bias = Parameter(Tensor.empty(ndim, dtype=dtype))
+            if bias_init is None:
+                bias_init = ZerosInitStrategy()
+            inplace_init(self.bias, bias_init)
 
     def forward(self, x: Tensor) -> Tensor:
         mean = x.mean(dim=-1, keepdim=True)
@@ -93,3 +173,60 @@ class LayerNorm(Module):
         if self.bias is not None:
             y = y + self.bias
         return y
+
+
+class Softmax(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.softmax()
+
+
+class Sigmoid(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.sigmoid()
+
+
+class HardSigmoid(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.hardsigmoid()
+
+
+class SiLU(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.silu()
+
+
+class Tanh(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.tanh()
+
+
+class ReLU(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.relu()
+
+
+class GeLU(Module):
+    def __init__(self, use_tanh_approx: bool = False) -> None:
+        super().__init__()
+        self.use_tanh_approx = use_tanh_approx
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.gelu_approx() if self.use_tanh_approx else x.gelu()

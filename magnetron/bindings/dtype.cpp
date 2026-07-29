@@ -35,7 +35,7 @@ namespace mag::bindings {
       .def("is_numeric", [](const dtype_wrapper &self) noexcept -> bool { return mag_type_category_is_numeric(self.v); }, "True for numeric dtypes.")
       .def("__int__", [](const dtype_wrapper &self) noexcept -> int { return self.v; })
       .def("__hash__", [](const dtype_wrapper &self) noexcept -> size_t { return self.v; })
-      .def("__eq__", [](const dtype_wrapper &a, const dtype_wrapper &b) noexcept -> bool { return a.v == b.v; });
+      .def("__eq__", [](const dtype_wrapper &a, const dtype_wrapper &b) noexcept -> bool { return a.v == b.v; }, nb::is_operator());
 
     for (std::underlying_type_t<mag_dtype_t> type=0; type < MAG_DTYPE__NUM; ++type) {
       auto dte = static_cast<mag_dtype_t>(type);

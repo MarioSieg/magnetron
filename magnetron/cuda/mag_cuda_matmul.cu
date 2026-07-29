@@ -32,12 +32,12 @@ namespace mag {
 #if MAG_CUDA_MATMUL_USE_WMMA /* WMMA + TMA fast kernel */
 
   [[nodiscard]] static int64_t tensor_batch_total(const mag_tensor_t *tensor) {
-    int64_t ra = tensor->coords.rank;
+    int64_t ra = tensor->meta.coords.rank;
     if (ra <= 2) return 1;
     int64_t batch=1;
     int64_t delta=ra-2;
     for (int64_t i=0; i < delta; ++i)
-      batch *= tensor->coords.shape[i];
+      batch *= tensor->meta.coords.shape[i];
     return batch;
   }
 
@@ -111,10 +111,10 @@ namespace mag {
 
    template <typename T, bool TA, int BM, int BK>
   [[nodiscard]] static CUtensorMap init_tmap_x(const mag_tensor_t *x) {
-    int64_t ra = x->coords.rank;
+    int64_t ra = x->meta.coords.rank;
     int64_t batch_total = tensor_batch_total(x);
-    int64_t M = ra == 1 ? 1 : x->coords.shape[ra-2];
-    int64_t K = x->coords.shape[ra-1];
+    int64_t M = ra == 1 ? 1 : x->meta.coords.shape[ra-2];
+    int64_t K = x->meta.coords.shape[ra-1];
     if constexpr (!TA) {
       return init_tmap_nd<T, 3>(
         reinterpret_cast<void *>(mag_tensor_data_ptr(x)),
@@ -134,10 +134,10 @@ namespace mag {
 
   template <typename T, bool TB, int BK, int BN>
   [[nodiscard]] static CUtensorMap init_tmap_y(const mag_tensor_t *y) {
-    int64_t ra = y->coords.rank;
+    int64_t ra = y->meta.coords.rank;
     int64_t batch_total = tensor_batch_total(y);
-    int64_t K = ra == 1 ? y->coords.shape[0] : y->coords.shape[ra-2];
-    int64_t N = ra == 1 ? 1 : y->coords.shape[ra-1];
+    int64_t K = ra == 1 ? y->meta.coords.shape[0] : y->meta.coords.shape[ra-2];
+    int64_t N = ra == 1 ? 1 : y->meta.coords.shape[ra-1];
     if constexpr (!TB) {
       return init_tmap_nd<T, 3>(
         reinterpret_cast<void *>(mag_tensor_data_ptr(y)),
@@ -257,7 +257,7 @@ namespace mag {
         : "memory"
       );
       return static_cast<bool>(wait_completed);
-    };
+    }
 
     __device__ void arrive(){
       [[maybe_unused]] uint64_t state;
@@ -267,11 +267,11 @@ namespace mag {
         : "r"(static_cast<uint32_t>(__cvta_generic_to_shared(this)))
         : "memory"
       );
-    };
+    }
   };
   static_assert(sizeof(barrier) == sizeof(uint64_t));
 
-  template <typename T, bool TA, bool TB, int BM, int BN, int STAGES>
+  template <typename T, bool TA, bool TB, int BM, int BN, int BK, int STAGES>
   __global__ static void matmul_kernel_wmma(
     int64_t M,
     int64_t N,
@@ -283,8 +283,7 @@ namespace mag {
   ) {
     using namespace nvcuda;
 
-    static constexpr int BK = 16;
-    static_assert(BK == 16);
+    static_assert(BK % 16 == 0, "BK must be a multiple of 16 for wmma 16x16x16");
     static_assert((BM&15) == 0);
     static_assert((BN&15) == 0);
     static constexpr int WM = BM>>4;
@@ -313,12 +312,10 @@ namespace mag {
     int consumer_warp = warp_id-1;
 
     T *__restrict__ r_batch = br + static_cast<int64_t>(batch)*M*N;
-
     extern __shared__ __align__(128) uint8_t smem_raw[];
     __shared__ barrier a_bar[STAGES];
     __shared__ barrier b_bar[STAGES];
     __shared__ barrier done_bar[STAGES];
-
     auto *a_smem = reinterpret_cast<T *>(smem_raw);
     auto *b_smem = a_smem + STAGES*A_SIZE;
     auto *c_smem = reinterpret_cast<float *>(b_smem + STAGES*B_SIZE);
@@ -356,41 +353,32 @@ namespace mag {
 
     auto issue_tma_stage = [&](int stage, int ktile) -> void {
       if (!is_producer || lane != 0) return;
-
       auto *a_buf = a_smem + stage * A_SIZE;
       auto *b_buf = b_smem + stage * B_SIZE;
       int32_t a_coords[3];
       int32_t b_coords[3];
       init_tma_coords(ktile, a_coords, b_coords);
-
       a_bar[stage].cp_async_bulk_tensor_3d(a_buf, &map_a, a_coords);
       a_bar[stage].arrive_expect_tx(sizeof(T)*A_SIZE);
-
       b_bar[stage].cp_async_bulk_tensor_3d(b_buf, &map_b, b_coords);
       b_bar[stage].arrive_expect_tx(sizeof(T)*B_SIZE);
     };
-
     auto wait_stage_ready = [&](int stage, int phase) -> void {
       while (!a_bar[stage].try_wait_parity(phase));
       while (!b_bar[stage].try_wait_parity(phase));
     };
-
     auto producer_wait_stage_reusable = [&](int stage, int phase) -> void {
       if (!is_producer || lane != 0) return;
       while (!done_bar[stage].try_wait_parity(phase));
     };
-
     auto consumer_mark_stage_done = [&](int stage) -> void {
       if (is_producer || lane != 0) return;
       done_bar[stage].arrive();
     };
-
     wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag0;
     wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag1;
-
     int warp_m0 = 0, warp_n0 = 0;
     int warp_m1 = 0, warp_n1 = 0;
-
     if (!is_producer) {
       wmma::fill_fragment(c_frag0, 0.0f);
       wmma::fill_fragment(c_frag1, 0.0f);
@@ -406,50 +394,41 @@ namespace mag {
       if (is_producer) return;
       auto *a_buf = a_smem + stage*A_SIZE;
       auto *b_buf = b_smem + stage*B_SIZE;
-      if constexpr (!TA && !TB) {
-        wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag0, a_frag1;
-        wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
-        const auto *a_ptr0 = a_buf + (warp_m0<<4)*BK;
-        const auto *a_ptr1 = a_buf + (warp_m1<<4)*BK;
-        const auto *b_ptr = b_buf + (warp_n0<<4);
-        wmma::load_matrix_sync(a_frag0, a_ptr0, BK);
-        wmma::load_matrix_sync(a_frag1, a_ptr1, BK);
-        wmma::load_matrix_sync(b_frag, b_ptr, BN);
-        wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
-        wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
-      } else if constexpr (TA && !TB) {
-        wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a_frag0, a_frag1;
-        wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
-        const auto *a_ptr0 = a_buf + (warp_m0<<4);
-        const auto *a_ptr1 = a_buf + (warp_m1<<4);
-        const auto *b_ptr = b_buf + (warp_n0<<4);
-        wmma::load_matrix_sync(a_frag0, a_ptr0, BM);
-        wmma::load_matrix_sync(a_frag1, a_ptr1, BM);
-        wmma::load_matrix_sync(b_frag, b_ptr, BN);
-        wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
-        wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
-      } else if constexpr (!TA && TB) {
-        wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a_frag0, a_frag1;
-        wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
-        const auto *a_ptr0 = a_buf + (warp_m0<<4)*BK;
-        const auto *a_ptr1 = a_buf + (warp_m1<<4)*BK;
-        const auto *b_ptr = b_buf + (warp_n0<<4)*BK;
-        wmma::load_matrix_sync(a_frag0, a_ptr0, BK);
-        wmma::load_matrix_sync(a_frag1, a_ptr1, BK);
-        wmma::load_matrix_sync(b_frag, b_ptr, BK);
-        wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
-        wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
-      } else {
-        wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a_frag0, a_frag1;
-        wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
-        const auto *a_ptr0 = a_buf + (warp_m0<<4);
-        const auto *a_ptr1 = a_buf + (warp_m1<<4);
-        const auto *b_ptr = b_buf + (warp_n0<<4)*BK;
-        wmma::load_matrix_sync(a_frag0, a_ptr0, BM);
-        wmma::load_matrix_sync(a_frag1, a_ptr1, BM);
-        wmma::load_matrix_sync(b_frag, b_ptr, BK);
-        wmma::mma_sync(c_frag0, a_frag0, b_frag, c_frag0);
-        wmma::mma_sync(c_frag1, a_frag1, b_frag, c_frag1);
+      #pragma unroll
+      for (int kk = 0; kk < BK; kk += 16) {
+        if constexpr (!TA && !TB) {
+          wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a0, a1;
+          wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
+          wmma::load_matrix_sync(a0,     a_buf + (warp_m0<<4)*BK + kk, BK);
+          wmma::load_matrix_sync(a1,     a_buf + (warp_m1<<4)*BK + kk, BK);
+          wmma::load_matrix_sync(b_frag, b_buf + kk*BN + (warp_n0<<4), BN);
+          wmma::mma_sync(c_frag0, a0, b_frag, c_frag0);
+          wmma::mma_sync(c_frag1, a1, b_frag, c_frag1);
+        } else if constexpr (TA && !TB) {
+          wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a0, a1;
+          wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
+          wmma::load_matrix_sync(a0,     a_buf + kk*BM + (warp_m0<<4), BM);
+          wmma::load_matrix_sync(a1,     a_buf + kk*BM + (warp_m1<<4), BM);
+          wmma::load_matrix_sync(b_frag, b_buf + kk*BN + (warp_n0<<4), BN);
+          wmma::mma_sync(c_frag0, a0, b_frag, c_frag0);
+          wmma::mma_sync(c_frag1, a1, b_frag, c_frag1);
+        } else if constexpr (!TA && TB) {
+          wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a0, a1;
+          wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
+          wmma::load_matrix_sync(a0,     a_buf + (warp_m0<<4)*BK + kk, BK);
+          wmma::load_matrix_sync(a1,     a_buf + (warp_m1<<4)*BK + kk, BK);
+          wmma::load_matrix_sync(b_frag, b_buf + (warp_n0<<4)*BK + kk, BK);
+          wmma::mma_sync(c_frag0, a0, b_frag, c_frag0);
+          wmma::mma_sync(c_frag1, a1, b_frag, c_frag1);
+        } else {
+          wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a0, a1;
+          wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
+          wmma::load_matrix_sync(a0,     a_buf + kk*BM + (warp_m0<<4), BM);
+          wmma::load_matrix_sync(a1,     a_buf + kk*BM + (warp_m1<<4), BM);
+          wmma::load_matrix_sync(b_frag, b_buf + (warp_n0<<4)*BK + kk, BK);
+          wmma::mma_sync(c_frag0, a0, b_frag, c_frag0);
+          wmma::mma_sync(c_frag1, a1, b_frag, c_frag1);
+        }
       }
     };
 
@@ -511,7 +490,8 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_matmul_kernel_wmma(
+  static mag_status_t launch_matmul_kernel_wmma(
+    mag_error_t *err,
     int64_t M, int64_t N, int64_t K,
     int64_t batch_total,
     T *__restrict__ br,
@@ -519,56 +499,51 @@ namespace mag {
     bool xT, bool yT
   ) {
     static_assert(std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>);
-
     static constexpr int BM = 128;
     static constexpr int BN = 64;
-    static constexpr int BK = 16;
-    static constexpr int STAGES = 2;
-    static constexpr int BLOCK_THREADS = (1 + ((BM / 16) * (BN / 16)) / 2) * 32;
-
+    static constexpr int BK = 32;
+    static constexpr int STAGES = 4;
+    static constexpr int BLOCK_THREADS = (1 + ((BM/16)*(BN/16))/2) * 32;
     int max_smem_real;
     int device;
     cudaGetDevice(&device);
     cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
-
-    size_t smem = sizeof(T)*(STAGES * (BM*BK + BN*BK)) + sizeof(float)*((BM>>4)*(BN>>4)<<8);
-    mag_assert(smem <= (unsigned)max_smem_real,"Required shared memory size for matmul kernel exceeds device limit");
-
+    size_t smem = sizeof(T)*STAGES*(BM*BK + BN*BK) + sizeof(float)*((BM>>4)*(BN>>4)<<8);
+    if (smem > (unsigned)max_smem_real)
+      return mag_set_error(err, MAG_ERR_OP, "cuda: matmul shared memory requirement (%u bytes) exceeds device limit (%d bytes).", static_cast<unsigned>(smem), max_smem_real);
     auto set_kernel_smem_size = [&](auto kernel, size_t size) -> void {
       mag_assert2(size <= INT32_MAX);
       cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(size));
     };
-
-    dim3 grid_dim((N + BN - 1) / BN, (M + BM - 1) / BM, batch_total);
+    dim3 grid_dim(static_cast<unsigned>((N + BN-1)/BN), static_cast<unsigned>((M + BM-1)/BM), static_cast<unsigned>(batch_total));
     dim3 block_dim(BLOCK_THREADS, 1, 1);
-
     if (!xT && !yT) {
       CUtensorMap map_a = init_tmap_x<T, false, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, false, BK, BN>(y);
-      auto *kernel = matmul_kernel_wmma<T, false, false, BM, BN, STAGES>;
+      auto *kernel = matmul_kernel_wmma<T, false, false, BM, BN, BK, STAGES>;
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
     } else if (!xT && yT) {
       CUtensorMap map_a = init_tmap_x<T, false, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, true, BK, BN>(y);
-      auto *kernel = matmul_kernel_wmma<T, false, true, BM, BN, STAGES>;
+      auto *kernel = matmul_kernel_wmma<T, false, true, BM, BN, BK, STAGES>;
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
     } else if (xT && !yT) {
       CUtensorMap map_a = init_tmap_x<T, true, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, false, BK, BN>(y);
-      auto *kernel = matmul_kernel_wmma<T, true, false, BM, BN, STAGES>;
+      auto *kernel = matmul_kernel_wmma<T, true, false, BM, BN, BK, STAGES>;
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
     } else {
       CUtensorMap map_a = init_tmap_x<T, true, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, true, BK, BN>(y);
-      auto *kernel = matmul_kernel_wmma<T, true, true, BM, BN, STAGES>;
+      auto *kernel = matmul_kernel_wmma<T, true, true, BM, BN, BK, STAGES>;
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
     }
+    return MAG_OK;
   }
-
 
 #endif
 
@@ -587,18 +562,14 @@ namespace mag {
     static constexpr int A_SIZE = BM*BK;
     static constexpr int B_SIZE = BK*BN;
     static constexpr int STAGES = 2;
-
     extern __shared__ uint8_t smem[];
     auto *a_smem = reinterpret_cast<T *>(smem);
     auto *b_smem = reinterpret_cast<T *>(smem) + STAGES*A_SIZE;
-
     int batch = blockIdx.z;
     if (batch >= batch_total) return;
-
     bx += batch*M*K;
     by += batch*K*N;
     br += batch*M*N;
-
     int a_row_stride = TA ? 1 : K;
     int a_col_stride = TA ? M : 1;
     int b_row_stride = TB ? 1 : N;
@@ -611,13 +582,10 @@ namespace mag {
     int nthreads = blockDim.x*blockDim.y;
     int local_m0 = ty * TM;
     int local_n0 = tx * TN;
-
     float acc[TM][TN] = {};
-
     auto load_stage = [&](int stage, int k0) {
       auto *a_buf = a_smem + stage*A_SIZE;
       auto *b_buf = b_smem + stage*B_SIZE;
-
       #pragma unroll
       for (int i=tid; i < A_SIZE; i += nthreads) {
         int row = i / BK;
@@ -691,7 +659,8 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_matmul_kernel_fallback(
+  static mag_status_t launch_matmul_kernel_fallback(
+    mag_error_t *err,
     int64_t M, int64_t N, int64_t K,
     int64_t batch_total,
     T *__restrict__ br,
@@ -719,7 +688,8 @@ namespace mag {
     cudaGetDevice(&device);
     cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
     size_t smem = STAGES * (BM*BK + BN*BK) * sizeof(T);
-    mag_assert(smem <= (unsigned)max_smem_real, "Required shared memory size for matmul kernel exceeds device limit");
+    if (smem > (unsigned)max_smem_real)
+      return mag_set_error(err, MAG_ERR_OP, "cuda: matmul shared memory requirement (%u bytes) exceeds device limit (%d bytes).", static_cast<unsigned>(smem), max_smem_real);
     auto set_kernel_smem_size = [&](auto kernel, size_t size) -> void {
       mag_assert2(size <= INT32_MAX);
       cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(size));
@@ -742,14 +712,15 @@ namespace mag {
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
     }
+    return MAG_OK;
   }
 
   template <typename T>
   [[nodiscard]] static bool is_tensor_tma_compat_x(const mag_tensor_t *x, bool TA) {
-    int64_t r = x->coords.rank;
+    int64_t r = x->meta.coords.rank;
     int64_t batch_total = tensor_batch_total(x);
-    int64_t M = r == 1 ? 1 : x->coords.shape[r-2];
-    int64_t K = x->coords.shape[r-1];
+    int64_t M = r == 1 ? 1 : x->meta.coords.shape[r-2];
+    int64_t K = x->meta.coords.shape[r-1];
     if (batch_total < 1) return false;
     if (15 & mag_tensor_data_ptr(x)) return false;
     return !TA ? !(15 & (K*sizeof(T))) && !(15 & (M*K*sizeof(T))) : !(15 & (M*sizeof(T))) && !(15 & (M*K*sizeof(T)));
@@ -757,147 +728,158 @@ namespace mag {
 
   template <typename T>
   [[nodiscard]] static bool is_tensor_tma_compat_y(const mag_tensor_t *y, bool TB) {
-    int64_t r = y->coords.rank;
+    int64_t r = y->meta.coords.rank;
     int64_t batch_total = tensor_batch_total(y);
-    int64_t K = r == 1 ? y->coords.shape[0] : y->coords.shape[r-2];
-    int64_t N = r == 1 ? 1 : y->coords.shape[r-1];
+    int64_t K = r == 1 ? y->meta.coords.shape[0] : y->meta.coords.shape[r-2];
+    int64_t N = r == 1 ? 1 : y->meta.coords.shape[r-1];
     if (batch_total < 1) return false;
     if (15 & mag_tensor_data_ptr(y)) return false;
     return !TB ? !(15 & (N*sizeof(T))) && !(15 & (K*N*sizeof(T))) : !(15 & (K*sizeof(T))) && !(15 & (K*N*sizeof(T)));
   }
 
-  template <typename T, bool YT, int THREADS_X, int OUTS_PER_BLOCK>
+  template <typename T, bool YT, int THREADS_X, int OUTS_PER_BLOCK, bool VEC128>
   __global__ static void gemv_m1_kernel(
-    int N,
-    int K,
-    int batch_total,
+    int N, int K, int batch_total,
     T *__restrict__ br,
     const T *__restrict__ bx,
     const T *__restrict__ by
   ) {
-    static_assert(!(THREADS_X&31));
+    static_assert(!(THREADS_X & 31));
     static_assert(THREADS_X*OUTS_PER_BLOCK <= 1024);
-
-    static constexpr int WARPS_X = THREADS_X>>5;
-
+    static constexpr int WARPS_X = THREADS_X >> 5;
     int batch = blockIdx.y;
     if (batch >= batch_total) return;
-
     bx += batch*K;
     by += batch*K*N;
     br += batch*N;
-
     int tx = threadIdx.x;
     int ty = threadIdx.y;
     int lane = tx & 31;
     int warp_x = tx >> 5;
-
     int out = blockIdx.x*OUTS_PER_BLOCK + ty;
     if (out >= N) return;
-
     float sum = 0.0f;
     if constexpr (YT) {
-      if constexpr (std::is_same_v<T, half>) {
-        int K2 = K >> 1;
-        const auto *__restrict__ x2 = reinterpret_cast<const half2 *>(bx);
-        const auto *__restrict__ w2 = reinterpret_cast<const half2 *>(by + out * K);
-        for (int k2 = tx; k2 < K2; k2 += THREADS_X) {
-          const float2 xv = __half22float2(x2[k2]);
-          const float2 wv = __half22float2(w2[k2]);
-          sum += xv.x * wv.x + xv.y * wv.y;
+      const T *__restrict__ w_row = by + out*K;
+      if constexpr (VEC128 && (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>)) {
+        const uint4 *x_vec = reinterpret_cast<const uint4 *>(bx);
+        const uint4 *w_vec = reinterpret_cast<const uint4 *>(w_row);
+        int Kv = K >> 3;
+        #pragma unroll 4
+        for (int kv = tx; kv < Kv; kv += THREADS_X) {
+          uint4 xv = __ldg(x_vec + kv);
+          uint4 wv = __ldg(w_vec + kv);
+          if constexpr (std::is_same_v<T, __nv_bfloat16>) {
+            const __nv_bfloat162 *xa = reinterpret_cast<const __nv_bfloat162 *>(&xv);
+            const __nv_bfloat162 *wa = reinterpret_cast<const __nv_bfloat162 *>(&wv);
+            #pragma unroll
+            for (int i = 0; i < 4; ++i) {
+              float2 a = __bfloat1622float2(xa[i]);
+              float2 b = __bfloat1622float2(wa[i]);
+              sum = __fmaf_rn(a.x, b.x, sum);
+              sum = __fmaf_rn(a.y, b.y, sum);
+            }
+          } else {
+            const half2 *xa = reinterpret_cast<const half2 *>(&xv);
+            const half2 *wa = reinterpret_cast<const half2 *>(&wv);
+            #pragma unroll
+            for (int i = 0; i < 4; ++i) {
+              float2 a = __half22float2(xa[i]);
+              float2 b = __half22float2(wa[i]);
+              sum = __fmaf_rn(a.x, b.x, sum);
+              sum = __fmaf_rn(a.y, b.y, sum);
+            }
+          }
         }
-        if ((K & 1) && tx == 0) {
-          int k = K - 1;
-          sum += static_cast<float>(bx[k]) * static_cast<float>(by[out * K + k]);
-        }
+        for (int k = (K & ~7) + tx; k < K; k += THREADS_X)
+          sum = __fmaf_rn(static_cast<float>(bx[k]), static_cast<float>(w_row[k]), sum);
       } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
+        const __nv_bfloat162 *x2 = reinterpret_cast<const __nv_bfloat162 *>(bx);
+        const __nv_bfloat162 *w2 = reinterpret_cast<const __nv_bfloat162 *>(w_row);
         int K2 = K >> 1;
-        const auto *__restrict__ x2 = reinterpret_cast<const __nv_bfloat162 *>(bx);
-        const auto *__restrict__ w2 = reinterpret_cast<const __nv_bfloat162 *>(by + out * K);
         for (int k2 = tx; k2 < K2; k2 += THREADS_X) {
-          const float2 xv = __bfloat1622float2(x2[k2]);
-          const float2 wv = __bfloat1622float2(w2[k2]);
-          sum += xv.x * wv.x + xv.y * wv.y;
+          float2 a = __bfloat1622float2(__ldg(x2 + k2));
+          float2 b = __bfloat1622float2(__ldg(w2 + k2));
+          sum = __fmaf_rn(a.x, b.x, sum);
+          sum = __fmaf_rn(a.y, b.y, sum);
         }
-        if ((K & 1) && tx == 0) {
-          int k = K - 1;
-          sum += static_cast<float>(bx[k])*static_cast<float>(by[out * K + k]);
+        if ((K & 1) && tx == 0)
+          sum = __fmaf_rn(static_cast<float>(bx[K-1]), static_cast<float>(w_row[K-1]), sum);
+      } else if constexpr (std::is_same_v<T, half>) {
+        const half2 *x2 = reinterpret_cast<const half2 *>(bx);
+        const half2 *w2 = reinterpret_cast<const half2 *>(w_row);
+        int K2 = K >> 1;
+        for (int k2 = tx; k2 < K2; k2 += THREADS_X) {
+          float2 a = __half22float2(__ldg(x2 + k2));
+          float2 b = __half22float2(__ldg(w2 + k2));
+          sum = __fmaf_rn(a.x, b.x, sum);
+          sum = __fmaf_rn(a.y, b.y, sum);
         }
+        if ((K & 1) && tx == 0)
+          sum = __fmaf_rn(static_cast<float>(bx[K-1]), static_cast<float>(w_row[K-1]), sum);
       } else {
-        for (int k = tx; k < K; k += THREADS_X) {
-          sum += static_cast<float>(bx[k])*static_cast<float>(by[out * K + k]);
-        }
+        for (int k = tx; k < K; k += THREADS_X)
+          sum = __fmaf_rn(static_cast<float>(__ldg(bx + k)), static_cast<float>(__ldg(w_row + k)), sum);
       }
     } else {
-      for (int k = tx; k < K; k += THREADS_X) {
-        sum += static_cast<float>(bx[k]) * static_cast<float>(by[k * N + out]);
-      }
+      for (int k = tx; k < K; k += THREADS_X)
+        sum = __fmaf_rn(static_cast<float>(__ldg(bx + k)), static_cast<float>(__ldg(by + k*N + out)), sum);
     }
     #pragma unroll
-    for (int offset=16; offset > 0; offset >>= 1)
+    for (int offset = 16; offset > 0; offset >>= 1)
       sum += __shfl_down_sync(0xffffffff, sum, offset);
     __shared__ float warp_sums[OUTS_PER_BLOCK][WARPS_X];
-    if (lane == 0) {
-      warp_sums[ty][warp_x] = sum;
-    }
+    if (lane == 0) warp_sums[ty][warp_x] = sum;
     __syncthreads();
-
     if (warp_x == 0) {
       sum = lane < WARPS_X ? warp_sums[ty][lane] : 0.0f;
       #pragma unroll
-      for (int offset=16; offset > 0; offset >>= 1)
+      for (int offset = 16; offset > 0; offset >>= 1)
         sum += __shfl_down_sync(0xffffffff, sum, offset);
-      if (lane == 0)
-        br[out] = static_cast<T>(sum);
+      if (lane == 0) br[out] = static_cast<T>(sum);
     }
   }
 
   template <typename T>
   static void launch_gemv_m1_kernel(
-    int64_t N,
-    int64_t K,
-    int64_t batch_total,
+    int64_t N, int64_t K, int64_t batch_total,
     T *__restrict__ br,
     const T *__restrict__ bx,
     const T *__restrict__ by,
-    bool xT,
-    bool yT
+    [[maybe_unused]] bool xT, bool yT
   ) {
-    (void)xT; // for M=1 vector input, xT does not matter after contiguity
-    static constexpr int THREADS_X = 64;
-    static constexpr int OUTS_PER_BLOCK = 8;
-
+    static constexpr int THREADS_X = 128;
+    static constexpr int OUTS_PER_BLOCK = 4;
+    bool vec128 = !(K&6) && !(reinterpret_cast<uintptr_t>(bx) & 15) && !(reinterpret_cast<uintptr_t>(by) & 15);
     dim3 block_dim(THREADS_X, OUTS_PER_BLOCK, 1);
-    dim3 grid_dim((N + OUTS_PER_BLOCK - 1)/OUTS_PER_BLOCK,batch_total,1);
-    if (yT) {
-      auto *kernel = gemv_m1_kernel<T, true, THREADS_X, OUTS_PER_BLOCK>;
-      kernel<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
+    dim3 grid_dim(static_cast<unsigned>((N + OUTS_PER_BLOCK - 1)/OUTS_PER_BLOCK), static_cast<unsigned>(batch_total), 1);
+    if (yT && vec128) {
+      auto *k = gemv_m1_kernel<T, true, THREADS_X, OUTS_PER_BLOCK, true>;
+      k<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
+    } else if (yT) {
+      auto *k = gemv_m1_kernel<T, true, THREADS_X, OUTS_PER_BLOCK, false>;
+      k<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
     } else {
-      auto *kernel = gemv_m1_kernel<T, false, THREADS_X, OUTS_PER_BLOCK>;
-      kernel<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
+      auto *k = gemv_m1_kernel<T, false, THREADS_X, OUTS_PER_BLOCK, false>;
+      k<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
     }
   }
 
   template <typename T>
-  static void launch_matmul(const mag_command_t &cmd) {
+  static mag_status_t launch_matmul(mag_error_t *err, const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *y = cmd.in[1];
-
     mag_assert2(mag_tensor_is_contiguous(r));
-
     bool x_batch_packed, y_batch_packed;
-    mag_mat_layout_type_t x_layout = mag_mat_layout_detect(&x->coords, &x_batch_packed);
-    mag_mat_layout_type_t y_layout = mag_mat_layout_detect(&y->coords, &y_batch_packed);
-
+    mag_mat_layout_type_t x_layout = mag_mat_layout_detect(&x->meta.coords, &x_batch_packed);
+    mag_mat_layout_type_t y_layout = mag_mat_layout_detect(&y->meta.coords, &y_batch_packed);
     bool x_ok = x_layout != MAG_MAT_LAYOUT_TYPE_OTHER && x_batch_packed;
     bool y_ok = y_layout != MAG_MAT_LAYOUT_TYPE_OTHER && y_batch_packed;
     bool xT = x_ok && x_layout == MAG_MAT_LAYOUT_TYPE_TRANSPOSED;
     bool yT = y_ok && y_layout == MAG_MAT_LAYOUT_TYPE_TRANSPOSED;
-
     bool cloned_x = false;
     bool cloned_y = false;
-
     if (!x_ok) {
       mag_contiguous(nullptr, &x, x);
       xT = false;
@@ -908,50 +890,54 @@ namespace mag {
       yT = false;
       cloned_y = true;
     }
-
-    int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank - 2];
-    int64_t Kx = x->coords.shape[x->coords.rank - 1];
-    int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank - 1];
-    int64_t Ky = y->coords.rank == 1 ? y->coords.shape[0] : y->coords.shape[y->coords.rank - 2];
-
+    int64_t M = x->meta.coords.rank == 1 ? 1 : x->meta.coords.shape[x->meta.coords.rank - 2];
+    int64_t Kx = x->meta.coords.shape[x->meta.coords.rank - 1];
+    int64_t N = y->meta.coords.rank == 1 ? 1 : y->meta.coords.shape[y->meta.coords.rank - 1];
+    int64_t Ky = y->meta.coords.rank == 1 ? y->meta.coords.shape[0] : y->meta.coords.shape[y->meta.coords.rank - 2];
     mag_assert2(Kx == Ky);
     int64_t K = Kx;
-
-    int64_t batch_rank = r->coords.rank > 2 ? r->coords.rank-2 : 0;
-    int64_t batch_total = std::accumulate(r->coords.shape, r->coords.shape + batch_rank, 1, std::multiplies<int64_t>());
-
+    int64_t batch_rank = r->meta.coords.rank > 2 ? r->meta.coords.rank-2 : 0;
+    int64_t batch_total = std::accumulate(r->meta.coords.shape, r->meta.coords.shape + batch_rank, 1, std::multiplies<int64_t>());
     auto *__restrict__ br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *__restrict__ bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     const auto *__restrict__ by = reinterpret_cast<const T *>(mag_tensor_data_ptr(y));
-    if (M == 1) { // GEMV
-      launch_gemv_m1_kernel(N, K, batch_total, br, bx, by, xT, yT);
-      goto end;
+    mag_matmul_type_t mm_type = mag_matmul_type_detect(x, y);
+    mag_status_t st = MAG_OK;
+    switch (mm_type) {
+      case MAG_MATMUL_TYPE_DOT:
+      case MAG_MATMUL_TYPE_BMM_DOT:
+      case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
+      case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
+        launch_gemv_m1_kernel(N, K, batch_total, br, bx, by, xT, yT);
+        goto end;
+      case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
+      case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
+        launch_gemv_m1_kernel(M, K, batch_total, br, by, bx, yT, true);
+        goto end;
+      default: break;
     }
-
     #if MAG_CUDA_MATMUL_USE_WMMA
       if constexpr (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>) {
-        bool can_use_wmma_tma_kernel = is_tensor_tma_compat_x<T>(x, xT) && is_tensor_tma_compat_y<T>(y, yT);
-        if (can_use_wmma_tma_kernel) {
-          launch_matmul_kernel_wmma(M, N, K, batch_total, br, x, y, xT, yT);
+        if (is_tensor_tma_compat_x<T>(x, xT) && is_tensor_tma_compat_y<T>(y, yT)) {
+          st = launch_matmul_kernel_wmma(err, M, N, K, batch_total, br, x, y, xT, yT);
           goto end;
         }
       }
     #endif
-
-    launch_matmul_kernel_fallback(M, N, K, batch_total, br, bx, by, xT, yT);
-
+    st = launch_matmul_kernel_fallback(err, M, N, K, batch_total, br, bx, by, xT, yT);
     [[maybe_unused]] end:
       if (cloned_x) mag_tensor_decref(x);
       if (cloned_y) mag_tensor_decref(y);
+    return st;
   }
 
-  void misc_op_matmul(const mag_command_t &cmd) {
+  mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
-    switch (x->dtype) {
-      case MAG_DTYPE_FLOAT32: launch_matmul<float>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_matmul<half>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_matmul<__nv_bfloat16>(cmd); break;
-      default: mag_assert(false, "matmul: unsupported dtype");
+    switch (x->meta.dtype) {
+      case MAG_DTYPE_FLOAT32: return launch_matmul<float>(err, cmd);
+      case MAG_DTYPE_FLOAT16: return launch_matmul<half>(err, cmd);
+      case MAG_DTYPE_BFLOAT16: return launch_matmul<__nv_bfloat16>(err, cmd);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: matmul: unsupported dtype %s.", mag_type_trait(x->meta.dtype)->name);
     }
   }
 }

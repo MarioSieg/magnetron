@@ -13,7 +13,7 @@
 #define MAGNETRON_CPU_H
 
 #include <core/mag_backend.h>
-#include <core/mag_thread.h>
+#include <core/mag_threadlib.h>
 
 #include "mag_cpu_numa.h"
 #include "mag_cpu_threadpool.h"

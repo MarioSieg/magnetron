@@ -26,6 +26,7 @@ template <> struct type_caster<std::wstring> {
             return false;
         }
         value = std::wstring(str, (size_t) size);
+        PyMem_Free((void *) str);
         return true;
     }
 

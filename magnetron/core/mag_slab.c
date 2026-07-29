@@ -30,7 +30,8 @@ static mag_slab_chunk_t *mag_fixed_pool_chunk_new(size_t block_size, size_t bloc
   uintptr_t total = 0;
   mag_pincr((void **)&total, sizeof(mag_slab_chunk_t), __alignof(mag_slab_chunk_t));
   mag_pincr((void **)&total, cap_bytes, block_align);
-  void *base = (*mag_alloc)(NULL, (size_t)total, 0);
+  void *base = (*mag_try_alloc)(NULL, (size_t)total, 0);
+  if (mag_unlikely(!base)) return NULL;
   void *pos = base;
   mag_slab_chunk_t *chunk = mag_pincr(&pos, sizeof(mag_slab_chunk_t), __alignof(mag_slab_chunk_t));
   uint8_t *bot = mag_pincr(&pos, cap_bytes, block_align);
@@ -43,7 +44,7 @@ static mag_slab_chunk_t *mag_fixed_pool_chunk_new(size_t block_size, size_t bloc
   return chunk;
 }
 
-void mag_slab_init(mag_slab_alloc_t *pool, size_t block_size, size_t block_align, size_t blocks_per_chunk) {
+bool mag_slab_init(mag_slab_alloc_t *pool, size_t block_size, size_t block_align, size_t blocks_per_chunk) {
   mag_assert2(pool);
   mag_assert2(blocks_per_chunk);
   block_align = mag_xmax(block_align, __alignof(void *));
@@ -51,7 +52,7 @@ void mag_slab_init(mag_slab_alloc_t *pool, size_t block_size, size_t block_align
   block_size = mag_xmax(block_size, sizeof(void *));
   block_size = (block_size + (block_align-1)) & ~(block_align-1);
   mag_slab_chunk_t *chunk = mag_fixed_pool_chunk_new(block_size, block_align, blocks_per_chunk);
-  mag_assert2(chunk);
+  if (mag_unlikely(!chunk)) { memset(pool, 0, sizeof(*pool)); return false; } /* OOM. */
   memset(pool, 0, sizeof(*pool));
   *pool = (mag_slab_alloc_t) {
     .block_size = block_size,
@@ -65,6 +66,7 @@ void mag_slab_init(mag_slab_alloc_t *pool, size_t block_size, size_t block_align
     .num_chunks = 1,
     .num_allocs = 0
   };
+  return true;
 }
 
 void *mag_slab_alloc(mag_slab_alloc_t *pool) {
@@ -85,7 +87,7 @@ void *mag_slab_alloc(mag_slab_alloc_t *pool) {
     return top;
   }
   mag_slab_chunk_t *new_chunk = mag_fixed_pool_chunk_new(pool->block_size, pool->block_align, pool->blocks_per_chunk); /* 3) allocate new chunk */
-  mag_assert2(new_chunk);
+  if (mag_unlikely(!new_chunk)) return NULL;
   pool->chunk_tail->next = new_chunk;
   pool->chunk_tail = new_chunk;
   ++pool->num_chunks;
@@ -111,8 +113,8 @@ void mag_slab_free(mag_slab_alloc_t *pool, void *blk) {
   mag_assert2(pool);
   mag_assert2(blk);
 #ifdef MAG_DEBUG
-  mag_assert(((uintptr_t)blk & (pool->block_align-1)) == 0, "invalid alignment");
-  mag_assert(mag_fixed_pool_owns_ptr(pool, blk), "pointer not owned by pool");
+  mag_assert(((uintptr_t)blk & (pool->block_align-1)) == 0, "slab: block %p is not aligned to %zu bytes.", blk, (size_t)pool->block_align);
+  mag_assert(mag_fixed_pool_owns_ptr(pool, blk), "slab: block %p is not owned by this fixed pool.", blk);
 #endif
   *(void **)blk = pool->free_list;
   pool->free_list = blk;

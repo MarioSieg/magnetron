@@ -12,6 +12,7 @@ enum class UnsignedFlag : uint64_t {
      All = (uint64_t) -1,
 };
 enum class SEnum : int32_t { A, B, C = (int32_t) -1 };
+enum class Color { Red, Green, Blue };
 enum ClassicEnum { Item1, Item2 };
 
 struct EnumProperty { Enum get_enum() { return Enum::A; } };
@@ -21,6 +22,22 @@ NB_MAKE_OPAQUE(OpaqueEnum)
 
 // Enum with members named 'name' and 'value' to test stubgen (issue #1246)
 enum class Item { name, value, extra };
+
+// Wrapper class with nested enum (diplomat pattern) to test stubgen
+// simplification of self-referencing types inside class bodies.
+class EnumWrapper {
+public:
+    enum Value { Alpha = 0, Beta = 1, Gamma = 2 };
+
+    EnumWrapper() : value(Alpha) {}
+    constexpr EnumWrapper(Value v) : value(v) {}
+    constexpr operator Value() const { return value; }
+    explicit operator bool() const = delete;
+
+    Value get_value() const { return value; }
+private:
+    Value value;
+};
 
 NB_MODULE(test_enum_ext, m) {
     nb::enum_<Enum>(m, "Enum", "enum-level docstring")
@@ -96,4 +113,28 @@ NB_MODULE(test_enum_ext, m) {
         .value("extra", Item::extra);
 
     m.def("item_to_int", [](Item i) { return (int) i; }, nb::arg("item") = Item::name);
+
+    // Wrapper class with nested enum — tests that stubgen uses short names
+    // (e.g. "Value" not "EnumWrapper.Value") inside the class body.
+    nb::class_<EnumWrapper> ew(m, "EnumWrapper");
+
+    nb::enum_<EnumWrapper::Value> ew_enum(ew, "Value");
+    ew_enum
+        .value("Alpha", EnumWrapper::Alpha)
+        .value("Beta", EnumWrapper::Beta)
+        .value("Gamma", EnumWrapper::Gamma)
+        .export_values();
+
+    ew.def(nb::init_implicit<EnumWrapper::Value>())
+      .def(nb::self == EnumWrapper::Value())
+      .def("get_value", &EnumWrapper::get_value);
+
+    nb::enum_<Color>(m, "Color", "string-valued enum", nb::is_str())
+        .str_value("Red",   Color::Red,   "red")
+        .str_value("Green", Color::Green, "green")
+        .str_value("Blue",  Color::Blue,  "blue");
+
+    m.def("from_color", [](Color c) { return (int) c; }, nb::arg().noconvert());
+    m.def("from_color_implicit", [](Color c) { return (int) c; });
+    m.def("to_color", [](int v) { return (Color) v; });
 }

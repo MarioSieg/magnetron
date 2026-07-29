@@ -11,8 +11,8 @@ from __future__ import annotations
 from collections.abc import Iterator, Callable, MutableMapping
 from collections import OrderedDict
 from collections.abc import Mapping
-
-from .. import Tensor
+from typing import Any
+from .. import Tensor, dtype
 
 
 class Parameter(Tensor):
@@ -31,358 +31,272 @@ class Parameter(Tensor):
         self._replace(v)
 
 
+class Buffer(Tensor):
+    """A tensor that is registered as non-parameter module state."""
+
+    def __init__(self, x: Tensor, persistent: bool = True) -> None:
+        Tensor.__init__(self, x)
+        self.persistent = persistent
+
+    @property
+    def data(self) -> Tensor:
+        return self
+
+    @data.setter
+    def data(self, v: Tensor) -> None:
+        self._replace(v)
+
+
 class Module:
-    """Base class for all neural network modules."""
-
     def __init__(self) -> None:
-        self._buffer_names = set()
-        self._fwd_hooks: list[Callable[[Module, tuple, Tensor], None]] = []
-        self._fwd_pre_hooks: list[Callable[[Module, tuple], None]] = []
-
-    def _parameters(self, visited: set[int]) -> Iterator[Parameter]:
-        for v in self.__dict__.values():
-            if isinstance(v, Parameter):
-                vid = id(v)
-                if vid not in visited:
-                    visited.add(vid)
-                    yield v
-            elif isinstance(v, Module):
-                yield from v._parameters(visited)
-            elif isinstance(v, ModuleList):
-                for m in v:
-                    yield from m._parameters(visited)
-
-    def register_forward_hook(self, hook: Callable[[Module, tuple, Tensor], None]) -> Callable[[Module, tuple, Tensor], None]:
-        self._fwd_hooks.append(hook)
-        return hook
-
-    def register_forward_pre_hook(self, hook: Callable[[Module, tuple], None]) -> Callable[[Module, tuple], None]:
-        self._fwd_pre_hooks.append(hook)
-        return hook
-
-    def parameters(self) -> Iterator[Parameter]:
-        """Yield all unique and nested parameters of the module."""
-        visited: set[int] = set()
-        yield from self._parameters(visited)
-
-    def named_parameters(
-        self,
-        prefix: str = '',
-    ) -> Iterator[tuple[str, Parameter]]:
-        seen: set[int] = set()
-        for attr_name, value in self.__dict__.items():
-            if isinstance(value, Parameter):
-                if id(value) not in seen:
-                    seen.add(id(value))
-                    yield prefix + attr_name, value
-            elif isinstance(value, Module):
-                yield from value.named_parameters(prefix + attr_name + '.')
-            elif isinstance(value, ModuleList):
-                for idx, sub_mod in enumerate(value):
-                    yield from sub_mod.named_parameters(f'{prefix}{attr_name}.{idx}.')
-
-    def children(self) -> Iterator[Module]:
-        """Yield immediate child modules."""
-        for v in self.__dict__.values():
-            if isinstance(v, Module):
-                yield v
-            elif isinstance(v, ModuleList):
-                yield from v
-
-    def modules(self) -> Iterator[Module]:
-        """Yield self and all submodules in pre-order."""
-        yield self
-        for child in self.children():
-            yield from child.modules()
+        self.training = True
+        self._buffers: dict[str, Buffer] = {}
+        self._fwd_hooks: list[Callable[[Module, tuple[Any, ...], Tensor], None]] = []
+        self._fwd_pre_hooks: list[Callable[[Module, tuple[Any, ...]], None]] = []
 
     def named_children(self) -> Iterator[tuple[str, Module]]:
-        for attr_name, value in self.__dict__.items():
+        for name, value in self.__dict__.items():
+            if name.startswith('_'):
+                continue
             if isinstance(value, Module):
-                yield attr_name, value
-            elif isinstance(value, ModuleList):
-                for i, m in enumerate(value):
-                    yield f'{attr_name}.{i}', m
+                yield name, value
 
-    def named_modules(self, memo: set[int] | None = None, prefix: str = '') -> Iterator[tuple[str, Module]]:
-        if memo is None:
-            memo = set()
+    def children(self) -> Iterator[Module]:
+        for _, child in self.named_children():
+            yield child
+
+    def named_modules(
+        self,
+        prefix: str = '',
+        memo: set[int] | None = None,
+    ) -> Iterator[tuple[str, Module]]:
+        memo = set() if memo is None else memo
         if id(self) in memo:
             return
         memo.add(id(self))
         yield prefix, self
         for name, child in self.named_children():
-            next_prefix = f'{prefix}.{name}' if prefix else name
-            yield from child.named_modules(memo, next_prefix)
+            child_prefix = f'{prefix}.{name}' if prefix else name
+            yield from child.named_modules(child_prefix, memo)
 
-    def _state_items(self, prefix: str = '') -> Iterator[tuple[str, Tensor]]:
-        for name, attr in self.__dict__.items():
-            if isinstance(attr, Parameter):
-                yield f'{prefix}{name}', attr
-            elif isinstance(attr, Tensor):
-                yield f'{prefix}{name}', attr
-            elif isinstance(attr, Module):
-                yield from attr._state_items(f'{prefix}{name}.')
-            elif isinstance(attr, ModuleList):
-                for i, sub in enumerate(attr):
-                    yield from sub._state_items(f'{prefix}{name}.{i}.')
+    def modules(self) -> Iterator[Module]:
+        for _, module in self.named_modules():
+            yield module
+
+    def named_parameters(
+        self,
+        prefix: str = '',
+        memo: set[int] | None = None,
+    ) -> Iterator[tuple[str, Parameter]]:
+        memo = set() if memo is None else memo
+        for name, value in self.__dict__.items():
+            if isinstance(value, Parameter) and id(value) not in memo:
+                memo.add(id(value))
+                yield prefix + name, value
+        for child_name, child in self.named_children():
+            yield from child.named_parameters(prefix + child_name + '.', memo)
+
+    def parameters(self) -> Iterator[Parameter]:
+        for _, p in self.named_parameters():
+            yield p
+
+    def register_buffer(self, name: str, tensor: Tensor, persistent: bool = True) -> None:
+        if not isinstance(tensor, Tensor):
+            raise TypeError(f'buffer must be Tensor, got {type(tensor)}')
+        buf = tensor if isinstance(tensor, Buffer) else Buffer(tensor, persistent)
+        buf.persistent = persistent
+        self._buffers[name] = buf
+        setattr(self, name, buf)
+
+    def named_buffers(
+        self,
+        prefix: str = '',
+        memo: set[int] | None = None,
+        persistent: bool | None = None,
+    ) -> Iterator[tuple[str, Buffer]]:
+        memo = set() if memo is None else memo
+        for name, buf in self._buffers.items():
+            if persistent is not None and buf.persistent != persistent:
+                continue
+            if id(buf) not in memo:
+                memo.add(id(buf))
+                yield prefix + name, buf
+        for child_name, child in self.named_children():
+            yield from child.named_buffers(prefix + child_name + '.', memo, persistent)
+
+    def buffers(self) -> Iterator[Tensor]:
+        for _, b in self.named_buffers():
+            yield b
 
     def state_items(self) -> Iterator[tuple[str, Tensor]]:
-        yield from self._state_items()
+        yield from self.named_parameters()
+        yield from self.named_buffers(persistent=True)
 
     def state_dict(self) -> OrderedDict[str, Tensor]:
-        return OrderedDict(self.state_items())
+        return OrderedDict((k, v.clone()) for k, v in self.state_items())
 
     def load_state_dict(
         self,
         state_dict: Mapping[str, Tensor],
         strict: bool = True,
     ) -> dict[str, list[str]]:
-        missing, unexpected = [], []
-
-        for full_key, tensor in state_dict.items():
-            parts = full_key.split('.')
-            target: Module | ModuleList = self
-            ok = True
-
-            for p in parts[:-1]:
-                if p.isdigit():
-                    idx = int(p)
-                    if not isinstance(target, list | ModuleList) or idx >= len(target):
-                        ok = False
-                        break
-                    target = target[idx]
-                else:
-                    target = getattr(target, p, None)
-                    if target is None:
-                        ok = False
-                        break
-
-            if not ok:
-                unexpected.append(full_key)
+        own_state = dict(self.state_items())
+        missing = [k for k in own_state if k not in state_dict]
+        unexpected = [k for k in state_dict if k not in own_state]
+        for key, tensor in state_dict.items():
+            if key not in own_state:
                 continue
-
-            leaf_name = parts[-1]
-            leaf = target[int(leaf_name)] if leaf_name.isdigit() and isinstance(target, list | ModuleList) else getattr(target, leaf_name, None)
-
-            if leaf is None:
-                unexpected.append(full_key)
-                continue
-
-            if isinstance(leaf, Parameter):
-                leaf.data = tensor.clone()
-            elif isinstance(leaf, Tensor):
-                setattr(target, leaf_name, tensor.clone())
-            else:
-                unexpected.append(full_key)
-
-        def _find_missing(m: Module | ModuleList, prefix: str = '') -> None:
-            if isinstance(m, ModuleList):
-                for i, sub in enumerate(m):
-                    _find_missing(sub, f'{prefix}{i}.')
-                return
-            for name, attr in m.__dict__.items():
-                key = f'{prefix}{name}'
-                if isinstance(attr, Parameter | Tensor):
-                    if key not in state_dict:
-                        missing.append(key)
-                elif isinstance(attr, Module):
-                    _find_missing(attr, f'{key}.')
-                elif isinstance(attr, ModuleList):
-                    _find_missing(attr, f'{key}.')
-
-        _find_missing(self)
-
+            own_state[key]._replace(tensor.clone())
         if strict and (missing or unexpected):
-            raise RuntimeError(f'Error(s) in loading state_dict:\n  Missing keys: {missing}\n  Unexpected keys: {unexpected}')
-
+            raise RuntimeError(f'Error(s) in loading state_dict:\n\tMissing keys: {missing}\n\tUnexpected keys: {unexpected}')
         return {'missing_keys': missing, 'unexpected_keys': unexpected}
 
-    def apply(self, fn: Callable[[Module], None]) -> Module:
-        """
-        Apply `fn` to self and all submodules.
-        Example:
-            model.apply(lambda m: init_fn(m))
-        """
-        for m in self.modules():
-            fn(m)
+    def train(self, mode: bool = True) -> Module:
+        self.training = mode
+        for child in self.children():
+            child.train(mode)
         return self
 
     def eval(self) -> Module:
-        """Set module to evaluation mode (disable gradients)."""
+        return self.train(False)
+
+    def requires_grad_(self, requires_grad: bool = True) -> Module:
         for p in self.parameters():
-            p.requires_grad = False
+            p.requires_grad = requires_grad
         return self
 
-    def train(self) -> Module:
-        """Set module to training mode (enable gradients)."""
+    def cast(self, dt: dtype.DType) -> Module:
         for p in self.parameters():
-            p.requires_grad = True
+            req = p.requires_grad
+            y = p.cast(dt)
+            y.requires_grad = req
+            p._replace(y)
+        for name, buf in self.named_buffers():
+            parent, leaf = self._resolve_parent(name)
+            casted = Buffer(buf.cast(dt), persistent=buf.persistent)
+            setattr(parent, leaf, casted)
+            parent._buffers[leaf] = casted
         return self
 
-    def forward(self, *args: Tensor, **kwargs: dict) -> Tensor:
-        """Forward pass; must be implemented by subclasses."""
+    def _resolve_parent(self, key: str) -> tuple[Module, str]:
+        parts = key.split('.')
+        target: Module = self
+        for p in parts[:-1]:
+            if isinstance(target, ModuleDict):
+                target = target[p]
+            elif isinstance(target, ModuleList):
+                target = target[int(p)]
+            else:
+                target = getattr(target, p)
+        return target, parts[-1]
+
+    def register_forward_hook(
+        self,
+        hook: Callable[[Module, tuple[Any, ...], Tensor], None],
+    ) -> Callable[[Module, tuple[Any, ...], Tensor], None]:
+        self._fwd_hooks.append(hook)
+        return hook
+
+    def register_forward_pre_hook(
+        self,
+        hook: Callable[[Module, tuple[Any, ...]], None],
+    ) -> Callable[[Module, tuple[Any, ...]], None]:
+        self._fwd_pre_hooks.append(hook)
+        return hook
+
+    def apply(self, fn: Callable[[Module], None]) -> Module:
+        for mod in self.modules():
+            fn(mod)
+        return self
+
+    def forward(self, *args: Any, **kwargs: Any) -> Tensor:
         raise NotImplementedError
 
-    def __call__(self, *args: Tensor, **kwargs: dict) -> Tensor:
-        for h in self._fwd_pre_hooks:
-            h(self, args)
+    def __call__(self, *args: Any, **kwargs: Any) -> Tensor:
+        for hook in self._fwd_pre_hooks:
+            hook(self, args)
         out = self.forward(*args, **kwargs)
-        for h in self._fwd_hooks:
-            h(self, args, out)
+        for hook in self._fwd_hooks:
+            hook(self, args, out)
         return out
 
-    def register_buffer(self, name: str, tensor: Tensor) -> None:
-        buf = tensor.clone().detach() if isinstance(tensor, Tensor) else tensor
-        setattr(self, name, buf)
-        names = getattr(self, '_buffer_names', set())
-        names.add(name)
-        self._buffer_names = names
 
-    def named_buffers(self, prefix: str = '') -> Iterator[tuple[str, Tensor]]:
-        for name in getattr(self, '_buffer_names', set()):
-            yield prefix + name, getattr(self, name)
-        for attr_name, value in self.__dict__.items():
-            if isinstance(value, Module):
-                yield from value.named_buffers(prefix + attr_name + '.')
-            elif isinstance(value, ModuleList):
-                for i, m in enumerate(value):
-                    yield from m.named_buffers(f'{prefix}{attr_name}.{i}.')
+class ModuleList(Module, list[Module]):
+    def __init__(self, modules: list[Module] | None = None) -> None:
+        Module.__init__(self)
+        list.__init__(self)
+        if modules:
+            self.extend(modules)
 
-    def buffers(self) -> Iterator[Tensor]:
-        for _, t in self.named_buffers():
-            yield t
-
-    def cast(self, dt: DataType) -> Module:
-        for p in self.parameters():
-            requires_grad = p.requires_grad
-            casted = p.cast(dt)
-            casted.requires_grad = requires_grad
-            p._replace(casted)
-        seen: set[int] = set()
-        for m in self.modules():
-            for name in getattr(m, '_buffer_names', set()):
-                buf = getattr(m, name)
-                if not isinstance(buf, Tensor):
-                    continue
-                bid = id(buf)
-                if bid in seen:
-                    continue
-                seen.add(bid)
-                setattr(m, name, buf.cast(dt))
-        return self
-
-
-class ModuleList(Module, list):
-    """A list of modules that can be used as a single module."""
-
-    def __init__(self, mods: list[Module] | None) -> None:
-        super().__init__()
-        if mods is not None:
-            self.extend(mods)
-
-    def __iadd__(self, other: list[Module]) -> ModuleList:
-        self.extend(other)
-        return self
-
-    def __setitem__(self, k: int, v: Module) -> None:
-        super().__setitem__(k, v)
-
-    def __getitem__(self, k: int) -> Module:
-        return super().__getitem__(k)
-
-    def parameters(self) -> Iterator[Parameter]:
-        seen: set[int] = set()
-        for mod in self:
-            yield from mod._parameters(seen)
-
-    def _register(self, idx: int, mod: Module) -> None:
-        if not isinstance(mod, Module):
+    def append(self, module: Module) -> None:
+        if not isinstance(module, Module):
             raise TypeError('ModuleList can only contain Module instances')
-        super().append(mod)
-        setattr(self, str(idx), mod)
+        list.append(self, module)
 
-    def append(self, mod: Module) -> None:
-        self._register(len(self), mod)
+    def extend(self, modules) -> None:
+        for module in modules:
+            self.append(module)
 
-    def extend(self, iterable: Iterator[Module]) -> None:
-        for m in iterable:
-            self.append(m)
-
-    def __setitem__(self, idx: int, mod: Module) -> None:
-        super().__setitem__(idx, mod)
-        setattr(self, str(idx), mod)
+    def named_children(self) -> Iterator[tuple[str, Module]]:
+        for i, module in enumerate(self):
+            yield str(i), module
 
 
 class ModuleDict(Module, MutableMapping[str, Module]):
-    """A dict of named submodules that behaves like a single Module."""
-
     def __init__(self, modules: dict[str, Module] | None = None) -> None:
         super().__init__()
         self._modules: dict[str, Module] = {}
-        if modules is not None:
-            for name, mod in modules.items():
-                self[name] = mod
+        if modules:
+            for name, module in modules.items():
+                self[name] = module
 
     def __setitem__(self, name: str, module: Module) -> None:
         if not isinstance(module, Module):
-            raise ValueError(f'ModuleDict can only hold Module, got {type(module)}')
-        # store in our internal dict
+            raise TypeError(f'ModuleDict can only hold Module, got {type(module)}')
         self._modules[name] = module
-        # also bind it as an attribute so Module.children()/modules() will see it
-        setattr(self, name, module)
 
     def __getitem__(self, name: str) -> Module:
         return self._modules[name]
 
     def __delitem__(self, name: str) -> None:
         del self._modules[name]
-        delattr(self, name)
 
-    def __iter__(self) -> None:
+    def __iter__(self) -> Iterator[str]:
         return iter(self._modules)
 
     def __len__(self) -> int:
         return len(self._modules)
 
-    def keys(self) -> dict_keys[str, Module]:
+    def __getattr__(self, name: str) -> Module:
+        if self._modules is not None and name in self._modules:
+            return self._modules[name]
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def keys(self):
         return self._modules.keys()
 
-    def items(self) -> dict_items[str, Module]:
+    def items(self):
         return self._modules.items()
 
-    def values(self) -> dict_values[str, Module]:
+    def values(self):
         return self._modules.values()
 
-    def parameters(self) -> Iterator[Parameter]:
-        seen: set[int] = set()
-        for mod in self._modules.values():
-            yield from mod._parameters(seen)
+    def __contains__(self, name: object) -> bool:
+        return name in self._modules
 
-    def named_parameters(self, prefix: str = '') -> Iterator[tuple[str, Parameter]]:
-        seen: set[int] = set()
-        for name, mod in self._modules.items():
-            for sub_name, p in mod.named_parameters(prefix + name + '.'):
-                if id(p) not in seen:
-                    seen.add(id(p))
-                    yield sub_name, p
+    def named_children(self) -> Iterator[tuple[str, Module]]:
+        yield from self._modules.items()
 
 
 class Sequential(ModuleList):
-    """
-    A thin wrapper that chains several sub-modules together, feeding the output of one directly into the next.
-    """
-
-    def __init__(self, *modules: Module) -> None:
-        if len(modules) == 1 and isinstance(modules[0], list | tuple):
+    def __init__(self, *modules: Module | list[Module] | tuple[Module, ...]) -> None:
+        if len(modules) == 1 and isinstance(modules[0], (list, tuple)):
             modules = tuple(modules[0])
         super().__init__(list(modules))
 
-    def forward(self, *args: Tensor, **kwargs: dict) -> Tensor:
-        x: Tensor | tuple[Tensor, ...] = args[0] if len(args) == 1 else args
-        for mod in self:
-            if isinstance(x, tuple):
-                x = mod(*x, **kwargs)
-            else:
-                x = mod(x, **kwargs)
-            kwargs = {}  # Only applies to first call
+    def forward(self, *args: Any, **kwargs: Any) -> Tensor:
+        x: Any = args[0] if len(args) == 1 else args
+        for module in self:
+            x = module(*x, **kwargs) if isinstance(x, tuple) else module(x, **kwargs)
+            kwargs = {}
         return x

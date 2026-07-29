@@ -51,7 +51,7 @@ static MAG_AINLINE void mag_rc_incref(void *obj) {
     mag_assert2(rc->__sentinel == 0xDEADBEEF);
   #endif
   mag_atomic32_t prev = mag_atomic32_fetch_add(&rc->rc_strong, 1, MAG_MO_RELAXED);
-  mag_assert(prev < INT32_MAX, "RC inc/dec imbalance detected"); /* Catch overflow */
+  mag_assert(prev < INT32_MAX, "rc: reference count overflow; possible incref/decref imbalance.");
 }
 
 /* Decrement reference count (release). Object must have MAG_RC_INJECT_HEADER as first field. */
@@ -61,7 +61,7 @@ static MAG_AINLINE bool mag_rc_decref(void *obj) {
     mag_assert2(rc->__sentinel == 0xDEADBEEF);
   #endif
   mag_atomic32_t prev = mag_atomic32_fetch_sub(&rc->rc_strong, 1, MAG_MO_ACQ_REL);
-  mag_assert(prev > 0, "RC inc/dec imbalance detected"); /* Catch underflow */
+  mag_assert(prev > 0, "rc: reference count underflow; possible incref/decref imbalance.");
   if (mag_unlikely(1 == prev)) { /* Decref and invoke destructor. */
     (*rc->dtor)(obj);
     return true; /* Object was destroyed. */

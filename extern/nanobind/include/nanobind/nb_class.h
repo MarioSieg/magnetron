@@ -21,6 +21,9 @@ enum class type_flags : uint32_t {
     /// Does the type provide a C++ move constructor?
     is_move_constructible    = (1 << 2),
 
+    /// Cached copy of Py_TPFLAGS_HAVE_GC
+    has_gc                   = (1 << 3),
+
     /// Is the 'destruct' field of the type_data structure set?
     has_destruct             = (1 << 4),
 
@@ -63,9 +66,10 @@ enum class type_flags : uint32_t {
 
     /// Does the type implement a custom __new__ operator that can take no args
     /// (except the type object)?
-    has_nullary_new          = (1 << 17)
+    has_nullary_new          = (1 << 17),
 
-    // One more bit available without needing a larger reorganization
+    /// Does the type opt into instance pooling? (nb::pooled)
+    pooled                   = (1 << 18)
 };
 
 /// Flags about a type that are only relevant when it is being created.
@@ -73,7 +77,7 @@ enum class type_flags : uint32_t {
 /// for more efficient memory layout, but could move elsewhere if we run
 /// out of flags.
 enum class type_init_flags : uint32_t {
-    /// Is the 'supplement' field of the type_init_data structure set?
+    /// Is the 'supplement_size' field of the type_init_data structure set?
     has_supplement           = (1 << 19),
 
     /// Is the 'doc' field of the type_init_data structure set?
@@ -93,6 +97,14 @@ enum class type_init_flags : uint32_t {
 
 // See internals.h
 struct nb_alias_chain;
+struct nb_inst;
+
+/// LIFO Instance pool
+struct nb_inst_pool {
+    nb_inst **slots;
+    uint32_t count;
+    uint32_t capacity;
+};
 
 // Implicit conversions for C++ type bindings, used in type_data below
 struct implicit_t {
@@ -130,6 +142,17 @@ struct type_data {
     bool (*keep_shared_from_this_alive)(PyObject *) noexcept;
     uint32_t dictoffset;
     uint32_t weaklistoffset;
+    /// Out-of-line heap storage for an optional nb::supplement<T>
+    void *supplement;
+    /// Instance pool capacity
+    uint32_t pool_capacity;
+#if defined(NB_FREE_THREADED)
+    /// Slot of this type's pool in the packed per-thread pool array
+    uint32_t pool_index;
+#else
+    /// Per-type instance pool for non-FT builds
+    nb_inst_pool pool;
+#endif
 };
 
 /// Information about a type that is only relevant when it is being created
@@ -139,7 +162,7 @@ struct type_init_data : type_data {
     PyTypeObject *base_py;
     const char *doc;
     const PyType_Slot *type_slots;
-    size_t supplement;
+    size_t supplement_size;
 };
 
 NB_INLINE void type_extra_apply(type_init_data &t, const handle &h) {
@@ -188,6 +211,11 @@ NB_INLINE void type_extra_apply(type_init_data &, never_destruct) {
     // intentionally empty
 }
 
+NB_INLINE void type_extra_apply(type_init_data &t, pooled p) {
+    t.flags |= (uint32_t) type_flags::pooled;
+    t.pool_capacity = p.capacity;
+}
+
 template <typename T>
 NB_INLINE void type_extra_apply(type_init_data &t, supplement<T>) {
     static_assert(std::is_trivially_default_constructible_v<T>,
@@ -195,7 +223,7 @@ NB_INLINE void type_extra_apply(type_init_data &t, supplement<T>) {
     static_assert(alignof(T) <= alignof(void *),
                   "The alignment requirement of the supplement is too high.");
     t.flags |= (uint32_t) type_init_flags::has_supplement | (uint32_t) type_flags::is_final;
-    t.supplement = sizeof(T);
+    t.supplement_size = sizeof(T);
 }
 
 enum class enum_flags : uint32_t {
@@ -206,7 +234,10 @@ enum class enum_flags : uint32_t {
     is_signed                = (1 << 2),
 
     /// Is the underlying enumeration type Flag?
-    is_flag                = (1 << 3)
+    is_flag                = (1 << 3),
+
+    /// Is this a string-valued enumeration (StrEnum)?
+    is_str                 = (1 << 4)
 };
 
 struct enum_init_data {
@@ -223,6 +254,10 @@ NB_INLINE void enum_extra_apply(enum_init_data &e, is_arithmetic) {
 
 NB_INLINE void enum_extra_apply(enum_init_data &e, is_flag) {
     e.flags |= (uint32_t) enum_flags::is_flag;
+}
+
+NB_INLINE void enum_extra_apply(enum_init_data &e, is_str) {
+    e.flags |= (uint32_t) enum_flags::is_str;
 }
 
 NB_INLINE void enum_extra_apply(enum_init_data &e, const char *doc) {
@@ -316,7 +351,7 @@ inline void inst_set_state(handle h, bool ready, bool destruct) {
     detail::nb_inst_set_state(h.ptr(), ready, destruct);
 }
 inline std::pair<bool, bool> inst_state(handle h) {
-    return detail::nb_inst_state(h.ptr());
+    return detail::nb_inst_state_read(h.ptr());
 }
 inline void inst_mark_ready(handle h) { inst_set_state(h, true, true); }
 inline bool inst_ready(handle h) { return inst_state(h).first; }
@@ -335,10 +370,9 @@ inline void *type_get_slot(handle h, int slot_id) {
 }
 
 template <typename Visitor> struct def_visitor {
-  protected:
     // Ensure def_visitor<T> can only be derived from, not constructed
     // directly
-    def_visitor() {
+    ~def_visitor() {
         static_assert(std::is_base_of_v<def_visitor, Visitor>,
                       "def_visitor uses CRTP: def_visitor<T> should be "
                       "a base of T");
@@ -788,7 +822,13 @@ public:
     }
 
     NB_INLINE enum_ &value(const char *name, T value, const char *doc = nullptr) {
-        detail::enum_append(m_ptr, name, (int64_t) value, doc);
+        detail::enum_append(m_ptr, name, (int64_t) value, nullptr, doc);
+        return *this;
+    }
+
+    NB_INLINE enum_ &str_value(const char *name, T value, const char *str_val,
+                               const char *doc = nullptr) {
+        detail::enum_append(m_ptr, name, (int64_t) value, str_val, doc);
         return *this;
     }
 
@@ -843,7 +883,8 @@ template <typename Source, typename Target> void implicitly_convertible() {
     if constexpr (!std::is_same_v<Source, Target>) {
         using Caster = detail::make_caster<Source>;
         static_assert(
-            !std::is_enum_v<Target> || !detail::is_base_caster_v<Target>,
+            !std::is_enum_v<Target> ||
+                detail::is_base_caster_v<detail::make_caster<Target>>,
             "implicitly_convertible(): 'Target' cannot be an enumeration "
             "unless it is opaque.");
 

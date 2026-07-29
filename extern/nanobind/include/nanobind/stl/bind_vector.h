@@ -15,6 +15,7 @@
 #include <nanobind/stl/detail/traits.h>
 #include <vector>
 #include <algorithm>
+#include <memory>
 
 NAMESPACE_BEGIN(NB_NAMESPACE)
 NAMESPACE_BEGIN(detail)
@@ -92,9 +93,14 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
 
         cl.def("__init__", [](Vector *v, typed<iterable, Value> seq) {
             new (v) Vector();
-            v->reserve(len_hint(seq));
-            for (handle h : seq)
-                v->push_back(cast<Value>(h));
+            try {
+                v->reserve(len_hint(seq));
+                for (handle h : seq)
+                    v->push_back(cast<Value>(h));
+            } catch (...) {
+                v->~Vector();
+                throw;
+            }
         }, "Construct from an iterable object");
 
         implicitly_convertible<iterable, Vector>();
@@ -125,7 +131,18 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
 
           .def("extend",
                [](Vector &v, const Vector &src) {
-                   v.insert(v.end(), src.begin(), src.end());
+                   if (&src == &v) {
+                       // Self-extension: inserting [v.begin(), v.end()) into v
+                       // itself violates the standard's precondition (the
+                       // source range must not lie inside the container) and
+                       // is undefined behavior. Reserve and append by index.
+                       size_t n = v.size();
+                       v.reserve(2 * n);
+                       for (size_t i = 0; i < n; ++i)
+                           v.push_back(v[i]);
+                   } else {
+                       v.insert(v.end(), src.begin(), src.end());
+                   }
                },
                "Extend `self` by appending elements from `arg`.")
 
@@ -142,7 +159,7 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
           .def("__getitem__",
                [](const Vector &v, const slice &slice) -> Vector * {
                    auto [start, stop, step, length] = slice.compute(v.size());
-                   auto *seq = new Vector();
+                   auto seq = std::make_unique<Vector>();
                    seq->reserve(length);
 
                    for (size_t i = 0; i < length; ++i) {
@@ -150,7 +167,7 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
                        start += step;
                    }
 
-                   return seq;
+                   return seq.release();
                })
 
           .def("__setitem__",
@@ -162,10 +179,21 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
                            "The left and right hand side of the slice "
                            "assignment have mismatched sizes!");
 
-                   for (size_t i = 0; i < length; ++i) {
-                       v[start] = value[i];
-                       start += step;
-                    }
+                   // Copy the RHS first when assigning a slice from the
+                   // container itself; otherwise the loop would read elements
+                   // it has already overwritten (e.g. ``v[::-1] = v``).
+                   if (&value == &v) {
+                       Vector copy(value);
+                       for (size_t i = 0; i < length; ++i) {
+                           v[start] = copy[i];
+                           start += step;
+                       }
+                   } else {
+                       for (size_t i = 0; i < length; ++i) {
+                           v[start] = value[i];
+                           start += step;
+                       }
+                   }
                })
 
           .def("__delitem__",

@@ -18,19 +18,28 @@
 extern "C" {
 #endif
 
+#define MAG_AU_STATE_INTRUSIVE_STORAGE_NUM 4 /* How many tensors to store inline before moving to dynamic mem */
+
 /* Autodiff state for parameters */
 struct mag_au_state_t {
   MAG_RC_INJECT_HEADER; /* RC Control block must be first */
 
   mag_context_t *ctx;
   mag_opcode_t op;
-  mag_tensor_t *op_inputs[MAG_MAX_OP_INPUTS];
-  mag_op_attr_t op_attrs[MAG_MAX_OP_PARAMS];
+  mag_tensor_t **in;
+  mag_tensor_t *in_intrusive[MAG_AU_STATE_INTRUSIVE_STORAGE_NUM];
+  uint32_t num_in;
+  uint32_t cap_in;
+  mag_op_params_t *params;
   mag_tensor_t *grad;
+  uint64_t topo_traversal_epoch; /* Epoch counter for topological traversal of the computation graph, compared to mag_context_t::topo_traversal_epoch */
 };
 MAG_RC_OBJECT_IS_VALID(mag_au_state_t);
 
-extern mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au_state, mag_context_t *ctx);
+extern mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au, mag_context_t *ctx);
+extern bool mag_au_state_reserve_more_input_cap(mag_au_state_t *au, uint32_t extra);
+extern bool mag_au_state_set_op_params(mag_au_state_t *au, const mag_op_params_t *params);
+extern bool mag_au_state_set_input(mag_au_state_t *au, mag_tensor_t *x);
 
 #ifdef __cplusplus
 }

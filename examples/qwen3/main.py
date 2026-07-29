@@ -38,6 +38,15 @@ class Conversation:
     def build_prompt(self, system: str) -> str:
         return build_prompt(system, self.history)
 
+    def build_initial_prompt(self, system: str) -> str:
+        return f'<|im_start|>system\n{system}<|im_end|>\n'
+
+    def build_user_turn(self, user: str) -> str:
+        return f'<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n'
+
+    def build_assistant_end(self) -> str:
+        return '<|im_end|>\n'
+
 
 def repl(engine: InferenceEngine) -> None:
     console.print(
@@ -54,6 +63,7 @@ def repl(engine: InferenceEngine) -> None:
             continue
         if user == '/exit':
             break
+        is_first_turn = len(conv.history) == 0
         conv.push_user(user)
         console.print(Rule(style='dim'))
         console.print('[bold magenta]Assistant[/]:', end=' ')
@@ -61,8 +71,8 @@ def repl(engine: InferenceEngine) -> None:
         parts: list[str] = []
         count = 0
         try:
-            prompt: str = conv.build_prompt(cfg.system)
-            for chunk in engine.gen_stream(prompt):
+            prompt: str = conv.build_initial_prompt(cfg.system) + conv.build_user_turn(user) if is_first_turn else conv.build_user_turn(user)
+            for chunk in engine.gen_stream(prompt, reset_cache=is_first_turn):
                 parts.append(chunk)
                 console.print(chunk, style='bold white', end='')
                 count += 1
@@ -90,6 +100,13 @@ def _main() -> None:
     args.add_argument('--reserve_gen', type=int, default=1024, help='Reserve tokens for generation headroom')
     args.add_argument('--device', type=str, default='cuda', choices=['cpu', 'cuda'])
     args.add_argument('--snapshot', type=str, default=None, help='Choose local .mag snapshot file instead of HF repo')
+    args.add_argument(
+        '--dtype',
+        type=str,
+        default='bfloat16',
+        choices=['float16', 'bfloat16', 'float32'],
+        help='Data type to run the model in',
+    )
     args = args.parse_args()
 
     if not args.repl and not args.prompt:

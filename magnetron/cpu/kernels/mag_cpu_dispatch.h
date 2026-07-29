@@ -42,10 +42,6 @@
 #define mag_cvt_int_to_bool(x) (!!(x))
 #define mag_cvt_int32_to_int64(x) ((int32_t)(x))
 
-#define mag_cmd_in(i) (payload->cmd->in[(i)])
-#define mag_cmd_out(i) (payload->cmd->out[(i)])
-#define mag_cmd_attr(i) (payload->cmd->attrs[(i)])
-
 extern MAG_THREAD_LOCAL mag_scratch_arena_t mag_tls_arena; /* 4 MiB keep before decay */
 
 #ifdef __AVX512F__ /* Vector register width in bytes */
@@ -109,6 +105,19 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #define mag_float32_to_float8_e4m3fn(x) (mag_float8_e4m3fn_from_float32_soft_fp(x)) /* No hardware acceleration here, use soft-fp conversions */
 #define mag_float8_e4m3fn_to_float32(x) (mag_float8_e4m3fn_to_float32_soft_fp(x)) /* No hardware acceleration here, use soft-fp conversions */
 
+#define mag_scalar_to_float32(s) ((float)mag_scalar_as_float64(s))
+#define mag_scalar_to_float16(s) mag_float32_to_float16((float)mag_scalar_as_float64(s))
+#define mag_scalar_to_bfloat16(s) mag_float32_to_bfloat16((float)mag_scalar_as_float64(s))
+#define mag_scalar_to_float8_e4m3fn(s) mag_float32_to_float8_e4m3fn((float)mag_scalar_as_float64(s))
+#define mag_scalar_to_uint8(s) ((uint8_t)mag_scalar_as_uint64(s))
+#define mag_scalar_to_int8(s) ((int8_t)mag_scalar_as_int64(s))
+#define mag_scalar_to_uint16(s) ((uint16_t)mag_scalar_as_uint64(s))
+#define mag_scalar_to_int16(s) ((int16_t)mag_scalar_as_int64(s))
+#define mag_scalar_to_uint32(s) ((uint32_t)mag_scalar_as_uint64(s))
+#define mag_scalar_to_int32(s) ((int32_t)mag_scalar_as_int64(s))
+#define mag_scalar_to_uint64(s) ((uint64_t)mag_scalar_as_uint64(s))
+#define mag_scalar_to_int64(s) ((int64_t)mag_scalar_as_int64(s))
+
 #include "mag_cpu_simd.h"
 #include "mag_cpu_simd_functions.h"
 #include "mag_cpu_simd_philox4x32.h"
@@ -119,13 +128,21 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #include "mag_cpu_kernels_cast.h"
 #include "mag_cpu_kernels_binary.h"
 #include "mag_cpu_kernels_fill.h"
-#include "mag_cpu_kernels_matmul.h"
+#include "mag_cpu_kernels_matmul_dot.h"
+#include "mag_cpu_kernels_matmul_gemv_vec_mat.h"
+#include "mag_cpu_kernels_matmul_gemv_mat_vec.h"
+#include "mag_cpu_kernels_matmul_gemm.h"
+#include "mag_cpu_kernels_matmul_bmm.h"
+#include "mag_cpu_kernels_matmul_core.h"
 #include "mag_cpu_kernels_misc.h"
 #include "mag_cpu_kernels_reduction.h"
+#include "mag_cpu_kernels_scan.h"
+#include "mag_cpu_kernels_repeat.h"
+#include "mag_cpu_kernels_index.h"
 
 static mag_status_t mag_nop(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err, (void)payload;
-  return MAG_STATUS_OK;
+  return MAG_OK;
 }
 
 static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(mag_error_t *, const mag_kernel_payload_t *) = {
@@ -253,51 +270,6 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT32] = &mag_clone_int32,
     [MAG_DTYPE_UINT64] = &mag_clone_uint64,
     [MAG_DTYPE_INT64] = &mag_clone_int64,
-  },
-  [MAG_OP_VIEW] = {
-    [MAG_DTYPE_FLOAT32] = &mag_nop,
-    [MAG_DTYPE_FLOAT16] = &mag_nop,
-    [MAG_DTYPE_BFLOAT16] = &mag_nop,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_nop,
-    [MAG_DTYPE_BOOLEAN] = &mag_nop,
-    [MAG_DTYPE_UINT8] = &mag_nop,
-    [MAG_DTYPE_INT8] = &mag_nop,
-    [MAG_DTYPE_UINT16] = &mag_nop,
-    [MAG_DTYPE_INT16] = &mag_nop,
-    [MAG_DTYPE_UINT32] = &mag_nop,
-    [MAG_DTYPE_INT32] = &mag_nop,
-    [MAG_DTYPE_UINT64] = &mag_nop,
-    [MAG_DTYPE_INT64] = &mag_nop,
-  },
-  [MAG_OP_TRANSPOSE] = {
-    [MAG_DTYPE_FLOAT32] = &mag_nop,
-    [MAG_DTYPE_FLOAT16] = &mag_nop,
-    [MAG_DTYPE_BFLOAT16] = &mag_nop,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_nop,
-    [MAG_DTYPE_BOOLEAN] = &mag_nop,
-    [MAG_DTYPE_UINT8] = &mag_nop,
-    [MAG_DTYPE_INT8] = &mag_nop,
-    [MAG_DTYPE_UINT16] = &mag_nop,
-    [MAG_DTYPE_INT16] = &mag_nop,
-    [MAG_DTYPE_UINT32] = &mag_nop,
-    [MAG_DTYPE_INT32] = &mag_nop,
-    [MAG_DTYPE_UINT64] = &mag_nop,
-    [MAG_DTYPE_INT64] = &mag_nop,
-  },
-  [MAG_OP_PERMUTE] = {
-    [MAG_DTYPE_FLOAT32] = &mag_nop,
-    [MAG_DTYPE_FLOAT16] = &mag_nop,
-    [MAG_DTYPE_BFLOAT16] = &mag_nop,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_nop,
-    [MAG_DTYPE_BOOLEAN] = &mag_nop,
-    [MAG_DTYPE_UINT8] = &mag_nop,
-    [MAG_DTYPE_INT8] = &mag_nop,
-    [MAG_DTYPE_UINT16] = &mag_nop,
-    [MAG_DTYPE_INT16] = &mag_nop,
-    [MAG_DTYPE_UINT32] = &mag_nop,
-    [MAG_DTYPE_INT32] = &mag_nop,
-    [MAG_DTYPE_UINT64] = &mag_nop,
-    [MAG_DTYPE_INT64] = &mag_nop,
   },
   [MAG_OP_MEAN] = {
     [MAG_DTYPE_FLOAT32] = &mag_mean_float32,
@@ -891,15 +863,10 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT64] = &mag_pow_int64,
   },
   [MAG_OP_MATMUL] = {
-    [MAG_DTYPE_FLOAT32] = &mag_matmul_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_matmul_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_matmul_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_matmul_float8_e4m3fn,
-  },
-  [MAG_OP_SCALED_MATMUL] = {
-    [MAG_DTYPE_FLOAT32] = &mag_matmul_fp8w_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_matmul_fp8w_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_matmul_fp8w_bfloat16,
+    [MAG_DTYPE_FLOAT32] = &mag_matmul_generic,
+    [MAG_DTYPE_FLOAT16] = &mag_matmul_generic,
+    [MAG_DTYPE_BFLOAT16] = &mag_matmul_generic,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_matmul_generic,
   },
   [MAG_OP_REPEAT_BACK] = {
     [MAG_DTYPE_FLOAT32] = &mag_repeat_back_float32,
@@ -1131,6 +1098,195 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT32] = &mag_clamp_int32,
     [MAG_DTYPE_UINT64] = &mag_clamp_uint64,
     [MAG_DTYPE_INT64] = &mag_clamp_int64,
+  },
+  [MAG_OP_PAD] = {
+    [MAG_DTYPE_FLOAT32] = &mag_pad_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_pad_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_pad_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_pad_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_pad_uint8,
+    [MAG_DTYPE_UINT8] = &mag_pad_uint8,
+    [MAG_DTYPE_INT8] = &mag_pad_int8,
+    [MAG_DTYPE_UINT16] = &mag_pad_uint16,
+    [MAG_DTYPE_INT16] = &mag_pad_int16,
+    [MAG_DTYPE_UINT32] = &mag_pad_uint32,
+    [MAG_DTYPE_INT32] = &mag_pad_int32,
+    [MAG_DTYPE_UINT64] = &mag_pad_uint64,
+    [MAG_DTYPE_INT64] = &mag_pad_int64,
+  },
+  [MAG_OP_EYE] = {
+    [MAG_DTYPE_FLOAT32] = &mag_eye_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_eye_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_eye_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_eye_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_eye_uint8,
+    [MAG_DTYPE_UINT8] = &mag_eye_uint8,
+    [MAG_DTYPE_INT8] = &mag_eye_int8,
+    [MAG_DTYPE_UINT16] = &mag_eye_uint16,
+    [MAG_DTYPE_INT16] = &mag_eye_int16,
+    [MAG_DTYPE_UINT32] = &mag_eye_uint32,
+    [MAG_DTYPE_INT32] = &mag_eye_int32,
+    [MAG_DTYPE_UINT64] = &mag_eye_uint64,
+    [MAG_DTYPE_INT64] = &mag_eye_int64,
+  },
+  [MAG_OP_CUSUM] = {
+    [MAG_DTYPE_FLOAT32] = &mag_cusum_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_cusum_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_cusum_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cusum_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_cusum_uint8,
+    [MAG_DTYPE_INT8] = &mag_cusum_int8,
+    [MAG_DTYPE_UINT16] = &mag_cusum_uint16,
+    [MAG_DTYPE_INT16] = &mag_cusum_int16,
+    [MAG_DTYPE_UINT32] = &mag_cusum_uint32,
+    [MAG_DTYPE_INT32] = &mag_cusum_int32,
+    [MAG_DTYPE_UINT64] = &mag_cusum_uint64,
+    [MAG_DTYPE_INT64] = &mag_cusum_int64,
+  },
+  [MAG_OP_CUPROD] = {
+    [MAG_DTYPE_FLOAT32] = &mag_cuprod_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_cuprod_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_cuprod_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cuprod_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_cuprod_uint8,
+    [MAG_DTYPE_INT8] = &mag_cuprod_int8,
+    [MAG_DTYPE_UINT16] = &mag_cuprod_uint16,
+    [MAG_DTYPE_INT16] = &mag_cuprod_int16,
+    [MAG_DTYPE_UINT32] = &mag_cuprod_uint32,
+    [MAG_DTYPE_INT32] = &mag_cuprod_int32,
+    [MAG_DTYPE_UINT64] = &mag_cuprod_uint64,
+    [MAG_DTYPE_INT64] = &mag_cuprod_int64,
+  },
+  [MAG_OP_CUMAX] = {
+    [MAG_DTYPE_FLOAT32] = &mag_cumax_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_cumax_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_cumax_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cumax_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_cumax_uint8,
+    [MAG_DTYPE_INT8] = &mag_cumax_int8,
+    [MAG_DTYPE_UINT16] = &mag_cumax_uint16,
+    [MAG_DTYPE_INT16] = &mag_cumax_int16,
+    [MAG_DTYPE_UINT32] = &mag_cumax_uint32,
+    [MAG_DTYPE_INT32] = &mag_cumax_int32,
+    [MAG_DTYPE_UINT64] = &mag_cumax_uint64,
+    [MAG_DTYPE_INT64] = &mag_cumax_int64,
+  },
+  [MAG_OP_CUMIN] = {
+    [MAG_DTYPE_FLOAT32] = &mag_cumin_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_cumin_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_cumin_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_cumin_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_cumin_uint8,
+    [MAG_DTYPE_INT8] = &mag_cumin_int8,
+    [MAG_DTYPE_UINT16] = &mag_cumin_uint16,
+    [MAG_DTYPE_INT16] = &mag_cumin_int16,
+    [MAG_DTYPE_UINT32] = &mag_cumin_uint32,
+    [MAG_DTYPE_INT32] = &mag_cumin_int32,
+    [MAG_DTYPE_UINT64] = &mag_cumin_uint64,
+    [MAG_DTYPE_INT64] = &mag_cumin_int64,
+  },
+  [MAG_OP_REPEAT] = {
+    [MAG_DTYPE_FLOAT32] = &mag_repeat_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_repeat_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_repeat_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_repeat_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_repeat_uint8,
+    [MAG_DTYPE_UINT8] = &mag_repeat_uint8,
+    [MAG_DTYPE_INT8] = &mag_repeat_int8,
+    [MAG_DTYPE_UINT16] = &mag_repeat_uint16,
+    [MAG_DTYPE_INT16] = &mag_repeat_int16,
+    [MAG_DTYPE_UINT32] = &mag_repeat_uint32,
+    [MAG_DTYPE_INT32] = &mag_repeat_int32,
+    [MAG_DTYPE_UINT64] = &mag_repeat_uint64,
+    [MAG_DTYPE_INT64] = &mag_repeat_int64,
+  },
+  [MAG_OP_REPEAT_INTERLEAVE] = {
+    [MAG_DTYPE_FLOAT32] = &mag_repeat_interleave_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_repeat_interleave_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_repeat_interleave_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_repeat_interleave_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_repeat_interleave_uint8,
+    [MAG_DTYPE_UINT8] = &mag_repeat_interleave_uint8,
+    [MAG_DTYPE_INT8] = &mag_repeat_interleave_int8,
+    [MAG_DTYPE_UINT16] = &mag_repeat_interleave_uint16,
+    [MAG_DTYPE_INT16] = &mag_repeat_interleave_int16,
+    [MAG_DTYPE_UINT32] = &mag_repeat_interleave_uint32,
+    [MAG_DTYPE_INT32] = &mag_repeat_interleave_int32,
+    [MAG_DTYPE_UINT64] = &mag_repeat_interleave_uint64,
+    [MAG_DTYPE_INT64] = &mag_repeat_interleave_int64,
+  },
+  [MAG_OP_INDEX_ADD] = {
+    [MAG_DTYPE_FLOAT32] = &mag_index_add_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_index_add_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_index_add_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_index_add_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_index_add_uint8,
+    [MAG_DTYPE_INT8] = &mag_index_add_int8,
+    [MAG_DTYPE_UINT16] = &mag_index_add_uint16,
+    [MAG_DTYPE_INT16] = &mag_index_add_int16,
+    [MAG_DTYPE_UINT32] = &mag_index_add_uint32,
+    [MAG_DTYPE_INT32] = &mag_index_add_int32,
+    [MAG_DTYPE_UINT64] = &mag_index_add_uint64,
+    [MAG_DTYPE_INT64] = &mag_index_add_int64,
+  },
+  [MAG_OP_EMBEDDING] = {
+    [MAG_DTYPE_FLOAT32]       = &mag_embedding_float32,
+    [MAG_DTYPE_FLOAT16]       = &mag_embedding_float16,
+    [MAG_DTYPE_BFLOAT16]      = &mag_embedding_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_embedding_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_embedding_uint8,
+    [MAG_DTYPE_UINT8] = &mag_embedding_uint8,
+    [MAG_DTYPE_INT8] = &mag_embedding_int8,
+    [MAG_DTYPE_UINT16] = &mag_embedding_uint16,
+    [MAG_DTYPE_INT16] = &mag_embedding_int16,
+    [MAG_DTYPE_UINT32] = &mag_embedding_uint32,
+    [MAG_DTYPE_INT32] = &mag_embedding_int32,
+    [MAG_DTYPE_UINT64] = &mag_embedding_uint64,
+    [MAG_DTYPE_INT64] = &mag_embedding_int64,
+  },
+  [MAG_OP_SCATTER] = {
+    [MAG_DTYPE_FLOAT32] = &mag_scatter_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_scatter_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_scatter_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_scatter_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_scatter_uint8,
+    [MAG_DTYPE_UINT8] = &mag_scatter_uint8,
+    [MAG_DTYPE_INT8] = &mag_scatter_int8,
+    [MAG_DTYPE_UINT16] = &mag_scatter_uint16,
+    [MAG_DTYPE_INT16] = &mag_scatter_int16,
+    [MAG_DTYPE_UINT32] = &mag_scatter_uint32,
+    [MAG_DTYPE_INT32] = &mag_scatter_int32,
+    [MAG_DTYPE_UINT64] = &mag_scatter_uint64,
+    [MAG_DTYPE_INT64] = &mag_scatter_int64,
+  },
+  [MAG_OP_SCATTER_ADD] = {
+    [MAG_DTYPE_FLOAT32] = &mag_scatter_add_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_scatter_add_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_scatter_add_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_scatter_add_float8_e4m3fn,
+    [MAG_DTYPE_UINT8] = &mag_scatter_add_uint8,
+    [MAG_DTYPE_INT8] = &mag_scatter_add_int8,
+    [MAG_DTYPE_UINT16] = &mag_scatter_add_uint16,
+    [MAG_DTYPE_INT16] = &mag_scatter_add_int16,
+    [MAG_DTYPE_UINT32] = &mag_scatter_add_uint32,
+    [MAG_DTYPE_INT32] = &mag_scatter_add_int32,
+    [MAG_DTYPE_UINT64] = &mag_scatter_add_uint64,
+    [MAG_DTYPE_INT64] = &mag_scatter_add_int64,
+  },
+  [MAG_OP_STRIDED_VIEW] = {
+    [MAG_DTYPE_FLOAT32] = &mag_nop,
+    [MAG_DTYPE_FLOAT16] = &mag_nop,
+    [MAG_DTYPE_BFLOAT16] = &mag_nop,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_nop,
+    [MAG_DTYPE_BOOLEAN] = &mag_nop,
+    [MAG_DTYPE_UINT8] = &mag_nop,
+    [MAG_DTYPE_INT8] = &mag_nop,
+    [MAG_DTYPE_UINT16] = &mag_nop,
+    [MAG_DTYPE_INT16] = &mag_nop,
+    [MAG_DTYPE_UINT32] = &mag_nop,
+    [MAG_DTYPE_INT32] = &mag_nop,
+    [MAG_DTYPE_UINT64] = &mag_nop,
+    [MAG_DTYPE_INT64] = &mag_nop,
   },
 };
 

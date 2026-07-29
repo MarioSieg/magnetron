@@ -15,6 +15,10 @@
 #include <core/mag_context.h>
 #include <core/mag_tensor.h>
 
+#ifndef MAG_MATMUL_FLOPS_PER_WORKER /* Flops a GEMM worker must get before adding another one. */
+  #define MAG_MATMUL_FLOPS_PER_WORKER (1<<21)
+#endif
+
 mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
   static const mag_op_thread_scaling_info scaling_table[MAG_OP__NUM] = {
     [MAG_OP_NOP] = {0.0, 0},
@@ -28,18 +32,18 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_ONE_HOT] = {0.4, 10000},
     [MAG_OP_CLONE] = {0.4, 10000},
     [MAG_OP_CAST] = {0.4, 10000},
-    [MAG_OP_VIEW] = {0.0, 0},
-    [MAG_OP_TRANSPOSE] = {0.0, 0},
-    [MAG_OP_PERMUTE] = {0.0, 0},
-    [MAG_OP_MEAN] = {0.0, 0},
-    [MAG_OP_MIN] = {0.0, 0},
-    [MAG_OP_MAX] = {0.0, 0},
-    [MAG_OP_ARGMIN] = {0.0, 0},
-    [MAG_OP_ARGMAX] = {0.0, 0},
-    [MAG_OP_SUM] = {0.0, 0},
-    [MAG_OP_PROD] = {0.0, 0},
-    [MAG_OP_ALL] = {0.0, 0},
-    [MAG_OP_ANY] = {0.0, 0},
+    [MAG_OP_STRIDED_VIEW] = {0.0, 0},
+    [MAG_OP_MEAN] = {3.5, 10000},
+    [MAG_OP_MINIMA] = {3.5, 10000},
+    [MAG_OP_MAXIMA] = {3.5, 10000},
+    [MAG_OP_MIN] = {3.5, 10000},
+    [MAG_OP_MAX] = {3.5, 10000},
+    [MAG_OP_ARGMIN] = {3.5, 10000},
+    [MAG_OP_ARGMAX] = {3.5, 10000},
+    [MAG_OP_SUM] = {3.5, 10000},
+    [MAG_OP_PROD] = {3.5, 10000},
+    [MAG_OP_ALL] = {3.5, 10000},
+    [MAG_OP_ANY] = {3.5, 10000},
     [MAG_OP_ABS] = {0.5, 25000},
     [MAG_OP_SGN] = {0.5, 25000},
     [MAG_OP_NEG] = {0.5, 25000},
@@ -96,7 +100,6 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_DIV] = {3.5, 10000},
     [MAG_OP_MOD] = {3.5, 10000},
     [MAG_OP_MATMUL] = {0.4, 1000},
-    [MAG_OP_SCALED_MATMUL] = {0.4, 1000},
     [MAG_OP_REPEAT_BACK] = {0.5, 25000},
     [MAG_OP_GATHER] = {0.0, 0},
     [MAG_OP_AND] = {3.5, 10000},
@@ -111,182 +114,66 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_GE] = {3.5, 10000},
     [MAG_OP_LT] = {3.5, 10000},
     [MAG_OP_GT] = {3.5, 10000},
+    [MAG_OP_WHERE] = {3.5, 10000},
+    [MAG_OP_PAD] = {0.5, 10000},
+    [MAG_OP_EYE] = {0.5, 10000},
+    [MAG_OP_CUSUM] = {0.5, 10000},
+    [MAG_OP_CUPROD] = {0.5, 10000},
+    [MAG_OP_CUMAX] = {0.5, 10000},
+    [MAG_OP_CUMIN] = {0.5, 10000},
+    [MAG_OP_REPEAT] = {0.5, 10000},
+    [MAG_OP_REPEAT_INTERLEAVE] = {0.5, 10000},
+    [MAG_OP_INDEX_ADD] = {0.0, 0},
+    [MAG_OP_EMBEDDING] = {0.5, 10000},
+    [MAG_OP_SCATTER] = {0.5, 10000},
+    [MAG_OP_SCATTER_ADD] = {0.5, 10000},
   };
   return scaling_table[op];
 }
 
-void mag_mm_autotune_block_params(const mag_matmul_block_tune_info_t *info, mag_matmul_block_params_t *params) {
-  if (!info->l1_size || !info->l2_size || !info->elsize) {
-    *params = (mag_matmul_block_params_t) {
-      .MR = 8,
-      .NR = 16,
-      .MC = 256,
-      .KC = 256,
-      .NC = 128
-    };
-    return;
-  }
-  int64_t nt = info->nthreads;
-  int64_t M = info->M;
-  int64_t N = info->N;
-  int64_t K = info->K;
-  int64_t MR;
-  int64_t NR;
-  int64_t KC;
-  int64_t VW = info->vecreg_width;
-  int64_t W = VW >= 64 ? 64 : VW >= 32 ? 32 : 16;
-  MR = VW / info->elsize;
-  int64_t NR_cap = W == 64 ? 32 : W == 32 ? 32 : 16;
-  NR = mag_xclamp((MR)<<1, MR, NR_cap);
-  if (W == 64) MR = 16, NR = 32;
-  double aL1 = info->l1_load_factor ? info->l1_load_factor : W == 64 ? 0.55 : W == 32 ? 0.60 : 0.65;
-  double aL2 = info->l2_load_factor ? info->l2_load_factor : W == 64 ? 0.40 : W == 32 ? 0.45 : 0.50;
-  double L1e = aL1 * (double)info->l1_size;
-  double L2e = aL2 * (double)info->l2_size;
-  if (nt >= 2) {
-    L1e *= 0.85;
-    L2e *= 0.85;
-  }
-  double nb = (double)info->elsize;
-  int64_t kc = (int64_t)(L1e / (nb*(double)(MR + NR)));
-  kc = mag_rd_down(kc, 8);
-  int64_t KC_lo = W == 64 ? 384 : W == 32 ? 256 : 192;
-  int64_t KC_hi = W == 64 ? 1024 : W == 32 ? 768 : 512;
-  /* bf16/f16 (elsize==2): allow larger KC to amortize B packing, especially when B is strided */
-  if (info->elsize == 2 && W == 64) {
-    KC_hi = 2048;
-    if (K >= 512) kc = mag_xclamp(kc + 256, KC_lo, KC_hi);
-    if (K >= 2048) kc = mag_xclamp(kc + 256, KC_lo, KC_hi);
-    if (K >= 4096) kc = mag_xclamp(kc + 128, KC_lo, KC_hi);
-  } else if (info->elsize == 2 && W == 32) {
-    KC_hi = 896;
-    if (K >= 1024) kc = mag_xclamp(kc + 128, KC_lo, KC_hi);
-  } else if (info->elsize == 2 && W == 16) {
-    /* ARM64 NEON: larger KC to amortize pack, match AVX-512-style tuning for LLM shapes */
-    KC_hi = 1536;
-    if (K >= 512) kc = mag_xclamp(kc + 192, KC_lo, KC_hi);
-    if (K >= 2048) kc = mag_xclamp(kc + 192, KC_lo, KC_hi);
-    if (K >= 4096) kc = mag_xclamp(kc + 128, KC_lo, KC_hi);
-  }
-  kc = mag_xclamp(kc, KC_lo, KC_hi);
-  if (K >= 2048 && info->elsize != 2) kc = mag_xclamp(kc + 128, KC_lo, KC_hi);
-  KC = kc;
-  int64_t MC = (int64_t)(info->split_a*L2e / (nb*(double)KC));
-  int64_t NC = (int64_t)((1.0-info->split_a)*L2e / (nb*(double)KC));
-  MC = mag_rd_down(MC, MR);
-  NC = mag_rd_down(NC, NR);
-  MR = mag_xmax(8, MR);
-  NR = mag_xmax(8, NR);
-  if (MC < MR) MC = MR;
-  if (NC < NR) NC = NR;
-  int64_t NC_cap = W == 64 ? 256 : 128;
-  if (N < 8192) NC_cap = 128;
-  /* very large N (e.g. 151936): use larger NC to reduce B-pack iterations and improve throughput */
-  if (N >= 32768 && W == 64) NC_cap = 384;
-  if (N >= 65536 && W == 64) NC_cap = 512;
-  if (N >= 131072 && W == 64) NC_cap = 768;
-  if (N >= 32768 && W == 16) NC_cap = 256;
-  if (N >= 65536 && W == 16) NC_cap = 384;
-  if (N >= 131072 && W == 16) NC_cap = 512;
-  if (NC > NC_cap) NC = mag_rd_down(NC_cap, NR);
-  int64_t tic = (M + MC - 1)/MC;
-  int64_t tjc = (N + NC - 1)/NC;
-  int64_t tiles = tic * tjc;
-  int64_t flops_call = (M*N*K)<<1;
-  int64_t min_tiles_core = flops_call >= 0x10000000ll ? 1 : flops_call >= 0x2000000ll ? 2 : 4;
-  int64_t tiles_needed = min_tiles_core * nt;
-  if (tiles_needed < (nt<<1)+nt) tiles_needed = (nt<<1)+nt;
-  while (tiles < tiles_needed && (MC > MR<<4 || NC > NR<<4)) {
-    bool changed = false;
-    int64_t nMC = MC>>1;
-    if (!changed && nMC >= MR && (nMC*NC*KC)<<1 >= info->min_tile_flops) {
-      MC = mag_rd_down(nMC, MR);
-      changed = true;
-    }
-    int64_t nNC = NC>>1;
-    if (!changed && nNC >= NR && (MC*nNC*KC)<<1 >= info->min_tile_flops) {
-      NC = mag_rd_down(nNC, NR);
-      changed = true;
-    }
-    if (!changed) break;
-    tic = (M + MC - 1)/MC;
-    tjc = (N + NC - 1)/NC;
-    tiles = tic * tjc;
-  }
-  if (N >= 512 && NC < NR<<1) NC = NR<<1;
-  *params = (mag_matmul_block_params_t) {
-    .MR = MR,
-    .NR = NR,
-    .MC = MC,
-    .KC = KC,
-    .NC = NC
-  };
-}
-
-/*
-** Computes how many workers to use for intra-op parallelism depending on the number of elements.
-** A logarithmic scaling is used, see: https://www.desmos.com/calculator/xiunrskpwu
-** TODO: This can be improved by using a more sophisticated heuristic and a benchmarked, numerical approach.
-*/
-uint32_t mag_cpu_dynamic_work_scaling(uint32_t allocated_workers, mag_opcode_t op, int64_t numel) {
-  const mag_op_traits_t *meta = mag_op_traits(op);
-  mag_op_thread_scaling_info info = mag_cpu_get_op_thread_scaling_info(op);
-  if (allocated_workers <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel < info.thread_treshold)  /* Use a single worker (main thread). */
-    return 1;
-  numel -= info.thread_treshold;                                                             /* Saturate threshold */
-  uint32_t workers = (uint32_t)ceil(info.growth * log2((double)numel));         /* Logarithmic scaling */
-  workers = mag_xmin(allocated_workers, mag_xmax(1, workers));
-  return workers;
-}
-
-static uint32_t mag_mm_choose_workers(uint64_t flops, uint32_t tiles_total, uint32_t max_threads) {
-  if (flops < 0x80000) return 1;
-  (void)tiles_total;
-  return max_threads;
-}
-
-uint32_t mag_cpu_tune_heuristics_intraop_workers(const mag_command_t *cmd, mag_device_t *dvc) {
+uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_device_t *dvc) {
   mag_cpu_device_t *cpu_dvc = dvc->impl;
-  if (cmd->op == MAG_OP_MATMUL || cmd->op == MAG_OP_SCALED_MATMUL) {
+  int64_t max_numel = INT64_MIN;
+  for (uint32_t i=0; i < cmd->num_in; ++i) max_numel = mag_xmax(max_numel, cmd->in[i]->meta.numel);
+  for (uint32_t i=0; i < cmd->num_out; ++i) max_numel = mag_xmax(max_numel, cmd->out[i]->meta.numel);
+  mag_opcode_t op = cmd->op;
+  uint32_t allocated_workers = cpu_dvc->num_allocated_workers;
+  const mag_op_traits_t *meta = mag_op_trait(op);
+  mag_op_thread_scaling_info info = mag_cpu_get_op_thread_scaling_info(op);
+  if (allocated_workers <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || max_numel < info.thread_treshold)  /* Use a single worker (main thread). */
+    return 1;
+  if (op == MAG_OP_MATMUL) { /* Special case for matmul */
     const mag_tensor_t *x = cmd->in[0];
     const mag_tensor_t *y = cmd->in[1];
-    int64_t M = x->coords.rank == 1 ? 1 : x->coords.shape[x->coords.rank-2];
-    int64_t N = y->coords.rank == 1 ? 1 : y->coords.shape[y->coords.rank-1];
-    int64_t K = x->coords.shape[x->coords.rank-1];
-    int64_t L1 = dvc->ctx->machine.cpu_l1_size;
-    int64_t L2 = dvc->ctx->machine.cpu_l2_size;
-    const mag_matmul_block_tune_info_t tune_info = {
-      .nthreads = cpu_dvc->num_allocated_workers,
-      .elsize = (int64_t)mag_type_trait(x->dtype)->size,
-      .vecreg_width = (int64_t)(*cpu_dvc->kernels.vreg_width)(),
-      .M = M,
-      .N = N,
-      .K = K,
-      .l1_size = L1,
-      .l2_size = L2,
-      .l1_load_factor = 0.8,
-      .l2_load_factor = 0.8,
-      .min_tile_flops = (16*1024*1024),
-      .split_a = 0.8,
-      .min_n_factor = 16,
-      .min_m_factor = 16,
-    };
-    mag_matmul_block_params_t tuned;
-    mag_mm_autotune_block_params(&tune_info, &tuned); /* Tune block params */
-    for (uint32_t i=0; i < cpu_dvc->pool->num_allocated_workers; ++i) { /* Set up payload */
-      mag_kernel_payload_t *payload = &cpu_dvc->pool->workers[i].payload;
-      payload->mm_params = tuned;
+    mag_matmul_type_t matmul_type = mag_matmul_type_detect(x, y);
+    switch (matmul_type) {
+      case MAG_MATMUL_TYPE_DOT:
+      case MAG_MATMUL_TYPE_BMM_DOT: return 1;
+      case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
+      case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
+      case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
+      case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: {
+        int64_t K = x->meta.coords.shape[x->meta.coords.rank-1];
+        int64_t N = y->meta.coords.shape[y->meta.coords.rank-1];
+        int64_t work_bytes = N*K*mag_type_trait(x->meta.dtype)->size;
+        int64_t workers = 1;
+        if (work_bytes >= 4LL   << 20) workers = 4;
+        if (work_bytes >= 16LL  << 20) workers = 8;
+        if (work_bytes >= 32LL  << 20) workers = 16;
+        if (work_bytes >= 96LL  << 20) workers = 32;
+        if (work_bytes >= 256LL << 20) workers = 64;
+        return mag_xmin(workers, allocated_workers);
+      }
+      default: { /* GEMM/BMM: spread over workers only once the flops amortize the barrier and packing. */
+        int64_t K = x->meta.coords.shape[x->meta.coords.rank-1];
+        double flops = 2.0*(double)cmd->out[0]->meta.numel*(double)K;
+        int64_t workers = (int64_t)(flops/(double)MAG_MATMUL_FLOPS_PER_WORKER);
+        return (uint32_t)mag_xmin((int64_t)allocated_workers, mag_xmax(1, workers));
+      }
     }
-    if (M == 1 && K >= 128 && N >= 4096 && y->coords.rank == 2 && y->coords.strides[y->coords.rank-1] == 1) /* Special case for GEMV */
-      return mag_xmax(cpu_dvc->num_allocated_workers, 4)>>1;
-    int64_t flops = M*N*K;
-    uint32_t tiles_total = (uint32_t)(((M + tuned.MC - 1)/tuned.MC)*((N + tuned.NC - 1)/tuned.NC));
-    uint32_t nt = mag_mm_choose_workers(flops, tiles_total, cpu_dvc->num_allocated_workers);
-    /*printf("MM nt: %u, M=%" PRId64 ", N=%" PRId64 ", K=%" PRId64 ", MC=%" PRId64 ", NC=%" PRId64 ", KC=%" PRId64 ", MR=%" PRId64 ", NR=%" PRId64 "\n", nt, M, N, K, MC, NC, KC, MR, NR);*/
-    return nt;
   }
-  int64_t max_numel = INT64_MIN;
-  for (uint32_t i=0; i < cmd->num_in; ++i) max_numel = mag_xmax(max_numel, cmd->in[i]->numel);
-  for (uint32_t i=0; i < cmd->num_out; ++i) max_numel = mag_xmax(max_numel, cmd->out[i]->numel);
-  return mag_cpu_dynamic_work_scaling(cpu_dvc->num_allocated_workers, cmd->op, max_numel);
+  max_numel -= info.thread_treshold;
+  uint32_t workers = (uint32_t)ceil(info.growth * log2((double)max_numel)); /* Logarithmic scaling */
+  workers = mag_xmin(allocated_workers, mag_xmax(1, workers));
+  return workers;
 }

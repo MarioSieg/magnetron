@@ -272,6 +272,11 @@ NB_MODULE(test_functions_ext, m) {
     m.def("test_21_f", [](nb::float_ f) { return nb::int_(f); });
     m.def("test_21_g", []() { return nb::int_(1.5); });
     m.def("test_21_h", []() { return nb::int_(1e50); });
+    m.def("test_21_char",  []() { return nb::int_((char) 'a'); });
+    m.def("test_21_schar", []() { return nb::int_((signed char) 'a'); });
+    m.def("test_21_uchar", []() { return nb::int_((unsigned char) 'a'); });
+    m.def("test_21_short", []() { return nb::int_((short) -5); });
+    m.def("test_21_bool",  []() { return nb::int_(true); });
 
     // Test floating-point
     m.def("test_21_dnc", [](double d) { return d + 1.0; }, nb::arg().noconvert());
@@ -358,6 +363,15 @@ NB_MODULE(test_functions_ext, m) {
     m.def("test_cast_str", [](nb::handle h) {
         return nb::cast<const char *>(h);
     });
+
+    // Two overloads where the first matches any object and internally performs
+    // a 'nb::cast<char>' that fails for multi-character strings. A failing cast
+    // must surface as cast_error rather than silently re-dispatching to the
+    // second (string) overload.
+    m.def("test_cast_redispatch", [](nb::handle h) {
+        return std::string(1, nb::cast<char>(h));
+    });
+    m.def("test_cast_redispatch", [](const char *s) { return std::string(s); });
 
     m.def("test_set", []() {
         nb::set s;
@@ -531,4 +545,8 @@ NB_MODULE(test_functions_ext, m) {
     m.def("test_fallback_2", [](nb::fallback){ return 1; });
 
     m.def("test_get_dict_default", [](nb::dict l) { return l.get("key", nb::int_(123)); });
+    m.def("test_get_dict_default_2", [](nb::dict l, nb::handle key) { return l.get(key, nb::int_(123)); });
+
+    m.def("test_accessor_inplace_attr", [](nb::object o, nb::object v) { o.attr("x") += v; });
+    m.def("test_accessor_inplace_item", [](nb::object o, nb::object v) { o["x"] += v; });
 }

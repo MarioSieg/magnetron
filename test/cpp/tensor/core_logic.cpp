@@ -121,7 +121,7 @@ TEST(core_tensor_logic, init_1d) {
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
-    ASSERT_NE(internal->storage->device, nullptr);
+    ASSERT_NE(internal->meta.device, nullptr);
 
     std::cout << t.to_string() << std::endl;
 }
@@ -146,7 +146,7 @@ TEST(core_tensor_logic, init_2d) {
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
-    ASSERT_NE(internal->storage->device, nullptr);
+    ASSERT_NE(internal->meta.device, nullptr);
 
     std::cout << t.to_string() << std::endl;
 }
@@ -173,7 +173,7 @@ TEST(core_tensor_logic, init_3d) {
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
-    ASSERT_NE(internal->storage->device, nullptr);
+    ASSERT_NE(internal->meta.device, nullptr);
     std::cout << t.to_string() << std::endl;
 }
 
@@ -200,7 +200,7 @@ TEST(core_tensor_logic, init_4d) {
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
-    ASSERT_NE(internal->storage->device, nullptr);
+    ASSERT_NE(internal->meta.device, nullptr);
 
     std::cout << t.to_string() << std::endl;
 }
@@ -231,7 +231,7 @@ TEST(core_tensor_logic, init_5d) {
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
-    ASSERT_NE(internal->storage->device, nullptr);
+    ASSERT_NE(internal->meta.device, nullptr);
 
     std::cout << t.to_string() << std::endl;
 }
@@ -264,7 +264,7 @@ TEST(core_tensor_logic, init_6d) {
     ASSERT_NE(internal->storage->alignment, 0);
     ASSERT_NE(internal->storage->base, 0);
     ASSERT_NE(internal->storage->size, 0);
-    ASSERT_NE(internal->storage->device, nullptr);
+    ASSERT_NE(internal->meta.device, nullptr);
 
     auto str = t.to_string();
     std::cout << str << std::endl;

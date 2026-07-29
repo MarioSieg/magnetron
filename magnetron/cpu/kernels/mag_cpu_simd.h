@@ -20,6 +20,28 @@
 #include <string.h>
 #include <math.h>
 
+/*
+** Platform guards template (:
+**
+**#if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+**  #error "TODO"
+**#elif defined(__AVX512F__)
+**  #error "TODO"
+**#elif defined(__AVX2__)
+**  #error "TODO"
+**#elif defined(__SSE4_1__)
+**  #error "TODO"
+**#elif defined(__SSE2__)
+**  #error "TODO"
+**#elif defined(__loongarch_asx)
+**  #error "TODO"
+**#elif defined(__loongarch_sx)
+**  #error "TODO"
+**#else
+**  #error "TODO"
+**#endif
+*/
+
 #ifdef _MSC_VER
   #include <intrin.h>
 #else
@@ -44,18 +66,26 @@ extern "C" {
   typedef uint32x4_t mag_vmask32_t;
   typedef float32x4_t mag_vf32_t;
   typedef int32x4_t mag_vi32_t;
+  typedef uint16x8_t mag_vbf16_t;
 #elif defined(__AVX512F__)       /* 512-bit AVX*/
   typedef __mmask16 mag_vmask32_t;
   typedef __m512 mag_vf32_t;
   typedef __m512i mag_vi32_t;
-#elif defined(__AVX2__) /* TODO: Make AVX1 version, emulate AVX2 int instructions using dual SSE2 pumping */
+  #ifdef __AVX512BF16__
+    typedef __m512bh mag_vbf16_t;
+  #else
+    typedef __m512i mag_vbf16_t;
+  #endif
+#elif defined(__AVX2__) /* TODO (not so important tbh): Make AVX1 version, emulate AVX2 int instructions using dual SSE2 pumping */
   typedef __m256i mag_vmask32_t;
   typedef __m256 mag_vf32_t;
   typedef __m256i mag_vi32_t;
+  typedef __m256i mag_vbf16_t;
 #elif defined(__SSE2__)         /* 128-bit SSE* */
   typedef __m128i mag_vmask32_t;
   typedef __m128 mag_vf32_t;
   typedef __m128i mag_vi32_t;
+  typedef __m128i mag_vbf16_t;
 #elif defined(__loongarch_asx)   /* 256-bit LASX on Loongson / Godson */
   typedef __m256i mag_vmask32_t;
   typedef __m256 mag_vf32_t;
@@ -68,9 +98,17 @@ extern "C" {
   typedef uint32_t mag_vmask32_t;
   typedef float mag_vf32_t;
   typedef int32_t mag_vi32_t;
+  typedef mag_bfloat16_t mag_vbf16_t;
 #endif
 
 #define MAG_VF32_LANES ((int64_t)(sizeof(mag_vf32_t)/sizeof(float)))
+#define MAG_VBF16_LANES (MAG_VF32_LANES<<1)
+
+#if defined(__AVX512F__) && defined(__AVX512BF16__)
+  #define MAG_HAS_NATIVE_DPBF16 1
+#else
+  #define MAG_HAS_NATIVE_DPBF16 0
+#endif
 
 /* mask type */
 static MAG_AINLINE mag_vmask32_t mag_vmask32_zero(void) {
@@ -1115,6 +1153,88 @@ static MAG_AINLINE void mag_vf32_storeu_masked_bf16(mag_bfloat16_t *p, mag_vf32_
   mag_bfloat16_t tmp[MAG_VF32_LANES];
   mag_vf32_storeu_bf16(tmp, v);
   for (int i=0; i < n; ++i) p[i] = tmp[i];
+}
+
+static MAG_AINLINE mag_vbf16_t mag_vbf16_loadu(const mag_bfloat16_t *p) {
+  #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+    return vld1q_u16((const uint16_t *)p);
+  #elif defined(__AVX512F__)
+    return (mag_vbf16_t)_mm512_loadu_si512((const void *)p);
+  #elif defined(__AVX2__)
+    return _mm256_loadu_si256((const __m256i *)p);
+  #elif defined(__SSE2__)
+    return _mm_loadu_si128((const __m128i *)p);
+  #elif defined(__loongarch_asx)
+    #error "TODO"
+  #elif defined(__loongarch_sx)
+    #error "TODO"
+  #else
+    return *p;
+  #endif
+}
+static MAG_AINLINE mag_vbf16_t mag_vbf16_broadcast_pair(const mag_bfloat16_t *p) {
+  uint32_t pb;
+  memcpy(&pb, p, sizeof pb);
+  #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+    return vreinterpretq_u16_u32(vdupq_n_u32(pb));
+  #elif defined(__AVX512F__)
+    return (mag_vbf16_t)_mm512_set1_epi32((int)pb);
+  #elif defined(__AVX2__)
+    return _mm256_set1_epi32((int)pb);
+  #elif defined(__SSE2__)
+    return _mm_set1_epi32((int)pb);
+  #elif defined(__loongarch_asx)
+    #error "TODO"
+  #elif defined(__loongarch_sx)
+    #error "TODO"
+  #else
+    #error "TODO"
+  #endif
+}
+
+static MAG_AINLINE mag_vf32_t mag_vf32_dpbf16(mag_vf32_t acc, mag_vbf16_t x, mag_vbf16_t y) {
+  #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+    mag_vf32_t xlo = vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(x), 16));
+    mag_vf32_t xhi = vreinterpretq_f32_u32(vshll_n_u16(vget_high_u16(x), 16));
+    mag_vf32_t ylo = vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(y), 16));
+    mag_vf32_t yhi = vreinterpretq_f32_u32(vshll_n_u16(vget_high_u16(y), 16));
+    return vfmaq_f32(vfmaq_f32(acc, xlo, ylo), xhi, yhi);
+  #elif defined(__AVX512F__) && defined(__AVX512BF16__)
+    return _mm512_dpbf16_ps(acc, x, y);
+  #elif defined(__AVX512F__)
+    mag_vf32_t xlo = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256(x)), 16));
+    mag_vf32_t xhi = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(x, 1)), 16));
+    mag_vf32_t ylo = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256(y)), 16));
+    mag_vf32_t yhi = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(y, 1)), 16));
+    return _mm512_fmadd_ps(xhi, yhi, _mm512_fmadd_ps(xlo, ylo, acc));
+  #elif defined(__AVX2__)
+    mag_vf32_t xlo = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm256_castsi256_si128(x)), 16));
+    mag_vf32_t xhi = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm256_extracti128_si256(x, 1)), 16));
+    mag_vf32_t ylo = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm256_castsi256_si128(y)),16));
+    mag_vf32_t yhi = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm256_extracti128_si256(y, 1)), 16));
+    #ifdef __FMA__
+      return _mm256_fmadd_ps(xhi, yhi, _mm256_fmadd_ps(xlo, ylo, acc));
+    #else
+      return _mm256_add_ps(acc, _mm256_add_ps(_mm256_mul_ps(alo, blo), _mm256_mul_ps(ahi, bhi)));
+    #endif
+  #elif defined(__SSE2__)
+    __m128i z = _mm_setzero_si128();
+    mag_vf32_t xlo = _mm_castsi128_ps(_mm_unpacklo_epi16(z, x));
+    mag_vf32_t xhi = _mm_castsi128_ps(_mm_unpackhi_epi16(z, x));
+    mag_vf32_t ylo = _mm_castsi128_ps(_mm_unpacklo_epi16(z, y));
+    mag_vf32_t yhi = _mm_castsi128_ps(_mm_unpackhi_epi16(z, y));
+    #ifdef __FMA__
+      return _mm_fmadd_ps(xhi, yhi, _mm_fmadd_ps(xlo, ylo, acc));
+    #else
+      return _mm_add_ps(acc, _mm_add_ps(_mm_mul_ps(xlo, ylo), _mm_mul_ps(xhi, yhi)));
+    #endif
+  #elif defined(__loongarch_asx)
+    #error "TODO"
+  #elif defined(__loongarch_sx)
+    #error "TODO"
+  #else
+    #error "TODO"
+  #endif
 }
 
 static MAG_AINLINE mag_vf32_t mag_vf32_loadu_float8_e4m3fn(const mag_float8_e4m3fn_t *p) {

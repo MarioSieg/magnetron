@@ -16,5 +16,5 @@
 namespace mag {
   constexpr int MATMUL_BLOCK_SIZE = 256;
 
-  extern void misc_op_matmul(const mag_command_t &cmd);
+  extern mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd);
 }

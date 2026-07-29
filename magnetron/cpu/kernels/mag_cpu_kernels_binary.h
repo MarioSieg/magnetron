@@ -55,8 +55,8 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
 #define mag_fn_pow_i(x,y) mag_powi((x),(y))
 #define mag_fn_pow_u(x,y) mag_powu((x),(y))
 #define mag_fn_shl_i(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)<<(y))
-#define mag_fn_shl_u(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? ((x)<0 ? -1 : 0) : (x)>>(y))
-#define mag_fn_shr_i(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)<<(y))
+#define mag_fn_shl_u(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)<<(y))
+#define mag_fn_shr_i(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)>>(y))
 #define mag_fn_shr_u(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)>>(y))
 #define mag_fn_min_int(x,y) ((x)<(y)?(x):(y))
 #define mag_fn_max_int(x,y) ((x)>(y)?(x):(y))
@@ -64,51 +64,51 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
 #define mag_gen_bin_scalar(T, TF, name, suffix) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_tensor_t *y = mag_cmd_in(1); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *y = payload->cmd->in[1]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra+chunk,total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r,x,y},3)) { \
       for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],by[i]); \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     mag_coords_iter_t cr,cx,cy; \
-    mag_coords_iter_init(&cr,&r->coords); \
-    mag_coords_iter_init(&cx,&x->coords); \
-    mag_coords_iter_init(&cy,&y->coords); \
+    mag_coords_iter_init(&cr,&r->meta.coords); \
+    mag_coords_iter_init(&cx,&x->meta.coords); \
+    mag_coords_iter_init(&cy,&y->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri,xi,yi; \
       mag_coords_iter_offset3(&cr,&cx,&cy,i,&ri,&xi,&yi); \
       br[ri] = mag_fn_##name##_##suffix(bx[xi],by[yi]); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 #define mag_gen_bin_simd(T, TF, suffix, LOAD, STORE, name) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_tensor_t *y = mag_cmd_in(1); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *y = payload->cmd->in[1]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra+chunk,total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r, x, y}, 3)) { \
       int64_t i=ra; \
       for (; i+MAG_VF32_LANES <= rb; i += MAG_VF32_LANES) { \
@@ -118,18 +118,18 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         STORE(br+i,vr); \
       } \
       for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],by[i]); \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     mag_coords_iter_t cr,cx,cy; \
-    mag_coords_iter_init(&cr,&r->coords); \
-    mag_coords_iter_init(&cx,&x->coords); \
-    mag_coords_iter_init(&cy,&y->coords); \
+    mag_coords_iter_init(&cr,&r->meta.coords); \
+    mag_coords_iter_init(&cx,&x->meta.coords); \
+    mag_coords_iter_init(&cy,&y->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri,xi,yi; \
       mag_coords_iter_offset3(&cr,&cx,&cy,i,&ri,&xi,&yi); \
       br[ri] = mag_fn_##name##_##suffix(bx[xi],by[yi]); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 #define mag_gen_float_bin_scalar(name) \
@@ -191,33 +191,33 @@ mag_gen_int_signed_unsigned(pow)
 #define mag_gen_shift(T, TF, name, sign) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_tensor_t *y = mag_cmd_in(1); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *y = payload->cmd->in[1]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra+chunk,total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r,x,y},3)) { \
       for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##sign(bx[i],by[i],T); \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     mag_coords_iter_t cr,cx,cy; \
-    mag_coords_iter_init(&cr,&r->coords); \
-    mag_coords_iter_init(&cx,&x->coords); \
-    mag_coords_iter_init(&cy,&y->coords); \
+    mag_coords_iter_init(&cr,&r->meta.coords); \
+    mag_coords_iter_init(&cx,&x->meta.coords); \
+    mag_coords_iter_init(&cy,&y->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri,xi,yi; \
       mag_coords_iter_offset3(&cr,&cx,&cy,i,&ri,&xi,&yi); \
       br[ri] = mag_fn_##name##_##sign(bx[xi],by[yi],T); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 #define mag_gen_shift_all(name) \
@@ -236,33 +236,33 @@ mag_gen_shift_all(shr)
 #define mag_gen_cmp(T, TF, name, OP, CVT) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
-    mag_tensor_t *r = mag_cmd_out(0); \
-    const mag_tensor_t *x = mag_cmd_in(0); \
-    const mag_tensor_t *y = mag_cmd_in(1); \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *y = payload->cmd->in[1]; \
     uint8_t *br = (uint8_t *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
     const T *by = (const T *)mag_tensor_data_ptr(y); \
-    int64_t total = r->numel; \
+    int64_t total = r->meta.numel; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra+chunk,total); \
-    if (mag_unlikely(rb <= ra)) return MAG_STATUS_OK; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r,x,y},3)) { \
       for (int64_t i=ra; i < rb; ++i) br[i] = CVT(bx[i]) OP CVT(by[i]); \
-      return MAG_STATUS_OK; \
+      return MAG_OK; \
     } \
     mag_coords_iter_t cr,cx,cy; \
-    mag_coords_iter_init(&cr,&r->coords); \
-    mag_coords_iter_init(&cx,&x->coords); \
-    mag_coords_iter_init(&cy,&y->coords); \
+    mag_coords_iter_init(&cr,&r->meta.coords); \
+    mag_coords_iter_init(&cx,&x->meta.coords); \
+    mag_coords_iter_init(&cy,&y->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri,xi,yi; \
       mag_coords_iter_offset3(&cr,&cx,&cy,i,&ri,&xi,&yi); \
       br[ri] = CVT(bx[xi]) OP CVT(by[yi]); \
     } \
-    return MAG_STATUS_OK; \
+    return MAG_OK; \
   }
 
 #define mag_cvt_nop(x) (x)

@@ -59,6 +59,17 @@ struct NonDefaultConstructible : Movable {
     NonDefaultConstructible(int v) : Movable(v) {}
 };
 
+// Ordered type whose destructor poisons its payload, used to detect
+// use-after-free in the set caster when the source yields fresh objects.
+struct Ordered {
+    int value;
+    Ordered(int v) : value(v) {}
+    Ordered(const Ordered &s) : value(s.value) {}
+    Ordered(Ordered &&s) noexcept : value(s.value) {}
+    ~Ordered() { value = -999; }
+    bool operator<(const Ordered &o) const { return value < o.value; }
+};
+
 struct StructWithReadonlyMap {
     std::map<std::string, uint64_t> map;
 };
@@ -168,6 +179,25 @@ NB_MODULE(test_stl_ext, m) {
     });
     m.def("swap_pair", [](const std::pair<int, float> &v) {
         return std::pair<float, int>(std::get<1>(v), std::get<0>(v));
+    });
+
+    // Regression test: a generic (non-tuple) sequence input is converted to a
+    // temporary tuple that solely owns the freshly produced items. The pair /
+    // tuple casters must keep this temporary alive until the elements have been
+    // copied out, else they read from destroyed objects. 'Poisoned' makes such
+    // a use-after-free observable by overwriting its value on destruction.
+    struct Poisoned {
+        int value;
+        Poisoned(int value) : value(value) { }
+        ~Poisoned() { value = -1; }
+    };
+    nb::class_<Poisoned>(m, "Poisoned").def(nb::init<int>());
+    m.def("pair_of_poisoned", [](std::pair<Poisoned, Poisoned> v) {
+        return v.first.value * 100 + v.second.value;
+    });
+    m.def("tuple_of_poisoned", [](std::tuple<Poisoned, Poisoned, Poisoned> v) {
+        return std::get<0>(v).value * 10000 + std::get<1>(v).value * 100 +
+               std::get<2>(v).value;
     });
 
     // ----- test22 ------
@@ -378,6 +408,16 @@ NB_MODULE(test_stl_ext, m) {
     m.def("array_out", [](){ return std::array<int, 3>{1, 2, 3}; });
     m.def("array_in", [](std::array<int, 3> x) { return x[0] + x[1] + x[2]; });
 
+    nb::class_<Ordered>(m, "Ordered")
+        .def(nb::init<int>())
+        .def_ro("value", &Ordered::value);
+    m.def("set_of_ordered_values", [](std::set<Ordered> x) {
+        std::vector<int> out;
+        for (auto &k : x)
+            out.push_back(k.value);
+        return out;
+    });
+
     // ----- test60-test64 ------
     m.def("set_return_value", []() {
         std::set<std::string> x;
@@ -534,4 +574,8 @@ NB_MODULE(test_stl_ext, m) {
     nb::class_<IDHavingEvent>(m, "IDHavingEvent")
         .def(nb::init<>())
         .def_rw("id", &IDHavingEvent::id);
+
+    // Test some esoteric "None"-ish types
+    m.def("takes_nullptr", [](std::nullptr_t) { return "nullptr"; });
+    m.def("takes_monostate", [](std::monostate) { return "monostate"; });
 }

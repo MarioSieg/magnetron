@@ -42,7 +42,6 @@ class Qwen3HyperParams:
     bos_token_id: int = 151643
     eos_token_id: int = 151645
     sampling_strategy: SamplingStrategy = SamplingStrategy.GREEDY
-    quant_dtype: dtype.DType | None = dtype.float8_e4m3fn
 
 
 class KVLayerCache:
@@ -76,9 +75,14 @@ class KVCache:
             KVLayerCache(batch_size=batch_size, num_kv_heads=cfg.num_key_value_heads, max_seq_len=max_seq_len, head_dim=cfg.head_dim)
             for _ in range(cfg.num_hidden_layers)
         ]
+        assert all(layer.pos == self.cache_pos for layer in self.layers)
 
     def __getitem__(self, idx: int) -> KVLayerCache:
         return self.layers[idx]
+
+    @property
+    def cache_pos(self) -> int:
+        return self.layers[0].pos
 
     def clear(self) -> None:
         for layer in self.layers:
@@ -90,24 +94,30 @@ class MLP(nn.Module):
         super().__init__()
         self.hidden_size: int = cfg.hidden_size
         self.inter_size: int = cfg.intermediate_size
-        self.gate_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.down_proj = nn.Linear(self.inter_size, self.hidden_size, bias=False, dtype=cfg.quant_dtype, init=False)
+        self.gate_proj = nn.Linear(
+            self.hidden_size,
+            self.inter_size,
+            bias=False,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.up_proj = nn.Linear(
+            self.hidden_size,
+            self.inter_size,
+            bias=False,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.down_proj = nn.Linear(
+            self.inter_size,
+            self.hidden_size,
+            bias=False,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         return self.down_proj(self.gate_proj(x).silu() * self.up_proj(x))
-
-
-def _repeat_kv(x: Tensor, n_rep: int) -> Tensor:
-    if n_rep == 1:
-        return x
-    B, n_kv, T, D = x.shape
-    chunks: list[Tensor] = []
-    for h in range(n_kv):  # TODO: repeat
-        xh: Tensor = x[:, h : h + 1, :, :]
-        for _ in range(n_rep):
-            chunks.append(xh)
-    return Tensor.cat(chunks, dim=1)
 
 
 def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Tensor, Tensor]:
@@ -123,17 +133,17 @@ def _precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Te
 def _apply_rope(q: Tensor, k: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: Tensor) -> tuple[Tensor, Tensor]:
     def _rot_half(x: Tensor) -> Tensor:
         half: int = x.shape[-1] >> 1
-        x1: Tensor = x[:, :, :, :half]
-        x2: Tensor = x[:, :, :, half:]
+        x1 = x[:, :, :, :half]
+        x2 = x[:, :, :, half:]
         return Tensor.cat([-x2, x1], dim=-1)
 
-    cos: Tensor = freq_cos[idx]
-    sin: Tensor = freq_sin[idx]
+    cos = freq_cos[idx]
+    sin = freq_sin[idx]
     batch_size, seq_len, head_size = cos.shape
     cos = cos.reshape(batch_size, 1, seq_len, head_size)
     sin = sin.reshape(batch_size, 1, seq_len, head_size)
-    q_embed: Tensor = (q * cos) + (_rot_half(q) * sin)
-    k_embed: Tensor = (k * cos) + (_rot_half(k) * sin)
+    q_embed = (q * cos) + (_rot_half(q) * sin)
+    k_embed = (k * cos) + (_rot_half(k) * sin)
     return q_embed, k_embed
 
 
@@ -145,12 +155,36 @@ class SlidingWindowAttention(nn.Module):
         self.num_kv_heads = cfg.num_key_value_heads
         self.n_rep = self.num_heads // self.num_kv_heads
         self.sliding_window = cfg.sliding_window
-        self.q_proj = nn.Linear(cfg.hidden_size, self.num_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.k_proj = nn.Linear(cfg.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.v_proj = nn.Linear(cfg.hidden_size, self.num_kv_heads * self.head_dim, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, cfg.hidden_size, bias=False, dtype=cfg.quant_dtype, init=False)
-        self.q_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, init=False)
-        self.k_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, init=False)
+        self.q_proj = nn.Linear(
+            cfg.hidden_size,
+            self.num_heads * self.head_dim,
+            bias=False,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.k_proj = nn.Linear(
+            cfg.hidden_size,
+            self.num_kv_heads * self.head_dim,
+            bias=False,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.v_proj = nn.Linear(
+            cfg.hidden_size,
+            self.num_kv_heads * self.head_dim,
+            bias=False,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.o_proj = nn.Linear(
+            self.num_heads * self.head_dim,
+            cfg.hidden_size,
+            bias=False,
+            weight_init=nn.init.EmptyInitStrategy(),
+            bias_init=nn.init.EmptyInitStrategy(),
+        )
+        self.q_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
+        self.k_norm = nn.RMSNorm(self.head_dim, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
 
     def forward(self, x: Tensor, cos_freq: Tensor, sin_freq: Tensor, idx: Tensor, cache: KVLayerCache | None = None) -> Tensor:
         B, T, _ = x.shape
@@ -162,19 +196,23 @@ class SlidingWindowAttention(nn.Module):
             k, v = cache.append(curr_k, curr_v, self.sliding_window)
         else:
             k, v = curr_k, curr_v
-        k = _repeat_kv(k, self.n_rep)
-        v = _repeat_kv(v, self.n_rep)
-        scores: Tensor = (q @ k.transpose(2, 3)) * (1.0 / math.sqrt(self.head_dim))
+        qg = q.reshape(B, self.num_kv_heads, self.n_rep, T, self.head_dim)
+        scores = Tensor.einsum('bkgtd, bksd -> bkgts', qg, k)
+        scores *= 1.0 / math.sqrt(self.head_dim)
         q_len: int = q.shape[2]
         k_len: int = k.shape[2]
         if q_len == 1:
             attn = scores.softmax(dim=-1)
         else:
-            k_pos_indices: Tensor = Tensor.arange(k_len).reshape(1, -1)
-            q_pos_indices: Tensor = Tensor.arange(start=(k_len - q_len), stop=k_len).reshape(-1, 1)
-            mask = Tensor.where(k_pos_indices <= q_pos_indices, 0.0, -1e4).cast(scores.dtype).reshape(1, 1, q_len, k_len)
+            k_pos_indices = Tensor.arange(k_len).reshape(1, -1)
+            q_pos_indices = Tensor.arange(start=(k_len - q_len), stop=k_len).reshape(-1, 1)
+            mask = Tensor.where(k_pos_indices <= q_pos_indices, 0.0, -1e4)
+            mask = mask.cast(scores.dtype).reshape(1, 1, 1, q_len, k_len)
             attn = (scores + mask).softmax(dim=-1)
-        return self.o_proj((attn @ v).transpose(1, 2).reshape(B, T, -1))
+        out = Tensor.einsum('bkgts, bksd -> bkgtd', attn, v)
+        out = out.reshape(B, self.num_heads, T, self.head_dim)
+        out = out.transpose(1, 2).reshape(B, T, -1)
+        return self.o_proj(out)
 
 
 class Block(nn.Module):
@@ -182,8 +220,8 @@ class Block(nn.Module):
         super().__init__()
         self.self_attn = SlidingWindowAttention(cfg)
         self.mlp = MLP(cfg)
-        self.input_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps, init=False)
-        self.post_attention_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps, init=False)
+        self.input_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
+        self.post_attention_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
 
     def forward(self, x: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: Tensor, cache: KVLayerCache | None = None) -> Tensor:
         h = x + self.self_attn(
@@ -200,13 +238,19 @@ class Qwen3Model(nn.Module):
     def __init__(self, cfg: Qwen3HyperParams) -> None:
         super().__init__()
         self.cfg = cfg
-        self.embed_tokens = nn.Embedding(cfg.vocab_size, cfg.hidden_size, init=False)
+        self.embed_tokens = nn.Embedding(cfg.vocab_size, cfg.hidden_size, weight_init=nn.init.EmptyInitStrategy())
         self.layers = nn.ModuleList([Block(cfg) for _ in range(cfg.num_hidden_layers)])
-        self.norm = nn.RMSNorm(cfg.hidden_size, cfg.rms_norm_eps, init=False)
+        self.norm = nn.RMSNorm(cfg.hidden_size, cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
         if cfg.tie_word_embeddings:
             self.lm_head = None
         else:
-            self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False, dtype=cfg.quant_dtype, init=False)
+            self.lm_head = nn.Linear(
+                cfg.hidden_size,
+                cfg.vocab_size,
+                bias=False,
+                weight_init=nn.init.EmptyInitStrategy(),
+                bias_init=nn.init.EmptyInitStrategy(),
+            )
         cos_cache, sin_cache = _precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.cos_cache = cos_cache
         self.sin_cache = sin_cache
@@ -229,8 +273,8 @@ class Qwen3Model(nn.Module):
                     param.data = tensor
 
     @staticmethod
-    def from_pretrained_snapshot(snapshot_file: str) -> 'Qwen3Model':
-        model = Qwen3Model(Qwen3HyperParams())
+    def from_pretrained_snapshot(snapshot_file: str, params: Qwen3HyperParams) -> 'Qwen3Model':
+        model = Qwen3Model(params)
         model._load_from_snapshot(snapshot_file)
         gc.collect()
         return model
@@ -245,7 +289,7 @@ class Qwen3Model(nn.Module):
             layer_cache = self.cache[i] if self.cache is not None else None
             h = layer(h, self.cos_cache, self.sin_cache, idx, cache=layer_cache)
         h = self.norm(h)
-        return h @ self.embed_tokens.weight.T if self.cfg.tie_word_embeddings else self.lm_head(h)
+        return Tensor.einsum('...h, vh -> ...v', h, self.embed_tokens.weight) if self.cfg.tie_word_embeddings else self.lm_head(h)
 
     def generate_stream(
         self,
@@ -254,6 +298,7 @@ class Qwen3Model(nn.Module):
         max_tokens: int,
         temp: float = 1.0,
         top_k: int = 10,
+        reset_cache: bool = False,
     ) -> Iterator[str]:
 
         def sample(logits: Tensor, strategy: SamplingStrategy) -> int:  # Sample according to strategy
@@ -266,13 +311,17 @@ class Qwen3Model(nn.Module):
                 case _:
                     raise RuntimeError(f'Invalid sampling strategy: {strategy}')
 
-        self.cache.clear()
-
+        if reset_cache:
+            self.cache.clear()
         idx = idx.reshape(1, -1)
-        idl: int = idx.shape[1]
-        logits = self(idx, idx=Tensor.arange(stop=idl).reshape(1, -1))
-        next_logits: Tensor = logits[:, -1, :] / temp
-        curr_len: int = idl
+        start_pos: int = self.cache.cache_pos
+        T: int = idx.shape[1]
+        logits = self(
+            idx,
+            idx=Tensor.arange(start=start_pos, stop=start_pos + T).reshape(1, -1),
+        )
+        next_logits = logits[:, -1, :] / temp
+        curr_len: int = start_pos + T
         pending: list[int] = []
 
         for _ in range(max_tokens):

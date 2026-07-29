@@ -14,7 +14,10 @@
 #include <nanobind/nanobind.h>
 #include <tsl/robin_map.h>
 #if defined(NB_FREE_THREADED)
-#include <atomic>
+#  include <atomic>
+#if !defined(_WIN32)
+#  include <pthread.h>
+#endif
 #endif
 #include <cstring>
 #include <string_view>
@@ -30,6 +33,19 @@
 #else
 #  define NB_THREAD_LOCAL __thread
 #endif
+
+// When forwarding vector calls between functions that are known to be implemented by
+// nanobind, it uses an extended ABI that may set one additional bit to communicate
+// that the implicit 'self' argument is trusted and does not need to be type-checked.
+#define NB_VECTORCALL_TRUSTED_SELF (PY_VECTORCALL_ARGUMENTS_OFFSET >> 1)
+
+// Decodes the call argument count to avoid all use of ``PyVectorcall_NARGS()``
+// in nanobind. The an official function requires a (costly) indirect PLT call
+// in the stable ABI, which is unnecessary as its behavior is fully frozen by
+// the stable ABI contract.
+#define NB_VECTORCALL_NARGS(n)                                                  \
+    ((Py_ssize_t) ((n) & ~(PY_VECTORCALL_ARGUMENTS_OFFSET |                     \
+                           NB_VECTORCALL_TRUSTED_SELF)))
 
 #if PY_VERSION_HEX >= 0x030A0000
 #  define NB_TPFLAGS_IMMUTABLETYPE Py_TPFLAGS_IMMUTABLETYPE
@@ -53,22 +69,17 @@ struct func_data : func_data_prelim_base {
     char *signature;
 };
 
-/// Python object representing an instance of a bound C++ type
-struct nb_inst { // usually: 24 bytes
-    PyObject_HEAD
-
-    /// Offset to the actual instance data
-    int32_t offset;
-
-    /// State of the C++ object this instance points to: is it constructed?
-    /// can we use it?
-    uint8_t state : 2;
-
-    // Values for `state`. Note that the numeric values of these are relied upon
-    // for an optimization in `nb_type_get()`.
+/// Packed status of a nanobind type instance.
+struct nb_inst_state {
+    // Values for the 'state' field. Note that the numeric values of these are
+    // relied upon for an optimization in `nb_type_get()`.
     static constexpr uint32_t state_uninitialized = 0; // not constructed
     static constexpr uint32_t state_relinquished = 1; // owned by C++, don't touch
     static constexpr uint32_t state_ready = 2; // constructed and usable
+
+    /// State of the C++ object this instance points to: is it constructed?
+    /// can we use it? (see the 'state_*' values below)
+    uint8_t state : 2;
 
     /**
      * The variable 'offset' can either encode an offset relative to the
@@ -90,23 +101,59 @@ struct nb_inst { // usually: 24 bytes
     /// Does this instance use intrusive reference counting?
     uint8_t intrusive : 1;
 
+    /// Currently not used (but needed to pad to 8 bit)
+    uint8_t pad : 1;
+
     /// Does this instance hold references to others? (via internals.keep_alive)
-    /// This may be accessed concurrently to 'state', so it must not be in
-    /// the same bitfield as 'state'.
+    /// This may be accessed concurrently to the flag byte above, so it is kept
+    /// in its own byte (never read-modify-written together with the flags).
     uint8_t clear_keep_alive;
 
     // That's a lot of unused space. I wonder if there is a good use for it..
     uint16_t unused;
 };
 
+static_assert(sizeof(nb_inst_state) == sizeof(uint32_t));
+
+/// Python object representing an instance of a bound C++ type
+struct nb_inst { // usually: 24 bytes
+    PyObject_HEAD
+
+    /// Offset to the actual instance data
+    int32_t offset;
+
+    /// Packed status flags (see nb_inst_state)
+    nb_inst_state state;
+};
+
 static_assert(sizeof(nb_inst) == sizeof(PyObject) + sizeof(uint32_t) * 2);
+
+/// Helper to ensure that nb_inst instance state updates produce one 4-byte store
+inline void nb_inst_state_write(nb_inst *self, nb_inst_state state) noexcept {
+    uint32_t w;
+    std::memcpy(&w, &state, sizeof(w));
+    std::memcpy(&self->state, &w, sizeof(w));
+}
+
+/// Dispatcher needed by an overload chain; chain merging takes the maximum
+enum class call_complexity : uint8_t {
+    /// No named/default/flagged arguments: nb_func_vectorcall_simple*
+    simple = 0,
+
+    /// Named/default/'none'-accepting args or arg-mutating annotations;
+    /// keyword calls are forwarded to the complex dispatcher
+    medium = 1,
+
+    /// nb::args/nb::kwargs or more than NB_MAXARGS_SIMPLE arguments
+    complex = 2
+};
 
 /// Python object representing a bound C++ function
 struct nb_func {
     PyObject_VAR_HEAD
     PyObject* (*vectorcall)(PyObject *, PyObject * const*, size_t, PyObject *);
     uint32_t max_nargs; // maximum value of func_data::nargs for any overload
-    bool complex_call;
+    call_complexity complexity;
     bool doc_uniform;
 };
 
@@ -148,6 +195,8 @@ public:
     template <typename U> py_allocator(const py_allocator<U> &) { }
 
     pointer allocate(size_type n, const void * /*hint*/ = nullptr) noexcept {
+        if (NB_UNLIKELY(n > SIZE_MAX / sizeof(T)))
+            fail("py_allocator::allocate(): integer overflow!");
         void *p = PyMem_Malloc(n * sizeof(T));
         if (!p)
             fail("PyMem_Malloc(): out of memory!");
@@ -196,6 +245,33 @@ using nb_ptr_map  = tsl::robin_map<void *, void*, ptr_hash>;
 using nb_type_map_fast = nb_ptr_map;
 using nb_type_map_slow = tsl::robin_map<const std::type_info *, type_data *,
                                         std_typeinfo_hash, std_typeinfo_eq>;
+
+#if defined(NB_FREE_THREADED)
+// Per-thread state
+struct nb_thread_state {
+    // C++ -> Python type cache
+    nb_type_map_fast type_c2p_fast;
+
+    /// Per-thread instance pools indexed by ``type_data::pool_index``
+    /// Grown lazily by nb_pool_ensure() and freed when the thread exists
+    nb_inst_pool *pools = nullptr;
+
+    /// Number of entries currently allocated in ``pools``
+    uint32_t pools_size = 0;
+};
+
+extern NB_THREAD_LOCAL nb_thread_state *nb_thread_state_tls;
+
+/// Slow path: allocate this thread's state and register a cleanup routine
+extern nb_thread_state *nb_thread_state_alloc() noexcept;
+
+NB_INLINE nb_thread_state *nb_thread_state_get() noexcept {
+    nb_thread_state *ts = nb_thread_state_tls;
+    if (NB_UNLIKELY(!ts))
+        ts = nb_thread_state_alloc();
+    return ts;
+}
+#endif
 
 /// Convenience functions to deal with the pointer encoding in 'internals.inst_c2p'
 
@@ -289,15 +365,10 @@ struct nb_maybe_atomic {
  *
  * The following list clarifies locking semantics for each member.
  *
- * - `nb_module`, `nb_meta`, `nb_func`, `nb_method`, `nb_bound_method`,
+ * - `nb_module`, `nb_type`, `nb_func`, `nb_method`, `nb_bound_method`,
  *   `*_Type_tp_*`, `shard_count`, `is_alive_ptr`: these are initialized when
  *   loading the first nanobind extension within a domain, which happens within
  *   a critical section. They do not require locking.
- *
- * - `nb_type_dict`: created when the loading the first nanobind extension
- *   within a domain. While the dictionary itself is protected by its own
- *   lock, additional locking is needed to avoid races that create redundant
- *   entries. The `mutex` member is used for this.
  *
  * - `nb_static_property` and `nb_static_propert_descr_set`: created only once
  *   on demand, protected by `mutex`.
@@ -345,11 +416,8 @@ struct nb_internals {
     /// Internal nanobind module
     PyObject *nb_module;
 
-    /// Meta-metaclass of nanobind instances
-    PyTypeObject *nb_meta;
-
-    /// Dictionary with nanobind metaclass(es) for different payload sizes
-    PyObject *nb_type_dict;
+    /// The metaclass shared by every bound type
+    PyTypeObject *nb_type;
 
     /// Types of nanobind functions and methods
     PyTypeObject *nb_func, *nb_method, *nb_bound_method;
@@ -383,6 +451,19 @@ struct nb_internals {
     inline nb_shard &shard(void *) { return shards[0]; }
 #endif
 
+#if defined(NB_FREE_THREADED)
+    // Per-domain key for reclaiming nb_thread_state at thread exit
+#  if defined(_WIN32)
+    unsigned long thread_state_key;
+#  else
+    pthread_key_t thread_state_key;
+#  endif
+
+    // Current index into the per-thread object pool. Grows proportional
+    // to the number of pooled object types that are used across extensions
+    std::atomic<uint32_t> pool_index_counter{0};
+#endif
+
 #if !defined(NB_FREE_THREADED)
     /// C++ -> Python type map -- fast version based on std::type_info pointer equality
     nb_type_map_fast type_c2p_fast;
@@ -398,7 +479,7 @@ struct nb_internals {
 #endif
 
     /// Registered C++ -> Python exception translators
-    nb_translator_seq translators;
+    nb_maybe_atomic<nb_translator_seq *> translators = nullptr;
 
     /// Should nanobind print leak warnings on exit?
     bool print_leak_warnings = true;
@@ -433,20 +514,39 @@ struct nb_internals {
     /// PyList keeping managed PyObjects alive. Cleared when shared_ref_count
     /// reaches 0.
     PyObject *lifeline = nullptr;
+
+    /// Incremented whenever 'lifeline' is destroyed; used to detect stale
+    /// per-library 'static_pyobjects' arrays (see init_pyobjects())
+    uint32_t lifeline_generation = 0;
 };
+
+// Pre-interned strings in the per-module state array, alphabetically
+// sorted. Use NB_INTERNED(name) below to access an entry.
+#define NB_INTERNED_STRINGS(X)                                                 \
+    X(__complex__)                                                             \
+    X(__dlpack__)                                                              \
+    X(__init__)                                                                \
+    X(__length_hint__)                                                         \
+    X(__module__)                                                              \
+    X(__name__)                                                                \
+    X(__new__)                                                                 \
+    X(__qualname__)                                                            \
+    X(array)                                                                   \
+    X(clone)                                                                   \
+    X(copy)                                                                    \
+    X(dl_device)                                                               \
+    X(from_dlpack)                                                             \
+    X(max_version)                                                             \
+    X(stream)                                                                  \
+    X(value)
 
 // Names for the PyObject* entries in the per-module state array.
 // These names are scoped, but will implicitly convert to int.
 struct pyobj_name {
     enum : int {
-        value_str = 0,      // string "value"
-        copy_str,           // string "copy"
-        clone_str,          // string "clone"
-        array_str,          // string "array"
-        from_dlpack_str,    // string "from_dlpack"
-        dunder_dlpack_str,  // string "__dlpack__"
-        max_version_str,    // string "max_version"
-        dl_device_str,      // string "dl_device"
+        #define NB_INTERNED_ENTRY(name) interned_##name,
+        NB_INTERNED_STRINGS(NB_INTERNED_ENTRY)
+        #undef NB_INTERNED_ENTRY
         string_count,
 
         copy_tpl = string_count,  // tuple ("copy")
@@ -458,6 +558,9 @@ struct pyobj_name {
 };
 
 extern PyObject *static_pyobjects[];
+
+/// Access the pre-interned string constant 'name', e.g. NB_INTERNED(__name__)
+#define NB_INTERNED(name) static_pyobjects[pyobj_name::interned_##name]
 
 extern void internals_inc_ref();
 extern void internals_dec_ref();
@@ -484,9 +587,12 @@ inline PyTypeObject *new_type(nb_internals *p, PyType_Spec *spec) {
 #endif
 
 extern nb_internals *internals;
-extern PyTypeObject *nb_meta_cache;
 
 extern char *type_name(const std::type_info *t);
+
+/// Construct 'nb_type' as an instance of the meta-metaclass 'nb_meta'
+extern PyTypeObject *nb_type_create_metaclass(nb_internals *p,
+                                              PyTypeObject *nb_meta) noexcept;
 
 // Forward declarations
 extern PyObject *inst_new_ext(PyTypeObject *tp, void *value);
@@ -503,31 +609,57 @@ NB_INLINE func_data *nb_func_data(void *o) {
     return (func_data *) (((char *) o) + sizeof(nb_func));
 }
 
-#if defined(Py_LIMITED_API)
-extern type_data *nb_type_data_static(PyTypeObject *o) noexcept;
-#endif
-
 /// Fetch the nanobind type record from a 'nb_type' instance
 NB_INLINE type_data *nb_type_data(PyTypeObject *o) noexcept{
     #if !defined(Py_LIMITED_API)
         return (type_data *) (((char *) o) + sizeof(PyHeapTypeObject));
     #else
-        return nb_type_data_static(o);
+        #if 1
+            // Fast path that can be inlines without spilling registers
+            return (type_data *) ((char *) o + internals->type_data_offset);
+        #else
+            // Equivalent non-inlined reference version:
+            return (type_data *) PyObject_GetTypeData((PyObject *) o, Py_TYPE((PyObject *) o));
+        #endif
     #endif
 }
 
 inline void *inst_ptr(nb_inst *self) {
     void *ptr = (void *) ((intptr_t) self + self->offset);
-    return self->direct ? ptr : *(void **) ptr;
+    return self->state.direct ? ptr : *(void **) ptr;
 }
+
+// Return the instance pool associated with type `td`
+NB_INLINE nb_inst_pool *nb_pool_lookup(type_data *td) noexcept {
+#if !defined(NB_FREE_THREADED)
+    // In GIL-protected Python, global pool data structure is reachable via `td`
+    return &td->pool;
+#else
+    // In FT builds, the pool is per thread and stored in a packed pointer array
+    nb_thread_state *ts = nb_thread_state_tls;
+    if (ts && td->pool_index < ts->pools_size)
+        return ts->pools + td->pool_index;
+    return nullptr;
+#endif
+}
+
+// Return the instance pool associated with type `td` or allocate it on demand
+extern nb_inst_pool *nb_pool_ensure(type_data *td) noexcept;
+
+/// Release all objects kept in the given instance pool
+extern void nb_pool_drain(nb_inst_pool *pool, bool can_free) noexcept;
 
 template <typename T> struct scoped_pymalloc {
     scoped_pymalloc(size_t size = 1, size_t extra_bytes = 0) {
-        // Tip: construct objects in the extra bytes using placement new.
-        ptr = (T *) PyMem_Malloc(size * sizeof(T) + extra_bytes);
+        size_t total = size * sizeof(T);
+        if (NB_UNLIKELY(size > SIZE_MAX / sizeof(T) ||
+                        total > SIZE_MAX - extra_bytes))
+            fail("scoped_pymalloc(): integer overflow!");
+        total += extra_bytes;
+        ptr = (T *) PyMem_Malloc(total);
         if (!ptr)
             fail("scoped_pymalloc(): could not allocate %llu bytes of memory!",
-                 (unsigned long long) (size * sizeof(T) + extra_bytes));
+                 (unsigned long long) total);
     }
     ~scoped_pymalloc() { PyMem_Free(ptr); }
     T *release() {

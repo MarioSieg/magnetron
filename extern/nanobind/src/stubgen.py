@@ -335,7 +335,13 @@ class StubGen:
         """Append an indented single or multi-line docstring"""
         self.write(self.format_docstr(docstr, self.depth))
 
-    def put_nb_overload(self, fn: NbFunction, sig: NbFunctionSignature, name: Optional[str] = None) -> None:
+    def put_nb_overload(
+        self,
+        fn: NbFunction,
+        sig: NbFunctionSignature,
+        name: Optional[str] = None,
+        is_classmethod: bool = False,
+    ) -> None:
         """
         The ``put_nb_func()`` repeatedly calls this method to render the
         individual method overloads.
@@ -389,7 +395,10 @@ class StubGen:
                 sig_str = sig_str[:pos] + arg_str + sig_str[pos + len(pattern) :]
                 start = pos + len(arg_str)
 
-        if type(fn).__name__ == "nb_func" and self.depth > 0:
+        if is_classmethod:
+            # Rewrite the first parameter to just cls.
+            sig_str = re.sub(r'(def \w+\()[^,)]+', r'\1cls', sig_str, count=1)
+        elif type(fn).__name__ == "nb_func" and self.depth > 0:
             self.write_ln("@staticmethod")
 
         if not docstr or not self.include_docstrings:
@@ -406,20 +415,22 @@ class StubGen:
             self.depth -= 1
         self.write("\n")
 
-    def put_nb_func(self, fn: NbFunction, name: Optional[str] = None) -> None:
+    def put_nb_func(
+        self, fn: NbFunction, name: Optional[str] = None, is_classmethod: bool = False,
+    ) -> None:
         """Append a nanobind function binding to the stub"""
         sigs = fn.__nb_signature__
         count = len(sigs)
         assert count > 0
         if count == 1:
             # No overloads write directly
-            self.put_nb_overload(fn, sigs[0], name)
+            self.put_nb_overload(fn, sigs[0], name, is_classmethod=is_classmethod)
         else:
             # Render an @overload-decorated chain
             overload = self.import_object("typing", "overload")
             for s in sigs:
                 self.write_ln(f"@{overload}")
-                self.put_nb_overload(fn, s, name)
+                self.put_nb_overload(fn, s, name, is_classmethod=is_classmethod)
 
     def put_function(self, fn: Callable[..., Any], name: Optional[str] = None, parent: Optional[object] = None):
         """Append a function of an arbitrary type to the stub"""
@@ -440,18 +451,21 @@ class StubGen:
             self.write_ln(f"{name} = {fn_name}\n")
             return
 
-        # Special handling for nanobind functions with overloads
-        if type(fn).__module__ == "nanobind":
-            fn = cast(NbFunction, fn)
-            self.put_nb_func(fn, name)
-            return
-
-        if isinstance(fn, staticmethod):
-            self.write_ln("@staticmethod")
+        # Unwrap staticmethod/classmethod descriptors.
+        if is_staticmethod := isinstance(fn, staticmethod):
             fn = fn.__func__
-        elif isinstance(fn, classmethod):
+        if is_classmethod := isinstance(fn, classmethod):
             self.write_ln("@classmethod")
             fn = fn.__func__
+
+        # Special handling for nanobind functions with overloads.
+        if type(fn).__module__ == "nanobind":
+            fn = cast(NbFunction, fn)
+            self.put_nb_func(fn, name, is_classmethod=is_classmethod)
+            return
+
+        if is_staticmethod:
+            self.write_ln("@staticmethod")
 
         if name is None:
             name = fn.__name__
@@ -520,8 +534,11 @@ class StubGen:
         pos = getter_sig.find("/) -> ")
         if pos == -1:
             raise RuntimeError(f"Static property '{name}' ({getter_sig}) has an invalid signature!")
-        getter_sig = getter_sig[pos + 6 :]
-        self.write_ln(f"{name}: {getter_sig} = ...")
+        tp = self.simplify_types(getter_sig[pos + 6 :])
+        if prop.fset is None:
+            tp = f"{self.import_object('typing', 'Final')}[{tp}]"
+        tp = f"{self.import_object('typing', 'ClassVar')}[{tp}]"
+        self.write_ln(f"{name}: {tp} = ...")
         if prop.__doc__ and self.include_docstrings:
             self.put_docstr(prop.__doc__)
         self.write("\n")
@@ -623,7 +640,7 @@ class StubGen:
 
         if isinstance(parent, type) and issubclass(tp, parent):
             # This is an entry of an enumeration
-            self.write_ln(f"{name} = {typing.cast(enum.Enum, value)._value_}")
+            self.write_ln(f"{name} = {typing.cast(enum.Enum, value)._value_!r}")
             if value.__doc__ and self.include_docstrings:
                 self.put_docstr(value.__doc__)
             self.write("\n")
@@ -723,8 +740,17 @@ class StubGen:
                 return cls_name if cls_name != "NoneType" else "None"
             if full_name.startswith(self.module.__name__ + "."):
                 # Strip away the module prefix for local classes
-                return full_name[len(self.module.__name__) + 1 :]
-            elif mod_name == "typing" or mod_name == "collections.abc":
+                result = full_name[len(self.module.__name__) + 1 :]
+                # Inside a class body, strip the immediate enclosing class
+                # prefix (e.g. "ErrorEnum.Value" -> "Value"). Only that scope
+                # is stripped: class scopes don't nest, so an outer class's
+                # members aren't visible by short name in a nested class body.
+                scope = self.prefix[len(self.module.__name__) + 1 :]
+                enclosing = scope.rpartition(".")[0]
+                if enclosing and result.startswith(enclosing + "."):
+                    result = result[len(enclosing) + 1 :]
+                return result
+            elif mod_name in ("typing", "typing_extensions", "collections.abc"):
                 # Import frequently-occurring typing classes and ABCs directly
                 return self.import_object(mod_name, cls_name)
             else:
@@ -825,6 +851,19 @@ class StubGen:
                     import_as = item_list[1].strip() if len(item_list) > 1 else None
                     self.import_object(import_module, import_name, import_as)
                 continue
+            elif ls.startswith("\\import "):
+                # inline module imports like "\import A, B as b"
+                mod_list = ls[7:].split(",")
+                for mod in mod_list:
+                    items = mod.split(" as ")
+                    if len(items) == 1:
+                        modname, as_name = items[0].strip(), None
+                    elif len(items) == 2:
+                        modname, as_name = [i.strip() for i in items]
+                    else:
+                        raise RuntimeError(f"Could not parse import declaration {mod}")
+                    self.import_object(modname, None, as_name=as_name)
+                continue
 
             groups = match.groups()
             for i in reversed(range(len(groups))):
@@ -834,6 +873,7 @@ class StubGen:
             self.write_ln(line)
 
         # Success, pattern was applied
+        pattern.matches += 1
         return True
 
     def put(self, value: object, name: Optional[str] = None, parent: Optional[object] = None) -> None:
@@ -1049,7 +1089,15 @@ class StubGen:
         elif (sys.version_info >= (3, 11) and issubclass(tp, typing.TypeVarTuple)) \
             or (typing_extensions is not None and issubclass(tp, typing_extensions.TypeVarTuple)):
             tv = self.import_object(tp.__module__, "TypeVarTuple")
-            return f'{tv}("{e.__name__}")'
+            s = f'{tv}("{e.__name__}"'
+            if sys.version_info >= (3, 13):
+                v = e.__default__
+                if v is not typing.NoDefault:
+                    v = self.expr_str(v, abbrev=False)
+                    if v is None:
+                        return None
+                    s += ", default=" + v
+            return s + ')'
         elif issubclass(tp, typing.TypeVar):
             tv = self.import_object("typing", "TypeVar")
             s = f'{tv}("{e.__name__}"'
@@ -1068,6 +1116,13 @@ class StubGen:
                     if v is None:
                         return None
                     s += f", {k}=" + v
+            if sys.version_info >= (3, 13):
+                v = e.__default__
+                if v is not typing.NoDefault:
+                    v = self.expr_str(v, abbrev=False)
+                    if v is None:
+                        return None
+                    s += ", default=" + v
             s += ")"
             return s
         elif issubclass(tp, str):

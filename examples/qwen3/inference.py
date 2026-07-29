@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from magnetron import Tensor, context, dtype
 from rich.console import Console
 from tokenizers import Tokenizer
-from model import Qwen3Model
+from model import Qwen3Model, Qwen3HyperParams
 
 console = Console()
 REPO_ID: str = 'mario-sieg/qwen3.0-4b-2507-instruct-magnetron'
@@ -58,6 +58,9 @@ class InferenceConfig:
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> 'InferenceConfig':
+        dtype_map: dict[str, dtype.DType] = {}
+        for T in dtype.floating:
+            dtype_map[T.name] = T
         return cls(
             system=args.system,
             device=args.device,
@@ -76,7 +79,7 @@ class InferenceEngine:
         if snapshot is None:
             snapshot = _download_or_ensure_hf_file(
                 repo_id=REPO_ID,
-                filename='qwen3-4b-instruct-2507-f8e4m3fn.mag',
+                filename='qwen3-4b-instruct-2507-bf16.mag',
             )
         assert snapshot is not None
         start = time.perf_counter()
@@ -86,14 +89,21 @@ class InferenceEngine:
         if context.is_device_available(config.device):
             context.set_default_device(config.device)
         console.print(f'Loading model from snapshot: {snapshot}', style='dim')
-        self.model = Qwen3Model.from_pretrained_snapshot(snapshot)
+        self.model = Qwen3Model.from_pretrained_snapshot(snapshot, Qwen3HyperParams())
         self.tokenizer = HFTokenizer(REPO_ID)
         self.config = config
         end = time.perf_counter()
         console.print(f'Ready in {end - start:.2f}s', style='dim')
         gc.collect()
 
-    def gen_stream(self, prompt: str, max_tokens: int | None = None, temp: float | None = None, top_k: int | None = None) -> Iterator[str]:
+    def gen_stream(
+        self,
+        prompt: str,
+        max_tokens: int | None = None,
+        temp: float | None = None,
+        top_k: int | None = None,
+        reset_cache: bool = False,
+    ) -> Iterator[str]:
         if max_tokens is None:
             max_tokens = self.config.max_tokens
         if temp is None:
@@ -101,7 +111,14 @@ class InferenceEngine:
         if top_k is None:
             top_k = self.config.top_k
         model_input_ids = Tensor([self.tokenizer.encode(prompt)], dtype=dtype.int64)
-        for chunk in self.model.generate_stream(model_input_ids, self.tokenizer, max_tokens=max_tokens, temp=temp, top_k=top_k):
+        for chunk in self.model.generate_stream(
+            model_input_ids,
+            self.tokenizer,
+            max_tokens=max_tokens,
+            temp=temp,
+            top_k=top_k,
+            reset_cache=reset_cache,
+        ):
             yield chunk
         gc.collect()
 

@@ -109,6 +109,7 @@ void        _mi_strlcpy(char* dest, const char* src, size_t dest_size);
 void        _mi_strlcat(char* dest, const char* src, size_t dest_size);
 size_t      _mi_strlen(const char* s);
 size_t      _mi_strnlen(const char* s, size_t max_len);
+bool        _mi_streq(const char* s, const char* t);
 bool        _mi_getenv(const char* name, char* result, size_t result_size);
 
 // "options.c"
@@ -177,7 +178,7 @@ void*       _mi_os_alloc_aligned(size_t size, size_t alignment, bool commit, boo
 void*       _mi_os_alloc_aligned_at_offset(size_t size, size_t alignment, size_t align_offset, bool commit, bool allow_large, mi_memid_t* memid);
 
 void*       _mi_os_get_aligned_hint(size_t try_alignment, size_t size);
-bool        _mi_os_use_large_page(size_t size, size_t alignment);
+bool        _mi_os_canuse_large_page(size_t size, size_t alignment);
 size_t      _mi_os_large_page_size(void);
 void*       _mi_os_alloc_huge_os_pages(size_t pages, int numa_node, mi_msecs_t max_secs, size_t* pages_reserved, size_t* psize, mi_memid_t* memid);
 
@@ -238,7 +239,7 @@ bool       _mi_segment_attempt_reclaim(mi_heap_t* heap, mi_segment_t* segment);
 bool       _mi_segment_visit_blocks(mi_segment_t* segment, int heap_tag, bool visit_blocks, mi_block_visit_fun* visitor, void* arg);
 
 // "page.c"
-void*       _mi_malloc_generic(mi_heap_t* heap, size_t size, bool zero, size_t huge_alignment)  mi_attr_noexcept mi_attr_malloc;
+void*       _mi_malloc_generic(mi_heap_t* heap, size_t size, bool zero, size_t huge_alignment, size_t* usable)  mi_attr_noexcept mi_attr_malloc;
 
 void        _mi_page_retire(mi_page_t* page) mi_attr_noexcept;                  // free the page if there are no other pages with many free blocks
 void        _mi_page_unfull(mi_page_t* page);
@@ -258,9 +259,9 @@ void        _mi_deferred_free(mi_heap_t* heap, bool force);
 void        _mi_page_free_collect(mi_page_t* page,bool force);
 void        _mi_page_reclaim(mi_heap_t* heap, mi_page_t* page);   // callback from segments
 
-size_t      _mi_page_bin(const mi_page_t* page); // for stats
-size_t      _mi_bin_size(size_t bin);            // for stats
-size_t      _mi_bin(size_t size);                // for stats
+size_t      _mi_page_stats_bin(const mi_page_t* page); // for stats
+size_t      _mi_bin_size(size_t bin);                  // for stats
+size_t      _mi_bin(size_t size);                      // for stats
 
 // "heap.c"
 void        _mi_heap_init(mi_heap_t* heap, mi_tld_t* tld, mi_arena_id_t arena_id, bool noreclaim, uint8_t tag);
@@ -281,12 +282,12 @@ mi_msecs_t  _mi_clock_end(mi_msecs_t start);
 mi_msecs_t  _mi_clock_start(void);
 
 // "alloc.c"
-void*       _mi_page_malloc_zero(mi_heap_t* heap, mi_page_t* page, size_t size, bool zero) mi_attr_noexcept;  // called from `_mi_malloc_generic`
+void*       _mi_page_malloc_zero(mi_heap_t* heap, mi_page_t* page, size_t size, bool zero, size_t* usable) mi_attr_noexcept;  // called from `_mi_malloc_generic`
 void*       _mi_page_malloc(mi_heap_t* heap, mi_page_t* page, size_t size) mi_attr_noexcept;                  // called from `_mi_heap_malloc_aligned`
 void*       _mi_page_malloc_zeroed(mi_heap_t* heap, mi_page_t* page, size_t size) mi_attr_noexcept;           // called from `_mi_heap_malloc_aligned`
 void*       _mi_heap_malloc_zero(mi_heap_t* heap, size_t size, bool zero) mi_attr_noexcept;
-void*       _mi_heap_malloc_zero_ex(mi_heap_t* heap, size_t size, bool zero, size_t huge_alignment) mi_attr_noexcept;     // called from `_mi_heap_malloc_aligned`
-void*       _mi_heap_realloc_zero(mi_heap_t* heap, void* p, size_t newsize, bool zero) mi_attr_noexcept;
+void*       _mi_heap_malloc_zero_ex(mi_heap_t* heap, size_t size, bool zero, size_t huge_alignment, size_t* usable) mi_attr_noexcept;     // called from `_mi_heap_malloc_aligned`
+void*       _mi_heap_realloc_zero(mi_heap_t* heap, void* p, size_t newsize, bool zero, size_t* usable_pre, size_t* usable_post) mi_attr_noexcept;
 mi_block_t* _mi_page_ptr_unalign(const mi_page_t* page, const void* p);
 bool        _mi_free_delayed_block(mi_block_t* block);
 void        _mi_free_generic(mi_segment_t* segment, mi_page_t* page, bool is_local, void* p) mi_attr_noexcept;  // for runtime integration
@@ -351,7 +352,7 @@ mi_decl_noreturn mi_decl_cold void _mi_assert_fail(const char* assertion, const 
   Inlined definitions
 ----------------------------------------------------------- */
 #define MI_UNUSED(x)     (void)(x)
-#if (MI_DEBUG>0)
+#if (MI_DEBUG>1)
 #define MI_UNUSED_RELEASE(x)
 #else
 #define MI_UNUSED_RELEASE(x)  MI_UNUSED(x)
@@ -377,8 +378,7 @@ static inline bool _mi_is_power_of_two(uintptr_t x) {
 
 // Is a pointer aligned?
 static inline bool _mi_is_aligned(void* p, size_t alignment) {
-  mi_assert_internal(alignment != 0);
-  return (((uintptr_t)p % alignment) == 0);
+  return (alignment==0 || ((uintptr_t)p % alignment) == 0);
 }
 
 // Align upwards
@@ -406,12 +406,12 @@ static inline uintptr_t _mi_align_down(uintptr_t sz, size_t alignment) {
 }
 
 // Align a pointer upwards
-static inline void* mi_align_up_ptr(void* p, size_t alignment) {
+static inline void* _mi_align_up_ptr(const void* p, size_t alignment) {
   return (void*)_mi_align_up((uintptr_t)p, alignment);
 }
 
 // Align a pointer downwards
-static inline void* mi_align_down_ptr(void* p, size_t alignment) {
+static inline void* _mi_align_down_ptr(void* p, size_t alignment) {
   return (void*)_mi_align_down((uintptr_t)p, alignment);
 }
 
@@ -690,6 +690,13 @@ static inline bool mi_page_is_in_full(const mi_page_t* page) {
 }
 
 static inline void mi_page_set_in_full(mi_page_t* page, bool in_full) {
+  if (page->flags.x.in_full != in_full) {
+    // optimize: maintain pages_full_size to avoid visiting the full queue (issue #1220)
+    mi_heap_t* const heap = mi_page_heap(page);
+    const size_t size = page->capacity * mi_page_block_size(page);
+    if (in_full) { heap->pages_full_size += size; }
+            else { mi_assert_internal(size <= heap->pages_full_size); heap->pages_full_size -= size; }
+  }
   page->flags.x.in_full = in_full;
 }
 
@@ -704,12 +711,17 @@ static inline void mi_page_set_has_aligned(mi_page_t* page, bool has_aligned) {
 /* -------------------------------------------------------------------
   Guarded objects
 ------------------------------------------------------------------- */
-#if MI_GUARDED
 static inline bool mi_block_ptr_is_guarded(const mi_block_t* block, const void* p) {
+#if MI_GUARDED
   const ptrdiff_t offset = (uint8_t*)p - (uint8_t*)block;
   return (offset >= (ptrdiff_t)(sizeof(mi_block_t)) && block->next == MI_BLOCK_TAG_GUARDED);
+#else
+  MI_UNUSED(block); MI_UNUSED(p);
+  return false;
+#endif  
 }
 
+#if MI_GUARDED
 static inline bool mi_heap_malloc_use_guarded(mi_heap_t* heap, size_t size) {
   // this code is written to result in fast assembly as it is on the hot path for allocation
   const size_t count = heap->guarded_sample_count - 1;  // if the rate was 0, this will underflow and count for a long time..
@@ -1093,7 +1105,7 @@ static inline size_t mi_popcount(size_t x) {
 extern mi_decl_hidden bool _mi_cpu_has_fsrm;
 extern mi_decl_hidden bool _mi_cpu_has_erms;
 static inline void _mi_memcpy(void* dst, const void* src, size_t n) {
-  if ((_mi_cpu_has_fsrm && n <= 128) || (_mi_cpu_has_erms && n > 128)) {
+  if (_mi_cpu_has_fsrm && n <= 127) { // || (_mi_cpu_has_erms && n > 128)) {
     __movsb((unsigned char*)dst, (const unsigned char*)src, n);
   }
   else {
@@ -1101,7 +1113,7 @@ static inline void _mi_memcpy(void* dst, const void* src, size_t n) {
   }
 }
 static inline void _mi_memzero(void* dst, size_t n) {
-  if ((_mi_cpu_has_fsrm && n <= 128) || (_mi_cpu_has_erms && n > 128)) {
+  if (_mi_cpu_has_fsrm && n <= 127) { // || (_mi_cpu_has_erms && n > 128)) {
     __stosb((unsigned char*)dst, 0, n);
   }
   else {

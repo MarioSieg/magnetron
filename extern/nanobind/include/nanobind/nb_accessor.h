@@ -16,8 +16,8 @@ NAMESPACE_BEGIN(detail)
 #define NB_IMPL_ACCESSOR_OP_I(name, op)                                        \
     template <typename Impl> template <typename T>                             \
     accessor<Impl>& accessor<Impl>::name(const api<T> &o) {                    \
-        PyObject *res = obj_op_2(ptr(), o.derived().ptr(), op);                \
-        Impl::set(m_base, m_key, res);                                         \
+        object tmp = steal(obj_op_2(ptr(), o.derived().ptr(), op));            \
+        Impl::set(m_base, m_key, tmp.ptr());                                   \
         return *this;                                                          \
     }
 
@@ -87,7 +87,7 @@ struct str_attr {
 
 struct obj_attr {
     static constexpr bool cache_dec_ref = true;
-    using key_type = handle;
+    using key_type = object;
 
     NB_INLINE static void get(PyObject *obj, handle key, PyObject **cache) {
         detail::getattr_or_raise(obj, key.ptr(), cache);
@@ -122,7 +122,7 @@ struct str_item {
 
 struct obj_item {
     static constexpr bool cache_dec_ref = true;
-    using key_type = handle;
+    using key_type = object;
 
     NB_INLINE static void get(PyObject *obj, handle key, PyObject **cache) {
         detail::getitem_or_raise(obj, key.ptr(), cache);
@@ -165,6 +165,8 @@ struct num_item_list {
 
     NB_INLINE static void get(PyObject *obj, Py_ssize_t index, PyObject **cache) {
         #if defined(Py_GIL_DISABLED)
+            if (*cache)
+                return;
             *cache = PyList_GetItemRef(obj, index);
         #else
             *cache = NB_LIST_GET_ITEM(obj, index);

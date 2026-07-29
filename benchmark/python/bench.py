@@ -15,6 +15,7 @@ import torch
 context.set_default_dtype(dtype.bfloat16)
 torch.set_default_dtype(torch.bfloat16)
 
+
 class NumpyBenchmark(BenchParticipant):
     def __init__(self) -> None:
         super().__init__('Numpy')

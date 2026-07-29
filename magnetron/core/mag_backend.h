@@ -42,11 +42,11 @@ typedef struct mag_storage_buffer_t mag_storage_buffer_t;
 struct mag_storage_buffer_t {
   MAG_RC_INJECT_HEADER;                   /* RC Control block must be first */
   mag_context_t *ctx;
-  mag_storage_flags_t flags;                                  /* Storage buffer flags. */
-  uint32_t alignment;                                         /* Alignment of buffer. */
-  uintptr_t base;                                             /* Pointer to buffer on device. Might point to GPU or any other device memory. */
-  size_t size;                                                /* Size of buffer in bytes. */
-  mag_device_t *device;                                       /* Host device. */
+  mag_device_t *device;         /* Device where the buffer is allocated on */
+  mag_storage_flags_t flags;    /* Storage buffer flags. */
+  uint32_t alignment;           /* Alignment of buffer. */
+  uintptr_t base;               /* Pointer to buffer on device. Might point to GPU or any other device memory. */
+  size_t size;                  /* Size of buffer in bytes. */
   mag_alignas(MAG_CPU_BUF_INTRUSIVE_CAP) union {
     void *impl;                                             /* Backend specific storage buffer implementation, if any. */
     mag_alignas(MAG_CPU_BUF_INTRUSIVE_CAP) uint8_t intrusive_storage[MAG_CPU_BUF_INTRUSIVE_CAP]; /* (CPU only) Intrusive inline st */
@@ -59,10 +59,10 @@ mag_static_assert(offsetof(mag_storage_buffer_t, aux) % MAG_CPU_BUF_ALIGN == 0);
 typedef struct mag_command_t {
   mag_opcode_t op;
   mag_tensor_t **in;
-  mag_tensor_t **out;
   uint32_t num_in;
+  mag_tensor_t **out;
   uint32_t num_out;
-  mag_op_attr_t attrs[MAG_MAX_OP_PARAMS];
+  const mag_op_params_t *params;
 } mag_command_t;
 
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
@@ -71,19 +71,21 @@ struct mag_device_t {
   mag_context_t *ctx;                                                     /* Owning context */
   mag_device_id_t id;                                                     /* Device ID, (e.g. cuda:0, cpu, etc..) */
   bool is_async;                                                          /* True if the device executes commands asynchronously. */
-  mag_status_t (*submit)(mag_device_t *dvc, mag_error_t *err, const mag_command_t *cmd);    /* Submit a command to the device for execution. */
-  mag_status_t (*alloc_storage)(mag_device_t *dvc, mag_error_t *err, mag_storage_buffer_t **out, size_t size);
-  void (*manual_seed)(mag_device_t *dvc, mag_error_t *err, uint64_t seed);
-  mag_status_t (*transfer)(mag_device_t *dvc, mag_error_t *err, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst);
+  mag_status_t (*submit)(mag_error_t *err, mag_device_t *dvc, const mag_command_t *cmd);    /* Submit a command to the device for execution. */
+  mag_status_t (*alloc_storage)(mag_error_t *err, mag_device_t *dvc, mag_storage_buffer_t **out, size_t size);
+  void (*manual_seed)(mag_error_t *err, mag_device_t *dvc, uint64_t seed);
+  mag_status_t (*transfer)(mag_error_t *err, mag_device_t *dvc, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst);
   char physical_device_name[256];                                         /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
 };
 
-#define MAG_BACKEND_MODULE_ABI_VER 1 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */
+#define MAG_BACKEND_MODULE_ABI_VER 2 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */
 typedef struct mag_backend_t mag_backend_t;
 struct mag_backend_t {
+  mag_context_t *ctx;
   void *impl;
-  bool (*init)(mag_backend_t *self, mag_context_t *ctx);
-  bool (*shutdown)(mag_backend_t *self);
+  /* !!! VTABLE - only function pointers below till end end, respect/update AG_BACKEND_VTABLE_* on changes */
+  mag_status_t (*init)(mag_error_t *err, mag_backend_t *self, mag_context_t *ctx);
+  mag_status_t (*shutdown)(mag_error_t *err, mag_backend_t *self);
   uint32_t (*backend_version)(mag_backend_t *bck);
   uint32_t (*runtime_version)(mag_backend_t *bck);
   const char *(*id)(mag_backend_t *bck);
@@ -91,8 +93,11 @@ struct mag_backend_t {
   uint32_t (*best_device_id)(mag_backend_t *bck);
   mag_device_t *(*get_device)(mag_backend_t *bck, uint32_t idx);
 };
-#define MAG_BACKEND_VTABLE_SIZE 8 /* Number of function pointers in mag_backend_t struct. */
-mag_static_assert((sizeof(mag_backend_t)/sizeof(void *))-1 == MAG_BACKEND_VTABLE_SIZE);
+#define MAG_BACKEND_VTABLE_START offsetof(mag_backend_t, init)
+#define MAG_BACKEND_VTABLE_SIZE ((sizeof(mag_backend_t) - MAG_BACKEND_VTABLE_START)/sizeof(void *))
+mag_static_assert(MAG_BACKEND_VTABLE_START % sizeof(void *) == 0);
+mag_static_assert(sizeof(mag_backend_t) % sizeof(void *) == 0);
+mag_static_assert((MAG_BACKEND_VTABLE_START/sizeof(void *)) + MAG_BACKEND_VTABLE_SIZE == sizeof(mag_backend_t)/sizeof(void *));
 
 #define mag_backend_cat_name(x,y) x##y
 #define mag_backend_sym_fn_name(x) mag_backend_cat_name(x, _t)
@@ -107,24 +112,24 @@ typedef uint32_t (MAG_BACKEND_SYM_FN_ABI_COOKIE)(void);
 #define MAG_BACKEND_SYM_INIT mag_backend_module_hook_init
 #define MAG_BACKEND_SYM_FN_INIT mag_backend_sym_fn_name(MAG_BACKEND_SYM_INIT)
 #define MAG_BACKEND_SYM_NAME_INIT MAG_STRINGIZE(MAG_BACKEND_SYM_INIT)
-typedef mag_backend_t *(MAG_BACKEND_SYM_FN_INIT)(mag_context_t *ctx);
+typedef mag_status_t (MAG_BACKEND_SYM_FN_INIT)(mag_error_t *, mag_backend_t **, mag_context_t *);
 
 #define MAG_BACKEND_SYM_SHUTDOWN mag_backend_module_hook_shutdown
 #define MAG_BACKEND_SYM_FN_SHUTDOWN mag_backend_sym_fn_name(MAG_BACKEND_SYM_SHUTDOWN)
 #define MAG_BACKEND_SYM_NAME_SHUTDOWN MAG_STRINGIZE(MAG_BACKEND_SYM_SHUTDOWN)
-typedef void (MAG_BACKEND_SYM_FN_SHUTDOWN)(mag_backend_t *bck);
+typedef mag_status_t (MAG_BACKEND_SYM_FN_SHUTDOWN)(mag_error_t *, mag_backend_t *);
 
 #define mag_backend_decl_interface() \
   extern MAG_EXPORT uint32_t MAG_BACKEND_SYM_ABI_COOKIE(void); \
-  extern MAG_EXPORT mag_backend_t *MAG_BACKEND_SYM_INIT(mag_context_t *ctx); \
-  extern MAG_EXPORT void MAG_BACKEND_SYM_SHUTDOWN(mag_backend_t *bck)
+  extern MAG_EXPORT mag_status_t MAG_BACKEND_SYM_INIT(mag_error_t *, mag_backend_t **, mag_context_t *); \
+  extern MAG_EXPORT mag_status_t MAG_BACKEND_SYM_SHUTDOWN(mag_error_t *, mag_backend_t *)
 
 typedef struct mag_backend_registry_t mag_backend_registry_t;
 
-extern MAG_EXPORT mag_backend_registry_t *mag_backend_registry_init(mag_context_t *ctx);
-extern MAG_EXPORT bool mag_backend_registry_get_backend_and_device_by_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
+extern MAG_EXPORT mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag_backend_registry_t **out_reg);
+extern MAG_EXPORT bool mag_backend_registry_lookup_device_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
 extern MAG_EXPORT void mag_backend_registry_iter_devices(mag_backend_registry_t *reg, void (*callback)(mag_backend_t *bck, mag_device_t *dvc, void *usr), void *usr);
-extern MAG_EXPORT void mag_backend_registry_free(mag_backend_registry_t *reg);
+extern MAG_EXPORT mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registry_t *reg);
 
 #ifdef __cplusplus
 }

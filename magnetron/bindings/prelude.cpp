@@ -38,21 +38,21 @@ namespace mag::bindings {
     mag_tensor_t *out = nullptr;
     if (nb::isinstance<nb::bool_>(obj)) { // Prefer bool first: in Python, bool is a subclass of int.
       bool b = nb::cast<bool>(obj);
-      mag_scalar_t s = mag_scalar_from_u64(!!b);
+      mag_scalar_t s = mag_scalar_from_uint64(!!b);
       mag_error_t err {};
       throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
       return tensor_wrapper{out};
     }
     if (nb::isinstance<nb::int_>(obj)) { // Python int is arbitrary precision; nb::cast<int64_t> will throw if too big.
       auto v = nb::cast<int64_t>(obj);
-      mag_scalar_t s = mag_scalar_from_i64(v);
+      mag_scalar_t s = mag_scalar_from_int64(v);
       mag_error_t err {};
       throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
       return tensor_wrapper{out};
     }
     if (nb::isinstance<nb::float_>(obj)) {
       auto v = nb::cast<double>(obj);
-      mag_scalar_t s = mag_scalar_from_f64(v);
+      mag_scalar_t s = mag_scalar_from_float64(v);
       mag_error_t err {};
       throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
       return tensor_wrapper{out};
@@ -85,8 +85,28 @@ namespace mag::bindings {
       auto msg = "Invalid number of dimensions, must be <= " + std::to_string(MAG_MAX_DIMS);
       throw nb::value_error(msg.c_str());
     }
-    if (std::any_of(shape.begin(), shape.end(), [](int64_t d) { return d <= 0; }))
-      throw nb::value_error("Invalid dimension size (must be > 0)");
+    if (std::any_of(shape.begin(), shape.end(), [](int64_t d) { return d < 0; }))
+      throw nb::value_error("Invalid dimension size (must be >= 0)");
+  }
+
+  void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op) {
+    if (shape.size() > MAG_MAX_DIMS) {
+      auto msg = std::string(op) + ": invalid number of dimensions, must be <= " + std::to_string(MAG_MAX_DIMS);
+      throw nb::value_error(msg.c_str());
+    }
+    int infer = 0;
+    for (int64_t d : shape) {
+      if (d == -1) {
+        ++infer;
+        if (infer > 1) {
+          auto msg = std::string(op) + ": only one dimension can be inferred";
+          throw nb::value_error(msg.c_str());
+        }
+      } else if (d < 0) {
+        auto msg = std::string(op) + ": dimensions must be >= 0 or -1";
+        throw nb::value_error(msg.c_str());
+      }
+    }
   }
 
   static void flatten_i64_handle(nb::handle h, std::vector<int64_t> &out) {
@@ -95,7 +115,10 @@ namespace mag::bindings {
       for (auto &&child : seq)
         flatten_i64_handle(child, out);
     } else {
-      out.emplace_back(nb::cast<int64_t>(h));
+      int64_t v;
+      if (!nb::try_cast<int64_t>(h, v))
+        throw nb::type_error("expected integer dimensions (or a sequence of integers)");
+      out.emplace_back(v);
     }
   }
 
@@ -148,18 +171,18 @@ namespace mag::bindings {
     throw nb::type_error("dim must be None, int, or a sequence of ints");
   }
 
-  mag_scalar_t scalar_from_py(nb::handle h) {
-    if (nb::isinstance<nb::bool_>(h)) return mag_scalar_from_u64(nb::cast<bool>(h));
-    if (nb::isinstance<nb::int_>(h)) return mag_scalar_from_i64(nb::cast<int64_t>(h));
-    if (nb::isinstance<nb::float_>(h)) return mag_scalar_from_f64(nb::cast<double>(h));
+  mag_scalar_t scalar_from_py_number(nb::handle h) {
+    if (nb::isinstance<nb::bool_>(h)) return mag_scalar_from_uint64(nb::cast<bool>(h));
+    if (nb::isinstance<nb::int_>(h)) return mag_scalar_from_int64(nb::cast<int64_t>(h));
+    if (nb::isinstance<nb::float_>(h)) return mag_scalar_from_float64(nb::cast<double>(h));
     throw nb::type_error("Expected scalar (bool|int|float)");
   }
 
   nb::object py_scalar_from_mag_scalar(const mag_scalar_t &scalar) {
     switch (scalar.type) {
-      case MAG_SCALAR_TYPE_I64: return nb::cast<int64_t>(mag_scalar_as_i64(scalar));
-      case MAG_SCALAR_TYPE_U64: return nb::cast<uint64_t>(mag_scalar_as_u64(scalar));
-      case MAG_SCALAR_TYPE_F64: return nb::cast<double>(mag_scalar_as_f64(scalar));
+      case MAG_SCALAR_TYPE_I64: return nb::cast<int64_t>(mag_scalar_as_int64(scalar));
+      case MAG_SCALAR_TYPE_U64: return nb::cast<uint64_t>(mag_scalar_as_uint64(scalar));
+      case MAG_SCALAR_TYPE_F64: return nb::cast<double>(mag_scalar_as_float64(scalar));
       default: throw nb::type_error("Unsupported scalar type");
     }
   }
@@ -184,43 +207,52 @@ namespace mag::bindings {
     }
     return ss.str();
   }
-
-  std::optional<mag_device_id_t> parse_device_id_str(std::string &&str) {
+  std::optional<mag_device_id_t> parse_device_id_str(const std::string &str) {
     std::string_view input{str};
     if (input.empty()) return std::nullopt;
-    auto sep = input.find(':');
+    size_t sep = input.find(':');
     std::string_view name = input.substr(0, sep);
     if (name.empty() || name.size() >= 32) return std::nullopt;
-    const auto iequals = [](std::string_view a, const char* b) -> bool {
+
+    const auto name_eq = [&name](const char *rhs) noexcept -> bool {
       size_t i=0;
-      for (; i < a.size() && b[i] != '\0'; ++i) {
-        const auto ac = static_cast<unsigned char>(a[i]);
-        const auto bc = static_cast<unsigned char>(b[i]);
-        if (std::tolower(ac) != std::tolower(bc)) return false;
-      }
-      return i == a.size() && b[i] == '\0';
+      for (; i < name.size() && rhs[i] != '\0'; ++i)
+        if (std::tolower(static_cast<unsigned char>(name[i])) != std::tolower(static_cast<unsigned char>(rhs[i])))
+          return false;
+      return i == name.size() && rhs[i] == '\0';
     };
+
+    if (name_eq("virtual")) return mag_device_id_t { // virtual device
+      .is_virtual = true,
+      .device_ordinal = 0,
+      .type = MAG_BACKEND_TYPE_CPU
+    };
+
     mag_backend_type_t type = MAG_BACKEND_TYPE__COUNT;
     static_assert(static_cast<std::underlying_type_t<mag_backend_type_t>>(MAG_BACKEND_TYPE_CPU) == 0);
     for (std::underlying_type_t<mag_backend_type_t> type_idx = MAG_BACKEND_TYPE_CPU; type_idx < MAG_BACKEND_TYPE__COUNT; ++type_idx) {
-      if (iequals(name, mag_backend_type_to_str(static_cast<mag_backend_type_t>(type_idx)))) {
+      if (name_eq(mag_backend_type_to_str(static_cast<mag_backend_type_t>(type_idx)))) {
         type = static_cast<mag_backend_type_t>(type_idx);
         break;
       }
     }
+
     if (type == MAG_BACKEND_TYPE__COUNT) return std::nullopt;
     uint32_t ordinal = 0;
     if (sep != std::string_view::npos) {
-      std::string_view ord_str = input.substr(sep + 1);
-      if (ord_str.empty()) return std::nullopt;
-      const char *first = ord_str.data();
-      const char *last  = ord_str.data() + ord_str.size();
-      auto [ptr, ec] = std::from_chars(first, last, ordinal);
-      if (ec != std::errc{} || ptr != last) return std::nullopt;
+      std::string_view ord = input.substr(sep + 1);
+      if (ord.empty()) return std::nullopt;
+      const char *first = ord.data();
+      const char *last = ord.data() + ord.size();
+      if (auto [ptr, ec] = std::from_chars(first, last, ordinal); ec != std::errc{} || ptr != last)
+        return std::nullopt;
+      if (ordinal > MAG_DEVICE_ORDINAL_MAX) // device ordinal out of range for 15-bit field
+        return std::nullopt;
     }
     return mag_device_id_t{
-      .type = type,
+      .is_virtual = false,
       .device_ordinal = ordinal,
+      .type = type,
     };
   }
 }

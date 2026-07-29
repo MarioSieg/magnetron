@@ -25,6 +25,7 @@ template <typename... Ts> struct remove_opt_mono<std::variant<Ts...>>
     : concat_variant<std::conditional_t<std::is_same_v<std::monostate, Ts>, std::variant<>, std::variant<remove_opt_mono_t<Ts>>>...> {};
 
 template <> struct type_caster<std::monostate> : none_caster<std::monostate> { };
+template <> struct has_arg_defaults<std::monostate> : std::true_type { };
 
 template <bool Defaultable, typename... Ts>
 struct variant_caster_storage;

@@ -116,89 +116,158 @@ void mag_fmt_shape(char (*buf)[MAG_FMT_DIM_BUF_SIZE], const int64_t (*dims)[MAG_
   *p = '\0';
 }
 
-bool mag_solve_view_strides(int64_t (*out)[MAG_MAX_DIMS], const int64_t *osz, const int64_t *ost, int64_t ork, const int64_t *nsz, int64_t nrk) {
-  int64_t numel = 1;
-  for (int64_t i=0; i < ork; ++i)
-    mag_assert2(!mag_mulov64(numel, osz[i], &numel));
-  if (!numel) {
-    if (!nrk) return false;
-    (*out)[nrk-1] = 1;
-    for (int64_t d=nrk-2; d >= 0; --d)
-      mag_assert2(!mag_mulov64((*out)[d+1], nsz[d+1], &(*out)[d]));
-    return true;
+mag_status_t mag_solve_view_strides(
+  mag_error_t *err,
+  int64_t (*out_new_strides)[MAG_MAX_DIMS],
+  const int64_t *old_shape,
+  const int64_t *old_strides,
+  int64_t old_rank,
+  const int64_t *new_shape,
+  int64_t new_rank
+) {
+  int64_t numel=1;
+  for (int64_t i=0; i < old_rank; ++i) {
+    if (mag_unlikely(mag_mulov64(numel, old_shape[i], &numel)))
+      return mag_set_error(err, MAG_ERR_DIM,
+        "view: source element count overflowed at dim %" PRIi64
+        " (size %" PRIi64 ").",
+        i, old_shape[i]);
   }
-  int64_t oi = ork-1;
-  int64_t ni = nrk-1;
+  int64_t oi = old_rank-1;
+  int64_t ni = new_rank-1;
   while (oi >= 0 && ni >= 0) {
-    if (nsz[ni] == 1) {
-      (*out)[ni] = 0;
+    if (new_shape[ni] == 1) {
+      (*out_new_strides)[ni] = ni+1 < new_rank ? (*out_new_strides)[ni+1]*new_shape[ni+1] : 1;
       --ni;
       continue;
     }
-    for (; oi >= 0 && osz[oi] == 1; --oi);
-    if (oi < 0) return false;
-    if (nsz[ni] == osz[oi]) {
-      (*out)[ni] = ost[oi];
+    for (; oi >= 0 && old_shape[oi] == 1; --oi);
+    if (mag_unlikely(oi < 0))
+      return mag_set_error(err, MAG_ERR_STRIDES,
+        "view: tensor memory layout is incompatible with the requested view; "
+        "ran out of source dimensions while matching target dim %" PRIi64 ".",
+        ni);
+    if (new_shape[ni] == old_shape[oi]) {
+      (*out_new_strides)[ni] = old_strides[oi];
       --ni;
       --oi;
       continue;
     }
-    int64_t nc = nsz[ni];
-    int64_t oc = osz[oi];
-    int64_t cs = ost[oi];
+    int64_t nc = new_shape[ni];
+    int64_t oc = old_shape[oi];
+    int64_t cs = old_strides[oi];
     int64_t nkf = ni;
     while (nc != oc) {
       if (nc < oc) {
         --ni;
-        if (ni < 0) return false;
-        nc *= nsz[ni];
+        if (mag_unlikely(ni < 0))
+          return mag_set_error(err, MAG_ERR_STRIDES,
+            "view: cannot split source dim %" PRIi64
+            " of size %" PRIi64 " into requested target shape.",
+            oi, old_shape[oi]);
+        if (mag_unlikely(mag_mulov64(nc, new_shape[ni], &nc)))
+          return mag_set_error(err, MAG_ERR_DIM,
+            "view: target chunk size overflowed while merging dim %" PRIi64
+            " (size %" PRIi64 ").",
+            ni, new_shape[ni]);
       } else {
         --oi;
-        for (; oi >= 0 && osz[oi] == 1; --oi);
-        if (oi < 0) return false;
-        if (ost[oi] != osz[oi+1]*ost[oi+1])
-          return false;
-        oc *= osz[oi];
+        for (; oi >= 0 && old_shape[oi] == 1; --oi);
+        if (mag_unlikely(oi < 0))
+          return mag_set_error(err, MAG_ERR_STRIDES,
+            "view: cannot merge target dims into source layout; "
+            "ran out of source dimensions.");
+        int64_t expected_stride;
+        if (mag_unlikely(mag_mulov64(old_shape[oi + 1], old_strides[oi + 1], &expected_stride)))
+          return mag_set_error(err, MAG_ERR_DIM,
+            "view: expected contiguous stride computation overflowed at source dim %" PRIi64 ".",
+            oi);
+        if (mag_unlikely(old_strides[oi] != expected_stride))
+          return mag_set_error(err, MAG_ERR_STRIDES,
+            "view: source dims %" PRIi64 " and %" PRIi64
+            " are not contiguous enough to merge "
+            "(stride[%" PRIi64 "]=%" PRIi64 ", expected %" PRIi64 ").",
+            oi, oi + 1,
+            oi, old_strides[oi], expected_stride);
+        if (mag_unlikely(mag_mulov64(oc, old_shape[oi], &oc)))
+          return mag_set_error(err, MAG_ERR_DIM,
+            "view: source chunk size overflowed while merging dim %" PRIi64
+            " (size %" PRIi64 ").",
+            oi, old_shape[oi]);
       }
     }
     int64_t stride = cs;
     for (int64_t k=ni; k <= nkf; ++k) {
-      (*out)[k] = stride;
-      mag_assert2(!mag_mulov64(stride, nsz[k], &stride));
+      (*out_new_strides)[k] = stride;
+      if (mag_unlikely(mag_mulov64(stride, new_shape[k], &stride)))
+        return mag_set_error(err, MAG_ERR_DIM,
+          "view: output stride computation overflowed at target dim %" PRIi64 ".",
+          k);
     }
     --ni;
     --oi;
   }
   while (ni >= 0) {
-    (*out)[ni] = 0;
+    (*out_new_strides)[ni] = ni+1 < new_rank ? (*out_new_strides)[ni+1]*new_shape[ni+1] : 1;
     --ni;
   }
-  for (; oi >= 0 && osz[oi] == 1; --oi);
-  return oi < 0;
+  for (; oi >= 0 && old_shape[oi] == 1; --oi);
+  if (mag_unlikely(oi >= 0))
+    return mag_set_error(err, MAG_ERR_STRIDES,
+      "view: tensor memory layout is incompatible with the requested view; "
+      "source dim %" PRIi64 " of size %" PRIi64 " remains unmatched.",
+      oi, old_shape[oi]);
+  return MAG_OK;
 }
 
-bool mag_infer_missing_dim(int64_t(*out)[MAG_MAX_DIMS], const int64_t *dims, int64_t rank, int64_t numel) {
-  int64_t prod = 1, infer = -1;
-  for (int64_t i=0; i < rank; ++i) {
+mag_status_t mag_infer_missing_dim(
+  mag_error_t *err,
+  int64_t (*out)[MAG_MAX_DIMS],
+  const int64_t *dims,
+  int64_t rank,
+  int64_t numel
+) {
+  int64_t prod=1;
+  int64_t infer=-1;
+  for (int64_t i = 0; i < rank; ++i) {
     int64_t ax = dims[i];
     if (ax == -1) {
-      if (mag_unlikely(infer != -1)) /* Only one dimension can be inferred */
-        return false;
+      if (mag_unlikely(infer != -1))
+        return mag_set_error(err, MAG_ERR_DIM,
+          "view: only one dimension can be inferred, but found another -1 at dim %" PRIi64 ".",
+          i);
       infer = i;
       (*out)[i] = 1;
     } else {
-      if (mag_unlikely(ax <= 0)) /* Dim must be positive or -1 */
-        return false;
+      if (mag_unlikely(ax < 0))
+        return mag_set_error(err, MAG_ERR_DIM,
+          "view: invalid dimension at dim %" PRIi64
+          " (size %" PRIi64 "); expected non-negative size or -1.",
+          i, ax);
       (*out)[i] = ax;
-      mag_assert2(!mag_mulov64(prod, ax, &prod));
+      if (mag_unlikely(mag_mulov64(prod, ax, &prod)))
+        return mag_set_error(err, MAG_ERR_DIM,
+          "view: requested shape element count overflowed at dim %" PRIi64
+          " (size %" PRIi64 ").",
+          i, ax);
     }
   }
   if (infer >= 0) {
-    if (mag_unlikely(numel % prod != 0)) /* Inferred dimension does not divide numel */
-      return false;
+    if (mag_unlikely(!(prod != 0 && numel % prod == 0)))
+      return mag_set_error(err, MAG_ERR_DIM,
+        "view: cannot infer dimension at dim %" PRIi64
+        " because tensor with %" PRIi64
+        " elements is not divisible by known product %" PRIi64 ".",
+        infer, numel, prod);
     (*out)[infer] = numel / prod;
-  } else if (mag_unlikely(prod != numel)) return false; /* Product does not match numel */
-  return true;
+  } else {
+    if (mag_unlikely(prod != numel))
+      return mag_set_error(err, MAG_ERR_DIM,
+        "view: requested shape has %" PRIi64
+        " elements, but input tensor has %" PRIi64 " elements.",
+        prod, numel);
+  }
+  return MAG_OK;
 }
 
 mag_mat_layout_type_t mag_mat_layout_detect(const mag_coords_t *coords, bool *out_batch_packed) {
@@ -220,4 +289,77 @@ mag_mat_layout_type_t mag_mat_layout_detect(const mag_coords_t *coords, bool *ou
   }
   *out_batch_packed = true;
   return layout;
+}
+
+mag_matmul_type_t mag_matmul_type_detect(const mag_tensor_t *x, const mag_tensor_t *y) {
+  int64_t xra = x->meta.coords.rank&255;
+  int64_t yra = y->meta.coords.rank&255;
+  if (mag_unlikely(xra < 1 || yra < 1)) return MAG_MATMUL_TYPE_INVALID;
+  switch ((xra<<8)|yra) {
+    case ((1<<8)|1): return MAG_MATMUL_TYPE_DOT;
+    case ((1<<8)|2): return MAG_MATMUL_TYPE_GEMV_VEC_MAT;
+    case ((2<<8)|1): return MAG_MATMUL_TYPE_GEMV_MAT_VEC;
+    case ((2<<8)|2): return MAG_MATMUL_TYPE_GEMM;
+    default: {
+      int64_t M = x->meta.coords.shape[xra-2];
+      int64_t N = y->meta.coords.shape[yra-1];
+      if (M == 1 && N == 1) return MAG_MATMUL_TYPE_BMM_DOT;
+      if (M == 1) return MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT;
+      if (N == 1) return MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC;
+      return MAG_MATMUL_TYPE_BMM_GEMM;
+    }
+  }
+}
+
+bool mag_matmul_type_is_micro_kernel_contig(mag_matmul_type_t type, const mag_tensor_t *x, const mag_tensor_t *y) {
+  switch (type) {
+    case MAG_MATMUL_TYPE_DOT:
+    case MAG_MATMUL_TYPE_BMM_DOT: {
+      int64_t sx = x->meta.coords.strides[0];
+      int64_t sy = y->meta.coords.strides[0];
+      return sx == 1 && sy == 1;
+    }
+    case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
+    case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: {
+      int64_t K = x->meta.coords.shape[1];
+      int64_t sx0 = x->meta.coords.strides[0];
+      int64_t sx1 = x->meta.coords.strides[1];
+      int64_t sy = y->meta.coords.strides[0];
+      return sx0 == K && sx1 == 1 && sy == 1;
+    }
+    case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
+    case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT: {
+      int64_t sx = x->meta.coords.strides[0];
+      int64_t sy0 = y->meta.coords.strides[0];
+      int64_t sy1 = y->meta.coords.strides[1];
+      int64_t N = y->meta.coords.shape[1];
+      return sx == 1 && sy0 == N && sy1 == 1;
+    }
+    case MAG_MATMUL_TYPE_GEMM:
+    case MAG_MATMUL_TYPE_BMM_GEMM: {
+      int64_t K = x->meta.coords.shape[1];
+      int64_t N = y->meta.coords.shape[1];
+      int64_t sx0 = x->meta.coords.strides[0];
+      int64_t sx1 = x->meta.coords.strides[1];
+      int64_t sy0 = y->meta.coords.strides[0];
+      int64_t sy1 = y->meta.coords.strides[1];
+      return sx0 == K && sx1 == 1 && sy0 == N && sy1 == 1;
+    }
+    default: return false;
+  }
+}
+
+const char *mag_matmul_type_name(mag_matmul_type_t type) {
+  switch (type) {
+    case MAG_MATMUL_TYPE_INVALID: return "invalid";
+    case MAG_MATMUL_TYPE_DOT: return "DOT";
+    case MAG_MATMUL_TYPE_GEMV_VEC_MAT: return "VGEM";
+    case MAG_MATMUL_TYPE_GEMV_MAT_VEC: return "GEMV";
+    case MAG_MATMUL_TYPE_GEMM: return "GEMM";
+    case MAG_MATMUL_TYPE_BMM_DOT: return "BMM_DOT";
+    case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT: return "BMM_VGEM";
+    case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: return "BMM_GEMV";
+    case MAG_MATMUL_TYPE_BMM_GEMM: return "BMM_GEMM";
+    default: return "unknown";
+  }
 }

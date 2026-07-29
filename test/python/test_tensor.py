@@ -12,5 +12,6 @@ def test_tensor_creation() -> None:
     assert tensor.is_contiguous is True
     assert tensor.dtype == dtype.float32
 
+
 def test_tensor_numpy_roundtrip() -> None:
-    pass # TODO
+    pass  # TODO

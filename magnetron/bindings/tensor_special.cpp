@@ -22,7 +22,6 @@ namespace mag::bindings {
         ++ellipsis_occ;
         if (ellipsis_pos < 0) ellipsis_pos = static_cast<int64_t>(i);
       } else if (x.is_none()) {
-        // does not consume
       } else { ++consuming; }
     }
     if (ellipsis_occ > 1)
@@ -79,7 +78,6 @@ namespace mag::bindings {
     return out;
   }
 
-  template <const bool allow_gather> // TODO: always allow gather, this can be removed when scatter is implemented
   [[nodiscard]] static tensor_wrapper tensor_index_impl(const tensor_wrapper &self, const nb::object &index) {
       nb::tuple idxs_in = nb::isinstance<nb::tuple>(index) ? nb::cast<nb::tuple>(index) : nb::make_tuple(index);
       tensor_wrapper curr = self;
@@ -130,22 +128,17 @@ namespace mag::bindings {
               curr = tensor_wrapper{out};
               ++ax;
           } else if (nb::isinstance<tensor_wrapper>(idx)) {
-              if (!allow_gather) {
-                  throw nb::type_error(
-                      "Advanced indexing assignment with Tensor indices is not supported yet"
-                  );
-              }
               auto idx_tw = nb::cast<tensor_wrapper>(idx);
               mag_tensor_t *out = nullptr;
-              throw_if_error(mag_gather(&err, &out, *curr, ax, *idx_tw), err);
-              curr = tensor_wrapper{out};
-              ++ax;
-          } else if (nb::isinstance<nb::sequence>(idx)) {
-              if (!allow_gather) {
-                  throw nb::type_error(
-                      "Advanced indexing assignment with sequence indices is not supported yet"
-                  );
+              if (ax == 0 && mag_tensor_type(*idx_tw) == MAG_DTYPE_INT64) {
+                  throw_if_error(mag_embedding(&err, &out, *curr, *idx_tw), err);
+                  ax = mag_tensor_rank(out) - (mag_tensor_rank(*curr) - 1);
+              } else {
+                  throw_if_error(mag_gather(&err, &out, *curr, ax, *idx_tw), err);
+                  ++ax;
               }
+              curr = tensor_wrapper{out};
+          } else if (nb::isinstance<nb::sequence>(idx)) {
               auto seq = nb::cast<nb::sequence>(idx);
               std::vector<int64_t> data {};
               data.reserve(nb::len(seq));
@@ -178,9 +171,14 @@ namespace mag::bindings {
                   err
               );
               mag_tensor_t *out = nullptr;
-              throw_if_error(mag_gather(&err, &out, *curr, ax, idx_tensor), err);
+              if (ax == 0) {
+                  throw_if_error(mag_embedding(&err, &out, *curr, idx_tensor), err);
+                  ax = mag_tensor_rank(out) - (mag_tensor_rank(*curr) - 1);
+              } else {
+                  throw_if_error(mag_gather(&err, &out, *curr, ax, idx_tensor), err);
+                  ++ax;
+              }
               curr = tensor_wrapper{out};
-              ++ax;
           } else throw nb::type_error("Invalid index component type");
       }
 
@@ -218,18 +216,18 @@ namespace mag::bindings {
       mag_scalar_t s {};
       mag_error_t err {};
       throw_if_error(mag_tensor_item(&err, *self, &s), err);
-      if (mag_scalar_is_f64(s)) return mag_scalar_as_f64(s) != 0.0;
-      if (mag_scalar_is_i64(s)) return mag_scalar_as_i64(s) != 0;
-      if (mag_scalar_is_u64(s)) return mag_scalar_as_u64(s) != 0;
+      if (mag_scalar_is_float64(s)) return mag_scalar_as_float64(s) != 0.0;
+      if (mag_scalar_is_int64(s)) return mag_scalar_as_int64(s) != 0;
+      if (mag_scalar_is_uint64(s)) return mag_scalar_as_uint64(s) != 0;
       throw nb::type_error("Unsupported scalar type for __bool__()");
     }, "True if single element is non-zero (only for 0-dim or 1-element tensors).")
     .def("__getitem__", [](const tensor_wrapper &self, nb::object index) -> tensor_wrapper {
        std::lock_guard lock {get_global_mutex()};
-       return tensor_index_impl<true>(self, index);
+       return tensor_index_impl(self, index);
     }, "Index with int, slice, ellipsis, or boolean/int index tensor. Supports NumPy-style indexing.")
     .def("__setitem__", [](tensor_wrapper &self, nb::object index, nb::object value) {
       std::lock_guard lock {get_global_mutex()};
-      tensor_wrapper dst = tensor_index_impl<false>(self, index);
+      tensor_wrapper dst = tensor_index_impl(self, index);
       mag_error_t err {};
       if (nb::isinstance<tensor_wrapper>(value)) {
           auto src = nb::cast<tensor_wrapper>(value);
@@ -237,7 +235,7 @@ namespace mag::bindings {
           return;
       }
       if (nb::isinstance<nb::bool_>(value) || nb::isinstance<nb::int_>(value) || nb::isinstance<nb::float_>(value)) {
-          mag_scalar_t scalar = scalar_from_py(value);
+          mag_scalar_t scalar = scalar_from_py_number(value);
           throw_if_error(mag_fill_(&err, *dst, scalar), err);
           return;
       }

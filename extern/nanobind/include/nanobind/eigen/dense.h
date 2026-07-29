@@ -186,7 +186,10 @@ struct type_caster<T, enable_if_t<is_eigen_plain_v<T> &&
             owner = capsule(temp, [](void *p) noexcept { delete (T *) p; });
             ptr = temp->data();
             policy = rv_policy::reference;
-        } else if (policy == rv_policy::reference_internal && cleanup->self()) {
+        } else if (policy == rv_policy::reference_internal) {
+            // reference_internal needs a self pointer; give up if unavailable
+            if (!cleanup || !cleanup->self())
+                return handle();
             owner = borrow(cleanup->self());
             policy = rv_policy::reference;
         }
@@ -328,8 +331,11 @@ struct type_caster<Eigen::Map<T, Options, StrideType>,
         // This also includes when shape=(0,0), when numpy reports the stride to be zero.
         // This creates an incompatibility with Eigen compile-time vectors, which expect
         // runtime and compile-time strides to be identical (e.g. for Eigen::VectorXi, equal to 1).
-        if (ndim_v<T> == 1 && caster.value.shape(0) == 0)
-            inner = IS;
+        // For dynamic strides (IS == Eigen::Dynamic), substitute a unit inner stride
+        if constexpr (ndim_v<T> == 1) {
+            if (caster.value.shape(0) == 0)
+                inner = IS == Eigen::Dynamic ? 1 : IS;
+        }
 
         if constexpr (OS == 0)
             outer = 0;

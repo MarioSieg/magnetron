@@ -14,7 +14,7 @@
 
 /// Tracks the version of nanobind's internal data structures
 #ifndef NB_INTERNALS_VERSION
-#  define NB_INTERNALS_VERSION 19
+#  define NB_INTERNALS_VERSION 20
 #endif
 
 #if defined(__MINGW32__)
@@ -64,8 +64,9 @@
 #  error "Unknown platform or compiler. Please revise this code."
 #endif
 
-// On MSVC, debug and release builds are not ABI-compatible!
-#if defined(_MSC_VER) && defined(_DEBUG)
+// MSVC debug builds and libstdc++'s _GLIBCXX_DEBUG mode are not
+// ABI-compatible with regular builds (standard container layouts change)
+#if (defined(_MSC_VER) && defined(_DEBUG)) || defined(_GLIBCXX_DEBUG)
 #  define NB_BUILD_TYPE "_debug"
 #else
 #  define NB_BUILD_TYPE ""

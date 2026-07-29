@@ -128,7 +128,11 @@ static void mag_ctx_dump_banner(void) {
 }
 
 /* Create context with compute device descriptor. */
-mag_context_t *mag_ctx_create() {
+mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
+  if (mag_unlikely(!out_ctx))
+    return mag_set_error(err, MAG_ERR_PARAM, "context: out_ctx pointer is NULL.");
+  *out_ctx = NULL;
+
   mag_setup_environ(); /* Parse and apply environment variables. */
 
   mag_log_info("Creating magnetron context...");
@@ -137,32 +141,63 @@ mag_context_t *mag_ctx_create() {
   mag_ctx_dump_banner();
 
   /* Initialize context with default values or from context info. */
-  mag_context_t *ctx = (*mag_alloc)(NULL, sizeof(*ctx), 0); /* Allocate context. */
+  mag_context_t *ctx = (*mag_try_alloc)(NULL, sizeof(*ctx), 0); /* Allocate context. */
+  if (mag_unlikely(!ctx))
+    return mag_set_error(err, MAG_ERR_OOM, "context: failed to allocate context structure.");
   memset(ctx, 0, sizeof(*ctx));
 
-  /* Init memory pools */
-  mag_slab_init(&ctx->tensor_slab, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
-  mag_slab_init(&ctx->storage_slab, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000);
-  mag_slab_init(&ctx->view_meta_slab, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
-  mag_slab_init(&ctx->au_state_slab, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
+  /* Slab allocators */
+  bool slab_ok = true;
+  slab_ok &= mag_slab_init(&ctx->tensor_slab, sizeof(mag_tensor_t), __alignof(mag_tensor_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->storage_slab, sizeof(mag_storage_buffer_t), __alignof(mag_storage_buffer_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->view_meta_slab, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->au_state_slab, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->au_state_op_params_slab, sizeof(mag_op_params_t), __alignof(mag_op_params_t), 0x1000);
+  if (mag_unlikely(!slab_ok)) {
+    mag_slab_destroy(&ctx->au_state_op_params_slab);
+    mag_slab_destroy(&ctx->au_state_slab);
+    mag_slab_destroy(&ctx->view_meta_slab);
+    mag_slab_destroy(&ctx->tensor_slab);
+    mag_slab_destroy(&ctx->storage_slab);
+    (*mag_alloc)(ctx, 0, 0);
+    return mag_set_error(err, MAG_ERR_OOM, "context: failed to initialize context memory pools.");
+  }
+
+  /* Toposort stuff */
+  ctx->topo_traversal_epoch = 0;
+  if (mag_unlikely(!mag_topo_set_init(&ctx->topo_set, 0x2000) || !mag_topo_stack_init(&ctx->topo_stack, 0x2000))) {
+    mag_topo_set_free(&ctx->topo_set);
+    mag_topo_stack_free(&ctx->topo_stack);
+    mag_slab_destroy(&ctx->au_state_op_params_slab);
+    mag_slab_destroy(&ctx->au_state_slab);
+    mag_slab_destroy(&ctx->view_meta_slab);
+    mag_slab_destroy(&ctx->tensor_slab);
+    mag_slab_destroy(&ctx->storage_slab);
+    (*mag_alloc)(ctx, 0, 0);
+    return mag_set_error(err, MAG_ERR_OOM, "context: failed to initialize toposort structures.");
+  }
 
   ctx->tr_id = mag_thread_id(); /* Get thread ID. */
   ctx->default_dtype = MAG_DTYPE_FLOAT32; /* Use fp32 by default */
-  ctx->flags |= MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
+  ctx->flags|=MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
 
   /* Query and print host system information. */
   mag_machine_info_probe(&ctx->machine);
   mag_system_host_info_dump(ctx);
 
-  /* Create selected compute device. */
-  ctx->backend_registry = mag_backend_registry_init(ctx);
-  mag_assert(ctx->backend_registry != NULL,
-    "\nNo magnetron compute backends found!"
-    "\nBackends are loaded dynamically as shared libraries in the directory containing the magnetron_core library, but none were found."
-    "\nMake sure you have at least one backend (e.g. magnetron_cpu) next to the magnetron_core library within the venv or installation path."
-    "\nThe backend shared library must be named magnetron_<backend>.{so|dylib|dll}"
-    "\nCheck the searched path manually to see if any backends were found."
-  );
+  /* Create compute backends and devices. On failure 'err' carries the specific reason (e.g. missing .so, ABI mismatch, device init failure). */
+  mag_status_t status = mag_backend_registry_init(err, ctx, &ctx->backend_registry);
+  if (mag_unlikely(mag_iserr(status))) {
+    mag_topo_set_free(&ctx->topo_set);
+    mag_topo_stack_free(&ctx->topo_stack);
+    mag_slab_destroy(&ctx->au_state_op_params_slab);
+    mag_slab_destroy(&ctx->au_state_slab);
+    mag_slab_destroy(&ctx->view_meta_slab);
+    mag_slab_destroy(&ctx->tensor_slab);
+    mag_slab_destroy(&ctx->storage_slab);
+    (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
+    return status;
+  }
 
   /* Seed prng once with secure system entropy */
   uint64_t global_seed = 0;
@@ -172,13 +207,14 @@ mag_context_t *mag_ctx_create() {
 
   /* Print context initialization time. */
   mag_log_info("magnetron context initialized in %.05f ms", mag_hpc_clock_elapsed_ms(time_stamp_start));
-  return ctx;
+  *out_ctx = ctx;
+  return MAG_OK;
 }
 
 bool mag_ctx_is_device_available(mag_context_t *ctx, mag_device_id_t id) {
   mag_device_t *device=NULL;
   mag_backend_t *backend=NULL;
-  return mag_backend_registry_get_backend_and_device_by_id(ctx->backend_registry, id, &backend, &device) && device && backend;
+  return mag_backend_registry_lookup_device_id(ctx->backend_registry, id, &backend, &device) && device && backend;
 }
 
 void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Destroy magnetron context. */
@@ -188,15 +224,18 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
   bool leaks_detected = ctx->telemetry.num_alive_tensors || ctx->telemetry.num_alive_storages;
   if (mag_unlikely(leaks_detected)) {
     char msg[256] = {0};
-    snprintf(msg, sizeof(msg), "magnetron context destroyed with %zu leaked tensors and %zu leaked storages", ctx->telemetry.num_alive_tensors, ctx->telemetry.num_alive_storages);
+    snprintf(msg, sizeof(msg), "context: destroyed with %zu leaked tensors and %zu leaked storage buffers.", ctx->telemetry.num_alive_tensors, ctx->telemetry.num_alive_storages);
     if (suppress_leak_detection) mag_log_warn("%s", msg);
-    else mag_panic("%s", msg);
+    else mag_log_error("%s", msg); /* Never abort from Python - report the leak instead of panicking. */
   }
+  mag_topo_set_free(&ctx->topo_set);
+  mag_topo_stack_free(&ctx->topo_stack);
+  mag_slab_destroy(&ctx->au_state_op_params_slab);
   mag_slab_destroy(&ctx->au_state_slab);
   mag_slab_destroy(&ctx->view_meta_slab);
   mag_slab_destroy(&ctx->tensor_slab);
   mag_slab_destroy(&ctx->storage_slab);
-  mag_backend_registry_free(ctx->backend_registry);
+  mag_backend_registry_shutdown(NULL, ctx->backend_registry); /* TODO: propagate error */
   size_t num_created_tensors = ctx->telemetry.num_created_tensors;
   size_t storage_bytes = ctx->telemetry.storage_bytes_allocated;
   size_t ops_dispatched = ctx->telemetry.ops_dispatched;
@@ -227,7 +266,7 @@ bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx) {
 }
 
 static void mag_seed_callback(mag_backend_t *bck, mag_device_t *dvc, void *usr) {
-  (*dvc->manual_seed)(dvc, NULL, *(const uint64_t *)usr);
+  (*dvc->manual_seed)(NULL, dvc, *(const uint64_t *)usr);
 }
 
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {

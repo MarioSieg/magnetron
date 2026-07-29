@@ -48,9 +48,37 @@ def test01_check_stub_refs(p_ref, request):
         s_in = f.read().split('\n')
 
     if "test_functions_ext" in p_in.name and sys.version_info < (3, 13):
-        s_ref = [line.replace("types.CapsuleType", "typing_extensions.CapsuleType") for line in s_ref]
+        s_ref = [line.replace("types.CapsuleType", "CapsuleType") for line in s_ref]
         s_ref.insert(5, "")
-        s_ref.insert(6, "import typing_extensions")
+        s_ref.insert(6, "from typing_extensions import CapsuleType")
+
+    if "test_enum_ext" in p_in.name and sys.version_info < (3, 11):
+        # fallback to Python 3.10's `(str, Enum)` MRO.
+        s_ref = [line.replace("(enum.StrEnum)", "(str, enum.Enum)") for line in s_ref]
+
+    if "test_typing_ext" in p_in.name and sys.version_info < (3, 13):
+        # The 'T4'/'T5' bindings from test_typing.cpp carry PEP 696 'default='
+        # values (and pull in the Unpack/TypeVarTuple imports) that only exist
+        # on Python 3.13+, which the reference file captures and the 3.13+ CI
+        # job checks exactly. On older interpreters, drop those lines and the
+        # 'from typing import' block from both the generated and reference text
+        # -- collapsing the blank gaps -- so the rest still diffs cleanly.
+        def strip(lines):
+            out, i = [], 0
+            while i < len(lines):
+                l = lines[i]
+                if l.startswith("from typing import"):
+                    if l.endswith("("):  # skip the rest of a wrapped block
+                        while lines[i].strip() != ")":
+                            i += 1
+                elif l.startswith(("T4 = TypeVar", "T5 = TypeVarTuple")):
+                    pass
+                elif not (l == "" and (not out or out[-1] == "")):
+                    out.append(l)
+                i += 1
+            return out
+
+        s_in, s_ref = strip(s_in), strip(s_ref)
 
     s_in = remove_platform_dependent(s_in)
     s_ref = remove_platform_dependent(s_ref)

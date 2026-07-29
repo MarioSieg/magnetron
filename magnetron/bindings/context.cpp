@@ -23,7 +23,9 @@ namespace mag::bindings {
 
   mag_context_t *get_ctx() {
     std::call_once(g_ctx_once, [] {
-      mag_context_t *ctx = mag_ctx_create();
+      mag_context_t *ctx = nullptr;
+      mag_error_t err {};
+      throw_if_error(mag_ctx_create(&err, &ctx), err);
       g_ctx.store(ctx, std::memory_order_release);
     });
     return g_ctx.load(std::memory_order_acquire);

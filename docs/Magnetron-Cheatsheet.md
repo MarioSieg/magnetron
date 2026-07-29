@@ -71,8 +71,11 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 | `Tensor.bernoulli(p)`          | Fill with Bernoulli samples                                               | $x\sim\text{Bern}(p)$         | `x = Tensor.bernoulli(2, 3, p=0.5)`              |
 | `Tensor.bernoulli_like(x, p)`  | Create tensor filled with bernoulli random values and same shape as input | $x\sim\text{Bern}(p)$         | `x = Tensor.bernoulli_like(x, p=0.5)`            |
 | `Tensor.arange(a,b,s)`         | Create evenly spaced values from start to stop                            | $a, a+s, \dots < b$           | `x = Tensor.arange(0, 10, 2)`                    |
+| `Tensor.linspace(a,b,n)`       | Create `n` evenly spaced values from start to end inclusive               | $a,\dots,b$                   | `x = Tensor.linspace(0, 1, steps=5)`             |
+| `Tensor.meshgrid(xs)`          | Create coordinate grids from 1D tensors                                   | N/A                           | `gx, gy = Tensor.meshgrid([x, y])`               |
 | `Tensor.rand_perm(n)`          | Random permutation of integers                                            | permutation of $\{0..n-1\}$   | `x = Tensor.rand_perm(10)`                       |
 | `Tensor.one_hot(c)`            | Convert indices to one-hot vectors                                        | $y_{i,j}=[x_i=j]$             | `x = idx.one_hot(10)`                            |
+| `Tensor.eye(n,m=None)`         | Create identity matrix                                                    | $I_{ij}=[i=j]$                | `x = Tensor.eye(4)`                              |
 | `Tensor.load_image(p)`         | Load image file into tensor                                               | N/A                           | `img = Tensor.load_image("img.png")`             |
 
 
@@ -105,26 +108,36 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 
 ## Shape, Views & Indexing
 
-| Method              | Description                                  | Math                  | Example               |
-|---------------------|----------------------------------------------|-----------------------|-----------------------|
-| `clone()`           | Create a deep copy of the tensor             | N/A                   | `y = x.clone()`       |
-| `copy_(src)`        | Copy data from src into this tensor in-place | $self \leftarrow src$ | `x.copy_(y)`          |
-| `view(shape)`       | Create a view with new shape                 | N/A                   | `x.view(2, -1)`       |
-| `view_slice(d,s,l)` | Slice tensor without copying                 | $x[s:s+l]$            | `x.view_slice(0,0,4)` |
-| `reshape(shape)`    | Reshape tensor (may copy)                    | N/A                   | `x.reshape(4,3)`      |
-| `transpose(a,b)`    | Swap two dimensions                          | $x^T$                 | `x.transpose(0,1)`    |
-| `permute(dims)`     | Reorder dimensions arbitrarily               | N/A                   | `x.permute(1,0,2)`    |
-| `contiguous()`      | Ensure tensor is contiguous in memory        | N/A                   | `x = x.contiguous()`  |
-| `squeeze()`         | Remove dimensions of size 1                  | N/A                   | `x.squeeze()`         |
-| `unsqueeze(d)`      | Insert new dimension                         | N/A                   | `x.unsqueeze(0)`      |
-| `flatten(a,b)`      | Flatten a range of dimensions                | N/A                   | `x.flatten(1)`        |
-| `unflatten(s)`      | Expand flattened dimension                   | N/A                   | `x.unflatten((2,3))`  |
-| `narrow(d,s,l)`     | Take slice along dimension                   | N/A                   | `x.narrow(1,0,4)`     |
-| `movedim(a,b)`      | Move dimension to new position               | N/A                   | `x.movedim(0,-1)`     |
-| `select(d,i)`       | Select single index along dim                | $x[...,i]$            | `x.select(1,2)`       |
-| `split(n,d)`        | Split tensor into chunks                     | N/A                   | `x.split(4,1)`        |
-| `cat(xs,d)`         | Concatenate tensors                          | N/A                   | `Tensor.cat([a,b],1)` |
-| `gather(d,idx)`     | Gather elements by index tensor              | $y_i=x_{idx_i}$       | `x.gather(1,idx)`     |
+| Method                                    | Description                                                                                                                 | Math                                       | Example                         |
+|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|---------------------------------|
+| `clone()`                                 | Create a deep copy of the tensor                                                                                            | N/A                                        | `y = x.clone()`                 |
+| `copy_(src)`                              | Copy data from src into this tensor in-place                                                                                | $self \leftarrow src$                      | `x.copy_(y)`                    |
+| `view(shape)`                             | Create a view with new shape                                                                                                | N/A                                        | `x.view(2, -1)`                 |
+| `view_slice(d,s,l)`                       | Slice tensor without copying                                                                                                | $x[s:s+l]$                                 | `x.view_slice(0,0,4)`           |
+| `reshape(shape)`                          | Reshape tensor (may copy)                                                                                                   | N/A                                        | `x.reshape(4,3)`                |
+| `broadcast(shape)`                     | Broadcast tensor to a target shape as a view when possible                                                                  | N/A                                        | `x.broadcast(2, 3, 4)`       |
+| `expand(shape)`                           | Expand singleton dimensions as a zero-stride view                                                                           | N/A                                        | `x.expand(2, 3, 4)`             |
+| `transpose(a,b)`                          | Swap two dimensions                                                                                                         | $x^T$                                      | `x.transpose(0,1)`              |
+| `permute(dims)`                           | Reorder dimensions arbitrarily                                                                                              | N/A                                        | `x.permute(1,0,2)`              |
+| `contiguous()`                            | Ensure tensor is contiguous in memory                                                                                       | N/A                                        | `x = x.contiguous()`            |
+| `squeeze()`                               | Remove dimensions of size 1                                                                                                 | N/A                                        | `x.squeeze()`                   |
+| `unsqueeze(d)`                            | Insert new dimension                                                                                                        | N/A                                        | `x.unsqueeze(0)`                |
+| `flatten(a,b)`                            | Flatten a range of dimensions                                                                                               | N/A                                        | `x.flatten(1)`                  |
+| `unflatten(s)`                            | Expand flattened dimension                                                                                                  | N/A                                        | `x.unflatten((2,3))`            |
+| `narrow(d,s,l)`                           | Take slice along dimension                                                                                                  | N/A                                        | `x.narrow(1,0,4)`               |
+| `movedim(a,b)`                            | Move dimension to new position                                                                                              | N/A                                        | `x.movedim(0,-1)`               |
+| `select(d,i)`                             | Select single index along dim                                                                                               | $x[...,i]$                                 | `x.select(1,2)`                 |
+| `split(n,d)`                              | Split tensor into chunks                                                                                                    | N/A                                        | `x.split(4,1)`                  |
+| `cat(xs,d)`                               | Concatenate tensors                                                                                                         | N/A                                        | `Tensor.cat([a,b],1)`           |
+| `stack(xs,d)`                             | Stack tensors along a new dimension                                                                                         | N/A                                        | `Tensor.stack([a,b],0)`         |
+| `hstack(xs)`                              | Stack tensors horizontally                                                                                                  | N/A                                        | `Tensor.hstack([a,b])`          |
+| `vstack(xs)`                              | Stack tensors vertically                                                                                                    | N/A                                        | `Tensor.vstack([a,b])`          |
+| `dstack(xs)`                              | Stack tensors depthwise                                                                                                     | N/A                                        | `Tensor.dstack([a,b])`          |
+| `gather(d,idx)`                           | Gather elements by index tensor                                                                                             | $y_i=x_{idx_i}$                            | `x.gather(1,idx)`               |
+| `index_add_(dim, index, source, alpha=1)` | Accumulate scaled source into self at indices along dim                                                                     | $self[i]+=\alpha\cdot source$              | `x.index_add_(0, idx, src)`     |
+| `pad(pad, mode="constant", value=0)`      | Pad tensor along dimensions                                                                                                 | N/A                                        | `x.pad((1,1,2,2))`              |
+| `repeat(*repeats)`                        | Tile tensor along each dimension                                                                                            | $\mathrm{out}_d = \mathrm{in}_d \cdot r_d$ | `x.repeat(2, 3)`                |
+| `repeat_interleave(repeats, dim=None)`    | Repeat each element interleaved along a dimension (or flattened if `dim=None`); `repeats` is int, list, or 1-D int64 tensor | N/A                                        | `x.repeat_interleave(2, dim=0)` |
 
 ---
 
@@ -135,6 +148,10 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 | `mean(dim=-1)`                               | Compute mean over elements                                         | $\frac1N\sum x$                                                               | `x.mean()`                    |
 | `sum(dim=-1)`                                | Sum elements                                                       | $\sum x$                                                                      | `x.sum()`                     |
 | `prod(dim=-1)`                               | Product of elements                                                | $\prod x$                                                                     | `x.prod()`                    |
+| `cusum(dim)`                                 | Cumulative sum along a dimension                                   | $y_i=\sum_{j\le i} x_j$                                                       | `y = x.cusum(0)`              |
+| `cuprod(dim)`                                | Cumulative product along a dimension                               | $y_i=\prod_{j\le i} x_j$                                                      | `y = x.cuprod(0)`             |
+| `cumax(dim)`                                 | Cumulative maximum along a dimension                               | $y_i=\max_{j\le i} x_j$                                                       | `values, idx = x.cumax(0)`    |
+| `cumin(dim)`                                 | Cumulative minimum along a dimension                               | $y_i=\min_{j\le i} x_j$                                                       | `values, idx = x.cumin(0)`    |
 | `min(dim=None, keepdim=False)`               | Reduction minimum, or elementwise min if argument is tensor/scalar | $\min(x)$ / $\min(x,y)$                                                       | `x.min()` / `x.min(y)`        |
 | `max(dim=None, keepdim=False)`               | Reduction maximum, or elementwise max if argument is tensor/scalar | $\max(x)$ / $\max(x,y)$                                                       | `x.max()` / `x.max(y)`        |                                                                | `x.max()`                     |
 | `argmin(dim=-1)`                             | Index of minimum                                                   | $\arg\min(x)$                                                                 | `x.argmin()`                  |
@@ -193,19 +210,21 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 
 ## Binary Arithmetic
 
-| Method                    | Operator | Description                                   | Math                                              | Example                     |
-|---------------------------|----------|-----------------------------------------------|---------------------------------------------------|-----------------------------|
-| `add()`                   | `+`      | Elementwise addition                          | $x+y$                                             | `x + y`                     |
-| `sub()`                   | `-`      | Elementwise subtraction                       | $x-y$                                             | `x - y`                     |
-| `mul()`                   | `*`      | Elementwise multiplication                    | $x\cdot y$                                        | `x * y`                     |
-| `div()`                   | `/`      | Elementwise division                          | $\frac{x}{y}$                                     | `x / y`                     |
-| `floordiv()`              | `//`     | Elementwise floor division                    | $\lfloor\frac{x}{y}\rfloor$                       | `x // y`                    |
-| `mod()`                   | `%`      | Elementwise modulus                           | $x\bmod y$                                        | `x % y`                     |
-| `pow()`                   | `**`     | Elementwise exponentiation                    | $x^y$                                             | `x ** y`                    |
-| `matmul()`                | `@`      | Matrix multiplication                         | $XY$                                              | `x @ y`                     |
-| `scaled_matmul(w, scale)` | N/A      | Matrix multiplication with output/input scale | $XY\cdot s$ or implementation-defined scaled GEMM | `x.scaled_matmul(w, scale)` |
-| `min(y)`                  | N/A      | Elementwise minimum                           | $\min(x,y)$                                       | `x.min(y)`                  |
-| `max(y)`                  | N/A      | Elementwise maximum                           | $\max(x,y)$                                       | `x.max(y)`                  |
+| Method                    | Operator | Description                                   | Math                                              | Example                            |
+|---------------------------|----------|-----------------------------------------------|---------------------------------------------------|------------------------------------|
+| `add()`                   | `+`      | Elementwise addition                          | $x+y$                                             | `x + y`                            |
+| `sub()`                   | `-`      | Elementwise subtraction                       | $x-y$                                             | `x - y`                            |
+| `mul()`                   | `*`      | Elementwise multiplication                    | $x\cdot y$                                        | `x * y`                            |
+| `div()`                   | `/`      | Elementwise division                          | $\frac{x}{y}$                                     | `x / y`                            |
+| `floordiv()`              | `//`     | Elementwise floor division                    | $\lfloor\frac{x}{y}\rfloor$                       | `x // y`                           |
+| `mod()`                   | `%`      | Elementwise modulus                           | $x\bmod y$                                        | `x % y`                            |
+| `pow()`                   | `**`     | Elementwise exponentiation                    | $x^y$                                             | `x ** y`                           |
+| `matmul()`                | `@`      | Matrix multiplication                         | $XY$                                              | `x @ y`                            |
+| `outer(y)`                | N/A      | Outer product of two 1D tensors               | $z_{ij}=x_i y_j$                                  | `z = x.outer(y)`                   |
+| `Tensor.einsum(eq, *xs)`  | N/A      | Einstein summation over one or more tensors   | equation-defined contractions                     | `Tensor.einsum("ij,jk->ik", a, b)` |
+| `scaled_matmul(w, scale)` | N/A      | Matrix multiplication with output/input scale | $XY\cdot s$ or implementation-defined scaled GEMM | `x.scaled_matmul(w, scale)`        |
+| `min(y)`                  | N/A      | Elementwise minimum                           | $\min(x,y)$                                       | `x.min(y)`                         |
+| `max(y)`                  | N/A      | Elementwise maximum                           | $\max(x,y)$                                       | `x.max(y)`                         |
 
 ## Comparison
 

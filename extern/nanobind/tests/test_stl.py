@@ -202,6 +202,53 @@ def test21_tuple_pair_basic():
     assert t.swap_pair((1, 2.5)) == (2.5, 1)
 
 
+def test21b_seq_getitem_raises():
+    # A custom sequence with a valid __len__ but a __getitem__ that raises
+    # must fail cleanly (overload resolution reports a TypeError) without
+    # leaking the original exception. Regression test for a missing
+    # PyErr_Clear() in the Py_LIMITED_API path of seq_get*.
+    class BadSeq:
+        def __init__(self, n):
+            self.n = n
+
+        def __len__(self):
+            return self.n
+
+        def __getitem__(self, i):
+            raise ValueError("boom from __getitem__")
+
+    # std::pair / std::tuple use seq_get_with_size, std::array likewise.
+    for fn, n in ((t.swap_pair, 2), (t.swap_tuple, 2), (t.array_in, 3)):
+        with pytest.raises(TypeError) as excinfo:
+            fn(BadSeq(n))
+        assert "incompatible function arguments" in str(excinfo.value)
+
+        # The error indicator must not have leaked: raising a fresh
+        # exception here must not pick up the ValueError as its context.
+        try:
+            raise RuntimeError("fresh")
+        except RuntimeError as e:
+            assert e.__context__ is None
+
+
+def test21c_tuple_pair_generic_sequence():
+    # A generic sequence (not a tuple) whose __getitem__ creates fresh items
+    # is converted via a temporary tuple that solely owns those items. The
+    # caster must keep that tuple alive until the elements are copied out.
+    class Seq:
+        def __init__(self, *vals):
+            self.vals = vals
+
+        def __len__(self):
+            return len(self.vals)
+
+        def __getitem__(self, i):
+            return t.Poisoned(self.vals[i])
+
+    assert t.pair_of_poisoned(Seq(1, 2)) == 102
+    assert t.tuple_of_poisoned(Seq(3, 4, 5)) == 30405
+
+
 # ------------------------------------------------------------------
 
 
@@ -635,6 +682,14 @@ def test64_set_in_failure():
     assert "incompatible function arguments" in str(excinfo.value)
 
 
+def test64b_set_of_temporaries():
+    # The source is a generator yielding fresh bound objects whose only
+    # reference is held by the iterator; the set caster must not drop that
+    # reference before constructing the set element (use-after-free).
+    assert sorted(t.set_of_ordered_values(t.Ordered(i) for i in range(5))) == \
+        [0, 1, 2, 3, 4]
+
+
 def test65_class_with_movable_field(clean):
     cwmf = t.ClassWithMovableField()
     m1 = t.Movable(1)
@@ -879,3 +934,7 @@ def test74_variant_implicit_conversions():
     assert event.id is None
     event.id = t.BasicID1(78)
     assert type(event.id) is t.BasicID1
+
+def test75_weird_nones():
+    assert t.takes_nullptr(None) == "nullptr"
+    assert t.takes_monostate(None) == "monostate"

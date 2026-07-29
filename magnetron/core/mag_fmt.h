@@ -66,6 +66,7 @@ typedef uint32_t mag_format_flags_t; /* Flags for formatting output */
 #define MAG_FMT_X (MAG_FMT_UINT|MAG_FMT_T_HEX) /* 'x' format */
 #define MAG_FMT_G14 (MAG_FMT_G | ((14+1) << MAG_FMT_SH_PREC)) /* 'g' format with precision 14 */
 #define MAG_FMT_G5 (MAG_FMT_G | ((5+1) << MAG_FMT_SH_PREC)) /* 'g' format with precision 5 */
+#define MAG_FMT_PREC0 (1u << MAG_FMT_SH_PREC) /* %.0f precision encoding (precision field is stored biased by +1, see MAG_FMT_PREC). */
 
 #define MAG_FMT_TENSOR_DEFAULT_HEAD_ELEMS 3
 #define MAG_FMT_TENSOR_DEFAULT_TAIL_ELEMS 3

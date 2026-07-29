@@ -37,7 +37,7 @@ const char *mag_status_get_name(mag_status_t op){
     mag_statusdef(_)
     #undef _
   };
-  mag_static_assert(sizeof(names)/sizeof(*names)-1 == MAG_STATUS_ERR_UNKNOWN);
+  mag_static_assert(sizeof(names)/sizeof(*names)-1 == MAG_ERR_UNKNOWN);
   return names[op];
 }
 
@@ -47,7 +47,7 @@ const char *mag_status_get_message(mag_status_t op) {
     mag_statusdef(_)
     #undef _
   };
-  mag_static_assert(sizeof(messages)/sizeof(*messages)-1 == MAG_STATUS_ERR_UNKNOWN);
+  mag_static_assert(sizeof(messages)/sizeof(*messages)-1 == MAG_ERR_UNKNOWN);
   return messages[op];
 }
 
@@ -105,9 +105,10 @@ void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) {
   if (level > mag_log_level_var) return;
   FILE *f = stdout;
   const char *color = NULL;
+  bool is_err = false;
   switch (level) {
-    case MAG_LOG_LEVEL_ERROR: color = MAG_CC_RED; break;
-    case MAG_LOG_LEVEL_WARN: color = MAG_CC_YELLOW; break;
+    case MAG_LOG_LEVEL_ERROR: color = MAG_CC_RED; is_err = true; break;
+    case MAG_LOG_LEVEL_WARN: color = MAG_CC_YELLOW; is_err = true; break;
     case MAG_LOG_LEVEL_INFO: color = NULL; break;
     case MAG_LOG_LEVEL_DEBUG: color = MAG_CC_MAGENTA; break;
     default:;
@@ -118,7 +119,7 @@ void mag_log_fmt(mag_log_level_t level, const char *fmt, ...) {
   vfprintf(f, fmt, args);
   va_end(args);
   fprintf(f, "%s\n", color ? MAG_CC_RESET : "");
-  if (level == MAG_LOG_LEVEL_ERROR) fflush(f);
+  if (is_err) fflush(f);
 }
 
 void MAG_COLDPROC mag_print_separator(FILE *f) {
@@ -219,7 +220,7 @@ extern __declspec(dllimport) int __stdcall WideCharToMultiByte(
 
 /* Open file. Basically fopen but with UTF-8 support on Windows. */
 FILE *mag_fopen(const char *file, const char *mode) {
-  mag_assert(file && *file && mode && *mode, "Invalid file name or mode");
+  if (mag_unlikely(!(file && *file && mode && *mode))) return NULL;
   FILE *f = NULL;
 #ifdef _WIN32
   wchar_t w_mode[64];
@@ -339,7 +340,8 @@ bool mag_utf8_validate(const uint8_t *p, size_t len) {
 char *mag_strdup(const char *s) {
   if (mag_unlikely(!s)) return NULL;
   size_t len = strlen(s);
-  char *clone = (*mag_alloc)(NULL, len+1, 0);
+  char *clone = (*mag_try_alloc)(NULL, len+1, 0);
+  if (mag_unlikely(!clone)) return NULL;
   memcpy(clone, s, len);
   clone[len] = '\0';
   return clone;
@@ -367,4 +369,26 @@ int mag_casecmp(const char *a, const char *b) {
     if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
       return 0;
   return *a == 0 && *b == 0;
+}
+
+MAG_COLDPROC mag_status_t mag_set_error_impl(
+  mag_error_t *err,
+  mag_status_t code,
+  const char *file,
+  int line,
+  const char *func,
+  const char *fmt,
+  ...
+) {
+  if (mag_likely(err != NULL && err->code == MAG_OK)) {
+    err->code = code;
+    err->file = file;
+    err->line = line;
+    err->func = func;
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(err->message, sizeof(err->message), fmt, ap);
+    va_end(ap);
+  }
+  return code;
 }

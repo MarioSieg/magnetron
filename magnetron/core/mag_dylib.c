@@ -16,17 +16,22 @@
 
 #else
 #include <dlfcn.h>
+#include <unistd.h>
 #endif
 
-mag_dylib_t *mag_dylib_open(const char *path) {
+mag_status_t mag_dylib_open(mag_error_t *err, mag_dylib_t **out_lib, const char *path) {
+  if (mag_unlikely(!out_lib || !path || !*path))
+    return mag_set_error(err, MAG_ERR_PARAM, "dylib_open: invalid parameters or path");
 #ifdef _WIN32
 #error "TODO: Windows support"
 #else
-  void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
-  if (mag_unlikely(!handle)) {
-    return NULL;
-  }
-  return handle;
+  if (mag_unlikely(access(path, F_OK)))
+    return mag_set_error(err, MAG_ERR_MMAP, "dylib_open: file does not exist: %s", path);
+  void *handle = dlopen(path, RTLD_LAZY|RTLD_LOCAL);
+  if (mag_unlikely(!handle))
+    return mag_set_error(err, MAG_ERR_MMAP, "dylib_open: failed to open file: %s", dlerror());
+  *out_lib = handle;
+  return MAG_OK;
 #endif
 }
 

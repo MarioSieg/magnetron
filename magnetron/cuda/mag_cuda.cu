@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cstdio>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -55,21 +56,23 @@ namespace mag {
     explicit cuda_backend_error(cudaError_t code, const char *what) : std::runtime_error {fmt_error_message(code, what)} { }
   };
 
-  static void manual_seed(mag_device_t *dvc, [[maybe_unused]] mag_error_t *err, uint64_t seed) {
+  static void manual_seed(mag_error_t *err, mag_device_t *dvc, uint64_t seed) {
     global_seed.store(seed, std::memory_order_relaxed);
   }
 
-  [[nodiscard]] static mag_status_t cuda_transfer(mag_device_t *dvc, mag_error_t *err, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst) {
+  [[nodiscard]] static mag_status_t cuda_transfer(mag_error_t *err, mag_device_t *dvc, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst) {
     const size_t nb = mag_tensor_numbytes(src);
-    mag_contract(err, ERR_INVALID_PARAM, {}, nb == mag_tensor_numbytes(dst), "Transfer: source and destination byte sizes differ.");
-    mag_contract(err, ERR_INVALID_PARAM, {}, mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(dst), "Transfer requires contiguous tensors.");
+    if (mag_unlikely(nb != mag_tensor_numbytes(dst)))
+      return mag_set_error(err, MAG_ERR_PARAM, "Transfer: source and destination byte sizes differ.");
+    if (mag_unlikely(!(mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(dst))))
+      return mag_set_error(err, MAG_ERR_PARAM, "Transfer requires contiguous tensors.");
 
     const int my_dev = static_cast<int>(dvc->id.device_ordinal);
 
     auto report_cuda = [err](cudaError_t ce, const char *what) -> mag_status_t {
-      if (err && err->code == MAG_STATUS_OK) {
+      if (err && err->code == MAG_OK) {
         *err = mag_error_t{
-          .code = MAG_STATUS_ERR_UNKNOWN,
+          .code = MAG_ERR_UNKNOWN,
           .message = "",
           .file = __FILE__,
           .line = __LINE__,
@@ -77,39 +80,47 @@ namespace mag {
         };
         snprintf(err->message, sizeof err->message, "%s: %s", what, cudaGetErrorString(ce));
       }
-      return MAG_STATUS_ERR_UNKNOWN;
+      return MAG_ERR_UNKNOWN;
     };
 
     switch (dir) {
     case MAG_TRANSFER_DIR_H2D: {
-      mag_contract(err, ERR_INVALID_PARAM, {}, src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE, "H2D: source storage must be host-visible.");
-      mag_contract(err, ERR_INVALID_PARAM, {}, !(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE), "H2D: destination storage must be device-local.");
-      mag_contract(err, ERR_INVALID_PARAM, {}, dst->storage->device == dvc, "H2D: destination device mismatch.");
+      if (mag_unlikely(!(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))
+        return mag_set_error(err, MAG_ERR_PARAM, "H2D: source storage must be host-visible.");
+      if (mag_unlikely(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE))
+        return mag_set_error(err, MAG_ERR_PARAM, "H2D: destination storage must be device-local.");
+      if (mag_unlikely(dst->meta.device != dvc))
+        return mag_set_error(err, MAG_ERR_PARAM, "H2D: destination device mismatch.");
       cudaError_t ce = cudaSetDevice(my_dev);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaSetDevice (H2D)");
       ce = cudaMemcpy(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst)), reinterpret_cast<const void *>(mag_tensor_data_ptr(src)), nb, cudaMemcpyHostToDevice);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaMemcpy H2D");
-      return MAG_STATUS_OK;
+      return MAG_OK;
     }
     case MAG_TRANSFER_DIR_D2H: {
-      mag_contract(err, ERR_INVALID_PARAM, {}, !(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE), "D2H: source storage must be device-local.");
-      mag_contract(err, ERR_INVALID_PARAM, {}, src->storage->device == dvc, "D2H: source device mismatch.");
-      mag_contract(err, ERR_INVALID_PARAM, {}, dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE, "D2H: destination storage must be host-visible.");
+      if (mag_unlikely(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE))
+        return mag_set_error(err, MAG_ERR_PARAM, "D2H: source storage must be device-local.");
+      if (mag_unlikely(src->meta.device != dvc))
+        return mag_set_error(err, MAG_ERR_PARAM, "D2H: source device mismatch.");
+      if (mag_unlikely(!(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))
+        return mag_set_error(err, MAG_ERR_PARAM, "D2H: destination storage must be host-visible.");
       cudaError_t ce = cudaSetDevice(my_dev);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaSetDevice (D2H)");
       ce = cudaMemcpy(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst)), reinterpret_cast<const void *>(mag_tensor_data_ptr(src)), nb, cudaMemcpyDeviceToHost);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaMemcpy D2H");
-      return MAG_STATUS_OK;
+      return MAG_OK;
     }
     case MAG_TRANSFER_DIR_D2D: {
-      mag_contract(err, ERR_INVALID_PARAM, {}, !(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE) && !(dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE), "D2D: both storages must be device-local.");
-      const int src_ord = static_cast<int>(src->storage->device->id.device_ordinal);
-      const int dst_ord = static_cast<int>(dst->storage->device->id.device_ordinal);
-      mag_contract(err, ERR_INVALID_PARAM, {}, dst->storage->device == dvc, "D2D: destination device mismatch.");
+      if (mag_unlikely((src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE) || (dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))
+        return mag_set_error(err, MAG_ERR_PARAM, "D2D: both storages must be device-local.");
+      const int src_ord = static_cast<int>(src->meta.device->id.device_ordinal);
+      const int dst_ord = static_cast<int>(dst->meta.device->id.device_ordinal);
+      if (mag_unlikely(dst->storage->device != dvc))
+        return mag_set_error(err, MAG_ERR_PARAM, "D2D: destination device mismatch.");
       cudaError_t ce = cudaSetDevice(dst_ord);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaSetDevice (D2D)");
@@ -118,19 +129,20 @@ namespace mag {
       ce = cudaMemcpyPeer(dp, dst_ord, sp, src_ord, nb);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaMemcpyPeer");
-      return MAG_STATUS_OK;
+      return MAG_OK;
     }
     default:
-      mag_contract(err, ERR_INVALID_PARAM, {}, false, "Invalid transfer direction.");
+      return mag_set_error(err, MAG_ERR_PARAM, "Invalid transfer direction.");
     }
   }
 
-  [[nodiscard]] static mag_status_t submit(mag_device_t *dvc, [[maybe_unused]] mag_error_t *err, const mag_command_t *cmd) {
-    mag_cuda_check(cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)));
+  [[nodiscard]] static mag_status_t submit(mag_error_t *err, mag_device_t *dvc, const mag_command_t *cmd) {
+    if (cudaError_t ce = cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_ERR_DEVICE, "cuda: failed to select device %d: %s.", static_cast<int>(dvc->id.device_ordinal), cudaGetErrorString(ce));
 
-    static constexpr auto *op_nop = +[](const mag_command_t &) -> void { };
+    static constexpr auto *op_nop = +[](mag_error_t *, const mag_command_t &) -> mag_status_t { return MAG_OK; };
 
-    static constexpr void(*dispatch_table[])(const mag_command_t &) = {
+    static constexpr mag_status_t(*dispatch_table[])(mag_error_t *, const mag_command_t &) = {
       [MAG_OP_NOP] = op_nop,
       [MAG_OP_FILL] = &fill_op_fill,
       [MAG_OP_MASKED_FILL] = &fill_op_masked_fill,
@@ -142,12 +154,9 @@ namespace mag {
       [MAG_OP_ONE_HOT] = &misc_op_one_hot,
       [MAG_OP_CLONE] = &unary_op_clone,
       [MAG_OP_CAST] = &unary_op_cast,
-      [MAG_OP_VIEW] = op_nop,
-      [MAG_OP_TRANSPOSE] = op_nop,
-      [MAG_OP_PERMUTE] = op_nop,
       [MAG_OP_MEAN] = &reduce_op_mean,
-      [MAG_OP_MIN] = &reduce_op_min,
-      [MAG_OP_MAX] = &reduce_op_max,
+      [MAG_OP_MINIMA] = &reduce_op_minima,
+      [MAG_OP_MAXIMA] = &reduce_op_maxima,
       [MAG_OP_ARGMIN] = &reduce_op_argmin,
       [MAG_OP_ARGMAX] = &reduce_op_argmax,
       [MAG_OP_SUM] = &reduce_op_sum,
@@ -227,7 +236,23 @@ namespace mag {
       [MAG_OP_GE] = &binary_op_ge,
       [MAG_OP_LT] = &binary_op_lt,
       [MAG_OP_GT] = &binary_op_gt,
-      [MAG_OP_WHERE] = &misc_op_where
+      [MAG_OP_WHERE] = &misc_op_where,
+      [MAG_OP_MIN] = nullptr,
+      [MAG_OP_MAX] = nullptr,
+      [MAG_OP_CLAMP] = nullptr,
+      [MAG_OP_PAD] = &misc_op_pad,
+      [MAG_OP_EYE] = &fill_op_eye,
+      [MAG_OP_CUSUM] = &misc_op_cusum,
+      [MAG_OP_CUPROD] = &misc_op_cuprod,
+      [MAG_OP_CUMAX] = &misc_op_cumax,
+      [MAG_OP_CUMIN] = &misc_op_cumin,
+      [MAG_OP_REPEAT] = &misc_op_repeat,
+      [MAG_OP_REPEAT_INTERLEAVE] = &misc_op_repeat_interleave,
+      [MAG_OP_INDEX_ADD] = &misc_op_index_add,
+      [MAG_OP_EMBEDDING] = &misc_op_embedding,
+      [MAG_OP_SCATTER] = &misc_op_scatter,
+      [MAG_OP_SCATTER_ADD] = &misc_op_scatter_add,
+      [MAG_OP_STRIDED_VIEW] = op_nop,
     };
     static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
     //static_assert([] -> bool {
@@ -236,28 +261,33 @@ namespace mag {
     //    return true;
     //}());
     auto *kernel = dispatch_table[cmd->op];
-    mag_assert(kernel != nullptr, "Operator %s not implemented in CUDA backend", mag_op_traits(cmd->op)->mnemonic);
-    (*kernel)(*cmd);
-    cudaDeviceSynchronize();
-    return MAG_STATUS_OK;
+    if (mag_unlikely(kernel == nullptr))
+      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: operator %s not implemented in CUDA backend.", mag_op_trait(cmd->op)->mnemonic);
+    if (mag_status_t st = (*kernel)(err, *cmd); mag_unlikely(mag_iserr(st)))
+      return st;
+    if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: kernel launch failed for operator %s: %s.", mag_op_trait(cmd->op)->mnemonic, cudaGetErrorString(ce));
+    if (cudaError_t ce = cudaDeviceSynchronize(); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: kernel execution failed for operator %s: %s.", mag_op_trait(cmd->op)->mnemonic, cudaGetErrorString(ce));
+    return MAG_OK;
   }
 
-  [[nodiscard]] static mag_status_t alloc_storage_buffer(mag_device_t *dvc, [[maybe_unused]] mag_error_t *err, mag_storage_buffer_t **out, size_t size) {
+  [[nodiscard]] static mag_status_t alloc_storage_buffer(mag_error_t *err, mag_device_t *dvc, mag_storage_buffer_t **out, size_t size) {
     mag_context_t *ctx = dvc->ctx;
     uintptr_t base;
-    if (cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)) != cudaSuccess)
-      return MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED;
-    if (cudaMalloc(reinterpret_cast<void **>(&base), size) != cudaSuccess)
-      return MAG_STATUS_ERR_MEMORY_ALLOCATION_FAILED;
+    if (cudaError_t ce = cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_ERR_OOM, "cuda: failed to select device %d for allocation: %s.", static_cast<int>(dvc->id.device_ordinal), cudaGetErrorString(ce));
+    if (cudaError_t ce = cudaMalloc(reinterpret_cast<void **>(&base), size); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_ERR_OOM, "cuda: failed to allocate %zu bytes of device memory: %s.", size, cudaGetErrorString(ce));
     *out = static_cast<mag_storage_buffer_t *>(mag_slab_alloc(&ctx->storage_slab));
     new (*out) mag_storage_buffer_t {
       .__rcb = {},
       .ctx = ctx,
+      .device = dvc,
       .flags = MAG_STORAGE_FLAG_ACCESS_W,
       .alignment = 256, // cudaMalloc guarantees this
       .base = base,
       .size = size,
-      .device = dvc,
       .aux = {},
     };
     mag_rc_init_object(*out, +[](void *self) -> mag_status_t {
@@ -265,21 +295,31 @@ namespace mag {
       mag_context_t *ctx = buffer->ctx;
       mag_device_t *dvc = buffer->device;
       auto *base = reinterpret_cast<void *>(buffer->base);
+      mag_assert(ctx->telemetry.num_alive_storages > 0, "cuda: double free detected on CUDA storage buffer.");
+      --ctx->telemetry.num_alive_storages;
       mag_slab_free(&ctx->storage_slab, buffer);
       if (cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)) != cudaSuccess)
-        return MAG_STATUS_ERR_MEMORY_DEALLOCATION_FAILED;
-      return cudaFree(base) == cudaSuccess ? MAG_STATUS_OK : MAG_STATUS_ERR_MEMORY_DEALLOCATION_FAILED;
+        return MAG_ERR_FREE;
+      return cudaFree(base) == cudaSuccess ? MAG_OK : MAG_ERR_FREE;
     });
-    return MAG_STATUS_OK;
+    ++ctx->telemetry.num_alive_storages;
+    return MAG_OK;
   }
 
   class physical_device final : public mag_device_t {
   public:
     physical_device(mag_context_t *ctx, uint32_t idx) : mag_device_t{} {
+      if (mag_unlikely(idx > MAG_DEVICE_ORDINAL_MAX))
+        throw std::invalid_argument {"Device ordinal exceeds maximum allowed value."};
+
       // Init interface of superclass first
       impl = this;
       this->ctx = ctx;
-      id = {.type=MAG_BACKEND_TYPE_CUDA, .device_ordinal=idx};
+      id = mag_device_id_t {
+        .is_virtual = false,
+        .device_ordinal = idx,
+        .type = MAG_BACKEND_TYPE_CUDA
+      };
       is_async = false;
       submit = &::mag::submit;
       alloc_storage = &::mag::alloc_storage_buffer;
@@ -340,14 +380,21 @@ namespace mag {
 
   class cuda_backend final : public mag_backend_t {
   public:
-    cuda_backend() : mag_backend_t{} {
+    explicit cuda_backend(mag_context_t *ctx) : mag_backend_t{} {
       // Only init the interface of superclass here, the actual device initialization is deferred to the init callback
+      this->ctx = ctx;
       this->impl = this;
-      this->init = +[](mag_backend_t *bck, mag_context_t *ctx) -> bool {
-        return static_cast<cuda_backend *>(bck->impl)->initialize(ctx);
+      this->init = +[](mag_error_t *err, mag_backend_t *bck, mag_context_t *ctx) -> mag_status_t {
+        if (!static_cast<cuda_backend *>(bck->impl)->initialize(ctx)) {
+          return mag_set_error(err, MAG_ERR_OOM, "Failed to initialize CUDA backend.");
+        }
+        return MAG_OK;
       };
-      this->shutdown = +[](mag_backend_t *bck) -> bool {
-        return static_cast<cuda_backend *>(bck->impl)->destroy();
+      this->shutdown = +[](mag_error_t *err, mag_backend_t *bck) -> mag_status_t {
+        if (!static_cast<cuda_backend *>(bck->impl)->destroy()) {
+          return mag_set_error(err, MAG_ERR_OOM, "Failed to deinitialize CUDA backend.");
+        }
+        return MAG_OK;
       };
       backend_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_CUDA_BACKEND_VERSION; };
       runtime_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_VERSION; };
@@ -406,22 +453,24 @@ uint32_t MAG_BACKEND_SYM_ABI_COOKIE(){
   return mag_pack_abi_cookie('M', 'A', 'G', MAG_BACKEND_MODULE_ABI_VER);
 }
 
-mag_backend_t *MAG_BACKEND_SYM_INIT([[maybe_unused]] mag_context_t *ctx)
+mag_status_t MAG_BACKEND_SYM_INIT(mag_error_t *err, mag_backend_t **out, mag_context_t *ctx)
 try {
-  return new mag::cuda_backend {};
+  *out = new mag::cuda_backend {ctx};
+  return MAG_OK;
 } catch (const std::exception &e) {
-  mag_log_error("Error during backend initialization: %s", e.what());
-  return nullptr;
+  *out = nullptr;
+  return mag_set_error(err, MAG_ERR_BACKEND, "cuda: C++ exception during backend initialization: %s", e.what());
 } catch (...) {
-  mag_log_error("Unknown error during backend initialization.");
-  return nullptr;
+  *out = nullptr;
+  return mag_set_error(err, MAG_ERR_BACKEND, "cuda: C++ exception during backend initialization.");
 }
 
-void MAG_BACKEND_SYM_SHUTDOWN(mag_backend_t *backend)
+mag_status_t MAG_BACKEND_SYM_SHUTDOWN(mag_error_t *err, mag_backend_t *backend)
 try {
   delete static_cast<mag::cuda_backend *>(backend);
+  return MAG_OK;
 } catch (const std::exception &e) {
-  mag_log_error("Error during backend shutdown: %s", e.what());
+  return mag_set_error(err, MAG_ERR_BACKEND, "cuda: C++ exception during backend shutdown: %s", e.what());
 } catch (...) {
-  mag_log_error("Unknown error during backend shutdown.");
+  return mag_set_error(err, MAG_ERR_BACKEND, "cuda: C++ exception during backend shutdown.");
 }

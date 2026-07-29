@@ -2,6 +2,7 @@ import pytest
 import platform
 
 import test_stl_bind_vector_ext as t
+from common import collect
 
 def test01_vector_int(capfd):
     v_int = t.VectorInt([0, 0])
@@ -90,6 +91,23 @@ def test01_vector_int(capfd):
     assert len(v_int2) == 0
 
 
+def test01b_vector_self_extend():
+    # Self-extension must double the contents (and not be UB). Use a size that
+    # forces a reallocation mid-operation to exercise the aliased path.
+    v = t.VectorInt(range(100))
+    v.extend(v)
+    assert list(v) == list(range(100)) + list(range(100))
+
+    # Also check the small / empty cases
+    v0 = t.VectorInt()
+    v0.extend(v0)
+    assert list(v0) == []
+
+    v1 = t.VectorInt([7])
+    v1.extend(v1)
+    assert list(v1) == [7, 7]
+
+
 def test02_vector_bool():
     vv_c = t.VectorBool()
     for i in range(9):
@@ -141,6 +159,22 @@ def test04_vector_slicing():
     check_del(slice(200, 10, -3))
 
 
+def test04b_vector_self_slice_assign():
+    # Assigning a slice from the container itself must match list semantics,
+    # which copy the source first (e.g. ``v[::-1] = v`` reverses in place).
+    l = list(range(100))
+    v = t.VectorInt(l)
+    l[::-1] = l
+    v[::-1] = v
+    assert list(v) == l
+
+    l2 = [1, 2, 3]
+    v2 = t.VectorInt(l2)
+    l2[::-1] = l2
+    v2[::-1] = v2
+    assert list(v2) == l2 == [3, 2, 1]
+
+
 def test05_vector_non_shared():
     v = t.VectorEl()
     v.append(t.El(1))
@@ -186,3 +220,31 @@ def test07_vector_noncopyable():
     q = next(iter(vnc))
     q.value = 5
     assert vnc[0].value == 5
+
+
+def test08_vector_init_partial_cleanup():
+    # When the iterable constructor throws partway through, the partially
+    # constructed vector must still be destroyed (no leaked elements).
+    keep = t.Cnt()
+    collect()
+    base = t.cnt_alive()
+    for _ in range(100):
+        with pytest.raises(Exception):
+            t.VectorCnt([t.Cnt(), t.Cnt(), "not a Cnt"])
+    collect()
+    assert t.cnt_alive() == base
+    del keep
+
+
+def test09_vector_getitem_slice_leak():
+    # When a slice __getitem__ fails partway through (here the element copy
+    # constructor throws), the partially constructed result vector must be
+    # destroyed rather than leaked.
+    v = t.VectorCnt([t.Cnt(), t.Cnt(), t.Cnt(), t.Cnt()])
+    base = t.cnt_alive()
+    for _ in range(100):
+        t.cnt_throw_after(2)
+        with pytest.raises(Exception):
+            v[::1]
+    t.cnt_throw_after(-1)
+    assert t.cnt_alive() == base

@@ -30,7 +30,7 @@ for i in range(args.iters):
     C = A @ B
     t1 = time.perf_counter()
     times.append(t1 - t0)
-    if i == args.iters-1: # Save last C
+    if i == args.iters - 1:  # Save last C
         last_result = C
     del C
 
@@ -45,10 +45,10 @@ epsilons: dict[str, tuple[float, float]] = {
 ref = A @ B
 err = (ref - last_result).abs()
 atol, rtol = epsilons[args.dtype]
-tol = atol + rtol*ref.abs()
+tol = atol + rtol * ref.abs()
 
 if (err > tol).any():
-    raise RuntimeError(f"Matmul is wrong (max delta): {err.max().item()}")
+    raise RuntimeError(f'Matmul is wrong (max delta): {err.max().item()}')
 
 gflops = [flops / t / 1e9 for t in times]
 print(

@@ -39,6 +39,9 @@ namespace mag::bindings {
   [[nodiscard]] extern const std::string &get_default_device_unlocked();
   [[nodiscard]] extern std::string get_default_device();
 
+  // Set to 1 to enable record and profile all executed operators and export them to a CSV
+  constexpr bool enable_op_recorder = false;
+
   struct dtype_wrapper final {
     mag_dtype_t v;
 
@@ -71,35 +74,39 @@ namespace mag::bindings {
     bool m_active {};
   };
 
-  struct tensor_wrapper final {
-    mag_tensor_t *p = nullptr;
-
+  class tensor_wrapper final {
+  public:
     constexpr tensor_wrapper() noexcept = default;
-    explicit tensor_wrapper(mag_tensor_t *ptr) noexcept : p{ptr} {}
-    tensor_wrapper(const tensor_wrapper &other) noexcept : p{other.p} { if (p) mag_tensor_incref(p); }
-    constexpr tensor_wrapper(tensor_wrapper &&other) noexcept : p{other.p} { other.p = nullptr; }
+    explicit tensor_wrapper(mag_tensor_t *ptr) noexcept : m_tensor{ptr} {}
+    tensor_wrapper(const tensor_wrapper &other) noexcept : m_tensor{other.m_tensor} { if (m_tensor) mag_tensor_incref(m_tensor); }
+    constexpr tensor_wrapper(tensor_wrapper &&other) noexcept : m_tensor{other.m_tensor} { other.m_tensor = nullptr; }
     tensor_wrapper &operator=(const tensor_wrapper &other) noexcept {
       if (this != &other) {
-        if (other.p) mag_tensor_incref(other.p);
-        if (p) mag_tensor_decref(p);
-        p = other.p;
+        if (other.m_tensor) mag_tensor_incref(other.m_tensor);
+        if (m_tensor) mag_tensor_decref(m_tensor);
+        m_tensor = other.m_tensor;
       }
       return *this;
     }
     tensor_wrapper &operator=(tensor_wrapper &&other) noexcept {
       if (this != &other) {
-        if (p) mag_tensor_decref(p);
-        p = other.p;
-        other.p = nullptr;
+        if (m_tensor) mag_tensor_decref(m_tensor);
+        m_tensor = other.m_tensor;
+        other.m_tensor = nullptr;
       }
       return *this;
     }
     ~tensor_wrapper() {
-      if (p) mag_tensor_decref(p);
+      if (m_tensor) mag_tensor_decref(m_tensor);
     }
-    explicit constexpr operator bool() const noexcept { return p != nullptr; }
-    constexpr mag_tensor_t *operator * () const noexcept { return p; }
+    explicit constexpr operator bool() const noexcept { return m_tensor != nullptr; }
+    constexpr mag_tensor_t *operator * () const noexcept { return m_tensor; }
+    constexpr mag_tensor_t *&operator * () noexcept { return m_tensor; }
+
+  private:
+    mag_tensor_t *m_tensor = nullptr;
   };
+  static_assert(sizeof(tensor_wrapper) == sizeof(mag_tensor_t *), "tensor_wrapper should have the same size as a raw pointer.");
 
   struct reduction_axes final {
     std::vector<int64_t> storage {};
@@ -111,18 +118,20 @@ namespace mag::bindings {
   [[nodiscard]] extern tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt, mag_device_id_t device);
   [[nodiscard]] extern tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs);
   [[nodiscard]] extern std::vector<int64_t> parse_shape_from_args(const nb::args &args);
-  extern void validate_shape(const std::vector<int64_t> &shape);
   [[nodiscard]] extern std::vector<int64_t> parse_i64_dims(const nb::args &args, const char *what);
   [[nodiscard]] extern std::vector<int64_t> parse_i64_list_handle(nb::handle h, const char *what);
   [[nodiscard]] extern reduction_axes parse_reduction_axes(nb::handle dim_h);
-  [[nodiscard]] extern mag_scalar_t scalar_from_py(nb::handle h);
+  [[nodiscard]] extern mag_scalar_t scalar_from_py_number(nb::handle h);
   [[nodiscard]] extern nb::object py_scalar_from_mag_scalar(const mag_scalar_t &scalar);
   [[nodiscard]] extern dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h);
   [[nodiscard]] extern std::string format_error_msg(const mag_error_t &err);
-  [[nodiscard]] extern std::optional<mag_device_id_t> parse_device_id_str(std::string &&str);
+  [[nodiscard]] extern std::optional<mag_device_id_t> parse_device_id_str(const std::string &str);
+  extern void validate_shape(const std::vector<int64_t> &shape);
+  extern void validate_shape(const std::vector<int64_t> &shape);
+  extern void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op);;
 
   inline void throw_if_error(mag_status_t st, const mag_error_t &err) {
-    if (st == MAG_STATUS_OK) return;
+    if (st == MAG_OK) return;
     std::string msg = format_error_msg(err);
     throw std::runtime_error {msg.c_str()};
   }

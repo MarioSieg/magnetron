@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 rm -f qwen3_profile.nsys-rep
 rm -f qwen3_profile.sqlite

@@ -228,7 +228,8 @@ static void mag_machine_probe_cpu_cores(uint32_t *out_virtual, uint32_t *out_phy
   DWORD size = 0;
   GetLogicalProcessorInformation(NULL, &size);
   if (mag_unlikely(!size)) return;
-  SYSTEM_LOGICAL_PROCESSOR_INFORMATION *info = (*mag_alloc)(NULL, size, 0);
+  SYSTEM_LOGICAL_PROCESSOR_INFORMATION *info = (*mag_try_alloc)(NULL, size, 0);
+  if (mag_unlikely(!info)) return;
   if (mag_unlikely(!GetLogicalProcessorInformation(info, &size))) goto end;
   for (DWORD i=0; i < size/sizeof(*info); ++i) {
     switch (info[i].Relationship) {

@@ -21,14 +21,21 @@
 extern "C" {
 #endif
 
+typedef mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) struct mag_tile_sched_t {
+  mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) volatile mag_atomic64_t tile_idx;
+} mag_tile_sched_t;
+
+static inline int64_t mag_tile_sched_acquire_next(mag_tile_sched_t *sched) {
+  return mag_atomic64_fetch_add(&sched->tile_idx, 1, MAG_MO_RELAXED);
+}
+
 /* CPU Compute kernel payload passed to each CPU thread. */
 typedef struct mag_kernel_payload_t {
   const mag_command_t *cmd;
   int64_t thread_num;
   int64_t thread_idx;
   mag_philox4x32_stream_t *prng;
-  volatile mag_atomic64_t *mm_next_tile;
-  mag_matmul_block_params_t mm_params;
+  mag_tile_sched_t *tile_sched;
 } mag_kernel_payload_t;
 
 /*
