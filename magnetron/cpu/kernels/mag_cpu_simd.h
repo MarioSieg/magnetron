@@ -1193,10 +1193,10 @@ static MAG_AINLINE mag_vf32_t mag_vf32_dpbf16(mag_vf32_t acc, mag_vbf16_t x, mag
     mag_vf32_t yhi = vreinterpretq_f32_u32(vshll_n_u16(vget_high_u16(y), 16));
     return vfmaq_f32(vfmaq_f32(acc, xlo, ylo), xhi, yhi);
   #elif defined(__AVX512F__)
-    mag_vf32_t xlo = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256(x)), 16));
-    mag_vf32_t xhi = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(x, 1)), 16));
-    mag_vf32_t ylo = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256(y)), 16));
-    mag_vf32_t yhi = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(y, 1)), 16));
+    mag_vf32_t xlo = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256((__m512i)x)), 16));
+    mag_vf32_t xhi = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64((__m512i)x, 1)), 16));
+    mag_vf32_t ylo = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256((__m512i)y)), 16));
+    mag_vf32_t yhi = _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64((__m512i)y, 1)), 16));
     return _mm512_fmadd_ps(xhi, yhi, _mm512_fmadd_ps(xlo, ylo, acc));
   #elif defined(__AVX2__)
     mag_vf32_t xlo = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm256_castsi256_si128(x)), 16));
