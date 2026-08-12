@@ -12,8 +12,9 @@
 #pragma once
 
 #include <atomic>
+#include <stdexcept>
+#include <string>
 
-/* Use int instead of int64 for indexing iterators as int64 is much slower on CUA */
 #define MAG_COORDS_ITER_INTEGRAL_TYPE int
 
 #include <core/mag_backend.h>
@@ -26,6 +27,8 @@
 #include <cuda_bf16.h>
 #include <cuda_fp8.h>
 
+#include "mag_cuda_device.cuh"
+
 extern "C" {
   mag_backend_decl_interface();
 }
@@ -33,18 +36,42 @@ extern "C" {
 namespace mag {
   constexpr uint32_t MAG_CUDA_BACKEND_VERSION = mag_ver_encode(0, 1, 0);
 
-  static inline std::atomic_uint64_t global_seed = 0;
-  static inline std::atomic_uint64_t global_subseq = 0;
+#define mag_cu_check(E, expr, msg) \
+  do { \
+    CUresult ___res___ = (expr); \
+    if (mag_unlikely(___res___ != CUDA_SUCCESS)) { \
+      const char *___err___ = nullptr; \
+      cuGetErrorString(___res___, &___err___); \
+      return mag_set_error((E), MAG_ERR_BACKEND, \
+        "cuda error in " #expr ": %s: %s", \
+        (msg), ___err___ ? ___err___ : "unknown error"); \
+    } \
+  } while (0)
 
-  static inline std::atomic_bool global_async_alloc = false;
+  #define mag_cu_rt_check(E, expr, msg) \
+    do { \
+      cudaError_t ___res___ = (expr); \
+      if (mag_unlikely(___res___ != cudaSuccess)) \
+        return mag_set_error((E), MAG_ERR_BACKEND, "cuda error in: " #expr ": %s: %s", (msg), cudaGetErrorString(___res___)); \
+    } while (0)
 
-  [[nodiscard]] static inline cudaError_t stream_alloc(void **p, size_t size, cudaStream_t stream) {
+  /*
+  ** These must have external linkage: 'static inline' at namespace scope gives every translation
+  ** unit its own private copy, so a store from one .cu is invisible to the readers inlined into
+  ** the others. Plain 'inline' is the C++17 spelling for a single object shared across all TUs.
+  */
+  inline std::atomic_uint64_t global_seed = 0;
+  inline std::atomic_uint64_t global_subseq = 0;
+
+  inline std::atomic_bool global_async_alloc = false;
+
+  [[nodiscard]] inline cudaError_t stream_alloc(void **p, size_t size, cudaStream_t stream) {
     if (global_async_alloc.load(std::memory_order_relaxed))
       return cudaMallocAsync(p, size, stream);
     return cudaMalloc(p, size);
   }
 
-  [[nodiscard]] static inline cudaError_t stream_free(void *p, cudaStream_t stream) {
+  [[nodiscard]] inline cudaError_t stream_free(void *p, cudaStream_t stream) {
     if (global_async_alloc.load(std::memory_order_relaxed))
       return cudaFreeAsync(p, stream);
     return cudaFree(p);
