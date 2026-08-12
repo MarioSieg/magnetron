@@ -36,6 +36,20 @@ namespace mag {
   static inline std::atomic_uint64_t global_seed = 0;
   static inline std::atomic_uint64_t global_subseq = 0;
 
+  static inline std::atomic_bool global_async_alloc = false;
+
+  [[nodiscard]] static inline cudaError_t stream_alloc(void **p, size_t size, cudaStream_t stream) {
+    if (global_async_alloc.load(std::memory_order_relaxed))
+      return cudaMallocAsync(p, size, stream);
+    return cudaMalloc(p, size);
+  }
+
+  [[nodiscard]] static inline cudaError_t stream_free(void *p, cudaStream_t stream) {
+    if (global_async_alloc.load(std::memory_order_relaxed))
+      return cudaFreeAsync(p, stream);
+    return cudaFree(p);
+  }
+
   template <typename I>
   struct coords_iter final {
     static_assert(std::is_integral_v<I> && std::is_signed_v<I>, "Index cardinal must be signed integral type");

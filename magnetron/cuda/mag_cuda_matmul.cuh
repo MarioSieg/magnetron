@@ -16,5 +16,5 @@
 namespace mag {
   constexpr unsigned MATMUL_BLOCK_SIZE = 256;
 
-  [[nodiscard]] extern mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd);
+  [[nodiscard]] extern mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
 }

@@ -47,7 +47,7 @@ namespace mag {
     }
   }
 
-  mag_status_t misc_op_one_hot(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_one_hot(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     (void)err;
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *idx = cmd.in[0];
@@ -58,11 +58,11 @@ namespace mag {
     const auto *pidx = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(idx));
     int blocks = (n+MISC_BLOCK_SIZE-1)/MISC_BLOCK_SIZE;
     if (std::array<const mag_tensor_t *, 2> tensors{r, idx}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
-      one_hot_kernel<true><<<blocks, MISC_BLOCK_SIZE>>>(n, nc, pr, pidx, {});
+      one_hot_kernel<true><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, nc, pr, pidx, {});
     } else {
       mag_coords_iter_t it;
       mag_coords_iter_init(&it, &idx->meta.coords);
-      one_hot_kernel<false><<<blocks, MISC_BLOCK_SIZE>>>(n, nc, pr, pidx, it);
+      one_hot_kernel<false><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, nc, pr, pidx, it);
     }
     return MAG_OK;
   }
@@ -98,7 +98,7 @@ namespace mag {
   }
 
   template <typename T, const bool upper>
-  static void launch_tri_mask(mag_tensor_t *r, const mag_tensor_t *x, int64_t diag) {
+  static void launch_tri_mask(mag_tensor_t *r, const mag_tensor_t *x, int64_t diag, cudaStream_t stream) {
     int64_t n = mag_tensor_numel(r);
     int64_t blocks = (n + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
     mag_coords_iter_t cr, cx;
@@ -106,50 +106,50 @@ namespace mag {
     mag_coords_iter_init(&cx, &x->meta.coords);
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
-    tri_mask_kernel<T, upper><<<blocks, MISC_BLOCK_SIZE>>>(n, br, bx, cr, cx, diag);
+    tri_mask_kernel<T, upper><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, br, bx, cr, cx, diag);
   }
 
-  mag_status_t misc_op_tril(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_tril(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t diag = cmd.params->trilu.diag;
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_tri_mask<float, false>(r, x, diag); break;
-      case MAG_DTYPE_FLOAT16: launch_tri_mask<half, false>(r, x, diag); break;
-      case MAG_DTYPE_BFLOAT16: launch_tri_mask<__nv_bfloat16, false>(r, x, diag); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_tri_mask<__nv_fp8_e4m3, false>(r, x, diag); break;
+      case MAG_DTYPE_FLOAT32: launch_tri_mask<float, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_tri_mask<half, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_tri_mask<__nv_bfloat16, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_tri_mask<__nv_fp8_e4m3, false>(r, x, diag, stream); break;
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: launch_tri_mask<uint8_t, false>(r, x, diag); break;
-      case MAG_DTYPE_INT8: launch_tri_mask<int8_t, false>(r, x, diag); break;
-      case MAG_DTYPE_UINT16: launch_tri_mask<uint16_t, false>(r, x, diag); break;
-      case MAG_DTYPE_INT16: launch_tri_mask<int16_t, false>(r, x, diag); break;
-      case MAG_DTYPE_UINT32: launch_tri_mask<uint32_t, false>(r, x, diag); break;
-      case MAG_DTYPE_INT32: launch_tri_mask<int32_t, false>(r, x, diag); break;
-      case MAG_DTYPE_UINT64: launch_tri_mask<uint64_t, false>(r, x, diag); break;
-      case MAG_DTYPE_INT64: launch_tri_mask<int64_t, false>(r, x, diag); break;
+      case MAG_DTYPE_UINT8: launch_tri_mask<uint8_t, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_INT8: launch_tri_mask<int8_t, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_UINT16: launch_tri_mask<uint16_t, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_INT16: launch_tri_mask<int16_t, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_UINT32: launch_tri_mask<uint32_t, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_INT32: launch_tri_mask<int32_t, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_UINT64: launch_tri_mask<uint64_t, false>(r, x, diag, stream); break;
+      case MAG_DTYPE_INT64: launch_tri_mask<int64_t, false>(r, x, diag, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: tril: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
-  mag_status_t misc_op_triu(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_triu(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t diag = cmd.params->trilu.diag;
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_tri_mask<float, true>(r, x, diag); break;
-      case MAG_DTYPE_FLOAT16: launch_tri_mask<half, true>(r, x, diag); break;
-      case MAG_DTYPE_BFLOAT16: launch_tri_mask<__nv_bfloat16, true>(r, x, diag); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_tri_mask<__nv_fp8_e4m3, true>(r, x, diag); break;
+      case MAG_DTYPE_FLOAT32: launch_tri_mask<float, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_tri_mask<half, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_tri_mask<__nv_bfloat16, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_tri_mask<__nv_fp8_e4m3, true>(r, x, diag, stream); break;
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: launch_tri_mask<uint8_t, true>(r, x, diag); break;
-      case MAG_DTYPE_INT8: launch_tri_mask<int8_t, true>(r, x, diag); break;
-      case MAG_DTYPE_UINT16: launch_tri_mask<uint16_t, true>(r, x, diag); break;
-      case MAG_DTYPE_INT16: launch_tri_mask<int16_t, true>(r, x, diag); break;
-      case MAG_DTYPE_UINT32: launch_tri_mask<uint32_t, true>(r, x, diag); break;
-      case MAG_DTYPE_INT32: launch_tri_mask<int32_t, true>(r, x, diag); break;
-      case MAG_DTYPE_UINT64: launch_tri_mask<uint64_t, true>(r, x, diag); break;
-      case MAG_DTYPE_INT64: launch_tri_mask<int64_t, true>(r, x, diag); break;
+      case MAG_DTYPE_UINT8: launch_tri_mask<uint8_t, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_INT8: launch_tri_mask<int8_t, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_UINT16: launch_tri_mask<uint16_t, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_INT16: launch_tri_mask<int16_t, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_UINT32: launch_tri_mask<uint32_t, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_INT32: launch_tri_mask<int32_t, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_UINT64: launch_tri_mask<uint64_t, true>(r, x, diag, stream); break;
+      case MAG_DTYPE_INT64: launch_tri_mask<int64_t, true>(r, x, diag, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: triu: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
@@ -183,7 +183,7 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_where(mag_tensor_t *r, const mag_tensor_t *cond, const mag_tensor_t *x, const mag_tensor_t *y) {
+  static void launch_where(mag_tensor_t *r, const mag_tensor_t *cond, const mag_tensor_t *x, const mag_tensor_t *y, cudaStream_t stream) {
     int n = mag_tensor_numel(r); // TODO: i64 numel
     int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
@@ -191,37 +191,37 @@ namespace mag {
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     const auto *by = reinterpret_cast<const T *>(mag_tensor_data_ptr(y));
     if (std::array<const mag_tensor_t *, 4> tensors{r, cond, x, y}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
-      where_kernel<T, true><<<blocks, UNARY_BLOCK_SIZE>>>(n, br, bc, bx, by, {}, {}, {}, {});
+      where_kernel<T, true><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(n, br, bc, bx, by, {}, {}, {}, {});
     } else {
       mag_coords_iter_t cr, cc, cx, cy;
       mag_coords_iter_init(&cr, &r->meta.coords);
       mag_coords_iter_init(&cc, &cond->meta.coords);
       mag_coords_iter_init(&cx, &x->meta.coords);
       mag_coords_iter_init(&cy, &y->meta.coords);
-      where_kernel<T, false><<<blocks, UNARY_BLOCK_SIZE>>>(n, br, bc, bx, by, cr, cc, cx, cy);
+      where_kernel<T, false><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(n, br, bc, bx, by, cr, cc, cx, cy);
     }
   }
 
-  mag_status_t misc_op_where(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_where(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *cond = cmd.in[0];
     const mag_tensor_t *x = cmd.in[1];
     const mag_tensor_t *y = cmd.in[2];
     mag_assert2(cond->meta.dtype == MAG_DTYPE_BOOLEAN);
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_where<float>(r, cond, x, y); break;
-      case MAG_DTYPE_FLOAT16: launch_where<half>(r, cond, x, y); break;
-      case MAG_DTYPE_BFLOAT16: launch_where<__nv_bfloat16>(r, cond, x, y); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_where<__nv_fp8_e4m3>(r, cond, x, y); break;
+      case MAG_DTYPE_FLOAT32: launch_where<float>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_where<half>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_where<__nv_bfloat16>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_where<__nv_fp8_e4m3>(r, cond, x, y, stream); break;
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: launch_where<uint8_t>(r, cond, x, y); break;
-      case MAG_DTYPE_INT8: launch_where<int8_t>(r, cond, x, y); break;
-      case MAG_DTYPE_UINT16: launch_where<uint16_t>(r, cond, x, y); break;
-      case MAG_DTYPE_INT16: launch_where<int16_t>(r, cond, x, y); break;
-      case MAG_DTYPE_UINT32: launch_where<uint32_t>(r, cond, x, y); break;
-      case MAG_DTYPE_INT32: launch_where<int32_t>(r, cond, x, y); break;
-      case MAG_DTYPE_UINT64: launch_where<uint64_t>(r, cond, x, y); break;
-      case MAG_DTYPE_INT64: launch_where<int64_t>(r, cond, x, y); break;
+      case MAG_DTYPE_UINT8: launch_where<uint8_t>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_INT8: launch_where<int8_t>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_UINT16: launch_where<uint16_t>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_INT16: launch_where<int16_t>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_UINT32: launch_where<uint32_t>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_INT32: launch_where<int32_t>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_UINT64: launch_where<uint64_t>(r, cond, x, y, stream); break;
+      case MAG_DTYPE_INT64: launch_where<int64_t>(r, cond, x, y, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: where: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
@@ -247,7 +247,7 @@ namespace mag {
     }
   }
 
-  mag_status_t misc_op_repeat_back(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_repeat_back(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     mag_coords_iter_t cr, cx;
@@ -256,25 +256,25 @@ namespace mag {
     int rn = mag_tensor_numel(r); // TODO: i64 numel
     int xn = mag_tensor_numel(x); // TODO: i64 numel
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: repeat_back_kernel<float><<<1, 1>>>(
+      case MAG_DTYPE_FLOAT32: repeat_back_kernel<float><<<1, 1, 0, stream>>>(
         rn, xn,
         reinterpret_cast<float *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const float *>(mag_tensor_data_ptr(x)),
         cr, cx
       ); return MAG_OK;
-      case MAG_DTYPE_FLOAT16: repeat_back_kernel<half><<<1, 1>>>(
+      case MAG_DTYPE_FLOAT16: repeat_back_kernel<half><<<1, 1, 0, stream>>>(
         rn, xn,
         reinterpret_cast<half *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const half *>(mag_tensor_data_ptr(x)),
         cr, cx
       ); return MAG_OK;
-      case MAG_DTYPE_BFLOAT16: repeat_back_kernel<__nv_bfloat16><<<1, 1>>>(
+      case MAG_DTYPE_BFLOAT16: repeat_back_kernel<__nv_bfloat16><<<1, 1, 0, stream>>>(
         rn, xn,
         reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)),
         cr, cx
       ); return MAG_OK;
-        case MAG_DTYPE_FLOAT8_E4M3FN: repeat_back_kernel<__nv_fp8_e4m3><<<1, 1>>>(
+        case MAG_DTYPE_FLOAT8_E4M3FN: repeat_back_kernel<__nv_fp8_e4m3><<<1, 1, 0, stream>>>(
         rn, xn,
         reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)),
@@ -358,7 +358,7 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_gather(const mag_command_t &cmd) {
+  static void launch_gather(const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *src = cmd.in[0];
     const mag_tensor_t *index = cmd.in[1];
@@ -382,35 +382,35 @@ namespace mag {
           static_cast<unsigned>(out_ax),
           static_cast<unsigned>(outer)
         );
-        gather_kernel_3d<T><<<grid, block>>>(br, bx, bi, inner, out_ax, ax);
+        gather_kernel_3d<T><<<grid, block, 0, stream>>>(br, bx, bi, inner, out_ax, ax);
       } else {
         int64_t on = r->meta.numel;
         int64_t blocks = (on + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
-        gather_kernel_flat<T><<<blocks, MISC_BLOCK_SIZE>>>(on, br, bx, bi, inner, out_ax, ax);
+        gather_kernel_flat<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(on, br, bx, bi, inner, out_ax, ax);
       }
     } else {
       int64_t on = r->meta.numel;
       int64_t blocks = (on + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
-      gather_kernel_strided<T><<<blocks, MISC_BLOCK_SIZE>>>(on, br, bx, bi, *src, *index, *r, axis, ax);
+      gather_kernel_strided<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(on, br, bx, bi, *src, *index, *r, axis, ax);
     }
   }
 
-  mag_status_t misc_op_gather(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_gather(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_gather<float>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_gather<half>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_gather<__nv_bfloat16>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_gather<__nv_fp8_e4m3>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_gather<float>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_gather<half>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_gather<__nv_bfloat16>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_gather<__nv_fp8_e4m3>(cmd, stream); break;
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: launch_gather<uint8_t>(cmd); break;
-      case MAG_DTYPE_INT8: launch_gather<int8_t>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_gather<uint16_t>(cmd); break;
-      case MAG_DTYPE_INT16: launch_gather<int16_t>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_gather<uint32_t>(cmd); break;
-      case MAG_DTYPE_INT32: launch_gather<int32_t>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_gather<uint64_t>(cmd); break;
-      case MAG_DTYPE_INT64: launch_gather<int64_t>(cmd); break;
+      case MAG_DTYPE_UINT8: launch_gather<uint8_t>(cmd, stream); break;
+      case MAG_DTYPE_INT8: launch_gather<int8_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT16: launch_gather<uint16_t>(cmd, stream); break;
+      case MAG_DTYPE_INT16: launch_gather<int16_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT32: launch_gather<uint32_t>(cmd, stream); break;
+      case MAG_DTYPE_INT32: launch_gather<int32_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT64: launch_gather<uint64_t>(cmd, stream); break;
+      case MAG_DTYPE_INT64: launch_gather<int64_t>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: gather: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
@@ -453,7 +453,7 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_embedding(const mag_command_t &cmd) {
+  static void launch_embedding(const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *weight = cmd.in[0];
     const mag_tensor_t *indices = cmd.in[1];
@@ -470,30 +470,30 @@ namespace mag {
         static_cast<unsigned>((row_size + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE),
         static_cast<unsigned>(n_indices)
       );
-      embedding_kernel_2d<T><<<grid, block>>>(br, bx, bi, row_size, vocab_size);
+      embedding_kernel_2d<T><<<grid, block, 0, stream>>>(br, bx, bi, row_size, vocab_size);
     } else {
       int64_t on = n_indices*row_size;
       int64_t blocks = (on + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
-      embedding_kernel_flat<T><<<blocks, MISC_BLOCK_SIZE>>>(on, br, bx, bi, row_size, vocab_size);
+      embedding_kernel_flat<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(on, br, bx, bi, row_size, vocab_size);
     }
   }
 
-  mag_status_t misc_op_embedding(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_embedding(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32:       launch_embedding<float>(cmd); break;
-      case MAG_DTYPE_FLOAT16:       launch_embedding<half>(cmd); break;
-      case MAG_DTYPE_BFLOAT16:      launch_embedding<__nv_bfloat16>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_embedding<__nv_fp8_e4m3>(cmd); break;
+      case MAG_DTYPE_FLOAT32:       launch_embedding<float>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16:       launch_embedding<half>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16:      launch_embedding<__nv_bfloat16>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_embedding<__nv_fp8_e4m3>(cmd, stream); break;
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8:         launch_embedding<uint8_t>(cmd); break;
-      case MAG_DTYPE_INT8:          launch_embedding<int8_t>(cmd); break;
-      case MAG_DTYPE_UINT16:        launch_embedding<uint16_t>(cmd); break;
-      case MAG_DTYPE_INT16:         launch_embedding<int16_t>(cmd); break;
-      case MAG_DTYPE_UINT32:        launch_embedding<uint32_t>(cmd); break;
-      case MAG_DTYPE_INT32:         launch_embedding<int32_t>(cmd); break;
-      case MAG_DTYPE_UINT64:        launch_embedding<uint64_t>(cmd); break;
-      case MAG_DTYPE_INT64:         launch_embedding<int64_t>(cmd); break;
+      case MAG_DTYPE_UINT8:         launch_embedding<uint8_t>(cmd, stream); break;
+      case MAG_DTYPE_INT8:          launch_embedding<int8_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT16:        launch_embedding<uint16_t>(cmd, stream); break;
+      case MAG_DTYPE_INT16:         launch_embedding<int16_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT32:        launch_embedding<uint32_t>(cmd, stream); break;
+      case MAG_DTYPE_INT32:         launch_embedding<int32_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT64:        launch_embedding<uint64_t>(cmd, stream); break;
+      case MAG_DTYPE_INT64:         launch_embedding<int64_t>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: embedding: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
@@ -551,7 +551,7 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_cat(const mag_command_t &cmd) {
+  static void launch_cat(const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(mag_tensor_is_contiguous(r));
     const int64_t dim = cmd.params->cat.dim;
@@ -576,36 +576,36 @@ namespace mag {
         unsigned gx = static_cast<unsigned>((jk_total + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE);
         if (outer <= MAX_OUTER) {
           dim3 grid(gx, static_cast<unsigned>(outer), 1);
-          cat_kernel_2d<T><<<grid, block>>>(br, bx, jk_total, out_jk_base, out_jk_str);
+          cat_kernel_2d<T><<<grid, block, 0, stream>>>(br, bx, jk_total, out_jk_base, out_jk_str);
         } else {
           dim3 grid(gx, static_cast<unsigned>(MAX_OUTER), 1);
-          cat_kernel_2d_strided<T><<<grid, block>>>(br, bx, jk_total, out_jk_base, out_jk_str, outer);
+          cat_kernel_2d_strided<T><<<grid, block, 0, stream>>>(br, bx, jk_total, out_jk_base, out_jk_str, outer);
         }
       } else {
         int64_t numel  = outer*xi_dim*inner;
         int64_t blocks = (numel + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
-        cat_kernel_nc<T><<<blocks, MISC_BLOCK_SIZE>>>(numel, br, bx, inner, xi_dim, out_dim, dst_off, outer, *x, dim);
+        cat_kernel_nc<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(numel, br, bx, inner, xi_dim, out_dim, dst_off, outer, *x, dim);
       }
       dst_off += xi_dim;
     }
   }
 
-  mag_status_t misc_op_cat(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_cat(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32:       launch_cat<float>(cmd); break;
-      case MAG_DTYPE_FLOAT16:       launch_cat<half>(cmd); break;
-      case MAG_DTYPE_BFLOAT16:      launch_cat<__nv_bfloat16>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_cat<__nv_fp8_e4m3>(cmd); break;
+      case MAG_DTYPE_FLOAT32:       launch_cat<float>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16:       launch_cat<half>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16:      launch_cat<__nv_bfloat16>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_cat<__nv_fp8_e4m3>(cmd, stream); break;
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8:         launch_cat<uint8_t>(cmd); break;
-      case MAG_DTYPE_INT8:          launch_cat<int8_t>(cmd); break;
-      case MAG_DTYPE_UINT16:        launch_cat<uint16_t>(cmd); break;
-      case MAG_DTYPE_INT16:         launch_cat<int16_t>(cmd); break;
-      case MAG_DTYPE_UINT32:        launch_cat<uint32_t>(cmd); break;
-      case MAG_DTYPE_INT32:         launch_cat<int32_t>(cmd); break;
-      case MAG_DTYPE_UINT64:        launch_cat<uint64_t>(cmd); break;
-      case MAG_DTYPE_INT64:         launch_cat<int64_t>(cmd); break;
+      case MAG_DTYPE_UINT8:         launch_cat<uint8_t>(cmd, stream); break;
+      case MAG_DTYPE_INT8:          launch_cat<int8_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT16:        launch_cat<uint16_t>(cmd, stream); break;
+      case MAG_DTYPE_INT16:         launch_cat<int16_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT32:        launch_cat<uint32_t>(cmd, stream); break;
+      case MAG_DTYPE_INT32:         launch_cat<int32_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT64:        launch_cat<uint64_t>(cmd, stream); break;
+      case MAG_DTYPE_INT64:         launch_cat<int64_t>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: cat: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
@@ -716,7 +716,7 @@ namespace mag {
   }
 
   template <typename T>
-  static mag_status_t launch_topk(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t launch_topk(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *v = cmd.out[0];
     mag_tensor_t *idx = cmd.out[1];
@@ -732,34 +732,34 @@ namespace mag {
     size_t row_bytes = static_cast<size_t>(dim_size)*(sizeof(T) + sizeof(int64_t));
     size_t scratch_bytes = row_bytes*static_cast<size_t>(outer_count);
     void *d_scratch = nullptr;
-    if (cudaError_t ce = cudaMalloc(&d_scratch, scratch_bytes); mag_unlikely(ce != cudaSuccess)) return mag_set_error(err, MAG_ERR_OOM, "cuda: topk device allocation of %zu bytes failed: %s.", scratch_bytes, cudaGetErrorString(ce));
+    if (cudaError_t ce = stream_alloc(&d_scratch, scratch_bytes, stream); mag_unlikely(ce != cudaSuccess)) return mag_set_error(err, MAG_ERR_OOM, "cuda: topk device allocation of %zu bytes failed: %s.", scratch_bytes, cudaGetErrorString(ce));
     const T *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     T *bv = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(v));
     int64_t *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
     int64_t stride_x_dim = x->meta.coords.strides[dim];
     int64_t stride_v_dim = v->meta.coords.strides[dim];
-    topk_rows_kernel<T><<<static_cast<unsigned>(outer_count), 1>>>(
+    topk_rows_kernel<T><<<static_cast<unsigned>(outer_count), 1, 0, stream>>>(
       outer_count, dim_size, k, largest, R, dim, stride_x_dim, stride_v_dim,
       *x, *v, *idx, bx, bv, bi, reinterpret_cast<char *>(d_scratch), row_bytes);
-    cuda_check(cudaFree(d_scratch), "topk cudaFree");
+    cuda_check(stream_free(d_scratch, stream), "topk scratch free");
     return MAG_OK;
   }
 
-  mag_status_t misc_op_topk(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_topk(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: return launch_topk<float>(err, cmd);
-      case MAG_DTYPE_FLOAT16: return launch_topk<half>(err, cmd);
-      case MAG_DTYPE_BFLOAT16: return launch_topk<__nv_bfloat16>(err, cmd);
-      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_topk<__nv_fp8_e4m3>(err, cmd);
-      case MAG_DTYPE_UINT8: return launch_topk<uint8_t>(err, cmd);
-      case MAG_DTYPE_INT8: return launch_topk<int8_t>(err, cmd);
-      case MAG_DTYPE_UINT16: return launch_topk<uint16_t>(err, cmd);
-      case MAG_DTYPE_INT16: return launch_topk<int16_t>(err, cmd);
-      case MAG_DTYPE_UINT32: return launch_topk<uint32_t>(err, cmd);
-      case MAG_DTYPE_INT32: return launch_topk<int32_t>(err, cmd);
-      case MAG_DTYPE_UINT64: return launch_topk<uint64_t>(err, cmd);
-      case MAG_DTYPE_INT64: return launch_topk<int64_t>(err, cmd);
+      case MAG_DTYPE_FLOAT32: return launch_topk<float>(err, cmd, stream);
+      case MAG_DTYPE_FLOAT16: return launch_topk<half>(err, cmd, stream);
+      case MAG_DTYPE_BFLOAT16: return launch_topk<__nv_bfloat16>(err, cmd, stream);
+      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_topk<__nv_fp8_e4m3>(err, cmd, stream);
+      case MAG_DTYPE_UINT8: return launch_topk<uint8_t>(err, cmd, stream);
+      case MAG_DTYPE_INT8: return launch_topk<int8_t>(err, cmd, stream);
+      case MAG_DTYPE_UINT16: return launch_topk<uint16_t>(err, cmd, stream);
+      case MAG_DTYPE_INT16: return launch_topk<int16_t>(err, cmd, stream);
+      case MAG_DTYPE_UINT32: return launch_topk<uint32_t>(err, cmd, stream);
+      case MAG_DTYPE_INT32: return launch_topk<int32_t>(err, cmd, stream);
+      case MAG_DTYPE_UINT64: return launch_topk<uint64_t>(err, cmd, stream);
+      case MAG_DTYPE_INT64: return launch_topk<int64_t>(err, cmd, stream);
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: topk: unsupported dtype: %s.", mag_type_trait(x->meta.dtype)->name);
     }
   }
@@ -833,7 +833,7 @@ namespace mag {
     for (int64_t s=kout; s < num_samples; ++s) o[s] = -1;
   }
 
-  mag_status_t misc_op_multinomial(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_multinomial(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     mag_assert2(r->meta.dtype == MAG_DTYPE_INT64);
@@ -844,29 +844,29 @@ namespace mag {
     if (B <= 0) return MAG_OK;
     size_t ws = static_cast<size_t>(B)*static_cast<size_t>(K)*sizeof(mag_discrete_sample_pair_d);
     void *d_ws = nullptr;
-    if (cudaError_t ce = cudaMalloc(&d_ws, ws); mag_unlikely(ce != cudaSuccess)) return mag_set_error(err, MAG_ERR_OOM, "cuda: multinomial device allocation of %zu bytes failed: %s.", ws, cudaGetErrorString(ce));
+    if (cudaError_t ce = stream_alloc(&d_ws, ws, stream); mag_unlikely(ce != cudaSuccess)) return mag_set_error(err, MAG_ERR_OOM, "cuda: multinomial device allocation of %zu bytes failed: %s.", ws, cudaGetErrorString(ce));
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
     uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
     int64_t *br = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     int64_t blocks = (B + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
     switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32:
-        multinomial_rows_kernel<float><<<blocks, MISC_BLOCK_SIZE>>>(B, K, num_samples, reinterpret_cast<const float *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<float><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, reinterpret_cast<const float *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_FLOAT16:
-        multinomial_rows_kernel<half><<<blocks, MISC_BLOCK_SIZE>>>(B, K, num_samples, reinterpret_cast<const half *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<half><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, reinterpret_cast<const half *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_BFLOAT16:
-        multinomial_rows_kernel<__nv_bfloat16><<<blocks, MISC_BLOCK_SIZE>>>(B, K, num_samples, reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<__nv_bfloat16><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_FLOAT8_E4M3FN:
-        multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE>>>(B, K, num_samples, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       default:
-        cuda_check(cudaFree(d_ws), "multinomial cudaFree");
+        cuda_check(stream_free(d_ws, stream), "multinomial scratch free");
         return mag_set_error(err, MAG_ERR_KERNEL, "cuda: multinomial: unsupported dtype: %s.", mag_type_trait(x->meta.dtype)->name);
     }
-    cuda_check(cudaFree(d_ws), "multinomial cudaFree");
+    cuda_check(stream_free(d_ws, stream), "multinomial scratch free");
     return MAG_OK;
   }
 
@@ -960,20 +960,21 @@ namespace mag {
     mag_coords_iter_t cr,
     mag_coords_iter_t cx,
     T *br,
-    const T *bx
+    const T *bx,
+    cudaStream_t stream
   ) {
     switch (plan.pad.mode) {
-      case MAG_PAD_MODE_CONSTANT: pad_kernel<T, MAG_PAD_MODE_CONSTANT, C><<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
-      case MAG_PAD_MODE_REFLECT: pad_kernel<T, MAG_PAD_MODE_REFLECT, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
-      case MAG_PAD_MODE_REPLICATE: pad_kernel<T, MAG_PAD_MODE_REPLICATE, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
-      case MAG_PAD_MODE_CIRCULAR: pad_kernel<T, MAG_PAD_MODE_CIRCULAR, C> <<<blocks, MISC_BLOCK_SIZE>>>(n, R, plan, cr, cx, br, bx); break;
+      case MAG_PAD_MODE_CONSTANT: pad_kernel<T, MAG_PAD_MODE_CONSTANT, C><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, R, plan, cr, cx, br, bx); break;
+      case MAG_PAD_MODE_REFLECT: pad_kernel<T, MAG_PAD_MODE_REFLECT, C> <<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, R, plan, cr, cx, br, bx); break;
+      case MAG_PAD_MODE_REPLICATE: pad_kernel<T, MAG_PAD_MODE_REPLICATE, C> <<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, R, plan, cr, cx, br, bx); break;
+      case MAG_PAD_MODE_CIRCULAR: pad_kernel<T, MAG_PAD_MODE_CIRCULAR, C> <<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, R, plan, cr, cx, br, bx); break;
       default: return mag_set_error(err, MAG_ERR_PARAM, "cuda: pad: unsupported mode: %d.", plan.pad.mode);
     }
     return MAG_OK;
   }
 
   template <typename T>
-  static mag_status_t launch_pad(mag_error_t *err, mag_tensor_t *r, const mag_tensor_t *x, const mag_op_params_t &plan) {
+  static mag_status_t launch_pad(mag_error_t *err, mag_tensor_t *r, const mag_tensor_t *x, const mag_op_params_t &plan, cudaStream_t stream) {
     int n = static_cast<int>(mag_tensor_numel(r));
     int blocks = (n + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
     mag_coords_iter_t cr, cx;
@@ -982,30 +983,30 @@ namespace mag {
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     if (mag_tensor_is_contiguous(r)) {
-      return launch_pad_mode<T, true>(err, blocks, n, plan.pad.rank, plan, cr, cx, br, bx);
+      return launch_pad_mode<T, true>(err, blocks, n, plan.pad.rank, plan, cr, cx, br, bx, stream);
     } else {
-      return launch_pad_mode<T, false>(err, blocks, n, plan.pad.rank, plan, cr, cx, br, bx);
+      return launch_pad_mode<T, false>(err, blocks, n, plan.pad.rank, plan, cr, cx, br, bx, stream);
     }
   }
 
-  mag_status_t misc_op_pad(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_pad(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const auto &plan = *cmd.params;
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: return launch_pad<float>(err, r, x, plan);
-      case MAG_DTYPE_FLOAT16: return launch_pad<half>(err, r, x, plan);
-      case MAG_DTYPE_BFLOAT16: return launch_pad<__nv_bfloat16>(err, r, x, plan);
-      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_pad<__nv_fp8_e4m3>(err, r, x, plan);
+      case MAG_DTYPE_FLOAT32: return launch_pad<float>(err, r, x, plan, stream);
+      case MAG_DTYPE_FLOAT16: return launch_pad<half>(err, r, x, plan, stream);
+      case MAG_DTYPE_BFLOAT16: return launch_pad<__nv_bfloat16>(err, r, x, plan, stream);
+      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_pad<__nv_fp8_e4m3>(err, r, x, plan, stream);
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: return launch_pad<uint8_t>(err, r, x, plan);
-      case MAG_DTYPE_INT8: return launch_pad<int8_t>(err, r, x, plan);
-      case MAG_DTYPE_UINT16: return launch_pad<uint16_t>(err, r, x, plan);
-      case MAG_DTYPE_INT16: return launch_pad<int16_t>(err, r, x, plan);
-      case MAG_DTYPE_UINT32: return launch_pad<uint32_t>(err, r, x, plan);
-      case MAG_DTYPE_INT32: return launch_pad<int32_t>(err, r, x, plan);
-      case MAG_DTYPE_UINT64: return launch_pad<uint64_t>(err, r, x, plan);
-      case MAG_DTYPE_INT64: return launch_pad<int64_t>(err, r, x, plan);
+      case MAG_DTYPE_UINT8: return launch_pad<uint8_t>(err, r, x, plan, stream);
+      case MAG_DTYPE_INT8: return launch_pad<int8_t>(err, r, x, plan, stream);
+      case MAG_DTYPE_UINT16: return launch_pad<uint16_t>(err, r, x, plan, stream);
+      case MAG_DTYPE_INT16: return launch_pad<int16_t>(err, r, x, plan, stream);
+      case MAG_DTYPE_UINT32: return launch_pad<uint32_t>(err, r, x, plan, stream);
+      case MAG_DTYPE_INT32: return launch_pad<int32_t>(err, r, x, plan, stream);
+      case MAG_DTYPE_UINT64: return launch_pad<uint64_t>(err, r, x, plan, stream);
+      case MAG_DTYPE_INT64: return launch_pad<int64_t>(err, r, x, plan, stream);
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: pad: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
   }
@@ -1155,7 +1156,7 @@ namespace mag {
   }
 
   template <typename T, typename ACC, bool is_prod>
-  static void launch_cu_scan(const mag_command_t &cmd) {
+  static void launch_cu_scan(const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     int dim = cmd.params->cumu.dim;
@@ -1166,11 +1167,11 @@ namespace mag {
     int outer_count = mag_tensor_numel(x) / dim_size; // TODO: i64 nume lfix
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
-    cu_scan_rows_kernel<T, ACC, is_prod><<<static_cast<unsigned>(outer_count), 1>>>(outer_count, dim_size, R, dim, x->meta.coords.strides[dim], r->meta.coords.strides[dim], *x, *r, bx, br);
+    cu_scan_rows_kernel<T, ACC, is_prod><<<static_cast<unsigned>(outer_count), 1, 0, stream>>>(outer_count, dim_size, R, dim, x->meta.coords.strides[dim], r->meta.coords.strides[dim], *x, *r, bx, br);
   }
 
   template <typename T, bool is_max>
-  static void launch_cu_ext(const mag_command_t &cmd) {
+  static void launch_cu_ext(const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *v = cmd.out[0];
     mag_tensor_t *idx = cmd.out[1];
@@ -1183,128 +1184,128 @@ namespace mag {
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     auto *bv = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(v));
     auto *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
-    cu_ext_rows_kernel<T, is_max><<<static_cast<unsigned>(outer_count), 1>>>(
+    cu_ext_rows_kernel<T, is_max><<<static_cast<unsigned>(outer_count), 1, 0, stream>>>(
       outer_count, dim_size, R, dim, x->meta.coords.strides[dim], v->meta.coords.strides[dim], idx->meta.coords.strides[dim],
       *x, *v, *idx, bx, bv, bi
     );
   }
 
-  static mag_status_t impl_cu_scan(mag_error_t *err, const mag_command_t &cmd, bool is_prod) {
+  static mag_status_t impl_cu_scan(mag_error_t *err, const mag_command_t &cmd, bool is_prod, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32:
-        if (is_prod) launch_cu_scan<float, double, true>(cmd);
-        else launch_cu_scan<float, double, false>(cmd);
+        if (is_prod) launch_cu_scan<float, double, true>(cmd, stream);
+        else launch_cu_scan<float, double, false>(cmd, stream);
         break;
       case MAG_DTYPE_FLOAT16:
-        if (is_prod) launch_cu_scan<half, float, true>(cmd);
-        else launch_cu_scan<half, float, false>(cmd);
+        if (is_prod) launch_cu_scan<half, float, true>(cmd, stream);
+        else launch_cu_scan<half, float, false>(cmd, stream);
         break;
       case MAG_DTYPE_BFLOAT16:
-        if (is_prod) launch_cu_scan<__nv_bfloat16, float, true>(cmd);
-        else launch_cu_scan<__nv_bfloat16, float, false>(cmd);
+        if (is_prod) launch_cu_scan<__nv_bfloat16, float, true>(cmd, stream);
+        else launch_cu_scan<__nv_bfloat16, float, false>(cmd, stream);
         break;
       case MAG_DTYPE_FLOAT8_E4M3FN:
-        if (is_prod) launch_cu_scan<__nv_fp8_e4m3, float, true>(cmd);
-        else launch_cu_scan<__nv_fp8_e4m3, float, false>(cmd);
+        if (is_prod) launch_cu_scan<__nv_fp8_e4m3, float, true>(cmd, stream);
+        else launch_cu_scan<__nv_fp8_e4m3, float, false>(cmd, stream);
         break;
       case MAG_DTYPE_UINT8:
-        if (is_prod) launch_cu_scan<uint8_t, uint64_t, true>(cmd);
-        else launch_cu_scan<uint8_t, uint64_t, false>(cmd);
+        if (is_prod) launch_cu_scan<uint8_t, uint64_t, true>(cmd, stream);
+        else launch_cu_scan<uint8_t, uint64_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_INT8:
-        if (is_prod) launch_cu_scan<int8_t, int64_t, true>(cmd);
-        else launch_cu_scan<int8_t, int64_t, false>(cmd);
+        if (is_prod) launch_cu_scan<int8_t, int64_t, true>(cmd, stream);
+        else launch_cu_scan<int8_t, int64_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_UINT16:
-        if (is_prod) launch_cu_scan<uint16_t, uint64_t, true>(cmd);
-        else launch_cu_scan<uint16_t, uint64_t, false>(cmd);
+        if (is_prod) launch_cu_scan<uint16_t, uint64_t, true>(cmd, stream);
+        else launch_cu_scan<uint16_t, uint64_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_INT16:
-        if (is_prod) launch_cu_scan<int16_t, int64_t, true>(cmd);
-        else launch_cu_scan<int16_t, int64_t, false>(cmd);
+        if (is_prod) launch_cu_scan<int16_t, int64_t, true>(cmd, stream);
+        else launch_cu_scan<int16_t, int64_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_UINT32:
-        if (is_prod) launch_cu_scan<uint32_t, uint64_t, true>(cmd);
-        else launch_cu_scan<uint32_t, uint64_t, false>(cmd);
+        if (is_prod) launch_cu_scan<uint32_t, uint64_t, true>(cmd, stream);
+        else launch_cu_scan<uint32_t, uint64_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_INT32:
-        if (is_prod) launch_cu_scan<int32_t, int64_t, true>(cmd);
-        else launch_cu_scan<int32_t, int64_t, false>(cmd);
+        if (is_prod) launch_cu_scan<int32_t, int64_t, true>(cmd, stream);
+        else launch_cu_scan<int32_t, int64_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_UINT64:
-        if (is_prod) launch_cu_scan<uint64_t, uint64_t, true>(cmd);
-        else launch_cu_scan<uint64_t, uint64_t, false>(cmd);
+        if (is_prod) launch_cu_scan<uint64_t, uint64_t, true>(cmd, stream);
+        else launch_cu_scan<uint64_t, uint64_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_INT64:
-        if (is_prod) launch_cu_scan<int64_t, int64_t, true>(cmd);
-        else launch_cu_scan<int64_t, int64_t, false>(cmd);
+        if (is_prod) launch_cu_scan<int64_t, int64_t, true>(cmd, stream);
+        else launch_cu_scan<int64_t, int64_t, false>(cmd, stream);
         break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: cu*: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
-  static mag_status_t impl_cu_ext(mag_error_t *err, const mag_command_t &cmd, bool is_max) {
+  static mag_status_t impl_cu_ext(mag_error_t *err, const mag_command_t &cmd, bool is_max, cudaStream_t stream) {
     mag_tensor_t *v = cmd.out[0];
     switch (v->meta.dtype) {
       case MAG_DTYPE_FLOAT32:
-        if (is_max) launch_cu_ext<float, true>(cmd);
-        else launch_cu_ext<float, false>(cmd);
+        if (is_max) launch_cu_ext<float, true>(cmd, stream);
+        else launch_cu_ext<float, false>(cmd, stream);
         break;
       case MAG_DTYPE_FLOAT16:
-        if (is_max) launch_cu_ext<half, true>(cmd);
-        else launch_cu_ext<half, false>(cmd);
+        if (is_max) launch_cu_ext<half, true>(cmd, stream);
+        else launch_cu_ext<half, false>(cmd, stream);
         break;
       case MAG_DTYPE_BFLOAT16:
-        if (is_max) launch_cu_ext<__nv_bfloat16, true>(cmd);
-        else launch_cu_ext<__nv_bfloat16, false>(cmd);
+        if (is_max) launch_cu_ext<__nv_bfloat16, true>(cmd, stream);
+        else launch_cu_ext<__nv_bfloat16, false>(cmd, stream);
         break;
       case MAG_DTYPE_FLOAT8_E4M3FN:
-        if (is_max) launch_cu_ext<__nv_fp8_e4m3, true>(cmd);
-        else launch_cu_ext<__nv_fp8_e4m3, false>(cmd);
+        if (is_max) launch_cu_ext<__nv_fp8_e4m3, true>(cmd, stream);
+        else launch_cu_ext<__nv_fp8_e4m3, false>(cmd, stream);
         break;
       case MAG_DTYPE_UINT8:
-        if (is_max) launch_cu_ext<uint8_t, true>(cmd);
-        else launch_cu_ext<uint8_t, false>(cmd);
+        if (is_max) launch_cu_ext<uint8_t, true>(cmd, stream);
+        else launch_cu_ext<uint8_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_INT8:
-        if (is_max) launch_cu_ext<int8_t, true>(cmd);
-        else launch_cu_ext<int8_t, false>(cmd);
+        if (is_max) launch_cu_ext<int8_t, true>(cmd, stream);
+        else launch_cu_ext<int8_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_UINT16:
-        if (is_max) launch_cu_ext<uint16_t, true>(cmd);
-        else launch_cu_ext<uint16_t, false>(cmd);
+        if (is_max) launch_cu_ext<uint16_t, true>(cmd, stream);
+        else launch_cu_ext<uint16_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_INT16:
-        if (is_max) launch_cu_ext<int16_t, true>(cmd);
-        else launch_cu_ext<int16_t, false>(cmd);
+        if (is_max) launch_cu_ext<int16_t, true>(cmd, stream);
+        else launch_cu_ext<int16_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_UINT32:
-        if (is_max) launch_cu_ext<uint32_t, true>(cmd);
-        else launch_cu_ext<uint32_t, false>(cmd);
+        if (is_max) launch_cu_ext<uint32_t, true>(cmd, stream);
+        else launch_cu_ext<uint32_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_INT32:
-        if (is_max) launch_cu_ext<int32_t, true>(cmd);
-        else launch_cu_ext<int32_t, false>(cmd);
+        if (is_max) launch_cu_ext<int32_t, true>(cmd, stream);
+        else launch_cu_ext<int32_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_UINT64:
-        if (is_max) launch_cu_ext<uint64_t, true>(cmd);
-        else launch_cu_ext<uint64_t, false>(cmd);
+        if (is_max) launch_cu_ext<uint64_t, true>(cmd, stream);
+        else launch_cu_ext<uint64_t, false>(cmd, stream);
         break;
       case MAG_DTYPE_INT64:
-        if (is_max) launch_cu_ext<int64_t, true>(cmd);
-        else launch_cu_ext<int64_t, false>(cmd);
+        if (is_max) launch_cu_ext<int64_t, true>(cmd, stream);
+        else launch_cu_ext<int64_t, false>(cmd, stream);
         break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: cu*: unsupported dtype: %s.", mag_type_trait(v->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
-  mag_status_t misc_op_cusum(mag_error_t *err, const mag_command_t &cmd) { return impl_cu_scan(err, cmd, false); }
-  mag_status_t misc_op_cuprod(mag_error_t *err, const mag_command_t &cmd) { return impl_cu_scan(err, cmd, true); }
-  mag_status_t misc_op_cumax(mag_error_t *err, const mag_command_t &cmd) { return impl_cu_ext(err, cmd, true); }
-  mag_status_t misc_op_cumin(mag_error_t *err, const mag_command_t &cmd) { return impl_cu_ext(err, cmd, false); }
+  mag_status_t misc_op_cusum(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_cu_scan(err, cmd, false, stream); }
+  mag_status_t misc_op_cuprod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_cu_scan(err, cmd, true, stream); }
+  mag_status_t misc_op_cumax(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_cu_ext(err, cmd, true, stream); }
+  mag_status_t misc_op_cumin(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_cu_ext(err, cmd, false, stream); }
 
   [[nodiscard]] __device__ static int repeat_in_elem_offset_dev(
     int64_t flat_out,
@@ -1342,7 +1343,7 @@ namespace mag {
     }
   }
 
-  static mag_status_t launch_repeat(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t launch_repeat(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const auto *plan = cmd.params;
@@ -1353,74 +1354,74 @@ namespace mag {
     unsigned block = 256;
     unsigned grid = static_cast<unsigned>((on + block - 1)/block);
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: repeat_kernel<float><<<grid, block>>>(
+      case MAG_DTYPE_FLOAT32: repeat_kernel<float><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<float *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const float *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_FLOAT16: repeat_kernel<half><<<grid, block>>>(
+      case MAG_DTYPE_FLOAT16: repeat_kernel<half><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<half *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const half *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_BFLOAT16: repeat_kernel<__nv_bfloat16><<<grid, block>>>(
+      case MAG_DTYPE_BFLOAT16: repeat_kernel<__nv_bfloat16><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: repeat_kernel<__nv_fp8_e4m3><<<grid, block>>>(
+      case MAG_DTYPE_FLOAT8_E4M3FN: repeat_kernel<__nv_fp8_e4m3><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: repeat_kernel<uint8_t><<<grid, block>>>(
+      case MAG_DTYPE_UINT8: repeat_kernel<uint8_t><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_INT8: repeat_kernel<int8_t><<<grid, block>>>(
+      case MAG_DTYPE_INT8: repeat_kernel<int8_t><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<int8_t *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const int8_t *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_UINT16: repeat_kernel<uint16_t><<<grid, block>>>(
+      case MAG_DTYPE_UINT16: repeat_kernel<uint16_t><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<uint16_t *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const uint16_t *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_INT16: repeat_kernel<int16_t><<<grid, block>>>(
+      case MAG_DTYPE_INT16: repeat_kernel<int16_t><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<int16_t *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const int16_t *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_UINT32: repeat_kernel<uint32_t><<<grid, block>>>(
+      case MAG_DTYPE_UINT32: repeat_kernel<uint32_t><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<uint32_t *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const uint32_t *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_INT32: repeat_kernel<int32_t><<<grid, block>>>(
+      case MAG_DTYPE_INT32: repeat_kernel<int32_t><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<int32_t *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const int32_t *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_UINT64: repeat_kernel<uint64_t><<<grid, block>>>(
+      case MAG_DTYPE_UINT64: repeat_kernel<uint64_t><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<uint64_t *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const uint64_t *>(mag_tensor_data_ptr(x)),
         *plan, cr, cx
       ); break;
-      case MAG_DTYPE_INT64: repeat_kernel<int64_t><<<grid, block>>>(
+      case MAG_DTYPE_INT64: repeat_kernel<int64_t><<<grid, block, 0, stream>>>(
         on,
         reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(x)),
@@ -1431,9 +1432,9 @@ namespace mag {
     return MAG_OK;
   }
 
-  mag_status_t misc_op_repeat(mag_error_t *err, const mag_command_t &cmd) { return launch_repeat(err, cmd); }
+  mag_status_t misc_op_repeat(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return launch_repeat(err, cmd, stream); }
 
-  mag_status_t misc_op_repeat_interleave(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_repeat_interleave(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     (void)err;
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
@@ -1448,7 +1449,7 @@ namespace mag {
         for (int64_t k=0; k < rep; ++k) {
           const uint8_t *src = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(x)) + i*static_cast<int64_t>(elsz);
           uint8_t *dst = reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r)) + out_i*static_cast<int64_t>(elsz);
-          cudaMemcpy(dst, src, elsz, cudaMemcpyDeviceToDevice);
+          cudaMemcpyAsync(dst, src, elsz, cudaMemcpyDeviceToDevice, stream);
           ++out_i;
         }
       }
@@ -1487,11 +1488,12 @@ namespace mag {
         const uint8_t *src_ptr = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(x)) + sel*static_cast<int64_t>(elsz);
         uint8_t *dst_ptr = reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r)) + oel*static_cast<int64_t>(elsz);
         for (int64_t k=0; k < rep; ++k) {
-          cudaMemcpy(
+          cudaMemcpyAsync(
             dst_ptr + k*inner_block*static_cast<int64_t>(elsz),
             src_ptr,
             static_cast<size_t>(inner_block)*elsz,
-            cudaMemcpyDeviceToDevice
+            cudaMemcpyDeviceToDevice,
+            stream
           );
         }
         cur += rep;
@@ -1542,7 +1544,7 @@ namespace mag {
     }
   }
 
-  static mag_status_t launch_index_add(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t launch_index_add(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *self = cmd.out[0];
     const mag_tensor_t *source = cmd.in[1];
     const mag_tensor_t *index = cmd.in[2];
@@ -1553,84 +1555,84 @@ namespace mag {
     int64_t total = source->meta.numel;
     int64_t self_ax = self->meta.coords.shape[axis];
     switch (self->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: index_add_kernel<float, false><<<1, 1>>>(
+      case MAG_DTYPE_FLOAT32: index_add_kernel<float, false><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<float *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const float *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_FLOAT16: index_add_kernel<half, false><<<1, 1>>>(
+      case MAG_DTYPE_FLOAT16: index_add_kernel<half, false><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<half *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const half *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_BFLOAT16: index_add_kernel<__nv_bfloat16, false><<<1, 1>>>(
+      case MAG_DTYPE_BFLOAT16: index_add_kernel<__nv_bfloat16, false><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: index_add_kernel<__nv_fp8_e4m3, false><<<1, 1>>>(
+      case MAG_DTYPE_FLOAT8_E4M3FN: index_add_kernel<__nv_fp8_e4m3, false><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_UINT8: index_add_kernel<uint8_t, true><<<1, 1>>>(
+      case MAG_DTYPE_UINT8: index_add_kernel<uint8_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_INT8: index_add_kernel<int8_t, true><<<1, 1>>>(
+      case MAG_DTYPE_INT8: index_add_kernel<int8_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<int8_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const int8_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_UINT16: index_add_kernel<uint16_t, true><<<1, 1>>>(
+      case MAG_DTYPE_UINT16: index_add_kernel<uint16_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<uint16_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const uint16_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_INT16: index_add_kernel<int16_t, true><<<1, 1>>>(
+      case MAG_DTYPE_INT16: index_add_kernel<int16_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<int16_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const int16_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_UINT32: index_add_kernel<uint32_t, true><<<1, 1>>>(
+      case MAG_DTYPE_UINT32: index_add_kernel<uint32_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<uint32_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const uint32_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_INT32: index_add_kernel<int32_t, true><<<1, 1>>>(
+      case MAG_DTYPE_INT32: index_add_kernel<int32_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<int32_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const int32_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_UINT64: index_add_kernel<uint64_t, true><<<1, 1>>>(
+      case MAG_DTYPE_UINT64: index_add_kernel<uint64_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<uint64_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const uint64_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
         *self, *source, *index, alpha
       ); break;
-      case MAG_DTYPE_INT64: index_add_kernel<int64_t, true><<<1, 1>>>(
+      case MAG_DTYPE_INT64: index_add_kernel<int64_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(source)),
@@ -1642,7 +1644,7 @@ namespace mag {
     return MAG_OK;
   }
 
-  mag_status_t misc_op_index_add(mag_error_t *err, const mag_command_t &cmd) { return launch_index_add(err, cmd); }
+  mag_status_t misc_op_index_add(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return launch_index_add(err, cmd, stream); }
 
   template <typename T>
   __global__ static void scatter_kernel(
@@ -1677,7 +1679,7 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_scatter(const mag_command_t &cmd) {
+  static void launch_scatter(const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *self = cmd.out[0];
     const mag_tensor_t *src = cmd.in[1];
     const mag_tensor_t *index = cmd.in[2];
@@ -1689,7 +1691,7 @@ namespace mag {
     if (total <= 0) return;
     int64_t self_ax = self->meta.coords.shape[axis];
     int64_t blocks = (total + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
-    scatter_kernel<T><<<blocks, MISC_BLOCK_SIZE>>>(
+    scatter_kernel<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(
       total, rank, axis, self_ax,
       reinterpret_cast<T *>(mag_tensor_data_ptr_mut(self)),
       reinterpret_cast<const T *>(mag_tensor_data_ptr(src)),
@@ -1698,22 +1700,22 @@ namespace mag {
     );
   }
 
-  mag_status_t misc_op_scatter(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_scatter(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *self = cmd.out[0];
     switch (self->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_scatter<float>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_scatter<half>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_scatter<__nv_bfloat16>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_scatter<__nv_fp8_e4m3>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_scatter<float>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_scatter<half>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_scatter<__nv_bfloat16>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_scatter<__nv_fp8_e4m3>(cmd, stream); break;
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: launch_scatter<uint8_t>(cmd); break;
-      case MAG_DTYPE_INT8: launch_scatter<int8_t>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_scatter<uint16_t>(cmd); break;
-      case MAG_DTYPE_INT16: launch_scatter<int16_t>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_scatter<uint32_t>(cmd); break;
-      case MAG_DTYPE_INT32: launch_scatter<int32_t>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_scatter<uint64_t>(cmd); break;
-      case MAG_DTYPE_INT64: launch_scatter<int64_t>(cmd); break;
+      case MAG_DTYPE_UINT8: launch_scatter<uint8_t>(cmd, stream); break;
+      case MAG_DTYPE_INT8: launch_scatter<int8_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT16: launch_scatter<uint16_t>(cmd, stream); break;
+      case MAG_DTYPE_INT16: launch_scatter<int16_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT32: launch_scatter<uint32_t>(cmd, stream); break;
+      case MAG_DTYPE_INT32: launch_scatter<int32_t>(cmd, stream); break;
+      case MAG_DTYPE_UINT64: launch_scatter<uint64_t>(cmd, stream); break;
+      case MAG_DTYPE_INT64: launch_scatter<int64_t>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: scatter: unsupported dtype: %s.", mag_type_trait(self->meta.dtype)->name);
     }
     return MAG_OK;
@@ -1763,7 +1765,7 @@ namespace mag {
   }
 
   template <typename T, bool is_int>
-  static void launch_scatter_add_typed(const mag_command_t &cmd) {
+  static void launch_scatter_add_typed(const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *self = cmd.out[0];
     const mag_tensor_t *src = cmd.in[1];
     const mag_tensor_t *index = cmd.in[2];
@@ -1776,7 +1778,7 @@ namespace mag {
     int64_t self_ax = self->meta.coords.shape[axis];
     int64_t num_rows = total/s_axis;
     int64_t blocks = (num_rows + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE;
-    scatter_add_kernel<T, is_int><<<blocks, MISC_BLOCK_SIZE>>>(
+    scatter_add_kernel<T, is_int><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(
       num_rows, rank, axis, self_ax, s_axis,
       reinterpret_cast<T *>(mag_tensor_data_ptr_mut(self)),
       reinterpret_cast<const T *>(mag_tensor_data_ptr(src)),
@@ -1785,21 +1787,21 @@ namespace mag {
     );
   }
 
-  mag_status_t misc_op_scatter_add(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_scatter_add(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *self = cmd.out[0];
     switch (self->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_scatter_add_typed<float, false>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_scatter_add_typed<half, false>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_scatter_add_typed<__nv_bfloat16, false>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_scatter_add_typed<__nv_fp8_e4m3, false>(cmd); break;
-      case MAG_DTYPE_UINT8: launch_scatter_add_typed<uint8_t, true>(cmd); break;
-      case MAG_DTYPE_INT8: launch_scatter_add_typed<int8_t, true>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_scatter_add_typed<uint16_t, true>(cmd); break;
-      case MAG_DTYPE_INT16: launch_scatter_add_typed<int16_t, true>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_scatter_add_typed<uint32_t, true>(cmd); break;
-      case MAG_DTYPE_INT32: launch_scatter_add_typed<int32_t, true>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_scatter_add_typed<uint64_t, true>(cmd); break;
-      case MAG_DTYPE_INT64: launch_scatter_add_typed<int64_t, true>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_scatter_add_typed<float, false>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_scatter_add_typed<half, false>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_scatter_add_typed<__nv_bfloat16, false>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_scatter_add_typed<__nv_fp8_e4m3, false>(cmd, stream); break;
+      case MAG_DTYPE_UINT8: launch_scatter_add_typed<uint8_t, true>(cmd, stream); break;
+      case MAG_DTYPE_INT8: launch_scatter_add_typed<int8_t, true>(cmd, stream); break;
+      case MAG_DTYPE_UINT16: launch_scatter_add_typed<uint16_t, true>(cmd, stream); break;
+      case MAG_DTYPE_INT16: launch_scatter_add_typed<int16_t, true>(cmd, stream); break;
+      case MAG_DTYPE_UINT32: launch_scatter_add_typed<uint32_t, true>(cmd, stream); break;
+      case MAG_DTYPE_INT32: launch_scatter_add_typed<int32_t, true>(cmd, stream); break;
+      case MAG_DTYPE_UINT64: launch_scatter_add_typed<uint64_t, true>(cmd, stream); break;
+      case MAG_DTYPE_INT64: launch_scatter_add_typed<int64_t, true>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: scatter_add: unsupported dtype: %s.", mag_type_trait(self->meta.dtype)->name);
     }
     return MAG_OK;

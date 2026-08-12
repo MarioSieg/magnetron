@@ -173,7 +173,7 @@ namespace mag {
   }
 
   template <typename Op>
-  static void launch_reduce_op(const mag_command_t &cmd) {
+  static void launch_reduce_op(const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const auto &plan = cmd.params->reduction.red_plan;
@@ -186,101 +186,101 @@ namespace mag {
     size_t shmemnb = sizeof(typename Op::Acc)*static_cast<size_t>(threads);
     auto *pr = reinterpret_cast<typename Op::Out *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename Op::In *>(mag_tensor_data_ptr(x));
-    reduce_op_kernel<Op><<<blocks, threads, shmemnb>>>(Op{}, numel, pr, px, plan);
+    reduce_op_kernel<Op><<<blocks, threads, shmemnb, stream>>>(Op{}, numel, pr, px, plan);
   }
 
   template <template <typename, typename, typename> typename Op>
-  static mag_status_t impl_reduce_op_fp(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_fp(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->meta.dtype == x->meta.dtype);
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, double>>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, float>>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, double>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, float>>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, float>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in floating reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
   template <template <typename, typename, typename> typename Op>
-  static mag_status_t impl_reduce_op_sumprod(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_sumprod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, double>>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, float>>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
-      case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t,  uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t,   int64_t,  int64_t>>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_reduce_op<Op<uint16_t, uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT16: launch_reduce_op<Op<int16_t,  int64_t,  int64_t>>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_reduce_op<Op<uint32_t, uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT32: launch_reduce_op<Op<int32_t,  int64_t,  int64_t>>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_reduce_op<Op<uint64_t, uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT64: launch_reduce_op<Op<int64_t,  int64_t,  int64_t>>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, double>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, float>>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, float>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd, stream); break;
+      case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t,  uint64_t, uint64_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t,   int64_t,  int64_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT16: launch_reduce_op<Op<uint16_t, uint64_t, uint64_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT16: launch_reduce_op<Op<int16_t,  int64_t,  int64_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT32: launch_reduce_op<Op<uint32_t, uint64_t, uint64_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT32: launch_reduce_op<Op<int32_t,  int64_t,  int64_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT64: launch_reduce_op<Op<uint64_t, uint64_t, uint64_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT64: launch_reduce_op<Op<int64_t,  int64_t,  int64_t>>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in sum/prod reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
   template <template <typename, typename, typename> typename Op>
-  static mag_status_t impl_reduce_op_extrema(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_extrema(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->meta.dtype == x->meta.dtype);
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, float>>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, half>>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16>>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, __nv_fp8_e4m3>>(cmd); break;
-      case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t, int8_t, int8_t>>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_reduce_op<Op<uint16_t, uint16_t, uint16_t>>(cmd); break;
-      case MAG_DTYPE_INT16: launch_reduce_op<Op<int16_t, int16_t, int16_t>>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_reduce_op<Op<uint32_t, uint32_t, uint32_t>>(cmd); break;
-      case MAG_DTYPE_INT32: launch_reduce_op<Op<int32_t, int32_t, int32_t>>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_reduce_op<Op<uint64_t, uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT64: launch_reduce_op<Op<int64_t, int64_t, int64_t>>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, float>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, half>>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, __nv_fp8_e4m3>>(cmd, stream); break;
+      case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t, int8_t, int8_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT16: launch_reduce_op<Op<uint16_t, uint16_t, uint16_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT16: launch_reduce_op<Op<int16_t, int16_t, int16_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT32: launch_reduce_op<Op<uint32_t, uint32_t, uint32_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT32: launch_reduce_op<Op<int32_t, int32_t, int32_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT64: launch_reduce_op<Op<uint64_t, uint64_t, uint64_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT64: launch_reduce_op<Op<int64_t, int64_t, int64_t>>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in min/max reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
   template <template <typename, typename, typename> typename Op>
-  static mag_status_t impl_reduce_op_logical(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_logical(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->meta.dtype == MAG_DTYPE_BOOLEAN);
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_reduce_op<Op<uint16_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT16: launch_reduce_op<Op<int16_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_reduce_op<Op<uint32_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT32: launch_reduce_op<Op<int32_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_reduce_op<Op<uint64_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT64: launch_reduce_op<Op<int64_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT16: launch_reduce_op<Op<uint16_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT16: launch_reduce_op<Op<int16_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT32: launch_reduce_op<Op<uint32_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT32: launch_reduce_op<Op<int32_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_UINT64: launch_reduce_op<Op<uint64_t, uint8_t, uint8_t>>(cmd, stream); break;
+      case MAG_DTYPE_INT64: launch_reduce_op<Op<int64_t, uint8_t, uint8_t>>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in logical reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
-  mag_status_t reduce_op_mean(mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_fp<op_mean>(err, cmd); }
-  mag_status_t reduce_op_sum (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_sumprod<op_sum>(err, cmd); }
-  mag_status_t reduce_op_prod(mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_sumprod<op_prod>(err, cmd); }
-  mag_status_t reduce_op_minima (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_extrema<op_min>(err, cmd); }
-  mag_status_t reduce_op_maxima (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_extrema<op_max>(err, cmd); }
-  mag_status_t reduce_op_all (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_logical<op_all>(err, cmd); }
-  mag_status_t reduce_op_any (mag_error_t *err, const mag_command_t &cmd) { return impl_reduce_op_logical<op_any>(err, cmd); }
+  mag_status_t reduce_op_mean(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_fp<op_mean>(err, cmd, stream); }
+  mag_status_t reduce_op_sum (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_sumprod<op_sum>(err, cmd, stream); }
+  mag_status_t reduce_op_prod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_sumprod<op_prod>(err, cmd, stream); }
+  mag_status_t reduce_op_minima (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_extrema<op_min>(err, cmd, stream); }
+  mag_status_t reduce_op_maxima (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_extrema<op_max>(err, cmd, stream); }
+  mag_status_t reduce_op_all (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_logical<op_all>(err, cmd, stream); }
+  mag_status_t reduce_op_any (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_logical<op_any>(err, cmd, stream); }
 
   struct arg_acc_f32 {
     float val;
@@ -425,7 +425,7 @@ namespace mag {
   }
 
   template <typename T, bool is_max>
-  static void launch_reduce_arg_op(const mag_command_t &cmd) {
+  static void launch_reduce_arg_op(const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t n = mag_tensor_numel(r);
@@ -437,11 +437,11 @@ namespace mag {
     size_t shmem = sizeof(arg_acc_f32)*static_cast<size_t>(threads);
     auto *pr = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
-    reduce_arg_op_kernel<T, is_max><<<static_cast<unsigned>(n), threads, shmem>>>(n, pr, px, *plan);
+    reduce_arg_op_kernel<T, is_max><<<static_cast<unsigned>(n), threads, shmem, stream>>>(n, pr, px, *plan);
   }
 
   template <typename T, bool is_max>
-  static void launch_reduce_arg_op_int(const mag_command_t &cmd) {
+  static void launch_reduce_arg_op_int(const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     int64_t n = mag_tensor_numel(r);
@@ -453,56 +453,56 @@ namespace mag {
     size_t shmem = sizeof(arg_acc_i64)*static_cast<size_t>(threads);
     auto *pr = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
-    reduce_arg_op_kernel_int<T, is_max><<<static_cast<unsigned>(n), threads, shmem>>>(n, pr, px, *plan);
+    reduce_arg_op_kernel_int<T, is_max><<<static_cast<unsigned>(n), threads, shmem, stream>>>(n, pr, px, *plan);
   }
 
   template <bool is_max>
-  static mag_status_t impl_reduce_op_arg_fp(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_arg_fp(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->meta.dtype == MAG_DTYPE_INT64);
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_reduce_arg_op<float, is_max>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_arg_op<half, is_max>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_arg_op<__nv_bfloat16, is_max>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_arg_op<__nv_fp8_e4m3, is_max>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_reduce_arg_op<float, is_max>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_arg_op<half, is_max>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_arg_op<__nv_bfloat16, is_max>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_arg_op<__nv_fp8_e4m3, is_max>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in argmin/argmax fp reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
   template <bool is_max>
-  static mag_status_t impl_reduce_op_arg_int(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t impl_reduce_op_arg_int(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->meta.dtype == MAG_DTYPE_INT64);
     switch (x->meta.dtype) {
-      case MAG_DTYPE_UINT8: launch_reduce_arg_op_int<uint8_t, is_max>(cmd); break;
-      case MAG_DTYPE_INT8: launch_reduce_arg_op_int<int8_t, is_max>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_reduce_arg_op_int<uint16_t, is_max>(cmd); break;
-      case MAG_DTYPE_INT16: launch_reduce_arg_op_int<int16_t, is_max>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_reduce_arg_op_int<uint32_t, is_max>(cmd); break;
-      case MAG_DTYPE_INT32: launch_reduce_arg_op_int<int32_t, is_max>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_reduce_arg_op_int<uint64_t, is_max>(cmd); break;
-      case MAG_DTYPE_INT64: launch_reduce_arg_op_int<int64_t, is_max>(cmd); break;
+      case MAG_DTYPE_UINT8: launch_reduce_arg_op_int<uint8_t, is_max>(cmd, stream); break;
+      case MAG_DTYPE_INT8: launch_reduce_arg_op_int<int8_t, is_max>(cmd, stream); break;
+      case MAG_DTYPE_UINT16: launch_reduce_arg_op_int<uint16_t, is_max>(cmd, stream); break;
+      case MAG_DTYPE_INT16: launch_reduce_arg_op_int<int16_t, is_max>(cmd, stream); break;
+      case MAG_DTYPE_UINT32: launch_reduce_arg_op_int<uint32_t, is_max>(cmd, stream); break;
+      case MAG_DTYPE_INT32: launch_reduce_arg_op_int<int32_t, is_max>(cmd, stream); break;
+      case MAG_DTYPE_UINT64: launch_reduce_arg_op_int<uint64_t, is_max>(cmd, stream); break;
+      case MAG_DTYPE_INT64: launch_reduce_arg_op_int<int64_t, is_max>(cmd, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in argmin/argmax int reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
-  mag_status_t reduce_op_argmin(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t reduce_op_argmin(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     if (mag_tensor_is_floating_point_typed(x))
-      return impl_reduce_op_arg_fp<false>(err, cmd);
+      return impl_reduce_op_arg_fp<false>(err, cmd, stream);
     else
-      return impl_reduce_op_arg_int<false>(err, cmd);
+      return impl_reduce_op_arg_int<false>(err, cmd, stream);
   }
 
-  mag_status_t reduce_op_argmax(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t reduce_op_argmax(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     if (mag_tensor_is_floating_point_typed(x))
-      return impl_reduce_op_arg_fp<true>(err, cmd);
+      return impl_reduce_op_arg_fp<true>(err, cmd, stream);
     else
-      return impl_reduce_op_arg_int<true>(err, cmd);
+      return impl_reduce_op_arg_int<true>(err, cmd, stream);
   }
 }

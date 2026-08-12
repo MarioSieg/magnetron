@@ -504,7 +504,8 @@ namespace mag {
     int64_t batch_total,
     T *__restrict__ br,
     mag_tensor_t *x, mag_tensor_t *y,
-    bool xT, bool yT
+    bool xT, bool yT,
+    cudaStream_t stream
   ) {
     static_assert(std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>);
     static constexpr int BM = 128;
@@ -530,25 +531,25 @@ namespace mag {
       CUtensorMap map_b = init_tmap_y<T, false, BK, BN>(y);
       auto *kernel = matmul_kernel_wmma<T, false, false, BM, BN, BK, STAGES>;
       set_kernel_smem_size(kernel, smem);
-      kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
+      kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, map_a, map_b);
     } else if (!xT && yT) {
       CUtensorMap map_a = init_tmap_x<T, false, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, true, BK, BN>(y);
       auto *kernel = matmul_kernel_wmma<T, false, true, BM, BN, BK, STAGES>;
       set_kernel_smem_size(kernel, smem);
-      kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
+      kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, map_a, map_b);
     } else if (xT && !yT) {
       CUtensorMap map_a = init_tmap_x<T, true, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, false, BK, BN>(y);
       auto *kernel = matmul_kernel_wmma<T, true, false, BM, BN, BK, STAGES>;
       set_kernel_smem_size(kernel, smem);
-      kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
+      kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, map_a, map_b);
     } else {
       CUtensorMap map_a = init_tmap_x<T, true, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, true, BK, BN>(y);
       auto *kernel = matmul_kernel_wmma<T, true, true, BM, BN, BK, STAGES>;
       set_kernel_smem_size(kernel, smem);
-      kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, map_a, map_b);
+      kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, map_a, map_b);
     }
     return MAG_OK;
   }
@@ -674,7 +675,8 @@ namespace mag {
     T *__restrict__ br,
     const T *bx,
     const T *by,
-    bool xT, bool yT
+    bool xT, bool yT,
+    cudaStream_t stream
   ) {
     static constexpr int BM = 64;
     static constexpr int BN = 64;
@@ -706,19 +708,19 @@ namespace mag {
     if (!xT && !yT) {
       auto *kernel = matmul_kernel_fallback<T, false, false, BM, BN, BK, TM, TN>;
       set_kernel_smem_size(kernel, smem);
-      kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
+      kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, bx, by);
     } else if (!xT && yT) {
       auto *kernel = matmul_kernel_fallback<T, false, true, BM, BN, BK, TM, TN>;
       set_kernel_smem_size(kernel, smem);
-      kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
+      kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, bx, by);
     } else if (xT && !yT) {
       auto *kernel = matmul_kernel_fallback<T, true, false, BM, BN, BK, TM, TN>;
       set_kernel_smem_size(kernel, smem);
-      kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
+      kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, bx, by);
     } else {
       auto *kernel = matmul_kernel_fallback<T, true, true, BM, BN, BK, TM, TN>;
       set_kernel_smem_size(kernel, smem);
-      kernel<<<grid_dim, block_dim, smem>>>(M, N, K, batch_total, br, bx, by);
+      kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, bx, by);
     }
     return MAG_OK;
   }
@@ -854,7 +856,8 @@ namespace mag {
     T *__restrict__ br,
     const T *__restrict__ bx,
     const T *__restrict__ by,
-    [[maybe_unused]] bool xT, bool yT
+    [[maybe_unused]] bool xT, bool yT,
+    cudaStream_t stream
   ) {
     static constexpr int THREADS_X = 128;
     static constexpr int OUTS_PER_BLOCK = 4;
@@ -863,18 +866,18 @@ namespace mag {
     dim3 grid_dim(static_cast<unsigned>((N + OUTS_PER_BLOCK - 1)/OUTS_PER_BLOCK), static_cast<unsigned>(batch_total), 1);
     if (yT && vec128) {
       auto *k = gemv_m1_kernel<T, true, THREADS_X, OUTS_PER_BLOCK, true>;
-      k<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
+      k<<<grid_dim, block_dim, 0, stream>>>(N, K, batch_total, br, bx, by);
     } else if (yT) {
       auto *k = gemv_m1_kernel<T, true, THREADS_X, OUTS_PER_BLOCK, false>;
-      k<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
+      k<<<grid_dim, block_dim, 0, stream>>>(N, K, batch_total, br, bx, by);
     } else {
       auto *k = gemv_m1_kernel<T, false, THREADS_X, OUTS_PER_BLOCK, false>;
-      k<<<grid_dim, block_dim>>>(N, K, batch_total, br, bx, by);
+      k<<<grid_dim, block_dim, 0, stream>>>(N, K, batch_total, br, bx, by);
     }
   }
 
   template <typename T>
-  static mag_status_t launch_matmul(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t launch_matmul(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *y = cmd.in[1];
@@ -916,35 +919,35 @@ namespace mag {
       case MAG_MATMUL_TYPE_BMM_DOT:
       case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
       case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
-        launch_gemv_m1_kernel(N, K, batch_total, br, bx, by, xT, yT);
+        launch_gemv_m1_kernel(N, K, batch_total, br, bx, by, xT, yT, stream);
         goto end;
       case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
       case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
-        launch_gemv_m1_kernel(M, K, batch_total, br, by, bx, yT, true);
+        launch_gemv_m1_kernel(M, K, batch_total, br, by, bx, yT, true, stream);
         goto end;
       default: break;
     }
     #if MAG_CUDA_MATMUL_USE_WMMA
       if constexpr (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>) {
         if (is_tensor_tma_compat_x<T>(x, xT) && is_tensor_tma_compat_y<T>(y, yT)) {
-          st = launch_matmul_kernel_wmma(err, M, N, K, batch_total, br, x, y, xT, yT);
+          st = launch_matmul_kernel_wmma(err, M, N, K, batch_total, br, x, y, xT, yT, stream);
           goto end;
         }
       }
     #endif
-    st = launch_matmul_kernel_fallback(err, M, N, K, batch_total, br, bx, by, xT, yT);
+    st = launch_matmul_kernel_fallback(err, M, N, K, batch_total, br, bx, by, xT, yT, stream);
     [[maybe_unused]] end:
       if (cloned_x) mag_tensor_decref(x);
       if (cloned_y) mag_tensor_decref(y);
     return st;
   }
 
-  mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd) {
+  mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: return launch_matmul<float>(err, cmd);
-      case MAG_DTYPE_FLOAT16: return launch_matmul<half>(err, cmd);
-      case MAG_DTYPE_BFLOAT16: return launch_matmul<__nv_bfloat16>(err, cmd);
+      case MAG_DTYPE_FLOAT32: return launch_matmul<float>(err, cmd, stream);
+      case MAG_DTYPE_FLOAT16: return launch_matmul<half>(err, cmd, stream);
+      case MAG_DTYPE_BFLOAT16: return launch_matmul<__nv_bfloat16>(err, cmd, stream);
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: matmul: unsupported dtype %s.", mag_type_trait(x->meta.dtype)->name);
     }
   }

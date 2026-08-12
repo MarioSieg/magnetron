@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -60,6 +61,25 @@ namespace mag {
     global_seed.store(seed, std::memory_order_relaxed);
   }
 
+  class physical_device;
+
+  [[nodiscard]] static cudaStream_t device_stream(const mag_device_t *dvc) noexcept;
+  [[nodiscard]] static cudaEvent_t device_event(const mag_device_t *dvc) noexcept;
+
+  /*
+  ** Ops are submitted asynchronously, so an execution error (illegal address, assert trip, ...)
+  ** does not surface at the launch that caused it but at the next synchronization point, where it
+  ** gets blamed on an unrelated operator. Setting MAG_CUDA_SYNC=1 restores a synchronization after
+  ** every op so a failure is attributed to the operator that actually caused it.
+  */
+  [[nodiscard]] static bool sync_after_each_op() noexcept {
+    static const bool enabled = []() -> bool {
+      const char *v = std::getenv("MAG_CUDA_SYNC");
+      return v && *v && *v != '0';
+    }();
+    return enabled;
+  }
+
   [[nodiscard]] static mag_status_t cuda_transfer(mag_error_t *err, mag_device_t *dvc, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst) {
     const size_t nb = mag_tensor_numbytes(src);
     if (mag_unlikely(nb != mag_tensor_numbytes(dst)))
@@ -68,6 +88,7 @@ namespace mag {
       return mag_set_error(err, MAG_ERR_PARAM, "Transfer requires contiguous tensors.");
 
     const int my_dev = static_cast<int>(dvc->id.device_ordinal);
+    cudaStream_t stream = device_stream(dvc);
 
     auto report_cuda = [err](cudaError_t ce, const char *what) -> mag_status_t {
       if (err && err->code == MAG_OK) {
@@ -94,9 +115,11 @@ namespace mag {
       cudaError_t ce = cudaSetDevice(my_dev);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaSetDevice (H2D)");
-      ce = cudaMemcpy(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst)), reinterpret_cast<const void *>(mag_tensor_data_ptr(src)), nb, cudaMemcpyHostToDevice);
+      ce = cudaMemcpyAsync(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst)), reinterpret_cast<const void *>(mag_tensor_data_ptr(src)), nb, cudaMemcpyHostToDevice, stream);
       if (mag_unlikely(ce != cudaSuccess))
-        return report_cuda(ce, "cudaMemcpy H2D");
+        return report_cuda(ce, "cudaMemcpyAsync H2D");
+      if (ce = cudaStreamSynchronize(stream); mag_unlikely(ce != cudaSuccess))
+        return report_cuda(ce, "cudaStreamSynchronize (H2D)");
       return MAG_OK;
     }
     case MAG_TRANSFER_DIR_D2H: {
@@ -109,9 +132,11 @@ namespace mag {
       cudaError_t ce = cudaSetDevice(my_dev);
       if (mag_unlikely(ce != cudaSuccess))
         return report_cuda(ce, "cudaSetDevice (D2H)");
-      ce = cudaMemcpy(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst)), reinterpret_cast<const void *>(mag_tensor_data_ptr(src)), nb, cudaMemcpyDeviceToHost);
+      ce = cudaMemcpyAsync(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst)), reinterpret_cast<const void *>(mag_tensor_data_ptr(src)), nb, cudaMemcpyDeviceToHost, stream);
       if (mag_unlikely(ce != cudaSuccess))
-        return report_cuda(ce, "cudaMemcpy D2H");
+        return report_cuda(ce, "cudaMemcpyAsync D2H");
+      if (ce = cudaStreamSynchronize(stream); mag_unlikely(ce != cudaSuccess))
+        return report_cuda(ce, "cudaStreamSynchronize (D2H)");
       return MAG_OK;
     }
     case MAG_TRANSFER_DIR_D2D: {
@@ -126,9 +151,27 @@ namespace mag {
         return report_cuda(ce, "cudaSetDevice (D2D)");
       void *dp = reinterpret_cast<void *>(mag_tensor_data_ptr_mut(dst));
       const void *sp = reinterpret_cast<const void *>(mag_tensor_data_ptr(src));
-      ce = cudaMemcpyPeer(dp, dst_ord, sp, src_ord, nb);
+      /*
+      ** The copy runs on the destination device's stream, so it does not implicitly wait for work
+      ** still queued on the source device's stream. Order the two explicitly, which is also what
+      ** makes stream-ordered (cudaMallocAsync) source memory legal to read from this stream.
+      */
+      if (mag_device_t *src_dvc = src->meta.device; src_dvc != dvc) {
+        if (ce = cudaSetDevice(src_ord); mag_unlikely(ce != cudaSuccess))
+          return report_cuda(ce, "cudaSetDevice (D2D source)");
+        cudaEvent_t src_done = device_event(src_dvc);
+        if (ce = cudaEventRecord(src_done, device_stream(src_dvc)); mag_unlikely(ce != cudaSuccess))
+          return report_cuda(ce, "cudaEventRecord (D2D source)");
+        if (ce = cudaSetDevice(dst_ord); mag_unlikely(ce != cudaSuccess))
+          return report_cuda(ce, "cudaSetDevice (D2D destination)");
+        if (ce = cudaStreamWaitEvent(stream, src_done, 0); mag_unlikely(ce != cudaSuccess))
+          return report_cuda(ce, "cudaStreamWaitEvent (D2D)");
+      }
+      ce = cudaMemcpyPeerAsync(dp, dst_ord, sp, src_ord, nb, stream);
       if (mag_unlikely(ce != cudaSuccess))
-        return report_cuda(ce, "cudaMemcpyPeer");
+        return report_cuda(ce, "cudaMemcpyPeerAsync");
+      if (ce = cudaStreamSynchronize(stream); mag_unlikely(ce != cudaSuccess))
+        return report_cuda(ce, "cudaStreamSynchronize (D2D)");
       return MAG_OK;
     }
     default:
@@ -140,10 +183,10 @@ namespace mag {
     if (cudaError_t ce = cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)); mag_unlikely(ce != cudaSuccess))
       return mag_set_error(err, MAG_ERR_DEVICE, "cuda: failed to select device %d: %s.", static_cast<int>(dvc->id.device_ordinal), cudaGetErrorString(ce));
 
-    static constexpr auto *op_nop = +[](mag_error_t *, const mag_command_t &) -> mag_status_t { return MAG_OK; };
+    cudaStream_t stream = device_stream(dvc);
 
-    static constexpr mag_status_t(*dispatch_table[])(mag_error_t *, const mag_command_t &) = {
-      [MAG_OP_NOP] = op_nop,
+    static constexpr mag_status_t(*dispatch_table[])(mag_error_t *, const mag_command_t &, cudaStream_t) = {
+      [MAG_OP_NOP] = +[](mag_error_t *, const mag_command_t &, cudaStream_t) -> mag_status_t { return MAG_OK; },
       [MAG_OP_FILL] = &fill_op_fill,
       [MAG_OP_MASKED_FILL] = &fill_op_masked_fill,
       [MAG_OP_RAND_UNIFORM] = &fill_op_fill_rand_uniform,
@@ -252,7 +295,7 @@ namespace mag {
       [MAG_OP_EMBEDDING] = &misc_op_embedding,
       [MAG_OP_SCATTER] = &misc_op_scatter,
       [MAG_OP_SCATTER_ADD] = &misc_op_scatter_add,
-      [MAG_OP_STRIDED_VIEW] = op_nop,
+      [MAG_OP_STRIDED_VIEW] = +[](mag_error_t *, const mag_command_t &, cudaStream_t) -> mag_status_t { return MAG_OK; },
     };
     static_assert(std::size(dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
     //static_assert([] -> bool {
@@ -263,12 +306,13 @@ namespace mag {
     auto *kernel = dispatch_table[cmd->op];
     if (mag_unlikely(kernel == nullptr))
       return mag_set_error(err, MAG_ERR_KERNEL, "cuda: operator %s not implemented in CUDA backend.", mag_op_trait(cmd->op)->mnemonic);
-    if (mag_status_t st = (*kernel)(err, *cmd); mag_unlikely(mag_iserr(st)))
-      return st;
+    if (mag_status_t stat = (*kernel)(err, *cmd, stream); mag_unlikely(mag_iserr(stat)))
+      return stat;
     if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess))
       return mag_set_error(err, MAG_ERR_KERNEL, "cuda: kernel launch failed for operator %s: %s.", mag_op_trait(cmd->op)->mnemonic, cudaGetErrorString(ce));
-    if (cudaError_t ce = cudaDeviceSynchronize(); mag_unlikely(ce != cudaSuccess))
-      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: kernel execution failed for operator %s: %s.", mag_op_trait(cmd->op)->mnemonic, cudaGetErrorString(ce));
+    if (mag_unlikely(sync_after_each_op()))
+      if (cudaError_t ce = cudaStreamSynchronize(stream); mag_unlikely(ce != cudaSuccess))
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: kernel execution failed for operator %s: %s.", mag_op_trait(cmd->op)->mnemonic, cudaGetErrorString(ce));
     return MAG_OK;
   }
 
@@ -277,7 +321,7 @@ namespace mag {
     uintptr_t base;
     if (cudaError_t ce = cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)); mag_unlikely(ce != cudaSuccess))
       return mag_set_error(err, MAG_ERR_OOM, "cuda: failed to select device %d for allocation: %s.", static_cast<int>(dvc->id.device_ordinal), cudaGetErrorString(ce));
-    if (cudaError_t ce = cudaMalloc(reinterpret_cast<void **>(&base), size); mag_unlikely(ce != cudaSuccess))
+    if (cudaError_t ce = stream_alloc(reinterpret_cast<void **>(&base), size, device_stream(dvc)); mag_unlikely(ce != cudaSuccess))
       return mag_set_error(err, MAG_ERR_OOM, "cuda: failed to allocate %zu bytes of device memory: %s.", size, cudaGetErrorString(ce));
     *out = static_cast<mag_storage_buffer_t *>(mag_slab_alloc(&ctx->storage_slab));
     new (*out) mag_storage_buffer_t {
@@ -300,7 +344,7 @@ namespace mag {
       mag_slab_free(&ctx->storage_slab, buffer);
       if (cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)) != cudaSuccess)
         return MAG_ERR_FREE;
-      return cudaFree(base) == cudaSuccess ? MAG_OK : MAG_ERR_FREE;
+      return stream_free(base, device_stream(dvc)) == cudaSuccess ? MAG_OK : MAG_ERR_FREE;
     });
     ++ctx->telemetry.num_alive_storages;
     return MAG_OK;
@@ -320,7 +364,7 @@ namespace mag {
         .device_ordinal = idx,
         .type = MAG_BACKEND_TYPE_CUDA
       };
-      is_async = false;
+      is_async = true;
       submit = &::mag::submit;
       alloc_storage = &::mag::alloc_storage_buffer;
       manual_seed = &::mag::manual_seed;
@@ -356,7 +400,45 @@ namespace mag {
       m_has_vmm = !!vmm_support;
       m_vmm_granularity = vmm_gran;
       std::snprintf(physical_device_name, std::size(physical_device_name), "%s", props.name);
+
+      if ((res2 = cudaSetDevice(ord)) != cudaSuccess)
+        throw cuda_backend_error {res2, "Failed to select device for stream creation"};
+      if ((res2 = cudaStreamCreateWithFlags(&m_stream, cudaStreamNonBlocking)) != cudaSuccess)
+        throw cuda_backend_error {res2, "Failed to create device stream"};
+      if ((res2 = cudaEventCreateWithFlags(&m_event, cudaEventDisableTiming)) != cudaSuccess) {
+        cudaStreamDestroy(m_stream); /* Destructor does not run for an object whose constructor threw. */
+        m_stream = nullptr;
+        throw cuda_backend_error {res2, "Failed to create device event"};
+      }
+
+      int pool_support = 0;
+      if (cudaDeviceGetAttribute(&pool_support, cudaDevAttrMemoryPoolsSupported, ord) != cudaSuccess)
+        pool_support = 0;
+      m_has_mem_pool = !!pool_support;
+      if (m_has_mem_pool) {
+        cudaMemPool_t pool = nullptr;
+        if (cudaDeviceGetDefaultMemPool(&pool, ord) == cudaSuccess) {
+          uint64_t release_threshold = UINT64_MAX;
+          cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &release_threshold);
+        } else {
+          m_has_mem_pool = false;
+        }
+      }
     }
+
+    ~physical_device() {
+      if (m_stream || m_event) {
+        cudaSetDevice(static_cast<int>(id.device_ordinal));
+        if (m_stream) {
+          cudaStreamSynchronize(m_stream); /* Storage buffers are freed on this stream so drain before deleting. */
+          cudaStreamDestroy(m_stream);
+        }
+        if (m_event) cudaEventDestroy(m_event);
+      }
+    }
+
+    physical_device(const physical_device &) = delete;
+    physical_device &operator=(const physical_device &) = delete;
 
     [[nodiscard]] size_t vram() const noexcept { return m_vram; }
     [[nodiscard]] uint32_t compute_capability() const noexcept { return m_cl; }
@@ -366,6 +448,9 @@ namespace mag {
     [[nodiscard]] size_t shared_mem_per_block_optin() const noexcept { return m_smpb_opt; }
     [[nodiscard]] bool supports_vmm() const noexcept { return m_has_vmm; }
     [[nodiscard]] size_t vmm_granularity() const noexcept { return m_vmm_granularity; }
+    [[nodiscard]] cudaStream_t stream() const noexcept { return m_stream; }
+    [[nodiscard]] cudaEvent_t event() const noexcept { return m_event; }
+    [[nodiscard]] bool has_mem_pool() const noexcept { return m_has_mem_pool; }
 
   private:
     size_t m_vram = 0;
@@ -376,12 +461,22 @@ namespace mag {
     size_t m_smpb_opt = 0;
     bool m_has_vmm = false;
     size_t m_vmm_granularity = 0;
+    cudaStream_t m_stream = nullptr;
+    cudaEvent_t m_event = nullptr;
+    bool m_has_mem_pool = false;
   };
+
+  static cudaStream_t device_stream(const mag_device_t *dvc) noexcept {
+    return static_cast<const physical_device *>(dvc->impl)->stream();
+  }
+
+  static cudaEvent_t device_event(const mag_device_t *dvc) noexcept {
+    return static_cast<const physical_device *>(dvc->impl)->event();
+  }
 
   class cuda_backend final : public mag_backend_t {
   public:
     explicit cuda_backend(mag_context_t *ctx) : mag_backend_t{} {
-      // Only init the interface of superclass here, the actual device initialization is deferred to the init callback
       this->ctx = ctx;
       this->impl = this;
       this->init = +[](mag_error_t *err, mag_backend_t *bck, mag_context_t *ctx) -> mag_status_t {
@@ -435,10 +530,15 @@ namespace mag {
           mag_log_error("Unknown error while initializing CUDA device %d", device_ordinal);
         }
       }
+      bool async_alloc = !m_devices.empty();
+      for (const auto &dvc : m_devices)
+        async_alloc &= dvc->has_mem_pool();
+      global_async_alloc.store(async_alloc, std::memory_order_relaxed);
       return true;
     }
 
     [[nodiscard]] bool destroy() {
+      global_async_alloc.store(false, std::memory_order_relaxed);
       m_devices.clear();
       return true;
     }

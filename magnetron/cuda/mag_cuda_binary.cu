@@ -241,108 +241,108 @@ namespace mag {
   }
 
   template <typename Op>
-  static void launch_binary_op(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y) {
+  static void launch_binary_op(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y, cudaStream_t stream) {
     int64_t numel = mag_tensor_numel(r);
     auto blocks = static_cast<unsigned>(std::min((numel+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
     auto *pr = reinterpret_cast<typename Op::OutT *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename Op::InT *>(mag_tensor_data_ptr(x));
     const auto *py = reinterpret_cast<const typename Op::InT *>(mag_tensor_data_ptr(y));
     if (std::array<const mag_tensor_t *, 3> tensors {r, x, y}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
-      binary_op_kernel<Op, true><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, numel, pr, px, py, {}, {}, {});
+      binary_op_kernel<Op, true><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(Op {}, numel, pr, px, py, {}, {}, {});
     } else {
       coords_iter<int64_t> rc {r};
       coords_iter<int64_t> xc {x};
       coords_iter<int64_t> yc {y};
-      binary_op_kernel<Op, false><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, numel, pr, px, py, rc, xc, yc);
+      binary_op_kernel<Op, false><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(Op {}, numel, pr, px, py, rc, xc, yc);
     }
   }
 
   template <template <typename, typename> typename Op>
-  static mag_status_t impl_binary_op_numeric(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t impl_binary_op_numeric(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const mag_tensor_t *y = cmd.in[1];
     mag_assert2(r->meta.dtype == x->meta.dtype && r->meta.dtype == y->meta.dtype);
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_binary_op<Op<float, float>>(r, x, y); break;
-      case MAG_DTYPE_FLOAT16: launch_binary_op<Op<half, half>>(r, x, y); break;
-      case MAG_DTYPE_BFLOAT16: launch_binary_op<Op<__nv_bfloat16, __nv_bfloat16>>(r, x, y); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_binary_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3>>(r, x, y); break;
-      case MAG_DTYPE_UINT8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_INT8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y); break;
-      case MAG_DTYPE_UINT16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y); break;
-      case MAG_DTYPE_INT16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y); break;
-      case MAG_DTYPE_UINT32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y); break;
-      case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
-      case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
-      case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
+      case MAG_DTYPE_FLOAT32: launch_binary_op<Op<float, float>>(r, x, y, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_binary_op<Op<half, half>>(r, x, y, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_binary_op<Op<__nv_bfloat16, __nv_bfloat16>>(r, x, y, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_binary_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
   template <template <typename, typename> typename Op>
-  static mag_status_t impl_binary_op_logical(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t impl_binary_op_logical(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const mag_tensor_t *y = cmd.in[1];
     mag_assert2(r->meta.dtype == x->meta.dtype && r->meta.dtype == y->meta.dtype);
     switch (r->meta.dtype) {
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_INT8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y); break;
-      case MAG_DTYPE_UINT16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y); break;
-      case MAG_DTYPE_INT16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y); break;
-      case MAG_DTYPE_UINT32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y); break;
-      case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y); break;
-      case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y); break;
-      case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y); break;
+      case MAG_DTYPE_UINT8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT8: launch_binary_op<Op<int8_t, int8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT16: launch_binary_op<Op<uint16_t, uint16_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT16: launch_binary_op<Op<int16_t, int16_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT32: launch_binary_op<Op<uint32_t, uint32_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, int32_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint64_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, int64_t>>(r, x, y, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(r->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
   template <template <typename, typename> typename Op>
-  static mag_status_t impl_binary_op_cmp(mag_error_t *err, const mag_command_t &cmd) {
+  static mag_status_t impl_binary_op_cmp(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const mag_tensor_t *y = cmd.in[1];
     mag_assert2(r->meta.dtype == MAG_DTYPE_BOOLEAN && x->meta.dtype == y->meta.dtype);
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_binary_op<Op<float, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_FLOAT16: launch_binary_op<Op<half, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_BFLOAT16: launch_binary_op<Op<__nv_bfloat16, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_binary_op<Op<__nv_fp8_e4m3, uint8_t>>(r, x, y); break;
+      case MAG_DTYPE_FLOAT32: launch_binary_op<Op<float, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_binary_op<Op<half, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_binary_op<Op<__nv_bfloat16, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_binary_op<Op<__nv_fp8_e4m3, uint8_t>>(r, x, y, stream); break;
       case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_INT8: launch_binary_op<Op<int8_t, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_UINT16: launch_binary_op<Op<uint16_t, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_INT16: launch_binary_op<Op<int16_t, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_UINT32: launch_binary_op<Op<uint32_t, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint8_t>>(r, x, y); break;
-      case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, uint8_t>>(r, x, y); break;
+      case MAG_DTYPE_UINT8: launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT8: launch_binary_op<Op<int8_t, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT16: launch_binary_op<Op<uint16_t, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT16: launch_binary_op<Op<int16_t, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT32: launch_binary_op<Op<uint32_t, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT32: launch_binary_op<Op<int32_t, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_UINT64: launch_binary_op<Op<uint64_t, uint8_t>>(r, x, y, stream); break;
+      case MAG_DTYPE_INT64: launch_binary_op<Op<int64_t, uint8_t>>(r, x, y, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
-  mag_status_t binary_op_add(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_numeric<op_add>(err, cmd); }
-  mag_status_t binary_op_sub(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_numeric<op_sub>(err, cmd); }
-  mag_status_t binary_op_mul(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_numeric<op_mul>(err, cmd); }
-  mag_status_t binary_op_div(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_numeric<op_div>(err, cmd); }
-  mag_status_t binary_op_floordiv(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_numeric<op_floordiv>(err, cmd); }
-  mag_status_t binary_op_mod(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_numeric<op_mod>(err, cmd); }
-  mag_status_t binary_op_pow(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_numeric<op_pow>(err, cmd); }
-  mag_status_t binary_op_and(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_logical<op_and>(err, cmd); }
-  mag_status_t binary_op_or(mag_error_t *err, const mag_command_t &cmd)  { return impl_binary_op_logical<op_or>(err, cmd); }
-  mag_status_t binary_op_xor(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_logical<op_xor>(err, cmd); }
-  mag_status_t binary_op_shl(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_logical<op_shl>(err, cmd); }
-  mag_status_t binary_op_shr(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_logical<op_shr>(err, cmd); }
-  mag_status_t binary_op_eq(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_cmp<op_eq>(err, cmd); }
-  mag_status_t binary_op_ne(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_cmp<op_ne>(err, cmd); }
-  mag_status_t binary_op_le(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_cmp<op_le>(err, cmd); }
-  mag_status_t binary_op_ge(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_cmp<op_ge>(err, cmd); }
-  mag_status_t binary_op_lt(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_cmp<op_lt>(err, cmd); }
-  mag_status_t binary_op_gt(mag_error_t *err, const mag_command_t &cmd) { return impl_binary_op_cmp<op_gt>(err, cmd); }
+  mag_status_t binary_op_add(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_add>(err, cmd, stream); }
+  mag_status_t binary_op_sub(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_sub>(err, cmd, stream); }
+  mag_status_t binary_op_mul(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_mul>(err, cmd, stream); }
+  mag_status_t binary_op_div(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_div>(err, cmd, stream); }
+  mag_status_t binary_op_floordiv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_floordiv>(err, cmd, stream); }
+  mag_status_t binary_op_mod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_mod>(err, cmd, stream); }
+  mag_status_t binary_op_pow(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_pow>(err, cmd, stream); }
+  mag_status_t binary_op_and(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_and>(err, cmd, stream); }
+  mag_status_t binary_op_or(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream)  { return impl_binary_op_logical<op_or>(err, cmd, stream); }
+  mag_status_t binary_op_xor(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_xor>(err, cmd, stream); }
+  mag_status_t binary_op_shl(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_shl>(err, cmd, stream); }
+  mag_status_t binary_op_shr(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_shr>(err, cmd, stream); }
+  mag_status_t binary_op_eq(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_cmp<op_eq>(err, cmd, stream); }
+  mag_status_t binary_op_ne(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_cmp<op_ne>(err, cmd, stream); }
+  mag_status_t binary_op_le(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_cmp<op_le>(err, cmd, stream); }
+  mag_status_t binary_op_ge(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_cmp<op_ge>(err, cmd, stream); }
+  mag_status_t binary_op_lt(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_cmp<op_lt>(err, cmd, stream); }
+  mag_status_t binary_op_gt(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_cmp<op_gt>(err, cmd, stream); }
 }
