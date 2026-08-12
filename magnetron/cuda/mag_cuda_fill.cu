@@ -14,8 +14,6 @@
 #include <core/mag_prng_philox4x32.h>
 #include <core/mag_u128.h>
 
-#include <type_traits>
-
 namespace mag {
   template <typename T, const bool C>
   __global__ static void fill_kernel(
@@ -63,7 +61,7 @@ namespace mag {
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     auto v = unpack_scalar<T>(cmd.params->fill.value);
     bool cont = mag_tensor_is_contiguous(r);
-    int n = numel_i32(r);
+    int n = mag_tensor_numel(r); // TODO: i64 numel fix
     int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     if (mask) {
       const mag_tensor_t *xt = cmd.in[0];
@@ -191,7 +189,7 @@ namespace mag {
     auto *o = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     auto min = unpack_scalar<T>(cmd.params->uniform.low);
     auto max = unpack_scalar<T>(cmd.params->uniform.high);
-    int n = numel_i32(r);
+    int n = mag_tensor_numel(r); // TODO: int64 support
     int blocks = (n + FILL_BLOCK_SIZE - 1) / FILL_BLOCK_SIZE;
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
     uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
@@ -209,7 +207,7 @@ namespace mag {
     auto *o = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     auto p0 = unpack_scalar<T>(cmd.params->uniform.low);
     auto p1 = unpack_scalar<T>(cmd.params->uniform.high);
-    int n = numel_i32(r);
+    int n = mag_tensor_numel(r); // todo: I64 NUEML
     int blocks = (((n+3)>>2)+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
     uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
@@ -325,7 +323,7 @@ namespace mag {
     mag_assert2(r->meta.dtype == MAG_DTYPE_BOOLEAN);
     auto p = cmd.params->bernoulli.p;
     auto *o = reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(r));
-    int n = numel_i32(r);
+    int n = mag_tensor_numel(r); // TODO: int64 support
     int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
     uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
@@ -366,7 +364,7 @@ namespace mag {
 
   template <typename T>
   static void launch_rand_perm_kernel(mag_tensor_t *r, const mag_command_t &cmd) {
-    int n = numel_i32(r);
+    int n = mag_tensor_numel(r); // TODO: int64 support
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
     uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
     auto *po = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
@@ -417,7 +415,7 @@ namespace mag {
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     PT start = unpack_scalar<PT>(cmd.params->arange.start);
     PT step = unpack_scalar<PT>(cmd.params->arange.step);
-    int n = numel_i32(r);
+    int n = mag_tensor_numel(r); // TODO: i64 numel support
     int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     if (mag_tensor_is_contiguous(r)) {
       arange_kernel<T, PT, AT, true><<<blocks, FILL_BLOCK_SIZE>>>(n, pr, start, step, {});
@@ -470,7 +468,7 @@ namespace mag {
   template <typename T>
   static void launch_eye(mag_tensor_t *r) {
     mag_assert2(r->meta.coords.rank == 2);
-    int numel = numel_i32(r);
+    int numel = mag_tensor_numel(r); // TODO: i64 numel
     int cols = static_cast<int>(r->meta.coords.shape[1]);
     int blocks = (numel + FILL_BLOCK_SIZE - 1)/FILL_BLOCK_SIZE;
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));

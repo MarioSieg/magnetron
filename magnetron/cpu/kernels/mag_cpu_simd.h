@@ -835,8 +835,9 @@ static MAG_AINLINE mag_vf32_t mag_vf32_rcp_approx(mag_vf32_t x) {
 static MAG_AINLINE mag_vf32_t mag_vf32_rcp_refine_step(mag_vf32_t x, mag_vf32_t r) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
     return vmulq_f32(vrecpsq_f32(x, r), r);
-  #else /* Newton step */
-    return mag_vf32_mul(r, mag_vf32_fnmadd(x, r, mag_vf32_splat(2.f)));
+  #else
+    mag_vf32_t refined = mag_vf32_mul(r, mag_vf32_fnmadd(x, r, mag_vf32_splat(2.f)));
+    return mag_vf32_blend(mag_vf32_cmpeq(refined, refined), refined, r);
   #endif
 }
 static MAG_AINLINE mag_vf32_t mag_vf32_and(mag_vf32_t x, mag_vf32_t y) {

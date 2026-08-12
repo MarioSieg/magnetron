@@ -14,31 +14,41 @@
 #include <array>
 
 namespace mag {
-  template <typename Src, typename Dst, const bool C>
-  __global__ static void cast_kernel(int n, Dst *__restrict__ o, const Src *__restrict__ x, [[maybe_unused]] mag_coords_iter_t xc) {
-    int i = blockDim.x*blockIdx.x + threadIdx.x;
+  template <typename Src, typename Dst, typename I, const bool C>
+  __global__ static void cast_kernel(I numel, Dst *__restrict__ o, const Src *__restrict__ x, [[maybe_unused]] coords_iter<I> xc) {
+    I i = static_cast<I>(blockDim.x)*static_cast<I>(blockIdx.x) + static_cast<I>(threadIdx.x);
     if constexpr (C) {
-      if (i >= n) return;
+      if (i >= numel) return;
       o[i] = static_cast<Dst>(x[i]);
     } else {
-      int step = blockDim.x*gridDim.x;
-      for (; i < n; i += step)
-        o[i] = static_cast<Dst>(x[mag_coords_iter_to_offset(&xc, i)]);
+      I step = static_cast<I>(blockDim.x)*static_cast<I>(gridDim.x);
+      for (; i < numel; i += step)
+        o[i] = static_cast<Dst>(x[xc(i)]);
+    }
+  }
+
+  template <typename Src, typename Dst, typename I>
+  static void launch_cast_indexed(mag_tensor_t *r, const mag_tensor_t *x) {
+    int64_t numel = mag_tensor_numel(r);
+    auto blocks = static_cast<unsigned>(std::min((numel+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
+    auto *pr = reinterpret_cast<Dst *>(mag_tensor_data_ptr_mut(r));
+    const auto *px = reinterpret_cast<const Src *>(mag_tensor_data_ptr(x));
+    if (mag_tensor_is_contiguous(x)) {
+      cast_kernel<Src, Dst, I, true><<<blocks, UNARY_BLOCK_SIZE>>>(static_cast<I>(numel), pr, px, {});
+    } else {
+      coords_iter<I> xc {x};
+      cast_kernel<Src, Dst, I, false><<<blocks, UNARY_BLOCK_SIZE>>>(static_cast<I>(numel), pr, px, xc);
     }
   }
 
   template <typename Src, typename Dst>
   static void mag_cast_launcher(mag_tensor_t *r, const mag_tensor_t *x) {
-    int n = numel_i32(r);
-    auto *pr = reinterpret_cast<Dst *>(mag_tensor_data_ptr_mut(r));
-    const auto *px = reinterpret_cast<const Src *>(mag_tensor_data_ptr(x));
-    int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
-    if (mag_tensor_is_contiguous(x)) {
-      cast_kernel<Src, Dst, true><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, {});
+    int64_t numel = mag_tensor_numel(r);
+    if (mag_unlikely(numel <= 0)) return;
+    if (mag_likely(numel <= std::numeric_limits<int>::max())) {
+      launch_cast_indexed<Src, Dst, int>(r, x);
     } else {
-      mag_coords_iter_t xc;
-      mag_coords_iter_init(&xc, &x->meta.coords);
-      cast_kernel<Src, Dst, false><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, xc);
+      launch_cast_indexed<Src, Dst, int64_t>(r, x);
     }
   }
 
@@ -256,31 +266,38 @@ namespace mag {
     return MAG_OK;
   }
 
-  template <typename T>
-  __global__ static void clone_strided_kernel(int n, T *o, const T *x, mag_coords_iter_t rc, mag_coords_iter_t xc) {
-    int i = blockIdx.x*blockDim.x + threadIdx.x;
-    int step = blockDim.x*gridDim.x;
-    for (; i < n; i += step) {
-      int ri = mag_coords_iter_to_offset(&rc, i);
-      int xi = mag_coords_iter_to_offset(&xc, i);
-      o[ri] = x[xi];
+  template <typename T, typename I>
+  __global__ static void clone_strided_kernel(I n, T *o, const T *x, coords_iter<I> rc, coords_iter<I> xc) {
+    I i = static_cast<I>(blockIdx.x)*static_cast<I>(blockDim.x) + static_cast<I>(threadIdx.x);
+    I step = static_cast<I>(blockDim.x)*static_cast<I>(gridDim.x);
+    for (; i < n; i += step)
+      o[rc(i)] = x[xc(i)];
+  }
+
+  template <typename T, typename I>
+  static void launch_clone_indexed(mag_tensor_t *r, const mag_tensor_t *x) {
+    int64_t numel = mag_tensor_numel(r);
+    auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
+    const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
+    if (std::array<const mag_tensor_t *, 2> tensors {r, x}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) { // TODO: Can be relaxed to non-shape
+      cudaMemcpy(pr, px, numel*sizeof(T), cudaMemcpyDeviceToDevice);
+      return;
     }
+    auto blocks = static_cast<unsigned>(std::min((numel+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
+    coords_iter<I> rc {r};
+    coords_iter<I> xc {x};
+    clone_strided_kernel<T, I><<<blocks, UNARY_BLOCK_SIZE>>>(static_cast<I>(numel), pr, px, rc, xc);
   }
 
   template <typename T>
   static void launch_clone(mag_tensor_t *r, const mag_tensor_t *x) {
-    int n = numel_i32(r);
-    auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
-    const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
-    if (std::array<const mag_tensor_t *, 2> tensors {r, x}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) { // TODO: Can be relaxed to non-shape
-      cudaMemcpy(pr, px, n*sizeof(T), cudaMemcpyDeviceToDevice);
-      return;
+    int64_t numel = mag_tensor_numel(r);
+    if (mag_unlikely(numel <= 0)) return;
+    if (mag_likely(numel <= std::numeric_limits<int>::max())) {
+      launch_clone_indexed<T, int>(r, x);
+    } else {
+      launch_clone_indexed<T, int64_t>(r, x);
     }
-    mag_coords_iter_t rc, xc;
-    mag_coords_iter_init(&rc, &r->meta.coords);
-    mag_coords_iter_init(&xc, &x->meta.coords);
-    int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
-    clone_strided_kernel<T><<<blocks, UNARY_BLOCK_SIZE>>>(n, pr, px, rc, xc);
   }
 
   mag_status_t unary_op_clone(mag_error_t *err, const mag_command_t &cmd) {
@@ -744,42 +761,38 @@ namespace mag {
     }
   };
 
-  template <typename Op, const bool C>
+  template <typename Op, const bool Contig>
   __global__ static void unary_op_kernel(
     Op op,
-    int n,
+    int64_t n,
     typename Op::Out *r,
     const typename Op::In *x,
-    [[maybe_unused]] mag_coords_iter_t rc,
-    [[maybe_unused]] mag_coords_iter_t xc
+    [[maybe_unused]] coords_iter<int64_t> rc,
+    [[maybe_unused]] coords_iter<int64_t> xc
   ) {
-    int i = blockDim.x*blockIdx.x + threadIdx.x;
-    if constexpr (C) {
+    int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + static_cast<int64_t>(threadIdx.x);
+    if constexpr (Contig) {
       if (i >= n) return;
       r[i] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[i])));
     } else {
-      int step = blockDim.x*gridDim.x;
-      for (; i < n; i += step) {
-        int ri = mag_coords_iter_to_offset(&rc, i);
-        int xi = mag_coords_iter_broadcast(&rc, &xc, i);
-        r[ri] = op(x[xi]);
-      }
+      int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+      for (; i < n; i += step)
+        r[rc(i)] = op(x[rc.broadcast(xc, i)]);
     }
   }
 
   template <typename Op>
   static void launch_unary_op(mag_tensor_t *r, const mag_tensor_t *x) {
-    int n = numel_i32(r);
-    int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
-    mag_coords_iter_t rc, xc;
-    mag_coords_iter_init(&rc, &r->meta.coords);
-    mag_coords_iter_init(&xc, &x->meta.coords);
+    int64_t numel = mag_tensor_numel(r);
+    auto blocks = static_cast<unsigned>(std::min((numel+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
+    coords_iter<int64_t> rc {r};
+    coords_iter<int64_t> xc {x};
     auto *pr = reinterpret_cast<typename Op::Out *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename Op::In *>(mag_tensor_data_ptr(x));
     if (std::array<const mag_tensor_t *, 2> tensors {r, x}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
-      unary_op_kernel<Op, true><<<blocks, UNARY_BLOCK_SIZE>>>(Op{}, n, pr, px, rc, xc);
+      unary_op_kernel<Op, true><<<blocks, UNARY_BLOCK_SIZE>>>(Op{}, numel, pr, px, rc, xc);
     } else {
-      unary_op_kernel<Op, false><<<blocks, UNARY_BLOCK_SIZE>>>(Op{}, n, pr, px, rc, xc);
+      unary_op_kernel<Op, false><<<blocks, UNARY_BLOCK_SIZE>>>(Op{}, numel, pr, px, rc, xc);
     }
   }
 
@@ -855,40 +868,40 @@ namespace mag {
   mag_status_t unary_op_trunc(mag_error_t *err, const mag_command_t &cmd) { return impl_unary_op_fp<op_trunc>(err, cmd.out[0], cmd.in[0]); }
 
   template <typename T>
-  __global__ static void softmax_kernel(int rows, int last_dim, T *__restrict__ r, const T *__restrict__ x) {
-    int64_t row = blockIdx.x*blockDim.x + threadIdx.x;
+  __global__ static void softmax_kernel(int64_t rows, int64_t last_dim, T *__restrict__ r, const T *__restrict__ x) {
+    int64_t row = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + static_cast<int64_t>(threadIdx.x);
     if (row >= rows) return;
     const T *row_in = x + row * last_dim;
     T *row_out = r + row * last_dim;
     auto maxv = static_cast<float>(row_in[0]);
-    for (int i=1; i < last_dim; ++i) {
+    for (int64_t i=1; i < last_dim; ++i) {
       auto v = static_cast<float>(row_in[i]);
       if (v > maxv) maxv = v;
     }
     double sum = 0.0;
-    for (int i=0; i < last_dim; ++i)
+    for (int64_t i=0; i < last_dim; ++i)
       sum += static_cast<double>(__expf(static_cast<float>(row_in[i]) - maxv));
     if (!std::isfinite(sum) || sum <= 0.0) {
       float inv = 1.0f / static_cast<float>(last_dim);
-      for (int i=0; i < last_dim; ++i)
+      for (int64_t i=0; i < last_dim; ++i)
         row_out[i] = static_cast<T>(inv);
     } else {
       auto inv = static_cast<float>(1.0 / sum);
-      for (int i=0; i < last_dim; ++i)
+      for (int64_t i=0; i < last_dim; ++i)
         row_out[i] = static_cast<T>(__expf(static_cast<float>(row_in[i]) - maxv)*inv);
     }
   }
 
   template <typename T>
   static void launch_softmax(mag_tensor_t *r, const mag_tensor_t *x) {
-    int rank = static_cast<int>(r->meta.coords.rank);
-    int n = numel_i32(r);
-    if (mag_unlikely(!n)) return;
-    int last_dim = rank == 0 ? 1 : static_cast<int>(r->meta.coords.shape[rank-1]);
-    int rows = rank == 0 ? 1 : n/last_dim;
+    int64_t rank = mag_tensor_rank(r);
+    int64_t numel = mag_tensor_numel(r);
+    if (mag_unlikely(numel <= 0)) return;
+    int64_t last_dim = rank == 0 ? 1 : r->meta.coords.shape[rank-1];
+    int64_t rows = rank == 0 ? 1 : numel/last_dim;
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
-    int blocks = (rows+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
+    auto blocks = static_cast<unsigned>(std::min((numel+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
     softmax_kernel<T><<<blocks, UNARY_BLOCK_SIZE>>>(rows, last_dim, pr, px);
   }
 

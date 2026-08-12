@@ -218,47 +218,42 @@ namespace mag {
     }
   };
 
-  template <typename Op, const bool C>
+  template <typename Op, const bool Contig>
   __global__ static void binary_op_kernel(
     Op op,
-    int n,
+    int64_t numel,
     typename Op::OutT *r,
     const typename Op::InT *x,
     const typename Op::InT *y,
-    [[maybe_unused]] mag_coords_iter_t rc,
-    [[maybe_unused]] mag_coords_iter_t xc,
-    [[maybe_unused]] mag_coords_iter_t yc
+    [[maybe_unused]] coords_iter<int64_t> rc,
+    [[maybe_unused]] coords_iter<int64_t> xc,
+    [[maybe_unused]] coords_iter<int64_t> yc
   ) {
-    int i = blockDim.x*blockIdx.x + threadIdx.x;
-    int step = blockDim.x*gridDim.x;
-    if constexpr (C) {
-      for (; i < n; i += step)
+    int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + static_cast<int64_t>(threadIdx.x);
+    int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+    if constexpr (Contig) {
+      for (; i < numel; i += step)
         r[i] = op(x[i], y[i]);
     } else {
-      for (; i < n; i += step) {
-        int ri = mag_coords_iter_to_offset(&rc, i);
-        int xi = mag_coords_iter_broadcast(&rc, &xc, i);
-        int yi = mag_coords_iter_broadcast(&rc, &yc, i);
-        r[ri] = op(x[xi], y[yi]);
-      }
+      for (; i < numel; i += step)
+        r[rc(i)] = op(x[rc.broadcast(xc, i)], y[rc.broadcast(yc, i)]);
     }
   }
 
   template <typename Op>
   static void launch_binary_op(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y) {
-    int n = numel_i32(r);
-    int blocks = (n+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE;
+    int64_t numel = mag_tensor_numel(r);
+    auto blocks = static_cast<unsigned>(std::min((numel+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
     auto *pr = reinterpret_cast<typename Op::OutT *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename Op::InT *>(mag_tensor_data_ptr(x));
     const auto *py = reinterpret_cast<const typename Op::InT *>(mag_tensor_data_ptr(y));
     if (std::array<const mag_tensor_t *, 3> tensors {r, x, y}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
-      binary_op_kernel<Op, true><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, n, pr, px, py, {}, {}, {});
+      binary_op_kernel<Op, true><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, numel, pr, px, py, {}, {}, {});
     } else {
-      mag_coords_iter_t rc, xc, yc;
-      mag_coords_iter_init(&rc, &r->meta.coords);
-      mag_coords_iter_init(&xc, &x->meta.coords);
-      mag_coords_iter_init(&yc, &y->meta.coords);
-      binary_op_kernel<Op, false><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, n, pr, px, py, rc, xc, yc);
+      coords_iter<int64_t> rc {r};
+      coords_iter<int64_t> xc {x};
+      coords_iter<int64_t> yc {y};
+      binary_op_kernel<Op, false><<<blocks, BINARY_BLOCK_SIZE>>>(Op {}, numel, pr, px, py, rc, xc, yc);
     }
   }
 

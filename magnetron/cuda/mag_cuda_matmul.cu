@@ -223,6 +223,13 @@ namespace mag {
       asm volatile("mbarrier.init.shared.b64 [%0], %1;" :: "r"(static_cast<uint32_t>(__cvta_generic_to_shared(this))), "r"(count) : "memory");
     }
 
+    /* Make prior generic-proxy shared writes (mbarrier.init above) visible to the async proxy.
+       TMA runs in the async proxy, so without this fence it may observe an uninitialized
+       mbarrier. Required by the PTX ISA between init and the first cp.async.bulk.tensor. */
+    __device__ static void fence_proxy_async_shared_cta() {
+      asm volatile("fence.proxy.async.shared::cta;" ::: "memory");
+    }
+
     __device__ void cp_async_bulk_tensor_3d(void *dst, const void *tmap, const int32_t (&coords)[3]) {
       asm volatile(
         "cp.async.bulk.tensor.3d.shared::cluster.global.tile.mbarrier::complete_tx::bytes [%0], [%1, {%2, %3, %4}], [%5];"
@@ -327,6 +334,7 @@ namespace mag {
         b_bar[s].init(1);
         done_bar[s].init(CONSUMER_WARPS);
       }
+      barrier::fence_proxy_async_shared_cta();
     }
     __syncthreads();
 

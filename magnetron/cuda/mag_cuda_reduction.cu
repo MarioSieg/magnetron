@@ -11,6 +11,7 @@
 
 #include "mag_cuda_reduction.cuh"
 
+#include <algorithm>
 #include <core/mag_reduce_plan.h>
 
 #include <cuda/std/limits>
@@ -26,144 +27,143 @@ namespace mag {
   template <> [[nodiscard]] __device__ __forceinline__ float fn_max<float>(float a, float b) { return fmaxf(a, b);}
   template <> [[nodiscard]] __device__ __forceinline__ double fn_max<double>(double a, double b) {return fmax(a, b); }
 
-  template <typename scalar_in_t, typename scalar_out_t, typename acc_in_t>
+  template <typename TIn, typename TOut, typename TAcc>
   struct op_mean {
-    using in_t  = scalar_in_t;
-    using out_t = scalar_out_t;
-    using acc_t = acc_in_t;
+    using In  = TIn;
+    using Out = TOut;
+    using Acc = TAcc;
 
-    [[nodiscard]] __device__ __forceinline__ acc_t init() const { return acc_t{}; }
-    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const { return static_cast<acc_t>(x); }
-    [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return a + b; }
-    [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, int64_t red_prod) const {
-      acc /= static_cast<acc_t>(red_prod);
-      return static_cast<out_t>(acc);
+    [[nodiscard]] __device__ __forceinline__ Acc init() const { return Acc{}; }
+    [[nodiscard]] __device__ __forceinline__ Acc transform(In x) const { return static_cast<Acc>(x); }
+    [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return a + b; }
+    [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, int64_t red_prod) const {
+      acc /= static_cast<Acc>(red_prod);
+      return static_cast<Out>(acc);
     }
   };
 
-  template <typename scalar_in_t, typename scalar_out_t, typename acc_in_t>
+  template <typename TIn, typename TOut, typename TAcc>
   struct op_sum {
-    using in_t  = scalar_in_t;
-    using out_t = scalar_out_t;
-    using acc_t = acc_in_t;
+    using In  = TIn;
+    using Out = TOut;
+    using Acc = TAcc;
 
-    [[nodiscard]] __device__ __forceinline__ acc_t init() const { return acc_t{}; }
-    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const { return static_cast<acc_t>(x); }
-    [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return a + b; }
-    [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, [[maybe_unused]] int64_t red_prod) const {
-      return static_cast<out_t>(acc);
+    [[nodiscard]] __device__ __forceinline__ Acc init() const { return Acc{}; }
+    [[nodiscard]] __device__ __forceinline__ Acc transform(In x) const { return static_cast<Acc>(x); }
+    [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return a + b; }
+    [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, [[maybe_unused]] int64_t red_prod) const {
+      return static_cast<Out>(acc);
     }
   };
 
-  template <typename scalar_in_t, typename scalar_out_t, typename acc_in_t>
+  template <typename TIn, typename TOut, typename TAcc>
   struct op_prod {
-    using in_t  = scalar_in_t;
-    using out_t = scalar_out_t;
-    using acc_t = acc_in_t;
+    using In  = TIn;
+    using Out = TOut;
+    using Acc = TAcc;
 
-    [[nodiscard]] __device__ __forceinline__ acc_t init() const { return static_cast<acc_t>(1); }
-    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const { return static_cast<acc_t>(x); }
-    [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return a * b; }
-    [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, [[maybe_unused]] int64_t red_prod) const {
-      return static_cast<out_t>(acc);
+    [[nodiscard]] __device__ __forceinline__ Acc init() const { return static_cast<Acc>(1); }
+    [[nodiscard]] __device__ __forceinline__ Acc transform(In x) const { return static_cast<Acc>(x); }
+    [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return a * b; }
+    [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, [[maybe_unused]] int64_t red_prod) const {
+      return static_cast<Out>(acc);
     }
   };
 
-  template <typename scalar_in_t, typename scalar_out_t, typename acc_in_t>
+  template <typename TIn, typename TOut, typename TAcc>
   struct op_min {
-    using in_t  = scalar_in_t;
-    using out_t = scalar_out_t;
-    using acc_t = acc_in_t;
+    using In  = TIn;
+    using Out = TOut;
+    using Acc = TAcc;
 
-    [[nodiscard]] __device__ __forceinline__ acc_t init() const {
-      if constexpr (std::is_floating_point_v<acc_t>) return cuda::std::numeric_limits<acc_t>::infinity();
-      else return cuda::std::numeric_limits<acc_t>::max();
+    [[nodiscard]] __device__ __forceinline__ Acc init() const {
+      if constexpr (std::is_floating_point_v<Acc>) return cuda::std::numeric_limits<Acc>::infinity();
+      else return cuda::std::numeric_limits<Acc>::max();
     }
-    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const { return static_cast<acc_t>(x); }
-    [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return fn_min<acc_t>(a, b); }
-    [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, [[maybe_unused]] int64_t red_prod) const {
-      return static_cast<out_t>(acc);
+    [[nodiscard]] __device__ __forceinline__ Acc transform(In x) const { return static_cast<Acc>(x); }
+    [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return fn_min<Acc>(a, b); }
+    [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, [[maybe_unused]] int64_t red_prod) const {
+      return static_cast<Out>(acc);
     }
   };
 
-  template <typename scalar_in_t, typename scalar_out_t, typename acc_in_t>
+  template <typename TIn, typename TOut, typename TAcc>
   struct op_max {
-    using in_t  = scalar_in_t;
-    using out_t = scalar_out_t;
-    using acc_t = acc_in_t;
+    using In  = TIn;
+    using Out = TOut;
+    using Acc = TAcc;
 
-    [[nodiscard]] __device__ __forceinline__ acc_t init() const {
-      if constexpr (std::is_floating_point_v<acc_t>) return -cuda::std::numeric_limits<acc_t>::infinity();
-      else return cuda::std::numeric_limits<acc_t>::lowest();
+    [[nodiscard]] __device__ __forceinline__ Acc init() const {
+      if constexpr (std::is_floating_point_v<Acc>) return -cuda::std::numeric_limits<Acc>::infinity();
+      else return cuda::std::numeric_limits<Acc>::lowest();
     }
-    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const { return static_cast<acc_t>(x); }
-    [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return fn_max<acc_t>(a, b); }
-    [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, [[maybe_unused]] int64_t red_prod) const {
-      return static_cast<out_t>(acc);
+    [[nodiscard]] __device__ __forceinline__ Acc transform(In x) const { return static_cast<Acc>(x); }
+    [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return fn_max<Acc>(a, b); }
+    [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, [[maybe_unused]] int64_t red_prod) const {
+      return static_cast<Out>(acc);
     }
   };
 
-  template <typename scalar_in_t, typename scalar_out_t, typename acc_in_t>
+  template <typename TIn, typename TOut, typename TAcc>
   struct op_all {
-    using in_t  = scalar_in_t;
-    using out_t = scalar_out_t;
-    using acc_t = acc_in_t;
+    using In  = TIn;
+    using Out = TOut;
+    using Acc = TAcc;
 
-    [[nodiscard]] __device__ __forceinline__ acc_t init() const { return static_cast<acc_t>(1); }
-    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const {
-      return static_cast<acc_t>(static_cast<float>(x) != static_cast<float>(in_t{}));
+    [[nodiscard]] __device__ __forceinline__ Acc init() const { return static_cast<Acc>(1); }
+    [[nodiscard]] __device__ __forceinline__ Acc transform(In x) const {
+      return static_cast<Acc>(static_cast<float>(x) != static_cast<float>(In{}));
     }
-    [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return static_cast<acc_t>(a && b); }
-    [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, [[maybe_unused]] int64_t red_prod) const {
-      return static_cast<out_t>(acc != 0);
+    [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return static_cast<Acc>(a && b); }
+    [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, [[maybe_unused]] int64_t red_prod) const {
+      return static_cast<Out>(acc != 0);
     }
   };
 
-  template <typename scalar_in_t, typename scalar_out_t, typename acc_in_t>
+  template <typename TIn, typename TOut, typename TAcc>
   struct op_any {
-    using in_t  = scalar_in_t;
-    using out_t = scalar_out_t;
-    using acc_t = acc_in_t;
+    using In  = TIn;
+    using Out = TOut;
+    using Acc = TAcc;
 
-    [[nodiscard]] __device__ __forceinline__ acc_t init() const { return static_cast<acc_t>(0); }
-    [[nodiscard]] __device__ __forceinline__ acc_t transform(in_t x) const {
-      return static_cast<acc_t>(static_cast<float>(x) != static_cast<float>(in_t{}));
+    [[nodiscard]] __device__ __forceinline__ Acc init() const { return static_cast<Acc>(0); }
+    [[nodiscard]] __device__ __forceinline__ Acc transform(In x) const {
+      return static_cast<Acc>(static_cast<float>(x) != static_cast<float>(In{}));
     }
-    [[nodiscard]] __device__ __forceinline__ acc_t reduce(acc_t a, acc_t b) const { return static_cast<acc_t>(a || b); }
-    [[nodiscard]] __device__ __forceinline__ out_t finalize(acc_t acc, [[maybe_unused]] int64_t red_prod) const {
-      return static_cast<out_t>(acc != 0);
+    [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return static_cast<Acc>(a || b); }
+    [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, [[maybe_unused]] int64_t red_prod) const {
+      return static_cast<Out>(acc != 0);
     }
   };
 
-  template <typename op_t>
+  template <typename Op>
   __global__ static void reduce_op_kernel(
-    op_t op,
-    int n,
-    typename op_t::out_t *__restrict__ o,
-    const typename op_t::in_t *__restrict__ x,
+    Op op,
+    int64_t numel,
+    typename Op::Out *__restrict__ o,
+    const typename Op::In *__restrict__ x,
     mag_reduce_plan_t plan
   ) {
-    int oi = blockIdx.x;
-    if (oi >= n) return;
-    const int base = mag_reduce_plan_to_offset(&plan, oi);
-    typename op_t::acc_t acc = op.init();
-    for (int ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
-      int t = ri;
-      int xi = base;
-      #pragma unroll
-      for (int k=plan.rank-1; k >= 0; --k) {
-        int sz = plan.red_sizes[k];
-        int j = t % sz;
+    int64_t oi = blockIdx.x;
+    if (oi >= numel) return;
+    int64_t base = mag_reduce_plan_to_offset(&plan, oi);
+    typename Op::Acc acc = op.init();
+    for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
+      int64_t t = ri;
+      int64_t xi = base;
+      for (int64_t k=plan.rank-1; k >= 0; --k) {
+        int64_t sz = plan.red_sizes[k];
+        int64_t j = t % sz;
         t /= sz;
         xi += j*plan.red_strides[k];
       }
       acc = op.reduce(acc, op.transform(x[xi]));
     }
     extern __shared__ uint8_t smem_raw[];
-    auto *smem = reinterpret_cast<typename op_t::acc_t *>(smem_raw);
+    auto *smem = reinterpret_cast<typename Op::Acc *>(smem_raw);
     smem[threadIdx.x] = acc;
     __syncthreads();
-    for (int stride = blockDim.x>>1; stride > 0; stride >>= 1) {   // blockDim.x is guaranteed power-of-two by launcher
+    for (unsigned stride = blockDim.x>>1; stride > 0; stride >>= 1) {   // blockDim.x is guaranteed power-of-two by launcher
       if (threadIdx.x < stride)
         smem[threadIdx.x] = op.reduce(smem[threadIdx.x], smem[threadIdx.x + stride]);
       __syncthreads();
@@ -172,105 +172,103 @@ namespace mag {
       o[oi] = op.finalize(smem[0], plan.red_prod);
   }
 
-  template <typename op_t>
+  template <typename Op>
   static void launch_reduce_op(const mag_command_t &cmd) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    int numel = numel_i32(r);
-    const auto *plan = &cmd.params->reduction.red_plan;
-    int threads = REDUCTION_BLOCK_SIZE;
-    if (threads < 1) threads = 1;
-    if (plan->red_prod < threads)
-      threads = static_cast<int>(mag_next_pow2_u32(static_cast<uint32_t>(plan->red_prod > 0 ? plan->red_prod : 1)));
-    if (threads > REDUCTION_BLOCK_SIZE) threads = REDUCTION_BLOCK_SIZE;
-    if (threads > REDUCTION_BLOCK_SIZE) threads = REDUCTION_BLOCK_SIZE;
-    if (threads < 1) threads = 1;
-    size_t shmem = sizeof(typename op_t::acc_t)*static_cast<size_t>(threads);
-    auto *pr = reinterpret_cast<typename op_t::out_t *>(mag_tensor_data_ptr_mut(r));
-    const auto *px = reinterpret_cast<const typename op_t::in_t *>(mag_tensor_data_ptr(x));
-    reduce_op_kernel<op_t><<<static_cast<unsigned>(numel), threads, shmem>>>(op_t{}, numel, pr, px, *plan);
+    const auto &plan = cmd.params->reduction.red_plan;
+    int64_t numel = mag_tensor_numel(r);
+    unsigned threads = REDUCTION_BLOCK_SIZE;
+    if (plan.red_prod < threads)
+      threads = static_cast<int>(mag_next_pow2_u32(static_cast<uint32_t>(plan.red_prod > 0 ? plan.red_prod : 1)));
+    threads = std::clamp(threads, 1u, static_cast<decltype(threads)>(REDUCTION_BLOCK_SIZE));
+    auto blocks = static_cast<unsigned>(numel);
+    size_t shmemnb = sizeof(typename Op::Acc)*static_cast<size_t>(threads);
+    auto *pr = reinterpret_cast<typename Op::Out *>(mag_tensor_data_ptr_mut(r));
+    const auto *px = reinterpret_cast<const typename Op::In *>(mag_tensor_data_ptr(x));
+    reduce_op_kernel<Op><<<blocks, threads, shmemnb>>>(Op{}, numel, pr, px, plan);
   }
 
-  template <template <typename, typename, typename> typename op_t>
+  template <template <typename, typename, typename> typename Op>
   static mag_status_t impl_reduce_op_fp(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->meta.dtype == x->meta.dtype);
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, double>>(cmd); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, float>>(cmd); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in floating reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
-  template <template <typename, typename, typename> typename op_t>
+  template <template <typename, typename, typename> typename Op>
   static mag_status_t impl_reduce_op_sumprod(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, double>>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, float>>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
-      case MAG_DTYPE_BOOLEAN: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT8: launch_reduce_op<op_t<uint8_t,  uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT8: launch_reduce_op<op_t<int8_t,   int64_t,  int64_t>>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_reduce_op<op_t<uint16_t, uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT16: launch_reduce_op<op_t<int16_t,  int64_t,  int64_t>>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_reduce_op<op_t<uint32_t, uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t,  int64_t,  int64_t>>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t,  int64_t,  int64_t>>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, double>>(cmd); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, float>>(cmd); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, float>>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd); break;
+      case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t,  uint64_t, uint64_t>>(cmd); break;
+      case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t,   int64_t,  int64_t>>(cmd); break;
+      case MAG_DTYPE_UINT16: launch_reduce_op<Op<uint16_t, uint64_t, uint64_t>>(cmd); break;
+      case MAG_DTYPE_INT16: launch_reduce_op<Op<int16_t,  int64_t,  int64_t>>(cmd); break;
+      case MAG_DTYPE_UINT32: launch_reduce_op<Op<uint32_t, uint64_t, uint64_t>>(cmd); break;
+      case MAG_DTYPE_INT32: launch_reduce_op<Op<int32_t,  int64_t,  int64_t>>(cmd); break;
+      case MAG_DTYPE_UINT64: launch_reduce_op<Op<uint64_t, uint64_t, uint64_t>>(cmd); break;
+      case MAG_DTYPE_INT64: launch_reduce_op<Op<int64_t,  int64_t,  int64_t>>(cmd); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in sum/prod reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
-  template <template <typename, typename, typename> typename op_t>
+  template <template <typename, typename, typename> typename Op>
   static mag_status_t impl_reduce_op_extrema(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->meta.dtype == x->meta.dtype);
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, float, float>>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, half, half>>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16>>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, __nv_fp8_e4m3, __nv_fp8_e4m3>>(cmd); break;
-      case MAG_DTYPE_BOOLEAN: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT8: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT8: launch_reduce_op<op_t<int8_t, int8_t, int8_t>>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_reduce_op<op_t<uint16_t, uint16_t, uint16_t>>(cmd); break;
-      case MAG_DTYPE_INT16: launch_reduce_op<op_t<int16_t, int16_t, int16_t>>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_reduce_op<op_t<uint32_t, uint32_t, uint32_t>>(cmd); break;
-      case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t, int32_t, int32_t>>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint64_t, uint64_t>>(cmd); break;
-      case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t, int64_t, int64_t>>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, float>>(cmd); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, half>>(cmd); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16>>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, __nv_fp8_e4m3>>(cmd); break;
+      case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t, int8_t, int8_t>>(cmd); break;
+      case MAG_DTYPE_UINT16: launch_reduce_op<Op<uint16_t, uint16_t, uint16_t>>(cmd); break;
+      case MAG_DTYPE_INT16: launch_reduce_op<Op<int16_t, int16_t, int16_t>>(cmd); break;
+      case MAG_DTYPE_UINT32: launch_reduce_op<Op<uint32_t, uint32_t, uint32_t>>(cmd); break;
+      case MAG_DTYPE_INT32: launch_reduce_op<Op<int32_t, int32_t, int32_t>>(cmd); break;
+      case MAG_DTYPE_UINT64: launch_reduce_op<Op<uint64_t, uint64_t, uint64_t>>(cmd); break;
+      case MAG_DTYPE_INT64: launch_reduce_op<Op<int64_t, int64_t, int64_t>>(cmd); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in min/max reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
   }
 
-  template <template <typename, typename, typename> typename op_t>
+  template <template <typename, typename, typename> typename Op>
   static mag_status_t impl_reduce_op_logical(mag_error_t *err, const mag_command_t &cmd) {
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *r = cmd.out[0];
     mag_assert2(r->meta.dtype == MAG_DTYPE_BOOLEAN);
     switch (x->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_reduce_op<op_t<float, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<op_t<half, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_t<__nv_bfloat16, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_t<__nv_fp8_e4m3, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_BOOLEAN: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT8: launch_reduce_op<op_t<uint8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT8: launch_reduce_op<op_t<int8_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT16: launch_reduce_op<op_t<uint16_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT16: launch_reduce_op<op_t<int16_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT32: launch_reduce_op<op_t<uint32_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT32: launch_reduce_op<op_t<int32_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_UINT64: launch_reduce_op<op_t<uint64_t, uint8_t, uint8_t>>(cmd); break;
-      case MAG_DTYPE_INT64: launch_reduce_op<op_t<int64_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_UINT16: launch_reduce_op<Op<uint16_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_INT16: launch_reduce_op<Op<int16_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_UINT32: launch_reduce_op<Op<uint32_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_INT32: launch_reduce_op<Op<int32_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_UINT64: launch_reduce_op<Op<uint64_t, uint8_t, uint8_t>>(cmd); break;
+      case MAG_DTYPE_INT64: launch_reduce_op<Op<int64_t, uint8_t, uint8_t>>(cmd); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in logical reduction op: %s", mag_type_trait(x->meta.dtype)->name);
     }
     return MAG_OK;
@@ -432,12 +430,10 @@ namespace mag {
     const mag_tensor_t *x = cmd.in[0];
     int64_t n = mag_tensor_numel(r);
     const auto *plan = &cmd.params->reduction.red_plan;
-    int threads = REDUCTION_BLOCK_SIZE;
-    if (threads < 1) threads = 1;
+    unsigned threads = REDUCTION_BLOCK_SIZE;
     if (plan->red_prod < threads)
       threads = static_cast<int>(mag_next_pow2_u32(static_cast<uint32_t>(plan->red_prod > 0 ? plan->red_prod : 1)));
-    if (threads > REDUCTION_BLOCK_SIZE) threads = REDUCTION_BLOCK_SIZE;
-    if (threads < 1) threads = 1;
+    threads = std::clamp(threads, 1u, REDUCTION_BLOCK_SIZE);
     size_t shmem = sizeof(arg_acc_f32)*static_cast<size_t>(threads);
     auto *pr = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
@@ -450,12 +446,10 @@ namespace mag {
     const mag_tensor_t *x = cmd.in[0];
     int64_t n = mag_tensor_numel(r);
     const auto *plan = &cmd.params->reduction.red_plan;
-    int threads = REDUCTION_BLOCK_SIZE;
-    if (threads < 1) threads = 1;
+    unsigned threads = REDUCTION_BLOCK_SIZE;
     if (plan->red_prod < threads)
       threads = static_cast<int>(mag_next_pow2_u32(static_cast<uint32_t>(plan->red_prod > 0 ? plan->red_prod : 1)));
-    if (threads > REDUCTION_BLOCK_SIZE) threads = REDUCTION_BLOCK_SIZE;
-    if (threads < 1) threads = 1;
+    threads = std::clamp(threads, 1u, REDUCTION_BLOCK_SIZE);
     size_t shmem = sizeof(arg_acc_i64)*static_cast<size_t>(threads);
     auto *pr = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));

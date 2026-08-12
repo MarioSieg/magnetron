@@ -18,11 +18,10 @@ static MAG_AINLINE mag_vf32_t mag_vf32_exp(mag_vf32_t x) {
   mag_vf32_t k = mag_vf32_reinterpret_from_vi32(mag_vi32_add(e, mag_vi32_reinterpret_from_vf32(mag_vf32_splat(1.0f))));
   mag_vmask32_t c = mag_vf32_cmpgt(mag_vf32_abs(n), mag_vf32_splat(126.0f));
   mag_vf32_t u = mag_vf32_mul(b, b);
-  mag_vf32_t j = mag_vf32_fmadd(
-    mag_vf32_mul(mag_vf32_splat(0x1.ffffecp-1f), b),
-    mag_vf32_fmadd(mag_vf32_fmadd(mag_vf32_splat(0x1.fffdb6p-2f), mag_vf32_splat(0x1.555e66p-3f), b), mag_vf32_fmadd(mag_vf32_splat(0x1.573e2ep-5f), mag_vf32_splat(0x1.0e4020p-7f), b),u
-    ), u
-  );
+  mag_vf32_t p = mag_vf32_fmadd(mag_vf32_splat(0x1.555e66p-3f), b, mag_vf32_splat(0x1.fffdb6p-2f)); /* Eval Poly by Estrin Scheme */
+  mag_vf32_t q = mag_vf32_fmadd(mag_vf32_splat(0x1.0e4020p-7f), b, mag_vf32_splat(0x1.573e2ep-5f));
+  q = mag_vf32_fmadd(q, u, p);
+  mag_vf32_t j = mag_vf32_fmadd(q, u, mag_vf32_mul(mag_vf32_splat(0x1.ffffecp-1f), b));
   mag_vf32_t fast = mag_vf32_fmadd(k, j, k);
   if (!mag_vmask32_any(c)) return fast;
   mag_vi32_t d = mag_vi32_and(mag_vi32_from_vmask32(mag_vf32_cmple(n, mag_vf32_zero())), mag_vi32_splat((int32_t)0x82000000u));

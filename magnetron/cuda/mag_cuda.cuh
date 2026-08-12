@@ -36,11 +36,48 @@ namespace mag {
   static inline std::atomic_uint64_t global_seed = 0;
   static inline std::atomic_uint64_t global_subseq = 0;
 
-  [[nodiscard]] inline int numel_i32(const mag_tensor_t *x) {
-    int64_t numel = x->meta.numel;
-    assert(numel <= INT_MAX);
-    return static_cast<int>(numel);
-  }
+  template <typename I>
+  struct coords_iter final {
+    static_assert(std::is_integral_v<I> && std::is_signed_v<I>, "Index cardinal must be signed integral type");
+    I rank;
+    I shape[MAG_MAX_DIMS];
+    I strides[MAG_MAX_DIMS];
+
+    __host__ __device__ constexpr coords_iter() noexcept = default;
+    __host__ __device__ constexpr explicit coords_iter(const mag_coords_t &co) noexcept {
+      rank = static_cast<I>(co.rank);
+      for (int64_t k=0; k < co.rank; ++k) {
+        shape[k] = static_cast<I>(co.shape[k]);
+        strides[k] = static_cast<I>(co.strides[k]);
+      }
+    }
+    __host__ __device__ constexpr explicit coords_iter(const mag_tensor_t *tensor) noexcept : coords_iter{tensor->meta.coords} {}
+
+    [[nodiscard]] __device__ __forceinline__ constexpr I operator()(I i) const noexcept {
+        I o {};
+        for (I k=rank-1; k >= 0; --k) {
+          I dim = shape[k];
+          I ax = i % dim;
+          i /= dim;
+          o += ax*strides[k];
+        }
+        return o;
+      }
+
+      [[nodiscard]] __device__ __forceinline__ constexpr I broadcast(const coords_iter &cx, I i) const noexcept {
+        I delta = rank - cx.rank;
+        I o {};
+        for (I k=rank-1; k >= 0; --k) {
+          I dim = shape[k];
+          I ax = i % dim;
+          i /= dim;
+          I kd = k-delta;
+          if (kd >= 0 && cx.shape[kd] > 1)
+            o += ax*cx.strides[kd];
+        }
+        return o;
+      }
+  };
 
   template <typename T>
   [[nodiscard]] __host__ __device__ __forceinline__ static T unpack_scalar(mag_scalar_t scalar) {

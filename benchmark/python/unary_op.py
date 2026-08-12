@@ -2,23 +2,27 @@
 
 import time, statistics as stats
 import argparse
+import math
 from magnetron import Tensor, dtype
 
 args = argparse.ArgumentParser(description='Benchmark unary op')
 args.add_argument('op', type=str, help='Unary op name, e.g. exp, tanh, sigmoid, relu')
-args.add_argument('--N', type=int, default=1 << 24)
+args.add_argument('--N', type=int, default=1<<24)
 args.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'])
 args.add_argument('--warmup', type=int, default=20)
 args.add_argument('--iters', type=int, default=500)
 args.add_argument('--dtype', type=str, default='bfloat16', choices=['float8_e4m3fn', 'float16', 'bfloat16', 'float32'])
-args.add_argument('--noncontig', action='store_true', help='Use non-contiguous tensors')
+args.add_argument('--strided', action='store_true', help='Use non-contiguous tensors')
 args = args.parse_args()
 
 _dtype = getattr(dtype, args.dtype)
 
-x = Tensor.uniform(args.N, dtype=_dtype, device=args.device)
-if args.noncontig:
-    x = x.T
+cbrt = int(math.ceil(math.cbrt(args.N)))
+x = Tensor.uniform(cbrt, cbrt, cbrt, dtype=_dtype, device=args.device)
+if args.strided:
+    x = x.permute(*reversed([i for i in range(x.rank)]))
+    assert not x.is_contiguous
+print(x.shape)
 op = getattr(x, args.op)
 
 for _ in range(args.warmup):

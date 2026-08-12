@@ -22,8 +22,6 @@
 #include <type_traits>
 
 namespace mag {
-  constexpr int MISC_BLOCK_SIZE = 256;
-
   static void cuda_check(cudaError_t e, const char *what) {
     if (mag_unlikely(e != cudaSuccess))
       mag_panic("%s: %s", what, cudaGetErrorString(e));
@@ -55,7 +53,7 @@ namespace mag {
     mag_tensor_t *idx = cmd.in[0];
     mag_assert2(r->meta.dtype == MAG_DTYPE_INT64 && idx->meta.dtype == MAG_DTYPE_INT64);
     int nc = cmd.params->one_hot.num_classes;
-    int n = numel_i32(idx);
+    int n = mag_tensor_numel(idx); // TODO: i64 numel
     auto *pr = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     const auto *pidx = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(idx));
     int blocks = (n+MISC_BLOCK_SIZE-1)/MISC_BLOCK_SIZE;
@@ -186,7 +184,7 @@ namespace mag {
 
   template <typename T>
   static void launch_where(mag_tensor_t *r, const mag_tensor_t *cond, const mag_tensor_t *x, const mag_tensor_t *y) {
-    int n = numel_i32(r);
+    int n = mag_tensor_numel(r); // TODO: i64 numel
     int blocks = (n+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE;
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bc = reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(cond));
@@ -255,8 +253,8 @@ namespace mag {
     mag_coords_iter_t cr, cx;
     mag_coords_iter_init(&cr, &r->meta.coords);
     mag_coords_iter_init(&cx, &x->meta.coords);
-    int rn = numel_i32(r);
-    int xn = numel_i32(x);
+    int rn = mag_tensor_numel(r); // TODO: i64 numel
+    int xn = mag_tensor_numel(x); // TODO: i64 numel
     switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: repeat_back_kernel<float><<<1, 1>>>(
         rn, xn,
@@ -1165,7 +1163,7 @@ namespace mag {
     int R = static_cast<int>(x->meta.coords.rank);
     int dim_size = static_cast<int>(x->meta.coords.shape[dim]);
     if (dim_size <= 0) return;
-    int outer_count = numel_i32(x) / dim_size;
+    int outer_count = mag_tensor_numel(x) / dim_size; // TODO: i64 nume lfix
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     cu_scan_rows_kernel<T, ACC, is_prod><<<static_cast<unsigned>(outer_count), 1>>>(outer_count, dim_size, R, dim, x->meta.coords.strides[dim], r->meta.coords.strides[dim], *x, *r, bx, br);
@@ -1181,7 +1179,7 @@ namespace mag {
     int R = static_cast<int>(x->meta.coords.rank);
     int dim_size = static_cast<int>(x->meta.coords.shape[dim]);
     if (dim_size <= 0) return;
-    int outer_count = numel_i32(x) / dim_size;
+    int outer_count = mag_tensor_numel(x) / dim_size; // TODO: i64 numel fix
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     auto *bv = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(v));
     auto *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
