@@ -101,7 +101,7 @@ namespace mag {
       elem_stride.data(),
       CU_TENSOR_MAP_INTERLEAVE_NONE,
       swizzle,
-      CU_TENSOR_MAP_L2_PROMOTION_NONE,
+      CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
       CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
     );
     if (rc != CUDA_SUCCESS)
@@ -278,7 +278,7 @@ namespace mag {
   };
   static_assert(sizeof(barrier) == sizeof(uint64_t));
 
-  template <typename T, bool TA, bool TB, int BM, int BN, int BK, int STAGES>
+  template <typename T, bool TA, bool TB, int BM, int BN, int BK, int WT_M, int WT_N, int STAGES>
   __global__ static void matmul_kernel_wmma(
     int64_t M,
     int64_t N,
@@ -293,19 +293,26 @@ namespace mag {
     static_assert(BK % 16 == 0, "BK must be a multiple of 16 for wmma 16x16x16");
     static_assert((BM&15) == 0);
     static_assert((BN&15) == 0);
-    static constexpr int WM = BM>>4;
-    static constexpr int WN = BN>>4;
-    static constexpr int WARP_TILES_OUT = WM*WN;
+    static constexpr int TM = BM>>4;  /* 16x16 accumulator tiles spanning the block tile */
+    static constexpr int TN = BN>>4;
+    static_assert(TM%WT_M == 0 && TN%WT_N == 0, "warp tile must divide the block tile");
+    static constexpr int WARPS_M = TM/WT_M;
+    static constexpr int WARPS_N = TN/WT_N;
     static constexpr int PRODUCER_WARPS = 1;
-    static constexpr int CONSUMER_WARPS = WARP_TILES_OUT>>1;
+    static constexpr int CONSUMER_WARPS = WARPS_M*WARPS_N;
     static constexpr int TOTAL_WARPS = PRODUCER_WARPS + CONSUMER_WARPS;
     static constexpr int BLOCK_THREADS = TOTAL_WARPS<<5;
     static constexpr int A_SIZE = BM*BK;
     static constexpr int B_SIZE = BK*BN;
 
-    static_assert(!(WARP_TILES_OUT&1));
     static_assert(BLOCK_THREADS <= 1024);
     static_assert(CONSUMER_WARPS > 0);
+
+    /* Each warp owns a WT_M x WT_N grid of 16x16 accumulators, so one k-step costs
+       WT_M+WT_N fragment loads and yields WT_M*WT_N mma ops. Keeping that ratio well
+       above 1 is what keeps the tensor cores fed instead of the shared memory pipe. */
+    using a_layout = std::conditional_t<TA, wmma::col_major, wmma::row_major>;
+    using b_layout = std::conditional_t<TB, wmma::col_major, wmma::row_major>;
 
     int batch = blockIdx.z;
     if (batch >= batch_total) return;
@@ -325,7 +332,6 @@ namespace mag {
     __shared__ barrier done_bar[STAGES];
     auto *a_smem = reinterpret_cast<T *>(smem_raw);
     auto *b_smem = a_smem + STAGES*A_SIZE;
-    auto *c_smem = reinterpret_cast<float *>(b_smem + STAGES*B_SIZE);
 
     if (tid == 0) {
       #pragma unroll
@@ -383,20 +389,14 @@ namespace mag {
       if (is_producer || lane != 0) return;
       done_bar[stage].arrive();
     };
-    wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag0;
-    wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag1;
-    int warp_m0 = 0, warp_n0 = 0;
-    int warp_m1 = 0, warp_n1 = 0;
-    if (!is_producer) {
-      wmma::fill_fragment(c_frag0, 0.0f);
-      wmma::fill_fragment(c_frag1, 0.0f);
-      int tile0 = consumer_warp;
-      int tile1 = consumer_warp + CONSUMER_WARPS;
-      warp_m0 = tile0 / WN;
-      warp_n0 = tile0 % WN;
-      warp_m1 = tile1 / WN;
-      warp_n1 = tile1 % WN;
-    }
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag[WT_M][WT_N];
+    #pragma unroll
+    for (int i=0; i < WT_M; ++i)
+      #pragma unroll
+      for (int j=0; j < WT_N; ++j)
+        wmma::fill_fragment(c_frag[i][j], 0.0f);
+    int warp_m0 = is_producer ? 0 : (consumer_warp/WARPS_N)*WT_M;
+    int warp_n0 = is_producer ? 0 : (consumer_warp%WARPS_N)*WT_N;
 
     auto compute_stage = [&](int stage) -> void {
       if (is_producer) return;
@@ -404,39 +404,25 @@ namespace mag {
       auto *b_buf = b_smem + stage*B_SIZE;
       #pragma unroll
       for (int kk = 0; kk < BK; kk += 16) {
-        if constexpr (!TA && !TB) {
-          wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a0, a1;
-          wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
-          wmma::load_matrix_sync(a0,     a_buf + (warp_m0<<4)*BK + kk, BK);
-          wmma::load_matrix_sync(a1,     a_buf + (warp_m1<<4)*BK + kk, BK);
-          wmma::load_matrix_sync(b_frag, b_buf + kk*BN + (warp_n0<<4), BN);
-          wmma::mma_sync(c_frag0, a0, b_frag, c_frag0);
-          wmma::mma_sync(c_frag1, a1, b_frag, c_frag1);
-        } else if constexpr (TA && !TB) {
-          wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a0, a1;
-          wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::row_major> b_frag;
-          wmma::load_matrix_sync(a0,     a_buf + kk*BM + (warp_m0<<4), BM);
-          wmma::load_matrix_sync(a1,     a_buf + kk*BM + (warp_m1<<4), BM);
-          wmma::load_matrix_sync(b_frag, b_buf + kk*BN + (warp_n0<<4), BN);
-          wmma::mma_sync(c_frag0, a0, b_frag, c_frag0);
-          wmma::mma_sync(c_frag1, a1, b_frag, c_frag1);
-        } else if constexpr (!TA && TB) {
-          wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::row_major> a0, a1;
-          wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
-          wmma::load_matrix_sync(a0,     a_buf + (warp_m0<<4)*BK + kk, BK);
-          wmma::load_matrix_sync(a1,     a_buf + (warp_m1<<4)*BK + kk, BK);
-          wmma::load_matrix_sync(b_frag, b_buf + (warp_n0<<4)*BK + kk, BK);
-          wmma::mma_sync(c_frag0, a0, b_frag, c_frag0);
-          wmma::mma_sync(c_frag1, a1, b_frag, c_frag1);
-        } else {
-          wmma::fragment<wmma::matrix_a, 16, 16, 16, T, wmma::col_major> a0, a1;
-          wmma::fragment<wmma::matrix_b, 16, 16, 16, T, wmma::col_major> b_frag;
-          wmma::load_matrix_sync(a0,     a_buf + kk*BM + (warp_m0<<4), BM);
-          wmma::load_matrix_sync(a1,     a_buf + kk*BM + (warp_m1<<4), BM);
-          wmma::load_matrix_sync(b_frag, b_buf + (warp_n0<<4)*BK + kk, BK);
-          wmma::mma_sync(c_frag0, a0, b_frag, c_frag0);
-          wmma::mma_sync(c_frag1, a1, b_frag, c_frag1);
+        wmma::fragment<wmma::matrix_a, 16, 16, 16, T, a_layout> a_frag[WT_M];
+        wmma::fragment<wmma::matrix_b, 16, 16, 16, T, b_layout> b_frag[WT_N];
+        #pragma unroll
+        for (int i=0; i < WT_M; ++i) {
+          int mt = (warp_m0 + i)<<4;
+          if constexpr (!TA) wmma::load_matrix_sync(a_frag[i], a_buf + mt*BK + kk, BK);
+          else wmma::load_matrix_sync(a_frag[i], a_buf + kk*BM + mt, BM);
         }
+        #pragma unroll
+        for (int j=0; j < WT_N; ++j) {
+          int nt = (warp_n0 + j)<<4;
+          if constexpr (!TB) wmma::load_matrix_sync(b_frag[j], b_buf + kk*BN + nt, BN);
+          else wmma::load_matrix_sync(b_frag[j], b_buf + nt*BK + kk, BK);
+        }
+        #pragma unroll
+        for (int i=0; i < WT_M; ++i)
+          #pragma unroll
+          for (int j=0; j < WT_N; ++j)
+            wmma::mma_sync(c_frag[i][j], a_frag[i], b_frag[j], c_frag[i][j]);
       }
     };
 
@@ -465,35 +451,31 @@ namespace mag {
       }
     }
 
+    /* Every issued TMA has been waited on by the consumers, so the staging buffer is dead
+       from here on and can back the f32 epilogue instead of a second dedicated allocation. */
+    __syncthreads();
+    auto *c_smem = reinterpret_cast<float *>(smem_raw);
+
     if (!is_producer) {
-      int tile0 = consumer_warp;
-      int tile1 = consumer_warp + CONSUMER_WARPS;
-      auto *c_ptr0 = c_smem + (tile0<<8);
-      auto *c_ptr1 = c_smem + (tile1<<8);
-
-      wmma::store_matrix_sync(c_ptr0, c_frag0, 16, wmma::mem_row_major);
-      wmma::store_matrix_sync(c_ptr1, c_frag1, 16, wmma::mem_row_major);
-
-      __syncwarp();
-
-      store_tile_16x16<T>(
-        r_batch,
-        static_cast<int>(M),
-        static_cast<int>(N),
-        tile_m + (warp_m0 << 4),
-        tile_n + (warp_n0 << 4),
-        c_ptr0,
-        lane
-      );
-      store_tile_16x16<T>(
-        r_batch,
-        static_cast<int>(M),
-        static_cast<int>(N),
-        tile_m + (warp_m1 << 4),
-        tile_n + (warp_n1 << 4),
-        c_ptr1,
-        lane
-      );
+      auto *c_ptr = c_smem + (consumer_warp<<8);
+      #pragma unroll
+      for (int i=0; i < WT_M; ++i) {
+        #pragma unroll
+        for (int j=0; j < WT_N; ++j) {
+          wmma::store_matrix_sync(c_ptr, c_frag[i][j], 16, wmma::mem_row_major);
+          __syncwarp();
+          store_tile_16x16<T>(
+            r_batch,
+            static_cast<int>(M),
+            static_cast<int>(N),
+            tile_m + ((warp_m0 + i)<<4),
+            tile_n + ((warp_n0 + j)<<4),
+            c_ptr,
+            lane
+          );
+          __syncwarp();
+        }
+      }
     }
   }
 
@@ -509,15 +491,19 @@ namespace mag {
   ) {
     static_assert(std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>);
     static constexpr int BM = 128;
-    static constexpr int BN = 64;
+    static constexpr int BN = 128;
     static constexpr int BK = 32;
-    static constexpr int STAGES = 4;
-    static constexpr int BLOCK_THREADS = (1 + ((BM/16)*(BN/16))/2) * 32;
+    static constexpr int WT_M = 4;  /* 4x2 accumulators per warp: 8 mma per 6 fragment loads */
+    static constexpr int WT_N = 2;
+    static constexpr int STAGES = 3;
+    static constexpr int CONSUMER_WARPS = ((BM>>4)/WT_M)*((BN>>4)/WT_N);
+    static constexpr int BLOCK_THREADS = (1 + CONSUMER_WARPS)*32;
     int max_smem_real;
     int device;
     cudaGetDevice(&device);
     cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
-    size_t smem = sizeof(T)*STAGES*(BM*BK + BN*BK) + sizeof(float)*((BM>>4)*(BN>>4)<<8);
+    /* The epilogue aliases the A/B staging buffer, so the block only pays for the larger of the two. */
+    size_t smem = std::max(sizeof(T)*STAGES*(BM*BK + BN*BK), sizeof(float)*(CONSUMER_WARPS<<8));
     if (smem > (unsigned)max_smem_real)
       return mag_set_error(err, MAG_ERR_OP, "cuda: matmul shared memory requirement (%u bytes) exceeds device limit (%d bytes).", static_cast<unsigned>(smem), max_smem_real);
     auto set_kernel_smem_size = [&](auto kernel, size_t size) -> void {
@@ -529,25 +515,25 @@ namespace mag {
     if (!xT && !yT) {
       CUtensorMap map_a = init_tmap_x<T, false, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, false, BK, BN>(y);
-      auto *kernel = matmul_kernel_wmma<T, false, false, BM, BN, BK, STAGES>;
+      auto *kernel = matmul_kernel_wmma<T, false, false, BM, BN, BK, WT_M, WT_N, STAGES>;
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, map_a, map_b);
     } else if (!xT && yT) {
       CUtensorMap map_a = init_tmap_x<T, false, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, true, BK, BN>(y);
-      auto *kernel = matmul_kernel_wmma<T, false, true, BM, BN, BK, STAGES>;
+      auto *kernel = matmul_kernel_wmma<T, false, true, BM, BN, BK, WT_M, WT_N, STAGES>;
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, map_a, map_b);
     } else if (xT && !yT) {
       CUtensorMap map_a = init_tmap_x<T, true, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, false, BK, BN>(y);
-      auto *kernel = matmul_kernel_wmma<T, true, false, BM, BN, BK, STAGES>;
+      auto *kernel = matmul_kernel_wmma<T, true, false, BM, BN, BK, WT_M, WT_N, STAGES>;
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, map_a, map_b);
     } else {
       CUtensorMap map_a = init_tmap_x<T, true, BM, BK>(x);
       CUtensorMap map_b = init_tmap_y<T, true, BK, BN>(y);
-      auto *kernel = matmul_kernel_wmma<T, true, true, BM, BN, BK, STAGES>;
+      auto *kernel = matmul_kernel_wmma<T, true, true, BM, BN, BK, WT_M, WT_N, STAGES>;
       set_kernel_smem_size(kernel, smem);
       kernel<<<grid_dim, block_dim, smem, stream>>>(M, N, K, batch_total, br, map_a, map_b);
     }
@@ -747,133 +733,271 @@ namespace mag {
     return !TB ? !(15 & (N*sizeof(T))) && !(15 & (K*N*sizeof(T))) : !(15 & (K*sizeof(T))) && !(15 & (K*N*sizeof(T)));
   }
 
-  template <typename T, bool YT, int THREADS_X, int OUTS_PER_BLOCK, bool VEC128>
-  __global__ static void gemv_m1_kernel(
-    int N, int K, int batch_total,
-    T *__restrict__ br,
-    const T *__restrict__ bx,
-    const T *__restrict__ by
-  ) {
-    static_assert(!(THREADS_X & 31));
-    static_assert(THREADS_X*OUTS_PER_BLOCK <= 1024);
-    static constexpr int WARPS_X = THREADS_X >> 5;
-    int batch = blockIdx.y;
-    if (batch >= batch_total) return;
-    bx += batch*K;
-    by += batch*K*N;
-    br += batch*N;
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    int lane = tx & 31;
-    int warp_x = tx >> 5;
-    int out = blockIdx.x*OUTS_PER_BLOCK + ty;
-    if (out >= N) return;
-    float sum = 0.0f;
-    if constexpr (YT) {
-      const T *__restrict__ w_row = by + out*K;
-      if constexpr (VEC128 && (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>)) {
-        const uint4 *x_vec = reinterpret_cast<const uint4 *>(bx);
-        const uint4 *w_vec = reinterpret_cast<const uint4 *>(w_row);
-        int Kv = K >> 3;
-        #pragma unroll 4
-        for (int kv = tx; kv < Kv; kv += THREADS_X) {
-          uint4 xv = __ldg(x_vec + kv);
-          uint4 wv = __ldg(w_vec + kv);
-          if constexpr (std::is_same_v<T, __nv_bfloat16>) {
-            const __nv_bfloat162 *xa = reinterpret_cast<const __nv_bfloat162 *>(&xv);
-            const __nv_bfloat162 *wa = reinterpret_cast<const __nv_bfloat162 *>(&wv);
-            #pragma unroll
-            for (int i = 0; i < 4; ++i) {
-              float2 a = __bfloat1622float2(xa[i]);
-              float2 b = __bfloat1622float2(wa[i]);
-              sum = __fmaf_rn(a.x, b.x, sum);
-              sum = __fmaf_rn(a.y, b.y, sum);
-            }
-          } else {
-            const half2 *xa = reinterpret_cast<const half2 *>(&xv);
-            const half2 *wa = reinterpret_cast<const half2 *>(&wv);
-            #pragma unroll
-            for (int i = 0; i < 4; ++i) {
-              float2 a = __half22float2(xa[i]);
-              float2 b = __half22float2(wa[i]);
-              sum = __fmaf_rn(a.x, b.x, sum);
-              sum = __fmaf_rn(a.y, b.y, sum);
-            }
-          }
-        }
-        for (int k = (K & ~7) + tx; k < K; k += THREADS_X)
-          sum = __fmaf_rn(static_cast<float>(bx[k]), static_cast<float>(w_row[k]), sum);
-      } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
-        const __nv_bfloat162 *x2 = reinterpret_cast<const __nv_bfloat162 *>(bx);
-        const __nv_bfloat162 *w2 = reinterpret_cast<const __nv_bfloat162 *>(w_row);
-        int K2 = K >> 1;
-        for (int k2 = tx; k2 < K2; k2 += THREADS_X) {
-          float2 a = __bfloat1622float2(__ldg(x2 + k2));
-          float2 b = __bfloat1622float2(__ldg(w2 + k2));
-          sum = __fmaf_rn(a.x, b.x, sum);
-          sum = __fmaf_rn(a.y, b.y, sum);
-        }
-        if ((K & 1) && tx == 0)
-          sum = __fmaf_rn(static_cast<float>(bx[K-1]), static_cast<float>(w_row[K-1]), sum);
-      } else if constexpr (std::is_same_v<T, half>) {
-        const half2 *x2 = reinterpret_cast<const half2 *>(bx);
-        const half2 *w2 = reinterpret_cast<const half2 *>(w_row);
-        int K2 = K >> 1;
-        for (int k2 = tx; k2 < K2; k2 += THREADS_X) {
-          float2 a = __half22float2(__ldg(x2 + k2));
-          float2 b = __half22float2(__ldg(w2 + k2));
-          sum = __fmaf_rn(a.x, b.x, sum);
-          sum = __fmaf_rn(a.y, b.y, sum);
-        }
-        if ((K & 1) && tx == 0)
-          sum = __fmaf_rn(static_cast<float>(bx[K-1]), static_cast<float>(w_row[K-1]), sum);
-      } else {
-        for (int k = tx; k < K; k += THREADS_X)
-          sum = __fmaf_rn(static_cast<float>(__ldg(bx + k)), static_cast<float>(__ldg(w_row + k)), sum);
+
+
+  static constexpr int64_t GEMV_MAX_THIN_M = 8;
+
+  template <typename T>
+  [[nodiscard]] static __device__ __forceinline__ float dot_vec16(const uint4 &a, const uint4 &b) {
+    float s0 = 0.0f;
+    float s1 = 0.0f;
+    if constexpr (std::is_same_v<T, __nv_bfloat16>) {
+      const auto *p = reinterpret_cast<const __nv_bfloat162 *>(&a);
+      const auto *q = reinterpret_cast<const __nv_bfloat162 *>(&b);
+      #pragma unroll
+      for (int i=0; i < 4; ++i) {
+        float2 u = __bfloat1622float2(p[i]);
+        float2 v = __bfloat1622float2(q[i]);
+        s0 = __fmaf_rn(u.x, v.x, s0);
+        s1 = __fmaf_rn(u.y, v.y, s1);
+      }
+    } else if constexpr (std::is_same_v<T, half>) {
+      const auto *p = reinterpret_cast<const half2 *>(&a);
+      const auto *q = reinterpret_cast<const half2 *>(&b);
+      #pragma unroll
+      for (int i=0; i < 4; ++i) {
+        float2 u = __half22float2(p[i]);
+        float2 v = __half22float2(q[i]);
+        s0 = __fmaf_rn(u.x, v.x, s0);
+        s1 = __fmaf_rn(u.y, v.y, s1);
       }
     } else {
-      for (int k = tx; k < K; k += THREADS_X)
-        sum = __fmaf_rn(static_cast<float>(__ldg(bx + k)), static_cast<float>(__ldg(by + k*N + out)), sum);
+      const auto *p = reinterpret_cast<const float *>(&a);
+      const auto *q = reinterpret_cast<const float *>(&b);
+      #pragma unroll
+      for (int i=0; i < 4; i += 2) {
+        s0 = __fmaf_rn(p[i], q[i], s0);
+        s1 = __fmaf_rn(p[i+1], q[i+1], s1);
+      }
+    }
+    return s0 + s1;
+  }
+
+  template <typename T>
+  static __device__ __forceinline__ void unpack_vec16(const uint4 &v, float *o) {
+    if constexpr (std::is_same_v<T, __nv_bfloat16>) {
+      const auto *p = reinterpret_cast<const __nv_bfloat162 *>(&v);
+      #pragma unroll
+      for (int i=0; i < 4; ++i) {
+        float2 u = __bfloat1622float2(p[i]);
+        o[i<<1] = u.x;
+        o[(i<<1)+1] = u.y;
+      }
+    } else if constexpr (std::is_same_v<T, half>) {
+      const auto *p = reinterpret_cast<const half2 *>(&v);
+      #pragma unroll
+      for (int i=0; i < 4; ++i) {
+        float2 u = __half22float2(p[i]);
+        o[i<<1] = u.x;
+        o[(i<<1)+1] = u.y;
+      }
+    } else {
+      const auto *p = reinterpret_cast<const float *>(&v);
+      #pragma unroll
+      for (int i=0; i < 4; ++i) o[i] = p[i];
+    }
+  }
+
+  /* One warp owns ROWS consecutive weight rows: 32 lanes sweep K in 16-byte strides, so a
+     warp-step pulls ROWS*512 contiguous bytes with ROWS independent loads in flight, and the
+     x fragment is fetched once and reused across all ROWS*MTILE dot products. The tail rows
+     are clamped instead of predicated - they read live memory and are dropped at store time,
+     which keeps the inner loop branch free. */
+  template <typename T, int MTILE, int WARPS, int ROWS, bool VEC>
+  static __global__ void __launch_bounds__(WARPS*32) gemv_wt_kernel(
+    int M, int N, int K, int batch_total,
+    T *__restrict__ br,
+    const T *__restrict__ bx,
+    const T *__restrict__ bw
+  ) {
+    static constexpr int E = 16/sizeof(T);
+    int batch = blockIdx.y;
+    if (batch >= batch_total) return;
+    bx += static_cast<int64_t>(batch)*M*K;
+    bw += static_cast<int64_t>(batch)*N*K;
+    br += static_cast<int64_t>(batch)*M*N;
+    int lane = threadIdx.x&31;
+    int row0 = (blockIdx.x*WARPS + static_cast<int>(threadIdx.x>>5))*ROWS;
+    if (row0 >= N) return;
+    const T *wr[ROWS];
+    #pragma unroll
+    for (int r=0; r < ROWS; ++r)
+      wr[r] = bw + static_cast<int64_t>(::min(row0 + r, N-1))*K;
+    const T *xr[MTILE];
+    #pragma unroll
+    for (int m=0; m < MTILE; ++m)
+      xr[m] = bx + static_cast<int64_t>(::min(m, M-1))*K;
+    float acc[MTILE][ROWS] = {};
+    if constexpr (VEC) {
+      int kv = K/E;
+      #pragma unroll 2
+      for (int i=lane; i < kv; i += 32) {
+        uint4 xv[MTILE];
+        #pragma unroll
+        for (int m=0; m < MTILE; ++m)
+          xv[m] = __ldg(reinterpret_cast<const uint4 *>(xr[m]) + i);
+        uint4 wv[ROWS];
+        #pragma unroll
+        for (int r=0; r < ROWS; ++r)
+          wv[r] = __ldcs(reinterpret_cast<const uint4 *>(wr[r]) + i); /* streamed once, keep it out of L1 */
+        #pragma unroll
+        for (int m=0; m < MTILE; ++m)
+          #pragma unroll
+          for (int r=0; r < ROWS; ++r)
+            acc[m][r] += dot_vec16<T>(xv[m], wv[r]);
+      }
+    } else {
+      for (int k=lane; k < K; k += 32) {
+        float xv[MTILE];
+        #pragma unroll
+        for (int m=0; m < MTILE; ++m) xv[m] = static_cast<float>(xr[m][k]);
+        #pragma unroll
+        for (int r=0; r < ROWS; ++r) {
+          float w = static_cast<float>(wr[r][k]);
+          #pragma unroll
+          for (int m=0; m < MTILE; ++m) acc[m][r] = __fmaf_rn(xv[m], w, acc[m][r]);
+        }
+      }
     }
     #pragma unroll
-    for (int offset = 16; offset > 0; offset >>= 1)
-      sum += __shfl_down_sync(0xffffffff, sum, offset);
-    __shared__ float warp_sums[OUTS_PER_BLOCK][WARPS_X];
-    if (lane == 0) warp_sums[ty][warp_x] = sum;
-    __syncthreads();
-    if (warp_x == 0) {
-      sum = lane < WARPS_X ? warp_sums[ty][lane] : 0.0f;
+    for (int m=0; m < MTILE; ++m) {
       #pragma unroll
-      for (int offset = 16; offset > 0; offset >>= 1)
-        sum += __shfl_down_sync(0xffffffff, sum, offset);
-      if (lane == 0) br[out] = static_cast<T>(sum);
+      for (int r=0; r < ROWS; ++r) {
+        float s = acc[m][r];
+        #pragma unroll
+        for (int off=16; off > 0; off >>= 1)
+          s += __shfl_down_sync(0xffffffff, s, off);
+        acc[m][r] = s;
+      }
+    }
+    if (lane) return;
+    #pragma unroll
+    for (int m=0; m < MTILE; ++m) {
+      if (m >= M) break;
+      #pragma unroll
+      for (int r=0; r < ROWS; ++r)
+        if (row0 + r < N) br[static_cast<int64_t>(m)*N + row0 + r] = static_cast<T>(acc[m][r]);
+    }
+  }
+
+  template <typename T, int MTILE, int BLOCK, bool VEC>
+  static __global__ void __launch_bounds__(BLOCK) gemv_wn_kernel(
+    int M, int N, int K, int batch_total,
+    T *__restrict__ br,
+    const T *__restrict__ bx,
+    const T *__restrict__ bw
+  ) {
+    static constexpr int CPT = VEC ? 16/sizeof(T) : 1;
+    int batch = blockIdx.y;
+    if (batch >= batch_total) return;
+    bx += static_cast<int64_t>(batch)*M*K;
+    bw += static_cast<int64_t>(batch)*K*N;
+    br += static_cast<int64_t>(batch)*M*N;
+    int col0 = (blockIdx.x*BLOCK + static_cast<int>(threadIdx.x))*CPT;
+    if (col0 >= N) return;
+    const T *xr[MTILE];
+    #pragma unroll
+    for (int m=0; m < MTILE; ++m)
+      xr[m] = bx + static_cast<int64_t>(::min(m, M-1))*K;
+    float acc[MTILE][CPT] = {};
+    bool vectorized = VEC && col0 + CPT <= N;
+    if constexpr (VEC) {
+      if (vectorized) {
+        #pragma unroll 4
+        for (int k=0; k < K; ++k) {
+          uint4 wv = __ldcs(reinterpret_cast<const uint4 *>(bw + static_cast<int64_t>(k)*N + col0));
+          float w[CPT];
+          unpack_vec16<T>(wv, w);
+          #pragma unroll
+          for (int m=0; m < MTILE; ++m) {
+            float xv = static_cast<float>(__ldg(xr[m] + k));
+            #pragma unroll
+            for (int e=0; e < CPT; ++e) acc[m][e] = __fmaf_rn(xv, w[e], acc[m][e]);
+          }
+        }
+      }
+    }
+    if (!vectorized) {
+      for (int k=0; k < K; ++k) {
+        float w[CPT];
+        #pragma unroll
+        for (int e=0; e < CPT; ++e)
+          w[e] = col0 + e < N ? static_cast<float>(bw[static_cast<int64_t>(k)*N + col0 + e]) : 0.0f;
+        #pragma unroll
+        for (int m=0; m < MTILE; ++m) {
+          float xv = static_cast<float>(__ldg(xr[m] + k));
+          #pragma unroll
+          for (int e=0; e < CPT; ++e) acc[m][e] = __fmaf_rn(xv, w[e], acc[m][e]);
+        }
+      }
+    }
+    #pragma unroll
+    for (int m=0; m < MTILE; ++m) {
+      if (m >= M) break;
+      #pragma unroll
+      for (int e=0; e < CPT; ++e)
+        if (col0 + e < N) br[static_cast<int64_t>(m)*N + col0 + e] = static_cast<T>(acc[m][e]);
+    }
+  }
+
+  template <typename T, int MTILE, int ROWS>
+  static void launch_gemv_wt(
+    int M, int N, int K, int64_t batch_total,
+    T *__restrict__ br,
+    const T *__restrict__ bx,
+    const T *__restrict__ bw,
+    bool vec, cudaStream_t stream
+  ) {
+    static constexpr int WARPS = 4;
+    dim3 block_dim(WARPS<<5, 1, 1);
+    dim3 grid_dim(static_cast<unsigned>((N + WARPS*ROWS - 1)/(WARPS*ROWS)), static_cast<unsigned>(batch_total), 1);
+    if (vec) gemv_wt_kernel<T, MTILE, WARPS, ROWS, true><<<grid_dim, block_dim, 0, stream>>>(M, N, K, batch_total, br, bx, bw);
+    else gemv_wt_kernel<T, MTILE, WARPS, ROWS, false><<<grid_dim, block_dim, 0, stream>>>(M, N, K, batch_total, br, bx, bw);
+  }
+
+  template <typename T, int MTILE>
+  static void launch_gemv_mtile(
+    int64_t M, int64_t N, int64_t K, int64_t batch_total,
+    T *__restrict__ br,
+    const T *__restrict__ bx,
+    const T *__restrict__ bw,
+    bool wT, cudaStream_t stream
+  ) {
+    static constexpr int64_t ALIGN = 15;
+    bool base_aligned = !(ALIGN & reinterpret_cast<uintptr_t>(bx)) && !(ALIGN & reinterpret_cast<uintptr_t>(bw));
+    int Mi = static_cast<int>(M);
+    int Ni = static_cast<int>(N);
+    int Ki = static_cast<int>(K);
+    if (wT) {
+      bool vec = base_aligned && !(ALIGN & (K*static_cast<int64_t>(sizeof(T))));
+      if (N >= 4096) launch_gemv_wt<T, MTILE, 4>(Mi, Ni, Ki, batch_total, br, bx, bw, vec, stream);
+      else if (N >= 1024) launch_gemv_wt<T, MTILE, 2>(Mi, Ni, Ki, batch_total, br, bx, bw, vec, stream);
+      else launch_gemv_wt<T, MTILE, 1>(Mi, Ni, Ki, batch_total, br, bx, bw, vec, stream);
+    } else {
+      static constexpr int BLOCK = 128;
+      static constexpr int E = 16/sizeof(T);
+      bool vec = base_aligned && !(ALIGN & (N*static_cast<int64_t>(sizeof(T))));
+      int cpt = vec ? E : 1;
+      dim3 block_dim(BLOCK, 1, 1);
+      dim3 grid_dim(static_cast<unsigned>((N + BLOCK*cpt - 1)/(BLOCK*cpt)), static_cast<unsigned>(batch_total), 1);
+      if (vec) gemv_wn_kernel<T, MTILE, BLOCK, true><<<grid_dim, block_dim, 0, stream>>>(Mi, Ni, Ki, batch_total, br, bx, bw);
+      else gemv_wn_kernel<T, MTILE, BLOCK, false><<<grid_dim, block_dim, 0, stream>>>(Mi, Ni, Ki, batch_total, br, bx, bw);
     }
   }
 
   template <typename T>
-  static void launch_gemv_m1_kernel(
-    int64_t N, int64_t K, int64_t batch_total,
+  static void launch_gemv(
+    int64_t M, int64_t N, int64_t K, int64_t batch_total,
     T *__restrict__ br,
     const T *__restrict__ bx,
-    const T *__restrict__ by,
-    [[maybe_unused]] bool xT, bool yT,
-    cudaStream_t stream
+    const T *__restrict__ bw,
+    bool wT, cudaStream_t stream
   ) {
-    static constexpr int THREADS_X = 128;
-    static constexpr int OUTS_PER_BLOCK = 4;
-    bool vec128 = !(K&6) && !(reinterpret_cast<uintptr_t>(bx) & 15) && !(reinterpret_cast<uintptr_t>(by) & 15);
-    dim3 block_dim(THREADS_X, OUTS_PER_BLOCK, 1);
-    dim3 grid_dim(static_cast<unsigned>((N + OUTS_PER_BLOCK - 1)/OUTS_PER_BLOCK), static_cast<unsigned>(batch_total), 1);
-    if (yT && vec128) {
-      auto *k = gemv_m1_kernel<T, true, THREADS_X, OUTS_PER_BLOCK, true>;
-      k<<<grid_dim, block_dim, 0, stream>>>(N, K, batch_total, br, bx, by);
-    } else if (yT) {
-      auto *k = gemv_m1_kernel<T, true, THREADS_X, OUTS_PER_BLOCK, false>;
-      k<<<grid_dim, block_dim, 0, stream>>>(N, K, batch_total, br, bx, by);
-    } else {
-      auto *k = gemv_m1_kernel<T, false, THREADS_X, OUTS_PER_BLOCK, false>;
-      k<<<grid_dim, block_dim, 0, stream>>>(N, K, batch_total, br, bx, by);
-    }
+    if (N == 1) wT = true; /* a single output column is K-contiguous under either layout */
+    if (M <= 1) launch_gemv_mtile<T, 1>(M, N, K, batch_total, br, bx, bw, wT, stream);
+    else if (M <= 2) launch_gemv_mtile<T, 2>(M, N, K, batch_total, br, bx, bw, wT, stream);
+    else if (M <= 4) launch_gemv_mtile<T, 4>(M, N, K, batch_total, br, bx, bw, wT, stream);
+    else launch_gemv_mtile<T, 8>(M, N, K, batch_total, br, bx, bw, wT, stream);
   }
 
   template <typename T>
@@ -919,13 +1043,22 @@ namespace mag {
       case MAG_MATMUL_TYPE_BMM_DOT:
       case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
       case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
-        launch_gemv_m1_kernel(N, K, batch_total, br, bx, by, xT, yT, stream);
+        launch_gemv(1, N, K, batch_total, br, bx, by, yT, stream);
         goto end;
       case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
       case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
-        launch_gemv_m1_kernel(M, K, batch_total, br, by, bx, yT, true, stream);
+
+        launch_gemv(1, M, K, batch_total, br, by, bx, !xT, stream);
         goto end;
       default: break;
+    }
+    if (N == 1) {
+      launch_gemv(1, M, K, batch_total, br, by, bx, !xT, stream);
+      goto end;
+    }
+    if (M <= GEMV_MAX_THIN_M && !xT) {
+      launch_gemv(M, N, K, batch_total, br, bx, by, yT, stream);
+      goto end;
     }
     #if MAG_CUDA_MATMUL_USE_WMMA
       if constexpr (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>) {
