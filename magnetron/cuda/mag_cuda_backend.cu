@@ -99,6 +99,10 @@ namespace mag {
         return dvc->features() & device_features::mem_pool;
       });
       global_async_alloc.store(alloc_async, std::memory_order_relaxed);
+      if (m_devices.empty()) {
+        mag_log_error("cuda: no usable CUDA devices out of %d detected.", num_devices);
+        return false;
+      }
       return true;
     }
 

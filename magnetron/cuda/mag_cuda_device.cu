@@ -68,6 +68,10 @@ namespace mag {
     global_seed.store(seed, std::memory_order_relaxed);
   }
 
+  namespace {
+    __global__ void image_probe_kernel() {}
+  }
+
   mag_status_t physical_device::create(
      mag_error_t *err,
      std::shared_ptr<physical_device> &out,
@@ -121,10 +125,21 @@ namespace mag {
     device->m_event = nullptr;
     std::snprintf(device->physical_device_name, std::size(device->physical_device_name), "%s", props.name);
     mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to select device for stream creation");
+
+    cudaFuncAttributes probe {};
+    // Probe the fat binary for a usable image now so unsupported GPU architectures fail before the first operator launch
+    if (cudaError_t res = cudaFuncGetAttributes(&probe, &image_probe_kernel); mag_unlikely(res != cudaSuccess)) {
+      cudaGetLastError(); // consume error so next device init is clean
+      return mag_set_error(err, MAG_ERR_BACKEND,
+        "cuda: device %d (%s, sm_%d%d) has no compatible kernel image: %s. This magnetron build was compiled for a different set of GPU architectures.",
+        ordinal, props.name, props.major, props.minor, cudaGetErrorString(res)
+      );
+    }
+
     mag_cu_rt_check(err, cudaStreamCreateWithFlags(&device->m_stream, cudaStreamNonBlocking), "failed to create non-blocking stream");
     mag_cu_rt_check(err, cudaEventCreateWithFlags(&device->m_event, cudaEventDisableTiming), "failed to create device event");
 
-    device->m_features |= device_features::from_compute_caps(device->m_cl);
+    device->m_features |= device_features::from_compute_caps(device->m_cl); // Query device featuress from compute level
     if (device->m_features & device_features::clusters) {
       int cluster_support = 0;
       if (cudaDeviceGetAttribute(&cluster_support, cudaDevAttrClusterLaunch, ordinal) != cudaSuccess || !cluster_support) // Cluster launch requires additional check
