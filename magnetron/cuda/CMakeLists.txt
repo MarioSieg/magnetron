@@ -99,7 +99,9 @@ if (CUDAToolkit_FOUND)
     add_library(magnetron_cuda SHARED ${MAGNETRON_CUDA_SOURCES} ${MAG_CUDA_ARCH_OBJECTS})
     set_property(TARGET magnetron_cuda PROPERTY CUDA_ARCHITECTURES ${MAG_CUDA_ARCHS})
     apply_common_config_to_target(magnetron_cuda FALSE)
-    target_compile_options(magnetron_cuda PRIVATE "-Wall -Wextra -Werror -fvisibility=hidden -Wno-unused-parameter")
+    # These are host compiler flags: nvcc rejects them unless they are forwarded via -Xcompiler.
+    # -Werror is off here because the shared core headers trip -Wunused-function in every TU.
+    target_compile_options(magnetron_cuda PRIVATE -Xcompiler=-Wall,-Wextra,-fvisibility=hidden,-Wno-unused-parameter,-Wno-unused-function)
     target_link_libraries(magnetron_cuda PRIVATE CUDA::cudart CUDA::cuda_driver)
     target_link_libraries(magnetron_cuda PRIVATE magnetron_core)
     target_include_directories(magnetron_cuda PRIVATE ../)

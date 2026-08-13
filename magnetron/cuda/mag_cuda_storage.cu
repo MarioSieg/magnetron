@@ -23,8 +23,12 @@ namespace mag {
     int ordinal = static_cast<int>(dvc->id.device_ordinal);
     mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to set active device");
     const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
-    if (cudaError_t res = stream_alloc(reinterpret_cast<void **>(&base), size, phys_device.stream()); mag_unlikely(res != cudaSuccess))
-      return mag_set_error(err, MAG_ERR_OOM, "cuda: failed to allocate %zu bytes of device memory: %s.", size, cudaGetErrorString(res));
+    if (cudaError_t res = stream_alloc(reinterpret_cast<void **>(&base), size, phys_device.stream()); mag_unlikely(res != cudaSuccess)) {
+      double amount = 0.0;
+      const char *unit = "";
+      mag_humanize_memory_size(size, &amount, &unit);
+      return mag_set_error(err, MAG_ERR_OOM, "cuda: failed to allocate %.03f %s of device memory: %s.", amount, unit, cudaGetErrorString(res));
+    }
     *out = static_cast<mag_storage_buffer_t *>(mag_slab_alloc(&ctx->storage_slab));
     new (*out) mag_storage_buffer_t {
       .__rcb = {},

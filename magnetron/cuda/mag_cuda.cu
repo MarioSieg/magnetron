@@ -33,13 +33,13 @@ namespace mag {
       this->impl = this;
       this->init = +[](mag_error_t *err, mag_backend_t *bck, mag_context_t *ctx) -> mag_status_t {
         if (!static_cast<cuda_backend *>(bck->impl)->initialize(ctx)) {
-          return mag_set_error(err, MAG_ERR_OOM, "Failed to initialize CUDA backend.");
+          return mag_set_error(err, MAG_ERR_OOM, "cuda: failed to initialize CUDA backend.");
         }
         return MAG_OK;
       };
       this->shutdown = +[](mag_error_t *err, mag_backend_t *bck) -> mag_status_t {
         if (!static_cast<cuda_backend *>(bck->impl)->destroy()) {
-          return mag_set_error(err, MAG_ERR_OOM, "Failed to deinitialize CUDA backend.");
+          return mag_set_error(err, MAG_ERR_OOM, "cuda: failed to deinitialize CUDA backend.");
         }
         return MAG_OK;
       };
@@ -51,7 +51,7 @@ namespace mag {
       get_device = +[](mag_backend_t *bck, uint32_t idx) -> mag_device_t* {
         auto &dvc = static_cast<cuda_backend *>(bck->impl)->devices();
         if (idx >= dvc.size()) {
-          mag_log_error("Invalid device index %u (max %zu)", idx, dvc.size()-1);
+          mag_log_error("cuda: invalid device index %u (max %zu)", idx, dvc.size()-1);
           return nullptr;
         }
         return &*dvc[idx];
@@ -68,12 +68,12 @@ namespace mag {
   private:
     [[nodiscard]] bool initialize(mag_context_t *ctx) {
       if (cuInit(0) != CUDA_SUCCESS) {
-        mag_log_error("Failed to initialize CUDA driver API.");
+        mag_log_error("cuda: failed to initialize CUDA driver API.");
         return false;
       }
       int num_devices = 0;
       if (cudaGetDeviceCount(&num_devices) != cudaSuccess || num_devices <= 0) { // No GPUs found, backend cannot be used
-        mag_log_error("No CUDA-capable devices found.");
+        mag_log_error("cuda: no CUDA-capable devices found.");
         return false;
       }
       m_devices.reserve(num_devices);
@@ -83,14 +83,16 @@ namespace mag {
           std::shared_ptr<physical_device> device = nullptr;
           mag_status_t stat = physical_device::create(&err, device, ctx, device_ordinal);
           if (mag_iserr(stat) || !device) {
-            mag_log_error("Failed to initialize CUDA device %d: %s", device_ordinal, err.message); // TODO: propagate error message bet
+            mag_log_error("cuda: failed to initialize CUDA device %d: %s", device_ordinal, err.message); // TODO: propagate error message bet
             continue;
           }
+          auto info = device->info_string();
+          mag_log_info("Initialized CUDA device %d: %s", device_ordinal, info.c_str());
           m_devices.emplace_back(std::move(device));
         } catch (const std::exception &e) {
-          mag_log_error("Failed to initialize CUDA device %d: %s", device_ordinal, e.what());
+          mag_log_error("cuda: failed to initialize CUDA device %d: %s", device_ordinal, e.what());
         } catch (...) {
-          mag_log_error("Unknown error while initializing CUDA device %d", device_ordinal);
+          mag_log_error("cuda: unknown error while initializing CUDA device %d", device_ordinal);
         }
       }
       bool alloc_async = !m_devices.empty() && std::all_of(m_devices.begin(), m_devices.end(), [](const auto &dvc) noexcept -> bool {

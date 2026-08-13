@@ -16,14 +16,29 @@
 #include "mag_cuda.cuh"
 
 #include <string>
+#include <type_traits>
+
+#include <cuda_runtime_api.h> /* CUDART_VERSION: nvcc pre-includes this for .cu, spell it out so the toolkit checks below cannot silently evaluate to 0. */
 
 namespace mag {
+  // Device capability bits used to select kernel variants at runtime.
   struct device_features final {
     enum $ : uint32_t {
       none = 0,
-      virt_mem = 1<<0,
-      mem_pool = 1<<1,
+      virt_mem = 1<<0,  // virtual memory support
+      mem_pool = 1<<1,  // memory pool for cudaMallocAsync
+      mma = 1<<2,       // mma.sync - base tensor cores, sm_70+
+      ldmatrix = 1<<3,  // ldmatrix.sync.aligned, sm_75+
+      cp_async = 1<<4,  // cp.async.ca/cg.shared.global, sm_80+
+      mma_bf16 = 1<<5,  // mma.sync m16n8k16 bf16/tf32, sm_80+
+      stmatrix = 1<<6,  // stmatrix.sync.aligned, sm_90+
+      tma = 1<<7,       // cp.async.bulk.tensor and cuTensorMapEncode*, sm_90+
+      clusters = 1<<8,  // thread block clusters and distributed shared memory, sm_90+
+      wgmma = 1<<9,     // wgmma.mma_async, Hopper only
+      tcgen05 = 1<<10,  // tcgen05.mma and tensor memory - datacenter Blackwell only
     };
+    [[nodiscard]] static std::underlying_type_t<$> from_compute_caps(uint32_t cl) noexcept;
+    [[nodiscard]] static std::string to_string(std::underlying_type_t<$> f);
   };
 
   class physical_device : public mag_device_t {
@@ -50,8 +65,10 @@ namespace mag {
     [[nodiscard]] size_t vmm_granularity() const noexcept { return m_vmm_granularity; }
     [[nodiscard]] std::string_view name() const noexcept { return physical_device_name; }
     [[nodiscard]] std::underlying_type_t<device_features::$> features() const noexcept { return m_features; }
+    [[nodiscard]] bool has_features(std::underlying_type_t<device_features::$> mask) const noexcept { return (m_features & mask) == mask; }
     [[nodiscard]] cudaStream_t stream() const noexcept { return m_stream; }
     [[nodiscard]] cudaEvent_t event() const noexcept { return m_event; }
+    [[nodiscard]] std::string info_string() const;
 
   protected:
     physical_device() = default;

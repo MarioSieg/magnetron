@@ -131,18 +131,21 @@ void MAG_COLDPROC mag_print_separator(FILE *f) {
 }
 
 void mag_humanize_memory_size(size_t n, double *out, const char **unit) {
-  if (n < (1<<10)) {
+  if (n < (1ull<<10)) {
     *out = (double)n;
     *unit = "B";
-  } else if (n < (1<<20)) {
-    *out = (double)n/(double)(1<<10);
+  } else if (n < (1ull<<20)) {
+    *out = (double)n / (double)(1ull<<10);
     *unit = "KiB";
-  } else if (n < (1<<30)) {
-    *out = (double)n/(double)(1<<20);
+  } else if (n < (1ull<<30)) {
+    *out = (double)n / (double)(1ull<<20);
     *unit = "MiB";
-  } else {
-    *out = (double)n/(double)(1<<30);
+  } else if (n < (1ull<<40)) {
+    *out = (double)n / (double)(1ull<<30);
     *unit = "GiB";
+  } else {
+    *out = (double)n / (double)(1ull<<40);
+    *unit = "TiB";
   }
 }
 

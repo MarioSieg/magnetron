@@ -10,11 +10,60 @@
 */
 
 #include "mag_cuda_device.cuh"
+
+#include <algorithm>
+
 #include "mag_cuda_transfer.cuh"
 #include "mag_cuda_storage.cuh"
 #include "mag_cuda_exec.cuh"
 
+#include <array>
+#include <sstream>
+
 namespace mag {
+  std::underlying_type_t<device_features::$> device_features::from_compute_caps(uint32_t cl) noexcept {
+    std::underlying_type_t<$> f = none;
+    if (cl >= 700) f |= mma;
+    if (cl >= 750) f |= ldmatrix;
+    if (cl >= 800) f |= cp_async|mma_bf16;
+    if (cl >= 900) f |= stmatrix|tma|clusters;
+    if (cl >= 900 && cl < 1000) f |= wgmma; // wgmma is Hopper only, Blackwell gropped it for tcgen05 again
+    if (cl == 1000 || cl == 1010 || cl == 1030) f |= tcgen05; // only datacenter Blackwell has tcgen05, consumer doesn't
+#if CUDART_VERSION < 12080
+    f &= ~static_cast<decltype(f)>(tcgen05);
+#endif
+#if CUDART_VERSION < 12000
+    f &= ~static_cast<decltype(f)>(stmatrix|tma|clusters|wgmma);
+#endif
+    return f;
+  }
+
+  std::string device_features::to_string(std::underlying_type_t<$> f) {
+    static constexpr std::array<std::string_view, 11> table = {
+      "virt_mem",
+      "mem_pool",
+      "mma",
+      "ldmatrix",
+      "cp_async",
+      "mma_bf16",
+      "stmatrix",
+      "tma",
+      "clusters",
+      "wgmma",
+      "tcgen05",
+    };
+    std::stringstream ss {};
+    for (size_t i=0; i < table.size(); ++i) {
+      if (!(f&(1u<<i))) continue;
+      auto name = std::string{table[i]};
+      std::for_each(name.begin(), name.end(), [](char &c) -> void { c = static_cast<char>(std::toupper(c)); });
+      ss << name;
+      if (i != (table.size()-1)) ss << " ";
+    }
+    auto res = ss.str();
+    return res.empty() ? "none" : res;
+  }
+
   static void set_global_seed([[maybe_unused]] mag_error_t *err, [[maybe_unused]] mag_device_t *dvc, uint64_t seed) {
     global_seed.store(seed, std::memory_order_relaxed);
   }
@@ -75,6 +124,12 @@ namespace mag {
     mag_cu_rt_check(err, cudaStreamCreateWithFlags(&device->m_stream, cudaStreamNonBlocking), "failed to create non-blocking stream");
     mag_cu_rt_check(err, cudaEventCreateWithFlags(&device->m_event, cudaEventDisableTiming), "failed to create device event");
 
+    device->m_features |= device_features::from_compute_caps(device->m_cl);
+    if (device->m_features & device_features::clusters) {
+      int cluster_support = 0;
+      if (cudaDeviceGetAttribute(&cluster_support, cudaDevAttrClusterLaunch, ordinal) != cudaSuccess || !cluster_support) // Cluster launch requires additional check
+        device->m_features &= ~static_cast<std::underlying_type_t<device_features::$>>(device_features::clusters);
+    }
     if (int pool_support = 0; cudaDeviceGetAttribute(&pool_support, cudaDevAttrMemoryPoolsSupported, ordinal) == cudaSuccess && !!pool_support) {
       cudaMemPool_t pool = nullptr;
       if (mag_likely(cudaDeviceGetDefaultMemPool(&pool, ordinal) == cudaSuccess)) {
@@ -85,6 +140,17 @@ namespace mag {
     }
     out = device;
     return MAG_OK;
+  }
+
+  std::string physical_device::info_string() const {
+    std::ostringstream ss {};
+    ss << (*physical_device_name ? physical_device_name : "Unknown CUDA Device");
+    double amount = 0.0;
+    const char *unit = "";
+    mag_humanize_memory_size(m_vram, &amount, &unit);
+    ss << ", VRAM: " << amount << " " << unit;
+    ss << ", CAPS: " << device_features::to_string(m_features);
+    return ss.str();
   }
 
   physical_device::~physical_device() {
