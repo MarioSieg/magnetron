@@ -555,7 +555,8 @@ The program has the following command line options:
      -r, --recursive               recursively process submodules
      -M FILE, --marker-file FILE   generate a marker file (usually named 'py.typed')
      -p FILE, --pattern-file FILE  apply the given patterns to the generated stub
-                                   (see the docs for syntax)
+                                   (see the docs for syntax, can specify multiple
+                                   times)
      -P, --include-private         include private members (with single leading or
                                    trailing underscore)
      -D, --exclude-docstrings      exclude docstrings from the generated stub
@@ -588,6 +589,31 @@ Note that for now, the ``nanobind.stubgen.StubGen`` API is considered
 experimental and not subject to the semantic versioning policy used by the
 nanobind project.
 
+.. _stubgen_detection:
+
+Detecting stub generation
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Some extensions perform steps (e.g., initializing a GPU) that may be neither
+needed nor appropriate for stub generation. ``stubgen`` sets the environment
+variable ``NB_STUBGEN`` to ``"1"`` so that modules may skip such steps.
+
+.. code-block:: cpp
+
+   NB_MODULE(my_ext, m) {
+       const char *value = std::getenv("NB_STUBGEN");
+       bool stubgen = value && value[0] == '1';
+
+       if (!stubgen)
+           initialize_device();
+
+       // ...
+   }
+
+Use ``os.environ`` to query the variable iin Python Note that it is only set by
+the ``stubgen`` command line / CMake interface. Programs that drive the
+``StubGen`` class directly must set it themselves.
+
 .. _pattern_files:
 
 Pattern files
@@ -616,9 +642,13 @@ command.
 
    nanobind_add_stub(
      ...
-     PATTERN_FILE  <PATH>
+     PATTERN_FILE  <PATH> [<PATH> ...]
      ...
    )
+
+Multiple pattern files (for example, a hand-written one alongside a generated
+one) are merged in the order specified. Since the first matching rule wins,
+rules from earlier files take precedence.
 
 A pattern file contains sequence of patterns. Each pattern consists of a query
 and an indented replacement block to be applied when the query matches.

@@ -1246,27 +1246,17 @@ storage (values returned by pointer or reference, or from :cpp:struct:`nb::new_
 <new_>` bindings that return a pointer) don't benefit from pooling.
 
 Pooling composes transparently with the :ref:`low-level interface <lowlevel>`:
-:cpp:func:`nb::inst_alloc() <inst_alloc>` draws a recycled object from the pool
-when one is available, and the object is returned to the pool when the Python
-wrapper's reference count finally reaches zero. :cpp:func:`nb::inst_destruct()
-<inst_destruct>` only runs the C++ destructor and resets the instance to
-non-ready status; it does not park or free the object, so the
-alloc/initialize/destruct/reinitialize cycle behaves as usual. The ``destruct``
-flag (e.g. cleared via :cpp:func:`nb::inst_set_state() <inst_set_state>`)
-continues to govern whether the C++ destructor runs when the object is later
-parked. Instances whose ownership has been transferred to C++ are not parked.
+:cpp:func:`nb::inst_alloc() <inst_alloc>` draws an object from the pool ff
+possible, which is returned to the pool when its reference count reaches zero.
+Instances whose ownership has been transferred to C++ are never placed into the
+pool.
 
 .. note::
 
-   Pooling is only available for *simple* value types. A type is **ineligible**
-   (and binding will fail with an error) if it
-
-   - participates in Python's cyclic garbage collector, which includes any type
-     using :cpp:class:`nb::dynamic_attr <dynamic_attr>`,
-     :cpp:class:`nb::is_weak_referenceable <is_weak_referenceable>`, or a custom
-     ``tp_traverse`` slot, or
-
-   - uses :ref:`intrusive reference counting <intrusive>`.
+   Pooling is *incompatible* with :ref:`intrusive reference counting
+   <intrusive>`. That corner case aside, everything else works:
+   garbage-collected types with custom type slots, weak-reference types, or
+   types with instance dictionaries, etc.
 
    Pooling is intended for types that are frequently constructed and destroyed.
    Enabling it for a rarely-instantiated type wastes the (lazily allocated) pool

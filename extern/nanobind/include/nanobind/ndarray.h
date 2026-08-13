@@ -89,10 +89,11 @@ NB_FRAMEWORK(no_framework, 0, "ndarray");
 NB_FRAMEWORK(numpy, 1, "numpy.ndarray");
 NB_FRAMEWORK(pytorch, 2, "torch.Tensor");
 NB_FRAMEWORK(tensorflow, 3, "tensorflow.python.framework.ops.EagerTensor");
-NB_FRAMEWORK(jax, 4, "jaxlib.xla_extension.DeviceArray");
+NB_FRAMEWORK(jax, 4, "jaxlib._jax.ArrayImpl");
 NB_FRAMEWORK(cupy, 5, "cupy.ndarray");
 NB_FRAMEWORK(memview, 6, "memoryview");
 NB_FRAMEWORK(array_api, 7, "ArrayLike");
+NB_FRAMEWORK(mlx, 8, "mlx.core.array");
 
 NAMESPACE_BEGIN(device)
 NB_DEVICE(none, 0); NB_DEVICE(cpu, 1); NB_DEVICE(cuda, 2);
@@ -291,7 +292,7 @@ template <typename Scalar, size_t Dim, char Order> struct ndarray_view {
     }
 
     size_t ndim() const { return Dim; }
-    size_t shape(size_t i) const { return m_shape[i]; }
+    size_t shape(size_t i) const { return (size_t) m_shape[i]; }
     int64_t stride(size_t i) const { return m_strides[i]; }
     Scalar *data() const { return m_data; }
 
@@ -328,6 +329,7 @@ private:
 template <typename... Args> class ndarray {
 public:
     template <typename...> friend class ndarray;
+    template <typename, typename> friend struct detail::type_caster;
 
     using Config = detail::ndarray_config_t<int, Args...>;
     using Scalar = typename Config::Scalar;
@@ -409,16 +411,16 @@ public:
     }
 
     ndarray(ndarray &&t) noexcept : m_handle(t.m_handle), m_dltensor(t.m_dltensor) {
+        // Only reset m_handle, it's safe to leave m_dltensor as-is
         t.m_handle = nullptr;
-        t.m_dltensor = dlpack::dltensor();
     }
 
     ndarray &operator=(ndarray &&t) noexcept {
         detail::ndarray_dec_ref(m_handle);
         m_handle = t.m_handle;
         m_dltensor = t.m_dltensor;
+        // Only reset t.m_handle, it's safe to leave t.m_dltensor as-is
         t.m_handle = nullptr;
-        t.m_dltensor = dlpack::dltensor();
         return *this;
     }
 
@@ -517,7 +519,7 @@ private:
             int64_t index = 0;
             ((index += int64_t(indices) * m_dltensor.strides[counter++]), ...);
 
-            return (int64_t) m_dltensor.byte_offset + index * sizeof(Scalar);
+            return (int64_t) m_dltensor.byte_offset + index * (int64_t) sizeof(Scalar);
         } else {
             return 0;
         }
@@ -572,11 +574,15 @@ template <typename... Args> struct type_caster<ndarray<Args...>> {
             (void) shape_buf;
         }
 
-        value = Value(ndarray_import(src.ptr(), &config,
-                                     flags & (uint8_t) cast_flags::convert,
-                                     cleanup));
+        detail::ndarray_handle *h = ndarray_import(
+            src.ptr(), &config, flags & (uint8_t) cast_flags::convert, cleanup);
 
-        return value.is_valid();
+        if (NB_UNLIKELY(value.m_handle))
+            detail::ndarray_dec_ref(value.m_handle);
+        if (NB_LIKELY(h))
+            value.m_dltensor = *detail::ndarray_inc_ref(h);
+        value.m_handle = h;
+        return h != nullptr;
     }
 
     static handle from_cpp(const ndarray<Args...> &tensor, rv_policy policy,

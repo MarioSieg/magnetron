@@ -229,6 +229,8 @@ template <> struct type_caster<void> {
             value = nullptr;
             return true;
         } else {
+            if (!PyCapsule_CheckExact(src.ptr()))
+                return false;
             value = PyCapsule_GetPointer(src.ptr(), "nb_handle");
             if (!value) {
                 PyErr_Clear();
@@ -292,6 +294,8 @@ template <> struct type_caster<char> {
     using Cast = std::conditional_t<is_pointer_v<T_>, const char *, char>;
 
     bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
+        if (!PyUnicode_Check(src.ptr()))
+            return false;
         value = PyUnicode_AsUTF8AndSize(src.ptr(), &size);
         if (!value) {
             PyErr_Clear();
@@ -672,7 +676,7 @@ template <rv_policy policy = rv_policy::automatic, typename... Args>
 tuple make_tuple(Args &&...args) {
     tuple result = steal<tuple>(PyTuple_New((Py_ssize_t) sizeof...(Args)));
 
-    size_t nargs = 0;
+    Py_ssize_t nargs = 0;
     PyObject *o = result.ptr();
 
     (NB_TUPLE_SET_ITEM(o, nargs++,

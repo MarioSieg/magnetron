@@ -24,6 +24,10 @@
 #include <functional>
 #include "hash.h"
 
+#if defined(_AIX) && defined(func_data)
+# undef func_data
+#endif
+
 #if TSL_RH_VERSION_MAJOR != 1 || TSL_RH_VERSION_MINOR < 3
 #  error nanobind depends on tsl::robin_map, in particular version >= 1.3.0, <2.0.0
 #endif
@@ -154,6 +158,7 @@ struct nb_func {
     PyObject* (*vectorcall)(PyObject *, PyObject * const*, size_t, PyObject *);
     uint32_t max_nargs; // maximum value of func_data::nargs for any overload
     call_complexity complexity;
+    PyObject *module_name; // '__module__' captured at definition time
     bool doc_uniform;
 };
 
@@ -330,7 +335,7 @@ struct NB_SHARD_ALIGNMENT nb_shard {
 #if defined(NB_FREE_THREADED)
 template<typename T>
 struct nb_maybe_atomic {
-  nb_maybe_atomic(T v) : value(v) {}
+  nb_maybe_atomic(T v = T()) : value(v) {}
 
   std::atomic<T> value;
   T load_acquire() { return value.load(std::memory_order_acquire); }
@@ -340,7 +345,7 @@ struct nb_maybe_atomic {
 #else
 template<typename T>
 struct nb_maybe_atomic {
-  nb_maybe_atomic(T v) : value(v) {}
+  nb_maybe_atomic(T v = T()) : value(v) {}
 
   T value;
   T load_acquire() { return value; }
@@ -348,6 +353,19 @@ struct nb_maybe_atomic {
   void store_release(T w) { value = w; }
 };
 #endif
+
+/// Cache slots for `nb_internals::ndarray_export`: cached callables that build a
+/// framework's array from nanobind's DLPack/buffer wrapper.
+enum ndarray_export_slot {
+    nd_export_numpy_view, // numpy.asarray
+    nd_export_numpy_copy, // numpy.copy
+    nd_export_pytorch,    // torch.utils.dlpack.from_dlpack
+    nd_export_tensorflow, // tensorflow.experimental.dlpack.from_dlpack
+    nd_export_jax,        // jax.dlpack.from_dlpack
+    nd_export_cupy,       // cupy.from_dlpack
+    nd_export_mlx,        // mlx.core.array (constructor, not from_dlpack)
+    nd_export_count
+};
 
 /**
  * `nb_internals` is the central data structure storing information related to
@@ -411,7 +429,6 @@ struct nb_maybe_atomic {
  * - `print_leak_warnings`, `print_implicit_cast_warnings`: simple boolean
  *   flags. No protection against concurrent conflicting updates.
  */
-
 struct nb_internals {
     /// Internal nanobind module
     PyObject *nb_module;
@@ -434,6 +451,10 @@ struct nb_internals {
 
     /// N-dimensional array wrapper (created on demand)
     nb_maybe_atomic<PyTypeObject *> nb_ndarray = nullptr;
+
+    /// Cached callables used to export an ndarray to a framework, indexed by
+    /// `ndarray_export_slot`.
+    nb_maybe_atomic<PyObject *> ndarray_export[nd_export_count] {};
 
 #if defined(NB_FREE_THREADED)
     nb_shard *shards = nullptr;
@@ -498,7 +519,7 @@ struct nb_internals {
     setattrofunc PyType_Type_tp_setattro;
     descrgetfunc PyProperty_Type_tp_descr_get;
     descrsetfunc PyProperty_Type_tp_descr_set;
-    size_t type_data_offset;
+    ptrdiff_t type_data_offset;
 #endif
 
 #if defined(NB_FREE_THREADED)
@@ -531,13 +552,15 @@ struct nb_internals {
     X(__name__)                                                                \
     X(__new__)                                                                 \
     X(__qualname__)                                                            \
-    X(array)                                                                   \
+    X(astype)                                                                  \
+    X(cast)                                                                    \
     X(clone)                                                                   \
+    X(contiguous)                                                              \
     X(copy)                                                                    \
     X(dl_device)                                                               \
-    X(from_dlpack)                                                             \
     X(max_version)                                                             \
     X(stream)                                                                  \
+    X(to)                                                                      \
     X(value)
 
 // Names for the PyObject* entries in the per-module state array.
@@ -549,17 +572,18 @@ struct pyobj_name {
         #undef NB_INTERNED_ENTRY
         string_count,
 
-        copy_tpl = string_count,  // tuple ("copy")
-        max_version_tpl, // tuple ("max_version")
-        dl_cpu_tpl,      // tuple (1, 0), which corresponds to nb::device::cpu
-        dl_version_tpl,  // tuple (dlpack::major_version, dlpack::minor_version)
+        // Cached constant tuples using the same interning machinery
+        interned_max_version_tpl = string_count, // tuple ("max_version")
+        interned_dl_cpu_tpl,              // tuple (1, 0) == nb::device::cpu
+        interned_dl_version_tpl,          // tuple (dlpack major, minor)
         total_count
     };
 };
 
 extern PyObject *static_pyobjects[];
 
-/// Access the pre-interned string constant 'name', e.g. NB_INTERNED(__name__)
+/// Access a cached static PyObject (interned string or constant tuple) by name,
+/// e.g. NB_INTERNED(__name__) or NB_INTERNED(copy_tpl)
 #define NB_INTERNED(name) static_pyobjects[pyobj_name::interned_##name]
 
 extern void internals_inc_ref();

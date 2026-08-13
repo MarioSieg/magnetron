@@ -24,7 +24,12 @@ if (MSVC)
     add_compile_options(/W4)
   endif()
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU|IntelLLVM")
-  add_compile_options(-Wall -Wextra)
+  # Not enabling -Werror on CUDA compiler because of many visibility attribute warnings in tests
+  add_compile_options(
+      $<$<COMPILE_LANGUAGE:CXX>:-Werror>
+      # $<$<COMPILE_LANGUAGE:CUDA>:--compiler-options=-Werror>
+      -Wall -Wextra -Wconversion
+  )
 endif()
 
 if (UNIX AND (CMAKE_SIZEOF_VOID_P EQUAL 4) AND (CMAKE_SYSTEM_PROCESSOR STREQUAL i686))
@@ -179,6 +184,7 @@ set(TEST_FILES
   test_jax.py
   test_tensorflow.py
   test_stubs.py
+  test_stubgen.py
   test_typing.py
   test_thread.py
   test_specialization.py
@@ -196,7 +202,10 @@ set(TEST_FILES
   py_stub_test.py
   py_stub_test.pyi.ref
   py_recursive_stub_test/__init__.pyi.ref
+  py_recursive_stub_test/alias.pyi.ref
   py_recursive_stub_test/bar.pyi.ref
+  py_recursive_stub_test/sub/__init__.pyi.ref
+  py_recursive_stub_test/sub/mod.pyi.ref
   test_prefix_module/__init__.pyi.ref
   test_prefix_module/prefix.pyi.ref
   test_prefix_module/prefixabc.pyi.ref
@@ -213,7 +222,12 @@ if (NOT (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR) OR MSVC)
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${IN_FILE} ${OUT_FILE})
   endforeach()
 
-  add_custom_target(copy-tests ALL DEPENDS ${TEST_FILES_OUT})
+  # The unit tests in test_stubgen.py need a copy of stubgen.py next to them
+  add_custom_command(
+    DEPENDS ${NB_DIR}/src/stubgen.py OUTPUT ${OUT_DIR}/stubgen.py
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${NB_DIR}/src/stubgen.py ${OUT_DIR}/stubgen.py)
+
+  add_custom_target(copy-tests ALL DEPENDS ${TEST_FILES_OUT} ${OUT_DIR}/stubgen.py)
   set(PY_STUB_TEST ${OUT_DIR}/py_stub_test.py)
 endif()
 
@@ -233,7 +247,11 @@ nanobind_add_stub(
     ${PYI_PREFIX}py_recursive_stub_test
   OUTPUT
     ${PYI_PREFIX}py_recursive_stub_test/__init__.pyi
+    ${PYI_PREFIX}py_recursive_stub_test/alias.pyi
     ${PYI_PREFIX}py_recursive_stub_test/bar.pyi
+    ${PYI_PREFIX}py_recursive_stub_test/sub/__init__.pyi
+    ${PYI_PREFIX}py_recursive_stub_test/sub/mod.pyi
+  PATTERN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/pattern_file_recursive.nb
   PYTHON_PATH ${CMAKE_CURRENT_SOURCE_DIR}
 )
 

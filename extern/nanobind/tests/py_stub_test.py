@@ -16,6 +16,19 @@ del sys
 C = 123
 T = typing.TypeVar("T")
 
+
+class ArrayLike:
+    # Mimics a NumPy array: comparisons return an object whose truth value is
+    # ambiguous. This used to crash the stub generator's cycle check (#1335).
+    def __eq__(self, other):
+        return self
+
+    def __bool__(self):
+        raise ValueError("ambiguous truth value")
+
+
+ARRAY_LIKE = ArrayLike()
+
 def f1(a, b, c, /):
     """docstring"""
 
@@ -67,3 +80,23 @@ class AClass:
 
     def overloaded_2(self, x):
         "docstr 3"
+
+    def _set_write_only(self, value: int) -> None:
+        pass
+
+    def _set_write_only_untyped(self, value):
+        pass
+
+    # Write-only properties are emitted as plain attributes with the setter's
+    # value type (or typing.Any if unannotated)
+    write_only = property(fset=_set_write_only)
+    write_only_untyped = property(fset=_set_write_only_untyped)
+
+
+class Sentinel:
+    pass
+
+
+# A class attribute holding an instance of the enclosing class. Stubgen used
+# to render it as an enum member and crash.
+Sentinel.INSTANCE = Sentinel()

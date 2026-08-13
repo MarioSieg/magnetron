@@ -31,6 +31,13 @@ try:
 except:
     needs_cupy = pytest.mark.skip(reason="CuPy is required")
 
+try:
+    import mlx.core as mx
+    def needs_mlx(x):
+        return x
+except:
+    needs_mlx = pytest.mark.skip(reason="MLX is required")
+
 
 @needs_numpy
 def test01_metadata():
@@ -366,6 +373,25 @@ def test18_return_pytorch():
     assert t.destruct_count() - dc == 1
 
 
+@needs_mlx
+def test18b_return_mlx():
+    collect()
+    dc = t.destruct_count()
+    x = t.ret_mlx()
+    assert isinstance(x, mx.array)
+    assert x.shape == (2, 4)
+    assert x.dtype == mx.float32
+    expect = mx.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=mx.float32)
+    assert bool(mx.all(x == expect))
+    # mlx.core.array() copies, so the source buffer is released immediately
+    # rather than on `del` (as with the zero-copy dlpack frameworks).
+    collect()
+    assert t.destruct_count() - dc == 1
+    del x
+    collect()
+    assert t.destruct_count() - dc == 1
+
+
 @skip_on_pypy
 def test19_return_memview():
     collect()
@@ -536,10 +562,10 @@ def test20a_dlpack_copy_device_kwargs():
     with pytest.raises(BufferError):
         obj.__dlpack__(dl_device=(99, 0))
 
-    # stream=None is fine, other values are rejected
+    # stream is accepted and ignored
     assert 'dltensor' in repr(obj.__dlpack__(stream=None))
-    with pytest.raises(RuntimeError):
-        obj.__dlpack__(stream=0)
+    assert 'dltensor' in repr(obj.__dlpack__(stream=0))
+    assert 'dltensor' in repr(obj.__dlpack__(stream=1))
 
     # Keyword names passed via f(**d) need not be interned/identical to the
     # internal references; equal-but-distinct strings must behave identically.
@@ -547,8 +573,7 @@ def test20a_dlpack_copy_device_kwargs():
         obj.__dlpack__(**{''.join(['co', 'py']): True})
     with pytest.raises(BufferError):
         obj.__dlpack__(**{''.join(['dl_', 'device']): (99, 0)})
-    with pytest.raises(RuntimeError):
-        obj.__dlpack__(**{''.join(['str', 'eam']): "0"})
+    assert 'dltensor' in repr(obj.__dlpack__(**{''.join(['str', 'eam']): "0"}))
     assert 'dltensor' in repr(obj.__dlpack__(**{''.join(['co', 'py']): False}))
 
     # Unrecognized keyword names (e.g., misspellings) are rejected
@@ -575,7 +600,8 @@ def test20b_import_metal_dlpack():
 
     rec = Recorder(obj)
     assert t.check_metal_contig(rec) == (8, 0, 2, 2, 4, True, 0)
-    assert "max_version" in rec.kwargs
+    # A read-only import uses the cheaper unversioned __dlpack__() (no kwargs).
+    assert rec.kwargs == {}
 
     obj = t.ret_array_api_metal_byte_offset()
     assert t.check_metal_contig(obj) == (8, 0, 2, 2, 3, True, 4)

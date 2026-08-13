@@ -12,6 +12,7 @@
 #include <cstring>
 #include <vector>
 #include <atomic>
+#include <initializer_list>
 #include <nanobind/stl/detail/traits.h>
 #include "inter_module.h"
 #include "test_classes.h"
@@ -61,6 +62,14 @@ struct PairStruct {
     Struct s2;
 };
 
+// Test case for issue #1074: nb::init must not use list-initialization, which
+// would spuriously prefer the std::initializer_list constructor.
+struct InitListTest {
+    int value;
+    InitListTest(int count) : value(count) { }
+    InitListTest(std::initializer_list<int>) : value(-1) { }
+};
+
 // Test case for issue #1280
 struct OptionalNoneTest {
     int compute(int i, std::optional<int> j, int k) const {
@@ -101,6 +110,51 @@ struct Pooled {
     Pooled(const Pooled &o) : value(o.value) { pooled_constructed++; }
     ~Pooled() { pooled_destructed++; }
     int get() const { return value; }
+};
+
+// Like 'Pooled', but bound as a GC type (dynamic_attr + weak-referenceable).
+static std::atomic<int> pooled_gc_constructed{0}, pooled_gc_destructed{0};
+
+struct PooledGC {
+    int value;
+    PooledGC(int v = 0) : value(v) { pooled_gc_constructed++; }
+    PooledGC(const PooledGC &o) : value(o.value) { pooled_gc_constructed++; }
+    ~PooledGC() { pooled_gc_destructed++; }
+    int get() const { return value; }
+};
+
+// A pooled GC type with a custom tp_traverse/tp_clear that reads the C++ payload
+// (a held Python reference).
+static std::atomic<int> pooled_tr_constructed{0}, pooled_tr_destructed{0};
+
+struct PooledTraverse {
+    PyObject *ref;
+    PooledTraverse(nb::object o) : ref(o.ptr()) {
+        Py_XINCREF(ref);
+        pooled_tr_constructed++;
+    }
+    ~PooledTraverse() { Py_XDECREF(ref); pooled_tr_destructed++; }
+    nb::object get() const { return nb::borrow(ref); }
+};
+
+int pooled_tr_traverse(PyObject *self, visitproc visit, void *arg) {
+    Py_VISIT(Py_TYPE(self));
+    if (!nb::inst_ready(self))  // payload not valid until the constructor runs
+        return 0;
+    Py_VISIT(nb::inst_ptr<PooledTraverse>(self)->ref);
+    return 0;
+}
+
+int pooled_tr_clear(PyObject *self) {
+    PyObject *&ref = nb::inst_ptr<PooledTraverse>(self)->ref;
+    Py_CLEAR(ref);
+    return 0;
+}
+
+PyType_Slot pooled_tr_slots[] = {
+    { Py_tp_traverse, (void *) pooled_tr_traverse },
+    { Py_tp_clear, (void *) pooled_tr_clear },
+    { 0, nullptr }
 };
 
 // Benchmark types: identical, minimal shape; the only difference is whether the
@@ -250,6 +304,11 @@ NB_MODULE(test_classes_ext, m) {
         .def_rw("s1", &PairStruct::s1, "A documented property")
         .def_rw("s2", &PairStruct::s2);
 
+    // Test case for issue #1074
+    nb::class_<InitListTest>(m, "InitListTest")
+        .def(nb::init<int>())
+        .def_ro("value", &InitListTest::value);
+
     // Test case for issue #1280
     nb::class_<OptionalNoneTest>(m, "OptionalNoneTest")
         .def(nb::init<>())
@@ -297,6 +356,36 @@ NB_MODULE(test_classes_ext, m) {
         return std::make_pair(pooled_constructed.load(), pooled_destructed.load());
     });
     m.def("pooled_reset", [] { pooled_constructed = pooled_destructed = 0; });
+
+    nb::class_<PooledGC>(m, "PooledGC", nb::pooled(4), nb::dynamic_attr(),
+                         nb::is_weak_referenceable())
+        .def(nb::init<int>())
+        .def("get", &PooledGC::get)
+        .def_rw("value", &PooledGC::value)
+        .def("__add__",
+             [](const PooledGC &p, int o) { return PooledGC(p.value + o); },
+             nb::is_operator());
+
+    m.def("pooled_gc_stats", [] {
+        return std::make_pair(pooled_gc_constructed.load(),
+                              pooled_gc_destructed.load());
+    });
+    m.def("pooled_gc_reset", [] {
+        pooled_gc_constructed = pooled_gc_destructed = 0;
+    });
+
+    nb::class_<PooledTraverse>(m, "PooledTraverse", nb::pooled(4),
+                               nb::type_slots(pooled_tr_slots))
+        .def(nb::init<nb::object>(), nb::arg("obj") = nb::none())
+        .def("get", &PooledTraverse::get);
+
+    m.def("pooled_tr_stats", [] {
+        return std::make_pair(pooled_tr_constructed.load(),
+                              pooled_tr_destructed.load());
+    });
+    m.def("pooled_tr_reset", [] {
+        pooled_tr_constructed = pooled_tr_destructed = 0;
+    });
 
     // Benchmark pair (see benchmark_pooled.py)
     nb::class_<BenchPooled>(m, "BenchPooled", nb::pooled(128))
@@ -486,7 +575,7 @@ NB_MODULE(test_classes_ext, m) {
     struct Int {
         int i;
         Int operator+(Int o) const { return {i + o.i}; }
-        Int operator-(float j) const { return {int(i - j)}; }
+        Int operator-(float j) const { return {int((float)i - j)}; }
         bool operator==(Int o) const { return i == o.i; }
         Int &operator+=(Int o) {
             i += o.i;
@@ -827,13 +916,13 @@ NB_MODULE(test_classes_ext, m) {
         .def_ro("value", &NewDflt::value);
     nb::class_<NewStarPosOnly>(m, "NewStarPosOnly")
         .def(nb::new_([](nb::args a, int value) {
-            return NewStarPosOnly{nb::len(a) + value};
+            return NewStarPosOnly{nb::len(a) + (size_t) value};
         }),
             "args"_a, "value"_a = 42)
         .def_ro("value", &NewStarPosOnly::value);
     nb::class_<NewStar>(m, "NewStar")
         .def(nb::new_([](nb::args a, int value, nb::kwargs k) {
-            return NewStar{nb::len(a) + value + 10 * nb::len(k)};
+            return NewStar{nb::len(a) + (size_t) value + 10 * nb::len(k)};
         }),
             "args"_a, "value"_a = 42, "kwargs"_a)
         .def_ro("value", &NewStar::value);
