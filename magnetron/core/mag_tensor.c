@@ -322,7 +322,7 @@ uintptr_t mag_tensor_data_storage_ptr(const mag_tensor_t *tensor) {
 }
 
 uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor) {
-  mag_assert(tensor->storage->flags & MAG_STORAGE_FLAG_ACCESS_W, "tensor: storage is read-only.");
+  mag_assert(tensor->storage->flags & MAG_STORAGE_FLAG_ACCESS_W, "tensor: storage is read-only."); /* TODO: make use mag_status_t for this */
   return mag_tensor_data_storage_ptr(tensor);
 }
 
