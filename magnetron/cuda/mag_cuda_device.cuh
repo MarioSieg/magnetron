@@ -63,6 +63,10 @@ namespace mag {
     [[nodiscard]] size_t shared_mem_per_block() const noexcept { return m_smpb; }
     [[nodiscard]] size_t shared_mem_per_block_optin() const noexcept { return m_smpb_opt; }
     [[nodiscard]] size_t vmm_granularity() const noexcept { return m_vmm_granularity; }
+    [[nodiscard]] bool is_integrated() const noexcept { return m_integrated; }
+    [[nodiscard]] double peak_fp32_gflops() const noexcept;
+    [[nodiscard]] double peak_mem_bandwidth_gbs() const noexcept;
+    [[nodiscard]] double score() const noexcept { return m_score; }
     [[nodiscard]] std::string_view name() const noexcept { return physical_device_name; }
     [[nodiscard]] std::underlying_type_t<device_features::$> features() const noexcept { return m_features; }
     [[nodiscard]] bool has_features(std::underlying_type_t<device_features::$> mask) const noexcept { return (m_features & mask) == mask; }
@@ -81,8 +85,15 @@ namespace mag {
     size_t m_smpb = 0;
     size_t m_smpb_opt = 0;
     size_t m_vmm_granularity = 0;
+    uint32_t m_clock_khz = 0;
+    uint32_t m_mem_clock_khz = 0;
+    uint32_t m_mem_bus_bits = 0;
+    bool m_integrated = false;
+    double m_score = 0.0;
     std::underlying_type_t<device_features::$> m_features = device_features::$::none;
     cudaStream_t m_stream = nullptr;
     cudaEvent_t m_event = nullptr;
   };
+
+  [[nodiscard]] extern bool ranks_above(const physical_device &a, const physical_device &b) noexcept;
 }

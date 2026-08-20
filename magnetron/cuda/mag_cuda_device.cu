@@ -18,6 +18,7 @@
 #include "mag_cuda_exec.cuh"
 
 #include <array>
+#include <cmath>
 #include <sstream>
 
 namespace mag {
@@ -68,6 +69,32 @@ namespace mag {
     global_seed.store(seed, std::memory_order_relaxed);
   }
 
+  static constexpr uint32_t cores_per_sm(uint32_t cl) noexcept {
+    switch (cl) {
+      case 700: case 720: case 750: case 800: return 64;
+      default: return 128;
+    }
+  }
+
+  double physical_device::peak_fp32_gflops() const noexcept {
+    double khz = m_clock_khz ? static_cast<double>(m_clock_khz) : 1.0e6;
+    return 2.0*cores_per_sm(m_cl)*m_nsm*khz*1e-6;
+  }
+
+  double physical_device::peak_mem_bandwidth_gbs() const noexcept {
+    double khz = m_mem_clock_khz ? static_cast<double>(m_mem_clock_khz) : 1.0e6;
+    double bits = m_mem_bus_bits ? static_cast<double>(m_mem_bus_bits) : 128.0;
+    return 2.0*khz*1e3*(bits/8.0)/1e9;
+  }
+
+  bool ranks_above(const physical_device &a, const physical_device &b) noexcept {
+    double sa = a.score();
+    double sb = b.score();
+    if (std::fabs(sa-sb) > 0.01*std::fmax(sa, sb)) return sa > sb;
+    if (a.vram() != b.vram()) return a.vram() > b.vram();
+    return a.id.device_ordinal < b.id.device_ordinal;
+  }
+
   namespace {
     __global__ void image_probe_kernel() {}
   }
@@ -114,6 +141,8 @@ namespace mag {
     }
     cudaDeviceProp props = {};
     mag_cu_rt_check(err, cudaGetDeviceProperties(&props, ordinal), "failed to query device properties");
+    if (int mode = cudaComputeModeDefault; cudaDeviceGetAttribute(&mode, cudaDevAttrComputeMode, ordinal) == cudaSuccess && mode == cudaComputeModeProhibited)
+      return mag_set_error(err, MAG_ERR_DEVICE, "cuda: device %d (%s) is in prohibited compute mode and cannot be used.", ordinal, props.name);
     device->m_vram = props.totalGlobalMem;
     device->m_cl = static_cast<uint32_t>(100*props.major + 10*props.minor);
     device->m_nsm = static_cast<uint32_t>(props.multiProcessorCount);
@@ -121,15 +150,23 @@ namespace mag {
     device->m_smpb = props.sharedMemPerBlock;
     device->m_smpb_opt = props.sharedMemPerBlockOptin;
     device->m_vmm_granularity = vmm_gran;
+    device->m_integrated = !!props.integrated;
+    device->m_mem_bus_bits = static_cast<uint32_t>(props.memoryBusWidth);
+    if (int khz = 0; cudaDeviceGetAttribute(&khz, cudaDevAttrClockRate, ordinal) == cudaSuccess && khz > 0)
+      device->m_clock_khz = static_cast<uint32_t>(khz);
+    if (int khz = 0; cudaDeviceGetAttribute(&khz, cudaDevAttrMemoryClockRate, ordinal) == cudaSuccess && khz > 0)
+      device->m_mem_clock_khz = static_cast<uint32_t>(khz);
+    double score = std::sqrt(device->peak_fp32_gflops()*device->peak_mem_bandwidth_gbs());
+    if (device->is_integrated()) score *= 0.1;
+    device->m_score = score;
     device->m_stream = nullptr;
     device->m_event = nullptr;
     std::snprintf(device->physical_device_name, std::size(device->physical_device_name), "%s", props.name);
     mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to select device for stream creation");
 
     cudaFuncAttributes probe {};
-    // Probe the fat binary for a usable image now so unsupported GPU architectures fail before the first operator launch
     if (cudaError_t res = cudaFuncGetAttributes(&probe, &image_probe_kernel); mag_unlikely(res != cudaSuccess)) {
-      cudaGetLastError(); // consume error so next device init is clean
+      cudaGetLastError();
       return mag_set_error(err, MAG_ERR_BACKEND,
         "cuda: device %d (%s, sm_%d%d) has no compatible kernel image: %s. This magnetron build was compiled for a different set of GPU architectures.",
         ordinal, props.name, props.major, props.minor, cudaGetErrorString(res)
@@ -164,6 +201,11 @@ namespace mag {
     const char *unit = "";
     mag_humanize_memory_size(m_vram, &amount, &unit);
     ss << ", VRAM: " << amount << " " << unit;
+    ss.setf(std::ios::fixed);
+    ss.precision(0);
+    ss << ", PEAK: " << peak_fp32_gflops() << " GFLOP/s FP32, " << peak_mem_bandwidth_gbs() << " GB/s";
+    if (m_integrated) ss << " (integrated)";
+    ss.unsetf(std::ios::fixed);
     ss << ", CAPS: " << device_features::to_string(m_features);
     return ss.str();
   }

@@ -111,6 +111,7 @@ typedef enum mag_backend_type_t {
 mag_static_assert(MAG_BACKEND_TYPE__COUNT <= 0xff);
 extern MAG_EXPORT const char *mag_backend_type_to_str(mag_backend_type_t type);
 extern MAG_EXPORT bool mag_backend_type_is_required(mag_backend_type_t type);
+extern MAG_EXPORT bool mag_backend_type_has_device_ordinals(mag_backend_type_t type);
 
 #define MAG_DEVICE_ORDINAL_MAX ((1u<<15u)-1u)
 
@@ -123,7 +124,9 @@ mag_static_assert(sizeof(mag_device_id_t) <= 8); /* We want this compact <= 8B o
 extern MAG_EXPORT void mag_device_id_to_str(mag_device_id_t id, char (*buf)[32]);
 extern MAG_EXPORT bool mag_device_id_eq(mag_device_id_t a, mag_device_id_t b);
 
-#define mag_device(name, ordinal) ((mag_device_id_t){MAG_BACKEND_TYPE_##name, (ordinal)})
+/* Designated, not positional: 'is_virtual' is the first member, so a positional list would land the backend
+   type in it and leave 'type' defaulted to CPU. That happened to work only for mag_device(CPU, 0). */
+#define mag_device(name, ordinal) ((mag_device_id_t){.is_virtual=false, .device_ordinal=(ordinal), .type=MAG_BACKEND_TYPE_##name})
 
 /**
  * @brief Error structure for magnetron library functions.
@@ -231,6 +234,9 @@ extern MAG_EXPORT bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx
 extern MAG_EXPORT void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed);                                          /* Manually seed the PRNG. */
 extern MAG_EXPORT mag_dtype_t mag_ctx_default_dtype(mag_context_t *ctx);                                                /* Get default floating point dtype for the context. This is used by factory functions when the dtype is not specified. */
 extern MAG_EXPORT bool mag_ctx_set_default_dtype(mag_context_t *ctx, mag_dtype_t type);                                 /* Set default floating point dtype for the context. This is used by factory functions when the dtype is not specified. Must be a floating point type. */
+extern MAG_EXPORT mag_device_id_t mag_ctx_default_device(mag_context_t *ctx);                                           /* Get the device used when a caller names none. Defaults to the CPU device - having a GPU present does not change it. */
+extern MAG_EXPORT mag_status_t mag_ctx_set_default_device(mag_error_t *err, mag_context_t *ctx, mag_device_id_t id);    /* Set the device used when a caller names none. Fails if the device is not available. */
+extern MAG_EXPORT mag_status_t mag_ctx_best_device(mag_error_t *err, mag_context_t *ctx, mag_backend_type_t type, mag_device_id_t *out_id); /* Backend's own pick of its fastest device, e.g. mag_ctx_best_device(err, ctx, MAG_BACKEND_TYPE_CUDA, &id). */
 extern MAG_EXPORT void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection);                               /* Destroy context and free memory */
 
 typedef struct mag_tensor_t mag_tensor_t;

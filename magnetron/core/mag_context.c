@@ -179,6 +179,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
 
   ctx->tr_id = mag_thread_id(); /* Get thread ID. */
   ctx->default_dtype = MAG_DTYPE_FLOAT32; /* Use fp32 by default */
+  ctx->default_device = mag_device(CPU, 0);
   ctx->flags|=MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
 
   /* Query and print host system information. */
@@ -271,6 +272,28 @@ static void mag_seed_callback(mag_backend_t *bck, mag_device_t *dvc, void *usr) 
 
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
   mag_backend_registry_iter_devices(ctx->backend_registry, &mag_seed_callback, &seed);
+}
+
+mag_device_id_t mag_ctx_default_device(mag_context_t *ctx) {
+  return ctx->default_device;
+}
+
+mag_status_t mag_ctx_set_default_device(mag_error_t *err, mag_context_t *ctx, mag_device_id_t id) {
+  if (mag_unlikely(!mag_ctx_is_device_available(ctx, id))) {
+    char device_name[32];
+    mag_device_id_to_str(id, &device_name);
+    return mag_set_error(err, MAG_ERR_DEVICE, "set_default_device: device '%s' is not available.", device_name);
+  }
+  ctx->default_device = id;
+  return MAG_OK;
+}
+
+mag_status_t mag_ctx_best_device(mag_error_t *err, mag_context_t *ctx, mag_backend_type_t type, mag_device_id_t *out_id) {
+  mag_device_t *device = NULL;
+  if (mag_unlikely(!mag_backend_registry_best_device(ctx->backend_registry, type, NULL, &device)))
+    return mag_set_error(err, MAG_ERR_DEVICE, "best_device: backend '%s' has no usable device.", mag_backend_type_to_str(type));
+  *out_id = device->id;
+  return MAG_OK;
 }
 
 mag_dtype_t mag_ctx_default_dtype(mag_context_t *ctx) {

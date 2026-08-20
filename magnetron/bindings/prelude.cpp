@@ -207,7 +207,8 @@ namespace mag::bindings {
     }
     return ss.str();
   }
-  std::optional<mag_device_id_t> parse_device_id_str(const std::string &str) {
+  std::optional<mag_device_id_t> parse_device_id_str(const std::string &str, bool *out_has_ordinal) {
+    if (out_has_ordinal) *out_has_ordinal = false;
     std::string_view input{str};
     if (input.empty()) return std::nullopt;
     size_t sep = input.find(':');
@@ -240,6 +241,9 @@ namespace mag::bindings {
     if (type == MAG_BACKEND_TYPE__COUNT) return std::nullopt;
     uint32_t ordinal = 0;
     if (sep != std::string_view::npos) {
+      // "cpu:0" is rejected rather than normalized: a host has one CPU device, so an ordinal there is
+      // either redundant or a request for a device that cannot exist. Spell it "cpu".
+      if (!mag_backend_type_has_device_ordinals(type)) return std::nullopt;
       std::string_view ord = input.substr(sep + 1);
       if (ord.empty()) return std::nullopt;
       const char *first = ord.data();
@@ -248,11 +252,24 @@ namespace mag::bindings {
         return std::nullopt;
       if (ordinal > MAG_DEVICE_ORDINAL_MAX) // device ordinal out of range for 15-bit field
         return std::nullopt;
+      if (out_has_ordinal) *out_has_ordinal = true;
     }
     return mag_device_id_t{
       .is_virtual = false,
       .device_ordinal = ordinal,
       .type = type,
     };
+  }
+
+  // A backend named without an ordinal ("cuda") means "the best device of that backend", so users land on
+  // the right GPU without having to know its index. An explicit "cuda:1" is always exactly that device.
+  std::optional<mag_device_id_t> resolve_device_id_str(const std::string &str) {
+    bool has_ordinal = false;
+    std::optional<mag_device_id_t> id = parse_device_id_str(str, &has_ordinal);
+    if (!id || has_ordinal || id->is_virtual) return id;
+    mag_device_id_t best {};
+    mag_error_t err {};
+    if (mag_iserr(mag_ctx_best_device(&err, get_ctx(), id->type, &best))) return id; // Report the miss as "cuda:0 unavailable" downstream.
+    return best;
   }
 }

@@ -47,7 +47,7 @@ namespace mag {
       runtime_version = +[](mag_backend_t *bck) noexcept -> uint32_t { return MAG_VERSION; };
       id = +[](mag_backend_t *bck) noexcept -> const char* { return "cuda"; };
       num_devices = +[](mag_backend_t *bck) noexcept -> uint32_t { return static_cast<cuda_backend *>(bck->impl)->device_count(); };
-      best_device_id = +[](mag_backend_t *bck) noexcept -> uint32_t { return 0; };
+      best_device_id = +[](mag_backend_t *bck) noexcept -> uint32_t { return static_cast<cuda_backend *>(bck->impl)->best_device_idx(); };
       get_device = +[](mag_backend_t *bck, uint32_t idx) -> mag_device_t* {
         auto &dvc = static_cast<cuda_backend *>(bck->impl)->devices();
         if (idx >= dvc.size()) {
@@ -103,6 +103,13 @@ namespace mag {
         mag_log_error("cuda: no usable CUDA devices out of %d detected.", num_devices);
         return false;
       }
+      m_best_device_idx = 0;
+      for (size_t i=1; i < m_devices.size(); ++i)
+        if (ranks_above(*m_devices[i], *m_devices[m_best_device_idx]))
+          m_best_device_idx = static_cast<uint32_t>(i);
+      if (m_devices.size() > 1)
+        mag_log_info("Selected CUDA device %u of %zu as default: %s",
+          static_cast<uint32_t>(m_devices[m_best_device_idx]->id.device_ordinal), m_devices.size(), m_devices[m_best_device_idx]->physical_device_name);
       return true;
     }
 
