@@ -32,6 +32,10 @@ function(mag_register_cpu_backend src posix_flags msvc_flags)
         endif()
     endif()
 
+    if (ARGC GREATER 3 AND NOT "${ARGV3}" STREQUAL "")
+        set(CPU_NAME "${ARGV3}")
+    endif()
+
     string(REGEX REPLACE "[^A-Za-z0-9]" "_" CPU_NAME_CLEAN "${CPU_NAME}")
     string(TOUPPER "${CPU_NAME_CLEAN}" CPU_NAME_UPPER)
     set(MACRO_NAME "MAG_HAVE_CPU_${CPU_NAME_UPPER}")

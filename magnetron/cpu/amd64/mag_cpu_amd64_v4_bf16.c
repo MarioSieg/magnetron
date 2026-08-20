@@ -9,8 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#define MAG_BLAS_SPECIALIZATION mag_cpu_blas_specialization_amd64_zn1
-#define MAG_BLAS_SPECIALIZATION_FEAT_REQUEST mag_cpu_blas_specialization_amd64_zn1_features
+#define MAG_BLAS_SPECIALIZATION mag_cpu_blas_specialization_amd64_v4_bf16
+#define MAG_BLAS_SPECIALIZATION_FEAT_REQUEST mag_cpu_blas_specialization_amd64_v4_bf16_features
 
 #include "../kernels/mag_cpu_dispatch.h"
-

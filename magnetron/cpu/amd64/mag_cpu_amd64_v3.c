@@ -9,8 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#define MAG_BLAS_SPECIALIZATION mag_cpu_blas_specialization_amd64_cannonlake
-#define MAG_BLAS_SPECIALIZATION_FEAT_REQUEST mag_cpu_blas_specialization_amd64_cannonlake_features
+#define MAG_BLAS_SPECIALIZATION mag_cpu_blas_specialization_amd64_v3
+#define MAG_BLAS_SPECIALIZATION_FEAT_REQUEST mag_cpu_blas_specialization_amd64_v3_features
 
 #include "../kernels/mag_cpu_dispatch.h"
-
