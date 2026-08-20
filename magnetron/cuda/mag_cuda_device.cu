@@ -190,7 +190,7 @@ namespace mag {
         mag_log_info("Initialized CUDA device %d: %s in %.03f ms", ordinal, physical_device_name, mag_hpc_clock_elapsed_ms(start));
     });
     if (mag_unlikely(mag_iserr(m_init_status))) {
-      if (err) *err = m_init_error; /* Replay the memoized failure so every caller sees the original diagnosis. */
+      if (err) *err = m_init_error;
       return m_init_status;
     }
     return MAG_OK;
