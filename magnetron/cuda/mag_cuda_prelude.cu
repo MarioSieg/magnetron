@@ -18,8 +18,7 @@ namespace mag {
     const mag_coords_t &co = tensor->meta.coords;
     int64_t span = 0;
     for (int64_t k=0; k < co.rank; ++k) {
-      int64_t s = co.strides[k];
-      if (s < 0) s = -s; /* A negative stride covers the same distance, just the other way. */
+      int64_t s = std::abs(co.strides[k]);
       if (co.shape[k] > 0) span += (co.shape[k]-1)*s;
       if (span > lim) return false;
     }
