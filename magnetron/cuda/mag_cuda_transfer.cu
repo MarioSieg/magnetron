@@ -28,6 +28,7 @@ namespace mag {
       case MAG_TRANSFER_DIR_H2D: {
         int ordinal = static_cast<int>(dvc->id.device_ordinal);
         const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
+        if (mag_status_t stat = phys_device.ensure_initialized(err); mag_iserr(stat)) return stat;
         cudaStream_t stream = phys_device.stream();
         if (mag_unlikely(!(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))
           return mag_set_error(err, MAG_ERR_PARAM, "cuda transfer: source storage must be host-visible.");
@@ -49,6 +50,7 @@ namespace mag {
       case MAG_TRANSFER_DIR_D2H: {
         int ordinal = static_cast<int>(dvc->id.device_ordinal);
         const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
+        if (mag_status_t stat = phys_device.ensure_initialized(err); mag_iserr(stat)) return stat;
         cudaStream_t stream = phys_device.stream();
         if (mag_unlikely(src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE))
           return mag_set_error(err, MAG_ERR_PARAM, "cuda transfer: source storage must be device-local.");
@@ -73,13 +75,15 @@ namespace mag {
         int src_ordinal = static_cast<int>(src->meta.device->id.device_ordinal);
         int dst_ordinal = static_cast<int>(dst->meta.device->id.device_ordinal);
         const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
+        if (mag_status_t stat = phys_device.ensure_initialized(err); mag_iserr(stat)) return stat;
         cudaStream_t stream = phys_device.stream();
         if (mag_unlikely(dst->storage->device != dvc))
           return mag_set_error(err, MAG_ERR_PARAM, "cuda transfer: destination device mismatch.");
         mag_cu_rt_check(err, cudaSetDevice(dst_ordinal), "failed to set active device");
         if (mag_device_t *src_dvc = src->meta.device; src_dvc != dvc) {
-          mag_cu_rt_check(err, cudaSetDevice(src_ordinal), "failed to set active device");
           const auto &src_phys_device = *static_cast<const physical_device *>(src_dvc->impl);
+          if (mag_status_t stat = src_phys_device.ensure_initialized(err); mag_iserr(stat)) return stat;
+          mag_cu_rt_check(err, cudaSetDevice(src_ordinal), "failed to set active device");
           cudaEvent_t src_done = src_phys_device.event();
           mag_cu_rt_check(err, cudaEventRecord(src_done, src_phys_device.stream()), "failed to record event on source device");
           mag_cu_rt_check(err, cudaSetDevice(dst_ordinal), "failed to set active device");

@@ -139,8 +139,9 @@ namespace mag {
 
   mag_status_t submit_op(mag_error_t *err, mag_device_t *dvc, const mag_command_t *cmd) {
     int ordinal = static_cast<int>(dvc->id.device_ordinal);
-    mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to set active device");
     const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
+    if (mag_status_t stat = phys_device.ensure_initialized(err); mag_iserr(stat)) return stat;
+    mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to set active device");
     cudaStream_t stream = phys_device.stream();
     auto *kernel = k_kernel_dispatch_table[cmd->op];
     if (mag_unlikely(kernel == nullptr))

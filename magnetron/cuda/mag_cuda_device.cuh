@@ -12,6 +12,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 
 #include "mag_cuda_prelude.cuh"
 
@@ -49,12 +50,15 @@ namespace mag {
     physical_device &operator=(physical_device &&) = default;
     virtual ~physical_device();
 
+    /* Creates no CUDA context: every query it makes is context-free, so enumerating all GPUs is cheap. */
     [[nodiscard]] static mag_status_t create(
       mag_error_t *err,
       std::shared_ptr<physical_device> &out,
       mag_context_t *ctx,
       int ordinal
     );
+
+    [[nodiscard]] mag_status_t ensure_initialized(mag_error_t *err) const; // Lazy on purpose on a 8xB200 box it's very slow to init all devices on boot
 
     [[nodiscard]] size_t vram() const noexcept { return m_vram; }
     [[nodiscard]] uint32_t compute_capability() const noexcept { return m_cl; }
@@ -73,8 +77,6 @@ namespace mag {
     [[nodiscard]] cudaStream_t stream() const noexcept { return m_stream; }
     [[nodiscard]] cudaEvent_t event() const noexcept { return m_event; }
     [[nodiscard]] std::string info_string() const;
-    /* Grow-only device scratch, for kernels that need somewhere to stage partial results. Kept on the device so a
-       multi-pass reduction does not have to allocate per call. */
     [[nodiscard]] mag_status_t reserve_scratch(mag_error_t *err, size_t bytes);
     [[nodiscard]] void *scratch() const noexcept { return m_scratch; }
 
@@ -82,6 +84,8 @@ namespace mag {
     physical_device() = default;
 
   private:
+    [[nodiscard]] mag_status_t initialize(mag_error_t *err, int ordinal) const;
+
     size_t m_vram = 0;
     uint32_t m_cl = 0;
     uint32_t m_nsm = 0;
@@ -95,8 +99,11 @@ namespace mag {
     bool m_integrated = false;
     double m_score = 0.0;
     std::underlying_type_t<device_features::$> m_features = device_features::$::none;
-    cudaStream_t m_stream = nullptr;
-    cudaEvent_t m_event = nullptr;
+    mutable std::once_flag m_init_once;
+    mutable mag_status_t m_init_status = MAG_OK;
+    mutable mag_error_t m_init_error = {};
+    mutable cudaStream_t m_stream = nullptr;
+    mutable cudaEvent_t m_event = nullptr;
     void *m_scratch = nullptr;
     size_t m_scratch_size = 0;
   };

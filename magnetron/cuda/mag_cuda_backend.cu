@@ -87,7 +87,7 @@ namespace mag {
             continue;
           }
           auto info = device->info_string();
-          mag_log_info("Initialized CUDA device %d: %s", device_ordinal, info.c_str());
+          mag_log_info("Detected CUDA device %d: %s", device_ordinal, info.c_str()); /* Detected, not live: the primary context is created lazily on first use. */
           m_devices.emplace_back(std::move(device));
         } catch (const std::exception &e) {
           mag_log_error("cuda: failed to initialize CUDA device %d: %s", device_ordinal, e.what());

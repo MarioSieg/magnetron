@@ -21,8 +21,9 @@ namespace mag {
     mag_context_t *ctx = dvc->ctx;
     uintptr_t base;
     int ordinal = static_cast<int>(dvc->id.device_ordinal);
-    mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to set active device");
     const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
+    if (mag_status_t stat = phys_device.ensure_initialized(err); mag_iserr(stat)) return stat;
+    mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to set active device");
     if (cudaError_t res = stream_alloc(reinterpret_cast<void **>(&base), size, phys_device.stream()); mag_unlikely(res != cudaSuccess)) {
       double amount = 0.0;
       const char *unit = "";

@@ -162,19 +162,6 @@ namespace mag {
     device->m_stream = nullptr;
     device->m_event = nullptr;
     std::snprintf(device->physical_device_name, std::size(device->physical_device_name), "%s", props.name);
-    mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to select device for stream creation");
-
-    cudaFuncAttributes probe {};
-    if (cudaError_t res = cudaFuncGetAttributes(&probe, &image_probe_kernel); mag_unlikely(res != cudaSuccess)) {
-      cudaGetLastError();
-      return mag_set_error(err, MAG_ERR_BACKEND,
-        "cuda: device %d (%s, sm_%d%d) has no compatible kernel image: %s. This magnetron build was compiled for a different set of GPU architectures.",
-        ordinal, props.name, props.major, props.minor, cudaGetErrorString(res)
-      );
-    }
-
-    mag_cu_rt_check(err, cudaStreamCreateWithFlags(&device->m_stream, cudaStreamNonBlocking), "failed to create non-blocking stream");
-    mag_cu_rt_check(err, cudaEventCreateWithFlags(&device->m_event, cudaEventDisableTiming), "failed to create device event");
 
     device->m_features |= device_features::from_compute_caps(device->m_cl); // Query device featuress from compute level
     if (device->m_features & device_features::clusters) {
@@ -194,25 +181,54 @@ namespace mag {
     return MAG_OK;
   }
 
+  mag_status_t physical_device::ensure_initialized(mag_error_t *err) const {
+    std::call_once(m_init_once, [this]() -> void {
+      int ordinal = static_cast<int>(id.device_ordinal);
+      uint64_t start = mag_hpc_clock_ns();
+      m_init_status = initialize(&m_init_error, ordinal);
+      if (mag_isok(m_init_status))
+        mag_log_info("Initialized CUDA device %d: %s in %.03f ms", ordinal, physical_device_name, mag_hpc_clock_elapsed_ms(start));
+    });
+    if (mag_unlikely(mag_iserr(m_init_status))) {
+      if (err) *err = m_init_error; /* Replay the memoized failure so every caller sees the original diagnosis. */
+      return m_init_status;
+    }
+    return MAG_OK;
+  }
+
+  mag_status_t physical_device::initialize(mag_error_t *err, int ordinal) const {
+    mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to select device for stream creation");
+    cudaFuncAttributes probe {};
+    if (cudaError_t res = cudaFuncGetAttributes(&probe, &image_probe_kernel); mag_unlikely(res != cudaSuccess)) {
+      cudaGetLastError();
+      return mag_set_error(err, MAG_ERR_BACKEND,
+        "cuda: device %d (%s, sm_%d%d) has no compatible kernel image: %s. This magnetron build was compiled for a different set of GPU architectures.",
+        ordinal, physical_device_name, m_cl/100, (m_cl/10)%10, cudaGetErrorString(res)
+      );
+    }
+    mag_cu_rt_check(err, cudaStreamCreateWithFlags(&m_stream, cudaStreamNonBlocking), "failed to create non-blocking stream");
+    mag_cu_rt_check(err, cudaEventCreateWithFlags(&m_event, cudaEventDisableTiming), "failed to create device event");
+    return MAG_OK;
+  }
+
   std::string physical_device::info_string() const {
     std::ostringstream ss {};
     ss << (*physical_device_name ? physical_device_name : "Unknown CUDA Device");
     double amount = 0.0;
     const char *unit = "";
     mag_humanize_memory_size(m_vram, &amount, &unit);
-    ss << ", VRAM: " << amount << " " << unit;
+    ss << "\n\tVRAM: " << amount << " " << unit;
     ss.setf(std::ios::fixed);
     ss.precision(0);
-    ss << ", PEAK: " << peak_fp32_gflops() << " GFLOP/s FP32, " << peak_mem_bandwidth_gbs() << " GB/s";
+    ss << "\n\tPEAK: " << peak_fp32_gflops() << " GFLOP/s FP32, " << peak_mem_bandwidth_gbs() << " GB/s";
     if (m_integrated) ss << " (integrated)";
     ss.unsetf(std::ios::fixed);
-    ss << ", CAPS: " << device_features::to_string(m_features);
+    ss << "\n\tCAPS: " << device_features::to_string(m_features);
     return ss.str();
   }
 
   mag_status_t physical_device::reserve_scratch(mag_error_t *err, size_t bytes) {
     if (bytes <= m_scratch_size) return MAG_OK;
-    /* Grows only, and growing is rare, so draining the stream first is cheaper than tracking who still reads it. */
     if (m_scratch) {
       mag_cu_rt_check(err, cudaStreamSynchronize(m_stream), "failed to drain stream before growing scratch");
       mag_cu_rt_check(err, cudaFree(m_scratch), "failed to free device scratch");
@@ -228,7 +244,7 @@ namespace mag {
     if (m_stream || m_event || m_scratch) {
       cudaSetDevice(static_cast<int>(id.device_ordinal));
       if (m_stream) {
-        cudaStreamSynchronize(m_stream); /* Storage buffers are freed on this stream so drain before deleting. */
+        cudaStreamSynchronize(m_stream);
         cudaStreamDestroy(m_stream);
       }
       if (m_event) cudaEventDestroy(m_event);
