@@ -9,7 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include "mag_cuda.cuh"
+#include "mag_cuda_prelude.cuh"
 
 #include <algorithm>
 

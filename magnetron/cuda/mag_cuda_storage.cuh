@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "mag_cuda.cuh"
+#include "mag_cuda_prelude.cuh"
 
 namespace mag {
   [[nodiscard]] extern mag_status_t alloc_storage_buffer(

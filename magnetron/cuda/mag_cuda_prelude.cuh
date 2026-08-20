@@ -55,14 +55,8 @@ namespace mag {
         return mag_set_error((E), MAG_ERR_BACKEND, "cuda error in: " #expr ": %s: %s", (msg), cudaGetErrorString(___res___)); \
     } while (0)
 
-  /*
-  ** These must have external linkage: 'static inline' at namespace scope gives every translation
-  ** unit its own private copy, so a store from one .cu is invisible to the readers inlined into
-  ** the others. Plain 'inline' is the C++17 spelling for a single object shared across all TUs.
-  */
   inline std::atomic_uint64_t global_seed = 0;
   inline std::atomic_uint64_t global_subseq = 0;
-
   inline std::atomic_bool global_async_alloc = false;
 
   [[nodiscard]] inline cudaError_t stream_alloc(void **p, size_t size, cudaStream_t stream) {
@@ -120,8 +114,15 @@ namespace mag {
       }
   };
 
+  [[nodiscard]] extern bool can_use_i32_indexes(const mag_tensor_t *tensor) noexcept;
+
+  template <typename... Ts>
+  [[nodiscard]] inline bool can_all_use_i32_indexes(Ts... tensors) noexcept {
+    return (can_use_i32_indexes(tensors) && ...);
+  }
+
   template <typename T>
-  [[nodiscard]] __host__ __device__ __forceinline__ static T unpack_scalar(mag_scalar_t scalar) {
+  [[nodiscard]] __host__ __device__ __forceinline__ static constexpr T unpack_scalar(mag_scalar_t scalar) noexcept {
     switch (scalar.type) {
       case MAG_SCALAR_TYPE_F64: return static_cast<T>(scalar.value.float64);
       case MAG_SCALAR_TYPE_I64: return static_cast<T>(scalar.value.int64);

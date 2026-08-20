@@ -13,7 +13,7 @@
 
 #include <memory>
 
-#include "mag_cuda.cuh"
+#include "mag_cuda_prelude.cuh"
 
 #include <string>
 #include <type_traits>
@@ -73,6 +73,10 @@ namespace mag {
     [[nodiscard]] cudaStream_t stream() const noexcept { return m_stream; }
     [[nodiscard]] cudaEvent_t event() const noexcept { return m_event; }
     [[nodiscard]] std::string info_string() const;
+    /* Grow-only device scratch, for kernels that need somewhere to stage partial results. Kept on the device so a
+       multi-pass reduction does not have to allocate per call. */
+    [[nodiscard]] mag_status_t reserve_scratch(mag_error_t *err, size_t bytes);
+    [[nodiscard]] void *scratch() const noexcept { return m_scratch; }
 
   protected:
     physical_device() = default;
@@ -93,6 +97,8 @@ namespace mag {
     std::underlying_type_t<device_features::$> m_features = device_features::$::none;
     cudaStream_t m_stream = nullptr;
     cudaEvent_t m_event = nullptr;
+    void *m_scratch = nullptr;
+    size_t m_scratch_size = 0;
   };
 
   [[nodiscard]] extern bool ranks_above(const physical_device &a, const physical_device &b) noexcept;

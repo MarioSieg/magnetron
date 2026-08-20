@@ -210,14 +210,29 @@ namespace mag {
     return ss.str();
   }
 
+  mag_status_t physical_device::reserve_scratch(mag_error_t *err, size_t bytes) {
+    if (bytes <= m_scratch_size) return MAG_OK;
+    /* Grows only, and growing is rare, so draining the stream first is cheaper than tracking who still reads it. */
+    if (m_scratch) {
+      mag_cu_rt_check(err, cudaStreamSynchronize(m_stream), "failed to drain stream before growing scratch");
+      mag_cu_rt_check(err, cudaFree(m_scratch), "failed to free device scratch");
+      m_scratch = nullptr;
+      m_scratch_size = 0;
+    }
+    mag_cu_rt_check(err, cudaMalloc(&m_scratch, bytes), "failed to allocate device scratch");
+    m_scratch_size = bytes;
+    return MAG_OK;
+  }
+
   physical_device::~physical_device() {
-    if (m_stream || m_event) {
+    if (m_stream || m_event || m_scratch) {
       cudaSetDevice(static_cast<int>(id.device_ordinal));
       if (m_stream) {
         cudaStreamSynchronize(m_stream); /* Storage buffers are freed on this stream so drain before deleting. */
         cudaStreamDestroy(m_stream);
       }
       if (m_event) cudaEventDestroy(m_event);
+      if (m_scratch) cudaFree(m_scratch);
     }
   }
 }

@@ -11,6 +11,7 @@
 
 #include "mag_cuda_reduction.cuh"
 
+
 #include <algorithm>
 #include <core/mag_reduce_plan.h>
 
@@ -148,16 +149,26 @@ namespace mag {
     if (oi >= numel) return;
     int64_t base = mag_reduce_plan_to_offset(&plan, oi);
     typename Op::Acc acc = op.init();
-    for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
-      int64_t t = ri;
-      int64_t xi = base;
-      for (int64_t k=plan.rank-1; k >= 0; --k) {
-        int64_t sz = plan.red_sizes[k];
-        int64_t j = t % sz;
-        t /= sz;
-        xi += j*plan.red_strides[k];
+
+    if (plan.rank == 1 && plan.red_strides[0] == 1) {
+      for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
+        acc = op.reduce(acc, op.transform(x[base+ri]));
+    } else if (plan.rank == 1) {
+      const int64_t rs = plan.red_strides[0];
+      for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
+        acc = op.reduce(acc, op.transform(x[base+ri*rs]));
+    } else {
+      for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
+        int64_t t = ri;
+        int64_t xi = base;
+        for (int64_t k=plan.rank-1; k >= 0; --k) {
+          int64_t sz = plan.red_sizes[k];
+          int64_t j = t % sz;
+          t /= sz;
+          xi += j*plan.red_strides[k];
+        }
+        acc = op.reduce(acc, op.transform(x[xi]));
       }
-      acc = op.reduce(acc, op.transform(x[xi]));
     }
     extern __shared__ uint8_t smem_raw[];
     auto *smem = reinterpret_cast<typename Op::Acc *>(smem_raw);
@@ -170,6 +181,81 @@ namespace mag {
     }
     if (threadIdx.x == 0)
       o[oi] = op.finalize(smem[0], plan.red_prod);
+  }
+
+  template <typename Op>
+  __global__ static void reduce_op_partial_kernel(
+    Op op,
+    int64_t numel,
+    typename Op::Acc *__restrict__ partials,
+    const typename Op::In *__restrict__ x,
+    mag_reduce_plan_t plan,
+    int64_t splits
+  ) {
+    int64_t oi = static_cast<int64_t>(blockIdx.y);
+    if (oi >= numel) return;
+    const int64_t base = mag_reduce_plan_to_offset(&plan, oi);
+    const int64_t start = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
+    const int64_t step = static_cast<int64_t>(blockDim.x)*splits;
+    typename Op::Acc acc = op.init();
+    if (plan.rank == 1 && plan.red_strides[0] == 1) {
+      for (int64_t ri=start; ri < plan.red_prod; ri += step)
+        acc = op.reduce(acc, op.transform(x[base+ri]));
+    } else if (plan.rank == 1) { /* One axis of any stride: a scale, not a coordinate walk. */
+      const int64_t rs = plan.red_strides[0];
+      for (int64_t ri=start; ri < plan.red_prod; ri += step)
+        acc = op.reduce(acc, op.transform(x[base+ri*rs]));
+    } else {
+      for (int64_t ri=start; ri < plan.red_prod; ri += step) {
+        int64_t t = ri;
+        int64_t xi = base;
+        for (int64_t k=plan.rank-1; k >= 0; --k) {
+          int64_t sz = plan.red_sizes[k];
+          int64_t j = t % sz;
+          t /= sz;
+          xi += j*plan.red_strides[k];
+        }
+        acc = op.reduce(acc, op.transform(x[xi]));
+      }
+    }
+    extern __shared__ uint8_t smem_raw[];
+    auto *smem = reinterpret_cast<typename Op::Acc *>(smem_raw);
+    smem[threadIdx.x] = acc;
+    __syncthreads();
+    for (unsigned stride = blockDim.x>>1; stride > 0; stride >>= 1) {
+      if (threadIdx.x < stride)
+        smem[threadIdx.x] = op.reduce(smem[threadIdx.x], smem[threadIdx.x + stride]);
+      __syncthreads();
+    }
+    if (threadIdx.x == 0)
+      partials[oi*splits + static_cast<int64_t>(blockIdx.x)] = smem[0];
+  }
+
+  template <typename Op>
+  __global__ static void reduce_op_combine_kernel(
+    Op op,
+    int64_t numel,
+    typename Op::Out *__restrict__ o,
+    const typename Op::Acc *__restrict__ partials,
+    int64_t splits,
+    int64_t red_prod
+  ) {
+    int64_t oi = static_cast<int64_t>(blockIdx.x);
+    if (oi >= numel) return;
+    typename Op::Acc acc = op.init();
+    for (int64_t i=threadIdx.x; i < splits; i += blockDim.x)
+      acc = op.reduce(acc, partials[oi*splits + i]);
+    extern __shared__ uint8_t smem_raw[];
+    auto *smem = reinterpret_cast<typename Op::Acc *>(smem_raw);
+    smem[threadIdx.x] = acc;
+    __syncthreads();
+    for (unsigned stride = blockDim.x>>1; stride > 0; stride >>= 1) {
+      if (threadIdx.x < stride)
+        smem[threadIdx.x] = op.reduce(smem[threadIdx.x], smem[threadIdx.x + stride]);
+      __syncthreads();
+    }
+    if (threadIdx.x == 0)
+      o[oi] = op.finalize(smem[0], red_prod);
   }
 
   template <typename Op>
@@ -186,6 +272,19 @@ namespace mag {
     size_t shmemnb = sizeof(typename Op::Acc)*static_cast<size_t>(threads);
     auto *pr = reinterpret_cast<typename Op::Out *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename Op::In *>(mag_tensor_data_ptr(x));
+    auto *dvc = static_cast<physical_device *>(r->meta.device->impl);
+    int64_t splits = 1;
+    if (numel <= REDUCTION_SPLIT_MAX_OUTPUTS && plan.red_prod >= REDUCTION_SPLIT_MIN_ELEMS)
+      splits = std::clamp<int64_t>(plan.red_prod/(threads*REDUCTION_SPLIT_ELEMS_PER_THREAD), 1, REDUCTION_MAX_SPLITS);
+    if (splits > 1 && mag_isok(dvc->reserve_scratch(nullptr, sizeof(typename Op::Acc)*static_cast<size_t>(numel*splits)))) {
+      auto *partials = static_cast<typename Op::Acc *>(dvc->scratch());
+      dim3 grid {static_cast<unsigned>(splits), static_cast<unsigned>(numel), 1};
+      reduce_op_partial_kernel<Op><<<grid, threads, shmemnb, stream>>>(Op{}, numel, partials, px, plan, splits);
+      unsigned cthreads = std::clamp(mag_next_pow2_u32(static_cast<uint32_t>(splits)), 1u, REDUCTION_BLOCK_SIZE);
+      reduce_op_combine_kernel<Op><<<blocks, cthreads, sizeof(typename Op::Acc)*cthreads, stream>>>(
+        Op{}, numel, pr, partials, splits, plan.red_prod);
+      return;
+    }
     reduce_op_kernel<Op><<<blocks, threads, shmemnb, stream>>>(Op{}, numel, pr, px, plan);
   }
 
@@ -363,17 +462,26 @@ namespace mag {
     if (oi >= n) return;
     const int64_t base = mag_reduce_plan_to_offset(&plan, oi);
     arg_acc_f32 acc {};
-    for (int64_t ri = threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
-      int64_t t = ri;
-      int64_t xi = base;
-      #pragma unroll
-      for (int64_t k = plan.rank - 1; k >= 0; --k) {
-        const int64_t sz = plan.red_sizes[k];
-        const int64_t j  = t % sz;
-        t /= sz;
-        xi += j * plan.red_strides[k];
+    if (plan.rank == 1 && plan.red_strides[0] == 1) {
+      for (int64_t ri = threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
+        acc = reduce_arg_acc_f32<T, is_max>(acc, x[base+ri], ri);
+    } else if (plan.rank == 1) {
+      const int64_t rs = plan.red_strides[0];
+      for (int64_t ri = threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
+        acc = reduce_arg_acc_f32<T, is_max>(acc, x[base+ri*rs], ri);
+    } else {
+      for (int64_t ri = threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
+        int64_t t = ri;
+        int64_t xi = base;
+        #pragma unroll
+        for (int64_t k = plan.rank - 1; k >= 0; --k) {
+          const int64_t sz = plan.red_sizes[k];
+          const int64_t j  = t % sz;
+          t /= sz;
+          xi += j * plan.red_strides[k];
+        }
+        acc = reduce_arg_acc_f32<T, is_max>(acc, x[xi], ri);
       }
-      acc = reduce_arg_acc_f32<T, is_max>(acc, x[xi], ri);
     }
     extern __shared__ uint8_t smem_raw[];
     auto *smem = reinterpret_cast<arg_acc_f32 *>(smem_raw);
@@ -430,10 +538,11 @@ namespace mag {
     const mag_tensor_t *x = cmd.in[0];
     int64_t n = mag_tensor_numel(r);
     const auto *plan = &cmd.params->reduction.red_plan;
-    unsigned threads = REDUCTION_BLOCK_SIZE;
+
+    unsigned threads = n <= WIDE_REDUCTION_OUTPUTS ? WIDE_REDUCTION_BLOCK_SIZE : REDUCTION_BLOCK_SIZE;
     if (plan->red_prod < threads)
       threads = static_cast<int>(mag_next_pow2_u32(static_cast<uint32_t>(plan->red_prod > 0 ? plan->red_prod : 1)));
-    threads = std::clamp(threads, 1u, REDUCTION_BLOCK_SIZE);
+    threads = std::clamp(threads, 1u, WIDE_REDUCTION_BLOCK_SIZE);
     size_t shmem = sizeof(arg_acc_f32)*static_cast<size_t>(threads);
     auto *pr = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));

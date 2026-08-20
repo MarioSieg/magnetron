@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "mag_cuda.cuh"
+#include "mag_cuda_prelude.cuh"
 
 namespace mag {
   constexpr unsigned MISC_BLOCK_SIZE = 256;

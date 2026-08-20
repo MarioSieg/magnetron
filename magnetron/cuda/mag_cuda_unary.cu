@@ -45,8 +45,8 @@ namespace mag {
   static void mag_cast_launcher(mag_tensor_t *r, const mag_tensor_t *x, cudaStream_t stream) {
     int64_t numel = mag_tensor_numel(r);
     if (mag_unlikely(numel <= 0)) return;
-    if (mag_likely(numel <= std::numeric_limits<int>::max())) {
-      launch_cast_indexed<Src, Dst, int>(r, x, stream);
+    if (mag_likely(can_all_use_i32_indexes(r, x))) {
+      launch_cast_indexed<Src, Dst, int32_t>(r, x, stream);
     } else {
       launch_cast_indexed<Src, Dst, int64_t>(r, x, stream);
     }
@@ -293,8 +293,8 @@ namespace mag {
   static void launch_clone(mag_tensor_t *r, const mag_tensor_t *x, cudaStream_t stream) {
     int64_t numel = mag_tensor_numel(r);
     if (mag_unlikely(numel <= 0)) return;
-    if (mag_likely(numel <= std::numeric_limits<int>::max())) {
-      launch_clone_indexed<T, int>(r, x, stream);
+    if (mag_likely(can_all_use_i32_indexes(r, x))) { /* Counting elements is not enough: a view's strides can outrun its numel. */
+      launch_clone_indexed<T, int32_t>(r, x, stream);
     } else {
       launch_clone_indexed<T, int64_t>(r, x, stream);
     }
@@ -761,21 +761,21 @@ namespace mag {
     }
   };
 
-  template <typename Op, const bool Contig>
+  template <typename Op, typename I, const bool Contig>
   __global__ static void unary_op_kernel(
     Op op,
-    int64_t n,
+    I n,
     typename Op::Out *r,
     const typename Op::In *x,
-    [[maybe_unused]] coords_iter<int64_t> rc,
-    [[maybe_unused]] coords_iter<int64_t> xc
+    [[maybe_unused]] coords_iter<I> rc,
+    [[maybe_unused]] coords_iter<I> xc
   ) {
-    int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + static_cast<int64_t>(threadIdx.x);
+    I i = static_cast<I>(blockDim.x)*static_cast<I>(blockIdx.x) + static_cast<I>(threadIdx.x);
     if constexpr (Contig) {
       if (i >= n) return;
       r[i] = static_cast<typename Op::Out>(op(static_cast<typename Op::In>(x[i])));
     } else {
-      int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+      I step = static_cast<I>(blockDim.x)*static_cast<I>(gridDim.x);
       for (; i < n; i += step)
         r[rc(i)] = op(x[rc.broadcast(xc, i)]);
     }
@@ -785,14 +785,14 @@ namespace mag {
   static void launch_unary_op(mag_tensor_t *r, const mag_tensor_t *x, cudaStream_t stream) {
     int64_t numel = mag_tensor_numel(r);
     auto blocks = static_cast<unsigned>(std::min((numel+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
-    coords_iter<int64_t> rc {r};
-    coords_iter<int64_t> xc {x};
     auto *pr = reinterpret_cast<typename Op::Out *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename Op::In *>(mag_tensor_data_ptr(x));
     if (std::array<const mag_tensor_t *, 2> tensors {r, x}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
-      unary_op_kernel<Op, true><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(Op{}, numel, pr, px, rc, xc);
+      unary_op_kernel<Op, int64_t, true><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(Op{}, numel, pr, px, {}, {});
     } else {
-      unary_op_kernel<Op, false><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(Op{}, numel, pr, px, rc, xc);
+      coords_iter<int64_t> rc {r};
+      coords_iter<int64_t> xc {x};
+      unary_op_kernel<Op, int64_t, false><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(Op{}, numel, pr, px, rc, xc);
     }
   }
 

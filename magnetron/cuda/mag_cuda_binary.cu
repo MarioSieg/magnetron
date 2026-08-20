@@ -218,19 +218,19 @@ namespace mag {
     }
   };
 
-  template <typename Op, const bool Contig>
+  template <typename Op, typename I, const bool Contig>
   __global__ static void binary_op_kernel(
     Op op,
-    int64_t numel,
+    I numel,
     typename Op::OutT *r,
     const typename Op::InT *x,
     const typename Op::InT *y,
-    [[maybe_unused]] coords_iter<int64_t> rc,
-    [[maybe_unused]] coords_iter<int64_t> xc,
-    [[maybe_unused]] coords_iter<int64_t> yc
+    [[maybe_unused]] coords_iter<I> rc,
+    [[maybe_unused]] coords_iter<I> xc,
+    [[maybe_unused]] coords_iter<I> yc
   ) {
-    int64_t i = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + static_cast<int64_t>(threadIdx.x);
-    int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
+    I i = static_cast<I>(blockDim.x)*static_cast<I>(blockIdx.x) + static_cast<I>(threadIdx.x);
+    I step = static_cast<I>(blockDim.x)*static_cast<I>(gridDim.x);
     if constexpr (Contig) {
       for (; i < numel; i += step)
         r[i] = op(x[i], y[i]);
@@ -247,13 +247,15 @@ namespace mag {
     auto *pr = reinterpret_cast<typename Op::OutT *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename Op::InT *>(mag_tensor_data_ptr(x));
     const auto *py = reinterpret_cast<const typename Op::InT *>(mag_tensor_data_ptr(y));
+    /* The index stays 64-bit on purpose. Narrowing it to 32 measured as no gain at all: this kernel is bound
+       by memory, and the divides hide under the loads whose addresses they compute. */
     if (std::array<const mag_tensor_t *, 3> tensors {r, x, y}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
-      binary_op_kernel<Op, true><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(Op {}, numel, pr, px, py, {}, {}, {});
+      binary_op_kernel<Op, int64_t, true><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(Op {}, numel, pr, px, py, {}, {}, {});
     } else {
       coords_iter<int64_t> rc {r};
       coords_iter<int64_t> xc {x};
       coords_iter<int64_t> yc {y};
-      binary_op_kernel<Op, false><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(Op {}, numel, pr, px, py, rc, xc, yc);
+      binary_op_kernel<Op, int64_t, false><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(Op {}, numel, pr, px, py, rc, xc, yc);
     }
   }
 

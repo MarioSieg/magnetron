@@ -450,12 +450,8 @@ namespace mag {
         issue_tma_stage(stage, next_kt);
       }
     }
-
-    /* Every issued TMA has been waited on by the consumers, so the staging buffer is dead
-       from here on and can back the f32 epilogue instead of a second dedicated allocation. */
     __syncthreads();
     auto *c_smem = reinterpret_cast<float *>(smem_raw);
-
     if (!is_producer) {
       auto *c_ptr = c_smem + (consumer_warp<<8);
       #pragma unroll

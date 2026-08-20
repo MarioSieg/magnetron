@@ -611,18 +611,78 @@ namespace mag {
     return MAG_OK;
   }
 
+  /* Top-k runs entirely on unsigned integer keys. Every supported dtype maps to an unsigned integer that
+     orders the way the values do, which turns "find the k largest" into a radix problem: no comparator, no
+     data dependent branching, and one pass structure that serves every dtype. */
   template <typename T>
-  [[nodiscard]] static __device__ __forceinline__ float topk_cmp_val(T x) {
-    if constexpr (std::is_same_v<T, float>) return x;
-    else if constexpr (std::is_same_v<T, half>) return __half2float(x);
-    else if constexpr (std::is_same_v<T, __nv_bfloat16>) return __bfloat162float(x);
-    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return static_cast<float>(x);
-    else return static_cast<float>(x);
+  struct topk_order {
+    using key_t = uint32_t;
+    [[nodiscard]] static __device__ __forceinline__ key_t encode(T x) {
+      if constexpr (std::is_signed_v<T>) return static_cast<uint32_t>(static_cast<int32_t>(x))^0x80000000u;
+      else return static_cast<uint32_t>(x);
+    }
+  };
+
+  /* Flipping the sign bit on positives and every bit on negatives turns IEEE 754 into its total order: -0
+     lands just below +0, and NaNs fall outside the finite range at whichever end their sign points to. */
+  [[nodiscard]] static __device__ __forceinline__ uint32_t topk_encode_f32(float x) {
+    uint32_t u = __float_as_uint(x);
+    return (u & 0x80000000u) ? ~u : (u|0x80000000u);
+  }
+
+  /* The narrow floats widen to float exactly and monotonically, so they can share its encoding. */
+  template <> struct topk_order<float> {
+    using key_t = uint32_t;
+    [[nodiscard]] static __device__ __forceinline__ uint32_t encode(float x) { return topk_encode_f32(x); }
+  };
+  template <> struct topk_order<half> {
+    using key_t = uint32_t;
+    [[nodiscard]] static __device__ __forceinline__ uint32_t encode(half x) { return topk_encode_f32(__half2float(x)); }
+  };
+  template <> struct topk_order<__nv_bfloat16> {
+    using key_t = uint32_t;
+    [[nodiscard]] static __device__ __forceinline__ uint32_t encode(__nv_bfloat16 x) { return topk_encode_f32(__bfloat162float(x)); }
+  };
+  template <> struct topk_order<__nv_fp8_e4m3> {
+    using key_t = uint32_t;
+    [[nodiscard]] static __device__ __forceinline__ uint32_t encode(__nv_fp8_e4m3 x) { return topk_encode_f32(static_cast<float>(x)); }
+  };
+  template <> struct topk_order<int64_t> {
+    using key_t = uint64_t;
+    [[nodiscard]] static __device__ __forceinline__ uint64_t encode(int64_t x) { return static_cast<uint64_t>(x)^0x8000000000000000ull; }
+  };
+  template <> struct topk_order<uint64_t> {
+    using key_t = uint64_t;
+    [[nodiscard]] static __device__ __forceinline__ uint64_t encode(uint64_t x) { return x; }
+  };
+
+  /* The composite has to hold the ordering key plus a 32 bit position, so 64 bit keys need the wider slot. */
+  template <typename K> struct topk_composite;
+  template <> struct topk_composite<uint32_t> { using type = uint64_t; };
+  template <> struct topk_composite<uint64_t> { using type = unsigned __int128; };
+
+  static constexpr int MAG_TOPK_BLOCK = 512;
+  static constexpr int MAG_TOPK_RADIX_BITS = 8;
+  static constexpr int MAG_TOPK_RADIX_BINS = 1<<MAG_TOPK_RADIX_BITS;
+  static constexpr int MAG_TOPK_POS_BITS = 32;
+
+  /* One integer carries both the ordering key and the position, so every composite within a row is distinct
+     and the k largest of them are exactly the k elements the op must return, in the order it must return
+     them. The position rides in the low bits complemented, so a tie on value resolves towards the lower
+     index, which is the rule the CPU kernel follows. Smallest-first is the same search over complemented
+     keys, which is why only the key is flipped and the position is not. */
+  template <typename T>
+  [[nodiscard]] static __device__ __forceinline__ typename topk_composite<typename topk_order<T>::key_t>::type
+  topk_make(T value, int64_t pos, bool largest) {
+    using key_t = typename topk_order<T>::key_t;
+    using comp_t = typename topk_composite<key_t>::type;
+    key_t key = topk_order<T>::encode(value);
+    if (!largest) key = static_cast<key_t>(~key);
+    return (static_cast<comp_t>(key)<<MAG_TOPK_POS_BITS)|static_cast<comp_t>(~static_cast<uint32_t>(pos));
   }
 
   template <typename T>
   __global__ static void topk_rows_kernel(
-    int64_t outer_count,
     int64_t dim_size,
     int64_t k,
     bool largest,
@@ -632,21 +692,21 @@ namespace mag {
     int64_t stride_v_dim,
     mag_tensor_t x_t,
     mag_tensor_t v_t,
-    mag_tensor_t i_t,
     const T *bx,
     T *bv,
     int64_t *bi,
     char *scratch_base,
-    size_t row_bytes
+    size_t row_bytes,
+    int64_t sort_len
   ) {
+    using key_t = typename topk_order<T>::key_t;
+    using comp_t = typename topk_composite<key_t>::type;
+    constexpr int used_bits = static_cast<int>(sizeof(key_t))*8 + MAG_TOPK_POS_BITS;
+    constexpr int num_passes = used_bits/MAG_TOPK_RADIX_BITS;
     int64_t row = static_cast<int64_t>(blockIdx.x);
-    if (row >= outer_count || threadIdx.x != 0) return;
     const int64_t *shape_x = x_t.meta.coords.shape;
     const int64_t *str_x = x_t.meta.coords.strides;
     const int64_t *str_v = v_t.meta.coords.strides;
-    (void)i_t;
-    T *vals_buf = reinterpret_cast<T *>(scratch_base + static_cast<size_t>(row)*row_bytes);
-    int64_t *idx_buf = reinterpret_cast<int64_t *>(vals_buf + dim_size);
     int64_t outer_rank = R - 1;
     int64_t shape_outer[MAG_MAX_DIMS];
     int64_t mult_outer[MAG_MAX_DIMS];
@@ -668,12 +728,10 @@ namespace mag {
     }
     int64_t rtmp = row;
     int64_t base_idx[MAG_MAX_DIMS] = {0};
-    for (int64_t d=0; d < R; ++d) base_idx[d] = 0;
     for (int64_t t=0; t < outer_rank; ++t) {
-      int64_t q = mult_outer[t] == 0 ? 0 : rtmp / mult_outer[t];
-      if (mult_outer[t] != 0) rtmp = rtmp % mult_outer[t];
-      int64_t fd = outer_to_full[t];
-      base_idx[fd] = q;
+      int64_t q = mult_outer[t] == 0 ? 0 : rtmp/mult_outer[t];
+      if (mult_outer[t] != 0) rtmp = rtmp%mult_outer[t];
+      base_idx[outer_to_full[t]] = q;
     }
     base_idx[dim] = 0;
     int64_t off_x0=0;
@@ -682,41 +740,89 @@ namespace mag {
       off_x0 += base_idx[d]*str_x[d];
       off_v0 += base_idx[d]*str_v[d];
     }
-    for (int64_t p = 0; p < dim_size; ++p) {
-      int64_t off_x = off_x0 + p*stride_x_dim;
-      vals_buf[p] = bx[off_x];
-      idx_buf[p] = p;
+    comp_t *comps = reinterpret_cast<comp_t *>(scratch_base + static_cast<size_t>(row)*row_bytes);
+    comp_t *sorted = comps + dim_size;
+    __shared__ uint32_t hist[MAG_TOPK_RADIX_BINS];
+    __shared__ comp_t sh_prefix;
+    __shared__ int64_t sh_rank;
+    __shared__ uint32_t sh_count;
+    for (int64_t p=threadIdx.x; p < dim_size; p += blockDim.x)
+      comps[p] = topk_make<T>(bx[off_x0 + p*stride_x_dim], p, largest);
+    if (threadIdx.x == 0) {
+      sh_prefix = 0;
+      sh_rank = k;
     }
-    for (int64_t rr=0; rr < k; ++rr) {
-      int64_t best = rr;
-      for (int64_t p = rr+1; p < dim_size; ++p) {
-        T vp = vals_buf[p];
-        T vb = vals_buf[best];
-        float fvp = topk_cmp_val(vp);
-        float fvb = topk_cmp_val(vb);
-        bool better;
-        if (largest) better = (fvp > fvb) || ((fvp == fvb) && (idx_buf[p] < idx_buf[best]));
-        else better = (fvp < fvb) || ((fvp == fvb) && (idx_buf[p] < idx_buf[best]));
-        if (better) best = p;
+    __syncthreads();
+    /* Radix select, most significant digit first. Each pass histograms the digit of every composite still
+       matching the prefix, walks the bins downwards until it reaches the one holding the k-th largest, and
+       appends that digit. After the last pass the prefix is that composite exactly. */
+    comp_t hi_mask = 0;
+    for (int pass=0; pass < num_passes; ++pass) {
+      int shift = used_bits - MAG_TOPK_RADIX_BITS*(pass+1);
+      for (int b=threadIdx.x; b < MAG_TOPK_RADIX_BINS; b += blockDim.x) hist[b] = 0;
+      __syncthreads();
+      comp_t prefix = sh_prefix;
+      for (int64_t p=threadIdx.x; p < dim_size; p += blockDim.x) {
+        comp_t c = comps[p];
+        if ((c & hi_mask) == prefix)
+          atomicAdd(hist + static_cast<uint32_t>((c>>shift)&0xFF), 1u);
       }
-      if (best != rr) {
-        T tv = vals_buf[rr];
-        vals_buf[rr] = vals_buf[best];
-        vals_buf[best] = tv;
-        int64_t ti2 = idx_buf[rr];
-        idx_buf[rr] = idx_buf[best];
-        idx_buf[best] = ti2;
+      __syncthreads();
+      if (threadIdx.x == 0) {
+        int64_t rank = sh_rank;
+        for (int b=MAG_TOPK_RADIX_BINS-1; b >= 0; --b) {
+          int64_t cnt = static_cast<int64_t>(hist[b]);
+          if (cnt >= rank) {
+            sh_prefix |= static_cast<comp_t>(static_cast<uint32_t>(b))<<shift;
+            break;
+          }
+          rank -= cnt;
+        }
+        sh_rank = rank;
+      }
+      __syncthreads();
+      hi_mask |= static_cast<comp_t>(0xFFu)<<shift;
+    }
+    comp_t threshold = sh_prefix;
+    if (threadIdx.x == 0) sh_count = 0;
+    __syncthreads();
+    /* Composites are distinct, so exactly k of them clear the threshold and no tie breaking is left to do. */
+    for (int64_t p=threadIdx.x; p < dim_size; p += blockDim.x) {
+      comp_t c = comps[p];
+      if (c >= threshold) sorted[atomicAdd(&sh_count, 1u)] = c;
+    }
+    __syncthreads();
+    for (int64_t p=static_cast<int64_t>(sh_count)+threadIdx.x; p < sort_len; p += blockDim.x)
+      sorted[p] = 0; /* Pad to a power of two with the minimum, which the sort pushes past the k real ones. */
+    __syncthreads();
+    for (int64_t size=2; size <= sort_len; size <<= 1) { /* Bitonic sort, descending. */
+      for (int64_t stride=size>>1; stride > 0; stride >>= 1) {
+        for (int64_t i=threadIdx.x; i < sort_len; i += blockDim.x) {
+          int64_t j = i^stride;
+          if (j > i) {
+            comp_t a = sorted[i];
+            comp_t b = sorted[j];
+            if ((i & size) == 0 ? a < b : a > b) {
+              sorted[i] = b;
+              sorted[j] = a;
+            }
+          }
+        }
+        __syncthreads();
       }
     }
-    for (int64_t rr=0; rr < k; ++rr) {
-      int64_t off_v = off_v0 + rr*stride_v_dim;
-      bv[off_v] = vals_buf[rr];
-      bi[off_v] = idx_buf[rr];
+    for (int64_t r=threadIdx.x; r < k; r += blockDim.x) {
+      int64_t pos = static_cast<int64_t>(~static_cast<uint32_t>(sorted[r]));
+      int64_t off_v = off_v0 + r*stride_v_dim;
+      bv[off_v] = bx[off_x0 + pos*stride_x_dim];
+      bi[off_v] = pos;
     }
   }
 
   template <typename T>
   static mag_status_t launch_topk(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    using key_t = typename topk_order<T>::key_t;
+    using comp_t = typename topk_composite<key_t>::type;
     const mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *v = cmd.out[0];
     mag_tensor_t *idx = cmd.out[1];
@@ -727,9 +833,14 @@ namespace mag {
     mag_assert2(dim >= 0 && dim < R);
     const int64_t dim_size = x->meta.coords.shape[dim];
     mag_assert2(k > 0 && k <= dim_size);
-    int64_t outer_count = x->meta.numel / dim_size;
+    int64_t outer_count = x->meta.numel/dim_size;
     if (outer_count <= 0) return MAG_OK;
-    size_t row_bytes = static_cast<size_t>(dim_size)*(sizeof(T) + sizeof(int64_t));
+    /* The composite packs the position into 32 bits, so a longer reduced axis would alias two elements. */
+    if (mag_unlikely(dim_size > 0xFFFFFFFFll))
+      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: topk: reduced dimension of %lld exceeds the supported maximum of %lld.", static_cast<long long>(dim_size), 0xFFFFFFFFll);
+    int64_t sort_len = 1;
+    while (sort_len < k) sort_len <<= 1;
+    size_t row_bytes = (static_cast<size_t>(dim_size) + static_cast<size_t>(sort_len))*sizeof(comp_t);
     size_t scratch_bytes = row_bytes*static_cast<size_t>(outer_count);
     void *d_scratch = nullptr;
     if (cudaError_t ce = stream_alloc(&d_scratch, scratch_bytes, stream); mag_unlikely(ce != cudaSuccess)) return mag_set_error(err, MAG_ERR_OOM, "cuda: topk device allocation of %zu bytes failed: %s.", scratch_bytes, cudaGetErrorString(ce));
@@ -738,9 +849,15 @@ namespace mag {
     int64_t *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
     int64_t stride_x_dim = x->meta.coords.strides[dim];
     int64_t stride_v_dim = v->meta.coords.strides[dim];
-    topk_rows_kernel<T><<<static_cast<unsigned>(outer_count), 1, 0, stream>>>(
-      outer_count, dim_size, k, largest, R, dim, stride_x_dim, stride_v_dim,
-      *x, *v, *idx, bx, bv, bi, reinterpret_cast<char *>(d_scratch), row_bytes);
+    topk_rows_kernel<T><<<static_cast<unsigned>(outer_count), MAG_TOPK_BLOCK, 0, stream>>>(
+      dim_size, k, largest, R, dim, stride_x_dim, stride_v_dim,
+      *x, *v, bx, bv, bi, reinterpret_cast<char *>(d_scratch), row_bytes, sort_len);
+    /* A launch that never ran leaves the outputs untouched, which reads back as a plausible looking row of
+       zeros rather than as a failure, so the error has to be collected here instead of at the next sync. */
+    if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess)) {
+      cuda_check(stream_free(d_scratch, stream), "topk scratch free");
+      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: topk kernel launch failed: %s.", cudaGetErrorString(ce));
+    }
     cuda_check(stream_free(d_scratch, stream), "topk scratch free");
     return MAG_OK;
   }
