@@ -4,8 +4,8 @@ file(GLOB MAGNETRON_CUDA_SOURCES "*.cuh" "*.cu")
 
 find_package(CUDAToolkit)
 
-if (NOT CUDAToolkit_FOUND)
-    set(CMAKE_CUDA_COMPILER /usr/local/cuda-13.0/bin/nvcc) # Set to your CUDA compiler path if not found automatically
+if (CUDAToolkit_FOUND AND NOT CMAKE_CUDA_COMPILER AND NOT DEFINED ENV{CUDACXX} AND CUDAToolkit_BIN_DIR)
+    set(CMAKE_CUDA_COMPILER "${CUDAToolkit_BIN_DIR}/nvcc")
 endif()
 
 if (CUDAToolkit_FOUND)
