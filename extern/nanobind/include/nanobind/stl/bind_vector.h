@@ -107,7 +107,7 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
 
         cl.def("append",
                [](Vector &v, const Value &value) { v.push_back(value); },
-               "Append `arg` to the end of the list.")
+               "Append ``arg`` to the end of the list.")
 
           .def("insert",
                [](Vector &v, Py_ssize_t i, const Value &x) {
@@ -117,17 +117,17 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
                        throw index_error();
                    v.insert(v.begin() + i, x);
                },
-               "Insert object `arg1` before index `arg0`.")
+               "Insert object ``arg1`` before index ``arg0``.")
 
            .def("pop",
                 [](Vector &v, Py_ssize_t i) {
                     size_t index = detail::wrap(i, v.size());
                     Value result = std::move(v[index]);
-                    v.erase(v.begin() + index);
+                    v.erase(v.begin() + (ptrdiff_t) index);
                     return result;
                 },
                 arg("index") = -1,
-                "Remove and return item at `index` (default last).")
+                "Remove and return item at ``index`` (default last).")
 
           .def("extend",
                [](Vector &v, const Vector &src) {
@@ -144,7 +144,7 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
                        v.insert(v.end(), src.begin(), src.end());
                    }
                },
-               "Extend `self` by appending elements from `arg`.")
+               "Extend ``self`` by appending elements from ``arg``.")
 
           .def("__setitem__",
                [](Vector &v, Py_ssize_t i, const Value &value) {
@@ -153,7 +153,7 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
 
           .def("__delitem__",
                [](Vector &v, Py_ssize_t i) {
-                   v.erase(v.begin() + detail::wrap(i, v.size()));
+                   v.erase(v.begin() + (ptrdiff_t) detail::wrap(i, (size_t) v.size()));
                })
 
           .def("__getitem__",
@@ -163,7 +163,7 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
                    seq->reserve(length);
 
                    for (size_t i = 0; i < length; ++i) {
-                       seq->push_back(v[start]);
+                       seq->push_back(v[(size_t) start]);
                        start += step;
                    }
 
@@ -185,12 +185,12 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
                    if (&value == &v) {
                        Vector copy(value);
                        for (size_t i = 0; i < length; ++i) {
-                           v[start] = copy[i];
+                           v[(size_t) start] = copy[i];
                            start += step;
                        }
                    } else {
                        for (size_t i = 0; i < length; ++i) {
-                           v[start] = value[i];
+                           v[(size_t) start] = value[i];
                            start += step;
                        }
                    }
@@ -202,7 +202,7 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
                    if (length == 0)
                        return;
 
-                   stop = start + (length - 1) * step;
+                   stop = start + ((Py_ssize_t) length - 1) * step;
                    if (start > stop) {
                        std::swap(start, stop);
                        step = -step;
@@ -234,7 +234,7 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
           .def("count",
                [](const Vector &v, const Value &x) {
                    return std::count(v.begin(), v.end(), x);
-               }, "Return number of occurrences of `arg`.")
+               }, "Return number of occurrences of ``arg``.")
 
           .def("remove",
                [](Vector &v, const Value &x) {
@@ -244,7 +244,7 @@ class_<Vector> bind_vector(handle scope, const char *name, Args &&...args) {
                    else
                        throw value_error();
                },
-               "Remove first occurrence of `arg`.");
+               "Remove first occurrence of ``arg``.");
     }
 
     return cl;

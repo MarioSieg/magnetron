@@ -180,7 +180,7 @@ The high-level interface consists of just one CMake command:
      This defense is especially costly for nanobind-based bindings, where it
      instruments every function binding wrapper and all ndarray-related code.
      In the test suite, it increases binary size by ~9-12% while adding 1-2%
-     runtime cost. The thread model is questionable in this context, since
+     runtime cost. The threat model is questionable in this context, since
      the arrays being processed are either controlled by Python or validated
      by nanobind.
 
@@ -529,8 +529,10 @@ Nanobind's CMake tooling includes a convenience command to interface with the
           Multiple marker file paths can be optionally passed to this parameter.
 
       * - ``PATTERN_FILE``
-        - Specify a pattern file used to replace declarations in the stub. The
-          syntax is described in the section on :ref:`stub generation <stubs>`.
+        - Specify one or more pattern files used to replace declarations in
+          the stub. The syntax is described in the section on :ref:`stub
+          generation <stubs>`. When several files are given, their rules are
+          merged in the order specified, and the first matching rule wins.
 
       * - ``COMPONENT``
         - Specify a component when ``INSTALL_TIME`` stub generation is used.

@@ -182,8 +182,10 @@ static void nb_thread_state_destroy(void *p) noexcept {
 
     // Reclaim this thread's instance pools if the runtime is still alive
     if (internals && ts->pools) {
+        PyGILState_STATE state = PyGILState_Ensure();
         for (uint32_t i = 0; i < ts->pools_size; ++i)
             nb_pool_drain(&ts->pools[i], /* can_free = */ true);
+        PyGILState_Release(state);
     }
     PyMem_Free(ts->pools);
 
@@ -244,19 +246,17 @@ static void init_pyobjects(nb_internals *p) {
     for (int i = 0; i < pyobj_name::string_count; ++i)
         new_constant(p, i, PyUnicode_InternFromString(interned_c_strs[i]));
 
-    new_constant(p, pyobj_name::copy_tpl,
-                 PyTuple_Pack(1, NB_INTERNED(copy)));
-    new_constant(p, pyobj_name::max_version_tpl,
+    new_constant(p, pyobj_name::interned_max_version_tpl,
                  PyTuple_Pack(1, NB_INTERNED(max_version)));
 
     PyObject *one = PyLong_FromLong(1), *zero = PyLong_FromLong(0);
-    new_constant(p, pyobj_name::dl_cpu_tpl, PyTuple_Pack(2, one, zero));
+    new_constant(p, pyobj_name::interned_dl_cpu_tpl, PyTuple_Pack(2, one, zero));
     Py_DECREF(zero);
     Py_DECREF(one);
 
     PyObject *major = PyLong_FromLong(dlpack::major_version),
              *minor = PyLong_FromLong(dlpack::minor_version);
-    new_constant(p, pyobj_name::dl_version_tpl, PyTuple_Pack(2, major, minor));
+    new_constant(p, pyobj_name::interned_dl_version_tpl, PyTuple_Pack(2, major, minor));
     Py_DECREF(minor);
     Py_DECREF(major);
 }
@@ -314,7 +314,7 @@ static void init_internals(nb_internals *p) {
     PyObject *dummy = PyType_FromMetaclass(
         nb_meta, p->nb_module, &dummy_spec, nullptr);
     p->type_data_offset =
-        (uint8_t *) PyObject_GetTypeData(dummy, nb_meta) - (uint8_t *) dummy;
+        ((uint8_t *) PyObject_GetTypeData(dummy, nb_meta) - (uint8_t *) dummy);
     Py_DECREF(dummy);
 #endif
 
@@ -348,6 +348,8 @@ void internals_dec_ref() {
     p->nb_bound_method = nullptr;
     p->nb_static_property.store_release(nullptr);
     p->nb_ndarray.store_release(nullptr);
+    for (auto &entry : p->ndarray_export)
+        entry.store_release(nullptr);
 
     for (int i = 0; i < pyobj_name::total_count; ++i)
         static_pyobjects[i] = nullptr;
@@ -538,7 +540,7 @@ NB_NOINLINE void nb_module_exec(const char *name, PyObject *) {
     check(key, "nanobind::detail::nb_module_exec(): "
                "could not create dictionary key!");
 
-    PyObject *capsule = dict_get_item_ref_or_fail(dict, key);
+    PyObject *capsule = dict_getitem_or_default(dict, key, nullptr);
     if (capsule) {
         Py_DECREF(key);
         internals = (nb_internals *) PyCapsule_GetPointer(capsule, "nb_internals");
@@ -595,13 +597,14 @@ NB_NOINLINE void nb_module_exec(const char *name, PyObject *) {
 
     internals_inc_ref();
 
-#if PY_VERSION_HEX < 0x030C0000 && !defined(PYPY_VERSION)
-    /* The implementation of typing.py on CPython <3.12 tends to introduce
-       spurious reference leaks that upset nanobind's leak checker. The
-       following band-aid, installs an 'atexit' handler that clears LRU caches
-       used in typing.py. To be resilient to potential future changes in
-       typing.py, the implementation fails silently if any step goes wrong. For
-       context, see https://github.com/python/cpython/issues/98253. */
+#if !defined(PYPY_VERSION)
+    // typing.py on CPython introduces spurious reference leaks that upset
+    // nanobind's leak checker. The following band-aid installs an 'atexit'
+    // handler that clears LRU caches used in typing.py. To be resilient to
+    // potential future changes in typing.py, the implementation fails silently
+    // if any step goes wrong. For context, see
+    // https://github.com/python/cpython/issues/98253 and
+    // https://github.com/python/cpython/issues/151728. */
 
     const char *str =
         "def cleanup():\n"

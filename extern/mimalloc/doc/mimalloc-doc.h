@@ -1,5 +1,5 @@
 /* ----------------------------------------------------------------------------
-Copyright (c) 2018-2025, Microsoft Research, Daan Leijen
+Copyright (c) 2018-2026, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license. A copy of the license can be found in the file
 "LICENSE" at the root of this distribution.
@@ -1012,7 +1012,7 @@ void* mi_zalloc_small(size_t size);
 /// This function is meant for use in run-time systems for best
 /// performance and does not check if the pointer was _indeed_ allocated
 /// with #mi_malloc_small (et al) -- use with care!
-/// This function has a small perf benefit but only if mimalloc was built with `MI_FAST_FREE_SMALL=1`
+/// This function has a small perf benefit but only if mimalloc was built with `MI_PAGE_META_ALIGNED_FREE_SMALL=1`
 /// @see mi_malloc_small()
 /// @see mi_zalloc_small()
 /// @see mi_heap_malloc_small()

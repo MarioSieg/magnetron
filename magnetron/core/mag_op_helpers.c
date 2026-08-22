@@ -309,30 +309,27 @@ mag_status_t mag_op_stub_binary(
   mag_tensor_t *tmp_y = NULL;
   if (x->meta.dtype != prom_type) { /* Cast x only if its dtype != promote_dtype and the op semantics say so */
     status = mag_cast(err, &tmp_x, x, prom_type); /* For inplace, x->meta.dtype == promote_dtype, so this is skipped */
-    if (mag_iserr(status)) {
-      if (!(flags & MAG_BINOP_INPLACE) && result) mag_tensor_decref(result);
-      return status;
-    }
+    if (mag_iserr(status)) goto cleanup;
     prom_x = tmp_x;
   }
   if (y->meta.dtype != prom_type) { /* Cast y if needed */
     status = mag_cast(err, &tmp_y, y, prom_type);
-    if (mag_iserr(status)) {
-      if (tmp_x) mag_tensor_decref(tmp_x);
-      if (!(flags & MAG_BINOP_INPLACE) && result) mag_tensor_decref(result);
-      return status;
-    }
+    if (mag_iserr(status)) goto cleanup;
     prom_y = tmp_y;
   }
   mag_tensor_t *in[2] = {prom_x, prom_y};
   status = mag_check_dtype_and_device_compat(err, op, in, 0);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(status)) goto cleanup;
   status = mag_dispatch(err, op, flags & MAG_BINOP_INPLACE, in, sizeof(in)/sizeof(*in), &result, 1, NULL);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(status)) goto cleanup;
   if (tmp_x) mag_tensor_decref(tmp_x);
   if (tmp_y) mag_tensor_decref(tmp_y);
   *out_result = result;
   return MAG_OK;
+cleanup:
+  if (tmp_y) mag_tensor_decref(tmp_y);
+  if (result) mag_tensor_decref(result);
+  return status;
 }
 
 mag_status_t mag_matmul_verify_shapes(

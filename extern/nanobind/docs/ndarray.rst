@@ -8,7 +8,8 @@ The ``nb::ndarray<..>`` class
 nanobind can exchange n-dimensional arrays (henceforth "**nd-arrays**") with
 popular array programming frameworks including `NumPy <https://numpy.org>`__,
 `PyTorch <https://pytorch.org>`__, `TensorFlow <https://www.tensorflow.org>`__,
-`JAX <https://jax.readthedocs.io>`__, and `CuPy <https://cupy.dev>`_. It
+`JAX <https://jax.readthedocs.io>`__, `CuPy <https://cupy.dev>`__, and
+`MLX <https://ml-explore.github.io/mlx>`__. It
 supports *zero-copy* exchange using two protocols:
 
 -  The classic `buffer
@@ -273,15 +274,17 @@ desired Python type.
 - :cpp:class:`nb::numpy <numpy>`: create a ``numpy.ndarray``.
 - :cpp:class:`nb::pytorch <pytorch>`: create a ``torch.Tensor``.
 - :cpp:class:`nb::tensorflow <tensorflow>`: create a ``tensorflow.python.framework.ops.EagerTensor``.
-- :cpp:class:`nb::jax <jax>`: create a ``jaxlib.xla_extension.DeviceArray``.
+- :cpp:class:`nb::jax <jax>`: create a ``jaxlib._jax.ArrayImpl``.
 - :cpp:class:`nb::cupy <cupy>`: create a ``cupy.ndarray``.
+- :cpp:class:`nb::mlx <mlx>`: create an Apple ``mlx.core.array``.
 - :cpp:class:`nb::memview <memview>`: create a Python ``memoryview``.
 - :cpp:class:`nb::array_api <array_api>`: create an object that supports the
   Python buffer protocol (i.e., is accepted as an argument to ``memoryview()``)
   and also has the DLPack attributes  ``__dlpack__`` and ``__dlpack_device__``
   (i.e., it is accepted as an argument to a framework's ``from_dlpack()``
   function).
-- No framework annotation. In this case, nanobind will create a raw Python
+- :cpp:class:`nb::no_framework <no_framework>` (the default when no framework
+  annotation is given). In this case, nanobind will create a raw Python
   ``dltensor`` `capsule <https://docs.python.org/3/c-api/capsule.html>`__
   representing the `DLPack <https://github.com/dmlc/dlpack>`__ metadata of
   a ``DLManagedTensor``.
@@ -470,6 +473,9 @@ nanobind itself.
 For example, ``numpy.array()`` is passed the keyword argument ``copy`` with
 value ``True``, or the PyTorch tensor's ``clone()`` method is immediately
 called to create the copy.
+MLX is a special case: ``mlx.core.array()`` always copies into a unified-memory
+buffer (and provides no ``copy()``/``clone()`` method), so a requested copy is
+satisfied inherently without an extra step.
 This design has a couple of advantages.
 First, nanobind does not have a build-time dependency on the libraries and
 frameworks (NumPy, PyTorch, CUDA, etc.) that would otherwise be necessary
@@ -762,6 +768,25 @@ used to support additional parameters (e.g., to allow the caller to request a
 copy).  See
 `__dlpack__() <https://data-apis.org/array-api/latest/API_specification/generated/array_api.array.__dlpack__.html>`__
 in the Python array API standard for details.
+
+**Stream synchronization.** The array API's ``__dlpack__`` accepts a ``stream``
+argument through which a *consumer* asks the *producer* to make the array safe
+to access on a particular compute stream (for example, via a cross-stream wait
+on CUDA or ROCm). The object nanobind returns for :cpp:class:`nb::array_api
+<array_api>` accepts this argument but performs no synchronization. nanobind has
+no build-time dependency on CUDA, ROCm, or any other backend and treats the
+device as mere metadata, so it knows neither the stream that produced the data
+nor the runtime needed to act on it. This is harmless when the memory is
+host-resident or when the producing computations are inherently serialized with
+respect to the consumer (for example, by running on CUDA's default "null"
+stream). If you instead export device memory still being produced asynchronously
+on a separate stream, you must handle synchronization yourself. Expose your own
+object providing ``__dlpack__`` and ``__dlpack_device__`` methods. The
+``__dlpack__`` method should inspect ``stream``, perform the wait via your
+backend's API, and then return a DLPack capsule, which can be obtained by
+casting an :cpp:class:`nb::ndarray\<\> <ndarray>` that has no framework
+annotation. The ``__dlpack_device__`` method should report the device as a
+``(device_type, device_id)`` pair.
 
 
 Frequently asked questions

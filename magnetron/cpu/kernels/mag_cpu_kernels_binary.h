@@ -9,6 +9,8 @@
 ** +---------------------------------------------------------------------+
 */
 
+#include "../mag_cpu_vectorize_plan.h"
+
 static MAG_AINLINE float mag_fn_add_f32(float x, float y) { return x+y; }
 static MAG_AINLINE float mag_fn_sub_f32(float x, float y) { return x-y; }
 static MAG_AINLINE float mag_fn_mul_f32(float x, float y) { return x*y; }
@@ -61,6 +63,60 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
 #define mag_fn_min_int(x,y) ((x)<(y)?(x):(y))
 #define mag_fn_max_int(x,y) ((x)>(y)?(x):(y))
 
+#define mag_bin_run_body(T, RT, F) \
+    mag_binary_vectorization_plan_t plan; \
+    if (mag_binary_vectorization_plan_init(&plan, r, x, y)) { \
+      for (int64_t i=ra; i < rb; ) { \
+        int64_t o = i/plan.inner; \
+        int64_t j = i - o*plan.inner; \
+        int64_t run = mag_xmin(plan.inner-j, rb-i); \
+        int64_t xb, yb; \
+        mag_binary_vectorization_plan_step(&plan, o, &xb, &yb); \
+        const T *px = bx + xb + (plan.x_const ? 0 : j); \
+        const T *py = by + yb + (plan.y_const ? 0 : j); \
+        RT *pr = br + i; \
+        if (plan.x_const) { T cs = *px; for (int64_t t=0; t < run; ++t) pr[t] = F(cs, py[t]); } \
+        else if (plan.y_const) { T cs = *py; for (int64_t t=0; t < run; ++t) pr[t] = F(px[t], cs); } \
+        else { for (int64_t t=0; t < run; ++t) pr[t] = F(px[t], py[t]); } \
+        i += run; \
+      } \
+      return MAG_OK; \
+    }
+
+#define mag_bin_run_body_simd(T, LOAD, STORE, VF, F) \
+    mag_binary_vectorization_plan_t plan; \
+    if (mag_binary_vectorization_plan_init(&plan, r, x, y)) { \
+      for (int64_t i=ra; i < rb; ) { \
+        int64_t o = i/plan.inner; \
+        int64_t j = i - o*plan.inner; \
+        int64_t run = mag_xmin(plan.inner-j, rb-i); \
+        int64_t xb, yb; \
+        mag_binary_vectorization_plan_step(&plan, o, &xb, &yb); \
+        const T *px = bx + xb + (plan.x_const ? 0 : j); \
+        const T *py = by + yb + (plan.y_const ? 0 : j); \
+        T *pr = br + i; \
+        int64_t t = 0; \
+        if (plan.x_const || plan.y_const) { \
+          T cs = plan.x_const ? *px : *py; \
+          T sp[MAG_VF32_LANES]; \
+          for (int64_t l=0; l < MAG_VF32_LANES; ++l) sp[l] = cs; \
+          mag_vf32_t vc = LOAD(sp); \
+          if (plan.x_const) { \
+            for (; t+MAG_VF32_LANES <= run; t += MAG_VF32_LANES) STORE(pr+t, VF(vc, LOAD(py+t))); \
+            for (; t < run; ++t) pr[t] = F(cs, py[t]); \
+          } else { \
+            for (; t+MAG_VF32_LANES <= run; t += MAG_VF32_LANES) STORE(pr+t, VF(LOAD(px+t), vc)); \
+            for (; t < run; ++t) pr[t] = F(px[t], cs); \
+          } \
+        } else { \
+          for (; t+MAG_VF32_LANES <= run; t += MAG_VF32_LANES) STORE(pr+t, VF(LOAD(px+t), LOAD(py+t))); \
+          for (; t < run; ++t) pr[t] = F(px[t], py[t]); \
+        } \
+        i += run; \
+      } \
+      return MAG_OK; \
+    }
+
 #define mag_gen_bin_scalar(T, TF, name, suffix) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
@@ -81,6 +137,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],by[i]); \
       return MAG_OK; \
     } \
+    mag_bin_run_body(T, T, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
@@ -120,6 +177,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],by[i]); \
       return MAG_OK; \
     } \
+    mag_bin_run_body_simd(T, LOAD, STORE, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \

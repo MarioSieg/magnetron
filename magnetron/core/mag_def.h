@@ -645,10 +645,10 @@ static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
   return r;
 }
 
-extern bool mag_utf8_validate(const uint8_t *str, size_t len);
-extern char *mag_strdup(const char *s);
-extern void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);
-extern int mag_casecmp(const char *a, const char *b);
+extern MAG_EXPORT bool mag_utf8_validate(const uint8_t *str, size_t len);
+extern MAG_EXPORT char *mag_strdup(const char *s);
+extern MAG_EXPORT void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);
+extern MAG_EXPORT int mag_casecmp(const char *a, const char *b);
 
 #ifdef __cplusplus
 }

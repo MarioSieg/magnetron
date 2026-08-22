@@ -13,6 +13,7 @@
 
 #include <core/mag_context.h>
 #include <core/mag_cpuid.h>
+#include <core/mag_envcfg.h>
 #include <core/mag_sstream.h>
 
 extern void mag_cpu_blas_specialization_fallback(mag_kernel_registry_t *kernels); /* Generic any CPU impl */
@@ -39,141 +40,42 @@ extern void mag_cpu_blas_specialization_##arch##_##flag(mag_kernel_registry_t *k
   static uint64_t mag_get_cpu_host_caps(const mag_context_t *ctx) { return ctx->machine.amd64_cpu_caps; }
 
   static const mag_cpu_specialization_t *mag_get_cpu_specializations(const mag_context_t *ctx, size_t *num) {
-  #ifdef MAG_HAVE_CPU_ALDERLAKE
-    mag_cpu_specialization_extern(amd64, alderlake);
+  #ifdef MAG_HAVE_CPU_V4_BF16
+    mag_cpu_specialization_extern(amd64, v4_bf16);
   #endif
-  #ifdef MAG_HAVE_CPU_ARROWLAKE
-    mag_cpu_specialization_extern(amd64, arrowlake);
+  #ifdef MAG_HAVE_CPU_V4
+    mag_cpu_specialization_extern(amd64, v4);
   #endif
-  #ifdef MAG_HAVE_CPU_CANNONLAKE
-    mag_cpu_specialization_extern(amd64, cannonlake);
+  #ifdef MAG_HAVE_CPU_V3
+    mag_cpu_specialization_extern(amd64, v3);
   #endif
-  #ifdef MAG_HAVE_CPU_CASCADELAKE
-    mag_cpu_specialization_extern(amd64, cascadelake);
+  #ifdef MAG_HAVE_CPU_V2_AVX
+    mag_cpu_specialization_extern(amd64, v2_avx);
   #endif
-  #ifdef MAG_HAVE_CPU_COOPERLAKE
-    mag_cpu_specialization_extern(amd64, cooperlake);
-  #endif
-  #ifdef MAG_HAVE_CPU_CORE2
-    mag_cpu_specialization_extern(amd64, core2);
-  #endif
-  #ifdef MAG_HAVE_CPU_HASWELL
-    mag_cpu_specialization_extern(amd64, haswell);
-  #endif
-  #ifdef MAG_HAVE_CPU_ICELAKE
-    mag_cpu_specialization_extern(amd64, icelake);
-  #endif
-  #ifdef MAG_HAVE_CPU_IVYBRIDGE
-    mag_cpu_specialization_extern(amd64, ivybridge);
-  #endif
-  #ifdef MAG_HAVE_CPU_NEHALEM
-    mag_cpu_specialization_extern(amd64, nehalem);
-  #endif
-  #ifdef MAG_HAVE_CPU_WESTMERE
-    mag_cpu_specialization_extern(amd64, westmere);
-  #endif
-  #ifdef MAG_HAVE_CPU_SANDYBRIDGE
-    mag_cpu_specialization_extern(amd64, sandybridge);
-  #endif
-  #ifdef MAG_HAVE_CPU_SAPPHIRERAPIDS
-    mag_cpu_specialization_extern(amd64, sapphirerapids);
-  #endif
-  #ifdef MAG_HAVE_CPU_SIERRAFOREST
-    mag_cpu_specialization_extern(amd64, sierraforest);
-  #endif
-  #ifdef MAG_HAVE_CPU_SKYLAKE_AVX512
-    mag_cpu_specialization_extern(amd64, skylake_avx512);
-  #endif
-  #ifdef MAG_HAVE_CPU_TIGERLAKE
-    mag_cpu_specialization_extern(amd64, tigerlake);
-  #endif
-  #ifdef MAG_HAVE_CPU_ZNVER1
-    mag_cpu_specialization_extern(amd64, zn1);
-  #endif
-  #ifdef MAG_HAVE_CPU_ZNVER2
-    mag_cpu_specialization_extern(amd64, zn2);
-  #endif
-  #ifdef MAG_HAVE_CPU_ZNVER3
-    mag_cpu_specialization_extern(amd64, zn3);
-  #endif
-  #ifdef MAG_HAVE_CPU_ZNVER4
-    mag_cpu_specialization_extern(amd64, zn4);
-  #endif
-  #ifdef MAG_HAVE_CPU_ZNVER5
-    mag_cpu_specialization_extern(amd64, zn5);
+  #ifdef MAG_HAVE_CPU_V2
+    mag_cpu_specialization_extern(amd64, v2);
   #endif
 
-  static const mag_cpu_specialization_t specializations_intel[] = {
-    #ifdef MAG_HAVE_CPU_SAPPHIRERAPIDS
-    mag_cpu_specialization_configure(amd64, sapphirerapids),
+  static const mag_cpu_specialization_t specializations[] = {  /* Order matters, sorted from best to worst */
+    #ifdef MAG_HAVE_CPU_V4_BF16
+      mag_cpu_specialization_configure(amd64, v4_bf16),
     #endif
-    #ifdef MAG_HAVE_CPU_ICELAKE
-    mag_cpu_specialization_configure(amd64, icelake),
+    #ifdef MAG_HAVE_CPU_V4
+      mag_cpu_specialization_configure(amd64, v4),
     #endif
-    #ifdef MAG_HAVE_CPU_COOPERLAKE
-    mag_cpu_specialization_configure(amd64, cooperlake),
+    #ifdef MAG_HAVE_CPU_V3
+      mag_cpu_specialization_configure(amd64, v3),
     #endif
-    #ifdef MAG_HAVE_CPU_CASCADELAKE
-    mag_cpu_specialization_configure(amd64, cascadelake),
+    #ifdef MAG_HAVE_CPU_V2_AVX
+      mag_cpu_specialization_configure(amd64, v2_avx),
     #endif
-    #ifdef MAG_HAVE_CPU_TIGERLAKE
-    mag_cpu_specialization_configure(amd64, tigerlake),
-    #endif
-    #ifdef MAG_HAVE_CPU_SKYLAKE_AVX512
-    mag_cpu_specialization_configure(amd64, skylake_avx512),
-    #endif
-    #ifdef MAG_HAVE_CPU_HASWELL
-    mag_cpu_specialization_configure(amd64, haswell),
-    #endif
-    #ifdef MAG_HAVE_CPU_ALDERLAKE
-    mag_cpu_specialization_configure(amd64, alderlake),
-    #endif
-    #ifdef MAG_HAVE_CPU_ARROWLAKE
-    mag_cpu_specialization_configure(amd64, arrowlake),
-    #endif
-    #ifdef MAG_HAVE_CPU_CANNONLAKE
-    mag_cpu_specialization_configure(amd64, cannonlake),
-    #endif
-    #ifdef MAG_HAVE_CPU_IVYBRIDGE
-    mag_cpu_specialization_configure(amd64, ivybridge),
-    #endif
-    #ifdef MAG_HAVE_CPU_SANDYBRIDGE
-    mag_cpu_specialization_configure(amd64, sandybridge),
-    #endif
-    #ifdef MAG_HAVE_CPU_WESTMERE
-    mag_cpu_specialization_configure(amd64, westmere),
-    #endif
-    #ifdef MAG_HAVE_CPU_NEHALEM
-    mag_cpu_specialization_configure(amd64, nehalem),
-    #endif
-    #ifdef MAG_HAVE_CPU_CORE2
-    mag_cpu_specialization_configure(amd64, core2),
-    #endif
-    #ifdef MAG_HAVE_CPU_SIERRAFOREST
-    mag_cpu_specialization_configure(amd64, sierraforest),
+    #ifdef MAG_HAVE_CPU_V2
+      mag_cpu_specialization_configure(amd64, v2),
     #endif
   };
-
-  static const mag_cpu_specialization_t specializations_amd[] = {
-    #ifdef MAG_HAVE_CPU_ZNVER5
-    mag_cpu_specialization_configure(amd64, zn5),
-    #endif
-    #ifdef MAG_HAVE_CPU_ZNVER4
-    mag_cpu_specialization_configure(amd64, zn4),
-    #endif
-    #ifdef MAG_HAVE_CPU_ZNVER3
-    mag_cpu_specialization_configure(amd64, zn3),
-    #endif
-    #ifdef MAG_HAVE_CPU_ZNVER2
-    mag_cpu_specialization_configure(amd64, zn2),
-    #endif
-    #ifdef MAG_HAVE_CPU_ZNVER1
-    mag_cpu_specialization_configure(amd64, zn1),
-    #endif
-  };
-  bool is_amd = ctx->machine.amd64_cpu_caps&mag_amd64_cap(AMD);
-  *num = is_amd ? sizeof(specializations_amd)/sizeof(*specializations_amd) : sizeof(specializations_intel)/sizeof(*specializations_intel);
-  return is_amd ? specializations_amd : specializations_intel;
+  (void)ctx;
+  *num = sizeof(specializations)/sizeof(*specializations);
+  return specializations;
   }
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
@@ -181,39 +83,46 @@ extern void mag_cpu_blas_specialization_##arch##_##flag(mag_kernel_registry_t *k
   static uint64_t mag_get_cpu_host_caps(const mag_context_t *ctx) { return ctx->machine.arm64_cpu_caps; }
 
   static const mag_cpu_specialization_t *mag_get_cpu_specializations(const mag_context_t *ctx, size_t *num) {
-    #ifdef MAG_HAVE_CPU_ARMV9_A_SVE2
+    #ifdef MAG_HAVE_CPU_ARM_V9_SVE2
       mag_cpu_specialization_extern(arm64, v9_sve2);
     #endif
-    #ifdef MAG_HAVE_CPU_ARMV8_2_A_SVE
-      mag_cpu_specialization_extern(arm64, v82_sve);
+    #ifdef MAG_HAVE_CPU_ARM_V86_SVE
+      mag_cpu_specialization_extern(arm64, v86_sve);
     #endif
-    #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD_CRYPTO
+    #ifdef MAG_HAVE_CPU_ARM_V86_CRYPTO
       mag_cpu_specialization_extern(arm64, v86_crypto);
     #endif
-    #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD
+    #ifdef MAG_HAVE_CPU_ARM_V86
       mag_cpu_specialization_extern(arm64, v86);
     #endif
-    #ifdef MAG_HAVE_CPU_ARMV8_2_A_DOTPROD_FP16
+    #ifdef MAG_HAVE_CPU_ARM_V82
       mag_cpu_specialization_extern(arm64, v82);
     #endif
+    #ifdef MAG_HAVE_CPU_ARM_V82_SVE
+      mag_cpu_specialization_extern(arm64, v82_sve);
+    #endif
 
-    static const mag_cpu_specialization_t specializations[] = {
-      #ifdef MAG_HAVE_CPU_ARMV9_A_SVE2
+    static const mag_cpu_specialization_t specializations[] = {  /* Order matters, sorted from best to worst */
+      #ifdef MAG_HAVE_CPU_ARM_V9_SVE2
         mag_cpu_specialization_configure(arm64, v9_sve2),
       #endif
-      #ifdef MAG_HAVE_CPU_ARMV8_2_A_SVE
-        mag_cpu_specialization_configure(arm64, v82_sve),
+      #ifdef MAG_HAVE_CPU_ARM_V86_SVE
+        mag_cpu_specialization_configure(arm64, v86_sve),
       #endif
-      #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD_CRYPTO
+      #ifdef MAG_HAVE_CPU_ARM_V86_CRYPTO
         mag_cpu_specialization_configure(arm64, v86_crypto),
       #endif
-      #ifdef MAG_HAVE_CPU_ARMV8_6_A_BF16_I8MM_FP16_DOTPROD
+      #ifdef MAG_HAVE_CPU_ARM_V86
         mag_cpu_specialization_configure(arm64, v86),
       #endif
-      #ifdef MAG_HAVE_CPU_ARMV8_2_A_DOTPROD_FP16
+      #ifdef MAG_HAVE_CPU_ARM_V82
         mag_cpu_specialization_configure(arm64, v82),
       #endif
+      #ifdef MAG_HAVE_CPU_ARM_V82_SVE
+        mag_cpu_specialization_configure(arm64, v82_sve),
+      #endif
     };
+    (void)ctx;
     *num = sizeof(specializations)/sizeof(*specializations);
     return specializations;
   }
@@ -254,25 +163,78 @@ static const mag_cpu_specialization_t *mag_get_cpu_specializations(const mag_con
 
 #endif
 
+static MAG_COLDPROC bool mag_specialization_name_matches(const char *name, const char *want) {
+  if (mag_casecmp(name, want)) return true;
+  const char *suffix = strchr(name, '-');
+  return suffix && mag_casecmp(suffix+1, want);
+}
+
+static MAG_COLDPROC void mag_log_available_specializations(const mag_cpu_specialization_t *impls, size_t num) {
+  for (size_t i=0; i < num; ++i)
+    mag_log_info("  %s", impls[i].name);
+  mag_log_info("  fallback");
+}
+
+static const mag_cpu_specialization_t *mag_get_pinned_specialization(
+  const mag_cpu_specialization_t *impls,
+  size_t num,
+  uint64_t host_caps,
+  const char *want
+) {
+  for (size_t i=0; i < num; ++i) {
+    const mag_cpu_specialization_t *spec = impls+i;
+    if (!mag_specialization_name_matches(spec->name, want)) continue;
+    uint64_t spec_caps = (*spec->get_feature_bitset)();
+    if ((host_caps&spec_caps) != spec_caps) {
+      mag_log_warn(
+        MAG_ENV_CPU_SPECIALIZATION_LEVEL "=%s requests specialization %s, but this CPU lacks the required features "
+        "(requires 0x%" PRIx64 ", machine caps 0x%" PRIx64 "). Auto-detecting instead.",
+        want, spec->name, spec_caps, host_caps
+      );
+      return NULL;
+    }
+    return spec;
+  }
+  mag_log_warn(MAG_ENV_CPU_SPECIALIZATION_LEVEL "=%s is not a specialization level built into this binary. Available:", want);
+  mag_log_available_specializations(impls, num);
+  return NULL;
+}
+
 bool mag_blas_detect_optimal_specialization(const mag_context_t *ctx, mag_kernel_registry_t *kernels) {
   size_t num_impls=0;
   const mag_cpu_specialization_t *impls = mag_get_cpu_specializations(ctx, &num_impls);
   if (mag_unlikely(!num_impls || !impls)) goto fallback;
   mag_log_debug("Available CPU specializations: %zu", num_impls);
   uint64_t host_caps = mag_get_cpu_host_caps(ctx);
-  for (size_t i=0; i < num_impls; ++i) { /* Find best blas spec for the host CPU */
-  const mag_cpu_specialization_t *spec = impls+i;
-  uint64_t spec_caps = (*spec->get_feature_bitset)(); /* Get requires features */
-  bool matches = (host_caps&spec_caps) == spec_caps;
-  mag_log_debug("Checked specialization %s: requires 0x%" PRIx64 ", machine caps 0x%" PRIx64 ", matches: %s", spec->name, spec_caps, host_caps, matches ? "yes" : "no");
-  if (matches) { /* Since specializations are sorted by score, we found the perfect spec. */
-    (*spec->inject_kernels)(kernels);
-    mag_log_info("Found tuned specialization: %s", spec->name);
-    return true;
+  const char *pinned_name = NULL;
+  switch (mag_envcfg_cpu_specialization_level(&pinned_name)) { /* Honor a level pinned via the environment. */
+    case MAG_ENVCFG_CPU_SPECIALIZATION_FALLBACK:
+      mag_log_info("Using fallback BLAS specialization (pinned by " MAG_ENV_CPU_SPECIALIZATION_LEVEL ")");
+      mag_cpu_blas_specialization_fallback(kernels);
+      return false;
+    case MAG_ENVCFG_CPU_SPECIALIZATION_PINNED: {
+      const mag_cpu_specialization_t *pinned = mag_get_pinned_specialization(impls, num_impls, host_caps, pinned_name);
+      if (pinned) {
+        (*pinned->inject_kernels)(kernels);
+        mag_log_info("Using pinned specialization: %s (" MAG_ENV_CPU_SPECIALIZATION_LEVEL ")", pinned->name);
+        return true;
+      }
+    } break;
+    case MAG_ENVCFG_CPU_SPECIALIZATION_AUTO: break;
   }
+  for (size_t i=0; i < num_impls; ++i) {
+    const mag_cpu_specialization_t *spec = impls+i;
+    uint64_t spec_caps = (*spec->get_feature_bitset)();
+    bool matches = (host_caps&spec_caps) == spec_caps;
+    mag_log_debug("Checked specialization %s: requires 0x%" PRIx64 ", machine caps 0x%" PRIx64 ", matches: %s", spec->name, spec_caps, host_caps, matches ? "yes" : "no");
+    if (matches) {
+      (*spec->inject_kernels)(kernels);
+      mag_log_info("Found tuned specialization: %s", spec->name);
+      return true;
+    }
   }
-fallback:  /* No matching specialization found, use generic */
+fallback:
   mag_cpu_blas_specialization_fallback(kernels);
   mag_log_info("Using fallback BLAS specialization");
-  return false; /* No spec used, fallback is active */
+  return false;
 }

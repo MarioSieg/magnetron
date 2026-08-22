@@ -1119,6 +1119,11 @@ convert into an equivalent representation in one of the following frameworks:
 
 .. cpp:class:: cupy
 
+.. cpp:class:: mlx
+
+   Apple ``mlx.core.array``. The constructor always copies into a
+   unified-memory buffer, so a requested copy is performed inherently.
+
 .. cpp:class:: memview
 
    Builtin Python ``memoryview`` for CPU-resident data.
@@ -1127,6 +1132,13 @@ convert into an equivalent representation in one of the following frameworks:
 
    An object that both implements the buffer protocol and also has the
    ``__dlpack__`` and ``__dlpack_device__`` attributes.
+
+.. cpp:class:: no_framework
+
+   The default when no framework annotation is given. Instead of a
+   framework-specific array, the :cpp:class:`nb::ndarray <ndarray>` converts
+   into a raw `DLPack <https://github.com/dmlc/dlpack>`__ capsule wrapping a
+   ``DLManagedTensor``.
 
 Eigen convenience type aliases
 ------------------------------
@@ -1151,6 +1163,26 @@ The following helper type aliases require an additional include directive:
 
    This templated type alias creates an ``Eigen::Map<..>`` with flexible strides for
    zero-copy data exchange between Eigen and NumPy.
+
+.. cpp:type:: DStride1 = Eigen::Stride<Eigen::Dynamic, 1>
+
+   Like :cpp:type:`DStride`, but with a *unit inner stride* fixed at compile
+   time. It accepts an arbitrary outer stride while requiring a contiguous inner
+   dimension. Fixing the inner stride this way preserves Eigen's vectorization,
+   which is otherwise disabled when the inner stride is dynamic. See the section
+   on :ref:`auto-vectorization <eigen_vectorization>` for details.
+
+.. cpp:type:: template <typename T> DRef1 = Eigen::Ref<T, 0, DStride1>
+
+   Variant of :cpp:type:`DRef` that uses :cpp:type:`DStride1`. Use it instead of
+   :cpp:type:`DRef` in performance-critical bindings to retain Eigen's
+   vectorization. The contiguous inner dimension must match the storage order of
+   ``T`` (a row-major ``T`` for C-contiguous arrays, a column-major ``T`` for
+   F-contiguous arrays).
+
+.. cpp:type:: template <typename T> DMap1 = Eigen::Map<T, 0, DStride1>
+
+   Variant of :cpp:type:`DMap` that uses :cpp:type:`DStride1`.
 
 .. _chrono_conversions:
 

@@ -196,8 +196,8 @@ mag_status_t mag_solve_view_strides(
             oi, old_shape[oi]);
       }
     }
-    int64_t stride = cs;
-    for (int64_t k=ni; k <= nkf; ++k) {
+    int64_t stride = cs; /* Row-major: the innermost (rightmost) target dim carries the source stride, growing leftwards. */
+    for (int64_t k=nkf; k >= ni; --k) {
       (*out_new_strides)[k] = stride;
       if (mag_unlikely(mag_mulov64(stride, new_shape[k], &stride)))
         return mag_set_error(err, MAG_ERR_DIM,

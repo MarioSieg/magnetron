@@ -163,8 +163,13 @@ bool mag_backend_type_is_required(mag_backend_type_t type) {
   return data[type];
 }
 
+bool mag_backend_type_has_device_ordinals(mag_backend_type_t type) {
+  return type != MAG_BACKEND_TYPE_CPU;
+}
+
 void mag_device_id_to_str(mag_device_id_t id, char(*buf)[32]) {
   if (id.is_virtual) snprintf(*buf, sizeof(*buf), "virtual");
+  else if (!mag_backend_type_has_device_ordinals(id.type)) snprintf(*buf, sizeof(*buf), "%s", mag_backend_type_to_str(id.type));
   else snprintf(*buf, sizeof(*buf), "%s:%u", mag_backend_type_to_str(id.type), id.device_ordinal);
 }
 
@@ -248,11 +253,31 @@ mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag
   return mod->backend;
 }
 
+/*
+** Search by the device's own ordinal instead of indexing with it: get_device() is index-addressed and a
+** backend only publishes the devices that initialized successfully, so one skipped device (unsupported
+** architecture, prohibited compute mode) would otherwise shift every later ordinal down and 'cuda:N' would
+** stop meaning GPU N. Device counts are tiny, so the scan is free.
+*/
 bool mag_backend_registry_lookup_device_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc) {
   mag_backend_t *bck = mag_backend_registry_get_backend(reg, id.type);
   if (mag_unlikely(!bck)) return false;
-  if (mag_unlikely(id.device_ordinal >= (*bck->num_devices)(bck))) return false;
-  mag_device_t *dvc = (*bck->get_device)(bck, id.device_ordinal);
+  uint32_t nd = (*bck->num_devices)(bck);
+  for (uint32_t i=0; i < nd; ++i) {
+    mag_device_t *dvc = (*bck->get_device)(bck, i);
+    if (!dvc || dvc->id.device_ordinal != id.device_ordinal) continue;
+    if (out_bck) *out_bck = bck;
+    if (out_dvc) *out_dvc = dvc;
+    return true;
+  }
+  return false;
+}
+
+bool mag_backend_registry_best_device(mag_backend_registry_t *reg, mag_backend_type_t type, mag_backend_t **out_bck, mag_device_t **out_dvc) {
+  mag_backend_t *bck = mag_backend_registry_get_backend(reg, type);
+  if (mag_unlikely(!bck)) return false;
+  if (mag_unlikely(!(*bck->num_devices)(bck))) return false;
+  mag_device_t *dvc = (*bck->get_device)(bck, (*bck->best_device_id)(bck)); /* Backend-chosen index, not an ordinal. */
   if (mag_unlikely(!dvc)) return false;
   if (out_bck) *out_bck = bck;
   if (out_dvc) *out_dvc = dvc;

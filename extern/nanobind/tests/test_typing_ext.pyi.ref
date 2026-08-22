@@ -1,7 +1,6 @@
-import collections.abc as cabc
+from collections import abc as cabc
 from collections.abc import Iterable
 import logging
-import py_stub_test
 from typing import (
     Any,
     Generic,
@@ -10,11 +9,14 @@ from typing import (
     TypeAlias,
     TypeVar,
     TypeVarTuple,
-    Unpack
+    Unpack,
+    overload
 )
 
-from . import submodule as submodule
-from .submodule import F as F, f as f2
+import py_stub_test
+
+from test_typing_ext import submodule as submodule
+from test_typing_ext.submodule import F as F, f as f2
 
 
 # a prefix
@@ -93,5 +95,16 @@ def tweak_me(arg: int):
     """
 
 def import_me(arg: logging.Logger) -> cabc.Iterable[int]: ...
+
+@overload
+def overload_me(arg: int) -> None:
+    """first overload"""
+
+@overload
+def overload_me(arg: str) -> None:
+    """second overload"""
+
+def collapse_me(arg: int | str) -> None:
+    """only docstring"""
 
 # a suffix

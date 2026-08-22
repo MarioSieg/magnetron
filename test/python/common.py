@@ -142,8 +142,8 @@ def totorch(obj: Tensor | int | float | bool, dtype: torch.dtype | None = None) 
     if isinstance(obj, torch.Tensor):
         return obj.to(dtype) if dtype is not None else obj
     if isinstance(obj, Tensor):
-        if obj.device != 'cpu:0':
-            obj = obj.transfer('cpu:0')
+        if obj.device != 'cpu':
+            obj = obj.transfer('cpu')
     else:
         return torch.tensor(obj, dtype=dtype) if dtype is not None else torch.tensor(obj)
     if dtype is None:

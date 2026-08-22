@@ -267,7 +267,7 @@ class Qwen3Model(nn.Module):
                     raise RuntimeError(f'Shape mismatch for {name}: {tensor.shape} != {param.shape}')
                 if tensor.dtype != param.dtype:
                     raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.dtype}')
-                if context.get_default_device() != 'cpu:0':
+                if context.get_default_device() != 'cpu':
                     param.data = tensor.transfer(context.get_default_device())
                 else:
                     param.data = tensor

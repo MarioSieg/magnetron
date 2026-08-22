@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "mag_cuda.cuh"
+#include "mag_cuda_prelude.cuh"
 
 namespace mag {
-  constexpr int MATMUL_BLOCK_SIZE = 256;
+  constexpr unsigned MATMUL_BLOCK_SIZE = 256;
 
-  extern mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd);
+  [[nodiscard]] extern mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
 }

@@ -36,7 +36,7 @@ namespace mag::bindings {
   // Lazy init the context, destruction is handled by the module destructor.
   [[nodiscard]] extern mag_context_t *get_ctx();
   [[nodiscard]] extern std::mutex &get_global_mutex();
-  [[nodiscard]] extern const std::string &get_default_device_unlocked();
+  [[nodiscard]] extern std::string get_default_device_unlocked();
   [[nodiscard]] extern std::string get_default_device();
 
   // Set to 1 to enable record and profile all executed operators and export them to a CSV
@@ -125,7 +125,10 @@ namespace mag::bindings {
   [[nodiscard]] extern nb::object py_scalar_from_mag_scalar(const mag_scalar_t &scalar);
   [[nodiscard]] extern dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h);
   [[nodiscard]] extern std::string format_error_msg(const mag_error_t &err);
-  [[nodiscard]] extern std::optional<mag_device_id_t> parse_device_id_str(const std::string &str);
+  // Literal parse. 'out_has_ordinal' reports whether the string named one ("cuda:1") or not ("cuda").
+  [[nodiscard]] extern std::optional<mag_device_id_t> parse_device_id_str(const std::string &str, bool *out_has_ordinal = nullptr);
+  // Parse, then substitute the backend's best device when no ordinal was named. Use this for user input.
+  [[nodiscard]] extern std::optional<mag_device_id_t> resolve_device_id_str(const std::string &str);
   extern void validate_shape(const std::vector<int64_t> &shape);
   extern void validate_shape(const std::vector<int64_t> &shape);
   extern void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op);;

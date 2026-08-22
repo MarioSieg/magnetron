@@ -124,7 +124,11 @@ void nb_func_dealloc(PyObject *self) {
         }
     }
 
+    Py_XDECREF(((nb_func *) self)->module_name);
+
+    PyTypeObject *tp = Py_TYPE(self);
     PyObject_GC_Del(self);
+    NB_DECREF_TYPE(tp);
 
     internals_dec_ref();
 }
@@ -151,7 +155,10 @@ void nb_bound_method_dealloc(PyObject *self) {
     if (mb->func)
         NB_DECREF_FUNC((PyObject *) mb->func);
     Py_XDECREF(mb->self);
+
+    PyTypeObject *tp = Py_TYPE(self);
     PyObject_GC_Del(self);
+    Py_DECREF(tp);
 }
 
 static arg_data method_args[2] = {
@@ -246,8 +253,9 @@ PyObject *nb_func_new(const func_data_prelim_base *f) noexcept {
 
         func_prev = PyObject_GetAttr(f->scope, name);
         if (func_prev) {
-            if (Py_TYPE(func_prev) == internals_->nb_func ||
-                Py_TYPE(func_prev) == internals_->nb_method) {
+            PyTypeObject *func_prev_tp = Py_TYPE(func_prev);
+            if (func_prev_tp == internals_->nb_func ||
+                func_prev_tp == internals_->nb_method) {
                 func_data *fp = nb_func_data(func_prev);
 
                 check((fp->flags & (uint32_t) func_flags::is_method) ==
@@ -344,8 +352,8 @@ PyObject *nb_func_new(const func_data_prelim_base *f) noexcept {
         if (nb_func_prev->doc_uniform)
             prev_doc = prev->doc;
 
-        memcpy(cur, prev, sizeof(func_data) * prev_overloads);
-        memset(prev, 0, sizeof(func_data) * prev_overloads);
+        memcpy(cur, prev, sizeof(func_data) * (size_t) prev_overloads);
+        memset(prev, 0, sizeof(func_data) * (size_t) prev_overloads);
 
         ((PyVarObject *) func_prev)->ob_size = 0;
 
@@ -360,6 +368,16 @@ PyObject *nb_func_new(const func_data_prelim_base *f) noexcept {
 
     func->max_nargs = max_nargs;
     func->complexity = complexity;
+
+    // Snapshot the current '__module__'
+    if (has_scope) {
+        func->module_name =
+            PyObject_GetAttr(f->scope, PyModule_Check(f->scope)
+                                           ? NB_INTERNED(__name__)
+                                           : NB_INTERNED(__module__));
+        if (!func->module_name)
+            PyErr_Clear();
+    }
 
     PyObject* (*vectorcall)(PyObject *, PyObject * const*, size_t, PyObject *);
     if (complexity == call_complexity::complex) {
@@ -564,10 +582,10 @@ nb_func_error_overload(PyObject *self, PyObject *const *args_in,
             buf.put(", ");
         buf.put("kwargs = { ");
 
-        size_t nkwargs_in = (size_t) NB_TUPLE_GET_SIZE(kwargs_in);
-        for (size_t j = 0; j < nkwargs_in; ++j) {
+        Py_ssize_t nkwargs_in = NB_TUPLE_GET_SIZE(kwargs_in);
+        for (Py_ssize_t j = 0; j < nkwargs_in; ++j) {
             PyObject *key   = NB_TUPLE_GET_ITEM(kwargs_in, j),
-                     *value = args_in[nargs_in + j];
+                     *value = args_in[nargs_in + (size_t) j];
 
             const char *key_cstr = PyUnicode_AsUTF8AndSize(key, nullptr);
             if (!key_cstr) {
@@ -677,7 +695,7 @@ static PyObject *nb_func_vectorcall_complex(PyObject *self,
 #if !defined(PYPY_VERSION) && !defined(Py_LIMITED_API)
     bool kwnames_interned = true;
     for (size_t i = 0; i < nkwargs_in; ++i) {
-        PyObject *key = NB_TUPLE_GET_ITEM(kwargs_in, i);
+        PyObject *key = NB_TUPLE_GET_ITEM(kwargs_in, (Py_ssize_t) i);
         kwnames_interned &= ((PyASCIIObject *) key)->state.interned != 0;
     }
     if (kwargs_in && NB_LIKELY(kwnames_interned)) {
@@ -688,7 +706,7 @@ static PyObject *nb_func_vectorcall_complex(PyObject *self,
 
     kwnames = (PyObject **) alloca(nkwargs_in * sizeof(PyObject *));
     for (size_t i = 0; i < nkwargs_in; ++i) {
-        PyObject *key = NB_TUPLE_GET_ITEM(kwargs_in, i);
+        PyObject *key = NB_TUPLE_GET_ITEM(kwargs_in, (Py_ssize_t) i);
         Py_INCREF(key);
 
         kwnames[i] = key;
@@ -810,7 +828,8 @@ static PyObject *nb_func_vectorcall_complex(PyObject *self,
                     break;
 
                 // Implicit conversion only active in the 2nd pass
-                args_flags[i] = arg_flag & ~uint8_t(pass == 0);
+                // Have to cast to uint8_t because of integer promotion (uint8_t promoted to int before ~ and & operations)
+                args_flags[i] = (uint8_t) (arg_flag & ~uint8_t(pass == 0));
                 args[i] = arg;
             }
 
@@ -826,7 +845,7 @@ static PyObject *nb_func_vectorcall_complex(PyObject *self,
                 for (size_t j = nargs_pos; j < nargs_in; ++j) {
                     PyObject *o = args_in[j];
                     Py_INCREF(o);
-                    NB_TUPLE_SET_ITEM(tuple, j - nargs_pos, o);
+                    NB_TUPLE_SET_ITEM(tuple, (Py_ssize_t) (j - nargs_pos), o);
                 }
 
                 args[nargs_pos] = tuple;
@@ -967,7 +986,8 @@ nb_func_vectorcall_medium_pos(PyObject *self, PyObject *const *args_in,
                              (arg_flag & cast_flags::accepts_none) == 0))
                     break;
 
-                args_flags[i] = arg_flag & ~uint8_t(pass == 0);
+                // Have to cast to uint8_t because of integer promotion (uint8_t promoted to int before ~ and & operations)
+                args_flags[i] = (uint8_t) (arg_flag & ~uint8_t(pass == 0));
                 args[i] = arg;
             }
 
@@ -1310,7 +1330,7 @@ static PyObject *nb_bound_method_vectorcall(PyObject *self,
     } else {
         size_t size = nargs + 1;
         if (kwargs_in)
-            size += NB_TUPLE_GET_SIZE(kwargs_in);
+            size += (size_t) NB_TUPLE_GET_SIZE(kwargs_in);
 
         if (size < buf_size) {
             args = args_buf;
@@ -1607,14 +1627,11 @@ static PyObject *nb_func_get_qualname(PyObject *self) {
 }
 
 static PyObject *nb_func_get_module(PyObject *self) {
-    func_data *f = nb_func_data(self);
-    if (f->flags & (uint32_t) func_flags::has_scope) {
-        return PyObject_GetAttr(f->scope, PyModule_Check(f->scope)
-                                               ? NB_INTERNED(__name__)
-                                               : NB_INTERNED(__module__));
-    } else {
+    PyObject *name = ((nb_func *) self)->module_name;
+    if (!name)
         return none_ref();
-    }
+    Py_INCREF(name);
+    return name;
 }
 
 PyObject *nb_func_get_nb_signature(PyObject *self, void *) {
@@ -1631,8 +1648,8 @@ PyObject *nb_func_get_nb_signature(PyObject *self, void *) {
         docstr = item = sigstr = defaults = nullptr;
 
         const func_data *fi = f + i;
-        if ((fi->flags & (uint32_t) func_flags::has_doc) &&
-            (!((nb_func *) self)->doc_uniform || i == 0)) {
+        // Expose each overload's docstring faithfully; stubgen deduplicates.
+        if (fi->flags & (uint32_t) func_flags::has_doc) {
             docstr = PyUnicode_FromString(fi->doc);
         } else {
             docstr = Py_None;
@@ -1671,7 +1688,7 @@ PyObject *nb_func_get_nb_signature(PyObject *self, void *) {
                 } else {
                     Py_INCREF(value);
                 }
-                NB_TUPLE_SET_ITEM(defaults, pos, value);
+                NB_TUPLE_SET_ITEM(defaults, (Py_ssize_t) pos, value);
                 pos++;
             }
 
