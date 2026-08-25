@@ -54,7 +54,7 @@ MAG_RC_OBJECT_IS_VALID(mag_mmap_owner_t);
 
 static mag_status_t mag_mmap_owner_dtor(void *self) {
   mag_mmap_owner_t *o = self;
-  mag_unmap_file(&o->file);
+  mag_munmap_file(&o->file);
   (*mag_alloc)(o, 0, 0);
   return MAG_OK;
 }
@@ -63,7 +63,7 @@ static mag_mmap_owner_t *mag_mmap_owner_open(const char *path) {
   mag_mmap_owner_t *o = (*mag_try_alloc)(NULL, sizeof(*o), 0);
   if (mag_unlikely(!o)) return NULL;
   memset(o, 0, sizeof(*o));
-  if (!mag_map_file(&o->file, path, 0, MAG_MAP_READ)) {
+  if (!mag_mmap_file(&o->file, path, 0, MAG_MAP_READ)) {
     (*mag_alloc)(o, 0, 0);
     return NULL;
   }
@@ -107,7 +107,7 @@ static mag_status_t mag_stream_mmap_file_w(mag_error_t *err, mag_mem_stream_t *s
   if (mag_unlikely(!(size > 0))) {
     return mag_set_error(err, MAG_ERR_MMAP, "snapshot: file size for memory mapping must be > 0.");
   }
-  if (mag_unlikely(!mag_map_file(map, path, size, MAG_MAP_WRITE))) {
+  if (mag_unlikely(!mag_mmap_file(map, path, size, MAG_MAP_WRITE))) {
     return mag_set_error(err, MAG_ERR_MMAP, "snapshot: failed to memory-map file '%s'.", path);
   }
   stream->base = stream->pos = map->map;
@@ -1092,12 +1092,12 @@ mag_status_t mag_snapshot_serialize(mag_error_t *err, mag_snapshot_t *snap, cons
     mag_assert2(mag_stream_needle(&stream) == stream.end-stream.base); /* All pre-estimated bytes must be written, down to the last crumb of cookie */
   }
   mag_stream_close(&stream);
-  mag_unmap_file(&map);
+  mag_munmap_file(&map);
   (*mag_alloc)(stable, 0, 0);
   return MAG_OK;
 cleanup:
   mag_stream_close(&stream);
-  mag_unmap_file(&map);
+  mag_munmap_file(&map);
   if (stable) (*mag_alloc)(stable, 0, 0);
   return status;
 }

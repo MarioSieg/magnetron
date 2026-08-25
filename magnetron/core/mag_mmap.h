@@ -37,8 +37,9 @@ typedef struct mag_mapped_file_t {
 } mag_mapped_file_t;
 
 
-extern bool mag_map_file(mag_mapped_file_t *o, const char *filename, size_t size, mag_map_mode_t mode);
-extern bool mag_unmap_file(mag_mapped_file_t *f);
+extern bool mag_mmap_file(mag_mapped_file_t *mf, const char *path, size_t size, mag_map_mode_t mode);
+extern bool mag_mflush_file(mag_mapped_file_t *mf);
+extern bool mag_munmap_file(mag_mapped_file_t *mf);
 
 #ifdef __cplusplus
 }
