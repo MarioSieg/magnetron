@@ -299,6 +299,7 @@ extern MAG_EXPORT mag_status_t mag_clone(mag_error_t *err, mag_tensor_t **out_re
 extern MAG_EXPORT mag_status_t mag_cast(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_dtype_t dst_type);
 extern MAG_EXPORT mag_status_t mag_transfer(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_device_id_t device);
 extern MAG_EXPORT mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank);
+extern MAG_EXPORT mag_status_t mag_reinterpret_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_dtype_t dtype, const int64_t *dims, int64_t rank);
 extern MAG_EXPORT mag_status_t mag_view_slice(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t start, int64_t len, int64_t step);
 extern MAG_EXPORT mag_status_t mag_reshape(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank);
 extern MAG_EXPORT mag_status_t mag_transpose(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim1, int64_t dim2);
@@ -497,7 +498,8 @@ extern MAG_EXPORT uintptr_t mag_tensor_data_ptr_mut(const mag_tensor_t *tensor);
 extern MAG_EXPORT uintptr_t mag_tensor_data_storage_ptr(const mag_tensor_t *tensor);
 extern MAG_EXPORT uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor);
 extern MAG_EXPORT mag_device_id_t mag_tensor_device_id(const mag_tensor_t *tensor);
-extern MAG_EXPORT size_t mag_tensor_numbytes(const mag_tensor_t *tensor);
+extern MAG_EXPORT size_t mag_tensor_numbytes(const mag_tensor_t *tensor);         /* Bytes this tensor spans: numel*esz. */
+extern MAG_EXPORT size_t mag_tensor_storage_numbytes(const mag_tensor_t *tensor); /* Bytes of the whole storage behind it, which for a view is more. */
 extern MAG_EXPORT int64_t mag_tensor_numel(const mag_tensor_t *tensor);
 extern MAG_EXPORT mag_context_t *mag_tensor_context(const mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_is_view(const mag_tensor_t *tensor);

@@ -9,6 +9,8 @@
 ** +---------------------------------------------------------------------+
 */
 
+#include <cstring>
+
 #include <prelude.hpp>
 
 using namespace magnetron;
@@ -189,4 +191,118 @@ TEST(views, view_no_axes) {
     ASSERT_FALSE(base.is_view());
     ASSERT_TRUE(v.is_view());
     ASSERT_EQ(base.storage_base_ptr(), v.storage_base_ptr());
+}
+
+TEST(views, reinterpret_view_widens_and_narrows) {
+    auto ctx = context{};
+    tensor base {ctx, dtype::u8, std::vector<int64_t>{16}};
+    auto *bytes = static_cast<uint8_t *>(base.data_ptr());
+    for (int i=0; i < 16; ++i) bytes[i] = static_cast<uint8_t>(i);
+
+    // 16 bytes read as 4 floats, and back again: same storage, same address, no conversion.
+    mag_tensor_t *out = nullptr;
+    mag_error_t err {};
+    std::vector<int64_t> as_f32 = {4};
+    ASSERT_EQ(mag_reinterpret_view(&err, &out, &*base, MAG_DTYPE_FLOAT32, as_f32.data(), 1), MAG_OK) << err.message;
+    tensor f32 {out};
+    ASSERT_EQ(f32.dtype(), dtype::float32);
+    ASSERT_EQ(f32.numel(), 4);
+    ASSERT_TRUE(f32.is_view());
+    ASSERT_EQ(f32.data_ptr(), base.data_ptr());
+    ASSERT_EQ(std::memcmp(f32.data_ptr(), bytes, 16), 0);
+
+    std::vector<int64_t> back = {16};
+    ASSERT_EQ(mag_reinterpret_view(&err, &out, &*f32, MAG_DTYPE_UINT8, back.data(), 1), MAG_OK) << err.message;
+    tensor u8 {out};
+    ASSERT_EQ(u8.numel(), 16);
+    ASSERT_EQ(std::memcmp(u8.data_ptr(), bytes, 16), 0);
+}
+
+TEST(views, reinterpret_view_reshapes_and_infers) {
+    auto ctx = context{};
+    tensor base {ctx, dtype::u8, std::vector<int64_t>{48}};
+    mag_tensor_t *out = nullptr;
+    mag_error_t err {};
+    std::vector<int64_t> shape = {3, -1};   // -1 is resolved against the reinterpreted count, not the base's
+    ASSERT_EQ(mag_reinterpret_view(&err, &out, &*base, MAG_DTYPE_FLOAT32, shape.data(), 2), MAG_OK) << err.message;
+    tensor f32 {out};
+    ASSERT_EQ(f32.rank(), 2);
+    ASSERT_EQ(f32.shape()[0], 3);
+    ASSERT_EQ(f32.shape()[1], 4);
+    ASSERT_EQ(f32.numel(), 12);
+}
+
+TEST(views, reinterpret_view_same_dtype_is_a_view) {
+    auto ctx = context{};
+    tensor base {ctx, dtype::float32, std::vector<int64_t>{6}};
+    mag_tensor_t *out = nullptr;
+    mag_error_t err {};
+    std::vector<int64_t> shape = {2, 3};
+    ASSERT_EQ(mag_reinterpret_view(&err, &out, &*base, MAG_DTYPE_FLOAT32, shape.data(), 2), MAG_OK) << err.message;
+    tensor v {out};
+    ASSERT_EQ(v.rank(), 2);
+    ASSERT_EQ(v.data_ptr(), base.data_ptr());
+}
+
+TEST(views, reinterpret_view_tracks_the_offset_of_a_slice) {
+    auto ctx = context{};
+    tensor base {ctx, dtype::u8, std::vector<int64_t>{64}};
+    auto *bytes = static_cast<uint8_t *>(base.data_ptr());
+    for (int i=0; i < 64; ++i) bytes[i] = static_cast<uint8_t>(i);
+
+    // The path a snapshot takes: narrow to a byte range, then read that range as another dtype.
+    mag_tensor_t *sliced = nullptr;
+    mag_error_t err {};
+    ASSERT_EQ(mag_view_slice(&err, &sliced, &*base, 0, 32, 16, 1), MAG_OK) << err.message;
+    tensor slice {sliced};
+    mag_tensor_t *out = nullptr;
+    std::vector<int64_t> shape = {4};
+    ASSERT_EQ(mag_reinterpret_view(&err, &out, &*slice, MAG_DTYPE_FLOAT32, shape.data(), 1), MAG_OK) << err.message;
+    tensor f32 {out};
+    ASSERT_EQ(reinterpret_cast<std::uintptr_t>(f32.data_ptr()), reinterpret_cast<std::uintptr_t>(base.data_ptr())+32);
+    ASSERT_EQ(std::memcmp(f32.data_ptr(), bytes+32, 16), 0);
+}
+
+TEST(views, reinterpret_view_rejects_invalid_reinterpretations) {
+    auto ctx = context{};
+    mag_tensor_t *out = nullptr;
+    mag_error_t err {};
+
+    { // A byte count that is not a whole number of target elements.
+        tensor base {ctx, dtype::u8, std::vector<int64_t>{6}};
+        std::vector<int64_t> shape = {1};
+        ASSERT_NE(mag_reinterpret_view(&err, &out, &*base, MAG_DTYPE_FLOAT32, shape.data(), 1), MAG_OK);
+    }
+    { // An element offset that is fine for uint8 but does not divide for float32.
+        tensor base {ctx, dtype::u8, std::vector<int64_t>{64}};
+        mag_tensor_t *sliced = nullptr;
+        ASSERT_EQ(mag_view_slice(&err, &sliced, &*base, 0, 2, 16, 1), MAG_OK) << err.message;
+        tensor slice {sliced};
+        std::vector<int64_t> shape = {4};
+        ASSERT_NE(mag_reinterpret_view(&err, &out, &*slice, MAG_DTYPE_FLOAT32, shape.data(), 1), MAG_OK);
+    }
+    { // A non-contiguous base, where "the bytes" is not one range to begin with.
+        tensor base {ctx, dtype::u8, std::vector<int64_t>{8, 8}};
+        mag_tensor_t *tr = nullptr;
+        ASSERT_EQ(mag_transpose(&err, &tr, &*base, 0, 1), MAG_OK) << err.message;
+        tensor transposed {tr};
+        std::vector<int64_t> shape = {16};
+        ASSERT_NE(mag_reinterpret_view(&err, &out, &*transposed, MAG_DTYPE_FLOAT32, shape.data(), 1), MAG_OK);
+    }
+    { // A shape whose element count does not match the reinterpreted one.
+        tensor base {ctx, dtype::u8, std::vector<int64_t>{16}};
+        std::vector<int64_t> shape = {5};
+        ASSERT_NE(mag_reinterpret_view(&err, &out, &*base, MAG_DTYPE_FLOAT32, shape.data(), 1), MAG_OK);
+    }
+    { // Autograd: a bit pattern has no derivative to record.
+        tensor base {ctx, dtype::float32, std::vector<int64_t>{8}};
+        base.requires_grad(true);
+        std::vector<int64_t> shape = {4};
+        ASSERT_NE(mag_reinterpret_view(&err, &out, &*base, MAG_DTYPE_INT64, shape.data(), 1), MAG_OK);
+    }
+    { // An invalid dtype id.
+        tensor base {ctx, dtype::u8, std::vector<int64_t>{16}};
+        std::vector<int64_t> shape = {16};
+        ASSERT_NE(mag_reinterpret_view(&err, &out, &*base, static_cast<mag_dtype_t>(MAG_DTYPE__NUM), shape.data(), 1), MAG_OK);
+    }
 }

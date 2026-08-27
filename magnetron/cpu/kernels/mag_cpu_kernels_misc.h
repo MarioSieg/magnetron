@@ -295,10 +295,10 @@ static void mag_rb_build_plan(mag_rb_plan_t *p, const mag_tensor_t *r, const mag
         for (int64_t j=0; j < plan.red_prod; ++j) { \
           int64_t redoff = 0; \
           { int64_t rt = j; for (int64_t g=plan.g_nred-1; g >= 0; --g) { int64_t idx = rt % plan.g_red[g].size; rt /= plan.g_red[g].size; redoff += idx*plan.g_red[g].xstride; } } \
-          mag_bnd_chk(bx+x_base+redoff, x->storage->base, mag_tensor_numbytes(x)); \
+          mag_bnd_chk(bx+x_base+redoff, x->storage->base, x->storage->size); \
           acc += CVT(bx[x_base+redoff]); \
         } \
-        mag_bnd_chk(br+r_off, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(br+r_off, r->storage->base, r->storage->size); \
         br[r_off] = RCVT(acc); \
       } \
       return MAG_OK; \
@@ -338,8 +338,8 @@ mag_gen_stub_repeat_back(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_t
       int64_t col = inner - row*cols; \
       int64_t ri, xi; \
       mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi); \
-      mag_bnd_chk(bx+xi, x->storage->base, mag_tensor_numbytes(x)); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(bx+xi, x->storage->base, x->storage->size); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
       br[ri] = ((col-row) CMP diag) ? bx[xi] : (Z); \
     }  \
     return MAG_OK; \
@@ -454,7 +454,7 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
       \
       for (int64_t p=0; p < dim_size; ++p) { \
         const int64_t off_x = off_x0 + p * stride_x_dim; \
-        mag_bnd_chk(bx + off_x, x->storage->base, mag_tensor_numbytes(x)); \
+        mag_bnd_chk(bx + off_x, x->storage->base, x->storage->size); \
         const T xv = bx[off_x]; \
         const double xvc = (double)CVT(xv); \
         if (filled < k) { \
@@ -501,8 +501,8 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
       mag_assert2(filled == k); \
       for (int64_t r=0; r < k; ++r) { \
         const int64_t off_v = off_v0 + r * stride_v_dim; \
-        mag_bnd_chk(bv + off_v, v->storage->base, mag_tensor_numbytes(v)); \
-        mag_bnd_chk(bi + off_v, idx->storage->base, mag_tensor_numbytes(idx)); \
+        mag_bnd_chk(bv + off_v, v->storage->base, v->storage->size); \
+        mag_bnd_chk(bi + off_v, idx->storage->base, idx->storage->size); \
         bv[off_v] = best_vals[r]; \
         bi[off_v] = best_idx[r]; \
       } \
@@ -552,10 +552,10 @@ mag_gen_stub_topk(int64_t, int64, mag_cvt_nop)
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri, ci, xi, yi; \
       mag_coords_iter_offset4(&cr, &cc, &cx, &cy, i, &ri, &ci, &xi, &yi); \
-      mag_bnd_chk(bc+ci, cond->storage->base, mag_tensor_numbytes(cond)); \
-      mag_bnd_chk(bx+xi, x->storage->base, mag_tensor_numbytes(x)); \
-      mag_bnd_chk(by+yi, y->storage->base, mag_tensor_numbytes(y)); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(bc+ci, cond->storage->base, cond->storage->size); \
+      mag_bnd_chk(bx+xi, x->storage->base, x->storage->size); \
+      mag_bnd_chk(by+yi, y->storage->base, y->storage->size); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
       br[ri] = bc[ci] ? bx[xi] : by[yi]; \
     } \
     return MAG_OK; \
@@ -816,13 +816,13 @@ static int64_t mag_pad_map_index(int64_t i, int64_t size, mag_pad_mode_t mode) {
           si[d] = mag_pad_map_index(ic, in_shape[d], payload->cmd->params->pad.mode); \
         } \
       } \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
       if (use_constant) { \
         br[ri] = fill; \
       } else { \
         int64_t xi = 0; \
         for (int64_t d=0; d < R; ++d) xi += si[d]*in_stride[d]; \
-        mag_bnd_chk(bx+xi, x->storage->base, mag_tensor_numbytes(x)); \
+        mag_bnd_chk(bx+xi, x->storage->base, x->storage->size); \
         br[ri] = bx[xi]; \
       } \
     } \

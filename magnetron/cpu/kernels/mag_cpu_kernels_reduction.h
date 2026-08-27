@@ -33,7 +33,7 @@
       if (mag_contig) { \
         for (int64_t ri=0; ri < red_prod; ++ri) { \
           int64_t roff = base + ri; \
-          mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
+          mag_bnd_chk(bx + roff, x->storage->base, x->storage->size); \
           { UPDATE_STMT } \
         } \
       } else { \
@@ -46,7 +46,7 @@
             tmp /= sz; \
             roff += idx*plan->red_strides[k]; \
           } \
-          mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
+          mag_bnd_chk(bx + roff, x->storage->base, x->storage->size); \
           { UPDATE_STMT } \
         } \
       } \
@@ -82,7 +82,7 @@
         int64_t i = 0; \
         mag_vf32_t vacc = (VINIT); \
         for (; i + MAG_VF32_LANES <= red_prod; i += MAG_VF32_LANES) { \
-          mag_bnd_chk(p + i + MAG_VF32_LANES - 1, x->storage->base, mag_tensor_numbytes(x)); \
+          mag_bnd_chk(p + i + MAG_VF32_LANES - 1, x->storage->base, x->storage->size); \
           vacc = VACC(vacc, VLOAD(p + i)); \
         } \
         acc = SCOMB(acc, VRED(vacc)); \
@@ -97,7 +97,7 @@
             tmp /= sz; \
             roff += idx*plan->red_strides[k]; \
           } \
-          mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
+          mag_bnd_chk(bx + roff, x->storage->base, x->storage->size); \
           float xv = CVT(bx[roff]); acc = SCOMB(acc, xv); \
         } \
       } \
@@ -414,7 +414,7 @@ mag_cpu_impl_argminmax_int(int64_t,  int64);
           tmp /= sz; \
           roff += idx*plan->red_strides[k]; \
         } \
-        mag_bnd_chk(bx + roff, x->storage->base, mag_tensor_numbytes(x)); \
+        mag_bnd_chk(bx + roff, x->storage->base, x->storage->size); \
         { UPDATE_STMT } \
         if (BREAK_COND) break; \
       } \

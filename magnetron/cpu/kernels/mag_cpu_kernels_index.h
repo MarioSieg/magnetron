@@ -207,8 +207,8 @@ mag_gen_stub_embedding(int64_t, int64)
       sc[ax] = g; \
       int64_t dst_off = 0; \
       for (int64_t dx=0; dx < ra; ++dx) dst_off += sc[dx]*r->meta.coords.strides[dx]; \
-      mag_bnd_chk(bs+dst_off, r->storage->base, mag_tensor_numbytes(r)); \
-      mag_bnd_chk(bx+src_off, src->storage->base, mag_tensor_numbytes(src)); \
+      mag_bnd_chk(bs+dst_off, r->storage->base, r->storage->size); \
+      mag_bnd_chk(bx+src_off, src->storage->base, src->storage->size); \
       bs[dst_off] = FROM_ACC((ACC_T)(CVT(bs[dst_off])) + (ACC_T)(MUL(CVT(bx[src_off]), alpha))); \
     } \
     return MAG_OK; \
@@ -272,8 +272,8 @@ mag_gen_stub_index_add(int64_t, int64, mag_cvt_nop, int64_t, mag_index_add_mul_i
         } \
         int64_t dst_off = dst_row + g*rst; \
         int64_t src_off = src_row + j*xst; \
-        mag_bnd_chk(bs+dst_off, r->storage->base, mag_tensor_numbytes(r)); \
-        mag_bnd_chk(bx+src_off, src->storage->base, mag_tensor_numbytes(src)); \
+        mag_bnd_chk(bs+dst_off, r->storage->base, r->storage->size); \
+        mag_bnd_chk(bx+src_off, src->storage->base, src->storage->size); \
         OP; \
       } \
     } \

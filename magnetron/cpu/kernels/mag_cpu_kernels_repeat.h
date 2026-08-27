@@ -45,8 +45,8 @@ static MAG_AINLINE int64_t mag_repeat_in_elem_offset(
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
       int64_t xi = mag_repeat_in_elem_offset(i, payload->cmd->params, &x->meta.coords); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
-      mag_bnd_chk(bx+xi, x->storage->base, mag_tensor_numbytes(x)); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
+      mag_bnd_chk(bx+xi, x->storage->base, x->storage->size); \
       br[ri] = bx[xi]; \
     } \
     return MAG_OK; \
@@ -83,8 +83,8 @@ mag_gen_stub_repeat(int64_t, int64)
         int64_t rep = payload->cmd->params->repeat_interleave.count_len == 1 ? payload->cmd->params->repeat_interleave.counts[0] : payload->cmd->params->repeat_interleave.counts[i]; \
         mag_assert2(rep >= 0); \
         for (int64_t k=0; k < rep; ++k) { \
-          mag_bnd_chk(br+out_i, r->storage->base, mag_tensor_numbytes(r)); \
-          mag_bnd_chk(bx+i, x->storage->base, mag_tensor_numbytes(x)); \
+          mag_bnd_chk(br+out_i, r->storage->base, r->storage->size); \
+          mag_bnd_chk(bx+i, x->storage->base, x->storage->size); \
           br[out_i++] = bx[i]; \
         } \
       } \
@@ -130,10 +130,10 @@ mag_gen_stub_repeat(int64_t, int64)
         int64_t sel = smoff + a*x->meta.coords.strides[dim]; \
         const T *restrict src_ptr = bx + sel; \
         T *restrict dst_ptr = br + oel; \
-        mag_bnd_chk(bx + sel, x->storage->base, mag_tensor_numbytes(x)); \
-        mag_bnd_chk(br + oel, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(bx + sel, x->storage->base, x->storage->size); \
+        mag_bnd_chk(br + oel, r->storage->base, r->storage->size); \
         for (int64_t k=0; k < rep; ++k) { \
-          mag_bnd_chk(dst_ptr + k*inner_block, r->storage->base, mag_tensor_numbytes(r)); \
+          mag_bnd_chk(dst_ptr + k*inner_block, r->storage->base, r->storage->size); \
           memcpy(dst_ptr + k*inner_block, src_ptr, (size_t)inner_block*sizeof(T)); \
         } \
         cur += rep; \

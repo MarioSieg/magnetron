@@ -108,7 +108,7 @@ mag_gen_vrand_uniform_int(int64_t, uint64_t)
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
-        mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
         br[ri] = val; \
       } \
       return MAG_OK; \
@@ -117,7 +117,7 @@ mag_gen_vrand_uniform_int(int64_t, uint64_t)
     mag_coords_iter_init(&cr, &r->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
       br[ri] = val; \
     } \
     return MAG_OK; \
@@ -162,9 +162,9 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     if (mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(x)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
         int64_t mi = mag_coords_iter_broadcast(&cr, &cm, ri); \
-        mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
-        mag_bnd_chk(bx+ri, x->storage->base, mag_tensor_numbytes(x)); \
-        mag_bnd_chk(bm+mi, mask->storage->base, mag_tensor_numbytes(mask)); \
+        mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
+        mag_bnd_chk(bx+ri, x->storage->base, x->storage->size); \
+        mag_bnd_chk(bm+mi, mask->storage->base, mask->storage->size); \
         br[ri] = bm[mi] ? val : bx[ri]; \
       } \
       return MAG_OK; \
@@ -172,9 +172,9 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri, xi, mi; \
       mag_coords_iter_offset3(&cr, &cx, &cm, i, &ri, &xi, &mi); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
-      mag_bnd_chk(bx+xi, x->storage->base, mag_tensor_numbytes(x)); \
-      mag_bnd_chk(bm+mi, mask->storage->base, mag_tensor_numbytes(mask)); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
+      mag_bnd_chk(bx+xi, x->storage->base, x->storage->size); \
+      mag_bnd_chk(bm+mi, mask->storage->base, mask->storage->size); \
       br[ri] = bm[mi] ? val : bx[xi]; \
     } \
     return MAG_OK; \
@@ -218,7 +218,7 @@ mag_gen_stub_masked_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     } \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
       mag_vrand_##D##_##T(prng, 1, br+ri, min, max); \
     } \
     return MAG_OK; \
@@ -274,7 +274,7 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
     mag_coords_iter_init(&cr, &r->meta.coords);                                       \
     for (int64_t i = ra; i < rb; ++i) {                                          \
       int64_t ri = mag_coords_iter_to_offset(&cr, i);                            \
-      mag_bnd_chk(br + ri, r->storage->base, mag_tensor_numbytes(r));                          \
+      mag_bnd_chk(br + ri, r->storage->base, r->storage->size);                          \
       uint64_t elem_block = (uint64_t)i / (uint64_t)(4 * MAG_VF32_LANES);         \
       uint64_t elem_off = (uint64_t)i % (uint64_t)(4 * MAG_VF32_LANES);           \
       T tmp[4 * MAG_VF32_LANES];                                                 \
@@ -314,7 +314,7 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
-        mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
         br[ri] = CVT((AT)start + (AT)ri*(AT)step); \
       } \
       return MAG_OK; \
@@ -323,7 +323,7 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
     mag_coords_iter_init(&cr, &r->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
       br[ri] = CVT((AT)start + (AT)i*(AT)step); \
     } \
     return MAG_OK; \
@@ -362,7 +362,7 @@ mag_gen_stub_arange(int64_t, int64, int64_t, mag_scalar_as_int64, uint64_t, mag_
       for (int64_t i=ra; i < rb; ++i) { \
         int64_t row = i / cols; \
         int64_t col = i - row*cols; \
-        mag_bnd_chk(br+i, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(br+i, r->storage->base, r->storage->size); \
         br[i] = row == col ? (ONE) : (ZERO); \
       } \
       return MAG_OK; \
@@ -373,7 +373,7 @@ mag_gen_stub_arange(int64_t, int64, int64_t, mag_scalar_as_int64, uint64_t, mag_
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
       int64_t row = i / cols; \
       int64_t col = i - row*cols; \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
       br[ri] = row == col ? (ONE) : (ZERO); \
     } \
     return MAG_OK; \
@@ -413,7 +413,7 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
       int64_t cls = pidx[i];
       if ((uint64_t)cls < (uint64_t)nc) {
         int64_t off = i*nc + cls;
-        mag_bnd_chk(pr+off, r->storage->base, mag_tensor_numbytes(r));
+        mag_bnd_chk(pr+off, r->storage->base, r->storage->size);
         pr[off] = 1;
       }
     }
@@ -423,11 +423,11 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
   mag_coords_iter_init(&it, &idx->meta.coords);
   for (int64_t i=ra; i < rb; ++i) {
     int64_t ridx = mag_coords_iter_to_offset(&it, i);
-    mag_bnd_chk(pidx+ridx, idx->storage->base, mag_tensor_numbytes(idx));
+    mag_bnd_chk(pidx+ridx, idx->storage->base, idx->storage->size);
     int64_t cls = pidx[ridx];
     if ((uint64_t)cls < (uint64_t)nc) {
       int64_t off = i*nc + cls;
-      mag_bnd_chk(pr+off, r->storage->base, mag_tensor_numbytes(r));
+      mag_bnd_chk(pr+off, r->storage->base, r->storage->size);
       pr[off] = 1;
     }
   }
@@ -456,12 +456,12 @@ static MAG_HOTPROC mag_status_t mag_fill_rand_bernoulli_bool(mag_error_t *err, c
     mag_philox4x32_stream_t *prng = payload->prng; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t i=0; i < numel; ++i) { \
-        mag_bnd_chk(br+i, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(br+i, r->storage->base, r->storage->size); \
         br[i] = CVT((int64_t)i); \
       } \
       for (int64_t i=0; i < numel-1; ++i) { \
         int64_t j = i+(int64_t)(mag_philox4x32_next_uint64(prng)%(uint64_t)(numel-i)); \
-        mag_bnd_chk(br+j, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(br+j, r->storage->base, r->storage->size); \
         T tmp = br[i]; \
         br[i] = br[j]; \
         br[j] = tmp; \
@@ -472,15 +472,15 @@ static MAG_HOTPROC mag_status_t mag_fill_rand_bernoulli_bool(mag_error_t *err, c
     mag_coords_iter_init(&it, &r->meta.coords); \
     for (int64_t i=0; i < numel; ++i) { \
       int64_t off = mag_coords_iter_to_offset(&it, i); \
-      mag_bnd_chk(br+off, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(br+off, r->storage->base, r->storage->size); \
       br[off] = CVT((int64_t)i); \
     } \
     for (int64_t i=0; i < numel-1; ++i) { \
       int64_t j = i+(int64_t)(mag_philox4x32_next_uint64(prng)%(uint64_t)(numel-i)); \
       int64_t off_i = mag_coords_iter_to_offset(&it, i); \
       int64_t off_j = mag_coords_iter_to_offset(&it, j); \
-      mag_bnd_chk(br+off_i, r->storage->base, mag_tensor_numbytes(r)); \
-      mag_bnd_chk(br+off_j, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(br+off_i, r->storage->base, r->storage->size); \
+      mag_bnd_chk(br+off_j, r->storage->base, r->storage->size); \
       T tmp = br[off_i]; \
       br[off_i] = br[off_j]; \
       br[off_j] = tmp; \

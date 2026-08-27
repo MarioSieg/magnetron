@@ -124,7 +124,11 @@ namespace mag::bindings {
     .def_prop_ro("numbytes", [](const tensor_wrapper &self) -> size_t {
       std::lock_guard lock {get_global_mutex()};
        return mag_tensor_numbytes(*self);
-    }, "Size in bytes of the tensor data.")
+    }, "Bytes this tensor spans: numel * itemsize. For a view this is less than storage_numbytes.")
+    .def_prop_ro("storage_numbytes", [](const tensor_wrapper &self) -> size_t {
+       std::lock_guard lock {get_global_mutex()};
+       return mag_tensor_storage_numbytes(*self);
+    }, "Bytes of the whole storage buffer behind this tensor, which a view shares with its base.")
     .def_prop_ro("dtype", [](const tensor_wrapper &self) -> dtype_wrapper {
       std::lock_guard lock {get_global_mutex()};
       return dtype_wrapper{ mag_tensor_type(*self) };
@@ -302,7 +306,19 @@ namespace mag::bindings {
         default: throw nb::value_error("Unsupported dtype for tolist()");
       }
       return result;
-    }, "Convert tensor to a nested Python list (copies through host if needed).")
+    }, "Convert tensor to a nested Python list.")
+    .def("tobytes", [](const tensor_wrapper &self) -> nb::bytes {
+      std::lock_guard lock {get_global_mutex()};
+      mag_error_t err {};
+      mag_tensor_t *host = nullptr;
+      throw_if_error(mag_transfer(&err, &host, *self, mag_device(CPU, 0)), err);
+      on_scope_exit defer_host {[host] { mag_tensor_decref(host); }};
+      mag_tensor_t *contig = nullptr;
+      throw_if_error(mag_contiguous(&err, &contig, host), err);
+      on_scope_exit defer_contig {[contig] { mag_tensor_decref(contig); }};
+      const auto *p = reinterpret_cast<const char *>(mag_tensor_data_ptr(contig));
+      return nb::bytes{p, mag_tensor_numbytes(contig)};
+    },  "Copy the raw element bytes out, in row major and in this tensor's dtype.")
     .def("save_image", [](const tensor_wrapper &self, const std::string &file_name) -> void {
       std::lock_guard lock {get_global_mutex()};
       mag_error_t err {};
