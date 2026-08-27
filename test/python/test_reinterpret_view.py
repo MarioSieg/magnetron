@@ -130,11 +130,40 @@ def test_rejects_a_misaligned_offset() -> None:
         sliced.reinterpret_view(dtype.float32, [4])
 
 
-def test_rejects_a_non_contiguous_base() -> None:
+def test_accepts_a_non_contiguous_base_with_a_unit_stride_innermost() -> None:
+    src = Tensor.arange(40, dtype=dtype.float32).reshape(4, 10)
+    big = Tensor(src.tolist(), dtype=dtype.float32)
+    sl = big.view_slice(1, 0, 4, 1)
+    assert not sl.is_contiguous and sl.strides == (10, 1)
+    b = sl.reinterpret_view(dtype.uint8)
+    assert tuple(b.shape) == (4, 16)
+    assert b.strides == (40, 1), 'the outer stride only changes units'
+    np.testing.assert_array_equal(b.numpy(), src[:, :4].clone().reinterpret_view(dtype.uint8).numpy())
+
+
+def test_rejects_an_innermost_dimension_that_is_not_unit_stride() -> None:
+    # Transposed: the bytes that would be merged are not neighbours.
     t = _u8(list(range(64))).view(8, 8).transpose(0, 1)
     assert not t.is_contiguous
-    with pytest.raises(RuntimeError, match='must be contiguous'):
+    with pytest.raises(RuntimeError, match='must be unit-stride'):
         t.reinterpret_view(dtype.float32, [16])
+
+
+def test_rejects_an_innermost_extent_that_does_not_divide() -> None:
+    # 3 uint8 is not a whole number of float32, even though the stride is fine.
+    t = _u8(list(range(48))).view(4, 12).view_slice(1, 0, 3, 1)
+    assert t.strides == (12, 1)
+    with pytest.raises(RuntimeError, match='not a whole number'):
+        t.reinterpret_view(dtype.float32)
+
+
+def test_rejects_an_outer_stride_that_does_not_divide() -> None:
+    # The innermost extent is fine (8 uint8 = 2 float32) but rows are 10 bytes apart, so the
+    # rescaled row stride would not be a whole number of float32 elements.
+    t = _u8(list(range(40))).view(4, 10).view_slice(1, 0, 8, 1)
+    assert t.strides == (10, 1)
+    with pytest.raises(RuntimeError, match='not a multiple'):
+        t.reinterpret_view(dtype.float32)
 
 
 def test_rejects_a_shape_that_does_not_match() -> None:

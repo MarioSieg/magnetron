@@ -281,13 +281,22 @@ TEST(views, reinterpret_view_rejects_invalid_reinterpretations) {
         std::vector<int64_t> shape = {4};
         ASSERT_NE(mag_reinterpret_view(&err, &out, &*slice, MAG_DTYPE_FLOAT32, shape.data(), 1), MAG_OK);
     }
-    { // A non-contiguous base, where "the bytes" is not one range to begin with.
+    { // A transposed base: the innermost step is not one element, so the bytes that would be
+      // merged are not neighbours.
         tensor base {ctx, dtype::u8, std::vector<int64_t>{8, 8}};
         mag_tensor_t *tr = nullptr;
         ASSERT_EQ(mag_transpose(&err, &tr, &*base, 0, 1), MAG_OK) << err.message;
         tensor transposed {tr};
         std::vector<int64_t> shape = {16};
         ASSERT_NE(mag_reinterpret_view(&err, &out, &*transposed, MAG_DTYPE_FLOAT32, shape.data(), 1), MAG_OK);
+    }
+    { // An outer stride whose byte length is not a multiple of the target element size.
+        tensor base {ctx, dtype::u8, std::vector<int64_t>{4, 10}};
+        mag_tensor_t *sl = nullptr;
+        ASSERT_EQ(mag_view_slice(&err, &sl, &*base, 1, 0, 8, 1), MAG_OK) << err.message;
+        tensor rows {sl};
+        std::vector<int64_t> shape = {4, 2};
+        ASSERT_NE(mag_reinterpret_view(&err, &out, &*rows, MAG_DTYPE_FLOAT32, shape.data(), 2), MAG_OK);
     }
     { // A shape whose element count does not match the reinterpreted one.
         tensor base {ctx, dtype::u8, std::vector<int64_t>{16}};
@@ -304,5 +313,37 @@ TEST(views, reinterpret_view_rejects_invalid_reinterpretations) {
         tensor base {ctx, dtype::u8, std::vector<int64_t>{16}};
         std::vector<int64_t> shape = {16};
         ASSERT_NE(mag_reinterpret_view(&err, &out, &*base, static_cast<mag_dtype_t>(MAG_DTYPE__NUM), shape.data(), 1), MAG_OK);
+    }
+}
+
+TEST(views, reinterpret_view_accepts_a_strided_base) {
+    // Rows of a larger matrix: strided between rows, unit-stride within one. Reinterpreting that
+    // is well defined and copies nothing, which is the layout a quantized weight arrives in.
+    auto ctx = context{};
+    tensor base {ctx, dtype::u8, std::vector<int64_t>{4, 16}};
+    auto *bytes = static_cast<uint8_t *>(base.data_ptr());
+    for (int i=0; i < 64; ++i) bytes[i] = static_cast<uint8_t>(i);
+
+    mag_tensor_t *sl = nullptr;
+    mag_error_t err {};
+    ASSERT_EQ(mag_view_slice(&err, &sl, &*base, 1, 0, 8, 1), MAG_OK) << err.message;  // u8[4,8] strides (16,1)
+    tensor rows {sl};
+    ASSERT_FALSE(rows.is_contiguous());
+    ASSERT_EQ(rows.strides()[0], 16);
+
+    mag_tensor_t *out = nullptr;
+    std::vector<int64_t> shape = {4, 2};
+    ASSERT_EQ(mag_reinterpret_view(&err, &out, &*rows, MAG_DTYPE_FLOAT32, shape.data(), 2), MAG_OK) << err.message;
+    tensor f32 {out};
+    ASSERT_EQ(f32.shape()[0], 4);
+    ASSERT_EQ(f32.shape()[1], 2);
+    ASSERT_EQ(f32.strides()[0], 4) << "16 uint8 apart is 4 float32 apart";
+    ASSERT_EQ(f32.strides()[1], 1);
+    ASSERT_EQ(f32.data_ptr(), base.data_ptr()) << "no copy";
+
+    // Row r of the result must be the 8 bytes at 16*r, read as two floats.
+    for (int r=0; r < 4; ++r) {
+        const auto *row = static_cast<const float *>(f32.data_ptr()) + 4*r;
+        ASSERT_EQ(std::memcmp(row, bytes + 16*r, 8), 0) << "row " << r;
     }
 }

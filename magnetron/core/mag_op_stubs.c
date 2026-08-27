@@ -530,14 +530,12 @@ mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
   return MAG_OK;
 }
 
-static mag_status_t mag_reinterpret_cast_flat_storage_1d(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, mag_dtype_t dtype, int64_t numel, int64_t offset) {
+static mag_status_t mag_reinterpret_cast_flat_storage_1d(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, mag_dtype_t dtype) {
   *out = NULL;
   mag_context_t *ctx = x->ctx;
   if (mag_unlikely(mag_thread_id() != ctx->tr_id))
     return mag_set_error(err, MAG_ERR_THREAD, "reinterpret_view: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
-  int64_t cap = (int64_t)(x->storage->size/mag_type_trait(dtype)->size);
-  if (mag_unlikely(offset < 0 || numel < 0 || offset > cap || numel > cap-offset))
-    return mag_set_error(err, MAG_ERR_BOUNDS, "reinterpret_view: elements [%" PRIi64 ", %" PRIi64 ") lie outside the %" PRIi64 " %s elements the storage holds.", offset, offset+numel, cap, mag_type_trait(dtype)->name);
+  int64_t numel = (int64_t)(x->storage->size/mag_type_trait(dtype)->size);
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, dtype, 1, numel, x->meta.device, NULL);
   if (mag_unlikely(!tensor))
     return mag_set_error(err, MAG_ERR_OOM, "reinterpret_view: failed to allocate tensor header.");
@@ -548,7 +546,7 @@ static mag_status_t mag_reinterpret_cast_flat_storage_1d(mag_error_t *err, mag_t
   tensor->meta.coords.shape[0] = numel;
   tensor->storage = x->storage;
   mag_rc_incref(x->storage);
-  tensor->meta.storage_offset = offset;
+  tensor->meta.storage_offset = 0;
   tensor->version = x->version;
   if (!(x->meta.flags & MAG_TFLAG_IS_VIEW)) {
     tensor->view_meta = mag_view_meta_alloc(x);
@@ -577,30 +575,54 @@ mag_status_t mag_reinterpret_view(mag_error_t *err, mag_tensor_t **out_result, m
     return mag_set_error(err, MAG_ERR_PARAM, "reinterpret_view: dims must not be NULL when rank > 0.");
   if (mag_unlikely(x->meta.flags & MAG_TFLAG_REQUIRES_GRAD))
     return mag_set_error(err, MAG_ERR_AUTOGRAD, "reinterpret_view: cannot reinterpret the bytes of a tensor that requires grad, must be detached.");
-  if (mag_unlikely(!mag_tensor_is_contiguous(x)))
-    return mag_set_error(err, MAG_ERR_STRIDES, "reinterpret_view: base tensor must be contiguous.");
   const mag_type_traits_t *ot = mag_type_trait(x->meta.dtype);
   const mag_type_traits_t *nt = mag_type_trait(dtype);
   int64_t osz = (int64_t)ot->size;
   int64_t nsz = (int64_t)nt->size;
-  int64_t nb;
-  if (mag_unlikely(mag_mulov64(x->meta.numel, osz, &nb)))
-    return mag_set_error(err, MAG_ERR_DIM, "reinterpret_view: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", x->meta.numel, osz);
-  if (mag_unlikely(nb % nsz))
-    return mag_set_error(err, MAG_ERR_SHAPE, "reinterpret_view: %" PRIi64 " %s elements are %" PRIi64 " bytes, which is not a whole number of %s elements (%" PRIi64 " bytes each).", x->meta.numel, ot->name, nb, nt->name, nsz);
+  int64_t xr = x->meta.coords.rank;
+  int64_t shape[MAG_MAX_DIMS];
+  int64_t strides[MAG_MAX_DIMS];
+  if (xr == 0) {
+    if (mag_unlikely(osz != nsz))
+      return mag_set_error(err, MAG_ERR_SHAPE, "reinterpret_view: a rank-0 %s tensor is %" PRIi64 " bytes, which is not one %s element (%" PRIi64 " bytes).", ot->name, osz, nt->name, nsz);
+  } else {
+    if (mag_unlikely(x->meta.coords.strides[xr-1] != 1))
+      return mag_set_error(err, MAG_ERR_STRIDES, "reinterpret_view: the innermost dimension must be unit-stride, but dim %" PRIi64 " has stride %" PRIi64 "; reinterpretation regroups adjacent bytes, so call contiguous() first.", xr-1, x->meta.coords.strides[xr-1]);
+    memcpy(shape, x->meta.coords.shape, (size_t)xr*sizeof(*shape));
+    memcpy(strides, x->meta.coords.strides, (size_t)xr*sizeof(*strides));
+    int64_t inner;
+    if (mag_unlikely(mag_mulov64(shape[xr-1], osz, &inner)))
+      return mag_set_error(err, MAG_ERR_DIM, "reinterpret_view: innermost byte size overflowed (%" PRIi64 " elements of %" PRIi64 " bytes).", shape[xr-1], osz);
+    if (mag_unlikely(inner%nsz))
+      return mag_set_error(err, MAG_ERR_SHAPE, "reinterpret_view: the innermost dimension is %" PRIi64 " %s elements (%" PRIi64 " bytes), which is not a whole number of %s elements (%" PRIi64 " bytes each).", shape[xr-1], ot->name, inner, nt->name, nsz);
+    shape[xr-1] = inner/nsz;
+    strides[xr-1] = 1;
+    for (int64_t i=0; i < xr-1; ++i) {
+      int64_t sb;
+      if (mag_unlikely(mag_mulov64(strides[i], osz, &sb)))
+        return mag_set_error(err, MAG_ERR_DIM, "reinterpret_view: stride overflowed at dim %" PRIi64 ".", i);
+      if (mag_unlikely(sb % nsz))
+        return mag_set_error(err, MAG_ERR_STRIDES, "reinterpret_view: stride %" PRIi64 " at dim %" PRIi64 " spans %" PRIi64 " bytes, which is not a multiple of the %" PRIi64 "-byte %s element size.", strides[i], i, sb, nsz, nt->name);
+      strides[i] = sb/nsz;
+    }
+  }
   int64_t byte_off;
   if (mag_unlikely(mag_mulov64(x->meta.storage_offset, osz, &byte_off)))
     return mag_set_error(err, MAG_ERR_DIM, "reinterpret_view: storage byte offset overflowed (offset=%" PRIi64 ", element size=%" PRIi64 ").", x->meta.storage_offset, osz);
   if (mag_unlikely(byte_off%nsz))
     return mag_set_error(err, MAG_ERR_PARAM, "reinterpret_view: base starts at byte %" PRIi64 " of its storage, which is not a multiple of the %" PRIi64 "-byte %s element size.", byte_off, nsz, nt->name);
   uintptr_t addr = x->storage->base + (uintptr_t)byte_off;
-  if (mag_unlikely(addr % nt->alignment)) /* Make sure base address is actually aligned too, regarding of device */
+  if (mag_unlikely(addr % nt->alignment))
     return mag_set_error(err, MAG_ERR_PARAM, "reinterpret_view: address 0x%" PRIxPTR " is not %zu-byte aligned for %s.", addr, nt->alignment, nt->name);
   mag_tensor_t *flat = NULL;
-  mag_status_t status = mag_reinterpret_cast_flat_storage_1d(err, &flat, x, dtype, nb/nsz, byte_off/nsz);
+  mag_status_t status = mag_reinterpret_cast_flat_storage_1d(err, &flat, x, dtype);
   if (mag_iserr(status)) return status;
-  status = mag_view(err, out_result, flat, dims, rank);
+  mag_tensor_t *geometry = NULL;
+  status = mag_strided_view(err, &geometry, x->ctx, flat, xr, xr ? shape : NULL, xr ? strides : NULL, byte_off/nsz);
   mag_tensor_decref(flat);
+  if (mag_iserr(status)) return status;
+  status = mag_view(err, out_result, geometry, dims, rank);
+  mag_tensor_decref(geometry);
   return status;
 }
 
