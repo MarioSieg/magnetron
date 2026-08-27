@@ -1180,7 +1180,7 @@ mag_status_t mag_einsum_eval(mag_error_t *err, mag_tensor_t **out_result, const 
   size_t len = strlen(equation);
   if (mag_unlikely(!mag_utf8_validate((const uint8_t *)equation, len)))
     return mag_set_error(err, MAG_ERR_EINSUM, "einsum: equation string contains invalid UTF-8.");
-  if (mag_unlikely(!(num_args > 0)))
+  if (mag_unlikely(num_args <= 0))
     return mag_set_error(err, MAG_ERR_EINSUM, "einsum: requires at least one input tensor.");
   char *cloned = mag_strdup(equation);
   if (mag_unlikely(!cloned))

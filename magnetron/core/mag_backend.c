@@ -200,18 +200,18 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
     mag_backend_module_t *mod = NULL;
     mag_status_t status2 = mag_backend_module_load(err, &mod, pathbuf, reg->ctx);
     if (mag_iserr(status2)) {
-      if (mag_backend_type_is_required(type)) { /* A required backend (e.g. CPU) failed: propagate its detailed reason to the caller. */
-        status = status2; /* 'err' already holds the specific failure message. */
+      if (mag_backend_type_is_required(type)) {
+        status = status2;
         goto error;
       }
-      mag_log_info("Optional backend '%s' not available: %s", mag_backend_type_to_str(type), err ? err->message : "(not present)"); /* Non-fatal. */
-      if (err) err->code = MAG_OK; /* Consume the non-fatal failure: clear the sticky error so a later real error can be recorded and the returned 'err' stays clean. */
+      mag_log_info("Optional backend '%s' not available: %s", mag_backend_type_to_str(type), err ? err->message : "(not present)");
+      if (err) err->code = MAG_OK;
       continue;
     }
     reg->backends[type] = mod;
     ++reg->backends_num;
   }
-  if (mag_unlikely(!reg->backends_num)) { /* Defensive: no usable backend at all. */
+  if (mag_unlikely(!reg->backends_num)) {
     status = mag_set_error(err, MAG_ERR_STATE,
       "backend: no magnetron compute backends could be loaded.\n"
       "Backends are loaded as shared libraries next to libmagnetron_core, but none were located or usable.\n"
@@ -220,7 +220,6 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
     goto error;
   }
   (*mag_alloc)(modpath, 0, 0);
-  /* Print short overview of loaded backends */
   for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
     if (reg->backends[type]) {
       mag_backend_t *bck = reg->backends[type]->backend;
@@ -239,7 +238,7 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
   return MAG_OK;
 error:
   if (modpath) (*mag_alloc)(modpath, 0, 0);
-  for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) /* Shut down any backends already loaded before the failure. */
+  for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type)
     if (reg->backends[type])
       mag_backend_module_shutdown(NULL, reg->backends[type]);
   (*mag_alloc)(reg, 0, 0);
@@ -253,12 +252,6 @@ mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag
   return mod->backend;
 }
 
-/*
-** Search by the device's own ordinal instead of indexing with it: get_device() is index-addressed and a
-** backend only publishes the devices that initialized successfully, so one skipped device (unsupported
-** architecture, prohibited compute mode) would otherwise shift every later ordinal down and 'cuda:N' would
-** stop meaning GPU N. Device counts are tiny, so the scan is free.
-*/
 bool mag_backend_registry_lookup_device_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc) {
   mag_backend_t *bck = mag_backend_registry_get_backend(reg, id.type);
   if (mag_unlikely(!bck)) return false;
@@ -277,7 +270,7 @@ bool mag_backend_registry_best_device(mag_backend_registry_t *reg, mag_backend_t
   mag_backend_t *bck = mag_backend_registry_get_backend(reg, type);
   if (mag_unlikely(!bck)) return false;
   if (mag_unlikely(!(*bck->num_devices)(bck))) return false;
-  mag_device_t *dvc = (*bck->get_device)(bck, (*bck->best_device_id)(bck)); /* Backend-chosen index, not an ordinal. */
+  mag_device_t *dvc = (*bck->get_device)(bck, (*bck->best_device_id)(bck));
   if (mag_unlikely(!dvc)) return false;
   if (out_bck) *out_bck = bck;
   if (out_dvc) *out_dvc = dvc;

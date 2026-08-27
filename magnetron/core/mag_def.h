@@ -569,27 +569,32 @@ static inline void *mag_pincr(void **p, size_t sz, size_t align) {
   return pp;
 }
 
-/* Performs c = ab with overflow checking. Returns true on overflow, else false. */
+static bool MAG_AINLINE mag_addov64(int64_t a, int64_t b, int64_t *c) {
+  #if defined(__GNUC__) || defined(__clang__)
+    return __builtin_add_overflow(a, b, c);
+  #else
+    uint64_t r = (uint64_t)a+(uint64_t)b;
+    *c = (int64_t)r;
+    return ((a^(int64_t)r)&(b^(int64_t)r)) < 0;
+  #endif
+}
+
 static bool MAG_AINLINE mag_mulov64(int64_t a, int64_t b, int64_t *c) {
-#ifdef _MSC_VER
-#ifdef _M_ARM64
-uint64_t high = __umulh(a, b);
-*c = a*b;
-return high != (*c>>63);
-#else
-int64_t high;
-int64_t low = _mul128(a, b, &high);
-int64_t sign = low>>63;
-*c = low;
-return high != sign;
-#endif
-#else
-#if __SIZEOF_LONG_LONG__ == 8 && __SIZEOF_LONG__ == 8
-return __builtin_smulll_overflow(a, b, (long long *)c);
-#else
-return __builtin_smull_overflow(a, b, c);
-#endif
-#endif
+  #ifdef _MSC_VER
+    #ifdef _M_ARM64
+      uint64_t high = __umulh(a, b);
+      *c = a*b;
+      return high != (*c>>63);
+    #else
+      int64_t high;
+      int64_t low = _mul128(a, b, &high);
+      int64_t sign = low>>63;
+      *c = low;
+      return high != sign;
+    #endif
+  #else
+    return __builtin_mul_overflow(a, b, c);
+  #endif
 }
 
 static MAG_CUDA_DEVICE MAG_AINLINE uint32_t mag_next_pow2_u32(uint32_t x) {
