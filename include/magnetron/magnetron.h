@@ -503,6 +503,7 @@ extern MAG_EXPORT size_t mag_tensor_storage_numbytes(const mag_tensor_t *tensor)
 extern MAG_EXPORT int64_t mag_tensor_numel(const mag_tensor_t *tensor);
 extern MAG_EXPORT mag_context_t *mag_tensor_context(const mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_is_view(const mag_tensor_t *tensor);
+extern MAG_EXPORT mag_tensor_t *mag_tensor_view_base(const mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_is_floating_point_typed(const mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_is_integral_typed(const mag_tensor_t *tensor);
 extern MAG_EXPORT bool mag_tensor_is_integer_typed(const mag_tensor_t *tensor);

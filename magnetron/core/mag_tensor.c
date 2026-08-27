@@ -470,6 +470,13 @@ bool mag_tensor_is_view(const mag_tensor_t *tensor) {
   return tensor->meta.flags & MAG_TFLAG_IS_VIEW;
 }
 
+mag_tensor_t *mag_tensor_view_base(const mag_tensor_t *tensor) {
+  if (!(tensor->meta.flags & MAG_TFLAG_IS_VIEW) || !tensor->view_meta) return NULL;
+  mag_tensor_t *base = tensor->view_meta->base;
+  if (base) mag_rc_incref(base);
+  return base;
+}
+
 bool mag_tensor_is_floating_point_typed(const mag_tensor_t *tensor) {
   return mag_dtype_bit(tensor->meta.dtype) & MAG_DTYPE_MASK_FP;
 }

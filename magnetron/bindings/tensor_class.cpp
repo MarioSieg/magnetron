@@ -145,6 +145,12 @@ namespace mag::bindings {
       std::lock_guard lock {get_global_mutex()};
        return mag_tensor_is_view(*self);
     }, "True if this tensor shares storage with another.")
+    .def_prop_ro("view_base", [](const tensor_wrapper &self) -> nb::object {
+      std::lock_guard lock {get_global_mutex()};
+      mag_tensor_t *base = mag_tensor_view_base(*self);
+      if (!base) return nb::none();
+      return nb::cast(tensor_wrapper {base});
+    }, "Base tensor this view was derived from, or None if this tensor is not a view.")
     .def_prop_ro("is_contiguous", [](const tensor_wrapper &self) -> bool {
       std::lock_guard lock {get_global_mutex()};
        return mag_tensor_is_contiguous(*self);
