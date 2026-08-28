@@ -55,8 +55,8 @@ def test_factory_arange(dt: dtype.DType) -> None:
             expected = np.arange(start, end, step, dtype=tonumpy_dtype(dt))
             np.testing.assert_allclose(tonumpy(x), expected, rtol=rtol, atol=atol)
         else:
-            expected = torch.arange(start, end, step, dtype=totorch_dtype(dt))
-            torch.testing.assert_close(totorch(x), expected, rtol=rtol, atol=atol)
+            expected = torch.arange(start, end, step, dtype=torch.float64).to(totorch_dtype(dt))
+            torch.testing.assert_close(totorch(x), expected, rtol=0, atol=0)
 
     for _ in range(1000):
         test()
