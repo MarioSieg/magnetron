@@ -84,7 +84,7 @@ namespace mag {
     [MAG_OP_RELU] = &unary_op_relu,
     [MAG_OP_RELU_DV] = &unary_op_relu_dv,
     [MAG_OP_GELU] = &unary_op_gelu,
-    [MAG_OP_GELU_APPROX] = &unary_op_gelu,
+    [MAG_OP_GELU_APPROX] = &unary_op_gelu_approx,
     [MAG_OP_GELU_DV] = &unary_op_gelu_dv,
     [MAG_OP_TRIL] = &misc_op_tril,
     [MAG_OP_TRIU] = &misc_op_triu,

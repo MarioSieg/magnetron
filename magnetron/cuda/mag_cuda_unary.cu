@@ -324,6 +324,9 @@ namespace mag {
   }
 
   constexpr float INVSQRT2 = 0.707106781186547524400844362104849039284835937f /* 1/√2 */;
+  constexpr float INVSQRT2PI = 0.398942280401432677939946059934381868475858631f;
+  constexpr float SQRT2OVERPI = 0.797884560802865355879892119868763736951717263f;
+  constexpr float GELU_COEFF = 0.044715f;
 
   template <typename T>
   struct op_abs {
@@ -654,15 +657,6 @@ namespace mag {
   };
 
   template <typename T>
-  struct op_softmax_dv {
-    using In = T;
-    using Out = T;
-    [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
-      return static_cast<Out>(__expf(static_cast<float>(x)));
-    }
-  };
-
-  template <typename T>
   struct op_sigmoid {
     using In = T;
     using Out = T;
@@ -708,7 +702,7 @@ namespace mag {
     [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
       auto xf32 = static_cast<float>(x);
       float sig = 1.f/(1.f + __expf(-xf32));
-      return static_cast<Out>(sig + xf32*sig);
+      return static_cast<Out>(sig + xf32*sig*(1.f - sig));
     }
   };
 
@@ -751,13 +745,22 @@ namespace mag {
   };
 
   template <typename T>
+  struct op_gelu_approx {
+    using In = T;
+    using Out = T;
+    [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
+      auto xf32 = static_cast<float>(x);
+      return static_cast<Out>(.5f*xf32*(1.f + __tanhf(SQRT2OVERPI*(xf32 + GELU_COEFF*xf32*xf32*xf32))));
+    }
+  };
+
+  template <typename T>
   struct op_gelu_dv {
     using In = T;
     using Out = T;
     [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
       auto xf32 = static_cast<float>(x);
-      float th = __tanhf(xf32);
-      return static_cast<Out>(.5f*(1.f + th) + .5f*xf32*(1.f - th*th));
+      return static_cast<Out>(.5f*(1.f + erff(xf32*INVSQRT2)) + xf32*INVSQRT2PI*__expf(-.5f*xf32*xf32));
     }
   };
 
@@ -867,7 +870,7 @@ namespace mag {
   mag_status_t unary_op_round(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_round>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_trunc(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_trunc>(err, cmd.out[0], cmd.in[0], stream); }
 
-  template <typename T>
+  template <typename T, const bool Dv>
   __global__ static void softmax_kernel(int64_t rows, int64_t last_dim, T *__restrict__ r, const T *__restrict__ x) {
     int64_t row = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + static_cast<int64_t>(threadIdx.x);
     if (row >= rows) return;
@@ -883,16 +886,19 @@ namespace mag {
       sum += static_cast<double>(__expf(static_cast<float>(row_in[i]) - maxv));
     if (!std::isfinite(sum) || sum <= 0.0) {
       float inv = 1.0f / static_cast<float>(last_dim);
+      float s = Dv ? inv*(1.0f - inv) : inv;
       for (int64_t i=0; i < last_dim; ++i)
-        row_out[i] = static_cast<T>(inv);
+        row_out[i] = static_cast<T>(s);
     } else {
       auto inv = static_cast<float>(1.0 / sum);
-      for (int64_t i=0; i < last_dim; ++i)
-        row_out[i] = static_cast<T>(__expf(static_cast<float>(row_in[i]) - maxv)*inv);
+      for (int64_t i=0; i < last_dim; ++i) {
+        float s = __expf(static_cast<float>(row_in[i]) - maxv)*inv;
+        row_out[i] = static_cast<T>(Dv ? s*(1.0f - s) : s);
+      }
     }
   }
 
-  template <typename T>
+  template <typename T, const bool Dv>
   static void launch_softmax(mag_tensor_t *r, const mag_tensor_t *x, cudaStream_t stream) {
     int64_t rank = mag_tensor_rank(r);
     int64_t numel = mag_tensor_numel(r);
@@ -902,26 +908,29 @@ namespace mag {
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     auto blocks = static_cast<unsigned>(std::min((numel+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
-    softmax_kernel<T><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(rows, last_dim, pr, px);
+    softmax_kernel<T, Dv><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(rows, last_dim, pr, px);
   }
 
-  mag_status_t unary_op_softmax(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+  template <const bool Dv>
+  static mag_status_t impl_softmax_op(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *x = cmd.in[0];
     mag_assert2(mag_tensor_is_contiguous(r));
     mag_assert2(mag_isok(mag_contiguous(nullptr, &x, x))); // Softmax requires contig x and r for now
     mag_assert2(r->meta.dtype == x->meta.dtype);
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: launch_softmax<float>(r, x, stream); break;
-      case MAG_DTYPE_FLOAT16: launch_softmax<half>(r, x, stream); break;
-      case MAG_DTYPE_BFLOAT16: launch_softmax<__nv_bfloat16>(r, x, stream); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_softmax<__nv_fp8_e4m3>(r, x, stream); break;
+      case MAG_DTYPE_FLOAT32: launch_softmax<float, Dv>(r, x, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_softmax<half, Dv>(r, x, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_softmax<__nv_bfloat16, Dv>(r, x, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_softmax<__nv_fp8_e4m3, Dv>(r, x, stream); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported dtype for softmax.");
     }
     mag_tensor_decref(x);
     return MAG_OK;
   }
-  mag_status_t unary_op_softmax_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_softmax_dv>(err, cmd.out[0], cmd.in[0], stream); }
+
+  mag_status_t unary_op_softmax(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_softmax_op<false>(err, cmd, stream); }
+  mag_status_t unary_op_softmax_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_softmax_op<true>(err, cmd, stream); }
   mag_status_t unary_op_sigmoid(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_sigmoid>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_sigmoid_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_sigmoid_dv>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_hard_sigmoid(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_hard_sigmoid>(err, cmd.out[0], cmd.in[0], stream); }
@@ -931,5 +940,6 @@ namespace mag {
   mag_status_t unary_op_relu(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_relu>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_relu_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_relu_dv>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_gelu(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_gelu>(err, cmd.out[0], cmd.in[0], stream); }
+  mag_status_t unary_op_gelu_approx(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_gelu_approx>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_gelu_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_gelu_dv>(err, cmd.out[0], cmd.in[0], stream); }
 }

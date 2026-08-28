@@ -561,6 +561,8 @@ extern MAG_EXPORT uint64_t mag_cycles(void); /* Get current CPU cycles. */
 
 #define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
 #define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
+#define MAG_INVSQRT2PI 0.398942280401432677939946059934381868475858631f
+#define MAG_SQRT2OVERPI 0.797884560802865355879892119868763736951717263f
 
 /* Increment pointer or buf_size with correct type alignment. */
 static inline void *mag_pincr(void **p, size_t sz, size_t align) {
