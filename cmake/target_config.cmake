@@ -35,10 +35,10 @@ function(apply_compilation_config_to_target target_name)
             add_compile_options(-moutline-atomics)
         endif()
         set(MAG_CLANG_COMPILE_FLAGS ${MAG_CLANG_COMPILE_FLAGS} -march=armv8-a -moutline-atomics) # See beginning for file for info of -moutline-atomics
-        set(MAG_GCC_COMPILE_FLAGS ${MAG_CLANG_COMPILE_FLAGS} -march=armv8-a -moutline-atomics)
+        set(MAG_GCC_COMPILE_FLAGS ${MAG_GCC_COMPILE_FLAGS} -march=armv8-a -moutline-atomics)
     elseif (${IS_AMD64})
         set(MAG_CLANG_COMPILE_FLAGS ${MAG_CLANG_COMPILE_FLAGS} -msse -msse2)
-        set(MAG_GCC_COMPILE_FLAGS ${MAG_CLANG_COMPILE_FLAGS} -msse -msse2)
+        set(MAG_GCC_COMPILE_FLAGS ${MAG_GCC_COMPILE_FLAGS} -msse -msse2)
     endif()
 
     if(WIN32) # Windows (MSVC) specific config
