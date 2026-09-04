@@ -7,7 +7,7 @@ from magnetron import Tensor, dtype
 
 args = argparse.ArgumentParser(description='Benchmark unary op')
 args.add_argument('op', type=str, help='Unary op name, e.g. exp, tanh, sigmoid, relu')
-args.add_argument('--N', type=int, default=1<<24)
+args.add_argument('--N', type=int, default=1 << 24)
 args.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'])
 args.add_argument('--warmup', type=int, default=20)
 args.add_argument('--iters', type=int, default=500)

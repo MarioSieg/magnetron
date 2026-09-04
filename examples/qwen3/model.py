@@ -300,7 +300,6 @@ class Qwen3Model(nn.Module):
         top_k: int = 10,
         reset_cache: bool = False,
     ) -> Iterator[str]:
-
         def sample(logits: Tensor, strategy: SamplingStrategy) -> int:  # Sample according to strategy
             match strategy:
                 case SamplingStrategy.GREEDY:

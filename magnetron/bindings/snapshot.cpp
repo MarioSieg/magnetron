@@ -16,115 +16,105 @@ namespace mag::bindings {
     return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
   }
 
-  class snapshot_wrapper final {
+  class snapshot_stream_writer final {
   public:
-    snapshot_wrapper(const std::string &fname, bool write) : write_mode(write), filename(fname) {
-      mag_context_t *ctx = get_ctx();
+    snapshot_stream_writer(const std::string &filename, const std::string & meta, uint64_t data_len) {
       mag_error_t err {};
-      if (write) throw_if_error(mag_snapshot_new(&err, &snap_ptr, ctx), err);
-      else throw_if_error(mag_snapshot_deserialize(&err, &snap_ptr, ctx, filename.c_str()), err);
+      throw_if_error(
+        mag_snapshot_stream_writer_open(
+          &err,
+          &m_writer,
+          get_ctx(),
+          filename.c_str(),
+          meta.c_str(),
+          static_cast<uint64_t>(meta.size()),
+          data_len
+        ),
+        err
+      );
     }
-    ~snapshot_wrapper() {
-      if (snap_ptr) mag_snapshot_free(snap_ptr);
-    }
-    snapshot_wrapper(const snapshot_wrapper&) = delete;
-    snapshot_wrapper& operator=(const snapshot_wrapper&) = delete;
-    snapshot_wrapper(snapshot_wrapper&& o) noexcept {
-      snap_ptr = o.snap_ptr;
-      write_mode = o.write_mode;
-      filename = std::move(o.filename);
-      o.snap_ptr = nullptr;
-    }
-    mag_snapshot_t *operator *() const noexcept { return snap_ptr; }
-    operator bool () const noexcept { return snap_ptr != nullptr; }
-    [[nodiscard]] bool is_write_mode() const noexcept { return write_mode; }
 
-    void serialize_if_needed() {
-      if (write_mode && snap_ptr) {
-        mag_error_t err {};
-        throw_if_error(mag_snapshot_serialize(&err, snap_ptr, filename.c_str()), err);
-      }
+    ~snapshot_stream_writer() noexcept {
+      abort();
+    }
+    snapshot_stream_writer(const snapshot_stream_writer &) = delete;
+    snapshot_stream_writer &operator=(const snapshot_stream_writer &) = delete;
+    snapshot_stream_writer(snapshot_stream_writer &&rhs) noexcept : m_writer {std::exchange(rhs.m_writer, nullptr)} {}
+    snapshot_stream_writer &operator=(snapshot_stream_writer &&rhs) noexcept {
+      if (this == &rhs)
+        return *this;
+      abort();
+      m_writer = std::exchange(rhs.m_writer, nullptr);
+      return *this;
+    }
+
+    [[nodiscard]] bool is_open() const noexcept { return m_writer != nullptr; }
+
+    void write(const void *data, std::uint64_t size) {
+      require_open();
+      mag_error_t err {};
+      throw_if_error(mag_snapshot_stream_writer_submit_blob(&err, m_writer, data, size), err);
     }
 
     void close() {
-      if (snap_ptr) {
-        if (write_mode) serialize_if_needed();
-        mag_snapshot_free(snap_ptr);
-        snap_ptr = nullptr;
-      }
+      if (!m_writer) return;
+      auto *writer = std::exchange(m_writer, nullptr);
+      mag_error_t err {};
+      throw_if_error(mag_snapshot_stream_writer_close(&err, writer), err);
+    }
+
+    void abort() noexcept {
+      if (auto *writer = std::exchange(m_writer, nullptr))
+        mag_snapshot_stream_writer_abort(writer);
     }
 
   private:
-    mag_snapshot_t *snap_ptr = nullptr;
-    bool write_mode = false;
-    std::string filename = {};
+      void require_open() const {
+        if (!m_writer)
+          throw std::runtime_error {"SnapshotStreamWriter is closed"};
+      }
+      mag_snapshot_stream_writer_t *m_writer {};
   };
 
   void init_bindings_snapshot(nb::module_ &m) {
-    nb::class_<snapshot_wrapper>(m, "Snapshot", "Save/load tensors to a .mag file. Use Snapshot.write(path) or Snapshot.read(path), then put_tensor/get_tensor.")
-    .def_static("write", [](const std::string &filename) {
-      std::lock_guard lock {get_global_mutex()};
-      if (!ends_with(filename, ".mag")) {
-        std::ostringstream oss;
-        oss << "Filename must end with .mag: " << filename;
-        throw nb::value_error(oss.str().c_str());
-      }
-      return snapshot_wrapper{filename, true};
-    }, "filename"_a, "Open a snapshot for writing. File must end with .mag.")
-    .def_static("read", [](const std::string &filename) {
-      std::lock_guard lock {get_global_mutex()};
-      if (!ends_with(filename, ".mag")) {
-        std::ostringstream oss;
-        oss << "Filename must end with .mag: " << filename;
-        throw nb::value_error(oss.str().c_str());
-      }
-      return snapshot_wrapper{filename, false};
-    }, "filename"_a, "Open a snapshot for reading. File must end with .mag.")
-    .def("__enter__", [](snapshot_wrapper &self) -> snapshot_wrapper& {
-      return self;
-    }, nb::rv_policy::reference_internal)
-    .def("__exit__", [](snapshot_wrapper &self, nb::args) -> bool {
-      std::lock_guard lock {get_global_mutex()};
-      self.close();
-      return false;
-    })
-    .def("close", [](snapshot_wrapper &self) {
-      std::lock_guard lock {get_global_mutex()};
-      self.close();
-    }, "Close the snapshot and flush (write mode) or release (read mode).")
-    .def("put_tensor", [](snapshot_wrapper &self, const std::string &name, const tensor_wrapper &tensor) {
-      std::lock_guard lock {get_global_mutex()};
-      if (!self.is_write_mode()) throw std::runtime_error("Snapshot opened in read mode");
-      if (!mag_snapshot_put_tensor(*self, name.c_str(), *tensor)) {
-        std::ostringstream oss;
-        oss << "Failed to store tensor: " << name;
-        throw std::runtime_error(oss.str());
-      }
-    }, "name"_a, "tensor"_a, "Store a tensor under name (write mode only).")
-    .def("get_tensor", [](snapshot_wrapper &self, const std::string &name) {
-      std::lock_guard lock {get_global_mutex()};
-      if (self.is_write_mode()) throw std::runtime_error("Snapshot opened in write mode");
-      mag_tensor_t *t = mag_snapshot_get_tensor(*self, name.c_str());
-      if (!t) {
-        std::ostringstream oss;
-        oss << "Tensor not found: " << name;
-        throw std::runtime_error(oss.str());
-      }
-      return tensor_wrapper{t};
-    }, "name"_a, "Load tensor by name (read mode only).")
-    .def("tensor_keys", [](snapshot_wrapper &self) {
-      std::lock_guard lock {get_global_mutex()};
-      size_t n=0;
-      const char **keys = mag_snapshot_get_tensor_keys(*self, &n);
-      on_scope_exit defer([keys, n] { mag_snapshot_free_tensor_keys(keys, n); });
-      nb::list out;
-      for (size_t i=0; i < n; ++i)
-        out.append(nb::str{keys[i]});
-      return out;
-    }, "List of tensor names in the snapshot.")
-    .def("print_info", [](snapshot_wrapper &self) {
-      std::lock_guard lock {get_global_mutex()};
-      mag_snapshot_print_info(*self);
-    }, "Print snapshot contents to stdout.");
+    nb::class_<snapshot_stream_writer>(m, "SnapshotStreamWriter")
+      .def(nb::init<const std::string &, const std::string &, uint64_t>(), "filename"_a, "meta"_a, "data_len"_a)
+      .def_prop_ro("is_open", &snapshot_stream_writer::is_open)
+      .def("write", [](snapshot_stream_writer &self, nb::object chunk) -> void {
+          Py_buffer view {};
+          if (PyObject_GetBuffer(chunk.ptr(), &view, PyBUF_SIMPLE) != 0)
+            throw nb::type_error("chunk must support the buffer protocol");
+          on_scope_exit release([&]() -> void {
+            PyBuffer_Release(&view);
+          });
+          std::lock_guard lock {get_global_mutex()};
+          self.write(view.buf, static_cast<std::uint64_t>(view.len));
+      }, "chunk"_a)
+      .def(
+        "write_tensor",
+        [](snapshot_stream_writer &self, const tensor_wrapper &tensor) -> void {
+          if (!mag_tensor_is_contiguous(*tensor)) throw nb::value_error("tensor must be contiguous");
+          if (!mag_tensor_is_cpu(*tensor)) throw nb::value_error("tensor must reside on CPU");
+          std::lock_guard lock {get_global_mutex()};
+          self.write(reinterpret_cast<const void *>(mag_tensor_data_ptr(*tensor)), mag_tensor_numbytes(*tensor));
+      }, "tensor"_a)
+      .def("close", [](snapshot_stream_writer &self) -> void {
+        std::lock_guard lock {get_global_mutex()};
+        self.close();
+      })
+      .def("abort", [](snapshot_stream_writer &self) -> void {
+        std::lock_guard lock {get_global_mutex()};
+        self.abort();
+      })
+      .def("__enter__", [](snapshot_stream_writer &self) -> snapshot_stream_writer & {
+        if (!self.is_open()) throw std::runtime_error {"SnapshotStreamWriter is closed"};
+        return self;
+      }, nb::rv_policy::reference_internal)
+      .def("__exit__", [](snapshot_stream_writer &self, nb::handle exc_type, nb::handle, nb::handle) -> bool {
+        std::lock_guard lock {get_global_mutex()};
+        if (exc_type.is_none()) self.close();
+        else self.abort();
+        return false;
+      }, "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none());
   }
 }
