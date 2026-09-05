@@ -39,7 +39,7 @@ extern "C" {
 #define mag_ver_minor(v) (((v)/100u)%100u)
 #define mag_ver_patch(v) ((v)%100u)
 #define MAG_VERSION mag_ver_encode(0, 1, 9)
-#define MAG_SNAPSHOT_VERSION mag_ver_encode(0, 2, 0)
+#define MAG_SNAPSHOT_VERSION mag_ver_encode(0, 3, 0)
 
 typedef enum mag_log_level_t {
   MAG_LOG_LEVEL_NONE,
@@ -181,7 +181,8 @@ extern MAG_EXPORT bool mag_scalar_same_type_and_value(mag_scalar_t a, mag_scalar
 /* === Data Type Handling === */
 
 /**
- * @brief Data types for tensors.
+ * @brief Data types for tensors. Never
+ * @warning The ordinals are used on disk - never reorder, append only.
  */
 typedef enum mag_dtype_t {
   MAG_DTYPE_FLOAT32,

@@ -18,11 +18,15 @@ from dataclasses import asdict, dataclass
 from . import __version__ as _mag_version, __snapshot_version__ as _snap_version
 from ._magnetron_bindings import (
     Tensor,
+    dtype as _dtype,
     SnapshotStreamWriter as _SnapshotStreamWriter,
     _SNAPSHOT_TBLOB_ALIGN as _TBLOB_ALIGN,
 )
 
 __all__ = ['SnapshotWriter', 'deserialize']
+
+# We serialize dtypes via the C enums ordinals, as names might change in the future
+_DTYPE_BY_ID: dict[int, Any] = {dt.ordinal: dt for dt in _dtype.all}
 
 def _align_up(x: int, a: int) -> int:
     return (x + a - 1) & ~(a - 1)
@@ -31,9 +35,10 @@ def _align_up(x: int, a: int) -> int:
 class _TensorMetadata:
     shape: tuple[int, ...]
     dtype: str
+    dtype_id: int
     offset: int
+    nbytes: int  # Future-proof: for sub-byte-packed quantized type
 
-# JSON manifest version
 _MANIFEST_VERSION: int = 1
 
 @dataclass
@@ -59,12 +64,40 @@ class _FileManifest:
             usr_metadata=obj['usr_metadata'],
             tensor_map={
                 k: _TensorMetadata(
-                    shape=v['shape'],
+                    shape=tuple(v['shape']),
                     dtype=v['dtype'],
-                    offset=v['offset']
+                    dtype_id=v['dtype_id'],
+                    offset=v['offset'],
+                    nbytes=v['nbytes'],
                 ) for k, v in obj['tensor_map'].items()
             }
         )
+
+    def validate(self, blob_span: int) -> None:
+        align: int = _TBLOB_ALIGN
+        end: int = 0
+        prev: str | None = None
+        for name, meta in sorted(self.tensor_map.items(), key=lambda kv: kv[1].offset):
+            dt = _DTYPE_BY_ID.get(meta.dtype_id)
+            if dt is None:
+                raise ValueError(f'Tensor {name} has unknown dtype ordinal {meta.dtype_id} ({meta.dtype}), the file needs a newer magnetron')
+            if any(dim < 0 for dim in meta.shape):
+                raise ValueError(f'Tensor {name} has negative dim in shape {meta.shape}')
+            expected = math.prod(meta.shape) * dt.size
+            if meta.nbytes != expected:
+                raise ValueError(f'Tensor {name} claims {meta.nbytes} bytes but {list(meta.shape)} x {dt.name} is {expected} bytes')
+            if meta.offset < end:
+                raise ValueError(f'Tensor {name} starts at {meta.offset} and overlaps {prev}, which ends at {end}')
+            if meta.nbytes and meta.offset % align:
+                raise ValueError(f'Tensor {name} starts at {meta.offset}, which is not a multiple of the {align} byte tensor alignment')
+            if not (meta.offset <= blob_span and meta.nbytes <= blob_span-meta.offset):
+                raise ValueError(f'Tensor {name} spans [{meta.offset}, {meta.offset+meta.nbytes}) but the data section is {blob_span} bytes')
+            if meta.offset-end >= align:
+                raise ValueError(f'{meta.offset-end} bytes before tensor {name} belong to no tensor, more than the {align} byte alignment can explain')
+            end = meta.offset+meta.nbytes
+            prev = name
+        if not 0 <= blob_span-end < align:
+            raise ValueError(f'The tensor map covers {end} of the {blob_span} byte data section')
 
 @dataclass(frozen=True, slots=True)
 class TensorSpec:
@@ -118,9 +151,14 @@ class SnapshotWriter:
         offsets: dict[str, int] = {}
         end: int = 0
         for key in self._order:
-            end = _align_up(end, _TBLOB_ALIGN)
+            nb = self._specs[key].numbytes
+            # An empty tensor gets no padding: submit_blob ignores a zero length write, so
+            # reserving alignment for one would promise bytes that never arrive, and a trailing
+            # empty tensor would fail the writer's own length check at close.
+            if nb:
+                end = _align_up(end, _TBLOB_ALIGN)
             offsets[key] = end
-            end += self._specs[key].numbytes
+            end += nb
         return offsets, end
 
     def _encode_manifest(self) -> _FileManifest:
@@ -134,7 +172,9 @@ class SnapshotWriter:
                 key: _TensorMetadata(
                     shape=self._specs[key].shape,
                     dtype=self._specs[key].dtype.name,
+                    dtype_id=self._specs[key].dtype.ordinal,
                     offset=self._offsets[key],
+                    nbytes=self._specs[key].numbytes,
                 ) for key in self._order
             }
         )
@@ -151,7 +191,9 @@ class SnapshotWriter:
         self._offsets, self._blob_len = self._plan()
         if self._blob_len == 0:
             raise RuntimeError('Empty data section')
-        self._stream = _SnapshotStreamWriter(str(self._file_path), self._encode_manifest().serialize(), self._blob_len)
+        manifest = self._encode_manifest()
+        manifest.validate(self._blob_len)
+        self._stream = _SnapshotStreamWriter(str(self._file_path), manifest.serialize(), self._blob_len)
 
     def write(self, name: str, payload: Any) -> None:
         self.seal()

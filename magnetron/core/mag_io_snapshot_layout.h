@@ -20,15 +20,16 @@ extern "C" {
 
 /* On disk layout rules */
 
-#define MAG_SNAP_FILE_BLOB_ALIGN 4096 /* Page + O_DIRECT + GDS */
-#define MAG_SNAP_TENSOR_BLOB_ALIGN 64
+#define MAG_SNAP_FILE_BLOB_ALIGN 0x1000   /* Page + O_DIRECT + GDS */
+#define MAG_SNAP_TENSOR_BLOB_ALIGN 0x1000 /* Page + O_DIRECT + GDS aswell */
 #define MAG_SNAP_META_LIM (32<<20) /* 32 MiB should be enough the fucks sake */
 #define mag_snap_quad_pack(a,b,c,d) ((((d)&255)<<24)+(((c)&255)<<16)+(((b)&255)<<8)+((a)&255))
 #define MAG_SNAP_FILE_MAGIC mag_snap_quad_pack('M','A','G','!')
 mag_static_assert(MAG_SNAP_TENSOR_BLOB_ALIGN >= MAG_CPU_BUF_ALIGN);
 mag_static_assert(MAG_SNAP_FILE_BLOB_ALIGN % MAG_SNAP_TENSOR_BLOB_ALIGN == 0);
 
-/* Bit 0 auf aux encodes the endianness (byte order) of the data section.
+/*
+** Bit 0 auf aux encodes the endianness (byte order) of the data section.
 ** Bits 1..31 are reserved for future use and must be written as 0 rn.
 */
 #define MAG_SNAP_AUX_BIG_ENDIAN ((uint32_t)1<<0)
