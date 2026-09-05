@@ -1,7 +1,7 @@
 on:
   workflow_dispatch:       # allow running the workflow manually   
   schedule:
-    - cron: "15 21 * * *"  # minute, hour, day (1-31), month (1-12), day of the week (0 - 6 or SUN-SAT)
+    - cron: "01 21 * * *"  # minute, hour, day (1-31), month (1-12), day of the week (0 - 6 or SUN-SAT)
 
 name: Close inactive issues
 jobs:
@@ -11,7 +11,7 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/stale@v10
+      - uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10.4.0
         with:
           days-before-issue-stale: 360
           days-before-issue-close: 14
