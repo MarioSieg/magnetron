@@ -66,8 +66,6 @@ mag_status_t mag_snapshot_stream_writer_open(
     return mag_set_error(err, MAG_ERR_PARAM, "snapshot: file '%s' must have a '.mag' extension.", filepath);
   if (mag_unlikely(meta_len && !meta_document))
     return mag_set_error(err, MAG_ERR_PARAM, "snapshot: metadata length is %" PRIu64 " but the pointer is NULL.", meta_len);
-  if (mag_unlikely(meta_len > MAG_SNAP_META_LIM))
-    return mag_set_error(err, MAG_ERR_PARAM, "snapshot: metadata too large, size is %" PRIu64 " bytes (maximum is %" PRIu64 ").", meta_len, (uint64_t)MAG_SNAP_META_LIM);
   if (mag_unlikely(meta_len && !mag_snap_verify_meta_document(meta_document, meta_len)))
     return mag_set_error(err, MAG_ERR_PARAM, "snapshot: metadata must be NUL-free UTF-8.");
   if (mag_unlikely(!blob_len || blob_len > (uint64_t)INT64_MAX))

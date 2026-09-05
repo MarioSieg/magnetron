@@ -36,9 +36,8 @@ bool mag_snap_within_region(uint64_t off, uint64_t len, uint64_t fs) {
 }
 
 bool mag_snap_verify_meta_document(const char *meta, uint64_t len) {
-  return len <= MAG_SNAP_META_LIM && !memchr(meta, 0, len) && mag_utf8_validate((const uint8_t *)meta, len);
+  return !memchr(meta, 0, len) && mag_utf8_validate((const uint8_t *)meta, len);
 }
-
 
 struct mag_snapshot_stream_reader_t {
   MAG_RC_INJECT_HEADER; /* RC control block must be first */

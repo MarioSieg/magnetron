@@ -22,7 +22,6 @@ extern "C" {
 
 #define MAG_SNAP_FILE_BLOB_ALIGN 0x1000   /* Page + O_DIRECT + GDS */
 #define MAG_SNAP_TENSOR_BLOB_ALIGN 0x1000 /* Page + O_DIRECT + GDS aswell */
-#define MAG_SNAP_META_LIM (32<<20) /* 32 MiB should be enough the fucks sake */
 #define mag_snap_quad_pack(a,b,c,d) ((((d)&255)<<24)+(((c)&255)<<16)+(((b)&255)<<8)+((a)&255))
 #define MAG_SNAP_FILE_MAGIC mag_snap_quad_pack('M','A','G','!')
 mag_static_assert(MAG_SNAP_TENSOR_BLOB_ALIGN >= MAG_CPU_BUF_ALIGN);

@@ -120,6 +120,14 @@ def _load_one(entry: _TensorPlan, torch_dtype: torch.dtype, mag_dtype: dtype.DTy
     return out
 
 
+def _load_tokenizer_json(repo_dir: str) -> str | None:
+    tokenizer_path = os.path.join(repo_dir, 'tokenizer.json')
+    if not os.path.exists(tokenizer_path):
+        return None
+    with open(tokenizer_path, encoding='utf-8') as f:
+        return f.read()
+
+
 def _load_hf_config(repo_dir: str) -> dict:
     config_path = os.path.join(repo_dir, 'config.json')
     if not os.path.exists(config_path):
@@ -136,6 +144,7 @@ def _write_model_card(
     mag_dtype: dtype.DType,
     cfg: dict,
     tensor_rows: list[tuple[str, tuple[int, ...], str]],
+    has_tokenizer: bool,
 ) -> None:
     tensor_rows = sorted(tensor_rows, key=lambda x: x[0])
     model_name = repo.split('/')[-1]
@@ -148,7 +157,8 @@ def _write_model_card(
         f.write(f'- **Source model:** `{repo}`\n')
         f.write(f'- **Snapshot file:** `{snap_file}`\n')
         f.write(f'- **Magnetron dtype mode:** `{mag_dtype.short_name}`\n')
-        f.write(f'- **Tensor count:** `{len(tensor_rows)}`\n\n')
+        f.write(f'- **Tensor count:** `{len(tensor_rows)}`\n')
+        f.write(f'- **Tokenizer:** {"embedded in the snapshot metadata" if has_tokenizer else "not included, bring your own"}\n\n')
         f.write('## Qwen3 configuration\n\n')
         f.write('| Field | Value |\n')
         f.write('|---|---:|\n')
@@ -173,6 +183,7 @@ def _print_stats(
     snap: SnapshotWriter,
     source_numbytes: int,
     elapsed: float,
+    tokenizer_numbytes: int,
 ) -> None:
     """Everything the file is made of, measured on the file itself, not estimated."""
     file_numbytes = os.path.getsize(snap_file)
@@ -181,6 +192,7 @@ def _print_stats(
     meta = snap.metadata_numbytes
     padding = blob-payload  # Inter tensor alignment
     container = file_numbytes-blob-meta  # Header plus the pad that puts the data section on a page
+    tokenizer_note = f' (incl. {_fmt_bytes(tokenizer_numbytes)} tokenizer)' if tokenizer_numbytes else ' (no tokenizer)'
     table = Table(title=snap_file, title_style='bold', show_header=False, box=None, pad_edge=False)
     table.add_column(style='dim')
     table.add_column(justify='right')
@@ -190,7 +202,7 @@ def _print_stats(
     table.add_row('Payload', _fmt_bytes(payload))
     table.add_row('Alignment padding', f'{_fmt_bytes(padding)} ({padding/blob:.3%})')
     table.add_row('Data section', _fmt_bytes(blob))
-    table.add_row('Metadata', _fmt_bytes(meta))
+    table.add_row('Metadata', f'{_fmt_bytes(meta)}{tokenizer_note}')
     table.add_row('Container overhead', _fmt_bytes(container))
     table.add_row('File size', _fmt_bytes(file_numbytes))
     table.add_row('Source shards', f'{_fmt_bytes(source_numbytes)} ({file_numbytes/source_numbytes:.2f}x)')
@@ -211,6 +223,9 @@ def _convert_model(
     console.print(f'Downloading model {repo} from Hugging Face...', style='dim')
     repo_dir = snapshot_download(repo_id=repo)
     hf_config = _load_hf_config(repo_dir)
+    tokenizer_json = _load_tokenizer_json(repo_dir)
+    if tokenizer_json is None:
+        console.print(f'{repo} ships no tokenizer.json, the snapshot will need one from elsewhere', style='yellow')
 
     plan = _plan_tensors(repo_dir)
     total_bytes = sum(entry.numbytes(mag_dtype) for entry in plan)
@@ -225,6 +240,8 @@ def _convert_model(
         'dtype': mag_dtype.name,
         'hf_config': hf_config,
     }
+    if tokenizer_json is not None:
+        metadata['tokenizer_json'] = tokenizer_json
     start = time.perf_counter()
     with SnapshotWriter(snap_file, metadata) as snap:
         for entry in plan:
@@ -253,6 +270,7 @@ def _convert_model(
             mag_dtype=mag_dtype,
             cfg=hf_config,
             tensor_rows=[(entry.mag_key, entry.shape, mag_dtype.short_name) for entry in plan],
+            has_tokenizer=tokenizer_json is not None,
         )
         console.print(f'Model card saved to {model_card_path}', style='dim')
     _print_stats(
@@ -262,6 +280,7 @@ def _convert_model(
         snap=snap,
         source_numbytes=source_numbytes,
         elapsed=elapsed,
+        tokenizer_numbytes=len(tokenizer_json.encode('utf-8')) if tokenizer_json else 0,
     )
 
 

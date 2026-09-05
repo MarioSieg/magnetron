@@ -255,13 +255,14 @@ class Qwen3Model(nn.Module):
         cos_cache, sin_cache = _precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.cos_cache = cos_cache
         self.sin_cache = sin_cache
+        self.snapshot_metadata: dict[str, Any] = {}
         self.cache = self._alloc_kv_cache()
 
     def _alloc_kv_cache(self) -> KVCache:
         return KVCache(self.cfg)
 
     def _load_from_snapshot(self, snapshot_file: str) -> None:
-        tensors, _ = deserialize(snapshot_file)
+        tensors, self.snapshot_metadata = deserialize(snapshot_file)
         device: str = context.get_default_device()
         for name, param in self.named_parameters():
             tensor = tensors.get(name)

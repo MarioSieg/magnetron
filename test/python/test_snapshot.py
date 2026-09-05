@@ -98,6 +98,15 @@ def test_mmap_load_shares_the_file_and_copy_does_not(tmp_path: Path) -> None:
     assert fresh['t'].tolist() == [0.0, 1.0, 2.0, 3.0], 'the copy must not write through to the file'
 
 
+def test_large_text_metadata_survives_byte_identical(tmp_path: Path) -> None:
+    tricky = 'quote " backslash \\ newline \n accent \u00e9 kanji \u6f22'
+    blob = json.dumps({'vocab': {f'tok{i}': i for i in range(70_000)}, 'tricky': tricky})
+    assert len(blob) > (1 << 20)
+    _, got = deserialize(_write(tmp_path / 'bigmeta.mag', {'t': _sample(dtype.float32, 4)}, {'tokenizer_json': blob}))
+    assert got['tokenizer_json'] == blob
+    assert json.loads(got['tokenizer_json'])['tricky'] == tricky
+
+
 def test_borrowed_tensor_outlives_the_reader(tmp_path: Path) -> None:
     path = _write(tmp_path / 'life.mag', {'a': _sample(dtype.float32, 4), 'b': _sample(dtype.float32, 4)})
     tensors, _ = deserialize(path)
