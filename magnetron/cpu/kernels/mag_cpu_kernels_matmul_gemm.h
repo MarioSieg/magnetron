@@ -9,7 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#define mag_gemm_align_up(x) (((x)+(MAG_MM_SCRATCH_ALIGN-1))&~(size_t)(MAG_MM_SCRATCH_ALIGN-1))
+#define mag_gemm_align_up(x) mag_align_up(x, MAG_MM_SCRATCH_ALIGN)
 
 #if defined(__AVX512F__)
   #define MAG_GEMM_MR 8
@@ -108,7 +108,7 @@ typedef void (mag_gemm_pack_a_t)(float *restrict ap, const void *px, int64_t mc,
   static MAG_HOTPROC void mag_gemm_pack_a_##T(float *restrict ap, const void *px, int64_t mc, int64_t kc, int64_t sx0, int64_t sx1) { \
     const T *x = (const T *)px; \
     for (int64_t q=0; q < mc; q += MAG_GEMM_MR) { \
-      int64_t mm = mag_xmin((int64_t)MAG_GEMM_MR, mc-q); \
+      int64_t mm = mag_vmin((int64_t)MAG_GEMM_MR, mc-q); \
       const T *src = x + q*sx0; \
       for (int64_t k=0; k < kc; ++k) { \
         int64_t i=0; \
@@ -129,7 +129,7 @@ typedef void (mag_gemm_pack_b_t)(float *restrict bp, const void *py, int64_t kc,
   static MAG_HOTPROC void mag_gemm_pack_b_##T(float *restrict bp, const void *py, int64_t kc, int64_t nc, int64_t sy0, int64_t sy1) { \
     const T *y = (const T *)py; \
     for (int64_t p=0; p < nc; p += MAG_GEMM_NR) { \
-      int64_t nn = mag_xmin((int64_t)MAG_GEMM_NR, nc-p); \
+      int64_t nn = mag_vmin((int64_t)MAG_GEMM_NR, nc-p); \
       const T *src = y + p*sy1; \
       for (int64_t k=0; k < kc; ++k) { \
         const T *row = src + k*sy0; \
@@ -311,13 +311,13 @@ static MAG_HOTPROC void mag_gemm_thin(
   const uint8_t *yb = py;
   uint8_t *rb = pr;
   for (int64_t i=m0; i < m1; i += MAG_GEMM_THIN_MR) {
-    int64_t md = mag_xmin((int64_t)MAG_GEMM_THIN_MR, m1-i);
+    int64_t md = mag_vmin((int64_t)MAG_GEMM_THIN_MR, m1-i);
     const void *arow = xb + i*sx0*el;
     void *rrow = rb + i*N*el;
     if (nt) {
       int64_t j = n0;
       for (; j < n1; j += MAG_GEMM_THIN_NRD) {
-        int64_t nn = mag_xmin((int64_t)MAG_GEMM_THIN_NRD, n1-j);
+        int64_t nn = mag_vmin((int64_t)MAG_GEMM_THIN_NRD, n1-j);
         (*lut_nt[dtype])(md, nn, K, (uint8_t *)rrow + j*el, N, arow, sx0, yb + j*sy1*el, sy1);
       }
     } else {
@@ -338,7 +338,7 @@ static MAG_HOTPROC void mag_gemm_pack_a_bf16_dp(mag_bfloat16_t *restrict ap, con
   mag_bfloat16_t zero = mag_float32_to_bfloat16(0.f);
   int64_t npairs = MAG_GEMM_BF16_NPAIRS(kc);
   for (int64_t q=0; q < mc; q += MAG_GEMM_MR) {
-    int64_t mm = mag_xmin((int64_t)MAG_GEMM_MR, mc-q);
+    int64_t mm = mag_vmin((int64_t)MAG_GEMM_MR, mc-q);
     const mag_bfloat16_t *src = x + q*sx0;
     for (int64_t kp=0; kp < npairs; ++kp) {
       int64_t k0 = 2*kp, k1 = k0+1;
@@ -355,7 +355,7 @@ static MAG_HOTPROC void mag_gemm_pack_b_bf16_dp(mag_bfloat16_t *restrict bp, con
   mag_bfloat16_t zero = mag_float32_to_bfloat16(0.f);
   int64_t npairs = MAG_GEMM_BF16_NPAIRS(kc);
   for (int64_t p=0; p < nc; p += MAG_GEMM_NR) {
-    int64_t nn = mag_xmin((int64_t)MAG_GEMM_NR, nc-p);
+    int64_t nn = mag_vmin((int64_t)MAG_GEMM_NR, nc-p);
     const mag_bfloat16_t *src = y + p*sy1;
     for (int64_t kp=0; kp < npairs; ++kp) {
       int64_t k0 = kp<<1, k1 = k0+1;
@@ -432,10 +432,10 @@ static MAG_HOTPROC void mag_gemm_packed_bf16_dp(
   const void *px, int64_t sx0, int64_t sx1,
   const void *py, int64_t sy0, int64_t sy1
 ) {
-  int64_t KC = mag_xmin((int64_t)MAG_GEMM_KC, K);
-  int64_t NC = mag_xmin((int64_t)MAG_GEMM_NC, n1-n0);
-  int64_t MB = mag_xmin((int64_t)MAG_GEMM_MB, m1-m0);
-  int64_t apad = (mag_xmin((int64_t)MAG_GEMM_MC, MB) + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
+  int64_t KC = mag_vmin((int64_t)MAG_GEMM_KC, K);
+  int64_t NC = mag_vmin((int64_t)MAG_GEMM_NC, n1-n0);
+  int64_t MB = mag_vmin((int64_t)MAG_GEMM_MB, m1-m0);
+  int64_t apad = (mag_vmin((int64_t)MAG_GEMM_MC, MB) + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
   int64_t ldc_max = (NC + MAG_GEMM_NR-1)/MAG_GEMM_NR*MAG_GEMM_NR;
   int64_t mb_max = (MB + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
   int64_t kcpair = MAG_GEMM_BF16_NPAIRS(KC);
@@ -451,17 +451,17 @@ static MAG_HOTPROC void mag_gemm_packed_bf16_dp(
   const mag_bfloat16_t *yb = py;
   mag_bfloat16_t *rb = pr;
   for (int64_t ib=m0; ib < m1; ib += MB) {
-    int64_t mbt = mag_xmin(MB, m1-ib);
+    int64_t mbt = mag_vmin(MB, m1-ib);
     for (int64_t jc=n0; jc < n1; jc += NC) {
-      int64_t nct = mag_xmin(NC, n1-jc);
+      int64_t nct = mag_vmin(NC, n1-jc);
       int64_t ldc = (nct + MAG_GEMM_NR-1)/MAG_GEMM_NR*MAG_GEMM_NR;
       memset(cc, 0, (size_t)((mbt + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR*ldc)*sizeof(*cc));
       for (int64_t pc=0; pc < K; pc += KC) {
-        int64_t kct = mag_xmin(KC, K-pc);
+        int64_t kct = mag_vmin(KC, K-pc);
         int64_t np = MAG_GEMM_BF16_NPAIRS(kct);
         mag_gemm_pack_b_bf16_dp(bp, yb + pc*sy0 + jc*sy1, kct, nct, sy0, sy1);
         for (int64_t ic=0; ic < mbt; ic += MAG_GEMM_MC) {
-          int64_t mct = mag_xmin((int64_t)MAG_GEMM_MC, mbt-ic);
+          int64_t mct = mag_vmin((int64_t)MAG_GEMM_MC, mbt-ic);
           mag_gemm_pack_a_bf16_dp(ap, xb + (ib+ic)*sx0 + pc*sx1, mct, kct, sx0, sx1);
           for (int64_t jr=0; jr < nct; jr += MAG_GEMM_NR) {
             const mag_bfloat16_t *bpp = bp + jr/MAG_GEMM_NR*np*MAG_GEMM_NR*2;
@@ -510,7 +510,7 @@ static MAG_HOTPROC void mag_matmul_gemm_impl(
     int64_t nchunk = (N + tc-1)/tc;
     nchunk = (nchunk + MAG_VF32_LANES-1)&~(MAG_VF32_LANES-1);
     int64_t n0 = ti*nchunk;
-    int64_t n1 = mag_xmin(N, n0+nchunk);
+    int64_t n1 = mag_vmin(N, n0+nchunk);
     if (mag_unlikely(n0 >= n1)) return;
     mag_gemm_thin(dtype, nt, 0, M, n0, n1, N, K, pr, px, sx0, py, sy0, sy1);
     return;
@@ -520,9 +520,9 @@ static MAG_HOTPROC void mag_matmul_gemm_impl(
   int64_t mchunk = (M + tm-1)/tm;
   int64_t nchunk = (N + tn-1)/tn;
   int64_t m0 = ti/tn*mchunk;
-  int64_t m1 = mag_xmin(M, m0+mchunk);
+  int64_t m1 = mag_vmin(M, m0+mchunk);
   int64_t n0 = ti%tn*nchunk;
-  int64_t n1 = mag_xmin(N, n0+nchunk);
+  int64_t n1 = mag_vmin(N, n0+nchunk);
   if (mag_unlikely(m0 >= m1 || n0 >= n1)) return;
 
   #if MAG_HAS_NATIVE_DPBF16
@@ -532,10 +532,10 @@ static MAG_HOTPROC void mag_matmul_gemm_impl(
     }
   #endif
   int64_t el = (int64_t)mag_type_trait(dtype)->size;
-  int64_t KC = mag_xmin((int64_t)MAG_GEMM_KC, K);
-  int64_t NC = mag_xmin((int64_t)MAG_GEMM_NC, n1-n0);
-  int64_t MB = mag_xmin((int64_t)MAG_GEMM_MB, m1-m0);
-  int64_t apad = (mag_xmin((int64_t)MAG_GEMM_MC, MB) + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
+  int64_t KC = mag_vmin((int64_t)MAG_GEMM_KC, K);
+  int64_t NC = mag_vmin((int64_t)MAG_GEMM_NC, n1-n0);
+  int64_t MB = mag_vmin((int64_t)MAG_GEMM_MB, m1-m0);
+  int64_t apad = (mag_vmin((int64_t)MAG_GEMM_MC, MB) + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
   int64_t ldc_max = (NC + MAG_GEMM_NR-1)/MAG_GEMM_NR*MAG_GEMM_NR;
   int64_t mb_max = (MB + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
   size_t ap_nb = mag_gemm_align_up((size_t)(apad*KC)*sizeof(float));
@@ -550,16 +550,16 @@ static MAG_HOTPROC void mag_matmul_gemm_impl(
   const uint8_t *yb = py;
   uint8_t *rb = pr;
   for (int64_t ib=m0; ib < m1; ib += MB) {
-    int64_t mbt = mag_xmin(MB, m1-ib);
+    int64_t mbt = mag_vmin(MB, m1-ib);
     for (int64_t jc=n0; jc < n1; jc += NC) {
-      int64_t nct = mag_xmin(NC, n1-jc);
+      int64_t nct = mag_vmin(NC, n1-jc);
       int64_t ldc = (nct + MAG_GEMM_NR-1)/MAG_GEMM_NR*MAG_GEMM_NR;
       memset(cc, 0, (size_t)((mbt + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR*ldc)*sizeof(*cc));
       for (int64_t pc=0; pc < K; pc += KC) {
-        int64_t kct = mag_xmin(KC, K-pc);
+        int64_t kct = mag_vmin(KC, K-pc);
         (*mag_gemm_lut_pack_b[dtype])(bp, yb + (pc*sy0 + jc*sy1)*el, kct, nct, sy0, sy1);
         for (int64_t ic=0; ic < mbt; ic += MAG_GEMM_MC) {
-          int64_t mct = mag_xmin((int64_t)MAG_GEMM_MC, mbt-ic);
+          int64_t mct = mag_vmin((int64_t)MAG_GEMM_MC, mbt-ic);
           (*mag_gemm_lut_pack_a[dtype])(ap, xb + ((ib+ic)*sx0 + pc*sx1)*el, mct, kct, sx0, sx1);
           for (int64_t jr=0; jr < nct; jr += MAG_GEMM_NR) {
             const float *bpp = bp + jr/MAG_GEMM_NR*kct*MAG_GEMM_NR;

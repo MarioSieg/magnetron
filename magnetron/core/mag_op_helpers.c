@@ -344,7 +344,7 @@ mag_status_t mag_matmul_verify_shapes(
   int64_t ky = y->meta.coords.rank == 1 ? *y->meta.coords.shape : y->meta.coords.rank == 2 && x->meta.coords.rank == 1 ? *y->meta.coords.shape : y->meta.coords.shape[y->meta.coords.rank-2];
   *xb = x->meta.coords.rank > 2 ? x->meta.coords.rank-2 : 0;
   *yb = y->meta.coords.rank > 2 ? y->meta.coords.rank-2 : 0;
-  *rb = mag_xmax(*xb, *yb);
+  *rb = mag_vmax(*xb, *yb);
   if (kx != ky) {
     char sx[MAG_FMT_DIM_BUF_SIZE];
     char sy[MAG_FMT_DIM_BUF_SIZE];

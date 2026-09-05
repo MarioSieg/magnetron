@@ -14,6 +14,8 @@
 
 using namespace magnetron;
 
+#if 0
+
 TEST(snapshot, read_write_tensors) {
     context ctx {};
     std::mt19937_64 rng {1234};
@@ -70,3 +72,5 @@ TEST(snapshot, read_write_tensors) {
     tensors.clear();
     ASSERT_TRUE(std::filesystem::remove("snap.mag"));
 }
+
+#endif

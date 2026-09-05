@@ -785,15 +785,15 @@ static MAG_AINLINE float mag_vf32_reduce_max(mag_vf32_t x) {
   #elif defined(__loongarch_asx)
     mag_alignas(32) float t[8];
     __lasx_xvst((__m256i)x, t, 0);
-    float a = mag_xmax(mag_xmax(t[0], t[1]), mag_xmax(t[2], t[3]));
-    float b = mag_xmax(mag_xmax(t[4], t[5]), mag_xmax(t[6], t[7]));
-    return mag_xmax(a, b);
+    float a = mag_vmax(mag_vmax(t[0], t[1]), mag_vmax(t[2], t[3]));
+    float b = mag_vmax(mag_vmax(t[4], t[5]), mag_vmax(t[6], t[7]));
+    return mag_vmax(a, b);
   #elif defined(__loongarch_sx)
     mag_alignas(16) float t[4];
     __lsx_vst((__m128i)x, t, 0);
-    float a = mag_xmax(t[0], t[1]);
-    float b = mag_xmax(t[2], t[3]);
-    return mag_xmax(a, b);
+    float a = mag_vmax(t[0], t[1]);
+    float b = mag_vmax(t[2], t[3]);
+    return mag_vmax(a, b);
   #else
     return x;
   #endif

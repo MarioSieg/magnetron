@@ -85,7 +85,7 @@
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1)/tc; \
     int64_t oa = ti*chunk; \
-    int64_t ob = mag_xmin(oa + chunk, outer_count); \
+    int64_t ob = mag_vmin(oa + chunk, outer_count); \
     for (int64_t row=oa; row < ob; ++row) { \
       mag_scan_outer_offsets(row, x, r, dim, outer_rank, mult_outer, outer_to_full, off_x0, off_r0); \
       ACC_T acc = ZERO; \
@@ -129,7 +129,7 @@ mag_gen_stub_cusum(int64_t, int64, mag_cvt_nop, int64_t, 0, mag_cvt_nop)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1)/tc; \
     int64_t oa = ti*chunk; \
-    int64_t ob = mag_xmin(oa + chunk, outer_count); \
+    int64_t ob = mag_vmin(oa + chunk, outer_count); \
     for (int64_t row=oa; row < ob; ++row) { \
       mag_scan_outer_offsets(row, x, r, dim, outer_rank, mult_outer, outer_to_full, off_x0, off_r0); \
       ACC_T acc = ONE; \
@@ -176,7 +176,7 @@ mag_gen_stub_cuprod(int64_t, int64, mag_cvt_nop, int64_t, 1, mag_cvt_nop)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1) / tc; \
     int64_t oa = ti * chunk; \
-    int64_t ob = mag_xmin(oa + chunk, outer_count); \
+    int64_t ob = mag_vmin(oa + chunk, outer_count); \
     for (int64_t row=oa; row < ob; ++row) { \
       mag_scan_outer_offsets2(row, x, v, idx, dim, outer_rank, mult_outer, outer_to_full, off_x0, off_v0, off_i0); \
       T best = (T){0}; \

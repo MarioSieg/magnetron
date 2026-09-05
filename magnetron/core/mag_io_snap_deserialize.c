@@ -16,6 +16,18 @@ bool mag_snap_has_ext(const char *filename) {
   return dot && strcmp(dot, ".mag") == 0;
 }
 
+bool mag_snap_aux_is_host_endian(uint32_t aux) {
+  return (aux & MAG_SNAP_AUX_BIG_ENDIAN) == MAG_SNAP_AUX_HOST_ENDIAN;
+}
+
+bool mag_snap_aux_reserved_is_clear(uint32_t aux) {
+  return !(aux & MAG_SNAP_AUX_RESERVED_BITS);
+}
+
+bool mag_snap_aux_is_host_readable(uint32_t aux) {
+  return mag_snap_aux_reserved_is_clear(aux) && mag_snap_aux_is_host_endian(aux);
+}
+
 bool mag_snap_within_region(uint64_t off, uint64_t len, uint64_t fs) {
   return off <= fs && len <= fs-off;
 }

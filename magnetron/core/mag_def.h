@@ -554,17 +554,17 @@ extern MAG_EXPORT double mag_hpc_clock_elapsed_ms(uint64_t start);
 extern MAG_EXPORT uint64_t mag_cycles(void); /* Get current CPU cycles. */
 
 #define mag_swap(T, a, b) do { T tmp = (a); (a) = (b); (b) = tmp; } while (0)
-#define mag_xmax(x, y) (((x)>(y))?(x):(y))
-#define mag_xmin(x, y) (((x)<(y))?(x):(y))
-#define mag_rd_down(x,m) ((x)/(m) * (m))
-#define mag_xclamp(v, lo, hi) ((v) < (lo) ? (lo) : (v) > (hi) ? (hi) : (v))
+#define mag_vmax(x, y) (((x)>(y))?(x):(y))
+#define mag_vmin(x, y) (((x)<(y))?(x):(y))
+#define mag_vclamp(v, lo, hi) ((v)<(lo)?(lo):(v)>(hi)?(hi):(v))
+#define mag_align_up(x, al) (((x)+(al)-1)&-(al))
+#define mag_align_down(x, al) ((x)&-(al))
 
 #define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
 #define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
 #define MAG_INVSQRT2PI 0.398942280401432677939946059934381868475858631f
 #define MAG_SQRT2OVERPI 0.797884560802865355879892119868763736951717263f
 
-/* Increment pointer or buf_size with correct type alignment. */
 static inline void *mag_pincr(void **p, size_t sz, size_t align) {
   void *pp = (void *)(((uintptr_t)*p+align-1)&-align);
   *p = (void *)((uint8_t *)pp+sz);
@@ -656,6 +656,8 @@ extern MAG_EXPORT bool mag_utf8_validate(const uint8_t *str, size_t len);
 extern MAG_EXPORT char *mag_strdup(const char *s);
 extern MAG_EXPORT void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);
 extern MAG_EXPORT int mag_casecmp(const char *a, const char *b);
+extern MAG_EXPORT bool mag_fsync_stream(FILE *f);
+extern MAG_EXPORT bool mag_fsync_parent_dir(const char *path);
 
 #ifdef __cplusplus
 }

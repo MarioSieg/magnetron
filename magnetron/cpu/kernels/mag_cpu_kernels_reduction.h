@@ -25,7 +25,7 @@
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (numel + tc - 1)/tc; \
     int64_t oa = ti*chunk; \
-    int64_t ob = mag_xmin(oa + chunk, numel); \
+    int64_t ob = mag_vmin(oa + chunk, numel); \
     bool mag_contig = plan->rank == 1 && plan->red_strides[0] == 1; \
     for (int64_t oi=oa; oi < ob; ++oi) { \
       int64_t base = mag_reduce_plan_to_offset(plan, oi); \
@@ -72,7 +72,7 @@
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (numel + tc - 1)/tc; \
     int64_t oa = ti*chunk; \
-    int64_t ob = mag_xmin(oa + chunk, numel); \
+    int64_t ob = mag_vmin(oa + chunk, numel); \
     bool mag_contig = plan->rank == 1 && plan->red_strides[0] == 1; \
     for (int64_t oi=oa; oi < ob; ++oi) { \
       int64_t base = mag_reduce_plan_to_offset(plan, oi); \
@@ -150,25 +150,25 @@ mag_cpu_impl_reduce_axes(float, float, float32, minima, float, INFINITY, acc = f
 mag_cpu_impl_reduce_axes(mag_float16_t, mag_float16_t, float16, minima, float, INFINITY, acc = fminf(acc, mag_float16_to_float32(bx[roff]));, *o = mag_float32_to_float16(acc); )
 mag_cpu_impl_reduce_axes(mag_bfloat16_t, mag_bfloat16_t, bfloat16, minima, float, INFINITY, acc = fminf(acc, mag_bfloat16_to_float32(bx[roff]));, *o = mag_float32_to_bfloat16(acc); )
 mag_cpu_impl_reduce_axes(mag_float8_e4m3fn_t, mag_float8_e4m3fn_t, float8_e4m3fn, minima, float, INFINITY, acc = fminf(acc, mag_float8_e4m3fn_to_float32(bx[roff]));, *o = mag_float32_to_float8_e4m3fn(acc); )
-mag_cpu_impl_reduce_axes(uint8_t, uint8_t, uint8, minima, uint8_t, UINT8_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(int8_t, int8_t, int8, minima, int8_t, INT8_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(uint16_t, uint16_t, uint16, minima, uint16_t, UINT16_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(int16_t, int16_t, int16, minima, int16_t, INT16_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(uint32_t, uint32_t, uint32, minima, uint32_t, UINT32_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(int32_t, int32_t, int32, minima, int32_t, INT32_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(uint64_t, uint64_t, uint64, minima, uint64_t, UINT64_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(int64_t, int64_t, int64, minima, int64_t, INT64_MAX, acc = mag_xmin(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(uint8_t, uint8_t, uint8, minima, uint8_t, UINT8_MAX, acc = mag_vmin(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(int8_t, int8_t, int8, minima, int8_t, INT8_MAX, acc = mag_vmin(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(uint16_t, uint16_t, uint16, minima, uint16_t, UINT16_MAX, acc = mag_vmin(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(int16_t, int16_t, int16, minima, int16_t, INT16_MAX, acc = mag_vmin(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(uint32_t, uint32_t, uint32, minima, uint32_t, UINT32_MAX, acc = mag_vmin(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(int32_t, int32_t, int32, minima, int32_t, INT32_MAX, acc = mag_vmin(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(uint64_t, uint64_t, uint64, minima, uint64_t, UINT64_MAX, acc = mag_vmin(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(int64_t, int64_t, int64, minima, int64_t, INT64_MAX, acc = mag_vmin(acc, bx[roff]);, *o = acc; )
 
 /* float32/float16/bfloat16 maxima are SIMD-specialized above via mag_cpu_impl_reduce_hfp. */
 mag_cpu_impl_reduce_axes(mag_float8_e4m3fn_t, mag_float8_e4m3fn_t, float8_e4m3fn, maxima, float, -INFINITY, acc = fmaxf(acc, mag_float8_e4m3fn_to_float32(bx[roff]));, *o = mag_float32_to_float8_e4m3fn(acc); )
-mag_cpu_impl_reduce_axes(uint8_t, uint8_t, uint8, maxima, uint8_t, 0, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(int8_t, int8_t, int8, maxima, int8_t, INT8_MIN, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(uint16_t, uint16_t, uint16, maxima, uint16_t, 0, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(int16_t, int16_t, int16, maxima, int16_t, INT16_MIN, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(uint32_t, uint32_t, uint32, maxima, uint32_t, 0, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(int32_t, int32_t, int32, maxima, int32_t, INT32_MIN, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(uint64_t, uint64_t, uint64, maxima, uint64_t, 0, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
-mag_cpu_impl_reduce_axes(int64_t, int64_t, int64, maxima, int64_t, INT64_MIN, acc = mag_xmax(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(uint8_t, uint8_t, uint8, maxima, uint8_t, 0, acc = mag_vmax(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(int8_t, int8_t, int8, maxima, int8_t, INT8_MIN, acc = mag_vmax(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(uint16_t, uint16_t, uint16, maxima, uint16_t, 0, acc = mag_vmax(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(int16_t, int16_t, int16, maxima, int16_t, INT16_MIN, acc = mag_vmax(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(uint32_t, uint32_t, uint32, maxima, uint32_t, 0, acc = mag_vmax(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(int32_t, int32_t, int32, maxima, int32_t, INT32_MIN, acc = mag_vmax(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(uint64_t, uint64_t, uint64, maxima, uint64_t, 0, acc = mag_vmax(acc, bx[roff]);, *o = acc; )
+mag_cpu_impl_reduce_axes(int64_t, int64_t, int64, maxima, int64_t, INT64_MIN, acc = mag_vmax(acc, bx[roff]);, *o = acc; )
 
 typedef struct mag_argmax_acc_f32_t {
   float val;
@@ -397,7 +397,7 @@ mag_cpu_impl_argminmax_int(int64_t,  int64);
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (numel + tc - 1)/tc; \
     int64_t oa = ti*chunk; \
-    int64_t ob = mag_xmin(oa + chunk, numel); \
+    int64_t ob = mag_vmin(oa + chunk, numel); \
     for (int64_t oi=oa; oi < ob; ++oi) { \
       uint8_t acc = (IDENTITY); \
       if (red_prod == 0) { \

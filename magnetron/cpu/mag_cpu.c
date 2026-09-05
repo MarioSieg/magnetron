@@ -212,7 +212,7 @@ static void mag_cpu_release_interface(mag_device_t *ctx) {
 
 static mag_status_t mag_cpu_init(mag_error_t *err, mag_backend_t *self, mag_context_t *ctx) {
   mag_assert2(!self->impl);
-  uint32_t hwc = mag_xmax(1, ctx->machine.cpu_virtual_cores);
+  uint32_t hwc = mag_vmax(1, ctx->machine.cpu_virtual_cores);
   uint32_t nt = ctx->machine.cpu_virtual_cores;
   nt = nt ? nt : hwc;
   return mag_cpu_init_interface(err, (mag_device_t **)&self->impl, ctx, nt);

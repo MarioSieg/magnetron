@@ -519,7 +519,7 @@ static MAG_HOTPROC mag_status_t mag_cast_generic(mag_error_t *err, const mag_ker
   int64_t ti = payload->thread_idx;
   int64_t chunk = (total + tc - 1)/tc;
   int64_t ra = ti*chunk;
-  int64_t rb = mag_xmin(ra + chunk, total);
+  int64_t rb = mag_vmin(ra + chunk, total);
   if (mag_unlikely(rb <= ra)) return MAG_OK;
   if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { /* TODO: can be relaxed to non-shape equality */
     void *pr = br + ra*nbd;

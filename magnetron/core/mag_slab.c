@@ -47,9 +47,9 @@ static mag_slab_chunk_t *mag_fixed_pool_chunk_new(size_t block_size, size_t bloc
 bool mag_slab_init(mag_slab_alloc_t *pool, size_t block_size, size_t block_align, size_t blocks_per_chunk) {
   mag_assert2(pool);
   mag_assert2(blocks_per_chunk);
-  block_align = mag_xmax(block_align, __alignof(void *));
+  block_align = mag_vmax(block_align, __alignof(void *));
   mag_assert2(block_align && !((block_align & (block_align-1))));
-  block_size = mag_xmax(block_size, sizeof(void *));
+  block_size = mag_vmax(block_size, sizeof(void *));
   block_size = (block_size + (block_align-1)) & ~(block_align-1);
   mag_slab_chunk_t *chunk = mag_fixed_pool_chunk_new(block_size, block_align, blocks_per_chunk);
   if (mag_unlikely(!chunk)) { memset(pool, 0, sizeof(*pool)); return false; } /* OOM. */

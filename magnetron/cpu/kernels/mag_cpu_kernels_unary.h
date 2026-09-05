@@ -17,7 +17,7 @@
       for (int64_t i=ra; i < rb; ) { \
         int64_t o = i/plan.inner; \
         int64_t j = i - o*plan.inner; \
-        int64_t run = mag_xmin(plan.inner-j, rb-i); \
+        int64_t run = mag_vmin(plan.inner-j, rb-i); \
         int64_t rbo, xbo; \
         mag_unary_vectorization_plan_step(&plan, o, &rbo, &xbo); \
         const T *px = bx + xbo + j; \
@@ -50,7 +50,7 @@
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk, total); \
+    int64_t rb = mag_vmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
       memcpy(br+ra, bx+ra, (rb-ra)*sizeof(T)); \
@@ -248,7 +248,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk, total); \
+    int64_t rb = mag_vmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
       for (int64_t i=ra; i < rb; ++i) \
@@ -279,7 +279,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk, total); \
+    int64_t rb = mag_vmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
       int64_t i = ra; \
@@ -416,7 +416,7 @@ mag_gen_int_unary(sqr)
     int64_t ti = payload->thread_idx; \
     int64_t rpt = (rows + tc - 1) / tc; \
     int64_t ra = ti * rpt; \
-    int64_t rb = mag_xmin(ra + rpt, rows); \
+    int64_t rb = mag_vmin(ra + rpt, rows); \
     for (int64_t ri = ra; ri < rb; ++ri) { \
       const T *row_in = bx + ri * last_dim; \
       T *row_out = br + ri * last_dim; \
@@ -427,7 +427,7 @@ mag_gen_int_unary(sqr)
       } \
       float max_val = mag_vf32_reduce_max(vmax); \
       for (; i < last_dim; ++i) { \
-        max_val = mag_xmax(max_val, TO_F32(row_in[i])); \
+        max_val = mag_vmax(max_val, TO_F32(row_in[i])); \
       } \
       i=0; \
       mag_vf32_t vsum = mag_vf32_zero(); \
@@ -523,7 +523,7 @@ mag_gen_softmax_simd(
     int64_t ti = payload->thread_idx; \
     int64_t rpt = (rows+tc-1)/tc; \
     int64_t ra = ti*rpt; \
-    int64_t rb = mag_xmin(ra+rpt, rows); \
+    int64_t rb = mag_vmin(ra+rpt, rows); \
     mag_vf32_t vone = mag_vf32_splat(1.0f); \
     for (int64_t ri=ra; ri < rb; ++ri) { \
       T *row = br + ri*last_dim; \

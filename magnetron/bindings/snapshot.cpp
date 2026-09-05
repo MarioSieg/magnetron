@@ -11,11 +11,9 @@
 
 #include "prelude.hpp"
 
-namespace mag::bindings {
-  [[nodiscard]] static bool ends_with(std::string_view s, std::string_view suffix) {
-    return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-  }
+#include <core/mag_io_snapshot_layout.h>
 
+namespace mag::bindings {
   class snapshot_stream_writer final {
   public:
     snapshot_stream_writer(const std::string &filename, const std::string & meta, uint64_t data_len) {
@@ -77,8 +75,13 @@ namespace mag::bindings {
   };
 
   void init_bindings_snapshot(nb::module_ &m) {
+    m.attr("_SNAPSHOT_TBLOB_ALIGN") = static_cast<uint64_t>(MAG_SNAP_TENSOR_BLOB_ALIGN);
     nb::class_<snapshot_stream_writer>(m, "SnapshotStreamWriter")
-      .def(nb::init<const std::string &, const std::string &, uint64_t>(), "filename"_a, "meta"_a, "data_len"_a)
+      .def("__init__", [](snapshot_stream_writer *self, const std::string &filename, const std::string &meta, uint64_t data_len) -> void {
+        nb::gil_scoped_release nogil;
+        std::lock_guard lock {get_global_mutex()};
+        new (self) snapshot_stream_writer {filename, meta, data_len};
+      }, "filename"_a, "meta"_a, "data_len"_a)
       .def_prop_ro("is_open", &snapshot_stream_writer::is_open)
       .def("write", [](snapshot_stream_writer &self, nb::object chunk) -> void {
           Py_buffer view {};
@@ -87,22 +90,28 @@ namespace mag::bindings {
           on_scope_exit release([&]() -> void {
             PyBuffer_Release(&view);
           });
+          nb::gil_scoped_release nogil {};
           std::lock_guard lock {get_global_mutex()};
-          self.write(view.buf, static_cast<std::uint64_t>(view.len));
+          self.write(view.buf, static_cast<uint64_t>(view.len));
       }, "chunk"_a)
       .def(
         "write_tensor",
         [](snapshot_stream_writer &self, const tensor_wrapper &tensor) -> void {
           if (!mag_tensor_is_contiguous(*tensor)) throw nb::value_error("tensor must be contiguous");
           if (!mag_tensor_is_cpu(*tensor)) throw nb::value_error("tensor must reside on CPU");
+          const void *data = reinterpret_cast<const void *>(mag_tensor_data_ptr(*tensor));
+          auto nbytes = static_cast<uint64_t>(mag_tensor_numbytes(*tensor));
+          nb::gil_scoped_release nogil {};
           std::lock_guard lock {get_global_mutex()};
-          self.write(reinterpret_cast<const void *>(mag_tensor_data_ptr(*tensor)), mag_tensor_numbytes(*tensor));
+          self.write(data, nbytes);
       }, "tensor"_a)
       .def("close", [](snapshot_stream_writer &self) -> void {
+        nb::gil_scoped_release nogil {};
         std::lock_guard lock {get_global_mutex()};
         self.close();
       })
       .def("abort", [](snapshot_stream_writer &self) -> void {
+        nb::gil_scoped_release nogil {};
         std::lock_guard lock {get_global_mutex()};
         self.abort();
       })
@@ -111,9 +120,11 @@ namespace mag::bindings {
         return self;
       }, nb::rv_policy::reference_internal)
       .def("__exit__", [](snapshot_stream_writer &self, nb::handle exc_type, nb::handle, nb::handle) -> bool {
+        bool has_exc = !exc_type.is_none();
+        nb::gil_scoped_release nogil {};
         std::lock_guard lock {get_global_mutex()};
-        if (exc_type.is_none()) self.close();
-        else self.abort();
+        if (has_exc) self.abort();
+        else self.close();
         return false;
       }, "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none());
   }

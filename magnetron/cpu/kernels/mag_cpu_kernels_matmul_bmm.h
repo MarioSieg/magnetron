@@ -49,7 +49,7 @@ static MAG_HOTPROC void mag_matmul_bmm_dot(const mag_kernel_payload_t *payload) 
   int64_t tc = payload->thread_num;
   int64_t chunk = (batch_tot+tc-1)/tc;
   int64_t start = ti*chunk;
-  int64_t end = mag_xmin(batch_tot, start+chunk);
+  int64_t end = mag_vmin(batch_tot, start+chunk);
   if (mag_unlikely(start >= end)) return;
   int64_t el = (int64_t)mag_type_trait(r->meta.dtype)->size;
   uint8_t *pr = (uint8_t *)mag_tensor_data_ptr_mut(r);
@@ -88,7 +88,7 @@ static MAG_HOTPROC void mag_matmul_bmm_vec_mat(const mag_kernel_payload_t *paylo
   int64_t cols_tot = batch_tot*N;
   int64_t chunk = (cols_tot+tc-1)/tc;
   int64_t start = ti*chunk;
-  int64_t end = mag_xmin(cols_tot, start+chunk);
+  int64_t end = mag_vmin(cols_tot, start+chunk);
   if (mag_unlikely(start >= end)) return;
   int64_t el = (int64_t)mag_type_trait(r->meta.dtype)->size;
   uint8_t *pr = (uint8_t *)mag_tensor_data_ptr_mut(r);
@@ -97,7 +97,7 @@ static MAG_HOTPROC void mag_matmul_bmm_vec_mat(const mag_kernel_payload_t *paylo
   for (int64_t i=start; i < end;) {
     int64_t batch = i/N;
     int64_t n0 = i%N;
-    int64_t Nt = mag_xmin(N-n0, end-i);
+    int64_t Nt = mag_vmin(N-n0, end-i);
     int64_t idx[MAG_MAX_DIMS];
     mag_bmm_compute_result_idx(br, batch, &idx, &r->meta.coords);
     int64_t mox = mag_bmm_flattened_batch_offset(br, bx, &idx, &x->meta.coords);
@@ -131,7 +131,7 @@ static MAG_HOTPROC void mag_matmul_bmm_mat_vec(const mag_kernel_payload_t *paylo
   int64_t rows_tot = batch_tot*M;
   int64_t chunk = (rows_tot+tc-1)/tc;
   int64_t start = ti*chunk;
-  int64_t end = mag_xmin(rows_tot, start+chunk);
+  int64_t end = mag_vmin(rows_tot, start+chunk);
   if (mag_unlikely(start >= end)) return;
   int64_t el = (int64_t)mag_type_trait(r->meta.dtype)->size;
   uint8_t *pr = (uint8_t *)mag_tensor_data_ptr_mut(r);
@@ -140,7 +140,7 @@ static MAG_HOTPROC void mag_matmul_bmm_mat_vec(const mag_kernel_payload_t *paylo
   for (int64_t i=start; i < end;) {
     int64_t batch = i/M;
     int64_t m0 = i%M;
-    int64_t Mt = mag_xmin(M-m0, end-i);
+    int64_t Mt = mag_vmin(M-m0, end-i);
     int64_t idx[MAG_MAX_DIMS];
     mag_bmm_compute_result_idx(br, batch, &idx, &r->meta.coords);
     int64_t mox = mag_bmm_flattened_batch_offset(br, bx, &idx, &x->meta.coords);
@@ -177,7 +177,7 @@ static MAG_HOTPROC void mag_matmul_bmm_gemm(const mag_kernel_payload_t *payload)
   int64_t tc = payload->thread_num;
   int64_t chunk = (rows_tot+tc-1)/tc;
   int64_t start = ti*chunk;
-  int64_t end = mag_xmin(rows_tot, start+chunk);
+  int64_t end = mag_vmin(rows_tot, start+chunk);
   if (mag_unlikely(start >= end)) return;
   int64_t el = (int64_t)mag_type_trait(r->meta.dtype)->size;
   uint8_t *pr = (uint8_t *)mag_tensor_data_ptr_mut(r);
@@ -186,7 +186,7 @@ static MAG_HOTPROC void mag_matmul_bmm_gemm(const mag_kernel_payload_t *payload)
   for (int64_t i=start; i < end;) {
     int64_t batch = i/M;
     int64_t i0 = i%M;
-    int64_t Mt = mag_xmin(M-i0, end-i);
+    int64_t Mt = mag_vmin(M-i0, end-i);
     int64_t idx[MAG_MAX_DIMS];
     mag_bmm_compute_result_idx(br, batch, &idx, &r->meta.coords);
     int64_t mox = mag_bmm_flattened_batch_offset(br, bx, &idx, &x->meta.coords);

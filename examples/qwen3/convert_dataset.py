@@ -8,17 +8,22 @@
 # +---------------------------------------------------------------------+
 
 import argparse
-import json
-import os
 import glob
 import gc
+import json
+import math
+import os
+from dataclasses import dataclass
 
-from magnetron import Snapshot, Tensor, dtype, context
-from model import Qwen3Model, Qwen3HyperParams
+from magnetron import Tensor, dtype
+from magnetron.snapshot import SnapshotWriter
 from huggingface_hub import snapshot_download
-from safetensors.torch import load_file
+from safetensors import safe_open
 
 import torch
+
+# HF tensors that are recomputed by the Magnetron model instead of being stored
+_SKIPPED_HF_KEYS: set[str] = {'rotary_emb.inv_freq'}
 
 
 def _mag_to_torch_dtype(mag_dtype: dtype.DType) -> torch.dtype:
@@ -53,16 +58,61 @@ def _iter_safetensor_shards(repo_dir: str) -> list[str]:
     raise FileNotFoundError('No safetensors weights found in repo snapshot.')
 
 
-def _quantize(x: Tensor) -> tuple[Tensor, Tensor]:
-    qtype = dtype.float8_e4m3fn
-    highp = x.cast(dtype.float32)
-    amax = float(highp.abs().max().item())
-    fp8max = qtype.max() if callable(qtype.max) else qtype.max
-    scale = 1.0 if amax < 1e-12 or not (amax == amax) else amax / fp8max
-    inv_scale = 1.0 / scale if scale != 0.0 else 1.0
-    q = (highp * inv_scale).clamp(-fp8max, fp8max).cast(qtype)
-    del highp
-    return q, Tensor([scale], dtype=dtype.float32)
+def _mag_key_for(hf_key: str) -> str:
+    return hf_key[len('model.') :] if hf_key.startswith('model.') else hf_key
+
+
+@dataclass(frozen=True, slots=True)
+class _TensorPlan:
+    shard: str
+    hf_key: str
+    mag_key: str
+    shape: tuple[int, ...]
+
+    def numbytes(self, mag_dtype: dtype.DType) -> int:
+        return math.prod(self.shape) * mag_dtype.size
+
+
+def _plan_tensors(repo_dir: str) -> list[_TensorPlan]:
+    plan: list[_TensorPlan] = []
+    seen: dict[str, str] = {}
+    for shard in _iter_safetensor_shards(repo_dir):
+        with safe_open(shard, framework='pt') as f:
+            for hf_key in sorted(f.keys()):
+                if any(hf_key.endswith(skip) for skip in _SKIPPED_HF_KEYS):
+                    continue
+                mag_key = _mag_key_for(hf_key)
+                if mag_key in seen:
+                    raise KeyError(f'{mag_key} appears in both {os.path.basename(seen[mag_key])} and {os.path.basename(shard)}')
+                seen[mag_key] = shard
+                plan.append(
+                    _TensorPlan(
+                        shard=shard,
+                        hf_key=hf_key,
+                        mag_key=mag_key,
+                        shape=tuple(f.get_slice(hf_key).get_shape()),
+                    )
+                )
+    if not plan:
+        raise RuntimeError('No convertible tensors found in the safetensors shards.')
+    return plan
+
+
+def _load_one(entry: _TensorPlan, torch_dtype: torch.dtype, mag_dtype: dtype.DType) -> Tensor:
+    with safe_open(entry.shard, framework='pt') as f:
+        src = f.get_tensor(entry.hf_key)
+        src = src.to(torch_dtype).contiguous()  # No copy when the dtype already matches
+        out = Tensor(src, dtype=mag_dtype)
+    del src
+    return out
+
+
+def _load_hf_config(repo_dir: str) -> dict:
+    config_path = os.path.join(repo_dir, 'config.json')
+    if not os.path.exists(config_path):
+        return {}
+    with open(config_path, encoding='utf-8') as f:
+        return json.load(f)
 
 
 def _write_model_card(
@@ -71,7 +121,7 @@ def _write_model_card(
     repo: str,
     snap_file: str,
     mag_dtype: dtype.DType,
-    cfg: Qwen3HyperParams,
+    cfg: dict,
     tensor_rows: list[tuple[str, tuple[int, ...], str]],
 ) -> None:
     tensor_rows = sorted(tensor_rows, key=lambda x: x[0])
@@ -89,7 +139,9 @@ def _write_model_card(
         f.write('## Qwen3 configuration\n\n')
         f.write('| Field | Value |\n')
         f.write('|---|---:|\n')
-        for k, v in vars(cfg).items():
+        for k, v in cfg.items():
+            if isinstance(v, (dict, list)):
+                continue
             f.write(f'| `{k}` | `{v}` |\n')
         f.write('\n')
         f.write('## Tensor manifest\n\n')
@@ -108,73 +160,42 @@ def _convert_model(
     write_model_card: bool = False,
     model_card_path: str = 'model_card.md',
 ) -> None:
-    skip: set[str] = {'cos_cache', 'sin_cache'}
     print(f'Downloading model {repo} from Hugging Face...')
     repo_dir = snapshot_download(repo_id=repo)
-    cfg = Qwen3HyperParams()
-    context.set_default_dtype(mag_dtype)
-    cfg.quant_dtype = None
-    mag_model = Qwen3Model(cfg)
-    mag_model = mag_model.cast(mag_dtype)
-    sd_mag: dict[str, Tensor] = mag_model.state_dict()
-    remaining = dict(sd_mag)
-    for k in list(remaining.keys()):
-        if k in skip:
-            remaining.pop(k)
+    hf_config = _load_hf_config(repo_dir)
 
-    def hf_key_for(mag_key: str) -> str:
-        if mag_key == 'lm_head.weight' and getattr(cfg, 'tie_word_embeddings', False):
-            return 'model.embed_tokens.weight'
-        if mag_key.startswith('lm_head.'):
-            return mag_key
-        return 'model.' + mag_key
-
-    snap_file: str = f'{repo.split("/")[1].lower()}-{mag_dtype.short_name}.mag'
-    tensor_manifest: list[tuple[str, tuple[int, ...], str]] = []
-    print(f'Writing snapshot to {snap_file}...')
-    with Snapshot.write(snap_file) as snap:
-        for shard_path in _iter_safetensor_shards(repo_dir):
-            hf_state_dict: dict[str, torch.Tensor] = load_file(shard_path, device='cpu')
-            processed_stack: list[str] = []
-            for key in list(remaining.keys()):
-                if key not in remaining:
-                    continue
-                hf_key: str = hf_key_for(key)
-                torch_tensor: torch.Tensor | None = hf_state_dict.get(hf_key)
-                if torch_tensor is None:
-                    continue
-                target_tensor = remaining[key]
-                target_dtype = target_tensor.dtype
-                print(f'Converting {hf_key} -> {key} shape={tuple(torch_tensor.shape)} dtype={target_dtype.short_name}')
-                out_tensor = Tensor(torch_tensor.to(torch_dtype).to('cpu').contiguous(), dtype=target_dtype)
-                snap.put_tensor(key, out_tensor)
-                tensor_manifest.append((key, tuple(out_tensor.shape), out_tensor.dtype.short_name))
-                processed_stack.append(key)
-                del out_tensor
-                gc.collect()
-            for k in processed_stack:
-                remaining.pop(k, None)
-            del hf_state_dict
+    plan = _plan_tensors(repo_dir)
+    total_bytes = sum(entry.numbytes(mag_dtype) for entry in plan)
+    snap_file: str = f'{repo.split("/")[-1].lower()}-{mag_dtype.short_name}.mag'
+    print(f'Writing snapshot to {snap_file}: {len(plan)} tensors, {total_bytes / (1 << 30):.2f} GiB of payload')
+    metadata = {
+        'source_repo': repo,
+        'source_format': 'safetensors',
+        'architecture': hf_config.get('model_type', 'qwen3'),
+        'dtype': mag_dtype.name,
+        'hf_config': hf_config,
+    }
+    written_bytes: int = 0
+    with SnapshotWriter(snap_file, metadata) as snap:
+        for entry in plan:
+            snap.declare(entry.mag_key, entry.shape, mag_dtype)
+        for entry in plan:
+            written_bytes += entry.numbytes(mag_dtype)
+            print(
+                f'[{written_bytes / total_bytes:6.1%}] {entry.hf_key} -> {entry.mag_key} '
+                f'shape={entry.shape} dtype={mag_dtype.short_name}'
+            )
+            snap.write(entry.mag_key, lambda entry=entry: _load_one(entry, torch_dtype, mag_dtype))
             gc.collect()
-        if remaining:
-            for key, tensor in list(remaining.items()):
-                if key.endswith('.bias'):
-                    print(f'Missing HF bias for {key}; writing zeros')
-                    tensor.zeros_()
-                    snap.put_tensor(key, tensor)
-                    tensor_manifest.append((key, tuple(tensor.shape), tensor.dtype.short_name))
-                    remaining.pop(key)
-                else:
-                    raise KeyError(f'Missing HF weight for magnetron key: {key}')
-        snap.print_info()
+
     if write_model_card:
         _write_model_card(
             model_card_path,
             repo=repo,
             snap_file=snap_file,
             mag_dtype=mag_dtype,
-            cfg=cfg,
-            tensor_rows=tensor_manifest,
+            cfg=hf_config,
+            tensor_rows=[(entry.mag_key, entry.shape, mag_dtype.short_name) for entry in plan],
         )
         print(f'Model card saved to {model_card_path}')
     print(f'Converted model saved to {snap_file}')

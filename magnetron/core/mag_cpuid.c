@@ -181,8 +181,8 @@ static void mag_probe_cpu_core_topology(mag_amd64_cap_bitset_t caps, uint32_t (*
         if (level == MAG_CPU_TOPO_STMT || level == MAG_CPU_TOPO_CORE)
           (*num_cores)[level-1] = mag_bextract(id[1], 0, 15);
       }
-      (*num_cores)[MAG_CPU_TOPO_STMT-1] = mag_xmax(1u, (*num_cores)[MAG_CPU_TOPO_STMT-1]);
-      (*num_cores)[MAG_CPU_TOPO_CORE-1] = mag_xmax((*num_cores)[MAG_CPU_TOPO_STMT-1], (*num_cores)[MAG_CPU_TOPO_CORE-1]);
+      (*num_cores)[MAG_CPU_TOPO_STMT-1] = mag_vmax(1u, (*num_cores)[MAG_CPU_TOPO_STMT-1]);
+      (*num_cores)[MAG_CPU_TOPO_CORE-1] = mag_vmax((*num_cores)[MAG_CPU_TOPO_STMT-1], (*num_cores)[MAG_CPU_TOPO_CORE-1]);
       return;
     }
   }
@@ -264,13 +264,13 @@ void mag_probe_cpu_cache_topology(mag_amd64_cap_bitset_t caps, size_t *ol1, size
         data_cache[levels] = line*partitions*ways;
         if (!assoc) data_cache[levels] *= sets;
         if (leaf > 0) {
-          sharing = mag_xmin(sharing, num_cores[1]);
-          sharing /= mag_xmax(1u, *shared_cache);
+          sharing = mag_vmin(sharing, num_cores[1]);
+          sharing /= mag_vmax(1u, *shared_cache);
         }
         shared_cache[levels] = sharing;
         ++levels;
       }
-      *shared_cache = mag_xmin(1u, *shared_cache);
+      *shared_cache = mag_vmin(1u, *shared_cache);
     } else if (*id >= 0x80000006) {
       levels = 1;
       mag_cpuid(&id, 0x80000005);
@@ -302,7 +302,7 @@ void mag_probe_cpu_cache_topology(mag_amd64_cap_bitset_t caps, size_t *ol1, size
       if (!type) break;
       if (type == 1 || type == 3) {
         uint32_t actual_logical_cores = mag_bextract(*id, 14, 25)+1;
-        if (logical_cores != 0) actual_logical_cores = mag_xmin(actual_logical_cores, logical_cores);
+        if (logical_cores != 0) actual_logical_cores = mag_vmin(actual_logical_cores, logical_cores);
         mag_assert2(actual_logical_cores);
         data_cache[levels] =
           (mag_bextract(id[1], 22, 31)+1)
@@ -311,7 +311,7 @@ void mag_probe_cpu_cache_topology(mag_amd64_cap_bitset_t caps, size_t *ol1, size
           * (id[2]+1);
         if (type == 1 && smt_width == 0) smt_width = actual_logical_cores;
         mag_assert2(smt_width != 0);
-        shared_cache[levels] = mag_xmax(actual_logical_cores / smt_width, 1u);
+        shared_cache[levels] = mag_vmax(actual_logical_cores / smt_width, 1u);
         ++levels;
       }
     }

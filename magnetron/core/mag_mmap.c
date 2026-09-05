@@ -67,7 +67,7 @@ static bool mag_mmap_preallocate_grow(
   #endif
 }
 
-static bool mag_mmap_strong_fsync(
+bool mag_mmap_strong_fsync(
   #ifdef _WIN32
     HANDLE hfile
   #else

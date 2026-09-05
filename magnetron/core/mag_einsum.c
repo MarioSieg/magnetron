@@ -212,7 +212,7 @@ static mag_status_t mag_ein_check_alnum_and_expand_ellipsis(
         "einsum: operand %zu with shape %s has too few dimensions for subscript '%s' (needs at least %zu, got %zu).",
         operand_idx, shape_fmt, subscript->buf, pre_count+post_count, (size_t)operand->meta.coords.rank
       );
-    *max_ellipsis_len = mag_xmax(*max_ellipsis_len, ellipsis_len);
+    *max_ellipsis_len = mag_vmax(*max_ellipsis_len, ellipsis_len);
   } else ellipsis_len = *max_ellipsis_len;
   size_t prefix_len = pre_count;
   size_t repl_len = ellipsis_len;

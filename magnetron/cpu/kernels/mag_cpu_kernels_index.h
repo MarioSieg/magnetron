@@ -25,7 +25,7 @@
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra + chunk, total); \
+    int64_t rb = mag_vmin(ra + chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     int64_t inner = 1; \
     for (int64_t d = axis+1; d < src->meta.coords.rank; ++d) inner *= src->meta.coords.shape[d]; \
@@ -106,7 +106,7 @@ mag_gen_stub_gather(int64_t, int64)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra + chunk, total); \
+    int64_t rb = mag_vmin(ra + chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_likely(mag_tensor_is_contiguous(weight) && mag_tensor_is_contiguous(indices))) { \
       int64_t row_start = ra / row_size; \
@@ -253,7 +253,7 @@ mag_gen_stub_index_add(int64_t, int64, mag_cvt_nop, int64_t, mag_index_add_mul_i
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (num_rows + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra + chunk, num_rows); \
+    int64_t rb = mag_vmin(ra + chunk, num_rows); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     int64_t ist = idx->meta.coords.strides[axis]; \
     int64_t xst = src->meta.coords.strides[axis]; \

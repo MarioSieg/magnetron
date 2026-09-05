@@ -104,7 +104,7 @@ mag_gen_vrand_uniform_int(int64_t, uint64_t)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk, total); \
+    int64_t rb = mag_vmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
@@ -157,7 +157,7 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk, total); \
+    int64_t rb = mag_vmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(x)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
@@ -210,7 +210,7 @@ mag_gen_stub_masked_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra + chunk, total); \
+    int64_t rb = mag_vmin(ra + chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       mag_vrand_##D##_##T(prng, rb-ra, br+ra, min, max); \
@@ -255,9 +255,9 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
     int64_t chunk_blocks = (blocks + tc - 1) / tc;                               \
                                                                                 \
     int64_t ba = ti * chunk_blocks;                                              \
-    int64_t bb = mag_xmin(ba + chunk_blocks, blocks);                            \
+    int64_t bb = mag_vmin(ba + chunk_blocks, blocks);                            \
     int64_t ra = ba * block;                                                     \
-    int64_t rb = mag_xmin(bb * block, total);                                    \
+    int64_t rb = mag_vmin(bb * block, total);                                    \
                                                                                 \
     if (mag_unlikely(rb <= ra)) return MAG_OK;                            \
                                                                                 \
@@ -310,7 +310,7 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra + chunk, total); \
+    int64_t rb = mag_vmin(ra + chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t ri=ra; ri < rb; ++ri) { \
@@ -356,7 +356,7 @@ mag_gen_stub_arange(int64_t, int64, int64_t, mag_scalar_as_int64, uint64_t, mag_
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra + chunk, total); \
+    int64_t rb = mag_vmin(ra + chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r)) { \
       for (int64_t i=ra; i < rb; ++i) { \
@@ -406,7 +406,7 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
   int64_t ti = payload->thread_idx;
   int64_t chunk = (total + tc - 1)/tc;
   int64_t ra = ti*chunk;
-  int64_t rb = mag_xmin(ra + chunk, total);
+  int64_t rb = mag_vmin(ra + chunk, total);
   if (mag_unlikely(rb <= ra)) return MAG_OK;
   if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, idx}, 2)) {
     for (int64_t i=ra; i < rb; ++i) {

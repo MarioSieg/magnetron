@@ -39,7 +39,7 @@ static MAG_AINLINE int64_t mag_repeat_in_elem_offset(
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra + chunk, total); \
+    int64_t rb = mag_vmin(ra + chunk, total); \
     mag_coords_iter_t cr; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
@@ -109,7 +109,7 @@ mag_gen_stub_repeat(int64_t, int64)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1)/tc; \
     int64_t oa = ti*chunk; \
-    int64_t ob = mag_xmin(oa + chunk, outer_count); \
+    int64_t ob = mag_vmin(oa + chunk, outer_count); \
     for (int64_t p=oa; p < ob; ++p) { \
       int64_t idx_prefix[MAG_MAX_DIMS]; \
       int64_t rtmp = p; \
