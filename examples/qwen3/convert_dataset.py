@@ -227,10 +227,8 @@ def _convert_model(
     }
     start = time.perf_counter()
     with SnapshotWriter(snap_file, metadata) as snap:
-        # Phase 1: the manifest. Shapes come from the headers, no weight data is touched.
         for entry in plan:
             snap.declare(entry.mag_key, entry.shape, mag_dtype)
-        # Phase 2: the payload, one tensor at a time, in the order it was declared.
         with Progress(
             TextColumn('{task.fields[name]}', style='cyan'),
             BarColumn(),
