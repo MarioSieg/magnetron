@@ -13,7 +13,7 @@ import datetime
 import json
 import math
 from pathlib import Path
-from typing import Any, override, Iterable
+from typing import Any, Iterable
 from dataclasses import asdict, dataclass
 from . import __version__ as _mag_version, __snapshot_version__ as _snap_version
 from ._magnetron_bindings import (
@@ -125,12 +125,29 @@ class SnapshotWriter:
         self._offsets: dict[str, int] = {}
         self._blob_len: int = 0
         self._needle: int = 0
+        self._meta_len: int = 0
         self._stream: _SnapshotStreamWriter | None = None
         self._done: bool = False
 
     @property
     def is_sealed(self) -> bool:
         return self._stream is not None
+
+    @property
+    def tensor_count(self) -> int:
+        return len(self._order)
+
+    @property
+    def payload_numbytes(self) -> int:
+        return sum(spec.numbytes for spec in self._specs.values())
+
+    @property
+    def blob_numbytes(self) -> int:
+        return self._blob_len if self.is_sealed else self._plan()[1]
+
+    @property
+    def metadata_numbytes(self) -> int:
+        return self._meta_len
 
     def declare(self, name: str, shape: Iterable[int], dtype: Any) -> TensorSpec:
         if self.is_sealed:
@@ -193,7 +210,9 @@ class SnapshotWriter:
             raise RuntimeError('Empty data section')
         manifest = self._encode_manifest()
         manifest.validate(self._blob_len)
-        self._stream = _SnapshotStreamWriter(str(self._file_path), manifest.serialize(), self._blob_len)
+        meta = manifest.serialize()
+        self._meta_len = len(meta.encode('utf-8'))
+        self._stream = _SnapshotStreamWriter(str(self._file_path), meta, self._blob_len)
 
     def write(self, name: str, payload: Any) -> None:
         self.seal()

@@ -9,21 +9,34 @@
 
 import argparse
 import glob
-import gc
 import json
 import math
 import os
+import time
 from dataclasses import dataclass
 
 from magnetron import Tensor, dtype
 from magnetron.snapshot import SnapshotWriter
 from huggingface_hub import snapshot_download
+from rich.console import Console
+from rich.progress import BarColumn, DownloadColumn, Progress, TaskProgressColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn
+from rich.table import Table
 from safetensors import safe_open
 
 import torch
 
+console = Console()
+
 # HF tensors that are recomputed by the Magnetron model instead of being stored
 _SKIPPED_HF_KEYS: set[str] = {'rotary_emb.inv_freq'}
+
+
+def _fmt_bytes(n: float) -> str:
+    for unit in ('B', 'KiB', 'MiB', 'GiB', 'TiB'):
+        if abs(n) < 1024.0 or unit == 'TiB':
+            return f'{n:.0f} {unit}' if unit == 'B' else f'{n:.2f} {unit}'
+        n /= 1024.0
+    raise AssertionError
 
 
 def _mag_to_torch_dtype(mag_dtype: dtype.DType) -> torch.dtype:
@@ -152,6 +165,41 @@ def _write_model_card(
             f.write(f'| `{name}` | `{shape_s}` | `{dt}` |\n')
 
 
+def _print_stats(
+    snap_file: str,
+    *,
+    repo: str,
+    mag_dtype: dtype.DType,
+    snap: SnapshotWriter,
+    source_numbytes: int,
+    elapsed: float,
+) -> None:
+    """Everything the file is made of, measured on the file itself, not estimated."""
+    file_numbytes = os.path.getsize(snap_file)
+    payload = snap.payload_numbytes
+    blob = snap.blob_numbytes
+    meta = snap.metadata_numbytes
+    padding = blob-payload  # Inter tensor alignment
+    container = file_numbytes-blob-meta  # Header plus the pad that puts the data section on a page
+    table = Table(title=snap_file, title_style='bold', show_header=False, box=None, pad_edge=False)
+    table.add_column(style='dim')
+    table.add_column(justify='right')
+    table.add_row('Source', repo)
+    table.add_row('DType', mag_dtype.name)
+    table.add_row('Tensors', f'{snap.tensor_count}')
+    table.add_row('Payload', _fmt_bytes(payload))
+    table.add_row('Alignment padding', f'{_fmt_bytes(padding)} ({padding/blob:.3%})')
+    table.add_row('Data section', _fmt_bytes(blob))
+    table.add_row('Metadata', _fmt_bytes(meta))
+    table.add_row('Container overhead', _fmt_bytes(container))
+    table.add_row('File size', _fmt_bytes(file_numbytes))
+    table.add_row('Source shards', f'{_fmt_bytes(source_numbytes)} ({file_numbytes/source_numbytes:.2f}x)')
+    table.add_row('Elapsed', f'{elapsed:.1f} s')
+    table.add_row('Throughput', f'{_fmt_bytes(blob/elapsed)}/s')
+    console.print()
+    console.print(table)
+
+
 def _convert_model(
     repo: str,
     torch_dtype: torch.dtype,
@@ -160,14 +208,16 @@ def _convert_model(
     write_model_card: bool = False,
     model_card_path: str = 'model_card.md',
 ) -> None:
-    print(f'Downloading model {repo} from Hugging Face...')
+    console.print(f'Downloading model {repo} from Hugging Face...', style='dim')
     repo_dir = snapshot_download(repo_id=repo)
     hf_config = _load_hf_config(repo_dir)
 
     plan = _plan_tensors(repo_dir)
     total_bytes = sum(entry.numbytes(mag_dtype) for entry in plan)
+    source_numbytes = sum(os.path.getsize(shard) for shard in dict.fromkeys(entry.shard for entry in plan))
     snap_file: str = f'{repo.split("/")[-1].lower()}-{mag_dtype.short_name}.mag'
-    print(f'Writing snapshot to {snap_file}: {len(plan)} tensors, {total_bytes / (1 << 30):.2f} GiB of payload')
+    console.print(f'Writing {len(plan)} tensors ({_fmt_bytes(total_bytes)} of {mag_dtype.short_name}) to {snap_file}', style='dim')
+
     metadata = {
         'source_repo': repo,
         'source_format': 'safetensors',
@@ -175,18 +225,27 @@ def _convert_model(
         'dtype': mag_dtype.name,
         'hf_config': hf_config,
     }
-    written_bytes: int = 0
+    start = time.perf_counter()
     with SnapshotWriter(snap_file, metadata) as snap:
+        # Phase 1: the manifest. Shapes come from the headers, no weight data is touched.
         for entry in plan:
             snap.declare(entry.mag_key, entry.shape, mag_dtype)
-        for entry in plan:
-            written_bytes += entry.numbytes(mag_dtype)
-            print(
-                f'[{written_bytes / total_bytes:6.1%}] {entry.hf_key} -> {entry.mag_key} '
-                f'shape={entry.shape} dtype={mag_dtype.short_name}'
-            )
-            snap.write(entry.mag_key, lambda entry=entry: _load_one(entry, torch_dtype, mag_dtype))
-            gc.collect()
+        # Phase 2: the payload, one tensor at a time, in the order it was declared.
+        with Progress(
+            TextColumn('{task.fields[name]}', style='cyan'),
+            BarColumn(),
+            TaskProgressColumn(),
+            DownloadColumn(binary_units=True),
+            TransferSpeedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task('convert', total=total_bytes, name='')
+            for entry in plan:
+                progress.update(task, name=f'{entry.mag_key[-34:]:<34}')
+                snap.write(entry.mag_key, lambda entry=entry: _load_one(entry, torch_dtype, mag_dtype))
+                progress.advance(task, entry.numbytes(mag_dtype))
+    elapsed = time.perf_counter()-start
 
     if write_model_card:
         _write_model_card(
@@ -197,8 +256,15 @@ def _convert_model(
             cfg=hf_config,
             tensor_rows=[(entry.mag_key, entry.shape, mag_dtype.short_name) for entry in plan],
         )
-        print(f'Model card saved to {model_card_path}')
-    print(f'Converted model saved to {snap_file}')
+        console.print(f'Model card saved to {model_card_path}', style='dim')
+    _print_stats(
+        snap_file,
+        repo=repo,
+        mag_dtype=mag_dtype,
+        snap=snap,
+        source_numbytes=source_numbytes,
+        elapsed=elapsed,
+    )
 
 
 def _main() -> None:
