@@ -175,6 +175,15 @@ static MAG_HOTPROC void mag_matmul_bmm_gemm(const mag_kernel_payload_t *payload)
   int64_t rows_tot = M*batch_tot;
   int64_t ti = payload->thread_idx;
   int64_t tc = payload->thread_num;
+  if (batch_tot == 1) { /* Plain GEMM, forward to it */
+    mag_matmul_gemm_impl(
+      r->meta.dtype, ti, tc, M, N, K,
+      (void *)mag_tensor_data_ptr_mut(r),
+      (const void *)mag_tensor_data_ptr(x), sx0, sx1,
+      (const void *)mag_tensor_data_ptr(y), sy0, sy1
+    );
+    return;
+  }
   int64_t chunk = (rows_tot+tc-1)/tc;
   int64_t start = ti*chunk;
   int64_t end = mag_vmin(rows_tot, start+chunk);
