@@ -559,6 +559,28 @@ extern MAG_EXPORT mag_status_t mag_snapshot_stream_writer_submit_blob(
 extern MAG_EXPORT mag_status_t mag_snapshot_stream_writer_close(mag_error_t *err, mag_snapshot_stream_writer_t *writer);
 extern MAG_EXPORT void mag_snapshot_stream_writer_abort(mag_snapshot_stream_writer_t *writer);
 
+typedef struct mag_snapshot_stream_reader_t mag_snapshot_stream_reader_t;
+extern MAG_EXPORT mag_status_t mag_snapshot_stream_reader_open(
+  mag_error_t *err,
+  mag_snapshot_stream_reader_t **reader,
+  mag_context_t *ctx,
+  const char *filepath
+);
+extern MAG_EXPORT const char *mag_snapshot_stream_reader_meta(const mag_snapshot_stream_reader_t *reader, uint64_t *out_len); /* Warning! NOT NUL terminated!! */
+extern MAG_EXPORT uint64_t mag_snapshot_stream_reader_blob_len(const mag_snapshot_stream_reader_t *reader);
+extern MAG_EXPORT uint32_t mag_snapshot_stream_reader_version(const mag_snapshot_stream_reader_t *reader);
+extern MAG_EXPORT mag_status_t mag_snapshot_stream_reader_borrow_tensor(
+  mag_error_t *err,
+  mag_tensor_t **out,
+  mag_snapshot_stream_reader_t *reader,
+  uint64_t offset,
+  uint64_t size,
+  mag_dtype_t dtype,
+  int64_t rank,
+  const int64_t *shape
+);
+extern MAG_EXPORT void mag_snapshot_stream_reader_close(mag_snapshot_stream_reader_t *reader);
+
 
 /* === Distributed & Process Group === */
 

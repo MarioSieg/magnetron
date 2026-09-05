@@ -74,6 +74,69 @@ namespace mag::bindings {
       mag_snapshot_stream_writer_t *m_writer {};
   };
 
+  class snapshot_stream_reader final {
+  public:
+    explicit snapshot_stream_reader(const std::string &filename) {
+      mag_error_t err {};
+      throw_if_error(mag_snapshot_stream_reader_open(&err, &m_reader, get_ctx(), filename.c_str()), err);
+    }
+
+    ~snapshot_stream_reader() noexcept { close(); }
+    snapshot_stream_reader(const snapshot_stream_reader &) = delete;
+    snapshot_stream_reader &operator=(const snapshot_stream_reader &) = delete;
+    snapshot_stream_reader(snapshot_stream_reader &&rhs) noexcept : m_reader {std::exchange(rhs.m_reader, nullptr)} {}
+    snapshot_stream_reader &operator=(snapshot_stream_reader &&rhs) noexcept {
+      if (this == &rhs) return *this;
+      close();
+      m_reader = std::exchange(rhs.m_reader, nullptr);
+      return *this;
+    }
+
+    [[nodiscard]] bool is_open() const noexcept { return m_reader != nullptr; }
+
+    [[nodiscard]] std::string_view meta() const {
+      require_open();
+      uint64_t len = 0;
+      const char *p = mag_snapshot_stream_reader_meta(m_reader, &len);
+      return std::string_view {p, static_cast<std::size_t>(len)};
+    }
+
+    [[nodiscard]] uint64_t blob_len() const { require_open(); return mag_snapshot_stream_reader_blob_len(m_reader); }
+    [[nodiscard]] uint32_t version() const { require_open(); return mag_snapshot_stream_reader_version(m_reader); }
+
+    [[nodiscard]] mag_tensor_t *borrow(uint64_t offset, uint64_t size, int dtype, const std::vector<int64_t> &shape) {
+      require_open();
+      mag_tensor_t *out = nullptr;
+      mag_error_t err {};
+      throw_if_error(
+        mag_snapshot_stream_reader_borrow_tensor(
+          &err,
+          &out,
+          m_reader,
+          offset,
+          size,
+          static_cast<mag_dtype_t>(dtype),
+          static_cast<int64_t>(shape.size()),
+          shape.empty() ? nullptr : shape.data()
+        ),
+        err
+      );
+      return out;
+    }
+
+    void close() noexcept {
+      if (auto *reader = std::exchange(m_reader, nullptr))
+        mag_snapshot_stream_reader_close(reader);
+    }
+
+  private:
+    void require_open() const {
+      if (!m_reader)
+        throw std::runtime_error {"SnapshotStreamReader is closed"};
+    }
+    mag_snapshot_stream_reader_t *m_reader {};
+  };
+
   void init_bindings_snapshot(nb::module_ &m) {
     m.attr("_SNAPSHOT_TBLOB_ALIGN") = static_cast<uint64_t>(MAG_SNAP_TENSOR_BLOB_ALIGN);
     nb::class_<snapshot_stream_writer>(m, "SnapshotStreamWriter")
@@ -125,6 +188,42 @@ namespace mag::bindings {
         std::lock_guard lock {get_global_mutex()};
         if (has_exc) self.abort();
         else self.close();
+        return false;
+      }, "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none());
+
+    nb::class_<snapshot_stream_reader>(m, "SnapshotStreamReader")
+      .def("__init__", [](snapshot_stream_reader *self, const std::string &filename) -> void {
+        nb::gil_scoped_release nogil;
+        std::lock_guard lock {get_global_mutex()};
+        new (self) snapshot_stream_reader {filename};
+      }, "filename"_a)
+      .def_prop_ro("is_open", &snapshot_stream_reader::is_open)
+      .def_prop_ro("metadata", [](const snapshot_stream_reader &self) -> nb::str {
+        std::string_view meta = self.meta();
+        return nb::str {meta.data(), meta.size()};
+      }, "The metadata document, exactly as it was written.")
+      .def_prop_ro("blob_numbytes", [](const snapshot_stream_reader &self) -> uint64_t { return self.blob_len(); }, "Size of the data section.")
+      .def_prop_ro("format_version", [](const snapshot_stream_reader &self) -> nb::tuple {
+        uint32_t v = self.version();
+        return nb::make_tuple(mag_ver_major(v), mag_ver_minor(v), mag_ver_patch(v));
+      }, "On disk format version as (major, minor, patch).")
+      .def("tensor", [](snapshot_stream_reader &self, uint64_t offset, uint64_t size, int dtype, const std::vector<int64_t> &shape) -> tensor_wrapper {
+        std::lock_guard lock {get_global_mutex()};
+        return tensor_wrapper {self.borrow(offset, size, dtype, shape)};
+      }, "offset"_a, "size"_a, "dtype"_a, "shape"_a, "Borrow one tensor out of the data section. Zero copy and read only.")
+      .def("close", [](snapshot_stream_reader &self) -> void {
+        nb::gil_scoped_release nogil {};
+        std::lock_guard lock {get_global_mutex()};
+        self.close();
+      })
+      .def("__enter__", [](snapshot_stream_reader &self) -> snapshot_stream_reader & {
+        if (!self.is_open()) throw std::runtime_error {"SnapshotStreamReader is closed"};
+        return self;
+      }, nb::rv_policy::reference_internal)
+      .def("__exit__", [](snapshot_stream_reader &self, nb::handle, nb::handle, nb::handle) -> bool {
+        nb::gil_scoped_release nogil {};
+        std::lock_guard lock {get_global_mutex()};
+        self.close();
         return false;
       }, "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none());
   }

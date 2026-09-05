@@ -19,6 +19,7 @@ from . import __version__ as _mag_version, __snapshot_version__ as _snap_version
 from ._magnetron_bindings import (
     Tensor,
     dtype as _dtype,
+    SnapshotStreamReader as _SnapshotStreamReader,
     SnapshotStreamWriter as _SnapshotStreamWriter,
     _SNAPSHOT_TBLOB_ALIGN as _TBLOB_ALIGN,
 )
@@ -73,8 +74,7 @@ class _FileManifest:
             }
         )
 
-    def validate(self, blob_span: int) -> None:
-        align: int = _TBLOB_ALIGN
+    def validate(self, blob_span: int, align: int = _TBLOB_ALIGN) -> None:
         end: int = 0
         prev: str | None = None
         for name, meta in sorted(self.tensor_map.items(), key=lambda kv: kv[1].offset):
@@ -169,9 +169,6 @@ class SnapshotWriter:
         end: int = 0
         for key in self._order:
             nb = self._specs[key].numbytes
-            # An empty tensor gets no padding: submit_blob ignores a zero length write, so
-            # reserving alignment for one would promise bytes that never arrive, and a trailing
-            # empty tensor would fail the writer's own length check at close.
             if nb:
                 end = _align_up(end, _TBLOB_ALIGN)
             offsets[key] = end
@@ -211,7 +208,7 @@ class SnapshotWriter:
         manifest = self._encode_manifest()
         manifest.validate(self._blob_len)
         meta = manifest.serialize()
-        self._meta_len = len(meta.encode('utf-8'))
+        self._meta_len = len(meta.encode('utf-8'))  # What the writer measures, not len(str)
         self._stream = _SnapshotStreamWriter(str(self._file_path), meta, self._blob_len)
 
     def write(self, name: str, payload: Any) -> None:
@@ -271,5 +268,16 @@ class SnapshotWriter:
             self.close()
         return False
 
-def deserialize(file_path: Path) -> tuple[dict[str, Tensor], str]: # Returns tensors, metadata
-    pass
+def deserialize(file_path: str | Path, mmap: bool = True) -> tuple[dict[str, Tensor], dict[str, Any]]:
+    with _SnapshotStreamReader(str(file_path)) as reader:
+        manifest = _FileManifest.deserialize(reader.metadata)
+        manifest.validate(reader.blob_numbytes)
+        tensors: dict[str, Tensor] = {}
+        for name, meta in manifest.tensor_map.items():
+            dt = _DTYPE_BY_ID[meta.dtype_id]
+            if not meta.nbytes:
+                tensors[name] = Tensor.empty(*meta.shape, dtype=dt)
+                continue
+            tensor = reader.tensor(meta.offset, meta.nbytes, meta.dtype_id, list(meta.shape))
+            tensors[name] = tensor if mmap else tensor.clone()
+        return tensors, dict(manifest.usr_metadata)

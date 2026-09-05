@@ -60,6 +60,7 @@ typedef struct mag_snap_decoded_hdr_t {
 } mag_snap_decoded_hdr_t;
 #define MAG_SNAP_HDR_SIZE (4+4+4 + 8+8 + 8+8)
 extern void mag_snap_hdr_encode(uint8_t *p, const mag_snap_decoded_hdr_t *hdr);
+extern bool mag_snap_hdr_decode(mag_snap_decoded_hdr_t *hdr, const uint8_t *p);
 
 static inline void mag_snap_wb(uint8_t **p, const void *src, size_t nb) {
   memcpy(*p, src, nb);
