@@ -15,6 +15,7 @@ from collections.abc import Iterable, Callable
 from typing import Any
 
 from . import Tensor, no_grad
+from ._magnetron_bindings import _fused_adam_step
 from .nn import Parameter
 
 
@@ -142,12 +143,21 @@ class Adam(Optimizer):
                 t = state['step']
                 m = state['m']
                 v = state['v']
+                c1 = 1.0 - beta1**t
+                c2 = 1.0 - beta2**t
+                # The whole update is one pointwise chain, so hand it to the fusion JIT: one pass
+                # over each tensor instead of roughly twenty. Declines for unsupported operands or
+                # when no host compiler is present, in which case the eager path below runs.
+                # It writes p, m and v in place, so unlike the eager path there is nothing to store
+                # back into state - the dict already holds these tensors.
+                if _fused_adam_step(p, grad, m, v, lr, beta1, beta2, eps, c1, c2):
+                    continue
                 m = beta1 * m + (1.0 - beta1) * grad
                 v = beta2 * v + (1.0 - beta2) * grad.sqr()
                 state['m'] = m
                 state['v'] = v
-                m_hat = m / (1.0 - beta1**t)
-                v_hat = v / (1.0 - beta2**t)
+                m_hat = m / c1
+                v_hat = v / c2
                 p -= lr * m_hat / (v_hat.sqrt() + eps)
 
 

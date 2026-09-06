@@ -14,6 +14,7 @@
 #include <atomic>
 
 #include "core/mag_context.h"
+#include "core/mag_fusion.h"
 
 namespace mag::bindings {
   static std::once_flag g_ctx_once;
@@ -73,6 +74,15 @@ namespace mag::bindings {
       std::lock_guard lock {get_global_mutex()};
       mag_ctx_manual_seed(get_ctx(), seed);
     }, "seed"_a, "Set RNG seed for reproducibility.");
+    context.def("jit_stats", []() -> nb::dict {
+      std::lock_guard lock {get_global_mutex()};
+      uint64_t hits = 0, compiles = 0;
+      mag_fuse_cache_stats(get_ctx(), &hits, &compiles);
+      nb::dict out;
+      out["kernels_compiled"] = compiles;
+      out["cache_hits"] = hits;
+      return out;
+    }, "Fused-kernel cache counters. 'kernels_compiled' counts host compiler invocations this session.");
     /* Resolves like set_default_device does, so 'is_device_available(d)' answering true guarantees that
        'set_default_device(d)' with the same string succeeds. */
     context.def("is_device_available", [](const std::string &device) -> bool {

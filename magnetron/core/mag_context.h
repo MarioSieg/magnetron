@@ -28,6 +28,8 @@ typedef enum mag_context_flags_t {
   MAG_CTX_FLAG_GRAD_RECORDER = 1<<0,     /* Gradient recording is currently active. */
 } mag_context_flags_t;
 
+typedef struct mag_fuse_cache_t mag_fuse_cache_t; /* Compiled pointwise kernels, see mag_fusion.h. */
+
 typedef struct mag_rt_telemetry_t {
   size_t num_alive_tensors;                   /* Total tensor instances allocated. */
   size_t num_alive_storages;                  /* Total storage buffers allocated. */
@@ -48,6 +50,7 @@ struct mag_context_t {
   mag_slab_alloc_t view_meta_slab;            /* View metadata headers. */
   mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
   mag_slab_alloc_t au_state_op_params_slab;   /* Autodiff state op params slab allocator */
+  mag_fuse_cache_t *fuse_cache;               /* Compiled fused pointwise kernels. NULL until the JIT is first used. */
   mag_backend_registry_t *backend_registry;   /* Compute backend registry */
   uint64_t topo_traversal_epoch;              /* Epoch counter for topological traversal of the computation graph */
   mag_topo_stack_t topo_stack;

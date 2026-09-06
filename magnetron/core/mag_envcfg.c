@@ -41,6 +41,17 @@ int64_t mag_envcfg_cpu_intraop_min_elems(void) {
   return (int64_t)parsed;
 }
 
+/* The JIT shells out to a host compiler the first time a chain is seen, which is a surprising
+   thing to do silently, so it must be switchable. Results are identical either way. */
+bool mag_envcfg_jit_enabled(void) {
+  const char *v = mag_envcfg_raw(MAG_ENV_JIT);
+  if (!v) return true;
+  if (mag_casecmp(v, "off") || mag_casecmp(v, "0") || mag_casecmp(v, "false")) return false;
+  if (mag_casecmp(v, "on") || mag_casecmp(v, "1") || mag_casecmp(v, "true")) return true;
+  mag_log_error("Invalid " MAG_ENV_JIT " value '%s' (valid: on, off)", v);
+  return true;
+}
+
 mag_envcfg_cpu_specialization_t mag_envcfg_cpu_specialization_level(const char **out_name) {
   const char *v = mag_envcfg_raw(MAG_ENV_CPU_SPECIALIZATION_LEVEL);
   if (!v) return MAG_ENVCFG_CPU_SPECIALIZATION_AUTO;
