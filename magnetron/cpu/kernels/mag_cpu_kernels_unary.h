@@ -17,7 +17,7 @@
       for (int64_t i=ra; i < rb; ) { \
         int64_t o = i/plan.inner; \
         int64_t j = i - o*plan.inner; \
-        int64_t run = mag_xmin(plan.inner-j, rb-i); \
+        int64_t run = mag_vmin(plan.inner-j, rb-i); \
         int64_t rbo, xbo; \
         mag_unary_vectorization_plan_step(&plan, o, &rbo, &xbo); \
         const T *px = bx + xbo + j; \
@@ -50,7 +50,7 @@
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk, total); \
+    int64_t rb = mag_vmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
       memcpy(br+ra, bx+ra, (rb-ra)*sizeof(T)); \
@@ -63,8 +63,8 @@
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri, xi; \
       mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi); \
-      mag_bnd_chk(bx+xi, x->storage->base, mag_tensor_numbytes(x)); \
-      mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
+      mag_bnd_chk(bx+xi, x->storage->base, x->storage->size); \
+      mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
       br[ri] = bx[xi]; \
     } \
     return MAG_OK; \
@@ -123,7 +123,6 @@ static MAG_AINLINE float mag_fn_sqr_f32(float x) { return x*x; }
 static MAG_AINLINE float mag_fn_rcp_f32(float x) { return 1.f/x; }
 static MAG_AINLINE float mag_fn_rsqrt_f32(float x) { return 1.f/sqrtf(x); }
 static MAG_AINLINE float mag_fn_step_f32(float x) { return x > 0.f ? 1.f : 0.f; }
-static MAG_AINLINE float mag_fn_softmax_dv_f32(float x) { return expf(x); }
 static MAG_AINLINE float mag_fn_sigmoid_f32(float x) { return 1.f/(1.f+expf(-x)); }
 static MAG_AINLINE float mag_fn_sigmoid_dv_f32(float x) { float s = mag_fn_sigmoid_f32(x); return s*(1.f-s); }
 static MAG_AINLINE float mag_fn_hard_sigmoid_f32(float x) { return fminf(1.f, fmaxf(0.f, (x+3.f)*(1.f/6.f))); }
@@ -133,8 +132,8 @@ static MAG_AINLINE float mag_fn_tanh_dv_f32(float x) { float t = tanhf(x); retur
 static MAG_AINLINE float mag_fn_relu_f32(float x) { return fmaxf(0.f, x); }
 static MAG_AINLINE float mag_fn_relu_dv_f32(float x) { return x > 0.f ? 1.f : 0.f; }
 static MAG_AINLINE float mag_fn_gelu_f32(float x) { return .5f*x*(1.f+erff(x*MAG_INVSQRT2)); }
-static MAG_AINLINE float mag_fn_gelu_approx_f32(float x) { return .5f*x*(1.f+tanhf(MAG_INVSQRT2*(x+MAG_GELU_COEFF*x*x*x))); }
-static MAG_AINLINE float mag_fn_gelu_dv_f32(float x) { float t = tanhf(x); return .5f*(1.f+t)+.5f*x*(1.f-t*t); }
+static MAG_AINLINE float mag_fn_gelu_approx_f32(float x) { return .5f*x*(1.f+tanhf(MAG_SQRT2OVERPI*(x+MAG_GELU_COEFF*x*x*x))); }
+static MAG_AINLINE float mag_fn_gelu_dv_f32(float x) { return .5f*(1.f+erff(x*MAG_INVSQRT2)) + x*MAG_INVSQRT2PI*expf(-.5f*x*x); }
 
 #define mag_def_float_wrappers(name) \
   static MAG_AINLINE mag_float16_t mag_fn_##name##_f16(mag_float16_t x) { return mag_float32_to_float16(mag_fn_##name##_f32(mag_float16_to_float32(x))); } \
@@ -174,7 +173,6 @@ mag_def_float_wrappers(sqr)
 mag_def_float_wrappers(rcp)
 mag_def_float_wrappers(rsqrt)
 mag_def_float_wrappers(step)
-mag_def_float_wrappers(softmax_dv)
 mag_def_float_wrappers(sigmoid)
 mag_def_float_wrappers(sigmoid_dv)
 mag_def_float_wrappers(hard_sigmoid)
@@ -206,7 +204,6 @@ static MAG_AINLINE mag_vf32_t mag_vec_gelu_approx_f32(mag_vf32_t x) { return mag
 static MAG_AINLINE mag_vf32_t mag_vec_relu_f32(mag_vf32_t x) { return mag_vf32_relu(x); }
 static MAG_AINLINE mag_vf32_t mag_vec_step_f32(mag_vf32_t x) { return mag_vf32_step(x); }
 static MAG_AINLINE mag_vf32_t mag_vec_hard_sigmoid_f32(mag_vf32_t x) { return mag_vf32_hard_sigmoid(x); }
-static MAG_AINLINE mag_vf32_t mag_vec_softmax_dv_f32(mag_vf32_t x) { return mag_vf32_exp(x); }
 static MAG_AINLINE mag_vf32_t mag_vec_rcp_f32(mag_vf32_t x) {
   mag_vf32_t r = mag_vf32_rcp_approx(x);
   r = mag_vf32_rcp_refine_step(x, r);
@@ -251,7 +248,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk, total); \
+    int64_t rb = mag_vmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
       for (int64_t i=ra; i < rb; ++i) \
@@ -282,7 +279,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk, total); \
+    int64_t rb = mag_vmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
       int64_t i = ra; \
@@ -354,7 +351,6 @@ mag_gen_float_unary_simd(sqr)
 mag_gen_float_unary_simd(rcp)
 mag_gen_float_unary_scalar(rsqrt)
 mag_gen_float_unary_simd(step)
-mag_gen_float_unary_simd(softmax_dv)
 mag_gen_float_unary_simd(sigmoid)
 mag_gen_float_unary_simd(sigmoid_dv)
 mag_gen_float_unary_simd(hard_sigmoid)
@@ -420,7 +416,7 @@ mag_gen_int_unary(sqr)
     int64_t ti = payload->thread_idx; \
     int64_t rpt = (rows + tc - 1) / tc; \
     int64_t ra = ti * rpt; \
-    int64_t rb = mag_xmin(ra + rpt, rows); \
+    int64_t rb = mag_vmin(ra + rpt, rows); \
     for (int64_t ri = ra; ri < rb; ++ri) { \
       const T *row_in = bx + ri * last_dim; \
       T *row_out = br + ri * last_dim; \
@@ -431,7 +427,7 @@ mag_gen_int_unary(sqr)
       } \
       float max_val = mag_vf32_reduce_max(vmax); \
       for (; i < last_dim; ++i) { \
-        max_val = mag_xmax(max_val, TO_F32(row_in[i])); \
+        max_val = mag_vmax(max_val, TO_F32(row_in[i])); \
       } \
       i=0; \
       mag_vf32_t vsum = mag_vf32_zero(); \
@@ -508,5 +504,82 @@ mag_gen_softmax_simd(
   mag_float32_to_float8_e4m3fn
 )
 
+#define mag_gen_softmax_dv_simd(T, TF, ZERO, LOAD, STORE, TO_F32, FROM_F32) \
+  static mag_status_t MAG_HOTPROC mag_softmax_dv_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    mag_status_t status = mag_softmax_##TF(err, payload); \
+    if (mag_unlikely(status != MAG_OK)) return status; \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    int64_t rank = r->meta.coords.rank; \
+    int64_t numel = r->meta.numel; \
+    if (mag_unlikely(!numel)) return MAG_OK; \
+    T *br = (T *)mag_tensor_data_ptr_mut(r); \
+    if (rank == 0) { \
+      if (payload->thread_idx == 0) *br = ZERO; \
+      return MAG_OK; \
+    } \
+    int64_t last_dim = r->meta.coords.shape[rank-1]; \
+    int64_t rows = numel/last_dim; \
+    int64_t tc = payload->thread_num; \
+    int64_t ti = payload->thread_idx; \
+    int64_t rpt = (rows+tc-1)/tc; \
+    int64_t ra = ti*rpt; \
+    int64_t rb = mag_vmin(ra+rpt, rows); \
+    mag_vf32_t vone = mag_vf32_splat(1.0f); \
+    for (int64_t ri=ra; ri < rb; ++ri) { \
+      T *row = br + ri*last_dim; \
+      int64_t i=0; \
+      for (; i+MAG_VF32_LANES <= last_dim; i += MAG_VF32_LANES) { \
+        mag_vf32_t s = LOAD(row+i); \
+        STORE(row+i, mag_vf32_mul(s, mag_vf32_sub(vone, s))); \
+      } \
+      for (; i < last_dim; ++i) { \
+        float s = TO_F32(row[i]); \
+        row[i] = FROM_F32(s*(1.0f-s)); \
+      } \
+    } \
+    return MAG_OK; \
+  }
+
+mag_gen_softmax_dv_simd(
+  float,
+  float32,
+  0.0f,
+  mag_vf32_loadu_f32,
+  mag_vf32_storeu_f32,
+  mag_f32_id,
+  mag_f32_id
+)
+
+mag_gen_softmax_dv_simd(
+  mag_float16_t,
+  float16,
+  MAG_FLOAT16_ZERO,
+  mag_vf32_loadu_f16,
+  mag_vf32_storeu_f16,
+  mag_float16_to_float32,
+  mag_float32_to_float16
+)
+
+mag_gen_softmax_dv_simd(
+  mag_bfloat16_t,
+  bfloat16,
+  MAG_BFLOAT16_ZERO,
+  mag_vf32_loadu_bf16,
+  mag_vf32_storeu_bf16,
+  mag_bfloat16_to_float32,
+  mag_float32_to_bfloat16
+)
+
+mag_gen_softmax_dv_simd(
+  mag_float8_e4m3fn_t,
+  float8_e4m3fn,
+  MAG_FLOAT8_E4M3FN_ZERO,
+  mag_vf32_loadu_float8_e4m3fn,
+  mag_vf32_storeu_float8_e4m3fn,
+  mag_float8_e4m3fn_to_float32,
+  mag_float32_to_float8_e4m3fn
+)
+
+#undef mag_gen_softmax_dv_simd
 #undef mag_f32_id
 #undef mag_gen_softmax_simd

@@ -13,7 +13,8 @@ from collections.abc import Iterator
 from typing import Any
 from enum import Enum, unique
 
-from magnetron import Tensor, Snapshot, nn, dtype, context
+from magnetron import Tensor, nn, dtype, context
+from magnetron.snapshot import deserialize
 from dataclasses import dataclass
 
 _EOS: set[int] = {151645, 151643}
@@ -254,23 +255,24 @@ class Qwen3Model(nn.Module):
         cos_cache, sin_cache = _precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.cos_cache = cos_cache
         self.sin_cache = sin_cache
+        self.snapshot_metadata: dict[str, Any] = {}
         self.cache = self._alloc_kv_cache()
 
     def _alloc_kv_cache(self) -> KVCache:
         return KVCache(self.cfg)
 
     def _load_from_snapshot(self, snapshot_file: str) -> None:
-        with Snapshot.read(snapshot_file) as snap:
-            for name, param in self.named_parameters():
-                tensor = snap.get_tensor(name)
-                if tuple(tensor.shape) != tuple(param.shape):
-                    raise RuntimeError(f'Shape mismatch for {name}: {tensor.shape} != {param.shape}')
-                if tensor.dtype != param.dtype:
-                    raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.dtype}')
-                if context.get_default_device() != 'cpu':
-                    param.data = tensor.transfer(context.get_default_device())
-                else:
-                    param.data = tensor
+        tensors, self.snapshot_metadata = deserialize(snapshot_file)
+        device: str = context.get_default_device()
+        for name, param in self.named_parameters():
+            tensor = tensors.get(name)
+            if tensor is None:
+                raise KeyError(f'Snapshot {snapshot_file} has no tensor named {name}')
+            if tuple(tensor.shape) != tuple(param.shape):
+                raise RuntimeError(f'Shape mismatch for {name}: {tensor.shape} != {param.shape}')
+            if tensor.dtype != param.dtype:
+                raise RuntimeError(f'Dtype mismatch for {name}: {tensor.dtype} != {param.dtype}')
+            param.data = tensor if device == 'cpu' else tensor.transfer(device)
 
     @staticmethod
     def from_pretrained_snapshot(snapshot_file: str, params: Qwen3HyperParams) -> 'Qwen3Model':
@@ -300,7 +302,6 @@ class Qwen3Model(nn.Module):
         top_k: int = 10,
         reset_cache: bool = False,
     ) -> Iterator[str]:
-
         def sample(logits: Tensor, strategy: SamplingStrategy) -> int:  # Sample according to strategy
             match strategy:
                 case SamplingStrategy.GREEDY:

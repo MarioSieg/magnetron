@@ -45,7 +45,7 @@ void *mag_scratch_arena_alloc(mag_scratch_arena_t *arena, size_t nb) {
     if (mag_unlikely(!mag_scratch_arena_reserve(arena, end))) return NULL;
   void *p = arena->base + pos;
   arena->pos = end;
-  arena->hi = mag_xmax(end, arena->hi);
+  arena->hi = mag_vmax(end, arena->hi);
   #ifndef _MSC_VER
     p = __builtin_assume_aligned(p, MAG_MM_SCRATCH_ALIGN);
   #endif
@@ -63,7 +63,7 @@ void mag_scratch_arena_trim(mag_scratch_arena_t *arena) {
     arena->hi = 0;
     return;
   }
-  size_t target = mag_xmin(mag_xmax(arena->hi, 4096), arena->keep);
+  size_t target = mag_vmin(mag_vmax(arena->hi, 4096), arena->keep);
   target = (target+4095)&~4095;
   if (arena->cap > target) {
     arena->base = (uint8_t *)(*mag_alloc)(arena->base, target, MAG_MM_SCRATCH_ALIGN);

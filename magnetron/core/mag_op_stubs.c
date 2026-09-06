@@ -530,6 +530,102 @@ mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
   return MAG_OK;
 }
 
+static mag_status_t mag_reinterpret_cast_flat_storage_1d(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, mag_dtype_t dtype) {
+  *out = NULL;
+  mag_context_t *ctx = x->ctx;
+  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
+    return mag_set_error(err, MAG_ERR_THREAD, "reinterpret_view: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
+  int64_t numel = (int64_t)(x->storage->size/mag_type_trait(dtype)->size);
+  mag_tensor_t *tensor = mag_tensor_init_header(ctx, dtype, 1, numel, x->meta.device, NULL);
+  if (mag_unlikely(!tensor))
+    return mag_set_error(err, MAG_ERR_OOM, "reinterpret_view: failed to allocate tensor header.");
+  for (int i=0; i < MAG_MAX_DIMS; ++i) {
+    tensor->meta.coords.shape[i] = 1;
+    tensor->meta.coords.strides[i] = 1;
+  }
+  tensor->meta.coords.shape[0] = numel;
+  tensor->storage = x->storage;
+  mag_rc_incref(x->storage);
+  tensor->meta.storage_offset = 0;
+  tensor->version = x->version;
+  if (!(x->meta.flags & MAG_TFLAG_IS_VIEW)) {
+    tensor->view_meta = mag_view_meta_alloc(x);
+    if (mag_unlikely(!tensor->view_meta)) {
+      mag_tensor_decref(tensor);
+      return mag_set_error(err, MAG_ERR_OOM, "reinterpret_view: failed to allocate view metadata.");
+    }
+  } else {
+    tensor->view_meta = x->view_meta;
+    mag_rc_incref(tensor->view_meta);
+  }
+  tensor->meta.flags = x->meta.flags|MAG_TFLAG_IS_VIEW;
+  *out = tensor;
+  return MAG_OK;
+}
+
+mag_status_t mag_reinterpret_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_dtype_t dtype, const int64_t *dims, int64_t rank) {
+  *out_result = NULL;
+  if (mag_unlikely((unsigned)dtype >= MAG_DTYPE__NUM))
+    return mag_set_error(err, MAG_ERR_PARAM, "reinterpret_view: invalid dtype id %d.", (int)dtype);
+  if (dtype == x->meta.dtype)
+    return mag_view(err, out_result, x, dims, rank);
+  if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
+    return mag_set_error(err, MAG_ERR_RANK, "reinterpret_view: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
+  if (mag_unlikely(rank > 0 && !dims))
+    return mag_set_error(err, MAG_ERR_PARAM, "reinterpret_view: dims must not be NULL when rank > 0.");
+  if (mag_unlikely(x->meta.flags & MAG_TFLAG_REQUIRES_GRAD))
+    return mag_set_error(err, MAG_ERR_AUTOGRAD, "reinterpret_view: cannot reinterpret the bytes of a tensor that requires grad, must be detached.");
+  const mag_type_traits_t *ot = mag_type_trait(x->meta.dtype);
+  const mag_type_traits_t *nt = mag_type_trait(dtype);
+  int64_t osz = (int64_t)ot->size;
+  int64_t nsz = (int64_t)nt->size;
+  int64_t xr = x->meta.coords.rank;
+  int64_t shape[MAG_MAX_DIMS];
+  int64_t strides[MAG_MAX_DIMS];
+  if (xr == 0) {
+    if (mag_unlikely(osz != nsz))
+      return mag_set_error(err, MAG_ERR_SHAPE, "reinterpret_view: a rank-0 %s tensor is %" PRIi64 " bytes, which is not one %s element (%" PRIi64 " bytes).", ot->name, osz, nt->name, nsz);
+  } else {
+    if (mag_unlikely(x->meta.coords.strides[xr-1] != 1))
+      return mag_set_error(err, MAG_ERR_STRIDES, "reinterpret_view: the innermost dimension must be unit-stride, but dim %" PRIi64 " has stride %" PRIi64 "; reinterpretation regroups adjacent bytes, so call contiguous() first.", xr-1, x->meta.coords.strides[xr-1]);
+    memcpy(shape, x->meta.coords.shape, (size_t)xr*sizeof(*shape));
+    memcpy(strides, x->meta.coords.strides, (size_t)xr*sizeof(*strides));
+    int64_t inner;
+    if (mag_unlikely(mag_mulov64(shape[xr-1], osz, &inner)))
+      return mag_set_error(err, MAG_ERR_DIM, "reinterpret_view: innermost byte size overflowed (%" PRIi64 " elements of %" PRIi64 " bytes).", shape[xr-1], osz);
+    if (mag_unlikely(inner%nsz))
+      return mag_set_error(err, MAG_ERR_SHAPE, "reinterpret_view: the innermost dimension is %" PRIi64 " %s elements (%" PRIi64 " bytes), which is not a whole number of %s elements (%" PRIi64 " bytes each).", shape[xr-1], ot->name, inner, nt->name, nsz);
+    shape[xr-1] = inner/nsz;
+    strides[xr-1] = 1;
+    for (int64_t i=0; i < xr-1; ++i) {
+      int64_t sb;
+      if (mag_unlikely(mag_mulov64(strides[i], osz, &sb)))
+        return mag_set_error(err, MAG_ERR_DIM, "reinterpret_view: stride overflowed at dim %" PRIi64 ".", i);
+      if (mag_unlikely(sb % nsz))
+        return mag_set_error(err, MAG_ERR_STRIDES, "reinterpret_view: stride %" PRIi64 " at dim %" PRIi64 " spans %" PRIi64 " bytes, which is not a multiple of the %" PRIi64 "-byte %s element size.", strides[i], i, sb, nsz, nt->name);
+      strides[i] = sb/nsz;
+    }
+  }
+  int64_t byte_off;
+  if (mag_unlikely(mag_mulov64(x->meta.storage_offset, osz, &byte_off)))
+    return mag_set_error(err, MAG_ERR_DIM, "reinterpret_view: storage byte offset overflowed (offset=%" PRIi64 ", element size=%" PRIi64 ").", x->meta.storage_offset, osz);
+  if (mag_unlikely(byte_off%nsz))
+    return mag_set_error(err, MAG_ERR_PARAM, "reinterpret_view: base starts at byte %" PRIi64 " of its storage, which is not a multiple of the %" PRIi64 "-byte %s element size.", byte_off, nsz, nt->name);
+  uintptr_t addr = x->storage->base + (uintptr_t)byte_off;
+  if (mag_unlikely(addr % nt->alignment))
+    return mag_set_error(err, MAG_ERR_PARAM, "reinterpret_view: address 0x%" PRIxPTR " is not %zu-byte aligned for %s.", addr, nt->alignment, nt->name);
+  mag_tensor_t *flat = NULL;
+  mag_status_t status = mag_reinterpret_cast_flat_storage_1d(err, &flat, x, dtype);
+  if (mag_iserr(status)) return status;
+  mag_tensor_t *geometry = NULL;
+  status = mag_strided_view(err, &geometry, x->ctx, flat, xr, xr ? shape : NULL, xr ? strides : NULL, byte_off/nsz);
+  mag_tensor_decref(flat);
+  if (mag_iserr(status)) return status;
+  status = mag_view(err, out_result, geometry, dims, rank);
+  mag_tensor_decref(geometry);
+  return status;
+}
+
 mag_status_t mag_reshape(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank) {
   *out_result = NULL;
   mag_tensor_t *result = NULL;
@@ -1480,7 +1576,6 @@ mag_impl_binary_pair(mul, MUL, false)
 mag_impl_binary_pair(div, DIV, false)
 mag_impl_binary_pair(floordiv, FLOORDIV, false)
 mag_impl_binary_pair(mod, MOD, false)
-mag_impl_binary_pair(pow, POW, false)
 mag_impl_binary_pair(and, AND, false)
 mag_impl_binary_pair(or, OR, false)
 mag_impl_binary_pair(xor, XOR, false)
@@ -1494,6 +1589,79 @@ mag_impl_binary_pair(lt, LT, true)
 mag_impl_binary_pair(gt, GT, true)
 
 #undef mag_impl_binary_pair
+
+static bool mag_pow_scalar_exponent(double *out, const mag_tensor_t *x, mag_tensor_t *y) {
+  if (mag_tensor_numel(y) != 1) return false;
+  if (y->meta.coords.rank > x->meta.coords.rank) return false;
+  if (!mag_tensor_is_cpu(y)) return false;
+  if (mag_tensor_requires_grad(y)) return false;
+  mag_dtype_t prom;
+  if (!mag_promote_type(&prom, x->meta.dtype, y->meta.dtype)) return false;
+  if (prom != x->meta.dtype) return false;
+  mag_scalar_t val;
+  if (mag_iserr(mag_tensor_item(NULL, y, &val))) return false;
+  switch (val.type) {
+    case MAG_SCALAR_TYPE_F64: *out = mag_scalar_as_float64(val); return true;
+    case MAG_SCALAR_TYPE_I64: *out = (double)mag_scalar_as_int64(val); return true;
+    case MAG_SCALAR_TYPE_U64: *out = (double)mag_scalar_as_uint64(val); return true;
+  }
+  return false;
+}
+
+static mag_status_t mag_pow_cube(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, bool inplace) {
+  *out_result = NULL;
+  mag_tensor_t *sq = NULL;
+  mag_status_t status = mag_sqr(err, &sq, x);
+  if (mag_iserr(status)) return status;
+  status = inplace ? mag_mul_(err, out_result, x, sq) : mag_mul(err, out_result, sq, x);
+  mag_tensor_decref(sq);
+  return status;
+}
+
+mag_status_t mag_pow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
+  double e;
+  if (mag_pow_scalar_exponent(&e, x, y)) { /* Rewrite common exponent into simplified direct ops */
+    if (e == 2.0) return mag_sqr(err, out_result, x);
+    if (e == 1.0) {
+      mag_tensor_incref(x);
+      *out_result = x;
+    }
+    if (e == 3.0) return mag_pow_cube(err, out_result, x, false);
+    if (e == 0.0 && !mag_tensor_requires_grad(x))
+      return mag_ones_like(err, out_result, x);
+    if (mag_tensor_is_floating_point_typed(x)) { /* These have no integral kernel */
+      if (e == 0.5) return mag_sqrt(err, out_result, x);
+      if (e == -0.5) return mag_rsqrt(err, out_result, x);
+      if (e == -1.0) return mag_rcp(err, out_result, x);
+    }
+  }
+  return mag_op_stub_binary(err, out_result, MAG_OP_POW, x, y, 0);
+}
+
+mag_status_t mag_pow_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
+  double e;
+  if (mag_pow_scalar_exponent(&e, x, y)) {  /* Rewrite common exponent into simplified direct ops */
+    if (e == 2.0) return mag_sqr_(err, out_result, x);
+    if (e == 1.0) { /* x**1 is x, nothing to write */
+      mag_status_t status = mag_check_inplace_grad_ok(err, x);
+      if (mag_iserr(status)) { *out_result = NULL; return status; }
+      mag_tensor_incref(x);
+      *out_result = x;
+      return MAG_OK;
+    }
+    if (e == 3.0) {
+      mag_status_t status = mag_check_inplace_grad_ok(err, x); /* Check up front, so we fail before allocating the temporary */
+      if (mag_iserr(status)) { *out_result = NULL; return status; }
+      return mag_pow_cube(err, out_result, x, true);
+    }
+    if (mag_tensor_is_floating_point_typed(x)) { /* These have no integral kernel */
+      if (e == 0.5) return mag_sqrt_(err, out_result, x);
+      if (e == -0.5) return mag_rsqrt_(err, out_result, x);
+      if (e == -1.0) return mag_rcp_(err, out_result, x);
+    }
+  }
+  return mag_op_stub_binary(err, out_result, MAG_OP_POW, x, y, MAG_BINOP_INPLACE);
+}
 
 mag_status_t mag_min(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
   return mag_op_stub_binary(err, out_result, MAG_OP_MIN, x, y, 0);
@@ -2036,12 +2204,17 @@ mag_status_t mag_bernoulli_(mag_error_t *err, mag_tensor_t *tensor, double p) {
 
 mag_status_t mag_detach(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor) {
   *out_result = NULL;
+  mag_context_t *ctx = tensor->ctx;
+  bool recording = mag_ctx_grad_recorder_is_running(ctx);
+  if (recording) mag_ctx_grad_recorder_stop(ctx);
   mag_status_t status = mag_view(err, out_result, tensor, tensor->meta.coords.shape, tensor->meta.coords.rank);
+  if (recording) mag_ctx_grad_recorder_start(ctx);
   if (mag_iserr(status)) return status;
   mag_tensor_t *target = *out_result;
   if (target->au_state) {
     mag_rc_decref(target->au_state);
     target->au_state = NULL;
   }
+  target->meta.flags &= ~MAG_TFLAG_REQUIRES_GRAD;
   return MAG_OK;
 }

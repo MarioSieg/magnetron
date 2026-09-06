@@ -463,15 +463,17 @@ static void* unix_mmap(void* addr, size_t size, size_t try_alignment, int protec
     #if !defined(MI_NO_THP)
     if (p != NULL && allow_large && mi_option_is_enabled(mi_option_allow_thp) && _mi_os_canuse_large_page(size, try_alignment)) {
       #if defined(MADV_HUGEPAGE)
-      // Many Linux systems don't allow MAP_HUGETLB but they support instead
-      // transparent huge pages (THP). Generally, it is not required to call `madvise` with MADV_HUGE
-      // though since properly aligned allocations will already use large pages if available
-      // in that case -- in particular for our large regions (in `memory.c`).
-      // However, some systems only allow THP if called with explicit `madvise`, so
-      // when large OS pages are enabled for mimalloc, we call `madvise` anyways.
-      if (unix_madvise(p, size, MADV_HUGEPAGE) == 0) {
-        // *is_large = true; // possibly
-      };
+      if (_mi_os_canuse_thp()) {
+        // Many Linux systems don't allow MAP_HUGETLB but they support instead
+        // transparent huge pages (THP). Generally, it is not required to call `madvise` with MADV_HUGE
+        // though since properly aligned allocations will already use large pages if available
+        // in that case -- in particular for our large regions (in `memory.c`).
+        // However, some systems only allow THP if called with explicit `madvise`, so
+        // when large OS pages are enabled for mimalloc, we call `madvise` anyways.
+        if (unix_madvise(p, size, MADV_HUGEPAGE) == 0) {
+          // *is_large = true; // possibly
+        };
+      }
       #elif defined(__sun)
       struct memcntl_mha cmd = {0};
       cmd.mha_pagesize = _mi_os_large_page_size();
@@ -503,7 +505,7 @@ int _mi_prim_alloc(void* hint_addr, size_t size, size_t try_alignment, bool comm
 //---------------------------------------------
 
 static void unix_mprotect_hint(int err) {
-  #if defined(__linux__) && (MI_SECURE>=5) // guard page around every mimalloc page
+  #if defined(__linux__) && (MI_SECURE>=5 || MI_GUARDED) // guard page around every mimalloc page
   if (err == ENOMEM) {
     _mi_warning_message("The next warning may be caused by a low memory map limit.\n"
                         "  On Linux this is controlled by the vm.max_map_count -- maybe increase it?\n"
@@ -676,18 +678,16 @@ size_t _mi_prim_numa_node(void) {
 
 size_t _mi_prim_numa_node_count(void) {
   char buf[128];
-  unsigned node = 0;
-  size_t skipped = 0;
-  for(node = 0; node < 256; node++) {
+  unsigned last_found = 0;
+  for(unsigned node = 1; node < 256; node++) {
     // enumerate node entries -- todo: it there a more efficient way to do this? (but ensure there is no allocation)
-    _mi_snprintf(buf, 127, "/sys/devices/system/node/node%u", node + 1);
+    _mi_snprintf(buf, 127, "/sys/devices/system/node/node%u", node);
     if (mi_prim_access(buf,R_OK) != 0) {
-      skipped++;
-      if (skipped > 4) break; // allow some sparseness of nodes but not more than 4
+      if (node - last_found > 4) break; // allow some sparseness of nodes but not more than 4
     }
-    else { skipped = 0; }     // reset skipped count
+    else { last_found = node; }         // highest found node
   }
-  return (node+1);
+  return last_found + 1;
 }
 
 #elif defined(__FreeBSD__) && __FreeBSD_version >= 1200000

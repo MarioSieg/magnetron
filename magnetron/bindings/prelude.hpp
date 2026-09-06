@@ -125,16 +125,13 @@ namespace mag::bindings {
   [[nodiscard]] extern nb::object py_scalar_from_mag_scalar(const mag_scalar_t &scalar);
   [[nodiscard]] extern dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h);
   [[nodiscard]] extern std::string format_error_msg(const mag_error_t &err);
-  // Literal parse. 'out_has_ordinal' reports whether the string named one ("cuda:1") or not ("cuda").
   [[nodiscard]] extern std::optional<mag_device_id_t> parse_device_id_str(const std::string &str, bool *out_has_ordinal = nullptr);
-  // Parse, then substitute the backend's best device when no ordinal was named. Use this for user input.
   [[nodiscard]] extern std::optional<mag_device_id_t> resolve_device_id_str(const std::string &str);
-  extern void validate_shape(const std::vector<int64_t> &shape);
   extern void validate_shape(const std::vector<int64_t> &shape);
   extern void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op);;
 
   inline void throw_if_error(mag_status_t st, const mag_error_t &err) {
-    if (st == MAG_OK) return;
+    if (mag_likely(st == MAG_OK)) return;
     std::string msg = format_error_msg(err);
     throw std::runtime_error {msg.c_str()};
   }

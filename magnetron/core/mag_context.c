@@ -255,12 +255,8 @@ bool mag_ctx_grad_recorder_is_running(const mag_context_t *ctx) {
   return ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER;
 }
 
-static void mag_seed_callback(mag_backend_t *bck, mag_device_t *dvc, void *usr) {
-  (*dvc->manual_seed)(NULL, dvc, *(const uint64_t *)usr);
-}
-
 void mag_ctx_manual_seed(mag_context_t *ctx, uint64_t seed) {
-  mag_backend_registry_iter_devices(ctx->backend_registry, &mag_seed_callback, &seed);
+  mag_backend_registry_manual_seed(ctx->backend_registry, seed); /* Also replayed onto backends that are loaded lazily later on */
 }
 
 mag_device_id_t mag_ctx_default_device(mag_context_t *ctx) {

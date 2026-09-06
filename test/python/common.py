@@ -97,9 +97,14 @@ def assert_close_mag_torch(
     atol: float | None = None,
 ) -> None:
     default_rtol, default_atol = compare_tol(dt)
+    got_t = totorch(got)
+    expected_t = totorch(expected) if isinstance(expected, Tensor) else expected
+    if got_t.dtype == torch.float8_e4m3fn or expected_t.dtype == torch.float8_e4m3fn:
+        got_t = got_t.float()
+        expected_t = expected_t.float()
     torch.testing.assert_close(
-        totorch(got),
-        totorch(expected) if isinstance(expected, Tensor) else expected,
+        got_t,
+        expected_t,
         rtol=default_rtol if rtol is None else rtol,
         atol=default_atol if atol is None else atol,
         equal_nan=equal_nan,
@@ -216,7 +221,8 @@ def random_tensor(shape: tuple[int, ...], dt: dtype.DType, device: str = 'cpu') 
     if dt == dtype.boolean:
         return Tensor.bernoulli(shape, device=device)
     lim = 100 if dt.is_integer() else 1.0
-    return Tensor.uniform(shape, low=-lim, high=lim, dtype=dt, device=device)
+    low = 0 if dt.is_unsigned_integer() else -lim
+    return Tensor.uniform(shape, low=low, high=lim, dtype=dt, device=device)
 
 
 DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (

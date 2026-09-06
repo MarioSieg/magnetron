@@ -112,3 +112,18 @@ def test_autograd_inherit_nograd() -> None:
         torchy = y
 
     assert magy.item() == torchy.data.item()
+
+
+def test_detach_clears_requires_grad_and_shares_storage() -> None:
+    t = mag.Tensor([1.0, 2.0, 3.0, 4.0], dtype=mag.dtype.float32)
+    t.requires_grad = True
+
+    d = t.detach()
+    assert not d.requires_grad
+    assert d.data_ptr == t.data_ptr
+    assert t.requires_grad, 'detach() must not disturb the base'
+
+    d.requires_grad = True
+    assert d.requires_grad and t.requires_grad
+
+    assert t.clone().requires_grad, 'clone() keeps the flag, unlike detach()'

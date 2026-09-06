@@ -410,6 +410,26 @@ namespace mag::bindings {
       throw_if_error(mag_view(&err, &out, *self, shape.data(), static_cast<int64_t>(shape.size())), err);
       return tensor_wrapper{out};
     }, "shape"_a, "View with new shape (same storage).")
+    .def("reinterpret_view", [](const tensor_wrapper &self, dtype_wrapper dt, nb::args args) -> tensor_wrapper {
+      std::lock_guard lock {get_global_mutex()};
+      std::vector<int64_t> shape {};
+      bool empty_seq = args.size() == 1 && nb::isinstance<nb::sequence>(args[0]) && !nb::isinstance<nb::str>(args[0]) && nb::len(nb::cast<nb::sequence>(args[0])) == 0;
+      if (empty_seq) {
+        shape.clear();
+      } else if (!args.empty()) {
+        shape = parse_i64_dims(args, "reinterpret_view");
+        validate_shape_infer_one(shape, "reinterpret_view");
+      } else {
+        int64_t rank = mag_tensor_rank(*self);
+        const auto *dims = mag_tensor_shape_ptr(*self);
+        shape.assign(dims, dims+rank);
+        if (rank) shape.back() = -1;
+      }
+      mag_tensor_t *out = nullptr;
+      mag_error_t err {};
+      throw_if_error(mag_reinterpret_view(&err, &out, *self, dt.v, shape.data(), static_cast<int64_t>(shape.size())), err);
+      return tensor_wrapper{out};
+    }, "dtype"_a, "shape"_a, "View with new dtype and shape (same storage).")
     .def("view_slice", [](const tensor_wrapper &self, int64_t dim, int64_t start, int64_t len, int64_t step) -> tensor_wrapper {
       std::lock_guard lock {get_global_mutex()};
       mag_tensor_t *out = nullptr;

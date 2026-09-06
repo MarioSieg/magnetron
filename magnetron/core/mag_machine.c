@@ -325,9 +325,9 @@ end:
   fclose(cpuinfo);
   *out_virtual = nprocs > 0 ? (uint32_t)nprocs : 0;
   if (!cpu_count && *out_virtual) cpu_count = *out_virtual;
-  *out_physical = mag_xmax(1, cpu_count);
+  *out_physical = mag_vmax(1, cpu_count);
   *out_virtual = nprocs > 0 ? (uint32_t)nprocs : *out_physical;
-  *out_sockets = mag_xmax(1, package_count);
+  *out_sockets = mag_vmax(1, package_count);
 #endif
 }
 

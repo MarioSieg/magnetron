@@ -77,6 +77,13 @@ def test_reduce_op_topk(dtype: dtype.DType, largest: bool) -> None:
             tv, ti = tx.topk(k, dim=dim, largest=largest)
 
         assert_close_mag_torch(rv, tv, dtype, equal_nan=True)
-        np.testing.assert_array_equal(tonumpy(ri), tonumpy(ti))
+
+        axis = (len(shape) - 1) if dim is None else (dim % len(shape))
+        mi = totorch(ri)
+        gathered = totorch_for_reference(x, dtype).gather(axis, mi)
+        torch.testing.assert_close(gathered, totorch_for_reference(rv, dtype), rtol=0, atol=0, equal_nan=True)
+        if k > 1:
+            srt = mi.sort(dim=axis).values
+            assert (srt.narrow(axis, 1, k - 1) != srt.narrow(axis, 0, k - 1)).all()
 
     for_all_shapes(test)

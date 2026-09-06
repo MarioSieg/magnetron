@@ -282,6 +282,10 @@ cleanup:
 }
 
 size_t mag_tensor_numbytes(const mag_tensor_t *t) {
+  return (size_t)t->meta.numel*mag_type_trait(t->meta.dtype)->size;
+}
+
+size_t mag_tensor_storage_numbytes(const mag_tensor_t *t) {
   return t->storage->size;
 }
 int64_t mag_tensor_numel(const mag_tensor_t *tensor) {
@@ -464,6 +468,13 @@ mag_context_t *mag_tensor_context(const mag_tensor_t *tensor) {
 
 bool mag_tensor_is_view(const mag_tensor_t *tensor) {
   return tensor->meta.flags & MAG_TFLAG_IS_VIEW;
+}
+
+mag_tensor_t *mag_tensor_view_base(const mag_tensor_t *tensor) {
+  if (!(tensor->meta.flags & MAG_TFLAG_IS_VIEW) || !tensor->view_meta) return NULL;
+  mag_tensor_t *base = tensor->view_meta->base;
+  if (base) mag_rc_incref(base);
+  return base;
 }
 
 bool mag_tensor_is_floating_point_typed(const mag_tensor_t *tensor) {

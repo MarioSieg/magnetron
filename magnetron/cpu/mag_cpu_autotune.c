@@ -134,8 +134,8 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
 uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_device_t *dvc) {
   mag_cpu_device_t *cpu_dvc = dvc->impl;
   int64_t max_numel = INT64_MIN;
-  for (uint32_t i=0; i < cmd->num_in; ++i) max_numel = mag_xmax(max_numel, cmd->in[i]->meta.numel);
-  for (uint32_t i=0; i < cmd->num_out; ++i) max_numel = mag_xmax(max_numel, cmd->out[i]->meta.numel);
+  for (uint32_t i=0; i < cmd->num_in; ++i) max_numel = mag_vmax(max_numel, cmd->in[i]->meta.numel);
+  for (uint32_t i=0; i < cmd->num_out; ++i) max_numel = mag_vmax(max_numel, cmd->out[i]->meta.numel);
   mag_opcode_t op = cmd->op;
   uint32_t allocated_workers = cpu_dvc->num_allocated_workers;
   const mag_op_traits_t *meta = mag_op_trait(op);
@@ -162,18 +162,18 @@ uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_
         if (work_bytes >= 32LL  << 20) workers = 16;
         if (work_bytes >= 96LL  << 20) workers = 32;
         if (work_bytes >= 256LL << 20) workers = 64;
-        return mag_xmin(workers, allocated_workers);
+        return mag_vmin(workers, allocated_workers);
       }
       default: { /* GEMM/BMM: spread over workers only once the flops amortize the barrier and packing. */
         int64_t K = x->meta.coords.shape[x->meta.coords.rank-1];
         double flops = 2.0*(double)cmd->out[0]->meta.numel*(double)K;
         int64_t workers = (int64_t)(flops/(double)MAG_MATMUL_FLOPS_PER_WORKER);
-        return (uint32_t)mag_xmin((int64_t)allocated_workers, mag_xmax(1, workers));
+        return (uint32_t)mag_vmin((int64_t)allocated_workers, mag_vmax(1, workers));
       }
     }
   }
   max_numel -= info.thread_treshold;
   uint32_t workers = (uint32_t)ceil(info.growth * log2((double)max_numel)); /* Logarithmic scaling */
-  workers = mag_xmin(allocated_workers, mag_xmax(1, workers));
+  workers = mag_vmin(allocated_workers, mag_vmax(1, workers));
   return workers;
 }
