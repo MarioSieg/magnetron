@@ -260,6 +260,11 @@ uint64_t mag_hpc_clock_ns(void) { /* High precision clock in nanoseconds. */
   LARGE_INTEGER li;
   QueryPerformanceCounter(&li);
   return ((li.QuadPart - t_boot)*1000000000) / t_freq;
+#elif defined(__APPLE__)
+  /* CLOCK_MONOTONIC is quantized to 1us on Darwin, which cannot resolve a kernel that runs in
+     a few hundred ns. CLOCK_UPTIME_RAW is the raw mach timer: ~41ns granularity and cheaper to
+     read. Both exclude time asleep, so interval measurements are unaffected. */
+  return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #else
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
