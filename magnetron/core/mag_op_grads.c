@@ -525,6 +525,99 @@ static mag_status_t mag_grad_reduce_to(mag_error_t *err, mag_tensor_t **io, mag_
   return MAG_OK;
 }
 
+/*
+** The general strided_view backward below scatters the gradient back through an explicitly built
+** index tensor, which costs a zeroed buffer the size of the base storage, an int64 index tensor the
+** size of the view, and an arange/mul/add per dimension. That generality is only needed when the
+** view aliases the same base element more than once (broadcast, expand, overlapping slices).
+**
+** The views that actually dominate real models are bijections onto the whole base: a reshape,
+** flatten, squeeze or unsqueeze (contiguous), and a transpose or permute (a reordering of the base's
+** own strides). Every nn.Linear hits the second case, because forward is x @ weight.T. For those the
+** gradient is a rearrangement of the incoming gradient and needs no scatter at all.
+**
+** Returns true and fills out_grad when the fast path applies, false to fall through to the general
+** path. Conditions are deliberately strict: base contiguous, view starts at offset 0 and covers the
+** base exactly once, so no element is written twice and none is left at zero.
+*/
+static bool mag_strided_view_backward_fast(
+  mag_error_t *err,
+  mag_status_t *status,
+  mag_tensor_t *base,
+  mag_tensor_t *grad,
+  int64_t rank,
+  const int64_t *vshape,
+  const int64_t *vstride,
+  int64_t voffset,
+  int64_t storel,
+  mag_tensor_t **out_grad
+) {
+  *out_grad = NULL;
+  const mag_coords_t *bc = &base->meta.coords;
+  if (voffset != 0) return false;
+  if (base->meta.numel != storel) return false;    /* base must own its whole storage */
+  if (!mag_tensor_is_contiguous(base)) return false;
+  int64_t vnumel = 1;
+  for (int64_t k=0; k < rank; ++k) vnumel *= vshape[k];
+  if (vnumel != storel) return false;              /* must cover the base exactly once */
+
+  /* Case 1: the view walks the storage in order (reshape, flatten, squeeze, unsqueeze, or a plain
+     alias). Both view and base are then contiguous linearizations of the same elements, so the
+     gradient only has to be relabelled with the base's shape. Size-1 dims index nothing, so their
+     stride carries no meaning and is skipped. */
+  bool view_is_contiguous = true;
+  int64_t expect = 1;
+  for (int64_t k=rank; k-- > 0;) {
+    if (vshape[k] == 1) continue;
+    if (vstride[k] != expect) { view_is_contiguous = false; break; }
+    expect *= vshape[k];
+  }
+  mag_tensor_t *gc = NULL;
+  if (view_is_contiguous) {
+    *status = mag_contiguous(err, &gc, grad);
+    if (mag_iserr(*status)) return true;           /* a real failure, not a reason to retry the slow path */
+    *status = mag_reshape(err, out_grad, gc, bc->shape, bc->rank);
+    mag_rc_decref(gc);
+    return true;
+  }
+
+  /* Case 2: the view is a reordering of the base's own dimensions (transpose, permute). That only
+     makes sense when the ranks agree, unlike case 1 which is free to change rank. */
+  if (rank != bc->rank) return false;
+  int64_t bstride[MAG_MAX_DIMS];                   /* base is contiguous, so its strides are row-major */
+  int64_t acc = 1;
+  for (int64_t i=rank; i-- > 0;) {
+    bstride[i] = acc;
+    acc *= bc->shape[i];
+  }
+  int64_t perm[MAG_MAX_DIMS];
+  bool used[MAG_MAX_DIMS] = {false};
+  for (int64_t k=0; k < rank; ++k) {
+    int64_t match = -1;
+    for (int64_t m=0; m < rank; ++m) {
+      if (used[m] || bc->shape[m] != vshape[k]) continue;
+      if (vshape[k] != 1 && vstride[k] != bstride[m]) continue;
+      match = m;
+      break;
+    }
+    if (match < 0) return false;                   /* not a reordering of the base's own strides */
+    used[match] = true;
+    perm[k] = match;
+  }
+  int64_t inv[MAG_MAX_DIMS];                       /* base dim perm[k] came from view dim k */
+  for (int64_t k=0; k < rank; ++k) inv[perm[k]] = k;
+
+  *status = mag_contiguous(err, &gc, grad);
+  if (mag_iserr(*status)) return true;
+  mag_tensor_t *permuted = NULL;
+  *status = mag_permute(err, &permuted, gc, inv, rank);
+  mag_rc_decref(gc);
+  if (mag_iserr(*status)) return true;
+  *status = mag_contiguous(err, out_grad, permuted);
+  mag_rc_decref(permuted);
+  return true;
+}
+
 mag_status_t mag_op_backward_strided_view(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *base = node->in[0];
   mag_context_t *ctx = base->ctx;
@@ -551,6 +644,12 @@ mag_status_t mag_op_backward_strided_view(mag_error_t *err, mag_au_state_t *node
   int64_t storel = (int64_t)(base->storage->size / (size_t)el);
   int64_t vnumel=1;
   for (int64_t k=0; k < rank; ++k) vnumel *= vshape[k];
+  mag_tensor_t *fast = NULL;
+  if (mag_strided_view_backward_fast(err, &status, base, node->grad, rank, vshape, vstride, voffset, storel, &fast)) {
+    if (mag_iserr(status)) return status;
+    grads[0] = fast;
+    return MAG_OK;
+  }
   status = mag_zeros(err, &flat, ctx, node->grad->meta.dtype, 1, &storel, dev);
   if (mag_iserr(status)) goto cleanup;
   status = mag_full(err, &idx, ctx, MAG_DTYPE_INT64, rank, vshape, mag_scalar_from_int64(voffset), dev);
