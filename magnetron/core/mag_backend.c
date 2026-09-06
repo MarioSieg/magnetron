@@ -67,7 +67,10 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
   /* Init backend */
   mag_backend_t *backend=NULL;
   status = (*(MAG_BACKEND_SYM_FN_INIT*)(fn_init))(err, &backend, ctx);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(status)) {
+    mag_dylib_close(handle);
+    return status;
+  }
 
   /* Verify vtable */
   bool vtab = true;
@@ -138,11 +141,20 @@ static mag_status_t mag_backend_module_shutdown(mag_error_t *err, mag_backend_mo
   return status;
 }
 
+typedef enum mag_backend_load_state_t {
+  MAG_BACKEND_LOAD_STATE_LAZY_PENDING = 0, /* Not loaded yet, will be loaded on first use */
+  MAG_BACKEND_LOAD_STATE_LOADED,      /* Loaded and initialized. */
+  MAG_BACKEND_LOAD_STATE_FAILED       /* Load failed, don't retry. */
+} mag_backend_load_state_t;
+
 struct mag_backend_registry_t {
   mag_context_t *ctx;
+  char *module_dir;                                         /* Directory the backend shared libraries are loaded from */
   mag_backend_module_t *backends[MAG_BACKEND_TYPE__COUNT];
+  mag_backend_load_state_t load_state[MAG_BACKEND_TYPE__COUNT];
+  uint64_t seed;                                            /* Seed to apply to devices of backends loaded later on */
+  bool has_seed;                                            /* True if a seed was set and must be replayed on lazy load */
   size_t backends_num;
-  size_t backends_cap;
 };
 
 const char *mag_backend_type_to_str(mag_backend_type_t type) {
@@ -177,6 +189,53 @@ bool mag_device_id_eq(mag_device_id_t a, mag_device_id_t b) {
   return a.is_virtual == b.is_virtual && a.type == b.type && a.device_ordinal == b.device_ordinal;
 }
 
+/* Seed all devices of a backend. */
+static void mag_backend_seed_devices(mag_backend_t *bck, uint64_t seed) {
+  uint32_t nd = (*bck->num_devices)(bck);
+  for (uint32_t i=0; i < nd; ++i) {
+    mag_device_t *dvc = (*bck->get_device)(bck, i);
+    if (dvc) (*dvc->manual_seed)(NULL, dvc, seed);
+  }
+}
+
+static void mag_backend_log_loaded(mag_backend_t *bck) {
+  uint32_t nd = (*bck->num_devices)(bck);
+  mag_log_info("Loaded backend: %s (Version %d.%d.%d, %u Device%s, Best Device: '%s')",
+    (*bck->id)(bck),
+    mag_ver_major((*bck->runtime_version)(bck)),
+    mag_ver_minor((*bck->runtime_version)(bck)),
+    mag_ver_patch((*bck->runtime_version)(bck)),
+    nd,
+    nd == 1 ? "" : "s",
+    nd > 0 ? (*bck->get_device)(bck, (*bck->best_device_id)(bck))->physical_device_name : "N/A"
+  );
+}
+
+static mag_backend_t *mag_backend_registry_load(mag_error_t *err, mag_backend_registry_t *reg, mag_backend_type_t type) {
+  switch (reg->load_state[type]) {
+    case MAG_BACKEND_LOAD_STATE_LOADED: return reg->backends[type]->backend;
+    case MAG_BACKEND_LOAD_STATE_FAILED: return NULL;
+    case MAG_BACKEND_LOAD_STATE_LAZY_PENDING: break;
+  }
+  char pathbuf[1024];
+  snprintf(pathbuf, sizeof(pathbuf), "%s/%smagnetron_%s.%s", reg->module_dir, MAG_DYLIB_PREFIX, mag_backend_type_to_str(type), MAG_DYLIB_EXT);
+  mag_backend_module_t *mod = NULL;
+  mag_error_t local_err = {0};
+  mag_status_t status = mag_backend_module_load(err ? err : &local_err, &mod, pathbuf, reg->ctx);
+  if (mag_iserr(status)) {
+    reg->load_state[type] = MAG_BACKEND_LOAD_STATE_FAILED;
+    mag_log_info("Backend '%s' not available: %s", mag_backend_type_to_str(type), err ? err->message : local_err.message);
+    if (err) err->code = MAG_OK;
+    return NULL;
+  }
+  reg->backends[type] = mod;
+  reg->load_state[type] = MAG_BACKEND_LOAD_STATE_LOADED;
+  ++reg->backends_num;
+  mag_backend_log_loaded(mod->backend);
+  if (reg->has_seed) mag_backend_seed_devices(mod->backend, reg->seed);
+  return mod->backend;
+}
+
 mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag_backend_registry_t **out_reg) {
   *out_reg = NULL;
   mag_backend_registry_t *reg = (*mag_try_alloc)(NULL, sizeof(*reg), 0);
@@ -193,46 +252,36 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
   char *module_dir, *file;
   mag_path_split_dir_inplace(modpath, &module_dir, &file);
   mag_log_info("Module search path: '%s'", module_dir);
-  /* Try to load all backends */
-  char pathbuf[1024] = {0};
-  for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
-    snprintf(pathbuf, sizeof(pathbuf), "%s/%smagnetron_%s.%s", module_dir, MAG_DYLIB_PREFIX, mag_backend_type_to_str(type), MAG_DYLIB_EXT);
-    mag_backend_module_t *mod = NULL;
-    mag_status_t status2 = mag_backend_module_load(err, &mod, pathbuf, reg->ctx);
-    if (mag_iserr(status2)) {
-      if (mag_backend_type_is_required(type)) {
-        status = status2;
-        goto error;
-      }
-      mag_log_info("Optional backend '%s' not available: %s", mag_backend_type_to_str(type), err ? err->message : "(not present)");
-      if (err) err->code = MAG_OK;
-      continue;
-    }
-    reg->backends[type] = mod;
-    ++reg->backends_num;
+  size_t dirlen = strlen(module_dir);
+  reg->module_dir = (*mag_try_alloc)(NULL, dirlen+1, 0); /* Keep the search path around for lazy loads. */
+  if (mag_unlikely(!reg->module_dir)) {
+    status = mag_set_error(err, MAG_ERR_OOM, "backend: failed to allocate backend module search path (%zu bytes).", dirlen+1);
+    goto error;
   }
-  if (mag_unlikely(!reg->backends_num)) {
+  memcpy(reg->module_dir, module_dir, dirlen+1);
+  (*mag_alloc)(modpath, 0, 0);
+  modpath = NULL;
+  size_t num_required = 0;
+  for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
+    if (!mag_backend_type_is_required(type)) continue;
+    ++num_required;
+    mag_error_t load_err = {0};
+    if (mag_unlikely(!mag_backend_registry_load(&load_err, reg, type))) {
+      status = mag_set_error(err, MAG_ERR_STATE,
+        "backend: required backend '%s' could not be loaded: %s\n"
+        "Backends are loaded as shared libraries next to libmagnetron_core.\n"
+        "Ensure %smagnetron_%s.%s is installed alongside libmagnetron_core.",
+        mag_backend_type_to_str(type), load_err.message, MAG_DYLIB_PREFIX, mag_backend_type_to_str(type), MAG_DYLIB_EXT);
+      goto error;
+    }
+  }
+  if (mag_unlikely(!num_required && !reg->backends_num)) {
     status = mag_set_error(err, MAG_ERR_STATE,
       "backend: no magnetron compute backends could be loaded.\n"
       "Backends are loaded as shared libraries next to libmagnetron_core, but none were located or usable.\n"
       "Ensure at least one backend (e.g. magnetron_cpu) is installed alongside libmagnetron_core,\n"
       "and that the file is named %smagnetron_<backend>.%s.", MAG_DYLIB_PREFIX, MAG_DYLIB_EXT);
     goto error;
-  }
-  (*mag_alloc)(modpath, 0, 0);
-  for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
-    if (reg->backends[type]) {
-      mag_backend_t *bck = reg->backends[type]->backend;
-      mag_log_info("Loaded backend: %s (Version %d.%d.%d, %u Device%s, Best Device: '%s')",
-        (*bck->id)(bck),
-        mag_ver_major((*bck->runtime_version)(bck)),
-        mag_ver_minor((*bck->runtime_version)(bck)),
-        mag_ver_patch((*bck->runtime_version)(bck)),
-        (*bck->num_devices)(bck),
-        (*bck->num_devices)(bck) == 1 ? "" : "s",
-        (*bck->num_devices)(bck) > 0 ? bck->get_device(bck, (*bck->best_device_id)(bck))->physical_device_name : "N/A"
-      );
-    }
   }
   *out_reg = reg;
   return MAG_OK;
@@ -241,15 +290,22 @@ error:
   for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type)
     if (reg->backends[type])
       mag_backend_module_shutdown(NULL, reg->backends[type]);
+  if (reg->module_dir) (*mag_alloc)(reg->module_dir, 0, 0);
   (*mag_alloc)(reg, 0, 0);
   return status;
 }
 
+void mag_backend_registry_manual_seed(mag_backend_registry_t *reg, uint64_t seed) {
+  reg->seed = seed; /* Remembered so backends loaded later on start from the same seed. */
+  reg->has_seed = true;
+  for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type)
+    if (reg->load_state[type] == MAG_BACKEND_LOAD_STATE_LOADED)
+      mag_backend_seed_devices(reg->backends[type]->backend, seed);
+}
+
 mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag_backend_type_t type) {
   if (mag_unlikely(type >= MAG_BACKEND_TYPE__COUNT)) return NULL;
-  mag_backend_module_t *mod = reg->backends[type];
-  if (mag_unlikely(!mod)) return NULL;
-  return mod->backend;
+  return mag_backend_registry_load(NULL, reg, type); /* Loads the module on first use. */
 }
 
 bool mag_backend_registry_lookup_device_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc) {
@@ -277,30 +333,18 @@ bool mag_backend_registry_best_device(mag_backend_registry_t *reg, mag_backend_t
   return true;
 }
 
-void mag_backend_registry_iter_devices(mag_backend_registry_t *reg, void(*callback)(mag_backend_t *bck, mag_device_t *dvc, void *usr), void *usr) {
-  for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
-    if (!reg->backends[type]) continue;
-    mag_backend_t *backend = reg->backends[type]->backend;
-    if (!backend) continue;
-    uint32_t nd = (*backend->num_devices)(backend);
-    for (uint32_t i=0; i<nd; ++i) {
-      mag_device_t *dvc = backend->get_device(backend, i);
-      if (!dvc) continue;
-      (*callback)(backend, dvc, usr);
-    }
-  }
-}
-
 mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registry_t *reg) {
   for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
     if (reg->backends[type]) {
       mag_status_t status = mag_backend_module_shutdown(err, reg->backends[type]);
       if (mag_iserr(status)) {
+        (*mag_alloc)(reg->module_dir, 0, 0);
         (*mag_alloc)(reg, 0, 0);
         return status;
       }
     }
   }
+  (*mag_alloc)(reg->module_dir, 0, 0);
   (*mag_alloc)(reg, 0, 0);
   return MAG_OK;
 }
