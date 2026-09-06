@@ -44,3 +44,33 @@ Example:
 ```bash
 export MAG_CPU_SPECIALIZATION_LEVEL=v3
 ```
+
+## MAG_CPU_INTRAOP_MIN_ELEMS
+
+Read by `mag_envcfg_cpu_intraop_min_elems()`.
+
+Overrides, for every operator, the element count at which the CPU backend starts spreading an
+operation across the threadpool. Normally each operator has its own threshold in the table in
+[`magnetron/cpu/mag_cpu_autotune.c`](../magnetron/cpu/mag_cpu_autotune.c); this variable replaces
+all of them with one value.
+
+This exists for tuning, not for production use. The thresholds are machine-specific: fan-out and
+barrier cost roughly a fixed amount regardless of tensor size, so the crossover depends on how
+fast the host executes the kernel and how much memory bandwidth a single core can already
+saturate. Setting a very large value forces everything single-threaded; setting `0` forces
+everything through the threadpool.
+
+Allowed values:
+- a non-negative integer element count
+
+To re-derive the table on a new machine, sweep this with the tuning tool, which runs each
+operator both ways at a range of sizes and prints a suggested table:
+
+```bash
+python benchmark/python/tune_intraop.py
+```
+
+Example:
+```bash
+export MAG_CPU_INTRAOP_MIN_ELEMS=0   # force multithreading on, to compare against the table
+```

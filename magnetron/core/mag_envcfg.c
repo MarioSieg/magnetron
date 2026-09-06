@@ -27,6 +27,20 @@ void mag_envcfg_apply_log_level(void) {
   else mag_log_error("Invalid " MAG_ENV_LOG_LEVEL " value '%s' (valid: off, error, warn, info, debug)", v);
 }
 
+/* Benchmark aid: pin the intra-op multithreading threshold for every op, so the per-op table can be
+   re-tuned on a new machine by sweeping this instead of rebuilding. Negative means unset. */
+int64_t mag_envcfg_cpu_intraop_min_elems(void) {
+  const char *v = mag_envcfg_raw(MAG_ENV_CPU_INTRAOP_MIN_ELEMS);
+  if (!v) return -1;
+  char *end = NULL;
+  long long parsed = strtoll(v, &end, 10);
+  if (!end || *end || parsed < 0) {
+    mag_log_error("Invalid " MAG_ENV_CPU_INTRAOP_MIN_ELEMS " value '%s' (expected a non-negative integer)", v);
+    return -1;
+  }
+  return (int64_t)parsed;
+}
+
 mag_envcfg_cpu_specialization_t mag_envcfg_cpu_specialization_level(const char **out_name) {
   const char *v = mag_envcfg_raw(MAG_ENV_CPU_SPECIALIZATION_LEVEL);
   if (!v) return MAG_ENVCFG_CPU_SPECIALIZATION_AUTO;
