@@ -19,7 +19,6 @@ import magnetron.nn as nn
 import tiktoken
 from collections.abc import Iterator
 from dataclasses import dataclass
-from magnetron._bootstrap import _FFI, _C
 from rich.console import Console
 
 console = Console()
@@ -147,25 +146,25 @@ class GPT2(nn.Module):
         sd_keys_hf = sd_hf.keys()
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')]
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')]
+        # lm_head.weight is tied to transformer.wte.weight. The checkpoint stores it under both
+        # names, this model under one, so dropping the duplicate keeps the key counts equal.
+        sd_keys_hf = [k for k in sd_keys_hf if k != 'lm_head.weight']
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
         assert len(sd_keys_hf) == len(sd_keys), f'mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}'
 
-        def copy(r: Tensor, x: torch.Tensor) -> None:  # TODO
-            assert x.is_contiguous and r.is_contiguous
-            assert r.shape == x.shape, f'Shape mismatch: {r.shape} != {x.shape}'
-            assert r.is_contiguous and x.is_contiguous, 'Both tensors must be contiguous for copy operation'
-            bytes = x.numel() * x.element_size()
-            _C.mag_copy_raw_(r._ptr, _FFI.cast('void*', x.data_ptr()), bytes)
-
+        # state_dict() hands back clones, so writing into its tensors never reaches the model.
+        new_state: dict[str, Tensor] = {}
         for k in sd_keys_hf:
+            src = sd_hf[k]
             if any(k.endswith(w) for w in transposed):
-                assert sd_hf[k].shape[::-1] == sd[k].shape
-                with no_grad():
-                    copy(sd[k], sd_hf[k].T.contiguous())
+                assert src.shape[::-1] == sd[k].shape, f'{k}: {tuple(src.shape[::-1])} != {sd[k].shape}'
+                src = src.T
             else:
-                assert sd_hf[k].shape == sd[k].shape
-                with no_grad():
-                    copy(sd[k], sd_hf[k].contiguous())
+                assert src.shape == sd[k].shape, f'{k}: {tuple(src.shape)} != {sd[k].shape}'
+            new_state[k] = Tensor(src.detach().contiguous().float().numpy())
+
+        with no_grad():
+            model.load_state_dict(new_state, strict=False)
 
         return model
 
@@ -192,7 +191,7 @@ class GPT2(nn.Module):
                 new_kv.append(kv)
 
         x = self.transformer.ln_f(x)
-        logits = self.lm_head(x[:, [-1], :])
+        logits = self.lm_head(x[:, -1:, :])  # a slice, not [-1]: both keep the dim, but a list index gathers
         return logits, new_kv
 
     @no_grad()
@@ -204,7 +203,7 @@ class GPT2(nn.Module):
             logits = logits[:, -1, :] / temp
             if top_k is not None:
                 v, _ = logits.topk(top_k)
-                logits.masked_fill_(logits < v[:, [-1]], float('-inf'))
+                logits.masked_fill_(logits < v[:, -1:], float('-inf'))
             probs = logits.softmax(dim=-1)
             next_id = probs.multinomial(num_samples=1).item()
             tokens.append(next_id)
@@ -224,7 +223,7 @@ class GPT2(nn.Module):
             logits = logits[:, -1, :] / temp
             if top_k is not None:
                 v, _ = logits.topk(top_k)
-                logits = logits.masked_fill(logits < v[:, [-1]], float('-inf'))
+                logits = logits.masked_fill(logits < v[:, -1:], float('-inf'))
             probs = logits.softmax(dim=-1)
             next_id = probs.multinomial(num_samples=1).item()
             tokens.append(next_id)
@@ -259,12 +258,12 @@ def _main() -> None:
     model = GPT2.from_pretrained(args.model)
     model = model.cast(dtype.bfloat16)
     puts = lambda s: console.print(s, style='bold white', end='')
-    puts(args.prompt)
     if not args.no_stream:
+        puts(args.prompt)  # only the streaming path needs this; generate() returns the prompt too
         for chunk in model.generate_stream(args.prompt, max_tokens=args.max_tokens, temp=args.temp, top_k=args.top_k):
             puts(chunk)
     else:
-        puts(model.generate(args.prompt, max_tokens=args.max_tokens, temp=args.temp))
+        puts(model.generate(args.prompt, max_tokens=args.max_tokens, temp=args.temp, top_k=args.top_k))
 
 
 if __name__ == '__main__':
