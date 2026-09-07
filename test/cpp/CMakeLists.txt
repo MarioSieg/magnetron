@@ -16,6 +16,13 @@ target_link_libraries(
     GTest::gmock
 )
 add_test(NAME magnetron_test COMMAND magnetron_test)
+
+# The fusion tests assert that a generated kernel matches an op-by-op reference bit for bit.
+# Generated kernels are built with -ffp-contract=off, so the reference has to be too: left to
+# contract, the compiler folds the reference's multiply-add into an FMA and it lands one ULP away.
+if (NOT MSVC)
+    set_source_files_properties(core/fusion.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+endif()
 target_precompile_headers(magnetron_test PRIVATE
     "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/test/cpp/prelude.hpp>"
 )

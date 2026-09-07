@@ -219,6 +219,7 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     if (suppress_leak_detection) mag_log_warn("%s", msg);
     else mag_log_error("%s", msg); /* Never abort from Python - report the leak instead of panicking. */
   }
+  mag_fuse_tape_shutdown(ctx);
   mag_fuse_cache_shutdown(ctx);
   mag_topo_set_free(&ctx->topo_set);
   mag_topo_stack_free(&ctx->topo_stack);

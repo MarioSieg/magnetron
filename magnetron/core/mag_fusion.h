@@ -6,10 +6,8 @@
 ** chain per element with intermediates in registers, which is where the win comes from: eager
 ** execution performs one load and one store per element for every operator in the chain.
 **
-** Interpreting the chain instead was measured and does not work. Running each operator over a
-** cache-resident tile still performs those loads and stores and recovers only about 1.2x of an
-** available 6-7x, because the cost is instruction count and register pressure rather than DRAM
-** traffic. Generating code is the only approach that removes them.
+** Interpreting the chain over cache-resident tiles was measured at 1.2x of an available 6-7x: the
+** cost is instruction count and register pressure, not DRAM traffic.
 */
 
 #ifndef MAG_FUSION_H
@@ -31,7 +29,8 @@ extern "C" {
 typedef enum mag_fuse_operand_kind_t {
   MAG_FUSE_REG = 0,   /* A value produced earlier in the chain. */
   MAG_FUSE_BUF = 1,   /* Element i of a tensor operand. */
-  MAG_FUSE_IMM = 2    /* A scalar passed in at call time, not baked into the code. */
+  MAG_FUSE_IMM = 2,   /* A scalar passed in at call time, not baked into the code. */
+  MAG_FUSE_SCL = 3    /* Element 0 of a tensor operand, broadcast across the loop. */
 } mag_fuse_operand_kind_t;
 
 typedef struct mag_fuse_operand_t {
@@ -73,6 +72,7 @@ typedef void (*mag_fused_fn_t)(void *const *bufs, const double *imms, int64_t be
    overflow, so a caller that outgrows the limits can fall back to eager execution. */
 extern MAG_EXPORT void mag_fuse_plan_init(mag_fuse_plan_t *plan, mag_dtype_t dtype);
 extern MAG_EXPORT int32_t mag_fuse_load(mag_fuse_plan_t *plan, uint8_t buf);
+extern MAG_EXPORT int32_t mag_fuse_load_scalar(mag_fuse_plan_t *plan, uint8_t buf);
 extern MAG_EXPORT int32_t mag_fuse_emit(mag_fuse_plan_t *plan, mag_opcode_t op, const mag_fuse_operand_t *in, uint8_t num_in);
 extern MAG_EXPORT bool mag_fuse_store(mag_fuse_plan_t *plan, uint8_t buf, int32_t reg);
 
@@ -86,9 +86,29 @@ extern MAG_EXPORT void mag_fuse_source_free(char *src);
 
 /* Compile (or fetch from cache) the kernel for a plan. The returned pointer stays valid for the
    lifetime of the context. Fails cleanly when no host compiler is available, so callers can fall
-   back to eager execution rather than aborting. */
+   back to eager execution. */
 extern MAG_EXPORT mag_status_t mag_fuse_compile(mag_error_t *err, mag_context_t *ctx, const mag_fuse_plan_t *plan, mag_fused_fn_t *out_fn);
 
+/*
+** Automatic capture.
+**
+** Fusing a chain means seeing it before any of it runs, which eager execution cannot do. Inside a
+** region the dispatcher records a fusible operation instead of submitting it and marks its output
+** pending; anything that cannot join the chain, and any read of a pending tensor, flushes first.
+** Re-recording on every entry is deliberate. A baked tape would need a guard against the control
+** flow having changed since; a fresh trace is its own guard, and a different path simply produces
+** a different chain.
+*/
+extern MAG_EXPORT void mag_fuse_region_begin(mag_context_t *ctx);
+extern MAG_EXPORT mag_status_t mag_fuse_region_end(mag_error_t *err, mag_context_t *ctx);
+extern MAG_EXPORT bool mag_fuse_region_active(const mag_context_t *ctx);
+extern mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx);
+/* Returns true in *captured when the op joined the chain and must not be submitted. */
+extern mag_status_t mag_fuse_capture(mag_error_t *err, mag_context_t *ctx, mag_opcode_t op, bool inplace,
+  mag_tensor_t **in, uint32_t num_in, mag_tensor_t **out, uint32_t num_out, bool *captured);
+extern MAG_EXPORT void mag_fuse_region_stats(mag_context_t *ctx, uint64_t *out_chains, uint64_t *out_ops_fused);
+
+extern MAG_COLDPROC void mag_fuse_tape_shutdown(mag_context_t *ctx);
 extern MAG_COLDPROC void mag_fuse_cache_shutdown(mag_context_t *ctx); /* Unload every compiled kernel. */
 extern MAG_EXPORT void mag_fuse_cache_stats(mag_context_t *ctx, uint64_t *out_hits, uint64_t *out_compiles);
 

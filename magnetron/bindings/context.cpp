@@ -74,13 +74,25 @@ namespace mag::bindings {
       std::lock_guard lock {get_global_mutex()};
       mag_ctx_manual_seed(get_ctx(), seed);
     }, "seed"_a, "Set RNG seed for reproducibility.");
+    context.def("begin_fusion", []() -> void {
+      std::lock_guard lock {get_global_mutex()};
+      mag_fuse_region_begin(get_ctx());
+    }, "Start recording fusible pointwise ops instead of executing them. Nestable.");
+    context.def("end_fusion", []() -> void {
+      std::lock_guard lock {get_global_mutex()};
+      mag_error_t err {};
+      throw_if_error(mag_fuse_region_end(&err, get_ctx()), err);
+    }, "Close the innermost fusion region; the outermost close materializes the chain.");
     context.def("jit_stats", []() -> nb::dict {
       std::lock_guard lock {get_global_mutex()};
-      uint64_t hits = 0, compiles = 0;
+      uint64_t hits = 0, compiles = 0, chains = 0, ops_fused = 0;
       mag_fuse_cache_stats(get_ctx(), &hits, &compiles);
+      mag_fuse_region_stats(get_ctx(), &chains, &ops_fused);
       nb::dict out;
       out["kernels_compiled"] = compiles;
       out["cache_hits"] = hits;
+      out["chains_fused"] = chains;
+      out["ops_fused"] = ops_fused;
       return out;
     }, "Fused-kernel cache counters. 'kernels_compiled' counts host compiler invocations this session.");
     /* Resolves like set_default_device does, so 'is_device_available(d)' answering true guarantees that

@@ -10,6 +10,7 @@
 */
 
 #include "mag_tensor.h"
+#include "mag_fusion.h"
 #include "mag_context.h"
 #include "mag_slab.h"
 #include "mag_alloc.h"
@@ -309,6 +310,10 @@ size_t mag_tensor_data_offset(const mag_tensor_t *tensor) {
 }
 
 uintptr_t mag_tensor_data_ptr(const mag_tensor_t *tensor) {
+  /* Catching it here rather than at each binding entry point is what makes deferral safe: there is
+     no way to read a tensor's bytes without going through this. */
+  if (mag_unlikely(tensor->meta.flags & MAG_TFLAG_PENDING))
+    mag_fuse_flush(NULL, tensor->ctx);
   return tensor->storage->base+mag_tensor_data_offset(tensor);
 }
 

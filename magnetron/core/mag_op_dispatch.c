@@ -13,6 +13,7 @@
 #include "mag_backend.h"
 #include "mag_context.h"
 #include "mag_autodiff.h"
+#include "mag_fusion.h"
 
 static void MAG_COLDPROC mag_dbg_trace_op_ir(
   mag_opcode_t op,
@@ -100,6 +101,17 @@ mag_status_t MAG_HOTPROC mag_dispatch(
     .num_out = num_out,
     .params = params
   };
+  if (mag_unlikely(ctx->flags & MAG_CTX_FLAG_FUSING)) {
+    /* Autograd recording above already ran, so the graph is built either way; only execution is
+       deferred. A captured op must not be submitted: its output is filled when the chain flushes. */
+    bool captured = false;
+    mag_status_t cs = mag_fuse_capture(err, ctx, op, inplace, in, num_in, out, num_out, &captured);
+    if (mag_unlikely(mag_iserr(cs))) return cs;
+    if (captured) {
+      ++ctx->telemetry.ops_dispatched;
+      return MAG_OK;
+    }
+  }
   mag_status_t (*submit)(mag_error_t *, mag_device_t *, const mag_command_t *) = device->submit;
   mag_status_t stat = (*submit)(err, device, &cmd);
   if (inplace)

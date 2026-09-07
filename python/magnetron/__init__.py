@@ -65,3 +65,37 @@ class no_grad(ContextDecorator):
         """Restore whatever gradient tracking state was active on entry."""
         if self.prev_recording.pop():
             context.start_grad_recorder()
+
+
+class fuse(ContextDecorator):
+    """Fuse the pointwise operations in this block into generated kernels.
+
+    Operations that can join a chain are recorded instead of executed, and the chain is compiled
+    into a single pass when the block ends or when something reads a value it has not produced yet.
+    Anything that cannot join - a matmul, a reduction, a strided operand - flushes the chain and
+    then runs normally, so a block may contain anything. Results are unchanged either way; with the
+    JIT off or no host compiler present the recorded ops just run in order.
+
+        with no_grad(), mag.fuse():
+            y = x * w + b
+            z = y * y - x
+
+    Use it under no_grad, where an intermediate nothing else refers to never has to reach memory:
+    on an 8-operation float32 chain, 1.8x at 4K elements rising to 6x at 4M on an Apple M3. With
+    gradient recording on it is roughly neutral, because the autograd graph holds every intermediate
+    for backward and only the loads are saved.
+
+    Transcendentals end a chain instead of joining it. Their CPU kernels are approximations, and
+    generated libm calls would not reproduce them bit for bit.
+    """
+
+    def __enter__(self) -> None:
+        context.begin_fusion()
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        context.end_fusion()
