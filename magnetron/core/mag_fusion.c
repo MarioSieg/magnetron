@@ -7,6 +7,7 @@
 #include "mag_dylib.h"
 #include "mag_alloc.h"
 #include "mag_hash.h"
+#include "mag_op_grads.h"
 #include "mag_envcfg.h"
 #include "mag_sstream.h"
 #include "mag_tensor.h"
@@ -531,23 +532,37 @@ void mag_fuse_region_stats(mag_context_t *ctx, uint64_t *out_chains, uint64_t *o
 }
 
 /*
-** A value needs storing only if something outside the chain can still read it.
+** A value needs storing only if something can still read it after the chain runs.
 **
-** The tape holds references of its own - one because the tensor is a node's output, and one more
-** for every later node that consumes it - so comparing the refcount against 1 would classify every
-** intermediate as escaping and store the whole chain, which is exactly the traffic fusion exists to
-** remove. Subtract what the tape itself holds and test the remainder.
+** Three kinds of reference exist at flush time. The tape holds one per node the tensor appears in.
+** The autograd graph holds one per consuming node, because mag_dispatch records every input on the
+** consumer's au_state. Anything left over is a real outside holder - a Python name, a caller - and
+** means the value is observable.
+**
+** A graph reference is not by itself a reason to keep the value: a backward may reference an input
+** purely for its shape. mag_op_backward_ignores_value says which operands are read, so a chain of
+** adds can drop its intermediates while a chain of multiplies cannot.
 */
-static bool mag_fuse_value_escapes(const struct mag_fuse_tape_t *tape, const mag_tensor_t *t) {
-  int32_t held_by_tape = 0;
+static bool mag_fuse_value_escapes(const mag_context_t *ctx, const struct mag_fuse_tape_t *tape, const mag_tensor_t *t) {
+  bool recording = (ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) != 0;
+  int32_t tape_refs = 0;
+  int32_t graph_refs = 0;
   for (uint32_t i=0; i < tape->len; ++i) {
-    if (tape->nodes[i].out == t) ++held_by_tape;
-    for (uint32_t j=0; j < tape->nodes[i].num_in; ++j)
-      if (tape->nodes[i].in[j] == t) ++held_by_tape;
+    const mag_fuse_tape_node_t *n = tape->nodes + i;
+    if (n->out == t) ++tape_refs;
+    const mag_op_traits_t *meta = mag_op_trait((mag_opcode_t)n->op);
+    uint8_t ignores = mag_op_backward_ignores_value((mag_opcode_t)n->op);
+    for (uint32_t j=0; j < n->num_in; ++j) {
+      if (n->in[j] != t) continue;
+      ++tape_refs;
+      if (!recording || !meta->backward) continue; /* nothing was recorded, so no graph edge exists */
+      ++graph_refs;
+      if (!(ignores & (1u<<j))) return true; /* this backward will read the value */
+    }
   }
   const mag_rc_control_block_t *rc = (const mag_rc_control_block_t *)t;
   int32_t total = mag_atomic32_load((mag_atomic32_t *)&rc->rc_strong, MAG_MO_RELAXED);
-  return total - held_by_tape > 0;
+  return total - tape_refs - graph_refs > 0;
 }
 
 static bool mag_fuse_operand_ok(const mag_tensor_t *t, const mag_tensor_t *out) {
@@ -630,6 +645,27 @@ static mag_status_t mag_fuse_replay_eager(mag_error_t *err, struct mag_fuse_tape
   return MAG_OK;
 }
 
+/*
+** Fill every value the chain declined to write with a NaN pattern, in debug builds only.
+**
+** Deciding not to write an intermediate rests on mag_op_backward_ignores_value being right about
+** that operator. If it is wrong, the backward reads whatever happens to be in that buffer and
+** produces gradients that are close enough to look plausible. Poisoning turns that into NaN on the
+** first run, which the differential gradient tests catch immediately.
+*/
+static void mag_fuse_poison_elided(const struct mag_fuse_tape_t *tape, const bool *stored) {
+#ifndef MAG_DEBUG
+  static int enabled = -1;
+  if (mag_unlikely(enabled < 0)) enabled = mag_envcfg_jit_poison() ? 1 : 0;
+  if (!enabled) return;
+#endif
+  for (uint32_t i=0; i < tape->len; ++i) {
+    if (stored[i]) continue;
+    mag_tensor_t *t = tape->nodes[i].out;
+    memset((void *)t->storage->base, 0xff, mag_tensor_numbytes(t)); /* 0xff.. is a NaN in every float type */
+  }
+}
+
 mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx) {
   struct mag_fuse_tape_t *tape = ctx->fuse_tape;
   if (!tape || !tape->len || tape->flushing) return MAG_OK;
@@ -671,14 +707,20 @@ mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx) {
     regs[i] = mag_fuse_emit(&plan, (mag_opcode_t)n->op, ops, n->num_in);
     if (regs[i] < 0) { status = MAG_ERR_OP; goto fallback; }
   }
-  for (uint32_t i=0; i < tape->len; ++i) { /* store only the values something outside can still read */
-    if (!mag_fuse_value_escapes(tape, tape->nodes[i].out)) continue;
+  bool stored[MAG_FUSE_TAPE_MAX] = {false};
+  for (uint32_t i=0; i < tape->len; ++i) { /* store only the values something can still read */
+    if (!mag_fuse_value_escapes(ctx, tape, tape->nodes[i].out)) continue;
+    stored[i] = true;
     uint8_t slot;
     mag_bind_buf(tape->nodes[i].out, slot);
     if (!mag_fuse_store(&plan, slot, regs[i])) { status = MAG_ERR_OP; goto fallback; }
   }
   #undef mag_bind_buf
-  if (!plan.num_stores) { status = MAG_OK; goto done; } /* the whole chain was dead */
+  if (!plan.num_stores) { /* nothing observable came out of the chain */
+    mag_fuse_poison_elided(tape, stored);
+    status = MAG_OK;
+    goto done;
+  }
   {
     mag_fused_fn_t fn = NULL;
     mag_error_t local = {0};
@@ -688,6 +730,7 @@ mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx) {
     (*fn)(ptrs, NULL, 0, tape->nodes[0].out->meta.numel);
     ++tape->chains;
     tape->ops_fused += tape->len;
+    mag_fuse_poison_elided(tape, stored);
     goto done;
   }
 fallback:

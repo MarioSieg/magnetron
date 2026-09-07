@@ -11,6 +11,26 @@
 
 #include "mag_op_grads.h"
 
+
+/*
+** See mag_op_grads.h. Each entry is checked against the implementation directly below it; an
+** operator absent from this table is treated as reading all of its operands.
+*/
+uint8_t mag_op_backward_ignores_value(mag_opcode_t op) {
+  static const uint8_t ignores[MAG_OP__NUM] = {
+    /* Gradient passes straight through; the inputs are referenced only to reduce it back to their
+       shapes, never to read their data. */
+    [MAG_OP_ADD] = MAG_BW_IGNORE_ALL,
+    [MAG_OP_SUB] = MAG_BW_IGNORE_ALL,
+    /* Multiplies the incoming gradient by a constant and never looks at the input at all. */
+    [MAG_OP_NEG] = MAG_BW_IGNORE_ALL,
+    /* Everything else reads what it references: mul and div multiply by the other operand, min and
+       max compare the two, abs and relu take step(x), sqr and sqrt scale by x, clamp compares
+       against its bounds. */
+  };
+  return op < MAG_OP__NUM ? ignores[op] : 0;
+}
+
 mag_status_t mag_op_backward_clone(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   return mag_clone(err, grads, node->grad);
 }
@@ -537,8 +557,8 @@ static mag_status_t mag_grad_reduce_to(mag_error_t *err, mag_tensor_t **io, mag_
 ** gradient is a rearrangement of the incoming gradient and needs no scatter at all.
 **
 ** Returns true and fills out_grad when the fast path applies, false to fall through to the general
-** path. Conditions are deliberately strict: base contiguous, view starts at offset 0 and covers the
-** base exactly once, so no element is written twice and none is left at zero.
+** path. It applies when the base is contiguous and the view starts at offset 0 and covers the base
+** exactly once, so no element is written twice and none is left at zero.
 */
 static bool mag_strided_view_backward_fast(
   mag_error_t *err,

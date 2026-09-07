@@ -74,6 +74,26 @@ mag_status_t mag_op_backward_gather(mag_error_t *err, mag_au_state_t *node, mag_
 mag_status_t mag_op_backward_embedding(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 mag_status_t mag_op_backward_masked_fill(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 
+/*
+** Which operand values a backward never reads.
+**
+** A backward routinely references an input without touching its data: mag_grad_reduce_to needs its
+** shape, and the requires_grad flag decides whether a gradient is produced at all. Only actually
+** reading the data forces the forward value to be kept alive, which is what lets a fused chain skip
+** writing an intermediate out.
+**
+** Stated as what is ignored rather than what is read, so the zero default means "reads everything".
+** An operator nobody has classified therefore keeps its values, and a missing entry costs
+** performance, never correctness. Debug builds poison every elided value, so an entry that claims
+** too much shows up as NaN gradients on the first run.
+*/
+#define MAG_BW_IGNORE_IN0 (1u<<0)
+#define MAG_BW_IGNORE_IN1 (1u<<1)
+#define MAG_BW_IGNORE_IN2 (1u<<2)
+#define MAG_BW_IGNORE_ALL (MAG_BW_IGNORE_IN0|MAG_BW_IGNORE_IN1|MAG_BW_IGNORE_IN2)
+
+extern MAG_EXPORT uint8_t mag_op_backward_ignores_value(mag_opcode_t op);
+
 #ifdef __cplusplus
 }
 #endif

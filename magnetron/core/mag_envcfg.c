@@ -52,6 +52,14 @@ bool mag_envcfg_jit_enabled(void) {
   return true;
 }
 
+/* Debug builds poison elided fused values automatically; this turns it on anywhere, so the
+   backward value table can be checked without a rebuild. */
+bool mag_envcfg_jit_poison(void) {
+  const char *v = mag_envcfg_raw(MAG_ENV_JIT_POISON);
+  if (!v) return false;
+  return !(mag_casecmp(v, "off") || mag_casecmp(v, "0") || mag_casecmp(v, "false"));
+}
+
 mag_envcfg_cpu_specialization_t mag_envcfg_cpu_specialization_level(const char **out_name) {
   const char *v = mag_envcfg_raw(MAG_ENV_CPU_SPECIALIZATION_LEVEL);
   if (!v) return MAG_ENVCFG_CPU_SPECIALIZATION_AUTO;
