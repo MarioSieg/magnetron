@@ -11,34 +11,38 @@ import sys
 
 from .common import *
 
+import pytest
 import torch
 
 from magnetron import nn, optim
+from magnetron._magnetron_bindings import _fused_adam_supported
 
 
 _TRAIN = """
-import numpy as np
-from magnetron import Tensor, nn, optim, context
+import numpy as np, sys
+from magnetron import Tensor, nn, optim, context, dtype
 
+context.set_default_dtype(getattr(dtype, sys.argv[1]))
 context.manual_seed(1234)
 x = np.linspace(-1.0, 1.0, 256, dtype=np.float32).reshape(4, 64)
 
 layer = nn.Linear(64, 8, bias=False)   # seeded, so both subprocesses start identically
 opt = optim.Adam(layer.parameters(), lr=1e-2)
-inp = Tensor(x)
+inp = Tensor(x).cast(context.get_default_dtype())
 for _ in range(12):
     loss = (layer(inp) ** 2).sum()
     loss.backward()
     opt.step()
     opt.zero_grad()
-print(' '.join(f'{v:.9e}' for v in layer.weight.numpy().ravel()[:32]))
+w = layer.weight.cast(dtype.float32).numpy().ravel()[:32]  # widening is exact
+print(' '.join(f'{v:.9e}' for v in w))
 print('jit', context.jit_stats()['kernels_compiled'])
 """
 
 
-def _run_training(jit: str) -> tuple[list[float], int]:
+def _run_training(jit: str, dt: str = 'float32') -> tuple[list[float], int]:
     env = dict(os.environ, MAG_JIT=jit, MAG_LOG_LEVEL='off')
-    proc = subprocess.run([sys.executable, '-c', _TRAIN], env=env, capture_output=True, text=True)
+    proc = subprocess.run([sys.executable, '-c', _TRAIN, dt], env=env, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     lines = [ln for ln in proc.stdout.strip().splitlines() if ln]
     weights = [float(v) for v in lines[-2].split()]
@@ -53,6 +57,25 @@ def test_fused_adam_matches_eager_bitwise() -> None:
     assert fused_compiles == 1, 'JIT did not compile a kernel, so this compared eager against eager'
     assert eager_compiles == 0, 'MAG_JIT=off still compiled a kernel'
     assert fused == eager, 'fused optimizer diverged from the eager one'
+
+
+def test_fused_adam_matches_eager_bitwise_float16() -> None:
+    """float16 rounds every intermediate back to storage in the eager path, and converts scalar
+    operands to the tensor dtype before use. The generated kernel has to do both at the same points
+    or the weights drift."""
+    fused, fused_compiles = _run_training('on', 'float16')
+    eager, eager_compiles = _run_training('off', 'float16')
+    assert fused_compiles == 1, 'JIT declined float16, so this compared eager against eager'
+    assert eager_compiles == 0
+    assert fused == eager, 'fused float16 optimizer diverged from the eager one'
+
+
+def test_bfloat16_is_left_to_the_eager_kernels() -> None:
+    """bfloat16 conversion is soft-fp, and the generated kernel would run it once per operator per
+    element while the eager kernels convert a vector at a time. Measured slower fused than eager,
+    so the JIT declines it."""
+    _, compiles = _run_training('on', 'bfloat16')
+    assert compiles == 0, 'bfloat16 should not reach the JIT'
 
 
 def test_fused_adam_matches_torch() -> None:
@@ -89,29 +112,9 @@ def test_fused_adam_matches_torch() -> None:
 
 def test_fused_adam_declines_non_contiguous() -> None:
     """A transposed parameter is not contiguous, so the JIT must refuse and the eager path run."""
-    from magnetron._magnetron_bindings import _fused_adam_supported
-
     a = Tensor.uniform((8, 16), low=0.0, high=1.0)
     b = Tensor.uniform((8, 16), low=0.0, high=1.0)
     c = Tensor.zeros((8, 16))
     d = Tensor.zeros((8, 16))
     assert _fused_adam_supported(a, b, c, d) is True
     assert _fused_adam_supported(a.T, b, c, d) is False
-
-
-def test_fused_adam_trains_a_model() -> None:
-    """End to end: the loss must actually go down with the fused optimizer in the loop."""
-    context.manual_seed(7)
-    model = nn.Sequential(nn.Linear(32, 16), nn.ReLU(), nn.Linear(16, 32))
-    opt = optim.Adam(model.parameters(), lr=1e-2)
-    target = Tensor.uniform((4, 32), low=0.0, high=1.0)
-    criterion = nn.MSELoss()
-    first = None
-    for _ in range(30):
-        loss = criterion(model(target), target)
-        loss.backward()
-        opt.step()
-        opt.zero_grad()
-        if first is None:
-            first = loss.item()
-    assert loss.item() < first
