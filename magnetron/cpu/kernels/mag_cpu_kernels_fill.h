@@ -160,6 +160,27 @@ mag_gen_stub_fill(int64_t, int64, mag_G, int64, mag_cvt_nop)
     int64_t rb = mag_xmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(x)) { \
+      /* When the mask broadcasts only over leading dimensions - the causal mask in attention is \
+         (1,1,T,T) against (B,H,T,T) - its elements simply repeat every mask_numel entries. Walking \
+         that in runs replaces a full index decomposition per element, which was costing this kernel \
+         roughly 50x against a plain elementwise op on the same tensor. */ \
+      bool repeats = mag_tensor_is_contiguous(mask); \
+      if (repeats) { \
+        int64_t k = cr.rank-1; \
+        while (k >= 0 && k < cm.rank && cm.shape[k] == cr.shape[k]) --k; \
+        for (int64_t j=k; j >= 0; --j) if (j < cm.rank && cm.shape[j] != 1) { repeats = false; break; } \
+        if (cm.rank != cr.rank) repeats = false; \
+      } \
+      if (repeats) { \
+        int64_t mn = mask->meta.numel; \
+        for (int64_t base=ra; base < rb; ) { \
+          int64_t mi0 = base % mn; \
+          int64_t run = mag_xmin(mn-mi0, rb-base); \
+          for (int64_t j=0; j < run; ++j) br[base+j] = bm[mi0+j] ? val : bx[base+j]; \
+          base += run; \
+        } \
+        return MAG_OK; \
+      } \
       for (int64_t ri=ra; ri < rb; ++ri) { \
         int64_t mi = mag_coords_iter_broadcast(&cr, &cm, ri); \
         mag_bnd_chk(br+ri, r->storage->base, mag_tensor_numbytes(r)); \
