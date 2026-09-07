@@ -1097,8 +1097,25 @@ static MAG_AINLINE mag_vf32_t mag_vf32_loadu_bf16(const mag_bfloat16_t *p) {
 
 static MAG_AINLINE void mag_vf32_storeu_bf16(mag_bfloat16_t *p, mag_vf32_t v) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+    /* bfloat16 is the top 16 bits of a float32, so the store is a shift; the rounding is what
+       makes it agree with mag_bfloat16_from_float32_soft_fp. A bare shift truncates, which made a
+       result depend on whether an element fell in the vector body or the scalar tail: the same
+       value came out differently for a length-3 and a length-4 tensor.
+
+       Round to nearest, ties to even: add half of the last kept bit (0x7fff, one below the 0x8000
+       midpoint) plus one more when the kept bit is odd, so exact halves go to the even neighbour.
+       Carry out of bit 15 then increments the kept half on its own. */
     uint32x4_t u = vreinterpretq_u32_f32(v);
-    uint16x4_t h = vmovn_u32(vshrq_n_u32(u, 16));
+    uint32x4_t lsb = vandq_u32(vshrq_n_u32(u, 16), vdupq_n_u32(1)); /* bit 16: is the kept half odd */
+    uint32x4_t bias = vaddq_u32(lsb, vdupq_n_u32(0x7fffu));
+    uint32x4_t rounded = vaddq_u32(u, bias);
+    /* NaN survives the shift only if its payload is in the top bits, and adding the bias can carry
+       it into an infinity. Anything above 0x7f800000 once the sign is masked off is a NaN, so give
+       them all the canonical quiet NaN, whose top half is 0x7fc0. */
+    uint32x4_t abs = vandq_u32(u, vdupq_n_u32(0x7fffffffu));
+    uint32x4_t is_nan = vcgtq_u32(abs, vdupq_n_u32(0x7f800000u));
+    rounded = vbslq_u32(is_nan, vdupq_n_u32(0x7fc00000u), rounded);
+    uint16x4_t h = vmovn_u32(vshrq_n_u32(rounded, 16)); /* keep the top half of each lane */
     vst1_u16((uint16_t *)p, h);
   #elif defined(__AVX512F__) && defined(__AVX512BF16__)
     __m256bh h = _mm512_cvtneps_pbh(v);
