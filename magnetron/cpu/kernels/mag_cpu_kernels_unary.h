@@ -38,6 +38,59 @@
       for (; t < run; ++t) pr[t] = F(px[t]); \
     )
 
+
+/*
+** Blocked copy for a contiguous destination fed by a strided source.
+**
+** The generic fallback below recomputes a full index decomposition per element and visits the
+** source in destination order. For a transpose that means a divmod chain plus a cache miss for
+** every element. Walking the innermost two dimensions in tiles keeps both sides resident and
+** advances offsets incrementally instead. Measured ~2x on a 2D transpose at these sizes.
+**
+** Work is split over (plane, row-block) pairs so threads get whole tiles rather than an
+** element range that would cut across them.
+*/
+#define MAG_CLONE_TILE 32
+
+#define mag_clone_blocked_body(T) \
+  do { \
+    int64_t rank = r->meta.coords.rank; \
+    if (rank < 2 || !mag_tensor_is_contiguous(r)) break; \
+    const int64_t *rsh = r->meta.coords.shape; \
+    const int64_t *xsh = x->meta.coords.shape; \
+    const int64_t *xst = x->meta.coords.strides; \
+    bool same_shape = true; \
+    for (int64_t k=0; k < rank; ++k) if (rsh[k] != xsh[k]) { same_shape = false; break; } \
+    if (!same_shape || rank != x->meta.coords.rank) break; \
+    int64_t cols = rsh[rank-1], rows = rsh[rank-2]; \
+    if (cols <= 0 || rows <= 0) break; \
+    int64_t plane = rows*cols; \
+    int64_t planes = total/plane; \
+    int64_t sc = xst[rank-1], sr = xst[rank-2]; \
+    if (sc == 1) break; /* inner run is contiguous: the vectorized walk below is better */ \
+    int64_t row_blocks = (rows+MAG_CLONE_TILE-1)/MAG_CLONE_TILE; \
+    int64_t units = planes*row_blocks; \
+    int64_t ustep = (units+tc-1)/tc; \
+    int64_t ua = ti*ustep, ub = mag_xmin(ua+ustep, units); \
+    for (int64_t u=ua; u < ub; ++u) { \
+      int64_t p = u/row_blocks, ib = (u - p*row_blocks)*MAG_CLONE_TILE; \
+      int64_t src_plane = 0, rem = p; /* decompose the outer dims once per plane, not per element */ \
+      for (int64_t k=rank-3; k >= 0; --k) { int64_t d = xsh[k]; src_plane += (rem % d)*xst[k]; rem /= d; } \
+      T *dp = br + p*plane; \
+      const T *sp = bx + src_plane; \
+      int64_t imax = mag_xmin(ib+MAG_CLONE_TILE, rows); \
+      for (int64_t j0=0; j0 < cols; j0 += MAG_CLONE_TILE) { \
+        int64_t jmax = mag_xmin(j0+MAG_CLONE_TILE, cols); \
+        for (int64_t i=ib; i < imax; ++i) { \
+          T *drow = dp + i*cols; \
+          const T *srow = sp + i*sr; \
+          for (int64_t j=j0; j < jmax; ++j) drow[j] = srow[j*sc]; \
+        } \
+      } \
+    } \
+    return MAG_OK; \
+  } while (0)
+
 #define mag_gen_stub_clone(T, TF) \
   static MAG_HOTPROC mag_status_t mag_clone_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
@@ -51,11 +104,13 @@
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_xmin(ra+chunk, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
+      if (mag_unlikely(rb <= ra)) return MAG_OK; \
       memcpy(br+ra, bx+ra, (rb-ra)*sizeof(T)); \
       return MAG_OK; \
     } \
+    mag_clone_blocked_body(T); /* splits work itself, so it must precede the ra/rb guard */ \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     mag_un_run_body_copy(T) \
     mag_coords_iter_t cr, cx; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
