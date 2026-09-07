@@ -135,7 +135,7 @@ class RMSNorm(Module):
         inplace_init(self.weight, weight_init)
 
     def forward(self, x: Tensor) -> Tensor:
-        rms = (x.sqr().mean(dim=-1, keepdim=True) + self.eps).sqrt_()
+        rms = (x.sqr().mean(dim=-1, keepdim=True) + self.eps).sqrt()
         return (x / rms) * self.weight
 
 
