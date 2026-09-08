@@ -19,12 +19,11 @@
 ** C expression for each fusible opcode.
 **
 ** Only operations whose CPU kernels are exact IEEE arithmetic appear here. The transcendentals are
-** deliberately absent: magnetron's vector kernels approximate them (tanh is 2/(1+exp(-2x))-1 built
-** on a reciprocal estimate plus Newton steps, see mag_cpu_simd_functions.h), so libm in generated
-** code would not reproduce them and fusing would silently change results. They end a chain instead.
-** Adding one means emitting magnetron's own approximation, not calling libm. $0..$2 are the operands, already materialized into named
-** locals, so an operand appearing twice costs nothing and has no double-evaluation hazard.
-** An opcode absent from this table is not fusible and ends a chain.
+** absent: the vector kernels approximate them (see mag_cpu_simd_functions.h), so libm in generated
+** code would not reproduce them. Adding one means emitting that approximation, not calling libm.
+**
+** $0..$2 are the operands, already materialized into named locals, so an operand appearing twice
+** has no double-evaluation hazard. An opcode absent from this table ends a chain.
 */
 typedef struct mag_fuse_op_form_t {
   const char *f32;    /* Expression for float and, via promotion, the narrower float types. */
@@ -310,6 +309,8 @@ static mag_status_t mag_fuse_build(mag_error_t *err, uint64_t key, mag_sstream_t
 
 mag_status_t mag_fuse_compile(mag_error_t *err, mag_context_t *ctx, const mag_fuse_plan_t *plan, mag_fused_fn_t *out_fn) {
   *out_fn = NULL;
+  if (!(ctx->flags & MAG_CTX_FLAG_JIT))
+    return mag_set_error(err, MAG_ERR_BACKEND, "fusion: disabled by " MAG_ENV_JIT "=off.");
   if (mag_unlikely(!mag_fuse_elem_ctype((mag_dtype_t)plan->dtype)))
     return mag_set_error(err, MAG_ERR_OP, "fusion: dtype '%s' has no fusible representation.",
       mag_type_trait((mag_dtype_t)plan->dtype)->name);
@@ -320,10 +321,6 @@ mag_status_t mag_fuse_compile(mag_error_t *err, mag_context_t *ctx, const mag_fu
     memset(cache, 0, sizeof(*cache));
     ctx->fuse_cache = cache;
   }
-  static int jit_enabled = -1;
-  if (mag_unlikely(jit_enabled < 0)) jit_enabled = mag_envcfg_jit_enabled() ? 1 : 0;
-  if (!jit_enabled)
-    return mag_set_error(err, MAG_ERR_BACKEND, "fusion: disabled by " MAG_ENV_JIT "=off.");
   if (cache->compiler_unavailable)
     return mag_set_error(err, MAG_ERR_BACKEND, "fusion: no usable host compiler, falling back to eager.");
   uint64_t key = mag_fuse_plan_hash(plan);
@@ -385,9 +382,9 @@ void mag_fuse_cache_shutdown(mag_context_t *ctx) {
 
 /* Buffer slots and immediate slots of the Adam plan. */
 enum { ADAM_BUF_P = 0, ADAM_BUF_G = 1, ADAM_BUF_M = 2, ADAM_BUF_V = 3 };
-/* One minus beta is passed in rather than computed in the kernel: the eager path evaluates
+/* One minus beta is computed by the caller, not the kernel: the eager path evaluates
    (1.0 - beta) in Python double and only then rounds to float, and 1.0f - (float)beta gives a
-   different last bit. Matching it exactly is what keeps fused and eager training identical. */
+   different last bit. Matching it keeps fused and eager training identical. */
 enum { ADAM_IMM_B1 = 0, ADAM_IMM_B2 = 1, ADAM_IMM_LR = 2, ADAM_IMM_EPS = 3,
        ADAM_IMM_C1 = 4, ADAM_IMM_C2 = 5, ADAM_IMM_OMB1 = 6, ADAM_IMM_OMB2 = 7, ADAM_IMM__NUM = 8 };
 

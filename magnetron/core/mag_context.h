@@ -27,6 +27,7 @@ typedef enum mag_context_flags_t {
   MAG_CTX_FLAG_NONE = 0,
   MAG_CTX_FLAG_GRAD_RECORDER = 1<<0,     /* Gradient recording is currently active. */
   MAG_CTX_FLAG_FUSING = 1<<1,            /* Inside a fusion region: fusible ops are recorded, not submitted. */
+  MAG_CTX_FLAG_JIT = 1<<2,               /* The fusion JIT may invoke the host compiler. Set from MAG_JIT at creation. */
 } mag_context_flags_t;
 
 typedef struct mag_fuse_cache_t mag_fuse_cache_t; /* Compiled pointwise kernels, see mag_fusion.h. */

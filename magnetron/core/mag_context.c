@@ -124,6 +124,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   *out_ctx = NULL;
 
   mag_envcfg_apply_log_level(); /* Parse and apply environment variables, see mag_envcfg.h */
+  bool jit_requested = mag_envcfg_jit_enabled();
 
   mag_log_info("Creating magnetron context...");
 
@@ -171,6 +172,8 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   ctx->default_dtype = MAG_DTYPE_FLOAT32; /* Use fp32 by default */
   ctx->default_device = mag_device(CPU, 0);
   ctx->flags|=MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
+  if (jit_requested) ctx->flags|=MAG_CTX_FLAG_JIT; /* MAG_JIT=off keeps the runtime from invoking a compiler. On by default. */
+  else mag_log_info("Fusion JIT disabled (" MAG_ENV_JIT "=off); pointwise chains run eagerly");
 
   /* Query and print host system information. */
   mag_machine_info_probe(&ctx->machine);
