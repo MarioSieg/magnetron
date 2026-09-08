@@ -11,7 +11,6 @@
 
 #include "mag_io_snapshot_layout.h"
 #include "mag_alloc.h"
-#include "mag_mmap.h"
 
 void mag_snap_hdr_encode(uint8_t *p, const mag_snap_decoded_hdr_t *hdr) {
   uint8_t *delta = p;
@@ -149,11 +148,10 @@ mag_status_t mag_snapshot_stream_writer_close(mag_error_t *err, mag_snapshot_str
   if (mag_unlikely(!writer)) return mag_set_error(err, MAG_ERR_PARAM, "snapshot: null writer.");
   if (writer->is_closed) return MAG_OK;
   mag_status_t st = MAG_OK;
-  if (mag_unlikely(writer->nb_emitted != writer->blob_len)) { /* Data is missing, would leave invalid corrupted file */
+  if (mag_unlikely(writer->nb_emitted != writer->blob_len)) {
     st = mag_set_error(err, MAG_ERR_STATE, "snapshot: the data section got %" PRIu64 " of the %" PRIu64 " bytes it declared.", writer->nb_emitted, writer->blob_len);
     goto fail;
   }
-  /* fflush only reaches the page cache, so a crash here would leave a renamed but empty file */
   if (mag_unlikely(!mag_fsync_stream(writer->F))) {
     st = mag_set_error(err, MAG_ERR_IO, "snapshot: failed to flush '%s' to stable storage.", writer->tmp_path);
     goto fail;
@@ -165,15 +163,14 @@ mag_status_t mag_snapshot_stream_writer_close(mag_error_t *err, mag_snapshot_str
   }
   writer->F = NULL;
   #ifdef _WIN32
-    remove(writer->path); /* Unlike POSIX, rename() here cannot replace an existing file */
+    remove(writer->path);
   #endif
   if (mag_unlikely(rename(writer->tmp_path, writer->path) != 0)) {
-    /* The temp file is the only complete copy now, so keep it rather than let abort() bin it */
     writer->preserve_tmp = true;
     st = mag_set_error(err, MAG_ERR_IO, "snapshot: failed to rename '%s' to '%s', the complete snapshot has been left at '%s'.", writer->tmp_path, writer->path, writer->tmp_path);
     goto fail;
   }
-  mag_fsync_parent_dir(writer->path); /* Best effort, this is what makes the rename itself durable */
+  mag_fsync_parent_dir(writer->path);
   writer->is_closed = true;
   mag_snapshot_stream_writer_abort(writer);
   return MAG_OK;
