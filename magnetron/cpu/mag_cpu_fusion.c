@@ -103,13 +103,51 @@ static void mag_cpu_fuse_operand_name(const mag_fuse_operand_t *o, char *buf, si
   switch (o->kind) {
     case MAG_FUSE_REG: snprintf(buf, cap, "r%u", o->idx); break;
     case MAG_FUSE_IMM: snprintf(buf, cap, "s%u", o->idx); break;
-    case MAG_FUSE_SCL: snprintf(buf, cap, "b%u[0]", o->idx); break;
-    default:           snprintf(buf, cap, "b%u[i]", o->idx); break;
+    case MAG_FUSE_SCL: snprintf(buf, cap, "mag_ld(b%u[0])", o->idx); break;
+    default:           snprintf(buf, cap, "mag_ld(b%u[i])", o->idx); break;
   }
 }
 
+
+/*
+** What the generated file needs before it can speak the storage type.
+**
+** For float32 the three helpers are the identity and the compiler deletes them. For float16 the
+** value is held as a bare uint16 and converted at the edges, and mag_rt rounds a result the way
+** storing and reloading it would - which is what the eager kernels do between every pair of
+** operators, and therefore what a chain has to do to produce the same bits.
+**
+** The conversion mirrors the ladder the backend itself compiles with. It is picked by the same
+** predefined macros, so a host that has the instruction uses it here too; where it does not, both
+** sides fall back to arithmetic that rounds to nearest even, which is what the instruction does.
+*/
+static const char *mag_cpu_fuse_prologue(mag_dtype_t dtype) {
+  if (dtype == MAG_DTYPE_FLOAT32)
+    return
+      "typedef float mag_st_t;\n"
+      "#define mag_ld(x) (x)\n"
+      "#define mag_st(x) (x)\n"
+      "#define mag_rt(x) (x)\n\n";
+  return
+    "#include <stdint.h>\n"
+    "typedef uint16_t mag_st_t;\n"
+    "#if defined(__F16C__)\n"
+    "#include <immintrin.h>\n"
+    "static inline float mag_ld(uint16_t h) { return _cvtsh_ss(h); }\n"
+    "static inline uint16_t mag_st(float f) { return _cvtss_sh(f, 0); }\n"
+    "#elif defined(__ARM_NEON)\n"
+    "static inline float mag_ld(uint16_t h) { union { __fp16 f; uint16_t u; } c = {.u=h}; return c.f; }\n"
+    "static inline uint16_t mag_st(float f) { union { __fp16 f; uint16_t u; } c = {.f=(__fp16)f}; return c.u; }\n"
+    "#else\n"
+    "#error \"no float16 conversion available for the generated chain\"\n"
+    "#endif\n"
+    "#define mag_rt(x) mag_ld(mag_st(x))\n\n";
+}
+
 char *mag_cpu_fuse_codegen(const mag_fuse_graph_t *g) {
-  if (g->dtype != MAG_DTYPE_FLOAT32) return NULL; /* Narrow floats need rounding at each step; not yet. */
+  /* bfloat16 is absent for the reason the interpreter gives: this backend's eager bfloat16 is not
+     a function of its input alone, so there is nothing definite to reproduce. */
+  if (g->dtype != MAG_DTYPE_FLOAT32 && g->dtype != MAG_DTYPE_FLOAT16) return NULL;
   for (uint32_t i=0; i < g->num_ins; ++i)
     if (g->ins[i].op != MAG_FUSE_OP_LOAD && !mag_cpu_fuse_form(g->ins[i].op)) return NULL;
 
@@ -118,27 +156,29 @@ char *mag_cpu_fuse_codegen(const mag_fuse_graph_t *g) {
   for (uint8_t s=0; s < g->num_stores; ++s) written[g->stores[s].buf] = true;
 
   mag_cpu_fuse_buf_t ss = {0};
-  mag_cpu_fuse_bprintf(&ss, "#include <math.h>\n\n");
+  mag_cpu_fuse_bprintf(&ss, "#include <math.h>\n");
+  mag_cpu_fuse_bputs(&ss, mag_cpu_fuse_prologue(g->dtype));
   mag_cpu_fuse_bprintf(&ss, "void mag_fused(void *const *bufs, const double *imms, long long begin, long long end) {\n");
   for (uint8_t b=0; b < g->num_bufs; ++b) {
     /* A written buffer may alias one that is read, so only read-only operands get restrict. Telling
        the compiler otherwise would licence it to reorder a load across the store that feeds it. */
-    if (written[b]) mag_cpu_fuse_bprintf(&ss, "  float *b%u = (float *)bufs[%u];\n", b, b);
-    else            mag_cpu_fuse_bprintf(&ss, "  const float *restrict b%u = (const float *)bufs[%u];\n", b, b);
+    if (written[b]) mag_cpu_fuse_bprintf(&ss, "  mag_st_t *b%u = (mag_st_t *)bufs[%u];\n", b, b);
+    else            mag_cpu_fuse_bprintf(&ss, "  const mag_st_t *restrict b%u = (const mag_st_t *)bufs[%u];\n", b, b);
   }
   for (uint8_t k=0; k < g->num_imms; ++k)
-    mag_cpu_fuse_bprintf(&ss, "  const float s%u = (float)imms[%u];\n", k, k);
+    mag_cpu_fuse_bprintf(&ss, "  const float s%u = mag_rt((float)imms[%u]);\n", k, k);
   mag_cpu_fuse_bprintf(&ss, "  for (long long i=begin; i < end; ++i) {\n");
   for (uint32_t i=0; i < g->num_ins; ++i) {
     const mag_fuse_ins_t *ins = g->ins+i;
     char name[32];
     if (ins->op == MAG_FUSE_OP_LOAD) {
       mag_cpu_fuse_operand_name(ins->in+0, name, sizeof(name));
+      /* The operand name already widens, in whichever position it appears. */
       mag_cpu_fuse_bprintf(&ss, "    const float r%u = %s;\n", i, name);
       continue;
     }
     const char *form = mag_cpu_fuse_form(ins->op);
-    mag_cpu_fuse_bprintf(&ss, "    const float r%u = ", i);
+    mag_cpu_fuse_bprintf(&ss, "    const float r%u = mag_rt(", i);
     for (const char *p=form; *p; ++p) {
       if (*p == '$' && p[1] >= '0' && p[1] <= '2') {
         mag_cpu_fuse_operand_name(ins->in + (p[1]-'0'), name, sizeof(name));
@@ -148,10 +188,10 @@ char *mag_cpu_fuse_codegen(const mag_fuse_graph_t *g) {
         { char one[2] = {*p, 0}; mag_cpu_fuse_bputs(&ss, one); }
       }
     }
-    mag_cpu_fuse_bprintf(&ss, ";\n");
+    mag_cpu_fuse_bprintf(&ss, ");\n");
   }
   for (uint8_t s=0; s < g->num_stores; ++s)
-    mag_cpu_fuse_bprintf(&ss, "    b%u[i] = r%u;\n", g->stores[s].buf, g->stores[s].reg);
+    mag_cpu_fuse_bprintf(&ss, "    b%u[i] = mag_st(r%u);\n", g->stores[s].buf, g->stores[s].reg);
   mag_cpu_fuse_bprintf(&ss, "  }\n}\n");
   if (ss.oom) { mag_cpu_fuse_source_free(ss.data); return NULL; }
   return ss.data; /* Ownership passes to the caller. */

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import magnetron as mag
-from magnetron import Tensor, no_grad
+from magnetron import Tensor, dtype, no_grad
 
 # Below magnetron's minimum chain size nothing is captured, so a test on a small tensor
 # would quietly be testing the eager path instead.
@@ -139,7 +139,7 @@ def test_compiled_and_interpreted_chains_agree() -> None:
 
     prog = """
 import numpy as np, magnetron as mag
-from magnetron import Tensor, no_grad
+from magnetron import Tensor, dtype, no_grad
 mag.context.manual_seed(20260918)
 n = 1 << 16
 x, w, b = (Tensor.uniform((n,), low=0.25, high=1.75) for _ in range(3))
@@ -167,7 +167,7 @@ def test_a_chain_runs_the_same_with_compilation_disabled() -> None:
 
     prog = """
 import numpy as np, magnetron as mag
-from magnetron import Tensor, no_grad
+from magnetron import Tensor, dtype, no_grad
 mag.context.manual_seed(99)
 n = 1 << 16
 x, w, b = (Tensor.uniform((n,)) for _ in range(3))
@@ -181,6 +181,58 @@ print('ok')
     env = {**os.environ, 'MAG_FUSE_COMPILE': 'off'}
     out = subprocess.run([sys.executable, '-c', prog], capture_output=True, text=True, env=env, check=True)
     assert out.stdout.strip() == 'ok'
+
+# Chains are fused per dtype: the arithmetic runs in float either way, and narrow storage only
+# changes where loads widen and results round. bfloat16 is absent on purpose - see below.
+FUSED_DTYPES = [dtype.float32, dtype.float16]
+
+
+@pytest.mark.parametrize('dt', FUSED_DTYPES, ids=lambda d: str(d).rsplit('.', 1)[-1])
+@pytest.mark.parametrize('name', list(CHAINS))
+def test_narrow_storage_rounds_where_eager_rounds(name: str, dt) -> None:
+    """A chain must round at exactly the points the operators it replaces round at.
+
+    Eager execution materializes a tensor after every operator, so each intermediate is narrowed on
+    its way out and widened on its way back in. A chain that carried full float precision straight
+    through would be *more* accurate and would disagree, which is the one thing it may not do.
+    """
+    fn = CHAINS[name]
+    x, w, b = (_rand().cast(dt) for _ in range(3))
+    with no_grad():
+        expect = fn(x, w, b).cast(dtype.float32).numpy().copy()
+    with no_grad(), mag.fuse():
+        got = fn(x, w, b)
+    assert np.array_equal(got.cast(dtype.float32).numpy(), expect), f'{name} {dt}'
+
+
+def test_bfloat16_is_left_to_the_eager_kernels() -> None:
+    """bfloat16 chains are declined, and the reason is a bug in the eager path rather than a gap here.
+
+    This backend's eager bfloat16 store truncates on the vector path and rounds to nearest on the
+    scalar tail, so the same multiply gives two different answers depending on how long the tensor
+    is. Until that is one answer there is nothing definite for a chain to reproduce, and choosing
+    either of the two would bake the inconsistency in.
+    """
+    short = Tensor([0.9] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
+    short_b = Tensor([0.012] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
+    long = Tensor([0.9] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
+    long_b = Tensor([0.012] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
+    with no_grad():
+        a = float((short * short_b).cast(dtype.float32).numpy()[0])
+        c = float((long * long_b).cast(dtype.float32).numpy()[0])
+    # If this ever starts passing, the eager store has been fixed and bfloat16 chains can be enabled.
+    assert a != c, 'eager bfloat16 is now length-independent; enable bfloat16 fusion'
+
+    # Meanwhile a bfloat16 chain still produces the eager answer, by falling back to it.
+    x, w, b = (_rand().cast(dtype.bfloat16) for _ in range(3))
+    before = mag.fusion_stats()['chains']
+    with no_grad():
+        expect = (x * w + b).cast(dtype.float32).numpy().copy()
+    with no_grad(), mag.fuse():
+        out = x * w + b
+    assert np.array_equal(out.cast(dtype.float32).numpy(), expect)
+    assert mag.fusion_stats()['chains'] == before, 'bfloat16 should not have been lowered'
+
 
 def test_a_read_only_operand_can_be_read_by_a_chain() -> None:
     """A chain must ask for write access only to what it writes.

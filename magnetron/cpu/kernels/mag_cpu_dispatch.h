@@ -1291,9 +1291,11 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT64] = &mag_nop,
   },
   [MAG_OP_FUSED] = {
-    /* A chain is one dtype throughout, and only float32 is lowered so far. Everything else
-       stays null, which core reads as a decline and replays operator by operator. */
+    /* A chain is one dtype throughout. One kernel serves both: the arithmetic runs in float either
+       way, and narrow storage only changes where the loads widen and the stores round. Everything
+       else stays null, which core reads as a decline and replays operator by operator. */
     [MAG_DTYPE_FLOAT32] = &mag_cpu_kernel_fused_f32,
+    [MAG_DTYPE_FLOAT16] = &mag_cpu_kernel_fused_f32,
   },
 };
 
