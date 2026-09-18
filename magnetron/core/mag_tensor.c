@@ -10,6 +10,7 @@
 */
 
 #include "mag_tensor.h"
+#include "mag_fuse_capture.h"
 #include "mag_context.h"
 #include "mag_slab.h"
 #include "mag_alloc.h"
@@ -308,7 +309,29 @@ size_t mag_tensor_data_offset(const mag_tensor_t *tensor) {
   return (size_t)tensor->meta.storage_offset*mag_type_trait(tensor->meta.dtype)->size; /* Return offset in bytes */
 }
 
+/*
+** Materialize a tensor whose value is still owed by a fusion chain.
+**
+** This is the only place a pending tensor can be observed, so it is where the chain has to run. The
+** accessors return a raw address and have no way to report a failure, and handing back a pointer to
+** memory nobody has written would turn a failed flush into silently wrong numbers somewhere later.
+** A flush only fails once eager replay has also failed, which means the operation could not be
+** carried out at all, so there is nothing to fall back to and saying so plainly is the honest move.
+*/
+static MAG_COLDPROC void mag_tensor_materialize_slow(const mag_tensor_t *tensor) {
+  mag_error_t err = {0}; /* Deliberately not in the inlined caller: this struct carries a 256 byte
+                            message buffer, and zeroing it on every operand of every operator cost a
+                            measurable 3-5% on small tensors. */
+  if (mag_unlikely(mag_iserr(mag_fuse_flush(&err, tensor->ctx))))
+    mag_panic("tensor: could not compute a pending value before reading it: %s", err.message);
+}
+
+static MAG_AINLINE void mag_tensor_materialize(const mag_tensor_t *tensor) {
+  if (mag_unlikely(tensor->meta.flags & MAG_TFLAG_PENDING)) mag_tensor_materialize_slow(tensor);
+}
+
 uintptr_t mag_tensor_data_ptr(const mag_tensor_t *tensor) {
+  mag_tensor_materialize(tensor);
   return tensor->storage->base+mag_tensor_data_offset(tensor);
 }
 
@@ -318,6 +341,7 @@ uintptr_t mag_tensor_data_ptr_mut(const mag_tensor_t *tensor) {
 }
 
 uintptr_t mag_tensor_data_storage_ptr(const mag_tensor_t *tensor) {
+  mag_tensor_materialize(tensor); /* Reaches the same bytes by a different route, so it needs the same guard. */
   return tensor->storage->base;
 }
 

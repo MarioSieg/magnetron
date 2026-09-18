@@ -1,0 +1,76 @@
+/*
+** Capturing a chain of operators instead of running them one at a time.
+**
+** Fusing a chain means seeing the whole chain before any of it runs, and eager execution never
+** offers that view: by the time an operator is dispatched, its predecessor has already produced a
+** tensor. So inside a fusion region the dispatcher records a fusible operator rather than submitting
+** it, and marks its output pending - a tensor that exists, with storage allocated, but whose bytes
+** have not been written yet.
+**
+** Everything else is about making that lie invisible. Anything that cannot join the chain, and any
+** attempt to read a pending tensor's memory, forces the chain to run first. The read guard lives in
+** the data-pointer accessors, which is the only way to reach a tensor's bytes, so there is no path
+** that observes a pending tensor without materializing it.
+**
+** The chain is re-recorded on every entry to the region rather than cached. A recorded tape would
+** need a guard proving the control flow that produced it has not changed since; tracing afresh is
+** its own guard, and a different path simply produces a different chain.
+*/
+
+#ifndef MAG_FUSE_CAPTURE_H
+#define MAG_FUSE_CAPTURE_H
+
+#include "mag_fuse_graph.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+** Chain length before a flush is forced.
+**
+** Larger than the number of buffers a graph can bind, because most links in a long chain consume a
+** value the previous link produced and never need a buffer of their own.
+*/
+#define MAG_FUSE_TAPE_MAX 48
+
+/*
+** Regions nest, and only leaving the outermost one runs the chain. Nesting is common by accident -
+** a helper that opens a region called from code that already did - and flushing at every exit would
+** chop chains at boundaries the author never intended to draw.
+*/
+extern MAG_EXPORT void mag_fuse_region_begin(mag_context_t *ctx);
+extern MAG_EXPORT mag_status_t mag_fuse_region_end(mag_error_t *err, mag_context_t *ctx);
+extern MAG_EXPORT bool mag_fuse_region_active(const mag_context_t *ctx);
+
+/*
+** Offer an operator to the chain.
+**
+** Sets *captured when the operator joined, which means the caller must not submit it. A false
+** *captured is the ordinary outcome for anything the chain cannot take, and is not an error.
+*/
+extern mag_status_t mag_fuse_capture(
+  mag_error_t *err,
+  mag_context_t *ctx,
+  mag_opcode_t op,
+  bool inplace,
+  mag_tensor_t **in,
+  uint32_t num_in,
+  mag_tensor_t **out,
+  uint32_t num_out,
+  bool *captured
+);
+
+/* Run whatever is on the tape and clear it. Safe to call when there is nothing pending. */
+extern MAG_EXPORT mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx);
+
+/* How many chains have run and how many operators went into them. */
+extern MAG_EXPORT void mag_fuse_stats(mag_context_t *ctx, uint64_t *out_chains, uint64_t *out_ops_fused);
+
+extern MAG_COLDPROC void mag_fuse_tape_shutdown(mag_context_t *ctx);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

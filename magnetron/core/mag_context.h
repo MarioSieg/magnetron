@@ -26,6 +26,7 @@ extern "C" {
 typedef enum mag_context_flags_t {
   MAG_CTX_FLAG_NONE = 0,
   MAG_CTX_FLAG_GRAD_RECORDER = 1<<0,     /* Gradient recording is currently active. */
+  MAG_CTX_FLAG_FUSING = 1<<1,            /* Inside a fusion region: fusible operators are recorded, not submitted. */
 } mag_context_flags_t;
 
 typedef struct mag_rt_telemetry_t {
@@ -49,6 +50,7 @@ struct mag_context_t {
   mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
   mag_slab_alloc_t au_state_op_params_slab;   /* Autodiff state op params slab allocator */
   mag_backend_registry_t *backend_registry;   /* Compute backend registry */
+  struct mag_fuse_tape_t *fuse_tape;          /* Operators recorded inside a fusion region. NULL until one opens. */
   uint64_t topo_traversal_epoch;              /* Epoch counter for topological traversal of the computation graph */
   mag_topo_stack_t topo_stack;
   mag_topo_set_t topo_set;

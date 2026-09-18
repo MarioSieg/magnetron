@@ -10,6 +10,7 @@
 */
 
 #include "mag_op_dispatch.h"
+#include "mag_fuse_capture.h"
 #include "mag_backend.h"
 #include "mag_context.h"
 #include "mag_autodiff.h"
@@ -91,6 +92,17 @@ mag_status_t MAG_HOTPROC mag_dispatch(
       }
       if (params) mag_au_state_set_op_params(au, params);
     }
+  }
+  /*
+  ** Offered to the chain only after the autodiff state above has been written, so the graph a
+  ** backward walks is the same whether or not this operator was captured. Fusion defers execution;
+  ** it must not change what differentiation sees.
+  */
+  if (mag_unlikely(ctx->flags & MAG_CTX_FLAG_FUSING)) {
+    bool captured = false;
+    mag_status_t cs = mag_fuse_capture(err, ctx, op, inplace, in, num_in, out, num_out, &captured);
+    if (mag_unlikely(mag_iserr(cs))) return cs;
+    if (captured) { ++ctx->telemetry.ops_dispatched; return MAG_OK; }
   }
   mag_command_t cmd = {
     .op = op,
