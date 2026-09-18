@@ -27,3 +27,22 @@ TEST(context, create_cpu) {
     tensor t {ctx, dtype::bfloat16, 4, 8, 4, 3};
     std::cout << t.to_string() << std::endl;
 }
+
+TEST(context, simple_init) {
+    mag_context_t *ctx = nullptr;
+    assert(mag_ctx_create(nullptr, &ctx) == MAG_OK); // create context to use magnetron
+    mag_tensor_t *random = nullptr;
+    assert(mag_uniform(
+        nullptr,
+        &random,
+        ctx,
+        MAG_DTYPE_FLOAT8_E4M3FN, // float8 datatype
+        2, // rank=2
+        (int64_t[]){2, 2}, // shape=2x2 matrix
+        mag_scalar_from_float64(-1.0), // sample from uniform from -1
+        mag_scalar_from_float64(1.0), // to +1
+        mag_device(CPU, 0) // place on device cpu:0
+    ) == MAG_OK);
+    mag_tensor_decref(random); // decrease refcount by 1 to free
+    mag_ctx_destroy(ctx, false); // destroy context and free resources
+}

@@ -37,9 +37,6 @@ typedef enum mag_pad_mode_t {
 
 typedef union mag_op_params_t {
   struct {
-    /* Geometry of a strided view relative to its base tensor's shared storage. Stored so the generic
-       strided_view backward can scatter the output gradient back to the base (handles view/reshape/
-       transpose/permute/slice/flip and, via stride-0 dims, broadcast/expand). */
     int64_t rank;
     int64_t shape[MAG_MAX_DIMS];
     int64_t strides[MAG_MAX_DIMS];
