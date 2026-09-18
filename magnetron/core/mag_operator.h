@@ -23,9 +23,20 @@ typedef enum mag_opflags_t {
   MAG_OP_FLAG_NONE = 0,
   MAG_OP_FLAG_SUPPORTS_INPLACE = 1<<0,                /* Allows to be executed inplace on the input tensor. */
   MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING = 1<<1,      /* Supports multithreading on CPU. */
+  /*
+  ** May appear inside a fused chain. Two conditions, both required:
+  **
+  ** The operator reads and writes element i only, so a chain of them is one loop over one index.
+  ** And its result is exactly defined by IEEE-754, so a backend that lowers the chain to its own
+  ** code produces the same bits as the eager kernel. The transcendentals fail the second test:
+  ** vector kernels approximate them, and any generated form would have to reproduce that
+  ** approximation rather than call libm. An operator without this flag ends a chain.
+  */
+  MAG_OP_FLAG_FUSIBLE = 1<<2,
 } mag_opflags_t;
 
 #define MAG_OP_FLAGS_COMMON (MAG_OP_FLAG_SUPPORTS_INPLACE+MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING)
+#define MAG_OP_FLAGS_FUSIBLE (MAG_OP_FLAGS_COMMON+MAG_OP_FLAG_FUSIBLE)
 #define MAG_OP_INOUT_DYN (UINT32_MAX-1) /* Flags flexible input/output count. Used for operations that can have arbitrary number of inputs/outputs such as split or cat. */
 
 typedef enum mag_pad_mode_t {
@@ -136,8 +147,25 @@ typedef union mag_op_params_t {
   struct {
     double p;
   } bernoulli;
+  struct {
+    /* The chain to run. Owned by core and valid for the duration of the submit call, like the
+       command's own in/out arrays. A backend caches what it lowers by the graph's structure hash;
+       it must not retain the pointer. */
+    const struct mag_fuse_graph_t *graph;
+  } fused;
 } mag_op_params_t;
 
+/*
+** MAG_OP_FUSED, the last entry, is not an operator a user calls. It is a chain of operators carrying
+** MAG_OP_FLAG_FUSIBLE, captured inside a fusion region and submitted as one command so a backend can
+** run the whole chain in a single pass with the intermediates staying in registers.
+**
+** Core builds the graph and submits it like anything else; the backend named by the operands' device
+** lowers it to its own implementation and may decline, in which case core replays the chain eagerly.
+** Arity is dynamic because a chain binds however many distinct tensors it reads and writes. It has no
+** backward: every operator in the chain recorded itself on the autograd graph as it was captured, so
+** the chain is an execution detail that differentiation never sees.
+*/
 #define mag_opdef(_, __)\
   _(NOP, 0, 0, NONE, MAG_OP_FLAG_NONE, NULL)__\
   _(FILL, 0, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
@@ -160,16 +188,16 @@ typedef union mag_op_params_t {
   _(ALL, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(ANY, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(TOPK, 1, 2, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-  _(ABS, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, abs)__\
-  _(SGN, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(NEG, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, neg)__\
+  _(ABS, 1, 1, NUMERIC, MAG_OP_FLAGS_FUSIBLE, abs)__\
+  _(SGN, 1, 1, NUMERIC, MAG_OP_FLAGS_FUSIBLE, NULL)__\
+  _(NEG, 1, 1, NUMERIC, MAG_OP_FLAGS_FUSIBLE, neg)__\
   _(LOG, 1, 1, FP, MAG_OP_FLAGS_COMMON, log)__\
   _(LOG10, 1, 1, FP, MAG_OP_FLAGS_COMMON, log10)__\
   _(LOG1P, 1, 1, FP, MAG_OP_FLAGS_COMMON, log1p)__\
   _(LOG2, 1, 1, FP, MAG_OP_FLAGS_COMMON, log2)__\
-  _(SQR, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, sqr)__\
+  _(SQR, 1, 1, NUMERIC, MAG_OP_FLAGS_FUSIBLE, sqr)__\
   _(RCP, 1, 1, FP, MAG_OP_FLAGS_COMMON, rcp)__\
-  _(SQRT, 1, 1, FP, MAG_OP_FLAGS_COMMON, sqrt)__\
+  _(SQRT, 1, 1, FP, MAG_OP_FLAGS_FUSIBLE, sqrt)__\
   _(RSQRT, 1, 1, FP, MAG_OP_FLAGS_COMMON, rsqrt)__\
   _(SIN, 1, 1, FP, MAG_OP_FLAGS_COMMON, sin)__\
   _(COS, 1, 1, FP, MAG_OP_FLAGS_COMMON, cos)__\
@@ -183,16 +211,16 @@ typedef union mag_op_params_t {
   _(ASINH, 1, 1, FP, MAG_OP_FLAGS_COMMON, asinh)__\
   _(ACOSH, 1, 1, FP, MAG_OP_FLAGS_COMMON, acosh)__\
   _(ATANH, 1, 1, FP, MAG_OP_FLAGS_COMMON, atanh)__\
-  _(STEP, 1, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(STEP, 1, 1, FP, MAG_OP_FLAGS_FUSIBLE, NULL)__\
   _(ERF, 1, 1, FP, MAG_OP_FLAGS_COMMON, erf)__\
   _(ERFC, 1, 1, FP, MAG_OP_FLAGS_COMMON, erfc)__\
   _(EXP, 1, 1, FP, MAG_OP_FLAGS_COMMON, exp)__\
   _(EXP2, 1, 1, FP, MAG_OP_FLAGS_COMMON, exp2)__\
   _(EXPM1, 1, 1, FP, MAG_OP_FLAGS_COMMON, expm1)__\
-  _(FLOOR, 1, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(CEIL, 1, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(ROUND, 1, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(TRUNC, 1, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
+  _(FLOOR, 1, 1, FP, MAG_OP_FLAGS_FUSIBLE, NULL)__\
+  _(CEIL, 1, 1, FP, MAG_OP_FLAGS_FUSIBLE, NULL)__\
+  _(ROUND, 1, 1, FP, MAG_OP_FLAGS_FUSIBLE, NULL)__\
+  _(TRUNC, 1, 1, FP, MAG_OP_FLAGS_FUSIBLE, NULL)__\
   _(SOFTMAX, 1, 1, FP, MAG_OP_FLAGS_COMMON, softmax)__\
   _(SOFTMAX_DV, 1, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
   _(SIGMOID, 1, 1, FP, MAG_OP_FLAGS_COMMON, sigmoid)__\
@@ -201,7 +229,7 @@ typedef union mag_op_params_t {
   _(SILU, 1, 1, FP, MAG_OP_FLAGS_COMMON, silu)__\
   _(SILU_DV, 1, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
   _(TANH_DV, 1, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
-  _(RELU, 1, 1, FP, MAG_OP_FLAGS_COMMON, relu)__\
+  _(RELU, 1, 1, FP, MAG_OP_FLAGS_FUSIBLE, relu)__\
   _(RELU_DV, 1, 1, FP, MAG_OP_FLAGS_COMMON, NULL)__\
   _(GELU, 1, 1, FP, MAG_OP_FLAGS_COMMON, gelu)__\
   _(GELU_APPROX, 1, 1, FP, MAG_OP_FLAGS_COMMON, gelu)__\
@@ -210,10 +238,10 @@ typedef union mag_op_params_t {
   _(TRIU, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, triu)__\
   _(MULTINOMIAL, 1, 1, FP, MAG_OP_FLAG_NONE, NULL)__\
   _(CAT, MAG_OP_INOUT_DYN, 1, ALL, MAG_OP_FLAGS_COMMON, cat)__\
-  _(ADD, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, add)__\
-  _(SUB, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, sub)__\
-  _(MUL, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, mul)__\
-  _(DIV, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, div)__\
+  _(ADD, 2, 1, NUMERIC, MAG_OP_FLAGS_FUSIBLE, add)__\
+  _(SUB, 2, 1, NUMERIC, MAG_OP_FLAGS_FUSIBLE, sub)__\
+  _(MUL, 2, 1, NUMERIC, MAG_OP_FLAGS_FUSIBLE, mul)__\
+  _(DIV, 2, 1, NUMERIC, MAG_OP_FLAGS_FUSIBLE, div)__\
   _(FLOORDIV, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, NULL)__\
   _(MOD, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, NULL)__\
   _(POW, 2, 1, NUMERIC, MAG_OP_FLAGS_COMMON, pow)__\
@@ -233,9 +261,9 @@ typedef union mag_op_params_t {
   _(LT, 2, 1, ALL, MAG_OP_FLAGS_COMMON, NULL)__\
   _(GT, 2, 1, ALL, MAG_OP_FLAGS_COMMON, NULL)__\
   _(WHERE, 3, 1, ALL, MAG_OP_FLAGS_COMMON, where)__\
-  _(MIN, 2, 1, ALL, MAG_OP_FLAGS_COMMON, min)__\
-  _(MAX, 2, 1, ALL, MAG_OP_FLAGS_COMMON, max)__\
-  _(CLAMP, 3, 1, ALL, MAG_OP_FLAGS_COMMON, clamp)__\
+  _(MIN, 2, 1, ALL, MAG_OP_FLAGS_FUSIBLE, min)__\
+  _(MAX, 2, 1, ALL, MAG_OP_FLAGS_FUSIBLE, max)__\
+  _(CLAMP, 3, 1, ALL, MAG_OP_FLAGS_FUSIBLE, clamp)__\
   _(PAD, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(EYE, 0, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(CUSUM, 1, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
@@ -248,7 +276,8 @@ typedef union mag_op_params_t {
   _(EMBEDDING, 2, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, embedding)__\
   _(SCATTER, 3, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(SCATTER_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-  _(STRIDED_VIEW, 1, 1, ALL, MAG_OP_FLAG_NONE, strided_view)__
+  _(STRIDED_VIEW, 1, 1, ALL, MAG_OP_FLAG_NONE, strided_view)__\
+  _(FUSED, MAG_OP_INOUT_DYN, MAG_OP_INOUT_DYN, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {
@@ -258,7 +287,7 @@ typedef enum mag_opcode_t {
   MAG_OP__NUM
 } mag_opcode_t;
 mag_static_assert(MAG_OP_NOP == 0);
-mag_static_assert(MAG_OP_STRIDED_VIEW+1 == MAG_OP__NUM);
+mag_static_assert(MAG_OP_FUSED+1 == MAG_OP__NUM); /* Update when adding an opcode: backend dispatch tables are sized by MAG_OP__NUM. */
 mag_static_assert(MAG_OP__NUM <= 0xff); /* Must fit in one byte */
 
 typedef uint16_t mag_dtype_mask_t; /* Bitmask of supported dtypes, 1 bit per dtype. */

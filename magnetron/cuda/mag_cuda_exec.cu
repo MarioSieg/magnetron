@@ -129,6 +129,9 @@ namespace mag {
     [MAG_OP_SCATTER] = &misc_op_scatter,
     [MAG_OP_SCATTER_ADD] = &misc_op_scatter_add,
     [MAG_OP_STRIDED_VIEW] = +[](mag_error_t *, const mag_command_t &, cudaStream_t) -> mag_status_t { return MAG_OK; },
+    /* No CUDA lowering for fused chains yet. A null entry makes submit_op report the operator as
+       unimplemented, which is the signal core uses to replay the chain eagerly. */
+    [MAG_OP_FUSED] = nullptr,
   };
   static_assert(std::size(k_kernel_dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
   //static_assert([] -> bool {
