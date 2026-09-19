@@ -135,3 +135,56 @@ TEST(threading, concurrent_backward_disjoint_graphs) {
     for (auto &th : pool) th.join();
     ASSERT_EQ(0, failures.load());
 }
+
+TEST(threading, serialized_backward_shared_graph) {
+    context ctx {};
+    const unsigned threads {worker_count()};
+    std::mutex backward_mtx {};
+
+    tensor x {ctx, dtype::float32, 8};
+    x.fill_(2.0f);
+    x.requires_grad(true);
+
+    std::vector<std::thread> pool {};
+    pool.reserve(threads);
+    for (unsigned t {0}; t < threads; ++t) {
+        pool.emplace_back([&] {
+            std::scoped_lock lock {backward_mtx};
+            tensor loss {x.mul(x).sum()};
+            loss.backward();
+        });
+    }
+    for (auto &th : pool) th.join();
+
+    std::vector<float> grad {x.grad()->to_vector<float>()};
+    const float expected {4.0f*static_cast<float>(threads)};
+    for (float g : grad)
+        ASSERT_NEAR(expected, g, 1e-3f);
+}
+
+TEST(threading, telemetry_is_exact_after_storm) {
+    context ctx {};
+    mag_context_t *raw {&*ctx};
+    const int64_t alive_tensors_before {mag_atomic64_load(&raw->telemetry.num_alive_tensors, MAG_MO_RELAXED)};
+    const int64_t alive_storages_before {mag_atomic64_load(&raw->telemetry.num_alive_storages, MAG_MO_RELAXED)};
+    const int64_t created_before {mag_atomic64_load(&raw->telemetry.num_created_tensors, MAG_MO_RELAXED)};
+
+    const unsigned threads {worker_count()};
+    constexpr int iterations {250};
+
+    std::vector<std::thread> pool {};
+    pool.reserve(threads);
+    for (unsigned t {0}; t < threads; ++t) {
+        pool.emplace_back([&ctx] {
+            for (int i {0}; i < iterations; ++i) {
+                tensor x {ctx, dtype::float32, 16, 16};
+            }
+        });
+    }
+    for (auto &th : pool) th.join();
+
+    ASSERT_EQ(alive_tensors_before, mag_atomic64_load(&raw->telemetry.num_alive_tensors, MAG_MO_RELAXED));
+    ASSERT_EQ(alive_storages_before, mag_atomic64_load(&raw->telemetry.num_alive_storages, MAG_MO_RELAXED));
+    ASSERT_EQ(created_before + static_cast<int64_t>(threads)*iterations,
+              mag_atomic64_load(&raw->telemetry.num_created_tensors, MAG_MO_RELAXED));
+}
