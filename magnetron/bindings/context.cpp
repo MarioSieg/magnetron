@@ -10,6 +10,7 @@
 */
 
 #include "prelude.hpp"
+#include <core/mag_fuse_capture.h>
 
 #include <atomic>
 
@@ -75,6 +76,24 @@ namespace mag::bindings {
     }, "seed"_a, "Set RNG seed for reproducibility.");
     /* Resolves like set_default_device does, so 'is_device_available(d)' answering true guarantees that
        'set_default_device(d)' with the same string succeeds. */
+    context.def("begin_fusion", []() -> void {
+      std::lock_guard lock {get_global_mutex()};
+      mag_fuse_region_begin(get_ctx());
+    }, "Start recording fusible pointwise operators instead of running them. Nestable.");
+    context.def("end_fusion", []() -> void {
+      std::lock_guard lock {get_global_mutex()};
+      mag_error_t err {};
+      throw_if_error(mag_fuse_region_end(&err, get_ctx()), err);
+    }, "Close the innermost region; closing the outermost one runs the chain.");
+    context.def("fusion_stats", []() -> nb::dict {
+      std::lock_guard lock {get_global_mutex()};
+      uint64_t chains = 0, ops_fused = 0;
+      mag_fuse_stats(get_ctx(), &chains, &ops_fused);
+      nb::dict out;
+      out["chains"] = chains;
+      out["ops_fused"] = ops_fused;
+      return out;
+    }, "How many chains have run and how many operators went into them.");
     context.def("is_device_available", [](const std::string &device) -> bool {
       std::lock_guard lock {get_global_mutex()};
       std::optional<mag_device_id_t> device_id = resolve_device_id_str(std::string {device});

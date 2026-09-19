@@ -35,6 +35,21 @@ extern "C" {
 #define MAG_FUSE_TAPE_MAX 48
 
 /*
+** Below this, recording a chain costs more than running the operators where they stand.
+**
+** Building the graph, walking the tape and submitting the chain is a fixed cost per chain, and on a
+** small tensor the operators it replaces are already cheaper than that. Measured on an Apple M3
+** against a two and four deep multiply-add chain: fusion loses at 1024 through 8192 elements
+** (0.68x to 0.85x) and wins from 16384 upward.
+**
+** Treat the exact figure as provisional. The eager path it was measured against threads any operator
+** above ten thousand elements, which costs about 12us of fan-out per operator and is far too eager -
+** so part of what fusion appears to win just above that line is really eager paying for threading it
+** should not have used. This wants re-deriving once those thresholds are themselves measured.
+*/
+#define MAG_FUSE_MIN_ELEMS 16384
+
+/*
 ** Regions nest, and only leaving the outermost one runs the chain. Nesting is common by accident -
 ** a helper that opens a region called from code that already did - and flushing at every exit would
 ** chop chains at boundaries the author never intended to draw.

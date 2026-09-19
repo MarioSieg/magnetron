@@ -259,7 +259,7 @@ mag_status_t mag_fuse_capture(
     !inplace &&
     num_out == 1 && num_in >= 1 && num_in <= 3 &&
     mag_fuse_op_is_fusible(op) &&
-    out[0]->meta.numel > 1;  /* A chain over a single element is not worth a kernel. */
+    out[0]->meta.numel >= MAG_FUSE_MIN_ELEMS;
   if (fusible)
     for (uint32_t i=0; i < num_in && fusible; ++i)
       fusible = mag_fuse_operand_ok(in[i], out[0]);

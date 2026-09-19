@@ -6,6 +6,9 @@ using namespace magnetron;
 using namespace magnetron::test;
 
 namespace {
+    /* Anything smaller is left to the eager path, so a capture test on it would test nothing. */
+    constexpr int64_t kN = MAG_FUSE_MIN_ELEMS;
+
     /* Fill a tensor with something whose exact bits are easy to reason about. */
     auto ramp(context &ctx, int64_t n, float scale) -> tensor {
         tensor t {ctx, dtype::float32, n};
@@ -31,8 +34,8 @@ namespace {
 
 TEST(fuse_capture, a_region_does_not_change_the_answer) {
     context ctx {};
-    tensor a = ramp(ctx, 64, 1.0f);
-    tensor b = ramp(ctx, 64, 0.5f);
+    tensor a = ramp(ctx, kN, 1.0f);
+    tensor b = ramp(ctx, kN, 0.5f);
 
     std::vector<float> eager = a.mul(b).add(a).to_vector<float>();
 
@@ -48,7 +51,7 @@ TEST(fuse_capture, a_region_does_not_change_the_answer) {
 
 TEST(fuse_capture, reading_a_value_inside_a_region_runs_the_chain_first) {
     context ctx {};
-    tensor a = ramp(ctx, 32, 1.0f);
+    tensor a = ramp(ctx, kN, 1.0f);
     std::vector<float> expect = a.mul(a).to_vector<float>();
 
     region r {ctx};
@@ -65,7 +68,7 @@ TEST(fuse_capture, reading_a_value_inside_a_region_runs_the_chain_first) {
 
 TEST(fuse_capture, an_operator_that_cannot_join_ends_the_chain) {
     context ctx {};
-    tensor a = ramp(ctx, 32, 1.0f);
+    tensor a = ramp(ctx, kN, 1.0f);
     std::vector<float> expect = a.mul(a).tanh().add(a).to_vector<float>();
 
     tensor out {ctx, dtype::float32, 1};
@@ -75,13 +78,16 @@ TEST(fuse_capture, an_operator_that_cannot_join_ends_the_chain) {
     }
     EXPECT_EQ(out.to_vector<float>(), expect);
 
+    /* tanh splits this into two chains - mul before it, add after - and both of them ran as
+       chains rather than one operator at a time. */
     auto [chains, ops] = chain_stats(ctx);
-    EXPECT_EQ(chains+ops, 0u); /* Nothing lowered yet: no backend implements MAG_OP_FUSED. */
+    EXPECT_EQ(chains, 2u);
+    EXPECT_EQ(ops, 2u);
 }
 
 TEST(fuse_capture, nesting_only_runs_the_chain_on_the_outermost_exit) {
     context ctx {};
-    tensor a = ramp(ctx, 32, 1.0f);
+    tensor a = ramp(ctx, kN, 1.0f);
     std::vector<float> expect = a.add(a).mul(a).to_vector<float>();
 
     tensor out {ctx, dtype::float32, 1};
@@ -102,7 +108,7 @@ TEST(fuse_capture, nesting_only_runs_the_chain_on_the_outermost_exit) {
 
 TEST(fuse_capture, a_chain_longer_than_the_tape_still_computes) {
     context ctx {};
-    tensor a = ramp(ctx, 16, 0.125f);
+    tensor a = ramp(ctx, kN, 0.125f);
 
     tensor eager = a;
     for (int i=0; i < MAG_FUSE_TAPE_MAX+8; ++i) eager = eager.add(a);
@@ -133,7 +139,7 @@ TEST(fuse_capture, a_single_element_tensor_is_left_alone) {
 
 TEST(fuse_capture, nothing_is_captured_outside_a_region) {
     context ctx {};
-    tensor a = ramp(ctx, 32, 1.0f);
+    tensor a = ramp(ctx, kN, 1.0f);
     tensor out = a.mul(a);
     EXPECT_FALSE((*out).meta.flags & MAG_TFLAG_PENDING);
 }
