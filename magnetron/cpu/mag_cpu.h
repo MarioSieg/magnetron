@@ -28,6 +28,7 @@ mag_backend_decl_interface();
 
 typedef struct mag_cpu_device_t {
   mag_context_t *ctx;
+  mag_lock_t submit_lock;                 /* One submitter at a time as the TR pool is fork join parallel for now */
   mag_thread_pool_t *pool;                /* Thread pool. NULL if num_allocated_workers <= 1 */
   uint32_t num_allocated_workers;         /* Amount of worker thread used. if == 1 then single threaded mode and thread pool is not created */
   mag_kernel_registry_t kernels;          /* Compute kernels. Specialized by arch optimized version at boot (e.g. AVX, AVX512 etc..) */

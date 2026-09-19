@@ -20,6 +20,9 @@
 using namespace magnetron;
 
 namespace {
+    constexpr int64_t k_parallel_rows {256};
+    constexpr int64_t k_parallel_cols {256};
+
     auto worker_count() -> unsigned {
         unsigned hw {std::thread::hardware_concurrency()};
         return std::max(4u, std::min(2u*(hw ? hw : 4u), 32u));
@@ -82,6 +85,30 @@ TEST(threading, cross_thread_ownership) {
         });
     }
     for (auto &th : consumers) th.join();
+}
+
+TEST(threading, concurrent_intra_op_parallel_submits) {
+    context ctx {};
+    const unsigned threads {worker_count()};
+    constexpr int iterations {24};
+    std::atomic<int> failures {0};
+
+    std::vector<std::thread> pool {};
+    pool.reserve(threads);
+    for (unsigned t {0}; t < threads; ++t) {
+        pool.emplace_back([&ctx, &failures] {
+            for (int i {0}; i < iterations; ++i) {
+                tensor x {ctx, dtype::float32, k_parallel_rows, k_parallel_cols};
+                x.fill_(-2.0f);
+                tensor y {x.abs()};
+                std::vector<float> host {y.to_vector<float>()};
+                for (float v : host)
+                    if (std::abs(v - 2.0f) > 1e-5f) ++failures;
+            }
+        });
+    }
+    for (auto &th : pool) th.join();
+    ASSERT_EQ(0, failures.load());
 }
 
 TEST(threading, concurrent_backward_disjoint_graphs) {

@@ -52,12 +52,12 @@ mag_status_t mag_worker_exec_thread_local(mag_error_t *err, const mag_kernel_reg
 }
 
 /* Execute the operation and broadcast completion if last chunk was done */
-static mag_status_t mag_worker_exec_and_broadcast(mag_error_t *err, mag_thread_pool_t *pool, const mag_kernel_registry_t *kernels, mag_kernel_payload_t *payload) {
+static void mag_worker_exec_and_broadcast(mag_error_t *err, mag_thread_pool_t *pool, const mag_kernel_registry_t *kernels, mag_kernel_payload_t *payload, mag_status_t *out_stat) {
   mag_status_t stat = MAG_OK;
   if (mag_likely(payload->thread_idx < pool->num_active_workers))
     stat = mag_worker_exec_thread_local(err, kernels, payload);
+  *out_stat = stat;                     /* publish status BEFORE signalling or master may access it stale */
   mag_phase_fence_done(&pool->fence);   /* signal completion to master */
-  return stat;
 }
 
 /* Worker thread entry point */
@@ -76,7 +76,7 @@ static MAG_HOTPROC void mag_worker_thread_entry(void *arg) {
     mag_numa_pin_thread_affinity(pool->numa_ctrl, payload->thread_idx);
   mag_atomic32_fetch_add(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
   while (mag_likely(mag_worker_await_work(worker, pool)))  /* Main work loop: wait, work, signal status */
-    *stat = mag_worker_exec_and_broadcast(err, pool, kernels, payload);
+    mag_worker_exec_and_broadcast(err, pool, kernels, payload, stat);
   mag_atomic32_fetch_sub(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
 }
 
@@ -204,7 +204,7 @@ mag_status_t mag_threadpool_parallel_compute(mag_error_t *err, mag_thread_pool_t
   mag_threadpool_clear_worker_status(pool);
   mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) mag_tile_sched_t tile_sched = {0};
   mag_threadpool_kickoff(pool, cmd, num_active_workers, &tile_sched); /* Kick off workers */
-  pool->workers[0].stat = mag_worker_exec_and_broadcast(err, pool, pool->kernels, &pool->workers->payload); /* Main thread does work too */
+  mag_worker_exec_and_broadcast(err, pool, pool->kernels, &pool->workers->payload, &pool->workers[0].stat); /* Main thread does work too */
   mag_threadpool_barrier(pool); /* Wait for all workers to finish */
   return mag_threadpool_collect_status(err, pool);
 }
