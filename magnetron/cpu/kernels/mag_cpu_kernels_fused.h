@@ -117,6 +117,15 @@ static mag_status_t MAG_HOTPROC mag_cpu_kernel_fused_f32(mag_error_t *err, const
   int64_t end = mag_xmin(begin+chunk, total);
   if (mag_unlikely(begin >= end)) return MAG_OK;
 
+  /* Submit compiles the chain before waking anyone, so by here the choice is already made. The
+     compiled form takes the same slice this would have interpreted, which is what lets one stand in
+     for the other without the rest of this kernel knowing which ran. */
+  if (payload->fused_fn) {
+    const double *call_imms = NULL; /* Immediates arrive at call time; no chain uses them yet. */
+    ((void (*)(void *const *, const double *, int64_t, int64_t))payload->fused_fn)(bufs, call_imms, begin, end);
+    return MAG_OK;
+  }
+
   /*
   ** Scratch holds intermediates and nothing else.
   **

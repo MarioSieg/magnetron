@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pytest
 
@@ -123,6 +125,62 @@ def test_a_broadcast_scalar_operand_still_fuses() -> None:
         out = x * w + 2.5
     assert np.array_equal(out.numpy(), expect)
 
+
+def test_compiled_and_interpreted_chains_agree() -> None:
+    """The CPU backend has two lowerings, and they must not disagree by a single bit.
+
+    Compiling needs a host toolchain and can always fail - no compiler, an unwritable cache
+    directory - in which case the chain is interpreted instead. That fallback is only safe if the
+    two produce identical numbers, so this runs the same chain both ways in separate processes and
+    compares the raw bytes.
+    """
+    import subprocess
+    import sys
+
+    prog = """
+import numpy as np, magnetron as mag
+from magnetron import Tensor, no_grad
+mag.context.manual_seed(20260918)
+n = 1 << 16
+x, w, b = (Tensor.uniform((n,), low=0.25, high=1.75) for _ in range(3))
+with no_grad(), mag.fuse():
+    y = x
+    for _ in range(6):
+        y = ((y * w + b).abs().sqrt() * w - b).relu()
+import sys
+sys.stdout.buffer.write(y.numpy().tobytes())
+"""
+    def run(compile_enabled: bool) -> bytes:
+        env = {**os.environ}
+        if not compile_enabled:
+            env['MAG_FUSE_COMPILE'] = 'off'
+        out = subprocess.run([sys.executable, '-c', prog], capture_output=True, env=env, check=True)
+        return out.stdout
+
+    assert run(True) == run(False)
+
+
+def test_a_chain_runs_the_same_with_compilation_disabled() -> None:
+    """Turning compilation off must change speed and nothing else."""
+    import subprocess
+    import sys
+
+    prog = """
+import numpy as np, magnetron as mag
+from magnetron import Tensor, no_grad
+mag.context.manual_seed(99)
+n = 1 << 16
+x, w, b = (Tensor.uniform((n,)) for _ in range(3))
+with no_grad():
+    eager = (x * w + b).numpy().copy()
+with no_grad(), mag.fuse():
+    fused = x * w + b
+assert np.array_equal(fused.numpy(), eager)
+print('ok')
+"""
+    env = {**os.environ, 'MAG_FUSE_COMPILE': 'off'}
+    out = subprocess.run([sys.executable, '-c', prog], capture_output=True, text=True, env=env, check=True)
+    assert out.stdout.strip() == 'ok'
 
 def test_a_read_only_operand_can_be_read_by_a_chain() -> None:
     """A chain must ask for write access only to what it writes.

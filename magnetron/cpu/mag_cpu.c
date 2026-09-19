@@ -10,6 +10,7 @@
 */
 
 #include "mag_cpu.h"
+#include "mag_cpu_fusion.h"
 #include "mag_cpu_specialization_detector.h"
 #include "mag_cpu_threadpool.h"
 #include "mag_cpu_tls_arena.h"
@@ -69,6 +70,12 @@ const uint32_t mag_crc32c_lut[256] = {
 
 static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *device, const mag_command_t *cmd) {
   mag_cpu_device_t *cpu_dvc = device->impl;
+  /* A fused chain is compiled here, before any worker is woken: building a kernel is not something
+     eight threads should each discover they need. A null answer means no toolchain, or a chain this
+     backend cannot write as C, and the kernel interprets it instead. */
+  const void *fused_fn = NULL;
+  if (mag_unlikely(cmd->op == MAG_OP_FUSED && cmd->params))
+    fused_fn = (const void *)mag_cpu_fuse_resolve(&cpu_dvc->fuse_cache, cmd->params->fused.graph);
   uint32_t intraop_workers = mag_cpu_tune_eager_intra_op_worker_count(cmd, device); /* Determine number of intra-op workers */
   if (intraop_workers <= 1) { /* Main thread does the work (single threaded mode). */
     mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) mag_tile_sched_t tile_sched = {0};
@@ -78,10 +85,11 @@ static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *d
       .thread_num = 1,
       .prng = &cpu_dvc->primary_prng,
       .tile_sched = &tile_sched,
+      .fused_fn = fused_fn,
     };
     return mag_worker_exec_thread_local(err, &cpu_dvc->kernels, &payload);
   }
-  return mag_threadpool_parallel_compute(err, cpu_dvc->pool, cmd, intraop_workers); /* Multithreaded exec + barrier */
+  return mag_threadpool_parallel_compute(err, cpu_dvc->pool, cmd, intraop_workers, fused_fn); /* Multithreaded exec + barrier */
 }
 
 static mag_status_t mag_cpu_storage_dtor(void *self) {
@@ -175,6 +183,7 @@ static mag_status_t mag_cpu_init_device(mag_error_t *err, mag_cpu_device_t **out
 static void mag_cpu_destroy_device(mag_cpu_device_t *device) {
   if (*device->kernels.deinit) (*device->kernels.deinit)();
   if (device->pool) mag_threadpool_destroy(device->pool);
+  mag_cpu_fuse_cache_destroy(device->fuse_cache); /* Unloads every compiled chain. */
   (*mag_try_alloc)(device, 0, 0);
 }
 

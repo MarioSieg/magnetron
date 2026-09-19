@@ -11,6 +11,8 @@
 
 #include "mag_envcfg.h"
 
+#include <string.h>
+
 const char *mag_envcfg_raw(const char *name) {
   const char *v = getenv(name);
   return v && *v ? v : NULL;
@@ -25,6 +27,24 @@ void mag_envcfg_apply_log_level(void) {
   else if (mag_casecmp(v, "info")) mag_set_log_level(MAG_LOG_LEVEL_INFO);
   else if (mag_casecmp(v, "debug")) mag_set_log_level(MAG_LOG_LEVEL_DEBUG);
   else mag_log_error("Invalid " MAG_ENV_LOG_LEVEL " value '%s' (valid: off, error, warn, info, debug)", v);
+}
+
+bool mag_envcfg_fuse_compile_enabled(void) {
+  const char *v = mag_envcfg_raw(MAG_ENV_FUSE_COMPILE);
+  if (!v) return true;
+  if (mag_casecmp(v, "off") || !strcmp(v, "0") || mag_casecmp(v, "false")) return false;
+  if (mag_casecmp(v, "on") || !strcmp(v, "1") || mag_casecmp(v, "true")) return true;
+  mag_log_error("Invalid " MAG_ENV_FUSE_COMPILE " value '%s' (valid: on, off)", v);
+  return true;
+}
+
+const char *mag_envcfg_fuse_cc(void) {
+  const char *v = mag_envcfg_raw(MAG_ENV_FUSE_CC);
+  return v ? v : "cc";
+}
+
+const char *mag_envcfg_fuse_cache_dir(void) {
+  return mag_envcfg_raw(MAG_ENV_FUSE_CACHE_DIR);
 }
 
 mag_envcfg_cpu_specialization_t mag_envcfg_cpu_specialization_level(const char **out_name) {

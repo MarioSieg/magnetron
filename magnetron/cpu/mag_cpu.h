@@ -33,6 +33,7 @@ typedef struct mag_cpu_device_t {
   mag_kernel_registry_t kernels;          /* Compute kernels. Specialized by arch optimized version at boot (e.g. AVX, AVX512 etc..) */
   mag_philox4x32_stream_t primary_prng;   /* Primary prng context. */
   mag_numa_node_controller_t numa_ctrl;
+  struct mag_cpu_fuse_cache_t *fuse_cache;  /* Compiled fused chains. NULL until the first one. */
 } mag_cpu_device_t;
 
 #ifdef __cplusplus
