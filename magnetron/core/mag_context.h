@@ -37,7 +37,6 @@ typedef struct mag_rt_telemetry_t {
 } mag_rt_telemetry_t;
 
 struct mag_context_t {
-  uintptr_t tr_id;                            /* Context thread ID. */
   mag_context_flags_t flags;                  /* Context flags. */
   mag_dtype_t default_dtype;                  /* Default floating point data type for the context. */
   mag_device_id_t default_device;             /* Device used by factory functions when the caller names none. Always fully resolved. */

@@ -166,7 +166,6 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
     return mag_set_error(err, MAG_ERR_OOM, "context: failed to initialize toposort structures.");
   }
 
-  ctx->tr_id = mag_thread_id(); /* Get thread ID. */
   ctx->default_dtype = MAG_DTYPE_FLOAT32; /* Use fp32 by default */
   ctx->default_device = mag_device(CPU, 0);
   ctx->flags|=MAG_CTX_FLAG_GRAD_RECORDER; /* Enable gradient recording by default. */
@@ -192,7 +191,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   /* Seed prng once with secure system entropy */
   uint64_t global_seed = 0;
   if (mag_unlikely(!mag_sec_crypto_entropy(&global_seed, sizeof(global_seed)))) /* Fallback to weak seeding */
-    global_seed = (uint64_t)time(NULL)^ctx->tr_id^((uintptr_t)ctx>>3)^mag_cycles()^((uintptr_t)&global_seed>>3);
+    global_seed = (uint64_t)time(NULL)^(uintptr_t)mag_thread_id()^((uintptr_t)ctx>>3)^mag_cycles()^((uintptr_t)&global_seed>>3);
   mag_ctx_manual_seed(ctx, global_seed);
 
   /* Print context initialization time. */

@@ -18,7 +18,7 @@
 namespace mag::bindings {
   static std::once_flag g_ctx_once;
   static std::atomic<mag_context_t*> g_ctx{nullptr};
-  static std::mutex g_mutex;
+  static std::recursive_mutex g_mutex;
 
   mag_context_t *get_ctx() {
     std::call_once(g_ctx_once, [] {
@@ -30,9 +30,7 @@ namespace mag::bindings {
     return g_ctx.load(std::memory_order_acquire);
   }
 
-  std::mutex &get_global_mutex() { return g_mutex; }
-  /* The default lives in the C context, not in a binding-local string, so the C and Python APIs cannot
-     disagree about where an unqualified tensor lands. It is always stored fully resolved. */
+  std::recursive_mutex &get_global_mutex() { return g_mutex; }
   std::string get_default_device_unlocked() {
     char buf[32];
     mag_device_id_to_str(mag_ctx_default_device(get_ctx()), &buf);
@@ -49,8 +47,6 @@ namespace mag::bindings {
   }
 
   void init_bindings_context(nb::module_ &m) {
-    // Keep the context guard alive for the lifetime of the module
-    // When the module unloads, the capsule destructor runs
     m.attr("_ctx_guard") = nb::capsule {reinterpret_cast<const void *>(1), &destroy_ctx};
 
     auto context = m.def_submodule(
@@ -73,8 +69,6 @@ namespace mag::bindings {
       std::lock_guard lock {get_global_mutex()};
       mag_ctx_manual_seed(get_ctx(), seed);
     }, "seed"_a, "Set RNG seed for reproducibility.");
-    /* Resolves like set_default_device does, so 'is_device_available(d)' answering true guarantees that
-       'set_default_device(d)' with the same string succeeds. */
     context.def("is_device_available", [](const std::string &device) -> bool {
       std::lock_guard lock {get_global_mutex()};
       std::optional<mag_device_id_t> device_id = resolve_device_id_str(std::string {device});

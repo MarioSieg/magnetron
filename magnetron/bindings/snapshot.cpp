@@ -14,65 +14,67 @@
 #include <core/mag_io_snapshot_layout.h>
 
 namespace mag::bindings {
-  class snapshot_stream_writer final {
-  public:
-    snapshot_stream_writer(const std::string &filename, const std::string & meta, uint64_t data_len) {
-      mag_error_t err {};
-      throw_if_error(
-        mag_snapshot_stream_writer_open(
-          &err,
-          &m_writer,
-          get_ctx(),
-          filename.c_str(),
-          meta.c_str(),
-          static_cast<uint64_t>(meta.size()),
-          data_len
-        ),
-        err
-      );
-    }
+  namespace {
+    class snapshot_stream_writer final {
+    public:
+      snapshot_stream_writer(const std::string &filename, const std::string & meta, uint64_t data_len) {
+        mag_error_t err {};
+        throw_if_error(
+          mag_snapshot_stream_writer_open(
+            &err,
+            &m_writer,
+            get_ctx(),
+            filename.c_str(),
+            meta.c_str(),
+            static_cast<uint64_t>(meta.size()),
+            data_len
+          ),
+          err
+        );
+      }
 
-    ~snapshot_stream_writer() noexcept {
-      abort();
-    }
-    snapshot_stream_writer(const snapshot_stream_writer &) = delete;
-    snapshot_stream_writer &operator=(const snapshot_stream_writer &) = delete;
-    snapshot_stream_writer(snapshot_stream_writer &&rhs) noexcept : m_writer {std::exchange(rhs.m_writer, nullptr)} {}
-    snapshot_stream_writer &operator=(snapshot_stream_writer &&rhs) noexcept {
-      if (this == &rhs)
+      ~snapshot_stream_writer() noexcept {
+        abort();
+      }
+      snapshot_stream_writer(const snapshot_stream_writer &) = delete;
+      snapshot_stream_writer &operator=(const snapshot_stream_writer &) = delete;
+      snapshot_stream_writer(snapshot_stream_writer &&rhs) noexcept : m_writer {std::exchange(rhs.m_writer, nullptr)} {}
+      snapshot_stream_writer &operator=(snapshot_stream_writer &&rhs) noexcept {
+        if (this == &rhs)
+          return *this;
+        abort();
+        m_writer = std::exchange(rhs.m_writer, nullptr);
         return *this;
-      abort();
-      m_writer = std::exchange(rhs.m_writer, nullptr);
-      return *this;
-    }
+      }
 
-    [[nodiscard]] bool is_open() const noexcept { return m_writer != nullptr; }
+      [[nodiscard]] bool is_open() const noexcept { return m_writer != nullptr; }
 
-    void write(const void *data, std::uint64_t size) {
-      require_open();
-      mag_error_t err {};
-      throw_if_error(mag_snapshot_stream_writer_submit_blob(&err, m_writer, data, size), err);
-    }
+      void write(const void *data, std::uint64_t size) {
+        require_open();
+        mag_error_t err {};
+        throw_if_error(mag_snapshot_stream_writer_submit_blob(&err, m_writer, data, size), err);
+      }
 
-    void close() {
-      if (!m_writer) return;
-      auto *writer = std::exchange(m_writer, nullptr);
-      mag_error_t err {};
-      throw_if_error(mag_snapshot_stream_writer_close(&err, writer), err);
-    }
+      void close() {
+        if (!m_writer) return;
+        auto *writer = std::exchange(m_writer, nullptr);
+        mag_error_t err {};
+        throw_if_error(mag_snapshot_stream_writer_close(&err, writer), err);
+      }
 
-    void abort() noexcept {
-      if (auto *writer = std::exchange(m_writer, nullptr))
-        mag_snapshot_stream_writer_abort(writer);
-    }
+      void abort() noexcept {
+        if (auto *writer = std::exchange(m_writer, nullptr))
+          mag_snapshot_stream_writer_abort(writer);
+      }
 
-  private:
+    private:
       void require_open() const {
         if (!m_writer)
           throw std::runtime_error {"SnapshotStreamWriter is closed"};
       }
       mag_snapshot_stream_writer_t *m_writer {};
-  };
+    };
+  }
 
   class snapshot_stream_reader final {
   public:

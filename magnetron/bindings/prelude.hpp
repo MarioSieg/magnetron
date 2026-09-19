@@ -35,7 +35,7 @@ namespace mag::bindings {
 
   // Lazy init the context, destruction is handled by the module destructor.
   [[nodiscard]] extern mag_context_t *get_ctx();
-  [[nodiscard]] extern std::mutex &get_global_mutex();
+  [[nodiscard]] extern std::recursive_mutex &get_global_mutex();
   [[nodiscard]] extern std::string get_default_device_unlocked();
   [[nodiscard]] extern std::string get_default_device();
 
@@ -80,24 +80,36 @@ namespace mag::bindings {
     explicit tensor_wrapper(mag_tensor_t *ptr) noexcept : m_tensor{ptr} {}
     tensor_wrapper(const tensor_wrapper &other) noexcept : m_tensor{other.m_tensor} { if (m_tensor) mag_tensor_incref(m_tensor); }
     constexpr tensor_wrapper(tensor_wrapper &&other) noexcept : m_tensor{other.m_tensor} { other.m_tensor = nullptr; }
+    /* A decref can run the storage destructor, which frees into the context slabs. Those are
+       not thread-safe yet, and this can fire on any thread once the GIL is released, so it
+       borrows the same global mutex the op bindings use. Drop the guards here together with
+       that mutex in milestone 5 - see THREAD_SAFETY.md. */
     tensor_wrapper &operator=(const tensor_wrapper &other) noexcept {
       if (this != &other) {
         if (other.m_tensor) mag_tensor_incref(other.m_tensor);
-        if (m_tensor) mag_tensor_decref(m_tensor);
+        if (m_tensor) {
+          std::lock_guard lock {get_global_mutex()};
+          mag_tensor_decref(m_tensor);
+        }
         m_tensor = other.m_tensor;
       }
       return *this;
     }
     tensor_wrapper &operator=(tensor_wrapper &&other) noexcept {
       if (this != &other) {
-        if (m_tensor) mag_tensor_decref(m_tensor);
+        if (m_tensor) {
+          std::lock_guard lock {get_global_mutex()};
+          mag_tensor_decref(m_tensor);
+        }
         m_tensor = other.m_tensor;
         other.m_tensor = nullptr;
       }
       return *this;
     }
     ~tensor_wrapper() {
-      if (m_tensor) mag_tensor_decref(m_tensor);
+      if (!m_tensor) return;
+      std::lock_guard lock {get_global_mutex()};
+      mag_tensor_decref(m_tensor);
     }
     explicit constexpr operator bool() const noexcept { return m_tensor != nullptr; }
     constexpr mag_tensor_t *operator * () const noexcept { return m_tensor; }

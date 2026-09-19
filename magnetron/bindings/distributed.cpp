@@ -12,45 +12,47 @@
 #include "prelude.hpp"
 
 namespace mag::bindings {
-  class process_group_wrapper final {
-  public:
-    process_group_wrapper() = default;
-    process_group_wrapper(
-      const char *master_addr,
-      uint16_t master_port,
-      uint32_t rank,
-      uint32_t world_size
-    ) {
-      mag_error_t err {};
-      throw_if_error(mag_pgroup_init_tcp(&err, &m_pg, master_addr, master_port, rank, world_size), err);
-    }
-    process_group_wrapper(const process_group_wrapper &) = delete;
-    process_group_wrapper &operator=(const process_group_wrapper &) = delete;
-    process_group_wrapper(process_group_wrapper &&other) noexcept : m_pg{other.m_pg} {
-      other.m_pg = nullptr;
-    }
-    process_group_wrapper &operator=(process_group_wrapper &&other) noexcept {
-      if (this != &other) {
-        reset();
-        m_pg = other.m_pg;
+  namespace {
+    class process_group_wrapper final {
+    public:
+      process_group_wrapper() = default;
+      process_group_wrapper(
+        const char *master_addr,
+        uint16_t master_port,
+        uint32_t rank,
+        uint32_t world_size
+      ) {
+        mag_error_t err {};
+        throw_if_error(mag_pgroup_init_tcp(&err, &m_pg, master_addr, master_port, rank, world_size), err);
+      }
+      process_group_wrapper(const process_group_wrapper &) = delete;
+      process_group_wrapper &operator=(const process_group_wrapper &) = delete;
+      process_group_wrapper(process_group_wrapper &&other) noexcept : m_pg{other.m_pg} {
         other.m_pg = nullptr;
       }
-      return *this;
-    }
-    ~process_group_wrapper() {
-      reset();
-    }
-    void reset() noexcept {
-      if (m_pg) {
-        mag_pgroup_destroy(m_pg);
-        m_pg = nullptr;
+      process_group_wrapper &operator=(process_group_wrapper &&other) noexcept {
+        if (this != &other) {
+          reset();
+          m_pg = other.m_pg;
+          other.m_pg = nullptr;
+        }
+        return *this;
       }
-    }
-    constexpr mag_process_group_t *operator * () const noexcept { return m_pg; }
+      ~process_group_wrapper() {
+        reset();
+      }
+      void reset() noexcept {
+        if (m_pg) {
+          mag_pgroup_destroy(m_pg);
+          m_pg = nullptr;
+        }
+      }
+      constexpr mag_process_group_t *operator * () const noexcept { return m_pg; }
 
-  private:
-    mag_process_group_t *m_pg = nullptr;
-  };
+    private:
+      mag_process_group_t *m_pg = nullptr;
+    };
+  }
 
   void init_bindings_distributed(nb::module_ &m) {
     auto distributed = m.def_submodule(

@@ -83,7 +83,7 @@ static void mag_tensor_free_header(mag_tensor_t *t) {
   mag_slab_free(&ctx->tensor_slab, t);
 }
 
-/* Create a new tensor. The must be created on the same thread as the context. */
+/* Create a new tensor. Callable from any thread. */
 mag_status_t mag_tensor_init(
   mag_error_t *err,
   mag_tensor_t **out,
@@ -95,8 +95,6 @@ mag_status_t mag_tensor_init(
   mag_device_id_t device
 ) {
   *out = NULL;
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
-    return mag_set_error(err, MAG_ERR_THREAD, "tensor: must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "tensor: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   if (rank > 0 && !shape)
@@ -216,8 +214,6 @@ mag_status_t mag_borrow_cpu_buffer(
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: data pointer must not be NULL.");
   if (mag_unlikely(!(num_bytes > 0)))
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: num_bytes must be > 0.");
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
-    return mag_set_error(err, MAG_ERR_THREAD, "borrow_cpu_buffer: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "borrow_cpu_buffer: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   if (rank > 0 && !shape)

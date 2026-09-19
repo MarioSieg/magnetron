@@ -34,8 +34,6 @@ extern mag_tensor_t *mag_tensor_init_header(
 
 mag_status_t mag_strided_view(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_tensor_t *base, int64_t rank, const int64_t *shape, const int64_t *strides, int64_t offset) {
   *out = NULL;
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
-    return mag_set_error(err, MAG_ERR_THREAD, "strided_view: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "strided_view: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   if (mag_unlikely(offset < 0))
@@ -533,8 +531,6 @@ mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
 static mag_status_t mag_reinterpret_cast_flat_storage_1d(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x, mag_dtype_t dtype) {
   *out = NULL;
   mag_context_t *ctx = x->ctx;
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
-    return mag_set_error(err, MAG_ERR_THREAD, "reinterpret_view: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   int64_t numel = (int64_t)(x->storage->size/mag_type_trait(dtype)->size);
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, dtype, 1, numel, x->meta.device, NULL);
   if (mag_unlikely(!tensor))
