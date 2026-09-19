@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 
 import numpy as np
 import pytest
@@ -180,7 +181,9 @@ print('ok')
 """
     env = {**os.environ, 'MAG_FUSE_COMPILE': 'off'}
     out = subprocess.run([sys.executable, '-c', prog], capture_output=True, text=True, env=env, check=True)
-    assert out.stdout.strip() == 'ok'
+    # The runtime may log before the program runs, so look for the marker rather than
+    # demanding it be the only thing on stdout.
+    assert out.stdout.strip().endswith('ok')
 
 # Chains are fused per dtype: the arithmetic runs in float either way, and narrow storage only
 # changes where loads widen and results round. bfloat16 is absent on purpose - see below.
@@ -205,25 +208,8 @@ def test_narrow_storage_rounds_where_eager_rounds(name: str, dt) -> None:
     assert np.array_equal(got.cast(dtype.float32).numpy(), expect), f'{name} {dt}'
 
 
-def test_bfloat16_is_left_to_the_eager_kernels() -> None:
-    """bfloat16 chains are declined, and the reason is a bug in the eager path rather than a gap here.
-
-    This backend's eager bfloat16 store truncates on the vector path and rounds to nearest on the
-    scalar tail, so the same multiply gives two different answers depending on how long the tensor
-    is. Until that is one answer there is nothing definite for a chain to reproduce, and choosing
-    either of the two would bake the inconsistency in.
-    """
-    short = Tensor([0.9] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
-    short_b = Tensor([0.012] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
-    long = Tensor([0.9] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
-    long_b = Tensor([0.012] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
-    with no_grad():
-        a = float((short * short_b).cast(dtype.float32).numpy()[0])
-        c = float((long * long_b).cast(dtype.float32).numpy()[0])
-    # If this ever starts passing, the eager store has been fixed and bfloat16 chains can be enabled.
-    assert a != c, 'eager bfloat16 is now length-independent; enable bfloat16 fusion'
-
-    # Meanwhile a bfloat16 chain still produces the eager answer, by falling back to it.
+def test_bfloat16_chains_are_not_lowered() -> None:
+    """bfloat16 is declined by every backend, and still gives the eager answer by falling back."""
     x, w, b = (_rand().cast(dtype.bfloat16) for _ in range(3))
     before = mag.fusion_stats()['chains']
     with no_grad():
@@ -233,6 +219,27 @@ def test_bfloat16_is_left_to_the_eager_kernels() -> None:
     assert np.array_equal(out.cast(dtype.float32).numpy(), expect)
     assert mag.fusion_stats()['chains'] == before, 'bfloat16 should not have been lowered'
 
+
+@pytest.mark.skipif(
+    platform.machine() not in ('arm64', 'aarch64'),
+    reason='the truncating bfloat16 store is in the NEON path only',
+)
+def test_bfloat16_eager_is_still_length_dependent() -> None:
+    """Why bfloat16 waits, as a tripwire rather than a comment.
+
+    On NEON the bfloat16 vector store truncates while the scalar tail rounds to nearest, so the same
+    multiply gives two answers depending on how long the tensor is. There is nothing definite for a
+    chain to reproduce until that is fixed, and when it is fixed this test fails - which is the
+    signal to enable bfloat16 fusion.
+    """
+    short = Tensor([0.9] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
+    short_b = Tensor([0.012] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
+    long = Tensor([0.9] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
+    long_b = Tensor([0.012] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
+    with no_grad():
+        first = float((short * short_b).cast(dtype.float32).numpy()[0])
+        rest = float((long * long_b).cast(dtype.float32).numpy()[0])
+    assert first != rest, 'eager bfloat16 is now length-independent; enable bfloat16 fusion'
 
 
 # Chains whose backwards never read their operands' values, so their intermediates can be dropped
@@ -327,3 +334,81 @@ def test_a_read_only_operand_can_be_read_by_a_chain() -> None:
     with no_grad(), mag.fuse():
         out = read_only * writable + writable
     assert np.array_equal(out.numpy(), expect)
+
+
+# The same chains again, on whatever other backend this machine has. Fusion is meant to be a core
+# concern that each backend lowers for itself, so the interesting question is not whether the CUDA
+# path is fast but whether it gives the same answers as running the operators one at a time.
+CUDA = pytest.mark.skipif(
+    not mag.context.is_device_available('cuda'),
+    reason='no CUDA device',
+)
+
+
+# The CUDA backend has no eager kernel for min, max or clamp, so a chain using them has nothing to
+# be measured against there - even though the fused lowering implements them perfectly well.
+CUDA_CHAINS = [n for n in CHAINS if n != 'min_max']
+
+
+@CUDA
+@pytest.mark.parametrize('name', CUDA_CHAINS)
+def test_cuda_chain_matches_eager(name: str) -> None:
+    fn = CHAINS[name]
+    with mag.device('cuda'):
+        x, w, b = _rand(), _rand(), _rand()
+        with no_grad():
+            expect = fn(x, w, b).numpy().copy()
+        with no_grad(), mag.fuse():
+            got = fn(x, w, b)
+        assert np.array_equal(got.numpy(), expect), name
+
+
+@CUDA
+def test_cuda_actually_lowers_the_chain() -> None:
+    """Falling back to eager would also pass the equality tests, so check the chain really ran."""
+    with mag.device('cuda'):
+        x, w, b = _rand(), _rand(), _rand()
+        before = mag.fusion_stats()
+        with no_grad(), mag.fuse():
+            y = x
+            for _ in range(6):
+                y = y * w + b
+        keep = y.numpy()
+        after = mag.fusion_stats()
+        assert after['chains'] - before['chains'] == 1
+        assert after['ops_fused'] - before['ops_fused'] == 12
+        # Only the result the caller kept has to reach memory.
+        assert after['elided'] - before['elided'] == 11
+        assert np.all(np.isfinite(keep))
+
+
+@CUDA
+@pytest.mark.parametrize('dt', FUSED_DTYPES, ids=lambda d: str(d).rsplit('.', 1)[-1])
+def test_cuda_narrow_storage_rounds_where_eager_rounds(dt) -> None:
+    with mag.device('cuda'):
+        x, w, b = (_rand().cast(dt) for _ in range(3))
+        with no_grad():
+            expect = ((x * w + b) * w - b).cast(dtype.float32).numpy().copy()
+        with no_grad(), mag.fuse():
+            got = (x * w + b) * w - b
+        assert np.array_equal(got.cast(dtype.float32).numpy(), expect)
+
+
+@CUDA
+def test_cuda_gradients_match_eager() -> None:
+    """Same inputs for both arms: the device has its own generator, so re-seeding is not enough."""
+    with mag.device('cuda'):
+        x_src, w_src, b_src = _rand(), _rand(), _rand()
+
+        def grads(fused: bool) -> np.ndarray:
+            x = x_src.clone()
+            x.requires_grad = True
+            if fused:
+                with mag.fuse():
+                    out = ((x + w_src) * b_src) + w_src
+            else:
+                out = ((x + w_src) * b_src) + w_src
+            out.sum().backward()
+            return x.grad.numpy().copy()
+
+        assert np.array_equal(grads(True), grads(False))

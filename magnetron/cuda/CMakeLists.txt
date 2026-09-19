@@ -102,7 +102,7 @@ if (CUDAToolkit_FOUND)
     # These are host compiler flags: nvcc rejects them unless they are forwarded via -Xcompiler.
     # -Werror is off here because the shared core headers trip -Wunused-function in every TU.
     target_compile_options(magnetron_cuda PRIVATE -Xcompiler=-Wall,-Wextra,-fvisibility=hidden,-Wno-unused-parameter,-Wno-unused-function)
-    target_link_libraries(magnetron_cuda PRIVATE CUDA::cudart CUDA::cuda_driver)
+    target_link_libraries(magnetron_cuda PRIVATE CUDA::cudart CUDA::cuda_driver CUDA::nvrtc) # nvrtc compiles fused chains at runtime
     target_link_libraries(magnetron_cuda PRIVATE magnetron_core)
     target_include_directories(magnetron_cuda PRIVATE ../)
     if (MAG_CUDA_ARCH_MACROS) # Tell the runtime dispatcher which specializations exist
