@@ -69,7 +69,7 @@ mag_status_t MAG_HOTPROC mag_dispatch(
   mag_context_t *ctx = in ? (*in)->ctx : (*out)->ctx;
   mag_device_t *device = in ? (*in)->meta.device : (*out)->meta.device;
   mag_assert_correct_op_data(op, in, num_in, out, num_out);
-  if ((ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && meta->backward) {
+  if (!mag_tls_state.no_grad && meta->backward) {
     for (uint32_t i=0; i < num_out; ++i) {
       mag_tensor_t *r = out[i];
       mag_au_state_t *au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);

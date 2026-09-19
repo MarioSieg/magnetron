@@ -22,11 +22,15 @@
 extern "C" {
 #endif
 
-/* Context specific flags. */
-typedef enum mag_context_flags_t {
-  MAG_CTX_FLAG_NONE = 0,
-  MAG_CTX_FLAG_GRAD_RECORDER = 1<<0,     /* Gradient recording is currently active. */
-} mag_context_flags_t;
+typedef struct mag_tls_state_t {
+  mag_dtype_t dtype;
+  mag_device_id_t device;
+  bool no_grad;
+} mag_tls_state_t;
+mag_static_assert(MAG_DTYPE_FLOAT32 == 0);
+mag_static_assert(MAG_BACKEND_TYPE_CPU == 0);
+
+extern MAG_THREAD_LOCAL mag_tls_state_t mag_tls_state; /* Thread local partial state. Needs to be TLS instead of context to enable cross-thread API invocation. */
 
 typedef struct mag_rt_telemetry_t {
   size_t num_alive_tensors;                   /* Total tensor instances allocated. */
@@ -37,9 +41,6 @@ typedef struct mag_rt_telemetry_t {
 } mag_rt_telemetry_t;
 
 struct mag_context_t {
-  mag_context_flags_t flags;                  /* Context flags. */
-  mag_dtype_t default_dtype;                  /* Default floating point data type for the context. */
-  mag_device_id_t default_device;             /* Device used by factory functions when the caller names none. Always fully resolved. */
   mag_machine_info_t machine;                 /* Machine information. */
   mag_rt_telemetry_t telemetry;               /* Runtime telemetry */
   mag_slab_alloc_t tensor_slab;               /* Tensor headers. */
@@ -48,9 +49,7 @@ struct mag_context_t {
   mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
   mag_slab_alloc_t au_state_op_params_slab;   /* Autodiff state op params slab allocator */
   mag_backend_registry_t *backend_registry;   /* Compute backend registry */
-  uint64_t topo_traversal_epoch;              /* Epoch counter for topological traversal of the computation graph */
-  mag_topo_stack_t topo_stack;
-  mag_topo_set_t topo_set;
+  mag_atomic64_t topo_traversal_epoch;        /* Epoch counter for topological traversal of the computation graph */
 #ifdef MAG_DEBUG
   mag_tensor_t *alive_head;                   /* List of alive tensors used for leak detection. */
 #endif

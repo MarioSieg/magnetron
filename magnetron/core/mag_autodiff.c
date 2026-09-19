@@ -162,15 +162,27 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
   if (mag_unlikely(!(root->meta.coords.rank == 0 && root->meta.numel == 1)))
     return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backpropagation requires a scalar root tensor.");
   mag_context_t *ctx = root->ctx;
+  bool grad_was_on = mag_ctx_grad_recorder_is_running(ctx);
   mag_ctx_grad_recorder_stop(ctx);
   mag_tensor_t *root_grad=NULL; /* Seed root gradient */
   if (mag_iserr(mag_ones_like(err, &root_grad, root))) {
-    mag_ctx_grad_recorder_start(ctx);
+    if (grad_was_on) mag_ctx_grad_recorder_start(ctx);
     return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate root gradient.");
   }
   mag_tensor_patch_grad(root, root_grad);
-  mag_topo_set_t *post_order = &ctx->topo_set;
-  status = mag_topo_sort(err, root, &ctx->topo_stack, post_order);
+  mag_topo_stack_t topo_stack = {0};
+  mag_topo_set_t topo_set = {0};
+  mag_topo_set_t *post_order = &topo_set;
+  if (mag_unlikely(!mag_topo_set_init(&topo_set, MAG_TOPOSORT_HASHSET_INIT_CAP))) {
+    if (grad_was_on) mag_ctx_grad_recorder_start(ctx);
+    return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate traversal set.");
+  }
+  if (mag_unlikely(!mag_topo_stack_init(&topo_stack, MAG_TOPOSORT_STACK_INIT_CAP))) {
+    mag_topo_set_free(&topo_set);
+    if (grad_was_on) mag_ctx_grad_recorder_start(ctx);
+    return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate traversal stack.");
+  }
+  status = mag_topo_sort(err, root, &topo_stack, post_order);
   mag_tensor_t *grads_intrusive[MAG_AU_STATE_INTRUSIVE_STORAGE_NUM];
   mag_tensor_t **grads_dyn = NULL;
   size_t grads_cap = 0;
@@ -244,7 +256,9 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
 cleanup:
   if (grads_dyn)
     (*mag_alloc)(grads_dyn, 0, 0);
-  mag_ctx_grad_recorder_start(ctx);
+  mag_topo_stack_free(&topo_stack);
+  mag_topo_set_free(&topo_set);
+  if (grad_was_on) mag_ctx_grad_recorder_start(ctx);
   return status;
 }
 

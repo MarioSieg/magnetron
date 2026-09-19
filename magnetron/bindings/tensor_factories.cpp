@@ -331,7 +331,7 @@ namespace mag::bindings {
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
-        dtype_wrapper dt {ctx->default_dtype};
+        dtype_wrapper dt {mag_ctx_default_dtype(ctx)};
         bool requires_grad = false;
         if (kwargs.contains("dtype"))
           dt = nb::cast<dtype_wrapper>(kwargs["dtype"]);
@@ -398,7 +398,7 @@ namespace mag::bindings {
         if (!kwargs.contains("fill_value"))
           throw nb::type_error("full() missing keyword argument 'fill_value'");
         nb::handle fill_value = kwargs["fill_value"];
-        dtype_wrapper dt = kw_dtype_or(kwargs, {ctx->default_dtype});
+        dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
         if (!device_id) throw std::runtime_error {"Invalid device id"};
@@ -431,7 +431,7 @@ namespace mag::bindings {
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
-        dtype_wrapper dt = kw_dtype_or(kwargs, {ctx->default_dtype});
+        dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
         if (!device_id) throw std::runtime_error {"Invalid device id"};
@@ -462,7 +462,7 @@ namespace mag::bindings {
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
-        dtype_wrapper dt = kw_dtype_or(kwargs, {ctx->default_dtype});
+        dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
         if (!device_id) throw std::runtime_error {"Invalid device id"};
@@ -493,7 +493,7 @@ namespace mag::bindings {
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
-        dtype_wrapper dt = kw_dtype_or(kwargs, {ctx->default_dtype});
+        dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
         if (!device_id) throw std::runtime_error {"Invalid device id"};
@@ -528,7 +528,7 @@ namespace mag::bindings {
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
         std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
-        dtype_wrapper dt = kw_dtype_or(kwargs, {ctx->default_dtype});
+        dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
         if (!device_id) throw std::runtime_error {"Invalid device id"};

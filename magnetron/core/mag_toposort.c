@@ -98,7 +98,7 @@ mag_status_t mag_topo_sort(
   mag_topo_stack_reset(tmp_stack);
   mag_topo_set_reset(out_sorted);
   if (mag_unlikely(!(root->meta.flags & MAG_TFLAG_REQUIRES_GRAD))) return MAG_OK;
-  uint64_t traversal_epoch = ++root->ctx->topo_traversal_epoch;
+  uint64_t traversal_epoch = 1+(uint64_t)mag_atomic64_fetch_add(&root->ctx->topo_traversal_epoch, 1, MAG_MO_RELAXED);
   mag_status_t status = MAG_OK;
   if (!root->au_state) {
     if (mag_unlikely(!mag_au_state_lazy_alloc(&root->au_state, root->ctx))) {
