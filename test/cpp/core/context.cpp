@@ -20,8 +20,10 @@ TEST(context, create_cpu) {
     mag_set_log_level(MAG_LOG_LEVEL_DEBUG);
     context ctx {};
     ASSERT_TRUE(ctx.is_recording_gradients());
-    ctx.start_grad_recorder();
     ctx.stop_grad_recorder();
+    ASSERT_FALSE(ctx.is_recording_gradients());
+    ctx.start_grad_recorder();
+    ASSERT_TRUE(ctx.is_recording_gradients());
 
     // crate a tensor
     tensor t {ctx, dtype::bfloat16, 4, 8, 4, 3};

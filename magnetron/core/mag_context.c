@@ -156,8 +156,6 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
 
   mag_atomic64_store(&ctx->topo_traversal_epoch, 0, MAG_MO_RELAXED);
 
-  memset(&mag_tls_state, 0, sizeof(mag_tls_state)); /* new context resets TLS state for, TODO: is this expected?!!?!?! */
-
   /* Query and print host system information. */
   mag_machine_info_probe(&ctx->machine);
   mag_system_host_info_dump(ctx);
