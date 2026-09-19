@@ -4,6 +4,7 @@
 #include "mag_backend.h"
 #include "mag_operator.h"
 #include "mag_alloc.h"
+#include "mag_rc.h"
 
 #include <string.h>
 
@@ -106,7 +107,16 @@ static int32_t mag_fuse_producer(const struct mag_fuse_tape_t *tape, uint32_t up
   return -1;
 }
 
-/* Distinct tensors the tape touches, which is what bounds how many buffers the graph needs. */
+/*
+** How many buffer slots the graph will need if the chain is flushed now.
+**
+** Only values that reach memory need one: the tensors the chain reads from outside itself, and the
+** results something still holds. A result consumed by a later link and by nothing else never leaves
+** a register, so it costs no slot - which is the whole reason a long chain fits at all.
+**
+** With gradients recording nothing is elided, so every result needs a slot and the count is simply
+** every distinct tensor the tape touches.
+*/
 static uint32_t mag_fuse_distinct_tensors(const struct mag_fuse_tape_t *tape, mag_tensor_t **extra, uint32_t num_extra) {
   const mag_tensor_t *seen[MAG_FUSE_TAPE_MAX*4];
   uint32_t n = 0;
@@ -124,6 +134,40 @@ static uint32_t mag_fuse_distinct_tensors(const struct mag_fuse_tape_t *tape, ma
   for (uint32_t i=0; i < num_extra; ++i) mag_fuse_note(extra[i]);
   #undef mag_fuse_note
   return n;
+}
+
+/*
+** Can anything outside the chain still read this value once the chain has run?
+**
+** A chain is captured as it executes, so by the time it runs it is full of results that turned out
+** to be wanted only by the next link. Those never need to reach memory at all - they are the traffic
+** fusion exists to remove. The ones that do are the results something still holds.
+**
+** Holding is a reference count question, and the only way to answer it is to account for every
+** reference the chain itself took and see whether any are left over. The tape increfs an operator's
+** output when it records it, and increfs each input again for every later operator that consumes it.
+** Subtract those and anything remaining belongs to somebody else.
+**
+** The accounting fails closed. An unexplained reference makes the count come out high, which reads
+** as "escapes" and writes the value back - the safe answer. It could only go wrong by counting a
+** reference that does not exist, and the tape is the only thing that takes these.
+**
+** With gradients recording this refuses to elide anything, and that is not a limitation of the
+** accounting but of what is being accounted. Recording gives every consumer's autodiff state a
+** reference to its inputs, so the counts move; worse, whether a value is read depends on what each
+** consumer's backward actually does with it - some need the operand, some only its shape. Getting
+** that wrong produces wrong gradients silently, a long way from here. It wants its own answer,
+** declared per operator, and until there is one this writes everything back.
+*/
+static bool mag_fuse_value_escapes(const mag_context_t *ctx, const struct mag_fuse_tape_t *tape, uint32_t i) {
+  if (ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) return true;
+  mag_tensor_t *t = tape->nodes[i].out;
+  int32_t ours = 1; /* The reference taken when this operator's output was recorded. */
+  for (uint32_t j=i+1; j < tape->len; ++j)
+    for (uint8_t k=0; k < tape->nodes[j].num_in; ++k)
+      if (tape->nodes[j].in[k] == t) ++ours; /* And one for every later link that consumes it. */
+  int32_t rc = (int32_t)mag_atomic32_load(&((mag_rc_control_block_t *)t)->rc_strong, MAG_MO_RELAXED);
+  return rc > ours;
 }
 
 mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx) {
@@ -174,9 +218,9 @@ mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx) {
     node_reg[i] = reg;
   }
 
-  /* Every output is written back. Which of them anything outside the chain can still observe is a
-     question this does not yet ask, so it assumes all of them can. */
+  /* Only the results something outside the chain can still read reach memory. */
   for (uint32_t i=0; i < tape->len; ++i) {
+    if (!mag_fuse_value_escapes(ctx, tape, i)) continue;
     uint8_t slot;
     mag_fuse_bind(slot, tape->nodes[i].out);
     if (!mag_fuse_graph_store(&graph, slot, node_reg[i])) goto fallback;
@@ -240,6 +284,33 @@ static bool mag_fuse_touches_pending(mag_tensor_t **ts, uint32_t n) {
   return false;
 }
 
+static uint32_t mag_fuse_slots_needed(
+  const mag_context_t *ctx,
+  const struct mag_fuse_tape_t *tape,
+  mag_tensor_t **extra,
+  uint32_t num_extra
+) {
+  if (ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER)
+    return mag_fuse_distinct_tensors(tape, extra, num_extra);
+  /* Count what the chain reads from outside itself, plus one slot for the result it is building.
+     An intermediate that later turns out to be held after all costs a slot the count did not
+     predict; the flush then runs out and replays eagerly, which is slower but still right. */
+  uint32_t external = 0;
+  for (uint32_t i=0; i < tape->len; ++i) {
+    const mag_fuse_tape_node_t *node = tape->nodes+i;
+    for (uint8_t j=0; j < node->num_in; ++j) {
+      if (mag_fuse_producer(tape, i, node->in[j]) >= 0) continue; /* Produced inside the chain. */
+      bool counted = false;
+      for (uint32_t k=0; k < i && !counted; ++k)
+        for (uint8_t m=0; m < tape->nodes[k].num_in; ++m)
+          if (tape->nodes[k].in[m] == node->in[j]) { counted = true; break; }
+      if (!counted) ++external;
+    }
+  }
+  for (uint32_t i=0; i < num_extra; ++i) ++external;
+  return external+1;
+}
+
 mag_status_t mag_fuse_capture(
   mag_error_t *err,
   mag_context_t *ctx,
@@ -281,7 +352,7 @@ mag_status_t mag_fuse_capture(
   uint32_t num_touched = 0;
   for (uint32_t i=0; i < num_in; ++i) touched[num_touched++] = in[i];
   touched[num_touched++] = out[0];
-  if (tape->len >= MAG_FUSE_TAPE_MAX || mag_fuse_distinct_tensors(tape, touched, num_touched) > MAG_FUSE_MAX_BUF) {
+  if (tape->len >= MAG_FUSE_TAPE_MAX || mag_fuse_slots_needed(ctx, tape, touched, num_touched) > MAG_FUSE_MAX_BUF) {
     mag_status_t st = mag_fuse_flush(err, ctx);
     if (mag_unlikely(mag_iserr(st))) return st;
   }
