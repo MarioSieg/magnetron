@@ -2,6 +2,11 @@
 
 #include <nvrtc.h>
 
+#include <core/mag_envcfg.h>
+#include <core/mag_hash.h>
+
+#include <sys/stat.h>
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -56,8 +61,8 @@ namespace mag {
     }
 
     [[nodiscard]] bool fused_supported(const mag_fuse_graph_t &g) noexcept {
-      /* bfloat16 is absent for the reason the CPU backend gives: eager bfloat16 is not yet a
-         function of its input alone, so there is nothing definite for a chain to reproduce. */
+      /* bfloat16 is absent because the eager bfloat16 store truncates on every vector path except
+         AVX512-BF16 and NEON, so there is no single answer for a chain to reproduce. */
       if (g.dtype != MAG_DTYPE_FLOAT32 && g.dtype != MAG_DTYPE_FLOAT16) return false;
       if (!g.num_ins || !g.num_stores) return false;
       for (uint32_t i = 0; i < g.num_ins; ++i)
@@ -152,6 +157,64 @@ namespace mag {
       return src;
     }
 
+    /*
+    ** Where compiled chains live between runs.
+    **
+    ** Compiling costs tens of milliseconds the first time a chain shape is seen, and a process that
+    ** finds the PTX already written pays a fraction of that. The path is under the user's own
+    ** directory rather than a shared temporary one: somewhere another process can write is somewhere
+    ** it can choose what this one loads.
+    **
+    ** The file is named for the generated source and the architecture, so neither a change to code
+    ** generation nor a different device can pick up the wrong one.
+    */
+    [[nodiscard]] bool cache_path(uint64_t src_hash, int cc_major, int cc_minor, std::string &out) {
+      const char *dir = mag_envcfg_fuse_cache_dir();
+      std::string base;
+      if (dir && *dir) {
+        base = dir;
+      } else {
+        const char *home = getenv("HOME");
+        if (!home || !*home) return false;
+        base = std::string {home} + "/.cache/magnetron/fused";
+      }
+      for (size_t i = 1; i < base.size(); ++i) {
+        if (base[i] != '/') continue;
+        std::string part = base.substr(0, i);
+        if (mkdir(part.c_str(), 0700) && errno != EEXIST) return false;
+      }
+      if (mkdir(base.c_str(), 0700) && errno != EEXIST) return false;
+      char name[128];
+      snprintf(name, sizeof(name), "/mag_fused_%016llx_sm%d%d.ptx",
+               static_cast<unsigned long long>(src_hash), cc_major, cc_minor);
+      out = base + name;
+      return true;
+    }
+
+    [[nodiscard]] bool read_file(const std::string &path, std::string &out) {
+      FILE *f = fopen(path.c_str(), "rb");
+      if (!f) return false;
+      fseek(f, 0, SEEK_END);
+      long n = ftell(f);
+      fseek(f, 0, SEEK_SET);
+      if (n <= 0) { fclose(f); return false; }
+      out.resize(static_cast<size_t>(n));
+      bool ok = fread(out.data(), 1, static_cast<size_t>(n), f) == static_cast<size_t>(n);
+      fclose(f);
+      return ok;
+    }
+
+    /* Written beside the target and renamed, so a reader never sees a half-written module. */
+    void write_file_atomically(const std::string &path, const std::string &data) {
+      std::string tmp = path + ".tmp";
+      FILE *f = fopen(tmp.c_str(), "wb");
+      if (!f) return;
+      bool ok = fwrite(data.data(), 1, data.size(), f) == data.size();
+      fclose(f);
+      if (ok) rename(tmp.c_str(), path.c_str());
+      else remove(tmp.c_str());
+    }
+
     struct fused_kernel final {
       CUmodule mod = nullptr;
       CUfunction fn = nullptr;
@@ -236,12 +299,21 @@ namespace mag {
         mag_cu_rt_check(err, cudaDeviceGetAttribute(&cc_major, cudaDevAttrComputeCapabilityMajor, ordinal), "failed to read compute capability");
         mag_cu_rt_check(err, cudaDeviceGetAttribute(&cc_minor, cudaDevAttrComputeCapabilityMinor, ordinal), "failed to read compute capability");
         std::string src = fused_codegen(*g), ptx, log;
-        if (!compile_ptx(src, cc_major, cc_minor, ptx, log)) {
+        /* Keyed on the generated text, so a change to code generation cannot load PTX built by an
+           older version of it. */
+        uint64_t src_hash = mag_murmur3_128_reduced_64(src.data(), src.size(), 0x5bf03635u);
+        std::string path;
+        bool have_path = cache_path(src_hash, cc_major, cc_minor, path);
+        if (have_path && read_file(path, ptx)) {
+          /* Already compiled by an earlier run. */
+        } else if (!compile_ptx(src, cc_major, cc_minor, ptx, log)) {
           /* Not an error the caller should see: core replays the chain one operator at a time. Say
              it happened, or the only symptom is that everything is quietly slower. */
           mag_log_warn("cuda: could not compile a fused chain; running it eagerly instead. %s", log.c_str());
           c.unavailable = true;
           return mag_set_error(err, MAG_ERR_KERNEL, "cuda: fused chain could not be compiled.");
+        } else if (have_path) {
+          write_file_atomically(path, ptx);
         }
         fused_kernel k {};
         mag_cu_check(err, cuModuleLoadData(&k.mod, ptx.c_str()), "failed to load a compiled fused chain");

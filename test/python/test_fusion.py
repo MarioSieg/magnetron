@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import platform
 
 import numpy as np
 import pytest
@@ -208,6 +207,18 @@ def test_narrow_storage_rounds_where_eager_rounds(name: str, dt) -> None:
     assert np.array_equal(got.cast(dtype.float32).numpy(), expect), f'{name} {dt}'
 
 
+def _bfloat16_eager_is_consistent() -> bool:
+    """True where the vector store rounds rather than truncates, which today means AVX512-BF16."""
+    short = Tensor([0.9] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
+    short_b = Tensor([0.012] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
+    long = Tensor([0.9] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
+    long_b = Tensor([0.012] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
+    with no_grad():
+        return float((short * short_b).cast(dtype.float32).numpy()[0]) == float(
+            (long * long_b).cast(dtype.float32).numpy()[0]
+        )
+
+
 def test_bfloat16_chains_are_not_lowered() -> None:
     """bfloat16 is declined by every backend, and still gives the eager answer by falling back."""
     x, w, b = (_rand().cast(dtype.bfloat16) for _ in range(3))
@@ -220,18 +231,19 @@ def test_bfloat16_chains_are_not_lowered() -> None:
     assert mag.fusion_stats()['chains'] == before, 'bfloat16 should not have been lowered'
 
 
-@pytest.mark.skipif(
-    platform.machine() not in ('arm64', 'aarch64'),
-    reason='the truncating bfloat16 store is in the NEON path only',
-)
 def test_bfloat16_eager_is_still_length_dependent() -> None:
     """Why bfloat16 waits, as a tripwire rather than a comment.
 
-    On NEON the bfloat16 vector store truncates while the scalar tail rounds to nearest, so the same
-    multiply gives two answers depending on how long the tensor is. There is nothing definite for a
-    chain to reproduce until that is fixed, and when it is fixed this test fails - which is the
-    signal to enable bfloat16 fusion.
+    The bfloat16 vector store shifts a float right by sixteen and keeps the top half, which
+    truncates, while the scalar tail rounds to nearest. So the same multiply gives two answers
+    depending on whether an element fell in the vector body or the tail. Every path does this except
+    AVX512-BF16, which has an instruction that rounds, so on that hardware alone the two agree.
+
+    Until eager bfloat16 is a function of its input alone there is nothing definite for a chain to
+    reproduce. When it is fixed this test fails, which is the signal to enable bfloat16 fusion.
     """
+    if _bfloat16_eager_is_consistent():
+        pytest.skip('this machine rounds the bfloat16 store already')
     short = Tensor([0.9] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
     short_b = Tensor([0.012] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
     long = Tensor([0.9] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
