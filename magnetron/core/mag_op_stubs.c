@@ -71,7 +71,7 @@ mag_status_t mag_strided_view(mag_error_t *err, mag_tensor_t **out, mag_context_
   tensor->storage = base->storage;
   mag_rc_incref(base->storage);
   tensor->meta.storage_offset = offset;
-  tensor->version = base->version;
+  mag_atomic64_store(&tensor->version, mag_atomic64_load(&base->version, MAG_MO_RELAXED), MAG_MO_RELAXED);
   if (!(base->meta.flags & MAG_TFLAG_IS_VIEW)) {
     tensor->view_meta = mag_view_meta_alloc(base);
     if (mag_unlikely(!tensor->view_meta)) {
@@ -543,7 +543,7 @@ static mag_status_t mag_reinterpret_cast_flat_storage_1d(mag_error_t *err, mag_t
   tensor->storage = x->storage;
   mag_rc_incref(x->storage);
   tensor->meta.storage_offset = 0;
-  tensor->version = x->version;
+  mag_atomic64_store(&tensor->version, mag_atomic64_load(&x->version, MAG_MO_RELAXED), MAG_MO_RELAXED);
   if (!(x->meta.flags & MAG_TFLAG_IS_VIEW)) {
     tensor->view_meta = mag_view_meta_alloc(x);
     if (mag_unlikely(!tensor->view_meta)) {

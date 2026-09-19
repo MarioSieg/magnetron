@@ -19,10 +19,10 @@
 
 /* Await signal to start work */
 static bool mag_worker_await_work(mag_worker_t *worker, mag_thread_pool_t *pool) {
-  if (mag_unlikely(pool->interrupt))
+  if (mag_unlikely(mag_atomic32_load(&pool->interrupt, MAG_MO_ACQUIRE)))
     return false;
   mag_phase_fence_wait(&pool->fence, &worker->phase);
-  return !pool->interrupt;
+  return !mag_atomic32_load(&pool->interrupt, MAG_MO_ACQUIRE);
 }
 
 static mag_dtype_t mag_command_dispatch_dtype(const mag_command_t *cmd) {
@@ -102,7 +102,7 @@ mag_status_t mag_threadpool_create(
   }
   memset(workers, 0, num_workers*sizeof(*workers));
   *pool = (mag_thread_pool_t) {
-    .interrupt = false,
+    .interrupt = 0,
     .num_allocated_workers = (int32_t)num_workers,
     .num_active_workers = num_workers,
     .num_workers_online = 0,  /* Main thread as worker 0 */
@@ -150,7 +150,7 @@ mag_status_t mag_threadpool_create(
 
 /* Destroy thread pool */
 void mag_threadpool_destroy(mag_thread_pool_t *pool) {
-  pool->interrupt = true;
+  mag_atomic32_store(&pool->interrupt, 1, MAG_MO_RELEASE);
   mag_phase_fence_kick(&pool->fence, pool->num_allocated_workers);
   while (mag_atomic32_load(&pool->num_workers_online, MAG_MO_SEQ_CST))  /* Wait for all workers to exit */
     mag_curr_thread_yield();

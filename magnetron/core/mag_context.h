@@ -33,11 +33,11 @@ mag_static_assert(MAG_BACKEND_TYPE_CPU == 0);
 extern MAG_THREAD_LOCAL mag_tls_state_t mag_tls_state; /* Thread local partial state. Needs to be TLS instead of context to enable cross-thread API invocation. */
 
 typedef struct mag_rt_telemetry_t {
-  size_t num_alive_tensors;                   /* Total tensor instances allocated. */
-  size_t num_alive_storages;                  /* Total storage buffers allocated. */
-  size_t num_created_tensors;                 /* Total tensor instances created. */
-  size_t storage_bytes_allocated;             /* Total bytes allocated for storage buffers. */
-  size_t ops_dispatched;                      /* Total number of dispatched operations. */
+  mag_atomic64_t num_alive_tensors;           /* Total tensor instances allocated. */
+  mag_atomic64_t num_alive_storages;          /* Total storage buffers allocated. */
+  mag_atomic64_t num_created_tensors;         /* Total tensor instances created. */
+  mag_atomic64_t storage_bytes_allocated;     /* Total bytes allocated for storage buffers. */
+  mag_atomic64_t ops_dispatched;              /* Total number of dispatched operations. */
 } mag_rt_telemetry_t;
 
 struct mag_context_t {
@@ -51,6 +51,7 @@ struct mag_context_t {
   mag_backend_registry_t *backend_registry;   /* Compute backend registry */
   mag_atomic64_t topo_traversal_epoch;        /* Epoch counter for topological traversal of the computation graph */
 #ifdef MAG_DEBUG
+  mag_lock_t leak_lock;                       /* Guards alive_head. */
   mag_tensor_t *alive_head;                   /* List of alive tensors used for leak detection. */
 #endif
 };

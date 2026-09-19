@@ -1,0 +1,110 @@
+/*
+** +---------------------------------------------------------------------+
+** | (c) 2026 Mario Sieg <mario.sieg.64@gmail.com>                       |
+** | Licensed under the Apache License, Version 2.0                      |
+** |                                                                     |
+** | Website : https://mariosieg.com                                     |
+** | GitHub  : https://github.com/MarioSieg                              |
+** | License : https://www.apache.org/licenses/LICENSE-2.0               |
+** +---------------------------------------------------------------------+
+*/
+
+#include <prelude.hpp>
+
+#include <atomic>
+#include <thread>
+#include <mutex>
+#include <optional>
+#include <vector>
+
+using namespace magnetron;
+
+namespace {
+    auto worker_count() -> unsigned {
+        unsigned hw {std::thread::hardware_concurrency()};
+        return std::max(4u, std::min(2u*(hw ? hw : 4u), 32u));
+    }
+}
+
+TEST(threading, allocator_storm) {
+    context ctx {};
+    const unsigned threads {worker_count()};
+    constexpr int iterations {2000};
+    std::atomic<int> failures {0};
+
+    std::vector<std::thread> pool {};
+    pool.reserve(threads);
+    for (unsigned t {0}; t < threads; ++t) {
+        pool.emplace_back([&ctx, &failures] {
+            for (int i {0}; i < iterations; ++i) {
+                tensor x {ctx, dtype::float32, 32, 32};
+                tensor y {x.view(x.shape())};
+                tensor z {y.abs()};
+                if (z.numel() != 32*32) ++failures;
+            }
+        });
+    }
+    for (auto &th : pool) th.join();
+    ASSERT_EQ(0, failures.load());
+}
+
+TEST(threading, cross_thread_ownership) {
+    context ctx {};
+    const unsigned threads {worker_count()};
+    constexpr int per_thread {512};
+
+    std::vector<std::optional<tensor>> handoff {};
+    std::mutex handoff_mtx {};
+
+    std::vector<std::thread> producers {};
+    producers.reserve(threads);
+    for (unsigned t {0}; t < threads; ++t) {
+        producers.emplace_back([&] {
+            std::vector<tensor> local {};
+            local.reserve(per_thread);
+            for (int i {0}; i < per_thread; ++i)
+                local.emplace_back(ctx, dtype::float32, 16, 16);
+            std::scoped_lock lock {handoff_mtx};
+            for (auto &tn : local) handoff.emplace_back(tn);
+        });
+    }
+    for (auto &th : producers) th.join();
+    ASSERT_EQ(static_cast<size_t>(threads)*per_thread, handoff.size());
+
+    std::vector<std::thread> consumers {};
+    consumers.reserve(threads);
+    const size_t chunk {handoff.size()/threads};
+    for (unsigned t {0}; t < threads; ++t) {
+        size_t begin {t*chunk};
+        size_t end {t+1 == threads ? handoff.size() : begin+chunk};
+        consumers.emplace_back([&handoff, begin, end] {
+            for (size_t i {begin}; i < end; ++i) handoff[i].reset();
+        });
+    }
+    for (auto &th : consumers) th.join();
+}
+
+TEST(threading, concurrent_backward_disjoint_graphs) {
+    context ctx {};
+    const unsigned threads {worker_count()};
+    std::atomic<int> failures {0};
+
+    std::vector<std::thread> pool {};
+    pool.reserve(threads);
+    for (unsigned t {0}; t < threads; ++t) {
+        pool.emplace_back([&ctx, &failures, t] {
+            for (int i {0}; i < 32; ++i) {
+                tensor x {ctx, dtype::float32, 8};
+                x.fill_(static_cast<float>(t+1));
+                x.requires_grad(true);
+                tensor loss {x.mul(x).sum()};
+                loss.backward();
+                std::vector<float> grad {x.grad()->to_vector<float>()};
+                for (float g : grad)
+                    if (std::abs(g - 2.0f*static_cast<float>(t+1)) > 1e-3f) ++failures;
+            }
+        });
+    }
+    for (auto &th : pool) th.join();
+    ASSERT_EQ(0, failures.load());
+}

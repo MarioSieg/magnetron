@@ -47,7 +47,7 @@ static void mag_assert_correct_op_data(
 static void mag_bump_version(mag_tensor_t *tensor) {
   if (tensor->meta.flags & MAG_TFLAG_IS_VIEW) /* If this is a view, bump the version of the base tensor */
     tensor = tensor->view_meta->base;
-  ++tensor->version;
+  mag_atomic64_fetch_add(&tensor->version, 1, MAG_MO_RELAXED);
 }
 
 mag_status_t MAG_HOTPROC mag_dispatch(
@@ -105,6 +105,6 @@ mag_status_t MAG_HOTPROC mag_dispatch(
   if (inplace)
     for (uint32_t i=0; i < num_out; ++i)
       mag_bump_version(out[i]);
-  ++ctx->telemetry.ops_dispatched;
+  mag_atomic64_fetch_add(&ctx->telemetry.ops_dispatched, 1, MAG_MO_RELAXED);
   return stat;
 }

@@ -87,8 +87,7 @@ static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *d
 static mag_status_t mag_cpu_storage_dtor(void *self) {
   mag_storage_buffer_t *buf = self;
   mag_context_t *ctx = buf->ctx;
-  mag_assert(ctx->telemetry.num_alive_storages > 0, "cpu: double free detected on CPU storage buffer.");
-  --ctx->telemetry.num_alive_storages;
+  mag_assert(mag_atomic64_fetch_sub(&ctx->telemetry.num_alive_storages, 1, MAG_MO_ACQ_REL) > 0, "cpu: double free detected on CPU storage buffer.");
   if (!(buf->flags & MAG_STORAGE_FLAG_BORROWED))
     (*mag_try_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
   mag_slab_free(&ctx->storage_slab, buf);
@@ -123,7 +122,7 @@ static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device
   }
   mag_assert2(!(buf->base&(MAG_CPU_BUF_ALIGN-1))); /* Ensure alignment */
   mag_rc_init_object(buf, &mag_cpu_storage_dtor);
-  ++device->ctx->telemetry.num_alive_storages;
+  mag_atomic64_fetch_add(&device->ctx->telemetry.num_alive_storages, 1, MAG_MO_RELAXED);
   *out = buf;
   return MAG_OK;
 cleanup:

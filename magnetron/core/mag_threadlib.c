@@ -272,3 +272,16 @@ void mag_futex_wakeall(volatile mag_atomic32_t *addr) {
 #error "Not implemented for this platform"
 #endif
 }
+
+void mag_lock_acquire_internal(mag_lock_t *lock) {
+  for (uint32_t spin=0; spin < 64; ++spin) {
+    mag_atomic32_t expect = 0, desire = 1;
+    if (mag_atomic32_compare_exchange_weak(&lock->state, &expect, &desire, MAG_MO_ACQUIRE, MAG_MO_RELAXED))
+      return;
+    mag_cpu_pause();
+  }
+  for (;;) {
+    if (mag_atomic32_exchange(&lock->state, 2, MAG_MO_ACQUIRE) == 0) return;
+    mag_futex_wait(&lock->state, 2);
+  }
+}

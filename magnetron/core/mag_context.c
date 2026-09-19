@@ -194,10 +194,12 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
 #ifdef MAG_DEBUG
   mag_leak_detector_dump_results(ctx);  /* Provide detailed leak check info */
 #endif
-  bool leaks_detected = ctx->telemetry.num_alive_tensors || ctx->telemetry.num_alive_storages;
+  int64_t alive_tensors = mag_atomic64_load(&ctx->telemetry.num_alive_tensors, MAG_MO_RELAXED);
+  int64_t alive_storages = mag_atomic64_load(&ctx->telemetry.num_alive_storages, MAG_MO_RELAXED);
+  bool leaks_detected = alive_tensors || alive_storages;
   if (mag_unlikely(leaks_detected)) {
     char msg[256] = {0};
-    snprintf(msg, sizeof(msg), "context: destroyed with %zu leaked tensors and %zu leaked storage buffers.", ctx->telemetry.num_alive_tensors, ctx->telemetry.num_alive_storages);
+    snprintf(msg, sizeof(msg), "context: destroyed with %" PRIi64 " leaked tensors and %" PRIi64 " leaked storage buffers.", alive_tensors, alive_storages);
     if (suppress_leak_detection) mag_log_warn("%s", msg);
     else mag_log_error("%s", msg); /* Never abort from Python - report the leak instead of panicking. */
   }
@@ -207,14 +209,14 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
   mag_slab_destroy(&ctx->tensor_slab);
   mag_slab_destroy(&ctx->storage_slab);
   mag_backend_registry_shutdown(NULL, ctx->backend_registry); /* TODO: propagate error */
-  size_t num_created_tensors = ctx->telemetry.num_created_tensors;
-  size_t storage_bytes = ctx->telemetry.storage_bytes_allocated;
-  size_t ops_dispatched = ctx->telemetry.ops_dispatched;
+  int64_t num_created_tensors = mag_atomic64_load(&ctx->telemetry.num_created_tensors, MAG_MO_RELAXED);
+  int64_t storage_bytes = mag_atomic64_load(&ctx->telemetry.storage_bytes_allocated, MAG_MO_RELAXED);
+  int64_t ops_dispatched = mag_atomic64_load(&ctx->telemetry.ops_dispatched, MAG_MO_RELAXED);
   memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
   (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
   ctx = NULL;
   mag_log_info(
-    "runtime metrics: ops: %zu, tensors: %zuK, storage alloc: %.02fGiB",
+    "runtime metrics: ops: %" PRIi64 ", tensors: %" PRIi64 "K, storage alloc: %.02fGiB",
     ops_dispatched/1000,
     num_created_tensors/1000,
     (double)storage_bytes / (double)(1<<30)

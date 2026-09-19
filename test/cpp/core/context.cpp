@@ -32,9 +32,9 @@ TEST(context, create_cpu) {
 
 TEST(context, simple_init) {
     mag_context_t *ctx = nullptr;
-    assert(mag_ctx_create(nullptr, &ctx) == MAG_OK); // create context to use magnetron
+    ASSERT_EQ(MAG_OK, mag_ctx_create(nullptr, &ctx)); // create context to use magnetron
     mag_tensor_t *random = nullptr;
-    assert(mag_uniform(
+    ASSERT_EQ(MAG_OK, mag_uniform(
         nullptr,
         &random,
         ctx,
@@ -44,7 +44,7 @@ TEST(context, simple_init) {
         mag_scalar_from_float64(-1.0), // sample from uniform from -1
         mag_scalar_from_float64(1.0), // to +1
         mag_device(CPU, 0) // place on device cpu:0
-    ) == MAG_OK);
+    ));
     mag_tensor_decref(random); // decrease refcount by 1 to free
     mag_ctx_destroy(ctx, false); // destroy context and free resources
 }

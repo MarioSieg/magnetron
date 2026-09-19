@@ -14,6 +14,7 @@
 #include "mag_os.h"
 #include "mag_alloc.h"
 #include "mag_hash.h"
+#include "mag_threadlib.h"
 
 #include <ctype.h>
 #include <sys/stat.h>
@@ -150,8 +151,9 @@ typedef enum mag_backend_load_state_t {
 struct mag_backend_registry_t {
   mag_context_t *ctx;
   char *module_dir;                                         /* Directory the backend shared libraries are loaded from */
+  mag_lock_t lock;
   mag_backend_module_t *backends[MAG_BACKEND_TYPE__COUNT];
-  mag_backend_load_state_t load_state[MAG_BACKEND_TYPE__COUNT];
+  mag_atomic32_t load_state[MAG_BACKEND_TYPE__COUNT];
   uint64_t seed;                                            /* Seed to apply to devices of backends loaded later on */
   bool has_seed;                                            /* True if a seed was set and must be replayed on lazy load */
   size_t backends_num;
@@ -212,9 +214,18 @@ static void mag_backend_log_loaded(mag_backend_t *bck) {
 }
 
 static mag_backend_t *mag_backend_registry_load(mag_error_t *err, mag_backend_registry_t *reg, mag_backend_type_t type) {
-  switch (reg->load_state[type]) {
-    case MAG_BACKEND_LOAD_STATE_LOADED: return reg->backends[type]->backend;
-    case MAG_BACKEND_LOAD_STATE_FAILED: return NULL;
+  if (mag_likely(mag_atomic32_load(&reg->load_state[type], MAG_MO_ACQUIRE) == MAG_BACKEND_LOAD_STATE_LOADED))
+    return reg->backends[type]->backend;
+  mag_lock_acquire(&reg->lock);
+  switch (mag_atomic32_load(&reg->load_state[type], MAG_MO_RELAXED)) {
+    case MAG_BACKEND_LOAD_STATE_LOADED: {
+      mag_backend_t *loaded = reg->backends[type]->backend;
+      mag_lock_release(&reg->lock);
+      return loaded;
+    }
+    case MAG_BACKEND_LOAD_STATE_FAILED:
+      mag_lock_release(&reg->lock);
+      return NULL;
     case MAG_BACKEND_LOAD_STATE_LAZY_PENDING: break;
   }
   char pathbuf[1024];
@@ -223,14 +234,16 @@ static mag_backend_t *mag_backend_registry_load(mag_error_t *err, mag_backend_re
   mag_error_t local_err = {0};
   mag_status_t status = mag_backend_module_load(err ? err : &local_err, &mod, pathbuf, reg->ctx);
   if (mag_iserr(status)) {
-    reg->load_state[type] = MAG_BACKEND_LOAD_STATE_FAILED;
+    mag_atomic32_store(&reg->load_state[type], MAG_BACKEND_LOAD_STATE_FAILED, MAG_MO_RELEASE);
+    mag_lock_release(&reg->lock);
     mag_log_info("Backend '%s' not available: %s", mag_backend_type_to_str(type), err ? err->message : local_err.message);
     if (err) err->code = MAG_OK;
     return NULL;
   }
   reg->backends[type] = mod;
-  reg->load_state[type] = MAG_BACKEND_LOAD_STATE_LOADED;
+  mag_atomic32_store(&reg->load_state[type], MAG_BACKEND_LOAD_STATE_LOADED, MAG_MO_RELEASE);
   ++reg->backends_num;
+  mag_lock_release(&reg->lock);
   mag_backend_log_loaded(mod->backend);
   if (reg->has_seed) mag_backend_seed_devices(mod->backend, reg->seed);
   return mod->backend;
@@ -299,7 +312,7 @@ void mag_backend_registry_manual_seed(mag_backend_registry_t *reg, uint64_t seed
   reg->seed = seed; /* Remembered so backends loaded later on start from the same seed. */
   reg->has_seed = true;
   for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type)
-    if (reg->load_state[type] == MAG_BACKEND_LOAD_STATE_LOADED)
+    if (mag_atomic32_load(&reg->load_state[type], MAG_MO_ACQUIRE) == MAG_BACKEND_LOAD_STATE_LOADED)
       mag_backend_seed_devices(reg->backends[type]->backend, seed);
 }
 

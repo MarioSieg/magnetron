@@ -55,6 +55,7 @@ bool mag_slab_init(mag_slab_alloc_t *pool, size_t block_size, size_t block_align
   if (mag_unlikely(!chunk)) { memset(pool, 0, sizeof(*pool)); return false; } /* OOM. */
   memset(pool, 0, sizeof(*pool));
   *pool = (mag_slab_alloc_t) {
+    .lock = MAG_LOCK_INIT,
     .block_size = block_size,
     .block_align = block_align,
     .blocks_per_chunk = blocks_per_chunk,
@@ -71,11 +72,13 @@ bool mag_slab_init(mag_slab_alloc_t *pool, size_t block_size, size_t block_align
 
 void *mag_slab_alloc(mag_slab_alloc_t *pool) {
   mag_assert2(pool);
+  mag_lock_acquire(&pool->lock);
   ++pool->num_allocs;
   if (mag_likely(pool->free_list)) { /* 1) freelist fast path */
     ++pool->num_freelist_hits;
     void *blk = pool->free_list;
     pool->free_list = *(void **)blk;
+    mag_lock_release(&pool->lock);
     return blk;
   }
   mag_slab_chunk_t *chunk = pool->chunk_tail; /* 2) bump allocate from tail chunk */
@@ -84,15 +87,21 @@ void *mag_slab_alloc(mag_slab_alloc_t *pool) {
   if (mag_likely(top >= chunk->bot)) {
     ++pool->num_pool_hits;
     chunk->top = top;
+    mag_lock_release(&pool->lock);
     return top;
   }
   mag_slab_chunk_t *new_chunk = mag_fixed_pool_chunk_new(pool->block_size, pool->block_align, pool->blocks_per_chunk); /* 3) allocate new chunk */
-  if (mag_unlikely(!new_chunk)) return NULL;
+  if (mag_unlikely(!new_chunk)) {
+    mag_lock_release(&pool->lock);
+    return NULL;
+  }
   pool->chunk_tail->next = new_chunk;
   pool->chunk_tail = new_chunk;
   ++pool->num_chunks;
   new_chunk->top -= pool->block_size;
-  return new_chunk->top;
+  void *blk = new_chunk->top;
+  mag_lock_release(&pool->lock);
+  return blk;
 }
 
 #ifdef MAG_DEBUG
@@ -112,12 +121,14 @@ static bool mag_fixed_pool_owns_ptr(const mag_slab_alloc_t *pool, const void *p)
 void mag_slab_free(mag_slab_alloc_t *pool, void *blk) {
   mag_assert2(pool);
   mag_assert2(blk);
+  mag_lock_acquire(&pool->lock);
 #ifdef MAG_DEBUG
   mag_assert(((uintptr_t)blk & (pool->block_align-1)) == 0, "slab: block %p is not aligned to %zu bytes.", blk, (size_t)pool->block_align);
   mag_assert(mag_fixed_pool_owns_ptr(pool, blk), "slab: block %p is not owned by this fixed pool.", blk);
 #endif
   *(void **)blk = pool->free_list;
   pool->free_list = blk;
+  mag_lock_release(&pool->lock);
 }
 
 void mag_slab_destroy(mag_slab_alloc_t *pool) {
