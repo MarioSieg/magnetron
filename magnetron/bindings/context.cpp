@@ -18,7 +18,6 @@
 namespace mag::bindings {
   static std::once_flag g_ctx_once;
   static std::atomic<mag_context_t*> g_ctx{nullptr};
-  static std::recursive_mutex g_mutex;
 
   mag_context_t *get_ctx() {
     std::call_once(g_ctx_once, [] {
@@ -30,15 +29,10 @@ namespace mag::bindings {
     return g_ctx.load(std::memory_order_acquire);
   }
 
-  std::recursive_mutex &get_global_mutex() { return g_mutex; }
-  std::string get_default_device_unlocked() {
+  std::string get_default_device() {
     char buf[32];
     mag_device_id_to_str(mag_ctx_default_device(get_ctx()), &buf);
     return std::string {buf};
-  }
-  std::string get_default_device() {
-    std::lock_guard lock {get_global_mutex()};
-    return get_default_device_unlocked();
   }
 
   static void destroy_ctx(void *) noexcept {
@@ -54,40 +48,32 @@ namespace mag::bindings {
       "Global runtime controls (errors, RNG, CPU info, backend, etc.)."
     );
     context.def("start_grad_recorder", []() -> void {
-      std::lock_guard lock {get_global_mutex()};
       mag_ctx_grad_recorder_start(get_ctx());
     }, "Start recording ops for autodiff.");
     context.def("stop_grad_recorder", []() -> void {
-      std::lock_guard lock {get_global_mutex()};
       mag_ctx_grad_recorder_stop(get_ctx());
     }, "Stop recording ops for autodiff.");
     context.def("is_grad_recording", []() -> bool {
-      std::lock_guard lock {get_global_mutex()};
       return mag_ctx_grad_recorder_is_running(get_ctx());
     }, "True if gradient recording is active.");
     context.def("manual_seed", [](uint64_t seed) -> void {
-      std::lock_guard lock {get_global_mutex()};
       mag_ctx_manual_seed(get_ctx(), seed);
     }, "seed"_a, "Set RNG seed for reproducibility.");
     context.def("is_device_available", [](const std::string &device) -> bool {
-      std::lock_guard lock {get_global_mutex()};
       std::optional<mag_device_id_t> device_id = resolve_device_id_str(std::string {device});
       if (!device_id) return false;
       return mag_ctx_is_device_available(get_ctx(), *device_id);
     });
     context.def("get_default_device", []() -> std::string {
-      std::lock_guard lock {get_global_mutex()};
-      return get_default_device_unlocked();
+      return get_default_device();
     }, "Get the default device string, with the ordinal resolved for backends that have one (e.g., 'cpu', 'cuda:1').");
     context.def("set_default_device", [](const std::string &device) -> void {
-      std::lock_guard lock {get_global_mutex()};
       std::optional<mag_device_id_t> device_id = resolve_device_id_str(device);
       if (!device_id) throw std::invalid_argument {"Invalid device id: '" + device + "'"};
       mag_error_t err {};
       throw_if_error(mag_ctx_set_default_device(&err, get_ctx(), *device_id), err);
     }, "device"_a, "Set the default device (e.g., 'cpu', 'cuda', 'cuda:1'). A backend without an ordinal selects its best device.");
     context.def("best_device", [](const std::string &backend) -> std::string {
-      std::lock_guard lock {get_global_mutex()};
       std::optional<mag_device_id_t> device_id = parse_device_id_str(backend);
       if (!device_id) throw std::invalid_argument {"Invalid backend: '" + backend + "'"};
       mag_device_id_t best {};
@@ -98,11 +84,9 @@ namespace mag::bindings {
       return std::string {buf};
     }, "backend"_a, "Fastest device of a backend, ranked by peak compute and memory bandwidth (e.g. best_device('cuda') -> 'cuda:1').");
     context.def("get_default_dtype", []() -> dtype_wrapper {
-      std::lock_guard lock {get_global_mutex()};
       return dtype_wrapper{mag_ctx_default_dtype(get_ctx())};
     });
     context.def("set_default_dtype", [](const dtype_wrapper &dtype) -> void {
-      std::lock_guard lock {get_global_mutex()};
       if (!mag_ctx_set_default_dtype(get_ctx(), *dtype))
         throw std::logic_error {"Only floating-point types are supported as the default type"};
     });

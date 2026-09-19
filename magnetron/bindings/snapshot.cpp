@@ -144,7 +144,6 @@ namespace mag::bindings {
     nb::class_<snapshot_stream_writer>(m, "SnapshotStreamWriter")
       .def("__init__", [](snapshot_stream_writer *self, const std::string &filename, const std::string &meta, uint64_t data_len) -> void {
         nb::gil_scoped_release nogil;
-        std::lock_guard lock {get_global_mutex()};
         new (self) snapshot_stream_writer {filename, meta, data_len};
       }, "filename"_a, "meta"_a, "data_len"_a)
       .def_prop_ro("is_open", &snapshot_stream_writer::is_open)
@@ -156,7 +155,6 @@ namespace mag::bindings {
             PyBuffer_Release(&view);
           });
           nb::gil_scoped_release nogil {};
-          std::lock_guard lock {get_global_mutex()};
           self.write(view.buf, static_cast<uint64_t>(view.len));
       }, "chunk"_a)
       .def(
@@ -167,17 +165,14 @@ namespace mag::bindings {
           const void *data = reinterpret_cast<const void *>(mag_tensor_data_ptr(*tensor));
           auto nbytes = static_cast<uint64_t>(mag_tensor_numbytes(*tensor));
           nb::gil_scoped_release nogil {};
-          std::lock_guard lock {get_global_mutex()};
           self.write(data, nbytes);
       }, "tensor"_a)
       .def("close", [](snapshot_stream_writer &self) -> void {
         nb::gil_scoped_release nogil {};
-        std::lock_guard lock {get_global_mutex()};
         self.close();
       })
       .def("abort", [](snapshot_stream_writer &self) -> void {
         nb::gil_scoped_release nogil {};
-        std::lock_guard lock {get_global_mutex()};
         self.abort();
       })
       .def("__enter__", [](snapshot_stream_writer &self) -> snapshot_stream_writer & {
@@ -187,7 +182,6 @@ namespace mag::bindings {
       .def("__exit__", [](snapshot_stream_writer &self, nb::handle exc_type, nb::handle, nb::handle) -> bool {
         bool has_exc = !exc_type.is_none();
         nb::gil_scoped_release nogil {};
-        std::lock_guard lock {get_global_mutex()};
         if (has_exc) self.abort();
         else self.close();
         return false;
@@ -196,7 +190,6 @@ namespace mag::bindings {
     nb::class_<snapshot_stream_reader>(m, "SnapshotStreamReader")
       .def("__init__", [](snapshot_stream_reader *self, const std::string &filename) -> void {
         nb::gil_scoped_release nogil;
-        std::lock_guard lock {get_global_mutex()};
         new (self) snapshot_stream_reader {filename};
       }, "filename"_a)
       .def_prop_ro("is_open", &snapshot_stream_reader::is_open)
@@ -210,12 +203,10 @@ namespace mag::bindings {
         return nb::make_tuple(mag_ver_major(v), mag_ver_minor(v), mag_ver_patch(v));
       }, "On disk format version as (major, minor, patch).")
       .def("tensor", [](snapshot_stream_reader &self, uint64_t offset, uint64_t size, int dtype, const std::vector<int64_t> &shape) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         return tensor_wrapper {self.borrow(offset, size, dtype, shape)};
       }, "offset"_a, "size"_a, "dtype"_a, "shape"_a, "Borrow one tensor out of the data section. Zero copy and read only.")
       .def("close", [](snapshot_stream_reader &self) -> void {
         nb::gil_scoped_release nogil {};
-        std::lock_guard lock {get_global_mutex()};
         self.close();
       })
       .def("__enter__", [](snapshot_stream_reader &self) -> snapshot_stream_reader & {
@@ -224,7 +215,6 @@ namespace mag::bindings {
       }, nb::rv_policy::reference_internal)
       .def("__exit__", [](snapshot_stream_reader &self, nb::handle, nb::handle, nb::handle) -> bool {
         nb::gil_scoped_release nogil {};
-        std::lock_guard lock {get_global_mutex()};
         self.close();
         return false;
       }, "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none());

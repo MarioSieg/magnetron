@@ -171,3 +171,42 @@ def test_concurrent_backward_on_disjoint_graphs() -> None:
     for i in range(_THREADS):
         expected = 2.0 * float(i + 1) * 64
         assert abs(grads[i] - expected) <= expected * 1e-4
+
+
+def test_ops_run_with_the_gil_released() -> None:
+    spins = 0
+    stop = False
+
+    def spinner() -> None:
+        nonlocal spins
+        while not stop:
+            spins += 1
+
+    sp = threading.Thread(target=spinner, daemon=True)
+    sp.start()
+    try:
+        a = Tensor.uniform(256, 256)
+        b = Tensor.uniform(256, 256)
+        for _ in range(40):
+            a.matmul(b)
+    finally:
+        stop = True
+        sp.join()
+
+    assert spins > 1000, f'GIL appears to be held across ops (only {spins} python iterations)'
+
+
+def test_concurrent_ops_do_not_corrupt_results() -> None:
+    sums: dict[int, float] = {}
+
+    def work(i: int) -> None:
+        x = Tensor.full(128, 128, fill_value=float(i + 1))
+        for _ in range(20):
+            x = (x * 1.0).relu()
+        sums[i] = x.sum().item()
+
+    errors = _run(work)
+    assert not errors, errors[0]
+    for i in range(_THREADS):
+        expected = float(i + 1) * 128 * 128
+        assert abs(sums[i] - expected) <= expected * 1e-4

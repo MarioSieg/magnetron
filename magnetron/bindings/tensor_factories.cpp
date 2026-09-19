@@ -61,7 +61,7 @@ namespace mag::bindings {
   [[nodiscard]] static std::string kw_device_or_default(nb::kwargs &kwargs) {
     if (kwargs.contains("device"))
       return nb::cast<std::string>(kwargs["device"]);
-    return get_default_device_unlocked();
+    return get_default_device();
   }
 
   static void maybe_set_requires_grad(mag_context_t *ctx, mag_tensor_t *t, bool requires_grad) {
@@ -311,7 +311,6 @@ namespace mag::bindings {
   void init_tensor_class_factories(nb::class_<tensor_wrapper> &cls) {
     cls.def("__init__",
       [](tensor_wrapper *self, const tensor_wrapper &other) {
-        std::lock_guard lock {get_global_mutex()};
         new (self) tensor_wrapper(other);
         mag_error_t err {};
         throw_if_error(mag_tensor_set_requires_grad(&err, **self, true), err);
@@ -321,7 +320,6 @@ namespace mag::bindings {
     );
     cls.def("__init__",
       [](tensor_wrapper *self, nb::handle data_h, nb::kwargs kwargs) {
-        std::lock_guard lock {get_global_mutex()};
         new (self) tensor_wrapper {tensor_from_data(data_h, kwargs)};
       },
       "data"_a, "kwargs"_a,
@@ -329,7 +327,6 @@ namespace mag::bindings {
     );
     cls.attr("empty") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
         dtype_wrapper dt {mag_ctx_default_dtype(ctx)};
         bool requires_grad = false;
@@ -363,7 +360,6 @@ namespace mag::bindings {
     );
     cls.attr("empty_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         throw_if_error(mag_empty_like(&err, &out, *like), err);
@@ -376,7 +372,6 @@ namespace mag::bindings {
     );
     cls.attr("scalar") = nb::cpp_function(
       [](nb::handle value, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         dtype_wrapper dt = kw_dtype_or(kwargs, deduce_dtype_from_py_scalar(value));
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
@@ -393,7 +388,6 @@ namespace mag::bindings {
     );
     cls.attr("full") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
         if (!kwargs.contains("fill_value"))
           throw nb::type_error("full() missing keyword argument 'fill_value'");
@@ -415,7 +409,6 @@ namespace mag::bindings {
     );
     cls.attr("full_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::handle fill_value, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_scalar_t fill_val = scalar_from_py_number(fill_value);
         mag_error_t err {};
@@ -429,7 +422,6 @@ namespace mag::bindings {
     );
     cls.attr("zeros") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
         dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
@@ -447,7 +439,6 @@ namespace mag::bindings {
     );
     cls.attr("zeros_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         throw_if_error(mag_zeros_like(&err, &out, *like), err);
@@ -460,7 +451,6 @@ namespace mag::bindings {
     );
     cls.attr("ones") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
         dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
@@ -478,7 +468,6 @@ namespace mag::bindings {
     );
     cls.attr("ones_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         throw_if_error(mag_ones_like(&err, &out, *like), err);
@@ -491,7 +480,6 @@ namespace mag::bindings {
     );
     cls.attr("uniform") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
         dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
@@ -511,7 +499,6 @@ namespace mag::bindings {
     );
     cls.attr("uniform_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_scalar_t low = kwargs.contains("low") ? scalar_from_py_number(kwargs["low"]) : mag_scalar_from_float64(0.0);
         mag_scalar_t high = kwargs.contains("high") ? scalar_from_py_number(kwargs["high"]) : mag_scalar_from_float64(1.0);
         mag_tensor_t *out = nullptr;
@@ -526,7 +513,6 @@ namespace mag::bindings {
     );
     cls.attr("normal") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_context_t *ctx = get_ctx();
         dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
@@ -546,7 +532,6 @@ namespace mag::bindings {
     );
     cls.attr("normal_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         mag_scalar_t mean = kwargs.contains("mean") ? scalar_from_py_number(kwargs["mean"]) : mag_scalar_from_float64(0.0);
         mag_scalar_t std = kwargs.contains("std") ? scalar_from_py_number(kwargs["std"]) : mag_scalar_from_float64(1.0);
         mag_tensor_t *out = nullptr;
@@ -561,7 +546,6 @@ namespace mag::bindings {
     );
     cls.attr("bernoulli") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         auto p = kwargs.contains("p") ? nb::cast<double>(kwargs["p"]) : 0.5;
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
@@ -579,7 +563,6 @@ namespace mag::bindings {
     );
     cls.attr("bernoulli_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         double p = kwargs.contains("p") ? nb::cast<double>(kwargs["p"]) : 0.5;
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
@@ -591,7 +574,6 @@ namespace mag::bindings {
     );
     cls.attr("arange") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         nb::handle start_h{};
         nb::handle stop_h{};
         nb::handle step_h{};
@@ -640,7 +622,6 @@ namespace mag::bindings {
     );
     cls.attr("linspace") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         if (args.size() > 3) {
           std::ostringstream oss;
           oss << "linspace() takes at most 3 positional args, got " << args.size();
@@ -685,7 +666,6 @@ namespace mag::bindings {
     );
     cls.attr("eye") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         if (args.size() > 2) {
           std::ostringstream oss;
           oss << "eye() takes 1 or 2 positional args, got " << args.size();
@@ -713,7 +693,6 @@ namespace mag::bindings {
     );
     cls.attr("meshgrid") = nb::cpp_function(
       [](nb::args args, nb::kwargs kwargs) -> nb::tuple {
-        std::lock_guard lock {get_global_mutex()};
         std::string indexing = "ij";
         if (kwargs.contains("indexing"))
           indexing = nb::cast<std::string>(kwargs["indexing"]);
@@ -774,7 +753,6 @@ namespace mag::bindings {
     );
     cls.attr("rand_perm") = nb::cpp_function(
       [](int64_t n, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         dtype_wrapper dt = kw_dtype_or(kwargs, dtype_wrapper{MAG_DTYPE_INT64});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
@@ -789,7 +767,6 @@ namespace mag::bindings {
       "Random permutation of [0, n). Kwargs: dtype, requires_grad."
     );
     cls.attr("load_image") = nb::cpp_function([](const std::string &path, nb::kwargs kwargs) -> tensor_wrapper {
-        std::lock_guard lock {get_global_mutex()};
         std::string channels = "RGB";
         uint32_t rw = 0, rh = 0;
         if (kwargs.contains("channels"))
@@ -822,7 +799,6 @@ namespace mag::bindings {
       "Load image from path. Kwargs: channels (e.g. 'RGB'), resize_to (w, h)."
     );
     cls.attr("load_audio") = nb::cpp_function([](const std::string &path, nb::kwargs kwargs) -> nb::tuple {
-        std::lock_guard lock {get_global_mutex()};
         for (auto [handle, _] : kwargs) {
           auto key = nb::cast<std::string>(handle);
           if (key != "device") {
@@ -848,7 +824,6 @@ namespace mag::bindings {
     );
     cls.def(
      "strided_view", [](const tensor_wrapper &base, nb::handle shape_h, nb::handle strides_h, nb::kwargs kwargs) -> tensor_wrapper {
-       std::lock_guard lock {get_global_mutex()};
        auto shape_seq = nb::cast<nb::sequence>(shape_h);
        auto strides_seq = nb::cast<nb::sequence>(strides_h);
        if (nb::len(shape_seq) != nb::len(strides_seq))
