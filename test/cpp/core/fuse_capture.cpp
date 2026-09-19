@@ -27,7 +27,7 @@ namespace {
 
     auto chain_stats(context &ctx) -> std::pair<uint64_t, uint64_t> {
         uint64_t chains = 0, ops = 0;
-        mag_fuse_stats(&*ctx, &chains, &ops);
+        mag_fuse_stats(&*ctx, &chains, &ops, nullptr);
         return {chains, ops};
     }
 }

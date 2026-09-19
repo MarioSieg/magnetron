@@ -234,6 +234,82 @@ def test_bfloat16_is_left_to_the_eager_kernels() -> None:
     assert mag.fusion_stats()['chains'] == before, 'bfloat16 should not have been lowered'
 
 
+
+# Chains whose backwards never read their operands' values, so their intermediates can be dropped
+# even while gradients are recording. add, sub and neg are the only operators that qualify.
+ELIDING_CHAINS = {
+    'adds': lambda x, w, b: (((x + w) + b) + w) + b,
+    'subs': lambda x, w, b: (((x - w) - b) - w) - b,
+    'negs': lambda x, w, b: -(-(x + w) - b),
+}
+
+
+@pytest.mark.parametrize('name', list(ELIDING_CHAINS))
+def test_intermediates_are_dropped_while_gradients_record(name: str) -> None:
+    """A chain of value-ignoring operators should write one result, not one per link.
+
+    Recording gradients gives every consumer's autodiff state a reference to its operands, so
+    without knowing which backwards actually read those operands nothing could ever be dropped.
+    """
+    fn = ELIDING_CHAINS[name]
+    x, w, b = _rand(), _rand(), _rand()
+    x.requires_grad = True
+    before = mag.fusion_stats()
+    with mag.fuse():
+        out = fn(x, w, b)
+    after = mag.fusion_stats()
+    ops = after['ops_fused'] - before['ops_fused']
+    elided = after['elided'] - before['elided']
+    assert ops >= 4, f'{name}: expected a chain, got {ops} operators'
+    # Everything but the result the caller kept.
+    assert elided == ops - 1, f'{name}: dropped {elided} of {ops} results'
+    out.sum().backward()
+    assert np.all(np.isfinite(x.grad.numpy()))
+
+
+def test_a_backward_that_reads_its_operand_keeps_the_value() -> None:
+    """mul needs both factors to differentiate, so none of its intermediates may be dropped."""
+    x, w, b = _rand(), _rand(), _rand()
+    x.requires_grad = True
+    before = mag.fusion_stats()
+    with mag.fuse():
+        out = ((x * w) * b) * w
+    after = mag.fusion_stats()
+    assert after['ops_fused'] - before['ops_fused'] == 3
+    assert after['elided'] - before['elided'] == 0
+    out.sum().backward()
+    assert np.all(np.isfinite(x.grad.numpy()))
+
+
+@pytest.mark.parametrize('name', list(ELIDING_CHAINS))
+def test_dropping_intermediates_does_not_change_the_gradient(name: str) -> None:
+    """The gradients a chain produces must match the ones the operators would have produced.
+
+    This is the check that catches a wrong entry in the ignores-value table. Verified by corrupting
+    that table on purpose - declaring that mul ignores its operands - and confirming this comparison
+    goes red.
+    """
+    fn = ELIDING_CHAINS[name]
+
+    def grads(fused: bool) -> tuple[np.ndarray, np.ndarray]:
+        mag.context.manual_seed(4242)
+        x, w = _rand(), _rand()
+        b = _rand()
+        x.requires_grad = True
+        w.requires_grad = True
+        if fused:
+            with mag.fuse():
+                out = fn(x, w, b)
+        else:
+            out = fn(x, w, b)
+        out.sum().backward()
+        return x.grad.numpy().copy(), w.grad.numpy().copy()
+
+    eager, fused = grads(False), grads(True)
+    assert np.array_equal(fused[0], eager[0]), f'{name}: grad wrt x'
+    assert np.array_equal(fused[1], eager[1]), f'{name}: grad wrt w'
+
+
 def test_a_read_only_operand_can_be_read_by_a_chain() -> None:
     """A chain must ask for write access only to what it writes.
 

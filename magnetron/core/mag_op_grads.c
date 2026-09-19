@@ -11,6 +11,25 @@
 
 #include "mag_op_grads.h"
 
+
+/*
+** See the comment on the MAG_BW_IGNORE_* macros for what belongs here and why the default is zero.
+**
+** add and sub mention their operands only through meta.flags and mag_grad_reduce_to, which needs a
+** shape; the reduction it may call passes the gradient as the data operand and takes nothing but
+** the shape from the one it is reducing towards. neg does not mention its operand at all. Every
+** other backward in this file reads at least one operand's memory - mul needs the other factor,
+** relu and abs need the sign, sqrt needs the value - so they are absent and keep their values.
+*/
+uint8_t mag_op_backward_ignores_value(mag_opcode_t op) {
+  static const uint8_t table[MAG_OP__NUM] = {
+    [MAG_OP_ADD] = MAG_BW_IGNORE_ALL,
+    [MAG_OP_SUB] = MAG_BW_IGNORE_ALL,
+    [MAG_OP_NEG] = MAG_BW_IGNORE_ALL,
+  };
+  return op < MAG_OP__NUM ? table[op] : 0;
+}
+
 mag_status_t mag_op_backward_clone(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   return mag_clone(err, grads, node->grad);
 }

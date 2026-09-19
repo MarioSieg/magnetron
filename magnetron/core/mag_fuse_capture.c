@@ -3,6 +3,7 @@
 #include "mag_tensor.h"
 #include "mag_backend.h"
 #include "mag_operator.h"
+#include "mag_op_grads.h"
 #include "mag_alloc.h"
 #include "mag_rc.h"
 
@@ -24,12 +25,13 @@ struct mag_fuse_tape_t {
   bool flushing;      /* Guards the read hook against re-entering while the chain is being run. */
   uint64_t chains;
   uint64_t ops_fused;
+  uint64_t elided;   /* Results the chain never had to write. */
 };
 
 static struct mag_fuse_tape_t *mag_fuse_tape(mag_context_t *ctx) {
   if (mag_likely(ctx->fuse_tape != NULL)) return ctx->fuse_tape;
   struct mag_fuse_tape_t *tape = (*mag_alloc)(NULL, sizeof(*tape), __alignof(struct mag_fuse_tape_t));
-  if (mag_unlikely(!tape)) return NULL; /* Out of memory simply means no fusion; the caller runs eagerly. */
+  if (mag_unlikely(!tape)) return NULL; /* mag_alloc is contracted never to fail; belt and braces. */
   memset(tape, 0, sizeof(*tape));
   ctx->fuse_tape = tape;
   return tape;
@@ -74,10 +76,11 @@ mag_status_t mag_fuse_region_end(mag_error_t *err, mag_context_t *ctx) {
   return mag_fuse_flush(err, ctx);
 }
 
-void mag_fuse_stats(mag_context_t *ctx, uint64_t *out_chains, uint64_t *out_ops_fused) {
+void mag_fuse_stats(mag_context_t *ctx, uint64_t *out_chains, uint64_t *out_ops_fused, uint64_t *out_elided) {
   struct mag_fuse_tape_t *tape = ctx->fuse_tape;
   if (out_chains) *out_chains = tape ? tape->chains : 0;
   if (out_ops_fused) *out_ops_fused = tape ? tape->ops_fused : 0;
+  if (out_elided) *out_elided = tape ? tape->elided : 0;
 }
 
 /* Submit the tape one operator at a time, which is what would have happened without a region. */
@@ -144,28 +147,40 @@ static uint32_t mag_fuse_distinct_tensors(const struct mag_fuse_tape_t *tape, ma
 ** fusion exists to remove. The ones that do are the results something still holds.
 **
 ** Holding is a reference count question, and the only way to answer it is to account for every
-** reference the chain itself took and see whether any are left over. The tape increfs an operator's
-** output when it records it, and increfs each input again for every later operator that consumes it.
-** Subtract those and anything remaining belongs to somebody else.
+** reference the chain itself caused and see whether any are left over. Two things take them. The
+** tape increfs an operator's output when it records it, and increfs each input again for every
+** later operator that consumes it. And while gradients are recording, every consumer's autodiff
+** state increfs its inputs too, once per operand position, so an operator that reads the same value
+** twice holds it twice.
+**
+** A leftover reference means somebody outside is holding the tensor and will read it. But a
+** reference the chain can account for is not automatically harmless: an autodiff state holds its
+** operands so that a backward can use them, and whether that backward reads the memory or only asks
+** the shape is a property of the operator, declared by mag_op_backward_ignores_value. A consumer
+** whose backward reads the value keeps it alive just as surely as a user variable does.
 **
 ** The accounting fails closed. An unexplained reference makes the count come out high, which reads
-** as "escapes" and writes the value back - the safe answer. It could only go wrong by counting a
-** reference that does not exist, and the tape is the only thing that takes these.
-**
-** With gradients recording this refuses to elide anything, and that is not a limitation of the
-** accounting but of what is being accounted. Recording gives every consumer's autodiff state a
-** reference to its inputs, so the counts move; worse, whether a value is read depends on what each
-** consumer's backward actually does with it - some need the operand, some only its shape. Getting
-** that wrong produces wrong gradients silently, a long way from here. It wants its own answer,
-** declared per operator, and until there is one this writes everything back.
+** as "still needed" and writes the value back. It could only go wrong by counting a reference that
+** does not exist, and only these two places take them.
 */
 static bool mag_fuse_value_escapes(const mag_context_t *ctx, const struct mag_fuse_tape_t *tape, uint32_t i) {
-  if (ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) return true;
   mag_tensor_t *t = tape->nodes[i].out;
+  bool recording = !!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER);
   int32_t ours = 1; /* The reference taken when this operator's output was recorded. */
-  for (uint32_t j=i+1; j < tape->len; ++j)
-    for (uint8_t k=0; k < tape->nodes[j].num_in; ++k)
-      if (tape->nodes[j].in[k] == t) ++ours; /* And one for every later link that consumes it. */
+  for (uint32_t j=i+1; j < tape->len; ++j) {
+    const mag_fuse_tape_node_t *consumer = tape->nodes+j;
+    /* An operator with no backward records nothing, so it holds no autodiff reference either. */
+    bool records = recording && mag_op_trait((mag_opcode_t)consumer->op)->backward != NULL;
+    uint8_t ignores = mag_op_backward_ignores_value((mag_opcode_t)consumer->op);
+    for (uint8_t k=0; k < consumer->num_in; ++k) {
+      if (consumer->in[k] != t) continue;
+      ++ours; /* The tape's own reference to this operand. */
+      if (!records) continue;
+      ++ours; /* And the autodiff state's. */
+      if (!(ignores & (1u<<k)))
+        return true; /* This backward will read these bytes, so they have to exist. */
+    }
+  }
   int32_t rc = (int32_t)mag_atomic32_load(&((mag_rc_control_block_t *)t)->rc_strong, MAG_MO_RELAXED);
   return rc > ours;
 }
@@ -219,8 +234,9 @@ mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx) {
   }
 
   /* Only the results something outside the chain can still read reach memory. */
+  uint32_t elided = 0; /* Counted into the context only if the chain actually runs. */
   for (uint32_t i=0; i < tape->len; ++i) {
-    if (!mag_fuse_value_escapes(ctx, tape, i)) continue;
+    if (!mag_fuse_value_escapes(ctx, tape, i)) { ++elided; continue; }
     uint8_t slot;
     mag_fuse_bind(slot, tape->nodes[i].out);
     if (!mag_fuse_graph_store(&graph, slot, node_reg[i])) goto fallback;
@@ -256,6 +272,7 @@ mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx) {
     }
     ++tape->chains;
     tape->ops_fused += tape->len;
+    tape->elided += elided;
     goto done;
   }
 
@@ -284,17 +301,23 @@ static bool mag_fuse_touches_pending(mag_tensor_t **ts, uint32_t n) {
   return false;
 }
 
+/*
+** How many buffer slots the graph will need if the chain is flushed now.
+**
+** Only values that reach memory need one: the tensors the chain reads from outside itself, and the
+** results something still holds. A result consumed by a later link and by nothing else never leaves
+** a register, so it costs no slot, which is the reason a long chain fits in the first place.
+**
+** This is an estimate rather than the decision itself, because the decision depends on reference
+** counts that can still change before the chain runs. It only has to be close: if it is low, the
+** flush runs out of slots and replays the chain eagerly, which is slower and still right.
+*/
 static uint32_t mag_fuse_slots_needed(
   const mag_context_t *ctx,
   const struct mag_fuse_tape_t *tape,
   mag_tensor_t **extra,
   uint32_t num_extra
 ) {
-  if (ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER)
-    return mag_fuse_distinct_tensors(tape, extra, num_extra);
-  /* Count what the chain reads from outside itself, plus one slot for the result it is building.
-     An intermediate that later turns out to be held after all costs a slot the count did not
-     predict; the flush then runs out and replays eagerly, which is slower but still right. */
   uint32_t external = 0;
   for (uint32_t i=0; i < tape->len; ++i) {
     const mag_fuse_tape_node_t *node = tape->nodes+i;
@@ -306,6 +329,8 @@ static uint32_t mag_fuse_slots_needed(
           if (tape->nodes[k].in[m] == node->in[j]) { counted = true; break; }
       if (!counted) ++external;
     }
+    /* A result a backward will read has to be written, so it needs a slot of its own. */
+    if (i+1 < tape->len && mag_fuse_value_escapes(ctx, tape, i)) ++external;
   }
   for (uint32_t i=0; i < num_extra; ++i) ++external;
   return external+1;

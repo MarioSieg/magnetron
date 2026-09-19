@@ -87,11 +87,12 @@ namespace mag::bindings {
     }, "Close the innermost region; closing the outermost one runs the chain.");
     context.def("fusion_stats", []() -> nb::dict {
       std::lock_guard lock {get_global_mutex()};
-      uint64_t chains = 0, ops_fused = 0;
-      mag_fuse_stats(get_ctx(), &chains, &ops_fused);
+      uint64_t chains = 0, ops_fused = 0, elided = 0;
+      mag_fuse_stats(get_ctx(), &chains, &ops_fused, &elided);
       nb::dict out;
       out["chains"] = chains;
       out["ops_fused"] = ops_fused;
+      out["elided"] = elided;
       return out;
     }, "How many chains have run and how many operators went into them.");
     context.def("is_device_available", [](const std::string &device) -> bool {

@@ -79,8 +79,11 @@ extern mag_status_t mag_fuse_capture(
 /* Run whatever is on the tape and clear it. Safe to call when there is nothing pending. */
 extern MAG_EXPORT mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx);
 
-/* How many chains have run and how many operators went into them. */
-extern MAG_EXPORT void mag_fuse_stats(mag_context_t *ctx, uint64_t *out_chains, uint64_t *out_ops_fused);
+/*
+** How many chains have run, how many operators went into them, and how many results never had to be
+** written at all.
+*/
+extern MAG_EXPORT void mag_fuse_stats(mag_context_t *ctx, uint64_t *out_chains, uint64_t *out_ops_fused, uint64_t *out_elided);
 
 extern MAG_COLDPROC void mag_fuse_tape_shutdown(mag_context_t *ctx);
 
