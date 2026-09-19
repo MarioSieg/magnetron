@@ -128,6 +128,22 @@ static const char *mag_cpu_fuse_prologue(mag_dtype_t dtype) {
       "#define mag_ld(x) (x)\n"
       "#define mag_st(x) (x)\n"
       "#define mag_rt(x) (x)\n\n";
+  if (dtype == MAG_DTYPE_BFLOAT16)
+    /* bfloat16 is the top sixteen bits of a float, so widening is a shift. Narrowing adds half of
+       the last kept bit, plus one more when that bit is odd so exact halves go to the even
+       neighbour - the arithmetic mag_bfloat16_from_float32_soft_fp performs, spelled out because
+       the generated file is compiled on its own. */
+    return
+      "#include <stdint.h>\n"
+      "#include <string.h>\n"
+      "typedef uint16_t mag_st_t;\n"
+      "static inline float mag_ld(mag_st_t h) { uint32_t u = (uint32_t)h << 16; float f; memcpy(&f, &u, 4); return f; }\n"
+      "static inline mag_st_t mag_st(float f) {\n"
+      "  uint32_t u; memcpy(&u, &f, 4);\n"
+      "  if ((u & 0x7fffffffu) > 0x7f800000u) return (mag_st_t)0x7fc0u;\n"
+      "  return (mag_st_t)((u + 0x7fffu + ((u >> 16) & 1u)) >> 16);\n"
+      "}\n"
+      "#define mag_rt(x) mag_ld(mag_st(x))\n\n";
   return
     "#include <stdint.h>\n"
     "typedef uint16_t mag_st_t;\n"
@@ -145,9 +161,8 @@ static const char *mag_cpu_fuse_prologue(mag_dtype_t dtype) {
 }
 
 char *mag_cpu_fuse_codegen(const mag_fuse_graph_t *g) {
-  /* bfloat16 is absent for the reason the interpreter gives: this backend's eager bfloat16 is not
-     a function of its input alone, so there is nothing definite to reproduce. */
-  if (g->dtype != MAG_DTYPE_FLOAT32 && g->dtype != MAG_DTYPE_FLOAT16) return NULL;
+  if (g->dtype != MAG_DTYPE_FLOAT32 && g->dtype != MAG_DTYPE_FLOAT16 && g->dtype != MAG_DTYPE_BFLOAT16)
+    return NULL;
   for (uint32_t i=0; i < g->num_ins; ++i)
     if (g->ins[i].op != MAG_FUSE_OP_LOAD && !mag_cpu_fuse_form(g->ins[i].op)) return NULL;
 

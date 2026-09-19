@@ -184,9 +184,9 @@ print('ok')
     # demanding it be the only thing on stdout.
     assert out.stdout.strip().endswith('ok')
 
-# Chains are fused per dtype: the arithmetic runs in float either way, and narrow storage only
-# changes where loads widen and results round. bfloat16 is absent on purpose - see below.
-FUSED_DTYPES = [dtype.float32, dtype.float16]
+# Chains are fused for every float storage type. The arithmetic runs in float whichever it is, and
+# narrow storage only changes where loads widen and results round back.
+FUSED_DTYPES = [dtype.float32, dtype.float16, dtype.bfloat16]
 
 
 @pytest.mark.parametrize('dt', FUSED_DTYPES, ids=lambda d: str(d).rsplit('.', 1)[-1])
@@ -207,85 +207,6 @@ def test_narrow_storage_rounds_where_eager_rounds(name: str, dt) -> None:
     assert np.array_equal(got.cast(dtype.float32).numpy(), expect), f'{name} {dt}'
 
 
-def _bfloat16_eager_is_consistent() -> bool:
-    """True where the vector store rounds rather than truncates, which today means AVX512-BF16."""
-    short = Tensor([0.9] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
-    short_b = Tensor([0.012] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
-    long = Tensor([0.9] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
-    long_b = Tensor([0.012] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
-    with no_grad():
-        return float((short * short_b).cast(dtype.float32).numpy()[0]) == float(
-            (long * long_b).cast(dtype.float32).numpy()[0]
-        )
-
-
-def test_bfloat16_chains_are_not_lowered() -> None:
-    """bfloat16 is declined by every backend, and still gives the eager answer by falling back."""
-    x, w, b = (_rand().cast(dtype.bfloat16) for _ in range(3))
-    before = mag.fusion_stats()['chains']
-    with no_grad():
-        expect = (x * w + b).cast(dtype.float32).numpy().copy()
-    with no_grad(), mag.fuse():
-        out = x * w + b
-    assert np.array_equal(out.cast(dtype.float32).numpy(), expect)
-    assert mag.fusion_stats()['chains'] == before, 'bfloat16 should not have been lowered'
-
-
-def test_bfloat16_eager_is_still_length_dependent() -> None:
-    """Why bfloat16 waits, as a tripwire rather than a comment.
-
-    The bfloat16 vector store shifts a float right by sixteen and keeps the top half, which
-    truncates, while the scalar tail rounds to nearest. So the same multiply gives two answers
-    depending on whether an element fell in the vector body or the tail. Every path does this except
-    AVX512-BF16, which has an instruction that rounds, so on that hardware alone the two agree.
-
-    Until eager bfloat16 is a function of its input alone there is nothing definite for a chain to
-    reproduce. When it is fixed this test fails, which is the signal to enable bfloat16 fusion.
-    """
-    if _bfloat16_eager_is_consistent():
-        pytest.skip('this machine rounds the bfloat16 store already')
-    short = Tensor([0.9] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
-    short_b = Tensor([0.012] * 3, dtype=dtype.float32).cast(dtype.bfloat16)
-    long = Tensor([0.9] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
-    long_b = Tensor([0.012] * 64, dtype=dtype.float32).cast(dtype.bfloat16)
-    with no_grad():
-        first = float((short * short_b).cast(dtype.float32).numpy()[0])
-        rest = float((long * long_b).cast(dtype.float32).numpy()[0])
-    assert first != rest, 'eager bfloat16 is now length-independent; enable bfloat16 fusion'
-
-
-# Chains whose backwards never read their operands' values, so their intermediates can be dropped
-# even while gradients are recording. add, sub and neg are the only operators that qualify.
-ELIDING_CHAINS = {
-    'adds': lambda x, w, b: (((x + w) + b) + w) + b,
-    'subs': lambda x, w, b: (((x - w) - b) - w) - b,
-    'negs': lambda x, w, b: -(-(x + w) - b),
-}
-
-
-@pytest.mark.parametrize('name', list(ELIDING_CHAINS))
-def test_intermediates_are_dropped_while_gradients_record(name: str) -> None:
-    """A chain of value-ignoring operators should write one result, not one per link.
-
-    Recording gradients gives every consumer's autodiff state a reference to its operands, so
-    without knowing which backwards actually read those operands nothing could ever be dropped.
-    """
-    fn = ELIDING_CHAINS[name]
-    x, w, b = _rand(), _rand(), _rand()
-    x.requires_grad = True
-    before = mag.fusion_stats()
-    with mag.fuse():
-        out = fn(x, w, b)
-    after = mag.fusion_stats()
-    ops = after['ops_fused'] - before['ops_fused']
-    elided = after['elided'] - before['elided']
-    assert ops >= 4, f'{name}: expected a chain, got {ops} operators'
-    # Everything but the result the caller kept.
-    assert elided == ops - 1, f'{name}: dropped {elided} of {ops} results'
-    out.sum().backward()
-    assert np.all(np.isfinite(x.grad.numpy()))
-
-
 def test_a_backward_that_reads_its_operand_keeps_the_value() -> None:
     """mul needs both factors to differentiate, so none of its intermediates may be dropped."""
     x, w, b = _rand(), _rand(), _rand()
@@ -298,6 +219,15 @@ def test_a_backward_that_reads_its_operand_keeps_the_value() -> None:
     assert after['elided'] - before['elided'] == 0
     out.sum().backward()
     assert np.all(np.isfinite(x.grad.numpy()))
+
+
+# Chains whose backwards never read their operands' values, so their intermediates can be dropped
+# even while gradients are recording. add, sub and neg are the only operators that qualify.
+ELIDING_CHAINS = {
+    'adds': lambda x, w, b: (((x + w) + b) + w) + b,
+    'subs': lambda x, w, b: (((x - w) - b) - w) - b,
+    'negs': lambda x, w, b: -(-(x + w) - b),
+}
 
 
 @pytest.mark.parametrize('name', list(ELIDING_CHAINS))

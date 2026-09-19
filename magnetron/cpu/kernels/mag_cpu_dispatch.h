@@ -1296,6 +1296,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
        else stays null, which core reads as a decline and replays operator by operator. */
     [MAG_DTYPE_FLOAT32] = &mag_cpu_kernel_fused_f32,
     [MAG_DTYPE_FLOAT16] = &mag_cpu_kernel_fused_f32,
+    [MAG_DTYPE_BFLOAT16] = &mag_cpu_kernel_fused_f32,
   },
 };
 

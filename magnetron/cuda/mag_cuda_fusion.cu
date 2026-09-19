@@ -61,9 +61,8 @@ namespace mag {
     }
 
     [[nodiscard]] bool fused_supported(const mag_fuse_graph_t &g) noexcept {
-      /* bfloat16 is absent because the eager bfloat16 store truncates on every vector path except
-         AVX512-BF16 and NEON, so there is no single answer for a chain to reproduce. */
-      if (g.dtype != MAG_DTYPE_FLOAT32 && g.dtype != MAG_DTYPE_FLOAT16) return false;
+      if (g.dtype != MAG_DTYPE_FLOAT32 && g.dtype != MAG_DTYPE_FLOAT16 && g.dtype != MAG_DTYPE_BFLOAT16)
+        return false;
       if (!g.num_ins || !g.num_stores) return false;
       for (uint32_t i = 0; i < g.num_ins; ++i)
         if (g.ins[i].op != MAG_FUSE_OP_LOAD && !fused_form(g.ins[i].op)) return false;
@@ -82,6 +81,7 @@ namespace mag {
       bool written[MAG_FUSE_MAX_BUF] = {};
       for (uint8_t s = 0; s < g.num_stores; ++s) written[g.stores[s].buf] = true;
       const bool narrow = g.dtype != MAG_DTYPE_FLOAT32;
+      const bool bf16 = g.dtype == MAG_DTYPE_BFLOAT16;
 
       /*
       ** Conversions are written as the two PTX instructions the hardware has, rather than through
@@ -91,7 +91,21 @@ namespace mag {
       ** backend does, so the three agree.
       */
       std::string src;
-      if (narrow) {
+      if (bf16) {
+        /* bfloat16 is the top sixteen bits of a float, so widening is a bit move on a shifted word.
+           cvt.rn.bf16.f32 narrows in one instruction from sm_80 on, rounding to nearest even like
+           the eager kernels and the CPU backend. */
+        src +=
+          "typedef unsigned short mag_st_t;\n"
+          "__device__ __forceinline__ float mag_ld(mag_st_t h) {\n"
+          "  unsigned int u = (unsigned int)h << 16; float f;\n"
+          "  asm(\"mov.b32 %0, %1;\" : \"=f\"(f) : \"r\"(u)); return f;\n"
+          "}\n"
+          "__device__ __forceinline__ mag_st_t mag_st(float f) {\n"
+          "  mag_st_t h; asm(\"cvt.rn.bf16.f32 %0, %1;\" : \"=h\"(h) : \"f\"(f)); return h;\n"
+          "}\n"
+          "#define mag_rt(x) mag_ld(mag_st(x))\n\n";
+      } else if (narrow) {
         src +=
           "typedef unsigned short mag_st_t;\n"
           "__device__ __forceinline__ float mag_ld(mag_st_t h) {\n"

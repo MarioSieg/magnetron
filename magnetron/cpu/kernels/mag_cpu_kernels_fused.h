@@ -69,13 +69,9 @@ static void MAG_HOTPROC mag_cpu_fuse_step_f32(
 
 /* Whether this backend can run the chain. Anything it declines, core replays one operator at a time. */
 static bool mag_cpu_fuse_supported(const mag_fuse_graph_t *g) {
-  /*
-  ** float32 and float16, not bfloat16. This backend's eager bfloat16 store truncates on the vector
-  ** path and rounds to nearest on the scalar tail, so the same multiply gives two different answers
-  ** depending on how long the tensor is. There is no single result for a chain to reproduce until
-  ** that is settled, and picking one of the two would bake the inconsistency in.
-  */
-  if (g->dtype != MAG_DTYPE_FLOAT32 && g->dtype != MAG_DTYPE_FLOAT16) return false;
+  /* Every float storage type. The narrow ones compute in float and round back after each operator. */
+  if (g->dtype != MAG_DTYPE_FLOAT32 && g->dtype != MAG_DTYPE_FLOAT16 && g->dtype != MAG_DTYPE_BFLOAT16)
+    return false;
   if (!g->num_ins || !g->num_stores) return false;
   for (uint32_t i=0; i < g->num_ins; ++i)
     if (g->ins[i].op != MAG_FUSE_OP_LOAD && !mag_fuse_op_is_fusible((mag_opcode_t)g->ins[i].op))
@@ -95,6 +91,10 @@ static MAG_AINLINE void mag_cpu_fuse_round_f16(float *restrict v, int64_t n) {
   for (int64_t i=0; i < n; ++i) v[i] = mag_float16_to_float32(mag_float32_to_float16(v[i]));
 }
 
+static MAG_AINLINE void mag_cpu_fuse_round_bf16(float *restrict v, int64_t n) {
+  for (int64_t i=0; i < n; ++i) v[i] = mag_bfloat16_to_float32(mag_float32_to_bfloat16(v[i]));
+}
+
 static mag_status_t MAG_HOTPROC mag_cpu_kernel_fused_f32(mag_error_t *err, const mag_kernel_payload_t *payload) {
   const mag_command_t *cmd = payload->cmd;
   if (mag_unlikely(!cmd->params))
@@ -103,6 +103,7 @@ static mag_status_t MAG_HOTPROC mag_cpu_kernel_fused_f32(mag_error_t *err, const
   if (mag_unlikely(!g || !mag_cpu_fuse_supported(g)))
     return mag_set_error(err, MAG_ERR_KERNEL, "cpu: no lowering for this fused chain.");
   const bool narrow = g->dtype != MAG_DTYPE_FLOAT32; /* Storage is not what the arithmetic runs in. */
+  const bool bf16 = g->dtype == MAG_DTYPE_BFLOAT16;
 
   if (mag_unlikely(cmd->num_in > MAG_FUSE_MAX_BUF))
     return mag_set_error(err, MAG_ERR_KERNEL, "cpu: fused chain binds %u buffers, more than the graph allows.", cmd->num_in);
@@ -206,14 +207,17 @@ static mag_status_t MAG_HOTPROC mag_cpu_kernel_fused_f32(mag_error_t *err, const
       const mag_fuse_ins_t *ins = g->ins+i;
       if (ins->op == MAG_FUSE_OP_LOAD) {
         if (narrow) { /* Storage is not float, so a load must widen and therefore must land somewhere. */
-          const mag_float16_t *nbuf = bufs[ins->in[0].idx];
           float *t = scratch + (size_t)i*MAG_CPU_FUSE_TILE;
-          if (ins->in[0].kind == MAG_FUSE_SCL) {
-            float v = mag_float16_to_float32(nbuf[0]);
-            for (int64_t k=0; k < n; ++k) t[k] = v;
+          bool scl = ins->in[0].kind == MAG_FUSE_SCL;
+          int64_t off = scl ? 0 : base, count = scl ? 1 : n;
+          if (bf16) {
+            const mag_bfloat16_t *nbuf = bufs[ins->in[0].idx];
+            for (int64_t k=0; k < count; ++k) t[k] = mag_bfloat16_to_float32(nbuf[off+k]);
           } else {
-            for (int64_t k=0; k < n; ++k) t[k] = mag_float16_to_float32(nbuf[base+k]);
+            const mag_float16_t *nbuf = bufs[ins->in[0].idx];
+            for (int64_t k=0; k < count; ++k) t[k] = mag_float16_to_float32(nbuf[off+k]);
           }
+          if (scl) { float v = t[0]; for (int64_t k=0; k < n; ++k) t[k] = v; } /* Broadcast. */
           reg[i] = t;
           continue;
         }
@@ -237,7 +241,7 @@ static mag_status_t MAG_HOTPROC mag_cpu_kernel_fused_f32(mag_error_t *err, const
           ? reg[ins->in[j].idx]
           : imm_tiles + (size_t)ins->in[j].idx*MAG_CPU_FUSE_TILE;
       mag_cpu_fuse_step_f32(ins->op, dst, src[0], src[1], src[2], n);
-      if (narrow) mag_cpu_fuse_round_f16(dst, n);
+      if (narrow) { if (bf16) mag_cpu_fuse_round_bf16(dst, n); else mag_cpu_fuse_round_f16(dst, n); }
       reg[i] = dst;
     }
     /* Whatever could not be written in place still has to reach its tensor. */
@@ -245,9 +249,14 @@ static mag_status_t MAG_HOTPROC mag_cpu_kernel_fused_f32(mag_error_t *err, const
       const mag_fuse_store_t *st = g->stores+sidx;
       if (dst_buf[st->reg] == st->buf) continue;
       if (narrow) { /* The value was already rounded above; this only changes its representation. */
-        mag_float16_t *out = bufs[st->buf];
         const float *v = reg[st->reg];
-        for (int64_t k=0; k < n; ++k) out[base+k] = mag_float32_to_float16(v[k]);
+        if (bf16) {
+          mag_bfloat16_t *out = bufs[st->buf];
+          for (int64_t k=0; k < n; ++k) out[base+k] = mag_float32_to_bfloat16(v[k]);
+        } else {
+          mag_float16_t *out = bufs[st->buf];
+          for (int64_t k=0; k < n; ++k) out[base+k] = mag_float32_to_float16(v[k]);
+        }
         continue;
       }
       memcpy((float *)bufs[st->buf]+base, reg[st->reg], (size_t)n*sizeof(float));
