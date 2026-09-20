@@ -174,8 +174,8 @@ namespace mag {
     /*
     ** Where compiled chains live between runs.
     **
-    ** Compiling costs tens of milliseconds the first time a chain shape is seen, and a process that
-    ** finds the PTX already written pays a fraction of that. The path is under the user's own
+    ** Compiling a chain takes work the first time its graph is seen. A later process can load the
+    ** cubin already written. The path is under the user's own
     ** directory rather than a shared temporary one: somewhere another process can write is somewhere
     ** it can choose what this one loads.
     **
@@ -199,7 +199,7 @@ namespace mag {
       }
       if (mkdir(base.c_str(), 0700) && errno != EEXIST) return false;
       char name[128];
-      snprintf(name, sizeof(name), "/mag_fused_%016llx_sm%d%d.ptx",
+      snprintf(name, sizeof(name), "/mag_fused_%016llx_sm%d%d.cubin",
                static_cast<unsigned long long>(src_hash), cc_major, cc_minor);
       out = base + name;
       return true;
@@ -238,7 +238,6 @@ namespace mag {
     struct fused_cache final {
       std::mutex lock;
       std::unordered_map<uint64_t, fused_kernel> kernels;
-      bool unavailable = false; /* Latched once NVRTC has been shown not to work here. */
     };
 
     fused_cache &cache_for(int ordinal) {
@@ -251,17 +250,19 @@ namespace mag {
     }
 
     /*
-    ** Compile to PTX for the architecture actually in the machine.
+    ** Compile a cubin for the architecture actually in the machine. A newer NVRTC can emit PTX
+    ** that an older driver in the same CUDA major release cannot JIT. NVRTC's native cubin output
+    ** avoids that driver-side PTX version dependency.
     **
     ** --fmad=false is load bearing. Left on, the compiler contracts a multiply and an add into one
     ** FMA, which rounds once where the eager kernels round twice, and the chain stops agreeing with
     ** the operators it replaces.
     */
-    [[nodiscard]] bool compile_ptx(const std::string &src, int cc_major, int cc_minor, std::string &ptx, std::string &log) {
+    [[nodiscard]] bool compile_cubin(const std::string &src, int cc_major, int cc_minor, std::string &cubin, std::string &log) {
       nvrtcProgram prog = nullptr;
       if (nvrtcCreateProgram(&prog, src.c_str(), "mag_fused.cu", 0, nullptr, nullptr) != NVRTC_SUCCESS) return false;
       char arch[64];
-      snprintf(arch, sizeof(arch), "--gpu-architecture=compute_%d%d", cc_major, cc_minor);
+      snprintf(arch, sizeof(arch), "--gpu-architecture=sm_%d%d", cc_major, cc_minor);
       const char *opts[] = {arch, "--fmad=false"};
       nvrtcResult rc = nvrtcCompileProgram(prog, static_cast<int>(std::size(opts)), opts);
       size_t log_size = 0;
@@ -270,10 +271,10 @@ namespace mag {
         nvrtcGetProgramLog(prog, log.data());
       }
       if (rc != NVRTC_SUCCESS) { nvrtcDestroyProgram(&prog); return false; }
-      size_t ptx_size = 0;
-      if (nvrtcGetPTXSize(prog, &ptx_size) != NVRTC_SUCCESS) { nvrtcDestroyProgram(&prog); return false; }
-      ptx.resize(ptx_size);
-      bool ok = nvrtcGetPTX(prog, ptx.data()) == NVRTC_SUCCESS;
+      size_t cubin_size = 0;
+      if (nvrtcGetCUBINSize(prog, &cubin_size) != NVRTC_SUCCESS || !cubin_size) { nvrtcDestroyProgram(&prog); return false; }
+      cubin.resize(cubin_size);
+      bool ok = nvrtcGetCUBIN(prog, cubin.data()) == NVRTC_SUCCESS;
       nvrtcDestroyProgram(&prog);
       return ok;
     }
@@ -288,6 +289,8 @@ namespace mag {
   }
 
   mag_status_t fused_op(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    if (!mag_envcfg_fuse_compile_enabled())
+      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: fused compilation is disabled.");
     if (mag_unlikely(!cmd.params))
       return mag_set_error(err, MAG_ERR_KERNEL, "cuda: fused command carries no graph.");
     const mag_fuse_graph_t *g = cmd.params->fused.graph;
@@ -304,33 +307,30 @@ namespace mag {
     CUfunction fn = nullptr;
     {
       std::lock_guard guard {c.lock};
-      if (c.unavailable)
-        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: no runtime compiler for fused chains.");
       if (auto it = c.kernels.find(key); it != c.kernels.end()) {
         fn = it->second.fn;
       } else {
         int cc_major = 0, cc_minor = 0;
         mag_cu_rt_check(err, cudaDeviceGetAttribute(&cc_major, cudaDevAttrComputeCapabilityMajor, ordinal), "failed to read compute capability");
         mag_cu_rt_check(err, cudaDeviceGetAttribute(&cc_minor, cudaDevAttrComputeCapabilityMinor, ordinal), "failed to read compute capability");
-        std::string src = fused_codegen(*g), ptx, log;
-        /* Keyed on the generated text, so a change to code generation cannot load PTX built by an
-           older version of it. */
+        std::string src = fused_codegen(*g), cubin, log;
+        /* Keyed on the generated text, so a change to code generation cannot load a cubin built
+           by an older version of it. */
         uint64_t src_hash = mag_murmur3_128_reduced_64(src.data(), src.size(), 0x5bf03635u);
         std::string path;
         bool have_path = cache_path(src_hash, cc_major, cc_minor, path);
-        if (have_path && read_file(path, ptx)) {
+        if (have_path && read_file(path, cubin)) {
           /* Already compiled by an earlier run. */
-        } else if (!compile_ptx(src, cc_major, cc_minor, ptx, log)) {
+        } else if (!compile_cubin(src, cc_major, cc_minor, cubin, log)) {
           /* Not an error the caller should see: core replays the chain one operator at a time. Say
              it happened, or the only symptom is that everything is quietly slower. */
           mag_log_warn("cuda: could not compile a fused chain; running it eagerly instead. %s", log.c_str());
-          c.unavailable = true;
           return mag_set_error(err, MAG_ERR_KERNEL, "cuda: fused chain could not be compiled.");
         } else if (have_path) {
-          write_file_atomically(path, ptx);
+          write_file_atomically(path, cubin);
         }
         fused_kernel k {};
-        mag_cu_check(err, cuModuleLoadData(&k.mod, ptx.c_str()), "failed to load a compiled fused chain");
+        mag_cu_check(err, cuModuleLoadData(&k.mod, cubin.data()), "failed to load a compiled fused chain");
         mag_cu_check(err, cuModuleGetFunction(&k.fn, k.mod, "mag_fused"), "compiled fused chain has no entry point");
         c.kernels.emplace(key, k);
         fn = k.fn;

@@ -1,6 +1,8 @@
 name: Build and Publish Wheels
 
 on:
+  pull_request:
+    branches: [master, develop]
   push:
     tags:
       - 'v*.*.*'
@@ -68,7 +70,9 @@ jobs:
       - name: Build wheels (Linux x86_64, Python 3.10–3.14, CPU + CUDA)
         env:
           CIBW_ARCHS_LINUX: "x86_64"
-          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          # A PR builds one Python version to catch CUDA compile/package failures. Tags and
+          # manual runs keep the complete release matrix.
+          CIBW_BUILD: ${{ github.event_name == 'pull_request' && 'cp313-*' || 'cp310-* cp311-* cp312-* cp313-* cp314-*' }}
           CIBW_SKIP: "*-musllinux_*"
 
           # Pinned so the CUDA repo below (rhel8) matches the image's distro. AlmaLinux 8 keeps
@@ -106,15 +110,20 @@ jobs:
             # ── CUDA toolkit ──────────────────────────────────────────────────────────
             # cuda-minimal-build pulls nvcc, the CRT, cudart headers/libs and the CCCL headers
             # (<cuda/barrier>, <cuda/std/...>) that the backend includes; cuda-driver-devel adds
-            # the libcuda stub needed to link CUDA::cuda_driver. The full cuda-toolkit meta
-            # package would drag in Nsight and blow the runner's disk budget.
+            # the libcuda stub. NVRTC and its matching builtins are needed by fused CUDA chains.
+            # The full cuda-toolkit meta package would also pull in Nsight.
             dnf -y install dnf-plugins-core
             dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
             dnf -y install \
               cuda-minimal-build-${{ env.MAGNETRON_CUDA_VERSION }} \
-              cuda-driver-devel-${{ env.MAGNETRON_CUDA_VERSION }}
+              cuda-driver-devel-${{ env.MAGNETRON_CUDA_VERSION }} \
+              cuda-nvrtc-devel-${{ env.MAGNETRON_CUDA_VERSION }}
             ln -sfn "/usr/local/cuda-$(echo '${{ env.MAGNETRON_CUDA_VERSION }}' | tr '-' '.')" /usr/local/cuda
             /usr/local/cuda/bin/nvcc --version
+            # libnvrtc opens libnvrtc-builtins itself. Keep its own directory in the loader path
+            # after auditwheel copies it next to the builtins bundled by CMake.
+            command -v patchelf
+            patchelf --set-rpath '$ORIGIN' "$(readlink -f /usr/local/cuda/lib64/libnvrtc.so.13)"
 
           CIBW_ENVIRONMENT_LINUX: >-
             PATH=/opt/clang/bin:/usr/local/cuda/bin:$PATH
@@ -132,8 +141,8 @@ jobs:
 
           # magnetron_cuda.so links libcuda.so.1, which is part of the NVIDIA display driver and
           # must always come from the host - bundling it would pin the wheel to one driver
-          # version. Everything else (libcudart) is vendored in as usual, so the wheel needs no
-          # CUDA installation on the target machine. On a box without a driver the dlopen of
+          # version. The CUDA runtime and NVRTC are vendored, including NVRTC's matching builtins,
+          # so the wheel needs no CUDA toolkit on the target machine. Without a driver the dlopen of
           # magnetron_cuda.so simply fails and the runtime falls back to the CPU backend.
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
             auditwheel repair --exclude libcuda.so.1 -w {dest_dir} {wheel}
@@ -149,7 +158,16 @@ jobs:
             echo "== $whl"
             python -m zipfile -l "$whl" | grep 'magnetron_cuda' \
               || { echo "magnetron_cuda is missing from $whl"; exit 1; }
+            python -m zipfile -l "$whl" | grep 'libnvrtc.so' \
+              || { echo "NVRTC is missing from $whl"; exit 1; }
+            python -m zipfile -l "$whl" | grep 'libnvrtc-builtins.so' \
+              || { echo "NVRTC builtins are missing from $whl"; exit 1; }
           done
+
+      # NVRTC can compile a cubin without a GPU. This also catches a builtins library that is present
+      # in the archive but cannot be found or loaded by the repaired NVRTC library.
+      - name: Verify bundled CUDA JIT compiler
+        run: python scripts/verify_nvrtc_wheel.py wheelhouse/*.whl
 
       - name: Upload Linux wheels
         uses: actions/upload-artifact@v4
@@ -197,7 +215,7 @@ jobs:
       - name: Build wheels (macOS arm64, Python 3.10–3.14)
         env:
           CIBW_ARCHS_MACOS: "arm64"
-          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          CIBW_BUILD: ${{ github.event_name == 'pull_request' && 'cp313-*' || 'cp310-* cp311-* cp312-* cp313-* cp314-*' }}
           # No CUDA on macOS: Apple dropped NVIDIA support, so this stays a CPU-only wheel
           # built with the Xcode toolchain.
           CIBW_ENVIRONMENT_MACOS: >-

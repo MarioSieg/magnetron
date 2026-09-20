@@ -114,6 +114,37 @@ namespace mag {
   };
 
   template <typename In, typename Out>
+  struct op_min {
+    using InT = In;
+    using OutT = Out;
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return x < y ? x : y;
+      return static_cast<OutT>(fminf(static_cast<float>(x), static_cast<float>(y)));
+    }
+  };
+
+  template <typename In, typename Out>
+  struct op_max {
+    using InT = In;
+    using OutT = Out;
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return x > y ? x : y;
+      return static_cast<OutT>(fmaxf(static_cast<float>(x), static_cast<float>(y)));
+    }
+  };
+
+  template <typename T>
+  struct op_clamp {
+    [[nodiscard]] __device__ __forceinline__ T operator()(T x, T lo, T hi) const {
+      if constexpr (std::is_integral_v<T>) {
+        T raised = x < lo ? lo : x;
+        return raised < hi ? raised : hi;
+      }
+      return static_cast<T>(fminf(fmaxf(static_cast<float>(x), static_cast<float>(lo)), static_cast<float>(hi)));
+    }
+  };
+
+  template <typename In, typename Out>
   struct op_and {
     using InT = In;
     using OutT = Out;
@@ -240,6 +271,45 @@ namespace mag {
     }
   }
 
+  template <typename T, const bool Contig>
+  __global__ static void clamp_op_kernel(
+    int64_t numel,
+    T *r,
+    const T *x,
+    const T *lo,
+    const T *hi,
+    [[maybe_unused]] coords_iter<int64_t> rc,
+    [[maybe_unused]] coords_iter<int64_t> xc,
+    [[maybe_unused]] coords_iter<int64_t> lc,
+    [[maybe_unused]] coords_iter<int64_t> hc
+  ) {
+    int64_t i = static_cast<int64_t>(blockDim.x)*blockIdx.x + threadIdx.x;
+    int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
+    op_clamp<T> op {};
+    if constexpr (Contig) {
+      for (; i < numel; i += step) r[i] = op(x[i], lo[i], hi[i]);
+    } else {
+      for (; i < numel; i += step)
+        r[rc(i)] = op(x[rc.broadcast(xc, i)], lo[rc.broadcast(lc, i)], hi[rc.broadcast(hc, i)]);
+    }
+  }
+
+  template <typename T>
+  static void launch_clamp_op(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *lo, const mag_tensor_t *hi, cudaStream_t stream) {
+    int64_t numel = mag_tensor_numel(r);
+    auto blocks = static_cast<unsigned>(std::min((numel+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
+    auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
+    const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
+    const auto *pl = reinterpret_cast<const T *>(mag_tensor_data_ptr(lo));
+    const auto *ph = reinterpret_cast<const T *>(mag_tensor_data_ptr(hi));
+    if (std::array<const mag_tensor_t *, 4> tensors {r, x, lo, hi}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
+      clamp_op_kernel<T, true><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(numel, pr, px, pl, ph, {}, {}, {}, {});
+    } else {
+      coords_iter<int64_t> rc {r}, xc {x}, lc {lo}, hc {hi};
+      clamp_op_kernel<T, false><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(numel, pr, px, pl, ph, rc, xc, lc, hc);
+    }
+  }
+
   template <typename Op>
   static void launch_binary_op(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y, cudaStream_t stream) {
     int64_t numel = mag_tensor_numel(r);
@@ -259,13 +329,17 @@ namespace mag {
     }
   }
 
-  template <template <typename, typename> typename Op>
+  template <template <typename, typename> typename Op, bool AllowBoolean = false>
   static mag_status_t impl_binary_op_numeric(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
     const mag_tensor_t *y = cmd.in[1];
     mag_assert2(r->meta.dtype == x->meta.dtype && r->meta.dtype == y->meta.dtype);
     switch (r->meta.dtype) {
+      case MAG_DTYPE_BOOLEAN:
+        if constexpr (AllowBoolean) launch_binary_op<Op<uint8_t, uint8_t>>(r, x, y, stream);
+        else return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in binary operation: bool");
+        break;
       case MAG_DTYPE_FLOAT32: launch_binary_op<Op<float, float>>(r, x, y, stream); break;
       case MAG_DTYPE_FLOAT16: launch_binary_op<Op<half, half>>(r, x, y, stream); break;
       case MAG_DTYPE_BFLOAT16: launch_binary_op<Op<__nv_bfloat16, __nv_bfloat16>>(r, x, y, stream); break;
@@ -336,6 +410,30 @@ namespace mag {
   mag_status_t binary_op_floordiv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_floordiv>(err, cmd, stream); }
   mag_status_t binary_op_mod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_mod>(err, cmd, stream); }
   mag_status_t binary_op_pow(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_pow>(err, cmd, stream); }
+  mag_status_t binary_op_min(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_min, true>(err, cmd, stream); }
+  mag_status_t binary_op_max(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_max, true>(err, cmd, stream); }
+  mag_status_t ternary_op_clamp(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    mag_tensor_t *r = cmd.out[0];
+    const mag_tensor_t *x = cmd.in[0], *lo = cmd.in[1], *hi = cmd.in[2];
+    mag_assert2(r->meta.dtype == x->meta.dtype && r->meta.dtype == lo->meta.dtype && r->meta.dtype == hi->meta.dtype);
+    switch (r->meta.dtype) {
+      case MAG_DTYPE_BOOLEAN: launch_clamp_op<uint8_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_FLOAT32: launch_clamp_op<float>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_clamp_op<half>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_clamp_op<__nv_bfloat16>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_clamp_op<__nv_fp8_e4m3>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_UINT8: launch_clamp_op<uint8_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_INT8: launch_clamp_op<int8_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_UINT16: launch_clamp_op<uint16_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_INT16: launch_clamp_op<int16_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_UINT32: launch_clamp_op<uint32_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_INT32: launch_clamp_op<int32_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_UINT64: launch_clamp_op<uint64_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_INT64: launch_clamp_op<int64_t>(r, x, lo, hi, stream); break;
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported data type in clamp: %s", mag_type_trait(r->meta.dtype)->name);
+    }
+    return MAG_OK;
+  }
   mag_status_t binary_op_and(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_and>(err, cmd, stream); }
   mag_status_t binary_op_or(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream)  { return impl_binary_op_logical<op_or>(err, cmd, stream); }
   mag_status_t binary_op_xor(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_xor>(err, cmd, stream); }

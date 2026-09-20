@@ -50,7 +50,8 @@ export MAG_CPU_SPECIALIZATION_LEVEL=v3
 Read by `mag_envcfg_fuse_compile_enabled()`.
 
 Whether a backend may turn a fused chain into compiled code. Turning it off leaves every chain to
-whatever the backend does without a compiler, which for the CPU backend means interpreting it.
+whatever the backend does without a compiler: CPU interprets it, while CUDA replays the operators
+eagerly.
 Intended for measuring one lowering against the other, and for machines where invoking a compiler at
 runtime is unwelcome.
 

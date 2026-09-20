@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 
 import numpy as np
@@ -81,6 +82,57 @@ def test_reading_a_value_inside_a_region_runs_the_chain_first() -> None:
         out = mid + b
     assert np.array_equal(seen, (x * w).numpy())
     assert np.array_equal(out.numpy(), expect)
+
+
+def test_writing_a_chain_input_runs_its_prior_reads_first() -> None:
+    x = Tensor.ones((N,))
+    with no_grad(), mag.fuse():
+        y = x * x
+        x.fill_(3.0)
+    assert np.all(y.numpy() == 1.0)
+    assert np.all(x.numpy() == 3.0)
+
+
+def test_writing_through_a_borrowed_alias_runs_prior_reads_first() -> None:
+    values = np.ones(N, dtype=np.float32)
+    x = Tensor(values, copy=False)
+    alias = Tensor(values, copy=False)
+    with no_grad(), mag.fuse():
+        y = x * x
+        alias.fill_(3.0)
+    assert np.all(y.numpy() == 1.0)
+    assert np.all(values == 3.0)
+
+
+def test_writing_through_a_mutable_storage_pointer_runs_prior_reads_first() -> None:
+    x = Tensor.ones((N,))
+    with no_grad(), mag.fuse():
+        y = x * x
+        raw = np.ctypeslib.as_array((ctypes.c_float * N).from_address(x.data_storage_ptr_mut))
+        raw[:] = 3.0
+    assert np.all(y.numpy() == 1.0)
+    assert np.all(x.numpy() == 3.0)
+
+
+def test_changing_grad_mode_does_not_drop_a_held_intermediate() -> None:
+    x, z = Tensor.ones((N,)), Tensor.ones((N,))
+    with mag.fuse():
+        with no_grad():
+            mid = x * x
+            out = mid + z
+    assert np.all(mid.numpy() == 1.0)
+    assert np.all(out.numpy() == 2.0)
+
+
+def test_fused_relu_preserves_eager_nan_bits_on_cpu() -> None:
+    values = np.full(N, np.nan, dtype=np.float32)
+    with mag.device('cpu'):
+        x = Tensor(values)
+        with no_grad():
+            eager = x.relu().numpy().copy()
+        with no_grad(), mag.fuse():
+            fused = x.relu()
+        assert np.array_equal(fused.numpy().view(np.uint32), eager.view(np.uint32))
 
 
 def test_an_operator_that_cannot_join_splits_the_chain() -> None:
@@ -287,9 +339,7 @@ CUDA = pytest.mark.skipif(
 )
 
 
-# The CUDA backend has no eager kernel for min, max or clamp, so a chain using them has nothing to
-# be measured against there - even though the fused lowering implements them perfectly well.
-CUDA_CHAINS = [n for n in CHAINS if n != 'min_max']
+CUDA_CHAINS = list(CHAINS)
 
 
 @CUDA
@@ -322,6 +372,45 @@ def test_cuda_actually_lowers_the_chain() -> None:
         # Only the result the caller kept has to reach memory.
         assert after['elided'] - before['elided'] == 11
         assert np.all(np.isfinite(keep))
+
+
+@CUDA
+@pytest.mark.parametrize('dt', FUSED_DTYPES, ids=lambda d: str(d).rsplit('.', 1)[-1])
+def test_cuda_min_max_and_clamp_have_eager_and_compiled_paths(dt) -> None:
+    with mag.device('cuda'):
+        x, lo, hi = (_rand().cast(dt) for _ in range(3))
+        with no_grad():
+            eager = x.max(lo).min(hi).clamp(0.5, 1.5).cast(dtype.float32).numpy().copy()
+        before = mag.fusion_stats()['chains']
+        with no_grad(), mag.fuse():
+            fused = x.max(lo).min(hi).clamp(0.5, 1.5)
+        assert mag.fusion_stats()['chains'] - before == 1
+        assert np.array_equal(fused.cast(dtype.float32).numpy(), eager)
+
+
+@CUDA
+def test_cuda_compile_off_replays_every_fusible_operator(monkeypatch: pytest.MonkeyPatch) -> None:
+    with mag.device('cuda'):
+        x, lo, hi = _rand(), _rand(), _rand()
+        with no_grad():
+            eager = x.max(lo).min(hi).clamp(0.5, 1.5).numpy().copy()
+        monkeypatch.setenv('MAG_FUSE_COMPILE', 'off')
+        before = mag.fusion_stats()['chains']
+        with no_grad(), mag.fuse():
+            replayed = x.max(lo).min(hi).clamp(0.5, 1.5)
+        assert mag.fusion_stats()['chains'] == before
+        assert np.array_equal(replayed.numpy(), eager)
+
+
+@CUDA
+def test_cuda_writing_a_chain_input_preserves_eager_order() -> None:
+    with mag.device('cuda'):
+        x = Tensor.ones((N,))
+        with no_grad(), mag.fuse():
+            y = x * x
+            x.fill_(3.0)
+        assert np.all(y.numpy() == 1.0)
+        assert np.all(x.numpy() == 3.0)
 
 
 @CUDA

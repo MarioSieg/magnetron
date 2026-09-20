@@ -105,6 +105,27 @@ if (CUDAToolkit_FOUND)
     target_link_libraries(magnetron_cuda PRIVATE CUDA::cudart CUDA::cuda_driver CUDA::nvrtc) # nvrtc compiles fused chains at runtime
     target_link_libraries(magnetron_cuda PRIVATE magnetron_core)
     target_include_directories(magnetron_cuda PRIVATE ../)
+    if (UNIX AND NOT APPLE)
+        # NVRTC opens its matching builtins library at runtime rather than listing it as an ELF
+        # dependency. auditwheel therefore cannot discover it when repairing the Python wheel.
+        # Put the real file beside the NVRTC copy auditwheel places in magnetron.libs. A regular
+        # file with the exact soname is needed because wheel installation does not preserve symlinks.
+        set(MAG_NVRTC_BUILTINS_NAME "libnvrtc-builtins.so.${CUDAToolkit_VERSION_MAJOR}.${CUDAToolkit_VERSION_MINOR}")
+        find_file(MAG_NVRTC_BUILTINS_LINK
+            NAMES "${MAG_NVRTC_BUILTINS_NAME}"
+            PATHS "${CUDAToolkit_LIBRARY_DIR}"
+            NO_DEFAULT_PATH
+        )
+        if (NOT MAG_NVRTC_BUILTINS_LINK)
+            message(FATAL_ERROR "NVRTC builtins are required for CUDA fusion: ${MAG_NVRTC_BUILTINS_NAME}")
+        endif()
+        get_filename_component(MAG_NVRTC_BUILTINS_REAL "${MAG_NVRTC_BUILTINS_LINK}" REALPATH)
+        install(FILES "${MAG_NVRTC_BUILTINS_REAL}"
+            DESTINATION magnetron.libs
+            RENAME "${MAG_NVRTC_BUILTINS_NAME}"
+            COMPONENT python
+        )
+    endif()
     if (MAG_CUDA_ARCH_MACROS) # Tell the runtime dispatcher which specializations exist
         target_compile_definitions(magnetron_cuda PRIVATE ${MAG_CUDA_ARCH_MACROS})
     endif()

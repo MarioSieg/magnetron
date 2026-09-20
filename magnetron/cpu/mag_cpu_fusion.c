@@ -93,7 +93,12 @@ static const char *mag_cpu_fuse_form(uint8_t op) {
     case MAG_OP_ROUND: return "roundf($0)";
     case MAG_OP_TRUNC: return "truncf($0)";
     case MAG_OP_STEP:  return "($0 > 0.0f ? 1.0f : 0.0f)";
-    case MAG_OP_RELU:  return "fmaxf($0, 0.0f)";
+    case MAG_OP_RELU:
+#if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+      return "(isnan($0) ? $0 : fmaxf(0.0f, $0))";
+#else
+      return "fmaxf(0.0f, $0)";
+#endif
     case MAG_OP_CLAMP: return "fminf(fmaxf($0, $1), $2)";
     default: return NULL;
   }

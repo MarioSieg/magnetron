@@ -7,10 +7,9 @@
 ** it, and marks its output pending - a tensor that exists, with storage allocated, but whose bytes
 ** have not been written yet.
 **
-** Everything else is about making that lie invisible. Anything that cannot join the chain, and any
-** attempt to read a pending tensor's memory, forces the chain to run first. The read guard lives in
-** the data-pointer accessors, which is the only way to reach a tensor's bytes, so there is no path
-** that observes a pending tensor without materializing it.
+** Everything else is about making that lie invisible. Reading a pending result or writing storage a
+** pending chain still reads forces the chain to run first. The data-pointer accessors cover direct
+** reads and writes, and dispatch checks the outputs of operators that cannot join the chain.
 **
 ** The chain is re-recorded on every entry to the region rather than cached. A recorded tape would
 ** need a guard proving the control flow that produced it has not changed since; tracing afresh is
@@ -78,6 +77,10 @@ extern mag_status_t mag_fuse_capture(
 
 /* Run whatever is on the tape and clear it. Safe to call when there is nothing pending. */
 extern MAG_EXPORT mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx);
+
+/* True when a pending chain still reads bytes the tensor may overwrite. The mutable data-pointer
+   accessor uses this for writes that bypass mag_dispatch, such as copy_raw_. */
+extern bool mag_fuse_tape_reads_storage(const mag_tensor_t *tensor);
 
 /*
 ** How many chains have run, how many operators went into them, and how many results never had to be

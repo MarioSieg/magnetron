@@ -61,7 +61,7 @@ static void MAG_HOTPROC mag_cpu_fuse_step_f32(
     case MAG_OP_ROUND: for (int64_t i=0; i < n; ++i) dst[i] = roundf(a[i]); break;
     case MAG_OP_TRUNC: for (int64_t i=0; i < n; ++i) dst[i] = truncf(a[i]); break;
     case MAG_OP_STEP:  for (int64_t i=0; i < n; ++i) dst[i] = a[i] > 0.0f ? 1.0f : 0.0f; break;
-    case MAG_OP_RELU:  for (int64_t i=0; i < n; ++i) dst[i] = fmaxf(a[i], 0.0f); break;
+    case MAG_OP_RELU:  for (int64_t i=0; i < n; ++i) dst[i] = mag_fn_relu_f32(a[i]); break;
     case MAG_OP_CLAMP: for (int64_t i=0; i < n; ++i) dst[i] = fminf(fmaxf(a[i], b[i]), c[i]); break;
     default: mag_panic("cpu: operator %u reached the fused interpreter without a case.", op);
   }
