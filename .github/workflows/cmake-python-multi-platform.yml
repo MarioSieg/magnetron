@@ -17,9 +17,6 @@ jobs:
         build_type: [Release]
         compiler: [gcc, clang]
         include:
-          - os: windows-latest
-            build_type: Release
-            compiler: cl
           - os: macos-latest
             build_type: Release
             compiler: clang
@@ -59,13 +56,9 @@ jobs:
           if [ "${{ matrix.compiler }}" = "gcc" ]; then
             CC=gcc
             CXX=g++
-          elif [ "${{ matrix.compiler }}" = "clang" ]; then
-            # Note: On Windows, we explicitly set compiler to "cl"
+          else
             CC=clang
             CXX=clang++
-          else
-            CC=cl
-            CXX=cl
           fi
           cmake -B "${{ steps.strings.outputs.build-output-dir }}" \
                 -DCMAKE_C_COMPILER=$CC \
@@ -81,20 +74,17 @@ jobs:
         run: ctest --build-config ${{ matrix.build_type }} --verbose
 
       - name: Setup Python Virtual Environment
-        if: runner.os != 'windows'
         shell: bash
         run: |
           uv venv
           source .venv/bin/activate
 
       - name: Build Python wheel
-        if: runner.os != 'windows'
         shell: bash
         run: |
           uv sync --extra dev
 
       - name: Run Python Tests
-        if: runner.os != 'windows'
         shell: bash
         run: |
           source .venv/bin/activate
