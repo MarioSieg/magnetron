@@ -59,7 +59,7 @@
 #define MAG_INTRAOP_ROW_MINMAX  (1<<18) /* 262144.  Measured at 1024 wide: MIN, MAX, MINIMA, MAXIMA. */
 #define MAG_INTRAOP_ROW_REDUCE  (1<<20) /* 1048576. Measured at 1024 wide: SUM, MEAN, PROD, ALL, ANY. */
 
-#define MAG_INTRAOP_NEVER       INT64_MAX /* Measured: FILL, CLONE, SUM, MEAN, SOFTMAX never win, even at 64M elements. */
+#define MAG_INTRAOP_NEVER       INT64_MAX /* Measured: contiguous FILL and CLONE do not benefit from threading. */
 
 /*
 ** The thresholds above assume the contiguous kernel, which walks memory straight through and is
