@@ -63,5 +63,6 @@ namespace mag {
   [[nodiscard]] extern mag_status_t unary_op_relu(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_relu_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_gelu(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
+  [[nodiscard]] extern mag_status_t unary_op_gelu_approx(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_gelu_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
 }

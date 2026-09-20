@@ -214,7 +214,6 @@ namespace mag::bindings {
     size_t sep = input.find(':');
     std::string_view name = input.substr(0, sep);
     if (name.empty() || name.size() >= 32) return std::nullopt;
-
     const auto name_eq = [&name](const char *rhs) noexcept -> bool {
       size_t i=0;
       for (; i < name.size() && rhs[i] != '\0'; ++i)
@@ -261,15 +260,13 @@ namespace mag::bindings {
     };
   }
 
-  // A backend named without an ordinal ("cuda") means "the best device of that backend", so users land on
-  // the right GPU without having to know its index. An explicit "cuda:1" is always exactly that device.
   std::optional<mag_device_id_t> resolve_device_id_str(const std::string &str) {
     bool has_ordinal = false;
     std::optional<mag_device_id_t> id = parse_device_id_str(str, &has_ordinal);
     if (!id || has_ordinal || id->is_virtual) return id;
     mag_device_id_t best {};
     mag_error_t err {};
-    if (mag_iserr(mag_ctx_best_device(&err, get_ctx(), id->type, &best))) return id; // Report the miss as "cuda:0 unavailable" downstream.
+    if (mag_iserr(mag_ctx_best_device(&err, get_ctx(), id->type, &best))) return id;
     return best;
   }
 }

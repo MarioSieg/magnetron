@@ -22,7 +22,7 @@ extern "C" {
 
 typedef struct mag_worker_t mag_worker_t;
 typedef struct mag_thread_pool_t {
-  mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) volatile bool interrupt;   /* Interrupt flag, 1=stop */
+  mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) volatile mag_atomic32_t interrupt;   /* Interrupt flag, 1=stop */
   mag_phase_fence_t fence;
   int32_t num_allocated_workers;                      /* Number of intra-op workers allocated */
   uint32_t num_active_workers;                        /* Number of intra-op workers that are actively used in this compute step. */

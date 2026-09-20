@@ -35,6 +35,7 @@ def timeit(fn, warmup, iters):
 def to_np32(t):
     return t.numpy().astype(np.float32)
 
+
 def run_case(name, shape_a, shape_b, dt_name, warmup, iters, check=True):
     mdtype, tdtype, _ = DT[dt_name]
     A = Tensor.uniform(*shape_a, dtype=mdtype, device='cpu')
@@ -66,10 +67,7 @@ def run_case(name, shape_a, shape_b, dt_name, warmup, iters, check=True):
 
     mag_gf = flops / mag_best / 1e9
     to_gf = flops / torch_best / 1e9
-    print(
-        f'{name:26s} {dt_name:9s} mag {mag_gf:9.1f} GF/s | torch {to_gf:9.1f} GF/s '
-        f'| ratio {mag_gf / to_gf:5.2f}x | {err}'
-    )
+    print(f'{name:26s} {dt_name:9s} mag {mag_gf:9.1f} GF/s | torch {to_gf:9.1f} GF/s | ratio {mag_gf / to_gf:5.2f}x | {err}')
     return mag_gf, to_gf
 
 

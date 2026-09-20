@@ -131,7 +131,7 @@ static mag_status_t MAG_HOTPROC mag_cpu_kernel_fused_f32(mag_error_t *err, const
   int64_t ti = payload->thread_idx;
   int64_t chunk = (total+tc-1)/tc;
   int64_t begin = ti*chunk;
-  int64_t end = mag_xmin(begin+chunk, total);
+  int64_t end = mag_vmin(begin+chunk, total);
   if (mag_unlikely(begin >= end)) return MAG_OK;
 
   /* Submit compiles the chain before waking anyone, so by here the choice is already made. The
@@ -201,7 +201,7 @@ static mag_status_t MAG_HOTPROC mag_cpu_kernel_fused_f32(mag_error_t *err, const
   if (narrow) for (uint32_t i=0; i < g->num_ins; ++i) dst_buf[i] = -1;
 
   for (int64_t base=begin; base < end; base += MAG_CPU_FUSE_TILE) {
-    int64_t n = mag_xmin(end-base, MAG_CPU_FUSE_TILE);
+    int64_t n = mag_vmin(end-base, MAG_CPU_FUSE_TILE);
     const float *reg[MAG_FUSE_MAX_INS];
     for (uint32_t i=0; i < g->num_ins; ++i) {
       const mag_fuse_ins_t *ins = g->ins+i;

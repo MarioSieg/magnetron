@@ -21,6 +21,7 @@ struct mag_fuse_tape_t {
   mag_fuse_tape_node_t nodes[MAG_FUSE_TAPE_MAX];
   uint32_t len;
   uint32_t depth;     /* Region nesting. Only the outermost exit flushes. */
+  uintptr_t owner_thread; /* One context cannot mix chains from concurrent region owners. */
   bool flushing;      /* Guards data-pointer hooks against re-entering while the chain runs. */
   uint64_t chains;
   uint64_t ops_fused;
@@ -54,25 +55,53 @@ void mag_fuse_tape_shutdown(mag_context_t *ctx) {
   mag_fuse_tape_release(ctx->fuse_tape);
   (*mag_alloc)(ctx->fuse_tape, 0, 0);
   ctx->fuse_tape = NULL;
+  mag_tls_state.fusing = false;
 }
 
 bool mag_fuse_region_active(const mag_context_t *ctx) {
-  return !!(ctx->flags & MAG_CTX_FLAG_FUSING);
+  (void)ctx;
+  return mag_tls_state.fusing;
 }
 
-void mag_fuse_region_begin(mag_context_t *ctx) {
+mag_status_t mag_fuse_region_begin(mag_error_t *err, mag_context_t *ctx) {
+  mag_lock_acquire(&ctx->fuse_state_lock);
   struct mag_fuse_tape_t *tape = mag_fuse_tape(ctx);
-  if (mag_unlikely(!tape)) return;
+  if (mag_unlikely(!tape)) {
+    mag_lock_release(&ctx->fuse_state_lock);
+    return mag_set_error(err, MAG_ERR_OOM, "fusion: could not allocate the capture tape.");
+  }
+  uintptr_t thread = mag_thread_id();
+  if (tape->depth && tape->owner_thread != thread) {
+    mag_lock_release(&ctx->fuse_state_lock);
+    return mag_set_error(err, MAG_ERR_OP, "fusion: another thread already owns an active region.");
+  }
+  tape->owner_thread = thread;
   ++tape->depth;
-  ctx->flags |= MAG_CTX_FLAG_FUSING;
+  mag_tls_state.fusing = true;
+  mag_lock_release(&ctx->fuse_state_lock);
+  return MAG_OK;
 }
 
 mag_status_t mag_fuse_region_end(mag_error_t *err, mag_context_t *ctx) {
+  mag_lock_acquire(&ctx->fuse_state_lock);
   struct mag_fuse_tape_t *tape = ctx->fuse_tape;
-  if (mag_unlikely(!tape || !tape->depth)) return MAG_OK;
-  if (--tape->depth) return MAG_OK;
-  ctx->flags &= (mag_context_flags_t)~MAG_CTX_FLAG_FUSING;
-  return mag_fuse_flush(err, ctx);
+  if (mag_unlikely(!tape || !tape->depth)) {
+    mag_lock_release(&ctx->fuse_state_lock);
+    return MAG_OK;
+  }
+  if (tape->owner_thread != mag_thread_id()) {
+    mag_lock_release(&ctx->fuse_state_lock);
+    return mag_set_error(err, MAG_ERR_OP, "fusion: this region belongs to another thread.");
+  }
+  if (--tape->depth) {
+    mag_lock_release(&ctx->fuse_state_lock);
+    return MAG_OK;
+  }
+  mag_tls_state.fusing = false;
+  mag_status_t status = mag_fuse_flush(err, ctx);
+  tape->owner_thread = 0;
+  mag_lock_release(&ctx->fuse_state_lock);
+  return status;
 }
 
 void mag_fuse_stats(mag_context_t *ctx, uint64_t *out_chains, uint64_t *out_ops_fused, uint64_t *out_elided) {
@@ -376,7 +405,7 @@ mag_status_t mag_fuse_capture(
   mag_fuse_tape_node_t *node = tape->nodes + tape->len;
   node->op = (uint8_t)op;
   node->num_in = (uint8_t)num_in;
-  node->records_backward = !!(ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && mag_op_trait(op)->backward != NULL;
+  node->records_backward = !mag_tls_state.no_grad && mag_op_trait(op)->backward != NULL;
   for (uint32_t i=0; i < num_in; ++i) {
     node->in[i] = in[i];
     mag_rc_incref(in[i]); /* The chain outlives the caller's own references. */

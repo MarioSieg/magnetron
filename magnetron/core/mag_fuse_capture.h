@@ -53,7 +53,7 @@ extern "C" {
 ** a helper that opens a region called from code that already did - and flushing at every exit would
 ** chop chains at boundaries the author never intended to draw.
 */
-extern MAG_EXPORT void mag_fuse_region_begin(mag_context_t *ctx);
+extern MAG_EXPORT mag_status_t mag_fuse_region_begin(mag_error_t *err, mag_context_t *ctx);
 extern MAG_EXPORT mag_status_t mag_fuse_region_end(mag_error_t *err, mag_context_t *ctx);
 extern MAG_EXPORT bool mag_fuse_region_active(const mag_context_t *ctx);
 

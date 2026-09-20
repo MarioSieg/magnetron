@@ -85,16 +85,16 @@
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1)/tc; \
     int64_t oa = ti*chunk; \
-    int64_t ob = mag_xmin(oa + chunk, outer_count); \
+    int64_t ob = mag_vmin(oa + chunk, outer_count); \
     for (int64_t row=oa; row < ob; ++row) { \
       mag_scan_outer_offsets(row, x, r, dim, outer_rank, mult_outer, outer_to_full, off_x0, off_r0); \
       ACC_T acc = ZERO; \
       for (int64_t p=0; p < dim_size; ++p) { \
         int64_t off_x = off_x0 + p * stride_x_dim; \
         int64_t off_r = off_r0 + p * stride_r_dim; \
-        mag_bnd_chk(bx + off_x, x->storage->base, mag_tensor_numbytes(x)); \
+        mag_bnd_chk(bx + off_x, x->storage->base, x->storage->size); \
         acc += CVT(bx[off_x]); \
-        mag_bnd_chk(br + off_r, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(br + off_r, r->storage->base, r->storage->size); \
         br[off_r] = FROM_ACC(acc); \
       } \
     } \
@@ -129,16 +129,16 @@ mag_gen_stub_cusum(int64_t, int64, mag_cvt_nop, int64_t, 0, mag_cvt_nop)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1)/tc; \
     int64_t oa = ti*chunk; \
-    int64_t ob = mag_xmin(oa + chunk, outer_count); \
+    int64_t ob = mag_vmin(oa + chunk, outer_count); \
     for (int64_t row=oa; row < ob; ++row) { \
       mag_scan_outer_offsets(row, x, r, dim, outer_rank, mult_outer, outer_to_full, off_x0, off_r0); \
       ACC_T acc = ONE; \
       for (int64_t p=0; p < dim_size; ++p) { \
         int64_t off_x = off_x0 + p * stride_x_dim; \
         int64_t off_r = off_r0 + p * stride_r_dim; \
-        mag_bnd_chk(bx + off_x, x->storage->base, mag_tensor_numbytes(x)); \
+        mag_bnd_chk(bx + off_x, x->storage->base, x->storage->size); \
         acc *= CVT(bx[off_x]); \
-        mag_bnd_chk(br + off_r, r->storage->base, mag_tensor_numbytes(r)); \
+        mag_bnd_chk(br + off_r, r->storage->base, r->storage->size); \
         br[off_r] = FROM_ACC(acc); \
       } \
     } \
@@ -176,7 +176,7 @@ mag_gen_stub_cuprod(int64_t, int64, mag_cvt_nop, int64_t, 1, mag_cvt_nop)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (outer_count + tc - 1) / tc; \
     int64_t oa = ti * chunk; \
-    int64_t ob = mag_xmin(oa + chunk, outer_count); \
+    int64_t ob = mag_vmin(oa + chunk, outer_count); \
     for (int64_t row=oa; row < ob; ++row) { \
       mag_scan_outer_offsets2(row, x, v, idx, dim, outer_rank, mult_outer, outer_to_full, off_x0, off_v0, off_i0); \
       T best = (T){0}; \
@@ -185,7 +185,7 @@ mag_gen_stub_cuprod(int64_t, int64, mag_cvt_nop, int64_t, 1, mag_cvt_nop)
         const int64_t off_x = off_x0 + p * stride_x_dim; \
         const int64_t off_v = off_v0 + p * stride_v_dim; \
         const int64_t off_i = off_i0 + p * stride_i_dim; \
-        mag_bnd_chk(bx + off_x, x->storage->base, mag_tensor_numbytes(x)); \
+        mag_bnd_chk(bx + off_x, x->storage->base, x->storage->size); \
         T xv = bx[off_x]; \
         double xvc = (double)CVT(xv); \
         if (p == 0) { \
@@ -196,8 +196,8 @@ mag_gen_stub_cuprod(int64_t, int64, mag_cvt_nop, int64_t, 1, mag_cvt_nop)
           bool better = IS_MAX ? xvc > bestc : xvc < bestc; \
           if (better) { best = xv; best_idx = p; } \
         } \
-        mag_bnd_chk(bv + off_v, v->storage->base, mag_tensor_numbytes(v)); \
-        mag_bnd_chk(bi + off_i, idx->storage->base, mag_tensor_numbytes(idx)); \
+        mag_bnd_chk(bv + off_v, v->storage->base, v->storage->size); \
+        mag_bnd_chk(bi + off_i, idx->storage->base, idx->storage->size); \
         bv[off_v] = best; \
         bi[off_i] = best_idx; \
       } \

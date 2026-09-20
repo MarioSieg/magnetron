@@ -77,6 +77,8 @@ static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *d
   if (mag_unlikely(cmd->op == MAG_OP_FUSED && cmd->params))
     fused_fn = (const void *)mag_cpu_fuse_resolve(&cpu_dvc->fuse_cache, cmd->params->fused.graph);
   uint32_t intraop_workers = mag_cpu_tune_eager_intra_op_worker_count(cmd, device); /* Determine number of intra-op workers */
+  mag_lock_acquire(&cpu_dvc->submit_lock);
+  mag_status_t stat;
   if (intraop_workers <= 1) { /* Main thread does the work (single threaded mode). */
     mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) mag_tile_sched_t tile_sched = {0};
     mag_kernel_payload_t payload = {
@@ -87,16 +89,18 @@ static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *d
       .tile_sched = &tile_sched,
       .fused_fn = fused_fn,
     };
-    return mag_worker_exec_thread_local(err, &cpu_dvc->kernels, &payload);
+    stat = mag_worker_exec_thread_local(err, &cpu_dvc->kernels, &payload);
+  } else {
+    stat = mag_threadpool_parallel_compute(err, cpu_dvc->pool, cmd, intraop_workers, fused_fn); /* Multithreaded exec + barrier */
   }
-  return mag_threadpool_parallel_compute(err, cpu_dvc->pool, cmd, intraop_workers, fused_fn); /* Multithreaded exec + barrier */
+  mag_lock_release(&cpu_dvc->submit_lock);
+  return stat;
 }
 
 static mag_status_t mag_cpu_storage_dtor(void *self) {
   mag_storage_buffer_t *buf = self;
   mag_context_t *ctx = buf->ctx;
-  mag_assert(ctx->telemetry.num_alive_storages > 0, "cpu: double free detected on CPU storage buffer.");
-  --ctx->telemetry.num_alive_storages;
+  mag_assert(mag_atomic64_fetch_sub(&ctx->telemetry.num_alive_storages, 1, MAG_MO_ACQ_REL) > 0, "cpu: double free detected on CPU storage buffer.");
   if (!(buf->flags & MAG_STORAGE_FLAG_BORROWED))
     (*mag_try_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
   mag_slab_free(&ctx->storage_slab, buf);
@@ -131,7 +135,7 @@ static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device
   }
   mag_assert2(!(buf->base&(MAG_CPU_BUF_ALIGN-1))); /* Ensure alignment */
   mag_rc_init_object(buf, &mag_cpu_storage_dtor);
-  ++device->ctx->telemetry.num_alive_storages;
+  mag_atomic64_fetch_add(&device->ctx->telemetry.num_alive_storages, 1, MAG_MO_RELAXED);
   *out = buf;
   return MAG_OK;
 cleanup:
@@ -160,6 +164,7 @@ static mag_status_t mag_cpu_init_device(mag_error_t *err, mag_cpu_device_t **out
   memset(device, 0, sizeof(*device));
   *device = (mag_cpu_device_t) {
     .ctx = ctx,
+    .submit_lock = MAG_LOCK_INIT,
     .pool = NULL,
     .num_allocated_workers = 0,
     .kernels = {},
@@ -221,7 +226,7 @@ static void mag_cpu_release_interface(mag_device_t *ctx) {
 
 static mag_status_t mag_cpu_init(mag_error_t *err, mag_backend_t *self, mag_context_t *ctx) {
   mag_assert2(!self->impl);
-  uint32_t hwc = mag_xmax(1, ctx->machine.cpu_virtual_cores);
+  uint32_t hwc = mag_vmax(1, ctx->machine.cpu_virtual_cores);
   uint32_t nt = ctx->machine.cpu_virtual_cores;
   nt = nt ? nt : hwc;
   return mag_cpu_init_interface(err, (mag_device_t **)&self->impl, ctx, nt);
@@ -270,4 +275,3 @@ mag_status_t MAG_BACKEND_SYM_SHUTDOWN(mag_error_t *err, mag_backend_t *backend) 
   (*mag_alloc)(backend, 0, 0);
   return MAG_OK;
 }
-

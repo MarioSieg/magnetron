@@ -75,6 +75,7 @@ namespace mag {
     [[nodiscard]] std::underlying_type_t<device_features::$> features() const noexcept { return m_features; }
     [[nodiscard]] bool has_features(std::underlying_type_t<device_features::$> mask) const noexcept { return (m_features & mask) == mask; }
     [[nodiscard]] cudaStream_t stream() const noexcept { return m_stream; }
+    [[nodiscard]] std::mutex &submit_mutex() const noexcept { return m_submit_mtx; }
     [[nodiscard]] cudaEvent_t event() const noexcept { return m_event; }
     [[nodiscard]] std::string info_string() const;
     [[nodiscard]] mag_status_t reserve_scratch(mag_error_t *err, size_t bytes);
@@ -102,6 +103,7 @@ namespace mag {
     mutable std::once_flag m_init_once;
     mutable mag_status_t m_init_status = MAG_OK;
     mutable mag_error_t m_init_error = {};
+    mutable std::mutex m_submit_mtx;
     mutable cudaStream_t m_stream = nullptr;
     mutable cudaEvent_t m_event = nullptr;
     void *m_scratch = nullptr;

@@ -204,7 +204,7 @@ static MAG_HOTPROC void mag_matmul_gemv_vec_mat_impl(
   int64_t chunk = (N + tc - 1) / tc;
   chunk = ((chunk + nr - 1) / nr) * nr;
   int64_t start = ti * chunk;
-  int64_t end = mag_xmin(N, start + chunk);
+  int64_t end = mag_vmin(N, start + chunk);
   if (mag_unlikely(start >= end)) return;
   int64_t Nt = end-start;
   int64_t el = (int64_t)mag_type_trait(dtype)->size;

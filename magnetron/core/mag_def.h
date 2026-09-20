@@ -554,42 +554,49 @@ extern MAG_EXPORT double mag_hpc_clock_elapsed_ms(uint64_t start);
 extern MAG_EXPORT uint64_t mag_cycles(void); /* Get current CPU cycles. */
 
 #define mag_swap(T, a, b) do { T tmp = (a); (a) = (b); (b) = tmp; } while (0)
-#define mag_xmax(x, y) (((x)>(y))?(x):(y))
-#define mag_xmin(x, y) (((x)<(y))?(x):(y))
-#define mag_rd_down(x,m) ((x)/(m) * (m))
-#define mag_xclamp(v, lo, hi) ((v) < (lo) ? (lo) : (v) > (hi) ? (hi) : (v))
+#define mag_vmax(x, y) (((x)>(y))?(x):(y))
+#define mag_vmin(x, y) (((x)<(y))?(x):(y))
+#define mag_vclamp(v, lo, hi) ((v)<(lo)?(lo):(v)>(hi)?(hi):(v))
+#define mag_align_up(x, al) (((x)+(al)-1)&-(al))
+#define mag_align_down(x, al) ((x)&-(al))
 
 #define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
 #define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
+#define MAG_INVSQRT2PI 0.398942280401432677939946059934381868475858631f
+#define MAG_SQRT2OVERPI 0.797884560802865355879892119868763736951717263f
 
-/* Increment pointer or buf_size with correct type alignment. */
 static inline void *mag_pincr(void **p, size_t sz, size_t align) {
   void *pp = (void *)(((uintptr_t)*p+align-1)&-align);
   *p = (void *)((uint8_t *)pp+sz);
   return pp;
 }
 
-/* Performs c = ab with overflow checking. Returns true on overflow, else false. */
+static bool MAG_AINLINE mag_addov64(int64_t a, int64_t b, int64_t *c) {
+  #if defined(__GNUC__) || defined(__clang__)
+    return __builtin_add_overflow(a, b, c);
+  #else
+    uint64_t r = (uint64_t)a+(uint64_t)b;
+    *c = (int64_t)r;
+    return ((a^(int64_t)r)&(b^(int64_t)r)) < 0;
+  #endif
+}
+
 static bool MAG_AINLINE mag_mulov64(int64_t a, int64_t b, int64_t *c) {
-#ifdef _MSC_VER
-#ifdef _M_ARM64
-uint64_t high = __umulh(a, b);
-*c = a*b;
-return high != (*c>>63);
-#else
-int64_t high;
-int64_t low = _mul128(a, b, &high);
-int64_t sign = low>>63;
-*c = low;
-return high != sign;
-#endif
-#else
-#if __SIZEOF_LONG_LONG__ == 8 && __SIZEOF_LONG__ == 8
-return __builtin_smulll_overflow(a, b, (long long *)c);
-#else
-return __builtin_smull_overflow(a, b, c);
-#endif
-#endif
+  #ifdef _MSC_VER
+    #ifdef _M_ARM64
+      uint64_t high = __umulh(a, b);
+      *c = a*b;
+      return high != (*c>>63);
+    #else
+      int64_t high;
+      int64_t low = _mul128(a, b, &high);
+      int64_t sign = low>>63;
+      *c = low;
+      return high != sign;
+    #endif
+  #else
+    return __builtin_mul_overflow(a, b, c);
+  #endif
 }
 
 static MAG_CUDA_DEVICE MAG_AINLINE uint32_t mag_next_pow2_u32(uint32_t x) {
@@ -649,6 +656,8 @@ extern MAG_EXPORT bool mag_utf8_validate(const uint8_t *str, size_t len);
 extern MAG_EXPORT char *mag_strdup(const char *s);
 extern MAG_EXPORT void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);
 extern MAG_EXPORT int mag_casecmp(const char *a, const char *b);
+extern MAG_EXPORT bool mag_fsync_stream(FILE *f);
+extern MAG_EXPORT bool mag_fsync_parent_dir(const char *path);
 
 #ifdef __cplusplus
 }

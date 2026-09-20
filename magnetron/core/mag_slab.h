@@ -13,6 +13,7 @@
 #define MAG_POOL_H
 
 #include "mag_def.h"
+#include "mag_threadlib.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,6 +30,7 @@ struct mag_slab_chunk_t {
 
 /* Fixed-size slab allocator with intrusive freelist. */
 typedef struct mag_slab_alloc_t {
+  mag_lock_t lock;
   size_t block_size;
   size_t block_align;
   size_t blocks_per_chunk;

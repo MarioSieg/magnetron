@@ -69,7 +69,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       for (int64_t i=ra; i < rb; ) { \
         int64_t o = i/plan.inner; \
         int64_t j = i - o*plan.inner; \
-        int64_t run = mag_xmin(plan.inner-j, rb-i); \
+        int64_t run = mag_vmin(plan.inner-j, rb-i); \
         int64_t xb, yb; \
         mag_binary_vectorization_plan_step(&plan, o, &xb, &yb); \
         const T *px = bx + xb + (plan.x_const ? 0 : j); \
@@ -89,7 +89,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       for (int64_t i=ra; i < rb; ) { \
         int64_t o = i/plan.inner; \
         int64_t j = i - o*plan.inner; \
-        int64_t run = mag_xmin(plan.inner-j, rb-i); \
+        int64_t run = mag_vmin(plan.inner-j, rb-i); \
         int64_t xb, yb; \
         mag_binary_vectorization_plan_step(&plan, o, &xb, &yb); \
         const T *px = bx + xb + (plan.x_const ? 0 : j); \
@@ -131,7 +131,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk,total); \
+    int64_t rb = mag_vmin(ra+chunk,total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r,x,y},3)) { \
       for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],by[i]); \
@@ -164,7 +164,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk,total); \
+    int64_t rb = mag_vmin(ra+chunk,total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r, x, y}, 3)) { \
       int64_t i=ra; \
@@ -260,7 +260,7 @@ mag_gen_int_signed_unsigned(pow)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk,total); \
+    int64_t rb = mag_vmin(ra+chunk,total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r,x,y},3)) { \
       for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##sign(bx[i],by[i],T); \
@@ -305,7 +305,7 @@ mag_gen_shift_all(shr)
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
-    int64_t rb = mag_xmin(ra+chunk,total); \
+    int64_t rb = mag_vmin(ra+chunk,total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r,x,y},3)) { \
       for (int64_t i=ra; i < rb; ++i) br[i] = CVT(bx[i]) OP CVT(by[i]); \

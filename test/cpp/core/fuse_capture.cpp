@@ -19,7 +19,10 @@ namespace {
     }
 
     struct region final {   /* mag_fuse_region_end runs the chain, so it must not be skipped. */
-        explicit region(context &ctx) : m_ctx{&*ctx} { mag_fuse_region_begin(m_ctx); }
+        explicit region(context &ctx) : m_ctx{&*ctx} {
+            mag_error_t err {};
+            if (mag_iserr(mag_fuse_region_begin(&err, m_ctx))) throw std::runtime_error(err.message);
+        }
         ~region() { mag_error_t err {}; mag_fuse_region_end(&err, m_ctx); }
     private:
         mag_context_t *m_ctx;

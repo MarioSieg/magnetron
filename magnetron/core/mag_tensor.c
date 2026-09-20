@@ -34,7 +34,7 @@ mag_view_meta_t *mag_view_meta_alloc(mag_tensor_t *base) {
   mag_rc_init_object(vm, &mag_view_meta_dtor);
   vm->base = base;
   mag_rc_incref(base);
-  vm->version_snapshot = base->version;
+  vm->version_snapshot = (uint32_t)mag_atomic64_load(&base->version, MAG_MO_RELAXED);
   return vm;
 }
 
@@ -71,7 +71,7 @@ mag_tensor_t *mag_tensor_init_header(
   hdr->alive_next = NULL;
   mag_leak_detector_enqueue(hdr);
 #endif
-  ++ctx->telemetry.num_alive_tensors;
+  mag_atomic64_fetch_add(&ctx->telemetry.num_alive_tensors, 1, MAG_MO_RELAXED);
   return hdr;
 }
 
@@ -84,7 +84,7 @@ static void mag_tensor_free_header(mag_tensor_t *t) {
   mag_slab_free(&ctx->tensor_slab, t);
 }
 
-/* Create a new tensor. The must be created on the same thread as the context. */
+/* Create a new tensor. Callable from any thread. */
 mag_status_t mag_tensor_init(
   mag_error_t *err,
   mag_tensor_t **out,
@@ -96,8 +96,6 @@ mag_status_t mag_tensor_init(
   mag_device_id_t device
 ) {
   *out = NULL;
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
-    return mag_set_error(err, MAG_ERR_THREAD, "tensor: must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "tensor: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   if (rank > 0 && !shape)
@@ -138,7 +136,7 @@ mag_status_t mag_tensor_init(
     status = mag_set_error(err, MAG_ERR_OOM, "tensor: failed to allocate tensor header.");
     goto cleanup;
   }
-  ctx->telemetry.storage_bytes_allocated += numby;
+  mag_atomic64_fetch_add(&ctx->telemetry.storage_bytes_allocated, (mag_atomic64_t)numby, MAG_MO_RELAXED);
   for (int i=0; i < MAG_MAX_DIMS; ++i) {
     tensor->meta.coords.shape[i] = shape && i < rank ? shape[i] : 1;
     tensor->meta.coords.strides[i] = 1;
@@ -152,7 +150,7 @@ mag_status_t mag_tensor_init(
       }
     }
   }
-  ++ctx->telemetry.num_created_tensors;
+  mag_atomic64_fetch_add(&ctx->telemetry.num_created_tensors, 1, MAG_MO_RELAXED);
   *out = tensor;
   return MAG_OK;
 cleanup:
@@ -163,8 +161,7 @@ cleanup:
 static mag_status_t mag_tensor_dtor(void *self) {
   mag_tensor_t *t = self;
   mag_context_t *ctx = t->ctx;
-  mag_assert(ctx->telemetry.num_alive_tensors > 0, "tensor: double free detected on tensor %p.", t);
-  --ctx->telemetry.num_alive_tensors;
+  mag_assert(mag_atomic64_fetch_sub(&ctx->telemetry.num_alive_tensors, 1, MAG_MO_ACQ_REL) > 0, "tensor: double free detected on tensor %p.", t);
   if (t->view_meta) {
     mag_rc_decref(t->view_meta);
     t->view_meta = NULL;
@@ -186,8 +183,7 @@ typedef struct mag_borrow_cookie_t {
 static mag_status_t mag_borrowed_storage_dtor(void *self) {
   mag_storage_buffer_t *buf = self;
   mag_context_t *ctx = buf->ctx;
-  mag_assert(ctx->telemetry.num_alive_storages > 0, "tensor: double free detected on storage buffer.");
-  --ctx->telemetry.num_alive_storages;
+  mag_assert(mag_atomic64_fetch_sub(&ctx->telemetry.num_alive_storages, 1, MAG_MO_ACQ_REL) > 0, "tensor: double free detected on storage buffer.");
   mag_borrow_cookie_t *cookie = buf->aux.impl;
   if (cookie) {
     if (cookie->fn) (*cookie->fn)(cookie->usr);
@@ -217,8 +213,6 @@ mag_status_t mag_borrow_cpu_buffer(
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: data pointer must not be NULL.");
   if (mag_unlikely(!(num_bytes > 0)))
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: num_bytes must be > 0.");
-  if (mag_unlikely(mag_thread_id() != ctx->tr_id))
-    return mag_set_error(err, MAG_ERR_THREAD, "borrow_cpu_buffer: tensor must be created on the thread that owns the context (expected thread 0x%" PRIx64 ", got 0x%" PRIx64 ").", (uint64_t)ctx->tr_id, (uint64_t)mag_thread_id());
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "borrow_cpu_buffer: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
   if (rank > 0 && !shape)
@@ -266,7 +260,7 @@ mag_status_t mag_borrow_cpu_buffer(
     buf->aux.impl = cookie;
     cookie = NULL;
     mag_rc_init_object(buf, &mag_borrowed_storage_dtor);
-    ++ctx->telemetry.num_alive_storages;
+    mag_atomic64_fetch_add(&ctx->telemetry.num_alive_storages, 1, MAG_MO_RELAXED);
     mag_tensor_t *tensor = NULL;
     status = mag_tensor_init(err, &tensor, ctx, buf, dtype, rank, shape, mag_device(CPU, 0));
     mag_rc_decref(buf);
@@ -283,6 +277,10 @@ cleanup:
 }
 
 size_t mag_tensor_numbytes(const mag_tensor_t *t) {
+  return (size_t)t->meta.numel*mag_type_trait(t->meta.dtype)->size;
+}
+
+size_t mag_tensor_storage_numbytes(const mag_tensor_t *t) {
   return t->storage->size;
 }
 int64_t mag_tensor_numel(const mag_tensor_t *tensor) {
@@ -494,6 +492,13 @@ bool mag_tensor_is_view(const mag_tensor_t *tensor) {
   return tensor->meta.flags & MAG_TFLAG_IS_VIEW;
 }
 
+mag_tensor_t *mag_tensor_view_base(const mag_tensor_t *tensor) {
+  if (!(tensor->meta.flags & MAG_TFLAG_IS_VIEW) || !tensor->view_meta) return NULL;
+  mag_tensor_t *base = tensor->view_meta->base;
+  if (base) mag_rc_incref(base);
+  return base;
+}
+
 bool mag_tensor_is_floating_point_typed(const mag_tensor_t *tensor) {
   return mag_dtype_bit(tensor->meta.dtype) & MAG_DTYPE_MASK_FP;
 }
@@ -584,21 +589,26 @@ bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {
 
 void mag_leak_detector_enqueue(mag_tensor_t *t) {
   mag_context_t *ctx = t->ctx;
+  mag_lock_acquire(&ctx->leak_lock);
   t->alive_next = ctx->alive_head;
   ctx->alive_head = t;
+  mag_lock_release(&ctx->leak_lock);
 }
 
 void mag_leak_detector_dequeue(mag_tensor_t *t) {
   mag_context_t *ctx = t->ctx;
+  mag_lock_acquire(&ctx->leak_lock);
   for (mag_tensor_t **p = &ctx->alive_head; *p; p = &(*p)->alive_next) {
     if (*p == t) {
       *p = t->alive_next;
       break;
     }
   }
+  mag_lock_release(&ctx->leak_lock);
 }
 
 MAG_COLDPROC void mag_leak_detector_dump_results(mag_context_t *ctx) {
+  mag_lock_acquire(&ctx->leak_lock);
   for (mag_tensor_t *leaked = ctx->alive_head; leaked; leaked = leaked->alive_next) {
     char shape[MAG_FMT_DIM_BUF_SIZE];
     mag_fmt_shape(&shape, &leaked->meta.coords.shape, leaked->meta.coords.rank);
@@ -609,6 +619,7 @@ MAG_COLDPROC void mag_leak_detector_dump_results(mag_context_t *ctx) {
       shape
     );
   }
+  mag_lock_release(&ctx->leak_lock);
   fflush(stderr);
 }
 

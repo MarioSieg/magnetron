@@ -57,7 +57,7 @@ bool mag_coords_strides_cmp(const mag_coords_t *x, const mag_coords_t *y) {
 }
 
 bool mag_coords_can_broadcast(const mag_coords_t *x, const mag_coords_t *y) {
-  int64_t mr = mag_xmax(x->rank, y->rank);
+  int64_t mr = mag_vmax(x->rank, y->rank);
   for (int64_t i=0; i < mr; ++i) {
     int64_t asz = i < x->rank ? x->shape[x->rank-1-i] : 1;
     int64_t bsz = i < y->rank ? y->shape[y->rank-1-i] : 1;

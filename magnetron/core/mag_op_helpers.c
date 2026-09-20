@@ -200,7 +200,6 @@ mag_status_t mag_op_stub_binary(
 ) {
   *out_result = NULL;
   mag_tensor_t *result = NULL;
-  mag_context_t *ctx = x->ctx;
   mag_dtype_t prom_type; /* common compute dtype for x,y */
   mag_dtype_t res_type;  /* dtype of 'result' tensor */
   bool x_int = mag_tensor_is_integer_typed(x);
@@ -238,7 +237,7 @@ mag_status_t mag_op_stub_binary(
     switch (op) {
       case MAG_OP_DIV: { /* Special case for truediv */
         if (x_int && y_int) { /* Integer division always promotes to default float dtype */
-          prom_type = res_type = ctx->default_dtype;
+          prom_type = res_type = mag_tls_state.dtype;
         } else {
           bool prom_ok = mag_promote_type(&prom_type, x->meta.dtype, y->meta.dtype);
           if (mag_unlikely(!prom_ok))
@@ -263,7 +262,7 @@ mag_status_t mag_op_stub_binary(
           res_type = prom_type;
         } else { /* Non-integer floor division promotes to floating dtype */
           if (!(mag_dtype_bit(prom_type) & MAG_DTYPE_MASK_FP))
-            prom_type = ctx->default_dtype;
+            prom_type = mag_tls_state.dtype;
           res_type = prom_type;
         }
       } break;
@@ -344,7 +343,7 @@ mag_status_t mag_matmul_verify_shapes(
   int64_t ky = y->meta.coords.rank == 1 ? *y->meta.coords.shape : y->meta.coords.rank == 2 && x->meta.coords.rank == 1 ? *y->meta.coords.shape : y->meta.coords.shape[y->meta.coords.rank-2];
   *xb = x->meta.coords.rank > 2 ? x->meta.coords.rank-2 : 0;
   *yb = y->meta.coords.rank > 2 ? y->meta.coords.rank-2 : 0;
-  *rb = mag_xmax(*xb, *yb);
+  *rb = mag_vmax(*xb, *yb);
   if (kx != ky) {
     char sx[MAG_FMT_DIM_BUF_SIZE];
     char sy[MAG_FMT_DIM_BUF_SIZE];
@@ -537,7 +536,7 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
 }
 
 mag_status_t mag_check_inplace_grad_ok(mag_error_t *err, const mag_tensor_t *result) {
-  if (mag_unlikely((result->ctx->flags & MAG_CTX_FLAG_GRAD_RECORDER) && (result->meta.flags & MAG_TFLAG_REQUIRES_GRAD)))
+  if (mag_unlikely(!mag_tls_state.no_grad && (result->meta.flags & MAG_TFLAG_REQUIRES_GRAD)))
     return mag_set_error(err, MAG_ERR_PARAM,
       "op_validate: in-place operations are not allowed on tensors that require gradients.\n"
       "    Hint: disable gradient tracking or use the out-of-place variant."

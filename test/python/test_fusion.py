@@ -124,6 +124,30 @@ def test_changing_grad_mode_does_not_drop_a_held_intermediate() -> None:
     assert np.all(out.numpy() == 2.0)
 
 
+def test_overlapping_regions_from_different_threads_are_rejected() -> None:
+    import threading
+
+    x = Tensor.ones((N,))
+    errors: list[str] = []
+
+    def other_thread() -> None:
+        try:
+            with mag.fuse():
+                pass
+        except RuntimeError as exc:
+            errors.append(str(exc))
+
+    with no_grad(), mag.fuse():
+        y = x * x
+        worker = threading.Thread(target=other_thread)
+        worker.start()
+        worker.join()
+        z = y + x
+
+    assert len(errors) == 1 and 'another thread' in errors[0]
+    assert np.all(z.numpy() == 2.0)
+
+
 def test_fused_relu_preserves_eager_nan_bits_on_cpu() -> None:
     values = np.full(N, np.nan, dtype=np.float32)
     with mag.device('cpu'):

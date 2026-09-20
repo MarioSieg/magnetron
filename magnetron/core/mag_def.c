@@ -11,13 +11,16 @@
 
 #include "mag_def.h"
 #include "mag_alloc.h"
+#include "mag_mmap.h"
 
 #include <ctype.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <io.h>
 #else
+#include <fcntl.h>
 #ifdef __APPLE__
 #include <mach/mach.h>
 #include <mach/mach_time.h>
@@ -394,4 +397,53 @@ MAG_COLDPROC mag_status_t mag_set_error_impl(
     va_end(ap);
   }
   return code;
+}
+
+extern bool mag_mmap_strong_fsync(
+  #ifdef _WIN32
+    HANDLE hfile
+  #else
+    int fd
+  #endif
+);
+
+bool mag_fsync_stream(FILE *f) {
+  if (mag_unlikely(!f)) return false;
+  if (mag_unlikely(fflush(f) != 0)) return false;
+#ifdef _WIN32
+  int fd = _fileno(f);
+  if (fd < 0) return false;
+  intptr_t h = _get_osfhandle(fd);
+  if (h == -1) return false;
+  return mag_mmap_strong_fsync((HANDLE)h);
+#else
+  int fd = fileno(f);
+  if (fd < 0) return false;
+  return mag_mmap_strong_fsync(fd);
+#endif
+}
+
+bool mag_fsync_parent_dir(const char *path) {
+#ifdef _WIN32
+  (void)path;
+  return true;
+#else
+  if (mag_unlikely(!(path && *path))) return false;
+  char dir[4096];
+  const char *sep = strrchr(path, '/');
+  size_t len = sep ? (size_t)(sep-path) : 0;
+  if (!len) { /* Bare filename, or a file sitting directly in the root */
+    dir[0] = sep ? '/' : '.';
+    dir[1] = '\0';
+  } else {
+    if (mag_unlikely(len >= sizeof(dir))) return false;
+    memcpy(dir, path, len);
+    dir[len] = '\0';
+  }
+  int fd = open(dir, O_RDONLY);
+  if (fd < 0) return false;
+  bool ok = fsync(fd) == 0;
+  close(fd);
+  return ok;
+#endif
 }

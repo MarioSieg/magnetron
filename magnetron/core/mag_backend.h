@@ -130,7 +130,7 @@ extern MAG_EXPORT mag_status_t mag_backend_registry_init(mag_error_t *err, mag_c
 extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag_backend_type_t type);
 extern MAG_EXPORT bool mag_backend_registry_lookup_device_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
 extern MAG_EXPORT bool mag_backend_registry_best_device(mag_backend_registry_t *reg, mag_backend_type_t type, mag_backend_t **out_bck, mag_device_t **out_dvc);
-extern MAG_EXPORT void mag_backend_registry_iter_devices(mag_backend_registry_t *reg, void (*callback)(mag_backend_t *bck, mag_device_t *dvc, void *usr), void *usr);
+extern MAG_EXPORT void mag_backend_registry_manual_seed(mag_backend_registry_t *reg, uint64_t seed);
 extern MAG_EXPORT mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registry_t *reg);
 
 #ifdef __cplusplus

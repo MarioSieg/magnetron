@@ -46,15 +46,14 @@ namespace mag {
       mag_context_t *ctx = buffer->ctx;
       mag_device_t *dvc = buffer->device;
       auto *base = reinterpret_cast<void *>(buffer->base);
-      mag_assert(ctx->telemetry.num_alive_storages > 0, "cuda: double free detected on CUDA storage buffer.");
-      --ctx->telemetry.num_alive_storages;
+      mag_assert(mag_atomic64_fetch_sub(&ctx->telemetry.num_alive_storages, 1, MAG_MO_ACQ_REL) > 0, "cuda: double free detected on CUDA storage buffer.");
       mag_slab_free(&ctx->storage_slab, buffer);
       if (mag_unlikely(cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)) != cudaSuccess))
         return MAG_ERR_FREE;
       const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
       return stream_free(base, phys_device.stream()) == cudaSuccess ? MAG_OK : MAG_ERR_FREE;
     });
-    ++ctx->telemetry.num_alive_storages;
+    mag_atomic64_fetch_add(&ctx->telemetry.num_alive_storages, 1, MAG_MO_RELAXED);
     return MAG_OK;
   }
 }

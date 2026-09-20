@@ -13,6 +13,7 @@ import time
 
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
+from typing import Any
 from magnetron import Tensor, context, dtype
 from rich.console import Console
 from tokenizers import Tokenizer
@@ -34,9 +35,17 @@ def _download_or_ensure_hf_file(repo_id: str, filename: str) -> str:
 
 
 class HFTokenizer:
-    def __init__(self, repo_id: str) -> None:
-        tok_path = _download_or_ensure_hf_file(repo_id=repo_id, filename='tokenizer.json')
-        self.tok = Tokenizer.from_file(tok_path)
+    def __init__(self, tok: Tokenizer) -> None:
+        self.tok = tok
+
+    @classmethod
+    def from_snapshot_metadata(cls, metadata: dict[str, Any]) -> 'HFTokenizer | None':
+        tokenizer_json = metadata.get('tokenizer_json')
+        return cls(Tokenizer.from_str(tokenizer_json)) if tokenizer_json else None
+
+    @classmethod
+    def from_hf(cls, repo_id: str) -> 'HFTokenizer':
+        return cls(Tokenizer.from_file(_download_or_ensure_hf_file(repo_id=repo_id, filename='tokenizer.json')))
 
     def encode(self, text: str) -> list[int]:
         return self.tok.encode(text).ids
@@ -90,7 +99,12 @@ class InferenceEngine:
             context.set_default_device(config.device)
         console.print(f'Loading model from snapshot: {snapshot}', style='dim')
         self.model = Qwen3Model.from_pretrained_snapshot(snapshot, Qwen3HyperParams())
-        self.tokenizer = HFTokenizer(REPO_ID)
+        tokenizer = HFTokenizer.from_snapshot_metadata(self.model.snapshot_metadata)
+        if tokenizer is None:
+            fallback: str = self.model.snapshot_metadata.get('source_repo', REPO_ID)
+            console.print(f'Snapshot carries no tokenizer, falling back to {fallback}', style='yellow')
+            tokenizer = HFTokenizer.from_hf(fallback)
+        self.tokenizer = tokenizer
         self.config = config
         end = time.perf_counter()
         console.print(f'Ready in {end - start:.2f}s', style='dim')

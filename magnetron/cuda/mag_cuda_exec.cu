@@ -11,6 +11,8 @@
 
 #include "mag_cuda_exec.cuh"
 
+#include <mutex>
+
 #include "mag_cuda_unary.cuh"
 #include "mag_cuda_binary.cuh"
 #include "mag_cuda_fill.cuh"
@@ -85,7 +87,7 @@ namespace mag {
     [MAG_OP_RELU] = &unary_op_relu,
     [MAG_OP_RELU_DV] = &unary_op_relu_dv,
     [MAG_OP_GELU] = &unary_op_gelu,
-    [MAG_OP_GELU_APPROX] = &unary_op_gelu,
+    [MAG_OP_GELU_APPROX] = &unary_op_gelu_approx,
     [MAG_OP_GELU_DV] = &unary_op_gelu_dv,
     [MAG_OP_TRIL] = &misc_op_tril,
     [MAG_OP_TRIU] = &misc_op_triu,
@@ -143,6 +145,7 @@ namespace mag {
     int ordinal = static_cast<int>(dvc->id.device_ordinal);
     const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
     if (mag_status_t stat = phys_device.ensure_initialized(err); mag_iserr(stat)) return stat;
+    std::scoped_lock submit_guard {phys_device.submit_mutex()};
     mag_cu_rt_check(err, cudaSetDevice(ordinal), "failed to set active device");
     cudaStream_t stream = phys_device.stream();
     auto *kernel = k_kernel_dispatch_table[cmd->op];

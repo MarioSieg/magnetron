@@ -132,7 +132,7 @@ static MAG_AINLINE mag_vf32_t mag_vf32_silu(mag_vf32_t x) {
 static MAG_AINLINE mag_vf32_t mag_vf32_gelu_approx(mag_vf32_t x) {
   mag_vf32_t half = mag_vf32_splat(0.5f);
   mag_vf32_t one = mag_vf32_splat(1.0f);
-  mag_vf32_t k = mag_vf32_splat(MAG_INVSQRT2);
+  mag_vf32_t k = mag_vf32_splat(MAG_SQRT2OVERPI);
   mag_vf32_t c = mag_vf32_splat(MAG_GELU_COEFF);
   mag_vf32_t x2 = mag_vf32_mul(x, x);
   mag_vf32_t x3 = mag_vf32_mul(x2, x);

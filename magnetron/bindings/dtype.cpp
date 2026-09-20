@@ -19,7 +19,7 @@ namespace mag::bindings {
     );
 
     nb::class_<dtype_wrapper>{dtype, "DType", "Data type descriptor (e.g. float32, int64, boolean)."}
-      .def_prop_ro("id", [](const dtype_wrapper &self) noexcept -> int { return self.v; }, "Internal type id.")
+      .def_prop_ro("ordinal", [](const dtype_wrapper &self) noexcept -> int { return self.v; }, "Internal enum ordinal.")
       .def_prop_ro("name", [](const dtype_wrapper &self) noexcept -> const char * { return mag_type_trait(self.v)->name; }, "Full name (e.g. float32).")
       .def_prop_ro("short_name", [](const dtype_wrapper &self) noexcept -> const char * { return mag_type_trait(self.v)->short_name; }, "Short name for display.")
       .def_prop_ro("size", [](const dtype_wrapper &self) noexcept -> size_t { return mag_type_trait(self.v)->size; }, "Size in bytes.")

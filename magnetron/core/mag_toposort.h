@@ -42,11 +42,13 @@ extern bool mag_topo_stack_init(mag_topo_stack_t *stack, size_t cap);
 extern void mag_topo_stack_reset(mag_topo_stack_t *stack);
 extern void mag_topo_stack_free(mag_topo_stack_t *stack);
 
+extern void mag_topo_release(const mag_topo_set_t *sorted, int64_t epoch);
 extern mag_status_t mag_topo_sort(
   mag_error_t *err,
   mag_tensor_t *root,
   mag_topo_stack_t *tmp_stack,
-  mag_topo_set_t *out_sorted
+  mag_topo_set_t *out_sorted,
+  int64_t *out_epoch
 );
 
 #ifdef __cplusplus

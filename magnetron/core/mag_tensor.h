@@ -62,7 +62,7 @@ struct mag_tensor_t {
   mag_storage_buffer_t *storage;  /* Storage buffer. */
   mag_view_meta_t *view_meta;     /* View metadata, if this is a view, else NULL. */
   mag_au_state_t *au_state;       /* Autodiff state, if gradient recording is active, else NULL. */
-  uint64_t version;               /* Version of the tensor. Used for views to detect changes in the base tensor. */
+  mag_atomic64_t version;         /* Version of the tensor. Used for views to detect changes in the base tensor. */
 
 #ifdef MAG_DEBUG
   mag_tensor_t *alive_next;                       /* Next alive tensor used for leak detection. */

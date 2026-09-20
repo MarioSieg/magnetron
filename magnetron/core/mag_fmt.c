@@ -818,7 +818,7 @@ static void mag_tensor_fmt_scan_width(mag_tensor_format_context_t *fmt, int dept
       bool ellipsis;
       size_t elen = 0;
       if (mag_fmt_lastdim_elem(fmt, depth, k, head, tails, dim, use_ellipsis, &tmp, &ellipsis, &elen))
-        fmt->width = mag_xmax(fmt->width, elen); /* one width shared by every column */
+        fmt->width = mag_vmax(fmt->width, elen); /* one width shared by every column */
     }
     return;
   }
@@ -884,7 +884,7 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
       size_t elen = 0;
       if (mag_unlikely(!mag_fmt_lastdim_elem(fmt, depth, k, head, tails, dim, use_ellipsis, &tmp, &ellipsis, &elen)))
         continue;
-      size_t elem_w = mag_xmax(fmt->width, elen);
+      size_t elem_w = mag_vmax(fmt->width, elen);
       size_t sep = k < total - 1 ? 2 : 0; /* ", " between elements */
       if (k > 0 && fmt->linewidth > 0 && fmt->col + elem_w + sep > fmt->linewidth) {
         mag_fmt_putc(fmt, '\n');

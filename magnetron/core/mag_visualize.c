@@ -16,10 +16,23 @@
 #include "mag_sstream.h"
 
 MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, mag_tensor_t *tensor, const char *file) {
-  mag_topo_set_t *post_order = &tensor->ctx->topo_set;
-  mag_status_t status = mag_topo_sort(err, tensor, &tensor->ctx->topo_stack, post_order);
-  if (mag_unlikely(mag_iserr(status) || !post_order->len))
+  mag_topo_stack_t topo_stack = {0};
+  mag_topo_set_t topo_set = {0};
+  mag_topo_set_t *post_order = &topo_set;
+  if (mag_unlikely(!mag_topo_set_init(&topo_set, MAG_TOPOSORT_HASHSET_INIT_CAP)))
+    return mag_set_error(err, MAG_ERR_OOM, "visualize: failed to allocate traversal set.");
+  if (mag_unlikely(!mag_topo_stack_init(&topo_stack, MAG_TOPOSORT_STACK_INIT_CAP))) {
+    mag_topo_set_free(&topo_set);
+    return mag_set_error(err, MAG_ERR_OOM, "visualize: failed to allocate traversal stack.");
+  }
+  int64_t topo_epoch = 0;
+  mag_status_t status = mag_topo_sort(err, tensor, &topo_stack, post_order, &topo_epoch);
+  mag_topo_stack_free(&topo_stack);
+  if (mag_unlikely(mag_iserr(status) || !post_order->len)) {
+    if (topo_epoch) mag_topo_release(post_order, topo_epoch);
+    mag_topo_set_free(&topo_set);
     return status;
+  }
   mag_sstream_t out;
   mag_sstream_init(&out);
   mag_sstream_append(&out, "digraph backward_graph {\n");
@@ -52,5 +65,7 @@ MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, 
   }
   mag_sstream_append(&out, "}\n");
   mag_sstream_flush(&out, file);
+  if (topo_epoch) mag_topo_release(post_order, topo_epoch);
+  mag_topo_set_free(&topo_set);
   return MAG_OK;
 }
