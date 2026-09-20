@@ -99,3 +99,15 @@ jobs:
         run: |
           source .venv/bin/activate
           pytest -n 4 -s "${{ github.workspace }}/test/python/"
+
+  ci-passed:
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check build matrix result
+        run: |
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "build matrix result: ${{ needs.build.result }}"
+            exit 1
+          fi
