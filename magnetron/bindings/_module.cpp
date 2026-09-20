@@ -21,7 +21,6 @@ namespace mag::bindings {
 
 // Global module entry definition
 NB_MODULE(_magnetron_bindings, m) {
-  std::lock_guard lock {mag::bindings::get_global_mutex()};
 
   m.doc() = "A compact, bloat-free machine learning framework with CPU and CUDA acceleration.";
 

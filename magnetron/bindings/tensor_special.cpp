@@ -188,13 +188,11 @@ namespace mag::bindings {
   void init_tensor_special_methods(nb::class_<tensor_wrapper> &cls) {
     cls
      .def("__len__", [](const tensor_wrapper &self) -> int64_t {
-       std::lock_guard lock {get_global_mutex()};
        if (mag_tensor_rank(*self) == 0)
          throw nb::value_error("Tensor must have at least one dimension to use len()");
        return *mag_tensor_shape_ptr(*self);
      }, "Length of the first dimension.")
      .def("__str__", [](const tensor_wrapper &self) -> nb::str {
-       std::lock_guard lock {get_global_mutex()};
        const char *cstr = mag_tensor_to_string(*self, 3, 3, 1000);
        if (!cstr) throw std::runtime_error("Failed to convert tensor to string");
        on_scope_exit defer_free {[cstr] { mag_tensor_to_string_free_data(cstr); }};
@@ -202,7 +200,6 @@ namespace mag::bindings {
        return str;
      }, "Short string representation.")
      .def("__repr__", [](const tensor_wrapper &self) -> nb::str {
-       std::lock_guard lock {get_global_mutex()};
        const char *cstr = mag_tensor_to_string(*self, 3, 3, 1000);
        if (!cstr) throw std::runtime_error("Failed to convert tensor to string");
        on_scope_exit defer_free {[cstr] { mag_tensor_to_string_free_data(cstr); }};
@@ -210,7 +207,6 @@ namespace mag::bindings {
        return str;
      }, "Full repr (shape, dtype, values).")
      .def("__bool__", [](const tensor_wrapper &self) -> bool {
-      std::lock_guard lock {get_global_mutex()};
       if (mag_tensor_numel(*self) != 1)
         throw nb::value_error("Tensor with >1 element has ambiguous truth value; use .any() or .all()");
       mag_scalar_t s {};
@@ -222,11 +218,9 @@ namespace mag::bindings {
       throw nb::type_error("Unsupported scalar type for __bool__()");
     }, "True if single element is non-zero (only for 0-dim or 1-element tensors).")
     .def("__getitem__", [](const tensor_wrapper &self, nb::object index) -> tensor_wrapper {
-       std::lock_guard lock {get_global_mutex()};
        return tensor_index_impl(self, index);
     }, "Index with int, slice, ellipsis, or boolean/int index tensor. Supports NumPy-style indexing.")
     .def("__setitem__", [](tensor_wrapper &self, nb::object index, nb::object value) {
-      std::lock_guard lock {get_global_mutex()};
       tensor_wrapper dst = tensor_index_impl(self, index);
       mag_error_t err {};
       if (nb::isinstance<tensor_wrapper>(value)) {

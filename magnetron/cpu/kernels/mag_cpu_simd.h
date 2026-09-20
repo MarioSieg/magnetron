@@ -1098,7 +1098,11 @@ static MAG_AINLINE mag_vf32_t mag_vf32_loadu_bf16(const mag_bfloat16_t *p) {
 static MAG_AINLINE void mag_vf32_storeu_bf16(mag_bfloat16_t *p, mag_vf32_t v) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
     uint32x4_t u = vreinterpretq_u32_f32(v);
-    uint16x4_t h = vmovn_u32(vshrq_n_u32(u, 16));
+    uint32x4_t bias = vaddq_u32(vandq_u32(vshrq_n_u32(u, 16), vdupq_n_u32(1)), vdupq_n_u32(0x7fffu));
+    uint32x4_t rounded = vaddq_u32(u, bias);
+    uint32x4_t is_nan = vcgtq_u32(vandq_u32(u, vdupq_n_u32(0x7fffffffu)), vdupq_n_u32(0x7f800000u));
+    rounded = vbslq_u32(is_nan, vdupq_n_u32(0x7fc00000u), rounded);
+    uint16x4_t h = vmovn_u32(vshrq_n_u32(rounded, 16));
     vst1_u16((uint16_t *)p, h);
   #elif defined(__AVX512F__) && defined(__AVX512BF16__)
     __m256bh h = _mm512_cvtneps_pbh(v);
