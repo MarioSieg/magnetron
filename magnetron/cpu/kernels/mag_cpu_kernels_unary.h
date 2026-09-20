@@ -370,7 +370,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
     mag_coords_iter_init(&cx, &x->meta.coords); \
     /* Gathered through the vector op as well, so a strided tensor agrees with a contiguous one. */ \
     for (int64_t i=ra; i < rb; ) { \
-      int64_t batch = mag_xmin((int64_t)MAG_VF32_LANES, rb-i); \
+      int64_t batch = mag_vmin((int64_t)MAG_VF32_LANES, rb-i); \
       T gin[MAG_VF32_LANES]; \
       T gout[MAG_VF32_LANES]; \
       int64_t dst_off[MAG_VF32_LANES]; \
