@@ -307,6 +307,18 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float16_t, float, float64, float
 mag_gen_stub_fill_rand_fp_simd_only(normal, mag_bfloat16_t, float, float64, bfloat16)
 mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64, float8_e4m3fn)
 
+static MAG_AINLINE float mag_arange_f64_to_f32_rto(double x) {
+  float f = (float)x;
+  if ((double)f == x || mag_unlikely(f != f)) return f;
+  union { float f; uint32_t u; } c = {.f = f};
+  if (fabs((double)f) > fabs(x)) --c.u;
+  c.u|=1u;
+  return c.f;
+}
+
+#define mag_arange_cvt_float16(x) mag_float32_to_float16(mag_arange_f64_to_f32_rto(x))
+#define mag_arange_cvt_bfloat16(x) mag_float32_to_bfloat16(mag_arange_f64_to_f32_rto(x))
+#define mag_arange_cvt_float8_e4m3fn(x) mag_float32_to_float8_e4m3fn(mag_arange_f64_to_f32_rto(x))
 
 #define mag_gen_stub_arange(T, TF, PT, UNWRAP, AT, CVT) \
   static MAG_HOTPROC mag_status_t mag_arange_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
@@ -340,9 +352,9 @@ mag_gen_stub_fill_rand_fp_simd_only(normal, mag_float8_e4m3fn_t, float, float64,
   }
 
 mag_gen_stub_arange(float, float32, double, mag_scalar_as_float64, double, mag_cvt_nop)
-mag_gen_stub_arange(mag_float16_t, float16, double, mag_scalar_as_float64, double, mag_float32_to_float16)
-mag_gen_stub_arange(mag_bfloat16_t, bfloat16, double, mag_scalar_as_float64, double, mag_float32_to_bfloat16)
-mag_gen_stub_arange(mag_float8_e4m3fn_t, float8_e4m3fn, double, mag_scalar_as_float64, double, mag_float32_to_float8_e4m3fn)
+mag_gen_stub_arange(mag_float16_t, float16, double, mag_scalar_as_float64, double, mag_arange_cvt_float16)
+mag_gen_stub_arange(mag_bfloat16_t, bfloat16, double, mag_scalar_as_float64, double, mag_arange_cvt_bfloat16)
+mag_gen_stub_arange(mag_float8_e4m3fn_t, float8_e4m3fn, double, mag_scalar_as_float64, double, mag_arange_cvt_float8_e4m3fn)
 mag_gen_stub_arange(uint8_t, uint8, uint64_t, mag_scalar_as_uint64, uint64_t, mag_cvt_nop)
 mag_gen_stub_arange(int8_t, int8, int64_t, mag_scalar_as_int64, uint64_t, mag_cvt_nop)
 mag_gen_stub_arange(uint16_t, uint16, uint64_t, mag_scalar_as_uint64, uint64_t, mag_cvt_nop)
