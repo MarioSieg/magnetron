@@ -12,6 +12,7 @@
 #include "prelude.hpp"
 
 #include <atomic>
+#include <mutex>
 
 #include "core/mag_context.h"
 
