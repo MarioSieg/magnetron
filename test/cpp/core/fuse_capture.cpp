@@ -77,7 +77,12 @@ TEST(fuse_capture, an_operator_that_cannot_join_ends_the_chain) {
     tensor out {ctx, dtype::float32, 1};
     {
         region r {ctx};
-        out = a.mul(a).tanh().add(a);  /* tanh is not exactly defined, so it splits this in two. */
+        tensor mid = a.mul(a);
+        tensor eager_only = mid.tanh();
+        /* Tanh is represented in the trace even though no backend compiles it as part of a
+           fused kernel. The shared pass schedules it between the two compiled groups. */
+        EXPECT_TRUE((*eager_only).meta.flags & MAG_TFLAG_PENDING);
+        out = eager_only.add(a);
     }
     EXPECT_EQ(out.to_vector<float>(), expect);
 
@@ -86,6 +91,30 @@ TEST(fuse_capture, an_operator_that_cannot_join_ends_the_chain) {
     auto [chains, ops] = chain_stats(ctx);
     EXPECT_EQ(chains, 2u);
     EXPECT_EQ(ops, 2u);
+}
+
+TEST(fuse_capture, interleaved_shapes_form_two_fused_groups) {
+    context ctx {};
+    tensor a = ramp(ctx, kN, 0.25f);
+    tensor b = ramp(ctx, kN*2, 0.125f);
+    auto eager_a = a.mul(a).add(a).to_vector<float>();
+    auto eager_b = b.mul(b).add(b).to_vector<float>();
+
+    auto before = chain_stats(ctx);
+    tensor out_a {ctx, dtype::float32, 1};
+    tensor out_b {ctx, dtype::float32, 1};
+    {
+        region r {ctx};
+        tensor mid_a = a.mul(a);
+        tensor mid_b = b.mul(b);
+        out_a = mid_a.add(a);
+        out_b = mid_b.add(b);
+    }
+    EXPECT_EQ(out_a.to_vector<float>(), eager_a);
+    EXPECT_EQ(out_b.to_vector<float>(), eager_b);
+    auto after = chain_stats(ctx);
+    EXPECT_EQ(after.first - before.first, 2u);
+    EXPECT_EQ(after.second - before.second, 4u);
 }
 
 TEST(fuse_capture, nesting_only_runs_the_chain_on_the_outermost_exit) {

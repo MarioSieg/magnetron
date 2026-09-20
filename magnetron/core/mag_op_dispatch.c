@@ -100,7 +100,7 @@ mag_status_t MAG_HOTPROC mag_dispatch(
   */
   if (mag_unlikely(mag_tls_state.fusing)) {
     bool captured = false;
-    mag_status_t cs = mag_fuse_capture(err, ctx, op, inplace, in, num_in, out, num_out, &captured);
+    mag_status_t cs = mag_fuse_capture(err, ctx, op, inplace, in, num_in, out, num_out, params, &captured);
     if (mag_unlikely(mag_iserr(cs))) return cs;
     if (captured) { ++ctx->telemetry.ops_dispatched; return MAG_OK; }
   }

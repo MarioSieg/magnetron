@@ -3,9 +3,10 @@
 **
 ** Fusing a chain means seeing the whole chain before any of it runs, and eager execution never
 ** offers that view: by the time an operator is dispatched, its predecessor has already produced a
-** tensor. So inside a fusion region the dispatcher records a fusible operator rather than submitting
-** it, and marks its output pending - a tensor that exists, with storage allocated, but whose bytes
-** have not been written yet.
+** tensor. So inside a fusion region the dispatcher records a pure pointwise operator rather than
+** submitting it, and marks its output pending - a tensor that exists, with storage allocated, but
+** whose bytes have not been written yet. A shared pass later chooses which operations form fused
+** kernels and which need ordinary backend dispatch.
 **
 ** Everything else is about making that lie invisible. Reading a pending result or writing storage a
 ** pending chain still reads forces the chain to run first. The data-pointer accessors cover direct
@@ -19,7 +20,7 @@
 #ifndef MAG_FUSE_CAPTURE_H
 #define MAG_FUSE_CAPTURE_H
 
-#include "mag_fuse_graph.h"
+#include "mag_fuse_trace.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,12 +32,10 @@ extern "C" {
 ** Larger than the number of buffers a graph can bind, because most links in a long chain consume a
 ** value the previous link produced and never need a buffer of their own.
 */
-#define MAG_FUSE_TAPE_MAX 48
-
 /*
-** Below this, recording a chain costs more than running the operators where they stand.
+** Below this, recording a trace costs more than running the operators where they stand.
 **
-** Building the graph, walking the tape and submitting the chain is a fixed cost per chain, and on a
+** Building the graph, walking the tape and submitting a kernel is a fixed cost, and on a
 ** small tensor the operators it replaces are already cheaper than that. Measured on an Apple M3
 ** against a two and four deep multiply-add chain: fusion loses at 1024 through 8192 elements
 ** (0.68x to 0.85x) and wins from 16384 upward.
@@ -58,10 +57,10 @@ extern MAG_EXPORT mag_status_t mag_fuse_region_end(mag_error_t *err, mag_context
 extern MAG_EXPORT bool mag_fuse_region_active(const mag_context_t *ctx);
 
 /*
-** Offer an operator to the chain.
+** Offer an operator to the unfused trace.
 **
 ** Sets *captured when the operator joined, which means the caller must not submit it. A false
-** *captured is the ordinary outcome for anything the chain cannot take, and is not an error.
+** *captured is the ordinary outcome for anything the trace cannot defer, and is not an error.
 */
 extern mag_status_t mag_fuse_capture(
   mag_error_t *err,
@@ -72,6 +71,7 @@ extern mag_status_t mag_fuse_capture(
   uint32_t num_in,
   mag_tensor_t **out,
   uint32_t num_out,
+  const mag_op_params_t *params,
   bool *captured
 );
 

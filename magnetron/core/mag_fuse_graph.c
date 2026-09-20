@@ -8,6 +8,11 @@ bool mag_fuse_op_is_fusible(mag_opcode_t op) {
   return !!(mag_op_trait(op)->flags & MAG_OP_FLAG_FUSIBLE);
 }
 
+bool mag_fuse_op_is_deferable(mag_opcode_t op) {
+  if (op >= MAG_OP__NUM) return false;
+  return !!(mag_op_trait(op)->flags & MAG_OP_FLAG_FUSE_DEFERABLE);
+}
+
 void mag_fuse_graph_init(mag_fuse_graph_t *g, mag_dtype_t dtype) {
   memset(g, 0, sizeof(*g)); /* Zeroes the padding too, so the structure hash reads no stale bytes. */
   g->dtype = (uint8_t)dtype;

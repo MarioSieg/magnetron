@@ -131,6 +131,29 @@ static mag_status_t mag_fuse_replay_eager(mag_error_t *err, struct mag_fuse_tape
   return MAG_OK;
 }
 
+static mag_status_t mag_fuse_replay_group(
+  mag_error_t *err,
+  struct mag_fuse_tape_t *tape,
+  const mag_fuse_group_t *group
+) {
+  for (uint8_t i=0; i < group->len; ++i) {
+    mag_fuse_tape_node_t *n = tape->nodes+group->nodes[i];
+    n->out->meta.flags &= (mag_tensor_flags_t)~MAG_TFLAG_PENDING;
+    mag_device_t *dvc = n->out->meta.device;
+    mag_command_t cmd = {
+      .op = (mag_opcode_t)n->op,
+      .in = n->in,
+      .out = &n->out,
+      .num_in = n->num_in,
+      .num_out = 1,
+      .params = NULL
+    };
+    mag_status_t st = (*dvc->submit)(err, dvc, &cmd);
+    if (mag_unlikely(mag_iserr(st))) return st;
+  }
+  return MAG_OK;
+}
+
 /* Is this tensor written by an earlier link, and therefore a value rather than a buffer to load? */
 static int32_t mag_fuse_producer(const struct mag_fuse_tape_t *tape, uint32_t upto, const mag_tensor_t *t) {
   for (uint32_t i=0; i < upto; ++i)
@@ -189,107 +212,137 @@ mag_status_t mag_fuse_flush(mag_error_t *err, mag_context_t *ctx) {
   tape->flushing = true;
   mag_status_t status = MAG_OK;
 
-  mag_fuse_graph_t graph;
-  mag_fuse_graph_init(&graph, tape->nodes[0].out->meta.dtype);
-
-  mag_tensor_t *bufs[MAG_FUSE_MAX_BUF];
-  uint8_t num_bufs = 0;
-  int32_t node_reg[MAG_FUSE_TAPE_MAX];
-
-  /* Bind a tensor to a buffer slot, reusing the slot if it is already bound. */
-  #define mag_fuse_bind(dst, t) \
-    do { \
-      int32_t found = -1; \
-      for (uint8_t b=0; b < num_bufs; ++b) if (bufs[b] == (t)) { found = b; break; } \
-      if (found < 0) { \
-        if (num_bufs >= MAG_FUSE_MAX_BUF) goto fallback; \
-        bufs[num_bufs] = (t); \
-        found = num_bufs++; \
-      } \
-      (dst) = (uint8_t)found; \
-    } while (0)
-
-  for (uint32_t i=0; i < tape->len; ++i) {
-    mag_fuse_tape_node_t *node = tape->nodes+i;
-    mag_fuse_operand_t operands[3];
-    for (uint8_t j=0; j < node->num_in; ++j) {
-      int32_t producer = mag_fuse_producer(tape, i, node->in[j]);
-      if (producer >= 0) { /* Stays in a register; nothing reaches memory for it. */
-        operands[j] = (mag_fuse_operand_t){.kind = MAG_FUSE_REG, .idx = (uint8_t)node_reg[producer]};
-        continue;
-      }
-      uint8_t slot;
-      mag_fuse_bind(slot, node->in[j]);
-      int32_t reg = node->in[j]->meta.numel == 1
-        ? mag_fuse_graph_load_scalar(&graph, slot)  /* One element, broadcast over the loop. */
-        : mag_fuse_graph_load(&graph, slot);
-      if (reg < 0) goto fallback;
-      operands[j] = (mag_fuse_operand_t){.kind = MAG_FUSE_REG, .idx = (uint8_t)reg};
+  /* The trace is an unfused dependency graph. Nothing here mentions CPU, CUDA, or a compiler. */
+  mag_fuse_trace_t trace = {.len = (uint8_t)tape->len};
+  for (uint8_t i=0; i < trace.len; ++i) {
+    const mag_fuse_tape_node_t *src = tape->nodes+i;
+    mag_fuse_trace_node_t *dst = trace.nodes+i;
+    dst->op = (mag_opcode_t)src->op;
+    dst->num_in = src->num_in;
+    dst->dtype = (uint8_t)src->out->meta.dtype;
+    dst->numel = src->out->meta.numel;
+    dst->device = src->out->meta.device;
+    dst->out = src->out;
+    dst->observed = mag_fuse_value_escapes(tape, i);
+    for (uint8_t j=0; j < src->num_in; ++j) {
+      dst->in[j] = src->in[j];
+      dst->producer[j] = (int16_t)mag_fuse_producer(tape, i, src->in[j]);
     }
-    int32_t reg = mag_fuse_graph_emit(&graph, (mag_opcode_t)node->op, operands, node->num_in);
-    if (reg < 0) goto fallback;
-    node_reg[i] = reg;
   }
-
-  /* Only the results something outside the chain can still read reach memory. */
-  uint32_t elided = 0; /* Counted into the context only if the chain actually runs. */
-  for (uint32_t i=0; i < tape->len; ++i) {
-    if (!mag_fuse_value_escapes(tape, i)) { ++elided; continue; }
-    uint8_t slot;
-    mag_fuse_bind(slot, tape->nodes[i].out);
-    if (!mag_fuse_graph_store(&graph, slot, node_reg[i])) goto fallback;
-  }
-  mag_fuse_graph_prune(&graph);
-  if (!graph.num_stores) goto done; /* Nothing observable: the chain need not run at all. */
-
-  {
-    /* The pending marks come off before submitting, because the kernel is about to write through
-       these very tensors and the guard would otherwise recurse into this function. */
-    for (uint32_t i=0; i < tape->len; ++i)
-      tape->nodes[i].out->meta.flags &= (mag_tensor_flags_t)~MAG_TFLAG_PENDING;
-
-    mag_device_t *dvc = tape->nodes[0].out->meta.device;
-    mag_op_params_t params;
-    memset(&params, 0, sizeof(params));
-    params.fused.graph = &graph;
-    mag_command_t cmd = {
-      .op = MAG_OP_FUSED,
-      .in = bufs,
-      .out = bufs,        /* A chain reads and writes the same bound set; the graph says which is which. */
-      .num_in = num_bufs,
-      .num_out = num_bufs,
-      .params = &params
-    };
-    mag_status_t st = (*dvc->submit)(err, dvc, &cmd);
-    if (mag_unlikely(mag_iserr(st))) {
-      /* The backend has no lowering for this chain, or could not build one. Nothing has been
-         written, so running the operators one at a time produces exactly what was asked for. */
-      mag_log_debug("fusion: backend declined a %u-op graph: %s", tape->len, err ? err->message : "unknown reason");
-      if (err) memset(err, 0, sizeof(*err)); /* Declining to lower a chain is not an error the caller should see. */
-      status = mag_fuse_replay_eager(err, tape);
-      goto done;
-    }
-    ++tape->chains;
-    tape->ops_fused += tape->len;
-    tape->elided += elided;
+  mag_fuse_plan_t plan;
+  if (!mag_fuse_trace_plan(&trace, &plan)) {
+    status = mag_fuse_replay_eager(err, tape);
     goto done;
   }
 
-fallback:
-  mag_log_debug("fusion: graph construction fell back to eager replay for %u operators", tape->len);
-  status = mag_fuse_replay_eager(err, tape);
+  for (uint8_t step=0; step < plan.num_groups; ++step) {
+    uint8_t group_id = plan.order[step];
+    const mag_fuse_group_t *group = plan.groups+group_id;
+    if (!group->fused) {
+      status = mag_fuse_replay_group(err, tape, group);
+      if (mag_unlikely(mag_iserr(status))) goto done;
+      continue;
+    }
+    mag_fuse_graph_t graph;
+    mag_fuse_graph_init(&graph, (mag_dtype_t)trace.nodes[group->nodes[0]].dtype);
+    mag_tensor_t *bufs[MAG_FUSE_MAX_BUF];
+    uint8_t num_bufs = 0;
+    int32_t node_reg[MAG_FUSE_TAPE_MAX];
+    uint32_t elided = 0;
+
+    /* Bind a tensor to a buffer slot, reusing the slot if it is already bound. */
+    #define mag_fuse_bind(dst, t) \
+      do { \
+        int32_t found = -1; \
+        for (uint8_t b=0; b < num_bufs; ++b) if (bufs[b] == (t)) { found = b; break; } \
+        if (found < 0) { \
+          if (num_bufs >= MAG_FUSE_MAX_BUF) goto group_fallback; \
+          bufs[num_bufs] = (t); \
+          found = num_bufs++; \
+        } \
+        (dst) = (uint8_t)found; \
+      } while (0)
+
+    for (uint8_t local=0; local < group->len; ++local) {
+      uint8_t i = group->nodes[local];
+      const mag_fuse_trace_node_t *node = trace.nodes+i;
+      mag_fuse_operand_t operands[3];
+      for (uint8_t j=0; j < node->num_in; ++j) {
+        int16_t producer = trace.nodes[i].producer[j];
+        if (producer >= 0 && plan.group_of[producer] == group_id) {
+          operands[j] = (mag_fuse_operand_t){.kind = MAG_FUSE_REG, .idx = (uint8_t)node_reg[producer]};
+          continue;
+        }
+        uint8_t slot;
+        mag_fuse_bind(slot, node->in[j]);
+        int32_t reg = node->in[j]->meta.numel == 1
+          ? mag_fuse_graph_load_scalar(&graph, slot)
+          : mag_fuse_graph_load(&graph, slot);
+        if (reg < 0) goto group_fallback;
+        operands[j] = (mag_fuse_operand_t){.kind = MAG_FUSE_REG, .idx = (uint8_t)reg};
+      }
+      int32_t reg = mag_fuse_graph_emit(&graph, node->op, operands, node->num_in);
+      if (reg < 0) goto group_fallback;
+      node_reg[i] = reg;
+    }
+
+    for (uint8_t local=0; local < group->len; ++local) {
+      uint8_t i = group->nodes[local];
+      if (!plan.store[i]) { ++elided; continue; }
+      uint8_t slot;
+      mag_fuse_bind(slot, trace.nodes[i].out);
+      if (!mag_fuse_graph_store(&graph, slot, node_reg[i])) goto group_fallback;
+    }
+    mag_fuse_graph_prune(&graph);
+
+    /* The pending marks come off before the kernel asks for its output data pointers. */
+    for (uint8_t local=0; local < group->len; ++local)
+      tape->nodes[group->nodes[local]].out->meta.flags &= (mag_tensor_flags_t)~MAG_TFLAG_PENDING;
+
+    {
+      mag_device_t *dvc = (mag_device_t *)trace.nodes[group->nodes[0]].device;
+      mag_op_params_t params = {0};
+      params.fused.graph = &graph;
+      mag_command_t cmd = {
+        .op = MAG_OP_FUSED,
+        .in = bufs,
+        .out = bufs,
+        .num_in = num_bufs,
+        .num_out = num_bufs,
+        .params = &params
+      };
+      mag_status_t st = (*dvc->submit)(err, dvc, &cmd);
+      if (mag_unlikely(mag_iserr(st))) {
+        mag_log_debug("fusion: backend declined a %u-op graph: %s", group->len, err ? err->message : "unknown reason");
+        if (err) memset(err, 0, sizeof(*err));
+        status = mag_fuse_replay_group(err, tape, group);
+        if (mag_unlikely(mag_iserr(status))) goto done;
+        continue;
+      }
+      ++tape->chains;
+      tape->ops_fused += group->len;
+      tape->elided += elided;
+      continue;
+    }
+
+group_fallback:
+    mag_log_debug("fusion: graph construction fell back to eager replay for %u operators", group->len);
+    status = mag_fuse_replay_group(err, tape, group);
+    if (mag_unlikely(mag_iserr(status))) goto done;
+    #undef mag_fuse_bind
+  }
+
 done:
-  #undef mag_fuse_bind
   mag_fuse_tape_release(tape);
   tape->flushing = false;
   return status;
 }
 
-/* Can this operand appear in a chain at all? */
+/* Can this operand appear in a pointwise trace node at all? */
 static bool mag_fuse_operand_ok(const mag_tensor_t *t, const mag_tensor_t *out) {
-  if (t->meta.dtype != out->meta.dtype) return false;      /* One dtype per chain. */
-  if (t->meta.device != out->meta.device) return false;    /* One device per chain. */
-  if (!mag_tensor_is_contiguous(t)) return false;          /* The graph indexes a flat loop. */
+  if (t->meta.dtype != out->meta.dtype) return false;      /* One dtype per operation. */
+  if (t->meta.device != out->meta.device) return false;    /* One device per operation. */
+  if (!mag_tensor_is_contiguous(t)) return false;          /* Fused groups index a flat loop. */
   if (t->meta.storage_offset) return false;
   return t->meta.numel == out->meta.numel || t->meta.numel == 1;
 }
@@ -363,26 +416,23 @@ mag_status_t mag_fuse_capture(
   uint32_t num_in,
   mag_tensor_t **out,
   uint32_t num_out,
+  const mag_op_params_t *params,
   bool *captured
 ) {
   *captured = false;
   struct mag_fuse_tape_t *tape = ctx->fuse_tape;
   if (mag_unlikely(!tape || tape->flushing)) return MAG_OK;
 
-  bool fusible =
+  bool deferable =
     !inplace &&
     num_out == 1 && num_in >= 1 && num_in <= 3 &&
-    mag_fuse_op_is_fusible(op) &&
+    !params && mag_fuse_op_is_deferable(op) &&
     out[0]->meta.numel >= MAG_FUSE_MIN_ELEMS;
-  if (fusible)
-    for (uint32_t i=0; i < num_in && fusible; ++i)
-      fusible = mag_fuse_operand_ok(in[i], out[0]);
-  if (fusible && tape->len) { /* Every link in one chain walks the same index space. */
-    const mag_tensor_t *head = tape->nodes[0].out;
-    fusible = out[0]->meta.numel == head->meta.numel && out[0]->meta.dtype == head->meta.dtype;
-  }
-
-  if (!fusible) {
+  if (deferable)
+    for (uint32_t i=0; i < num_in && deferable; ++i)
+      deferable = in[i]->meta.device == out[0]->meta.device &&
+        (!mag_fuse_op_is_fusible(op) || mag_fuse_operand_ok(in[i], out[0]));
+  if (!deferable) {
     /* Only flush when the operator actually reads something the chain still owes. An unrelated
        operator running beside a chain has no reason to cut it short. */
     bool must_flush = mag_fuse_touches_pending(in, num_in) || mag_fuse_touches_pending(out, num_out);

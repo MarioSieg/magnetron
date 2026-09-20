@@ -109,6 +109,8 @@ extern MAG_EXPORT int32_t mag_fuse_graph_imm(mag_fuse_graph_t *g);              
 
 /* True when an opcode may appear in a chain. Reads MAG_OP_FLAG_FUSIBLE from the operator table. */
 extern MAG_EXPORT bool mag_fuse_op_is_fusible(mag_opcode_t op);
+/* True when a pure pointwise operator may be deferred into the unfused trace. */
+extern MAG_EXPORT bool mag_fuse_op_is_deferable(mag_opcode_t op);
 
 /*
 ** Drop instructions whose results nothing stores and nothing else reads.

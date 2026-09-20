@@ -29,6 +29,7 @@ CHAINS = {
     'abs_sqrt': lambda x, w, b: (x * w).abs().sqrt() + b,
     'min_max': lambda x, w, b: x.max(w).min(b) * x,
     'reuses_result_twice': lambda x, w, b: (x * w) * (x * w) + b,
+    'tanh_barrier': lambda x, w, b: (x * w).tanh() + b,
 }
 
 
@@ -169,6 +170,98 @@ def test_an_operator_that_cannot_join_splits_the_chain() -> None:
     # tanh is not exactly defined, so it ends one chain and the add starts another.
     assert mag.fusion_stats()['chains'] - before == 2
     assert np.array_equal(out.numpy(), expect)
+
+
+def _interleaved_shapes_form_two_groups() -> None:
+    x, y = _rand(N), _rand(N * 2)
+    with no_grad():
+        expect_x = (x * x + x).numpy().copy()
+        expect_y = (y * y + y).numpy().copy()
+    before = mag.fusion_stats()
+    with no_grad(), mag.fuse():
+        mid_x = x * x
+        mid_y = y * y
+        out_x = mid_x + x
+        out_y = mid_y + y
+    after = mag.fusion_stats()
+    assert after['chains'] - before['chains'] == 2
+    assert after['ops_fused'] - before['ops_fused'] == 4
+    assert np.array_equal(out_x.numpy(), expect_x)
+    assert np.array_equal(out_y.numpy(), expect_y)
+
+
+def test_interleaved_shapes_form_two_groups_on_cpu() -> None:
+    with mag.device('cpu'):
+        _interleaved_shapes_form_two_groups()
+
+
+def _mixed_dtype_graph_executes_eager_nodes_between_fused_groups() -> None:
+    x, w, b = _rand(), _rand(), _rand()
+    with no_grad():
+        eager = (Tensor.where(x * w > b, x * w, b) + b).numpy().copy()
+    before = mag.fusion_stats()
+    with no_grad(), mag.fuse():
+        mid = x * w
+        mask = mid > b
+        chosen = Tensor.where(mask, mid, b)
+        out = chosen + b
+        assert mag.fusion_stats()['chains'] == before['chains']
+    after = mag.fusion_stats()
+    assert after['chains'] - before['chains'] == 2
+    assert after['ops_fused'] - before['ops_fused'] == 2
+    assert np.array_equal(out.numpy(), eager)
+
+
+def test_mixed_dtype_graph_on_cpu() -> None:
+    with mag.device('cpu'):
+        _mixed_dtype_graph_executes_eager_nodes_between_fused_groups()
+
+
+def _mixed_dtype_graph_gradient(fused: bool, values: tuple[np.ndarray, np.ndarray, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    x, w, b = (Tensor(value) for value in values)
+    x.requires_grad = True
+    w.requires_grad = True
+    if fused:
+        with mag.fuse():
+            mid = x * w
+            out = Tensor.where(mid > b, mid, b) + b
+    else:
+        mid = x * w
+        out = Tensor.where(mid > b, mid, b) + b
+    out.sum().backward()
+    return x.grad.numpy().copy(), w.grad.numpy().copy()
+
+
+def test_mixed_dtype_graph_preserves_gradient_on_cpu() -> None:
+    rng = np.random.default_rng(20260920)
+    values = tuple(rng.uniform(0.25, 1.75, N).astype(np.float32) for _ in range(3))
+    with mag.device('cpu'):
+        eager = _mixed_dtype_graph_gradient(False, values)
+        fused = _mixed_dtype_graph_gradient(True, values)
+    assert np.array_equal(fused[0], eager[0])
+    assert np.array_equal(fused[1], eager[1])
+
+
+def _cast_bridge_keeps_dtype_changes_in_the_trace() -> None:
+    x, w = _rand(), _rand()
+    with no_grad():
+        eager = ((x * w).cast(dtype.float16).cast(dtype.float32) + x).numpy().copy()
+    before = mag.fusion_stats()
+    with no_grad(), mag.fuse():
+        mid = x * w
+        narrow = mid.cast(dtype.float16)
+        wide = narrow.cast(dtype.float32)
+        out = wide + x
+        assert mag.fusion_stats()['chains'] == before['chains']
+    after = mag.fusion_stats()
+    assert after['chains'] - before['chains'] == 2
+    assert after['ops_fused'] - before['ops_fused'] == 2
+    assert np.array_equal(out.numpy(), eager)
+
+
+def test_cast_bridge_on_cpu() -> None:
+    with mag.device('cpu'):
+        _cast_bridge_keeps_dtype_changes_in_the_trace()
 
 
 def test_a_chain_nobody_keeps_runs_no_kernel() -> None:
@@ -364,6 +457,72 @@ CUDA = pytest.mark.skipif(
 
 
 CUDA_CHAINS = list(CHAINS)
+
+
+@CUDA
+def test_interleaved_shapes_form_two_groups_on_cuda() -> None:
+    with mag.device('cuda'):
+        _interleaved_shapes_form_two_groups()
+
+
+@CUDA
+def test_cuda_uncompiled_pointwise_op_separates_fused_groups() -> None:
+    with mag.device('cuda'):
+        x, w, b = _rand(), _rand(), _rand()
+        with no_grad():
+            eager = ((x * w).tanh() + b).numpy().copy()
+        before = mag.fusion_stats()['chains']
+        with no_grad(), mag.fuse():
+            mid = x * w
+            eager_only = mid.tanh()
+            got = eager_only + b
+        assert mag.fusion_stats()['chains'] - before == 2
+        assert np.array_equal(got.numpy(), eager)
+
+
+@CUDA
+def test_one_trace_partitions_cpu_and_cuda_work() -> None:
+    with mag.device('cpu'):
+        cpu_x = _rand()
+    with mag.device('cuda'):
+        cuda_x = _rand()
+    with no_grad():
+        eager_cpu = (cpu_x * cpu_x + cpu_x).numpy().copy()
+        eager_cuda = (cuda_x * cuda_x + cuda_x).numpy().copy()
+    before = mag.fusion_stats()
+    with no_grad(), mag.fuse():
+        cpu_mid = cpu_x * cpu_x
+        cuda_mid = cuda_x * cuda_x
+        cpu_out = cpu_mid + cpu_x
+        cuda_out = cuda_mid + cuda_x
+    after = mag.fusion_stats()
+    assert after['chains'] - before['chains'] == 2
+    assert after['ops_fused'] - before['ops_fused'] == 4
+    assert np.array_equal(cpu_out.numpy(), eager_cpu)
+    assert np.array_equal(cuda_out.numpy(), eager_cuda)
+
+
+@CUDA
+def test_mixed_dtype_graph_on_cuda() -> None:
+    with mag.device('cuda'):
+        _mixed_dtype_graph_executes_eager_nodes_between_fused_groups()
+
+
+@CUDA
+def test_mixed_dtype_graph_preserves_gradient_on_cuda() -> None:
+    rng = np.random.default_rng(20260920)
+    values = tuple(rng.uniform(0.25, 1.75, N).astype(np.float32) for _ in range(3))
+    with mag.device('cuda'):
+        eager = _mixed_dtype_graph_gradient(False, values)
+        fused = _mixed_dtype_graph_gradient(True, values)
+    assert np.array_equal(fused[0], eager[0])
+    assert np.array_equal(fused[1], eager[1])
+
+
+@CUDA
+def test_cast_bridge_on_cuda() -> None:
+    with mag.device('cuda'):
+        _cast_bridge_keeps_dtype_changes_in_the_trace()
 
 
 @CUDA
