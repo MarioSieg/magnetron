@@ -203,7 +203,7 @@ namespace mag::bindings {
       throw_if_error(mag_tensor_zero_grad(&err, *self), err);
     }, "Set stored gradient to zero.")
     .def("_replace", [](tensor_wrapper *self, const tensor_wrapper &other) -> void {
-      *self = other;
+      self->replace_shared(other);
     }, "other"_a, "Replace this tensor's storage with another.")
     .def("item", [](const tensor_wrapper &self) -> nb::object {
       if (mag_tensor_numel(*self) != 1)

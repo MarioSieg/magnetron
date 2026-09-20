@@ -89,16 +89,48 @@ void mag_topo_stack_free(mag_topo_stack_t *stack) {
   stack->cap = 0;
 }
 
+static void mag_topo_unclaim(mag_tensor_t *t, int64_t epoch) {
+  if (!t || !t->au_state) return;
+  mag_atomic64_t expect = epoch, desire = 0;
+  mag_atomic64_compare_exchange_strong(&t->au_state->topo_traversal_epoch, &expect, &desire, MAG_MO_ACQ_REL, MAG_MO_RELAXED);
+}
+
+void mag_topo_release(const mag_topo_set_t *sorted, int64_t epoch) {
+  for (size_t i=0; i < sorted->len; ++i)
+    mag_topo_unclaim(sorted->buf[i], epoch);
+}
+
+static void mag_topo_release_partial(const mag_topo_stack_t *stack, const mag_topo_set_t *sorted, int64_t epoch) {
+  mag_topo_release(sorted, epoch);
+  for (size_t i=0; i < stack->len; ++i)
+    mag_topo_unclaim(stack->top[i].tensor, epoch);
+}
+
+static int mag_topo_try_claim(mag_tensor_t *node, int64_t epoch) {
+  mag_au_state_t *au = node->au_state;
+  if (mag_atomic64_load(&au->topo_traversal_epoch, MAG_MO_ACQUIRE) == epoch) return 0;
+  mag_atomic64_t expect = 0, desire = epoch;
+  if (mag_likely(mag_atomic64_compare_exchange_strong(&au->topo_traversal_epoch, &expect, &desire, MAG_MO_ACQ_REL, MAG_MO_RELAXED)))
+    return 1;
+  return expect == epoch ? 0 : -1;
+}
+
+static MAG_COLDPROC mag_status_t mag_topo_shared_graph_error(mag_error_t *err) {
+  return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: another thread is traversing a graph that shares nodes with this one, concurrent backward is only supported over disjoint graphs.");
+}
+
 mag_status_t mag_topo_sort(
   mag_error_t *err,
   mag_tensor_t *root,
   mag_topo_stack_t *tmp_stack,
-  mag_topo_set_t *out_sorted
+  mag_topo_set_t *out_sorted,
+  int64_t *out_epoch
 ) {
   mag_topo_stack_reset(tmp_stack);
   mag_topo_set_reset(out_sorted);
+  *out_epoch = 0;
   if (mag_unlikely(!(root->meta.flags & MAG_TFLAG_REQUIRES_GRAD))) return MAG_OK;
-  uint64_t traversal_epoch = 1+(uint64_t)mag_atomic64_fetch_add(&root->ctx->topo_traversal_epoch, 1, MAG_MO_RELAXED);
+  int64_t traversal_epoch = 1+mag_atomic64_fetch_add(&root->ctx->topo_traversal_epoch, 1, MAG_MO_RELAXED);
   mag_status_t status = MAG_OK;
   if (!root->au_state) {
     if (mag_unlikely(!mag_au_state_lazy_alloc(&root->au_state, root->ctx))) {
@@ -106,6 +138,10 @@ mag_status_t mag_topo_sort(
       goto cleanup;
     }
     root->au_state->op = MAG_OP_NOP;
+  }
+  if (mag_unlikely(mag_topo_try_claim(root, traversal_epoch) < 0)) {
+    status = mag_topo_shared_graph_error(err);
+    goto cleanup;
   }
   if (mag_unlikely(!mag_topo_stack_push(tmp_stack, root))) {
     status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow traversal stack.");
@@ -135,15 +171,21 @@ mag_status_t mag_topo_sort(
     }
     mag_tensor_t *child = au->in[top->next_child_idx++];
     if (mag_unlikely(!child || !child->au_state)) continue;
-    if ((child->meta.flags & MAG_TFLAG_REQUIRES_GRAD) && child->au_state->topo_traversal_epoch != traversal_epoch) {
-      if (mag_unlikely(!mag_topo_stack_push(tmp_stack, child))) {
+    if (child->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
+      int claimed = mag_topo_try_claim(child, traversal_epoch);
+      if (mag_unlikely(claimed < 0)) {
+        status = mag_topo_shared_graph_error(err);
+        goto cleanup;
+      }
+      if (claimed && mag_unlikely(!mag_topo_stack_push(tmp_stack, child))) {
         status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow traversal stack.");
         goto cleanup;
       }
-      child->au_state->topo_traversal_epoch = traversal_epoch;
     }
   }
 cleanup:
+  if (mag_likely(!mag_iserr(status))) *out_epoch = traversal_epoch;
+  else mag_topo_release_partial(tmp_stack, out_sorted, traversal_epoch);
   mag_topo_stack_reset(tmp_stack);
   return status;
 }

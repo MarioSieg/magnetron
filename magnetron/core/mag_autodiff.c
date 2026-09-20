@@ -182,7 +182,8 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
     if (grad_was_on) mag_ctx_grad_recorder_start(ctx);
     return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate traversal stack.");
   }
-  status = mag_topo_sort(err, root, &topo_stack, post_order);
+  int64_t topo_epoch = 0;
+  status = mag_topo_sort(err, root, &topo_stack, post_order, &topo_epoch);
   mag_tensor_t *grads_intrusive[MAG_AU_STATE_INTRUSIVE_STORAGE_NUM];
   mag_tensor_t **grads_dyn = NULL;
   size_t grads_cap = 0;
@@ -254,6 +255,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
     }
   }
 cleanup:
+  if (topo_epoch) mag_topo_release(post_order, topo_epoch);
   if (grads_dyn)
     (*mag_alloc)(grads_dyn, 0, 0);
   mag_topo_stack_free(&topo_stack);

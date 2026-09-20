@@ -210,3 +210,18 @@ def test_concurrent_ops_do_not_corrupt_results() -> None:
     for i in range(_THREADS):
         expected = float(i + 1) * 128 * 128
         assert abs(sums[i] - expected) <= expected * 1e-4
+
+
+def test_parameter_data_setter_is_safe() -> None:
+    from magnetron import nn
+
+    param = nn.Parameter(Tensor.zeros(64))
+
+    def work(i: int) -> None:
+        for _ in range(500):
+            param.data = Tensor.full(64, fill_value=float(i))
+
+    errors = _run(work)
+    assert not errors, errors[0]
+    assert param.data.numel == 64
+    assert param.data[0].item() in {float(i) for i in range(_THREADS)}

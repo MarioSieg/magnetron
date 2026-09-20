@@ -96,6 +96,16 @@ namespace mag::bindings {
     ~tensor_wrapper() {
       if (m_tensor) mag_tensor_decref(m_tensor);
     }
+    void reset_owned(mag_tensor_t *next) noexcept {
+      mag_tensor_t *prev = __atomic_exchange_n(&m_tensor, next, __ATOMIC_ACQ_REL);
+      if (prev) mag_tensor_decref(prev);
+    }
+    void replace_shared(const tensor_wrapper &other) noexcept {
+      mag_tensor_t *next = __atomic_load_n(&other.m_tensor, __ATOMIC_ACQUIRE);
+      if (next) mag_tensor_incref(next);
+      reset_owned(next);
+    }
+
     explicit constexpr operator bool() const noexcept { return m_tensor != nullptr; }
     constexpr mag_tensor_t *operator * () const noexcept { return m_tensor; }
     constexpr mag_tensor_t *&operator * () noexcept { return m_tensor; }

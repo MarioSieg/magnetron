@@ -136,6 +136,41 @@ TEST(threading, concurrent_backward_disjoint_graphs) {
     ASSERT_EQ(0, failures.load());
 }
 
+TEST(threading, concurrent_backward_shared_graph_is_rejected) {
+    context ctx {};
+    const unsigned threads {worker_count()};
+    constexpr int rounds {64};
+
+    tensor x {ctx, dtype::float32, 4096};
+    x.fill_(2.0f);
+    x.requires_grad(true);
+
+    std::atomic<int> rejected {0};
+    std::atomic<int> succeeded {0};
+    std::atomic<int> other_errors {0};
+
+    std::vector<std::thread> pool {};
+    pool.reserve(threads);
+    for (unsigned t {0}; t < threads; ++t) {
+        pool.emplace_back([&] {
+            for (int i {0}; i < rounds; ++i) {
+                tensor loss {x.mul(x).sum()};
+                mag_error_t err {};
+                mag_status_t stat {mag_tensor_backward(&err, &*loss)};
+                if (stat == MAG_OK) ++succeeded;
+                else if (stat == MAG_ERR_AUTOGRAD) ++rejected;
+                else ++other_errors;
+            }
+        });
+    }
+    for (auto &th : pool) th.join();
+
+    ASSERT_EQ(0, other_errors.load());
+    ASSERT_GT(succeeded.load(), 0);
+    ASSERT_GT(rejected.load(), 0);
+    ASSERT_EQ(static_cast<int>(threads)*rounds, succeeded.load()+rejected.load());
+}
+
 TEST(threading, serialized_backward_shared_graph) {
     context ctx {};
     const unsigned threads {worker_count()};
