@@ -111,4 +111,8 @@ namespace mag {
   };
 
   [[nodiscard]] extern bool ranks_above(const physical_device &a, const physical_device &b) noexcept;
+
+  [[nodiscard]] inline physical_device &device_of(const mag_tensor_t *tensor) noexcept {
+    return *static_cast<physical_device *>(tensor->storage->device->impl);
+  }
 }
