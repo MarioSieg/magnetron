@@ -19,6 +19,7 @@
 #include "mag_cuda_reduction.cuh"
 #include "mag_cuda_misc.cuh"
 #include "mag_cuda_conv.cuh"
+#include "mag_cuda_interp.cuh"
 
 namespace mag {
   static constexpr mag_status_t(*k_kernel_dispatch_table[])(mag_error_t *, const mag_command_t &, cudaStream_t) = {
@@ -137,6 +138,8 @@ namespace mag {
     [MAG_OP_CONV] = &conv_op_conv,
     [MAG_OP_CONV_T] = &conv_op_conv_transpose,
     [MAG_OP_CONV_WGRAD] = &conv_op_conv_wgrad,
+    [MAG_OP_INTERPOLATE] = &interp_op_interpolate,
+    [MAG_OP_INTERPOLATE_BACK] = &interp_op_interpolate_back,
     [MAG_OP_STRIDED_VIEW] = +[](mag_error_t *, const mag_command_t &, cudaStream_t) -> mag_status_t { return MAG_OK; },
   };
   static_assert(std::size(k_kernel_dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");

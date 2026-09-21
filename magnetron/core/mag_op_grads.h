@@ -75,6 +75,7 @@ mag_status_t mag_op_backward_embedding(mag_error_t *err, mag_au_state_t *node, m
 mag_status_t mag_op_backward_masked_fill(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 mag_status_t mag_op_backward_conv(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 mag_status_t mag_op_backward_convT(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
+mag_status_t mag_op_backward_interpolate(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 
 #ifdef __cplusplus
 }

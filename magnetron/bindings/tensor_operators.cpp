@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace mag::bindings {
   [[nodiscard]] static std::array<int64_t, 3> parse_conv_param(nb::handle h, int64_t spatial, const char *what) {
@@ -1071,6 +1072,55 @@ namespace mag::bindings {
       },
       "weight"_a, "bias"_a = nb::none(), "stride"_a = 1, "padding"_a = 0, "output_padding"_a = 0, "groups"_a = 1, "dilation"_a = 1,
       "Transposed 3D convolution over an input of shape [N, C, D, H, W] with weight [C_in, C_out/groups, KD, KH, KW]."
+    )
+    .def("interpolate",
+      [](const tensor_wrapper &self, nb::handle size_h, nb::handle scale_h, const std::string &mode, bool align_corners, bool antialias) -> tensor_wrapper {
+        int64_t rank = mag_tensor_rank(*self);
+        if (rank < 3 || rank > 5)
+          throw nb::value_error("interpolate: input must have rank 3, 4 or 5 (batch, channels, spatial...)");
+        int64_t spatial = rank-2;
+        const int64_t *dims = mag_tensor_shape_ptr(*self);
+        std::array<int64_t, 3> out {};
+        std::array<double, 3> scale {};
+        bool has_scale = false;
+        if (size_h.is_none() == scale_h.is_none())
+          throw nb::value_error("interpolate: exactly one of size or scale_factor must be given");
+        if (!size_h.is_none()) {
+          out = parse_conv_param(size_h, spatial, "size");
+        } else {
+          has_scale = true;
+          if (nb::isinstance<nb::float_>(scale_h) || nb::isinstance<nb::int_>(scale_h)) {
+            double f = nb::cast<double>(scale_h);
+            for (int64_t i=0; i < spatial; ++i) scale[i] = f;
+          } else {
+            std::vector<double> v {};
+            for (auto &&item : nb::cast<nb::sequence>(scale_h)) v.push_back(nb::cast<double>(item));
+            if (static_cast<int64_t>(v.size()) != spatial)
+              throw nb::value_error(("interpolate: scale_factor must be a number or a sequence of " + std::to_string(spatial) + " numbers").c_str());
+            std::copy(v.begin(), v.end(), scale.begin());
+          }
+          for (int64_t i=0; i < spatial; ++i) {
+            if (!(scale[i] > 0.0))
+              throw nb::value_error("interpolate: scale_factor must be > 0");
+            out[i] = static_cast<int64_t>(std::floor(static_cast<double>(dims[2+i])*scale[i]));
+          }
+        }
+        mag_tensor_t *result = nullptr;
+        mag_error_t err {};
+        auto invoke = [&]() -> mag_status_t {
+          return mag_interpolate(&err, &result, *self, out.data(), spatial, has_scale ? scale.data() : nullptr, mode.c_str(), align_corners, antialias);
+        };
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_INTERPOLATE, [&] {
+            throw_if_error(call_without_gil(invoke), err);
+          }, {*self});
+        } else {
+          throw_if_error(call_without_gil(invoke), err);
+        }
+        return tensor_wrapper{result};
+      },
+      "size"_a = nb::none(), "scale_factor"_a = nb::none(), "mode"_a = "nearest", "align_corners"_a = false, "antialias"_a = false,
+      "Resample the spatial dims of an input of shape [N, C, *spatial] to size or by scale_factor. Modes: nearest, nearest-exact, linear, bilinear, bicubic, trilinear, area."
     )
     .def("tril",
       [](const tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {

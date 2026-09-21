@@ -35,6 +35,16 @@ typedef enum mag_pad_mode_t {
   MAG_PAD_MODE_CIRCULAR = 3,
 } mag_pad_mode_t;
 
+typedef enum mag_interp_mode_t {
+  MAG_INTERP_MODE_NEAREST = 0,
+  MAG_INTERP_MODE_NEAREST_EXACT = 1,
+  MAG_INTERP_MODE_LINEAR = 2,
+  MAG_INTERP_MODE_BILINEAR = 3,
+  MAG_INTERP_MODE_BICUBIC = 4,
+  MAG_INTERP_MODE_TRILINEAR = 5,
+  MAG_INTERP_MODE_AREA = 6,
+} mag_interp_mode_t;
+
 typedef union mag_op_params_t {
   struct {
     int64_t rank;
@@ -85,6 +95,14 @@ typedef union mag_op_params_t {
     int64_t output_padding[3];
     int64_t groups;
   } conv;
+  struct {
+    int64_t spatial;
+    int64_t out_size[3];
+    double scale[3];
+    int64_t mode;
+    bool align_corners : 1;
+    bool antialias : 1;
+  } interp;
   struct {
     int64_t dim;
   } cumu;
@@ -267,6 +285,8 @@ typedef union mag_op_params_t {
   _(CONV, MAG_OP_INOUT_DYN, 1, FP, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, conv)__\
   _(CONV_T, MAG_OP_INOUT_DYN, 1, FP, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, convT)__\
   _(CONV_WGRAD, 2, 1, FP, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(INTERPOLATE, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, interpolate)__\
+  _(INTERPOLATE_BACK, 1, 1, FP, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(STRIDED_VIEW, 1, 1, ALL, MAG_OP_FLAG_NONE, strided_view)__
 
 /* Standard opcodes, not including initialization operators. */

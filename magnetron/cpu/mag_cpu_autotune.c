@@ -133,6 +133,8 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_CONV] = {0.8, 4096},
     [MAG_OP_CONV_T] = {0.8, 4096},
     [MAG_OP_CONV_WGRAD] = {0.8, 4096},
+    [MAG_OP_INTERPOLATE] = {0.5, 10000},
+    [MAG_OP_INTERPOLATE_BACK] = {0.5, 10000},
   };
   return scaling_table[op];
 }

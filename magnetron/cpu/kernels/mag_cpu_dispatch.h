@@ -140,6 +140,7 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #include "mag_cpu_kernels_repeat.h"
 #include "mag_cpu_kernels_index.h"
 #include "mag_cpu_kernels_conv.h"
+#include "mag_cpu_kernels_interp.h"
 
 static mag_status_t mag_nop(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err, (void)payload;
@@ -460,6 +461,27 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_FLOAT16] = &mag_conv_wgrad_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_conv_wgrad_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_conv_wgrad_float8_e4m3fn,
+  },
+  [MAG_OP_INTERPOLATE] = {
+    [MAG_DTYPE_FLOAT32] = &mag_interpolate_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_interpolate_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_interpolate_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_interpolate_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_interpolate_uint8,
+    [MAG_DTYPE_UINT8] = &mag_interpolate_uint8,
+    [MAG_DTYPE_INT8] = &mag_interpolate_int8,
+    [MAG_DTYPE_UINT16] = &mag_interpolate_uint16,
+    [MAG_DTYPE_INT16] = &mag_interpolate_int16,
+    [MAG_DTYPE_UINT32] = &mag_interpolate_uint32,
+    [MAG_DTYPE_INT32] = &mag_interpolate_int32,
+    [MAG_DTYPE_UINT64] = &mag_interpolate_uint64,
+    [MAG_DTYPE_INT64] = &mag_interpolate_int64,
+  },
+  [MAG_OP_INTERPOLATE_BACK] = {
+    [MAG_DTYPE_FLOAT32] = &mag_interpolate_back_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_interpolate_back_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_interpolate_back_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_interpolate_back_float8_e4m3fn,
   },
   [MAG_OP_ABS] = {
     [MAG_DTYPE_FLOAT32] = &mag_abs_float32,

@@ -1298,6 +1298,23 @@ def test_lerp_inplace(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_interpolate(device: str) -> None:
+    x = Tensor.arange(2 * 3 * 2 * 3, device=device).cast(dtype.float32).reshape(2, 3, 2, 3)
+    y = x.interpolate(scale_factor=2)
+    expected = torch.nn.functional.interpolate(totorch(x), scale_factor=2, mode='nearest')
+    assert y.shape == (2, 3, 4, 6)
+    assert_close_mag_torch(y, expected, dtype.float32)
+    y = x.interpolate(size=(3, 5))
+    expected = torch.nn.functional.interpolate(totorch(x), size=(3, 5), mode='nearest')
+    assert y.shape == (2, 3, 3, 5)
+    assert_close_mag_torch(y, expected, dtype.float32)
+    for mode in ('nearest-exact', 'bilinear', 'bicubic', 'area'):
+        y = x.interpolate(size=(5, 7), mode=mode)
+        expected = torch.nn.functional.interpolate(totorch(x), size=(5, 7), mode=mode)
+        assert_close_mag_torch(y, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_conv1d(device: str) -> None:
     x = Tensor.arange(2 * 4 * 9, device=device).cast(dtype.float32).reshape(2, 4, 9)
     w = Tensor.arange(6 * 2 * 3, device=device).cast(dtype.float32).reshape(6, 2, 3) * 0.1

@@ -16,6 +16,7 @@
 #include "mag_u128.h"
 #include "mag_alloc.h"
 #include "mag_op_dispatch.h"
+#include "mag_interp_plan.h"
 #include "mag_op_helpers.h"
 
 /* Create a new tensor. The must be created on the same thread as the context. */
@@ -1512,6 +1513,80 @@ mag_status_t mag_conv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
 
 mag_status_t mag_convT(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weight, mag_tensor_t *bias, int64_t spatial, const int64_t *stride, const int64_t *padding, const int64_t *output_padding, const int64_t *dilation, int64_t groups) {
   return mag_conv_stub(err, out_result, MAG_OP_CONV_T, "convT", x, weight, bias, spatial, stride, padding, output_padding, dilation, groups);
+}
+
+mag_status_t mag_interpolate(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *out_size, int64_t out_len, const double *scale_factor, const char *mode, bool align_corners, bool antialias) {
+  *out_result = NULL;
+  if (mag_unlikely(!x))
+    return mag_set_error(err, MAG_ERR_PARAM, "interpolate: input tensor must not be NULL.");
+  mag_interp_mode_t m;
+  if (!strcmp(mode, "nearest")) m = MAG_INTERP_MODE_NEAREST;
+  else if (!strcmp(mode, "nearest-exact")) m = MAG_INTERP_MODE_NEAREST_EXACT;
+  else if (!strcmp(mode, "linear")) m = MAG_INTERP_MODE_LINEAR;
+  else if (!strcmp(mode, "bilinear")) m = MAG_INTERP_MODE_BILINEAR;
+  else if (!strcmp(mode, "bicubic")) m = MAG_INTERP_MODE_BICUBIC;
+  else if (!strcmp(mode, "trilinear")) m = MAG_INTERP_MODE_TRILINEAR;
+  else if (!strcmp(mode, "area")) m = MAG_INTERP_MODE_AREA;
+  else return mag_set_error(err, MAG_ERR_PARAM, "interpolate: invalid mode '%s', expected one of nearest, nearest-exact, linear, bilinear, bicubic, trilinear, area.", mode);
+  int64_t rank = x->meta.coords.rank;
+  if (mag_unlikely(rank < 3 || rank > 5))
+    return mag_set_error(err, MAG_ERR_RANK, "interpolate: input must have rank 3, 4 or 5 (batch, channels, spatial...), but got rank %" PRIi64 ".", rank);
+  int64_t spatial = rank-2;
+  int64_t tar_rank = 0;
+  switch (m) {
+    case MAG_INTERP_MODE_LINEAR: tar_rank = 3; break;
+    case MAG_INTERP_MODE_BILINEAR:
+    case MAG_INTERP_MODE_BICUBIC: tar_rank = 4; break;
+    case MAG_INTERP_MODE_TRILINEAR: tar_rank = 5; break;
+    default: break;
+  }
+  if (mag_unlikely(tar_rank && rank != tar_rank))
+    return mag_set_error(err, MAG_ERR_RANK, "interpolate: mode '%s' requires a rank %" PRIi64 " input, but got rank %" PRIi64 ".", mode, tar_rank, rank);
+  bool nearest = mag_interp_mode_is_nearest(m);
+  if (mag_unlikely(align_corners && (nearest || m == MAG_INTERP_MODE_AREA)))
+    return mag_set_error(err, MAG_ERR_PARAM, "interpolate: align_corners can only be set with modes linear, bilinear, bicubic or trilinear.");
+  if (mag_unlikely(antialias && m != MAG_INTERP_MODE_BILINEAR && m != MAG_INTERP_MODE_BICUBIC))
+    return mag_set_error(err, MAG_ERR_PARAM, "interpolate: antialias is only supported with modes bilinear and bicubic.");
+  if (mag_unlikely(!nearest && !mag_tensor_is_floating_point_typed(x)))
+    return mag_set_error(err, MAG_ERR_PARAM, "interpolate: mode '%s' requires a floating-point input, but got %s.", mode, mag_type_trait(x->meta.dtype)->name);
+  if (mag_unlikely(!out_size || out_len != spatial))
+    return mag_set_error(err, MAG_ERR_PARAM, "interpolate: expected %" PRIi64 " output sizes, but got %" PRIi64 ".", spatial, out_len);
+  mag_op_params_t params = {0};
+  params.interp.spatial = spatial;
+  params.interp.mode = m;
+  params.interp.align_corners = align_corners;
+  params.interp.antialias = antialias;
+  int64_t shape[MAG_MAX_DIMS];
+  shape[0] = x->meta.coords.shape[0];
+  shape[1] = x->meta.coords.shape[1];
+  for (int64_t i=0; i < spatial; ++i) {
+    if (mag_unlikely(out_size[i] < 1))
+      return mag_set_error(err, MAG_ERR_SHAPE, "interpolate: output size for spatial dim %" PRIi64 " must be >= 1, but got %" PRIi64 ".", i, out_size[i]);
+    if (mag_unlikely(x->meta.coords.shape[2+i] < 1))
+      return mag_set_error(err, MAG_ERR_SHAPE, "interpolate: input spatial dim %" PRIi64 " must be >= 1, but got %" PRIi64 ".", i, x->meta.coords.shape[2+i]);
+    double sf = scale_factor && m != MAG_INTERP_MODE_AREA ? scale_factor[i] : 0.0;
+    if (mag_unlikely(sf < 0.0))
+      return mag_set_error(err, MAG_ERR_PARAM, "interpolate: scale_factor must be > 0.");
+    params.interp.out_size[i] = out_size[i];
+    params.interp.scale[i] = sf;
+    shape[2+i] = out_size[i];
+  }
+  mag_tensor_t *xc = NULL;
+  mag_tensor_t *result = NULL;
+  mag_status_t status = mag_contiguous(err, &xc, x);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_check_dtype_and_device_compat(err, MAG_OP_INTERPOLATE, &xc, 1);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_empty(err, &result, x->ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_dispatch(err, MAG_OP_INTERPOLATE, false, &xc, 1, &result, 1, &params);
+  if (mag_iserr(status)) goto cleanup;
+  *out_result = result;
+  result = NULL;
+cleanup:
+  if (result) mag_tensor_decref(result);
+  if (xc) mag_tensor_decref(xc);
+  return status;
 }
 
 mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag) {

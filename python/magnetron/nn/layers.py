@@ -223,6 +223,69 @@ class ReLU(Module):
         return x.relu()
 
 
+class GroupNorm(Module):
+    def __init__(
+        self,
+        num_groups: int,
+        num_channels: int,
+        eps: float = 1e-5,
+        affine: bool = True,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        bias_init: InitStrategy | None = None,
+    ) -> None:
+        super().__init__()
+        if dtype is None:
+            dtype = context.get_default_dtype()
+        if num_groups < 1:
+            raise ValueError(f'num_groups must be >= 1, but got {num_groups}')
+        if num_channels % num_groups != 0:
+            raise ValueError(f'num_channels ({num_channels}) must be divisible by num_groups ({num_groups})')
+        self.num_groups = num_groups
+        self.num_channels = num_channels
+        self.eps = eps
+        self.weight: Parameter | None = None
+        self.bias: Parameter | None = None
+        if affine:
+            self.weight = Parameter(Tensor.empty(num_channels, dtype=dtype))
+            inplace_init(self.weight, OnesInitStrategy() if weight_init is None else weight_init)
+            self.bias = Parameter(Tensor.empty(num_channels, dtype=dtype))
+            inplace_init(self.bias, ZerosInitStrategy() if bias_init is None else bias_init)
+
+    def forward(self, x: Tensor) -> Tensor:
+        if x.rank < 2 or x.shape[1] != self.num_channels:
+            raise ValueError(f'expected input of shape [N, {self.num_channels}, ...], but got {x.shape}')
+        xg = x.reshape(x.shape[0], self.num_groups, -1)
+        mean = xg.mean(dim=-1, keepdim=True)
+        xm = xg - mean
+        var = xm.sqr().mean(dim=-1, keepdim=True)
+        y = (xm * (var + self.eps).rsqrt()).reshape(*x.shape)
+        if self.weight is not None:
+            bshape = (1, self.num_channels) + (1,) * (x.rank - 2)
+            y = y * self.weight.reshape(*bshape) + self.bias.reshape(*bshape)
+        return y
+
+
+class Upsample(Module):
+    def __init__(
+        self,
+        size: int | Sequence[int] | None = None,
+        scale_factor: float | Sequence[float] | None = None,
+        mode: str = 'nearest',
+        align_corners: bool = False,
+    ) -> None:
+        super().__init__()
+        if (size is None) == (scale_factor is None):
+            raise ValueError('exactly one of size or scale_factor must be given')
+        self.size = size
+        self.scale_factor = scale_factor
+        self.mode = mode
+        self.align_corners = align_corners
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.interpolate(size=self.size, scale_factor=self.scale_factor, mode=self.mode, align_corners=self.align_corners)
+
+
 class GeLU(Module):
     def __init__(self, use_tanh_approx: bool = False) -> None:
         super().__init__()

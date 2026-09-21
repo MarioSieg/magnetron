@@ -1422,3 +1422,21 @@ mag_status_t mag_op_backward_conv(mag_error_t *err, mag_au_state_t *node, mag_te
 mag_status_t mag_op_backward_convT(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   return mag_conv_backward_common(err, node, grads, true);
 }
+
+mag_status_t mag_op_backward_interpolate(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  mag_tensor_t *x = node->in[0];
+  mag_tensor_t *dy = NULL;
+  mag_tensor_t *g = NULL;
+  mag_status_t status = mag_contiguous(err, &dy, node->grad);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_empty_like(err, &g, x);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_dispatch(err, MAG_OP_INTERPOLATE_BACK, false, &dy, 1, &g, 1, node->params);
+  if (mag_iserr(status)) goto cleanup;
+  grads[0] = g;
+  g = NULL;
+cleanup:
+  if (g) mag_rc_decref(g);
+  if (dy) mag_rc_decref(dy);
+  return status;
+}
