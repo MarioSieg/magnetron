@@ -649,6 +649,194 @@ namespace mag {
     }
   }
 
+
+#if MAG_CUDA_MATMUL_USE_WMMA
+  template <typename T, bool TA, bool TB, int BM, int BN, int BK, int WARPS_M, int WARPS_N>
+  __global__ static void matmul_kernel_fallback_mma(
+    int M, int N, int K,
+    int batch_total,
+    T *br, const T *bx, const T *by
+  ) {
+    using namespace nvcuda;
+    static_assert(std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>);
+    static_assert(BM % (16*WARPS_M) == 0 && BN % (16*WARPS_N) == 0 && BK % 16 == 0);
+    static constexpr int WT_M = BM/(16*WARPS_M);
+    static constexpr int WT_N = BN/(16*WARPS_N);
+    static constexpr int NTHREADS = WARPS_M*WARPS_N*32;
+    static constexpr int A_SIZE = BM*BK;
+    static constexpr int B_SIZE = BK*BN;
+    static constexpr int STAGES = 2;
+    using a_layout = std::conditional_t<TA, wmma::col_major, wmma::row_major>;
+    using b_layout = std::conditional_t<TB, wmma::col_major, wmma::row_major>;
+    extern __shared__ __align__(128) uint8_t smem_raw[];
+    auto *a_smem = reinterpret_cast<T *>(smem_raw);
+    auto *b_smem = a_smem + STAGES*A_SIZE;
+    int batch = blockIdx.z;
+    if (batch >= batch_total) return;
+    bx += static_cast<int64_t>(batch)*M*K;
+    by += static_cast<int64_t>(batch)*K*N;
+    T *r_batch = br + static_cast<int64_t>(batch)*M*N;
+    int tile_m = blockIdx.y*BM;
+    int tile_n = blockIdx.x*BN;
+    int tid = threadIdx.x;
+    int lane = tid&31;
+    int warp = tid>>5;
+    int warp_m0 = (warp / WARPS_N)*WT_M;
+    int warp_n0 = (warp % WARPS_N)*WT_N;
+    const int a_pitch = TA ? M : K;
+    const int a_rows_total = TA ? K : M;
+    const int a_cols_total = TA ? M : K;
+    const int b_pitch = TB ? K : N;
+    const int b_rows_total = TB ? N : K;
+    const int b_cols_total = TB ? K : N;
+    auto vec_width = [](int pitch, const void *base) -> int {
+      if (!(pitch & 7) && !(reinterpret_cast<uintptr_t>(base) & 15)) return 8;
+      if (!(pitch & 1) && !(reinterpret_cast<uintptr_t>(base) & 3)) return 2;
+      return 1;
+    };
+    const int a_vec = vec_width(a_pitch, bx);
+    const int b_vec = vec_width(b_pitch, by);
+    auto load_tile = [&]<int ROWS, int COLS, int V>(T *dst, const T *src, int pitch, int row0, int col0, int rows_total, int cols_total) {
+      static_assert(COLS % V == 0 && (ROWS*COLS/V) % NTHREADS == 0);
+      using vec_t = std::conditional_t<V == 8, uint4, std::conditional_t<V == 2, uint32_t, T>>;
+      static constexpr int PER_THREAD = ROWS*COLS/V/NTHREADS;
+      static constexpr int VEC_COLS = COLS/V;
+      vec_t v[PER_THREAD];
+      #pragma unroll
+      for (int t=0; t < PER_THREAD; ++t) {
+        int i = tid + t*NTHREADS;
+        int row = i / VEC_COLS;
+        int col = (i % VEC_COLS)*V;
+        int grow = row0 + row;
+        int gcol = col0 + col;
+        v[t] = vec_t {};
+        if (grow < rows_total && gcol < cols_total)
+          v[t] = *reinterpret_cast<const vec_t *>(src + static_cast<int64_t>(grow)*pitch + gcol);
+      }
+      #pragma unroll
+      for (int t=0; t < PER_THREAD; ++t) {
+        int i = tid + t*NTHREADS;
+        int row = i / VEC_COLS;
+        int col = (i % VEC_COLS)*V;
+        *reinterpret_cast<vec_t *>(dst + row*COLS + col) = v[t];
+      }
+    };
+    auto load_tile_any = [&]<int ROWS, int COLS>(T *dst, const T *src, int pitch, int row0, int col0, int rows_total, int cols_total, int vec) {
+      if (vec == 8) load_tile.template operator()<ROWS, COLS, 8>(dst, src, pitch, row0, col0, rows_total, cols_total);
+      else if (vec == 2) load_tile.template operator()<ROWS, COLS, 2>(dst, src, pitch, row0, col0, rows_total, cols_total);
+      else load_tile.template operator()<ROWS, COLS, 1>(dst, src, pitch, row0, col0, rows_total, cols_total);
+    };
+
+    auto load_stage = [&](int stage, int k0) {
+      T *a_buf = a_smem + stage*A_SIZE;
+      T *b_buf = b_smem + stage*B_SIZE;
+      if constexpr (!TA) load_tile_any.template operator()<BM, BK>(a_buf, bx, a_pitch, tile_m, k0, a_rows_total, a_cols_total, a_vec);
+      else load_tile_any.template operator()<BK, BM>(a_buf, bx, a_pitch, k0, tile_m, a_rows_total, a_cols_total, a_vec);
+      if constexpr (!TB) load_tile_any.template operator()<BK, BN>(b_buf, by, b_pitch, k0, tile_n, b_rows_total, b_cols_total, b_vec);
+      else load_tile_any.template operator()<BN, BK>(b_buf, by, b_pitch, tile_n, k0, b_rows_total, b_cols_total, b_vec);
+    };
+
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag[WT_M][WT_N];
+    #pragma unroll
+    for (int i=0; i < WT_M; ++i) {
+      #pragma unroll
+      for (int j=0; j < WT_N; ++j)
+        wmma::fill_fragment(c_frag[i][j], 0.0f);
+    }
+
+    auto compute_stage = [&](int stage) {
+      const T *a_buf = a_smem + stage*A_SIZE;
+      const T *b_buf = b_smem + stage*B_SIZE;
+      #pragma unroll
+      for (int kk=0; kk < BK; kk += 16) {
+        wmma::fragment<wmma::matrix_a, 16, 16, 16, T, a_layout> a_frag[WT_M];
+        wmma::fragment<wmma::matrix_b, 16, 16, 16, T, b_layout> b_frag[WT_N];
+        #pragma unroll
+        for (int i=0; i < WT_M; ++i) {
+          int mt = (warp_m0 + i)<<4;
+          if constexpr (!TA) wmma::load_matrix_sync(a_frag[i], a_buf + mt*BK + kk, BK);
+          else wmma::load_matrix_sync(a_frag[i], a_buf + kk*BM + mt, BM);
+        }
+        #pragma unroll
+        for (int j=0; j < WT_N; ++j) {
+          int nt = (warp_n0 + j)<<4;
+          if constexpr (!TB) wmma::load_matrix_sync(b_frag[j], b_buf + kk*BN + nt, BN);
+          else wmma::load_matrix_sync(b_frag[j], b_buf + nt*BK + kk, BK);
+        }
+        #pragma unroll
+        for (int i=0; i < WT_M; ++i) {
+          #pragma unroll
+          for (int j=0; j < WT_N; ++j)
+            wmma::mma_sync(c_frag[i][j], a_frag[i], b_frag[j], c_frag[i][j]);
+        }
+      }
+    };
+
+    int stage = 0;
+    load_stage(stage, 0);
+    __syncthreads();
+    for (int k0=0; k0 < K; k0 += BK) {
+      int next_k0 = k0 + BK;
+      int next_stage = stage^1;
+      if (next_k0 < K)
+        load_stage(next_stage, next_k0); /* The other buffer was consumed before the last barrier */
+      compute_stage(stage);
+      __syncthreads();
+      stage = next_stage;
+    }
+    auto *c_ptr = reinterpret_cast<float *>(smem_raw) + (warp<<8);
+    #pragma unroll
+    for (int i=0; i < WT_M; ++i) {
+      #pragma unroll
+      for (int j=0; j < WT_N; ++j) {
+        wmma::store_matrix_sync(c_ptr, c_frag[i][j], 16, wmma::mem_row_major);
+        __syncwarp();
+        store_tile_16x16<T>(r_batch, M, N, tile_m + ((warp_m0 + i)<<4), tile_n + ((warp_n0 + j)<<4), c_ptr, lane);
+        __syncwarp();
+      }
+    }
+  }
+
+  template <typename T>
+  static mag_status_t launch_matmul_kernel_fallback_mma(
+    mag_error_t *err,
+    int64_t M, int64_t N, int64_t K,
+    int64_t batch_total,
+    T *__restrict__ br,
+    const T *bx,
+    const T *by,
+    bool xT, bool yT,
+    cudaStream_t stream
+  ) {
+    static constexpr int BM = 128;
+    static constexpr int BN = 128;
+    static constexpr int BK = 32;
+    static constexpr int WARPS_M = 4;
+    static constexpr int WARPS_N = 2;
+    static constexpr int STAGES = 2;
+    static constexpr int BLOCK_THREADS = WARPS_M*WARPS_N*32;
+    dim3 grid_dim(static_cast<unsigned>((N + BN-1)/BN), static_cast<unsigned>((M + BM-1)/BM), static_cast<unsigned>(batch_total));
+    dim3 block_dim(BLOCK_THREADS, 1, 1);
+    int max_smem_real;
+    int device;
+    cudaGetDevice(&device);
+    cudaDeviceGetAttribute(&max_smem_real, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
+    size_t smem = std::max(sizeof(T)*STAGES*(BM*BK + BK*BN), sizeof(float)*(WARPS_M*WARPS_N<<8));
+    if (smem > (unsigned)max_smem_real)
+      return mag_set_error(err, MAG_ERR_OP, "cuda: matmul shared memory requirement (%u bytes) exceeds device limit (%d bytes).", static_cast<unsigned>(smem), max_smem_real);
+    auto launch = [&](auto *kernel) -> void {
+      mag_assert2(smem <= INT32_MAX);
+      cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(smem));
+      kernel<<<grid_dim, block_dim, smem, stream>>>(static_cast<int>(M), static_cast<int>(N), static_cast<int>(K), static_cast<int>(batch_total), br, bx, by);
+    };
+    if (!xT && !yT) launch(matmul_kernel_fallback_mma<T, false, false, BM, BN, BK, WARPS_M, WARPS_N>);
+    else if (!xT && yT) launch(matmul_kernel_fallback_mma<T, false, true, BM, BN, BK, WARPS_M, WARPS_N>);
+    else if (xT && !yT) launch(matmul_kernel_fallback_mma<T, true, false, BM, BN, BK, WARPS_M, WARPS_N>);
+    else launch(matmul_kernel_fallback_mma<T, true, true, BM, BN, BK, WARPS_M, WARPS_N>);
+    return MAG_OK;
+  }
+#endif
+
   template <typename T>
   static mag_status_t launch_matmul_kernel_fallback(
     mag_error_t *err,
@@ -660,6 +848,10 @@ namespace mag {
     bool xT, bool yT,
     cudaStream_t stream
   ) {
+    #if MAG_CUDA_MATMUL_USE_WMMA
+      if constexpr (std::is_same_v<T, __nv_bfloat16> || std::is_same_v<T, half>)
+        return launch_matmul_kernel_fallback_mma<T>(err, M, N, K, batch_total, br, bx, by, xT, yT, stream);
+    #endif
     static constexpr int BM = 64;
     static constexpr int BN = 64;
     static constexpr int BK = 32;

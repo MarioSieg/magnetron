@@ -260,6 +260,26 @@ namespace mag {
     }
   }
 
+  template <typename Op, typename I, const bool ScalarRhs>
+  __global__ static void binary_op_scalar_kernel(
+    Op op,
+    I numel,
+    typename Op::OutT *__restrict__ r,
+    const typename Op::InT *__restrict__ x,
+    const typename Op::InT *__restrict__ s
+  ) {
+    I i = static_cast<I>(blockDim.x)*static_cast<I>(blockIdx.x) + static_cast<I>(threadIdx.x);
+    I step = static_cast<I>(blockDim.x)*static_cast<I>(gridDim.x);
+    auto xi = *s;
+    if constexpr (ScalarRhs) {
+      for (; i < numel; i += step)
+        r[i] = op(x[i], xi);
+    } else {
+      for (; i < numel; i += step)
+        r[i] = op(xi, x[i]);
+    }
+  }
+
   template <typename Op>
   static void launch_binary_op(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y, cudaStream_t stream) {
     int64_t numel = mag_tensor_numel(r);
@@ -267,10 +287,12 @@ namespace mag {
     auto *pr = reinterpret_cast<typename Op::OutT *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const typename Op::InT *>(mag_tensor_data_ptr(x));
     const auto *py = reinterpret_cast<const typename Op::InT *>(mag_tensor_data_ptr(y));
-    /* The index stays 64-bit on purpose. Narrowing it to 32 measured as no gain at all: this kernel is bound
-       by memory, and the divides hide under the loads whose addresses they compute. */
     if (std::array<const mag_tensor_t *, 3> tensors {r, x, y}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
       binary_op_kernel<Op, int64_t, true><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(Op {}, numel, pr, px, py, {}, {}, {});
+    } else if (std::array<const mag_tensor_t *, 2> rx {r, x}; mag_tensor_numel(y) == 1 && mag_all_shapes_equal_and_contig(rx.data(), rx.size())) {
+      binary_op_scalar_kernel<Op, int64_t, true><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(Op {}, numel, pr, px, py);
+    } else if (std::array<const mag_tensor_t *, 2> ry {r, y}; mag_tensor_numel(x) == 1 && mag_all_shapes_equal_and_contig(ry.data(), ry.size())) {
+      binary_op_scalar_kernel<Op, int64_t, false><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(Op {}, numel, pr, py, px);
     } else {
       coords_iter<int64_t> rc {r};
       coords_iter<int64_t> xc {x};
