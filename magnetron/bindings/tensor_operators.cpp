@@ -1326,7 +1326,9 @@ namespace mag::bindings {
     bind_stack_alias("dstack", mag_dstack, "Stack tensors depthwise.");
 
     cls.attr("where") = nb::cpp_function([](const tensor_wrapper &cond, nb::handle xh, nb::handle yh) -> tensor_wrapper {
-        auto [x, y] = normalize_where_operands(cond, xh, yh);
+        auto operands = normalize_where_operands(cond, xh, yh);
+        const tensor_wrapper &x = operands.first;
+        const tensor_wrapper &y = operands.second;
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         if constexpr (enable_op_recorder) {

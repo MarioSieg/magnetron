@@ -15,7 +15,7 @@ target_link_libraries(
     GTest::gtest_main
     GTest::gmock
 )
-add_test(NAME magnetron_test COMMAND magnetron_test)
+add_test(NAME magnetron_test COMMAND magnetron_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 target_precompile_headers(magnetron_test PRIVATE
     "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/test/cpp/prelude.hpp>"
 )
