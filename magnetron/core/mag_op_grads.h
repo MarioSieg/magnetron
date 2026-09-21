@@ -74,6 +74,28 @@ mag_status_t mag_op_backward_gather(mag_error_t *err, mag_au_state_t *node, mag_
 mag_status_t mag_op_backward_embedding(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 mag_status_t mag_op_backward_masked_fill(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads);
 
+/*
+** Which of an operator's operands its backward never looks at the values of.
+**
+** A bitmask over inputs: bit k set means the backward may reference operand k for its shape, its
+** dtype or whether it requires a gradient, but never reads its memory. That distinction is what
+** lets a fused chain drop an intermediate while gradients are being recorded - the autodiff graph
+** holds a reference to every operand of every operator, so without this every intermediate would
+** look like something a backward might read and nothing could ever be elided.
+**
+** Stated as "ignores" rather than "reads" so that the default is the safe one. An operator with no
+** entry keeps its values, which costs memory traffic and never costs correctness. Getting an entry
+** wrong is the opposite: a gradient computed from a buffer nobody wrote, far from here and without
+** a crash to point at it. Only add an operator after reading its backward and finding that every
+** mention of an operand is meta.flags, a shape, or a dtype.
+*/
+#define MAG_BW_IGNORE_IN0 (1u<<0)
+#define MAG_BW_IGNORE_IN1 (1u<<1)
+#define MAG_BW_IGNORE_IN2 (1u<<2)
+#define MAG_BW_IGNORE_ALL (MAG_BW_IGNORE_IN0|MAG_BW_IGNORE_IN1|MAG_BW_IGNORE_IN2)
+
+extern MAG_EXPORT uint8_t mag_op_backward_ignores_value(mag_opcode_t op);
+
 #ifdef __cplusplus
 }
 #endif

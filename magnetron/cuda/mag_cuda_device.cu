@@ -10,6 +10,7 @@
 */
 
 #include "mag_cuda_device.cuh"
+#include "mag_cuda_fusion.cuh"
 
 #include <algorithm>
 
@@ -241,6 +242,7 @@ namespace mag {
   }
 
   physical_device::~physical_device() {
+    fused_cache_shutdown(static_cast<int>(id.device_ordinal)); /* Unload chains compiled for this device. */
     if (m_stream || m_event || m_scratch) {
       cudaSetDevice(static_cast<int>(id.device_ordinal));
       if (m_stream) {

@@ -17,6 +17,7 @@
 #include <core/mag_bfloat16.h>
 #include <core/mag_float8_e4m3fn.h>
 #include <core/mag_coords.h>
+#include <core/mag_fuse_graph.h>
 #include <core/mag_coords_iter.h>
 #include <core/mag_cpuid.h>
 #include <core/mag_float16.h>
@@ -139,6 +140,7 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #include "mag_cpu_kernels_scan.h"
 #include "mag_cpu_kernels_repeat.h"
 #include "mag_cpu_kernels_index.h"
+#include "mag_cpu_kernels_fused.h"
 
 static mag_status_t mag_nop(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err, (void)payload;
@@ -1287,6 +1289,14 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT32] = &mag_nop,
     [MAG_DTYPE_UINT64] = &mag_nop,
     [MAG_DTYPE_INT64] = &mag_nop,
+  },
+  [MAG_OP_FUSED] = {
+    /* A chain is one dtype throughout. One kernel serves both: the arithmetic runs in float either
+       way, and narrow storage only changes where the loads widen and the stores round. Everything
+       else stays null, which core reads as a decline and replays operator by operator. */
+    [MAG_DTYPE_FLOAT32] = &mag_cpu_kernel_fused_f32,
+    [MAG_DTYPE_FLOAT16] = &mag_cpu_kernel_fused_f32,
+    [MAG_DTYPE_BFLOAT16] = &mag_cpu_kernel_fused_f32,
   },
 };
 

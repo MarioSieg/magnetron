@@ -19,9 +19,11 @@ extern "C" {
 #endif
 
 typedef void mag_dylib_t;
-extern mag_status_t mag_dylib_open(mag_error_t *err, mag_dylib_t **out_lib, const char *path);
-extern void *mag_dylib_sym(mag_dylib_t *lib, const char *sym);
-extern void mag_dylib_close(mag_dylib_t *lib);
+/* Exported because a backend may need to load code it produced itself, the way the CPU backend loads
+   a compiled fused chain. Core uses these only to load backend modules. */
+extern MAG_EXPORT mag_status_t mag_dylib_open(mag_error_t *err, mag_dylib_t **out_lib, const char *path);
+extern MAG_EXPORT void *mag_dylib_sym(mag_dylib_t *lib, const char *sym);
+extern MAG_EXPORT void mag_dylib_close(mag_dylib_t *lib);
 #ifdef _WIN32
 #define MAG_DYLIB_EXT "dll"
 #define MAG_DYLIB_PREFIX ""

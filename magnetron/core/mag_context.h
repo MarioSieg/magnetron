@@ -17,6 +17,7 @@
 #include "mag_machine.h"
 #include "mag_backend.h"
 #include "mag_toposort.h"
+#include "mag_threadlib.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +27,7 @@ typedef struct mag_tls_state_t {
   mag_dtype_t dtype;
   mag_device_id_t device;
   bool no_grad;
+  bool fusing;                            /* This thread is inside a fusion region. */
 } mag_tls_state_t;
 mag_static_assert(MAG_DTYPE_FLOAT32 == 0);
 mag_static_assert(MAG_BACKEND_TYPE_CPU == 0);
@@ -49,6 +51,8 @@ struct mag_context_t {
   mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
   mag_slab_alloc_t au_state_op_params_slab;   /* Autodiff state op params slab allocator */
   mag_backend_registry_t *backend_registry;   /* Compute backend registry */
+  struct mag_fuse_tape_t *fuse_tape;          /* Operators recorded inside a fusion region. NULL until one opens. */
+  mag_lock_t fuse_state_lock;                 /* Guards fusion-region ownership and lazy tape allocation. */
   mag_atomic64_t topo_traversal_epoch;        /* Epoch counter for topological traversal of the computation graph */
 #ifdef MAG_DEBUG
   mag_lock_t leak_lock;                       /* Guards alive_head. */

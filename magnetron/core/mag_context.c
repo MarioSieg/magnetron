@@ -10,6 +10,7 @@
 */
 
 #include "mag_context.h"
+#include "mag_fuse_capture.h"
 #include "mag_alloc.h"
 #include "mag_os.h"
 #include "mag_envcfg.h"
@@ -191,6 +192,7 @@ bool mag_ctx_is_device_available(mag_context_t *ctx, mag_device_id_t id) {
 }
 
 void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Destroy magnetron context. */
+  mag_fuse_tape_shutdown(ctx); /* Before the leak check: a tape abandoned mid-region still holds tensors. */
 #ifdef MAG_DEBUG
   mag_leak_detector_dump_results(ctx);  /* Provide detailed leak check info */
 #endif

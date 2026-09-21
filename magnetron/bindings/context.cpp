@@ -10,6 +10,7 @@
 */
 
 #include "prelude.hpp"
+#include <core/mag_fuse_capture.h>
 
 #include <atomic>
 #include <mutex>
@@ -60,6 +61,25 @@ namespace mag::bindings {
     context.def("manual_seed", [](uint64_t seed) -> void {
       mag_ctx_manual_seed(get_ctx(), seed);
     }, "seed"_a, "Set RNG seed for reproducibility.");
+    context.def("begin_fusion", []() -> void {
+      mag_error_t err {};
+      throw_if_error(mag_fuse_region_begin(&err, get_ctx()), err);
+    }, "Start recording fusible pointwise operators instead of running them. Nestable.");
+    context.def("end_fusion", []() -> void {
+      mag_error_t err {};
+      throw_if_error(mag_fuse_region_end(&err, get_ctx()), err);
+    }, "Close the innermost region; closing the outermost one runs the chain.");
+    context.def("fusion_stats", []() -> nb::dict {
+      uint64_t chains = 0, ops_fused = 0, elided = 0;
+      mag_fuse_stats(get_ctx(), &chains, &ops_fused, &elided);
+      nb::dict out;
+      out["chains"] = chains;
+      out["ops_fused"] = ops_fused;
+      out["elided"] = elided;
+      return out;
+    }, "How many chains have run and how many operators went into them.");
+    /* Resolves like set_default_device does, so 'is_device_available(d)' answering true guarantees that
+       'set_default_device(d)' with the same string succeeds. */
     context.def("is_device_available", [](const std::string &device) -> bool {
       std::optional<mag_device_id_t> device_id = resolve_device_id_str(std::string {device});
       if (!device_id) return false;

@@ -18,6 +18,7 @@
 #include "mag_cuda_fill.cuh"
 #include "mag_cuda_reduction.cuh"
 #include "mag_cuda_misc.cuh"
+#include "mag_cuda_fusion.cuh"
 
 namespace mag {
   static constexpr mag_status_t(*k_kernel_dispatch_table[])(mag_error_t *, const mag_command_t &, cudaStream_t) = {
@@ -115,9 +116,9 @@ namespace mag {
     [MAG_OP_LT] = &binary_op_lt,
     [MAG_OP_GT] = &binary_op_gt,
     [MAG_OP_WHERE] = &misc_op_where,
-    [MAG_OP_MIN] = nullptr,
-    [MAG_OP_MAX] = nullptr,
-    [MAG_OP_CLAMP] = nullptr,
+    [MAG_OP_MIN] = &binary_op_min,
+    [MAG_OP_MAX] = &binary_op_max,
+    [MAG_OP_CLAMP] = &ternary_op_clamp,
     [MAG_OP_PAD] = &misc_op_pad,
     [MAG_OP_EYE] = &fill_op_eye,
     [MAG_OP_CUSUM] = &misc_op_cusum,
@@ -131,6 +132,7 @@ namespace mag {
     [MAG_OP_SCATTER] = &misc_op_scatter,
     [MAG_OP_SCATTER_ADD] = &misc_op_scatter_add,
     [MAG_OP_STRIDED_VIEW] = +[](mag_error_t *, const mag_command_t &, cudaStream_t) -> mag_status_t { return MAG_OK; },
+    [MAG_OP_FUSED] = &fused_op,
   };
   static_assert(std::size(k_kernel_dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");
   //static_assert([] -> bool {

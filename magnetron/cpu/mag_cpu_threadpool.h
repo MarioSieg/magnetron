@@ -53,7 +53,7 @@ extern mag_status_t mag_threadpool_create(
   mag_thread_prio_t sched_prio
 );
 extern mag_status_t mag_worker_exec_thread_local(mag_error_t *err, const mag_kernel_registry_t *kernels, mag_kernel_payload_t *payload);
-extern mag_status_t mag_threadpool_parallel_compute(mag_error_t *err,mag_thread_pool_t *pool, const mag_command_t *cmd, uint32_t num_active_workers);
+extern mag_status_t mag_threadpool_parallel_compute(mag_error_t *err,mag_thread_pool_t *pool, const mag_command_t *cmd, uint32_t num_active_workers, const void *fused_fn);
 extern void mag_threadpool_destroy(mag_thread_pool_t *pool);
 
 #ifdef __cplusplus

@@ -1097,34 +1097,67 @@ static MAG_AINLINE mag_vf32_t mag_vf32_loadu_bf16(const mag_bfloat16_t *p) {
 
 static MAG_AINLINE void mag_vf32_storeu_bf16(mag_bfloat16_t *p, mag_vf32_t v) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+    /* bfloat16 is the top 16 bits of a float32, so the store is a shift; the rounding is what
+       makes it agree with mag_bfloat16_from_float32_soft_fp. A bare shift truncates, which made a
+       result depend on whether an element fell in the vector body or the scalar tail: the same
+       value came out differently for a length-3 and a length-4 tensor.
+
+       Round to nearest, ties to even: add half of the last kept bit (0x7fff, one below the 0x8000
+       midpoint) plus one more when the kept bit is odd, so exact halves go to the even neighbour.
+       Carry out of bit 15 then increments the kept half on its own. */
     uint32x4_t u = vreinterpretq_u32_f32(v);
-    uint32x4_t bias = vaddq_u32(vandq_u32(vshrq_n_u32(u, 16), vdupq_n_u32(1)), vdupq_n_u32(0x7fffu));
+    uint32x4_t lsb = vandq_u32(vshrq_n_u32(u, 16), vdupq_n_u32(1)); /* bit 16: is the kept half odd */
+    uint32x4_t bias = vaddq_u32(lsb, vdupq_n_u32(0x7fffu));
     uint32x4_t rounded = vaddq_u32(u, bias);
-    uint32x4_t is_nan = vcgtq_u32(vandq_u32(u, vdupq_n_u32(0x7fffffffu)), vdupq_n_u32(0x7f800000u));
+    /* NaN survives the shift only if its payload is in the top bits, and adding the bias can carry
+       it into an infinity. Anything above 0x7f800000 once the sign is masked off is a NaN, so give
+       them all the canonical quiet NaN, whose top half is 0x7fc0. */
+    uint32x4_t abs = vandq_u32(u, vdupq_n_u32(0x7fffffffu));
+    uint32x4_t is_nan = vcgtq_u32(abs, vdupq_n_u32(0x7f800000u));
     rounded = vbslq_u32(is_nan, vdupq_n_u32(0x7fc00000u), rounded);
-    uint16x4_t h = vmovn_u32(vshrq_n_u32(rounded, 16));
+    uint16x4_t h = vmovn_u32(vshrq_n_u32(rounded, 16)); /* keep the top half of each lane */
     vst1_u16((uint16_t *)p, h);
   #elif defined(__AVX512F__) && defined(__AVX512BF16__)
     __m256bh h = _mm512_cvtneps_pbh(v);
     _mm256_storeu_si256((__m256i *)p, (__m256i)h);
   #elif defined(__AVX512F__)
     __m512i u = _mm512_castps_si512(v);
-    u = _mm512_srli_epi32(u, 16);
-    __m256i h = _mm512_cvtepi32_epi16(u);
+    __m512i lsb = _mm512_and_si512(_mm512_srli_epi32(u, 16), _mm512_set1_epi32(1));
+    __m512i rounded = _mm512_add_epi32(u, _mm512_add_epi32(lsb, _mm512_set1_epi32(0x7fff)));
+    __m512i abs = _mm512_and_si512(u, _mm512_set1_epi32(0x7fffffff));
+    __mmask16 is_nan = _mm512_cmpgt_epi32_mask(abs, _mm512_set1_epi32(0x7f800000));
+    rounded = _mm512_mask_blend_epi32(is_nan, rounded, _mm512_set1_epi32(0x7fc00000));
+    __m256i h = _mm512_cvtepi32_epi16(_mm512_srli_epi32(rounded, 16));
     _mm256_storeu_si256((__m256i *)p, h);
   #elif defined(__AVX2__)
     __m256i u = _mm256_castps_si256(v);
-    u = _mm256_srli_epi32(u, 16);
-    __m128i h = _mm_packus_epi32(_mm256_castsi256_si128(u), _mm256_extracti128_si256(u, 1));
+    __m256i lsb = _mm256_and_si256(_mm256_srli_epi32(u, 16), _mm256_set1_epi32(1));
+    __m256i rounded = _mm256_add_epi32(u, _mm256_add_epi32(lsb, _mm256_set1_epi32(0x7fff)));
+    /* abs has its top bit cleared, so a signed compare is an unsigned one here. */
+    __m256i abs = _mm256_and_si256(u, _mm256_set1_epi32(0x7fffffff));
+    __m256i is_nan = _mm256_cmpgt_epi32(abs, _mm256_set1_epi32(0x7f800000));
+    rounded = _mm256_blendv_epi8(rounded, _mm256_set1_epi32(0x7fc00000), is_nan);
+    __m256i shifted = _mm256_srli_epi32(rounded, 16);
+    __m128i h = _mm_packus_epi32(_mm256_castsi256_si128(shifted), _mm256_extracti128_si256(shifted, 1));
     _mm_storeu_si128((__m128i *)p, h);
   #elif defined(__SSE4_1__)
     __m128i u = _mm_castps_si128(v);
-    u = _mm_srli_epi32(u, 16);
-    __m128i h = _mm_packus_epi32(u, u);
+    __m128i lsb = _mm_and_si128(_mm_srli_epi32(u, 16), _mm_set1_epi32(1));
+    __m128i rounded = _mm_add_epi32(u, _mm_add_epi32(lsb, _mm_set1_epi32(0x7fff)));
+    __m128i abs = _mm_and_si128(u, _mm_set1_epi32(0x7fffffff));
+    __m128i is_nan = _mm_cmpgt_epi32(abs, _mm_set1_epi32(0x7f800000));
+    rounded = _mm_blendv_epi8(rounded, _mm_set1_epi32(0x7fc00000), is_nan);
+    __m128i h = _mm_packus_epi32(_mm_srli_epi32(rounded, 16), _mm_srli_epi32(rounded, 16));
     _mm_storel_epi64((__m128i *)p, h);
   #elif defined(__SSE2__)
-    __m128i u = _mm_castps_si128(v);
-    u = _mm_srli_epi32(u, 16);
+    __m128i u0 = _mm_castps_si128(v);
+    __m128i lsb = _mm_and_si128(_mm_srli_epi32(u0, 16), _mm_set1_epi32(1));
+    __m128i rounded = _mm_add_epi32(u0, _mm_add_epi32(lsb, _mm_set1_epi32(0x7fff)));
+    __m128i abs = _mm_and_si128(u0, _mm_set1_epi32(0x7fffffff));
+    __m128i is_nan = _mm_cmpgt_epi32(abs, _mm_set1_epi32(0x7f800000));
+    /* No blendv before SSE4.1, so select with a mask. */
+    rounded = _mm_or_si128(_mm_andnot_si128(is_nan, rounded), _mm_and_si128(is_nan, _mm_set1_epi32(0x7fc00000)));
+    __m128i u = _mm_srli_epi32(rounded, 16);
     __m128i a = _mm_shufflelo_epi16(u, _MM_SHUFFLE(2, 0, 2, 0));
     __m128i b = _mm_shufflehi_epi16(u, _MM_SHUFFLE(2, 0, 2, 0));
     b = _mm_srli_si128(b, 8);

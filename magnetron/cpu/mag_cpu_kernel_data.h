@@ -36,6 +36,9 @@ typedef struct mag_kernel_payload_t {
   int64_t thread_idx;
   mag_philox4x32_stream_t *prng;
   mag_tile_sched_t *tile_sched;
+  /* A fused chain that was compiled before the workers were woken. NULL means interpret it.
+     Resolved once by submit rather than per worker, since compiling is not a per-thread concern. */
+  const void *fused_fn;
 } mag_kernel_payload_t;
 
 /*

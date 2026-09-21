@@ -129,7 +129,13 @@ static MAG_AINLINE float mag_fn_hard_sigmoid_f32(float x) { return fminf(1.f, fm
 static MAG_AINLINE float mag_fn_silu_f32(float x) { return x*mag_fn_sigmoid_f32(x); }
 static MAG_AINLINE float mag_fn_silu_dv_f32(float x) { float s = mag_fn_sigmoid_f32(x); return s + x*s*(1.f-s); }
 static MAG_AINLINE float mag_fn_tanh_dv_f32(float x) { float t = tanhf(x); return 1.f - t*t; }
-static MAG_AINLINE float mag_fn_relu_f32(float x) { return fmaxf(0.f, x); }
+static MAG_AINLINE float mag_fn_relu_f32(float x) {
+  /* NEON vmax propagates NaNs. Match it in the scalar tail and the strided walk too. */
+#if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+  if (isnan(x)) return x;
+#endif
+  return fmaxf(0.f, x);
+}
 static MAG_AINLINE float mag_fn_relu_dv_f32(float x) { return x > 0.f ? 1.f : 0.f; }
 static MAG_AINLINE float mag_fn_gelu_f32(float x) { return .5f*x*(1.f+erff(x*MAG_INVSQRT2)); }
 static MAG_AINLINE float mag_fn_gelu_approx_f32(float x) { return .5f*x*(1.f+tanhf(MAG_SQRT2OVERPI*(x+MAG_GELU_COEFF*x*x*x))); }

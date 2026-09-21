@@ -15,6 +15,10 @@
 #include <core/mag_context.h>
 #include <core/mag_tensor.h>
 
+#ifndef MAG_FUSED_INTRAOP_THRESHOLD /* Elements before a fused chain is worth spreading across cores. */
+  #define MAG_FUSED_INTRAOP_THRESHOLD 10000
+#endif
+
 #ifndef MAG_MATMUL_FLOPS_PER_WORKER /* Flops a GEMM worker must get before adding another one. */
   #define MAG_MATMUL_FLOPS_PER_WORKER (1<<21)
 #endif
@@ -22,6 +26,8 @@
 mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
   static const mag_op_thread_scaling_info scaling_table[MAG_OP__NUM] = {
     [MAG_OP_NOP] = {0.0, 0},
+    [MAG_OP_FUSED] = {1.0, MAG_FUSED_INTRAOP_THRESHOLD},
+
     [MAG_OP_FILL] = {0.5, 10000},
     [MAG_OP_MASKED_FILL] = {0.5, 10000},
     [MAG_OP_RAND_UNIFORM] = {0.8, 10000},

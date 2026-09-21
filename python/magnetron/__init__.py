@@ -71,3 +71,31 @@ class no_grad(ContextDecorator):
         """Restore whatever gradient tracking state was active on entry."""
         if _saved_state_stack(self._tls).pop():
             context.start_grad_recorder()
+
+class fuse(ContextDecorator):
+    """Record fusible pointwise operators and run them as one chain.
+
+    Inside the region an operator that can join the chain is recorded rather than executed, and its
+    result is not computed until something needs it: leaving the region, reading the values, or an
+    operator arriving that cannot join. The answers are identical to running eagerly, bit for bit.
+
+    Regions nest, and only leaving the outermost one runs anything, so a helper that opens a region
+    can be called from code that already did without cutting the chain in half.
+    A context accepts one active region owner at a time; another thread gets an error rather than
+    mixing its operations into that chain.
+
+        with no_grad(), fuse():
+            y = x * w + b
+            z = y * y - x
+    """
+
+    def __enter__(self) -> None:
+        context.begin_fusion()
+
+    def __exit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None) -> None:
+        context.end_fusion()
+
+
+def fusion_stats() -> dict[str, int]:
+    """How many chains have run and how many operators went into them."""
+    return context.fusion_stats()
