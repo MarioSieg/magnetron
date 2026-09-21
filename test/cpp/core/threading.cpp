@@ -27,6 +27,25 @@ namespace {
         unsigned hw {std::thread::hardware_concurrency()};
         return std::max(4u, std::min(2u*(hw ? hw : 4u), 32u));
     }
+
+    class spin_barrier final {
+    public:
+        explicit spin_barrier(unsigned parties) : m_parties{parties} {}
+        auto wait() -> void {
+            unsigned gen {m_generation.load(std::memory_order_acquire)};
+            if (m_arrived.fetch_add(1, std::memory_order_acq_rel)+1 == m_parties) {
+                m_arrived.store(0, std::memory_order_relaxed);
+                m_generation.store(gen+1, std::memory_order_release);
+                return;
+            }
+            while (m_generation.load(std::memory_order_acquire) == gen)
+                std::this_thread::yield();
+        }
+    private:
+        unsigned m_parties;
+        std::atomic<unsigned> m_arrived {0};
+        std::atomic<unsigned> m_generation {0};
+    };
 }
 
 TEST(threading, allocator_storm) {
@@ -139,7 +158,8 @@ TEST(threading, concurrent_backward_disjoint_graphs) {
 TEST(threading, concurrent_backward_shared_graph_is_rejected) {
     context ctx {};
     const unsigned threads {worker_count()};
-    constexpr int rounds {64};
+    constexpr int rounds {32};
+    constexpr int chain_depth {128};
 
     tensor x {ctx, dtype::float32, 4096};
     x.fill_(2.0f);
@@ -148,13 +168,18 @@ TEST(threading, concurrent_backward_shared_graph_is_rejected) {
     std::atomic<int> rejected {0};
     std::atomic<int> succeeded {0};
     std::atomic<int> other_errors {0};
+    spin_barrier barrier {threads};
 
     std::vector<std::thread> pool {};
     pool.reserve(threads);
     for (unsigned t {0}; t < threads; ++t) {
         pool.emplace_back([&] {
             for (int i {0}; i < rounds; ++i) {
-                tensor loss {x.mul(x).sum()};
+                tensor y {x.add(x)};
+                for (int k {0}; k < chain_depth; ++k)
+                    y = y.add(x);
+                tensor loss {y.sum()};
+                barrier.wait();
                 mag_error_t err {};
                 mag_status_t stat {mag_tensor_backward(&err, &*loss)};
                 if (stat == MAG_OK) ++succeeded;
