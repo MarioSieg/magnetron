@@ -15,6 +15,66 @@
 #include <core/mag_operator.h>
 
 #include <algorithm>
+#include <array>
+
+namespace mag::bindings {
+  [[nodiscard]] static std::array<int64_t, 3> parse_conv_param(nb::handle h, int64_t spatial, const char *what) {
+    std::array<int64_t, 3> out {};
+    if (nb::isinstance<nb::int_>(h)) {
+      int64_t ax = nb::cast<int64_t>(h);
+      for (int64_t i=0; i < spatial; ++i) out[i] = ax;
+      return out;
+    }
+    std::vector<int64_t> v = parse_i64_list_handle(h, what);
+    if (static_cast<int64_t>(v.size()) != spatial)
+      throw nb::value_error((std::string(what) + ": expected an int or a sequence of " + std::to_string(spatial) + " ints").c_str());
+    std::copy(v.begin(), v.end(), out.begin());
+    return out;
+  }
+
+  template <const bool T>
+  static tensor_wrapper conv_impl(
+    const tensor_wrapper &self,
+    const tensor_wrapper &weight,
+    nb::handle bias_h,
+    int64_t spatial,
+    nb::handle stride_h,
+    nb::handle padding_h,
+    nb::handle output_padding_h,
+    nb::handle dilation_h,
+    int64_t groups
+  ) {
+    const char *name = T ? "convT" : "conv";
+    tensor_wrapper bias;
+    if (!bias_h.is_none()) {
+      if (!nb::isinstance<tensor_wrapper>(bias_h))
+        throw nb::type_error((std::string(name) + ": bias must be a Tensor or None").c_str());
+      bias = nb::cast<tensor_wrapper>(bias_h);
+    }
+    mag_tensor_t *b = bias ? *bias : nullptr;
+    std::array<int64_t, 3> stride = parse_conv_param(stride_h, spatial, "stride");
+    std::array<int64_t, 3> padding = parse_conv_param(padding_h, spatial, "padding");
+    std::array<int64_t, 3> dilation = parse_conv_param(dilation_h, spatial, "dilation");
+    std::array<int64_t, 3> output_padding = T ? parse_conv_param(output_padding_h, spatial, "output_padding") : std::array<int64_t, 3>{};
+    mag_tensor_t *out = nullptr;
+    mag_error_t err {};
+    auto invoke = [&]() -> mag_status_t {
+      return T
+        ? mag_convT(&err, &out, *self, *weight, b, spatial, stride.data(), padding.data(), output_padding.data(), dilation.data(), groups)
+        : mag_conv(&err, &out, *self, *weight, b, spatial, stride.data(), padding.data(), dilation.data(), groups);
+    };
+    if constexpr (enable_op_recorder) {
+      std::vector<mag_tensor_t *> ins {*self, *weight};
+      if (b) ins.push_back(b);
+      op_recorder::singleton().profile(T ? MAG_OP_CONV_T : MAG_OP_CONV, [&] {
+        throw_if_error(call_without_gil(invoke), err);
+      }, ins);
+    } else {
+      throw_if_error(call_without_gil(invoke), err);
+    }
+    return tensor_wrapper{out};
+  }
+}
 
 #define bind_unary_pair(cls, name, opcode, doc) \
   cls \
@@ -969,6 +1029,48 @@ namespace mag::bindings {
       },
       "weights"_a = nb::none(), "minlength"_a = 0,
       "Count occurrences of each non-negative integer in a 1D tensor, optionally weighted."
+    )
+    .def("conv1D",
+      [](const tensor_wrapper &self, const tensor_wrapper &weight, nb::handle bias, nb::handle stride, nb::handle padding, nb::handle dilation, int64_t groups) -> tensor_wrapper {
+        return conv_impl<false>(self, weight, bias, 1, stride, padding, nb::none(), dilation, groups);
+      },
+      "weight"_a, "bias"_a = nb::none(), "stride"_a = 1, "padding"_a = 0, "dilation"_a = 1, "groups"_a = 1,
+      "1D convolution over an input of shape [N, C, L] with weight [C_out, C_in/groups, K]."
+    )
+    .def("conv2D",
+      [](const tensor_wrapper &self, const tensor_wrapper &weight, nb::handle bias, nb::handle stride, nb::handle padding, nb::handle dilation, int64_t groups) -> tensor_wrapper {
+        return conv_impl<false>(self, weight, bias, 2, stride, padding, nb::none(), dilation, groups);
+      },
+      "weight"_a, "bias"_a = nb::none(), "stride"_a = 1, "padding"_a = 0, "dilation"_a = 1, "groups"_a = 1,
+      "2D convolution over an input of shape [N, C, H, W] with weight [C_out, C_in/groups, KH, KW]."
+    )
+    .def("conv3D",
+      [](const tensor_wrapper &self, const tensor_wrapper &weight, nb::handle bias, nb::handle stride, nb::handle padding, nb::handle dilation, int64_t groups) -> tensor_wrapper {
+        return conv_impl<false>(self, weight, bias, 3, stride, padding, nb::none(), dilation, groups);
+      },
+      "weight"_a, "bias"_a = nb::none(), "stride"_a = 1, "padding"_a = 0, "dilation"_a = 1, "groups"_a = 1,
+      "3D convolution over an input of shape [N, C, D, H, W] with weight [C_out, C_in/groups, KD, KH, KW]."
+    )
+    .def("convT1D",
+      [](const tensor_wrapper &self, const tensor_wrapper &weight, nb::handle bias, nb::handle stride, nb::handle padding, nb::handle output_padding, int64_t groups, nb::handle dilation) -> tensor_wrapper {
+        return conv_impl<true>(self, weight, bias, 1, stride, padding, output_padding, dilation, groups);
+      },
+      "weight"_a, "bias"_a = nb::none(), "stride"_a = 1, "padding"_a = 0, "output_padding"_a = 0, "groups"_a = 1, "dilation"_a = 1,
+      "Transposed 1D convolution over an input of shape [N, C, L] with weight [C_in, C_out/groups, K]."
+    )
+    .def("convT2D",
+      [](const tensor_wrapper &self, const tensor_wrapper &weight, nb::handle bias, nb::handle stride, nb::handle padding, nb::handle output_padding, int64_t groups, nb::handle dilation) -> tensor_wrapper {
+        return conv_impl<true>(self, weight, bias, 2, stride, padding, output_padding, dilation, groups);
+      },
+      "weight"_a, "bias"_a = nb::none(), "stride"_a = 1, "padding"_a = 0, "output_padding"_a = 0, "groups"_a = 1, "dilation"_a = 1,
+      "Transposed 2D convolution over an input of shape [N, C, H, W] with weight [C_in, C_out/groups, KH, KW]."
+    )
+    .def("convT3D",
+      [](const tensor_wrapper &self, const tensor_wrapper &weight, nb::handle bias, nb::handle stride, nb::handle padding, nb::handle output_padding, int64_t groups, nb::handle dilation) -> tensor_wrapper {
+        return conv_impl<true>(self, weight, bias, 3, stride, padding, output_padding, dilation, groups);
+      },
+      "weight"_a, "bias"_a = nb::none(), "stride"_a = 1, "padding"_a = 0, "output_padding"_a = 0, "groups"_a = 1, "dilation"_a = 1,
+      "Transposed 3D convolution over an input of shape [N, C, D, H, W] with weight [C_in, C_out/groups, KD, KH, KW]."
     )
     .def("tril",
       [](const tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {

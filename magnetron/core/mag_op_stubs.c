@@ -1386,6 +1386,134 @@ mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
   return MAG_OK;
 }
 
+static mag_status_t mag_conv_stub(
+  mag_error_t *err,
+  mag_tensor_t **out_result,
+  mag_opcode_t op,
+  const char *name,
+  mag_tensor_t *x,
+  mag_tensor_t *weight,
+  mag_tensor_t *bias,
+  int64_t spatial,
+  const int64_t *stride,
+  const int64_t *padding,
+  const int64_t *output_padding,
+  const int64_t *dilation,
+  int64_t groups
+) {
+  *out_result = NULL;
+  bool transposed = op == MAG_OP_CONV_T;
+  if (mag_unlikely(!x || !weight))
+    return mag_set_error(err, MAG_ERR_PARAM, "%s: input and weight tensors must not be NULL.", name);
+  if (mag_unlikely(spatial < 1 || spatial > 3))
+    return mag_set_error(err, MAG_ERR_PARAM, "%s: spatial dimension count must be 1, 2 or 3, but got %" PRIi64 ".", name, spatial);
+  int64_t rank = spatial+2;
+  if (mag_unlikely(x->meta.coords.rank != rank))
+    return mag_set_error(err, MAG_ERR_RANK, "%s: input must have rank %" PRIi64 " (batch, channels, spatial...), but got rank %" PRIi64 ".", name, rank, x->meta.coords.rank);
+  if (mag_unlikely(weight->meta.coords.rank != rank))
+    return mag_set_error(err, MAG_ERR_RANK, "%s: weight must have rank %" PRIi64 ", but got rank %" PRIi64 ".", name, rank, weight->meta.coords.rank);
+  if (mag_unlikely(!mag_tensor_is_floating_point_typed(x) || x->meta.dtype != weight->meta.dtype))
+    return mag_set_error(err, MAG_ERR_PARAM, "%s: input and weight must share a floating-point dtype, but got %s and %s.", name, mag_type_trait(x->meta.dtype)->name, mag_type_trait(weight->meta.dtype)->name);
+  if (mag_unlikely(groups < 1))
+    return mag_set_error(err, MAG_ERR_PARAM, "%s: groups must be >= 1, but got %" PRIi64 ".", name, groups);
+  const int64_t *xs = x->meta.coords.shape;
+  const int64_t *ws = weight->meta.coords.shape;
+  int64_t N = xs[0];
+  int64_t cin = xs[1];
+  int64_t cout;
+  if (transposed) {
+    if (mag_unlikely(ws[0] != cin))
+      return mag_set_error(err, MAG_ERR_SHAPE, "%s: weight dim 0 (%" PRIi64 ") must equal input channels (%" PRIi64 ").", name, ws[0], cin);
+    if (mag_unlikely(cin % groups))
+      return mag_set_error(err, MAG_ERR_SHAPE, "%s: input channels (%" PRIi64 ") must be divisible by groups (%" PRIi64 ").", name, cin, groups);
+    cout = ws[1]*groups;
+  } else {
+    if (mag_unlikely(cin % groups))
+      return mag_set_error(err, MAG_ERR_SHAPE, "%s: input channels (%" PRIi64 ") must be divisible by groups (%" PRIi64 ").", name, cin, groups);
+    if (mag_unlikely(ws[1] != cin/groups))
+      return mag_set_error(err, MAG_ERR_SHAPE, "%s: weight dim 1 (%" PRIi64 ") must equal input channels / groups (%" PRIi64 ").", name, ws[1], cin/groups);
+    cout = ws[0];
+    if (mag_unlikely(cout % groups))
+      return mag_set_error(err, MAG_ERR_SHAPE, "%s: output channels (%" PRIi64 ") must be divisible by groups (%" PRIi64 ").", name, cout, groups);
+  }
+  if (bias) {
+    if (mag_unlikely(bias->meta.coords.rank != 1 || bias->meta.coords.shape[0] != cout))
+      return mag_set_error(err, MAG_ERR_SHAPE, "%s: bias must be 1D with %" PRIi64 " elements.", name, cout);
+    if (mag_unlikely(bias->meta.dtype != x->meta.dtype))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: bias dtype must match input dtype.", name);
+  }
+  mag_op_params_t params = {0};
+  params.conv.spatial = spatial;
+  params.conv.groups = groups;
+  int64_t shape[MAG_MAX_DIMS];
+  shape[0] = N;
+  shape[1] = cout;
+  for (int64_t i=0; i < spatial; ++i) {
+    int64_t s = stride ? stride[i] : 1;
+    int64_t p = padding ? padding[i] : 0;
+    int64_t d = dilation ? dilation[i] : 1;
+    int64_t opp = output_padding ? output_padding[i] : 0;
+    if (mag_unlikely(s < 1))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: stride must be >= 1, but got %" PRIi64 ".", name, s);
+    if (mag_unlikely(p < 0))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: padding must be >= 0, but got %" PRIi64 ".", name, p);
+    if (mag_unlikely(d < 1))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: dilation must be >= 1, but got %" PRIi64 ".", name, d);
+    if (mag_unlikely(opp < 0 || (transposed && opp >= mag_vmax(s, d))))
+      return mag_set_error(err, MAG_ERR_PARAM, "%s: output_padding must be >= 0 and smaller than stride or dilation, but got %" PRIi64 ".", name, opp);
+    params.conv.stride[i] = s;
+    params.conv.padding[i] = p;
+    params.conv.dilation[i] = d;
+    params.conv.output_padding[i] = opp;
+    int64_t in = xs[2+i];
+    int64_t k = ws[2+i];
+    int64_t out = transposed
+      ? (in-1)*s - (p<<1) + d*(k-1) + opp + 1
+      : (in + (p<<1) - d*(k-1) - 1)/s + 1;
+    if (mag_unlikely(k < 1 || in + (p<<1) - d*(k-1) - 1 < 0 || out < 1))
+      return mag_set_error(err, MAG_ERR_SHAPE, "%s: computed output size %" PRIi64 " for spatial dim %" PRIi64 " (input %" PRIi64 ", kernel %" PRIi64 ", stride %" PRIi64 ", padding %" PRIi64 ", dilation %" PRIi64 ") is invalid.", name, out, i, in, k, s, p, d);
+    shape[2+i] = out;
+  }
+  mag_tensor_t *xc = NULL;
+  mag_tensor_t *wc = NULL;
+  mag_tensor_t *bc = NULL;
+  mag_tensor_t *result = NULL;
+  mag_status_t status = mag_contiguous(err, &xc, x);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_contiguous(err, &wc, weight);
+  if (mag_iserr(status)) goto cleanup;
+  if (bias) {
+    status = mag_contiguous(err, &bc, bias);
+    if (mag_iserr(status)) goto cleanup;
+  }
+  {
+    mag_tensor_t *ins[3] = {xc, wc, bc};
+    uint32_t num_in = bc ? 3 : 2;
+    status = mag_check_dtype_and_device_compat(err, op, ins, num_in);
+    if (mag_iserr(status)) goto cleanup;
+    status = mag_empty(err, &result, x->ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
+    if (mag_iserr(status)) goto cleanup;
+    status = mag_dispatch(err, op, false, ins, num_in, &result, 1, &params);
+    if (mag_iserr(status)) goto cleanup;
+  }
+  *out_result = result;
+  result = NULL;
+cleanup:
+  if (result) mag_tensor_decref(result);
+  if (bc) mag_tensor_decref(bc);
+  if (wc) mag_tensor_decref(wc);
+  if (xc) mag_tensor_decref(xc);
+  return status;
+}
+
+mag_status_t mag_conv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weight, mag_tensor_t *bias, int64_t spatial, const int64_t *stride, const int64_t *padding, const int64_t *dilation, int64_t groups) {
+  return mag_conv_stub(err, out_result, MAG_OP_CONV, "conv", x, weight, bias, spatial, stride, padding, NULL, dilation, groups);
+}
+
+mag_status_t mag_convT(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weight, mag_tensor_t *bias, int64_t spatial, const int64_t *stride, const int64_t *padding, const int64_t *output_padding, const int64_t *dilation, int64_t groups) {
+  return mag_conv_stub(err, out_result, MAG_OP_CONV_T, "convT", x, weight, bias, spatial, stride, padding, output_padding, dilation, groups);
+}
+
 mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag) {
   *out_result = NULL;
   if (mag_unlikely(tensor->meta.coords.rank < 2))

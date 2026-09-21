@@ -165,6 +165,21 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 
 ---
 
+## Convolution
+
+Inputs are batched: `[N, C, L]`, `[N, C, H, W]` or `[N, C, D, H, W]`. Weight is `[C_out, C_in/groups, *K]` for `convXD` and `[C_in, C_out/groups, *K]` for `convTXD`. Also available as layers `nn.Conv1D`, `nn.Conv2D`, `nn.Conv3D`, `nn.ConvT1D`, `nn.ConvT2D`, `nn.ConvT3D`.
+
+| Method                                                                                             | Description               | Math                                                                    | Example                                       |
+|----------------------------------------------------------------------------------------------------|---------------------------|-------------------------------------------------------------------------|-----------------------------------------------|
+| `conv1D(weight, bias=None, stride=1, padding=0, dilation=1, groups=1)`                             | 1D convolution            | $y_{n,o,l}=b_o+\sum_{c,k} w_{o,c,k}\,x_{n,c,\,ls-p+kd}$                 | `y = x.conv1D(w, b, stride=2)`                |
+| `conv2D(weight, bias=None, stride=1, padding=0, dilation=1, groups=1)`                             | 2D convolution            | $y_{n,o,i,j}=b_o+\sum_{c,k,l} w_{o,c,k,l}\,x_{n,c,\,is-p+kd,\,js-p+ld}$ | `y = x.conv2D(w, padding=1)`                  |
+| `conv3D(weight, bias=None, stride=1, padding=0, dilation=1, groups=1)`                             | 3D convolution            | as above over three spatial dims                                        | `y = x.conv3D(w)`                             |
+| `convT1D(weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1)` | Transposed 1D convolution | $y_{n,o,\,is-p+kd}\mathrel{+}=w_{c,o,k}\,x_{n,c,i}$                     | `y = x.convT1D(w, stride=2)`         |
+| `convT2D(weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1)` | Transposed 2D convolution | as above over two spatial dims                                          | `y = x.convT2D(w, output_padding=1)` |
+| `convT3D(weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1)` | Transposed 3D convolution | as above over three spatial dims                                        | `y = x.convT3D(w)`                   |
+
+---
+
 ## Unary Math Operations
 
 | Method           | Description                  | Math (per element)                      | Example                |

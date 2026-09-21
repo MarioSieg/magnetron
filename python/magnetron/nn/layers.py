@@ -230,3 +230,105 @@ class GeLU(Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return x.gelu_approx() if self.use_tanh_approx else x.gelu()
+
+
+class _ConvND(Module):
+    _spatial: int = 0  # spatial dim, 1=conv1d,2=conv2d etc..
+    _T: bool = False
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int | Sequence[int],
+        stride: int | Sequence[int] = 1,
+        padding: int | Sequence[int] = 0,
+        output_padding: int | Sequence[int] = 0,
+        dilation: int | Sequence[int] = 1,
+        groups: int = 1,
+        bias: bool = True,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        bias_init: InitStrategy | None = None,
+    ) -> None:
+        def _form_tuple_n(value: int | Sequence[int], n: int, what: str) -> tuple[int, ...]:
+            if isinstance(value, int):
+                return (value,) * n
+            value = tuple(value)
+            if len(value) != n:
+                raise ValueError(f'{what} must be an int or a sequence of {n} ints, but got {value}')
+            return value
+
+        super().__init__()
+        if dtype is None:
+            dtype = context.get_default_dtype()
+        n = self._spatial
+        if groups < 1:
+            raise ValueError(f'groups must be >= 1, but got {groups}')
+        if in_channels % groups != 0:
+            raise ValueError(f'in_channels ({in_channels}) must be divisible by groups ({groups})')
+        if out_channels % groups != 0:
+            raise ValueError(f'out_channels ({out_channels}) must be divisible by groups ({groups})')
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = _form_tuple_n(kernel_size, n, 'kernel_size')
+        self.stride = _form_tuple_n(stride, n, 'stride')
+        self.padding = _form_tuple_n(padding, n, 'padding')
+        self.output_padding = _form_tuple_n(output_padding, n, 'output_padding')
+        self.dilation = _form_tuple_n(dilation, n, 'dilation')
+        self.groups = groups
+        if self._T:
+            wshape = (in_channels, out_channels // groups, *self.kernel_size)
+        else:
+            wshape = (out_channels, in_channels // groups, *self.kernel_size)
+        self.weight: Parameter = Parameter(Tensor.empty(*wshape, dtype=dtype))
+        if weight_init is None:
+            weight_init = KaimingUniformInitStrategy(
+                a=math.sqrt(5.0),
+                mode=FanMode.FAN_IN,
+                activation=Activation.LEAKY_RELU,
+            )
+        inplace_init(self.weight, weight_init)
+        self.bias: Parameter | None = None
+        if bias:
+            self.bias = Parameter(Tensor.empty(out_channels, dtype=dtype))
+            if bias_init is None:
+                fan_in, _ = compute_fan_inout(self.weight)
+                bound = 1.0 / math.sqrt(float(fan_in)) if fan_in > 0 else 0.0
+                inplace_init(self.bias, UniformInitStrategy(-bound, bound))
+            else:
+                inplace_init(self.bias, bias_init)
+
+    def forward(self, x: Tensor) -> Tensor:
+        if self._T:
+            return getattr(x, f'convT{self._spatial}D')(
+                self.weight, self.bias, self.stride, self.padding, self.output_padding, self.groups, self.dilation
+            )
+        return getattr(x, f'conv{self._spatial}D')(self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+
+
+class Conv1D(_ConvND):
+    _spatial = 1
+
+
+class Conv2D(_ConvND):
+    _spatial = 2
+
+
+class Conv3D(_ConvND):
+    _spatial = 3
+
+
+class ConvT1D(_ConvND):
+    _spatial = 1
+    _T = True
+
+
+class ConvT2D(_ConvND):
+    _spatial = 2
+    _T = True
+
+
+class ConvT3D(_ConvND):
+    _spatial = 3
+    _T = True

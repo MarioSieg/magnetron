@@ -480,6 +480,8 @@ extern MAG_EXPORT mag_status_t mag_clamp_min(mag_error_t *err, mag_tensor_t **ou
 extern MAG_EXPORT mag_status_t mag_clamp_max(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *max);
 extern MAG_EXPORT mag_status_t mag_lerp(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *start, mag_tensor_t *end, mag_tensor_t *weight);
 extern MAG_EXPORT mag_status_t mag_lerp_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *start, mag_tensor_t *end, mag_tensor_t *weight);
+extern MAG_EXPORT mag_status_t mag_conv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weight, mag_tensor_t *bias, int64_t spatial, const int64_t *stride, const int64_t *padding, const int64_t *dilation, int64_t groups);
+extern MAG_EXPORT mag_status_t mag_convT(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weight, mag_tensor_t *bias, int64_t spatial, const int64_t *stride, const int64_t *padding, const int64_t *output_padding, const int64_t *dilation, int64_t groups);
 extern MAG_EXPORT mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *pad, int64_t pad_len, const char *mode,  mag_scalar_t value);
 extern MAG_EXPORT mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag);
 extern MAG_EXPORT mag_status_t mag_tril_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag);

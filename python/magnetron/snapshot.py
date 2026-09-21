@@ -29,8 +29,10 @@ __all__ = ['SnapshotWriter', 'deserialize']
 # We serialize dtypes via the C enums ordinals, as names might change in the future
 _DTYPE_BY_ID: dict[int, Any] = {dt.ordinal: dt for dt in _dtype.all}
 
+
 def _align_up(x: int, a: int) -> int:
     return (x + a - 1) & ~(a - 1)
+
 
 @dataclass
 class _TensorMetadata:
@@ -40,7 +42,9 @@ class _TensorMetadata:
     offset: int
     nbytes: int  # Future-proof: for sub-byte-packed quantized type
 
+
 _MANIFEST_VERSION: int = 1
+
 
 @dataclass
 class _FileManifest:
@@ -70,8 +74,9 @@ class _FileManifest:
                     dtype_id=v['dtype_id'],
                     offset=v['offset'],
                     nbytes=v['nbytes'],
-                ) for k, v in obj['tensor_map'].items()
-            }
+                )
+                for k, v in obj['tensor_map'].items()
+            },
         )
 
     def validate(self, blob_span: int, align: int = _TBLOB_ALIGN) -> None:
@@ -90,14 +95,17 @@ class _FileManifest:
                 raise ValueError(f'Tensor {name} starts at {meta.offset} and overlaps {prev}, which ends at {end}')
             if meta.nbytes and meta.offset % align:
                 raise ValueError(f'Tensor {name} starts at {meta.offset}, which is not a multiple of the {align} byte tensor alignment')
-            if not (meta.offset <= blob_span and meta.nbytes <= blob_span-meta.offset):
-                raise ValueError(f'Tensor {name} spans [{meta.offset}, {meta.offset+meta.nbytes}) but the data section is {blob_span} bytes')
-            if meta.offset-end >= align:
-                raise ValueError(f'{meta.offset-end} bytes before tensor {name} belong to no tensor, more than the {align} byte alignment can explain')
-            end = meta.offset+meta.nbytes
+            if not (meta.offset <= blob_span and meta.nbytes <= blob_span - meta.offset):
+                raise ValueError(f'Tensor {name} spans [{meta.offset}, {meta.offset + meta.nbytes}) but the data section is {blob_span} bytes')
+            if meta.offset - end >= align:
+                raise ValueError(
+                    f'{meta.offset - end} bytes before tensor {name} belong to no tensor, more than the {align} byte alignment can explain'
+                )
+            end = meta.offset + meta.nbytes
             prev = name
-        if not 0 <= blob_span-end < align:
+        if not 0 <= blob_span - end < align:
             raise ValueError(f'The tensor map covers {end} of the {blob_span} byte data section')
+
 
 @dataclass(frozen=True, slots=True)
 class TensorSpec:
@@ -111,6 +119,7 @@ class TensorSpec:
     @property
     def numbytes(self) -> int:
         return self.dtype.size * self.numel
+
 
 class SnapshotWriter:
     def __init__(
@@ -154,10 +163,7 @@ class SnapshotWriter:
             raise RuntimeError(f'Cannot declare Tensor with name {name}, writer is sealed')
         if name in self._specs:
             raise KeyError(f'Duplicate tensor with name {name}')
-        spec = TensorSpec(
-            shape=tuple(int(dim) for dim in shape),
-            dtype=dtype
-        )
+        spec = TensorSpec(shape=tuple(int(dim) for dim in shape), dtype=dtype)
         if any(dim < 0 for dim in spec.shape):
             raise ValueError(f'Tensor {name} has negaive dim in shape {spec.shape}')
         self._specs[name] = spec
@@ -189,13 +195,14 @@ class SnapshotWriter:
                     dtype_id=self._specs[key].dtype.ordinal,
                     offset=self._offsets[key],
                     nbytes=self._specs[key].numbytes,
-                ) for key in self._order
-            }
+                )
+                for key in self._order
+            },
         )
 
     @property
     def pending(self) -> list[str]:
-        return self._order[self._needle:]
+        return self._order[self._needle :]
 
     def seal(self) -> None:
         if self.is_sealed:
@@ -218,11 +225,13 @@ class SnapshotWriter:
             raise RuntimeError(f'All {len(self._order)} declared tensors were already written, got "{name}"')
         key = self._order[self._needle]
         if name != key:
-            raise RuntimeError(f'Writes must follow the declared order because the data section is append-only, expected "{key}" at index {self._needle} but got "{name}"')
+            raise RuntimeError(
+                f'Writes must follow the declared order because the data section is append-only, expected "{key}" at index {self._needle} but got "{name}"'
+            )
         spec = self._specs[name]
         if callable(payload):
             payload = payload()
-        if isinstance(payload, Tensor): # Magnetron Tensor
+        if isinstance(payload, Tensor):  # Magnetron Tensor
             blob = payload.contiguous().transfer('cpu')
             if tuple(blob.shape) != spec.shape:
                 raise RuntimeError(f'"{name}" was declared {spec.shape} but the payload is {tuple(blob.shape)}')
@@ -232,7 +241,7 @@ class SnapshotWriter:
                 raise RuntimeError(f'"{name}" reserved {spec.numbytes} bytes but the payload spans {blob.numbytes}')
             self._stream.write_tensor(blob)
             del blob
-        else: # Membuf case for numpy arrays or torch tensors
+        else:  # Membuf case for numpy arrays or torch tensors
             view = memoryview(payload).cast('B')
             if view.nbytes != spec.numbytes:
                 raise RuntimeError(f'"{name}" reserved {spec.numbytes} bytes but the buffer spans {view.nbytes}')
@@ -263,10 +272,11 @@ class SnapshotWriter:
 
     def __exit__(self, exc_type: type[BaseException] | None, *_: Any) -> bool:
         if exc_type is not None:
-            self.abort() # Removes temp file aswell
+            self.abort()  # Removes temp file aswell
         else:
             self.close()
         return False
+
 
 def deserialize(file_path: str | Path, mmap: bool = True) -> tuple[dict[str, Tensor], dict[str, Any]]:
     with _SnapshotStreamReader(str(file_path)) as reader:

@@ -78,6 +78,14 @@ typedef union mag_op_params_t {
     int64_t minlength;
   } bincount;
   struct {
+    int64_t spatial;
+    int64_t stride[3]; /* Spatial=3 is max dim for conv */
+    int64_t padding[3];
+    int64_t dilation[3];
+    int64_t output_padding[3];
+    int64_t groups;
+  } conv;
+  struct {
     int64_t dim;
   } cumu;
   struct {
@@ -256,6 +264,9 @@ typedef union mag_op_params_t {
   _(EMBEDDING, 2, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, embedding)__\
   _(SCATTER, 3, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(SCATTER_ADD, 3, 1, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(CONV, MAG_OP_INOUT_DYN, 1, FP, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, conv)__\
+  _(CONV_T, MAG_OP_INOUT_DYN, 1, FP, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, convT)__\
+  _(CONV_WGRAD, 2, 1, FP, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(STRIDED_VIEW, 1, 1, ALL, MAG_OP_FLAG_NONE, strided_view)__
 
 /* Standard opcodes, not including initialization operators. */

@@ -1295,3 +1295,46 @@ def test_lerp_inplace(device: str) -> None:
     x = start.clone()
     x.lerp_(end, 0.5)
     assert_close_mag_torch(x, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_conv1d(device: str) -> None:
+    x = Tensor.arange(2 * 4 * 9, device=device).cast(dtype.float32).reshape(2, 4, 9)
+    w = Tensor.arange(6 * 2 * 3, device=device).cast(dtype.float32).reshape(6, 2, 3) * 0.1
+    b = Tensor([1.0, -1.0, 0.5, 0.25, -0.25, 2.0], device=device)
+    y = x.conv1D(w, b, stride=2, padding=1, dilation=2, groups=2)
+    expected = torch.nn.functional.conv1d(totorch(x), totorch(w), totorch(b), stride=2, padding=1, dilation=2, groups=2)
+    assert y.shape == (2, 6, 4)
+    assert_close_mag_torch(y, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_conv_transpose1d(device: str) -> None:
+    x = Tensor.arange(2 * 4 * 5, device=device).cast(dtype.float32).reshape(2, 4, 5)
+    w = Tensor.arange(4 * 3 * 3, device=device).cast(dtype.float32).reshape(4, 3, 3) * 0.1
+    b = Tensor([1.0, -1.0, 0.5, 0.25, -0.25, 2.0], device=device)
+    y = x.convT1D(w, b, stride=2, padding=1, output_padding=1, groups=2)
+    expected = torch.nn.functional.conv_transpose1d(totorch(x), totorch(w), totorch(b), stride=2, padding=1, output_padding=1, groups=2)
+    assert y.shape == (2, 6, 10)
+    assert_close_mag_torch(y, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_conv2d(device: str) -> None:
+    x = Tensor.arange(2 * 2 * 4 * 4, device=device).cast(dtype.float32).reshape(2, 2, 4, 4)
+    w = Tensor.arange(3 * 2 * 3 * 3, device=device).cast(dtype.float32).reshape(3, 2, 3, 3) * 0.1
+    b = Tensor([1.0, -1.0, 0.5], device=device)
+    y = x.conv2D(w, b, stride=2, padding=1)
+    expected = torch.nn.functional.conv2d(totorch(x), totorch(w), totorch(b), stride=2, padding=1)
+    assert y.shape == (2, 3, 2, 2)
+    assert_close_mag_torch(y, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_conv_transpose2d(device: str) -> None:
+    x = Tensor.arange(2 * 2 * 3 * 3, device=device).cast(dtype.float32).reshape(2, 2, 3, 3)
+    w = Tensor.arange(2 * 3 * 3 * 3, device=device).cast(dtype.float32).reshape(2, 3, 3, 3) * 0.1
+    y = x.convT2D(w, stride=2, padding=1, output_padding=1)
+    expected = torch.nn.functional.conv_transpose2d(totorch(x), totorch(w), stride=2, padding=1, output_padding=1)
+    assert y.shape == (2, 3, 6, 6)
+    assert_close_mag_torch(y, expected, dtype.float32)

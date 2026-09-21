@@ -139,6 +139,7 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #include "mag_cpu_kernels_scan.h"
 #include "mag_cpu_kernels_repeat.h"
 #include "mag_cpu_kernels_index.h"
+#include "mag_cpu_kernels_conv.h"
 
 static mag_status_t mag_nop(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err, (void)payload;
@@ -441,6 +442,24 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_FLOAT16] = &mag_bincount_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_bincount_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_bincount_float8_e4m3fn,
+  },
+  [MAG_OP_CONV] = {
+    [MAG_DTYPE_FLOAT32] = &mag_conv_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_conv_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_conv_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_conv_float8_e4m3fn,
+  },
+  [MAG_OP_CONV_T] = {
+    [MAG_DTYPE_FLOAT32] = &mag_conv_transpose_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_conv_transpose_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_conv_transpose_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_conv_transpose_float8_e4m3fn,
+  },
+  [MAG_OP_CONV_WGRAD] = {
+    [MAG_DTYPE_FLOAT32] = &mag_conv_wgrad_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_conv_wgrad_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_conv_wgrad_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_conv_wgrad_float8_e4m3fn,
   },
   [MAG_OP_ABS] = {
     [MAG_DTYPE_FLOAT32] = &mag_abs_float32,

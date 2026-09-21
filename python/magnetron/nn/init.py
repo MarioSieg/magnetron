@@ -121,7 +121,7 @@ def compute_fan_inout(x: Tensor) -> tuple[int, int]:
         num_out_fmaps = x.shape[0]
         receptive_field_size = 1
         if rank > 2:
-            receptive_field_size = x[0][0].numel()
+            receptive_field_size = x[0][0].numel
         fan_in = num_in_fmaps * receptive_field_size
         fan_out = num_out_fmaps * receptive_field_size
     return fan_in, fan_out

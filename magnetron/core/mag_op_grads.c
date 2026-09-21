@@ -10,6 +10,7 @@
 */
 
 #include "mag_op_grads.h"
+#include "mag_op_dispatch.h"
 
 mag_status_t mag_op_backward_clone(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   return mag_clone(err, grads, node->grad);
@@ -1369,4 +1370,55 @@ mag_status_t mag_op_backward_masked_fill(mag_error_t *err, mag_au_state_t *node,
   if (!(x->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) return MAG_OK;
   /* out = where(mask, value, x)  =>  dx = where(mask, 0, grad): filled positions do not depend on x. */
   return mag_masked_fill(err, &grads[0], node->grad, mask, mag_scalar_from_float64(0.0));
+}
+
+static mag_status_t mag_conv_backward_common(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads, bool transposed) {
+  mag_tensor_t *x = node->in[0];
+  mag_tensor_t *w = node->in[1];
+  mag_tensor_t *b = node->num_in > 2 ? node->in[2] : NULL;
+  mag_status_t status = MAG_OK;
+  mag_tensor_t *dy = NULL;
+  mag_tensor_t *g = NULL;
+  status = mag_contiguous(err, &dy, node->grad);
+  if (mag_iserr(status)) goto cleanup;
+  if (x->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
+    status = mag_empty_like(err, &g, x);
+    if (mag_iserr(status)) goto cleanup;
+    mag_tensor_t *ins[2] = {dy, w};
+    status = mag_dispatch(err, transposed ? MAG_OP_CONV : MAG_OP_CONV_T, false, ins, 2, &g, 1, node->params);
+    if (mag_iserr(status)) goto cleanup;
+    grads[0] = g;
+    g = NULL;
+  }
+  if (w->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
+    status = mag_empty_like(err, &g, w);
+    if (mag_iserr(status)) goto cleanup;
+    mag_tensor_t *ins[2] = {transposed ? dy : x, transposed ? x : dy};
+    status = mag_dispatch(err, MAG_OP_CONV_WGRAD, false, ins, 2, &g, 1, node->params);
+    if (mag_iserr(status)) goto cleanup;
+    grads[1] = g;
+    g = NULL;
+  }
+  if (b && b->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
+    int64_t dims[MAG_MAX_DIMS];
+    int64_t nd = 0;
+    dims[nd++] = 0;
+    for (int64_t i=2; i < dy->meta.coords.rank; ++i) dims[nd++] = i;
+    status = mag_sum(err, &g, dy, dims, nd, false);
+    if (mag_iserr(status)) goto cleanup;
+    grads[2] = g;
+    g = NULL;
+  }
+cleanup:
+  if (g) mag_rc_decref(g);
+  if (dy) mag_rc_decref(dy);
+  return status;
+}
+
+mag_status_t mag_op_backward_conv(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  return mag_conv_backward_common(err, node, grads, false);
+}
+
+mag_status_t mag_op_backward_convT(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
+  return mag_conv_backward_common(err, node, grads, true);
 }

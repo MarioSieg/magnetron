@@ -130,6 +130,9 @@ mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
     [MAG_OP_EMBEDDING] = {0.5, 10000},
     [MAG_OP_SCATTER] = {0.5, 10000},
     [MAG_OP_SCATTER_ADD] = {0.5, 10000},
+    [MAG_OP_CONV] = {0.8, 4096},
+    [MAG_OP_CONV_T] = {0.8, 4096},
+    [MAG_OP_CONV_WGRAD] = {0.8, 4096},
   };
   return scaling_table[op];
 }

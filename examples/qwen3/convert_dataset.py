@@ -190,8 +190,8 @@ def _print_stats(
     payload = snap.payload_numbytes
     blob = snap.blob_numbytes
     meta = snap.metadata_numbytes
-    padding = blob-payload  # Inter tensor alignment
-    container = file_numbytes-blob-meta  # Header plus the pad that puts the data section on a page
+    padding = blob - payload  # Inter tensor alignment
+    container = file_numbytes - blob - meta  # Header plus the pad that puts the data section on a page
     tokenizer_note = f' (incl. {_fmt_bytes(tokenizer_numbytes)} tokenizer)' if tokenizer_numbytes else ' (no tokenizer)'
     table = Table(title=snap_file, title_style='bold', show_header=False, box=None, pad_edge=False)
     table.add_column(style='dim')
@@ -200,14 +200,14 @@ def _print_stats(
     table.add_row('DType', mag_dtype.name)
     table.add_row('Tensors', f'{snap.tensor_count}')
     table.add_row('Payload', _fmt_bytes(payload))
-    table.add_row('Alignment padding', f'{_fmt_bytes(padding)} ({padding/blob:.3%})')
+    table.add_row('Alignment padding', f'{_fmt_bytes(padding)} ({padding / blob:.3%})')
     table.add_row('Data section', _fmt_bytes(blob))
     table.add_row('Metadata', f'{_fmt_bytes(meta)}{tokenizer_note}')
     table.add_row('Container overhead', _fmt_bytes(container))
     table.add_row('File size', _fmt_bytes(file_numbytes))
-    table.add_row('Source shards', f'{_fmt_bytes(source_numbytes)} ({file_numbytes/source_numbytes:.2f}x)')
+    table.add_row('Source shards', f'{_fmt_bytes(source_numbytes)} ({file_numbytes / source_numbytes:.2f}x)')
     table.add_row('Elapsed', f'{elapsed:.1f} s')
-    table.add_row('Throughput', f'{_fmt_bytes(blob/elapsed)}/s')
+    table.add_row('Throughput', f'{_fmt_bytes(blob / elapsed)}/s')
     console.print()
     console.print(table)
 
@@ -260,7 +260,7 @@ def _convert_model(
                 progress.update(task, name=f'{entry.mag_key[-34:]:<34}')
                 snap.write(entry.mag_key, lambda entry=entry: _load_one(entry, torch_dtype, mag_dtype))
                 progress.advance(task, entry.numbytes(mag_dtype))
-    elapsed = time.perf_counter()-start
+    elapsed = time.perf_counter() - start
 
     if write_model_card:
         _write_model_card(
