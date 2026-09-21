@@ -1081,6 +1081,168 @@ mag_status_t mag_topk(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t 
   return MAG_OK;
 }
 
+static mag_status_t mag_op_stub_sort(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_opcode_t op, const char *name, mag_tensor_t *x, int64_t dim, bool descending, bool stable) {
+  if (out_values) *out_values = NULL;
+  *out_indices = NULL;
+  if (mag_unlikely(!(x != NULL)))
+    return mag_set_error(err, MAG_ERR_PARAM, "%s: input tensor must not be NULL.", name);
+  mag_context_t *ctx = x->ctx;
+  int64_t rank = x->meta.coords.rank;
+  mag_status_t status = mag_check_dtype_and_device_compat(err, op, &x, 0);
+  if (mag_iserr(status)) return status;
+  if (rank == 0) {
+    if (mag_unlikely(dim != 0 && dim != -1))
+      return mag_set_error(err, MAG_ERR_DIM, "%s: dim %" PRIi64 " is out of range for rank 0.", name, dim);
+    mag_tensor_t *values = NULL;
+    mag_tensor_t *indices = NULL;
+    if (out_values) {
+      status = mag_clone(err, &values, x);
+      if (mag_iserr(status)) return status;
+    }
+    status = mag_zeros(err, &indices, ctx, MAG_DTYPE_INT64, 0, NULL, mag_tensor_device_id(x));
+    if (mag_iserr(status)) {
+      if (values) mag_tensor_decref(values);
+      return status;
+    }
+    if (out_values) *out_values = values;
+    *out_indices = indices;
+    return MAG_OK;
+  }
+  mag_norm_axis(&dim, rank);
+  if (mag_unlikely(!(0 <= dim && dim < rank)))
+    return mag_set_error(err, MAG_ERR_DIM, "%s: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", name, dim, rank);
+  mag_tensor_t *values = NULL;
+  mag_tensor_t *indices = NULL;
+  if (out_values) {
+    status = mag_empty(err, &values, ctx, x->meta.dtype, rank, x->meta.coords.shape, mag_tensor_device_id(x));
+    if (mag_iserr(status)) return status;
+  }
+  status = mag_empty(err, &indices, ctx, MAG_DTYPE_INT64, rank, x->meta.coords.shape, mag_tensor_device_id(x));
+  if (mag_iserr(status)) {
+    if (values) mag_tensor_decref(values);
+    return status;
+  }
+  mag_op_params_t params = {
+    .sort = {
+      .dim = dim,
+      .descending = descending,
+      .stable = stable
+    }
+  };
+  mag_tensor_t *outs[2];
+  uint32_t num_out;
+  if (values) {
+    outs[0] = values;
+    outs[1] = indices;
+    num_out = 2;
+  } else {
+    outs[0] = indices;
+    num_out = 1;
+  }
+  status = mag_dispatch(err, op, false, &x, 1, outs, num_out, &params);
+  if (mag_iserr(status)) {
+    if (values) mag_tensor_decref(values);
+    mag_tensor_decref(indices);
+    return status;
+  }
+  if (out_values) *out_values = values;
+  *out_indices = indices;
+  return MAG_OK;
+}
+
+mag_status_t mag_sort(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t dim, bool descending, bool stable) {
+  return mag_op_stub_sort(err, out_values, out_indices, MAG_OP_SORT, "sort", x, dim, descending, stable);
+}
+
+mag_status_t mag_argsort(mag_error_t *err, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t dim, bool descending, bool stable) {
+  return mag_op_stub_sort(err, NULL, out_indices, MAG_OP_ARGSORT, "argsort", x, dim, descending, stable);
+}
+
+static mag_status_t mag_bincount_range(mag_error_t *err, mag_tensor_t *x, mag_opcode_t op, int64_t *out_value) {
+  mag_tensor_t *red = NULL;
+  mag_status_t status = op == MAG_OP_MINIMA ? mag_minima(err, &red, x, NULL, 0, false) : mag_maxima(err, &red, x, NULL, 0, false);
+  if (mag_iserr(status)) return status;
+  mag_scalar_t sc;
+  status = mag_tensor_item(err, red, &sc);
+  mag_tensor_decref(red);
+  if (mag_iserr(status)) return status;
+  *out_value = mag_scalar_as_int64(sc);
+  return MAG_OK;
+}
+
+mag_status_t mag_bincount(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weights, int64_t minlength) {
+  *out_result = NULL;
+  if (mag_unlikely(!(x != NULL)))
+    return mag_set_error(err, MAG_ERR_PARAM, "bincount: input tensor must not be NULL.");
+  mag_context_t *ctx = x->ctx;
+  if (mag_unlikely(x->meta.coords.rank != 1))
+    return mag_set_error(err, MAG_ERR_RANK, "bincount: input must be 1D, but got rank %" PRIi64 ".", x->meta.coords.rank);
+  if (mag_unlikely(!mag_type_category_is_integer(x->meta.dtype)))
+    return mag_set_error(err, MAG_ERR_PARAM, "bincount: input must have an integer dtype, but got '%s'.", mag_type_trait(x->meta.dtype)->name);
+  if (mag_unlikely(minlength < 0))
+    return mag_set_error(err, MAG_ERR_PARAM, "bincount: minlength must be >= 0, but got %" PRIi64 ".", minlength);
+  if (weights) {
+    if (mag_unlikely(weights->meta.coords.rank != 1 || weights->meta.numel != x->meta.numel))
+      return mag_set_error(err, MAG_ERR_SHAPE, "bincount: weights must be 1D with the same length as the input (%" PRIi64 "), but got rank %" PRIi64 " with %" PRIi64 " elements.", x->meta.numel, weights->meta.coords.rank, weights->meta.numel);
+    if (mag_unlikely(!mag_device_id_eq(mag_tensor_device_id(x), mag_tensor_device_id(weights))))
+      return mag_set_error(err, MAG_ERR_DEVICE, "bincount: input and weights must be on the same device.");
+    if (mag_unlikely(weights->meta.dtype == MAG_DTYPE_BOOLEAN))
+      return mag_set_error(err, MAG_ERR_PARAM, "bincount: weights must have a numeric dtype.");
+  }
+  mag_tensor_t *xi = NULL;
+  mag_tensor_t *w = NULL;
+  mag_tensor_t *result = NULL;
+  mag_status_t status;
+  if (x->meta.dtype == MAG_DTYPE_INT64) {
+    xi = x;
+    mag_tensor_incref(xi);
+  } else {
+    status = mag_cast(err, &xi, x, MAG_DTYPE_INT64);
+    if (mag_iserr(status)) return status;
+  }
+  if (weights) {
+    if (mag_type_category_is_floating_point(weights->meta.dtype)) {
+      w = weights;
+      mag_tensor_incref(w);
+    } else {
+      status = mag_cast(err, &w, weights, MAG_DTYPE_FLOAT32);
+      if (mag_iserr(status)) goto cleanup;
+    }
+  }
+  int64_t bins = minlength;
+  if (x->meta.numel > 0) {
+    int64_t lo, hi;
+    status = mag_bincount_range(err, xi, MAG_OP_MINIMA, &lo);
+    if (mag_iserr(status)) goto cleanup;
+    if (mag_unlikely(lo < 0)) {
+      status = mag_set_error(err, MAG_ERR_PARAM, "bincount: input must be non-negative, but contains %" PRIi64 ".", lo);
+      goto cleanup;
+    }
+    status = mag_bincount_range(err, xi, MAG_OP_MAXIMA, &hi);
+    if (mag_iserr(status)) goto cleanup;
+    bins = mag_vmax(bins, hi + 1);
+  }
+  mag_dtype_t out_type = w ? w->meta.dtype : MAG_DTYPE_INT64;
+  status = mag_zeros(err, &result, ctx, out_type, 1, &bins, mag_tensor_device_id(x));
+  if (mag_iserr(status)) goto cleanup;
+  {
+    mag_tensor_t *ins[2] = {xi, w};
+    uint32_t num_in = w ? 2 : 1;
+    mag_op_params_t params = { .bincount = { .minlength = minlength } };
+    status = mag_check_dtype_and_device_compat(err, MAG_OP_BINCOUNT, ins, num_in);
+    if (mag_iserr(status)) goto cleanup;
+    status = mag_dispatch(err, MAG_OP_BINCOUNT, false, ins, num_in, &result, 1, &params);
+    if (mag_iserr(status)) goto cleanup;
+  }
+  *out_result = result;
+  result = NULL;
+cleanup:
+  if (result) mag_tensor_decref(result);
+  if (w) mag_tensor_decref(w);
+  if (xi) mag_tensor_decref(xi);
+  return status;
+}
+
 mag_status_t mag_cusum(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim) {
   return mag_op_stub_cu(err, out_result, MAG_OP_CUSUM, "sum", x, dim);
 }

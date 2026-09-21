@@ -18,6 +18,9 @@ namespace mag {
 
   [[nodiscard]] extern mag_status_t misc_op_one_hot(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t misc_op_topk(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
+  [[nodiscard]] extern mag_status_t misc_op_sort(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
+  [[nodiscard]] extern mag_status_t misc_op_argsort(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
+  [[nodiscard]] extern mag_status_t misc_op_bincount(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t misc_op_tril(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t misc_op_triu(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t misc_op_multinomial(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);

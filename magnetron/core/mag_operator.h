@@ -71,6 +71,14 @@ typedef union mag_op_params_t {
   } topk;
   struct {
     int64_t dim;
+    bool descending : 1;
+    bool stable : 1;
+  } sort;
+  struct {
+    int64_t minlength;
+  } bincount;
+  struct {
+    int64_t dim;
   } cumu;
   struct {
     int64_t rank;
@@ -157,6 +165,9 @@ typedef union mag_op_params_t {
   _(ALL, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(ANY, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(TOPK, 1, 2, NUMERIC, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(SORT, 1, 2, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(ARGSORT, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
+  _(BINCOUNT, MAG_OP_INOUT_DYN, 1, ALL, MAG_OP_FLAG_NONE, NULL)__\
   _(ABS, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, abs)__\
   _(SGN, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, NULL)__\
   _(NEG, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, neg)__\

@@ -904,6 +904,72 @@ namespace mag::bindings {
       "k"_a, "dim"_a = -1, "largest"_a = true, "sorted"_a = true,
       "Return (values, indices) of the k largest or smallest elements along dim."
     )
+    .def("sort",
+      [](const tensor_wrapper &self, int64_t dim = -1, bool descending = false, bool stable = false) -> nb::tuple {
+        mag_tensor_t *values = nullptr;
+        mag_tensor_t *indices = nullptr;
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_SORT, [&] {
+            throw_if_error(call_without_gil([&] { return mag_sort(&err, &values, &indices, *self, dim, descending, stable); }), err);
+          }, {*self});
+        } else {
+          throw_if_error(call_without_gil([&] { return mag_sort(&err, &values, &indices, *self, dim, descending, stable); }), err);
+        }
+        tensor_wrapper v_tw{values};
+        tensor_wrapper i_tw{indices};
+        PyObject *t = PyTuple_New(2);
+        if (!t) throw nb::python_error();
+        nb::object v = nb::cast(v_tw);
+        nb::object i = nb::cast(i_tw);
+        PyTuple_SET_ITEM(t, 0, v.release().ptr());
+        PyTuple_SET_ITEM(t, 1, i.release().ptr());
+        return nb::steal<nb::tuple>(t);
+      },
+      "dim"_a = -1, "descending"_a = false, "stable"_a = false,
+      "Return (values, indices) of the elements sorted along dim."
+    )
+    .def("argsort",
+      [](const tensor_wrapper &self, int64_t dim = -1, bool descending = false, bool stable = false) -> tensor_wrapper {
+        mag_tensor_t *indices = nullptr;
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_ARGSORT, [&] {
+            throw_if_error(call_without_gil([&] { return mag_argsort(&err, &indices, *self, dim, descending, stable); }), err);
+          }, {*self});
+        } else {
+          throw_if_error(call_without_gil([&] { return mag_argsort(&err, &indices, *self, dim, descending, stable); }), err);
+        }
+        return tensor_wrapper{indices};
+      },
+      "dim"_a = -1, "descending"_a = false, "stable"_a = false,
+      "Return the indices that sort the elements along dim."
+    )
+    .def("bincount",
+      [](const tensor_wrapper &self, nb::handle weights_h = nb::none(), int64_t minlength = 0) -> tensor_wrapper {
+        tensor_wrapper weights;
+        if (!weights_h.is_none()) {
+          if (!nb::isinstance<tensor_wrapper>(weights_h))
+            throw nb::type_error("bincount: weights must be a Tensor or None");
+          weights = nb::cast<tensor_wrapper>(weights_h);
+        }
+        mag_tensor_t *w = weights ? *weights : nullptr;
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          std::vector<mag_tensor_t *> ins {*self};
+          if (w) ins.push_back(w);
+          op_recorder::singleton().profile(MAG_OP_BINCOUNT, [&] {
+            throw_if_error(call_without_gil([&] { return mag_bincount(&err, &out, *self, w, minlength); }), err);
+          }, ins);
+        } else {
+          throw_if_error(call_without_gil([&] { return mag_bincount(&err, &out, *self, w, minlength); }), err);
+        }
+        return tensor_wrapper{out};
+      },
+      "weights"_a = nb::none(), "minlength"_a = 0,
+      "Count occurrences of each non-negative integer in a 1D tensor, optionally weighted."
+    )
     .def("tril",
       [](const tensor_wrapper &self, int32_t diagonal = 0) -> tensor_wrapper {
         mag_tensor_t *out = nullptr;

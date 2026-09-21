@@ -87,3 +87,40 @@ def test_reduce_op_topk(dtype: dtype.DType, largest: bool) -> None:
             assert (srt.narrow(axis, 1, k - 1) != srt.narrow(axis, 0, k - 1)).all()
 
     for_all_shapes(test)
+
+
+@pytest.mark.parametrize('dtype', FLOATING_NO_FLOAT8 | dtype.integer)
+@pytest.mark.parametrize('descending', [True, False])
+def test_sort(dtype: dtype.DType, descending: bool) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        x = random_tensor(shape, dt=dtype)
+        dim = random_dim(shape)
+        tx = totorch(x)
+        if dim is None:
+            rv, ri = x.sort(descending=descending)
+            tv, ti = tx.sort(descending=descending, stable=True)
+        else:
+            rv, ri = x.sort(dim=dim, descending=descending)
+            tv, ti = tx.sort(dim=dim, descending=descending, stable=True)
+        assert_close_mag_torch(rv, tv, dtype, equal_nan=True)
+        assert ri.tolist() == ti.tolist()
+
+    for_all_shapes(test)
+
+
+@pytest.mark.parametrize('dtype', FLOATING_NO_FLOAT8 | dtype.integer)
+@pytest.mark.parametrize('descending', [True, False])
+def test_argsort(dtype: dtype.DType, descending: bool) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        x = random_tensor(shape, dt=dtype)
+        dim = random_dim(shape)
+        tx = totorch(x)
+        if dim is None:
+            ri = x.argsort(descending=descending)
+            ti = tx.argsort(descending=descending, stable=True)
+        else:
+            ri = x.argsort(dim=dim, descending=descending)
+            ti = tx.argsort(dim=dim, descending=descending, stable=True)
+        assert ri.tolist() == ti.tolist()
+
+    for_all_shapes(test)

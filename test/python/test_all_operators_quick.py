@@ -1043,6 +1043,78 @@ def test_topk(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_sort(device: str) -> None:
+    x = Tensor([[3.0, 1.0, 4.0, 1.0], [9.0, 2.0, 6.0, 5.0]], device=device)
+    t = totorch(x)
+    values, indices = x.sort(dim=1)
+    expected_values, expected_indices = torch.sort(t, dim=1, stable=True)
+    assert_close_mag_torch(values, expected_values, dtype.float32)
+    assert indices.tolist() == expected_indices.tolist()
+    values, indices = x.sort(dim=0, descending=True)
+    expected_values, expected_indices = torch.sort(t, dim=0, descending=True, stable=True)
+    assert_close_mag_torch(values, expected_values, dtype.float32)
+    assert indices.tolist() == expected_indices.tolist()
+    y = Tensor([5, 3, 8, 3, 1], dtype=dtype.int32, device=device)
+    values, indices = y.sort()
+    assert values.tolist() == [1, 3, 3, 5, 8]
+    assert indices.tolist() == [4, 1, 3, 0, 2]
+    values, indices = y.sort(descending=True)
+    assert values.tolist() == [8, 5, 3, 3, 1]
+    assert indices.tolist() == [2, 0, 1, 3, 4]
+    z = Tensor([2.0, float('nan'), -1.0, 0.0], device=device)
+    values, indices = z.sort()
+    assert indices.tolist() == [2, 3, 0, 1]
+    values, indices = z.sort(descending=True)
+    assert indices.tolist() == [1, 0, 3, 2]
+    big = Tensor.uniform((7, 300), low=-1.0, high=1.0, device=device)
+    values, indices = big.sort(dim=1)
+    expected_values, expected_indices = torch.sort(totorch(big), dim=1, stable=True)
+    assert_close_mag_torch(values, expected_values, dtype.float32)
+    assert indices.tolist() == expected_indices.tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_argsort(device: str) -> None:
+    x = Tensor([[3.0, 1.0, 4.0, 1.0], [9.0, 2.0, 6.0, 5.0]], device=device)
+    t = totorch(x)
+    assert x.argsort(dim=1).tolist() == torch.argsort(t, dim=1, stable=True).tolist()
+    assert x.argsort(dim=1, descending=True).tolist() == torch.argsort(t, dim=1, descending=True, stable=True).tolist()
+    assert x.argsort(dim=0).tolist() == torch.argsort(t, dim=0, stable=True).tolist()
+    big = Tensor.uniform((5, 257), low=-1.0, high=1.0, device=device)
+    assert big.argsort(dim=1, descending=True).tolist() == torch.argsort(totorch(big), dim=1, descending=True, stable=True).tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_bincount(device: str) -> None:
+    x = Tensor([0, 1, 1, 3, 2, 1, 7], dtype=dtype.int64, device=device)
+    t = totorch(x)
+    r = x.bincount()
+    assert r.dtype == dtype.int64
+    assert r.tolist() == torch.bincount(t).tolist()
+    assert x.bincount(minlength=12).tolist() == torch.bincount(t, minlength=12).tolist()
+    assert x.bincount(minlength=3).tolist() == torch.bincount(t, minlength=3).tolist()
+    w = Tensor([0.5, 1.0, 1.5, 2.0, -1.0, 0.25, 3.0], device=device)
+    rw = x.bincount(weights=w)
+    assert rw.dtype == dtype.float32
+    assert_close_mag_torch(rw, torch.bincount(t, weights=totorch(w)).to(torch.float32), dtype.float32)
+    xi32 = Tensor([4, 4, 0], dtype=dtype.int32, device=device)
+    assert xi32.bincount().tolist() == [1, 0, 0, 0, 2]
+    empty = Tensor.zeros((0,), dtype=dtype.int64, device=device)
+    assert empty.bincount().tolist() == []
+    assert empty.bincount(minlength=4).tolist() == [0, 0, 0, 0]
+    big = Tensor.uniform((5000,), low=0, high=64, dtype=dtype.int32, device=device)
+    assert big.bincount().tolist() == torch.bincount(totorch(big)).tolist()
+    bw = Tensor.uniform((5000,), low=-1.0, high=1.0, device=device)
+    assert_close_mag_torch(big.bincount(weights=bw), torch.bincount(totorch(big), weights=totorch(bw)).to(torch.float32), dtype.float32)
+    with pytest.raises(RuntimeError):
+        Tensor([1, -1], dtype=dtype.int64, device=device).bincount()
+    with pytest.raises(RuntimeError):
+        Tensor([[1, 2]], dtype=dtype.int64, device=device).bincount()
+    with pytest.raises(RuntimeError):
+        Tensor([1.0, 2.0], device=device).bincount()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_where(device: str) -> None:
     cond = Tensor([[True, False], [False, True]], device=device)
     x = Tensor([[1.0, 2.0], [3.0, 4.0]], device=device)
