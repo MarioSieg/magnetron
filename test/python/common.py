@@ -111,6 +111,19 @@ def assert_close_mag_torch(
     )
 
 
+def round_f64_to_dtype(x: torch.Tensor, dt: torch.dtype) -> torch.Tensor:
+    if dt == torch.float32:
+        return x.to(torch.float32)
+    f = x.to(torch.float32)
+    back = f.to(torch.float64)
+    inexact = back != x
+    away = back.abs() > x.abs()
+    bits = f.view(torch.int32)
+    bits = torch.where(inexact & away, bits - 1, bits)
+    bits = torch.where(inexact, bits | 1, bits)
+    return bits.view(torch.float32).to(dt)
+
+
 def totorch_for_reference(obj: Tensor, dt: dtype.DType) -> torch.Tensor:
     t = totorch(obj)
     if dt == dtype.float8_e4m3fn:

@@ -34,13 +34,14 @@ TEST(context, simple_init) {
     mag_context_t *ctx = nullptr;
     ASSERT_EQ(MAG_OK, mag_ctx_create(nullptr, &ctx)); // create context to use magnetron
     mag_tensor_t *random = nullptr;
+    int64_t shape[] = {2, 2};
     ASSERT_EQ(MAG_OK, mag_uniform(
         nullptr,
         &random,
         ctx,
         MAG_DTYPE_FLOAT8_E4M3FN, // float8 datatype
         2, // rank=2
-        (int64_t[]){2, 2}, // shape=2x2 matrix
+        shape, // shape=2x2 matrix
         mag_scalar_from_float64(-1.0), // sample from uniform from -1
         mag_scalar_from_float64(1.0), // to +1
         mag_device(CPU, 0) // place on device cpu:0
