@@ -20,9 +20,11 @@ extern "C" {
 
 #define MAG_ENV_LOG_LEVEL "MAG_LOG_LEVEL"                                /* Global log verbosity */
 #define MAG_ENV_CPU_SPECIALIZATION_LEVEL "MAG_CPU_SPECIALIZATION_LEVEL"  /* Pinned CPU specialization level */
+#define MAG_ENV_CPU_INTRAOP_MIN_ELEMS "MAG_CPU_INTRAOP_MIN_ELEMS"        /* Override the element count at which intra-op multithreading starts */
 
 extern MAG_COLDPROC MAG_EXPORT const char *mag_envcfg_raw(const char *name);
 extern MAG_COLDPROC MAG_EXPORT void mag_envcfg_apply_log_level(void);
+extern MAG_COLDPROC MAG_EXPORT int64_t mag_envcfg_cpu_intraop_min_elems(void); /* <0 when unset, meaning use the per-op table. */
 
 typedef enum mag_envcfg_cpu_specialization_t {
   MAG_ENVCFG_CPU_SPECIALIZATION_AUTO,     /* Autodetect with runtime cpu detection */

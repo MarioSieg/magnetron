@@ -31,12 +31,89 @@
 #define mag_un_run_body_copy(T) mag_un_run_walk(T, memcpy(pr, px, (size_t)run*sizeof(T));)
 #define mag_un_run_body(T, F) mag_un_run_walk(T, for (int64_t t=0; t < run; ++t) pr[t] = F(px[t]);)
 
+
+/*
+** Apply the vector form of an op to a contiguous run, remainder included.
+**
+** The vector and scalar forms of the same op are not the same function: mag_vf32_tanh and friends
+** are approximations (2/(1+exp(-2x))-1 over a reciprocal estimate) while mag_fn_tanh_f32 calls
+** libm. Using the vector one for the body and the scalar one for the tail therefore made a value's
+** result depend on where it landed, so tanh(0.7) differed between a length-3 and a length-4 tensor.
+** The remainder goes through the same vector op via a small staging buffer instead; the padding
+** lanes repeat the last element and are discarded.
+*/
+#define mag_un_apply_vec(T, LOAD, STORE, VF, dst, src, n) do { \
+  int64_t vk = 0; \
+  int64_t vn = (n); \
+  for (; vk+MAG_VF32_LANES <= vn; vk += MAG_VF32_LANES) STORE((dst)+vk, VF(LOAD((src)+vk))); \
+  if (vk < vn) { \
+    T vin[MAG_VF32_LANES]; \
+    T vout[MAG_VF32_LANES]; \
+    int64_t vrem = vn-vk; \
+    for (int64_t vj=0; vj < MAG_VF32_LANES; ++vj) vin[vj] = (src)[vk + (vj < vrem ? vj : vrem-1)]; \
+    STORE(vout, VF(LOAD(vin))); \
+    for (int64_t vj=0; vj < vrem; ++vj) (dst)[vk+vj] = vout[vj]; \
+  } \
+} while (0)
+
 #define mag_un_run_body_simd(T, LOAD, STORE, VF, F) \
     mag_un_run_walk(T, \
-      int64_t t = 0; \
-      for (; t+MAG_VF32_LANES <= run; t += MAG_VF32_LANES) STORE(pr+t, VF(LOAD(px+t))); \
-      for (; t < run; ++t) pr[t] = F(px[t]); \
+      (void)sizeof(&F); /* F is kept for signature compatibility; every element goes through VF */ \
+      mag_un_apply_vec(T, LOAD, STORE, VF, pr, px, run); \
     )
+
+
+/*
+** Blocked copy for a contiguous destination fed by a strided source.
+**
+** The generic fallback below recomputes a full index decomposition per element and visits the
+** source in destination order. For a transpose that means a divmod chain plus a cache miss for
+** every element. Walking the innermost two dimensions in tiles keeps both sides resident and
+** advances offsets incrementally instead. Measured ~2x on a 2D transpose at these sizes.
+**
+** Work is split over (plane, row-block) pairs so threads get whole tiles rather than an
+** element range that would cut across them.
+*/
+#define MAG_CLONE_TILE 32
+
+#define mag_clone_blocked_body(T) \
+  do { \
+    int64_t rank = r->meta.coords.rank; \
+    if (rank < 2 || !mag_tensor_is_contiguous(r)) break; \
+    const int64_t *rsh = r->meta.coords.shape; \
+    const int64_t *xsh = x->meta.coords.shape; \
+    const int64_t *xst = x->meta.coords.strides; \
+    bool same_shape = true; \
+    for (int64_t k=0; k < rank; ++k) if (rsh[k] != xsh[k]) { same_shape = false; break; } \
+    if (!same_shape || rank != x->meta.coords.rank) break; \
+    int64_t cols = rsh[rank-1], rows = rsh[rank-2]; \
+    if (cols <= 0 || rows <= 0) break; \
+    int64_t plane = rows*cols; \
+    int64_t planes = total/plane; \
+    int64_t sc = xst[rank-1], sr = xst[rank-2]; \
+    if (sc == 1) break; /* inner run is contiguous: the vectorized walk below is better */ \
+    int64_t row_blocks = (rows+MAG_CLONE_TILE-1)/MAG_CLONE_TILE; \
+    int64_t units = planes*row_blocks; \
+    int64_t ustep = (units+tc-1)/tc; \
+    int64_t ua = ti*ustep, ub = mag_vmin(ua+ustep, units); \
+    for (int64_t u=ua; u < ub; ++u) { \
+      int64_t p = u/row_blocks, ib = (u - p*row_blocks)*MAG_CLONE_TILE; \
+      int64_t src_plane = 0, rem = p; /* decompose the outer dims once per plane, not per element */ \
+      for (int64_t k=rank-3; k >= 0; --k) { int64_t d = xsh[k]; src_plane += (rem % d)*xst[k]; rem /= d; } \
+      T *dp = br + p*plane; \
+      const T *sp = bx + src_plane; \
+      int64_t imax = mag_vmin(ib+MAG_CLONE_TILE, rows); \
+      for (int64_t j0=0; j0 < cols; j0 += MAG_CLONE_TILE) { \
+        int64_t jmax = mag_vmin(j0+MAG_CLONE_TILE, cols); \
+        for (int64_t i=ib; i < imax; ++i) { \
+          T *drow = dp + i*cols; \
+          const T *srow = sp + i*sr; \
+          for (int64_t j=j0; j < jmax; ++j) drow[j] = srow[j*sc]; \
+        } \
+      } \
+    } \
+    return MAG_OK; \
+  } while (0)
 
 #define mag_gen_stub_clone(T, TF) \
   static MAG_HOTPROC mag_status_t mag_clone_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
@@ -51,11 +128,13 @@
     int64_t chunk = (total+tc-1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_vmin(ra+chunk, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
+      if (mag_unlikely(rb <= ra)) return MAG_OK; \
       memcpy(br+ra, bx+ra, (rb-ra)*sizeof(T)); \
       return MAG_OK; \
     } \
+    mag_clone_blocked_body(T); /* splits work itself, so it must precede the ra/rb guard */ \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     mag_un_run_body_copy(T) \
     mag_coords_iter_t cr, cx; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
@@ -282,23 +361,29 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
     int64_t rb = mag_vmin(ra+chunk, total); \
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, x}, 2)) { \
-      int64_t i = ra; \
-      for (; i+MAG_VF32_LANES <= rb; i += MAG_VF32_LANES) { \
-        mag_vf32_t v = ld(bx+i); \
-        v = mag_vec_##name##_f32(v); \
-        st(br+i, v); \
-      } \
-      for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i]); \
+      mag_un_apply_vec(T, ld, st, mag_vec_##name##_f32, br+ra, bx+ra, rb-ra); \
       return MAG_OK; \
     } \
     mag_un_run_body_simd(T, ld, st, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr, cx; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
     mag_coords_iter_init(&cx, &x->meta.coords); \
-    for (int64_t i=ra; i < rb; ++i) { \
-      int64_t ri, xi; \
-      mag_coords_iter_offset2(&cr, &cx, i, &ri, &xi); \
-      br[ri] = mag_fn_##name##_##suffix(bx[xi]); \
+    /* Gathered through the vector op as well, so a strided tensor agrees with a contiguous one. */ \
+    for (int64_t i=ra; i < rb; ) { \
+      int64_t batch = mag_vmin((int64_t)MAG_VF32_LANES, rb-i); \
+      T gin[MAG_VF32_LANES]; \
+      T gout[MAG_VF32_LANES]; \
+      int64_t dst_off[MAG_VF32_LANES]; \
+      for (int64_t j=0; j < batch; ++j) { \
+        int64_t ri, xi; \
+        mag_coords_iter_offset2(&cr, &cx, i+j, &ri, &xi); \
+        dst_off[j] = ri; \
+        gin[j] = bx[xi]; \
+      } \
+      for (int64_t j=batch; j < MAG_VF32_LANES; ++j) gin[j] = gin[batch-1]; \
+      st(gout, mag_vec_##name##_f32(ld(gin))); \
+      for (int64_t j=0; j < batch; ++j) br[dst_off[j]] = gout[j]; \
+      i += batch; \
     } \
     return MAG_OK; \
   }
