@@ -57,6 +57,26 @@ namespace mag {
   };
 
   template <typename In, typename Out>
+  struct op_min {
+    using InT = In;
+    using OutT = Out;
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x < y ? x : y);
+      return static_cast<OutT>(fminf(static_cast<float>(x), static_cast<float>(y)));
+    }
+  };
+
+  template <typename In, typename Out>
+  struct op_max {
+    using InT = In;
+    using OutT = Out;
+    [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
+      if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x > y ? x : y);
+      return static_cast<OutT>(fmaxf(static_cast<float>(x), static_cast<float>(y)));
+    }
+  };
+
+  template <typename In, typename Out>
   struct op_floordiv {
     using InT = In;
     using OutT = Out;
@@ -329,6 +349,81 @@ namespace mag {
     return MAG_OK;
   }
 
+  /* clamp(x, lo, hi) is a ternary elementwise op, so it cannot ride the binary kernel: same broadcast rules, one more operand. */
+  template <typename T, typename I, const bool Contig>
+  __global__ static void clamp_kernel(
+    I numel,
+    T *__restrict__ r,
+    const T *__restrict__ x,
+    const T *__restrict__ lo,
+    const T *__restrict__ hi,
+    [[maybe_unused]] coords_iter<I> rc,
+    [[maybe_unused]] coords_iter<I> xc,
+    [[maybe_unused]] coords_iter<I> loc,
+    [[maybe_unused]] coords_iter<I> hic
+  ) {
+    auto clamp1 = [](T v, T mn, T mx) -> T {
+      if constexpr (std::is_integral_v<T>) {
+        return v < mn ? mn : (v > mx ? mx : v);
+      } else {
+        float fv = static_cast<float>(v), fmn = static_cast<float>(mn), fmx = static_cast<float>(mx);
+        return static_cast<T>(fv < fmn ? fmn : (fv > fmx ? fmx : fv));
+      }
+    };
+    I i = static_cast<I>(blockDim.x)*static_cast<I>(blockIdx.x) + static_cast<I>(threadIdx.x);
+    I step = static_cast<I>(blockDim.x)*static_cast<I>(gridDim.x);
+    if constexpr (Contig) {
+      for (; i < numel; i += step)
+        r[i] = clamp1(x[i], lo[i], hi[i]);
+    } else {
+      for (; i < numel; i += step)
+        r[rc(i)] = clamp1(x[rc.broadcast(xc, i)], lo[rc.broadcast(loc, i)], hi[rc.broadcast(hic, i)]);
+    }
+  }
+
+  template <typename T>
+  static void launch_clamp(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *lo, const mag_tensor_t *hi, cudaStream_t stream) {
+    int64_t numel = mag_tensor_numel(r);
+    auto blocks = static_cast<unsigned>(std::min((numel+BINARY_BLOCK_SIZE-1)/BINARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
+    auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
+    const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
+    const auto *plo = reinterpret_cast<const T *>(mag_tensor_data_ptr(lo));
+    const auto *phi = reinterpret_cast<const T *>(mag_tensor_data_ptr(hi));
+    if (std::array<const mag_tensor_t *, 4> tensors {r, x, lo, hi}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
+      clamp_kernel<T, int64_t, true><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(numel, pr, px, plo, phi, {}, {}, {}, {});
+    } else {
+      coords_iter<int64_t> rc {r};
+      coords_iter<int64_t> xc {x};
+      coords_iter<int64_t> loc {lo};
+      coords_iter<int64_t> hic {hi};
+      clamp_kernel<T, int64_t, false><<<blocks, BINARY_BLOCK_SIZE, 0, stream>>>(numel, pr, px, plo, phi, rc, xc, loc, hic);
+    }
+  }
+
+  mag_status_t binary_op_clamp(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    mag_tensor_t *r = cmd.out[0];
+    const mag_tensor_t *x = cmd.in[0];
+    const mag_tensor_t *lo = cmd.in[1];
+    const mag_tensor_t *hi = cmd.in[2];
+    mag_assert2(r->meta.dtype == x->meta.dtype && r->meta.dtype == lo->meta.dtype && r->meta.dtype == hi->meta.dtype);
+    switch (r->meta.dtype) {
+      case MAG_DTYPE_FLOAT32: launch_clamp<float>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_clamp<half>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_clamp<__nv_bfloat16>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_clamp<__nv_fp8_e4m3>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_UINT8: launch_clamp<uint8_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_INT8: launch_clamp<int8_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_UINT16: launch_clamp<uint16_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_INT16: launch_clamp<int16_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_UINT32: launch_clamp<uint32_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_INT32: launch_clamp<int32_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_UINT64: launch_clamp<uint64_t>(r, x, lo, hi, stream); break;
+      case MAG_DTYPE_INT64: launch_clamp<int64_t>(r, x, lo, hi, stream); break;
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: clamp: unsupported dtype %s.", mag_type_trait(r->meta.dtype)->name);
+    }
+    return MAG_OK;
+  }
+
   mag_status_t binary_op_add(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_add>(err, cmd, stream); }
   mag_status_t binary_op_sub(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_sub>(err, cmd, stream); }
   mag_status_t binary_op_mul(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_mul>(err, cmd, stream); }
@@ -336,6 +431,8 @@ namespace mag {
   mag_status_t binary_op_floordiv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_floordiv>(err, cmd, stream); }
   mag_status_t binary_op_mod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_mod>(err, cmd, stream); }
   mag_status_t binary_op_pow(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_pow>(err, cmd, stream); }
+  mag_status_t binary_op_min(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_min>(err, cmd, stream); }
+  mag_status_t binary_op_max(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_max>(err, cmd, stream); }
   mag_status_t binary_op_and(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_and>(err, cmd, stream); }
   mag_status_t binary_op_or(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream)  { return impl_binary_op_logical<op_or>(err, cmd, stream); }
   mag_status_t binary_op_xor(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_xor>(err, cmd, stream); }
