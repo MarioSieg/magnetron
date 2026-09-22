@@ -40,11 +40,7 @@ class Linear(Module):
         self.out_features: int = out_features
         self.weight: Parameter = Parameter(Tensor.empty(out_features, in_features, dtype=dtype))
         if weight_init is None:
-            weight_init = KaimingUniformInitStrategy(
-                a=math.sqrt(5.0),
-                mode=FanMode.FAN_IN,
-                activation=Activation.LEAKY_RELU,
-            )
+            weight_init = KaimingUniformInitStrategy(a=math.sqrt(5.0), mode=FanMode.FAN_IN, activation=Activation.LEAKY_RELU)
         inplace_init(self.weight, weight_init)
         self.bias: Parameter | None = None
         if bias:
@@ -95,13 +91,7 @@ class Pad(Module):
 
 
 class Embedding(Module):
-    def __init__(
-        self,
-        num_embeddings: int,
-        embedding_dim: int,
-        dtype: dtype.DType | None = None,
-        weight_init: InitStrategy | None = None,
-    ) -> None:
+    def __init__(self, num_embeddings: int, embedding_dim: int, dtype: dtype.DType | None = None, weight_init: InitStrategy | None = None) -> None:
         super().__init__()
         if dtype is None:
             dtype = context.get_default_dtype()
@@ -118,13 +108,7 @@ class Embedding(Module):
 
 
 class RMSNorm(Module):
-    def __init__(
-        self,
-        dim: int,
-        eps: float = 1e-5,
-        dtype: dtype.DType | None = None,
-        weight_init: InitStrategy | None = None,
-    ) -> None:
+    def __init__(self, dim: int, eps: float = 1e-5, dtype: dtype.DType | None = None, weight_init: InitStrategy | None = None) -> None:
         super().__init__()
         if dtype is None:
             dtype = context.get_default_dtype()
@@ -346,11 +330,7 @@ class _ConvND(Module):
             wshape = (out_channels, in_channels // groups, *self.kernel_size)
         self.weight: Parameter = Parameter(Tensor.empty(*wshape, dtype=dtype))
         if weight_init is None:
-            weight_init = KaimingUniformInitStrategy(
-                a=math.sqrt(5.0),
-                mode=FanMode.FAN_IN,
-                activation=Activation.LEAKY_RELU,
-            )
+            weight_init = KaimingUniformInitStrategy(a=math.sqrt(5.0), mode=FanMode.FAN_IN, activation=Activation.LEAKY_RELU)
         inplace_init(self.weight, weight_init)
         self.bias: Parameter | None = None
         if bias:

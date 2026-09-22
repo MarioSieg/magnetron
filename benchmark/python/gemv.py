@@ -48,11 +48,7 @@ last_result_cpu = last_result.transfer('cpu')
 ref = x_cpu @ w_cpu
 err = (ref - last_result_cpu).abs()
 
-epsilons: dict[str, tuple[float, float]] = {
-    'bfloat16': (1.5, 2e-2),
-    'float16': (0.5, 1e-2),
-    'float32': (1e-4, 1e-4),
-}
+epsilons: dict[str, tuple[float, float]] = {'bfloat16': (1.5, 2e-2), 'float16': (0.5, 1e-2), 'float32': (1e-4, 1e-4)}
 
 atol, rtol = epsilons[args.dtype]
 tol = atol + rtol * ref.abs()

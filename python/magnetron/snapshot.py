@@ -68,13 +68,7 @@ class _FileManifest:
             snapshot_ver=obj['snapshot_ver'],
             usr_metadata=obj['usr_metadata'],
             tensor_map={
-                k: _TensorMetadata(
-                    shape=tuple(v['shape']),
-                    dtype=v['dtype'],
-                    dtype_id=v['dtype_id'],
-                    offset=v['offset'],
-                    nbytes=v['nbytes'],
-                )
+                k: _TensorMetadata(shape=tuple(v['shape']), dtype=v['dtype'], dtype_id=v['dtype_id'], offset=v['offset'], nbytes=v['nbytes'])
                 for k, v in obj['tensor_map'].items()
             },
         )
@@ -122,11 +116,7 @@ class TensorSpec:
 
 
 class SnapshotWriter:
-    def __init__(
-        self,
-        file_path: str | Path,
-        metadata: dict[str, Any] | None = None,
-    ) -> None:
+    def __init__(self, file_path: str | Path, metadata: dict[str, Any] | None = None) -> None:
         self._file_path: Path = Path(file_path)
         self._usr_metadata: dict[str, Any] = dict(metadata or {})
         self._specs: dict[str, TensorSpec] = {}

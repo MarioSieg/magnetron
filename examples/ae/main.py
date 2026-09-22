@@ -23,22 +23,11 @@ class AE(nn.Module):
         self.h = h
         self.encoder = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(
-                3 * w * h,
-                latent_dim,
-                weight_init=nn.init.XavierNormalInitStrategy(),
-                bias_init=nn.init.ZerosInitStrategy(),
-            ),
+            nn.Linear(3 * w * h, latent_dim, weight_init=nn.init.XavierNormalInitStrategy(), bias_init=nn.init.ZerosInitStrategy()),
             nn.ReLU(),
         )
         self.decoder = nn.Sequential(
-            nn.Linear(
-                latent_dim,
-                3 * w * h,
-                weight_init=nn.init.XavierNormalInitStrategy(),
-                bias_init=nn.init.ZerosInitStrategy(),
-            ),
-            nn.Sigmoid(),
+            nn.Linear(latent_dim, 3 * w * h, weight_init=nn.init.XavierNormalInitStrategy(), bias_init=nn.init.ZerosInitStrategy()), nn.Sigmoid()
         )
 
     def forward(self, x: Tensor) -> Tensor:

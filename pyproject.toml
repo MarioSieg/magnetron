@@ -70,8 +70,10 @@ build-dir = "build/{wheel_tag}"
 
 [tool.ruff]
 line-length = 150
+indent-width = 4
 exclude = [
     ".venv",
+    "build",
     "docs",
     "extern",
     "test",
@@ -82,14 +84,37 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-ignore = ["F403"]
 select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "SIM",
+    "PERF",
+    "RUF",
     "ANN",
-    "UP"
 ]
 
-[tool.ruff.format]
-quote-style = "single"
+ignore = [
+    "E501",
+    "E701",
+    "E702",
+    "ANN401",
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-single-line = false
+split-on-trailing-comma = false
 
 [tool.ruff.lint.per-file-ignores]
 "setup.py" = ["ANN"]
+"test/**/*.py" = ["ANN"]
+"tests/**/*.py" = ["ANN"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = true

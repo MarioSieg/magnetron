@@ -96,25 +96,13 @@ class MLP(nn.Module):
         self.hidden_size: int = cfg.hidden_size
         self.inter_size: int = cfg.intermediate_size
         self.gate_proj = nn.Linear(
-            self.hidden_size,
-            self.inter_size,
-            bias=False,
-            weight_init=nn.init.EmptyInitStrategy(),
-            bias_init=nn.init.EmptyInitStrategy(),
+            self.hidden_size, self.inter_size, bias=False, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy()
         )
         self.up_proj = nn.Linear(
-            self.hidden_size,
-            self.inter_size,
-            bias=False,
-            weight_init=nn.init.EmptyInitStrategy(),
-            bias_init=nn.init.EmptyInitStrategy(),
+            self.hidden_size, self.inter_size, bias=False, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy()
         )
         self.down_proj = nn.Linear(
-            self.inter_size,
-            self.hidden_size,
-            bias=False,
-            weight_init=nn.init.EmptyInitStrategy(),
-            bias_init=nn.init.EmptyInitStrategy(),
+            self.inter_size, self.hidden_size, bias=False, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy()
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -225,13 +213,7 @@ class Block(nn.Module):
         self.post_attention_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps, weight_init=nn.init.EmptyInitStrategy())
 
     def forward(self, x: Tensor, freq_cos: Tensor, freq_sin: Tensor, idx: Tensor, cache: KVLayerCache | None = None) -> Tensor:
-        h = x + self.self_attn(
-            self.input_layernorm(x),
-            freq_cos,
-            freq_sin,
-            idx,
-            cache,
-        )
+        h = x + self.self_attn(self.input_layernorm(x), freq_cos, freq_sin, idx, cache)
         return h + self.mlp(self.post_attention_layernorm(h))
 
 
@@ -246,11 +228,7 @@ class Qwen3Model(nn.Module):
             self.lm_head = None
         else:
             self.lm_head = nn.Linear(
-                cfg.hidden_size,
-                cfg.vocab_size,
-                bias=False,
-                weight_init=nn.init.EmptyInitStrategy(),
-                bias_init=nn.init.EmptyInitStrategy(),
+                cfg.hidden_size, cfg.vocab_size, bias=False, weight_init=nn.init.EmptyInitStrategy(), bias_init=nn.init.EmptyInitStrategy()
             )
         cos_cache, sin_cache = _precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.cos_cache = cos_cache
@@ -281,11 +259,7 @@ class Qwen3Model(nn.Module):
         gc.collect()
         return model
 
-    def forward(
-        self,
-        x: Tensor,
-        idx: Tensor,
-    ) -> Tensor:
+    def forward(self, x: Tensor, idx: Tensor) -> Tensor:
         h = self.embed_tokens(x)
         for i, layer in enumerate(self.layers):
             layer_cache = self.cache[i] if self.cache is not None else None
@@ -294,13 +268,7 @@ class Qwen3Model(nn.Module):
         return Tensor.einsum('...h, vh -> ...v', h, self.embed_tokens.weight) if self.cfg.tie_word_embeddings else self.lm_head(h)
 
     def generate_stream(
-        self,
-        idx: Tensor,
-        tokenizer: Any,
-        max_tokens: int,
-        temp: float = 1.0,
-        top_k: int = 10,
-        reset_cache: bool = False,
+        self, idx: Tensor, tokenizer: Any, max_tokens: int, temp: float = 1.0, top_k: int = 10, reset_cache: bool = False
     ) -> Iterator[str]:
         def sample(logits: Tensor, strategy: SamplingStrategy) -> int:  # Sample according to strategy
             match strategy:
@@ -317,10 +285,7 @@ class Qwen3Model(nn.Module):
         idx = idx.reshape(1, -1)
         start_pos: int = self.cache.cache_pos
         T: int = idx.shape[1]
-        logits = self(
-            idx,
-            idx=Tensor.arange(start=start_pos, stop=start_pos + T).reshape(1, -1),
-        )
+        logits = self(idx, idx=Tensor.arange(start=start_pos, stop=start_pos + T).reshape(1, -1))
         next_logits = logits[:, -1, :] / temp
         curr_len: int = start_pos + T
         pending: list[int] = []

@@ -40,19 +40,11 @@ def _fmt_bytes(n: float) -> str:
 
 
 def _mag_to_torch_dtype(mag_dtype: dtype.DType) -> torch.dtype:
-    return {
-        dtype.float16: torch.float16,
-        dtype.bfloat16: torch.bfloat16,
-        dtype.float32: torch.float32,
-    }[mag_dtype]
+    return {dtype.float16: torch.float16, dtype.bfloat16: torch.bfloat16, dtype.float32: torch.float32}[mag_dtype]
 
 
 def _mag_dtype_from_str(dtype_str: str) -> dtype.DType:
-    return {
-        'float16': dtype.float16,
-        'bfloat16': dtype.bfloat16,
-        'float32': dtype.float32,
-    }[dtype_str]
+    return {'float16': dtype.float16, 'bfloat16': dtype.bfloat16, 'float32': dtype.float32}[dtype_str]
 
 
 def _iter_safetensor_shards(repo_dir: str) -> list[str]:
@@ -98,14 +90,7 @@ def _plan_tensors(repo_dir: str) -> list[_TensorPlan]:
                 if mag_key in seen:
                     raise KeyError(f'{mag_key} appears in both {os.path.basename(seen[mag_key])} and {os.path.basename(shard)}')
                 seen[mag_key] = shard
-                plan.append(
-                    _TensorPlan(
-                        shard=shard,
-                        hf_key=hf_key,
-                        mag_key=mag_key,
-                        shape=tuple(f.get_slice(hf_key).get_shape()),
-                    )
-                )
+                plan.append(_TensorPlan(shard=shard, hf_key=hf_key, mag_key=mag_key, shape=tuple(f.get_slice(hf_key).get_shape())))
     if not plan:
         raise RuntimeError('No convertible tensors found in the safetensors shards.')
     return plan
@@ -176,14 +161,7 @@ def _write_model_card(
 
 
 def _print_stats(
-    snap_file: str,
-    *,
-    repo: str,
-    mag_dtype: dtype.DType,
-    snap: SnapshotWriter,
-    source_numbytes: int,
-    elapsed: float,
-    tokenizer_numbytes: int,
+    snap_file: str, *, repo: str, mag_dtype: dtype.DType, snap: SnapshotWriter, source_numbytes: int, elapsed: float, tokenizer_numbytes: int
 ) -> None:
     """Everything the file is made of, measured on the file itself, not estimated."""
     file_numbytes = os.path.getsize(snap_file)
@@ -213,12 +191,7 @@ def _print_stats(
 
 
 def _convert_model(
-    repo: str,
-    torch_dtype: torch.dtype,
-    mag_dtype: dtype.DType,
-    *,
-    write_model_card: bool = False,
-    model_card_path: str = 'model_card.md',
+    repo: str, torch_dtype: torch.dtype, mag_dtype: dtype.DType, *, write_model_card: bool = False, model_card_path: str = 'model_card.md'
 ) -> None:
     console.print(f'Downloading model {repo} from Hugging Face...', style='dim')
     repo_dir = snapshot_download(repo_id=repo)
@@ -286,30 +259,10 @@ def _convert_model(
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description='Convert Hugging Face Qwen model to Magnetron file format')
-    parser.add_argument(
-        '--model',
-        type=str,
-        default='Qwen/Qwen3-4B-Instruct-2507',
-        help='HF repo model name',
-    )
-    parser.add_argument(
-        '--model-card',
-        action='store_true',
-        help='Write a Hugging Face-style model_card.md with tensor manifest',
-    )
-    parser.add_argument(
-        '--model-card-path',
-        type=str,
-        default='model_card.md',
-        help='Output path for the generated model card',
-    )
-    parser.add_argument(
-        '--dtype',
-        type=str,
-        default='bfloat16',
-        choices=['float16', 'bfloat16', 'float32'],
-        help='Data type for Magnetron tensors',
-    )
+    parser.add_argument('--model', type=str, default='Qwen/Qwen3-4B-Instruct-2507', help='HF repo model name')
+    parser.add_argument('--model-card', action='store_true', help='Write a Hugging Face-style model_card.md with tensor manifest')
+    parser.add_argument('--model-card-path', type=str, default='model_card.md', help='Output path for the generated model card')
+    parser.add_argument('--dtype', type=str, default='bfloat16', choices=['float16', 'bfloat16', 'float32'], help='Data type for Magnetron tensors')
     args = parser.parse_args()
     mag_dtype = _mag_dtype_from_str(args.dtype)
     _convert_model(

@@ -65,11 +65,7 @@ class Module:
         for _, child in self.named_children():
             yield child
 
-    def named_modules(
-        self,
-        prefix: str = '',
-        memo: set[int] | None = None,
-    ) -> Iterator[tuple[str, Module]]:
+    def named_modules(self, prefix: str = '', memo: set[int] | None = None) -> Iterator[tuple[str, Module]]:
         memo = set() if memo is None else memo
         if id(self) in memo:
             return
@@ -83,11 +79,7 @@ class Module:
         for _, module in self.named_modules():
             yield module
 
-    def named_parameters(
-        self,
-        prefix: str = '',
-        memo: set[int] | None = None,
-    ) -> Iterator[tuple[str, Parameter]]:
+    def named_parameters(self, prefix: str = '', memo: set[int] | None = None) -> Iterator[tuple[str, Parameter]]:
         memo = set() if memo is None else memo
         for name, value in self.__dict__.items():
             if isinstance(value, Parameter) and id(value) not in memo:
@@ -108,12 +100,7 @@ class Module:
         self._buffers[name] = buf
         setattr(self, name, buf)
 
-    def named_buffers(
-        self,
-        prefix: str = '',
-        memo: set[int] | None = None,
-        persistent: bool | None = None,
-    ) -> Iterator[tuple[str, Buffer]]:
+    def named_buffers(self, prefix: str = '', memo: set[int] | None = None, persistent: bool | None = None) -> Iterator[tuple[str, Buffer]]:
         memo = set() if memo is None else memo
         for name, buf in self._buffers.items():
             if persistent is not None and buf.persistent != persistent:
@@ -135,11 +122,7 @@ class Module:
     def state_dict(self) -> OrderedDict[str, Tensor]:
         return OrderedDict((k, v.clone()) for k, v in self.state_items())
 
-    def load_state_dict(
-        self,
-        state_dict: Mapping[str, Tensor],
-        strict: bool = True,
-    ) -> dict[str, list[str]]:
+    def load_state_dict(self, state_dict: Mapping[str, Tensor], strict: bool = True) -> dict[str, list[str]]:
         own_state = dict(self.state_items())
         missing = [k for k in own_state if k not in state_dict]
         unexpected = [k for k in state_dict if k not in own_state]
@@ -190,17 +173,11 @@ class Module:
                 target = getattr(target, p)
         return target, parts[-1]
 
-    def register_forward_hook(
-        self,
-        hook: Callable[[Module, tuple[Any, ...], Tensor], None],
-    ) -> Callable[[Module, tuple[Any, ...], Tensor], None]:
+    def register_forward_hook(self, hook: Callable[[Module, tuple[Any, ...], Tensor], None]) -> Callable[[Module, tuple[Any, ...], Tensor], None]:
         self._fwd_hooks.append(hook)
         return hook
 
-    def register_forward_pre_hook(
-        self,
-        hook: Callable[[Module, tuple[Any, ...]], None],
-    ) -> Callable[[Module, tuple[Any, ...]], None]:
+    def register_forward_pre_hook(self, hook: Callable[[Module, tuple[Any, ...]], None]) -> Callable[[Module, tuple[Any, ...]], None]:
         self._fwd_pre_hooks.append(hook)
         return hook
 
