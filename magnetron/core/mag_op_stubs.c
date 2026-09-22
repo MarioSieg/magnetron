@@ -1171,7 +1171,7 @@ static mag_status_t mag_bincount_range(mag_error_t *err, mag_tensor_t *x, mag_op
   return MAG_OK;
 }
 
-mag_status_t mag_bincount(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weights, int64_t minlength) {
+mag_status_t mag_bincount(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weights, int64_t min_len) {
   *out_result = NULL;
   if (mag_unlikely(!(x != NULL)))
     return mag_set_error(err, MAG_ERR_PARAM, "bincount: input tensor must not be NULL.");
@@ -1180,8 +1180,8 @@ mag_status_t mag_bincount(mag_error_t *err, mag_tensor_t **out_result, mag_tenso
     return mag_set_error(err, MAG_ERR_RANK, "bincount: input must be 1D, but got rank %" PRIi64 ".", x->meta.coords.rank);
   if (mag_unlikely(!mag_type_category_is_integer(x->meta.dtype)))
     return mag_set_error(err, MAG_ERR_PARAM, "bincount: input must have an integer dtype, but got '%s'.", mag_type_trait(x->meta.dtype)->name);
-  if (mag_unlikely(minlength < 0))
-    return mag_set_error(err, MAG_ERR_PARAM, "bincount: minlength must be >= 0, but got %" PRIi64 ".", minlength);
+  if (mag_unlikely(min_len < 0))
+    return mag_set_error(err, MAG_ERR_PARAM, "bincount: minlength must be >= 0, but got %" PRIi64 ".", min_len);
   if (weights) {
     if (mag_unlikely(weights->meta.coords.rank != 1 || weights->meta.numel != x->meta.numel))
       return mag_set_error(err, MAG_ERR_SHAPE, "bincount: weights must be 1D with the same length as the input (%" PRIi64 "), but got rank %" PRIi64 " with %" PRIi64 " elements.", x->meta.numel, weights->meta.coords.rank, weights->meta.numel);
@@ -1210,7 +1210,7 @@ mag_status_t mag_bincount(mag_error_t *err, mag_tensor_t **out_result, mag_tenso
       if (mag_iserr(status)) goto cleanup;
     }
   }
-  int64_t bins = minlength;
+  int64_t bins = min_len;
   if (x->meta.numel > 0) {
     int64_t lo, hi;
     status = mag_bincount_range(err, xi, MAG_OP_MINIMA, &lo);
@@ -1229,7 +1229,7 @@ mag_status_t mag_bincount(mag_error_t *err, mag_tensor_t **out_result, mag_tenso
   {
     mag_tensor_t *ins[2] = {xi, w};
     uint32_t num_in = w ? 2 : 1;
-    mag_op_params_t params = { .bincount = { .minlength = minlength } };
+    mag_op_params_t params = { .bincount = { .minlength = min_len } };
     status = mag_check_dtype_and_device_compat(err, MAG_OP_BINCOUNT, ins, num_in);
     if (mag_iserr(status)) goto cleanup;
     status = mag_dispatch(err, MAG_OP_BINCOUNT, false, ins, num_in, &result, 1, &params);
@@ -1260,23 +1260,23 @@ mag_status_t mag_cumin(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t
   return mag_op_stub_cu_ex(err, out_values, out_indices, MAG_OP_CUMIN, "min", x, dim);
 }
 
-mag_status_t mag_outer(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *a, mag_tensor_t *b) {
+mag_status_t mag_outer(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
   *out_result = NULL;
-  if (mag_unlikely(!(a != NULL)))
+  if (mag_unlikely(!(x != NULL)))
     return mag_set_error(err, MAG_ERR_PARAM, "outer: first input tensor must not be NULL.");
-  if (mag_unlikely(!(b != NULL)))
+  if (mag_unlikely(!(y != NULL)))
     return mag_set_error(err, MAG_ERR_PARAM, "outer: second input tensor must not be NULL.");
-  if (mag_unlikely(a->meta.coords.rank != 1))
-    return mag_set_error(err, MAG_ERR_RANK, "outer: first input must be 1D, but got rank %" PRIi64 ".", a->meta.coords.rank);
-  if (mag_unlikely(b->meta.coords.rank != 1))
-    return mag_set_error(err, MAG_ERR_RANK, "outer: second input must be 1D, but got rank %" PRIi64 ".", b->meta.coords.rank);
-  if (mag_unlikely(!mag_device_id_eq(mag_tensor_device_id(a), mag_tensor_device_id(b))))
+  if (mag_unlikely(x->meta.coords.rank != 1))
+    return mag_set_error(err, MAG_ERR_RANK, "outer: first input must be 1D, but got rank %" PRIi64 ".", x->meta.coords.rank);
+  if (mag_unlikely(y->meta.coords.rank != 1))
+    return mag_set_error(err, MAG_ERR_RANK, "outer: second input must be 1D, but got rank %" PRIi64 ".", y->meta.coords.rank);
+  if (mag_unlikely(!mag_device_id_eq(mag_tensor_device_id(x), mag_tensor_device_id(y))))
     return mag_set_error(err, MAG_ERR_DEVICE, "outer: input tensors must be on the same device.");
   mag_tensor_t *av = NULL;
   mag_tensor_t *bv = NULL;
-  mag_status_t status = mag_unsqueeze(err, &av, a, 1);
+  mag_status_t status = mag_unsqueeze(err, &av, x, 1);
   if (mag_iserr(status)) return status;
-  status = mag_unsqueeze(err, &bv, b, 0);
+  status = mag_unsqueeze(err, &bv, y, 0);
   if (mag_iserr(status)) {
     mag_tensor_decref(av);
     return status;
@@ -2174,21 +2174,21 @@ mag_status_t mag_repeat_back(mag_error_t *err, mag_tensor_t **out_result, mag_te
   return MAG_OK;
 }
 
-mag_status_t mag_repeat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *repeats, int64_t repeats_len) {
+mag_status_t mag_repeat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *repeats, int64_t num_reps) {
   *out_result = NULL;
   if (mag_unlikely(!(x != NULL)))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat: input tensor must not be NULL.");
-  if (mag_unlikely(!(repeats != NULL && repeats_len > 0)))
+  if (mag_unlikely(!(repeats != NULL && num_reps > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat: repeats must be a non-empty sequence.");
   int64_t in_rank = x->meta.coords.rank;
-  int64_t out_rank = in_rank > repeats_len ? in_rank : repeats_len;
+  int64_t out_rank = in_rank > num_reps ? in_rank : num_reps;
   if (mag_unlikely(!(out_rank <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat: result rank would exceed MAG_MAX_DIMS.");
   mag_op_params_t params = {0};
   params.repeat.in_rank = in_rank;
   params.repeat.rank = out_rank;
   int64_t lead_x = out_rank - in_rank;
-  int64_t lead_r = out_rank - repeats_len;
+  int64_t lead_r = out_rank - num_reps;
   for (int64_t d=0; d < out_rank; ++d) {
     int64_t is = d >= lead_x ? x->meta.coords.shape[d - lead_x] : 1;
     int64_t rs = d >= lead_r ? repeats[d - lead_r] : 1;
@@ -2208,30 +2208,30 @@ mag_status_t mag_repeat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   return MAG_OK;
 }
 
-mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, bool flatten, int64_t dim, const int64_t *counts, int64_t count_len) {
+mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, bool flatten, int64_t dim, const int64_t *counts, int64_t num_counts) {
   *out_result = NULL;
   if (mag_unlikely(!(x != NULL)))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: input tensor must not be NULL.");
-  if (mag_unlikely(!(counts != NULL && count_len > 0)))
+  if (mag_unlikely(!(counts != NULL && num_counts > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts must be a non-empty sequence.");
-  for (int64_t i=0; i < count_len; ++i)
+  for (int64_t i=0; i < num_counts; ++i)
     if (mag_unlikely(!(counts[i] >= 0)))
         return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts must be >= 0.");
   mag_op_params_t params = {0};
   params.repeat_interleave.flatten = flatten;
   params.repeat_interleave.counts = counts;
-  params.repeat_interleave.count_len = count_len;
+  params.repeat_interleave.count_len = num_counts;
   mag_tensor_t *xin = NULL;
   int64_t shape[MAG_MAX_DIMS];
   mag_status_t status = MAG_OK;
   if (flatten) {
-    if (mag_unlikely(!(count_len == 1 || count_len == x->meta.numel)))
-        return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts length (%" PRIi64 ") must match input numel (%" PRIi64 ") when dim is None.", count_len, x->meta.numel);
+    if (mag_unlikely(!(num_counts == 1 || num_counts == x->meta.numel)))
+        return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts length (%" PRIi64 ") must match input numel (%" PRIi64 ") when dim is None.", num_counts, x->meta.numel);
     int64_t out_n = 0;
-    if (count_len == 1)
+    if (num_counts == 1)
       out_n = x->meta.numel*counts[0];
     else
-      for (int64_t i=0; i < count_len; ++i) out_n += counts[i];
+      for (int64_t i=0; i < num_counts; ++i) out_n += counts[i];
     params.repeat_interleave.rank = 1;
     params.repeat_interleave.out_shape[0] = out_n;
     status = mag_contiguous(err, &xin, x);
@@ -2246,13 +2246,13 @@ mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, 
     params.repeat_interleave.rank = x->meta.coords.rank;
     memcpy(shape, x->meta.coords.shape, params.repeat_interleave.rank*sizeof(*shape));
     int64_t axis_len = x->meta.coords.shape[dim];
-    if (mag_unlikely(!(count_len == 1 || count_len == axis_len)))
-        return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts length (%" PRIi64 ") must match size of dim (%" PRIi64 ").", count_len, axis_len);
-    if (count_len == 1)
+    if (mag_unlikely(!(num_counts == 1 || num_counts == axis_len)))
+        return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts length (%" PRIi64 ") must match size of dim (%" PRIi64 ").", num_counts, axis_len);
+    if (num_counts == 1)
       shape[dim] *= counts[0];
     else {
       int64_t sum = 0;
-      for (int64_t i=0; i < count_len; ++i) sum += counts[i];
+      for (int64_t i=0; i < num_counts; ++i) sum += counts[i];
       shape[dim] = sum;
     }
     memcpy(params.repeat_interleave.out_shape, shape, params.repeat_interleave.rank*sizeof(*params.repeat_interleave.out_shape));
@@ -2416,17 +2416,17 @@ mag_status_t mag_scatter(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
   return mag_scatter_impl(err, MAG_OP_SCATTER, "scatter", *out_result, dim, index, src);
 }
 
-mag_status_t mag_scatter_add_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
+mag_status_t mag_scatter_add_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *idx, mag_tensor_t *src) {
   mag_status_t status = mag_check_inplace_grad_ok(err, self);
   if (mag_iserr(status)) return status;
-  return mag_scatter_impl(err, MAG_OP_SCATTER_ADD, "scatter_add_", self, dim, index, src);
+  return mag_scatter_impl(err, MAG_OP_SCATTER_ADD, "scatter_add_", self, dim, idx, src);
 }
 
-mag_status_t mag_scatter_add(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
+mag_status_t mag_scatter_add(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *idx, mag_tensor_t *src) {
   *out_result = NULL;
   mag_status_t status = mag_clone(err, out_result, self);
   if (mag_iserr(status)) return status;
-  return mag_scatter_impl(err, MAG_OP_SCATTER_ADD, "scatter_add", *out_result, dim, index, src);
+  return mag_scatter_impl(err, MAG_OP_SCATTER_ADD, "scatter_add", *out_result, dim, idx, src);
 }
 
 mag_status_t mag_copy_(mag_error_t *err, mag_tensor_t *dst, mag_tensor_t *src) {
