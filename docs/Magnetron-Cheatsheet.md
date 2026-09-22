@@ -162,6 +162,7 @@ If you are familiar with PyTorch, think `x.sin()` instead of `torch.sin(x)`.
 | `sort(dim=-1, descending=False, stable=False)`    | Sort values along a dimension                                      | $ x_{i_1}\le x_{i_2}\le\dots\le x_{i_n} $                                     | `values, indices = x.sort()`  |
 | `argsort(dim=-1, descending=False, stable=False)` | Indices that sort along a dimension                                | $ \mathrm{argsort}(x)=(i_1,\dots,i_n) $                                       | `indices = x.argsort()`       |
 | `bincount(weights=None, minlength=0)`             | Count occurrences of each non-negative integer in a 1D tensor      | $ y_b=\sum_{i:\,x_i=b} w_i $                                                  | `counts = x.bincount()`       |
+| `nonzero()`                                       | Row-major multi-indices of all non-zero elements, shape (N, rank)  | $ \{\,i : x_i \neq 0\,\} $                                                    | `idx = x.nonzero()`           |
 
 ---
 

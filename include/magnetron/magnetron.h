@@ -1827,6 +1827,20 @@ extern MAG_EXPORT mag_status_t mag_bincount(
 );
 
 /**
+ * Compute the indices of all non-zero elements of @p x. NaN counts as non-zero.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives an int64 tensor of shape [N, rank] holding one row-major multi-index per non-zero element; the caller owns one reference.
+ * @param x Input tensor.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_nonzero(
+  mag_error_t *err,
+  mag_tensor_t **out_result,
+  mag_tensor_t *x
+);
+
+/**
  * Compute the cumulative sum of @p x along @p dim.
  *
  * @param err Error output; set when the call fails.

@@ -1031,6 +1031,21 @@ namespace mag::bindings {
       "weights"_a = nb::none(), "minlength"_a = 0,
       "Count occurrences of each non-negative integer in a 1D tensor, optionally weighted."
     )
+    .def("nonzero",
+      [](const tensor_wrapper &self) -> tensor_wrapper {
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        if constexpr (enable_op_recorder) {
+          op_recorder::singleton().profile(MAG_OP_NONZERO, [&] {
+            throw_if_error(call_without_gil([&] { return mag_nonzero(&err, &out, *self); }), err);
+          }, {*self});
+        } else {
+          throw_if_error(call_without_gil([&] { return mag_nonzero(&err, &out, *self); }), err);
+        }
+        return tensor_wrapper{out};
+      },
+      "Return an int64 tensor of shape (N, rank) holding the row-major multi-index of every non-zero element."
+    )
     .def("conv1D",
       [](const tensor_wrapper &self, const tensor_wrapper &weight, nb::handle bias, nb::handle stride, nb::handle padding, nb::handle dilation, int64_t groups) -> tensor_wrapper {
         return conv_impl<false>(self, weight, bias, 1, stride, padding, nb::none(), dilation, groups);

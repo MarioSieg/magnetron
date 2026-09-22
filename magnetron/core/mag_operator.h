@@ -88,6 +88,9 @@ typedef union mag_op_params_t {
     int64_t minlength;
   } bincount;
   struct {
+    bool count_only;
+  } nonzero;
+  struct {
     int64_t spatial;
     int64_t stride[3]; /* Spatial=3 is max dim for conv */
     int64_t padding[3];
@@ -194,6 +197,7 @@ typedef union mag_op_params_t {
   _(SORT, 1, 2, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(ARGSORT, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(BINCOUNT, MAG_OP_INOUT_DYN, 1, ALL, MAG_OP_FLAG_NONE, NULL)__\
+  _(NONZERO, 1, 1, ALL, MAG_OP_FLAG_NONE, NULL)__\
   _(ABS, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, abs)__\
   _(SGN, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, NULL)__\
   _(NEG, 1, 1, NUMERIC, MAG_OP_FLAGS_COMMON, neg)__\

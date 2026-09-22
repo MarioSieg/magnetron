@@ -1115,6 +1115,36 @@ def test_bincount(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_nonzero(device: str) -> None:
+    x = Tensor([[0.0, 1.5, 0.0], [-2.0, 0.0, float('nan')]], device=device)
+    r = x.nonzero()
+    assert r.dtype == dtype.int64
+    assert r.shape == (3, 2)
+    assert r.tolist() == torch.nonzero(totorch(x)).tolist()
+    v = Tensor([0, 3, 0, 0, 7], dtype=dtype.int32, device=device)
+    assert v.nonzero().tolist() == torch.nonzero(totorch(v)).tolist()
+    b = Tensor([[True, False], [False, True]], device=device)
+    assert b.nonzero().tolist() == [[0, 0], [1, 1]]
+    zeros = Tensor.zeros((4, 5), device=device)
+    assert zeros.nonzero().shape == (0, 2)
+    assert zeros.nonzero().tolist() == []
+    empty = Tensor.zeros((0, 3), device=device)
+    assert empty.nonzero().shape == (0, 2)
+    scalar = Tensor.scalar(3.0, device=device)
+    assert scalar.nonzero().shape == (1, 0)
+    assert Tensor.scalar(0.0, device=device).nonzero().shape == (0, 0)
+    t = Tensor.arange(24, device=device).reshape(4, 6).T
+    assert not t.is_contiguous
+    assert t.nonzero().tolist() == torch.nonzero(totorch(t)).tolist()
+    for dt in (dtype.float16, dtype.bfloat16, dtype.int8, dtype.uint16, dtype.int64):
+        big = Tensor.uniform((37, 129), low=-1.0, high=1.0, device=device)
+        big = (big > 0.5).cast(dt)
+        assert big.nonzero().tolist() == torch.nonzero(totorch(big).to(torch.int64)).tolist()
+    huge = (Tensor.uniform((3, 9000), low=0.0, high=1.0, device=device) > 0.7)
+    assert huge.nonzero().tolist() == torch.nonzero(totorch(huge)).tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_where(device: str) -> None:
     cond = Tensor([[True, False], [False, True]], device=device)
     x = Tensor([[1.0, 2.0], [3.0, 4.0]], device=device)

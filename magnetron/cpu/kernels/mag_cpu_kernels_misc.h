@@ -753,6 +753,73 @@ mag_gen_stub_bincount(mag_bfloat16_t, bfloat16, mag_bfloat16_to_float32, mag_flo
 mag_gen_stub_bincount(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
 
 #undef mag_gen_stub_bincount
+
+#define mag_nonzero_pred_arith(v) ((v) != 0)
+#define mag_nonzero_pred_bits16(v) (((v).bits & 0x7fff) != 0)
+#define mag_nonzero_pred_bits8(v) (((v).bits & 0x7f) != 0)
+
+#define mag_gen_stub_nonzero(T, TF, IS_NZ) \
+  static MAG_HOTPROC mag_status_t mag_nonzero_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    (void)err; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    mag_assert2(r->meta.dtype == MAG_DTYPE_INT64 && mag_tensor_is_contiguous(r)); \
+    const T *bx = (const T *)mag_tensor_data_ptr(x); \
+    int64_t *br = (int64_t *)mag_tensor_data_ptr_mut(r); \
+    const int64_t total = x->meta.numel; \
+    const int64_t rank = x->meta.coords.rank; \
+    const bool count_only = payload->cmd->params->nonzero.count_only; \
+    if (count_only && mag_tensor_is_contiguous(x)) { \
+      int64_t n = 0; \
+      for (int64_t i=0; i < total; ++i) n += IS_NZ(bx[i]); \
+      *br = n; \
+      return MAG_OK; \
+    } \
+    mag_coords_iter_t cx; \
+    mag_coords_iter_init(&cx, &x->meta.coords); \
+    const int64_t cap = count_only ? INT64_MAX : r->meta.coords.shape[0]; \
+    int64_t idx[MAG_MAX_DIMS] = {0}; \
+    int64_t off = 0; \
+    int64_t n = 0; \
+    for (int64_t i=0; i < total && n < cap; ++i) { \
+      mag_bnd_chk(bx+off, x->storage->base, x->storage->size); \
+      if (IS_NZ(bx[off])) { \
+        if (!count_only) { \
+          int64_t *row = br + n*rank; \
+          for (int64_t k=0; k < rank; ++k) row[k] = idx[k]; \
+        } \
+        ++n; \
+      } \
+      for (int64_t k=rank-1; k >= 0; --k) { \
+        if (++idx[k] < cx.shape[k]) { \
+          off += cx.strides[k]; \
+          break; \
+        } \
+        idx[k] = 0; \
+        off -= (cx.shape[k]-1)*cx.strides[k]; \
+      } \
+    } \
+    if (count_only) *br = n; \
+    return MAG_OK; \
+  }
+
+mag_gen_stub_nonzero(float, float32, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(mag_float16_t, float16, mag_nonzero_pred_bits16)
+mag_gen_stub_nonzero(mag_bfloat16_t, bfloat16, mag_nonzero_pred_bits16)
+mag_gen_stub_nonzero(mag_float8_e4m3fn_t, float8_e4m3fn, mag_nonzero_pred_bits8)
+mag_gen_stub_nonzero(uint8_t, uint8, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(int8_t, int8, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(uint16_t, uint16, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(int16_t, int16, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(uint32_t, uint32, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(int32_t, int32, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(uint64_t, uint64, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(int64_t, int64, mag_nonzero_pred_arith)
+
+#undef mag_gen_stub_nonzero
+#undef mag_nonzero_pred_arith
+#undef mag_nonzero_pred_bits16
+#undef mag_nonzero_pred_bits8
 #undef MAG_SORT_RUN
 #undef mag_sort_never_nan
 

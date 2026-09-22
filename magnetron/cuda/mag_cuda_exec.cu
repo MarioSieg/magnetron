@@ -47,6 +47,7 @@ namespace mag {
     [MAG_OP_SORT] = &misc_op_sort,
     [MAG_OP_ARGSORT] = &misc_op_argsort,
     [MAG_OP_BINCOUNT] = &misc_op_bincount,
+    [MAG_OP_NONZERO] = &misc_op_nonzero,
     [MAG_OP_ABS] = &unary_op_abs,
     [MAG_OP_SGN] = &unary_op_sgn,
     [MAG_OP_NEG] = &unary_op_neg,

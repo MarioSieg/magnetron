@@ -1039,7 +1039,7 @@ mag_status_t mag_any(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
 mag_status_t mag_topk(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t k, int64_t dim, bool largest, bool sorted) {
   *out_values = NULL;
   *out_indices = NULL;
-  if (mag_unlikely(!(x != NULL)))
+  if (mag_unlikely(!x))
       return mag_set_error(err, MAG_ERR_PARAM, "topk: input tensor must not be NULL.");
   mag_context_t *ctx = x->ctx;
   if (mag_unlikely(k <= 0))
@@ -1085,7 +1085,7 @@ mag_status_t mag_topk(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t 
 static mag_status_t mag_op_stub_sort(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_opcode_t op, const char *name, mag_tensor_t *x, int64_t dim, bool descending, bool stable) {
   if (out_values) *out_values = NULL;
   *out_indices = NULL;
-  if (mag_unlikely(!(x != NULL)))
+  if (mag_unlikely(!x))
     return mag_set_error(err, MAG_ERR_PARAM, "%s: input tensor must not be NULL.", name);
   mag_context_t *ctx = x->ctx;
   int64_t rank = x->meta.coords.rank;
@@ -1173,7 +1173,7 @@ static mag_status_t mag_bincount_range(mag_error_t *err, mag_tensor_t *x, mag_op
 
 mag_status_t mag_bincount(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weights, int64_t min_len) {
   *out_result = NULL;
-  if (mag_unlikely(!(x != NULL)))
+  if (mag_unlikely(!x))
     return mag_set_error(err, MAG_ERR_PARAM, "bincount: input tensor must not be NULL.");
   mag_context_t *ctx = x->ctx;
   if (mag_unlikely(x->meta.coords.rank != 1))
@@ -1244,6 +1244,41 @@ cleanup:
   return status;
 }
 
+mag_status_t mag_nonzero(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) {
+  *out_result = NULL;
+  if (mag_unlikely(!x))
+    return mag_set_error(err, MAG_ERR_PARAM, "nonzero: input tensor must not be NULL.");
+  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_NONZERO, &x, 0);
+  if (mag_iserr(status)) return status;
+  mag_context_t *ctx = x->ctx;
+  mag_device_id_t dev = mag_tensor_device_id(x);
+  mag_tensor_t *count = NULL;
+  status = mag_empty_scalar(err, &count, ctx, MAG_DTYPE_INT64, dev);
+  if (mag_iserr(status)) return status;
+  mag_op_params_t params = { .nonzero = { .count_only = true } }; /* pass 1: count NZ elements, required to allocate result tensor */
+  status = mag_dispatch(err, MAG_OP_NONZERO, false, &x, 1, &count, 1, &params);
+  if (mag_iserr(status)) {
+    mag_tensor_decref(count);
+    return status;
+  }
+  mag_scalar_t sc;
+  status = mag_tensor_item(err, count, &sc);
+  mag_tensor_decref(count);
+  if (mag_iserr(status)) return status;
+  int64_t shape[2] = {mag_scalar_as_int64(sc), x->meta.coords.rank};
+  mag_tensor_t *result = NULL;
+  status = mag_empty(err, &result, ctx, MAG_DTYPE_INT64, 2, shape, dev);
+  if (mag_iserr(status)) return status;
+  params.nonzero.count_only = false; /* now actually NZ get elements */
+  status = mag_dispatch(err, MAG_OP_NONZERO, false, &x, 1, &result, 1, &params);
+  if (mag_iserr(status)) {
+    mag_tensor_decref(result);
+    return status;
+  }
+  *out_result = result;
+  return MAG_OK;
+}
+
 mag_status_t mag_cusum(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim) {
   return mag_op_stub_cu(err, out_result, MAG_OP_CUSUM, "sum", x, dim);
 }
@@ -1262,9 +1297,9 @@ mag_status_t mag_cumin(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t
 
 mag_status_t mag_outer(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
   *out_result = NULL;
-  if (mag_unlikely(!(x != NULL)))
+  if (mag_unlikely(!x))
     return mag_set_error(err, MAG_ERR_PARAM, "outer: first input tensor must not be NULL.");
-  if (mag_unlikely(!(y != NULL)))
+  if (mag_unlikely(!y))
     return mag_set_error(err, MAG_ERR_PARAM, "outer: second input tensor must not be NULL.");
   if (mag_unlikely(x->meta.coords.rank != 1))
     return mag_set_error(err, MAG_ERR_RANK, "outer: first input must be 1D, but got rank %" PRIi64 ".", x->meta.coords.rank);
@@ -1343,7 +1378,7 @@ mag_impl_unary_pair(gelu_dv, GELU_DV)
 
 mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *pad, int64_t pad_len, const char *mode, mag_scalar_t value) {
   *out_result = NULL;
-  if (mag_unlikely(!(x != NULL)))
+  if (mag_unlikely(!x))
       return mag_set_error(err, MAG_ERR_PARAM, "pad: input tensor must not be NULL.");
   if (mag_unlikely(!(pad != NULL || pad_len == 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "pad: padding array must not be NULL.");
@@ -1837,7 +1872,7 @@ mag_status_t mag_dstack(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
 mag_status_t mag_chunk(mag_error_t *err, mag_tensor_t ***out_chunks, size_t *out_count, mag_tensor_t *x, int64_t chunks, int64_t dim) {
   *out_chunks = NULL;
   *out_count = 0;
-  if (mag_unlikely(!(x != NULL)))
+  if (mag_unlikely(!x))
       return mag_set_error(err, MAG_ERR_PARAM, "chunk: input tensor must not be NULL.");
   if (mag_unlikely(!(chunks > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "chunk: chunks must be > 0.");
@@ -2176,7 +2211,7 @@ mag_status_t mag_repeat_back(mag_error_t *err, mag_tensor_t **out_result, mag_te
 
 mag_status_t mag_repeat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *repeats, int64_t num_reps) {
   *out_result = NULL;
-  if (mag_unlikely(!(x != NULL)))
+  if (mag_unlikely(!x))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat: input tensor must not be NULL.");
   if (mag_unlikely(!(repeats != NULL && num_reps > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat: repeats must be a non-empty sequence.");
@@ -2210,7 +2245,7 @@ mag_status_t mag_repeat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
 
 mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, bool flatten, int64_t dim, const int64_t *counts, int64_t num_counts) {
   *out_result = NULL;
-  if (mag_unlikely(!(x != NULL)))
+  if (mag_unlikely(!x))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: input tensor must not be NULL.");
   if (mag_unlikely(!(counts != NULL && num_counts > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts must be a non-empty sequence.");
