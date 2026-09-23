@@ -19,7 +19,7 @@ namespace mag::bindings {
     public:
       communicator_wrapper(uint32_t rank, uint32_t size, const std::string &backend) {
         mag_error_t err {};
-        throw_if_error(mag_comm_init(&err, &m_comm, rank, size, backend.c_str(), nullptr), err);
+        throw_if_error(mag_comm_init(&err, get_ctx(), &m_comm, rank, size, backend.c_str(), nullptr), err);
       }
       communicator_wrapper(const communicator_wrapper &) = delete;
       communicator_wrapper &operator=(const communicator_wrapper &) = delete;
@@ -38,11 +38,11 @@ namespace mag::bindings {
       }
 
       [[nodiscard]] bool is_alive() const noexcept { return m_comm != nullptr; }
-      [[nodiscard]] uint32_t rank() const { return mag_comm_rank(require()); }
-      [[nodiscard]] uint32_t size() const { return mag_comm_size(require()); }
-      [[nodiscard]] const char *backend() const { return mag_comm_backend_name(require()); }
+      [[nodiscard]] uint32_t rank() const noexcept { return mag_comm_rank(**this); }
+      [[nodiscard]] uint32_t size() const noexcept { return mag_comm_size(**this); }
+      [[nodiscard]] const char *backend() const noexcept { return mag_comm_backend_name(**this); }
 
-      mag_communicator_t *require() const {
+      mag_communicator_t *operator*() const {
         if (!m_comm) throw std::runtime_error {"Communicator is destroyed"};
         return m_comm;
       }
@@ -58,7 +58,7 @@ namespace mag::bindings {
 
       template <typename F>
       void invoke(F &&fn) const {
-        mag_communicator_t *comm = require();
+        mag_communicator_t *comm = **this;
         mag_error_t err {};
         throw_if_error(call_without_gil([&]() noexcept -> mag_status_t { return fn(&err, comm); }), err);
       }
@@ -188,7 +188,7 @@ namespace mag::bindings {
         });
       }, "tensor"_a, "src"_a, "Receive into the tensor from the source rank.")
       .def("__enter__", [](communicator_wrapper &self) -> communicator_wrapper & {
-        self.require();
+        [[maybe_unused]] auto *dummy = *self;
         return self;
       }, nb::rv_policy::reference_internal)
       .def("__exit__", [](communicator_wrapper &self, nb::handle, nb::handle, nb::handle) -> bool {

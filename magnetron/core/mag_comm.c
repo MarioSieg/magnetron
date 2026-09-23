@@ -9,7 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include "mag_distributed.h"
+#include "mag_comm.h"
 #include "mag_alloc.h"
 
 #define mag_comm_interface_verify(err_, comm_, op_) \
@@ -44,9 +44,9 @@
         (comm_)->size); \
   } while (0)
 
-
 mag_status_t mag_comm_init(
   mag_error_t *err,
+  mag_context_t *ctx,
   mag_communicator_t **out_comm,
   uint32_t rank,
   uint32_t size,
@@ -73,7 +73,6 @@ mag_status_t mag_comm_barrier(
   mag_comm_interface_verify(err, comm, barrier);
   return (*comm->com_ops->barrier)(err, comm);
 }
-
 
 mag_status_t mag_comm_broadcast(
   mag_error_t *err,
@@ -125,7 +124,6 @@ mag_status_t mag_comm_all_gather(
   return (*comm->com_ops->all_gather)(err, comm, out, in);
 }
 
-
 mag_status_t mag_comm_reduce_scatter(
   mag_error_t *err,
   mag_communicator_t *comm,
@@ -154,7 +152,6 @@ mag_status_t mag_comm_all_to_all(
     return mag_set_error(err, MAG_ERR_PARAM, "all_to_all: input tensor must not be NULL");
   return (*comm->com_ops->all_to_all)(err, comm, out, in);
 }
-
 
 mag_status_t mag_comm_all_to_all_v(
   mag_error_t *err,
@@ -185,7 +182,6 @@ mag_status_t mag_comm_send(
   mag_comm_interface_verify_ra(err, comm, dst, "destination", send);
   return (*comm->com_ops->send)(err, comm, tensor, dst);
 }
-
 
 mag_status_t mag_comm_recv(
   mag_error_t *err,

@@ -4383,6 +4383,7 @@ typedef struct mag_communicator_t mag_communicator_t;
  */
 extern MAG_EXPORT mag_status_t mag_comm_init(
   mag_error_t *err,
+  mag_context_t *ctx,
   mag_communicator_t **out_comm,
   uint32_t rank,
   uint32_t size,
