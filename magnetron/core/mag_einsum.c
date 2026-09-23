@@ -23,12 +23,16 @@
 ** https://github.com/dgasmith/opt_einsum
 */
 
-#define MAG_EIN_MAX_INPUTS 64
+#define MAG_EIN_MAX_INPUTS MAG_EINSUM_MAX_INPUTS
 #define MAG_EIN_MAX_SPEC 128
 #define MAG_EIN_STR_BUF_LEN (MAG_EIN_MAX_SPEC+1)
 #define MAG_EIN_NUM_LETTERS (26+26) /* a-z + A-Z */
 #define MAG_EIN_ASCII_TABLE_SIZE 256
-#define MAG_EIN_MAX_CONTRACTIONS ((MAG_EIN_MAX_INPUTS*(MAG_EIN_MAX_INPUTS-1))>>1)
+#define MAG_EIN_BB_MAX_INPUTS 8
+#define MAG_EIN_BB_FULL_INPUTS 6
+#define MAG_EIN_BB_NBRANCH 2
+#define MAG_EIN_BB_CUTOFF_FACTOR 4
+#define MAG_EIN_BB_MAX_CANDIDATES ((MAG_EIN_BB_MAX_INPUTS*(MAG_EIN_BB_MAX_INPUTS-1))>>1)
 
 mag_static_assert(MAG_EIN_STR_BUF_LEN >= MAG_EIN_NUM_LETTERS+sizeof("...")-1+1);
 
@@ -37,6 +41,20 @@ static int mag_ein_label_id(char c) {
   if (c >= 'A' && c <= 'Z') return 26 + (c - 'A');
   mag_assert(false, "einsum: invalid label character '%c'.", c);
   return -1;
+}
+
+static MAG_AINLINE int mag_ein_ctz64(uint64_t x) {
+#if defined(__GNUC__) || defined(__clang__)
+  return __builtin_ctzll((unsigned long long)x);
+#elif defined(_MSC_VER)
+  unsigned long i;
+  _BitScanForward64(&i, x);
+  return (int)i;
+#else
+  int n=0;
+  while (!(x&1)) { x >>= 1; ++n; }
+  return n;
+#endif
 }
 
 typedef uint64_t mag_ein_charset_t;
@@ -70,11 +88,13 @@ typedef struct mag_ein_path_heuristics_t {
   size_t max_term;
 } mag_ein_path_heuristics_t;
 
+#define MAG_EIN_NODE_MAX_INPUTS 2
+
 typedef struct mag_ein_path_node_t {
-  mag_ein_subscript_t inputs[MAG_EIN_MAX_INPUTS];
+  mag_ein_subscript_t inputs[MAG_EIN_NODE_MAX_INPUTS];
   uint32_t num_inputs;
   mag_ein_subscript_t output;
-  uint32_t positions[MAG_EIN_MAX_INPUTS];
+  uint32_t positions[MAG_EIN_NODE_MAX_INPUTS];
 } mag_ein_path_node_t;
 
 typedef struct mag_ein_dim_map_t {
@@ -87,14 +107,21 @@ typedef struct mag_ein_axes_t {
   int64_t n;
 } mag_ein_axes_t;
 
-typedef struct mag_ein_contraction_t {
-  int64_t size;
-  size_t cost;
-  uint32_t dims;
+typedef struct mag_ein_pair_t {
   uint32_t x;
   uint32_t y;
+  mag_ein_charset_t k12;
+  size_t flops;
+  size_t size12;
+  int64_t removed;
+} mag_ein_pair_t;
+
+typedef struct mag_ein_keep_ctx_t {
+  mag_ein_charset_t eq1;
+  mag_ein_charset_t eq2;
+  mag_ein_charset_t ge3;
   mag_ein_charset_t output;
-} mag_ein_contraction_t;
+} mag_ein_keep_ctx_t;
 
 typedef struct mag_ein_char_axis_t {
   char c;
@@ -241,9 +268,10 @@ static size_t mag_ein_term_size(const char *term, const mag_ein_dim_map_t *dim_m
 
 static size_t mag_ein_term_size_set(mag_ein_charset_t term, const mag_ein_dim_map_t *dim_map) {
   size_t size=1;
-  for (int id=0; id < MAG_EIN_NUM_LETTERS; ++id)
-    if (mag_ein_charset_has_bit(term, id))
-      size *= (size_t)dim_map->dims[id];
+  while (term) {
+    size *= (size_t)dim_map->dims[mag_ein_ctz64(term)];
+    term &= term-1;
+  }
   return size;
 }
 
@@ -521,202 +549,290 @@ static mag_status_t mag_ein_dot_node(mag_error_t *err, mag_tensor_t **out, mag_e
   return MAG_OK;
 }
 
-static void mag_ein_subscript_from_set_sorted_by_dim(mag_ein_subscript_t *out, mag_ein_charset_t set, const mag_ein_dim_map_t *dim_map) {
-  int ids[MAG_EIN_NUM_LETTERS];
-  int n=0;
-  for (int id=0; id < MAG_EIN_NUM_LETTERS; ++id)
-    if (mag_ein_charset_has_bit(set, id))
-      ids[n++] = id;
-  for (int i=1; i < n; ++i) {
-    int v = ids[i];
-    int64_t vd = dim_map->dims[v];
-    int j=i-1;
-    while (j >= 0 && dim_map->dims[ids[j]] > vd) {
-      ids[j+1] = ids[j];
+static void mag_ein_keep_ctx_init(mag_ein_keep_ctx_t *ctx, const mag_ein_charset_t *terms, uint32_t n, mag_ein_charset_t output) {
+  mag_ein_charset_t s1=0, s2=0, s3=0;
+  for (uint32_t i=0; i < n; ++i) {
+    s3 |= s2&terms[i];
+    s2 |= s1&terms[i];
+    s1 |= terms[i];
+  }
+  ctx->eq1 = s1&~s2;
+  ctx->eq2 = s2&~s3;
+  ctx->ge3 = s3;
+  ctx->output = output;
+}
+
+static mag_ein_charset_t mag_ein_keep_set(const mag_ein_keep_ctx_t *ctx, mag_ein_charset_t tx, mag_ein_charset_t ty) {
+  return ctx->output | ctx->ge3 | (ctx->eq2&~(tx&ty)) | (ctx->eq1&~(tx|ty));
+}
+
+static void mag_ein_assess_pair(
+  mag_ein_pair_t *p,
+  const mag_ein_charset_t *terms,
+  uint32_t x,
+  uint32_t y,
+  const mag_ein_keep_ctx_t *keep_ctx,
+  const mag_ein_dim_map_t *dim_map
+) {
+  mag_ein_charset_t tx = terms[x];
+  mag_ein_charset_t ty = terms[y];
+  mag_ein_charset_t either = tx | ty;
+  mag_ein_charset_t keep = mag_ein_keep_set(keep_ctx, tx, ty);
+  mag_ein_charset_t k12 = either & keep;
+  bool inner = (either & ~keep) != 0;
+  p->x = x;
+  p->y = y;
+  p->k12 = k12;
+  p->flops = mag_ein_flop_count(either, inner, 2, dim_map);
+  p->size12 = mag_ein_term_size_set(k12, dim_map);
+  p->removed = (int64_t)mag_ein_term_size_set(tx, dim_map) + (int64_t)mag_ein_term_size_set(ty, dim_map) - (int64_t)p->size12;
+}
+
+static void mag_ein_terms_contract(mag_ein_charset_t *terms, uint32_t *n, uint32_t x, uint32_t y, mag_ein_charset_t k12) {
+  if (x > y) mag_swap(uint32_t, x, y);
+  memmove(terms+y, terms+y+1, (size_t)(*n-y-1)*sizeof(*terms));
+  --*n;
+  memmove(terms+x, terms+x+1, (size_t)(*n-x-1)*sizeof(*terms));
+  --*n;
+  terms[(*n)++] = k12;
+}
+
+static void mag_ein_greedy_path(
+  const mag_ein_charset_t *terms_src,
+  uint32_t n_src,
+  mag_ein_charset_t output,
+  const mag_ein_dim_map_t *dim_map,
+  mag_ein_pair_t *out_pairs
+) {
+  mag_ein_charset_t terms[MAG_EIN_MAX_INPUTS];
+  memcpy(terms, terms_src, (size_t)n_src*sizeof(*terms));
+  uint32_t n = n_src;
+  for (uint32_t step=0; step < n_src-1; ++step) {
+    mag_ein_keep_ctx_t keep_ctx;
+    mag_ein_keep_ctx_init(&keep_ctx, terms, n, output);
+    mag_ein_pair_t best = {0};
+    bool found = false;
+    for (uint32_t i=0; i < n; ++i) {
+      for (uint32_t j=i+1; j < n; ++j) {
+        if (!(terms[i] & terms[j])) continue;
+        mag_ein_pair_t p;
+        mag_ein_assess_pair(&p, terms, i, j, &keep_ctx, dim_map);
+        if (!found || p.removed > best.removed || (p.removed == best.removed && p.flops < best.flops)) {
+          best = p;
+          found = true;
+        }
+      }
+    }
+    if (!found) {
+      for (uint32_t i=0; i < n; ++i) {
+        for (uint32_t j=i+1; j < n; ++j) {
+          mag_ein_pair_t p;
+          mag_ein_assess_pair(&p, terms, i, j, &keep_ctx, dim_map);
+          if (!found || p.size12 < best.size12 || (p.size12 == best.size12 && p.flops < best.flops)) {
+            best = p;
+            found = true;
+          }
+        }
+      }
+    }
+    out_pairs[step] = best;
+    mag_ein_terms_contract(terms, &n, best.x, best.y, best.k12);
+  }
+}
+
+typedef struct mag_ein_bb_cand_t {
+  mag_ein_pair_t pair;
+  size_t flops;
+  size_t size;
+} mag_ein_bb_cand_t;
+
+typedef struct mag_ein_bb_t {
+  const mag_ein_dim_map_t *dim_map;
+  mag_ein_charset_t output;
+  uint32_t nbranch;
+  size_t best_flops;
+  size_t best_size;
+  size_t best_progress[MAG_EIN_BB_MAX_INPUTS];
+  mag_ein_pair_t path[MAG_EIN_BB_MAX_INPUTS];
+  mag_ein_pair_t best_path[MAG_EIN_BB_MAX_INPUTS];
+} mag_ein_bb_t;
+
+static bool mag_ein_bb_better(size_t flops, size_t size, size_t best_flops, size_t best_size) {
+  return flops < best_flops || (flops == best_flops && size < best_size);
+}
+
+static bool mag_ein_bb_cand_before(const mag_ein_bb_cand_t *a, const mag_ein_bb_cand_t *b) {
+  if (a->pair.removed != b->pair.removed) return a->pair.removed > b->pair.removed;
+  return a->pair.flops < b->pair.flops;
+}
+
+static void mag_ein_bb_assess(
+  mag_ein_bb_t *bb,
+  mag_ein_bb_cand_t *cands,
+  uint32_t *nc,
+  const mag_ein_charset_t *terms,
+  uint32_t x,
+  uint32_t y,
+  const mag_ein_keep_ctx_t *keep_ctx,
+  uint32_t depth,
+  size_t flops,
+  size_t size
+) {
+  mag_ein_pair_t p;
+  mag_ein_assess_pair(&p, terms, x, y, keep_ctx, bb->dim_map);
+  size_t new_flops = flops + p.flops;
+  size_t new_size = mag_vmax(size, p.size12);
+  if (!mag_ein_bb_better(new_flops, new_size, bb->best_flops, bb->best_size)) return;
+  if (new_flops < bb->best_progress[depth]) bb->best_progress[depth] = new_flops;
+  else if (new_flops > MAG_EIN_BB_CUTOFF_FACTOR*bb->best_progress[depth]) return;
+  cands[(*nc)++] = (mag_ein_bb_cand_t){.pair = p, .flops = new_flops, .size = new_size};
+}
+
+static void mag_ein_bb_iterate(mag_ein_bb_t *bb, const mag_ein_charset_t *terms, uint32_t n, uint32_t depth, size_t flops, size_t size) {
+  if (n == 1) {
+    bb->best_flops = flops;
+    bb->best_size = size;
+    memcpy(bb->best_path, bb->path, (size_t)depth*sizeof(*bb->path));
+    return;
+  }
+  mag_ein_keep_ctx_t keep_ctx;
+  mag_ein_keep_ctx_init(&keep_ctx, terms, n, bb->output);
+  mag_ein_bb_cand_t cands[MAG_EIN_BB_MAX_CANDIDATES];
+  uint32_t nc = 0;
+  for (uint32_t i=0; i < n; ++i)
+    for (uint32_t j=i+1; j < n; ++j)
+      if (terms[i] & terms[j])
+        mag_ein_bb_assess(bb, cands, &nc, terms, i, j, &keep_ctx, depth, flops, size);
+  if (!nc)
+    for (uint32_t i=0; i < n; ++i)
+      for (uint32_t j=i+1; j < n; ++j)
+        mag_ein_bb_assess(bb, cands, &nc, terms, i, j, &keep_ctx, depth, flops, size);
+  for (uint32_t i=1; i < nc; ++i) {
+    mag_ein_bb_cand_t v = cands[i];
+    int64_t j = (int64_t)i-1;
+    while (j >= 0 && mag_ein_bb_cand_before(&v, cands+j)) {
+      cands[j+1] = cands[j];
       --j;
     }
-    ids[j+1] = v;
+    cands[j+1] = v;
   }
-  for (int i=0; i < n; ++i) {
-    int id = ids[i];
-    out->str.buf[i] = id < 26 ? (char)('a'+id) : (char)('A'+id-26);
+  uint32_t limit = mag_vmin(nc, bb->nbranch);
+  for (uint32_t b=0; b < limit; ++b) {
+    const mag_ein_bb_cand_t *c = cands+b;
+    if (!mag_ein_bb_better(c->flops, c->size, bb->best_flops, bb->best_size)) continue;
+    mag_ein_charset_t next[MAG_EIN_BB_MAX_INPUTS];
+    memcpy(next, terms, (size_t)n*sizeof(*terms));
+    uint32_t nn = n;
+    mag_ein_terms_contract(next, &nn, c->pair.x, c->pair.y, c->pair.k12);
+    bb->path[depth] = c->pair;
+    mag_ein_bb_iterate(bb, next, nn, depth+1, c->flops, c->size);
+  }
+}
+
+static void mag_ein_branch_path(
+  const mag_ein_charset_t *terms,
+  uint32_t n,
+  mag_ein_charset_t output,
+  const mag_ein_dim_map_t *dim_map,
+  uint32_t nbranch,
+  mag_ein_pair_t *out_pairs
+) {
+  mag_ein_bb_t bb = {
+    .dim_map = dim_map,
+    .output = output,
+    .nbranch = nbranch,
+    .best_flops = SIZE_MAX,
+    .best_size = SIZE_MAX,
+  };
+  for (uint32_t i=0; i < MAG_EIN_BB_MAX_INPUTS; ++i)
+    bb.best_progress[i] = SIZE_MAX;
+  mag_ein_bb_iterate(&bb, terms, n, 0, 0, 0);
+  memcpy(out_pairs, bb.best_path, (size_t)(n-1)*sizeof(*out_pairs));
+}
+
+static void mag_ein_subscript_push(mag_ein_subscript_t *out, int *n, mag_ein_charset_t *done, char c) {
+  int id = mag_ein_label_id(c);
+  if (mag_ein_charset_has_bit(*done, id)) return;
+  mag_ein_charset_add_bit(*done, id);
+  out->str.buf[(*n)++] = c;
+}
+
+static void mag_ein_natural_output(mag_ein_subscript_t *out, const mag_ein_subscript_t *a, const mag_ein_subscript_t *b, mag_ein_charset_t k12) {
+  mag_ein_charset_t shared = a->charset & b->charset;
+  mag_ein_charset_t done = 0;
+  int n = 0;
+  if (shared & ~k12) {
+    for (const char *p=a->str.buf; *p; ++p)
+      if (mag_ein_charset_has(shared & k12, *p))
+        mag_ein_subscript_push(out, &n, &done, *p);
+    for (const char *p=a->str.buf; *p; ++p)
+      if (mag_ein_charset_has(k12 & ~b->charset, *p))
+        mag_ein_subscript_push(out, &n, &done, *p);
+    for (const char *p=b->str.buf; *p; ++p)
+      if (mag_ein_charset_has(k12 & ~a->charset, *p))
+        mag_ein_subscript_push(out, &n, &done, *p);
+  } else {
+    for (const char *p=a->str.buf; *p; ++p)
+      if (mag_ein_charset_has(k12, *p))
+        mag_ein_subscript_push(out, &n, &done, *p);
+    for (const char *p=b->str.buf; *p; ++p)
+      if (mag_ein_charset_has(k12, *p))
+        mag_ein_subscript_push(out, &n, &done, *p);
   }
   out->str.buf[n] = '\0';
-  out->charset = set;
+  out->charset = k12;
 }
 
-static void mag_ein_remove_inputs_2(mag_ein_subscript_t *inputs, uint32_t *num_inputs, uint32_t x, uint32_t y) {
-  if (x > y) mag_swap(uint32_t, x,y);
-  memmove(inputs+y, inputs+y+1, (size_t)(*num_inputs-y-1)*sizeof(*inputs));
-  --*num_inputs;
-  memmove(inputs+x, inputs+x+1, (size_t)(*num_inputs-x-1)*sizeof(*inputs));
-  --*num_inputs;
-}
-
-static void mag_ein_remove_operand_at(mag_tensor_t **operands, size_t *num_operands, uint32_t pos) {
-  mag_tensor_decref(operands[pos]);
-  memmove(operands+pos, operands+pos+1, (*num_operands-(size_t)pos-1)*sizeof(*operands));
-  --*num_operands;
-}
-
-static bool mag_ein_add_contraction(
-  mag_ein_contraction_t *possible,
-  uint32_t *num_possible,
-  uint32_t max_possible,
-  const mag_ein_subscript_t *inputs,
-  uint32_t num_inputs,
-  const mag_ein_subscript_t *output,
-  const mag_ein_dim_map_t *dim_map,
-  uint32_t p1,
-  uint32_t p2,
-  size_t path_cost,
-  size_t cost_limit,
-  size_t memory_limit
-) {
-  mag_ein_charset_t contractions = inputs[p1].charset | inputs[p2].charset;
-  mag_ein_charset_t new_term = 0;
-  for (uint32_t i=0; i < num_inputs; ++i) {
-    if (i == p1 || i == p2) continue;
-    new_term = mag_ein_charset_union(new_term, mag_ein_charset_intersects(inputs[i].charset, contractions));
-  }
-  new_term = mag_ein_charset_union(new_term, mag_ein_charset_intersects(output->charset, contractions));
-  size_t new_size = mag_ein_term_size_set(new_term, dim_map);
-  if (new_size > memory_limit)
-    return false;
-  int64_t removed_size = (int64_t)mag_ein_term_size_set(inputs[p1].charset, dim_map) + (int64_t)mag_ein_term_size_set(inputs[p2].charset, dim_map) - (int64_t)new_size;
-  bool inner = mag_ein_chatset_len(contractions) > mag_ein_chatset_len(new_term);
-  size_t cost = mag_ein_flop_count(contractions, inner, 2, dim_map);
-  if (path_cost+cost > cost_limit) return false;
-  if (*num_possible >= max_possible) return false;
-  possible[*num_possible] = (mag_ein_contraction_t){
-    .size = removed_size,
-    .cost = cost,
-    .output = new_term,
-    .dims = (uint32_t)mag_ein_chatset_len(contractions),
-    .x = p1,
-    .y = p2,
-  };
-  ++*num_possible;
-  return true;
-}
-
-static uint32_t mag_ein_find_best_contraction(const mag_ein_contraction_t *possible, uint32_t num_possible) {
-  uint32_t best = 0;
-  for (uint32_t i=1; i < num_possible; ++i) {
-    const mag_ein_contraction_t *x = possible+i;
-    const mag_ein_contraction_t *y = possible+best;
-    if (x->size > y->size || (x->size == y->size && x->cost < y->cost))
-      best = i;
-  }
-  return best;
-}
-
-static mag_status_t mag_ein_greedy_path(
+static mag_status_t mag_ein_build_nodes(
   mag_error_t *err,
   const mag_ein_subscript_t *inputs_src,
   uint32_t num_inputs_src,
   const mag_ein_subscript_t *output,
-  const mag_ein_dim_map_t *dim_map,
-  size_t cost_limit,
-  size_t memory_limit,
+  const mag_ein_pair_t *pairs,
+  uint32_t num_pairs,
   mag_ein_path_node_t *out_nodes,
   size_t *out_num_nodes,
   size_t *out_cost,
   size_t *out_scaling
 ) {
-  mag_ein_subscript_t inputs[MAG_EIN_MAX_INPUTS];
-  memcpy(inputs, inputs_src, (size_t)num_inputs_src*sizeof(*inputs));
-  uint32_t num_inputs = num_inputs_src;
-  size_t path_cost = 0;
-  size_t path_scaling = 0;
-  size_t num_nodes = 0;
-  for (uint32_t step=0; step < num_inputs_src-1; ++step) {
-    mag_ein_contraction_t possible[MAG_EIN_MAX_CONTRACTIONS];
-    uint32_t num_possible = 0;
-    for (uint32_t i=0; i < num_inputs; ++i) {
-      for (uint32_t j=i+1; j < num_inputs; ++j) {
-        if (mag_ein_charset_intersects(inputs[i].charset, inputs[j].charset) == 0)
-          continue;
-        mag_ein_add_contraction(
-          possible,
-          &num_possible,
-          sizeof(possible)/sizeof(*possible),
-          inputs,
-          num_inputs,
-          output,
-          dim_map,
-          i,
-          j,
-          path_cost,
-          cost_limit,
-          memory_limit
-        );
-      }
-    }
-    if (num_possible == 0) {
-      for (uint32_t i=0; i < num_inputs; ++i) {
-        for (uint32_t j=i+1; j < num_inputs; ++j) {
-          mag_ein_add_contraction(
-            possible,
-            &num_possible,
-            sizeof(possible)/sizeof(*possible),
-            inputs,
-            num_inputs,
-            output,
-            dim_map,
-            i,
-            j,
-            path_cost,
-            cost_limit,
-            memory_limit
-          );
-        }
-      }
-    }
-    if (num_possible == 0) {
-      mag_ein_path_node_t *node = out_nodes+num_nodes++;
-      memset(node, 0, sizeof(*node));
-      node->num_inputs = num_inputs;
-      for (uint32_t i=0; i < num_inputs; ++i) {
-        node->inputs[i] = inputs[i];
-        node->positions[i] = i;
-      }
+  mag_ein_subscript_t list[MAG_EIN_MAX_INPUTS];
+  memcpy(list, inputs_src, (size_t)num_inputs_src*sizeof(*list));
+  uint32_t n = num_inputs_src;
+  size_t cost = 0;
+  size_t scaling = 0;
+  for (uint32_t k=0; k < num_pairs; ++k) {
+    const mag_ein_pair_t *p = pairs+k;
+    if (mag_unlikely(!(p->x < n && p->y < n && p->x != p->y)))
+      return mag_set_error(err, MAG_ERR_EINSUM, "einsum: internal error, invalid contraction pair (%u, %u) for %u operands.", p->x, p->y, n);
+    uint32_t x = mag_vmin(p->x, p->y);
+    uint32_t y = mag_vmax(p->x, p->y);
+    mag_ein_path_node_t *node = out_nodes+k;
+    memset(node, 0, sizeof(*node));
+    node->num_inputs = 2;
+    node->inputs[0] = list[x];
+    node->inputs[1] = list[y];
+    node->positions[0] = x;
+    node->positions[1] = y;
+    if (k+1 == num_pairs) {
+      if (mag_unlikely(p->k12 != output->charset))
+        return mag_set_error(err, MAG_ERR_EINSUM, "einsum: internal error, final contraction does not produce the output subscript.");
       node->output = *output;
-      size_t cost = 0;
-      size_t scaling = 0;
-      mag_ein_compute_cost_and_scaling(inputs, num_inputs, output, dim_map, &cost, &scaling);
-      path_cost += cost;
-      if (scaling > path_scaling)
-        path_scaling = scaling;
-      break;
+    } else {
+      mag_ein_natural_output(&node->output, list+x, list+y, p->k12);
     }
-    uint32_t best_i = mag_ein_find_best_contraction(possible, num_possible);
-    mag_ein_contraction_t best = possible[best_i];
-    if (best.dims > path_scaling)
-      path_scaling = best.dims;
-    mag_ein_subscript_t new_output;
-    mag_ein_subscript_from_set_sorted_by_dim(&new_output, best.output, dim_map);
-    if (mag_unlikely(!(num_nodes < MAG_EIN_MAX_INPUTS)))
-      return mag_set_error(err, MAG_ERR_EINSUM, "einsum: contraction path is too long (%zu >= %d).", num_nodes, MAG_EIN_MAX_INPUTS);
-    {
-      mag_ein_path_node_t *node = out_nodes+num_nodes++;
-      memset(node, 0, sizeof(*node));
-      node->num_inputs = 2;
-      node->inputs[0] = inputs[best.x];
-      node->inputs[1] = inputs[best.y];
-      node->positions[0] = best.x;
-      node->positions[1] = best.y;
-      node->output = new_output;
-    }
-    mag_ein_remove_inputs_2(inputs, &num_inputs, best.x, best.y);
-    if (mag_unlikely(!(num_inputs < MAG_EIN_MAX_INPUTS)))
-      return mag_set_error(err, MAG_ERR_EINSUM, "einsum: too many intermediate inputs (%u >= %d).", num_inputs, MAG_EIN_MAX_INPUTS);
-    inputs[num_inputs++] = new_output;
-    path_cost += best.cost;
+    cost += p->flops;
+    scaling = mag_vmax(scaling, (size_t)mag_ein_chatset_len(list[x].charset | list[y].charset));
+    memmove(list+y, list+y+1, (size_t)(n-y-1)*sizeof(*list));
+    --n;
+    memmove(list+x, list+x+1, (size_t)(n-x-1)*sizeof(*list));
+    --n;
+    list[n++] = node->output;
   }
-  *out_num_nodes = num_nodes;
-  *out_cost = path_cost;
-  *out_scaling = path_scaling;
+  if (mag_unlikely(n != 1))
+    return mag_set_error(err, MAG_ERR_EINSUM, "einsum: internal error, contraction path leaves %u operands.", n);
+  *out_num_nodes = num_pairs;
+  *out_cost = cost;
+  *out_scaling = scaling;
   return MAG_OK;
 }
 
@@ -855,14 +971,18 @@ static mag_status_t mag_ein_compute_path(
     *out_num_nodes = 1;
     out_heuristics->opt_cost = out_heuristics->naive_cost;
     out_heuristics->opt_scaling = out_heuristics->naive_scaling;
-  } else {
-    stat = mag_ein_greedy_path(err, inputs, parsed.num_inputs, &output, &dim_map, out_heuristics->naive_cost, max_size, out_nodes, out_num_nodes, &out_heuristics->opt_cost, &out_heuristics->opt_scaling);
-    if (mag_iserr(stat)) return stat;
-    if (mag_unlikely(!(*out_num_nodes > 0)))
-      return mag_set_error(err, MAG_ERR_EINSUM, "einsum: failed to produce a contraction path.");
-    out_nodes[*out_num_nodes - 1].output = output;
+    return MAG_OK;
   }
-  return MAG_OK;
+  uint32_t n = parsed.num_inputs;
+  mag_ein_charset_t terms[MAG_EIN_MAX_INPUTS];
+  for (uint32_t i=0; i < n; ++i)
+    terms[i] = inputs[i].charset;
+  mag_ein_pair_t pairs[MAG_EIN_MAX_INPUTS];
+  if (n <= MAG_EIN_BB_MAX_INPUTS)
+    mag_ein_branch_path(terms, n, out_set, &dim_map, n <= MAG_EIN_BB_FULL_INPUTS ? UINT32_MAX : MAG_EIN_BB_NBRANCH, pairs);
+  else
+    mag_ein_greedy_path(terms, n, out_set, &dim_map, pairs);
+  return mag_ein_build_nodes(err, inputs, n, &output, pairs, n-1, out_nodes, out_num_nodes, &out_heuristics->opt_cost, &out_heuristics->opt_scaling);
 }
 
 static bool mag_ein_axes_sorted_by_original_axis(const mag_ein_char_axis_t *xs, int64_t n) {
@@ -1113,6 +1233,12 @@ static mag_status_t mag_ein_preprocess_node(mag_error_t *err, mag_ein_path_node_
   return MAG_OK;
 }
 
+static void mag_ein_remove_operand_at(mag_tensor_t **operands, size_t *num_operands, uint32_t pos) {
+  mag_tensor_decref(operands[pos]);
+  memmove(operands+pos, operands+pos+1, (*num_operands-(size_t)pos-1)*sizeof(*operands));
+  --*num_operands;
+}
+
 static mag_status_t mag_ein_execute_path(
   mag_error_t *err,
   mag_tensor_t **out_result,
@@ -1176,31 +1302,75 @@ static MAG_COLDPROC void mag_ein_debug_print_path(const char *equation, const ma
   }
 }
 
-mag_status_t mag_einsum_eval(mag_error_t *err, mag_tensor_t **out_result, const char *equation, const mag_tensor_t **args, size_t num_args) {
+static mag_status_t mag_ein_plan(
+  mag_error_t *err,
+  char **out_equation,
+  const char *equation,
+  const mag_tensor_t **args,
+  size_t num_args,
+  mag_ein_path_heuristics_t *out_heuristics,
+  mag_ein_path_node_t *out_nodes,
+  size_t *out_num_nodes
+) {
+  *out_equation = NULL;
   size_t len = strlen(equation);
   if (mag_unlikely(!mag_utf8_validate((const uint8_t *)equation, len)))
     return mag_set_error(err, MAG_ERR_EINSUM, "einsum: equation string contains invalid UTF-8.");
   if (mag_unlikely(num_args <= 0))
     return mag_set_error(err, MAG_ERR_EINSUM, "einsum: requires at least one input tensor.");
+  if (mag_unlikely(num_args > MAG_EIN_MAX_INPUTS))
+    return mag_set_error(err, MAG_ERR_EINSUM, "einsum: too many input tensors (%zu > %d).", num_args, MAG_EIN_MAX_INPUTS);
   char *cloned = mag_strdup(equation);
   if (mag_unlikely(!cloned))
     return mag_set_error(err, MAG_ERR_OOM, "einsum: failed to allocate %zu bytes for equation string.", len+1);
   mag_ein_remove_spaces(cloned);
   len = strlen(cloned);
-  if (mag_unlikely(!(len > 0)))
+  if (mag_unlikely(!(len > 0))) {
+    (*mag_alloc)(cloned, 0, 0);
     return mag_set_error(err, MAG_ERR_EINSUM, "einsum: equation string is empty.");
-  mag_ein_path_heuristics_t heuristics = {0};
-  mag_ein_path_node_t nodes[MAG_EIN_MAX_INPUTS] = {0};
-  size_t num_nodes = 0;
-  mag_status_t stat = mag_ein_compute_path(err, cloned, args, num_args, &heuristics, nodes, &num_nodes);
+  }
+  mag_status_t stat = mag_ein_compute_path(err, cloned, args, num_args, out_heuristics, out_nodes, out_num_nodes);
   if (mag_iserr(stat)) {
     (*mag_alloc)(cloned, 0, 0);
     return stat;
   }
+  *out_equation = cloned;
+  return MAG_OK;
+}
+
+mag_status_t mag_einsum_eval(mag_error_t *err, mag_tensor_t **out_result, const char *equation, const mag_tensor_t **args, size_t num_args) {
+  mag_ein_path_heuristics_t heuristics = {0};
+  mag_ein_path_node_t nodes[MAG_EIN_MAX_INPUTS];
+  size_t num_nodes = 0;
+  char *cloned = NULL;
+  mag_status_t stat = mag_ein_plan(err, &cloned, equation, args, num_args, &heuristics, nodes, &num_nodes);
+  if (mag_iserr(stat)) return stat;
   #ifdef MAG_DEBUG
     mag_ein_debug_print_path(cloned, &heuristics, nodes, num_nodes);
   #endif
   stat = mag_ein_execute_path(err, out_result, nodes, num_nodes, args, num_args);
   (*mag_alloc)(cloned, 0, 0);
   return stat;
+}
+
+mag_status_t mag_einsum_path(mag_error_t *err, mag_einsum_path_t *out_path, const char *equation, const mag_tensor_t **args, size_t num_args) {
+  mag_ein_path_heuristics_t heuristics = {0};
+  mag_ein_path_node_t nodes[MAG_EIN_MAX_INPUTS];
+  size_t num_nodes = 0;
+  char *cloned = NULL;
+  mag_status_t stat = mag_ein_plan(err, &cloned, equation, args, num_args, &heuristics, nodes, &num_nodes);
+  if (mag_iserr(stat)) return stat;
+  (*mag_alloc)(cloned, 0, 0);
+  memset(out_path, 0, sizeof(*out_path));
+  out_path->naive_cost = heuristics.naive_cost;
+  out_path->naive_scaling = heuristics.naive_scaling;
+  out_path->opt_cost = heuristics.opt_cost;
+  out_path->opt_scaling = heuristics.opt_scaling;
+  out_path->max_term = heuristics.max_term;
+  out_path->num_steps = num_nodes;
+  for (size_t i=0; i < num_nodes; ++i) {
+    out_path->steps[i][0] = nodes[i].positions[0];
+    out_path->steps[i][1] = nodes[i].num_inputs > 1 ? nodes[i].positions[1] : UINT32_MAX;
+  }
+  return MAG_OK;
 }
