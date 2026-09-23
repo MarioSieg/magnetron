@@ -40,6 +40,7 @@ extern mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au, mag_context_
 extern bool mag_au_state_reserve_more_input_cap(mag_au_state_t *au, uint32_t extra);
 extern bool mag_au_state_set_op_params(mag_au_state_t *au, const mag_op_params_t *params);
 extern bool mag_au_state_set_input(mag_au_state_t *au, mag_tensor_t *x);
+extern void mag_au_state_clear_inputs(mag_au_state_t *au);
 
 #ifdef __cplusplus
 }

@@ -99,6 +99,18 @@ bool mag_au_state_set_input(mag_au_state_t *au, mag_tensor_t *x) {
   return true;
 }
 
+void mag_au_state_clear_inputs(mag_au_state_t *au) {
+  for (uint32_t i=0; i < au->num_in; ++i) {
+    if (au->in[i]) mag_rc_decref(au->in[i]);
+    au->in[i] = NULL;
+  }
+  au->num_in = 0;
+  if (au->params) {
+    mag_slab_free(&au->ctx->au_state_op_params_slab, au->params);
+    au->params = NULL;
+  }
+}
+
 mag_tensor_t *mag_tensor_grad(const mag_tensor_t *tensor) {
   if (!(tensor->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) return NULL;
   if (!tensor->au_state) return NULL;

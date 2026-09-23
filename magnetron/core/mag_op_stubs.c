@@ -958,11 +958,8 @@ mag_status_t mag_select(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   mag_status_t status = mag_view_slice(err, &tmp, x, dim, index, 1, 1);
   if (mag_iserr(status)) return status;
   status = mag_squeeze_dim(err, out_result, tmp, dim);
-  if (mag_iserr(status)) {
-    mag_tensor_decref(tmp);
-    return status;
-  }
-  return MAG_OK;
+  mag_tensor_decref(tmp);
+  return status;
 }
 
 mag_status_t mag_split(mag_error_t *err, mag_tensor_t **outs, int64_t num_splits, mag_tensor_t *x, int64_t split_size, int64_t dim) {

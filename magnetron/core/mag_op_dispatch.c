@@ -69,12 +69,24 @@ mag_status_t MAG_HOTPROC mag_dispatch(
   mag_context_t *ctx = in ? (*in)->ctx : (*out)->ctx;
   mag_device_t *device = in ? (*in)->meta.device : (*out)->meta.device;
   mag_assert_correct_op_data(op, in, num_in, out, num_out);
-  if (!mag_tls_state.no_grad && meta->backward) {
+  bool record = false;
+  if (!mag_tls_state.no_grad && meta->backward)
+    for (uint32_t j=0; j < num_in; ++j)
+      if (in[j] && in[j]->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
+        record = true;
+        break;
+      }
+  if (record) {
+    for (uint32_t i=0; i < num_out; ++i)
+      for (uint32_t j=0; j < num_in; ++j)
+        if (mag_unlikely(in[j] == out[i]))
+          return mag_set_error(err, MAG_ERR_PARAM, "dispatch: in-place operator '%s' overwrites an input that gradients depend on.\n\tHint: disable gradient tracking or use the out-of-place variant.", meta->mnemonic);
     for (uint32_t i=0; i < num_out; ++i) {
       mag_tensor_t *r = out[i];
       mag_au_state_t *au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
       if (mag_unlikely(!au))
         return mag_set_error(err, MAG_ERR_OOM, "dispatch: failed to allocate autodiff state for gradient recording.");
+      mag_au_state_clear_inputs(au);
       au->op = op;
       if (mag_unlikely(!mag_au_state_reserve_more_input_cap(au, num_in)))
         return mag_set_error(err, MAG_ERR_OOM, "dispatch: failed to reserve autodiff state input array.");
