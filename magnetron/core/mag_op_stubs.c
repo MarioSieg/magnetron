@@ -726,7 +726,7 @@ mag_status_t mag_permute(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
 
   for (int64_t i=0; i < rank; ++i)
   for (int64_t j=i+1; j < rank; ++j)
-    if (mag_unlikely(!(axes[i] != axes[j])))
+    if (mag_unlikely(axes[i] == axes[j]))
       return mag_set_error(err, MAG_ERR_PARAM, "permute: duplicate axis %" PRIi64 " at positions %" PRIi64 " and %" PRIi64 ".", axes[i], i, j);
 
   int64_t shape[MAG_MAX_DIMS] = {0};
@@ -1376,7 +1376,7 @@ mag_impl_unary_pair(gelu_dv, GELU_DV)
 
 #undef mag_impl_unary_pair
 
-mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *pad, int64_t pad_len, const char *mode, mag_scalar_t value) {
+mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *pad, int64_t pad_len, mag_pad_mode_t mode, mag_scalar_t value) {
   *out_result = NULL;
   if (mag_unlikely(!x))
       return mag_set_error(err, MAG_ERR_PARAM, "pad: input tensor must not be NULL.");
@@ -1384,33 +1384,29 @@ mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
       return mag_set_error(err, MAG_ERR_PARAM, "pad: padding array must not be NULL.");
   if (mag_unlikely(pad_len < 0))
       return mag_set_error(err, MAG_ERR_PARAM, "pad: pad_len must be >= 0.");
-  if (mag_unlikely(!(mode && *mode)))
-      return mag_set_error(err, MAG_ERR_PARAM, "pad: invalid mode string");
   int64_t rank = x->meta.coords.rank;
   if (mag_unlikely(pad_len > (rank<<1)))
       return mag_set_error(err, MAG_ERR_PARAM, "pad: expected at most %" PRIi64 " padding values for rank %" PRIi64 ", but got %" PRIi64 ".", 2*rank, rank, pad_len);
-  mag_op_params_t params = {0};
-  params.pad.rank = rank;
-  if (!strcmp(mode, "constant")) params.pad.mode = MAG_PAD_MODE_CONSTANT;
-  else if (!strcmp(mode, "reflect")) params.pad.mode = MAG_PAD_MODE_REFLECT;
-  else if (!strcmp(mode, "replicate")) params.pad.mode = MAG_PAD_MODE_REPLICATE;
-  else return mag_set_error(err, MAG_ERR_PARAM, "pad: invalid mode string '%s'.", mode);
-  params.pad.value = value;
-  for (int64_t d=0; d < rank; ++d) {
-    int64_t idx = (rank - 1 - d)<<1;
-    params.pad.pad_before[d] = idx < pad_len ? pad[idx] : 0;
-    params.pad.pad_after[d] = idx + 1 < pad_len ? pad[idx+1] : 0;
-    if (mag_unlikely(!(params.pad.pad_before[d] >= 0 && params.pad.pad_after[d] >= 0)))
+  mag_op_params_t params = {.pad = {
+    .rank = rank,
+    .mode = mode,
+    .value = value,
+  }};
+  for (int64_t dx=0; dx < rank; ++dx) {
+    int64_t idx = (rank-1-dx)<<1;
+    params.pad.pre_pad[dx] = idx < pad_len ? pad[idx] : 0;
+    params.pad.post_pad[dx] = idx+1 < pad_len ? pad[idx+1] : 0;
+    if (mag_unlikely(!(params.pad.pre_pad[dx] >= 0 && params.pad.post_pad[dx] >= 0)))
         return mag_set_error(err, MAG_ERR_PARAM, "pad: padding values must be >= 0.");
     if (params.pad.mode == MAG_PAD_MODE_REFLECT) {
-      int64_t dim = x->meta.coords.shape[d];
-      if (mag_unlikely(!(params.pad.pad_before[d] < dim && params.pad.pad_after[d] < dim)))
-          return mag_set_error(err, MAG_ERR_PARAM, "pad: reflect padding on dim %" PRIi64 " must be less than input size %" PRIi64 ".", d, dim);
+      int64_t dim = x->meta.coords.shape[dx];
+      if (mag_unlikely(!(params.pad.pre_pad[dx] < dim && params.pad.post_pad[dx] < dim)))
+          return mag_set_error(err, MAG_ERR_PARAM, "pad: reflect padding on dim %" PRIi64 " must be less than input size %" PRIi64 ".", dx, dim);
     }
   }
   int64_t shape[MAG_MAX_DIMS];
   for (int64_t dim=0; dim < rank; ++dim)
-    shape[dim] = x->meta.coords.shape[dim] + params.pad.pad_before[dim] + params.pad.pad_after[dim];
+    shape[dim] = x->meta.coords.shape[dim]+params.pad.pre_pad[dim]+params.pad.post_pad[dim];
   mag_tensor_t *result = NULL;
   mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_PAD, &x, 0);
   if (mag_iserr(status)) return status;
@@ -1550,25 +1546,16 @@ mag_status_t mag_convT(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
   return mag_conv_stub(err, out_result, MAG_OP_CONV_T, "convT", x, weight, bias, spatial, stride, padding, output_padding, dilation, groups);
 }
 
-mag_status_t mag_interpolate(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *out_size, int64_t out_len, const double *scale_factor, const char *mode, bool align_corners, bool antialias) {
+mag_status_t mag_interpolate(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *out_size, int64_t out_len, const double *scale_factor, mag_interp_mode_t mode, bool align_corners, bool antialias) {
   *out_result = NULL;
   if (mag_unlikely(!x))
     return mag_set_error(err, MAG_ERR_PARAM, "interpolate: input tensor must not be NULL.");
-  mag_interp_mode_t m;
-  if (!strcmp(mode, "nearest")) m = MAG_INTERP_MODE_NEAREST;
-  else if (!strcmp(mode, "nearest-exact")) m = MAG_INTERP_MODE_NEAREST_EXACT;
-  else if (!strcmp(mode, "linear")) m = MAG_INTERP_MODE_LINEAR;
-  else if (!strcmp(mode, "bilinear")) m = MAG_INTERP_MODE_BILINEAR;
-  else if (!strcmp(mode, "bicubic")) m = MAG_INTERP_MODE_BICUBIC;
-  else if (!strcmp(mode, "trilinear")) m = MAG_INTERP_MODE_TRILINEAR;
-  else if (!strcmp(mode, "area")) m = MAG_INTERP_MODE_AREA;
-  else return mag_set_error(err, MAG_ERR_PARAM, "interpolate: invalid mode '%s', expected one of nearest, nearest-exact, linear, bilinear, bicubic, trilinear, area.", mode);
   int64_t rank = x->meta.coords.rank;
   if (mag_unlikely(rank < 3 || rank > 5))
     return mag_set_error(err, MAG_ERR_RANK, "interpolate: input must have rank 3, 4 or 5 (batch, channels, spatial...), but got rank %" PRIi64 ".", rank);
   int64_t spatial = rank-2;
   int64_t tar_rank = 0;
-  switch (m) {
+  switch (mode) {
     case MAG_INTERP_MODE_LINEAR: tar_rank = 3; break;
     case MAG_INTERP_MODE_BILINEAR:
     case MAG_INTERP_MODE_BICUBIC: tar_rank = 4; break;
@@ -1576,19 +1563,19 @@ mag_status_t mag_interpolate(mag_error_t *err, mag_tensor_t **out_result, mag_te
     default: break;
   }
   if (mag_unlikely(tar_rank && rank != tar_rank))
-    return mag_set_error(err, MAG_ERR_RANK, "interpolate: mode '%s' requires a rank %" PRIi64 " input, but got rank %" PRIi64 ".", mode, tar_rank, rank);
-  bool nearest = mag_interp_mode_is_nearest(m);
-  if (mag_unlikely(align_corners && (nearest || m == MAG_INTERP_MODE_AREA)))
+    return mag_set_error(err, MAG_ERR_RANK, "interpolate: mode '%d' requires a rank %" PRIi64 " input, but got rank %" PRIi64 ".", mode, tar_rank, rank);
+  bool nearest = mag_interp_mode_is_nearest(mode);
+  if (mag_unlikely(align_corners && (nearest || mode == MAG_INTERP_MODE_AREA)))
     return mag_set_error(err, MAG_ERR_PARAM, "interpolate: align_corners can only be set with modes linear, bilinear, bicubic or trilinear.");
-  if (mag_unlikely(antialias && m != MAG_INTERP_MODE_BILINEAR && m != MAG_INTERP_MODE_BICUBIC))
+  if (mag_unlikely(antialias && mode != MAG_INTERP_MODE_BILINEAR && mode != MAG_INTERP_MODE_BICUBIC))
     return mag_set_error(err, MAG_ERR_PARAM, "interpolate: antialias is only supported with modes bilinear and bicubic.");
   if (mag_unlikely(!nearest && !mag_tensor_is_floating_point_typed(x)))
-    return mag_set_error(err, MAG_ERR_PARAM, "interpolate: mode '%s' requires a floating-point input, but got %s.", mode, mag_type_trait(x->meta.dtype)->name);
+    return mag_set_error(err, MAG_ERR_PARAM, "interpolate: mode '%d' requires a floating-point input, but got %s.", mode, mag_type_trait(x->meta.dtype)->name);
   if (mag_unlikely(!out_size || out_len != spatial))
     return mag_set_error(err, MAG_ERR_PARAM, "interpolate: expected %" PRIi64 " output sizes, but got %" PRIi64 ".", spatial, out_len);
   mag_op_params_t params = {0};
   params.interp.spatial = spatial;
-  params.interp.mode = m;
+  params.interp.mode = mode;
   params.interp.align_corners = align_corners;
   params.interp.antialias = antialias;
   int64_t shape[MAG_MAX_DIMS];
@@ -1599,7 +1586,7 @@ mag_status_t mag_interpolate(mag_error_t *err, mag_tensor_t **out_result, mag_te
       return mag_set_error(err, MAG_ERR_SHAPE, "interpolate: output size for spatial dim %" PRIi64 " must be >= 1, but got %" PRIi64 ".", i, out_size[i]);
     if (mag_unlikely(x->meta.coords.shape[2+i] < 1))
       return mag_set_error(err, MAG_ERR_SHAPE, "interpolate: input spatial dim %" PRIi64 " must be >= 1, but got %" PRIi64 ".", i, x->meta.coords.shape[2+i]);
-    double sf = scale_factor && m != MAG_INTERP_MODE_AREA ? scale_factor[i] : 0.0;
+    double sf = scale_factor && mode != MAG_INTERP_MODE_AREA ? scale_factor[i] : 0.0;
     if (mag_unlikely(sf < 0.0))
       return mag_set_error(err, MAG_ERR_PARAM, "interpolate: scale_factor must be > 0.");
     params.interp.out_size[i] = out_size[i];
@@ -1917,9 +1904,9 @@ mag_status_t mag_einsum(mag_error_t *err, mag_tensor_t **out_result, const char 
 mag_status_t mag_one_hot(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *indices, int64_t num_classes) {
   *out_result = NULL;
   mag_context_t *ctx = indices->ctx;
-  if (mag_unlikely(!(indices->meta.dtype == MAG_DTYPE_INT64)))
+  if (mag_unlikely(indices->meta.dtype != MAG_DTYPE_INT64))
       return mag_set_error(err, MAG_ERR_PARAM, "one_hot: indices must have dtype int64, but got %s.", mag_type_trait(indices->meta.dtype)->name);
-  if (mag_unlikely(!(num_classes >= -1)))
+  if (mag_unlikely(num_classes < -1))
       return mag_set_error(err, MAG_ERR_PARAM, "one_hot: num_classes must be >= -1, but got %" PRIi64 ".", num_classes);
   if (num_classes == -1) {
     mag_tensor_t *maxv = NULL;
@@ -1935,7 +1922,7 @@ mag_status_t mag_one_hot(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
     mag_tensor_decref(maxv);
     num_classes = max_class >= 0 ? 1+max_class : 0;
   }
-  if (mag_unlikely(!(num_classes > 0)))
+  if (mag_unlikely(num_classes <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "one_hot: inferred num_classes must be > 0, but got %" PRIi64 ".", num_classes);
   int64_t rank = indices->meta.coords.rank;
   if (mag_unlikely(!(rank + 1 <= MAG_MAX_DIMS)))
@@ -2250,7 +2237,7 @@ mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, 
   if (mag_unlikely(!(counts != NULL && num_counts > 0)))
       return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts must be a non-empty sequence.");
   for (int64_t i=0; i < num_counts; ++i)
-    if (mag_unlikely(!(counts[i] >= 0)))
+    if (mag_unlikely(counts[i] < 0))
         return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts must be >= 0.");
   mag_op_params_t params = {0};
   params.repeat_interleave.flatten = flatten;

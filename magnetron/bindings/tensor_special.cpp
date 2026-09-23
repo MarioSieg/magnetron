@@ -206,7 +206,39 @@ namespace mag::bindings {
        auto str = nb::str {cstr};
        return str;
      }, "Full repr (shape, dtype, values).")
-     .def("__bool__", [](const tensor_wrapper &self) -> bool {
+    .def("__int__", [](const tensor_wrapper &self) -> int64_t {
+      if (mag_tensor_numel(*self) != 1)
+        throw nb::value_error("Only one-element tensors can be converted to Python scalars");
+      mag_scalar_t val {};
+      mag_error_t err {};
+      throw_if_error(mag_tensor_item(&err, *self, &val), err);
+      if (mag_scalar_is_float64(val)) return static_cast<int64_t>(mag_scalar_as_float64(val));
+      if (mag_scalar_is_int64(val)) return mag_scalar_as_int64(val);
+      if (mag_scalar_is_uint64(val)) return static_cast<int64_t>(mag_scalar_as_uint64(val));
+      throw nb::type_error("Unsupported scalar type for __int__()");
+    })
+    .def("__float__", [](const tensor_wrapper &self) -> double {
+      if (mag_tensor_numel(*self) != 1)
+        throw nb::value_error("Only one-element tensors can be converted to Python scalars");
+      mag_scalar_t val {};
+      mag_error_t err {};
+      throw_if_error(mag_tensor_item(&err, *self, &val), err);
+      if (mag_scalar_is_float64(val)) return mag_scalar_as_float64(val);
+      if (mag_scalar_is_int64(val)) return static_cast<double>(mag_scalar_as_int64(val));
+      if (mag_scalar_is_uint64(val)) return static_cast<double>(mag_scalar_as_uint64(val));
+      throw nb::type_error("Unsupported scalar type for __float__()");
+    })
+    .def("__index__", [](const tensor_wrapper &self) -> int64_t {
+      if (mag_tensor_numel(*self) != 1)
+        throw nb::value_error("Only one-element tensors can be converted to an index");
+      mag_scalar_t val {};
+      mag_error_t err {};
+      throw_if_error(mag_tensor_item(&err, *self, &val), err);
+      if (mag_scalar_is_int64(val)) return mag_scalar_as_int64(val);
+      if (mag_scalar_is_uint64(val)) return static_cast<int64_t>(mag_scalar_as_uint64(val));
+      throw nb::type_error("Only integer tensors can be converted to an index");
+    })
+    .def("__bool__", [](const tensor_wrapper &self) -> bool {
       if (mag_tensor_numel(*self) != 1)
         throw nb::value_error("Tensor with >1 element has ambiguous truth value; use .any() or .all()");
       mag_scalar_t s {};

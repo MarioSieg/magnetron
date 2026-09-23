@@ -56,7 +56,7 @@ static float mag_aa_filter_cubic(float x) {
   return 0.f;
 }
 
-static bool mag_interp_axis_alloc(mag_interp_axis_t *ax, int64_t in, int64_t out, int64_t max_taps, mag_interp_alloc_fn alloc, void *ud) {
+static bool mag_interp_axis_alloc(mag_interp_axis_t *ax, int64_t in, int64_t out, int64_t max_taps, mag_interp_alloc_fn *alloc, void *ud) {
   ax->in = in;
   ax->out = out;
   ax->max_taps = max_taps;
@@ -188,7 +188,7 @@ static bool mag_interp_axis_build_forward(
 static bool mag_interp_axis_transpose(mag_interp_axis_t *dst, const mag_interp_axis_t *src, mag_interp_alloc_fn alloc, void *ud) {
   int64_t in = src->out;
   int64_t out = src->in;
-  int64_t *counts = (int64_t *)(*alloc)(ud, (size_t)out*sizeof(int64_t));
+  int64_t *counts = (*alloc)(ud, (size_t)out*sizeof(int64_t));
   if (!counts) return false;
   for (int64_t i=0; i < out; ++i) counts[i] = 0;
   for (int64_t o=0; o < src->out; ++o)
@@ -216,13 +216,13 @@ bool mag_interp_plan_build(
   const int64_t *big_shape,
   int64_t rank,
   bool transposed,
-  mag_interp_alloc_fn alloc,
+  mag_interp_alloc_fn *alloc,
   void *ud
 ) {
   int64_t spatial = rank-2;
-  int64_t off = 3 - spatial;
+  int64_t off = 3-spatial;
   plan->planes = small_shape[0]*small_shape[1];
-  mag_interp_kind_t kind = mag_interp_kind_of((mag_interp_mode_t)params->interp.mode);
+  mag_interp_kind_t kind = mag_interp_kind_of(params->interp.mode);
   for (int64_t d=0; d < 3; ++d) {
     int64_t in = 1;
     int64_t out = 1;

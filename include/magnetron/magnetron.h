@@ -96,6 +96,7 @@ extern MAG_EXPORT mag_log_level_t mag_log_level(void);
   _(MAG_ERR_NOFILE, "File not found") \
   _(MAG_ERR_OS, "Operating system error") \
   _(MAG_ERR_BACKEND, "Backend error") \
+  _(MAG_ERR_COMM, "Distributed communicator error") \
   _(MAG_ERR_AUTOGRAD, "Autograd error") \
   _(MAG_ERR_UNKNOWN, "Unknown error")
 
@@ -3561,6 +3562,26 @@ extern MAG_EXPORT mag_status_t mag_convT(
 );
 
 /**
+ * Interpolation modes for tensor resizing and resampling operations.
+ */
+typedef enum mag_interp_mode_t {
+  /** Nearest-neighbor interpolation. */
+  MAG_INTERP_MODE_NEAREST = 0,
+  /** Nearest-neighbor interpolation using exact source-index mapping. */
+  MAG_INTERP_MODE_NEAREST_EXACT = 1,
+  /** Linear interpolation for 1D inputs. */
+  MAG_INTERP_MODE_LINEAR = 2,
+  /** Bilinear interpolation for 2D inputs. */
+  MAG_INTERP_MODE_BILINEAR = 3,
+  /** Bicubic interpolation for 2D inputs. */
+  MAG_INTERP_MODE_BICUBIC = 4,
+  /** Trilinear interpolation for 3D inputs. */
+  MAG_INTERP_MODE_TRILINEAR = 5,
+  /** Area-based interpolation, typically used for downsampling. */
+  MAG_INTERP_MODE_AREA = 6,
+} mag_interp_mode_t;
+
+/**
  * Resample the spatial dims of an input of layout (batch, channels, spatial...) to a new size.
  *
  * @param err Error output; set when the call fails.
@@ -3569,7 +3590,7 @@ extern MAG_EXPORT mag_status_t mag_convT(
  * @param out_size Target size per spatial dim, @p out_len entries.
  * @param out_len Number of entries in @p out_size; must equal rank - 2.
  * @param scale_factor Optional scale per spatial dim used for coordinate mapping, or NULL.
- * @param mode One of "nearest", "nearest-exact", "linear", "bilinear", "bicubic", "trilinear", or "area".
+ * @param mode One of mag_interp_mode_t::*.
  * @param align_corners If true, align corner samples; only valid for the linear, bilinear, bicubic, and trilinear modes.
  * @param antialias If true, apply antialiasing; only valid for the bilinear and bicubic modes.
  * @return MAG_OK on success, an error status otherwise.
@@ -3581,10 +3602,24 @@ extern MAG_EXPORT mag_status_t mag_interpolate(
   const int64_t *out_size,
   int64_t out_len,
   const double *scale_factor,
-  const char *mode,
+  mag_interp_mode_t mode,
   bool align_corners,
   bool antialias
 );
+
+/**
+ * Padding modes for mag_pad.
+ */
+typedef enum mag_pad_mode_t {
+  /** Fill padded elements with a constant value. */
+  MAG_PAD_MODE_CONSTANT = 0,
+  /** Pad by reflecting values at the input boundaries. */
+  MAG_PAD_MODE_REFLECT = 1,
+  /** Pad by replicating the boundary values. */
+  MAG_PAD_MODE_REPLICATE = 2,
+  /** Pad by wrapping values around from the opposite boundary. */
+  MAG_PAD_MODE_CIRCULAR = 3,
+} mag_pad_mode_t;
 
 /**
  * Pad the dims of @p x.
@@ -3594,7 +3629,7 @@ extern MAG_EXPORT mag_status_t mag_interpolate(
  * @param x Input tensor.
  * @param pad Padding as (before, after) pairs starting with the last dim, @p pad_len entries; omitted dims get no padding.
  * @param pad_len Number of entries in @p pad, at most 2 * rank.
- * @param mode One of "constant", "reflect", or "replicate".
+ * @param mode One of mag_pad_mode_t::*.
  * @param value Fill value for constant mode.
  * @return MAG_OK on success, an error status otherwise.
  */
@@ -3604,7 +3639,7 @@ extern MAG_EXPORT mag_status_t mag_pad(
   mag_tensor_t *x,
   const int64_t *pad,
   int64_t pad_len,
-  const char *mode,
+  mag_pad_mode_t mode,
   mag_scalar_t value
 );
 
@@ -4307,126 +4342,256 @@ extern MAG_EXPORT mag_status_t mag_snapshot_stream_reader_borrow_tensor(
 extern MAG_EXPORT void mag_snapshot_stream_reader_close(mag_snapshot_stream_reader_t *reader);
 
 
-/* === Distributed & Process Group === */
+/* === Distributed === */
 
 /**
- * Opaque group of processes connected over TCP. Rank 0 is the master and holds a connection to every other rank; other ranks connect only to rank 0.
+ * Element-wise reduction applied by the reducing collectives. MAG_REDUCE_AVG divides the sum by the communicator size; the bitwise ops require integral tensors.
  */
-typedef struct mag_process_group_t mag_process_group_t;
+typedef enum mag_reduce_op_t {
+  MAG_REDUCE_SUM,
+  MAG_REDUCE_AVG,
+  MAG_REDUCE_PROD,
+  MAG_REDUCE_MIN,
+  MAG_REDUCE_MAX,
+  MAG_REDUCE_AND,
+  MAG_REDUCE_OR,
+  MAG_REDUCE_XOR,
+} mag_reduce_op_t;
 
 /**
- * Create a process group. Rank 0 listens on @p master_port and accepts the other ranks; every other rank connects to it. Blocks until all ranks have joined.
+ * Backend-specific communicator configuration passed to mag_comm_init. Reserved; pass NULL for defaults.
+ */
+typedef struct mag_comm_backend_desc_t {
+  int dummy;
+} mag_comm_backend_desc_t;
+
+/**
+ * Opaque handle to a group of ranks that exchange tensors through a communication backend. Every collective must be called by all ranks of the communicator.
+ */
+typedef struct mag_communicator_t mag_communicator_t;
+
+/**
+ * Create a communicator for the calling rank and connect it to the given backend.
  *
  * @param err Error output; set when the call fails.
- * @param out Receives the process group.
- * @param master_addr Host name or address of rank 0.
- * @param master_port TCP port rank 0 listens on.
- * @param rank Rank of the calling process, in [0, world_size).
- * @param world_size Total number of processes, > 0.
+ * @param out_comm Receives the communicator; release it with mag_comm_destroy.
+ * @param rank Rank of the caller within the communicator, in [0, size).
+ * @param size Number of ranks in the communicator; must be > 0.
+ * @param backend Name of the communication backend to use.
+ * @param backend_desc Optional backend configuration; NULL selects the defaults.
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_pgroup_init_tcp(
+extern MAG_EXPORT mag_status_t mag_comm_init(
   mag_error_t *err,
-  mag_process_group_t **out,
-  const char *master_addr,
-  uint16_t master_port,
+  mag_communicator_t **out_comm,
   uint32_t rank,
-  uint32_t world_size
+  uint32_t size,
+  const char *backend,
+  const mag_comm_backend_desc_t *backend_desc
 );
 
 /**
- * Close all connections and free the process group. NULL is ignored.
+ * Tear down the communicator and release its backend resources. NULL is ignored.
  *
- * @param pgroup Process group to destroy.
+ * @param comm Communicator to destroy.
  */
-extern MAG_EXPORT void mag_pgroup_destroy(mag_process_group_t *pgroup);
+extern MAG_EXPORT void mag_comm_destroy(mag_communicator_t *comm);
+
 
 /**
- * Get the rank of the calling process within the group.
+ * Query the rank of the caller within the communicator.
  *
- * @param pgroup Process group.
- * @return Rank in [0, world_size).
+ * @param comm Communicator to query.
+ * @return Rank in [0, size).
  */
-extern MAG_EXPORT uint32_t mag_pgroup_rank(const mag_process_group_t *pgroup);
+extern MAG_EXPORT uint32_t mag_comm_rank(mag_communicator_t *comm);
+
 
 /**
- * Get the number of processes in the group.
+ * Query the number of ranks in the communicator.
  *
- * @param pgroup Process group.
- * @return World size.
+ * @param comm Communicator to query.
+ * @return Number of participating ranks.
  */
-extern MAG_EXPORT uint32_t mag_pgroup_world_size(const mag_process_group_t *pgroup);
+extern MAG_EXPORT uint32_t mag_comm_size(mag_communicator_t *comm);
+
 
 /**
- * Check that a process group handle is non-NULL and its rank and world size are consistent.
+ * Query the name of the communication backend behind the communicator.
+ *
+ * @param comm Communicator to query.
+ * @return Static backend name string; owned by the library.
+ */
+extern MAG_EXPORT const char *mag_comm_backend_name(mag_communicator_t *comm);
+
+
+/**
+ * Block until every rank of the communicator has entered the barrier.
  *
  * @param err Error output; set when the call fails.
- * @param pgroup Process group to validate.
+ * @param comm Communicator to synchronize.
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_pgroup_validate(mag_error_t *err, mag_process_group_t *pgroup);
+extern MAG_EXPORT mag_status_t mag_comm_barrier(
+  mag_error_t *err,
+  mag_communicator_t *comm
+);
 
 /**
- * Check that a tensor can be transferred between ranks: it must reside on CPU, be contiguous, and have a numeric dtype.
+ * Copy @p tensor from the root rank into the same-shaped @p tensor of every other rank.
  *
  * @param err Error output; set when the call fails.
- * @param tensor Tensor to check.
+ * @param comm Communicator to use.
+ * @param tensor Source on the root rank, destination on all other ranks; updated in place.
+ * @param root Rank whose data is broadcast, in [0, size).
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_pgroup_verify_tensor_is_wireable(mag_error_t *err, mag_tensor_t *tensor);
+extern MAG_EXPORT mag_status_t mag_comm_broadcast(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *tensor,
+  uint32_t root
+);
 
 /**
- * Send a buffer to another rank. Blocks until all bytes are written. Only rank 0 is connected to every rank; other ranks can only send to rank 0.
+ * Reduce @p tensor across all ranks with @p red and store the result in @p tensor on the root rank only.
  *
  * @param err Error output; set when the call fails.
- * @param pgroup Process group.
- * @param dst_rank Destination rank; must differ from the caller's rank.
- * @param buf Bytes to send.
- * @param nb Number of bytes to send.
+ * @param comm Communicator to use.
+ * @param tensor Contribution of the caller; overwritten with the result on the root rank.
+ * @param root Rank that receives the reduced result, in [0, size).
+ * @param red Reduction to apply element-wise.
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_pgroup_send_bytes(mag_error_t *err, mag_process_group_t *pgroup, uint32_t dst_rank, const void *buf, size_t nb);
+extern MAG_EXPORT mag_status_t mag_comm_reduce(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *tensor,
+  uint32_t root,
+  mag_reduce_op_t red
+);
 
 /**
- * Receive exactly @p nb bytes from another rank. Blocks until the buffer is filled. Only rank 0 is connected to every rank; other ranks can only receive from rank 0.
+ * Reduce @p tensor across all ranks with @p red and store the result in @p tensor on every rank.
  *
  * @param err Error output; set when the call fails.
- * @param pgroup Process group.
- * @param src_rank Source rank; must differ from the caller's rank.
- * @param buf Buffer that receives the bytes.
- * @param nb Number of bytes to receive.
+ * @param comm Communicator to use.
+ * @param tensor Contribution of the caller; overwritten with the reduced result in place.
+ * @param red Reduction to apply element-wise.
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_pgroup_recv_bytes(mag_error_t *err, mag_process_group_t *pgroup, uint32_t src_rank, void *buf, size_t nb);
+extern MAG_EXPORT mag_status_t mag_comm_all_reduce(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *tensor,
+  mag_reduce_op_t red
+);
 
 /**
- * Block until every rank in the group has entered the barrier.
+ * Concatenate the @p in tensor of every rank, ordered by rank, into @p out on every rank.
  *
  * @param err Error output; set when the call fails.
- * @param pgroup Process group.
+ * @param comm Communicator to use.
+ * @param out Receives size copies of the input shape stacked along the first dim.
+ * @param in Contribution of the caller; the same shape on every rank.
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_pgroup_barrier(mag_error_t *err, mag_process_group_t *pgroup);
+extern MAG_EXPORT mag_status_t mag_comm_all_gather(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *out,
+  mag_tensor_t *in
+);
 
 /**
- * Copy the contents of @p x on rank 0 to the same tensor on every other rank, in place. Every rank must call this with a wireable tensor of identical shape and dtype.
+ * Reduce @p in across all ranks with @p red, then scatter the result so that rank i receives the i-th equal chunk in @p out.
  *
  * @param err Error output; set when the call fails.
- * @param pgroup Process group.
- * @param x Tensor to broadcast; the source on rank 0, overwritten on all other ranks.
+ * @param comm Communicator to use.
+ * @param out Receives the caller's chunk of the reduced result; holds numel(in)/size elements.
+ * @param in Contribution of the caller; the same shape on every rank and divisible into size chunks.
+ * @param red Reduction to apply element-wise.
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_pgroup_broadcast_(mag_error_t *err, mag_process_group_t *pgroup, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_comm_reduce_scatter(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *out,
+  mag_tensor_t *in,
+  mag_reduce_op_t red
+);
 
 /**
- * Sum @p x across all ranks and store the total in @p x on every rank, in place. Every rank must call this with a wireable tensor of identical shape and dtype.
+ * Split @p in into size equal chunks and send chunk j to rank j; @p out receives the chunk addressed to the caller from every rank, ordered by source rank.
  *
  * @param err Error output; set when the call fails.
- * @param pgroup Process group.
- * @param x Tensor to reduce; overwritten with the sum over all ranks.
+ * @param comm Communicator to use.
+ * @param out Receives size chunks; the same shape as @p in.
+ * @param in Data to distribute; the same shape on every rank and divisible into size chunks.
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_pgroup_all_reduce_sum_(mag_error_t *err, mag_process_group_t *pgroup, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_comm_all_to_all(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *out,
+  mag_tensor_t *in
+);
+
+/**
+ * Ragged all-to-all: send a per-peer slice of @p in to every rank and receive a per-peer slice from every rank into @p out. Counts and offsets are in elements and have size entries indexed by peer rank.
+ *
+ * @param err Error output; set when the call fails.
+ * @param comm Communicator to use.
+ * @param out Receives the slices addressed to the caller; must hold recv_offsets[j] + recv_counts[j] elements for every j.
+ * @param in Data to distribute; must hold send_offsets[j] + send_counts[j] elements for every j.
+ * @param send_counts Number of elements sent to rank j.
+ * @param send_offsets Element offset into @p in of the slice sent to rank j.
+ * @param recv_counts Number of elements received from rank j; must equal that rank's send_counts entry for the caller.
+ * @param recv_offsets Element offset into @p out of the slice received from rank j.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_comm_all_to_all_v(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *out,
+  mag_tensor_t *in,
+  const size_t *send_counts,
+  const size_t *send_offsets,
+  const size_t *recv_counts,
+  const size_t *recv_offsets
+);
+
+/**
+ * Send @p tensor to a single peer. Blocks until the peer has posted a matching mag_comm_recv with the same shape and dtype.
+ *
+ * @param err Error output; set when the call fails.
+ * @param comm Communicator to use.
+ * @param tensor Data to send.
+ * @param dst Destination rank, in [0, size).
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_comm_send(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *tensor,
+  uint32_t dst
+);
+
+/**
+ * Receive into @p tensor from a single peer. Blocks until the peer's matching mag_comm_send with the same shape and dtype completes.
+ *
+ * @param err Error output; set when the call fails.
+ * @param comm Communicator to use.
+ * @param tensor Preallocated destination; overwritten in place.
+ * @param src Source rank, in [0, size).
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_comm_recv(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *tensor,
+  uint32_t src
+);
 
 #ifdef __cplusplus
 }

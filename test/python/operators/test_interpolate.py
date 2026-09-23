@@ -199,7 +199,7 @@ def test_interpolate_invalid_args(device: str) -> None:
         random_tensor((4, 4), dtype.float32, device).interpolate(scale_factor=2)
     with pytest.raises(RuntimeError):
         x.interpolate(size=(0, 8))
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValueError):
         x.interpolate(size=(8, 8), mode='cubic')
     with pytest.raises(RuntimeError):
         x.interpolate(size=(8, 8), mode='linear')

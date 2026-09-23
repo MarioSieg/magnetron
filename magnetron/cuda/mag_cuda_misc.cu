@@ -1544,7 +1544,7 @@ namespace mag {
       if constexpr (MODE == MAG_PAD_MODE_CONSTANT) {
         bool outside = false;
         for (int dim = 0; dim < R; ++dim) {
-          int ic = oc[dim] - plan.pad.pad_before[dim];
+          int ic = oc[dim] - plan.pad.pre_pad[dim];
           if (ic < 0 || ic >= in_shape[dim]) {
             outside = true;
             break;
@@ -1557,7 +1557,7 @@ namespace mag {
         }
       } else {
         for (int dim=0; dim < R; ++dim) {
-          int ic = oc[dim] - plan.pad.pad_before[dim];
+          int ic = oc[dim] - plan.pad.pre_pad[dim];
           if constexpr (MODE == MAG_PAD_MODE_REFLECT)
             si[dim] = pad_reflect_index(ic, in_shape[dim]);
           else if constexpr (MODE == MAG_PAD_MODE_REPLICATE)

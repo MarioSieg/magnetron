@@ -28,23 +28,6 @@ typedef enum mag_opflags_t {
 #define MAG_OP_FLAGS_COMMON (MAG_OP_FLAG_SUPPORTS_INPLACE+MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING)
 #define MAG_OP_INOUT_DYN (UINT32_MAX-1) /* Flags flexible input/output count. Used for operations that can have arbitrary number of inputs/outputs such as split or cat. */
 
-typedef enum mag_pad_mode_t {
-  MAG_PAD_MODE_CONSTANT = 0,
-  MAG_PAD_MODE_REFLECT = 1,
-  MAG_PAD_MODE_REPLICATE = 2,
-  MAG_PAD_MODE_CIRCULAR = 3,
-} mag_pad_mode_t;
-
-typedef enum mag_interp_mode_t {
-  MAG_INTERP_MODE_NEAREST = 0,
-  MAG_INTERP_MODE_NEAREST_EXACT = 1,
-  MAG_INTERP_MODE_LINEAR = 2,
-  MAG_INTERP_MODE_BILINEAR = 3,
-  MAG_INTERP_MODE_BICUBIC = 4,
-  MAG_INTERP_MODE_TRILINEAR = 5,
-  MAG_INTERP_MODE_AREA = 6,
-} mag_interp_mode_t;
-
 typedef union mag_op_params_t {
   struct {
     int64_t rank;
@@ -102,7 +85,7 @@ typedef union mag_op_params_t {
     int64_t spatial;
     int64_t out_size[3];
     double scale[3];
-    int64_t mode;
+    mag_interp_mode_t mode : 8;
     bool align_corners : 1;
     bool antialias : 1;
   } interp;
@@ -111,8 +94,8 @@ typedef union mag_op_params_t {
   } cumu;
   struct {
     int64_t rank;
-    int64_t pad_before[MAG_MAX_DIMS];
-    int64_t pad_after[MAG_MAX_DIMS];
+    int64_t pre_pad[MAG_MAX_DIMS];
+    int64_t post_pad[MAG_MAX_DIMS];
     mag_pad_mode_t mode;
     mag_scalar_t value;
   } pad;

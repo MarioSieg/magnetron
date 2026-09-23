@@ -506,7 +506,7 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
     }
   }
   if (op == MAG_OP_GATHER || op == MAG_OP_EMBEDDING) {
-    if (mag_unlikely(!(inputs[1]->meta.dtype == MAG_DTYPE_INT64)))
+    if (mag_unlikely(inputs[1]->meta.dtype != MAG_DTYPE_INT64))
         return mag_set_error(err, MAG_ERR_PARAM,
           "op_validate: index tensor for operator '%s' must have dtype int64, but got '%s'.\n"
           "    Hint: cast the indices to int64.",
@@ -515,7 +515,7 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
     return MAG_OK;
   }
   if (op == MAG_OP_MASKED_FILL) {
-    if (mag_unlikely(!(inputs[1]->meta.dtype == MAG_DTYPE_BOOLEAN)))
+    if (mag_unlikely(inputs[1]->meta.dtype != MAG_DTYPE_BOOLEAN))
         return mag_set_error(err, MAG_ERR_PARAM,
           "op_validate: mask tensor for operator '%s' must have dtype bool, but got '%s'.\n"
           "    Hint: cast the mask to bool.",

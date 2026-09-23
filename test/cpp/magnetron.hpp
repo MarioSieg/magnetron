@@ -996,3 +996,4 @@ namespace magnetron {
         handle_error(mag_uniform_(&g_error, m_tensor, mag_scalar_from_int64(min), mag_scalar_from_int64(max)));
     }
 }
+

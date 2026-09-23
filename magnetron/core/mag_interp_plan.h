@@ -33,7 +33,7 @@ typedef struct mag_interp_plan_t {
   mag_interp_axis_t axes[3];
 } mag_interp_plan_t;
 
-typedef void *(*mag_interp_alloc_fn)(void *ud, size_t nb);
+typedef void *(mag_interp_alloc_fn)(void *ud, size_t nb);
 
 extern MAG_EXPORT bool mag_interp_mode_is_nearest(mag_interp_mode_t mode);
 extern MAG_EXPORT bool mag_interp_plan_build(
@@ -43,7 +43,7 @@ extern MAG_EXPORT bool mag_interp_plan_build(
   const int64_t *big_shape,
   int64_t rank,
   bool transposed,
-  mag_interp_alloc_fn alloc,
+  mag_interp_alloc_fn *alloc,
   void *ud
 );
 

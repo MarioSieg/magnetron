@@ -1100,7 +1100,7 @@ static int64_t mag_pad_map_index(int64_t i, int64_t size, mag_pad_mode_t mode) {
       if (payload->cmd->params->pad.mode == MAG_PAD_MODE_CONSTANT) { \
         use_constant = false; \
         for (int64_t d=0; d < R; ++d) { \
-          int64_t ic = oc[d] - payload->cmd->params->pad.pad_before[d]; \
+          int64_t ic = oc[d] - payload->cmd->params->pad.pre_pad[d]; \
           if (ic < 0 || ic >= in_shape[d]) { \
             use_constant = true; \
             break; \
@@ -1109,7 +1109,7 @@ static int64_t mag_pad_map_index(int64_t i, int64_t size, mag_pad_mode_t mode) {
         } \
       } else { \
         for (int64_t d=0; d < R; ++d) { \
-          int64_t ic = oc[d] - payload->cmd->params->pad.pad_before[d]; \
+          int64_t ic = oc[d] - payload->cmd->params->pad.pre_pad[d]; \
           si[d] = mag_pad_map_index(ic, in_shape[d], payload->cmd->params->pad.mode); \
         } \
       } \

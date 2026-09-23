@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <string_view>
 
 namespace mag::bindings {
   [[nodiscard]] static std::array<int64_t, 3> parse_conv_param(nb::handle h, int64_t spatial, const char *what) {
@@ -31,6 +32,25 @@ namespace mag::bindings {
       throw nb::value_error((std::string(what) + ": expected an int or a sequence of " + std::to_string(spatial) + " ints").c_str());
     std::copy(v.begin(), v.end(), out.begin());
     return out;
+  }
+
+  [[nodiscard]] static mag_interp_mode_t parse_interp_mode(std::string_view mode) {
+    if (mode == "nearest") return MAG_INTERP_MODE_NEAREST;
+    if (mode == "nearest-exact") return MAG_INTERP_MODE_NEAREST_EXACT;
+    if (mode == "linear") return MAG_INTERP_MODE_LINEAR;
+    if (mode == "bilinear") return MAG_INTERP_MODE_BILINEAR;
+    if (mode == "bicubic") return MAG_INTERP_MODE_BICUBIC;
+    if (mode == "trilinear") return MAG_INTERP_MODE_TRILINEAR;
+    if (mode == "area") return MAG_INTERP_MODE_AREA;
+    throw nb::value_error(("interpolate: unknown mode '" + std::string(mode) + "', expected one of nearest, nearest-exact, linear, bilinear, bicubic, trilinear, area").c_str());
+  }
+
+  [[nodiscard]] static mag_pad_mode_t parse_pad_mode(std::string_view mode) {
+    if (mode == "constant") return MAG_PAD_MODE_CONSTANT;
+    if (mode == "reflect") return MAG_PAD_MODE_REFLECT;
+    if (mode == "replicate") return MAG_PAD_MODE_REPLICATE;
+    if (mode == "circular") return MAG_PAD_MODE_CIRCULAR;
+    throw nb::value_error(("pad: unknown mode '" + std::string(mode) + "', expected one of constant, reflect, replicate, circular").c_str());
   }
 
   template <const bool T>
@@ -1090,6 +1110,7 @@ namespace mag::bindings {
     )
     .def("interpolate",
       [](const tensor_wrapper &self, nb::handle size_h, nb::handle scale_h, const std::string &mode, bool align_corners, bool antialias) -> tensor_wrapper {
+        mag_interp_mode_t interp_mode = parse_interp_mode(mode);
         int64_t rank = mag_tensor_rank(*self);
         if (rank < 3 || rank > 5)
           throw nb::value_error("interpolate: input must have rank 3, 4 or 5 (batch, channels, spatial...)");
@@ -1123,7 +1144,7 @@ namespace mag::bindings {
         mag_tensor_t *result = nullptr;
         mag_error_t err {};
         auto invoke = [&]() -> mag_status_t {
-          return mag_interpolate(&err, &result, *self, out.data(), spatial, has_scale ? scale.data() : nullptr, mode.c_str(), align_corners, antialias);
+          return mag_interpolate(&err, &result, *self, out.data(), spatial, has_scale ? scale.data() : nullptr, interp_mode, align_corners, antialias);
         };
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_INTERPOLATE, [&] {
@@ -1443,15 +1464,16 @@ namespace mag::bindings {
     .def("pad",
       [](const tensor_wrapper &self, nb::handle pad_h, const std::string &mode = "constant", nb::handle value = nb::float_{0.0}) -> tensor_wrapper {
         std::vector<int64_t> pad = parse_i64_list_handle(pad_h, "pad");
+        mag_pad_mode_t pad_mode = parse_pad_mode(mode);
         mag_scalar_t sv = scalar_from_py_number(value);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_PAD, [&] {
-            throw_if_error(call_without_gil([&] { return mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), mode.c_str(), sv); }), err);
+            throw_if_error(call_without_gil([&] { return mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), pad_mode, sv); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), mode.c_str(), sv); }), err);
+          throw_if_error(call_without_gil([&] { return mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), pad_mode, sv); }), err);
         }
         return tensor_wrapper{out};
       },
