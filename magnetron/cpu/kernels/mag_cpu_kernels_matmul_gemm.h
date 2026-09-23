@@ -33,17 +33,23 @@
 #define MAG_GEMM_NR (MAG_GEMM_NRV*MAG_VF32_LANES)
 
 #ifndef MAG_GEMM_KC
-  #define MAG_GEMM_KC 256 /* K depth per pass - bounds both packed panels */
+  #define MAG_GEMM_KC 256
 #endif
 #ifndef MAG_GEMM_MC
-  #define MAG_GEMM_MC 192 /* A panel rows - MC*KC floats should live in L2. */
+  #define MAG_GEMM_MC 192
 #endif
 #ifndef MAG_GEMM_NC
-  #define MAG_GEMM_NC 256 /* B panel cols - KC*NC floats should live in L2/L3. */
+  #define MAG_GEMM_NC 256
 #endif
-#ifndef MAG_GEMM_MB
-  #define MAG_GEMM_MB 512 /* Rows of the f32 C accumulator - bounds it to MB*NC floats. */
+#ifndef MAG_GEMM_TILES_PER_THREAD
+  #define MAG_GEMM_TILES_PER_THREAD 4
 #endif
+#ifndef MAG_GEMM_MIN_TILE_FLOPS
+  #define MAG_GEMM_MIN_TILE_FLOPS (1<<20)
+#endif
+#define MAG_GEMM_MIN_MT (MAG_GEMM_MR*4)
+#define MAG_GEMM_MIN_NT (MAG_GEMM_NR*2)
+#define mag_gemm_round_up(x, m) (((x)+(m)-1)/(m)*(m))
 
 #if MAG_GEMM_MR == 4
   #define mag_gemm_unroll_mr(X) X(0) X(1) X(2) X(3)
@@ -332,7 +338,7 @@ static MAG_HOTPROC void mag_gemm_thin(
   }
 }
 
-#define MAG_GEMM_BF16_NPAIRS(kc) (((kc)+1)>>1) /* K reduced two-at-a-time; odd tail zero-padded by packing. */
+#define MAG_GEMM_BF16_NPAIRS(kc) (((kc)+1)>>1)
 
 static MAG_HOTPROC void mag_gemm_pack_a_bf16_dp(mag_bfloat16_t *restrict ap, const mag_bfloat16_t *x, int64_t mc, int64_t kc, int64_t sx0, int64_t sx1) {
   mag_bfloat16_t zero = mag_float32_to_bfloat16(0.f);
@@ -402,174 +408,176 @@ static MAG_HOTPROC void mag_gemm_ukernel_bf16_dp(int64_t npairs, const mag_bfloa
   #undef mag_gemm_bdp_store_row
 }
 
-static void mag_gemm_thread_grid(int64_t tc, int64_t M, int64_t N, int64_t *ptm, int64_t *ptn) {
-  int64_t btm = tc;
-  int64_t btn = 1;
-  double best = 0;
-  for (int64_t tm=1; tm <= tc; ++tm) {
-    if (tc%tm) continue;
-    int64_t tn = tc/tm;
-    int64_t mc = (M + tm-1)/tm;
-    int64_t nc = (N + tn-1)/tn;
-    int64_t mpad = (mc + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
-    int64_t npad = (nc + MAG_GEMM_NR-1)/MAG_GEMM_NR*MAG_GEMM_NR;
-    double waste = (double)(mpad*tm)*(double)(npad*tn)/((double)M*(double)N);
-    double cost = ((double)(tn*M) + (double)(tm*N))*waste;
-    if (best == 0 || cost < best) {
-      best = cost;
-      btm = tm;
-      btn = tn;
+typedef void (mag_gemm_resolve_batch_t)(const void *user, int64_t batch, void **pr, const void **px, const void **py);
+
+static void mag_gemm_pick_tiles(int64_t tc, int64_t batch, int64_t M, int64_t N, int64_t K, bool split_m, int64_t *pmt, int64_t *pnt) {
+  int64_t mt = split_m ? mag_vmin((int64_t)MAG_GEMM_MC, mag_gemm_round_up(M, MAG_GEMM_MR)) : M;
+  int64_t nt = mag_vmin((int64_t)MAG_GEMM_NC, mag_gemm_round_up(N, MAG_GEMM_NR));
+  if (tc > 1) {
+    int64_t want = MAG_GEMM_TILES_PER_THREAD*tc;
+    for (;;) {
+      int64_t tiles = batch*((M + mt-1)/mt)*((N + nt-1)/nt);
+      if (tiles >= want) break;
+      bool can_m = split_m && mt > MAG_GEMM_MIN_MT;
+      bool can_n = nt > MAG_GEMM_MIN_NT;
+      if (!can_m && !can_n) break;
+      int64_t nmt = mt, nnt = nt;
+      if (can_m && (!can_n || mt >= nt)) nmt = mag_vmax((int64_t)MAG_GEMM_MIN_MT, mag_gemm_round_up((mt+1)/2, MAG_GEMM_MR));
+      else nnt = mag_vmax((int64_t)MAG_GEMM_MIN_NT, mag_gemm_round_up((nt+1)/2, MAG_GEMM_NR));
+      if (2*mag_vmin(nmt, M)*mag_vmin(nnt, N)*K < MAG_GEMM_MIN_TILE_FLOPS) break;
+      mt = nmt;
+      nt = nnt;
     }
   }
-  *ptm = btm;
-  *ptn = btn;
+  *pmt = mt;
+  *pnt = nt;
 }
 
-static MAG_HOTPROC void mag_gemm_packed_bf16_dp(
+static MAG_HOTPROC void mag_gemm_tile_bf16_dp(
   int64_t m0, int64_t m1, int64_t n0, int64_t n1,
-  int64_t N, int64_t K,
+  int64_t N, int64_t K, bool pack_b,
   void *pr,
   const void *px, int64_t sx0, int64_t sx1,
-  const void *py, int64_t sy0, int64_t sy1
+  const void *py, int64_t sy0, int64_t sy1,
+  mag_bfloat16_t *ap, mag_bfloat16_t *bp, float *cc
 ) {
-  int64_t KC = mag_vmin((int64_t)MAG_GEMM_KC, K);
-  int64_t NC = mag_vmin((int64_t)MAG_GEMM_NC, n1-n0);
-  int64_t MB = mag_vmin((int64_t)MAG_GEMM_MB, m1-m0);
-  int64_t apad = (mag_vmin((int64_t)MAG_GEMM_MC, MB) + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
-  int64_t ldc_max = (NC + MAG_GEMM_NR-1)/MAG_GEMM_NR*MAG_GEMM_NR;
-  int64_t mb_max = (MB + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
-  int64_t kcpair = MAG_GEMM_BF16_NPAIRS(KC);
-  size_t ap_nb = mag_gemm_align_up((size_t)(apad*kcpair*2)*sizeof(mag_bfloat16_t));
-  size_t bp_nb = mag_gemm_align_up((size_t)(ldc_max*kcpair*2)*sizeof(mag_bfloat16_t));
-  size_t cc_nb = mag_gemm_align_up((size_t)(mb_max*ldc_max)*sizeof(float));
-  size_t mark = mag_scratch_arena_mark(&mag_tls_arena);
-  uint8_t *blk = mag_scratch_arena_alloc(&mag_tls_arena, ap_nb + bp_nb + cc_nb); /* Allocate one big chunk as scratch areena can resize: TODO */
-  mag_bfloat16_t *ap = (mag_bfloat16_t *)blk;
-  mag_bfloat16_t *bp = (mag_bfloat16_t *)(blk + ap_nb);
-  float *cc = (float *)(blk + ap_nb + bp_nb);
   const mag_bfloat16_t *xb = px;
   const mag_bfloat16_t *yb = py;
   mag_bfloat16_t *rb = pr;
-  for (int64_t ib=m0; ib < m1; ib += MB) {
-    int64_t mbt = mag_vmin(MB, m1-ib);
-    for (int64_t jc=n0; jc < n1; jc += NC) {
-      int64_t nct = mag_vmin(NC, n1-jc);
-      int64_t ldc = (nct + MAG_GEMM_NR-1)/MAG_GEMM_NR*MAG_GEMM_NR;
-      memset(cc, 0, (size_t)((mbt + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR*ldc)*sizeof(*cc));
-      for (int64_t pc=0; pc < K; pc += KC) {
-        int64_t kct = mag_vmin(KC, K-pc);
-        int64_t np = MAG_GEMM_BF16_NPAIRS(kct);
-        mag_gemm_pack_b_bf16_dp(bp, yb + pc*sy0 + jc*sy1, kct, nct, sy0, sy1);
-        for (int64_t ic=0; ic < mbt; ic += MAG_GEMM_MC) {
-          int64_t mct = mag_vmin((int64_t)MAG_GEMM_MC, mbt-ic);
-          mag_gemm_pack_a_bf16_dp(ap, xb + (ib+ic)*sx0 + pc*sx1, mct, kct, sx0, sx1);
-          for (int64_t jr=0; jr < nct; jr += MAG_GEMM_NR) {
-            const mag_bfloat16_t *bpp = bp + jr/MAG_GEMM_NR*np*MAG_GEMM_NR*2;
-            for (int64_t ir=0; ir < mct; ir += MAG_GEMM_MR)
-              mag_gemm_ukernel_bf16_dp(np, ap + ir/MAG_GEMM_MR*np*MAG_GEMM_MR*2, bpp, cc + (ic+ir)*ldc + jr, ldc);
-          }
-        }
-      }
-      mag_gemm_store_c_mag_bfloat16_t(rb + ib*N + jc, N, cc, ldc, mbt, nct);
+  int64_t KC = mag_vmin((int64_t)MAG_GEMM_KC, K);
+  int64_t mbt = m1-m0;
+  int64_t nct = n1-n0;
+  int64_t ldc = mag_gemm_round_up(nct, MAG_GEMM_NR);
+  memset(cc, 0, (size_t)(mag_gemm_round_up(mbt, MAG_GEMM_MR)*ldc)*sizeof(*cc));
+  for (int64_t pc=0; pc < K; pc += KC) {
+    int64_t kct = mag_vmin(KC, K-pc);
+    int64_t np = MAG_GEMM_BF16_NPAIRS(kct);
+    if (pack_b || pc) mag_gemm_pack_b_bf16_dp(bp, yb + pc*sy0 + n0*sy1, kct, nct, sy0, sy1);
+    mag_gemm_pack_a_bf16_dp(ap, xb + m0*sx0 + pc*sx1, mbt, kct, sx0, sx1);
+    for (int64_t jr=0; jr < nct; jr += MAG_GEMM_NR) {
+      const mag_bfloat16_t *bpp = bp + jr/MAG_GEMM_NR*np*MAG_GEMM_NR*2;
+      for (int64_t ir=0; ir < mbt; ir += MAG_GEMM_MR)
+        mag_gemm_ukernel_bf16_dp(np, ap + ir/MAG_GEMM_MR*np*MAG_GEMM_MR*2, bpp, cc + ir*ldc + jr, ldc);
     }
   }
-  mag_scratch_arena_reset(&mag_tls_arena, mark);
+  mag_gemm_store_c_mag_bfloat16_t(rb + m0*N + n0, N, cc, ldc, mbt, nct);
 }
 
-static MAG_HOTPROC void mag_matmul_gemm_impl(
+static MAG_HOTPROC void mag_gemm_tile_f32(
   mag_dtype_t dtype,
-  int64_t ti,
-  int64_t tc,
-  int64_t M,
-  int64_t N,
-  int64_t K,
-  void *restrict pr,
+  int64_t m0, int64_t m1, int64_t n0, int64_t n1,
+  int64_t N, int64_t K, bool pack_b,
+  void *pr,
   const void *px, int64_t sx0, int64_t sx1,
-  const void *py, int64_t sy0, int64_t sy1
+  const void *py, int64_t sy0, int64_t sy1,
+  float *ap, float *bp, float *cc
 ) {
-  static mag_gemm_pack_a_t *const mag_gemm_lut_pack_a[4] = {
+  static mag_gemm_pack_a_t *const lut_pack_a[4] = {
     [MAG_DTYPE_FLOAT32] = &mag_gemm_pack_a_float,
     [MAG_DTYPE_FLOAT16] = &mag_gemm_pack_a_mag_float16_t,
     [MAG_DTYPE_BFLOAT16] = &mag_gemm_pack_a_mag_bfloat16_t,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gemm_pack_a_mag_float8_e4m3fn_t
   };
-  static mag_gemm_pack_b_t *const mag_gemm_lut_pack_b[4] = {
+  static mag_gemm_pack_b_t *const lut_pack_b[4] = {
     [MAG_DTYPE_FLOAT32] = &mag_gemm_pack_b_float,
     [MAG_DTYPE_FLOAT16] = &mag_gemm_pack_b_mag_float16_t,
     [MAG_DTYPE_BFLOAT16] = &mag_gemm_pack_b_mag_bfloat16_t,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gemm_pack_b_mag_float8_e4m3fn_t
   };
-  static mag_gemm_store_c_t *const mag_gemm_lut_store_c[4] = {
+  static mag_gemm_store_c_t *const lut_store_c[4] = {
     [MAG_DTYPE_FLOAT32] = &mag_gemm_store_c_float,
     [MAG_DTYPE_FLOAT16] = &mag_gemm_store_c_mag_float16_t,
     [MAG_DTYPE_BFLOAT16] = &mag_gemm_store_c_mag_bfloat16_t,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gemm_store_c_mag_float8_e4m3fn_t
   };
-  if (M <= MAG_GEMM_THIN_MAX_M && sx1 == 1 && (sy1 == K ? sy0 == 1 : (sy0 == N && sy1 == 1))) {
-    bool nt = sy1 == K;
-    int64_t nchunk = (N + tc-1)/tc;
-    nchunk = (nchunk + MAG_VF32_LANES-1)&~(MAG_VF32_LANES-1);
-    int64_t n0 = ti*nchunk;
-    int64_t n1 = mag_vmin(N, n0+nchunk);
-    if (mag_unlikely(n0 >= n1)) return;
-    mag_gemm_thin(dtype, nt, 0, M, n0, n1, N, K, pr, px, sx0, py, sy0, sy1);
-    return;
-  }
-  int64_t tm, tn;
-  mag_gemm_thread_grid(tc, M, N, &tm, &tn);
-  int64_t mchunk = (M + tm-1)/tm;
-  int64_t nchunk = (N + tn-1)/tn;
-  int64_t m0 = ti/tn*mchunk;
-  int64_t m1 = mag_vmin(M, m0+mchunk);
-  int64_t n0 = ti%tn*nchunk;
-  int64_t n1 = mag_vmin(N, n0+nchunk);
-  if (mag_unlikely(m0 >= m1 || n0 >= n1)) return;
-
-  #if MAG_HAS_NATIVE_DPBF16
-    if (dtype == MAG_DTYPE_BFLOAT16) {
-      mag_gemm_packed_bf16_dp(m0, m1, n0, n1, N, K, pr, px, sx0, sx1, py, sy0, sy1);
-      return;
-    }
-  #endif
   int64_t el = (int64_t)mag_type_trait(dtype)->size;
-  int64_t KC = mag_vmin((int64_t)MAG_GEMM_KC, K);
-  int64_t NC = mag_vmin((int64_t)MAG_GEMM_NC, n1-n0);
-  int64_t MB = mag_vmin((int64_t)MAG_GEMM_MB, m1-m0);
-  int64_t apad = (mag_vmin((int64_t)MAG_GEMM_MC, MB) + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
-  int64_t ldc_max = (NC + MAG_GEMM_NR-1)/MAG_GEMM_NR*MAG_GEMM_NR;
-  int64_t mb_max = (MB + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR;
-  size_t ap_nb = mag_gemm_align_up((size_t)(apad*KC)*sizeof(float));
-  size_t bp_nb = mag_gemm_align_up((size_t)(ldc_max*KC)*sizeof(float));
-  size_t cc_nb = mag_gemm_align_up((size_t)(mb_max*ldc_max)*sizeof(float));
-  size_t mark = mag_scratch_arena_mark(&mag_tls_arena);
-  uint8_t *blk = mag_scratch_arena_alloc(&mag_tls_arena, ap_nb + bp_nb + cc_nb);
-  float *ap = (float *)blk;
-  float *bp = (float *)(blk + ap_nb);
-  float *cc = (float *)(blk + ap_nb + bp_nb);
   const uint8_t *xb = px;
   const uint8_t *yb = py;
   uint8_t *rb = pr;
-  for (int64_t ib=m0; ib < m1; ib += MB) {
-    int64_t mbt = mag_vmin(MB, m1-ib);
-    for (int64_t jc=n0; jc < n1; jc += NC) {
-      int64_t nct = mag_vmin(NC, n1-jc);
-      int64_t ldc = (nct + MAG_GEMM_NR-1)/MAG_GEMM_NR*MAG_GEMM_NR;
-      memset(cc, 0, (size_t)((mbt + MAG_GEMM_MR-1)/MAG_GEMM_MR*MAG_GEMM_MR*ldc)*sizeof(*cc));
-      for (int64_t pc=0; pc < K; pc += KC) {
-        int64_t kct = mag_vmin(KC, K-pc);
-        (*mag_gemm_lut_pack_b[dtype])(bp, yb + (pc*sy0 + jc*sy1)*el, kct, nct, sy0, sy1);
-        for (int64_t ic=0; ic < mbt; ic += MAG_GEMM_MC) {
-          int64_t mct = mag_vmin((int64_t)MAG_GEMM_MC, mbt-ic);
-          (*mag_gemm_lut_pack_a[dtype])(ap, xb + ((ib+ic)*sx0 + pc*sx1)*el, mct, kct, sx0, sx1);
-          for (int64_t jr=0; jr < nct; jr += MAG_GEMM_NR) {
-            const float *bpp = bp + jr/MAG_GEMM_NR*kct*MAG_GEMM_NR;
-            for (int64_t ir=0; ir < mct; ir += MAG_GEMM_MR)
-              mag_gemm_ukernel(kct, ap + ir/MAG_GEMM_MR*kct*MAG_GEMM_MR, bpp, cc + (ic+ir)*ldc + jr, ldc);
-          }
-        }
-      }
-      (*mag_gemm_lut_store_c[dtype])(rb + (ib*N + jc)*el, N, cc, ldc, mbt, nct);
+  int64_t KC = mag_vmin((int64_t)MAG_GEMM_KC, K);
+  int64_t mbt = m1-m0;
+  int64_t nct = n1-n0;
+  int64_t ldc = mag_gemm_round_up(nct, MAG_GEMM_NR);
+  memset(cc, 0, (size_t)(mag_gemm_round_up(mbt, MAG_GEMM_MR)*ldc)*sizeof(*cc));
+  for (int64_t pc=0; pc < K; pc += KC) {
+    int64_t kct = mag_vmin(KC, K-pc);
+    if (pack_b || pc) (*lut_pack_b[dtype])(bp, yb + (pc*sy0 + n0*sy1)*el, kct, nct, sy0, sy1);
+    (*lut_pack_a[dtype])(ap, xb + (m0*sx0 + pc*sx1)*el, mbt, kct, sx0, sx1);
+    for (int64_t jr=0; jr < nct; jr += MAG_GEMM_NR) {
+      const float *bpp = bp + jr/MAG_GEMM_NR*kct*MAG_GEMM_NR;
+      for (int64_t ir=0; ir < mbt; ir += MAG_GEMM_MR)
+        mag_gemm_ukernel(kct, ap + ir/MAG_GEMM_MR*kct*MAG_GEMM_MR, bpp, cc + ir*ldc + jr, ldc);
     }
+  }
+  (*lut_store_c[dtype])(rb + (m0*N + n0)*el, N, cc, ldc, mbt, nct);
+}
+
+static MAG_HOTPROC void mag_matmul_gemm_impl(
+  const mag_kernel_payload_t *payload,
+  mag_dtype_t dtype,
+  int64_t M,
+  int64_t N,
+  int64_t K,
+  int64_t batch,
+  mag_gemm_resolve_batch_t *resolve,
+  const void *user,
+  void *restrict pr,
+  const void *px, int64_t sx0, int64_t sx1,
+  const void *py, int64_t sy0, int64_t sy1
+) {
+  int64_t tc = payload->thread_num;
+  bool thin = M <= MAG_GEMM_THIN_MAX_M && sx1 == 1 && (sy1 == K ? sy0 == 1 : (sy0 == N && sy1 == 1));
+  bool bf16_dp = false;
+  #if MAG_HAS_NATIVE_DPBF16
+    bf16_dp = !thin && dtype == MAG_DTYPE_BFLOAT16;
+  #endif
+  int64_t mt, nt;
+  mag_gemm_pick_tiles(tc, batch, M, N, K, !thin, &mt, &nt);
+  int64_t tiles_m = (M + mt-1)/mt;
+  int64_t tiles_n = (N + nt-1)/nt;
+  int64_t tiles_per_batch = tiles_m*tiles_n;
+  int64_t total = batch*tiles_per_batch;
+  size_t mark = mag_scratch_arena_mark(&mag_tls_arena);
+  uint8_t *blk = NULL;
+  size_t ap_nb = 0, bp_nb = 0;
+  if (!thin) {
+    int64_t KC = mag_vmin((int64_t)MAG_GEMM_KC, K);
+    int64_t apad = mag_gemm_round_up(mt, MAG_GEMM_MR);
+    int64_t ldc_max = mag_gemm_round_up(nt, MAG_GEMM_NR);
+    int64_t kdepth = bf16_dp ? MAG_GEMM_BF16_NPAIRS(KC)*2 : KC;
+    size_t el = bf16_dp ? sizeof(mag_bfloat16_t) : sizeof(float);
+    ap_nb = mag_gemm_align_up((size_t)(apad*kdepth)*el);
+    bp_nb = mag_gemm_align_up((size_t)(ldc_max*kdepth)*el);
+    size_t cc_nb = mag_gemm_align_up((size_t)(apad*ldc_max)*sizeof(float));
+    blk = mag_scratch_arena_alloc(&mag_tls_arena, ap_nb + bp_nb + cc_nb);
+  }
+  bool b_reusable = !thin && K <= MAG_GEMM_KC;
+  int64_t packed_batch = -1;
+  int64_t packed_jc = -1;
+  for (int64_t t=payload->thread_idx; t < total; t = tc + mag_tile_sched_acquire_next(payload->tile_sched)) {
+    int64_t b = t/tiles_per_batch;
+    int64_t rem = t%tiles_per_batch;
+    int64_t jc = rem/tiles_m;
+    int64_t ic = rem%tiles_m;
+    void *tpr = pr;
+    const void *tpx = px;
+    const void *tpy = py;
+    if (resolve) (*resolve)(user, b, &tpr, &tpx, &tpy);
+    int64_t m0 = ic*mt;
+    int64_t m1 = mag_vmin(M, m0+mt);
+    int64_t n0 = jc*nt;
+    int64_t n1 = mag_vmin(N, n0+nt);
+    if (thin) {
+      mag_gemm_thin(dtype, sy1 == K, m0, m1, n0, n1, N, K, tpr, tpx, sx0, tpy, sy0, sy1);
+      continue;
+    }
+    bool pack_b = !(b_reusable && packed_batch == b && packed_jc == jc);
+    if (bf16_dp)
+      mag_gemm_tile_bf16_dp(m0, m1, n0, n1, N, K, pack_b, tpr, tpx, sx0, sx1, tpy, sy0, sy1, (mag_bfloat16_t *)blk, (mag_bfloat16_t *)(blk + ap_nb), (float *)(blk + ap_nb + bp_nb));
+    else
+      mag_gemm_tile_f32(dtype, m0, m1, n0, n1, N, K, pack_b, tpr, tpx, sx0, sx1, tpy, sy0, sy1, (float *)blk, (float *)(blk + ap_nb), (float *)(blk + ap_nb + bp_nb));
+    packed_batch = b;
+    packed_jc = jc;
   }
   mag_scratch_arena_reset(&mag_tls_arena, mark);
 }
@@ -585,10 +593,8 @@ static MAG_HOTPROC void mag_matmul_gemm(const mag_kernel_payload_t *payload) {
   int64_t sx1 = x->meta.coords.strides[1];
   int64_t sy0 = y->meta.coords.strides[0];
   int64_t sy1 = y->meta.coords.strides[1];
-  int64_t ti = payload->thread_idx;
-  int64_t tc = payload->thread_num;
   void *restrict pr = (void *)mag_tensor_data_ptr_mut(r);
   const void *px = (const void *)mag_tensor_data_ptr(x);
   const void *py = (const void *)mag_tensor_data_ptr(y);
-  mag_matmul_gemm_impl(r->meta.dtype, ti, tc, M, N, K, pr, px, sx0, sx1, py, sy0, sy1);
+  mag_matmul_gemm_impl(payload, r->meta.dtype, M, N, K, 1, NULL, NULL, pr, px, sx0, sx1, py, sy0, sy1);
 }
