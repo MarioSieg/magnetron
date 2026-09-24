@@ -537,6 +537,13 @@ extern MAG_EXPORT mag_status_t mag_ctx_set_default_device(mag_error_t *err, mag_
 extern MAG_EXPORT mag_status_t mag_ctx_best_device(mag_error_t *err, mag_context_t *ctx, mag_backend_type_t type, mag_device_id_t *out_id);
 
 /**
+ * Checks if any tensors or storage buffers are still alive and reference the context, which means the context must stay alive longer.
+ * @param ctx Context
+ * @return true if any tensors or storages alive, else false.
+ */
+extern MAG_EXPORT bool mag_ctx_tensors_alive(mag_context_t *ctx);
+
+/**
  * Destroy a context and release its resources. All tensors created from it should have been released.
  *
  * @param ctx Context to destroy.

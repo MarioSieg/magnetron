@@ -30,7 +30,10 @@ namespace mag::bindings {
         m_comm = std::exchange(rhs.m_comm, nullptr);
         return *this;
       }
-      ~communicator_wrapper() noexcept { destroy(); }
+      ~communicator_wrapper() noexcept {
+        destroy();
+        release_ctx_if_pending();
+      }
 
       void destroy() noexcept {
         if (auto *comm = std::exchange(m_comm, nullptr))

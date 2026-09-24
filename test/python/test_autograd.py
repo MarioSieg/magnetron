@@ -5,6 +5,7 @@ import random
 import torch
 
 import magnetron as mag
+from magnetron import nn
 
 
 def test_autograd_simple() -> None:
@@ -149,7 +150,7 @@ def test_cross_entropy_matches_torch_and_is_stable() -> None:
     targets = torch.tensor([1, 0, 1, 0])
     x = mag.Tensor(logits.tolist(), requires_grad=True)
     y = mag.Tensor(targets.tolist(), dtype=mag.dtype.int64).one_hot(2).cast(mag.dtype.float32)
-    loss = mag.nn.CrossEntropyLoss()(x, y)
+    loss = nn.CrossEntropyLoss()(x, y)
     loss.backward()
     ref = torch.nn.functional.cross_entropy(logits, targets)
     ref.backward()

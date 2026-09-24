@@ -34,6 +34,7 @@ namespace mag::bindings {
 
   // Lazy init the context, destruction is handled by the module destructor.
   [[nodiscard]] extern mag_context_t *get_ctx();
+  extern void release_ctx_if_pending() noexcept;
   [[nodiscard]] extern std::string get_default_device();
 
   // Set to 1 to enable record and profile all executed operators and export them to a CSV
@@ -80,25 +81,24 @@ namespace mag::bindings {
     tensor_wrapper &operator=(const tensor_wrapper &other) noexcept {
       if (this != &other) {
         if (other.m_tensor) mag_tensor_incref(other.m_tensor);
-        if (m_tensor) mag_tensor_decref(m_tensor);
+        release(m_tensor);
         m_tensor = other.m_tensor;
       }
       return *this;
     }
     tensor_wrapper &operator=(tensor_wrapper &&other) noexcept {
       if (this != &other) {
-        if (m_tensor) mag_tensor_decref(m_tensor);
+        release(m_tensor);
         m_tensor = other.m_tensor;
         other.m_tensor = nullptr;
       }
       return *this;
     }
     ~tensor_wrapper() {
-      if (m_tensor) mag_tensor_decref(m_tensor);
+      release(m_tensor);
     }
     void reset_owned(mag_tensor_t *next) noexcept {
-      mag_tensor_t *prev = __atomic_exchange_n(&m_tensor, next, __ATOMIC_ACQ_REL);
-      if (prev) mag_tensor_decref(prev);
+      release(__atomic_exchange_n(&m_tensor, next, __ATOMIC_ACQ_REL));
     }
     void replace_shared(const tensor_wrapper &other) noexcept {
       mag_tensor_t *next = __atomic_load_n(&other.m_tensor, __ATOMIC_ACQUIRE);
@@ -111,6 +111,12 @@ namespace mag::bindings {
     constexpr mag_tensor_t *&operator * () noexcept { return m_tensor; }
 
   private:
+    static void release(mag_tensor_t *t) noexcept {
+      if (!t) return;
+      mag_tensor_decref(t);
+      release_ctx_if_pending();
+    }
+
     mag_tensor_t *m_tensor = nullptr;
   };
   static_assert(sizeof(tensor_wrapper) == sizeof(mag_tensor_t *), "tensor_wrapper should have the same size as a raw pointer.");

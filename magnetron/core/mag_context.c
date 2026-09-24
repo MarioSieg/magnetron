@@ -269,6 +269,11 @@ mag_status_t mag_ctx_best_device(mag_error_t *err, mag_context_t *ctx, mag_backe
   return MAG_OK;
 }
 
+bool mag_ctx_tensors_alive(mag_context_t* ctx) {
+  return mag_atomic64_load(&ctx->telemetry.num_alive_tensors, MAG_MO_ACQUIRE) > 0
+    || mag_atomic64_load(&ctx->telemetry.num_alive_storages, MAG_MO_ACQUIRE) > 0;
+}
+
 mag_dtype_t mag_ctx_default_dtype(mag_context_t *ctx) { /* TODO: maybe remove ctx here */
   (void)ctx;
   return mag_tls_state.dtype;

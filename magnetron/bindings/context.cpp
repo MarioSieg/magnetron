@@ -18,7 +18,8 @@
 
 namespace mag::bindings {
   static std::once_flag g_ctx_once;
-  static std::atomic<mag_context_t*> g_ctx{nullptr};
+  static std::atomic<mag_context_t*> g_ctx = nullptr;
+  static std::atomic<bool> g_ctx_shutdown_pending = false;
 
   mag_context_t *get_ctx() {
     std::call_once(g_ctx_once, [] {
@@ -36,9 +37,27 @@ namespace mag::bindings {
     return std::string {buf};
   }
 
+  static bool ctx_is_idle(mag_context_t *ctx) noexcept {
+    return !mag_ctx_tensors_alive(ctx);
+  }
+
+  static void destroy_ctx_now(mag_context_t *ctx) noexcept {
+    if (!g_ctx.compare_exchange_strong(ctx, nullptr, std::memory_order_acq_rel)) return;
+    g_ctx_shutdown_pending.store(false, std::memory_order_release);
+    mag_ctx_destroy(ctx, false);
+  }
+
   static void destroy_ctx(void *) noexcept {
-    if (mag_context_t* ctx = g_ctx.exchange(nullptr, std::memory_order_acq_rel))
-      mag_ctx_destroy(ctx, false);
+    auto *ctx = g_ctx.load(std::memory_order_acquire);
+    if (!ctx) return;
+    g_ctx_shutdown_pending.store(true, std::memory_order_release);
+    if (ctx_is_idle(ctx)) destroy_ctx_now(ctx);
+  }
+
+  void release_ctx_if_pending() noexcept {
+    if (!g_ctx_shutdown_pending.load(std::memory_order_acquire)) return;
+    auto *ctx = g_ctx.load(std::memory_order_acquire);
+    if (ctx && ctx_is_idle(ctx)) destroy_ctx_now(ctx);
   }
 
   void init_bindings_context(nb::module_ &m) {
