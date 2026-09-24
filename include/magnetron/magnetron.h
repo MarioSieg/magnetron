@@ -1564,6 +1564,24 @@ extern MAG_EXPORT mag_status_t mag_split(
 );
 
 /**
+ * Remove @p dim from @p x and return one view per index along it. Views share storage with @p x.
+ *
+ * @param err Error output; set when the call fails.
+ * @param outs Array of @p num_outs entries receiving the views; the caller owns one reference each.
+ * @param num_outs Expected output count, equal to the size of @p dim.
+ * @param x Input tensor.
+ * @param dim Axis; negative values count from the end.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_unbind(
+  mag_error_t *err,
+  mag_tensor_t **outs,
+  int64_t num_outs,
+  mag_tensor_t *x,
+  int64_t dim
+);
+
+/**
  * Compute the mean of @p x over the given dims.
  *
  * @param err Error output; set when the call fails.

@@ -155,3 +155,15 @@ def test_cross_entropy_matches_torch_and_is_stable() -> None:
     ref.backward()
     torch.testing.assert_close(torch.tensor(loss.item()), ref.detach(), rtol=1e-4, atol=1e-5)
     torch.testing.assert_close(torch.tensor(x.grad.tolist()), logits.grad, rtol=1e-4, atol=1e-5)
+
+
+def test_unbind_backward_matches_torch() -> None:
+    x = mag.Tensor.uniform(3, 4, requires_grad=True)
+    tx = torch.tensor(x.tolist(), dtype=torch.float32, requires_grad=True)
+    a, b, c = x.unbind(0)
+    ta, tb, tc = tx.unbind(0)
+    y = (a * 2.0 + b * 3.0 + c * 5.0).sum()
+    ty = (ta * 2.0 + tb * 3.0 + tc * 5.0).sum()
+    y.backward()
+    ty.backward()
+    torch.testing.assert_close(torch.tensor(x.grad.tolist()), tx.grad)

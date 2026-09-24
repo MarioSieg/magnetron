@@ -535,6 +535,23 @@ def test_split(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_unbind(device: str) -> None:
+    x = Tensor.arange(6, device=device).reshape(3, 2)
+    rows = x.unbind()
+    assert isinstance(rows, tuple)
+    assert len(rows) == 3
+    assert [r.tolist() for r in rows] == [[0, 1], [2, 3], [4, 5]]
+    cols = x.unbind(1)
+    assert len(cols) == 2
+    assert [c.tolist() for c in cols] == [[0, 2, 4], [1, 3, 5]]
+    assert [c.tolist() for c in x.unbind(-1)] == [[0, 2, 4], [1, 3, 5]]
+    assert rows[0].shape == (2,)
+    assert cols[0].shape == (3,)
+    assert x.unbind(0)[1].data_ptr == x.select(0, 1).data_ptr
+    assert Tensor.stack(list(rows), dim=0).tolist() == x.tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_eye(device: str) -> None:
     assert_close_mag_torch(Tensor.eye(3, device=device), torch.eye(3), dtype.float32)
     assert_close_mag_torch(Tensor.eye(2, 4, device=device), torch.eye(2, 4), dtype.float32)

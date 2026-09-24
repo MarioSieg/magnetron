@@ -1001,6 +1001,31 @@ mag_status_t mag_split(mag_error_t *err, mag_tensor_t **outs, int64_t num_splits
   return MAG_OK;
 }
 
+mag_status_t mag_unbind(mag_error_t *err, mag_tensor_t **outs, int64_t num_outs, mag_tensor_t *x, int64_t dim) {
+  int64_t rank = x->meta.coords.rank;
+  if (mag_unlikely(rank <= 0))
+      return mag_set_error(err, MAG_ERR_RANK, "unbind: cannot unbind a scalar tensor.");
+  mag_norm_axis(&dim, rank);
+  if (mag_unlikely(!(0 <= dim && dim < rank)))
+      return mag_set_error(err, MAG_ERR_RANK, "unbind: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
+  int64_t ax = x->meta.coords.shape[dim];
+  if (mag_unlikely(!(num_outs == ax)))
+      return mag_set_error(err, MAG_ERR_PARAM, "unbind: number of outputs (%" PRIi64 ") does not match the size of dim (%" PRIi64 ").", num_outs, ax);
+  if (!num_outs) return MAG_OK;
+  memset(outs, 0, sizeof(*outs)*num_outs);
+  for (int64_t i=0; i < num_outs; ++i) {
+    mag_status_t status = mag_select(err, outs+i, x, dim, i);
+    if (mag_iserr(status)) {
+      for (int64_t j=0; j < i; ++j) {
+        mag_tensor_decref(outs[j]);
+        outs[j] = NULL;
+      }
+      return status;
+    }
+  }
+  return MAG_OK;
+}
+
 mag_status_t mag_mean(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
   return mag_op_stub_reduction(err, out_result, MAG_OP_MEAN, x, dims, rank, keepdim);
 }

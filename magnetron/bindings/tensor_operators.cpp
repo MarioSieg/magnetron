@@ -686,6 +686,29 @@ namespace mag::bindings {
       "split_size"_a, "dim"_a = 0,
       "Split into chunks of split_size along dim. Returns tuple of tensors."
     )
+    .def("unbind",
+      [](const tensor_wrapper &self, int64_t dim = 0) -> nb::tuple {
+        int64_t rank = mag_tensor_rank(*self);
+        if (rank == 0) throw std::runtime_error("unbind is not defined for 0-dim tensors");
+        if (dim < 0) dim += rank;
+        if (dim < 0 || dim >= rank) throw nb::index_error("unbind: dim out of range");
+        int64_t n = mag_tensor_shape_ptr(*self)[dim];
+        if (n == 0) return nb::steal<nb::tuple>(PyTuple_New(0));
+        std::vector<mag_tensor_t*> outs(static_cast<size_t>(n), nullptr);
+        mag_error_t err {};
+        throw_if_error(call_without_gil([&] { return mag_unbind(&err, outs.data(), n, *self, dim); }), err);
+        PyObject *t = PyTuple_New(n);
+        if (!t) throw nb::python_error();
+        for (int64_t i=0; i < n; ++i) {
+          tensor_wrapper tw{outs[static_cast<size_t>(i)]};
+          nb::object obj = nb::cast(tw);
+          PyTuple_SET_ITEM(t, i, obj.release().ptr());
+        }
+        return nb::steal<nb::tuple>(t);
+      },
+      "dim"_a = 0,
+      "Remove dim and return a tuple of views, one per index along it."
+    )
     .def("mean",
       [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
         auto ax = parse_reduction_axes(dim);
