@@ -11,6 +11,8 @@
 
 #include "prelude.hpp"
 
+#include <cstdlib>
+
 namespace mag::bindings {
   extern void init_bindings_context(nb::module_ &m);
   extern void init_bindings_dtype(nb::module_ &m);
@@ -23,6 +25,7 @@ namespace mag::bindings {
 NB_MODULE(_magnetron_bindings, m) {
 
   m.doc() = "A compact, bloat-free machine learning framework with CPU and CUDA acceleration.";
+  nanobind::set_leak_warnings(std::getenv("MAGNETRON_LEAK_WARNINGS") != nullptr);
 
   // Export metadata
   std::array<char, 64> version_buf {};

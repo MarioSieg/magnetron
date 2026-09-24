@@ -44,3 +44,22 @@ Example:
 ```bash
 export MAG_CPU_SPECIALIZATION_LEVEL=v3
 ```
+
+## MAGNETRON_LEAK_WARNINGS
+
+Read directly by the Python bindings in [`magnetron/bindings/_module.cpp`](../magnetron/bindings/_module.cpp),
+not through `mag_envcfg`; the core library never sees it.
+
+Enables nanobind's exit-time report of binding objects that were never freed. It is off by default
+because pytest with numpy or torch loaded keeps parametrized `DType` values alive through interpreter
+shutdown, which the report flags as a leak even though the bindings are correct. Set it when hunting
+a real reference-counting bug in the bindings from a plain Python script.
+
+Allowed values:
+- any non-empty value – enable the report
+- unset – disable (default)
+
+Example:
+```bash
+export MAGNETRON_LEAK_WARNINGS=1
+```
