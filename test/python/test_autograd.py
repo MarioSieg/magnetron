@@ -2,8 +2,9 @@
 
 import random
 
-import magnetron as mag
 import torch
+
+import magnetron as mag
 
 
 def test_autograd_simple() -> None:
@@ -127,3 +128,30 @@ def test_detach_clears_requires_grad_and_shares_storage() -> None:
     assert d.requires_grad and t.requires_grad
 
     assert t.clone().requires_grad, 'clone() keeps the flag, unlike detach()'
+
+
+def test_reduction_backward_without_keepdim() -> None:
+    for shape, dim, op in [((32, 2), -1, 'sum'), ((32, 2), -1, 'mean'), ((4, 3, 2), 1, 'sum'), ((4, 3, 2), (0, 2), 'mean'), ((32, 2), 0, 'sum')]:
+        xt = torch.rand(*shape, requires_grad=True)
+        wt = torch.rand(*shape)
+        x = mag.Tensor(xt.tolist(), requires_grad=True)
+        w = mag.Tensor(wt.tolist())
+        r = getattr(x * w, op)(dim=dim)
+        (r * r).sum().backward()
+        rt = getattr(xt * wt, op)(dim=dim)
+        (rt * rt).sum().backward()
+        assert tuple(x.grad.shape) == tuple(shape)
+        torch.testing.assert_close(torch.tensor(x.grad.tolist()), xt.grad, rtol=1e-4, atol=1e-5)
+
+
+def test_cross_entropy_matches_torch_and_is_stable() -> None:
+    logits = torch.tensor([[0.0, 200.0], [-300.0, 5.0], [1.0, -1.0], [0.5, 0.5]], requires_grad=True)
+    targets = torch.tensor([1, 0, 1, 0])
+    x = mag.Tensor(logits.tolist(), requires_grad=True)
+    y = mag.Tensor(targets.tolist(), dtype=mag.dtype.int64).one_hot(2).cast(mag.dtype.float32)
+    loss = mag.nn.CrossEntropyLoss()(x, y)
+    loss.backward()
+    ref = torch.nn.functional.cross_entropy(logits, targets)
+    ref.backward()
+    torch.testing.assert_close(torch.tensor(loss.item()), ref.detach(), rtol=1e-4, atol=1e-5)
+    torch.testing.assert_close(torch.tensor(x.grad.tolist()), logits.grad, rtol=1e-4, atol=1e-5)

@@ -21,18 +21,42 @@ mag_status_t mag_op_backward_cast(mag_error_t *err, mag_au_state_t *node, mag_te
 }
 
 
+static mag_status_t mag_op_backward_reduce_grad_keepdim(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **out) {
+  mag_tensor_t *grad = node->grad;
+  const mag_reduce_plan_t *plan = node->params ? &node->params->reduction.red_plan : NULL;
+  if (!plan || plan->keepdim || !plan->rank || !plan->out_rank) {
+    mag_rc_incref(grad);
+    *out = grad;
+    return MAG_OK;
+  }
+  int64_t shape[MAG_MAX_DIMS];
+  int64_t k = 0;
+  for (int64_t dim=0; dim < plan->nd; ++dim) {
+    if (k < plan->rank && plan->axes[k] == dim) {
+      shape[dim] = 1;
+      ++k;
+    } else shape[dim] = plan->in_shape[dim];
+  }
+  return mag_reshape(err, out, grad, shape, plan->nd);
+}
+
 mag_status_t mag_op_backward_mean(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_status_t status = MAG_OK;
   mag_tensor_t *scale = NULL;
+  mag_tensor_t *grad = NULL;
 
+  status = mag_op_backward_reduce_grad_keepdim(err, node, &grad);
+  if (mag_iserr(status))
+    goto cleanup;
   status = mag_full_like(err, &scale, x, mag_scalar_from_float64((double)node->grad->meta.numel/(double)x->meta.numel));
   if (mag_iserr(status))
     goto cleanup;
-  status = mag_mul(err, grads, scale, node->grad);
+  status = mag_mul(err, grads, scale, grad);
 
 cleanup:
   if (scale) mag_rc_decref(scale);
+  if (grad) mag_rc_decref(grad);
   return status;
 }
 
@@ -40,14 +64,19 @@ mag_status_t mag_op_backward_sum(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *x = node->in[0];
   mag_status_t status = MAG_OK;
   mag_tensor_t *ones = NULL;
+  mag_tensor_t *grad = NULL;
 
+  status = mag_op_backward_reduce_grad_keepdim(err, node, &grad);
+  if (mag_iserr(status))
+    goto cleanup;
   status = mag_full_like(err, &ones, x, mag_scalar_from_float64(1.0));
   if (mag_iserr(status))
     goto cleanup;
-  status = mag_mul(err, grads, ones, node->grad);
+  status = mag_mul(err, grads, ones, grad);
 
 cleanup:
   if (ones) mag_rc_decref(ones);
+  if (grad) mag_rc_decref(grad);
   return status;
 }
 
