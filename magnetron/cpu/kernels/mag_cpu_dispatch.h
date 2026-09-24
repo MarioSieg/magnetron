@@ -11,6 +11,7 @@
 
 #include "../mag_cpu.h"
 #include "../mag_cpu_tls_arena.h"
+#include "../mag_cpu_acc.h"
 
 #include <core/mag_alloc.h>
 #include <core/mag_float16.h>

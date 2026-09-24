@@ -104,7 +104,7 @@ extern "C" {
 #define MAG_VF32_LANES ((int64_t)(sizeof(mag_vf32_t)/sizeof(float)))
 #define MAG_VBF16_LANES (MAG_VF32_LANES<<1)
 
-#if defined(__AVX512F__) && defined(__AVX512BF16__)
+#if (defined(__AVX512F__) && defined(__AVX512BF16__)) || defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC)
   #define MAG_HAS_NATIVE_DPBF16 1
 #else
   #define MAG_HAS_NATIVE_DPBF16 0
@@ -1198,7 +1198,9 @@ static MAG_AINLINE mag_vbf16_t mag_vbf16_broadcast_pair(const mag_bfloat16_t *p)
 }
 
 static MAG_AINLINE mag_vf32_t mag_vf32_dpbf16(mag_vf32_t acc, mag_vbf16_t x, mag_vbf16_t y) {
-  #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+  #if defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC)
+    return vbfdotq_f32(acc, vreinterpretq_bf16_u16(x), vreinterpretq_bf16_u16(y));
+  #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
     mag_vf32_t xlo = vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(x), 16));
     mag_vf32_t xhi = vreinterpretq_f32_u32(vshll_n_u16(vget_high_u16(x), 16));
     mag_vf32_t ylo = vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(y), 16));

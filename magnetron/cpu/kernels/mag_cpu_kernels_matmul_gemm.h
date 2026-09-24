@@ -47,6 +47,9 @@
 #ifndef MAG_GEMM_MIN_TILE_FLOPS
   #define MAG_GEMM_MIN_TILE_FLOPS (1<<20)
 #endif
+#ifndef MAG_GEMM_THIN_MIN_TILE_BYTES
+  #define MAG_GEMM_THIN_MIN_TILE_BYTES (256<<10) /* Thin (bandwidth bound) tiles stop shrinking below this many bytes of B. */
+#endif
 #define MAG_GEMM_MIN_MT (MAG_GEMM_MR*4)
 #define MAG_GEMM_MIN_NT (MAG_GEMM_NR*2)
 #define mag_gemm_round_up(x, m) (((x)+(m)-1)/(m)*(m))
@@ -181,64 +184,82 @@ mag_gemm_store_c_impl(mag_float8_e4m3fn_t, mag_float32_to_float8_e4m3fn, mag_vf3
 #define MAG_GEMM_THIN_NRD 4
 #define MAG_GEMM_THIN_NRV 2
 
-typedef void (mag_gemm_thin_nt_t)(int64_t md, int64_t nn, int64_t K, void *pr, int64_t ldr, const void *pa, int64_t lda, const void *pb, int64_t ldb);
-#define mag_gemm_thin_nt_impl(T, TtoF32, F32toT, LoadTtoF32) \
-  static MAG_HOTPROC void mag_gemm_thin_nt_##T(int64_t md, int64_t nn, int64_t K, void *pr, int64_t ldr, const void *pa, int64_t lda, const void *pb, int64_t ldb) { \
+typedef void (mag_gemm_thin_nt_tail_t)(int64_t md, int64_t nn, int64_t K, void *pr, int64_t ldr, const void *pa, int64_t lda, const void *pb, int64_t ldb);
+#define mag_gemm_thin_nt_tail_impl(T, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_gemm_thin_nt_tail_##T(int64_t md, int64_t nn, int64_t K, void *pr, int64_t ldr, const void *pa, int64_t lda, const void *pb, int64_t ldb) { \
     T *restrict r = (T *)pr; \
     const T *a = (const T *)pa; \
     const T *b = (const T *)pb; \
-    mag_vf32_t acc[MAG_GEMM_THIN_MR][MAG_GEMM_THIN_NRD]; \
-    for (int64_t i=0; i < md; ++i) for (int64_t j=0; j < nn; ++j) acc[i][j] = mag_vf32_zero(); \
-    int64_t k = 0; \
-    for (; k+MAG_VF32_LANES-1 < K; k += MAG_VF32_LANES) { \
-      mag_vf32_t bv[MAG_GEMM_THIN_NRD]; \
-      for (int64_t j=0; j < nn; ++j) bv[j] = LoadTtoF32(b + j*ldb + k); \
-      for (int64_t i=0; i < md; ++i) { \
-        mag_vf32_t av = LoadTtoF32(a + i*lda + k); \
-        for (int64_t j=0; j < nn; ++j) acc[i][j] = mag_vf32_fmadd(av, bv[j], acc[i][j]); \
-      } \
-    } \
     for (int64_t i=0; i < md; ++i) { \
       for (int64_t j=0; j < nn; ++j) { \
-        float s = mag_vf32_reduce_add(acc[i][j]); \
+        float s = 0.f; \
+        for (int64_t k=0; k < K; ++k) s += TtoF32(a[i*lda + k])*TtoF32(b[j*ldb + k]); \
+        r[i*ldr + j] = F32toT(s); \
+      } \
+    } \
+  }
+mag_gemm_thin_nt_tail_impl(float, mag_cvt_nop, mag_cvt_nop)
+mag_gemm_thin_nt_tail_impl(mag_float16_t, mag_float16_to_float32, mag_float32_to_float16)
+mag_gemm_thin_nt_tail_impl(mag_bfloat16_t, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
+mag_gemm_thin_nt_tail_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
+#undef mag_gemm_thin_nt_tail_impl
+
+#define mag_gemm_dot_fma(acc, a, b) mag_vf32_fmadd(a, b, acc)
+
+typedef void (mag_gemm_thin_nt_t)(int64_t K, void *pr, int64_t ldr, const void *pa, int64_t lda, const void *pb, int64_t ldb);
+#define mag_gemm_thin_nt_impl(T, MD, KU, VT, LANES, LOAD, DOT, TtoF32, F32toT) \
+  static MAG_HOTPROC void mag_gemm_thin_nt_##T##_md##MD(int64_t K, void *pr, int64_t ldr, const void *pa, int64_t lda, const void *pb, int64_t ldb) { \
+    T *restrict r = (T *)pr; \
+    const T *a = (const T *)pa; \
+    const T *b = (const T *)pb; \
+    mag_vf32_t acc[KU][MD][MAG_GEMM_THIN_NRD]; \
+    for (int u=0; u < KU; ++u) for (int i=0; i < MD; ++i) for (int j=0; j < MAG_GEMM_THIN_NRD; ++j) acc[u][i][j] = mag_vf32_zero(); \
+    int64_t k = 0; \
+    for (; k+KU*LANES-1 < K; k += KU*LANES) { \
+      VT bv[KU][MAG_GEMM_THIN_NRD]; \
+      for (int u=0; u < KU; ++u) for (int j=0; j < MAG_GEMM_THIN_NRD; ++j) bv[u][j] = LOAD(b + j*ldb + k + u*LANES); \
+      for (int i=0; i < MD; ++i) { \
+        for (int u=0; u < KU; ++u) { \
+          VT av = LOAD(a + i*lda + k + u*LANES); \
+          for (int j=0; j < MAG_GEMM_THIN_NRD; ++j) acc[u][i][j] = DOT(acc[u][i][j], av, bv[u][j]); \
+        } \
+      } \
+    } \
+    for (; k+LANES-1 < K; k += LANES) { \
+      VT bv[MAG_GEMM_THIN_NRD]; \
+      for (int j=0; j < MAG_GEMM_THIN_NRD; ++j) bv[j] = LOAD(b + j*ldb + k); \
+      for (int i=0; i < MD; ++i) { \
+        VT av = LOAD(a + i*lda + k); \
+        for (int j=0; j < MAG_GEMM_THIN_NRD; ++j) acc[0][i][j] = DOT(acc[0][i][j], av, bv[j]); \
+      } \
+    } \
+    for (int i=0; i < MD; ++i) { \
+      for (int j=0; j < MAG_GEMM_THIN_NRD; ++j) { \
+        mag_vf32_t v = acc[0][i][j]; \
+        for (int u=1; u < KU; ++u) v = mag_vf32_add(v, acc[u][i][j]); \
+        float s = mag_vf32_reduce_add(v); \
         for (int64_t kk=k; kk < K; ++kk) s += TtoF32(a[i*lda + kk])*TtoF32(b[j*ldb + kk]); \
         r[i*ldr + j] = F32toT(s); \
       } \
     } \
   }
-mag_gemm_thin_nt_impl(float, mag_cvt_nop, mag_cvt_nop, mag_vf32_loadu)
-mag_gemm_thin_nt_impl(mag_float16_t, mag_float16_to_float32, mag_float32_to_float16, mag_vf32_loadu_f16)
-mag_gemm_thin_nt_impl(mag_float8_e4m3fn_t, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn)
+#define mag_gemm_thin_nt_impl_all(T, VT, LANES, LOAD, DOT, TtoF32, F32toT) \
+  mag_gemm_thin_nt_impl(T, 1, 2, VT, LANES, LOAD, DOT, TtoF32, F32toT) \
+  mag_gemm_thin_nt_impl(T, 2, 2, VT, LANES, LOAD, DOT, TtoF32, F32toT) \
+  mag_gemm_thin_nt_impl(T, 3, 1, VT, LANES, LOAD, DOT, TtoF32, F32toT) \
+  mag_gemm_thin_nt_impl(T, 4, 1, VT, LANES, LOAD, DOT, TtoF32, F32toT)
+mag_gemm_thin_nt_impl_all(float, mag_vf32_t, MAG_VF32_LANES, mag_vf32_loadu, mag_gemm_dot_fma, mag_cvt_nop, mag_cvt_nop)
+mag_gemm_thin_nt_impl_all(mag_float16_t, mag_vf32_t, MAG_VF32_LANES, mag_vf32_loadu_f16, mag_gemm_dot_fma, mag_float16_to_float32, mag_float32_to_float16)
+mag_gemm_thin_nt_impl_all(mag_float8_e4m3fn_t, mag_vf32_t, MAG_VF32_LANES, mag_vf32_loadu_float8_e4m3fn, mag_gemm_dot_fma, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
+#if MAG_HAS_NATIVE_DPBF16
+  mag_gemm_thin_nt_impl_all(mag_bfloat16_t, mag_vbf16_t, MAG_VBF16_LANES, mag_vbf16_loadu, mag_vf32_dpbf16, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
+#else
+  mag_gemm_thin_nt_impl_all(mag_bfloat16_t, mag_vf32_t, MAG_VF32_LANES, mag_vf32_loadu_bf16, mag_gemm_dot_fma, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
+#endif
+#undef mag_gemm_thin_nt_impl_all
 #undef mag_gemm_thin_nt_impl
 
-/* Specialized kernel */
-static MAG_HOTPROC void mag_gemm_thin_nt_mag_bfloat16_t(int64_t md, int64_t nn, int64_t K, void *pr, int64_t ldr, const void *pa, int64_t lda, const void *pb, int64_t ldb) {
-  mag_bfloat16_t *restrict r = pr;
-  const mag_bfloat16_t *a = pa;
-  const mag_bfloat16_t *b = pb;
-  mag_vf32_t vacc[MAG_GEMM_THIN_MR][MAG_GEMM_THIN_NRD];
-  for (int64_t i=0; i < md; ++i)
-    for (int64_t j=0; j < nn; ++j)
-      vacc[i][j] = mag_vf32_zero();
-  int64_t k = 0;
-  for (; k+MAG_VBF16_LANES-1 < K; k += MAG_VBF16_LANES) {
-    mag_vbf16_t bv[MAG_GEMM_THIN_NRD];
-    for (int64_t j=0; j < nn; ++j)
-      bv[j] = mag_vbf16_loadu(b + j*ldb + k);
-    for (int64_t i=0; i < md; ++i) {
-      mag_vbf16_t av = mag_vbf16_loadu(a + i*lda + k);
-      for (int64_t j=0; j < nn; ++j)
-        vacc[i][j] = mag_vf32_dpbf16(vacc[i][j], av, bv[j]);
-    }
-  }
-  for (int64_t i=0; i < md; ++i) {
-    for (int64_t j=0; j < nn; ++j) {
-      float acc = mag_vf32_reduce_add(vacc[i][j]);
-      for (int64_t kk=k; kk < K; ++kk) acc += mag_bfloat16_to_float32(a[i*lda + kk])*mag_bfloat16_to_float32(b[j*ldb + kk]);
-      r[i*ldr + j] = mag_float32_to_bfloat16(acc);
-    }
-  }
-}
+#define mag_gemm_thin_nt_lut_row(T) { NULL, &mag_gemm_thin_nt_##T##_md1, &mag_gemm_thin_nt_##T##_md2, &mag_gemm_thin_nt_##T##_md3, &mag_gemm_thin_nt_##T##_md4 }
 
 typedef void (mag_gemm_thin_nn_t)(int64_t md, int64_t nv, int64_t K, void *pr, int64_t ldr, const void *pa, int64_t lda, const void *pb, int64_t ldb);
 #define mag_gemm_thin_nn_impl(T, TtoF32, F32toT, LoadTtoF32, StoreF32toT) \
@@ -294,11 +315,17 @@ static MAG_HOTPROC void mag_gemm_thin(
   const void *px, int64_t sx0,
   const void *py, int64_t sy0, int64_t sy1
 ) {
-  static mag_gemm_thin_nt_t *const lut_nt[4] = {
-    [MAG_DTYPE_FLOAT32] = &mag_gemm_thin_nt_float,
-    [MAG_DTYPE_FLOAT16] = &mag_gemm_thin_nt_mag_float16_t,
-    [MAG_DTYPE_BFLOAT16] = &mag_gemm_thin_nt_mag_bfloat16_t,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gemm_thin_nt_mag_float8_e4m3fn_t
+  static mag_gemm_thin_nt_t *const lut_nt[4][MAG_GEMM_THIN_MR+1] = {
+    [MAG_DTYPE_FLOAT32] = mag_gemm_thin_nt_lut_row(float),
+    [MAG_DTYPE_FLOAT16] = mag_gemm_thin_nt_lut_row(mag_float16_t),
+    [MAG_DTYPE_BFLOAT16] = mag_gemm_thin_nt_lut_row(mag_bfloat16_t),
+    [MAG_DTYPE_FLOAT8_E4M3FN] = mag_gemm_thin_nt_lut_row(mag_float8_e4m3fn_t)
+  };
+  static mag_gemm_thin_nt_tail_t *const lut_nt_tail[4] = {
+    [MAG_DTYPE_FLOAT32] = &mag_gemm_thin_nt_tail_float,
+    [MAG_DTYPE_FLOAT16] = &mag_gemm_thin_nt_tail_mag_float16_t,
+    [MAG_DTYPE_BFLOAT16] = &mag_gemm_thin_nt_tail_mag_bfloat16_t,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gemm_thin_nt_tail_mag_float8_e4m3fn_t
   };
   static mag_gemm_thin_nn_t *const lut_nn[4] = {
     [MAG_DTYPE_FLOAT32] = &mag_gemm_thin_nn_float,
@@ -322,10 +349,10 @@ static MAG_HOTPROC void mag_gemm_thin(
     void *rrow = rb + i*N*el;
     if (nt) {
       int64_t j = n0;
-      for (; j < n1; j += MAG_GEMM_THIN_NRD) {
-        int64_t nn = mag_vmin((int64_t)MAG_GEMM_THIN_NRD, n1-j);
-        (*lut_nt[dtype])(md, nn, K, (uint8_t *)rrow + j*el, N, arow, sx0, yb + j*sy1*el, sy1);
-      }
+      for (; j+MAG_GEMM_THIN_NRD-1 < n1; j += MAG_GEMM_THIN_NRD)
+        (*lut_nt[dtype][md])(K, (uint8_t *)rrow + j*el, N, arow, sx0, yb + j*sy1*el, sy1);
+      if (j < n1)
+        (*lut_nt_tail[dtype])(md, n1-j, K, (uint8_t *)rrow + j*el, N, arow, sx0, yb + j*sy1*el, sy1);
     } else {
       int64_t j = n0;
       for (; j+MAG_GEMM_THIN_NRV*MAG_VF32_LANES-1 < n1; j += MAG_GEMM_THIN_NRV*MAG_VF32_LANES)
@@ -410,7 +437,7 @@ static MAG_HOTPROC void mag_gemm_ukernel_bf16_dp(int64_t npairs, const mag_bfloa
 
 typedef void (mag_gemm_resolve_batch_t)(const void *user, int64_t batch, void **pr, const void **px, const void **py);
 
-static void mag_gemm_pick_tiles(int64_t tc, int64_t batch, int64_t M, int64_t N, int64_t K, bool split_m, int64_t *pmt, int64_t *pnt) {
+static void mag_gemm_pick_tiles(int64_t tc, int64_t batch, int64_t M, int64_t N, int64_t K, int64_t el, bool split_m, int64_t *pmt, int64_t *pnt) {
   int64_t mt = split_m ? mag_vmin((int64_t)MAG_GEMM_MC, mag_gemm_round_up(M, MAG_GEMM_MR)) : M;
   int64_t nt = mag_vmin((int64_t)MAG_GEMM_NC, mag_gemm_round_up(N, MAG_GEMM_NR));
   if (tc > 1) {
@@ -424,7 +451,7 @@ static void mag_gemm_pick_tiles(int64_t tc, int64_t batch, int64_t M, int64_t N,
       int64_t nmt = mt, nnt = nt;
       if (can_m && (!can_n || mt >= nt)) nmt = mag_vmax((int64_t)MAG_GEMM_MIN_MT, mag_gemm_round_up((mt+1)/2, MAG_GEMM_MR));
       else nnt = mag_vmax((int64_t)MAG_GEMM_MIN_NT, mag_gemm_round_up((nt+1)/2, MAG_GEMM_NR));
-      if (2*mag_vmin(nmt, M)*mag_vmin(nnt, N)*K < MAG_GEMM_MIN_TILE_FLOPS) break;
+      if (split_m ? 2*mag_vmin(nmt, M)*mag_vmin(nnt, N)*K < MAG_GEMM_MIN_TILE_FLOPS : mag_vmin(nnt, N)*K*el < MAG_GEMM_THIN_MIN_TILE_BYTES) break;
       mt = nmt;
       nt = nnt;
     }
@@ -532,7 +559,7 @@ static MAG_HOTPROC void mag_matmul_gemm_impl(
     bf16_dp = !thin && dtype == MAG_DTYPE_BFLOAT16;
   #endif
   int64_t mt, nt;
-  mag_gemm_pick_tiles(tc, batch, M, N, K, !thin, &mt, &nt);
+  mag_gemm_pick_tiles(tc, batch, M, N, K, (int64_t)mag_type_trait(dtype)->size, !thin, &mt, &nt);
   int64_t tiles_m = (M + mt-1)/mt;
   int64_t tiles_n = (N + nt-1)/nt;
   int64_t tiles_per_batch = tiles_m*tiles_n;

@@ -11,6 +11,7 @@
 
 #include "mag_cpu_autotune.h"
 #include "mag_cpu.h"
+#include "mag_cpu_acc.h"
 
 #include <core/mag_context.h>
 #include <core/mag_tensor.h>
@@ -18,6 +19,17 @@
 #ifndef MAG_MATMUL_FLOPS_PER_WORKER /* Flops a GEMM worker must get before adding another one. */
   #define MAG_MATMUL_FLOPS_PER_WORKER (1<<21)
 #endif
+#ifndef MAG_MATMUL_BYTES_PER_WORKER /* Weight bytes a bandwidth bound matmul worker must stream before adding another one. */
+  #define MAG_MATMUL_BYTES_PER_WORKER (512<<10)
+#endif
+#define MAG_MATMUL_THIN_MAX_M 32
+
+static uint32_t mag_cpu_tune_bandwidth_workers(const mag_tensor_t *x, const mag_tensor_t *y, uint32_t allocated_workers) {
+  const mag_tensor_t *big = x->meta.numel > y->meta.numel ? x : y;
+  int64_t bytes = big->meta.numel*(int64_t)mag_type_trait(big->meta.dtype)->size;
+  int64_t workers = bytes/MAG_MATMUL_BYTES_PER_WORKER;
+  return (uint32_t)mag_vmin((int64_t)allocated_workers, mag_vmax(1, workers));
+}
 
 mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
   static const mag_op_thread_scaling_info scaling_table[MAG_OP__NUM] = {
@@ -154,6 +166,7 @@ uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_
   if (op == MAG_OP_MATMUL) { /* Special case for matmul */
     const mag_tensor_t *x = cmd->in[0];
     const mag_tensor_t *y = cmd->in[1];
+    if (mag_accel_matmul_supported(x, y, cmd->out[0])) return 1;
     mag_matmul_type_t matmul_type = mag_matmul_type_detect(x, y);
     switch (matmul_type) {
       case MAG_MATMUL_TYPE_DOT:
@@ -161,20 +174,12 @@ uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_
       case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
       case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
       case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
-      case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC: {
-        int64_t K = x->meta.coords.shape[x->meta.coords.rank-1];
-        int64_t N = y->meta.coords.shape[y->meta.coords.rank-1];
-        int64_t work_bytes = N*K*mag_type_trait(x->meta.dtype)->size;
-        int64_t workers = 1;
-        if (work_bytes >= 4LL   << 20) workers = 4;
-        if (work_bytes >= 16LL  << 20) workers = 8;
-        if (work_bytes >= 32LL  << 20) workers = 16;
-        if (work_bytes >= 96LL  << 20) workers = 32;
-        if (work_bytes >= 256LL << 20) workers = 64;
-        return mag_vmin(workers, allocated_workers);
-      }
+      case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
+        return mag_cpu_tune_bandwidth_workers(x, y, allocated_workers);
       default: { /* GEMM/BMM: spread over workers only once the flops amortize the barrier and packing. */
         int64_t K = x->meta.coords.shape[x->meta.coords.rank-1];
+        if (x->meta.coords.rank >= 2 && x->meta.coords.shape[x->meta.coords.rank-2] <= MAG_MATMUL_THIN_MAX_M)
+          return mag_cpu_tune_bandwidth_workers(x, y, allocated_workers);
         double flops = 2.0*(double)cmd->out[0]->meta.numel*(double)K;
         int64_t workers = (int64_t)(flops/(double)MAG_MATMUL_FLOPS_PER_WORKER);
         return (uint32_t)mag_vmin((int64_t)allocated_workers, mag_vmax(1, workers));
