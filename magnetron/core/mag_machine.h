@@ -22,6 +22,7 @@ typedef struct mag_machine_info_t {
   char os_name[128];                      /* OS name. */
   char cpu_name[128];                     /* CPU name. */
   uint32_t cpu_virtual_cores;             /* Virtual CPUs. */
+  uint32_t cpu_perf_virtual_cores;
   uint32_t cpu_physical_cores;            /* Physical CPU cores. */
   uint32_t cpu_sockets;                   /* CPU sockets. */
   size_t cpu_l1_size;                    /* L1 data cache size in bytes. */

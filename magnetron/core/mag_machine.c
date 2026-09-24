@@ -223,7 +223,8 @@ static void mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) { /* Get CPU n
 #endif
 }
 
-static void mag_machine_probe_cpu_cores(uint32_t *out_virtual, uint32_t *out_physical, uint32_t *out_sockets) { /* Get CPU virtual (logical) cores. */
+static void mag_machine_probe_cpu_cores(uint32_t *out_virtual, uint32_t *out_perf_virtual, uint32_t *out_physical, uint32_t *out_sockets) { /* Get CPU virtual (logical) cores. */
+  *out_perf_virtual = 0;
 #ifdef _WIN32
   DWORD size = 0;
   GetLogicalProcessorInformation(NULL, &size);
@@ -255,6 +256,8 @@ end:
   size_t len;
   if (mag_likely(mag_sysctl_key(&tmp, &len, "machdep.cpu.thread_count") && len))
     *out_virtual = mag_sysctl_unpack_int(&tmp, len);
+  if (mag_sysctl_key(&tmp, &len, "hw.perflevel1.logicalcpu") && len && mag_sysctl_unpack_int(&tmp, len) && mag_sysctl_key(&tmp, &len, "hw.perflevel0.logicalcpu") && len)
+    *out_perf_virtual = mag_sysctl_unpack_int(&tmp, len);
   if (mag_likely(mag_sysctl_key(&tmp, &len, "machdep.cpu.core_count") && len))
     *out_physical = mag_sysctl_unpack_int(&tmp, len);
   if (mag_likely(mag_sysctl_key(&tmp, &len, "hw.packages") && len))
@@ -365,7 +368,7 @@ static void mag_machine_probe_memory(size_t *out_phys_mem_total, size_t *out_phy
 void mag_machine_info_probe(mag_machine_info_t *ma) {
   mag_machine_probe_os_name(&ma->os_name);
   mag_machine_probe_cpu_name(&ma->cpu_name);
-  mag_machine_probe_cpu_cores(&ma->cpu_virtual_cores, &ma->cpu_physical_cores, &ma->cpu_sockets);
+  mag_machine_probe_cpu_cores(&ma->cpu_virtual_cores, &ma->cpu_perf_virtual_cores, &ma->cpu_physical_cores, &ma->cpu_sockets);
   mag_machine_probe_memory(&ma->phys_mem_total, &ma->phys_mem_free);
   uint64_t caps = 0;
   (void)caps;

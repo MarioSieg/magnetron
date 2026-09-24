@@ -24,9 +24,10 @@
 static void mag_system_host_info_dump(mag_context_t *ctx) {
   mag_log_info("OS/Kernel: %s", ctx->machine.os_name);
   mag_log_info(
-    "CPU: %s, Virtual Cores: %u, Physical Cores: %u, Sockets: %u, L1D: %.01f KiB, L2: %.01f KiB, L3: %.01f MiB",
+    "CPU: %s, Virtual Cores: %u, Performance Virtual Cores: %u, Physical Cores: %u, Sockets: %u, L1D: %.01f KiB, L2: %.01f KiB, L3: %.01f MiB",
     ctx->machine.cpu_name,
     ctx->machine.cpu_virtual_cores,
+    ctx->machine.cpu_perf_virtual_cores,
     ctx->machine.cpu_physical_cores,
     ctx->machine.cpu_sockets,
     (double)ctx->machine.cpu_l1_size/1024.0,

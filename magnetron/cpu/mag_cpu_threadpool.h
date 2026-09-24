@@ -24,6 +24,7 @@ typedef struct mag_worker_t mag_worker_t;
 typedef struct mag_thread_pool_t {
   mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) volatile mag_atomic32_t interrupt;   /* Interrupt flag, 1=stop */
   mag_phase_fence_t fence;
+  mag_spin_ctrl_t master_spin;
   int32_t num_allocated_workers;                      /* Number of intra-op workers allocated */
   uint32_t num_active_workers;                        /* Number of intra-op workers that are actively used in this compute step. */
   volatile mag_atomic32_t num_workers_online;         /* Number of workers that are online */
@@ -35,6 +36,7 @@ typedef struct mag_thread_pool_t {
 
 struct mag_worker_t {
   int32_t phase;                          /* Current compute phase */
+  mag_spin_ctrl_t spin;
   mag_kernel_payload_t payload;           /* Compute op payload */
   mag_philox4x32_stream_t prng;           /* Thread local prng */
   mag_thread_pool_t *pool;                /* Host thread pool */

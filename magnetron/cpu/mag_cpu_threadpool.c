@@ -21,7 +21,7 @@
 static bool mag_worker_await_work(mag_worker_t *worker, mag_thread_pool_t *pool) {
   if (mag_unlikely(mag_atomic32_load(&pool->interrupt, MAG_MO_ACQUIRE)))
     return false;
-  mag_phase_fence_wait(&pool->fence, &worker->phase);
+  mag_phase_fence_wait(&pool->fence, &worker->phase, &worker->spin);
   return !mag_atomic32_load(&pool->interrupt, MAG_MO_ACQUIRE);
 }
 
@@ -113,6 +113,7 @@ mag_status_t mag_threadpool_create(
     .numa_ctrl = numa
   };
   mag_phase_fence_init(&pool->fence);
+  mag_spin_ctrl_init(&pool->master_spin);
   for (uint32_t ti=0; ti < num_workers; ++ti) { /* Initialize workers */
     mag_worker_t *worker = workers+ti;
     *worker = (mag_worker_t) {
@@ -127,6 +128,7 @@ mag_status_t mag_threadpool_create(
       .pool = pool,
     };
     worker->payload.prng = &worker->prng;
+    mag_spin_ctrl_init(&worker->spin);
     bool is_main = ti == 0;
     if (!is_main) { /* Main thread is worker 0 but runs inline without its own thread */
       if (mag_iserr(mag_thread_create(
@@ -176,7 +178,7 @@ static void mag_threadpool_kickoff(mag_thread_pool_t *pool, const mag_command_t 
 
 /* Blocks until all threads have completed their work */
 static void mag_threadpool_barrier(mag_thread_pool_t *pool) {
-  mag_phase_fence_barrier(&pool->fence);
+  mag_phase_fence_barrier(&pool->fence, &pool->master_spin);
 }
 
 static void mag_threadpool_clear_worker_status(mag_thread_pool_t *pool) {
