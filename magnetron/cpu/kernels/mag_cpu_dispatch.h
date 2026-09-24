@@ -1017,7 +1017,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT64] = &mag_xor_int64,
   },
   [MAG_OP_NOT] = {
-    [MAG_DTYPE_BOOLEAN] = &mag_not_uint8,
+    [MAG_DTYPE_BOOLEAN] = &mag_not_bool,
     [MAG_DTYPE_UINT8] = &mag_not_uint8,
     [MAG_DTYPE_INT8] = &mag_not_int8,
     [MAG_DTYPE_UINT16] = &mag_not_uint16,

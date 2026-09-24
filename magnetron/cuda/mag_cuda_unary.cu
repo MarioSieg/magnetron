@@ -377,6 +377,15 @@ namespace mag {
   };
 
   template <typename T>
+  struct op_not_bool {
+    using In = T;
+    using Out = T;
+    [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
+      return static_cast<Out>(!x);
+    }
+  };
+
+  template <typename T>
   struct op_log {
     using In = T;
     using Out = T;
@@ -838,7 +847,12 @@ namespace mag {
   }
   mag_status_t unary_op_sgn(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_sgn>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_neg(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_neg>(err, cmd.out[0], cmd.in[0], stream); }
-  mag_status_t unary_op_not(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_int<op_not>(err, cmd.out[0], cmd.in[0], stream); }
+  mag_status_t unary_op_not(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    mag_tensor_t *r = cmd.out[0];
+    mag_tensor_t *x = cmd.in[0];
+    if (r->meta.dtype == MAG_DTYPE_BOOLEAN) return impl_unary_op_int<op_not_bool>(err, r, x, stream);
+    return impl_unary_op_int<op_not>(err, r, x, stream);
+  }
   mag_status_t unary_op_log(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_log>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_log10(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_log10>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_log1p(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_log1p>(err, cmd.out[0], cmd.in[0], stream); }

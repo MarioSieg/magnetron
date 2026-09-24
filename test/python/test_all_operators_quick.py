@@ -933,6 +933,23 @@ def test_shift_op(device: str, name: str, ref: Callable) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_logical_not(device: str) -> None:
+    x = Tensor([[-3, 2, 12], [7, -4, 0]], dtype=dtype.int32, device=device)
+    expected = torch.bitwise_not(totorch(x))
+    assert (~x).tolist() == expected.tolist()
+    assert x.logical_not().tolist() == expected.tolist()
+    z = x.clone()
+    z.logical_not_()
+    assert z.tolist() == expected.tolist()
+    b = Tensor([True, False, True, False], device=device)
+    bexpected = torch.logical_not(totorch(b))
+    assert (~b).dtype == dtype.boolean
+    assert (~b).tolist() == bexpected.tolist()
+    assert b.logical_not().tolist() == bexpected.tolist()
+    assert (~~b).tolist() == b.tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_matmul(device: str) -> None:
     x = Tensor.uniform(3, 4, device=device)
     y = Tensor.uniform(4, 5, device=device)

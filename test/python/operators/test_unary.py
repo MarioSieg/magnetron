@@ -19,7 +19,6 @@ class UnaryOpTestCase:
 
 _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
     UnaryOpTestCase('clone', None, 0, False),
-    # UnaryOpTestCase('not', None),
     UnaryOpTestCase('abs', None),
     UnaryOpTestCase('neg', None),
     UnaryOpTestCase('log', None),
@@ -130,5 +129,20 @@ def test_unary_abs_integer(device: str, dt: dtype.DType) -> None:
         x = random_tensor(shape, dt=dt, device=device)
         r = x.clone().abs()
         np.testing.assert_array_equal(tonumpy(r), np.abs(tonumpy(x)))
+
+    for_all_shapes(test)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dt', dtype.integral)
+def test_unary_logical_not_integral(device: str, dt: dtype.DType) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        x = random_tensor(shape, dt=dt, device=device)
+        expected = np.logical_not(tonumpy(x)) if dt == dtype.boolean else np.bitwise_not(tonumpy(x))
+        np.testing.assert_array_equal(tonumpy(~x), expected)
+        np.testing.assert_array_equal(tonumpy(x.logical_not()), expected)
+        y = x.clone()
+        y.logical_not_()
+        np.testing.assert_array_equal(tonumpy(y), expected)
 
     for_all_shapes(test)

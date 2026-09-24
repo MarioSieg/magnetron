@@ -97,29 +97,31 @@ namespace mag::bindings {
   }
 }
 
-#define bind_unary_pair(cls, name, opcode, doc) \
+#define bind_unary_pair(cls, name, opcode, doc) bind_unary_pair_named(cls, name, name, opcode, doc)
+
+#define bind_unary_pair_named(cls, py_name, c_name, opcode, doc) \
   cls \
-    .def(#name, [](const tensor_wrapper &self) -> tensor_wrapper { \
+    .def(#py_name, [](const tensor_wrapper &self) -> tensor_wrapper { \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##name(&err, &out, *self); }), err); \
+          throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *self); }), err); \
         }, {*self}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##name(&err, &out, *self); }), err); \
+        throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *self); }), err); \
       } \
       return tensor_wrapper {out}; \
     }, doc) \
-    .def(#name "_", [](tensor_wrapper &self) -> tensor_wrapper& { \
+    .def(#py_name "_", [](tensor_wrapper &self) -> tensor_wrapper& { \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##name##_(&err, &out, *self); }), err); \
+          throw_if_error(call_without_gil([&] { return mag_##c_name##_(&err, &out, *self); }), err); \
         }, {*self}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##name##_(&err, &out, *self); }), err); \
+        throw_if_error(call_without_gil([&] { return mag_##c_name##_(&err, &out, *self); }), err); \
       } \
       if (self) mag_tensor_decref(*self); \
       *self = out; \
@@ -1755,6 +1757,19 @@ namespace mag::bindings {
     bind_binary_full_named(cls, pow, pow, pow, MAG_OP_POW, "Element-wise exponentiation.");
     bind_binary_full_named(cls, truediv, div, truediv, MAG_OP_DIV, "Element-wise true division.");
     bind_binary_full_named(cls, floordiv, floordiv, floordiv, MAG_OP_FLOORDIV, "Element-wise floor division.");
+    bind_unary_pair_named(cls, logical_not, not, MAG_OP_NOT, "Element-wise bitwise NOT (logical NOT for boolean tensors).");
+    cls.def("__invert__", [](const tensor_wrapper &self) -> tensor_wrapper {
+      mag_tensor_t *out = nullptr;
+      mag_error_t err {};
+      if constexpr (enable_op_recorder) {
+        op_recorder::singleton().profile(MAG_OP_NOT, [&] {
+          throw_if_error(call_without_gil([&] { return mag_not(&err, &out, *self); }), err);
+        }, {*self});
+      } else {
+        throw_if_error(call_without_gil([&] { return mag_not(&err, &out, *self); }), err);
+      }
+      return tensor_wrapper {out};
+    }, "Element-wise bitwise NOT (logical NOT for boolean tensors).");
     bind_binary_full_named(cls, and, and, logical_and, MAG_OP_AND, "Element-wise logical AND.");
     bind_binary_full_named(cls, or, or, logical_or, MAG_OP_OR, "Element-wise logical OR.");
     bind_binary_full_named(cls, xor, xor, logical_xor, MAG_OP_XOR, "Element-wise logical XOR.");

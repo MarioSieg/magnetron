@@ -191,6 +191,7 @@ mag_def_float_wrappers(gelu_dv)
 #define mag_fn_sgn_int(x) ((x) > 0 ? 1 : (x) < 0 ? -1 : 0)
 #define mag_fn_neg_int(x) (-(x))
 #define mag_fn_not_int(x) (~(x))
+#define mag_fn_not_bool(x) (!(x))
 #define mag_fn_sqr_int(x) ((x)*(x))
 
 static MAG_AINLINE mag_vf32_t mag_vec_exp_f32(mag_vf32_t x) { return mag_vf32_exp(x); }
@@ -377,6 +378,7 @@ mag_gen_int_unary(abs)
 mag_gen_int_unary(sgn)
 mag_gen_int_unary(neg)
 mag_gen_int_unary(not)
+mag_gen_unary_scalar(uint8_t, bool, not, bool)
 mag_gen_int_unary(sqr)
 
 #undef mag_gen_int_unary
@@ -392,6 +394,7 @@ mag_gen_int_unary(sqr)
 #undef mag_fn_sgn_int
 #undef mag_fn_neg_int
 #undef mag_fn_not_int
+#undef mag_fn_not_bool
 #undef mag_fn_sqr_int
 
 #define mag_gen_softmax_simd(T, TF, ONE, LOAD, STORE, TO_F32, FROM_F32) \
