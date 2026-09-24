@@ -60,21 +60,9 @@ namespace mag::bindings {
   }
 
   [[nodiscard]] static mag_tensor_t *index_by_scalar_per_axis(mag_tensor_t *base, int64_t ax, int64_t i) {
-    mag_tensor_t *tmp = nullptr;
-    mag_error_t err {};
-    throw_if_error(mag_view_slice(&err, &tmp, base, ax, i, 1, 1), err);
-    int64_t rank = mag_tensor_rank(tmp);
-    const int64_t *shape = mag_tensor_shape_ptr(tmp);
-    std::vector<int64_t> ns {};
-    ns.reserve(rank > 0 ? static_cast<size_t>(rank - 1) : 1);
-    for (int64_t d=0; d < rank; ++d) {
-      if (d == ax) continue;
-      ns.emplace_back(shape[d]);
-    }
-    if (ns.empty()) ns.emplace_back(1);
     mag_tensor_t *out = nullptr;
-    throw_if_error(mag_view(&err, &out, tmp, ns.data(), static_cast<int64_t>(ns.size())), err);
-    mag_tensor_decref(tmp);
+    mag_error_t err {};
+    throw_if_error(mag_select(&err, &out, base, ax, i), err);
     return out;
   }
 
@@ -187,9 +175,18 @@ namespace mag::bindings {
 
   void init_tensor_special_methods(nb::class_<tensor_wrapper> &cls) {
     cls
+     .def("__iter__", [](const tensor_wrapper &self) -> nb::object {
+       if (mag_tensor_rank(*self) == 0)
+         throw nb::type_error("iteration over a 0-d tensor");
+       int64_t dim0 = *mag_tensor_shape_ptr(*self);
+       nb::list items {};
+       for (int64_t i=0; i < dim0; ++i)
+         items.append(tensor_wrapper{index_by_scalar_per_axis(*self, 0, i)});
+       return nb::steal(PyObject_GetIter(items.ptr()));
+     }, "Iterate over the first dimension, yielding views.")
      .def("__len__", [](const tensor_wrapper &self) -> int64_t {
        if (mag_tensor_rank(*self) == 0)
-         throw nb::value_error("Tensor must have at least one dimension to use len()");
+         throw nb::type_error("len() of a 0-d tensor");
        return *mag_tensor_shape_ptr(*self);
      }, "Length of the first dimension.")
      .def("__str__", [](const tensor_wrapper &self) -> nb::str {

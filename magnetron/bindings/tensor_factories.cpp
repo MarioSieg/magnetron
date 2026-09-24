@@ -222,8 +222,13 @@ namespace mag::bindings {
           auto s = nb::cast<nb::sequence>(top);
           auto n = static_cast<int64_t>(nb::len(s));
           int64_t depth = static_cast<int64_t>(stack.size()) - 1;
-          if (depth < static_cast<int64_t>(shape.size()) && n != shape[static_cast<size_t>(depth)])
-            throw nb::value_error("Tensor(): ragged nested sequence");
+          if (mag_unlikely(depth < static_cast<int64_t>(shape.size()) && n != shape[static_cast<size_t>(depth)])) {
+            std::ostringstream ss;
+            ss << "Tensor(): inconsistent (ragged) nested sequence length at depth "
+               << depth << ": expected " << shape[static_cast<size_t>(depth)]
+               << ", got " << n;
+            throw nb::value_error(ss.str().c_str());
+          }
           if (i >= n) {
             stack.pop_back();
             idx_stack.pop_back();
