@@ -43,32 +43,39 @@ void mag_spin_ctrl_init(mag_spin_ctrl_t *ctrl) {
   ctrl->budget_ns = MAG_SPIN_INIT_NS;
 }
 
-void mag_phase_fence_init(mag_phase_fence_t *fence) {
-  fence->phase = fence->sleepers = fence->remaining = fence->master_parked = 0;
+void mag_worker_gate_init(mag_worker_gate_t *gate) {
+  gate->phase = gate->parked = 0;
 }
 
-void mag_phase_fence_kick(mag_phase_fence_t *fence, int32_t workers_active) {
-  mag_atomic32_store(&fence->remaining, workers_active, MAG_MO_RELAXED);
-  mag_atomic32_fetch_add(&fence->phase, 1, MAG_MO_SEQ_CST);
-  if (mag_atomic32_load(&fence->sleepers, MAG_MO_SEQ_CST))
-    mag_futex_wakeall(&fence->phase);
-}
-
-void mag_phase_fence_wait(mag_phase_fence_t *fence, int32_t *pha, mag_spin_ctrl_t *spin) {
+void mag_worker_gate_wait(mag_worker_gate_t *gate, int32_t *pha, mag_spin_ctrl_t *spin) {
   int32_t p = *pha;
   mag_spin_timer_t timer = mag_spin_timer_start(spin);
   bool parked = false;
-  while (mag_atomic32_load(&fence->phase, MAG_MO_ACQUIRE) == p) {
+  while (mag_atomic32_load(&gate->phase, MAG_MO_ACQUIRE) == p) {
     if (mag_likely(!mag_spin_timer_expired(&timer))) continue;
     parked = true;
-    mag_atomic32_fetch_add(&fence->sleepers, 1, MAG_MO_SEQ_CST);
-    while (mag_atomic32_load(&fence->phase, MAG_MO_SEQ_CST) == p)
-      mag_futex_wait(&fence->phase, p);
-    mag_atomic32_fetch_sub(&fence->sleepers, 1, MAG_MO_SEQ_CST);
+    mag_atomic32_store(&gate->parked, 1, MAG_MO_SEQ_CST);    /* Publish intent to sleep BEFORE re-checking, pairs with the load in gate_open */
+    while (mag_atomic32_load(&gate->phase, MAG_MO_SEQ_CST) == p)
+      mag_futex_wait(&gate->phase, p);
+    mag_atomic32_store(&gate->parked, 0, MAG_MO_SEQ_CST);
     break;
   }
   mag_spin_ctrl_update(spin, &timer, parked);
   *pha = p+1;
+}
+
+void mag_worker_gate_open(mag_worker_gate_t *gate) {
+  mag_atomic32_fetch_add(&gate->phase, 1, MAG_MO_SEQ_CST);  /* Also publishes the payload written before the call */
+  if (mag_atomic32_load(&gate->parked, MAG_MO_SEQ_CST))      /* Only do the syscall if the worker is actually asleep */
+    mag_futex_wake1(&gate->phase);
+}
+
+void mag_phase_fence_init(mag_phase_fence_t *fence) {
+  fence->remaining = fence->master_parked = 0;
+}
+
+void mag_phase_fence_arm(mag_phase_fence_t *fence, int32_t workers_active) {
+  mag_atomic32_store(&fence->remaining, workers_active, MAG_MO_RELAXED); /* Ordered before the gates open by their SEQ_CST RMW */
 }
 
 void mag_phase_fence_done(mag_phase_fence_t *fence) {

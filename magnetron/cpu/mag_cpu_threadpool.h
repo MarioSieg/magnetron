@@ -35,7 +35,8 @@ typedef struct mag_thread_pool_t {
 } mag_thread_pool_t;
 
 struct mag_worker_t {
-  int32_t phase;                          /* Current compute phase */
+  mag_worker_gate_t gate;                 /* Wake-up gate the master opens when this worker takes part in an op */
+  int32_t phase;                          /* Current compute phase*/
   mag_spin_ctrl_t spin;
   mag_kernel_payload_t payload;           /* Compute op payload */
   mag_philox4x32_stream_t prng;           /* Thread local prng */
