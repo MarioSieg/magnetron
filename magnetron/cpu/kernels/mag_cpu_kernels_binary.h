@@ -137,6 +137,16 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],by[i]); \
       return MAG_OK; \
     } \
+    if (y->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,x},2)) { \
+      T cs = *by; \
+      for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],cs); \
+      return MAG_OK; \
+    } \
+    if (x->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,y},2)) { \
+      T cs = *bx; \
+      for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(cs,by[i]); \
+      return MAG_OK; \
+    } \
     mag_bin_run_body(T, T, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
@@ -175,6 +185,26 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         STORE(br+i,vr); \
       } \
       for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],by[i]); \
+      return MAG_OK; \
+    } \
+    if (y->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,x},2)) { \
+      T cs = *by; \
+      T sp[MAG_VF32_LANES]; \
+      for (int64_t l=0; l < MAG_VF32_LANES; ++l) sp[l] = cs; \
+      mag_vf32_t vc = LOAD(sp); \
+      int64_t i=ra; \
+      for (; i+MAG_VF32_LANES <= rb; i += MAG_VF32_LANES) STORE(br+i, mag_vec_##name##_f32(LOAD(bx+i), vc)); \
+      for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],cs); \
+      return MAG_OK; \
+    } \
+    if (x->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,y},2)) { \
+      T cs = *bx; \
+      T sp[MAG_VF32_LANES]; \
+      for (int64_t l=0; l < MAG_VF32_LANES; ++l) sp[l] = cs; \
+      mag_vf32_t vc = LOAD(sp); \
+      int64_t i=ra; \
+      for (; i+MAG_VF32_LANES <= rb; i += MAG_VF32_LANES) STORE(br+i, mag_vec_##name##_f32(vc, LOAD(by+i))); \
+      for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(cs,by[i]); \
       return MAG_OK; \
     } \
     mag_bin_run_body_simd(T, LOAD, STORE, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
@@ -266,6 +296,16 @@ mag_gen_int_signed_unsigned(pow)
       for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##sign(bx[i],by[i],T); \
       return MAG_OK; \
     } \
+    if (y->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,x},2)) { \
+      T cs = *by; \
+      for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##sign(bx[i],cs,T); \
+      return MAG_OK; \
+    } \
+    if (x->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,y},2)) { \
+      T cs = *bx; \
+      for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##sign(cs,by[i],T); \
+      return MAG_OK; \
+    } \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
@@ -309,6 +349,16 @@ mag_gen_shift_all(shr)
     if (mag_unlikely(rb <= ra)) return MAG_OK; \
     if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[3]){r,x,y},3)) { \
       for (int64_t i=ra; i < rb; ++i) br[i] = CVT(bx[i]) OP CVT(by[i]); \
+      return MAG_OK; \
+    } \
+    if (y->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,x},2)) { \
+      T cs = *by; \
+      for (int64_t i=ra; i < rb; ++i) br[i] = CVT(bx[i]) OP CVT(cs); \
+      return MAG_OK; \
+    } \
+    if (x->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,y},2)) { \
+      T cs = *bx; \
+      for (int64_t i=ra; i < rb; ++i) br[i] = CVT(cs) OP CVT(by[i]); \
       return MAG_OK; \
     } \
     mag_coords_iter_t cr,cx,cy; \
