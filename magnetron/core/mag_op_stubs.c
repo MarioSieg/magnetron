@@ -409,7 +409,11 @@ mag_status_t mag_clone(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
 }
 
 mag_status_t mag_cast(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_dtype_t dst_type) {
-  if (x->meta.dtype == dst_type) return mag_clone(err, out_result, x); /* If dtypes match, we just clone */
+  if (x->meta.dtype == dst_type) {
+    mag_tensor_incref(x);
+    *out_result = x;
+    return MAG_OK;
+  }
   *out_result = NULL;
   mag_tensor_t *result;
   mag_status_t status = mag_empty(err, &result, x->ctx, dst_type, x->meta.coords.rank, x->meta.coords.shape, mag_tensor_device_id(x));
