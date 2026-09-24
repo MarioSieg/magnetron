@@ -16,8 +16,13 @@
 
 #include <core/mag_alloc.h>
 #include <core/mag_context.h>
+#include <core/mag_envcfg.h>
 #include <core/mag_tensor.h>
 #include <core/mag_threadlib.h>
+
+#ifdef __gnu_linux__
+#include <sched.h>
+#endif
 
 MAG_THREAD_LOCAL mag_scratch_arena_t mag_tls_arena = MAG_SCRATCH_ARENA_INIT(4ull<<20);
 
@@ -162,7 +167,7 @@ static mag_status_t mag_cpu_init_device(mag_error_t *err, mag_cpu_device_t **out
     .kernels = {},
     .primary_prng = {}
   };
-  mag_numa_init(&device->numa_ctrl, MAG_NUMA_STRATEGY_DISTRIBUTE); /* TODO: make configureable */
+  mag_numa_init(&device->numa_ctrl, (mag_numa_strategy_t)mag_envcfg_numa_strategy(MAG_NUMA_STRATEGY_DISTRIBUTE)); /* Overridable via MAG_NUMA_STRATEGY */
   mag_blas_detect_optimal_specialization(ctx, &device->kernels);
   if (num_threads > 1) {
     mag_status_t status = mag_threadpool_create(err, &device->pool, ctx, num_threads, &device->kernels, &device->numa_ctrl, sched_prio);
@@ -215,13 +220,59 @@ static void mag_cpu_release_interface(mag_device_t *ctx) {
   (*mag_alloc)(ctx, 0, 0); /* Free all memory */
 }
 
+#ifdef __gnu_linux__
+static uint32_t mag_cpu_cgroup_quota_cpus(void) {
+  long long int quota=-1, period=0;
+  FILE *f = mag_fopen("/sys/fs/cgroup/cpu.max", "r");
+  if (f) { /* cgroup v2 */
+    char q[32] = {0};
+    if (fscanf(f, "%31s %lld", q, &period) == 2 && strcmp(q, "max") != 0) quota = strtoll(q, NULL, 10);
+    fclose(f);
+  } else { /* cgroup v1 */
+    f = mag_fopen("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "r");
+    if (mag_unlikely(!f)) f = mag_fopen("/sys/fs/cgroup/cpu,cpuacct/cpu.cfs_quota_us", "r");
+    if (mag_unlikely(!f)) return 0;
+    if (fscanf(f, "%lld", &quota) != 1) quota = -1;
+    fclose(f);
+    f = mag_fopen("/sys/fs/cgroup/cpu/cpu.cfs_period_us", "r");
+    if (mag_unlikely(!f)) f = mag_fopen("/sys/fs/cgroup/cpu,cpuacct/cpu.cfs_period_us", "r");
+    if (mag_unlikely(!f)) return 0;
+    if (fscanf(f, "%lld", &period) != 1) period = 0;
+    fclose(f);
+  }
+  if (mag_unlikely(quota <= 0 || period <= 0)) return 0;
+  return (uint32_t)((quota+period-1)/period);
+}
+
+static uint32_t mag_cpu_usable_cpus(uint32_t online) {
+  uint32_t usable = online;
+  cpu_set_t set;
+  CPU_ZERO(&set);
+  if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+    uint32_t n = (uint32_t)CPU_COUNT(&set);
+    if (n) usable = mag_vmin(usable, n);
+  }
+  uint32_t quota = mag_cpu_cgroup_quota_cpus();
+  if (quota) {
+    if (quota < usable) mag_log_warn("cgroup CPU quota limits this process to %u CPU(s) of %u online, using %u worker threads (override with " MAG_ENV_CPU_THREADS ")", quota, online, quota);
+    usable = mag_vmin(usable, quota);
+  }
+  return mag_vmax(1, usable);
+}
+#endif
+
 static mag_status_t mag_cpu_init(mag_error_t *err, mag_backend_t *self, mag_context_t *ctx) {
   mag_assert2(!self->impl);
   uint32_t nt = ctx->machine.cpu_virtual_cores;
 #ifdef __APPLE__
   if (ctx->machine.cpu_perf_virtual_cores) nt = ctx->machine.cpu_perf_virtual_cores;
 #endif
+#ifdef __gnu_linux__
+  nt = mag_cpu_usable_cpus(nt); /* Respect taskset/cpuset and container CPU quotas, not just online CPUs */
+#endif
+  nt = mag_envcfg_cpu_threads(nt); /* Overridable via MAG_CPU_THREADS */
   nt = mag_vmax(1, nt);
+  mag_log_info("CPU backend: %u worker threads", nt);
   return mag_cpu_init_interface(err, (mag_device_t **)&self->impl, ctx, nt);
 }
 static mag_status_t mag_cpu_shutdown(mag_error_t *err, mag_backend_t *self) {
