@@ -23,12 +23,14 @@ _PAIRS: tuple[tuple[tuple[int, ...], tuple[int, ...]], ...] = (
     ((3, 1, 5), (1, 1, 5)),
 )
 
+_FLOORDIV = lambda a, b: a // b
+
 _ARITH: tuple[tuple[str, Callable], ...] = (
     ('add', lambda a, b: a + b),
     ('sub', lambda a, b: a - b),
     ('mul', lambda a, b: a * b),
     ('truediv', lambda a, b: a / b),
-    ('floordiv', lambda a, b: a // b),
+    ('floordiv', _FLOORDIV),
     ('mod', lambda a, b: a % b),
     ('pow', lambda a, b: a**b),
 )
@@ -70,6 +72,8 @@ def _operand(shape: tuple[int, ...], dt: dtype.DType, op: str, is_rhs: bool, dev
 
 def _torch_ref(fn: Callable, x: Tensor, y: Tensor, dt: dtype.DType) -> torch.Tensor:
     tx, ty = totorch(x), totorch(y)
+    if fn is _FLOORDIV and dt.is_floating_point():
+        return torch_floordiv(tx, ty)
     if dt in _WIDE_UNSIGNED:
         r = fn(tx.to(torch.int64), ty.to(torch.int64))
         return r if r.dtype == torch.bool else r.to(totorch_dtype(dt))

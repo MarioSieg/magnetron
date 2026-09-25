@@ -144,6 +144,15 @@ def clamp_shift_amount(y: Tensor, dt: dtype.DType) -> Tensor:
     return y.abs() % _SHIFT_BITS[dt]
 
 
+_TORCH_HALF_DTYPES = (torch.float16, torch.bfloat16)
+
+
+def torch_floordiv(tx: torch.Tensor, ty: torch.Tensor) -> torch.Tensor:
+    if tx.dtype in _TORCH_HALF_DTYPES:
+        return (tx.float() // ty.float()).to(tx.dtype)
+    return tx // ty
+
+
 def totorch_dtype(dtype: dtype.DType) -> torch.dtype:
     if dtype not in DTYPE_TORCH_MAP:
         raise ValueError(f'Unsupported dtype: {dtype}')

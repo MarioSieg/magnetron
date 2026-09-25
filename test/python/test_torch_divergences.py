@@ -213,19 +213,3 @@ def test_inplace_with_smaller_lhs_raises_like_torch(name: str) -> None:
         getattr(totorch(small), name)(totorch(big))
     with pytest.raises(Exception):
         getattr(small, name)(big)
-
-
-@pytest.mark.xfail(reason='uniform/normal return the same values on every call; torch advances the generator', **_STRICT)
-@pytest.mark.parametrize('factory', ['uniform', 'normal'])
-def test_random_factories_advance_generator_like_torch(factory: str) -> None:
-    a = getattr(Tensor, factory)((64,))
-    b = getattr(Tensor, factory)((64,))
-    assert a.tolist() != b.tolist()
-    c = Tensor.zeros(64)
-    getattr(c, f'{factory}_')()
-    d = Tensor.zeros(64)
-    getattr(d, f'{factory}_')()
-    assert c.tolist() != d.tolist()
-    ta = getattr(torch, 'rand' if factory == 'uniform' else 'randn')(64)
-    tb = getattr(torch, 'rand' if factory == 'uniform' else 'randn')(64)
-    assert not torch.equal(ta, tb)

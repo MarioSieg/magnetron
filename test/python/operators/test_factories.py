@@ -124,3 +124,65 @@ def test_rand_perm_is_uniform_over_positions() -> None:
     expected = trials / n
     se = math.sqrt(trials * (1.0 / n) * (1.0 - 1.0 / n))
     assert (counts - expected).abs().max().item() <= _SIGMAS * se
+
+
+@pytest.mark.parametrize('factory', ['uniform', 'normal', 'bernoulli'])
+@pytest.mark.parametrize('dt', (dtype.float32, dtype.float16, dtype.bfloat16, dtype.int32), ids=['float32', 'float16', 'bfloat16', 'int32'])
+def test_random_factories_advance_generator_like_torch(factory: str, dt: dtype.DType) -> None:
+    if factory == 'bernoulli':
+        if dt != dtype.float32:
+            pytest.skip('bernoulli only produces booleans')
+        make = lambda shape: Tensor.bernoulli(shape, p=0.5)
+        tmake = lambda shape: torch.rand(shape) < 0.5
+    elif dt.is_integer():
+        if factory == 'normal':
+            pytest.skip('normal is floating point only')
+        make = lambda shape: Tensor.uniform(shape, low=0, high=1 << 30, dtype=dt)
+        tmake = lambda shape: torch.randint(0, 1 << 30, shape)
+    else:
+        make = lambda shape: getattr(Tensor, factory)(shape, dtype=dt)
+        tmake = lambda shape: getattr(torch, 'rand' if factory == 'uniform' else 'randn')(shape)
+    shapes = ((64,), (3, 5, 17), (2, 4096)) if factory == 'bernoulli' else ((1,), (7,), (64,), (3, 5, 17), (2, 4096))
+    for shape in shapes:
+        a, b = make(shape), make(shape)
+        ta, tb = tmake(shape), tmake(shape)
+        assert a.tolist() != b.tolist()
+        assert not torch.equal(ta, tb)
+    inplace = f'{factory}_'
+    c = Tensor.zeros((256,), dtype=dtype.boolean if factory == 'bernoulli' else dt)
+    d = Tensor.zeros((256,), dtype=dtype.boolean if factory == 'bernoulli' else dt)
+    getattr(c, inplace)()
+    getattr(d, inplace)()
+    assert c.tolist() != d.tolist()
+
+
+@pytest.mark.parametrize('factory', ['uniform', 'normal', 'bernoulli', 'rand_perm'])
+def test_manual_seed_reproduces_sequence_like_torch(factory: str) -> None:
+    def draw() -> list:
+        if factory == 'rand_perm':
+            return [Tensor.rand_perm(100).tolist() for _ in range(3)]
+        if factory == 'bernoulli':
+            return [Tensor.bernoulli((3, 1000), p=0.3).tolist() for _ in range(3)]
+        return [getattr(Tensor, factory)((3, 1000)).tolist() for _ in range(3)]
+
+    def tdraw() -> list:
+        if factory == 'rand_perm':
+            return [torch.randperm(100) for _ in range(3)]
+        if factory == 'bernoulli':
+            return [torch.rand(3, 1000) < 0.3 for _ in range(3)]
+        return [getattr(torch, 'rand' if factory == 'uniform' else 'randn')(3, 1000) for _ in range(3)]
+
+    context.manual_seed(1234)
+    first = draw()
+    context.manual_seed(1234)
+    second = draw()
+    context.manual_seed(4321)
+    third = draw()
+    assert first == second
+    assert first != third
+    assert len({str(x) for x in first}) == 3
+    torch.manual_seed(1234)
+    tfirst = tdraw()
+    torch.manual_seed(1234)
+    tsecond = tdraw()
+    assert all(torch.equal(a, b) for a, b in zip(tfirst, tsecond))
