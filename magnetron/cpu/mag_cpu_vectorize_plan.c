@@ -12,51 +12,52 @@
 #include "mag_cpu_vectorize_plan.h"
 
 bool mag_unary_vectorization_plan_init(mag_unary_vectorization_plan_t *p, const mag_tensor_t *r, const mag_tensor_t *x) {
+  p->flags = 0;
   int64_t rank = r->meta.coords.rank;
   int64_t xr = x->meta.coords.rank;
   if (xr > rank) return false;
   const int64_t *rs = r->meta.coords.shape;
   const int64_t *rt = r->meta.coords.strides;
   int64_t xs[MAG_MAX_DIMS], xt[MAG_MAX_DIMS];
-  int64_t dx = rank-xr;
-  for (int64_t d=0; d < rank; ++d) {
-    xs[d] = d < dx ? 1 : x->meta.coords.shape[d-dx];
-    xt[d] = d < dx ? 0 : x->meta.coords.strides[d-dx];
+  int64_t ax = rank - xr;
+  for (int64_t dim=0; dim < rank; ++dim) {
+    xs[dim] = dim < ax ? 1 : x->meta.coords.shape[dim-ax];
+    xt[dim] = dim < ax ? 0 : x->meta.coords.strides[dim-ax];
   }
-  for (int64_t d=0; d < rank; ++d)
-    if (!(xs[d] == rs[d] || xs[d] == 1)) return false;
-  bool xf=true, xc=true;
+  for (int64_t dim = 0; dim < rank; ++dim)
+    if (!(xs[dim] == rs[dim] || xs[dim] == 1))
+      return false;
+  p->flags = MAG_VAX_CX|MAG_VAX_FX;
   int64_t inner = 1;
-  int64_t d = rank-1;
-  for (; d >= 0; --d) {
-    if (rs[d] == 1) continue;
-    if (rt[d] != inner) break;
-    bool xb = xs[d] == 1 || xt[d] == 0;
-    bool nxf = xf && !xb && xt[d] == inner;
-    bool nxc = xc && xb;
-    if (!(nxf || nxc)) break;
-    xf = nxf; xc = nxc;
-    inner *= rs[d];
+  int64_t dim = rank-1;
+  for (; dim >= 0; --dim) {
+    if (rs[dim] == 1) continue;
+    if (rt[dim] != inner) break;
+    mag_vectorize_flags_t nf = p->flags;
+    nf &= xs[dim] == 1 || xt[dim] == 0 ? ~MAG_VAX_FX : ~MAG_VAX_CX;
+    if (xt[dim] != inner) nf &= ~MAG_VAX_FX;
+    if (!(nf & (MAG_VAX_FX|MAG_VAX_CX))) break;
+    p->flags = nf;
+    inner *= rs[dim];
   }
   if (inner <= 1) return false;
   p->inner = inner;
-  p->x_const = xc;
-  p->outer_rank = d+1;
-  for (int64_t k=0; k <= d; ++k) {
-    p->shape[k] = rs[k];
-    p->rstr[k] = rs[k] == 1 ? 0 : rt[k];
-    p->xstr[k] = xs[k] == 1 ? 0 : xt[k];
+  p->outer_rank = dim+1;
+  for (int64_t kax = 0; kax <= dim; ++kax) {
+    p->shape[kax] = rs[kax];
+    p->rstr[kax] = rs[kax] == 1 ? 0 : rt[kax];
+    p->xstr[kax] = xs[kax] == 1 ? 0 : xt[kax];
   }
   return true;
 }
 
 void mag_unary_vectorization_plan_step(const mag_unary_vectorization_plan_t *p, int64_t o, int64_t *rb, int64_t *xb) {
   int64_t ri=0, xi=0;
-  for (int64_t k=p->outer_rank-1; k >= 0; --k) {
-    int64_t c = o%p->shape[k];
-    o /= p->shape[k];
-    ri += c*p->rstr[k];
-    xi += c*p->xstr[k];
+  for (int64_t dim=p->outer_rank-1; dim >= 0; --dim) {
+    int64_t ax = o%p->shape[dim];
+    o /= p->shape[dim];
+    ri += ax*p->rstr[dim];
+    xi += ax*p->xstr[dim];
   }
   *rb = ri;
   *xb = xi;
@@ -69,52 +70,55 @@ bool mag_binary_vectorization_plan_init(mag_binary_vectorization_plan_t *p, cons
   if (xr > rank || yr > rank) return false;
   const int64_t *rs = r->meta.coords.shape;
   const int64_t *rt = r->meta.coords.strides;
-  int64_t xs[MAG_MAX_DIMS], ys[MAG_MAX_DIMS], xst[MAG_MAX_DIMS], yst[MAG_MAX_DIMS];
-  int64_t dx = rank-xr, dy = rank-yr;
-  for (int64_t d=0; d < rank; ++d) {
-    xs[d] = d < dx ? 1 : x->meta.coords.shape[d-dx];
-    xst[d] = d < dx ? 0 : x->meta.coords.strides[d-dx];
-    ys[d] = d < dy ? 1 : y->meta.coords.shape[d-dy];
-    yst[d] = d < dy ? 0 : y->meta.coords.strides[d-dy];
+  int64_t xs[MAG_MAX_DIMS], ys[MAG_MAX_DIMS];
+  int64_t xst[MAG_MAX_DIMS], yst[MAG_MAX_DIMS];
+  int64_t dx = rank - xr;
+  int64_t dy = rank - yr;
+  for (int64_t dim=0; dim < rank; ++dim) {
+    xs[dim] = dim < dx ? 1 : x->meta.coords.shape[dim-dx];
+    xst[dim] = dim < dx ? 0 : x->meta.coords.strides[dim-dx];
+    ys[dim] = dim < dy ? 1 : y->meta.coords.shape[dim-dy];
+    yst[dim] = dim < dy ? 0 : y->meta.coords.strides[dim-dy];
   }
-  for (int64_t d=0; d < rank; ++d)
-    if (!((xs[d] == rs[d] || xs[d] == 1) && (ys[d] == rs[d] || ys[d] == 1))) return false;
-  bool xf=true, xc=true, yf=true, yc=true;
+  for (int64_t dim=0; dim < rank; ++dim)
+    if (!((xs[dim] == rs[dim] || xs[dim] == 1) && (ys[dim] == rs[dim] || ys[dim] == 1)))
+      return false;
+  mag_vectorize_flags_t flags = MAG_VAX_CX|MAG_VAX_CY|MAG_VAX_FX|MAG_VAX_FY;
   int64_t inner = 1;
-  int64_t d = rank-1;
-  for (; d >= 0; --d) {
-    if (rs[d] == 1) continue;
-    if (rt[d] != inner) break;
-    bool xb = xs[d] == 1 || xst[d] == 0;
-    bool yb = ys[d] == 1 || yst[d] == 0;
-    bool nxf = xf && !xb && xst[d] == inner, nxc = xc && xb;
-    bool nyf = yf && !yb && yst[d] == inner, nyc = yc && yb;
-    if (!(nxf || nxc) || !(nyf || nyc)) break;
-    xf = nxf; xc = nxc; yf = nyf; yc = nyc;
-    inner *= rs[d];
+  int64_t dim=rank-1;
+  for (; dim >= 0; --dim) {
+    if (rs[dim] == 1) continue;
+    if (rt[dim] != inner) break;
+    mag_vectorize_flags_t nf = flags;
+    nf&=xs[dim] == 1 || xst[dim] == 0 ?~MAG_VAX_FX:~MAG_VAX_CX;
+    nf&=ys[dim] == 1 || yst[dim] == 0 ?~MAG_VAX_FY:~MAG_VAX_CY;
+    if (xst[dim] != inner) nf&=~MAG_VAX_FX;
+    if (yst[dim] != inner) nf&=~MAG_VAX_FY;
+    if (!(nf & (MAG_VAX_CX|MAG_VAX_FX)) || !(nf & (MAG_VAX_CY|MAG_VAX_FY))) break;
+    flags = nf;
+    inner *= rs[dim];
   }
   if (inner <= 1) return false;
   p->inner = inner;
-  p->x_const = xc;
-  p->y_const = yc;
-  p->outer_rank = d+1;
-  for (int64_t k=0; k <= d; ++k) {
-    p->shape[k] = rs[k];
-    p->rstr[k] = rs[k] == 1 ? 0 : rt[k];
-    p->xstr[k] = xs[k] == 1 ? 0 : xst[k];
-    p->ystr[k] = ys[k] == 1 ? 0 : yst[k];
+  p->flags = flags;
+  p->outer_rank = dim + 1;
+  for (int64_t kax=0; kax <= dim; ++kax) {
+    p->shape[kax] = rs[kax];
+    p->rstr[kax] = rs[kax] == 1 ? 0 : rt[kax];
+    p->xstr[kax] = xs[kax] == 1 ? 0 : xst[kax];
+    p->ystr[kax] = ys[kax] == 1 ? 0 : yst[kax];
   }
   return true;
 }
 
 void mag_binary_vectorization_plan_step(const mag_binary_vectorization_plan_t *p, int64_t o, int64_t *rb, int64_t *xb, int64_t *yb) {
   int64_t ri=0, xi=0, yi=0;
-  for (int64_t k=p->outer_rank-1; k >= 0; --k) {
-    int64_t c = o%p->shape[k];
-    o /= p->shape[k];
-    ri += c*p->rstr[k];
-    xi += c*p->xstr[k];
-    yi += c*p->ystr[k];
+  for (int64_t dim=p->outer_rank-1; dim >= 0; --dim) {
+    int64_t ax = o%p->shape[dim];
+    o /= p->shape[dim];
+    ri += ax*p->rstr[dim];
+    xi += ax*p->xstr[dim];
+    yi += ax*p->ystr[dim];
   }
   *rb = ri;
   *xb = xi;
@@ -153,7 +157,7 @@ bool mag_tile_plan_init(mag_tile_plan_t *p, const mag_tensor_t *r, const int64_t
     c *= rs[d];
   }
   for (int64_t d=0; d < rank; ++d) {
-    p->grid[d] = (d == a || d == b) ? (rs[d]+tile-1)/tile : rs[d];
+    p->grid[d] = d == a || d == b ? (rs[d]+tile-1)/tile : rs[d];
     n *= p->grid[d];
   }
   p->ntiles = n;
@@ -164,6 +168,6 @@ void mag_tile_plan_origin(const mag_tile_plan_t *p, int64_t i, int64_t *o) {
   for (int64_t d=p->rank-1; d >= 0; --d) {
     int64_t c = i%p->grid[d];
     i /= p->grid[d];
-    o[d] = (d == p->a || d == p->b) ? c*p->tile : c;
+    o[d] = d == p->a || d == p->b ? c*p->tile : c;
   }
 }

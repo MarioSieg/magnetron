@@ -72,11 +72,11 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         int64_t run = mag_vmin(plan.inner-j, rb-i); \
         int64_t rbo, xb, yb; \
         mag_binary_vectorization_plan_step(&plan, o, &rbo, &xb, &yb); \
-        const T *px = bx + xb + (plan.x_const ? 0 : j); \
-        const T *py = by + yb + (plan.y_const ? 0 : j); \
+        const T *px = bx + xb + ((plan.flags&MAG_VAX_CX) ? 0 : j); \
+        const T *py = by + yb + ((plan.flags&MAG_VAX_CY) ? 0 : j); \
         RT *pr = br + rbo + j; \
-        if (plan.x_const) { T xa = *px; for (int64_t t=0; t < run; ++t) { T ya = py[t]; pr[t] = EXPR; } } \
-        else if (plan.y_const) { T ya = *py; for (int64_t t=0; t < run; ++t) { T xa = px[t]; pr[t] = EXPR; } } \
+        if (plan.flags&MAG_VAX_CX) { T xa = *px; for (int64_t t=0; t < run; ++t) { T ya = py[t]; pr[t] = EXPR; } } \
+        else if (plan.flags&MAG_VAX_CY) { T ya = *py; for (int64_t t=0; t < run; ++t) { T xa = px[t]; pr[t] = EXPR; } } \
         else { for (int64_t t=0; t < run; ++t) { T xa = px[t]; T ya = py[t]; pr[t] = EXPR; } } \
         i += run; \
       } \
@@ -92,16 +92,16 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         int64_t run = mag_vmin(plan.inner-j, rb-i); \
         int64_t rbo, xb, yb; \
         mag_binary_vectorization_plan_step(&plan, o, &rbo, &xb, &yb); \
-        const T *px = bx + xb + (plan.x_const ? 0 : j); \
-        const T *py = by + yb + (plan.y_const ? 0 : j); \
+        const T *px = bx + xb + ((plan.flags&MAG_VAX_CX) ? 0 : j); \
+        const T *py = by + yb + ((plan.flags&MAG_VAX_CY) ? 0 : j); \
         T *pr = br + rbo + j; \
         int64_t t = 0; \
-        if (plan.x_const || plan.y_const) { \
-          T cs = plan.x_const ? *px : *py; \
+        if ((plan.flags&MAG_VAX_CX) || (plan.flags&MAG_VAX_CY)) { \
+          T cs = (plan.flags&MAG_VAX_CX) ? *px : *py; \
           T sp[MAG_VF32_LANES]; \
           for (int64_t l=0; l < MAG_VF32_LANES; ++l) sp[l] = cs; \
           mag_vf32_t vc = LOAD(sp); \
-          if (plan.x_const) { \
+          if (plan.flags&MAG_VAX_CX) { \
             for (; t+MAG_VF32_LANES <= run; t += MAG_VF32_LANES) STORE(pr+t, VF(vc, LOAD(py+t))); \
             for (; t < run; ++t) pr[t] = F(cs, py[t]); \
           } else { \

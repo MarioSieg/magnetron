@@ -20,7 +20,7 @@
         int64_t run = mag_vmin(plan.inner-j, rb-i); \
         int64_t rbo, xbo; \
         mag_unary_vectorization_plan_step(&plan, o, &rbo, &xbo); \
-        const T *px = bx + xbo + (plan.x_const ? 0 : j); \
+        const T *px = bx + xbo + ((plan.flags&MAG_VAX_CX) ? 0 : j); \
         T *pr = br + rbo + j; \
         __VA_ARGS__ \
         i += run; \
@@ -30,18 +30,18 @@
 
 #define mag_un_exec_impl_copy(T) \
     mag_un_run_walk(T, \
-      if (plan.x_const) { T v = *px; for (int64_t t=0; t < run; ++t) pr[t] = v; } \
+      if (plan.flags&MAG_VAX_CX) { T v = *px; for (int64_t t=0; t < run; ++t) pr[t] = v; } \
       else memcpy(pr, px, (size_t)run*sizeof(T)); \
     )
 #define mag_un_exec_impl(T, F) \
     mag_un_run_walk(T, \
-      if (plan.x_const) { T v = F(*px); for (int64_t t=0; t < run; ++t) pr[t] = v; } \
+      if (plan.flags&MAG_VAX_CX) { T v = F(*px); for (int64_t t=0; t < run; ++t) pr[t] = v; } \
       else for (int64_t t=0; t < run; ++t) pr[t] = F(px[t]); \
     )
 
 #define mag_un_exec_impl_simd(T, LOAD, STORE, VF, F) \
     mag_un_run_walk(T, \
-      if (plan.x_const) { T v = F(*px); for (int64_t t=0; t < run; ++t) pr[t] = v; } \
+      if (plan.flags&MAG_VAX_CX) { T v = F(*px); for (int64_t t=0; t < run; ++t) pr[t] = v; } \
       else { \
         int64_t t = 0; \
         for (; t+MAG_VF32_LANES <= run; t += MAG_VF32_LANES) STORE(pr+t, VF(LOAD(px+t))); \
