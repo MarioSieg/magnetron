@@ -958,12 +958,16 @@ mag_status_t mag_select(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   mag_norm_axis(&index, sz);
   if (mag_unlikely(!(0 <= index && index < sz)))
       return mag_set_error(err, MAG_ERR_PARAM, "select: index %" PRIi64 " is out of bounds for dim of size %" PRIi64 ".", index, sz);
-  mag_tensor_t *tmp = NULL;
-  mag_status_t status = mag_view_slice(err, &tmp, x, dim, index, 1, 1);
-  if (mag_iserr(status)) return status;
-  status = mag_squeeze_dim(err, out_result, tmp, dim);
-  mag_tensor_decref(tmp);
-  return status;
+  int64_t shape[MAG_MAX_DIMS];
+  int64_t strides[MAG_MAX_DIMS];
+  int64_t ra=0;
+  for (int64_t i=0; i < rank; ++i) {
+    if (i == dim) continue;
+    shape[ra] = x->meta.coords.shape[i];
+    strides[ra++] = x->meta.coords.strides[i];
+  }
+  int64_t offset = x->meta.storage_offset + index*x->meta.coords.strides[dim];
+  return mag_strided_view(err, out_result, x->ctx, x, ra, ra ? shape : NULL, ra ? strides : NULL, offset);
 }
 
 mag_status_t mag_split(mag_error_t *err, mag_tensor_t **outs, int64_t num_splits, mag_tensor_t *x, int64_t split_size, int64_t dim) {

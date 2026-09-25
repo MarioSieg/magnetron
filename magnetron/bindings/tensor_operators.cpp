@@ -106,10 +106,10 @@ namespace mag::bindings {
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *self); }), err); \
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_##c_name(&err, &out, *self); }), err); \
         }, {*self}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *self); }), err); \
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_##c_name(&err, &out, *self); }), err); \
       } \
       return tensor_wrapper {out}; \
     }, doc) \
@@ -118,10 +118,10 @@ namespace mag::bindings {
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##c_name##_(&err, &out, *self); }), err); \
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_##c_name##_(&err, &out, *self); }), err); \
         }, {*self}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##c_name##_(&err, &out, *self); }), err); \
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_##c_name##_(&err, &out, *self); }), err); \
       } \
       if (self) mag_tensor_decref(*self); \
       *self = out; \
@@ -136,10 +136,10 @@ namespace mag::bindings {
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
+          throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
         }, {*a, *b}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
+        throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
       } \
       return tensor_wrapper{out}; \
     }, "rhs"_a, doc); \
@@ -150,10 +150,10 @@ namespace mag::bindings {
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *l, *a); }), err); \
+          throw_if_error(call_maybe_without_gil(l, a, [&] { return mag_##c_name(&err, &out, *l, *a); }), err); \
         }, {*l, *a}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *l, *a); }), err); \
+        throw_if_error(call_maybe_without_gil(l, a, [&] { return mag_##c_name(&err, &out, *l, *a); }), err); \
       } \
       return tensor_wrapper{out}; \
     }, "lhs"_a, "Right-hand side of " #named_name " (reflected)."); \
@@ -164,10 +164,10 @@ namespace mag::bindings {
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##c_name##_(&err, &out, *a, *b); }), err); \
+          throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name##_(&err, &out, *a, *b); }), err); \
         }, {*a, *b}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##c_name##_(&err, &out, *a, *b); }), err); \
+        throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name##_(&err, &out, *a, *b); }), err); \
       } \
       if (a) mag_tensor_decref(*a); \
       *a = out; \
@@ -180,10 +180,10 @@ namespace mag::bindings {
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
+          throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
         }, {*a, *b}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
+        throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
       } \
       return tensor_wrapper{out}; \
     }, "rhs"_a, doc); \
@@ -192,7 +192,7 @@ namespace mag::bindings {
       tensor_wrapper b = normalize_rhs_to_tensor(a, rhs); \
       mag_tensor_t *out = nullptr; \
       mag_error_t err {}; \
-      throw_if_error(call_without_gil([&] { return mag_##c_name##_(&err, &out, *a, *b); }), err); \
+      throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name##_(&err, &out, *a, *b); }), err); \
       if (a) mag_tensor_decref(*a); \
       *a = out; \
       return a; \
@@ -206,10 +206,10 @@ namespace mag::bindings {
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
+          throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
         }, {*a, *b}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
+        throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
       } \
       return tensor_wrapper{out}; \
     }, "rhs"_a, doc); \
@@ -220,10 +220,10 @@ namespace mag::bindings {
       mag_error_t err {}; \
       if constexpr (enable_op_recorder) { \
         op_recorder::singleton().profile(opcode, [&] { \
-          throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
+          throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
         }, {*a, *b}); \
       } else { \
-        throw_if_error(call_without_gil([&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
+        throw_if_error(call_maybe_without_gil(a, b, [&] { return mag_##c_name(&err, &out, *a, *b); }), err); \
       } \
       return tensor_wrapper{out}; \
     }, "rhs"_a, doc)
@@ -310,10 +310,10 @@ namespace mag::bindings {
         mag_scalar_t s = scalar_from_py_number(value);
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_FILL, [&] {
-            throw_if_error(call_without_gil([&] { return mag_fill_(&err, *self, s); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_fill_(&err, *self, s); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_fill_(&err, *self, s); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_fill_(&err, *self, s); }), err);
         }
         return self;
       },
@@ -323,7 +323,7 @@ namespace mag::bindings {
     .def("zero_",
       [](tensor_wrapper &self) -> tensor_wrapper& {
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_zeros_(&err, *self); }), err);
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_zeros_(&err, *self); }), err);
         return self;
       },
       "Fill the tensor with 0."
@@ -331,7 +331,7 @@ namespace mag::bindings {
     .def("one_",
       [](tensor_wrapper &self) -> tensor_wrapper& {
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_ones_(&err, *self); }), err);
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_ones_(&err, *self); }), err);
         return self;
       },
       "Fill the tensor with 1."
@@ -345,10 +345,10 @@ namespace mag::bindings {
         mag_scalar_t s = scalar_from_py_number(value);
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_MASKED_FILL, [&] {
-            throw_if_error(call_without_gil([&] { return mag_masked_fill(&err, &result, *self, *mask, s); }), err);
+            throw_if_error(call_maybe_without_gil(self, mask, [&] { return mag_masked_fill(&err, &result, *self, *mask, s); }), err);
           }, {*self, *mask});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_masked_fill(&err, &result, *self, *mask, s); }), err);
+          throw_if_error(call_maybe_without_gil(self, mask, [&] { return mag_masked_fill(&err, &result, *self, *mask, s); }), err);
         }
         return tensor_wrapper{result};
       },
@@ -363,10 +363,10 @@ namespace mag::bindings {
         mag_scalar_t s = scalar_from_py_number(value);
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_MASKED_FILL, [&] {
-            throw_if_error(call_without_gil([&] { return mag_masked_fill_(&err, *self, *mask, s); }), err);
+            throw_if_error(call_maybe_without_gil(self, mask, [&] { return mag_masked_fill_(&err, *self, *mask, s); }), err);
           }, {*self, *mask});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_masked_fill_(&err, *self, *mask, s); }), err);
+          throw_if_error(call_maybe_without_gil(self, mask, [&] { return mag_masked_fill_(&err, *self, *mask, s); }), err);
         }
         return self;
       },
@@ -380,10 +380,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_RAND_UNIFORM, [&] {
-            throw_if_error(call_without_gil([&] { return mag_uniform_(&err, *self, low, high); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_uniform_(&err, *self, low, high); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_uniform_(&err, *self, low, high); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_uniform_(&err, *self, low, high); }), err);
         }
         return self;
       },
@@ -398,10 +398,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_RAND_NORMAL, [&] {
-            throw_if_error(call_without_gil([&] { return mag_normal_(&err, *self, m, s); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_normal_(&err, *self, m, s); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_normal_(&err, *self, m, s); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_normal_(&err, *self, m, s); }), err);
         }
         return self;
       },
@@ -415,10 +415,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_RAND_BERNOULLI, [&] {
-            throw_if_error(call_without_gil([&] { return mag_bernoulli_(&err, *self, pv); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_bernoulli_(&err, *self, pv); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_bernoulli_(&err, *self, pv); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_bernoulli_(&err, *self, pv); }), err);
         }
         return self;
       },
@@ -430,16 +430,16 @@ namespace mag::bindings {
       mag_error_t err {};
       if constexpr (enable_op_recorder) {
         op_recorder::singleton().profile(MAG_OP_CLONE, [&] {
-          throw_if_error(call_without_gil([&] { return mag_clone(&err, &out, *self); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_clone(&err, &out, *self); }), err);
         }, {*self});
       } else {
-        throw_if_error(call_without_gil([&] { return mag_clone(&err, &out, *self); }), err);
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_clone(&err, &out, *self); }), err);
       }
       return tensor_wrapper{out};
     }, "Return a copy with the same data and dtype.")
     .def("copy_", [](tensor_wrapper &self, const tensor_wrapper &src) -> tensor_wrapper& {
       mag_error_t err {};
-      throw_if_error(call_without_gil([&] { return mag_copy_(&err, *self, *src); }), err);
+      throw_if_error(call_maybe_without_gil(self, src, [&] { return mag_copy_(&err, *self, *src); }), err);
       return self;
     }, "src"_a, "Copy data from src into this tensor in-place.")
     .def("cast", [](const tensor_wrapper &self, dtype_wrapper dt) -> tensor_wrapper {
@@ -447,10 +447,10 @@ namespace mag::bindings {
       mag_error_t err {};
       if constexpr (enable_op_recorder) {
         op_recorder::singleton().profile(MAG_OP_CAST, [&] {
-          throw_if_error(call_without_gil([&] { return mag_cast(&err, &out, *self, dt.v); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_cast(&err, &out, *self, dt.v); }), err);
         }, {*self});
       } else {
-        throw_if_error(call_without_gil([&] { return mag_cast(&err, &out, *self, dt.v); }), err);
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_cast(&err, &out, *self, dt.v); }), err);
       }
       return tensor_wrapper{out};
     }, "dtype"_a, "Return a copy with the given dtype.")
@@ -459,19 +459,19 @@ namespace mag::bindings {
       if (!device_id) throw std::runtime_error {"Invalid device id"};
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
-      throw_if_error(call_without_gil([&] { return mag_transfer(&err, &out, *self, *device_id); }), err);
+      throw_if_error(call_maybe_without_gil(self, [&] { return mag_transfer(&err, &out, *self, *device_id); }), err);
       return tensor_wrapper{out};
     }, "device"_a, "Return a tensor on the given device (e.g. 'cpu', 'cuda', 'cuda:1'). A backend without an ordinal selects its best device. Same device returns self (shared).")
     .def("view", [](const tensor_wrapper &self, nb::args args) -> tensor_wrapper {
-      std::vector<int64_t> shape = parse_i64_dims(args, "view");
+      fixed_dim_vec shape = parse_i64_dims(args, "view");
       validate_shape_infer_one(shape, "view");
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
-      throw_if_error(call_without_gil([&] { return mag_view(&err, &out, *self, shape.data(), static_cast<int64_t>(shape.size())); }), err);
+      throw_if_error(mag_view(&err, &out, *self, shape.data(), static_cast<int64_t>(shape.size())), err);
       return tensor_wrapper{out};
     }, "shape"_a, "View with new shape (same storage).")
     .def("reinterpret_view", [](const tensor_wrapper &self, dtype_wrapper dt, nb::args args) -> tensor_wrapper {
-      std::vector<int64_t> shape {};
+      fixed_dim_vec shape {};
       bool empty_seq = args.size() == 1 && nb::isinstance<nb::sequence>(args[0]) && !nb::isinstance<nb::str>(args[0]) && nb::len(nb::cast<nb::sequence>(args[0])) == 0;
       if (empty_seq) {
         shape.clear();
@@ -481,30 +481,30 @@ namespace mag::bindings {
       } else {
         int64_t rank = mag_tensor_rank(*self);
         const auto *dims = mag_tensor_shape_ptr(*self);
-        shape.assign(dims, dims+rank);
+        shape.assign(dims, rank);
         if (rank) shape.back() = -1;
       }
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
-      throw_if_error(call_without_gil([&] { return mag_reinterpret_view(&err, &out, *self, dt.v, shape.data(), static_cast<int64_t>(shape.size())); }), err);
+      throw_if_error(mag_reinterpret_view(&err, &out, *self, dt.v, shape.data(), static_cast<int64_t>(shape.size())), err);
       return tensor_wrapper{out};
     }, "dtype"_a, "shape"_a, "View with new dtype and shape (same storage).")
     .def("view_slice", [](const tensor_wrapper &self, int64_t dim, int64_t start, int64_t len, int64_t step) -> tensor_wrapper {
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
-      throw_if_error(call_without_gil([&] { return mag_view_slice(&err, &out, *self, dim, start, len, step); }), err);
+      throw_if_error(mag_view_slice(&err, &out, *self, dim, start, len, step), err);
       return tensor_wrapper{out};
     }, "dim"_a, "start"_a, "len"_a, "step"_a, "View a slice along one dimension.")
     .def("reshape",
       [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
-        std::vector<int64_t> dims = parse_i64_dims(dims_args, "reshape");
+        fixed_dim_vec dims = parse_i64_dims(dims_args, "reshape");
         if (std::find(dims.begin(), dims.end(), 0) != dims.end())
           throw nb::value_error("reshape: dimension 0 is not allowed");
         int neg_ones = static_cast<int>(std::count(dims.begin(), dims.end(), -1));
         if (neg_ones > 1) throw nb::value_error("reshape: only one -1 is allowed");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_reshape(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())); }), err);
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_reshape(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())); }), err);
         return tensor_wrapper{out};
       },
       "shape"_a,
@@ -516,7 +516,7 @@ namespace mag::bindings {
           throw nb::value_error("transpose: dim0 and dim1 must be different");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_transpose(&err, &out, *self, dim0, dim1); }), err);
+        throw_if_error(mag_transpose(&err, &out, *self, dim0, dim1), err);
         return tensor_wrapper{out};
       },
       "dim0"_a = 0, "dim1"_a = 1,
@@ -525,19 +525,19 @@ namespace mag::bindings {
     .def_prop_ro("T", [](const tensor_wrapper &self) -> tensor_wrapper {
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
-      throw_if_error(call_without_gil([&] { return mag_T(&err, &out, *self); }), err);
+      throw_if_error(mag_T(&err, &out, *self), err);
       return tensor_wrapper{out};
     }, "Transpose of the tensor (dims 0 and 1 swapped).")
     .def("permute",
       [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
-        std::vector<int64_t> dims = parse_i64_dims(dims_args, "permute");
+        fixed_dim_vec dims = parse_i64_dims(dims_args, "permute");
         int64_t r = mag_tensor_rank(*self);
         if (static_cast<int64_t>(dims.size()) != r)
           throw nb::value_error("permute: number of dims must match tensor rank");
 
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_permute(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())); }), err);
+        throw_if_error(mag_permute(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())), err);
         return tensor_wrapper{out};
       },
       "dims"_a,
@@ -545,17 +545,17 @@ namespace mag::bindings {
     )
     .def("flip",
       [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
-        std::vector<int64_t> dims = parse_i64_dims(dims_args, "flip");
+        fixed_dim_vec dims = parse_i64_dims(dims_args, "flip");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_flip(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())); }), err);
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_flip(&err, &out, *self, dims.data(), static_cast<int64_t>(dims.size())); }), err);
         return tensor_wrapper{out};
       },
       "dims"_a,
       "Reverse the order of elements along the given dimensions (a negative-strided view)."
     )
     .def("broadcast", [](const tensor_wrapper &self, nb::args shape_args) -> tensor_wrapper {
-        std::vector<int64_t> shape = parse_i64_dims(shape_args, "broadcast");
+        fixed_dim_vec shape = parse_i64_dims(shape_args, "broadcast");
         if (shape.empty())
           throw nb::value_error("broadcast: shape must not be empty");
         int64_t self_rank = mag_tensor_rank(*self);
@@ -582,7 +582,7 @@ namespace mag::bindings {
       [](const tensor_wrapper &self) -> tensor_wrapper {
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_contiguous(&err, &out, *self); }), err);
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_contiguous(&err, &out, *self); }), err);
         return tensor_wrapper{out};
       },
       "Return a contiguous copy if needed; otherwise self."
@@ -592,10 +592,10 @@ namespace mag::bindings {
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         if (dim_h.is_none()) {
-          throw_if_error(call_without_gil([&] { return mag_squeeze_all(&err, &out, *self); }), err);
+          throw_if_error(mag_squeeze_all(&err, &out, *self), err);
         } else {
           auto dim = nb::cast<int64_t>(dim_h);
-          throw_if_error(call_without_gil([&] { return mag_squeeze_dim(&err, &out, *self, dim); }), err);
+          throw_if_error(mag_squeeze_dim(&err, &out, *self, dim), err);
         }
         return tensor_wrapper{out};
       },
@@ -606,7 +606,7 @@ namespace mag::bindings {
       [](const tensor_wrapper &self, int64_t dim) -> tensor_wrapper {
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_unsqueeze(&err, &out, *self, dim); }), err);
+        throw_if_error(mag_unsqueeze(&err, &out, *self, dim), err);
         return tensor_wrapper{out};
       },
       "dim"_a,
@@ -616,7 +616,7 @@ namespace mag::bindings {
       [](const tensor_wrapper &self, int64_t start_dim = 0, int64_t end_dim = -1) -> tensor_wrapper {
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_flatten(&err, &out, *self, start_dim, end_dim); }), err);
+        throw_if_error(mag_flatten(&err, &out, *self, start_dim, end_dim), err);
         return tensor_wrapper{out};
       },
       "start_dim"_a = 0, "end_dim"_a = -1,
@@ -627,7 +627,7 @@ namespace mag::bindings {
         std::vector<int64_t> sizes = parse_i64_list_handle(sizes_h, "unflatten(sizes)");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_unflatten(&err, &out, *self, dim, sizes.data(), static_cast<int64_t>(sizes.size())); }), err);
+        throw_if_error(mag_unflatten(&err, &out, *self, dim, sizes.data(), static_cast<int64_t>(sizes.size())), err);
         return tensor_wrapper{out};
       },
       "dim"_a, "sizes"_a,
@@ -637,7 +637,7 @@ namespace mag::bindings {
       [](const tensor_wrapper &self, int64_t dim, int64_t start, int64_t length) -> tensor_wrapper {
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_narrow(&err, &out, *self, dim, start, length); }), err);
+        throw_if_error(mag_narrow(&err, &out, *self, dim, start, length), err);
         return tensor_wrapper{out};
       },
       "dim"_a, "start"_a, "length"_a,
@@ -647,7 +647,7 @@ namespace mag::bindings {
       [](const tensor_wrapper &self, int64_t src, int64_t dst) -> tensor_wrapper {
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_movedim(&err, &out, *self, src, dst); }), err);
+        throw_if_error(mag_movedim(&err, &out, *self, src, dst), err);
         return tensor_wrapper{out};
       },
       "src"_a, "dst"_a,
@@ -657,7 +657,7 @@ namespace mag::bindings {
       [](const tensor_wrapper &self, int64_t dim, int64_t index) -> tensor_wrapper {
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_select(&err, &out, *self, dim, index); }), err);
+        throw_if_error(mag_select(&err, &out, *self, dim, index), err);
         return tensor_wrapper{out};
       },
       "dim"_a, "index"_a,
@@ -675,7 +675,7 @@ namespace mag::bindings {
         int64_t n_chunks = (size + split_size - 1)/split_size;
         std::vector<mag_tensor_t*> outs(static_cast<size_t>(n_chunks), nullptr);
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_split(&err, outs.data(), n_chunks, *self, split_size, dim); }), err);
+        throw_if_error(mag_split(&err, outs.data(), n_chunks, *self, split_size, dim), err);
         PyObject *t = PyTuple_New(n_chunks);
         if (!t) throw nb::python_error();
         for (int64_t i=0; i < n_chunks; ++i) {
@@ -698,7 +698,7 @@ namespace mag::bindings {
         if (n == 0) return nb::steal<nb::tuple>(PyTuple_New(0));
         std::vector<mag_tensor_t*> outs(static_cast<size_t>(n), nullptr);
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_unbind(&err, outs.data(), n, *self, dim); }), err);
+        throw_if_error(mag_unbind(&err, outs.data(), n, *self, dim), err);
         PyObject *t = PyTuple_New(n);
         if (!t) throw nb::python_error();
         for (int64_t i=0; i < n; ++i) {
@@ -718,10 +718,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_MEAN, [&] {
-            throw_if_error(call_without_gil([&] { return mag_mean(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_mean(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_mean(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_mean(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -736,20 +736,20 @@ namespace mag::bindings {
           auto rhs = nb::cast<tensor_wrapper>(arg);
           if constexpr (enable_op_recorder) {
             op_recorder::singleton().profile(MAG_OP_MAX, [&] {
-              throw_if_error(call_without_gil([&] { return mag_max(&err, &out, *self, *rhs); }), err);
+              throw_if_error(call_maybe_without_gil(self, rhs, [&] { return mag_max(&err, &out, *self, *rhs); }), err);
             }, {*self, *rhs});
           } else {
-            throw_if_error(call_without_gil([&] { return mag_max(&err, &out, *self, *rhs); }), err);
+            throw_if_error(call_maybe_without_gil(self, rhs, [&] { return mag_max(&err, &out, *self, *rhs); }), err);
           }
           return tensor_wrapper{out};
         }
         auto ax = parse_reduction_axes(arg);
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_MAXIMA, [&] {
-            throw_if_error(call_without_gil([&] { return mag_maxima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_maxima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_maxima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_maxima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -765,20 +765,20 @@ namespace mag::bindings {
           auto rhs = nb::cast<tensor_wrapper>(arg);
           if constexpr (enable_op_recorder) {
             op_recorder::singleton().profile(MAG_OP_MIN, [&] {
-              throw_if_error(call_without_gil([&] { return mag_min(&err, &out, *self, *rhs); }), err);
+              throw_if_error(call_maybe_without_gil(self, rhs, [&] { return mag_min(&err, &out, *self, *rhs); }), err);
             }, {*self, *rhs});
           } else {
-            throw_if_error(call_without_gil([&] { return mag_min(&err, &out, *self, *rhs); }), err);
+            throw_if_error(call_maybe_without_gil(self, rhs, [&] { return mag_min(&err, &out, *self, *rhs); }), err);
           }
           return tensor_wrapper{out};
         }
         auto ax = parse_reduction_axes(arg);
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_MINIMA, [&] {
-            throw_if_error(call_without_gil([&] { return mag_minima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_minima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_minima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_minima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -793,10 +793,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_ARGMIN, [&] {
-            throw_if_error(call_without_gil([&] { return mag_argmin(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_argmin(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_argmin(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_argmin(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -810,10 +810,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_ARGMAX, [&] {
-            throw_if_error(call_without_gil([&] { return mag_argmax(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_argmax(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_argmax(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_argmax(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -827,10 +827,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SUM, [&] {
-            throw_if_error(call_without_gil([&] { return mag_sum(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_sum(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_sum(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_sum(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -844,10 +844,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_PROD, [&] {
-            throw_if_error(call_without_gil([&] { return mag_prod(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_prod(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_prod(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_prod(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -860,10 +860,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_CUSUM, [&] {
-            throw_if_error(call_without_gil([&] { return mag_cusum(&err, &out, *self, dim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_cusum(&err, &out, *self, dim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_cusum(&err, &out, *self, dim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_cusum(&err, &out, *self, dim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -876,10 +876,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_CUPROD, [&] {
-            throw_if_error(call_without_gil([&] { return mag_cuprod(&err, &out, *self, dim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_cuprod(&err, &out, *self, dim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_cuprod(&err, &out, *self, dim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_cuprod(&err, &out, *self, dim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -893,10 +893,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_CUMAX, [&] {
-            throw_if_error(call_without_gil([&] { return mag_cumax(&err, &values, &indices, *self, dim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_cumax(&err, &values, &indices, *self, dim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_cumax(&err, &values, &indices, *self, dim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_cumax(&err, &values, &indices, *self, dim); }), err);
         }
         tensor_wrapper v_tw{values};
         tensor_wrapper i_tw{indices};
@@ -918,10 +918,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_CUMIN, [&] {
-            throw_if_error(call_without_gil([&] { return mag_cumin(&err, &values, &indices, *self, dim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_cumin(&err, &values, &indices, *self, dim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_cumin(&err, &values, &indices, *self, dim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_cumin(&err, &values, &indices, *self, dim); }), err);
         }
         tensor_wrapper v_tw{values};
         tensor_wrapper i_tw{indices};
@@ -942,10 +942,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_CUMIN, [&] {
-            throw_if_error(call_without_gil([&] { return mag_outer(&err, &result, *self, *rhs); }), err);
+            throw_if_error(call_maybe_without_gil(self, rhs, [&] { return mag_outer(&err, &result, *self, *rhs); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_outer(&err, &result, *self, *rhs); }), err);
+          throw_if_error(call_maybe_without_gil(self, rhs, [&] { return mag_outer(&err, &result, *self, *rhs); }), err);
         }
         return tensor_wrapper{result};
       },
@@ -958,10 +958,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_ALL, [&] {
-            throw_if_error(call_without_gil([&] { return mag_all(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_all(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_all(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_all(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -975,10 +975,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_ANY, [&] {
-            throw_if_error(call_without_gil([&] { return mag_any(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_any(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_any(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_any(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -992,10 +992,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_TOPK, [&] {
-            throw_if_error(call_without_gil([&] { return mag_topk(&err, &values, &indices, *self, k, dim, largest, sorted); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_topk(&err, &values, &indices, *self, k, dim, largest, sorted); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_topk(&err, &values, &indices, *self, k, dim, largest, sorted); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_topk(&err, &values, &indices, *self, k, dim, largest, sorted); }), err);
         }
         tensor_wrapper v_tw{values};
         tensor_wrapper i_tw{indices};
@@ -1017,10 +1017,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SORT, [&] {
-            throw_if_error(call_without_gil([&] { return mag_sort(&err, &values, &indices, *self, dim, descending, stable); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_sort(&err, &values, &indices, *self, dim, descending, stable); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_sort(&err, &values, &indices, *self, dim, descending, stable); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_sort(&err, &values, &indices, *self, dim, descending, stable); }), err);
         }
         tensor_wrapper v_tw{values};
         tensor_wrapper i_tw{indices};
@@ -1041,10 +1041,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_ARGSORT, [&] {
-            throw_if_error(call_without_gil([&] { return mag_argsort(&err, &indices, *self, dim, descending, stable); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_argsort(&err, &indices, *self, dim, descending, stable); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_argsort(&err, &indices, *self, dim, descending, stable); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_argsort(&err, &indices, *self, dim, descending, stable); }), err);
         }
         return tensor_wrapper{indices};
       },
@@ -1066,10 +1066,10 @@ namespace mag::bindings {
           std::vector<mag_tensor_t *> ins {*self};
           if (w) ins.push_back(w);
           op_recorder::singleton().profile(MAG_OP_BINCOUNT, [&] {
-            throw_if_error(call_without_gil([&] { return mag_bincount(&err, &out, *self, w, minlength); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_bincount(&err, &out, *self, w, minlength); }), err);
           }, ins);
         } else {
-          throw_if_error(call_without_gil([&] { return mag_bincount(&err, &out, *self, w, minlength); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_bincount(&err, &out, *self, w, minlength); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1082,10 +1082,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_NONZERO, [&] {
-            throw_if_error(call_without_gil([&] { return mag_nonzero(&err, &out, *self); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_nonzero(&err, &out, *self); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_nonzero(&err, &out, *self); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_nonzero(&err, &out, *self); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1189,10 +1189,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_TRIL, [&] {
-            throw_if_error(call_without_gil([&] { return mag_tril(&err, &out, *self, diagonal); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_tril(&err, &out, *self, diagonal); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_tril(&err, &out, *self, diagonal); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_tril(&err, &out, *self, diagonal); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1205,10 +1205,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_TRIU, [&] {
-            throw_if_error(call_without_gil([&] { return mag_triu(&err, &out, *self, diagonal); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_triu(&err, &out, *self, diagonal); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_triu(&err, &out, *self, diagonal); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_triu(&err, &out, *self, diagonal); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1221,10 +1221,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_TRIL, [&] {
-            throw_if_error(call_without_gil([&] { return mag_tril_(&err, &out, *self, diagonal); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_tril_(&err, &out, *self, diagonal); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_tril_(&err, &out, *self, diagonal); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_tril_(&err, &out, *self, diagonal); }), err);
         }
         if (self) mag_tensor_decref(*self);
         *self = out;
@@ -1240,10 +1240,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_TRIU, [&] {
-            throw_if_error(call_without_gil([&] { return mag_triu_(&err, &out, *self, diagonal); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_triu_(&err, &out, *self, diagonal); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_triu_(&err, &out, *self, diagonal); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_triu_(&err, &out, *self, diagonal); }), err);
         }
         if (self) mag_tensor_decref(*self);
         *self = out;
@@ -1261,10 +1261,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_MULTINOMIAL, [&] {
-            throw_if_error(call_without_gil([&] { return mag_multinomial(&err, &out, *self, num_samples, replacement); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_multinomial(&err, &out, *self, num_samples, replacement); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_multinomial(&err, &out, *self, num_samples, replacement); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_multinomial(&err, &out, *self, num_samples, replacement); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1277,10 +1277,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_ONE_HOT, [&] {
-            throw_if_error(call_without_gil([&] { return mag_one_hot(&err, &out, *self, num_classes); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_one_hot(&err, &out, *self, num_classes); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_one_hot(&err, &out, *self, num_classes); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_one_hot(&err, &out, *self, num_classes); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1293,10 +1293,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_GATHER, [&] {
-            throw_if_error(call_without_gil([&] { return mag_gather(&err, &out, *self, dim, *index); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_gather(&err, &out, *self, dim, *index); }), err);
           }, {*self, *index});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_gather(&err, &out, *self, dim, *index); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_gather(&err, &out, *self, dim, *index); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1310,10 +1310,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_EMBEDDING, [&] {
-            throw_if_error(call_without_gil([&] { return mag_embedding(&err, &out, *self, *indices); }), err);
+            throw_if_error(call_maybe_without_gil(self, indices, [&] { return mag_embedding(&err, &out, *self, *indices); }), err);
           }, {*self, *indices});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_embedding(&err, &out, *self, *indices); }), err);
+          throw_if_error(call_maybe_without_gil(self, indices, [&] { return mag_embedding(&err, &out, *self, *indices); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1325,10 +1325,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_INDEX_ADD, [&] {
-            throw_if_error(call_without_gil([&] { return mag_index_add_(&err, *self, dim, *index, *source, alpha); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_index_add_(&err, *self, dim, *index, *source, alpha); }), err);
           }, {*self, *index, *source});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_index_add_(&err, *self, dim, *index, *source, alpha); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_index_add_(&err, *self, dim, *index, *source, alpha); }), err);
         }
         return self;
       },
@@ -1344,10 +1344,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SCATTER, [&] {
-            throw_if_error(call_without_gil([&] { return mag_scatter(&err, &out, *self, dim, *index, *src); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_scatter(&err, &out, *self, dim, *index, *src); }), err);
           }, {*self, *index, *src});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_scatter(&err, &out, *self, dim, *index, *src); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_scatter(&err, &out, *self, dim, *index, *src); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1361,10 +1361,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SCATTER, [&] {
-            throw_if_error(call_without_gil([&] { return mag_scatter_(&err, *self, dim, *index, *src); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_scatter_(&err, *self, dim, *index, *src); }), err);
           }, {*self, *index, *src});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_scatter_(&err, *self, dim, *index, *src); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_scatter_(&err, *self, dim, *index, *src); }), err);
         }
         return self;
       },
@@ -1379,10 +1379,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SCATTER_ADD, [&] {
-            throw_if_error(call_without_gil([&] { return mag_scatter_add(&err, &out, *self, dim, *index, *src); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_scatter_add(&err, &out, *self, dim, *index, *src); }), err);
           }, {*self, *index, *src});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_scatter_add(&err, &out, *self, dim, *index, *src); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_scatter_add(&err, &out, *self, dim, *index, *src); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1396,10 +1396,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SCATTER_ADD, [&] {
-            throw_if_error(call_without_gil([&] { return mag_scatter_add_(&err, *self, dim, *index, *src); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_scatter_add_(&err, *self, dim, *index, *src); }), err);
           }, {*self, *index, *src});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_scatter_add_(&err, *self, dim, *index, *src); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_scatter_add_(&err, *self, dim, *index, *src); }), err);
         }
         return self;
       },
@@ -1416,10 +1416,10 @@ namespace mag::bindings {
         mag_error_t err{};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_CLAMP, [&] {
-            throw_if_error(call_without_gil([&] { return mag_clamp(&err, &out, *self, *mn, *mx); }), err);
+            throw_if_error(call_maybe_without_gil(self, mn, [&] { return mag_clamp(&err, &out, *self, *mn, *mx); }), err);
           }, {*self, *mn, *mx});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_clamp(&err, &out, *self, *mn, *mx); }), err);
+          throw_if_error(call_maybe_without_gil(self, mn, [&] { return mag_clamp(&err, &out, *self, *mn, *mx); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1432,7 +1432,7 @@ namespace mag::bindings {
         tensor_wrapper min = normalize_rhs_to_tensor(self, min_h);
         mag_tensor_t *out = nullptr;
         mag_error_t err{};
-        throw_if_error(call_without_gil([&] { return mag_clamp_min(&err, &out, *self, *min); }), err);
+        throw_if_error(call_maybe_without_gil(self, min, [&] { return mag_clamp_min(&err, &out, *self, *min); }), err);
         return tensor_wrapper{out};
       },
       "min"_a,
@@ -1443,7 +1443,7 @@ namespace mag::bindings {
         tensor_wrapper max = normalize_rhs_to_tensor(self, max_h);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_clamp_max(&err, &out, *self, *max); }), err);
+        throw_if_error(call_maybe_without_gil(self, max, [&] { return mag_clamp_max(&err, &out, *self, *max); }), err);
         return tensor_wrapper{out};
       },
       "max"_a,
@@ -1454,7 +1454,7 @@ namespace mag::bindings {
         tensor_wrapper weight = normalize_rhs_to_tensor(self, weight_h);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_lerp(&err, &out, *self, *end, *weight); }), err);
+        throw_if_error(call_maybe_without_gil(self, end, [&] { return mag_lerp(&err, &out, *self, *end, *weight); }), err);
         return tensor_wrapper{out};
       },
       "end"_a,
@@ -1466,7 +1466,7 @@ namespace mag::bindings {
         tensor_wrapper weight = normalize_rhs_to_tensor(self, weight_h);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_lerp_(&err, &out, *self, *end, *weight); }), err);
+        throw_if_error(call_maybe_without_gil(self, end, [&] { return mag_lerp_(&err, &out, *self, *end, *weight); }), err);
         return tensor_wrapper{out};
       },
       "end"_a,
@@ -1475,12 +1475,12 @@ namespace mag::bindings {
     )
     .def("expand",
       [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
-        std::vector<int64_t> dims = parse_i64_dims(dims_args, "expand");
+        fixed_dim_vec dims = parse_i64_dims(dims_args, "expand");
         if (dims.empty())
           throw nb::value_error("expand: shape must not be empty");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&] { return mag_expand(&err, &out, *self, static_cast<int64_t>(dims.size()), dims.data()); }), err);
+        throw_if_error(mag_expand(&err, &out, *self, static_cast<int64_t>(dims.size()), dims.data()), err);
         return tensor_wrapper{out};
       },
       "shape"_a,
@@ -1495,10 +1495,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_PAD, [&] {
-            throw_if_error(call_without_gil([&] { return mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), pad_mode, sv); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), pad_mode, sv); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), pad_mode, sv); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_pad(&err, &out, *self, pad.data(), static_cast<int64_t>(pad.size()), pad_mode, sv); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1509,17 +1509,17 @@ namespace mag::bindings {
     )
     .def("repeat",
       [](const tensor_wrapper &self, nb::args repeats_args) -> tensor_wrapper {
-        std::vector<int64_t> repeats = parse_i64_dims(repeats_args, "repeat");
+        fixed_dim_vec repeats = parse_i64_dims(repeats_args, "repeat");
         if (repeats.empty())
           throw nb::value_error("repeat: expected at least one repeat count");
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_REPEAT, [&] {
-            throw_if_error(call_without_gil([&] { return mag_repeat(&err, &out, *self, repeats.data(), static_cast<int64_t>(repeats.size())); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_repeat(&err, &out, *self, repeats.data(), static_cast<int64_t>(repeats.size())); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_repeat(&err, &out, *self, repeats.data(), static_cast<int64_t>(repeats.size())); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_repeat(&err, &out, *self, repeats.data(), static_cast<int64_t>(repeats.size())); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1555,10 +1555,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_REPEAT_INTERLEAVE, [&] {
-            throw_if_error(call_without_gil([&] { return mag_repeat_interleave(&err, &out, *self, flatten, dim, counts.data(), static_cast<int64_t>(counts.size())); }), err);
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_repeat_interleave(&err, &out, *self, flatten, dim, counts.data(), static_cast<int64_t>(counts.size())); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_repeat_interleave(&err, &out, *self, flatten, dim, counts.data(), static_cast<int64_t>(counts.size())); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_repeat_interleave(&err, &out, *self, flatten, dim, counts.data(), static_cast<int64_t>(counts.size())); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1613,10 +1613,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_WHERE, [&] {
-            throw_if_error(call_without_gil([&] { return mag_where(&err, &out, *cond, *x, *y); }), err);
+            throw_if_error(call_maybe_without_gil(cond, x, [&] { return mag_where(&err, &out, *cond, *x, *y); }), err);
           }, {*cond, *x, *y});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_where(&err, &out, *cond, *x, *y); }), err);
+          throw_if_error(call_maybe_without_gil(cond, x, [&] { return mag_where(&err, &out, *cond, *x, *y); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1690,10 +1690,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SOFTMAX, [&] {
-            throw_if_error(call_without_gil([&] { return mag_softmax(&err, &out, *self); }), err); // TODO: respect dim
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax(&err, &out, *self); }), err); // TODO: respect dim
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_softmax(&err, &out, *self); }), err); // TODO: respect dim
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax(&err, &out, *self); }), err); // TODO: respect dim
         }
         return tensor_wrapper{out};
       },
@@ -1706,10 +1706,10 @@ namespace mag::bindings {
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SOFTMAX, [&] {
-            throw_if_error(call_without_gil([&] { return mag_softmax_(&err, &out, *self); }), err); // TODO: respect dim
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax_(&err, &out, *self); }), err); // TODO: respect dim
           }, {*self});
         } else {
-          throw_if_error(call_without_gil([&] { return mag_softmax_(&err, &out, *self); }), err); // TODO: respect dim
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax_(&err, &out, *self); }), err); // TODO: respect dim
         }
         if (self) mag_tensor_decref(*self);
         *self = out;
@@ -1736,7 +1736,7 @@ namespace mag::bindings {
     .def("__neg__", [](const tensor_wrapper &self) -> tensor_wrapper {
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
-      throw_if_error(call_without_gil([&] { return mag_neg(&err, &out, *self); }), err);
+      throw_if_error(call_maybe_without_gil(self, [&] { return mag_neg(&err, &out, *self); }), err);
       return tensor_wrapper{out};
     }, "Element-wise negation (unary -).")
     .def("__pos__", [](const tensor_wrapper &self) -> tensor_wrapper {
@@ -1745,7 +1745,7 @@ namespace mag::bindings {
     .def("__abs__", [](const tensor_wrapper &self) -> tensor_wrapper {
       mag_tensor_t *out = nullptr;
       mag_error_t err {};
-      throw_if_error(call_without_gil([&] { return mag_abs(&err, &out, *self); }), err);
+      throw_if_error(call_maybe_without_gil(self, [&] { return mag_abs(&err, &out, *self); }), err);
       return tensor_wrapper{out};
     }, "Element-wise absolute value.");
 
@@ -1763,10 +1763,10 @@ namespace mag::bindings {
       mag_error_t err {};
       if constexpr (enable_op_recorder) {
         op_recorder::singleton().profile(MAG_OP_NOT, [&] {
-          throw_if_error(call_without_gil([&] { return mag_not(&err, &out, *self); }), err);
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_not(&err, &out, *self); }), err);
         }, {*self});
       } else {
-        throw_if_error(call_without_gil([&] { return mag_not(&err, &out, *self); }), err);
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_not(&err, &out, *self); }), err);
       }
       return tensor_wrapper {out};
     }, "Element-wise bitwise NOT (logical NOT for boolean tensors).");
@@ -1788,10 +1788,10 @@ namespace mag::bindings {
       mag_error_t err{};
       if constexpr (enable_op_recorder) {
         op_recorder::singleton().profile(MAG_OP_MATMUL, [&] () -> void {
-          throw_if_error(call_without_gil([&] { return mag_matmul(&err, &out, *self, *b); }), err);
+          throw_if_error(call_maybe_without_gil(self, b, [&] { return mag_matmul(&err, &out, *self, *b); }), err);
         }, {*self, *b});
       } else {
-        throw_if_error(call_without_gil([&] { return mag_matmul(&err, &out, *self, *b); }), err);
+        throw_if_error(call_maybe_without_gil(self, b, [&] { return mag_matmul(&err, &out, *self, *b); }), err);
       }
       return tensor_wrapper{out};
     };

@@ -341,17 +341,7 @@ namespace mag::bindings {
           requires_grad = nb::cast<bool>(kwargs[intern_key(requires_grad)]);
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
-        std::vector<int64_t> shape {};
-        if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
-          auto seq = nb::cast<nb::sequence>(args[0]);
-          shape.reserve(nb::len(seq));
-          for (auto &&h : seq)
-            shape.emplace_back(nb::cast<int64_t>(h));
-        } else {
-          shape.reserve(args.size());
-          for (auto &&h : args)
-            shape.emplace_back(nb::cast<int64_t>(h));
-        }
+        fixed_dim_vec shape = parse_shape_from_args(args);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         if (shape.empty()) throw_if_error(mag_empty_scalar(&err, &out, ctx, dt.v, *device_id), err);
@@ -401,7 +391,7 @@ namespace mag::bindings {
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
-        std::vector<int64_t> shape = parse_shape_from_args(args);
+        fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
         mag_tensor_t *out = nullptr;
         mag_scalar_t s = scalar_from_py_number(fill_value);
@@ -432,7 +422,7 @@ namespace mag::bindings {
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
-        std::vector<int64_t> shape = parse_shape_from_args(args);
+        fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
@@ -461,7 +451,7 @@ namespace mag::bindings {
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
-        std::vector<int64_t> shape = parse_shape_from_args(args);
+        fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
@@ -492,7 +482,7 @@ namespace mag::bindings {
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_scalar_t low = kwargs.contains(intern_key(low)) ? scalar_from_py_number(kwargs[intern_key(low)]) : mag_scalar_from_float64(0.0);
         mag_scalar_t high = kwargs.contains(intern_key(high)) ? scalar_from_py_number(kwargs[intern_key(high)]) : mag_scalar_from_float64(1.0);
-        std::vector<int64_t> shape = parse_shape_from_args(args);
+        fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
@@ -525,7 +515,7 @@ namespace mag::bindings {
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_scalar_t mean = kwargs.contains(intern_key(mean)) ? scalar_from_py_number(kwargs[intern_key(mean)]) : mag_scalar_from_float64(0.0);
         mag_scalar_t std = kwargs.contains(intern_key(std)) ? scalar_from_py_number(kwargs[intern_key(std)]) : mag_scalar_from_float64(1.0);
-        std::vector<int64_t> shape = parse_shape_from_args(args);
+        fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
@@ -555,7 +545,7 @@ namespace mag::bindings {
         bool requires_grad = kw_requires_grad_or(kwargs, false);
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
-        std::vector<int64_t> shape = parse_shape_from_args(args);
+        fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
         mag_context_t *ctx = get_ctx();
         mag_tensor_t *out = nullptr;

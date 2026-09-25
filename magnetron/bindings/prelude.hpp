@@ -121,6 +121,38 @@ namespace mag::bindings {
   };
   static_assert(sizeof(tensor_wrapper) == sizeof(mag_tensor_t *), "tensor_wrapper should have the same size as a raw pointer.");
 
+  struct fixed_dim_vec final {
+    std::array<int64_t, MAG_MAX_DIMS> dims {};
+    int64_t numel = 0;
+
+    [[nodiscard]] int64_t *data() noexcept { return dims.data(); }
+    [[nodiscard]] const int64_t *data() const noexcept { return dims.data(); }
+    [[nodiscard]] size_t size() const noexcept { return static_cast<size_t>(numel); }
+    [[nodiscard]] int64_t rank() const noexcept { return numel; }
+    [[nodiscard]] bool empty() const noexcept { return numel == 0; }
+    [[nodiscard]] int64_t *begin() noexcept { return dims.data(); }
+    [[nodiscard]] int64_t *end() noexcept { return dims.data()+numel; }
+    [[nodiscard]] const int64_t *begin() const noexcept { return dims.data(); }
+    [[nodiscard]] const int64_t *end() const noexcept { return dims.data()+numel; }
+    [[nodiscard]] int64_t &operator[](size_t i) noexcept { return dims[i]; }
+    [[nodiscard]] int64_t operator[](size_t i) const noexcept { return dims[i]; }
+    [[nodiscard]] int64_t &back() noexcept { return dims[numel-1]; }
+    void clear() noexcept { numel = 0; }
+
+    void push_back(int64_t x) {
+      if (mag_unlikely(numel >= MAG_MAX_DIMS))
+        throw nb::value_error(("too many dimensions, must be <= " + std::to_string(MAG_MAX_DIMS)).c_str());
+      dims[numel++] = x;
+    }
+
+    void assign(const int64_t *p, int64_t count) {
+      if (count > MAG_MAX_DIMS)
+        throw nb::value_error(("too many dimensions, must be <= " + std::to_string(MAG_MAX_DIMS)).c_str());
+      std::copy_n(p, count, dims.begin());
+      numel = count;
+    }
+  };
+
   struct reduction_axes final {
     std::vector<int64_t> storage {};
     const int64_t *ptr = nullptr;
@@ -130,8 +162,8 @@ namespace mag::bindings {
   [[nodiscard]] extern nb::tuple tuple_from_i64_span(const int64_t *p, Py_ssize_t n);
   [[nodiscard]] extern tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt, mag_device_id_t device);
   [[nodiscard]] extern tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs);
-  [[nodiscard]] extern std::vector<int64_t> parse_shape_from_args(const nb::args &args);
-  [[nodiscard]] extern std::vector<int64_t> parse_i64_dims(const nb::args &args, const char *what);
+  [[nodiscard]] extern fixed_dim_vec parse_shape_from_args(const nb::args &args);
+  [[nodiscard]] extern fixed_dim_vec parse_i64_dims(const nb::args &args, const char *what);
   [[nodiscard]] extern std::vector<int64_t> parse_i64_list_handle(nb::handle h, const char *what);
   [[nodiscard]] extern reduction_axes parse_reduction_axes(nb::handle dim_h);
   [[nodiscard]] extern mag_scalar_t scalar_from_py_number(nb::handle h);
@@ -140,16 +172,34 @@ namespace mag::bindings {
   [[nodiscard]] extern std::string format_error_msg(const mag_error_t &err);
   [[nodiscard]] extern std::optional<mag_device_id_t> parse_device_id_str(const std::string &str, bool *out_has_ordinal = nullptr);
   [[nodiscard]] extern std::optional<mag_device_id_t> resolve_device_id_str(const std::string &str);
+  extern void validate_shape(const fixed_dim_vec &shape);
   extern void validate_shape(const std::vector<int64_t> &shape);
-  extern void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op);;
+  extern void validate_shape_infer_one(const fixed_dim_vec &shape, const char *op);
 
-  /* Runs a core call with the GIL released, so other Python threads make progress during compute.
-     The result is returned to the caller, which still holds the GIL and may therefore throw. Never
-     touch an nb:: object inside 'fn'. */
+  /* Below this element count a kernel finishes faster than the GIL lock/unlock itself and never touches the thread pool */
+  constexpr int64_t gil_release_numel_threshold = 1000;
+
   template <typename F>
-  [[nodiscard]] inline mag_status_t call_without_gil(F &&fn) {
+  [[nodiscard]] mag_status_t call_without_gil(F &&fn) noexcept(std::is_nothrow_invocable_r_v<mag_status_t, F>) {
+    static_assert(std::is_invocable_r_v<mag_status_t, F>);
     nb::gil_scoped_release nogil {};
-    return fn();
+    return std::invoke(fn);
+  }
+
+  template <typename F>
+  [[nodiscard]] mag_status_t call_maybe_without_gil(const tensor_wrapper &x, F &&fn) {
+    static_assert(std::is_invocable_r_v<mag_status_t, F>);
+    if (mag_tensor_numel(*x) <= gil_release_numel_threshold) return std::invoke(fn);
+    nb::gil_scoped_release nogil {};
+    return std::invoke(fn);
+  }
+
+  template <typename F>
+  [[nodiscard]] mag_status_t call_maybe_without_gil(const tensor_wrapper &x, const tensor_wrapper &y, F &&fn) {
+    static_assert(std::is_invocable_r_v<mag_status_t, F>);
+    if (mag_tensor_numel(*x) <= gil_release_numel_threshold && mag_tensor_numel(*y) <= gil_release_numel_threshold) return std::invoke(fn);
+    nb::gil_scoped_release nogil {};
+    return std::invoke(fn);
   }
 
   inline void throw_if_error(mag_status_t st, const mag_error_t &err) {
