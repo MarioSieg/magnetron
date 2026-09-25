@@ -25,6 +25,7 @@ typedef struct mag_unary_vectorization_plan_t {
   int64_t shape[MAG_MAX_DIMS];
   int64_t rstr[MAG_MAX_DIMS];
   int64_t xstr[MAG_MAX_DIMS];
+  bool x_const;
 } mag_unary_vectorization_plan_t;
 extern bool mag_unary_vectorization_plan_init(mag_unary_vectorization_plan_t *p, const mag_tensor_t *r, const mag_tensor_t *x);
 extern void mag_unary_vectorization_plan_step(const mag_unary_vectorization_plan_t *p, int64_t o, int64_t *rb, int64_t *xb);

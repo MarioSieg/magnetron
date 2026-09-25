@@ -2355,15 +2355,13 @@ mag_status_t mag_embedding(mag_error_t *err, mag_tensor_t **out_result, mag_tens
       return mag_set_error(err, MAG_ERR_PARAM, "embedding: indices tensor must have dtype int64, but got %s.", mag_type_trait(indices->meta.dtype)->name);
   if (mag_unlikely(!(weight->meta.coords.rank >= 1)))
       return mag_set_error(err, MAG_ERR_PARAM, "embedding: weight must have rank >= 1.");
-  if (mag_unlikely(!(indices->meta.coords.rank >= 1)))
-      return mag_set_error(err, MAG_ERR_PARAM, "embedding: indices must have rank >= 1.");
   /* Output shape: indices.shape + weight.shape[1:] */
   int64_t ork = 0;
   int64_t ax[MAG_MAX_DIMS];
   for (int64_t i = 0; i < indices->meta.coords.rank; ++i) ax[ork++] = indices->meta.coords.shape[i];
   for (int64_t i = 1; i < weight->meta.coords.rank; ++i)  ax[ork++] = weight->meta.coords.shape[i];
-  if (mag_unlikely(!(ork >= 1 && ork <= MAG_MAX_DIMS)))
-      return mag_set_error(err, MAG_ERR_RANK, "embedding: output rank must be in [1, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, ork);
+  if (mag_unlikely(!(ork >= 0 && ork <= MAG_MAX_DIMS)))
+      return mag_set_error(err, MAG_ERR_RANK, "embedding: output rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, ork);
   mag_status_t status = mag_empty(err, &result, weight->ctx, weight->meta.dtype, ork, ax, mag_tensor_device_id(weight));
   if (mag_iserr(status)) return status;
   status = mag_check_dtype_and_device_compat(err, MAG_OP_EMBEDDING, (mag_tensor_t *[2]){weight, indices}, 0);

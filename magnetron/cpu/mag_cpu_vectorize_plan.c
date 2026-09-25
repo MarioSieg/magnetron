@@ -13,27 +13,39 @@
 
 bool mag_unary_vectorization_plan_init(mag_unary_vectorization_plan_t *p, const mag_tensor_t *r, const mag_tensor_t *x) {
   int64_t rank = r->meta.coords.rank;
-  if (x->meta.coords.rank != rank) return false;
+  int64_t xr = x->meta.coords.rank;
+  if (xr > rank) return false;
   const int64_t *rs = r->meta.coords.shape;
-  const int64_t *xs = x->meta.coords.shape;
   const int64_t *rt = r->meta.coords.strides;
-  const int64_t *xt = x->meta.coords.strides;
+  int64_t xs[MAG_MAX_DIMS], xt[MAG_MAX_DIMS];
+  int64_t dx = rank-xr;
+  for (int64_t d=0; d < rank; ++d) {
+    xs[d] = d < dx ? 1 : x->meta.coords.shape[d-dx];
+    xt[d] = d < dx ? 0 : x->meta.coords.strides[d-dx];
+  }
   for (int64_t d=0; d < rank; ++d)
-    if (xs[d] != rs[d]) return false;
+    if (!(xs[d] == rs[d] || xs[d] == 1)) return false;
+  bool xf=true, xc=true;
   int64_t inner = 1;
   int64_t d = rank-1;
   for (; d >= 0; --d) {
     if (rs[d] == 1) continue;
-    if (rt[d] != inner || xt[d] != inner) break;
+    if (rt[d] != inner) break;
+    bool xb = xs[d] == 1 || xt[d] == 0;
+    bool nxf = xf && !xb && xt[d] == inner;
+    bool nxc = xc && xb;
+    if (!(nxf || nxc)) break;
+    xf = nxf; xc = nxc;
     inner *= rs[d];
   }
   if (inner <= 1) return false;
   p->inner = inner;
+  p->x_const = xc;
   p->outer_rank = d+1;
   for (int64_t k=0; k <= d; ++k) {
     p->shape[k] = rs[k];
     p->rstr[k] = rs[k] == 1 ? 0 : rt[k];
-    p->xstr[k] = rs[k] == 1 ? 0 : xt[k];
+    p->xstr[k] = xs[k] == 1 ? 0 : xt[k];
   }
   return true;
 }

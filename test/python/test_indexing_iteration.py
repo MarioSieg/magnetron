@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from magnetron import Tensor
+from magnetron import Tensor, dtype
 
 from .common import totorch
 
@@ -174,3 +174,22 @@ def test_list_conversion_of_rows_matches_tolist() -> None:
     mag_t, ref_t = _pair(3, 2)
     assert [row.tolist() for row in mag_t] == ref_t.tolist()
     assert [x.item() for x in mag_t[0]] == ref_t[0].tolist()
+
+
+def test_index_with_0d_int64_tensor_matches_torch() -> None:
+    got, ref = _pair(5, 3)
+    got_i = Tensor([2]).cast(dtype.int64).reshape(1, 1)[0, 0]
+    ref_i = torch.tensor([[2]])[0, 0]
+    assert got_i.rank == 0 == ref_i.dim()
+    _assert_same(got[got_i], ref[ref_i])
+    _assert_same(got[got_i, 1], ref[ref_i, 1])
+    got1, ref1 = _pair(5)
+    _assert_same(got1[got_i], ref1[ref_i])
+    assert got1[got_i].item() == ref1[ref_i].item()
+
+
+def test_embedding_with_0d_index_matches_torch() -> None:
+    got, ref = _pair(5, 3)
+    got_i = Tensor([4]).cast(dtype.int64)[0]
+    assert got_i.rank == 0
+    _assert_same(got.embedding(got_i), torch.nn.functional.embedding(torch.tensor(4), ref))
