@@ -61,26 +61,16 @@ _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
 )
 
 
+_HALF_DTYPES = {dtype.float16, dtype.bfloat16}
+
 _UNARY_TOLS: dict[dtype.DType, tuple[float, float]] = {
     dtype.float32: (1e-5, 1e-5),
     dtype.float16: (1e-3, 1e-5),
     dtype.bfloat16: (1.6e-2, 1e-5),
 }
 
-# Some CPU unary kernels use faster approximations that diverge from torch more than CUDA.
-_CPU_LOOSE_UNARY_OPS: frozenset[str] = frozenset({'tanh', 'exp', 'sigmoid', 'silu', 'softmax'})
-_CPU_LOOSE_TOLS: dict[dtype.DType, tuple[float, float]] = {
-    dtype.float32: (0.5, 0.75),
-    dtype.float16: (0.5, 0.75),
-    dtype.bfloat16: (0.5, 0.75),
-}
-
 
 def _unary_tol(device: str, dt: dtype.DType, op_name: str) -> tuple[float, float]:
-    if op_name == 'round' and dt in {dtype.float16, dtype.bfloat16}:
-        return 0.0, 1.0
-    if device == 'cpu' and op_name in _CPU_LOOSE_UNARY_OPS:
-        return _CPU_LOOSE_TOLS[dt]
     return _UNARY_TOLS[dt]
 
 
@@ -109,6 +99,8 @@ def unary_op(
 @pytest.mark.parametrize('op', _UNARY_OPS)
 def test_unary_op(device: str, dtype: dtype.DType, op: UnaryOpTestCase) -> None:
     name = op.name
+    if name == 'round' and dtype in _HALF_DTYPES:
+        pytest.skip('exact .5 ties occur in half precision; covered by test_unary_round_half_precision_ties')
     if op.torch_callback is not None:
         torch_op = op.torch_callback
     elif hasattr(torch, name):
@@ -144,5 +136,16 @@ def test_unary_logical_not_integral(device: str, dt: dtype.DType) -> None:
         y = x.clone()
         y.logical_not_()
         np.testing.assert_array_equal(tonumpy(y), expected)
+
+    for_all_shapes(test)
+
+
+@pytest.mark.xfail(reason='round() rounds half away from zero; torch rounds half to even, and exact .5 ties occur in half precision', strict=True)
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dt', [dtype.float16, dtype.bfloat16], ids=['float16', 'bfloat16'])
+def test_unary_round_half_precision_ties(device: str, dt: dtype.DType) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        x = random_tensor(shape, dt, device=device)
+        torch.testing.assert_close(totorch(x.round()), totorch(x).round(), rtol=0, atol=0)
 
     for_all_shapes(test)

@@ -230,12 +230,23 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             yield shape_A, shape_B
 
 
+_DTYPES = dtype
+
+
+def uniform_tensor(shape: tuple[int, ...], low: float = 0.0, high: float = 1.0, dtype: dtype.DType = dtype.float32, device: str = 'cpu') -> Tensor:
+    if dtype == _DTYPES.boolean:
+        return Tensor((torch.rand(shape) < 0.5).tolist(), dtype=dtype, device=device)
+    if dtype.is_integer():
+        return Tensor(torch.randint(int(low), int(high), shape).tolist(), dtype=dtype, device=device)
+    return Tensor((torch.rand(shape, dtype=torch.float64) * (high - low) + low).tolist(), dtype=dtype, device=device)
+
+
 def random_tensor(shape: tuple[int, ...], dt: dtype.DType, device: str = 'cpu') -> Tensor:
     if dt == dtype.boolean:
-        return Tensor.bernoulli(shape, device=device)
+        return uniform_tensor(shape, dtype=dt, device=device)
     lim = 100 if dt.is_integer() else 1.0
     low = 0 if dt.is_unsigned_integer() else -lim
-    return Tensor.uniform(shape, low=low, high=lim, dtype=dt, device=device)
+    return uniform_tensor(shape, low, lim, dt, device)
 
 
 DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (

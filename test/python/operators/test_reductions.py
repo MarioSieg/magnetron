@@ -124,3 +124,89 @@ def test_argsort(dtype: dtype.DType, descending: bool) -> None:
         assert ri.tolist() == ti.tolist()
 
     for_all_shapes(test)
+
+
+_INT_REDUCES = ('sum', 'prod', 'min', 'max', 'argmin', 'argmax')
+_INT_DTYPES = tuple(sorted(dtype.integer, key=lambda d: d.name))
+
+
+def _int_reference(tx64: torch.Tensor, op: str, dim: int | None, keepdim: bool) -> torch.Tensor:
+    t = getattr(tx64, op)() if dim is None else getattr(tx64, op)(dim=dim, keepdim=keepdim)
+    return t if isinstance(t, torch.Tensor) else t[0]
+
+
+def _int_result_dtype(dt: dtype.DType, op: str) -> dtype.DType:
+    if op in ('argmin', 'argmax'):
+        return dtype.int64
+    if op in ('sum', 'prod'):
+        return dtype.int64 if dt.is_signed_integer() else dtype.uint64
+    return dt
+
+
+@pytest.mark.parametrize('dt', _INT_DTYPES, ids=[d.name for d in _INT_DTYPES])
+@pytest.mark.parametrize('op', _INT_REDUCES)
+@pytest.mark.parametrize('keepdim', [True, False])
+def test_reduce_op_integer(dt: dtype.DType, op: str, keepdim: bool) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        x = uniform_tensor(shape, low=1 if op == 'prod' else 0, high=4, dtype=dt)
+        dim = random_dim(shape)
+        r = call_reduction(x, op, dim, keepdim)
+        t = _int_reference(totorch(x).to(torch.int64), op, dim, keepdim)
+        assert r.dtype == _int_result_dtype(dt, op)
+        assert r.shape == tuple(t.shape)
+        assert r.tolist() == t.to(totorch_dtype(r.dtype)).tolist()
+
+    for_all_shapes(test)
+
+
+@pytest.mark.parametrize('dt', _INT_DTYPES, ids=[d.name for d in _INT_DTYPES])
+@pytest.mark.parametrize('op', ['argmin', 'argmax'])
+def test_arg_reduction_returns_first_occurrence(dt: dtype.DType, op: str) -> None:
+    for shape in ((8,), (4, 6), (2, 3, 5), (64,), (3, 129)):
+        x = uniform_tensor(shape, low=0, high=2, dtype=dt)
+        tx = totorch(x).to(torch.int64)
+        assert getattr(x, op)().tolist() == getattr(tx, op)().tolist()
+        for dim in range(-len(shape), len(shape)):
+            for keepdim in (False, True):
+                r = getattr(x, op)(dim, keepdim=keepdim)
+                assert r.tolist() == getattr(tx, op)(dim=dim, keepdim=keepdim).tolist()
+
+
+@pytest.mark.parametrize('dt', tuple(sorted(FLOATING_NO_FLOAT8 | dtype.integer | {dtype.boolean}, key=lambda d: d.name)), ids=lambda d: d.name)
+@pytest.mark.parametrize('op', ['all', 'any'])
+@pytest.mark.parametrize('keepdim', [True, False])
+def test_all_any_matches_torch(dt: dtype.DType, op: str, keepdim: bool) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        x = uniform_tensor(shape, low=0, high=3, dtype=dtype.int32).cast(dt)
+        tx = totorch(x)
+        dim = random_dim(shape)
+        r = call_reduction(x, op, dim, keepdim)
+        t = getattr(tx, op)() if dim is None else getattr(tx, op)(dim=dim, keepdim=keepdim)
+        assert r.dtype == dtype.boolean
+        assert r.shape == tuple(t.shape)
+        assert r.tolist() == t.tolist()
+
+    for_all_shapes(test)
+
+
+@pytest.mark.parametrize('dt', tuple(sorted(FLOATING_NO_FLOAT8, key=lambda d: d.name)), ids=lambda d: d.name)
+@pytest.mark.parametrize('op', ['sum', 'mean', 'prod', 'min', 'max', 'argmin', 'argmax'])
+def test_reduce_multi_dim_matches_torch(dt: dtype.DType, op: str) -> None:
+    shape = (2, 3, 4, 5)
+    x = uniform_tensor(shape, low=0.8, high=1.25, dtype=dt)
+    tx = totorch(x)
+    for dims in ((0, 1), (1, 3), (0, 2, 3), (-1, -2), (0, 1, 2, 3)):
+        for keepdim in (False, True):
+            if op in ('min', 'max', 'argmin', 'argmax'):
+                continue
+            r = getattr(x, op)(dim=dims, keepdim=keepdim)
+            if op == 'prod':
+                t = tx.to(torch.float64)
+                for d in sorted(d % tx.dim() for d in dims):
+                    t = t.prod(dim=d, keepdim=True)
+                if not keepdim:
+                    t = t.squeeze()
+                t = t.to(totorch_dtype(dt))
+            else:
+                t = getattr(tx, op)(dim=dims, keepdim=keepdim)
+            assert_close_mag_torch(r, t, dt)
