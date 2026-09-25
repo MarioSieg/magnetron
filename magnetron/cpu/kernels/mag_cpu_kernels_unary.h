@@ -49,6 +49,64 @@
       } \
     )
 
+
+#define MAG_UN_TILE 32
+#define mag_un_id(x) (x)
+
+#define mag_tile_gather(T, dst, base, sA, sB, an, bn, TILE) \
+    if ((sA) == 1 || (sB) != 1) { for (int64_t tb=0; tb < (bn); ++tb) { const T *c = (base) + tb*(sB); for (int64_t ta=0; ta < (an); ++ta) (dst)[tb*(TILE)+ta] = c[ta*(sA)]; } } \
+    else { for (int64_t ta=0; ta < (an); ++ta) { const T *c = (base) + ta*(sA); for (int64_t tb=0; tb < (bn); ++tb) (dst)[tb*(TILE)+ta] = c[tb]; } }
+
+#define mag_tile_scatter(RT, src, base, sA, sB, an, bn, TILE) \
+    if ((sA) == 1 || (sB) != 1) { for (int64_t tb=0; tb < (bn); ++tb) { RT *o = (base) + tb*(sB); const RT *c = (src) + tb*(TILE); for (int64_t ta=0; ta < (an); ++ta) o[ta*(sA)] = c[ta]; } } \
+    else { for (int64_t ta=0; ta < (an); ++ta) { RT *o = (base) + ta*(sA); for (int64_t tb=0; tb < (bn); ++tb) o[tb] = (src)[tb*(TILE)+ta]; } }
+
+#define mag_un_tiled_impl(T, ...) \
+    if (r->meta.coords.rank >= 2 && x->meta.coords.rank <= r->meta.coords.rank) { \
+      int64_t rank = r->meta.coords.rank; \
+      int64_t dx = rank - x->meta.coords.rank; \
+      const int64_t *rs = r->meta.coords.shape; \
+      int64_t rt[MAG_MAX_DIMS], xt[MAG_MAX_DIMS]; \
+      bool ok = true; \
+      for (int64_t d=0; d < rank; ++d) { \
+        int64_t xsd = d < dx ? 1 : x->meta.coords.shape[d-dx]; \
+        rt[d] = rs[d] == 1 ? 0 : r->meta.coords.strides[d]; \
+        xt[d] = d < dx || xsd == 1 ? 0 : x->meta.coords.strides[d-dx]; \
+        if (xsd != 1 && xsd != rs[d]) ok = false; \
+      } \
+      mag_tile_plan_t tp; \
+      if (ok && mag_tile_plan_init(&tp, r, rt, xt, NULL, MAG_UN_TILE)) { \
+        T tile[MAG_UN_TILE*MAG_UN_TILE]; \
+        int64_t org[MAG_MAX_DIMS]; \
+        for (int64_t tile_i=0; tile_i < tp.ntiles; ++tile_i) { \
+          mag_tile_plan_origin(&tp, tile_i, org); \
+          int64_t first = 0, ro = 0, xo = 0; \
+          for (int64_t k=0; k < rank; ++k) { first += org[k]*tp.cstr[k]; ro += org[k]*rt[k]; xo += org[k]*xt[k]; } \
+          if (first >= rb) break; \
+          if (first < ra) continue; \
+          int64_t an = mag_vmin(MAG_UN_TILE, rs[tp.a]-org[tp.a]), bn = mag_vmin(MAG_UN_TILE, rs[tp.b]-org[tp.b]); \
+          mag_tile_gather(T, tile, bx + xo, xt[tp.a], xt[tp.b], an, bn, MAG_UN_TILE) \
+          __VA_ARGS__ \
+          mag_tile_scatter(T, tile, br + ro, rt[tp.a], rt[tp.b], an, bn, MAG_UN_TILE) \
+        } \
+        return MAG_OK; \
+      } \
+    }
+
+#define mag_un_tiled(T, F) \
+    mag_un_tiled_impl(T, \
+      for (int64_t tb=0; tb < bn; ++tb) { T *tr = tile + tb*MAG_UN_TILE; for (int64_t ta=0; ta < an; ++ta) tr[ta] = F(tr[ta]); } \
+    )
+#define mag_un_tiled_simd(T, ld, st, VF, F) \
+    mag_un_tiled_impl(T, \
+      for (int64_t tb=0; tb < bn; ++tb) { \
+        T *tr = tile + tb*MAG_UN_TILE; \
+        int64_t ta = 0; \
+        for (; ta+MAG_VF32_LANES <= an; ta += MAG_VF32_LANES) st(tr+ta, VF(ld(tr+ta))); \
+        for (; ta < an; ++ta) tr[ta] = F(tr[ta]); \
+      } \
+    )
+
 #define mag_gen_stub_clone(T, TF) \
   static MAG_HOTPROC mag_status_t mag_clone_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
@@ -68,6 +126,7 @@
       return MAG_OK; \
     } \
     mag_un_exec_impl_copy(T) \
+    mag_un_tiled_impl(T, ;) \
     mag_coords_iter_t cr, cx; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
     mag_coords_iter_init(&cx, &x->meta.coords); \
@@ -268,6 +327,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
       return MAG_OK; \
     } \
     mag_un_exec_impl(T, mag_fn_##name##_##suffix) \
+    mag_un_tiled(T, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr, cx; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
     mag_coords_iter_init(&cx, &x->meta.coords); \
@@ -304,6 +364,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
       return MAG_OK; \
     } \
     mag_un_exec_impl_simd(T, ld, st, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
+    mag_un_tiled_simd(T, ld, st, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr, cx; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
     mag_coords_iter_init(&cx, &x->meta.coords); \
@@ -399,6 +460,13 @@ mag_gen_int_unary(sqr)
 #undef mag_gen_unary_simd
 #undef mag_un_run_walk
 #undef mag_un_exec_impl_copy
+#undef mag_un_tiled
+#undef mag_un_tiled_simd
+#undef mag_un_tiled_impl
+#undef mag_tile_gather
+#undef mag_tile_scatter
+#undef mag_un_id
+#undef MAG_UN_TILE
 #undef mag_un_exec_impl
 #undef mag_un_exec_impl_simd
 #undef mag_fn_abs_int

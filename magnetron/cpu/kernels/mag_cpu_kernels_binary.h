@@ -70,11 +70,11 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         int64_t o = i/plan.inner; \
         int64_t j = i - o*plan.inner; \
         int64_t run = mag_vmin(plan.inner-j, rb-i); \
-        int64_t xb, yb; \
-        mag_binary_vectorization_plan_step(&plan, o, &xb, &yb); \
+        int64_t rbo, xb, yb; \
+        mag_binary_vectorization_plan_step(&plan, o, &rbo, &xb, &yb); \
         const T *px = bx + xb + (plan.x_const ? 0 : j); \
         const T *py = by + yb + (plan.y_const ? 0 : j); \
-        RT *pr = br + i; \
+        RT *pr = br + rbo + j; \
         if (plan.x_const) { T xa = *px; for (int64_t t=0; t < run; ++t) { T ya = py[t]; pr[t] = EXPR; } } \
         else if (plan.y_const) { T ya = *py; for (int64_t t=0; t < run; ++t) { T xa = px[t]; pr[t] = EXPR; } } \
         else { for (int64_t t=0; t < run; ++t) { T xa = px[t]; T ya = py[t]; pr[t] = EXPR; } } \
@@ -90,11 +90,11 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         int64_t o = i/plan.inner; \
         int64_t j = i - o*plan.inner; \
         int64_t run = mag_vmin(plan.inner-j, rb-i); \
-        int64_t xb, yb; \
-        mag_binary_vectorization_plan_step(&plan, o, &xb, &yb); \
+        int64_t rbo, xb, yb; \
+        mag_binary_vectorization_plan_step(&plan, o, &rbo, &xb, &yb); \
         const T *px = bx + xb + (plan.x_const ? 0 : j); \
         const T *py = by + yb + (plan.y_const ? 0 : j); \
-        T *pr = br + i; \
+        T *pr = br + rbo + j; \
         int64_t t = 0; \
         if (plan.x_const || plan.y_const) { \
           T cs = plan.x_const ? *px : *py; \
@@ -116,6 +116,68 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       } \
       return MAG_OK; \
     }
+
+
+#define MAG_BIN_TILE 32
+#define mag_bin_tile_gather(T, dst, base, sA, sB, an, bn) \
+    if ((sA) == 1 || (sB) != 1) { for (int64_t tb=0; tb < (bn); ++tb) { const T *c = (base) + tb*(sB); for (int64_t ta=0; ta < (an); ++ta) (dst)[tb*MAG_BIN_TILE+ta] = c[ta*(sA)]; } } \
+    else { for (int64_t ta=0; ta < (an); ++ta) { const T *c = (base) + ta*(sA); for (int64_t tb=0; tb < (bn); ++tb) (dst)[tb*MAG_BIN_TILE+ta] = c[tb]; } }
+
+#define mag_bin_tiled_impl(T, RT, ...) \
+    if (r->meta.coords.rank >= 2 && x->meta.coords.rank <= r->meta.coords.rank && y->meta.coords.rank <= r->meta.coords.rank) { \
+      int64_t rank = r->meta.coords.rank; \
+      int64_t dx = rank - x->meta.coords.rank, dy = rank - y->meta.coords.rank; \
+      const int64_t *rs = r->meta.coords.shape; \
+      int64_t rt[MAG_MAX_DIMS], xt[MAG_MAX_DIMS], yt[MAG_MAX_DIMS]; \
+      bool ok = true; \
+      for (int64_t d=0; d < rank; ++d) { \
+        int64_t xsd = d < dx ? 1 : x->meta.coords.shape[d-dx]; \
+        int64_t ysd = d < dy ? 1 : y->meta.coords.shape[d-dy]; \
+        rt[d] = rs[d] == 1 ? 0 : r->meta.coords.strides[d]; \
+        xt[d] = d < dx || xsd == 1 ? 0 : x->meta.coords.strides[d-dx]; \
+        yt[d] = d < dy || ysd == 1 ? 0 : y->meta.coords.strides[d-dy]; \
+        if ((xsd != 1 && xsd != rs[d]) || (ysd != 1 && ysd != rs[d])) ok = false; \
+      } \
+      mag_tile_plan_t tp; \
+      if (ok && mag_tile_plan_init(&tp, r, rt, xt, yt, MAG_BIN_TILE)) { \
+        T tx[MAG_BIN_TILE*MAG_BIN_TILE], ty[MAG_BIN_TILE*MAG_BIN_TILE]; \
+        RT tr[MAG_BIN_TILE*MAG_BIN_TILE]; \
+        int64_t org[MAG_MAX_DIMS]; \
+        for (int64_t tile_i=0; tile_i < tp.ntiles; ++tile_i) { \
+          mag_tile_plan_origin(&tp, tile_i, org); \
+          int64_t first = 0, ro = 0, xo = 0, yo = 0; \
+          for (int64_t k=0; k < rank; ++k) { first += org[k]*tp.cstr[k]; ro += org[k]*rt[k]; xo += org[k]*xt[k]; yo += org[k]*yt[k]; } \
+          if (first >= rb) break; \
+          if (first < ra) continue; \
+          int64_t an = mag_vmin(MAG_BIN_TILE, rs[tp.a]-org[tp.a]), bn = mag_vmin(MAG_BIN_TILE, rs[tp.b]-org[tp.b]); \
+          mag_bin_tile_gather(T, tx, bx + xo, xt[tp.a], xt[tp.b], an, bn) \
+          mag_bin_tile_gather(T, ty, by + yo, yt[tp.a], yt[tp.b], an, bn) \
+          __VA_ARGS__ \
+          int64_t rsA = rt[tp.a], rsB = rt[tp.b]; \
+          RT *pr = br + ro; \
+          if (rsA == 1 || rsB != 1) { for (int64_t tb=0; tb < bn; ++tb) { RT *o = pr + tb*rsB; const RT *c = tr + tb*MAG_BIN_TILE; for (int64_t ta=0; ta < an; ++ta) o[ta*rsA] = c[ta]; } } \
+          else { for (int64_t ta=0; ta < an; ++ta) { RT *o = pr + ta*rsA; for (int64_t tb=0; tb < bn; ++tb) o[tb] = tr[tb*MAG_BIN_TILE+ta]; } } \
+        } \
+        return MAG_OK; \
+      } \
+    }
+
+#define mag_bin_tiled(T, RT, EXPR) \
+    mag_bin_tiled_impl(T, RT, \
+      for (int64_t tb=0; tb < bn; ++tb) { \
+        const T *px = tx + tb*MAG_BIN_TILE; const T *py = ty + tb*MAG_BIN_TILE; RT *po = tr + tb*MAG_BIN_TILE; \
+        for (int64_t ta=0; ta < an; ++ta) { T xa = px[ta]; T ya = py[ta]; po[ta] = EXPR; } \
+      } \
+    )
+#define mag_bin_tiled_simd(T, LOAD, STORE, VF, F) \
+    mag_bin_tiled_impl(T, T, \
+      for (int64_t tb=0; tb < bn; ++tb) { \
+        const T *px = tx + tb*MAG_BIN_TILE; const T *py = ty + tb*MAG_BIN_TILE; T *po = tr + tb*MAG_BIN_TILE; \
+        int64_t ta = 0; \
+        for (; ta+MAG_VF32_LANES <= an; ta += MAG_VF32_LANES) STORE(po+ta, VF(LOAD(px+ta), LOAD(py+ta))); \
+        for (; ta < an; ++ta) po[ta] = F(px[ta], py[ta]); \
+      } \
+    )
 
 #define mag_gen_bin_scalar(T, TF, name, suffix) \
   static mag_status_t MAG_HOTPROC mag_##name##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
@@ -148,6 +210,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       return MAG_OK; \
     } \
     mag_bin_exec_impl(T, T, mag_fn_##name##_##suffix(xa,ya)) \
+    mag_bin_tiled(T, T, mag_fn_##name##_##suffix(xa,ya)) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
@@ -208,6 +271,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       return MAG_OK; \
     } \
     mag_bin_exec_impl_simd(T, LOAD, STORE, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
+    mag_bin_tiled_simd(T, LOAD, STORE, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
@@ -307,6 +371,7 @@ mag_gen_int_signed_unsigned(pow)
       return MAG_OK; \
     } \
     mag_bin_exec_impl(T, T, mag_fn_##name##_##sign(xa,ya,T)) \
+    mag_bin_tiled(T, T, mag_fn_##name##_##sign(xa,ya,T)) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
@@ -363,6 +428,7 @@ mag_gen_shift_all(shr)
       return MAG_OK; \
     } \
     mag_bin_exec_impl(T, uint8_t, CVT(xa) OP CVT(ya)) \
+    mag_bin_tiled(T, uint8_t, CVT(xa) OP CVT(ya)) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
@@ -400,6 +466,11 @@ mag_gen_cmp_all(ge, >=)
 
 #undef mag_gen_cmp_all
 #undef mag_gen_cmp
+#undef mag_bin_tiled
+#undef mag_bin_tiled_simd
+#undef mag_bin_tiled_impl
+#undef mag_bin_tile_gather
+#undef MAG_BIN_TILE
 #undef mag_cvt_nop
 #undef mag_gen_shift_all
 #undef mag_gen_shift
