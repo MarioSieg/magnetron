@@ -28,10 +28,10 @@
       return MAG_OK; \
     }
 
-#define mag_un_run_body_copy(T) mag_un_run_walk(T, memcpy(pr, px, (size_t)run*sizeof(T));)
-#define mag_un_run_body(T, F) mag_un_run_walk(T, for (int64_t t=0; t < run; ++t) pr[t] = F(px[t]);)
+#define mag_un_exec_impl_copy(T) mag_un_run_walk(T, memcpy(pr, px, (size_t)run*sizeof(T));)
+#define mag_un_exec_impl(T, F) mag_un_run_walk(T, for (int64_t t=0; t < run; ++t) pr[t] = F(px[t]);)
 
-#define mag_un_run_body_simd(T, LOAD, STORE, VF, F) \
+#define mag_un_exec_impl_simd(T, LOAD, STORE, VF, F) \
     mag_un_run_walk(T, \
       int64_t t = 0; \
       for (; t+MAG_VF32_LANES <= run; t += MAG_VF32_LANES) STORE(pr+t, VF(LOAD(px+t))); \
@@ -56,7 +56,7 @@
       memcpy(br+ra, bx+ra, (rb-ra)*sizeof(T)); \
       return MAG_OK; \
     } \
-    mag_un_run_body_copy(T) \
+    mag_un_exec_impl_copy(T) \
     mag_coords_iter_t cr, cx; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
     mag_coords_iter_init(&cx, &x->meta.coords); \
@@ -256,7 +256,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
         br[i] = mag_fn_##name##_##suffix(bx[i]); \
       return MAG_OK; \
     } \
-    mag_un_run_body(T, mag_fn_##name##_##suffix) \
+    mag_un_exec_impl(T, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr, cx; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
     mag_coords_iter_init(&cx, &x->meta.coords); \
@@ -292,7 +292,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_sgn_f32(mag_vf32_t x) {
       for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i]); \
       return MAG_OK; \
     } \
-    mag_un_run_body_simd(T, ld, st, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
+    mag_un_exec_impl_simd(T, ld, st, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr, cx; \
     mag_coords_iter_init(&cr, &r->meta.coords); \
     mag_coords_iter_init(&cx, &x->meta.coords); \
@@ -387,9 +387,9 @@ mag_gen_int_unary(sqr)
 #undef mag_gen_unary_scalar
 #undef mag_gen_unary_simd
 #undef mag_un_run_walk
-#undef mag_un_run_body_copy
-#undef mag_un_run_body
-#undef mag_un_run_body_simd
+#undef mag_un_exec_impl_copy
+#undef mag_un_exec_impl
+#undef mag_un_exec_impl_simd
 #undef mag_fn_abs_int
 #undef mag_fn_sgn_int
 #undef mag_fn_neg_int

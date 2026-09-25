@@ -63,7 +63,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
 #define mag_fn_min_int(x,y) ((x)<(y)?(x):(y))
 #define mag_fn_max_int(x,y) ((x)>(y)?(x):(y))
 
-#define mag_bin_run_body(T, RT, EXPR) \
+#define mag_bin_exec_impl(T, RT, EXPR) \
     mag_binary_vectorization_plan_t plan; \
     if (mag_binary_vectorization_plan_init(&plan, r, x, y)) { \
       for (int64_t i=ra; i < rb; ) { \
@@ -83,7 +83,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       return MAG_OK; \
     }
 
-#define mag_bin_run_body_simd(T, LOAD, STORE, VF, F) \
+#define mag_bin_exec_impl_simd(T, LOAD, STORE, VF, F) \
     mag_binary_vectorization_plan_t plan; \
     if (mag_binary_vectorization_plan_init(&plan, r, x, y)) { \
       for (int64_t i=ra; i < rb; ) { \
@@ -147,7 +147,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(cs,by[i]); \
       return MAG_OK; \
     } \
-    mag_bin_run_body(T, T, mag_fn_##name##_##suffix(xa,ya)) \
+    mag_bin_exec_impl(T, T, mag_fn_##name##_##suffix(xa,ya)) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
@@ -207,7 +207,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(cs,by[i]); \
       return MAG_OK; \
     } \
-    mag_bin_run_body_simd(T, LOAD, STORE, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
+    mag_bin_exec_impl_simd(T, LOAD, STORE, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
@@ -306,7 +306,7 @@ mag_gen_int_signed_unsigned(pow)
       for (int64_t i=ra; i < rb; ++i) br[i] = mag_fn_##name##_##sign(cs,by[i],T); \
       return MAG_OK; \
     } \
-    mag_bin_run_body(T, T, mag_fn_##name##_##sign(xa,ya,T)) \
+    mag_bin_exec_impl(T, T, mag_fn_##name##_##sign(xa,ya,T)) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
@@ -362,7 +362,7 @@ mag_gen_shift_all(shr)
       for (int64_t i=ra; i < rb; ++i) br[i] = CVT(cs) OP CVT(by[i]); \
       return MAG_OK; \
     } \
-    mag_bin_run_body(T, uint8_t, CVT(xa) OP CVT(ya)) \
+    mag_bin_exec_impl(T, uint8_t, CVT(xa) OP CVT(ya)) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \
     mag_coords_iter_init(&cx,&x->meta.coords); \
