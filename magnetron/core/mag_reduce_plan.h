@@ -29,6 +29,7 @@ typedef struct mag_reduce_plan_t {
   int64_t out_shape[MAG_MAX_DIMS];
   int64_t nk;
   int64_t keep_axes[MAG_MAX_DIMS];
+  int64_t red_rank;
   int64_t red_sizes[MAG_MAX_DIMS];
   int64_t red_strides[MAG_MAX_DIMS];
   int64_t red_prod;

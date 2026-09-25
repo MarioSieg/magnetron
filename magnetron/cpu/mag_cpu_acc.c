@@ -196,6 +196,14 @@ bool mag_accel_matmul(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t
   return false;
 }
 
+bool mag_accel_sgemm_available(void) {
+  return !mag_accel_disabled();
+}
+
+void mag_accel_sgemm_ex(bool ta, bool tb, int64_t M, int64_t N, int64_t K, float alpha, const float *a, int64_t lda, const float *b, int64_t ldb, float beta, float *c, int64_t ldc) {
+  cblas_sgemm(CblasRowMajor, ta ? CblasTrans : CblasNoTrans, tb ? CblasTrans : CblasNoTrans, (int)M, (int)N, (int)K, alpha, a, (int)lda, b, (int)ldb, beta, c, (int)ldc);
+}
+
 #pragma clang diagnostic pop
 
 #else
@@ -208,6 +216,14 @@ bool mag_accel_matmul_supported(const mag_tensor_t *x, const mag_tensor_t *y, co
 bool mag_accel_matmul(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y) {
   (void)r; (void)x; (void)y;
   return false;
+}
+
+bool mag_accel_sgemm_available(void) {
+  return false;
+}
+
+void mag_accel_sgemm_ex(bool ta, bool tb, int64_t M, int64_t N, int64_t K, float alpha, const float *a, int64_t lda, const float *b, int64_t ldb, float beta, float *c, int64_t ldc) {
+  (void)ta; (void)tb; (void)M; (void)N; (void)K; (void)alpha; (void)a; (void)lda; (void)b; (void)ldb; (void)beta; (void)c; (void)ldc;
 }
 
 #endif

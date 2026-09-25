@@ -100,12 +100,22 @@ mag_status_t mag_reduce_plan_init(
     if (!red) plan->keep_axes[plan->nk++] = d;
   }
   plan->red_prod = 1;
+  int64_t rr = 0;
   for (int64_t k2=0; k2 < rank; ++k2) {
     int64_t axd = ax[k2];
     int64_t sz = coords->shape[axd];
-    plan->red_sizes[k2] = sz;
-    plan->red_strides[k2] = coords->strides[axd];
+    int64_t st = coords->strides[axd];
     plan->red_prod *= sz;
+    if (sz == 1) continue;
+    if (rr > 0 && plan->red_strides[rr-1] == st*sz) {
+      plan->red_sizes[rr-1] *= sz;
+      plan->red_strides[rr-1] = st;
+      continue;
+    }
+    plan->red_sizes[rr] = sz;
+    plan->red_strides[rr] = st;
+    ++rr;
   }
+  plan->red_rank = rr;
   return MAG_OK;
 }

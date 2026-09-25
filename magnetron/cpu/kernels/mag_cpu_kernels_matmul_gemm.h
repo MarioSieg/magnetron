@@ -557,6 +557,9 @@ static MAG_HOTPROC void mag_matmul_gemm_impl(
   bool bf16_dp = false;
   #if MAG_HAS_NATIVE_DPBF16
     bf16_dp = !thin && dtype == MAG_DTYPE_BFLOAT16;
+    #if defined(__aarch64__) || defined(_M_ARM64)
+      bf16_dp = bf16_dp && !payload->cmd->out[0]->ctx->machine.arm64_bf16_dot_slow;
+    #endif
   #endif
   int64_t mt, nt;
   mag_gemm_pick_tiles(tc, batch, M, N, K, (int64_t)mag_type_trait(dtype)->size, !thin, &mt, &nt);

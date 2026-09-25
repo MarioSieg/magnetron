@@ -20,6 +20,8 @@ extern "C" {
 
 extern bool mag_accel_matmul_supported(const mag_tensor_t *x, const mag_tensor_t *y, const mag_tensor_t *r);
 extern bool mag_accel_matmul(mag_tensor_t *r, const mag_tensor_t *x, const mag_tensor_t *y);
+extern bool mag_accel_sgemm_available(void);
+extern void mag_accel_sgemm_ex(bool ta, bool tb, int64_t M, int64_t N, int64_t K, float alpha, const float *a, int64_t lda, const float *b, int64_t ldb, float beta, float *c, int64_t ldc);
 
 #ifdef __cplusplus
 }

@@ -36,6 +36,7 @@ typedef struct mag_machine_info_t {
 #elif defined (__aarch64__) || defined(_M_ARM64)
   mag_arm64_cap_bitset_t arm64_cpu_caps;  /* ARM64 CPU features. */
   int64_t arm64_cpu_sve_width;            /* ARM64 SVE vector register width. */
+  bool arm64_bf16_dot_slow;               /* Apple M3 for example supports bf16 but it's slower than fp32 in the hw, so don't use it */
 #elif defined(__loongarch64)
   mag_loongarch64_cap_bitset_t loongarch64_cpu_caps; /* Loongson / Godson CPU features */
 #endif

@@ -22,32 +22,31 @@
     const mag_reduce_plan_t *plan = &payload->cmd->params->reduction.red_plan; \
     int64_t numel = r->meta.numel; \
     int64_t red_prod = plan->red_prod; \
+    int64_t red_rank = plan->red_rank; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
-    bool mag_contig = plan->rank == 1 && plan->red_strides[0] == 1; \
+    int64_t od = red_rank > 0 && plan->red_strides[red_rank-1] == 1 ? red_rank-1 : red_rank; \
+    int64_t inner = od < red_rank ? plan->red_sizes[red_rank-1] : 1; \
+    int64_t outer = red_prod/inner; \
     int64_t row_len = plan->nk > 0 && plan->in_strides[plan->keep_axes[plan->nk-1]] == 1 ? plan->in_shape[plan->keep_axes[plan->nk-1]] : 0; \
     int64_t chunk = (numel + tc - 1)/tc; \
-    if (row_len > 0 && !mag_contig) chunk = (chunk + row_len - 1)/row_len*row_len; \
     int64_t oa = ti*chunk; \
     int64_t ob = mag_vmin(oa + chunk, numel); \
-    for (int64_t oi=oa; oi < ob; ++oi) { \
-      int64_t base = mag_reduce_plan_to_offset(plan, oi); \
+    int64_t oi = oa; \
+    while (oi < ob) { \
       ACC_T acc = INIT_EXPR; \
-      if (mag_contig) { \
-        for (int64_t ri=0; ri < red_prod; ++ri) { \
-          int64_t roff = base + ri; \
-          mag_bnd_chk(bx + roff, x->storage->base, x->storage->size); \
-          { UPDATE_STMT } \
-        } \
-      } else if (row_len >= 2 && oi % row_len == 0 && oi + row_len <= ob) { \
-        for (int64_t j0=0; j0 < row_len; j0 += MAG_REDUCE_ROW_BLOCK) { \
-          int64_t nb = mag_vmin((int64_t)MAG_REDUCE_ROW_BLOCK, row_len-j0); \
+      if (row_len >= 2 && inner == 1) { \
+        int64_t row_start = oi - oi%row_len; \
+        int64_t seg_end = mag_vmin(ob, row_start + row_len); \
+        int64_t base = mag_reduce_plan_to_offset(plan, row_start); \
+        for (int64_t j0=oi-row_start; j0 < seg_end-row_start; j0 += MAG_REDUCE_ROW_BLOCK) { \
+          int64_t nb = mag_vmin((int64_t)MAG_REDUCE_ROW_BLOCK, seg_end-row_start-j0); \
           ACC_T accs[MAG_REDUCE_ROW_BLOCK]; \
           for (int64_t j=0; j < nb; ++j) { ACC_T init = INIT_EXPR; accs[j] = init; } \
           for (int64_t ri=0; ri < red_prod; ++ri) { \
             int64_t tmp = ri; \
             int64_t roff0 = base + j0; \
-            for (int64_t k=plan->rank - 1; k >= 0; --k) { \
+            for (int64_t k=red_rank - 1; k >= 0; --k) { \
               int64_t sz = plan->red_sizes[k]; \
               int64_t idx = tmp % sz; \
               tmp /= sz; \
@@ -62,29 +61,35 @@
             } \
           } \
           for (int64_t j=0; j < nb; ++j) { \
-            OT *o = br + oi + j0 + j; \
+            OT *o = br + row_start + j0 + j; \
             acc = accs[j]; \
             { FINAL_STMT } \
           } \
         } \
-        oi += row_len - 1; \
+        oi = seg_end; \
         continue; \
-      } else { \
-        for (int64_t ri=0; ri < red_prod; ++ri) { \
-          int64_t tmp = ri; \
-          int64_t roff = base; \
-          for (int64_t k=plan->rank - 1; k >= 0; --k) { \
-            int64_t sz = plan->red_sizes[k]; \
-            int64_t idx = tmp % sz; \
-            tmp /= sz; \
-            roff += idx*plan->red_strides[k]; \
-          } \
-          mag_bnd_chk(bx+roff, x->storage->base, x->storage->size); \
+      } \
+      int64_t base = mag_reduce_plan_to_offset(plan, oi); \
+      for (int64_t ro=0; ro < outer; ++ro) { \
+        int64_t tmp = ro; \
+        int64_t roff0 = base; \
+        for (int64_t k=od - 1; k >= 0; --k) { \
+          int64_t sz = plan->red_sizes[k]; \
+          int64_t idx = tmp % sz; \
+          tmp /= sz; \
+          roff0 += idx*plan->red_strides[k]; \
+        } \
+        mag_bnd_chk(bx + roff0 + inner - 1, x->storage->base, x->storage->size); \
+        for (int64_t j=0; j < inner; ++j) { \
+          int64_t roff = roff0 + j; \
+          int64_t ri = ro*inner + j; \
+          (void)ri; \
           { UPDATE_STMT } \
         } \
       } \
       OT *o = br+oi; \
       { FINAL_STMT } \
+      ++oi; \
     } \
     return MAG_OK; \
   }
@@ -110,36 +115,30 @@ static MAG_AINLINE float mag_vf32_reduce_min_lanes(mag_vf32_t v) {
     const mag_reduce_plan_t *plan = &payload->cmd->params->reduction.red_plan; \
     int64_t numel = r->meta.numel; \
     int64_t red_prod = plan->red_prod; \
+    int64_t red_rank = plan->red_rank; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
-    bool mag_contig = plan->rank == 1 && plan->red_strides[0] == 1; \
+    int64_t od = red_rank > 0 && plan->red_strides[red_rank-1] == 1 ? red_rank-1 : red_rank; \
+    int64_t inner = od < red_rank ? plan->red_sizes[red_rank-1] : 1; \
+    int64_t outer = red_prod/inner; \
     int64_t row_len = plan->nk > 0 && plan->in_strides[plan->keep_axes[plan->nk-1]] == 1 ? plan->in_shape[plan->keep_axes[plan->nk-1]] : 0; \
     int64_t chunk = (numel+tc - 1)/tc; \
-    if (row_len > 0 && !mag_contig) chunk = (chunk+row_len - 1)/row_len*row_len; \
     int64_t oa = ti*chunk; \
     int64_t ob = mag_vmin(oa+chunk, numel); \
-    for (int64_t oi=oa; oi < ob; ++oi) { \
-      int64_t base = mag_reduce_plan_to_offset(plan, oi); \
-      float acc = (SINIT); \
-      if (mag_contig) { \
-        const T *p = bx+base; \
-        int64_t i = 0; \
-        mag_vf32_t vacc = (VINIT); \
-        for (; i+MAG_VF32_LANES <= red_prod; i += MAG_VF32_LANES) { \
-          mag_bnd_chk(p+i+MAG_VF32_LANES - 1, x->storage->base, x->storage->size); \
-          vacc = VACC(vacc, VLOAD(p+i)); \
-        } \
-        acc = SCOMB(acc, VRED(vacc)); \
-        for (; i < red_prod; ++i) { float xv = CVT(p[i]); acc = SCOMB(acc, xv); } \
-      } else if (row_len >= MAG_VF32_LANES && oi % row_len == 0 && oi+row_len <= ob) { \
-        for (int64_t j0=0; j0 < row_len; j0 += MAG_REDUCE_ROW_BLOCK) { \
-          int64_t nb = mag_vmin((int64_t)MAG_REDUCE_ROW_BLOCK, row_len-j0); \
+    int64_t oi = oa; \
+    while (oi < ob) { \
+      if (row_len >= MAG_VF32_LANES && inner == 1) { \
+        int64_t row_start = oi - oi%row_len; \
+        int64_t seg_end = mag_vmin(ob, row_start + row_len); \
+        int64_t base = mag_reduce_plan_to_offset(plan, row_start); \
+        for (int64_t j0=oi-row_start; j0 < seg_end-row_start; j0 += MAG_REDUCE_ROW_BLOCK) { \
+          int64_t nb = mag_vmin((int64_t)MAG_REDUCE_ROW_BLOCK, seg_end-row_start-j0); \
           float accs[MAG_REDUCE_ROW_BLOCK]; \
           for (int64_t j=0; j < nb; ++j) accs[j] = (SINIT); \
           for (int64_t ri=0; ri < red_prod; ++ri) { \
             int64_t tmp = ri; \
             int64_t roff = base+j0; \
-            for (int64_t k=plan->rank - 1; k >= 0; --k) { \
+            for (int64_t k=red_rank - 1; k >= 0; --k) { \
               int64_t sz = plan->red_sizes[k]; \
               int64_t idx = tmp % sz; \
               tmp /= sz; \
@@ -151,25 +150,44 @@ static MAG_AINLINE float mag_vf32_reduce_min_lanes(mag_vf32_t v) {
             for (; j+MAG_VF32_LANES <= nb; j += MAG_VF32_LANES) mag_vf32_storeu(accs+j, VACC(mag_vf32_loadu(accs+j), VLOAD(p+j))); \
             for (; j < nb; ++j) { float xv = CVT(p[j]); accs[j] = SCOMB(accs[j], xv); } \
           } \
-          for (int64_t j=0; j < nb; ++j) br[oi+j0+j] = RCVT(FINAL_ACC(accs[j])); \
+          for (int64_t j=0; j < nb; ++j) br[row_start+j0+j] = RCVT(FINAL_ACC(accs[j])); \
         } \
-        oi += row_len-1; \
+        oi = seg_end; \
         continue; \
-      } else { \
-        for (int64_t ri=0; ri < red_prod; ++ri) { \
-          int64_t tmp = ri; \
-          int64_t roff = base; \
-          for (int64_t k=plan->rank - 1; k >= 0; --k) { \
-            int64_t sz = plan->red_sizes[k]; \
-            int64_t idx = tmp % sz; \
-            tmp /= sz; \
-            roff += idx*plan->red_strides[k]; \
-          } \
-          mag_bnd_chk(bx+roff, x->storage->base, x->storage->size); \
-          float xv = CVT(bx[roff]); acc = SCOMB(acc, xv); \
-        } \
       } \
+      int64_t base = mag_reduce_plan_to_offset(plan, oi); \
+      float acc = (SINIT); \
+      mag_vf32_t vacc = (VINIT); \
+      mag_vf32_t vacc1 = (VINIT); \
+      mag_vf32_t vacc2 = (VINIT); \
+      mag_vf32_t vacc3 = (VINIT); \
+      for (int64_t ro=0; ro < outer; ++ro) { \
+        int64_t tmp = ro; \
+        int64_t roff = base; \
+        for (int64_t k=od - 1; k >= 0; --k) { \
+          int64_t sz = plan->red_sizes[k]; \
+          int64_t idx = tmp % sz; \
+          tmp /= sz; \
+          roff += idx*plan->red_strides[k]; \
+        } \
+        const T *p = bx+roff; \
+        mag_bnd_chk(p+inner - 1, x->storage->base, x->storage->size); \
+        int64_t i = 0; \
+        for (; i+4*MAG_VF32_LANES <= inner; i += 4*MAG_VF32_LANES) { \
+          vacc = VACC(vacc, VLOAD(p+i)); \
+          vacc1 = VACC(vacc1, VLOAD(p+i+MAG_VF32_LANES)); \
+          vacc2 = VACC(vacc2, VLOAD(p+i+2*MAG_VF32_LANES)); \
+          vacc3 = VACC(vacc3, VLOAD(p+i+3*MAG_VF32_LANES)); \
+        } \
+        for (; i+MAG_VF32_LANES <= inner; i += MAG_VF32_LANES) vacc = VACC(vacc, VLOAD(p+i)); \
+        for (; i < inner; ++i) { float xv = CVT(p[i]); acc = SCOMB(acc, xv); } \
+      } \
+      vacc = VACC(vacc, vacc1); \
+      vacc2 = VACC(vacc2, vacc3); \
+      vacc = VACC(vacc, vacc2); \
+      acc = SCOMB(acc, VRED(vacc)); \
       br[oi] = RCVT(FINAL_ACC(acc)); \
+      ++oi; \
     } \
     return MAG_OK; \
   }
@@ -193,7 +211,7 @@ mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float3
     int64_t red_prod = plan->red_prod; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
-    bool mag_contig = plan->rank == 1 && plan->red_strides[0] == 1; \
+    bool mag_contig = plan->red_rank == 1 && plan->red_strides[0] == 1; \
     int64_t row_len = plan->nk > 0 && plan->in_strides[plan->keep_axes[plan->nk-1]] == 1 ? plan->in_shape[plan->keep_axes[plan->nk-1]] : 0; \
     int64_t chunk = (numel + tc - 1)/tc; \
     if (row_len > 0 && !mag_contig) chunk = (chunk + row_len - 1)/row_len*row_len; \
@@ -224,7 +242,7 @@ mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float3
           for (int64_t ri=0; ri < red_prod; ++ri) { \
             int64_t tmp = ri; \
             int64_t roff0 = base + j0; \
-            for (int64_t k=plan->rank - 1; k >= 0; --k) { \
+            for (int64_t k=plan->red_rank - 1; k >= 0; --k) { \
               int64_t sz = plan->red_sizes[k]; \
               int64_t idx = tmp % sz; \
               tmp /= sz; \
@@ -242,7 +260,7 @@ mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float3
         for (int64_t ri=0; ri < red_prod; ++ri) { \
           int64_t tmp = ri; \
           int64_t roff = base; \
-          for (int64_t k=plan->rank - 1; k >= 0; --k) { \
+          for (int64_t k=plan->red_rank - 1; k >= 0; --k) { \
             int64_t sz = plan->red_sizes[k]; \
             int64_t idx = tmp % sz; \
             tmp /= sz; \
@@ -337,7 +355,7 @@ typedef struct mag_argmax_acc_i64_t {
     int64_t chunk = (numel+tc - 1)/tc; \
     int64_t oa = ti*chunk; \
     int64_t ob = mag_vmin(oa+chunk, numel); \
-    bool mag_contig = plan->rank == 1 && plan->red_strides[0] == 1; \
+    bool mag_contig = plan->red_rank == 1 && plan->red_strides[0] == 1; \
     int64_t row_len = plan->nk > 0 && plan->in_strides[plan->keep_axes[plan->nk-1]] == 1 ? plan->in_shape[plan->keep_axes[plan->nk-1]] : 0; \
     if (row_len > 0 && !mag_contig) { chunk = (chunk + row_len - 1)/row_len*row_len; oa = ti*chunk; ob = mag_vmin(oa + chunk, numel); } \
     for (int64_t oi=oa; oi < ob; ++oi) { \
@@ -380,7 +398,7 @@ typedef struct mag_argmax_acc_i64_t {
           for (ri=0; ri < red_prod; ++ri) { \
             int64_t tmp = ri; \
             int64_t roff0 = base + j0; \
-            for (int64_t k=plan->rank - 1; k >= 0; --k) { \
+            for (int64_t k=plan->red_rank - 1; k >= 0; --k) { \
               int64_t sz = plan->red_sizes[k]; \
               int64_t idx = tmp % sz; \
               tmp /= sz; \
@@ -402,7 +420,7 @@ typedef struct mag_argmax_acc_i64_t {
           int64_t tmp = ri; \
           int64_t roff = base; \
           if (mag_contig) roff += ri; \
-          else for (int64_t k=plan->rank - 1; k >= 0; --k) { \
+          else for (int64_t k=plan->red_rank - 1; k >= 0; --k) { \
             int64_t sz = plan->red_sizes[k]; \
             int64_t idx = tmp % sz; \
             tmp /= sz; \
@@ -503,7 +521,7 @@ mag_cpu_impl_reduce_axes(mag_float8_e4m3fn_t, mag_float8_e4m3fn_t, float8_e4m3fn
       for (int64_t ri=0; ri < red_prod; ++ri) { \
         int64_t tmp = ri; \
         int64_t roff = base; \
-        for (int64_t k=plan->rank-1; k >= 0; --k) { \
+        for (int64_t k=plan->red_rank-1; k >= 0; --k) { \
           int64_t sz = plan->red_sizes[k]; \
           int64_t idx = tmp % sz; \
           tmp /= sz; \

@@ -19,6 +19,7 @@
 #include <core/mag_float8_e4m3fn.h>
 #include <core/mag_coords.h>
 #include <core/mag_coords_iter.h>
+#include <core/mag_context.h>
 #include <core/mag_cpuid.h>
 #include <core/mag_float16.h>
 #include <core/mag_tensor.h>
