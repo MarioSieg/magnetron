@@ -58,10 +58,10 @@ namespace mag::bindings {
     return def;
   }
 
-  [[nodiscard]] static std::string kw_device_or_default(nb::kwargs &kwargs) {
+  [[nodiscard]] static std::optional<mag_device_id_t> kw_device_id_or_default(nb::kwargs &kwargs) {
     if (kwargs.contains("device"))
-      return nb::cast<std::string>(kwargs["device"]);
-    return get_default_device();
+      return resolve_device_id_str(nb::cast<std::string>(kwargs["device"]));
+    return mag_ctx_default_device(get_ctx());
   }
 
   static void maybe_set_requires_grad(mag_context_t *ctx, mag_tensor_t *t, bool requires_grad) {
@@ -74,7 +74,7 @@ namespace mag::bindings {
   [[nodiscard]] static tensor_wrapper tensor_from_data(nb::handle handle, nb::kwargs &kwargs) {
     dtype_wrapper dtype = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{MAG_DTYPE__NUM};
     bool requires_grad = kw_requires_grad_or(kwargs, false);
-    std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+    std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
     if (!device_id) throw std::runtime_error {"Invalid device id"};
     mag_device_id_t cpu_dvc_id = mag_device(CPU, 0);
     if (nb::isinstance<nb::int_>(handle) || nb::isinstance<nb::float_>(handle) || nb::isinstance<nb::bool_>(handle)) {
@@ -95,11 +95,11 @@ namespace mag::bindings {
       mag_tensor_incref(raw);
       return tensor_wrapper{raw};
     }
-    try { // Accept NumPy ndarray, PyTorch Tensor, etc. when CPU and C-contiguous (nanobind may copy if not)
+    nb::ndarray<nb::c_contig, nb::device::cpu> arr {};
+    if (nb::try_cast(handle, arr)) { // Use try cast to avoid throwing in a well defined path
       bool copy = true;
       if (kwargs.contains("copy"))
         copy = nb::cast<bool>(kwargs["copy"]);
-      auto arr = nb::cast<nb::ndarray<nb::c_contig, nb::device::cpu>>(handle);
       mag_dtype_t elem_dtype = ndarray_dtype_to_mag_dtype(arr);
       if (elem_dtype == MAG_DTYPE__NUM) {
         std::stringstream types {};
@@ -193,8 +193,6 @@ namespace mag::bindings {
       }
       mag_tensor_incref(typed_cpu);
       return tensor_wrapper{typed_cpu};
-    } catch (const nb::cast_error &) {
-      // Not array-like - fall through to sequence path
     }
     if (!nb::isinstance<nb::sequence>(handle))
       throw nb::type_error("Tensor() requires scalar, array (NumPy/torch CPU contiguous), or nested sequence");
@@ -339,7 +337,7 @@ namespace mag::bindings {
           dt = nb::cast<dtype_wrapper>(kwargs["dtype"]);
         if (kwargs.contains("requires_grad"))
           requires_grad = nb::cast<bool>(kwargs["requires_grad"]);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         std::vector<int64_t> shape {};
         if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
@@ -379,7 +377,7 @@ namespace mag::bindings {
       [](nb::handle value, nb::kwargs kwargs) -> tensor_wrapper {
         dtype_wrapper dt = kw_dtype_or(kwargs, deduce_dtype_from_py_scalar(value));
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
         mag_tensor_t *out = nullptr;
@@ -399,7 +397,7 @@ namespace mag::bindings {
         nb::handle fill_value = kwargs["fill_value"];
         dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         std::vector<int64_t> shape = parse_shape_from_args(args);
         validate_shape(shape);
@@ -430,7 +428,7 @@ namespace mag::bindings {
         mag_context_t *ctx = get_ctx();
         dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         std::vector<int64_t> shape = parse_shape_from_args(args);
         validate_shape(shape);
@@ -459,7 +457,7 @@ namespace mag::bindings {
         mag_context_t *ctx = get_ctx();
         dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         std::vector<int64_t> shape = parse_shape_from_args(args);
         validate_shape(shape);
@@ -488,7 +486,7 @@ namespace mag::bindings {
         mag_context_t *ctx = get_ctx();
         dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_scalar_t low = kwargs.contains("low") ? scalar_from_py_number(kwargs["low"]) : mag_scalar_from_float64(0.0);
         mag_scalar_t high = kwargs.contains("high") ? scalar_from_py_number(kwargs["high"]) : mag_scalar_from_float64(1.0);
@@ -521,7 +519,7 @@ namespace mag::bindings {
         mag_context_t *ctx = get_ctx();
         dtype_wrapper dt = kw_dtype_or(kwargs, {mag_ctx_default_dtype(ctx)});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_scalar_t mean = kwargs.contains("mean") ? scalar_from_py_number(kwargs["mean"]) : mag_scalar_from_float64(0.0);
         mag_scalar_t std = kwargs.contains("std") ? scalar_from_py_number(kwargs["std"]) : mag_scalar_from_float64(1.0);
@@ -553,7 +551,7 @@ namespace mag::bindings {
       [](nb::args args, nb::kwargs kwargs) -> tensor_wrapper {
         auto p = kwargs.contains("p") ? nb::cast<double>(kwargs["p"]) : 0.5;
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         std::vector<int64_t> shape = parse_shape_from_args(args);
         validate_shape(shape);
@@ -611,7 +609,7 @@ namespace mag::bindings {
         auto stop_obj = nb::borrow<nb::object>(stop_h);
         dtype_wrapper dtype = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : deduce_dtype_from_py_scalar(any_float ? nb::object{nb::float_{0.0}} : nb::object{nb::int_{0}});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_scalar_t start = scalar_from_py_number(start_obj);
         mag_scalar_t stop = scalar_from_py_number(stop_obj);
@@ -655,7 +653,7 @@ namespace mag::bindings {
           steps = nb::cast<int64_t>(kwargs["steps"]);
         dtype_wrapper dtype = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{mag_ctx_default_dtype(get_ctx())};
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id)
           throw std::runtime_error {"Invalid device id"};
         mag_scalar_t start = scalar_from_py_number(start_h);
@@ -684,7 +682,7 @@ namespace mag::bindings {
           throw nb::value_error("eye(): n and m must be >= 0");
         dtype_wrapper dtype = kwargs.contains("dtype") ? nb::cast<dtype_wrapper>(kwargs["dtype"]) : dtype_wrapper{mag_ctx_default_dtype(get_ctx())};
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id)
           throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
@@ -760,7 +758,7 @@ namespace mag::bindings {
       [](int64_t n, nb::kwargs kwargs) -> tensor_wrapper {
         dtype_wrapper dt = kw_dtype_or(kwargs, dtype_wrapper{MAG_DTYPE_INT64});
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
         mag_tensor_t *out = nullptr;
@@ -793,7 +791,7 @@ namespace mag::bindings {
           rw = static_cast<uint32_t>(nb::cast<int64_t>(t[0]));
           rh = static_cast<uint32_t>(nb::cast<int64_t>(t[1]));
         }
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
         mag_tensor_t *out = nullptr;
@@ -812,7 +810,7 @@ namespace mag::bindings {
             throw nb::value_error(oss.str().c_str());
           }
         }
-        std::optional<mag_device_id_t> device_id = resolve_device_id_str(kw_device_or_default(kwargs));
+        std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
         mag_tensor_t *out = nullptr;

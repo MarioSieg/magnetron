@@ -180,7 +180,7 @@ class HardSigmoid(Module):
         super().__init__()
 
     def forward(self, x: Tensor) -> Tensor:
-        return x.hardsigmoid()
+        return x.hard_sigmoid()
 
 
 class SiLU(Module):
