@@ -59,13 +59,21 @@ uint64_t mag_envcfg_readahead_mb(uint64_t fallback) {
   return n;
 }
 
-int mag_envcfg_readahead_release(void) {
-  const char *v = mag_envcfg_raw(MAG_ENV_READAHEAD_RELEASE);
+static int mag_envcfg_tristate(const char *name) {
+  const char *v = mag_envcfg_raw(name);
   if (!v || mag_casecmp(v, "auto")) return -1;
-  if (!strcmp(v, "0")) return 0;
-  if (!strcmp(v, "1")) return 1;
-  mag_log_error("Invalid " MAG_ENV_READAHEAD_RELEASE " value '%s' (expected 0, 1 or auto)", v);
+  if (!strcmp(v, "0") || mag_casecmp(v, "off")) return 0;
+  if (!strcmp(v, "1") || mag_casecmp(v, "on")) return 1;
+  mag_log_error("Invalid %s value '%s' (expected 0, 1 or auto)", name, v);
   return -1;
+}
+
+int mag_envcfg_readahead(void) {
+  return mag_envcfg_tristate(MAG_ENV_READAHEAD);
+}
+
+int mag_envcfg_readahead_release(void) {
+  return mag_envcfg_tristate(MAG_ENV_READAHEAD_RELEASE);
 }
 
 int mag_envcfg_numa_strategy(int fallback) {

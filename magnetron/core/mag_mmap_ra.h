@@ -25,7 +25,7 @@ extern "C" {
 #define MAG_RA_QUEUE_CAP 0x1000u
 #define MAG_RA_CHUNK 0x100000u
 #define MAG_RA_MIN_HINT_BYTES 0x40000u
-#define MAG_RA_MAX_ENGINES 16u
+#define MAG_RA_MAX_ENGINES 4u
 #define MAG_RA_DEFAULT_WINDOW_MB 0x400u
 extern void mag_mmap_ra_register(const mag_mapped_file_t *mf);
 extern void mag_mmap_ra_unregister(const mag_mapped_file_t *mf);
