@@ -24,7 +24,6 @@ extern MAG_THREAD_LOCAL mag_scratch_arena_t mag_tls_arena;
 #include <Accelerate/Accelerate.h>
 
 #define MAG_ACCEL_BF16_MIN_M_CONTIG 16
-#define MAG_ACCEL_THIN_MAX_M 32
 #define MAG_ACCEL_HALF_MIN_M_TRANSPOSED 3
 #define MAG_ACCEL_F32_MIN_M_TRANSPOSED 4
 
@@ -113,8 +112,6 @@ bool mag_accel_matmul_supported(const mag_tensor_t *x, const mag_tensor_t *y, co
   mag_accel_gemm_t g;
   if (!mag_accel_describe(&g, x, y, r)) return false;
   bool y_transposed = g.sy0 == 1 && g.sy1 != 1 && g.N > 1;
-  bool thin = g.M <= MAG_ACCEL_THIN_MAX_M && g.sx1 == 1 && (g.sy1 == g.K ? g.sy0 == 1 : (g.sy0 == g.N && g.sy1 == 1));
-  if (thin) return false;
   switch (dt) {
     case MAG_DTYPE_FLOAT32: return !y_transposed || g.M == 1 || g.M >= MAG_ACCEL_F32_MIN_M_TRANSPOSED;
     case MAG_DTYPE_BFLOAT16:
