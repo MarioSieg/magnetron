@@ -64,10 +64,18 @@ bool mag_binary_vectorization_plan_init(mag_binary_vectorization_plan_t *p, cons
     return p->inner > 1;
   }
   int64_t rank = r->meta.coords.rank;
-  if (x->meta.coords.rank != rank || y->meta.coords.rank != rank) return false;
+  int64_t xr = x->meta.coords.rank;
+  int64_t yr = y->meta.coords.rank;
+  if (xr > rank || yr > rank) return false;
   const int64_t *rs = r->meta.coords.shape;
-  const int64_t *xs = x->meta.coords.shape;
-  const int64_t *ys = y->meta.coords.shape;
+  int64_t xs[MAG_MAX_DIMS], ys[MAG_MAX_DIMS], xst[MAG_MAX_DIMS], yst[MAG_MAX_DIMS];
+  int64_t dx = rank-xr, dy = rank-yr;
+  for (int64_t d=0; d < rank; ++d) {
+    xs[d] = d < dx ? 1 : x->meta.coords.shape[d-dx];
+    xst[d] = d < dx ? 0 : x->meta.coords.strides[d-dx];
+    ys[d] = d < dy ? 1 : y->meta.coords.shape[d-dy];
+    yst[d] = d < dy ? 0 : y->meta.coords.strides[d-dy];
+  }
   for (int64_t d=0; d < rank; ++d)
     if (!((xs[d] == rs[d] || xs[d] == 1) && (ys[d] == rs[d] || ys[d] == 1))) return false;
   bool xf=true, xc=true, yf=true, yc=true;
@@ -87,8 +95,8 @@ bool mag_binary_vectorization_plan_init(mag_binary_vectorization_plan_t *p, cons
   p->outer_rank = d+1;
   for (int64_t k=0; k <= d; ++k) {
     p->shape[k] = rs[k];
-    p->xstr[k] = xs[k] == 1 ? 0 : x->meta.coords.strides[k];
-    p->ystr[k] = ys[k] == 1 ? 0 : y->meta.coords.strides[k];
+    p->xstr[k] = xs[k] == 1 ? 0 : xst[k];
+    p->ystr[k] = ys[k] == 1 ? 0 : yst[k];
   }
   return true;
 }
