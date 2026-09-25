@@ -643,7 +643,7 @@ namespace mag {
     using In = T;
     using Out = T;
     [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
-      return static_cast<Out>(roundf(static_cast<float>(x)));
+      return static_cast<Out>(rintf(static_cast<float>(x)));
     }
   };
 

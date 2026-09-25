@@ -10,13 +10,6 @@ from .common import *
 _STRICT = dict(strict=True)
 
 
-@pytest.mark.xfail(reason='round() rounds half away from zero; torch rounds half to even', **_STRICT)
-def test_round_ties_to_even_like_torch() -> None:
-    values = [0.5, 1.5, 2.5, -0.5, -1.5, -2.5, 3.5]
-    x = Tensor(values)
-    assert x.round().tolist() == torch.tensor(values).round().tolist()
-
-
 @pytest.mark.xfail(reason='cumax/cumin return the first index of a run of equal values; torch returns the last', **_STRICT)
 @pytest.mark.parametrize('op', ['cumax', 'cumin'])
 def test_cummax_cummin_tie_index_like_torch(op: str) -> None:

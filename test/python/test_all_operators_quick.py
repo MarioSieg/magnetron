@@ -708,7 +708,6 @@ _UNARY_GENERAL: list[float] = [-2.75, -1.25, -0.5, 0.0, 0.5, 1.25, 2.75]
 _UNARY_POSITIVE: list[float] = [0.125, 0.5, 1.0, 2.0, 3.5, 7.25]
 _UNARY_UNIT: list[float] = [-0.875, -0.5, -0.125, 0.0, 0.125, 0.5, 0.875]
 _UNARY_ABOVE_ONE: list[float] = [1.0, 1.5, 2.0, 4.0, 9.0]
-_UNARY_NO_TIES: list[float] = [-2.7, -1.2, -0.4, 0.0, 0.4, 1.2, 2.7]
 
 _UNARY_OPS: tuple[tuple[str, list[float], Callable[[torch.Tensor], torch.Tensor]], ...] = (
     ('abs', _UNARY_GENERAL, torch.abs),
@@ -742,7 +741,7 @@ _UNARY_OPS: tuple[tuple[str, list[float], Callable[[torch.Tensor], torch.Tensor]
     ('expm1', _UNARY_GENERAL, torch.expm1),
     ('floor', _UNARY_GENERAL, torch.floor),
     ('ceil', _UNARY_GENERAL, torch.ceil),
-    ('round', _UNARY_NO_TIES, torch.round),
+    ('round', _UNARY_GENERAL + [1.5, 2.5, -1.5, -2.5], torch.round),
     ('trunc', _UNARY_GENERAL, torch.trunc),
 )
 

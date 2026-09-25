@@ -181,7 +181,7 @@ mag_def_libm_f32(exp2, exp2)
 mag_def_libm_f32(expm1, expm1)
 mag_def_libm_f32(floor, floor)
 mag_def_libm_f32(ceil, ceil)
-mag_def_libm_f32(round, round)
+mag_def_libm_f32(round, rint)
 mag_def_libm_f32(trunc, trunc)
 
 #undef mag_def_libm_f32

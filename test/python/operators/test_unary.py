@@ -61,8 +61,6 @@ _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
 )
 
 
-_HALF_DTYPES = {dtype.float16, dtype.bfloat16}
-
 _UNARY_TOLS: dict[dtype.DType, tuple[float, float]] = {
     dtype.float32: (1e-5, 1e-5),
     dtype.float16: (1e-3, 1e-5),
@@ -99,8 +97,6 @@ def unary_op(
 @pytest.mark.parametrize('op', _UNARY_OPS)
 def test_unary_op(device: str, dtype: dtype.DType, op: UnaryOpTestCase) -> None:
     name = op.name
-    if name == 'round' and dtype in _HALF_DTYPES:
-        pytest.skip('exact .5 ties occur in half precision; covered by test_unary_round_half_precision_ties')
     if op.torch_callback is not None:
         torch_op = op.torch_callback
     elif hasattr(torch, name):
@@ -140,12 +136,18 @@ def test_unary_logical_not_integral(device: str, dt: dtype.DType) -> None:
     for_all_shapes(test)
 
 
-@pytest.mark.xfail(reason='round() rounds half away from zero; torch rounds half to even, and exact .5 ties occur in half precision', strict=True)
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-@pytest.mark.parametrize('dt', [dtype.float16, dtype.bfloat16], ids=['float16', 'bfloat16'])
-def test_unary_round_half_precision_ties(device: str, dt: dtype.DType) -> None:
+@pytest.mark.parametrize('dt', [dtype.float32, dtype.float16, dtype.bfloat16], ids=['float32', 'float16', 'bfloat16'])
+def test_unary_round_ties_to_even(device: str, dt: dtype.DType) -> None:
+    ties = [0.5, 1.5, 2.5, 3.5, -0.5, -1.5, -2.5, -3.5, 0.0, -0.0, 4.5, 1024.5, -1024.5]
+    x = Tensor(ties, dtype=dt, device=device)
+    torch.testing.assert_close(totorch(x.round()), totorch(x).round(), rtol=0, atol=0)
+    y = x.clone()
+    y.round_()
+    torch.testing.assert_close(totorch(y), totorch(x).round(), rtol=0, atol=0)
+
     def test(shape: tuple[int, ...]) -> None:
-        x = random_tensor(shape, dt, device=device)
+        x = uniform_tensor(shape, -8.0, 8.0, dt, device)
         torch.testing.assert_close(totorch(x.round()), totorch(x).round(), rtol=0, atol=0)
 
     for_all_shapes(test)
