@@ -47,11 +47,32 @@ uint32_t mag_envcfg_cpu_threads(uint32_t fallback) {
   return (uint32_t)n;
 }
 
-int mag_envcfg_numa_strategy(int fallback) { /* Returns a mag_numa_strategy_t value, kept as int to avoid a core -> cpu backend include. */
+uint64_t mag_envcfg_readahead_mb(uint64_t fallback) {
+  const char *v = mag_envcfg_raw(MAG_ENV_READAHEAD_MB);
+  if (!v) return fallback;
+  char *end = NULL;
+  unsigned long long n = strtoull(v, &end, 10);
+  if (end == v || *end || n > 0x100000ull) {
+    mag_log_error("Invalid " MAG_ENV_READAHEAD_MB " value '%s' (expected int in [0, 1048576])", v);
+    return fallback;
+  }
+  return n;
+}
+
+int mag_envcfg_readahead_release(void) {
+  const char *v = mag_envcfg_raw(MAG_ENV_READAHEAD_RELEASE);
+  if (!v || mag_casecmp(v, "auto")) return -1;
+  if (!strcmp(v, "0")) return 0;
+  if (!strcmp(v, "1")) return 1;
+  mag_log_error("Invalid " MAG_ENV_READAHEAD_RELEASE " value '%s' (expected 0, 1 or auto)", v);
+  return -1;
+}
+
+int mag_envcfg_numa_strategy(int fallback) {
   const char *v = mag_envcfg_raw(MAG_ENV_NUMA_STRATEGY);
   if (!v) return fallback;
   if (mag_casecmp(v, "disabled") || mag_casecmp(v, "off")) return 0;
-  if (mag_casecmp(v, "distribute")) return 1;
+  if (mag_casecmp(v, "distribute")) return 1; /* vals of mag_numa_strategy_t in cpu */
   if (mag_casecmp(v, "isolate")) return 2;
   if (mag_casecmp(v, "numactl")) return 3;
   mag_log_error("Invalid " MAG_ENV_NUMA_STRATEGY " value '%s' (valid: disabled, distribute, isolate, numactl)", v);

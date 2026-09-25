@@ -17,6 +17,7 @@
 #include <core/mag_alloc.h>
 #include <core/mag_context.h>
 #include <core/mag_envcfg.h>
+#include <core/mag_mmap_ra.h>
 #include <core/mag_tensor.h>
 #include <core/mag_threadlib.h>
 
@@ -74,6 +75,11 @@ const uint32_t mag_crc32c_lut[256] = {
 
 static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *device, const mag_command_t *cmd) {
   mag_cpu_device_t *cpu_dvc = device->impl;
+  for (uint32_t i=0; i < cmd->num_in; ++i) {
+    const mag_tensor_t *t = cmd->in[i];
+    if (t->storage->flags & MAG_STORAGE_FLAG_BORROWED) /* Prefetch borrowed mmap data */
+      mag_mmap_readahead_hint((const void *)mag_tensor_data_ptr(t), mag_tensor_numbytes(t));
+  }
   uint32_t intraop_workers = mag_cpu_tune_eager_intra_op_worker_count(cmd, device); /* Determine number of intra-op workers */
   mag_lock_acquire(&cpu_dvc->submit_lock);
   mag_status_t stat;
@@ -91,6 +97,11 @@ static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *d
     stat = mag_threadpool_parallel_compute(err, cpu_dvc->pool, cmd, intraop_workers); /* Multithreaded exec + barrier */
   }
   mag_lock_release(&cpu_dvc->submit_lock);
+  for (uint32_t i=0; i < cmd->num_in; ++i) {
+    const mag_tensor_t *t = cmd->in[i];
+    if (t->storage->flags & MAG_STORAGE_FLAG_BORROWED) /* release borrowed mmap data */
+      mag_mmap_release_hint((const void *)mag_tensor_data_ptr(t), mag_tensor_numbytes(t));
+  }
   return stat;
 }
 
