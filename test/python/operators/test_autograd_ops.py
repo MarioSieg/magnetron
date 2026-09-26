@@ -67,6 +67,7 @@ _UNARY: tuple[tuple[str, float, float, Callable[[torch.Tensor], torch.Tensor]], 
     ('silu', -5.0, 5.0, F.silu),
     ('relu', -2.0, 2.0, torch.relu),
     ('gelu', -3.0, 3.0, F.gelu),
+    ('gelu_approx', -3.0, 3.0, lambda t: F.gelu(t, approximate='tanh')),
     ('softmax', -3.0, 3.0, lambda t: torch.softmax(t, -1)),
 )
 
@@ -185,7 +186,7 @@ def test_matmul_backward(device: str, shapes) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-@pytest.mark.parametrize('x_shape', [(3, 4), (2, 3, 4)])
+@pytest.mark.parametrize('x_shape', [(3, 4), (2, 3, 4), (4,)])
 def test_matmul_transposed_rhs_backward(device: str, x_shape) -> None:
     x, tx = _leaf(x_shape, -1.0, 1.0, device)
     w, tw = _leaf((6, 4), -1.0, 1.0, device)
@@ -279,6 +280,21 @@ _VIEW_CASES: tuple[tuple[str, Callable], ...] = (
     ('movedim', lambda x: x.movedim(0, 2)),
     ('split', lambda x: x.split(2, dim=1)[1]),
     ('flip', lambda x: x.flip(0, 2)),
+    ('repeat', lambda x: x.repeat(2, 1, 3)),
+    ('repeat_leading', lambda x: x.repeat(2, 1, 1, 2)),
+    ('repeat_interleave_int', lambda x: x.repeat_interleave(3, dim=1)),
+    ('repeat_interleave_flat', lambda x: x.repeat_interleave(2)),
+    ('cusum', lambda x: x.cumsum(1) if isinstance(x, torch.Tensor) else x.cusum(1)),
+    ('cusum_last', lambda x: x.cumsum(-1) if isinstance(x, torch.Tensor) else x.cusum(-1)),
+    ('pad_constant', lambda x: F.pad(x, [1, 2, 0, 1], value=0.5) if isinstance(x, torch.Tensor) else x.pad([1, 2, 0, 1], value=0.5)),
+    ('pad_reflect', lambda x: F.pad(x, [2, 1, 1, 2], mode='reflect') if isinstance(x, torch.Tensor) else x.pad([2, 1, 1, 2], mode='reflect')),
+    ('pad_replicate', lambda x: F.pad(x, [1, 3, 2, 0], mode='replicate') if isinstance(x, torch.Tensor) else x.pad([1, 3, 2, 0], mode='replicate')),
+    ('topk', lambda x: x.topk(2, dim=1)[0]),
+    ('topk_smallest', lambda x: x.topk(3, dim=-1, largest=False)[0]),
+    ('sort', lambda x: x.sort(dim=1)[0]),
+    ('sort_desc', lambda x: x.sort(dim=-1, descending=True)[0]),
+    ('cummax', lambda x: x.cummax(2)[0] if isinstance(x, torch.Tensor) else x.cumax(2)[0]),
+    ('cummin', lambda x: x.cummin(0)[0] if isinstance(x, torch.Tensor) else x.cumin(0)[0]),
     ('expand_leading', lambda x: x.expand(2, 3, 4, 5)),
     ('tril', lambda x: x.tril(1)),
     ('triu', lambda x: x.triu(-1)),
@@ -475,3 +491,193 @@ def test_no_grad_blocks_recording(device: str) -> None:
     tz.backward()
     _assert_grad(x, tx)
 
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shapes', [((4,), (4, 5)), ((3, 4), (4,)), ((4,), (4,)), ((1,), (1, 3)), ((6, 1), (1,))])
+def test_matmul_vector_operands_backward(device: str, shapes) -> None:
+    a, ta = _leaf(shapes[0], -1.0, 1.0, device)
+    b, tb = _leaf(shapes[1], -1.0, 1.0, device)
+    _backward(a @ b, ta @ tb, device)
+    _assert_grad(a, ta)
+    _assert_grad(b, tb)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('name', ['min', 'max'])
+def test_binary_minmax_ties_backward(device: str, name: str) -> None:
+    x, tx = _leaf((3, 4), -2.0, 2.0, device)
+    y = x.detach().clone()
+    ty = tx.detach().clone().requires_grad_(True)
+    y.requires_grad = True
+    ref = torch.minimum if name == 'min' else torch.maximum
+    _backward(getattr(x, name)(y), ref(tx, ty), device)
+    _assert_grad(x, tx)
+    _assert_grad(y, ty)
+    x, tx = _leaf((3, 4), -2.0, 2.0, device)
+    _backward(getattr(x, name)(x), ref(tx, tx), device)
+    _assert_grad(x, tx)
+
+
+_REDUCE_MINMAX_DIMS = (None, 0, 1, -1, (0, 2), (1, 2))
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('op', ['max', 'min'])
+@pytest.mark.parametrize('keepdim', [False, True])
+@pytest.mark.parametrize('dim', _REDUCE_MINMAX_DIMS, ids=[str(d) for d in _REDUCE_MINMAX_DIMS])
+def test_reduce_minmax_backward(device: str, op: str, keepdim: bool, dim) -> None:
+    x, tx = _leaf((3, 4, 5), -2.0, 2.0, device)
+    tref = torch.amax if op == 'max' else torch.amin
+    if dim is None:
+        y = getattr(x, op)()
+        ty = tref(tx)
+    else:
+        y = getattr(x, op)(dim, keepdim=keepdim)
+        ty = tref(tx, dim=dim, keepdim=keepdim)
+    _backward(y, ty, device)
+    _assert_grad(x, tx)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('op', ['max', 'min'])
+@pytest.mark.parametrize('dim', [None, 0, 1, -1])
+def test_reduce_minmax_ties_split_evenly_backward(device: str, op: str, dim) -> None:
+    tx = torch.tensor([[1.0, 3.0, 3.0, 0.0], [2.0, 2.0, 2.0, 2.0], [-1.0, 5.0, -1.0, 5.0]], requires_grad=True)
+    x = Tensor(tx.tolist(), device=device)
+    x.requires_grad = True
+    tref = torch.amax if op == 'max' else torch.amin
+    if dim is None:
+        y, ty = getattr(x, op)(), tref(tx)
+    else:
+        y, ty = getattr(x, op)(dim), tref(tx, dim=dim)
+    _backward(y, ty, device)
+    _assert_grad(x, tx)
+
+
+_PROD_DIMS = (None, 0, 1, -1, (0, 2), (1, 2), (0, 1, 2))
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('keepdim', [False, True])
+@pytest.mark.parametrize('dim', _PROD_DIMS, ids=[str(d) for d in _PROD_DIMS])
+@pytest.mark.parametrize('zeros', ['none', 'single', 'double'])
+def test_prod_backward(device: str, keepdim: bool, dim, zeros: str) -> None:
+    tx = torch.rand(3, 4, 5, dtype=torch.float64) * 1.5 + 0.5
+    if zeros != 'none':
+        tx[1, 2, 3] = 0.0
+        tx[2, 0, 0] = 0.0
+    if zeros == 'double':
+        tx[1, 2, 1] = 0.0
+        tx[2, 3, 0] = 0.0
+    tx = tx.to(torch.float32).requires_grad_(True)
+    x = Tensor(tx.tolist(), device=device)
+    x.requires_grad = True
+    if dim is None:
+        y, ty = x.prod(), tx.prod()
+    elif isinstance(dim, int):
+        y, ty = x.prod(dim, keepdim=keepdim), tx.prod(dim, keepdim=keepdim)
+    else:
+        y = x.prod(dim, keepdim=keepdim)
+        ty = tx
+        for d in sorted((d % 3 for d in dim), reverse=True):
+            ty = ty.prod(d, keepdim=True)
+        if not keepdim:
+            ty = ty.squeeze(tuple(d % 3 for d in dim))
+    _backward(y, ty, device)
+    _assert_grad(x, tx)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shape, dim', [((7,), 0), ((3, 5), 0), ((3, 5), 1), ((2, 3, 4), -1), ((2, 3, 4), 1), ((2, 1, 5, 3), 2)])
+def test_cumulative_backward(device: str, shape, dim: int) -> None:
+    x, tx = _leaf(shape, -2.0, 2.0, device)
+    _backward(x.cusum(dim), tx.cumsum(dim), device)
+    _assert_grad(x, tx)
+    x, tx = _leaf(shape, -2.0, 2.0, device)
+    _backward(x.cumax(dim)[0], tx.cummax(dim).values, device)
+    _assert_grad(x, tx)
+    x, tx = _leaf(shape, -2.0, 2.0, device)
+    _backward(x.cumin(dim)[0], tx.cummin(dim).values, device)
+    _assert_grad(x, tx)
+
+
+_PAD_BACKWARD_CASES = (
+    ((3, 4), (1, 2), 'constant'),
+    ((5,), (2, 3), 'constant'),
+    ((2, 3, 4), (2, 1, 1, 1, 0, 2), 'constant'),
+    ((2, 3, 4, 5), (1, 1, 2, 2), 'constant'),
+    ((2, 3, 5), (2, 1), 'reflect'),
+    ((2, 3, 4, 5), (1, 2, 2, 1), 'reflect'),
+    ((1, 2, 3, 4, 5), (1, 1, 1, 1, 1, 1), 'reflect'),
+    ((2, 3, 5), (2, 1), 'replicate'),
+    ((2, 3, 4, 5), (1, 2, 2, 1), 'replicate'),
+    ((1, 2, 3, 4, 5), (1, 1, 1, 1, 1, 1), 'replicate'),
+    ((2, 3, 4, 5), (3, 3, 0, 0), 'replicate'),
+)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shape, pad, mode', _PAD_BACKWARD_CASES)
+def test_pad_backward(device: str, shape, pad, mode: str) -> None:
+    x, tx = _leaf(shape, -2.0, 2.0, device)
+    _backward(x.pad(list(pad), mode=mode, value=1.5), F.pad(tx, list(pad), mode=mode, value=1.5 if mode == 'constant' else None), device)
+    _assert_grad(x, tx)
+
+
+_RI_BACKWARD_CASES = (((3,), 2, None), ((2, 3), 2, None), ((2, 3), 3, 1), ((2, 3), 2, 0), ((2, 3, 4), 3, -1), ((3,), [1, 2, 3], 0), ((2, 3), [2, 1], 0), ((2, 3), [1, 0, 2], 1), ((3,), [0, 2, 1], None), ((2, 3, 4), [2, 0, 1, 3], 2), ((4,), [0, 2, 0, 1], 0))
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shape, reps, dim', _RI_BACKWARD_CASES)
+def test_repeat_interleave_backward(device: str, shape, reps, dim) -> None:
+    x, tx = _leaf(shape, -2.0, 2.0, device)
+    mreps = Tensor(reps, device=device) if isinstance(reps, list) else reps
+    treps = torch.tensor(reps) if isinstance(reps, list) else reps
+    if dim is None:
+        y, ty = x.repeat_interleave(mreps), tx.repeat_interleave(treps)
+    else:
+        y, ty = x.repeat_interleave(mreps, dim=dim), tx.repeat_interleave(treps, dim=dim)
+    _backward(y, ty, device)
+    _assert_grad(x, tx)
+
+
+_SCATTER_BACKWARD_CASES = (((3, 5), 0, (2, 5)), ((3, 5), 1, (3, 3)), ((2, 3, 4), 2, (2, 3, 2)), ((2, 3, 4), 0, (1, 3, 4)), ((4,), 0, (3,)))
+
+
+def _unique_index(shape, dim: int, idx_shape) -> torch.Tensor:
+    d = dim % len(shape)
+    full = list(idx_shape)
+    full[d] = shape[d]
+    return torch.rand(full).argsort(dim=d).narrow(d, 0, idx_shape[d])
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shape, dim, idx_shape', _SCATTER_BACKWARD_CASES)
+@pytest.mark.parametrize('name', ['scatter', 'scatter_add'])
+def test_scatter_backward(device: str, shape, dim: int, idx_shape, name: str) -> None:
+    base, tbase = _leaf(shape, -2.0, 2.0, device)
+    src, tsrc = _leaf(idx_shape, -2.0, 2.0, device)
+    tidx = _unique_index(shape, dim, idx_shape) if name == 'scatter' else torch.randint(0, shape[dim], idx_shape)
+    idx = Tensor(tidx.tolist(), device=device)
+    _backward(getattr(base, name)(dim, idx, src), getattr(tbase, name)(dim, tidx, tsrc), device)
+    _assert_grad(base, tbase)
+    _assert_grad(src, tsrc)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shape, k, dim', [((7,), 3, 0), ((3, 5), 2, 1), ((3, 5), 3, 0), ((2, 3, 4), 4, -1), ((2, 3, 4), 1, 1)])
+@pytest.mark.parametrize('largest', [True, False])
+def test_topk_backward(device: str, shape, k: int, dim: int, largest: bool) -> None:
+    x, tx = _leaf(shape, -2.0, 2.0, device)
+    _backward(x.topk(k, dim=dim, largest=largest)[0], tx.topk(k, dim=dim, largest=largest).values, device)
+    _assert_grad(x, tx)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shape, dim', [((7,), 0), ((3, 5), 1), ((3, 5), 0), ((2, 3, 4), -1), ((2, 3, 4), 1)])
+@pytest.mark.parametrize('descending', [False, True])
+def test_sort_backward(device: str, shape, dim: int, descending: bool) -> None:
+    x, tx = _leaf(shape, -2.0, 2.0, device)
+    _backward(x.sort(dim=dim, descending=descending)[0], tx.sort(dim=dim, descending=descending).values, device)
+    _assert_grad(x, tx)

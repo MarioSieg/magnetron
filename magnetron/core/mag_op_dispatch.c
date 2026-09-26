@@ -83,6 +83,7 @@ mag_status_t MAG_HOTPROC mag_dispatch(
           return mag_set_error(err, MAG_ERR_PARAM, "dispatch: in-place operator '%s' overwrites an input that gradients depend on.\n\tHint: disable gradient tracking or use the out-of-place variant.", meta->mnemonic);
     for (uint32_t i=0; i < num_out; ++i) {
       mag_tensor_t *r = out[i];
+      if (!mag_tensor_is_floating_point_typed(r)) continue;
       mag_au_state_t *au = mag_au_state_lazy_alloc(&r->au_state, r->ctx);
       if (mag_unlikely(!au))
         return mag_set_error(err, MAG_ERR_OOM, "dispatch: failed to allocate autodiff state for gradient recording.");

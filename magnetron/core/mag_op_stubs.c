@@ -2312,11 +2312,21 @@ mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, 
     if (mag_iserr(status)) return status;
   }
   mag_tensor_t *result = NULL;
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT_INTERLEAVE, &xin, 0);
+  status = mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT_INTERLEAVE, &xin, 1);
   if (mag_iserr(status)) return status;
   status = mag_empty(err, &result, x->ctx, x->meta.dtype, params.repeat_interleave.rank, flatten ? params.repeat_interleave.out_shape : shape, mag_tensor_device_id(xin));
   if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_REPEAT_INTERLEAVE, false, &xin, 1, &result, 1, &params);
+  mag_tensor_t *inputs[2] = {xin, NULL};
+  uint32_t num_in = 1;
+  if (xin->meta.flags & MAG_TFLAG_REQUIRES_GRAD && mag_ctx_grad_recorder_is_running(x->ctx)) {
+    status = mag_empty(err, &inputs[1], x->ctx, MAG_DTYPE_INT64, 1, &num_counts, mag_tensor_device_id(xin));
+    if (mag_iserr(status)) return status;
+    status = mag_copy_raw_(err, inputs[1], counts, (size_t)num_counts*sizeof(*counts));
+    if (mag_iserr(status)) return status;
+    num_in = 2;
+  }
+  status = mag_dispatch(err, MAG_OP_REPEAT_INTERLEAVE, false, inputs, num_in, &result, 1, &params);
+  if (inputs[1]) mag_tensor_decref(inputs[1]);
   if (mag_iserr(status)) return status;
   mag_tensor_decref(xin);
   *out_result = result;
@@ -2453,6 +2463,31 @@ static mag_status_t mag_scatter_impl(mag_error_t *err, mag_opcode_t op, const ch
   return mag_dispatch(err, op, true, inputs, 3, &self, 1, &params);
 }
 
+static mag_status_t mag_scatter_impl_out(mag_error_t *err, mag_opcode_t op, const char *name, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
+  *out_result = NULL;
+  mag_status_t status = mag_scatter_validate(err, name, self, &dim, index, src);
+  if (mag_iserr(status)) return status;
+  mag_tensor_t *inputs[3] = {self, src, index};
+  status = mag_check_dtype_and_device_compat(err, op, inputs, 0);
+  if (mag_iserr(status)) return status;
+  mag_tensor_t *result = NULL;
+  bool grad_was_on = mag_ctx_grad_recorder_is_running(self->ctx);
+  if (grad_was_on) mag_ctx_grad_recorder_stop(self->ctx);
+  status = mag_clone(err, &result, self);
+  if (grad_was_on) mag_ctx_grad_recorder_start(self->ctx);
+  if (mag_iserr(status)) return status;
+  mag_op_params_t params = {
+    .scatter = {.dim = dim}
+  };
+  status = mag_dispatch(err, op, false, inputs, 3, &result, 1, &params);
+  if (mag_iserr(status)) {
+    mag_tensor_decref(result);
+    return status;
+  }
+  *out_result = result;
+  return MAG_OK;
+}
+
 mag_status_t mag_scatter_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
   mag_status_t status = mag_check_inplace_grad_ok(err, self);
   if (mag_iserr(status)) return status;
@@ -2460,10 +2495,7 @@ mag_status_t mag_scatter_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag
 }
 
 mag_status_t mag_scatter(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
-  *out_result = NULL;
-  mag_status_t status = mag_clone(err, out_result, self);
-  if (mag_iserr(status)) return status;
-  return mag_scatter_impl(err, MAG_OP_SCATTER, "scatter", *out_result, dim, index, src);
+  return mag_scatter_impl_out(err, MAG_OP_SCATTER, "scatter", out_result, self, dim, index, src);
 }
 
 mag_status_t mag_scatter_add_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *idx, mag_tensor_t *src) {
@@ -2473,10 +2505,7 @@ mag_status_t mag_scatter_add_(mag_error_t *err, mag_tensor_t *self, int64_t dim,
 }
 
 mag_status_t mag_scatter_add(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *idx, mag_tensor_t *src) {
-  *out_result = NULL;
-  mag_status_t status = mag_clone(err, out_result, self);
-  if (mag_iserr(status)) return status;
-  return mag_scatter_impl(err, MAG_OP_SCATTER_ADD, "scatter_add", *out_result, dim, idx, src);
+  return mag_scatter_impl_out(err, MAG_OP_SCATTER_ADD, "scatter_add", out_result, self, dim, idx, src);
 }
 
 mag_status_t mag_copy_(mag_error_t *err, mag_tensor_t *dst, mag_tensor_t *src) {
