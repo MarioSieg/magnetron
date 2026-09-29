@@ -202,6 +202,75 @@ static void mag_machine_probe_os_name(char (*out_os_name)[128]) { /* Get OS name
 #endif
 }
 
+#if defined(__aarch64__) && defined(__linux__)
+typedef struct mag_arm64_cpu_part_t {
+  uint16_t implementer;
+  uint16_t part;
+  const char *name;
+} mag_arm64_cpu_part_t;
+
+static const mag_arm64_cpu_part_t mag_arm64_cpu_parts[] = {
+  {0x41, 0xd03, "ARM Cortex-A53"},
+  {0x41, 0xd04, "ARM Cortex-A35"},
+  {0x41, 0xd05, "ARM Cortex-A55"},
+  {0x41, 0xd06, "ARM Cortex-A65"},
+  {0x41, 0xd07, "ARM Cortex-A57"},
+  {0x41, 0xd08, "ARM Cortex-A72"},
+  {0x41, 0xd09, "ARM Cortex-A73"},
+  {0x41, 0xd0a, "ARM Cortex-A75"},
+  {0x41, 0xd0b, "ARM Cortex-A76"},
+  {0x41, 0xd0c, "ARM Neoverse-N1"},
+  {0x41, 0xd0d, "ARM Cortex-A77"},
+  {0x41, 0xd0e, "ARM Cortex-A76AE"},
+  {0x41, 0xd40, "ARM Neoverse-V1"},
+  {0x41, 0xd41, "ARM Cortex-A78"},
+  {0x41, 0xd42, "ARM Cortex-A78AE"},
+  {0x41, 0xd43, "ARM Cortex-A65AE"},
+  {0x41, 0xd44, "ARM Cortex-X1"},
+  {0x41, 0xd46, "ARM Cortex-A510"},
+  {0x41, 0xd47, "ARM Cortex-A710"},
+  {0x41, 0xd48, "ARM Cortex-X2"},
+  {0x41, 0xd49, "ARM Neoverse-N2"},
+  {0x41, 0xd4a, "ARM Neoverse-E1"},
+  {0x41, 0xd4b, "ARM Cortex-A78C"},
+  {0x41, 0xd4c, "ARM Cortex-X1C"},
+  {0x41, 0xd4d, "ARM Cortex-A715"},
+  {0x41, 0xd4e, "ARM Cortex-X3"},
+  {0x41, 0xd4f, "ARM Neoverse-V2"},
+  {0x41, 0xd80, "ARM Cortex-A520"},
+  {0x41, 0xd81, "ARM Cortex-A720"},
+  {0x41, 0xd82, "ARM Cortex-X4"},
+  {0x41, 0xd83, "ARM Neoverse-V3AE"},
+  {0x41, 0xd84, "ARM Neoverse-V3"},
+  {0x41, 0xd85, "ARM Cortex-X925"},
+  {0x41, 0xd87, "ARM Cortex-A725"},
+  {0x41, 0xd8e, "ARM Neoverse-N3"},
+  {0x43, 0x0a1, "Cavium ThunderX"},
+  {0x43, 0x0af, "Cavium ThunderX2"},
+  {0x46, 0x001, "Fujitsu A64FX"},
+  {0x48, 0xd01, "HiSilicon Kunpeng-920"},
+  {0x4e, 0x004, "NVIDIA Carmel"},
+  {0x51, 0x001, "Qualcomm Oryon"},
+  {0xc0, 0xac3, "Ampere AmpereOne"},
+  {0xc0, 0xac4, "Ampere AmpereOne"},
+};
+
+static void mag_machine_probe_arm64_cpu_name(char (*out_cpu_name)[128]) {
+  char implementer[128], part[128];
+  if (!mag_cpuinfo_parse_value("CPU implementer", &implementer) || !mag_cpuinfo_parse_value("CPU part", &part)) return;
+  unsigned long impl = strtoul(implementer, NULL, 0);
+  unsigned long prt = strtoul(part, NULL, 0);
+  for (size_t i=0; i < sizeof(mag_arm64_cpu_parts)/sizeof(*mag_arm64_cpu_parts); ++i) {
+    const mag_arm64_cpu_part_t *e = mag_arm64_cpu_parts+i;
+    if (e->implementer == impl && e->part == prt) {
+      snprintf(*out_cpu_name, sizeof(*out_cpu_name), "%s", e->name);
+      return;
+    }
+  }
+  snprintf(*out_cpu_name, sizeof(*out_cpu_name), "ARM64 implementer 0x%02lx part 0x%03lx", impl, prt);
+}
+#endif
+
 static void mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) { /* Get CPU name */
 #ifdef _WIN32
   HKEY key;
@@ -220,6 +289,9 @@ static void mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) { /* Get CPU n
   char cpu_name[128];
   if (mag_likely((mag_cpuinfo_parse_value("model name", &cpu_name) && *cpu_name) || (mag_cpuinfo_parse_value("Model", &cpu_name) && *cpu_name)))
     snprintf(*out_cpu_name, sizeof(*out_cpu_name), "%s", cpu_name);
+#if defined(__aarch64__) && defined(__linux__)
+  else mag_machine_probe_arm64_cpu_name(out_cpu_name);
+#endif
 #endif
 }
 
