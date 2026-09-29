@@ -108,11 +108,14 @@ jobs:
           fi
           passes=1
           if [ "${{ matrix.mimalloc_checks }}" = "true" ]; then passes=6; fi
+          set -o pipefail
+          mkdir -p crash
           for i in $(seq 1 $passes); do
             echo "::group::pytest pass $i/$passes"
-            pytest -n 4 -s "${{ github.workspace }}/test/python/"
+            pytest -n 4 -s -v "${{ github.workspace }}/test/python/" 2>&1 | tee "crash/pytest-$i.log"
             echo "::endgroup::"
           done
+          rm -f crash/pytest-*.log
 
       - name: Collect crash reports (macOS)
         if: failure() && runner.os == 'macOS'

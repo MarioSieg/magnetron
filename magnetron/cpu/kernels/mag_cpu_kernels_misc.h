@@ -34,8 +34,11 @@
     for (int64_t i = 0; i < n && all_contig; ++i) \
       if (!mag_tensor_is_contiguous(payload->cmd->in[i])) all_contig = false; \
     if (mag_likely(all_contig)) { \
-      int64_t *xi_outer = mag_scratch_arena_alloc(&mag_tls_arena, n*sizeof(*xi_outer)); \
-      const T **bxi = mag_scratch_arena_alloc(&mag_tls_arena, n*sizeof(*bxi)); \
+      size_t xo_nb = mag_align_up((size_t)n*sizeof(int64_t), MAG_MM_SCRATCH_ALIGN); \
+      uint8_t *blk = mag_scratch_arena_alloc(&mag_tls_arena, xo_nb + (size_t)n*sizeof(const T *)); \
+      if (mag_unlikely(!blk)) return mag_set_error(err, MAG_ERR_OOM, "cat: failed to allocate scratch buffer."); \
+      int64_t *xi_outer = (int64_t *)blk; \
+      const T **bxi = (const T **)(blk + xo_nb); \
       for (int64_t i=0; i < n; ++i) { \
         const mag_tensor_t *x = payload->cmd->in[i]; \
         xi_outer[i] = x->meta.coords.shape[dim] * inner; \
@@ -446,9 +449,11 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
         off_x0 += base_idx[d] * x->meta.coords.strides[d]; \
         off_v0 += base_idx[d] * v->meta.coords.strides[d]; \
       } \
-      T *best_vals = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_vals)); \
-      int64_t *best_idx = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_idx)); \
-      if (mag_unlikely(!best_vals || !best_idx)) \
+      size_t bv_nb = mag_align_up((size_t)k*sizeof(T), MAG_MM_SCRATCH_ALIGN); \
+      uint8_t *blk = mag_scratch_arena_alloc(&mag_tls_arena, bv_nb + (size_t)k*sizeof(int64_t)); \
+      T *best_vals = (T *)blk; \
+      int64_t *best_idx = (int64_t *)(blk + bv_nb); \
+      if (mag_unlikely(!blk)) \
         return mag_set_error(err, MAG_ERR_OOM, "topk: failed to allocate scratch buffer for k=%" PRIi64 ".", (int64_t)k); \
       int64_t filled = 0; \
       \
@@ -579,11 +584,14 @@ mag_gen_stub_topk(int64_t, int64, mag_cvt_nop)
     int64_t ob = mag_vmin(oa + chunk, outer_count); \
     if (oa >= ob) return MAG_OK; \
     size_t mark = mag_scratch_arena_mark(&mag_tls_arena); \
-    CT *ka = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)n * sizeof(*ka)); \
-    CT *kb = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)n * sizeof(*kb)); \
-    int64_t *pa = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)n * sizeof(*pa)); \
-    int64_t *pb = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)n * sizeof(*pb)); \
-    if (mag_unlikely(!ka || !kb || !pa || !pb)) { \
+    size_t k_nb = mag_align_up((size_t)n*sizeof(CT), MAG_MM_SCRATCH_ALIGN); \
+    size_t p_nb = mag_align_up((size_t)n*sizeof(int64_t), MAG_MM_SCRATCH_ALIGN); \
+    uint8_t *blk = mag_scratch_arena_alloc(&mag_tls_arena, 2*k_nb + 2*p_nb); \
+    CT *ka = (CT *)blk; \
+    CT *kb = (CT *)(blk + k_nb); \
+    int64_t *pa = (int64_t *)(blk + 2*k_nb); \
+    int64_t *pb = (int64_t *)(blk + 2*k_nb + p_nb); \
+    if (mag_unlikely(!blk)) { \
       mag_scratch_arena_reset(&mag_tls_arena, mark); \
       return mag_set_error(err, MAG_ERR_OOM, "sort: failed to allocate scratch buffer for n=%" PRIi64 ".", n); \
     } \
