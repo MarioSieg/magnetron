@@ -97,7 +97,7 @@ typedef int64_t mag_atomic64_t;
 static MAG_AINLINE void mag_atomic64_store(volatile mag_atomic64_t *o, mag_atomic64_t x, mag_memory_order_t order) {
   __atomic_store_n(o, x, order);
 }
-static MAG_AINLINE mag_atomic64_t mag_atomic64_load(volatile mag_atomic64_t *o, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic64_t mag_atomic64_load(const volatile mag_atomic64_t *o, mag_memory_order_t order) {
   return __atomic_load_n(o, order);
 }
 static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_add(volatile mag_atomic64_t *o, mag_atomic64_t x, mag_memory_order_t order) {
@@ -129,7 +129,7 @@ typedef int32_t mag_atomic32_t;
 static MAG_AINLINE void mag_atomic32_store(volatile mag_atomic32_t *o, mag_atomic32_t x, mag_memory_order_t order) {
   __atomic_store_n(o, x, order);
 }
-static MAG_AINLINE mag_atomic32_t mag_atomic32_load(volatile mag_atomic32_t *o, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic32_t mag_atomic32_load(const volatile mag_atomic32_t *o, mag_memory_order_t order) {
   return __atomic_load_n(o, order);
 }
 static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_add(volatile mag_atomic32_t *o, mag_atomic32_t x, mag_memory_order_t order) {
