@@ -284,6 +284,7 @@ static mag_status_t mag_cpu_init(mag_error_t *err, mag_backend_t *self, mag_cont
   nt = mag_envcfg_cpu_threads(nt); /* Overridable via MAG_CPU_THREADS */
   nt = mag_vmax(1, nt);
   mag_log_info("CPU backend: %u worker threads", nt);
+  ctx->telemetry.cpu_workers = nt;
   return mag_cpu_init_interface(err, (mag_device_t **)&self->impl, ctx, nt);
 }
 static mag_status_t mag_cpu_shutdown(mag_error_t *err, mag_backend_t *self) {

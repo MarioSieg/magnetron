@@ -239,6 +239,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
   if (mag_unlikely(!(root->meta.coords.rank == 0 && root->meta.numel == 1)))
     return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backpropagation requires a scalar root tensor.");
   mag_context_t *ctx = root->ctx;
+  mag_atomic64_fetch_add(&ctx->telemetry.backward_passes, 1, MAG_MO_RELAXED);
   bool grad_was_on = mag_ctx_grad_recorder_is_running(ctx);
   mag_ctx_grad_recorder_stop(ctx);
   mag_tensor_t *root_grad=NULL; /* Seed root gradient */
@@ -266,6 +267,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
   size_t grads_cap = 0;
   if (mag_unlikely(mag_iserr(status))) goto cleanup;
   if (mag_unlikely(!post_order->len)) goto cleanup;
+  mag_atomic64_fetch_add(&ctx->telemetry.backward_nodes_visited, (mag_atomic64_t)post_order->len, MAG_MO_RELAXED);
   for (size_t i=post_order->len; i --> 0;) {
     mag_au_state_t *node = post_order->buf[i];
     if (mag_unlikely(!node->grad || node->op == MAG_OP_NOP))
@@ -330,6 +332,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
       }
       if (!inode->grad) {
         mag_node_patch_grad(inode, gri);
+        mag_atomic64_fetch_add(&ctx->telemetry.grads_materialized, 1, MAG_MO_RELAXED);
       } else {
         status = mag_add_(err, &gri, gri, inode->grad);
         if (mag_iserr(status)) goto cleanup;

@@ -137,6 +137,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   if (mag_unlikely(!ctx))
     return mag_set_error(err, MAG_ERR_OOM, "context: failed to allocate context structure.");
   memset(ctx, 0, sizeof(*ctx));
+  ctx->boot_timestamp_ns = time_stamp_start;
 
   /* Slab allocators */
   bool slab_ok = true;
@@ -191,10 +192,43 @@ bool mag_ctx_is_device_available(mag_context_t *ctx, mag_device_id_t id) {
   return mag_backend_registry_lookup_device_id(ctx->backend_registry, id, &backend, &device) && device && backend;
 }
 
+typedef struct mag_slab_stats_t {
+  const char *name;
+  uint32_t num_allocs;
+  uint32_t num_freelist_hits;
+  uint32_t num_pool_hits;
+  uint32_t num_chunks;
+  size_t blocks_per_chunk;
+  size_t capacity_bytes;
+} mag_slab_stats_t;
+
+static mag_slab_stats_t mag_slab_snapshot(const mag_slab_alloc_t *slab, const char *name) {
+  return (mag_slab_stats_t) {
+    .name = name,
+    .num_allocs = slab->num_allocs,
+    .num_freelist_hits = slab->num_freelist_hits,
+    .num_pool_hits = slab->num_pool_hits,
+    .num_chunks = slab->num_chunks,
+    .blocks_per_chunk = slab->blocks_per_chunk,
+    .capacity_bytes = (size_t)slab->num_chunks*slab->blocks_per_chunk*slab->block_size
+  };
+}
+
+static void mag_fmt_duration(char *buf, size_t n, uint64_t ns) {
+  uint64_t whole = ns/1000000000ull;
+  uint64_t days = whole/86400, hours = whole%86400/3600, mins = whole%3600/60;
+  size_t off = (size_t)snprintf(buf, n, "up ");
+  if (days) off += (size_t)snprintf(buf+off, n-off, "%" PRIu64 " day%s, ", days, days == 1 ? "" : "s");
+  if (hours) snprintf(buf+off, n-off, "%" PRIu64 ":%02" PRIu64, hours, mins);
+  else if (mins || days) snprintf(buf+off, n-off, "%" PRIu64 " min", mins);
+  else snprintf(buf+off, n-off, "%" PRIu64 " sec", whole);
+}
+
 void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Destroy magnetron context. */
 #ifdef MAG_DEBUG
   mag_leak_detector_dump_results(ctx);  /* Provide detailed leak check info */
 #endif
+  uint64_t uptime_ns = mag_hpc_clock_elapsed_ns(ctx->boot_timestamp_ns);
   int64_t alive_tensors = mag_atomic64_load(&ctx->telemetry.num_alive_tensors, MAG_MO_RELAXED);
   int64_t alive_storages = mag_atomic64_load(&ctx->telemetry.num_alive_storages, MAG_MO_RELAXED);
   bool leaks_detected = alive_tensors || alive_storages;
@@ -204,6 +238,13 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     if (suppress_leak_detection) mag_log_warn("%s", msg);
     else mag_log_error("%s", msg); /* Never abort from Python - report the leak instead of panicking. */
   }
+  mag_slab_stats_t slabs[] = {
+    mag_slab_snapshot(&ctx->tensor_slab, "tensor"),
+    mag_slab_snapshot(&ctx->storage_slab, "storage"),
+    mag_slab_snapshot(&ctx->view_meta_slab, "view_meta"),
+    mag_slab_snapshot(&ctx->au_state_slab, "au_state"),
+    mag_slab_snapshot(&ctx->au_state_op_params_slab, "au_op_params"),
+  };
   mag_slab_destroy(&ctx->au_state_op_params_slab);
   mag_slab_destroy(&ctx->au_state_slab);
   mag_slab_destroy(&ctx->view_meta_slab);
@@ -211,23 +252,57 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
   mag_slab_destroy(&ctx->storage_slab);
   mag_backend_registry_shutdown(NULL, ctx->backend_registry); /* TODO: propagate error */
   int64_t num_created_tensors = mag_atomic64_load(&ctx->telemetry.num_created_tensors, MAG_MO_RELAXED);
+  int64_t num_created_views = mag_atomic64_load(&ctx->telemetry.num_created_views, MAG_MO_RELAXED);
   int64_t storage_bytes = mag_atomic64_load(&ctx->telemetry.storage_bytes_allocated, MAG_MO_RELAXED);
   int64_t ops_dispatched = mag_atomic64_load(&ctx->telemetry.ops_dispatched, MAG_MO_RELAXED);
+  int64_t backward_passes = mag_atomic64_load(&ctx->telemetry.backward_passes, MAG_MO_RELAXED);
+  int64_t backward_nodes = mag_atomic64_load(&ctx->telemetry.backward_nodes_visited, MAG_MO_RELAXED);
+  int64_t grads_materialized = mag_atomic64_load(&ctx->telemetry.grads_materialized, MAG_MO_RELAXED);
+  uint32_t cpu_workers = ctx->telemetry.cpu_workers;
   memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
   (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
   ctx = NULL;
-  /* Dump some metrics */
-  double storage_alloc, tensors_num, ops_num;
-  const char *storage_unit, *tensors_unit, *ops_unit;
+  double uptime_s = (double)uptime_ns*1e-9;
+  double rate_div = uptime_s > 0.0 ? uptime_s : 1.0;
+  char uptime_str[64];
+  mag_fmt_duration(uptime_str, sizeof(uptime_str), uptime_ns);
+  double storage_alloc, tensors_num, views_num, ops_num, ops_rate, tensors_rate, bwd_num, bwd_nodes_num, grads_num;
+  const char *storage_unit, *tensors_unit, *views_unit, *ops_unit, *ops_rate_unit, *tensors_rate_unit, *bwd_unit, *bwd_nodes_unit, *grads_unit;
   mag_humanize_memory_size(storage_bytes, &storage_alloc, &storage_unit);
   mag_humanize_amount(num_created_tensors, &tensors_num, &tensors_unit);
+  mag_humanize_amount(num_created_views, &views_num, &views_unit);
+  double views_pct = num_created_tensors ? 100.0*(double)num_created_views/(double)num_created_tensors : 0.0;
   mag_humanize_amount(ops_dispatched, &ops_num, &ops_unit);
+  mag_humanize_amount((size_t)((double)ops_dispatched/rate_div), &ops_rate, &ops_rate_unit);
+  mag_humanize_amount((size_t)((double)num_created_tensors/rate_div), &tensors_rate, &tensors_rate_unit);
+  mag_humanize_amount(backward_passes, &bwd_num, &bwd_unit);
+  mag_humanize_amount(backward_nodes, &bwd_nodes_num, &bwd_nodes_unit);
+  mag_humanize_amount(grads_materialized, &grads_num, &grads_unit);
+  double nodes_per_pass = backward_passes ? (double)backward_nodes/(double)backward_passes : 0.0;
+  mag_log_info("runtime metrics: %s, cpu workers: %u", uptime_str, cpu_workers);
   mag_log_info(
-    "runtime metrics: operators dispatched: %.01f%s, tensors created: %.01f%s, total storage memory allocated: %.01f%s.",
-    ops_num, ops_unit,
-    tensors_num, tensors_unit,
+    "runtime metrics: operators dispatched: %.01f%s (%.01f%s/s), tensors created: %.01f%s (%.01f%s/s), of which views: %.01f%s (%.01f%%), total storage memory allocated: %.01f%s.",
+    ops_num, ops_unit, ops_rate, ops_rate_unit,
+    tensors_num, tensors_unit, tensors_rate, tensors_rate_unit,
+    views_num, views_unit, views_pct,
     storage_alloc, storage_unit
   );
+  mag_log_info(
+    "runtime metrics: backward passes: %.01f%s, autograd nodes visited: %.01f%s (%.01f/pass), grad tensors materialized: %.01f%s.",
+    bwd_num, bwd_unit,
+    bwd_nodes_num, bwd_nodes_unit, nodes_per_pass,
+    grads_num, grads_unit
+  );
+  for (size_t i=0; i < sizeof(slabs)/sizeof(*slabs); ++i) {
+    const mag_slab_stats_t *st = slabs+i;
+    double cap_val, reuse = st->num_allocs ? 100.0*(double)st->num_freelist_hits/(double)st->num_allocs : 0.0;
+    const char *cap_unit;
+    mag_humanize_memory_size(st->capacity_bytes, &cap_val, &cap_unit);
+    mag_log_info(
+      "runtime metrics: slab %-12s allocs: %u, freelist hits: %u (%.01f%% reuse), pool hits: %u, chunks: %u x %zu blocks, capacity: %.01f%s",
+      st->name, st->num_allocs, st->num_freelist_hits, reuse, st->num_pool_hits, st->num_chunks, st->blocks_per_chunk, cap_val, cap_unit
+    );
+  }
   mag_log_info("magnetron context offline");
   fflush(stdout);
   fflush(stderr);

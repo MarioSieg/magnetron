@@ -84,6 +84,7 @@ mag_status_t mag_strided_view(mag_error_t *err, mag_tensor_t **out, mag_context_
     mag_rc_incref(tensor->view_meta);
   }
   tensor->meta.flags = base->meta.flags|MAG_TFLAG_IS_VIEW;
+  mag_atomic64_fetch_add(&ctx->telemetry.num_created_views, 1, MAG_MO_RELAXED);
   if (mag_ctx_grad_recorder_is_running(ctx) && (base->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) {
     mag_op_params_t params = {0};
     params.strided.rank = rank;
@@ -560,6 +561,7 @@ static mag_status_t mag_reinterpret_cast_flat_storage_1d(mag_error_t *err, mag_t
     mag_rc_incref(tensor->view_meta);
   }
   tensor->meta.flags = x->meta.flags|MAG_TFLAG_IS_VIEW;
+  mag_atomic64_fetch_add(&ctx->telemetry.num_created_views, 1, MAG_MO_RELAXED);
   *out = tensor;
   return MAG_OK;
 }
@@ -2298,38 +2300,47 @@ mag_status_t mag_clamp_max(mag_error_t *err, mag_tensor_t **out_result, mag_tens
 
 mag_status_t mag_lerp(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *start, mag_tensor_t *end, mag_tensor_t *weight) { /* TODO: this op deserves dedicated kernel */
   *out_result = NULL;
+  mag_dtype_t compute_dtype = mag_tensor_is_floating_point_typed(start) ? MAG_DTYPE_FLOAT32 : start->meta.dtype;
+  mag_tensor_t *s = NULL;
+  mag_tensor_t *e = NULL;
+  mag_tensor_t *w = NULL;
   mag_tensor_t *delta = NULL;
   mag_tensor_t *scaled = NULL;
-  mag_tensor_t *result = NULL;
-  mag_status_t status = mag_sub(err, &delta, end, start);
+  mag_tensor_t *sum = NULL;
+  mag_status_t status = mag_cast(err, &s, start, compute_dtype);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_mul(err, &scaled, delta, weight);
+  status = mag_cast(err, &e, end, compute_dtype);
   if (mag_iserr(status)) goto cleanup;
-  status = mag_add(err, &result, start, scaled);
+  status = mag_cast(err, &w, weight, compute_dtype);
   if (mag_iserr(status)) goto cleanup;
-  *out_result = result;
-  result = NULL; /* ownership transferred */
+  status = mag_sub(err, &delta, e, s);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_mul(err, &scaled, delta, w);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_add(err, &sum, s, scaled);
+  if (mag_iserr(status)) goto cleanup;
+  status = mag_cast(err, out_result, sum, start->meta.dtype);
   cleanup:
+    if (s) mag_tensor_decref(s);
+    if (e) mag_tensor_decref(e);
+    if (w) mag_tensor_decref(w);
     if (delta) mag_tensor_decref(delta);
-  if (scaled) mag_tensor_decref(scaled);
-  if (result) mag_tensor_decref(result);
+    if (scaled) mag_tensor_decref(scaled);
+    if (sum) mag_tensor_decref(sum);
   return status;
 }
 
 mag_status_t mag_lerp_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *start, mag_tensor_t *end, mag_tensor_t *weight) { /* TODO: this op deserves dedicated kernel */
   *out_result = NULL;
-  mag_tensor_t *delta = NULL;
-  mag_tensor_t *scaled = NULL;
-  mag_status_t status = mag_sub(err, &delta, end, start);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_mul(err, &scaled, delta, weight);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_add_(err, out_result, start, scaled);
-  cleanup:
-    if (delta) mag_tensor_decref(delta);
-    if (scaled) mag_tensor_decref(scaled);
-  return status;
-
+  mag_tensor_t *result = NULL;
+  mag_status_t status = mag_lerp(err, &result, start, end, weight);
+  if (mag_iserr(status)) return status;
+  status = mag_copy_(err, start, result);
+  mag_tensor_decref(result);
+  if (mag_iserr(status)) return status;
+  mag_tensor_incref(start);
+  *out_result = start;
+  return MAG_OK;
 }
 
 mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
