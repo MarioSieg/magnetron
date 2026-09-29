@@ -15,7 +15,16 @@ static MAG_AINLINE float mag_fn_add_f32(float x, float y) { return x+y; }
 static MAG_AINLINE float mag_fn_sub_f32(float x, float y) { return x-y; }
 static MAG_AINLINE float mag_fn_mul_f32(float x, float y) { return x*y; }
 static MAG_AINLINE float mag_fn_div_f32(float x, float y) { return x/y; }
-static MAG_AINLINE float mag_fn_floordiv_f32(float x, float y) { return floorf(x/y); }
+static MAG_AINLINE float mag_fn_floordiv_f32(float x, float y) {
+  if (y == 0.f) return x/y;
+  float mod = fmodf(x, y);
+  float div = (x - mod)/y;
+  if (mod != 0.f && (y < 0.f) != (mod < 0.f)) div -= 1.f;
+  if (div == 0.f) return copysignf(0.f, x/y);
+  float fl = floorf(div);
+  if (div - fl > .5f) fl += 1.f;
+  return fl;
+}
 static MAG_AINLINE float mag_fn_mod_f32(float x, float y) { return mag_remf(x,y); }
 static MAG_AINLINE float mag_fn_pow_f32(float x, float y) { return powf(x,y); }
 static MAG_AINLINE float mag_fn_min_f32(float x, float y) { return (x != x || y != y) ? x+y : fminf(x,y); }
