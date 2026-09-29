@@ -761,6 +761,43 @@ static MAG_AINLINE float mag_vf32_reduce_add(mag_vf32_t x) {
     return x;
   #endif
 }
+static MAG_AINLINE float mag_vf32_reduce_min(mag_vf32_t x) {
+  #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+    return vminvq_f32(x);
+  #elif defined(__AVX512F__)
+    return _mm512_reduce_min_ps(x);
+  #elif defined(__AVX2__)
+    __m128 acc = _mm_min_ps(
+      _mm256_castps256_ps128(x),
+      _mm256_extractf128_ps(x, 1)
+    );
+    __m128 shuf = _mm_movehdup_ps(acc);
+    acc = _mm_min_ps(acc, shuf);
+    shuf = _mm_movehl_ps(shuf, acc);
+    acc = _mm_min_ss(acc, shuf);
+    return _mm_cvtss_f32(acc);
+  #elif defined(__SSE2__)
+    __m128 shuf = _mm_shuffle_ps(x, x, _MM_SHUFFLE(2, 3, 0, 1));
+    x = _mm_min_ps(x, shuf);
+    shuf = _mm_movehl_ps(shuf, x);
+    x = _mm_min_ss(x, shuf);
+    return _mm_cvtss_f32(x);
+  #elif defined(__loongarch_asx)
+    mag_alignas(32) float t[8];
+    __lasx_xvst((__m256i)x, t, 0);
+    float a = mag_vmin(mag_vmin(t[0], t[1]), mag_vmin(t[2], t[3]));
+    float b = mag_vmin(mag_vmin(t[4], t[5]), mag_vmin(t[6], t[7]));
+    return mag_vmin(a, b);
+  #elif defined(__loongarch_sx)
+    mag_alignas(16) float t[4];
+    __lsx_vst((__m128i)x, t, 0);
+    float a = mag_vmin(t[0], t[1]);
+    float b = mag_vmin(t[2], t[3]);
+    return mag_vmin(a, b);
+  #else
+    return x;
+  #endif
+}
 static MAG_AINLINE float mag_vf32_reduce_max(mag_vf32_t x) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
     return vmaxvq_f32(x);

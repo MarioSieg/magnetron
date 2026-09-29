@@ -98,13 +98,6 @@
 #define mag_add_f32(a, b) ((a)+(b))
 #define mag_final_id(a) (a)
 #define mag_final_mean(a) ((a)/(float)red_prod)
-static MAG_AINLINE float mag_vf32_reduce_min_lanes(mag_vf32_t v) {
-  float lanes[MAG_VF32_LANES];
-  mag_vf32_storeu(lanes, v);
-  float m = lanes[0];
-  for (int i=1; i < MAG_VF32_LANES; ++i) m = fminf(m, lanes[i]);
-  return m;
-}
 #define mag_cpu_impl_reduce_hfp(T, TF, FUNC, CVT, RCVT, VLOAD, VINIT, VACC, VRED, SINIT, SCOMB, FINAL_ACC) \
   static mag_status_t MAG_HOTPROC mag_##FUNC##_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
@@ -277,13 +270,13 @@ mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float3
 mag_cpu_impl_reduce_prod_hfp(float, float32, mag_cvt_nop, mag_cvt_nop)
 mag_cpu_impl_reduce_prod_hfp(mag_float16_t, float16, mag_float16_to_float32, mag_float32_to_float16)
 mag_cpu_impl_reduce_prod_hfp(mag_bfloat16_t, bfloat16, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
-mag_cpu_impl_reduce_hfp(float, float32, minima, mag_cvt_nop, mag_cvt_nop, mag_vf32_loadu, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min_lanes, INFINITY, fminf, mag_final_id)
-mag_cpu_impl_reduce_hfp(mag_float16_t, float16, minima, mag_float16_to_float32, mag_float32_to_float16, mag_vf32_loadu_f16, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min_lanes, INFINITY, fminf, mag_final_id)
-mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, minima, mag_bfloat16_to_float32, mag_float32_to_bfloat16, mag_vf32_loadu_bf16, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min_lanes, INFINITY, fminf, mag_final_id)
+mag_cpu_impl_reduce_hfp(float, float32, minima, mag_cvt_nop, mag_cvt_nop, mag_vf32_loadu, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min, INFINITY, fminf, mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_float16_t, float16, minima, mag_float16_to_float32, mag_float32_to_float16, mag_vf32_loadu_f16, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min, INFINITY, fminf, mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, minima, mag_bfloat16_to_float32, mag_float32_to_bfloat16, mag_vf32_loadu_bf16, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min, INFINITY, fminf, mag_final_id)
 mag_cpu_impl_reduce_hfp(float,          float32,  maxima, mag_cvt_nop,             mag_cvt_nop,               mag_vf32_loadu,      mag_vf32_splat(-INFINITY),     mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf,       mag_final_id)
 mag_cpu_impl_reduce_hfp(mag_float16_t,  float16,  maxima, mag_float16_to_float32,  mag_float32_to_float16,   mag_vf32_loadu_f16,  mag_vf32_splat(-INFINITY),     mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf,       mag_final_id)
 mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, maxima, mag_bfloat16_to_float32, mag_float32_to_bfloat16,  mag_vf32_loadu_bf16, mag_vf32_splat(-INFINITY),     mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf,       mag_final_id)
-mag_cpu_impl_reduce_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, minima, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min_lanes, INFINITY, fminf, mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, minima, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min, INFINITY, fminf, mag_final_id)
 mag_cpu_impl_reduce_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, maxima, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn, mag_vf32_splat(-INFINITY), mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf, mag_final_id)
 mag_cpu_impl_reduce_prod_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
 #undef mag_final_id
