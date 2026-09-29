@@ -236,7 +236,7 @@ jobs:
           PYTHONMALLOC: malloc
           MAG_LOG_LEVEL: debug
         run: |
-          export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
+          export LD_PRELOAD="$(gcc -print-file-name=libasan.so):$(gcc -print-file-name=libstdc++.so)"
           export PYTHONPATH="${{ github.workspace }}/stage"
           .venv/bin/python -m pytest -n 4 -s "${{ github.workspace }}/test/python/"
 

@@ -89,8 +89,10 @@ mag_status_t mag_strided_view(mag_error_t *err, mag_tensor_t **out, mag_context_
     mag_op_params_t params = {0};
     params.strided.rank = rank;
     params.strided.offset = offset;
-    memcpy(params.strided.shape, shape, rank*sizeof(*shape));
-    memcpy(params.strided.strides, strides, rank*sizeof(*strides));
+    if (rank) {
+      memcpy(params.strided.shape, shape, rank*sizeof(*shape));
+      memcpy(params.strided.strides, strides, rank*sizeof(*strides));
+    }
     mag_status_t status = mag_dispatch(err, MAG_OP_STRIDED_VIEW, false, &base, 1, &tensor, 1, &params);
     if (mag_unlikely(mag_iserr(status))) { mag_tensor_decref(tensor); return status; }
   }
