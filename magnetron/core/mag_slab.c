@@ -27,7 +27,7 @@ static inline bool mag_mulov_sz(size_t a, size_t b, size_t *out) {
 static mag_slab_chunk_t *mag_fixed_pool_chunk_new(size_t block_size, size_t block_align, size_t blocks_per_chunk) {
   size_t cap_bytes;
   mag_assert2(!mag_mulov_sz(blocks_per_chunk, block_size, &cap_bytes)); /* overflow */
-  size_t total = mag_align_up(sizeof(mag_slab_chunk_t), block_align) + cap_bytes;
+  size_t total = sizeof(mag_slab_chunk_t) + block_align-1 + cap_bytes;
   void *base = (*mag_try_alloc)(NULL, total, 0);
   if (mag_unlikely(!base)) return NULL;
   void *pos = base;

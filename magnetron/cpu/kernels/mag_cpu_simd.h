@@ -1699,7 +1699,7 @@ static MAG_AINLINE mag_vi32_t mag_vi32_blend(mag_vmask32_t m, mag_vi32_t t, mag_
 }
 static MAG_AINLINE mag_vi32_t mag_vi32_add(mag_vi32_t x, mag_vi32_t y) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
-    return vaddq_s32(x, y);
+    return vreinterpretq_s32_u32(vaddq_u32(vreinterpretq_u32_s32(x), vreinterpretq_u32_s32(y)));
   #elif defined(__AVX512F__)
     return _mm512_add_epi32(x, y);
   #elif defined(__AVX2__)
@@ -1711,12 +1711,12 @@ static MAG_AINLINE mag_vi32_t mag_vi32_add(mag_vi32_t x, mag_vi32_t y) {
   #elif defined(__loongarch_sx)
     return __lsx_vadd_w(x, y);
   #else
-    return x+y;
+    return (int32_t)((uint32_t)x+(uint32_t)y);
   #endif
 }
 static MAG_AINLINE mag_vi32_t mag_vi32_sub(mag_vi32_t x, mag_vi32_t y) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
-    return vsubq_s32(x, y);
+    return vreinterpretq_s32_u32(vsubq_u32(vreinterpretq_u32_s32(x), vreinterpretq_u32_s32(y)));
   #elif defined(__AVX512F__)
     return _mm512_sub_epi32(x, y);
   #elif defined(__AVX2__)
@@ -1728,12 +1728,12 @@ static MAG_AINLINE mag_vi32_t mag_vi32_sub(mag_vi32_t x, mag_vi32_t y) {
   #elif defined(__loongarch_sx)
     return __lsx_vsub_w(x, y);
   #else
-    return x-y;
+    return (int32_t)((uint32_t)x-(uint32_t)y);
   #endif
 }
 static MAG_AINLINE mag_vi32_t mag_vi32_mul(mag_vi32_t x, mag_vi32_t y) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
-    return vmulq_s32(x, y);
+    return vreinterpretq_s32_u32(vmulq_u32(vreinterpretq_u32_s32(x), vreinterpretq_u32_s32(y)));
   #elif defined(__AVX512F__)
     return _mm512_mullo_epi32(x, y);
   #elif defined(__AVX2__)
@@ -1749,7 +1749,7 @@ static MAG_AINLINE mag_vi32_t mag_vi32_mul(mag_vi32_t x, mag_vi32_t y) {
   #elif defined(__loongarch_sx)
     return __lsx_vmul_w(x, y);
   #else
-    return x*y;
+    return (int32_t)((uint32_t)x*(uint32_t)y);
   #endif
 }
 static MAG_AINLINE mag_vi32_t mag_vi32_mulhi_u32(mag_vi32_t x, mag_vi32_t y) {
