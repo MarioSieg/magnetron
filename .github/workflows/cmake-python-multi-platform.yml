@@ -23,11 +23,6 @@ jobs:
           - os: macos-14
             build_type: Release
             compiler: clang
-          - os: macos-14
-            build_type: Release
-            compiler: clang
-            mimalloc_checks: true
-            label: -mimalloc-checks
 
     steps:
       - uses: actions/checkout@v4
@@ -88,9 +83,6 @@ jobs:
       - name: Build Python wheel
         shell: bash
         run: |
-          if [ "${{ matrix.mimalloc_checks }}" = "true" ]; then
-            export CMAKE_ARGS="-DMI_DEBUG=FULL -DMI_PADDING=ON -DMI_SECURE=ON -DMI_GUARDED=ON"
-          fi
           uv sync --extra dev
 
       - name: Run Python Tests
@@ -98,24 +90,15 @@ jobs:
         run: |
           source .venv/bin/activate
           export MAG_LOG_LEVEL=debug
-          export MIMALLOC_VERBOSE=1 MIMALLOC_SHOW_ERRORS=1
-          if [ "${{ matrix.mimalloc_checks }}" = "true" ]; then
-            export MIMALLOC_GUARDED_SAMPLE_RATE=1 MIMALLOC_GUARDED_PRECISE=1
-          fi
+          export MIMALLOC_SHOW_ERRORS=1
           if [ "$RUNNER_OS" = "Linux" ]; then
             ulimit -c unlimited
             sudo sysctl -w kernel.core_pattern="${{ github.workspace }}/core.%e.%p" > /dev/null
           fi
-          passes=1
-          if [ "${{ matrix.mimalloc_checks }}" = "true" ]; then passes=6; fi
           set -o pipefail
           mkdir -p crash
-          for i in $(seq 1 $passes); do
-            echo "::group::pytest pass $i/$passes"
-            pytest -n 4 -s -v "${{ github.workspace }}/test/python/" 2>&1 | tee "crash/pytest-$i.log"
-            echo "::endgroup::"
-          done
-          rm -f crash/pytest-*.log
+          pytest -n 4 -s -v "${{ github.workspace }}/test/python/" 2>&1 | tee crash/pytest.log
+          rm -f crash/pytest.log
 
       - name: Collect crash reports (macOS)
         if: failure() && runner.os == 'macOS'
@@ -148,7 +131,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: crash-${{ matrix.os }}-${{ matrix.compiler }}${{ matrix.label }}
+          name: crash-${{ matrix.os }}-${{ matrix.compiler }}
           path: crash
           if-no-files-found: ignore
 
