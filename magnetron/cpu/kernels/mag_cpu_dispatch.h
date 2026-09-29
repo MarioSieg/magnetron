@@ -1610,7 +1610,7 @@ mag_arm64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(void) {
   caps|=mag_arm64_cap(F16SCALAR);
   caps|=mag_arm64_cap(F16CVT);
 #endif
-#ifdef __ARM_FEATURE_BF16
+#if defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC) || defined(__ARM_FEATURE_BF16)
   caps|=mag_arm64_cap(BF16);
 #endif
 #ifdef __ARM_FEATURE_CRC32
