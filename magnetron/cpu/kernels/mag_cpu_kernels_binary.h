@@ -92,7 +92,12 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
       return MAG_OK; \
     }
 
-#define mag_bin_exec_impl_simd(T, LOAD, STORE, VF, F) \
+#define mag_splat_f32(x) mag_vf32_splat(x)
+#define mag_splat_f16(x) mag_vf32_splat(mag_float16_to_float32(x))
+#define mag_splat_bf16(x) mag_vf32_splat(mag_bfloat16_to_float32(x))
+#define mag_splat_f8_e4m3fn(x) mag_vf32_splat(mag_float8_e4m3fn_to_float32(x))
+
+#define mag_bin_exec_impl_simd(T, LOAD, STORE, SPLAT, VF, F) \
     mag_binary_vectorization_plan_t plan; \
     if (mag_binary_vectorization_plan_init(&plan, r, x, y)) { \
       for (int64_t i=ra; i < rb; ) { \
@@ -107,9 +112,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         int64_t t = 0; \
         if ((plan.flags&MAG_VAX_CX) || (plan.flags&MAG_VAX_CY)) { \
           T cs = (plan.flags&MAG_VAX_CX) ? *px : *py; \
-          T sp[MAG_VF32_LANES]; \
-          for (int64_t l=0; l < MAG_VF32_LANES; ++l) sp[l] = cs; \
-          mag_vf32_t vc = LOAD(sp); \
+          mag_vf32_t vc = SPLAT(cs); \
           if (plan.flags&MAG_VAX_CX) { \
             for (; t+MAG_VF32_LANES <= run; t += MAG_VF32_LANES) STORE(pr+t, VF(vc, LOAD(py+t))); \
             for (; t < run; ++t) pr[t] = F(cs, py[t]); \
@@ -261,9 +264,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
     } \
     if (y->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,x},2)) { \
       T cs = *by; \
-      T sp[MAG_VF32_LANES]; \
-      for (int64_t l=0; l < MAG_VF32_LANES; ++l) sp[l] = cs; \
-      mag_vf32_t vc = LOAD(sp); \
+      mag_vf32_t vc = mag_splat_##suffix(cs); \
       int64_t i=ra; \
       for (; i+MAG_VF32_LANES <= rb; i += MAG_VF32_LANES) STORE(br+i, mag_vec_##name##_f32(LOAD(bx+i), vc)); \
       for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(bx[i],cs); \
@@ -271,15 +272,13 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
     } \
     if (x->meta.numel == 1 && mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r,y},2)) { \
       T cs = *bx; \
-      T sp[MAG_VF32_LANES]; \
-      for (int64_t l=0; l < MAG_VF32_LANES; ++l) sp[l] = cs; \
-      mag_vf32_t vc = LOAD(sp); \
+      mag_vf32_t vc = mag_splat_##suffix(cs); \
       int64_t i=ra; \
       for (; i+MAG_VF32_LANES <= rb; i += MAG_VF32_LANES) STORE(br+i, mag_vec_##name##_f32(vc, LOAD(by+i))); \
       for (; i < rb; ++i) br[i] = mag_fn_##name##_##suffix(cs,by[i]); \
       return MAG_OK; \
     } \
-    mag_bin_exec_impl_simd(T, LOAD, STORE, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
+    mag_bin_exec_impl_simd(T, LOAD, STORE, mag_splat_##suffix, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
     mag_bin_tiled_simd(T, LOAD, STORE, mag_vec_##name##_f32, mag_fn_##name##_##suffix) \
     mag_coords_iter_t cr,cx,cy; \
     mag_coords_iter_init(&cr,&r->meta.coords); \

@@ -199,7 +199,7 @@ jobs:
         working-directory: "${{ github.workspace }}/build-asan"
         shell: bash
         env:
-          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:disable_coredump=0
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: |
           ulimit -c unlimited
@@ -222,14 +222,14 @@ jobs:
               -ex "bt" \
               -ex "info registers rip rsp rbp rax rbx rcx rdx rsi rdi r8 r9 r10 r11 r12 r13 r14 r15" \
               -ex "x/8i \$pc" \
-              -ex "frame function mag_mul_float32" \
-              -ex "info locals" \
-              -ex "print *payload" \
-              -ex "print *payload->cmd" \
-              -ex "print *r" -ex "print *r->storage" \
-              -ex "print *x" -ex "print *x->storage" \
-              -ex "print *y" -ex "print *y->storage" \
               -ex "thread apply all bt" \
+              -ex "thread apply all -s frame function mag_worker_exec_thread_local" \
+              -ex "thread apply all -s frame function mag_worker_exec_thread_local" \
+              -ex "thread apply all -s print *payload->cmd" \
+              -ex "thread apply all -s print *payload->cmd->in[0]" \
+              -ex "thread apply all -s print *payload->cmd->in[1]" \
+              -ex "thread apply all -s print *payload->cmd->out[0]" \
+              -ex "thread apply all -s x/8i \$pc" \
               build-asan/magnetron_test "$c" 2>&1 | tail -n 600
           done
           cp build-asan/libmagnetron_core.so build-asan/libmagnetron_cpu.so build-asan/magnetron_test crash/ 2>/dev/null || true
