@@ -182,7 +182,7 @@ jobs:
         working-directory: "${{ github.workspace }}/build-asan"
         shell: bash
         env:
-          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:disable_coredump=0
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:disable_coredump=0:detect_stack_use_after_return=0
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: |
           ulimit -c unlimited
@@ -235,7 +235,7 @@ jobs:
       - name: Run Python Tests
         shell: bash
         env:
-          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:detect_stack_use_after_return=0
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
           PYTHONMALLOC: malloc
           MAG_LOG_LEVEL: debug

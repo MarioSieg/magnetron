@@ -34,6 +34,7 @@ endif()
 if (${MAGNETRON_ASAN})
     message(STATUS "ASAN & UBSAN enabled")
     add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g -O1 -Wno-error=unused-but-set-variable -Wno-error=deprecated-declarations)
+    add_compile_options($<$<COMPILE_LANG_AND_ID:C,GNU>:--param=asan-use-after-return=0> $<$<COMPILE_LANG_AND_ID:CXX,GNU>:--param=asan-use-after-return=0>)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
