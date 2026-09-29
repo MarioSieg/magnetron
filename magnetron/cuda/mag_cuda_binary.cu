@@ -88,7 +88,15 @@ namespace mag {
           return (x - mag_remi(static_cast<int64_t>(x), static_cast<int64_t>(y)))/y;
         }
       } else {
-        return static_cast<OutT>(floorf(static_cast<float>(x)/static_cast<float>(y)));
+        float fx = static_cast<float>(x), fy = static_cast<float>(y);
+        if (fy == 0.f) return static_cast<OutT>(fx/fy);
+        float mod = fmodf(fx, fy);
+        float div = (fx - mod)/fy;
+        if (mod != 0.f && (fy < 0.f) != (mod < 0.f)) div -= 1.f;
+        if (div == 0.f) return static_cast<OutT>(copysignf(0.f, fx/fy));
+        float fl = floorf(div);
+        if (div - fl > .5f) fl += 1.f;
+        return static_cast<OutT>(fl);
       }
     }
   };
