@@ -8,8 +8,11 @@ GPT-2 text generation in Magnetron (KV cache, streaming output). Uses `transform
 ### [Qwen3 Inference](examples/qwen3/)
 Qwen3 chat with a CLI and a local HTTP server. Loads weights from Magnetron `.mag` snapshots.
 
-### [Autoencoder](examples/ae/)
-Train an autoencoder on an image and visualize reconstruction.
+### [Denoising Autoencoder](examples/ae/)
+Train a convolutional autoencoder on the cats and dogs images to remove noise and fill in missing patches.
+
+### [Cats vs Dogs](examples/cats_dogs/)
+Train a small CNN classifier from scratch and run it on your own pictures.
 
 ### [Linear Regression](examples/linear_regression/)
 Fit a line to noisy 1D data with `Linear` + SGD.
