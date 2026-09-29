@@ -14,9 +14,11 @@
 #include <algorithm>
 #include <exception>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <magnetron/magnetron.h>

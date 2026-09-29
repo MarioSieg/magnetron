@@ -84,7 +84,10 @@ namespace mag::bindings {
         && !nb::isinstance<nb::sequence>(handle) && !nb::isinstance<tensor_wrapper>(handle)
         && nb::hasattr(handle, "dtype") && nb::hasattr(handle, "item") && nb::hasattr(handle, "ndim")
         && nb::cast<int64_t>(handle.attr("ndim")) == 0
-        && !nb::try_cast(handle, *std::make_unique<nb::ndarray<nb::c_contig, nb::device::cpu>>())) {
+        && ![&] {
+             nb::ndarray<nb::c_contig, nb::device::cpu> probe;
+             return nb::try_cast(handle, probe);
+           }()) {
       if (dtype.v == MAG_DTYPE__NUM) {
         std::string name = nb::borrow<nb::str>(handle.attr("dtype").attr("name")).c_str();
         static const std::pair<const char *, mag_dtype_t> names[] = {
