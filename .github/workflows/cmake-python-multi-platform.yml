@@ -106,7 +106,13 @@ jobs:
             ulimit -c unlimited
             sudo sysctl -w kernel.core_pattern="${{ github.workspace }}/core.%e.%p" > /dev/null
           fi
-          pytest -n 4 -s "${{ github.workspace }}/test/python/"
+          passes=1
+          if [ "${{ matrix.mimalloc_checks }}" = "true" ]; then passes=6; fi
+          for i in $(seq 1 $passes); do
+            echo "::group::pytest pass $i/$passes"
+            pytest -n 4 -s "${{ github.workspace }}/test/python/"
+            echo "::endgroup::"
+          done
 
       - name: Collect crash reports (macOS)
         if: failure() && runner.os == 'macOS'
