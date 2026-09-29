@@ -79,6 +79,26 @@ namespace mag::bindings {
     std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
     if (!device_id) throw std::runtime_error {"Invalid device id"};
     mag_device_id_t cpu_dvc_id = mag_device(CPU, 0);
+    nb::object numpy_item;
+    if (!nb::isinstance<nb::int_>(handle) && !nb::isinstance<nb::float_>(handle) && !nb::isinstance<nb::bool_>(handle)
+        && !nb::isinstance<nb::sequence>(handle) && !nb::isinstance<tensor_wrapper>(handle)
+        && nb::hasattr(handle, "dtype") && nb::hasattr(handle, "item") && nb::hasattr(handle, "ndim")
+        && nb::cast<int64_t>(handle.attr("ndim")) == 0
+        && !nb::try_cast(handle, *std::make_unique<nb::ndarray<nb::c_contig, nb::device::cpu>>())) {
+      if (dtype.v == MAG_DTYPE__NUM) {
+        std::string name = nb::borrow<nb::str>(handle.attr("dtype").attr("name")).c_str();
+        static const std::pair<const char *, mag_dtype_t> names[] = {
+          {"float16", MAG_DTYPE_FLOAT16}, {"float32", MAG_DTYPE_FLOAT32}, {"float64", MAG_DTYPE_FLOAT32}, {"bfloat16", MAG_DTYPE_BFLOAT16},
+          {"int8", MAG_DTYPE_INT8}, {"int16", MAG_DTYPE_INT16}, {"int32", MAG_DTYPE_INT32}, {"int64", MAG_DTYPE_INT64},
+          {"uint8", MAG_DTYPE_UINT8}, {"uint16", MAG_DTYPE_UINT16}, {"uint32", MAG_DTYPE_UINT32}, {"uint64", MAG_DTYPE_UINT64},
+          {"bool", MAG_DTYPE_BOOLEAN},
+        };
+        for (auto &[n, d] : names) if (name == n) { dtype = dtype_wrapper{d}; break; }
+        if (dtype.v == MAG_DTYPE__NUM) throw nb::type_error(("Tensor(): unsupported scalar dtype " + name).c_str());
+      }
+      numpy_item = handle.attr("item")();
+      handle = numpy_item;
+    }
     if (nb::isinstance<nb::int_>(handle) || nb::isinstance<nb::float_>(handle) || nb::isinstance<nb::bool_>(handle)) {
       if (dtype.v == MAG_DTYPE__NUM)
         dtype = deduce_dtype_from_py_scalar(handle);
@@ -691,8 +711,8 @@ namespace mag::bindings {
         std::string indexing = "ij";
         if (kwargs.contains(intern_key(indexing)))
           indexing = nb::cast<std::string>(kwargs[intern_key(indexing)]);
-        if (indexing != "ij")
-          throw nb::value_error("meshgrid: only indexing='ij' is currently supported");
+        if (indexing != "ij" && indexing != "xy")
+          throw nb::value_error("meshgrid: indexing must be 'ij' or 'xy'");
         std::vector<tensor_wrapper> tensors {};
         if (args.size() == 0) {
           if (!kwargs.contains(intern_key(tensors)))
@@ -738,8 +758,11 @@ namespace mag::bindings {
           ptrs.emplace_back(*tensor);
         std::vector<mag_tensor_t *> outs(nt, nullptr);
         mag_error_t err {};
+        bool xy = indexing == "xy" && nt >= 2;
+        if (xy) std::swap(ptrs[0], ptrs[1]);
         throw_if_error(mag_meshgrid(&err, outs.data(), ptrs.data(), nt), err);
-         nb::list ret {};
+        if (xy) std::swap(outs[0], outs[1]);
+        nb::list ret {};
         for (auto *tensor : outs)
           ret.append(tensor_wrapper{tensor});
         return nb::tuple(ret);

@@ -15,6 +15,7 @@
 #include "mag_alloc.h"
 #include "mag_hashset.h"
 #include "mag_toposort.h"
+#include "mag_op_grads.h"
 
 static mag_status_t mag_au_state_dtor(void *p) {
   mag_au_state_t *au = p;
@@ -25,10 +26,20 @@ static mag_status_t mag_au_state_dtor(void *p) {
   for (uint32_t i=0; i < au->num_in; ++i) {
     if (au->in[i])
       mag_rc_decref(au->in[i]);
+    if (au->in_nodes[i])
+      mag_rc_decref(au->in_nodes[i]);
   }
   if (au->in != au->in_intrusive) { /* AU state stored inputs on the heap */
     (*mag_alloc)(au->in, 0, 0);
     au->in = NULL;
+  }
+  if (au->in_nodes != au->in_nodes_intrusive) {
+    (*mag_alloc)(au->in_nodes, 0, 0);
+    au->in_nodes = NULL;
+  }
+  if (au->in_versions != au->in_versions_intrusive) {
+    (*mag_alloc)(au->in_versions, 0, 0);
+    au->in_versions = NULL;
   }
   if (au->params) {
     mag_slab_free(&au->ctx->au_state_op_params_slab, au->params);
@@ -50,6 +61,11 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au, mag_context_t *ctx)
     .num_in = 0,
     .cap_in = MAG_AU_STATE_INTRUSIVE_STORAGE_NUM,
     .grad = NULL,
+    .owner = NULL,
+    .in_nodes = state->in_nodes_intrusive,
+    .in_versions = state->in_versions_intrusive,
+    .owner_version = 0,
+    .retain_grad = false,
   };
   mag_rc_init_object(state, &mag_au_state_dtor);
   *au = state;
@@ -58,27 +74,42 @@ mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au, mag_context_t *ctx)
 
 bool mag_au_state_reserve_more_input_cap(mag_au_state_t *au,uint32_t extra) {
   if (mag_unlikely(extra > UINT32_MAX-au->num_in)) return false;
-  uint32_t want = au->num_in + extra;
-  if (want <= au->cap_in) return true;
-  uint32_t new_cap = au->cap_in;
-  while (new_cap < want) {
-    if (new_cap > (UINT32_MAX>>1)) {
-      new_cap = want;
+  uint32_t len = au->num_in + extra;
+  if (len <= au->cap_in) return true;
+  uint32_t cap = au->cap_in;
+  for (; cap < len; cap<<=1) {
+    if (cap > (UINT32_MAX>>1)) {
+      cap = len;
       break;
     }
-    new_cap<<=1;
   }
-  mag_tensor_t **realloced;
+  mag_tensor_t **re_in;
+  mag_au_state_t **re_au;
+  uint64_t *re_v;
   if (au->in == au->in_intrusive) { /* Transition from inline storage to heap */
-    realloced = (*mag_try_alloc)(NULL, sizeof(*realloced)*new_cap, 0);
-    if (mag_unlikely(!realloced)) return false;
-    memcpy(realloced, au->in_intrusive, sizeof(*realloced) * au->num_in);
+    re_in = (*mag_try_alloc)(NULL, sizeof(*re_in)*cap, 0);
+    if (mag_unlikely(!re_in)) return false;
+    memcpy(re_in, au->in_intrusive, sizeof(*re_in)*au->num_in);
+    re_au = (*mag_try_alloc)(NULL, sizeof(*re_au)*cap, 0);
+    if (mag_unlikely(!re_au)) { (*mag_alloc)(re_in, 0, 0); return false; }
+    memcpy(re_au, au->in_nodes_intrusive, sizeof(*re_au)*au->num_in);
+    re_v = (*mag_try_alloc)(NULL, sizeof(*re_v)*cap, 0);
+    if (mag_unlikely(!re_v)) { (*mag_alloc)(re_in, 0, 0); (*mag_alloc)(re_au, 0, 0); return false; }
+    memcpy(re_v, au->in_versions_intrusive, sizeof(*re_v)*au->num_in);
   } else {
-    realloced = (*mag_try_alloc)(au->in, sizeof(*realloced) * new_cap, 0);
-    if (mag_unlikely(!realloced)) return false;
+    re_in = (*mag_try_alloc)(au->in, sizeof(*re_in)*cap, 0);
+    if (mag_unlikely(!re_in)) return false;
+    au->in = re_in;
+    re_au = (*mag_try_alloc)(au->in_nodes, sizeof(*re_au)*cap, 0);
+    if (mag_unlikely(!re_au)) return false;
+    au->in_nodes = re_au;
+    re_v = (*mag_try_alloc)(au->in_versions, sizeof(*re_v)*cap, 0);
+    if (mag_unlikely(!re_v)) return false;
   }
-  au->in = realloced;
-  au->cap_in = new_cap;
+  au->in = re_in;
+  au->in_nodes = re_au;
+  au->in_versions = re_v;
+  au->cap_in = cap;
   return true;
 }
 
@@ -95,14 +126,42 @@ bool mag_au_state_set_input(mag_au_state_t *au, mag_tensor_t *x) {
   if (mag_unlikely(!x)) return false;
   if (mag_unlikely(!mag_au_state_reserve_more_input_cap(au, 1))) return false;
   mag_rc_incref(x);
+  au->in_versions[au->num_in] = mag_tensor_current_version(x);
+  au->in_nodes[au->num_in] = x->au_state;
+  if (x->au_state) mag_rc_incref(x->au_state);
   au->in[au->num_in++] = x;
   return true;
+}
+
+uint64_t mag_tensor_current_version(const mag_tensor_t *t) {
+  if (t->meta.flags & MAG_TFLAG_IS_VIEW) t = t->view_meta->base;
+  return (uint64_t)mag_atomic64_load((mag_atomic64_t *)&t->version, MAG_MO_RELAXED);
+}
+
+bool mag_au_state_output_is_valid(const mag_au_state_t *node) {
+  return node->owner && node->owner->au_state == node && mag_tensor_current_version(node->owner) == node->owner_version;
+}
+
+bool mag_tensor_is_leaf(const mag_tensor_t *tensor) {
+  return !tensor->au_state || tensor->au_state->op == MAG_OP_NOP;
+}
+
+mag_status_t mag_tensor_retain_grad(mag_error_t *err, mag_tensor_t *tensor) {
+  if (mag_unlikely(!(tensor->meta.flags & MAG_TFLAG_REQUIRES_GRAD)))
+    return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: retain_grad requires a tensor that requires gradients.");
+  if (!tensor->au_state && !mag_au_state_lazy_alloc(&tensor->au_state, tensor->ctx))
+    return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate autodiff state.");
+  if (!tensor->au_state->owner) tensor->au_state->owner = tensor;
+  tensor->au_state->retain_grad = true;
+  return MAG_OK;
 }
 
 void mag_au_state_clear_inputs(mag_au_state_t *au) {
   for (uint32_t i=0; i < au->num_in; ++i) {
     if (au->in[i]) mag_rc_decref(au->in[i]);
     au->in[i] = NULL;
+    if (au->in_nodes[i]) mag_rc_decref(au->in_nodes[i]);
+    au->in_nodes[i] = NULL;
   }
   au->num_in = 0;
   if (au->params) {
@@ -135,6 +194,7 @@ mag_status_t mag_tensor_set_grad(mag_error_t *err, mag_tensor_t *tensor, mag_ten
     if (!mag_au_state_lazy_alloc(&tensor->au_state, tensor->ctx))
       return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate autodiff state for grad assignment.");
   }
+  if (!tensor->au_state->owner) tensor->au_state->owner = tensor;
   if (tensor->au_state->grad)
     mag_rc_decref(tensor->au_state->grad);
   mag_rc_incref(grad);
@@ -154,17 +214,22 @@ mag_status_t mag_tensor_set_requires_grad(mag_error_t *err, mag_tensor_t *tensor
       tensor->meta.flags &= ~MAG_TFLAG_REQUIRES_GRAD;
       return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate autodiff state.");
     }
+    if (!tensor->au_state->owner) tensor->au_state->owner = tensor;
     return MAG_OK;
   }
   tensor->meta.flags &= ~MAG_TFLAG_REQUIRES_GRAD;
   return MAG_OK;
 }
 
-static void mag_tensor_patch_grad(mag_tensor_t *dst, mag_tensor_t *grad) {
-  if (dst->au_state->grad)
-    mag_rc_decref(dst->au_state->grad);
+static void mag_node_patch_grad(mag_au_state_t *node, mag_tensor_t *grad) {
+  if (node->grad)
+    mag_rc_decref(node->grad);
   grad->meta.flags = (grad->meta.flags|MAG_TFLAG_IS_GRAD)&~MAG_TFLAG_REQUIRES_GRAD;
-  dst->au_state->grad = grad;
+  node->grad = grad;
+}
+
+static void mag_tensor_patch_grad(mag_tensor_t *dst, mag_tensor_t *grad) {
+  mag_node_patch_grad(dst->au_state, grad);
 }
 
 mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
@@ -195,33 +260,40 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
     return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate traversal stack.");
   }
   int64_t topo_epoch = 0;
-  status = mag_topo_sort(err, root, &topo_stack, post_order, &topo_epoch);
+  status = mag_topo_sort(err, root->au_state, &topo_stack, post_order, &topo_epoch);
   mag_tensor_t *grads_intrusive[MAG_AU_STATE_INTRUSIVE_STORAGE_NUM];
   mag_tensor_t **grads_dyn = NULL;
   size_t grads_cap = 0;
   if (mag_unlikely(mag_iserr(status))) goto cleanup;
   if (mag_unlikely(!post_order->len)) goto cleanup;
   for (size_t i=post_order->len; i --> 0;) {
-    mag_tensor_t *child = post_order->buf[i];
-    if (mag_unlikely(!(child && child->au_state))) {
-      status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: autodiff state is missing for a tensor in the computation graph.");
-      goto cleanup;
-    }
-    if (mag_unlikely(!child->au_state->grad || child->au_state->op == MAG_OP_NOP))
+    mag_au_state_t *node = post_order->buf[i];
+    if (mag_unlikely(!node->grad || node->op == MAG_OP_NOP))
       continue;
-    const mag_op_traits_t *meta = mag_op_trait(child->au_state->op);
+    const mag_op_traits_t *meta = mag_op_trait(node->op);
     mag_status_t (*backward)(mag_error_t *, mag_au_state_t *, mag_tensor_t **) = meta->backward;
     if (mag_unlikely(backward == NULL)) {
       status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' has no backward implementation.", meta->mnemonic);
       goto cleanup;
     }
+    bool recompute = mag_op_trait(node->op)->flags&MAG_OP_FLAG_GRAD_READS_OUT && !mag_au_state_output_is_valid(node);
+    if (mag_op_trait(node->op)->flags&MAG_OP_FLAG_GRAD_READS_IN || recompute) {
+      for (uint32_t j=0; j < node->num_in; ++j) {
+        mag_tensor_t *input = node->in[j];
+        if (!recompute && !mag_op_backward_reads_input(node->op, node->in, node->num_in, j)) continue;
+        if (mag_unlikely(input && mag_tensor_current_version(input) != node->in_versions[j])) {
+          status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: a tensor needed for the gradient of operator '%s' has been modified by an in-place operation.", meta->mnemonic);
+          goto cleanup;
+        }
+      }
+    }
     mag_tensor_t **grads;
     uint32_t num_in;
     if (meta->in == MAG_OP_INOUT_DYN) {
-      num_in = child->au_state->num_in;
+      num_in = node->num_in;
     } else {
-      if (mag_unlikely(child->au_state->num_in != meta->in)) {
-        status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' input count is invalid, required: %u, got: %u", meta->mnemonic, meta->in, child->au_state->num_in);
+      if (mag_unlikely(node->num_in != meta->in)) {
+        status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' input count is invalid, required: %u, got: %u", meta->mnemonic, meta->in, node->num_in);
         goto cleanup;
       }
       num_in = meta->in;
@@ -230,40 +302,44 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
       grads = grads_intrusive;
     } else {
       if (num_in > grads_cap) {
-        size_t nc = grads_cap ? grads_cap : MAG_AU_STATE_INTRUSIVE_STORAGE_NUM;
-        while (nc < num_in)
-          nc <<= 1;
-        void *realloced = (*mag_try_alloc)(grads_dyn, nc * sizeof(*grads_dyn), grads_cap * sizeof(*grads_dyn));
+        size_t cap = grads_cap ? grads_cap : MAG_AU_STATE_INTRUSIVE_STORAGE_NUM;
+        for (; cap < num_in; cap <<= 1);
+        void *realloced = (*mag_try_alloc)(grads_dyn, cap*sizeof(*grads_dyn), grads_cap*sizeof(*grads_dyn));
         if (mag_unlikely(!realloced)) {
           status = mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate backward gradients.");
           goto cleanup;
         }
         grads_dyn = realloced;
-        grads_cap = nc;
+        grads_cap = cap;
       }
       grads = grads_dyn;
     }
     memset(grads, 0, num_in*sizeof(*grads)); /* Reset only activate range */
-    status = (*backward)(err, child->au_state, grads);
+    status = (*backward)(err, node, grads);
     if (mag_iserr(status))
       goto cleanup;
     for (uint32_t j=0; j < num_in; ++j) {
-      mag_tensor_t *input = child->au_state->in[j];
-      if (mag_unlikely(!input) || !(input->meta.flags & MAG_TFLAG_REQUIRES_GRAD))
+      mag_tensor_t *input = node->in[j];
+      mag_au_state_t *inode = node->in_nodes[j];
+      if (mag_unlikely(!input || !inode) || !(input->meta.flags & MAG_TFLAG_REQUIRES_GRAD))
         continue;
       mag_tensor_t *gri = grads[j];
       if (mag_unlikely(!gri)) {
         status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backward of operator '%s' did not produce a valid gradient for input %u.", meta->mnemonic, j);
         goto cleanup;
       }
-      if (!input->au_state->grad) {
-        mag_tensor_patch_grad(input, gri);
+      if (!inode->grad) {
+        mag_node_patch_grad(inode, gri);
       } else {
-        status = mag_add_(err, &gri, gri, input->au_state->grad);
+        status = mag_add_(err, &gri, gri, inode->grad);
         if (mag_iserr(status)) goto cleanup;
-        mag_tensor_patch_grad(input, gri);
+        mag_node_patch_grad(inode, gri);
         mag_rc_decref(gri);
       }
+    }
+    if (!node->retain_grad && node->grad) {
+      mag_rc_decref(node->grad);
+      node->grad = NULL;
     }
   }
 cleanup:
@@ -277,7 +353,7 @@ cleanup:
 }
 
 mag_status_t mag_tensor_zero_grad(mag_error_t *err,mag_tensor_t *tensor) {
-  if (tensor->meta.flags & MAG_TFLAG_REQUIRES_GRAD && tensor->au_state && tensor->au_state->grad)
+  if (tensor->meta.flags&MAG_TFLAG_REQUIRES_GRAD && tensor->au_state && tensor->au_state->grad)
     return mag_zeros_(err, tensor->au_state->grad);
   return MAG_OK;
 }

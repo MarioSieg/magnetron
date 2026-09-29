@@ -13,6 +13,7 @@
 #define MAG_TOPOSORT_H
 
 #include "mag_tensor.h"
+#include "mag_autodiff.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,7 +23,7 @@ extern "C" {
 #define MAG_TOPOSORT_STACK_INIT_CAP 512
 
 typedef struct mag_topo_set_t {
-  mag_tensor_t **buf;
+  mag_au_state_t **buf;
   size_t len;
   size_t cap;
 } mag_topo_set_t;
@@ -45,7 +46,7 @@ extern void mag_topo_stack_free(mag_topo_stack_t *stack);
 extern void mag_topo_release(const mag_topo_set_t *sorted, int64_t epoch);
 extern mag_status_t mag_topo_sort(
   mag_error_t *err,
-  mag_tensor_t *root,
+  mag_au_state_t *root,
   mag_topo_stack_t *tmp_stack,
   mag_topo_set_t *out_sorted,
   int64_t *out_epoch

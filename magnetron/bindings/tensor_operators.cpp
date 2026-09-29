@@ -729,7 +729,7 @@ namespace mag::bindings {
       "Mean over dim(s). None = all dims."
     )
     .def("max",
-      [](const tensor_wrapper &self, nb::handle arg = nb::none(), bool keepdim = false) -> tensor_wrapper {
+      [](const tensor_wrapper &self, nb::handle arg = nb::none(), bool keepdim = false) -> nb::object {
         mag_tensor_t *out = nullptr;
         mag_error_t err{};
         if (!arg.is_none() && nb::isinstance<tensor_wrapper>(arg)) {
@@ -741,7 +741,16 @@ namespace mag::bindings {
           } else {
             throw_if_error(call_maybe_without_gil(self, rhs, [&] { return mag_max(&err, &out, *self, *rhs); }), err);
           }
-          return tensor_wrapper{out};
+          return nb::cast(tensor_wrapper{out});
+        }
+        if (!arg.is_none()) {
+          if (!nb::isinstance<nb::int_>(arg))
+            throw nb::type_error("max: dim must be an int; use amax() to reduce over several dims");
+          int64_t dim = nb::cast<int64_t>(arg);
+          mag_tensor_t *values = nullptr;
+          mag_tensor_t *indices = nullptr;
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_max_dim(&err, &values, &indices, *self, dim, keepdim); }), err);
+          return nb::make_tuple(tensor_wrapper{values}, tensor_wrapper{indices});
         }
         auto ax = parse_reduction_axes(arg);
         if constexpr (enable_op_recorder) {
@@ -751,14 +760,14 @@ namespace mag::bindings {
         } else {
           throw_if_error(call_maybe_without_gil(self, [&] { return mag_maxima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
-        return tensor_wrapper{out};
+        return nb::cast(tensor_wrapper{out});
       },
       "dim_or_other"_a = nb::none(),
       "keepdim"_a = false,
       "Elementwise maximum with another tensor, or reduction maximum over dim(s)."
     )
     .def("min",
-      [](const tensor_wrapper &self, nb::handle arg = nb::none(), bool keepdim = false) -> tensor_wrapper {
+      [](const tensor_wrapper &self, nb::handle arg = nb::none(), bool keepdim = false) -> nb::object {
         mag_tensor_t *out = nullptr;
         mag_error_t err{};
         if (!arg.is_none() && nb::isinstance<tensor_wrapper>(arg)) {
@@ -770,7 +779,16 @@ namespace mag::bindings {
           } else {
             throw_if_error(call_maybe_without_gil(self, rhs, [&] { return mag_min(&err, &out, *self, *rhs); }), err);
           }
-          return tensor_wrapper{out};
+          return nb::cast(tensor_wrapper{out});
+        }
+        if (!arg.is_none()) {
+          if (!nb::isinstance<nb::int_>(arg))
+            throw nb::type_error("min: dim must be an int; use amin() to reduce over several dims");
+          int64_t dim = nb::cast<int64_t>(arg);
+          mag_tensor_t *values = nullptr;
+          mag_tensor_t *indices = nullptr;
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_min_dim(&err, &values, &indices, *self, dim, keepdim); }), err);
+          return nb::make_tuple(tensor_wrapper{values}, tensor_wrapper{indices});
         }
         auto ax = parse_reduction_axes(arg);
         if constexpr (enable_op_recorder) {
@@ -780,11 +798,33 @@ namespace mag::bindings {
         } else {
           throw_if_error(call_maybe_without_gil(self, [&] { return mag_minima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
         }
-        return tensor_wrapper{out};
+        return nb::cast(tensor_wrapper{out});
       },
       "dim_or_other"_a = nb::none(),
       "keepdim"_a = false,
       "Elementwise minimum with another tensor, or reduction minimum over dim(s)."
+    )
+    .def("amax",
+      [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
+        auto ax = parse_reduction_axes(dim);
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_maxima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+        return tensor_wrapper{out};
+      },
+      "dim"_a = nb::none(), "keepdim"_a = false,
+      "Maximum over dim(s) without indices; ties share the gradient evenly."
+    )
+    .def("amin",
+      [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
+        auto ax = parse_reduction_axes(dim);
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_minima(&err, &out, *self, ax.ptr, ax.rank, keepdim); }), err);
+        return tensor_wrapper{out};
+      },
+      "dim"_a = nb::none(), "keepdim"_a = false,
+      "Minimum over dim(s) without indices; ties share the gradient evenly."
     )
     .def("argmin",
       [](const tensor_wrapper &self, nb::handle dim = nb::none(), bool keepdim = false) -> tensor_wrapper {
@@ -1320,6 +1360,19 @@ namespace mag::bindings {
       "indices"_a,
       "Embedding lookup: self is the weight matrix [vocab_size, ...], indices is an int64 tensor of any shape. Returns indices.shape + self.shape[1:]."
     )
+    .def("index_add",
+      [](const tensor_wrapper &self, int64_t dim, const tensor_wrapper &index, const tensor_wrapper &source, double alpha = 1.0) -> tensor_wrapper {
+        mag_tensor_t *out = nullptr;
+        mag_error_t err {};
+        throw_if_error(call_maybe_without_gil(self, [&] { return mag_index_add(&err, &out, *self, dim, *index, *source, alpha); }), err);
+        return tensor_wrapper{out};
+      },
+      "dim"_a,
+      "index"_a,
+      "source"_a,
+      "alpha"_a = 1.0,
+      "Out-of-place index_add: returns a copy of self with source accumulated along dim at the given indices."
+    )
     .def("index_add_",
       [](tensor_wrapper &self, int64_t dim, const tensor_wrapper &index, const tensor_wrapper &source, double alpha = 1.0) -> tensor_wrapper& {
         mag_error_t err {};
@@ -1685,15 +1738,15 @@ namespace mag::bindings {
 
     // Softmax has params and required a specialized binding
     cls.def("softmax",
-      [](const tensor_wrapper &self, [[maybe_unused]] int64_t dim) -> tensor_wrapper {
+      [](const tensor_wrapper &self, int64_t dim) -> tensor_wrapper {
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SOFTMAX, [&] {
-            throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax(&err, &out, *self); }), err); // TODO: respect dim
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax_dim(&err, &out, *self, dim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax(&err, &out, *self); }), err); // TODO: respect dim
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax_dim(&err, &out, *self, dim); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1701,15 +1754,15 @@ namespace mag::bindings {
       "Softmax over dim (normalizes to sum to 1)."
     );
     cls.def("softmax_",
-      [](tensor_wrapper &self, [[maybe_unused]] int64_t dim) -> tensor_wrapper& {
+      [](tensor_wrapper &self, int64_t dim) -> tensor_wrapper& {
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_SOFTMAX, [&] {
-            throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax_(&err, &out, *self); }), err); // TODO: respect dim
+            throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax_dim_(&err, &out, *self, dim); }), err);
           }, {*self});
         } else {
-          throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax_(&err, &out, *self); }), err); // TODO: respect dim
+          throw_if_error(call_maybe_without_gil(self, [&] { return mag_softmax_dim_(&err, &out, *self, dim); }), err);
         }
         if (self) mag_tensor_decref(*self);
         *self = out;

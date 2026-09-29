@@ -48,7 +48,7 @@ namespace {
     };
 }
 
-TEST(threading, allocator_storm) {
+TEST(threading, parallel_allocator_pressure) {
     context ctx {};
     const unsigned threads {worker_count()};
     constexpr int iterations {2000};

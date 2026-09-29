@@ -901,7 +901,7 @@ mag_gen_stub_where(int64_t, int64)
       float v = CVT(bx[xi]); \
       float lo = CVT(bmn[mni]); \
       float hi = CVT(bmx[mxi]); \
-      float o = v < lo ? lo : (v > hi ? hi : v); \
+      float o = (v < lo ? lo : v) > hi ? hi : (v < lo ? lo : v); \
       br[ri] = FROMF32(o); \
     } \
     return MAG_OK; \
@@ -942,7 +942,7 @@ mag_gen_stub_clamp_cvt(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_to_
       T v = bx[xi]; \
       T lo = bmn[mni]; \
       T hi = bmx[mxi]; \
-      br[ri] = v < lo ? lo : (v > hi ? hi : v); \
+      br[ri] = (v < lo ? lo : v) > hi ? hi : (v < lo ? lo : v); \
     } \
     return MAG_OK; \
   }

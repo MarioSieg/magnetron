@@ -140,8 +140,6 @@ def test_broadcast_minmax(device: str, dt: dtype.DType, name: str, fn: Callable,
 def test_broadcast_inplace(device: str, dt: dtype.DType, name: str, fn: Callable) -> None:
     if dt.is_integer() and name == 'truediv':
         pytest.skip('integer true division produces a float result and cannot be applied in place')
-    if dt.is_floating_point() and name == 'floordiv':
-        pytest.skip('in-place float floor division is rejected; covered by test_inplace_float_floordiv_like_torch')
     dunder = f'__i{name}__'
     for xs, ys in _PAIRS:
         big = broadcast_shape(xs, ys)
@@ -151,6 +149,13 @@ def test_broadcast_inplace(device: str, dt: dtype.DType, name: str, fn: Callable
         z = x.clone()
         getattr(z, dunder)(y)
         _assert_same(z, expected, dt)
+        if xs != big:
+            small = _operand(xs, dt, name, False, device)
+            tsmall = totorch(small)
+            with pytest.raises(RuntimeError):
+                getattr(tsmall, dunder)(totorch(y))
+            with pytest.raises(RuntimeError):
+                getattr(small, dunder)(y)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)

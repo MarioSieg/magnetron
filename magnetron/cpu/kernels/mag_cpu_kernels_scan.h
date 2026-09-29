@@ -193,7 +193,7 @@ mag_gen_stub_cuprod(int64_t, int64, mag_cvt_nop, int64_t, 1, mag_cvt_nop)
           best_idx = 0; \
         } else { \
           double bestc = (double)CVT(best); \
-          bool better = IS_MAX ? xvc > bestc : xvc < bestc; \
+          bool better = IS_MAX ? xvc >= bestc : xvc <= bestc; \
           if (better) { best = xv; best_idx = p; } \
         } \
         mag_bnd_chk(bv + off_v, v->storage->base, v->storage->size); \

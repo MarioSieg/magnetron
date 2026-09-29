@@ -447,6 +447,17 @@ def test_embedding_backward(device: str, idx_shape) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('w_shape', [(7,), (7, 1), (7, 3, 2)])
+@pytest.mark.parametrize('idx_shape', [(4,), (2, 3)])
+def test_index_tensor_backward_any_weight_rank(device: str, w_shape, idx_shape) -> None:
+    w, tw = _leaf(w_shape, -2.0, 2.0, device)
+    tidx = torch.randint(0, 7, idx_shape)
+    idx = Tensor(tidx.tolist(), device=device)
+    _backward(w[idx], tw[tidx], device)
+    _assert_grad(w, tw)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 @pytest.mark.parametrize('inner', [dtype.float16, dtype.bfloat16])
 def test_cast_roundtrip_backward(device: str, inner: dtype.DType) -> None:
     x, tx = _leaf((4, 6), -2.0, 2.0, device)
@@ -533,7 +544,7 @@ def test_reduce_minmax_backward(device: str, op: str, keepdim: bool, dim) -> Non
         y = getattr(x, op)()
         ty = tref(tx)
     else:
-        y = getattr(x, op)(dim, keepdim=keepdim)
+        y = getattr(x, f'a{op}')(dim, keepdim=keepdim)
         ty = tref(tx, dim=dim, keepdim=keepdim)
     _backward(y, ty, device)
     _assert_grad(x, tx)
@@ -550,7 +561,7 @@ def test_reduce_minmax_ties_split_evenly_backward(device: str, op: str, dim) -> 
     if dim is None:
         y, ty = getattr(x, op)(), tref(tx)
     else:
-        y, ty = getattr(x, op)(dim), tref(tx, dim=dim)
+        y, ty = getattr(x, f'a{op}')(dim), tref(tx, dim=dim)
     _backward(y, ty, device)
     _assert_grad(x, tx)
 
@@ -681,3 +692,327 @@ def test_sort_backward(device: str, shape, dim: int, descending: bool) -> None:
     x, tx = _leaf(shape, -2.0, 2.0, device)
     _backward(x.sort(dim=dim, descending=descending)[0], tx.sort(dim=dim, descending=descending).values, device)
     _assert_grad(x, tx)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dim', [0, 1, 2, -1, -3])
+def test_softmax_any_dim_backward(device: str, dim: int) -> None:
+    x, tx = _leaf((3, 4, 5), -3.0, 3.0, device)
+    _backward(x.softmax(dim), torch.softmax(tx, dim), device)
+    _assert_grad(x, tx)
+    x, tx = _leaf((3, 4, 5), -3.0, 3.0, device)
+    _backward(x.transpose(0, 2).softmax(dim), torch.softmax(tx.transpose(0, 2), dim), device)
+    _assert_grad(x, tx)
+    x, tx = _leaf((3, 4, 5), -3.0, 3.0, device)
+    y = x * 2.0
+    y.softmax_(dim)
+    _backward(y, torch.softmax(tx * 2.0, dim), device)
+    _assert_grad(x, tx)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('name', ['max', 'min'])
+@pytest.mark.parametrize('keepdim', [False, True])
+def test_indexed_minmax_backward_routes_to_selected(device: str, name: str, keepdim: bool) -> None:
+    ties = torch.tensor([[1.0, 3.0, 3.0, 0.0], [2.0, 2.0, 2.0, 2.0], [-1.0, 5.0, -1.0, 5.0]])
+    for dim in (0, 1, -1):
+        for source in (ties, torch.rand(3, 4) * 4 - 2):
+            tx = source.clone().requires_grad_(True)
+            x = Tensor(source.tolist(), device=device)
+            x.requires_grad = True
+            values, indices = getattr(x, name)(dim, keepdim=keepdim)
+            ref = getattr(tx, name)(dim, keepdim=keepdim)
+            assert indices.tolist() == ref.indices.tolist()
+            _backward(values, ref.values, device)
+            _assert_grad(x, tx)
+
+
+def _chain_safe(x):
+    y = x * 2.0
+    y.add_(1.0)
+    y.mul_(3.0)
+    y.sin_()
+    y.sub_(0.25)
+    y.exp_()
+    y.neg_()
+    return y
+
+
+def _chain_safe_ref(x):
+    return -((((x * 2.0 + 1.0) * 3.0).sin() - 0.25).exp())
+
+
+def _chain_with_grad_operand(x):
+    y = x * 2.0
+    z = x + 1.0
+    y.mul_(z)
+    y.sub_(z)
+    y /= z
+    return y * z
+
+
+def _chain_with_grad_operand_ref(x):
+    z = x + 1.0
+    return (((x * 2.0) * z - z) / z) * z
+
+
+def _chain_modify_unneeded_input(x):
+    t = x * 2.0
+    z = t * 3.0
+    t.add_(1.0)
+    return z + t
+
+
+def _chain_modify_unneeded_input_ref(x):
+    t = x * 2.0
+    return t * 3.0 + (t + 1.0)
+
+
+def _chain_exp_then_sigmoid(x):
+    y = x.exp()
+    y.sigmoid_()
+    y.add_(1.0)
+    return y
+
+
+def _chain_exp_then_sigmoid_ref(x):
+    return x.exp().sigmoid() + 1.0
+
+
+def _chain_powers(x):
+    y = x.abs() + 0.5
+    y.sqrt_()
+    y *= y
+    y.tanh_()
+    y.mul_(2.0)
+    return y
+
+
+def _chain_powers_ref(x):
+    s = (x.abs() + 0.5).sqrt()
+    return (s * s).tanh() * 2.0
+
+
+def _chain_self_mul(x):
+    y = x * 2.0
+    y.mul_(y)
+    y.add_(y)
+    return y
+
+
+def _chain_self_mul_ref(x):
+    y = x * 2.0
+    y = y * y
+    return y + y
+
+
+def _chain_copy_from_own_history(x):
+    y = x * 2.0
+    y.copy_(y.sin() * 3.0)
+    return y
+
+
+def _chain_copy_from_own_history_ref(x):
+    return (x * 2.0).sin() * 3.0
+
+
+_INPLACE_CASES = (
+    ('safe_chain', _chain_safe, _chain_safe_ref),
+    ('grad_operand', _chain_with_grad_operand, _chain_with_grad_operand_ref),
+    ('unneeded_input', _chain_modify_unneeded_input, _chain_modify_unneeded_input_ref),
+    ('exp_then_sigmoid_', _chain_exp_then_sigmoid, _chain_exp_then_sigmoid_ref),
+    ('powers', _chain_powers, _chain_powers_ref),
+    ('self_mul', _chain_self_mul, _chain_self_mul_ref),
+    ('copy_from_own_history', _chain_copy_from_own_history, _chain_copy_from_own_history_ref),
+)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('name, fn, ref', _INPLACE_CASES, ids=[c[0] for c in _INPLACE_CASES])
+def test_inplace_on_non_leaf_like_torch(device: str, name: str, fn: Callable, ref: Callable) -> None:
+    x, tx = _leaf((3, 4), -2.0, 2.0, device)
+    torch_raised = False
+    try:
+        ty = fn(tx)
+        (ty * 1.5).sum().backward()
+    except RuntimeError:
+        torch_raised = True
+    if not torch_raised:
+        y = fn(x)
+        assert_close_mag_torch(y, ty.detach(), dtype.float32)
+        (y * 1.5).sum().backward()
+        _assert_grad(x, tx)
+        return
+    try:
+        y = fn(x)
+        (y * 1.5).sum().backward()
+    except RuntimeError:
+        return
+    x_ref, tx_ref = _leaf((3, 4), -2.0, 2.0, device)
+    tx_ref = totorch(x).clone().requires_grad_(True)
+    (ref(tx_ref) * 1.5).sum().backward()
+    _assert_grad(x, tx_ref)
+
+
+def _err_modify_sin_input(x):
+    y = x * 2.0
+    z = y.sin()
+    y.add_(1.0)
+    return z
+
+
+def _err_modify_mul_input_needed(x):
+    y = x * 2.0
+    w = x + 3.0
+    z = y * w
+    y.add_(1.0)
+    return z
+
+
+def _err_leaf_inplace(x):
+    x.add_(1.0)
+    return x
+
+
+def _err_modify_pow_input(x):
+    y = x.abs() + 1.0
+    z = y ** 2.5
+    y.mul_(2.0)
+    return z
+
+
+_INPLACE_ERROR_CASES = (
+    ('modify_sin_input', _err_modify_sin_input),
+    ('modify_needed_mul_input', _err_modify_mul_input_needed),
+    ('leaf_inplace', _err_leaf_inplace),
+    ('modify_pow_input', _err_modify_pow_input),
+)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('name, fn', _INPLACE_ERROR_CASES, ids=[c[0] for c in _INPLACE_ERROR_CASES])
+def test_inplace_errors_like_torch(device: str, name: str, fn: Callable) -> None:
+    x, tx = _leaf((3, 4), -2.0, 2.0, device)
+    with pytest.raises(RuntimeError):
+        ty = fn(tx)
+        (ty * 1.5).sum().backward()
+    with pytest.raises(RuntimeError):
+        y = fn(x)
+        (y * 1.5).sum().backward()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_inplace_on_view_of_grad_tensor_raises(device: str) -> None:
+    x, tx = _leaf((3, 4), -2.0, 2.0, device)
+    y = x * 2.0
+    with pytest.raises(RuntimeError):
+        y[0].add_(1.0)
+    with pytest.raises(RuntimeError):
+        x[0].add_(1.0)
+    with pytest.raises(RuntimeError):
+        tx[0].add_(1.0)
+    with mag.no_grad():
+        y[0].add_(1.0)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_only_leaf_grads_are_retained_like_torch(device: str) -> None:
+    x, tx = _leaf((3, 4), -2.0, 2.0, device)
+    y = x * 2.0
+    z = y.exp()
+    kept = y.tanh()
+    ty = tx * 2.0
+    tz = ty.exp()
+    tkept = ty.tanh()
+    assert x.is_leaf and not y.is_leaf and not z.is_leaf
+    assert tx.is_leaf and not ty.is_leaf
+    kept.retain_grad()
+    tkept.retain_grad()
+    (z + kept).sum().backward()
+    (tz + tkept).sum().backward()
+    assert y.grad is None
+    assert z.grad is None
+    assert ty.grad is None
+    assert tz.grad is None
+    _assert_grad(x, tx)
+    _assert_grad(kept, tkept)
+    with pytest.raises(RuntimeError):
+        Tensor.zeros(3).retain_grad()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shape, dim', [((7,), 0), ((3, 5), 0), ((3, 5), 1), ((2, 3, 4), -1), ((2, 3, 4), 1), ((2, 1, 5, 3), 2)])
+@pytest.mark.parametrize('zeros', ['none', 'single', 'double'])
+def test_cumprod_backward(device: str, shape, dim: int, zeros: str) -> None:
+    tx = torch.rand(shape, dtype=torch.float64) * 1.5 + 0.5
+    if zeros != 'none':
+        flat = tx.flatten()
+        flat[1] = 0.0
+        flat[len(flat) - 2] = 0.0
+        if zeros == 'double':
+            flat[3 % len(flat)] = 0.0
+            flat[len(flat) // 2] = 0.0
+        tx = flat.reshape(shape)
+    tx = tx.to(torch.float32).requires_grad_(True)
+    x = Tensor(tx.tolist(), device=device)
+    x.requires_grad = True
+    _backward(x.cuprod(dim), tx.cumprod(dim), device)
+    _assert_grad(x, tx)
+
+
+_ZERO_GRAD_OPS = (
+    ('floor', torch.floor),
+    ('ceil', torch.ceil),
+    ('round', torch.round),
+    ('trunc', torch.trunc),
+    ('sgn', torch.sign),
+)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('name, ref', _ZERO_GRAD_OPS, ids=[c[0] for c in _ZERO_GRAD_OPS])
+def test_zero_gradient_ops_backward(device: str, name: str, ref: Callable) -> None:
+    x, tx = _leaf((3, 4), -3.0, 3.0, device)
+    _backward(getattr(x, name)() + x * 2.0, ref(tx) + tx * 2.0, device)
+    _assert_grad(x, tx)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_step_has_zero_gradient(device: str) -> None:
+    x, tx = _leaf((3, 4), -3.0, 3.0, device)
+    _backward(x.step() + x * 2.0, (tx > 0).to(tx.dtype) + tx * 2.0, device)
+    _assert_grad(x, tx)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shapes', [((3, 4), (3, 4)), ((3, 1), (1, 4)), ((2, 3, 4), (4,))])
+def test_mod_and_floordiv_backward(device: str, shapes) -> None:
+    x, tx = _leaf(shapes[0], -5.0, 5.0, device)
+    y, ty = _leaf(shapes[1], 0.5, 2.0, device)
+    _backward(x % y, torch.remainder(tx, ty), device)
+    _assert_grad(x, tx)
+    _assert_grad(y, ty)
+    x, tx = _leaf(shapes[0], -5.0, 5.0, device)
+    y, ty = _leaf(shapes[1], 0.5, 2.0, device)
+    _backward(x // y + x * y, torch.floor_divide(tx, ty).detach() + tx * ty, device)
+    _assert_grad(x, tx)
+    _assert_grad(y, ty)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shape, dim, index, src_shape, alpha', [((5, 3), 0, [0, 4, 2], (3, 3), 1.0), ((5, 3), 1, [2, 0], (5, 2), -0.5), ((5, 3), 0, [1, 1, 3], (3, 3), 2.0), ((2, 4, 3), 1, [3, 0, 3], (2, 3, 3), 1.0), ((2, 4, 3), -1, [0, 2], (2, 4, 2), 1.5)])
+def test_index_add_backward(device: str, shape, dim: int, index, src_shape, alpha: float) -> None:
+    x, tx = _leaf(shape, -2.0, 2.0, device)
+    src, tsrc = _leaf(src_shape, -2.0, 2.0, device)
+    _backward(x.index_add(dim, Tensor(index, device=device), src, alpha=alpha), tx.index_add(dim, torch.tensor(index), tsrc, alpha=alpha), device)
+    _assert_grad(x, tx)
+    _assert_grad(src, tsrc)
+    x, tx = _leaf(shape, -2.0, 2.0, device)
+    src, tsrc = _leaf(src_shape, -2.0, 2.0, device)
+    y = x * 1.0
+    ty = tx * 1.0
+    y.index_add_(dim, Tensor(index, device=device), src, alpha=alpha)
+    ty.index_add_(dim, torch.tensor(index), tsrc, alpha=alpha)
+    _backward(y, ty, device)
+    _assert_grad(x, tx)
+    _assert_grad(src, tsrc)

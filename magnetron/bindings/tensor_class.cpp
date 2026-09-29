@@ -198,6 +198,11 @@ namespace mag::bindings {
       mag_error_t err {};
       throw_if_error(mag_tensor_backward(&err, *self), err);
     }, "Compute gradients for all tensors that contributed to this one.")
+    .def("retain_grad", [](const tensor_wrapper &self) -> void {
+      mag_error_t err {};
+      throw_if_error(mag_tensor_retain_grad(&err, *self), err);
+    }, "Keep the gradient of this non-leaf tensor after backward().")
+    .def_prop_ro("is_leaf", [](const tensor_wrapper &self) -> bool { return mag_tensor_is_leaf(*self); })
     .def("zero_grad", [](const tensor_wrapper &self) -> void {
       mag_error_t err {};
       throw_if_error(mag_tensor_zero_grad(&err, *self), err);

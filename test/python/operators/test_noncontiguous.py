@@ -151,13 +151,13 @@ def test_integer_reduction_on_view(device: str, view: str, op: str) -> None:
             assert r.tolist() == t.tolist()
 
 
-@pytest.mark.xfail(reason='softmax rejects non-contiguous input; torch accepts any layout', strict=True)
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 @pytest.mark.parametrize('view', _VIEW_NAMES)
 def test_softmax_on_view(device: str, view: str) -> None:
     x, tx = _base(dtype.float32, device, -3.0, 3.0)
     v, tv = _view(view, x, tx)
-    assert_close_mag_torch(v.softmax(), torch.softmax(tv, -1), dtype.float32)
+    for dim in range(-v.rank, v.rank):
+        assert_close_mag_torch(v.softmax(dim), torch.softmax(tv, dim), dtype.float32)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
@@ -298,7 +298,6 @@ def test_expanded_stride_zero_inputs(device: str) -> None:
     assert_close_mag_torch(e.cast(dtype.float16), te.to(torch.float16), dtype.float16)
 
 
-@pytest.mark.xfail(reason='softmax rejects non-contiguous input; torch accepts any layout', strict=True)
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_softmax_on_expanded_input(device: str) -> None:
     x = uniform_tensor((4, 1, 8), low=-3.0, high=3.0, device=device)

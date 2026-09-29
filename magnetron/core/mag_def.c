@@ -152,6 +152,34 @@ void mag_humanize_memory_size(size_t n, double *out, const char **unit) {
   }
 }
 
+void mag_humanize_amount(size_t n, double* out, const char** unit) {
+  if (n < 1000ull) {
+    *out = (double)n;
+    *unit = "";
+  } else if (n < 1000000ull) {
+    *out = (double)n / 1000.0;
+    *unit = "K";
+  } else if (n < 1000000000ull) {
+    *out = (double)n / 1000000.0;
+    *unit = "M";
+  } else if (n < 1000000000000ull) {
+    *out = (double)n / 1000000000.0;
+    *unit = "B";
+  } else {
+    *out = (double)n / 1000000000000.0;
+    *unit = "T";
+  }
+}
+
+void mag_format_decimal(char *buf, size_t size, double x) {
+  snprintf(buf, size, "%.3f", x);
+  char *p = buf + strlen(buf) - 1;
+  while (p > buf && *p == '0')
+    *p-- = '\0';
+  if (p > buf && *p == '.')
+    *p = '\0';
+}
+
 uintptr_t mag_thread_id(void) { /* Get the current thread ID. */
   uintptr_t tid;
 #if defined(_MSC_VER) && defined(_M_X64)

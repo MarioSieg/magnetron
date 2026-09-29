@@ -175,12 +175,12 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
 
   /* Seed prng once with secure system entropy */
   uint64_t global_seed = 0;
-  if (mag_unlikely(!mag_sec_crypto_entropy(&global_seed, sizeof(global_seed)))) /* Fallback to weak seeding */
+  if (mag_unlikely(!mag_query_crypto_entropy(&global_seed, sizeof(global_seed)))) /* Fallback to weak seeding */
     global_seed = (uint64_t)time(NULL)^mag_thread_id()^((uintptr_t)ctx>>3)^mag_cycles()^((uintptr_t)&global_seed>>3);
   mag_ctx_manual_seed(ctx, global_seed);
 
   /* Print context initialization time. */
-  mag_log_info("magnetron context initialized in %.05f ms", mag_hpc_clock_elapsed_ms(time_stamp_start));
+  mag_log_info("context: magnetron initialized in %.05f ms.", mag_hpc_clock_elapsed_ms(time_stamp_start));
   *out_ctx = ctx;
   return MAG_OK;
 }
@@ -216,11 +216,17 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
   memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
   (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
   ctx = NULL;
+  /* Dump some metrics */
+  double storage_alloc, tensors_num, ops_num;
+  const char *storage_unit, *tensors_unit, *ops_unit;
+  mag_humanize_memory_size(storage_bytes, &storage_alloc, &storage_unit);
+  mag_humanize_amount(num_created_tensors, &tensors_num, &tensors_unit);
+  mag_humanize_amount(ops_dispatched, &ops_num, &ops_unit);
   mag_log_info(
-    "runtime metrics: ops: %" PRIi64 ", tensors: %" PRIi64 "K, storage alloc: %.02fGiB",
-    ops_dispatched/1000,
-    num_created_tensors/1000,
-    (double)storage_bytes / (double)(1<<30)
+    "runtime metrics: operators dispatched: %.01f%s, tensors created: %.01f%s, total storage memory allocated: %.01f%s.",
+    ops_num, ops_unit,
+    tensors_num, tensors_unit,
+    storage_alloc, storage_unit
   );
   mag_log_info("magnetron context offline");
   fflush(stdout);

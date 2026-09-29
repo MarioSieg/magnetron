@@ -34,6 +34,6 @@ class CrossEntropyLoss(Loss):
     """Cross Entropy Loss."""
 
     def __call__(self, y_hat: Tensor, y: Tensor) -> Tensor:
-        z = y_hat - y_hat.max(-1, True)
+        z = y_hat - y_hat.amax(-1, True)
         log_probs = z - z.exp().sum(dim=-1, keepdim=True).log()
         return -(y * log_probs).sum(dim=-1).mean()

@@ -210,10 +210,6 @@ mag_status_t mag_op_stub_binary(
         if (mag_unlikely(!(!x_int)))
             return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place true division is not allowed on integer tensors (got dtype %s).", mag_type_trait(x->meta.dtype)->name);
       } break;
-      case MAG_OP_FLOORDIV: {
-        if (mag_unlikely(!(x_int && y_int)))
-            return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place floor division requires integer tensors, but got dtypes %s and %s.", mag_type_trait(x->meta.dtype)->name, mag_type_trait(y->meta.dtype)->name);
-      } break;
       default: { /* Inplace ops must keep x's dtype */
         mag_dtype_t prom;
         bool prom_ok = mag_promote_type(&prom, x->meta.dtype, y->meta.dtype);
@@ -281,6 +277,17 @@ mag_status_t mag_op_stub_binary(
   mag_status_t status;
   if (flags & MAG_BINOP_INPLACE) {
     mag_assert2(!(flags & MAG_BINOP_LOGICAL));
+    int64_t bdims[MAG_MAX_DIMS];
+    int64_t brank = 0;
+    if (mag_unlikely(!mag_coords_broadcast_shape(&x->meta.coords, &y->meta.coords, bdims, &brank)
+      || brank != x->meta.coords.rank
+      || memcmp(bdims, x->meta.coords.shape, sizeof(*bdims)*brank) != 0)) {
+      char sx[MAG_FMT_DIM_BUF_SIZE];
+      char sy[MAG_FMT_DIM_BUF_SIZE];
+      mag_fmt_shape(&sx, &x->meta.coords.shape, x->meta.coords.rank);
+      mag_fmt_shape(&sy, &y->meta.coords.shape, y->meta.coords.rank);
+      return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place '%s' with shapes %s and %s would change the shape of x; the broadcast result must match x.", mag_op_trait(op)->mnemonic, sx, sy);
+    }
     status = mag_check_inplace_grad_ok(err, x);
     if (mag_iserr(status)) return status;
     result = x;
@@ -473,7 +480,7 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
   if (meta->in == MAG_OP_INOUT_DYN) {
     n = num_in_dyn;
     if (mag_unlikely(!(inputs && n > 0)))
-        return mag_set_error(err, MAG_ERR_PARAM, "op_validate: operator '%s' requires a non-empty input tensor list.", meta->mnemonic);
+      return mag_set_error(err, MAG_ERR_PARAM, "op_validate: operator '%s' requires a non-empty input tensor list.", meta->mnemonic);
   } else {
     n = meta->in;
     (void)num_in_dyn;
@@ -483,11 +490,7 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
     bool supported = meta->dtype_mask & mag_dtype_bit(inputs[i]->meta.dtype);
     if (mag_unlikely(!supported)) {
       const char *dtype = mag_type_trait(inputs[i]->meta.dtype)->name;
-      return mag_set_error(err, MAG_ERR_PARAM,
-        "op_validate: operator '%s' does not support dtype '%s'.\n"
-        "    Hint: cast the tensor to a supported dtype.",
-        meta->mnemonic, dtype
-      );
+      return mag_set_error(err, MAG_ERR_PARAM, "op_validate: operator '%s' does not support dtype '%s'.\nHint: cast the tensor to a supported dtype.", meta->mnemonic, dtype);
     }
     if (i == 0) {
       dev0 = mag_tensor_device_id(inputs[0]);
@@ -497,49 +500,30 @@ mag_status_t mag_check_dtype_and_device_compat(mag_error_t *err, mag_opcode_t op
         char b0[32], bi[32];
         mag_device_id_to_str(dev0, &b0);
         mag_device_id_to_str(devi, &bi);
-        return mag_set_error(err, MAG_ERR_PARAM,
-          "op_validate: all input tensors for operator '%s' must be on the same device, but found '%s' and '%s'.\n"
-          "    Hint: transfer tensors to a single device before calling this operator.",
-          meta->mnemonic, b0, bi
-        );
+        return mag_set_error(err, MAG_ERR_PARAM, "op_validate: all input tensors for operator '%s' must be on the same device, but found '%s' and '%s'.\n\tHint: transfer tensors to a single device before calling this operator.", meta->mnemonic, b0, bi);
       }
     }
   }
   if (op == MAG_OP_GATHER || op == MAG_OP_EMBEDDING) {
     if (mag_unlikely(inputs[1]->meta.dtype != MAG_DTYPE_INT64))
-        return mag_set_error(err, MAG_ERR_PARAM,
-          "op_validate: index tensor for operator '%s' must have dtype int64, but got '%s'.\n"
-          "    Hint: cast the indices to int64.",
-          meta->mnemonic, mag_type_trait(inputs[1]->meta.dtype)->name
-        );
+        return mag_set_error(err, MAG_ERR_PARAM, "op_validate: index tensor for operator '%s' must have dtype int64, but got '%s'.\n\tHint: cast the indices to int64.", meta->mnemonic, mag_type_trait(inputs[1]->meta.dtype)->name);
     return MAG_OK;
   }
   if (op == MAG_OP_MASKED_FILL) {
     if (mag_unlikely(inputs[1]->meta.dtype != MAG_DTYPE_BOOLEAN))
-        return mag_set_error(err, MAG_ERR_PARAM,
-          "op_validate: mask tensor for operator '%s' must have dtype bool, but got '%s'.\n"
-          "    Hint: cast the mask to bool.",
-          meta->mnemonic, mag_type_trait(inputs[1]->meta.dtype)->name
-        );
+        return mag_set_error(err, MAG_ERR_PARAM, "op_validate: mask tensor for operator '%s' must have dtype bool, but got '%s'.\n\tHint: cast the mask to bool.", meta->mnemonic, mag_type_trait(inputs[1]->meta.dtype)->name);
     return MAG_OK;
   }
   if (mag_unlikely(meta->in == 2 && n == 2 && inputs[0]->meta.dtype != inputs[1]->meta.dtype)) { /* For binary operators, check that both inputs have the same data type. */
     const char *dtype_x = mag_type_trait(inputs[0]->meta.dtype)->name;
     const char *dtype_y = mag_type_trait(inputs[1]->meta.dtype)->name;
-    return mag_set_error(err, MAG_ERR_PARAM,
-      "op_validate: input dtypes for operator '%s' must match, but got '%s' and '%s'.\n"
-      "    Hint: cast both inputs to the same dtype.",
-      meta->mnemonic, dtype_x, dtype_y
-    );
+    return mag_set_error(err, MAG_ERR_PARAM, "op_validate: input dtypes for operator '%s' must match, but got '%s' and '%s'.\n\tHint: cast both inputs to the same dtype.", meta->mnemonic, dtype_x, dtype_y);
   }
   return MAG_OK;
 }
 
 mag_status_t mag_check_inplace_grad_ok(mag_error_t *err, const mag_tensor_t *result) {
-  if (mag_unlikely(!mag_tls_state.no_grad && (result->meta.flags & MAG_TFLAG_REQUIRES_GRAD)))
-    return mag_set_error(err, MAG_ERR_PARAM,
-      "op_validate: in-place operations are not allowed on tensors that require gradients.\n"
-      "    Hint: disable gradient tracking or use the out-of-place variant."
-    );
+  if (mag_unlikely(!mag_tls_state.no_grad && (result->meta.flags & MAG_TFLAG_REQUIRES_GRAD) && mag_tensor_is_leaf(result)))
+    return mag_set_error(err, MAG_ERR_PARAM, "autograd: a leaf tensor that requires grad is being used in an in-place operation.\n\tHint: use the out-of-place variant, detach the tensor, or disable gradient tracking.");
   return MAG_OK;
 }

@@ -136,7 +136,7 @@ def call_reduction(tensor: Tensor, op_name: str, dim: int | None, keepdim: bool)
     if dim is None:
         return op()
     if op_name in ('min', 'max'):
-        return op(dim, keepdim=keepdim)
+        return op(dim, keepdim=keepdim)[0]
     return op(dim=dim, keepdim=keepdim)
 
 

@@ -994,8 +994,14 @@ def test_minima(device: str) -> None:
     x = Tensor.uniform(2, 3, 4, device=device)
     t = totorch(x)
     assert_close_mag_torch(x.min(), t.min(), dtype.float32)
-    assert_close_mag_torch(x.min(1), t.min(1).values, dtype.float32)
-    assert_close_mag_torch(x.min(1, keepdim=True), t.min(1, keepdim=True).values, dtype.float32)
+    values, indices = x.min(1)
+    assert_close_mag_torch(values, t.min(1).values, dtype.float32)
+    assert indices.tolist() == t.min(1).indices.tolist()
+    values, indices = x.min(1, keepdim=True)
+    assert_close_mag_torch(values, t.min(1, keepdim=True).values, dtype.float32)
+    assert indices.tolist() == t.min(1, keepdim=True).indices.tolist()
+    assert_close_mag_torch(x.amin(1), t.amin(1), dtype.float32)
+    assert_close_mag_torch(x.amin((0, 2), keepdim=True), t.amin((0, 2), keepdim=True), dtype.float32)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
@@ -1003,8 +1009,14 @@ def test_maxima(device: str) -> None:
     x = Tensor.uniform(2, 3, 4, device=device)
     t = totorch(x)
     assert_close_mag_torch(x.max(), t.max(), dtype.float32)
-    assert_close_mag_torch(x.max(1), t.max(1).values, dtype.float32)
-    assert_close_mag_torch(x.max(1, keepdim=True), t.max(1, keepdim=True).values, dtype.float32)
+    values, indices = x.max(1)
+    assert_close_mag_torch(values, t.max(1).values, dtype.float32)
+    assert indices.tolist() == t.max(1).indices.tolist()
+    values, indices = x.max(1, keepdim=True)
+    assert_close_mag_torch(values, t.max(1, keepdim=True).values, dtype.float32)
+    assert indices.tolist() == t.max(1, keepdim=True).indices.tolist()
+    assert_close_mag_torch(x.amax(1), t.amax(1), dtype.float32)
+    assert_close_mag_torch(x.amax((0, 2), keepdim=True), t.amax((0, 2), keepdim=True), dtype.float32)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)

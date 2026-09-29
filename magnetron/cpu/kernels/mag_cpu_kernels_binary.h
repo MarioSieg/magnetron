@@ -18,8 +18,8 @@ static MAG_AINLINE float mag_fn_div_f32(float x, float y) { return x/y; }
 static MAG_AINLINE float mag_fn_floordiv_f32(float x, float y) { return floorf(x/y); }
 static MAG_AINLINE float mag_fn_mod_f32(float x, float y) { return mag_remf(x,y); }
 static MAG_AINLINE float mag_fn_pow_f32(float x, float y) { return powf(x,y); }
-static MAG_AINLINE float mag_fn_min_f32(float x, float y) { return fminf(x,y); }
-static MAG_AINLINE float mag_fn_max_f32(float x, float y) { return fmaxf(x,y); }
+static MAG_AINLINE float mag_fn_min_f32(float x, float y) { return (x != x || y != y) ? x+y : fminf(x,y); }
+static MAG_AINLINE float mag_fn_max_f32(float x, float y) { return (x != x || y != y) ? x+y : fmaxf(x,y); }
 
 #define mag_def_float_bin_wrappers(name) \
   static MAG_AINLINE mag_float16_t mag_fn_##name##_f16(mag_float16_t x, mag_float16_t y) { return mag_float32_to_float16(mag_fn_##name##_f32(mag_float16_to_float32(x), mag_float16_to_float32(y))); } \

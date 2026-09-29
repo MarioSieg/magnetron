@@ -2629,6 +2629,11 @@ extern MAG_EXPORT mag_status_t mag_softmax(mag_error_t *err, mag_tensor_t **out_
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_softmax_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
+extern MAG_EXPORT mag_status_t mag_softmax_dim(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim);
+extern MAG_EXPORT mag_status_t mag_softmax_dim_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim);
+extern MAG_EXPORT mag_status_t mag_max_dim(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t dim, bool keepdim);
+extern MAG_EXPORT mag_status_t mag_min_dim(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t **out_indices, mag_tensor_t *x, int64_t dim, bool keepdim);
+extern MAG_EXPORT mag_status_t mag_index_add(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *source, double alpha);
 
 /**
  * Compute the derivative of the softmax along the last dim element-wise.
@@ -4106,6 +4111,8 @@ extern MAG_EXPORT mag_status_t mag_tensor_set_grad(mag_error_t *err, mag_tensor_
  * @return true if the tensor requires grad.
  */
 extern MAG_EXPORT bool mag_tensor_requires_grad(const mag_tensor_t *tensor);
+extern MAG_EXPORT bool mag_tensor_is_leaf(const mag_tensor_t *tensor);
+extern MAG_EXPORT mag_status_t mag_tensor_retain_grad(mag_error_t *err, mag_tensor_t *tensor);
 
 /**
  * Enable or disable gradient tracking. Tracking requires a floating-point dtype.

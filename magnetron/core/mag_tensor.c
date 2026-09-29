@@ -166,6 +166,7 @@ static mag_status_t mag_tensor_dtor(void *self) {
     t->view_meta = NULL;
   }
   if (t->au_state) {
+    if (t->au_state->owner == t) t->au_state->owner = NULL;
     mag_rc_decref(t->au_state);
     t->au_state = NULL;
   }

@@ -155,7 +155,7 @@ def test_lerp_matches_torch(device: str, dt: dtype.DType, shape) -> None:
     _same(a.lerp(b, row), torch.lerp(ta, tb, totorch(row)), dt)
 
 
-_GATHER_CASES = (((3, 4), 0, (2, 4)), ((3, 4), 1, (3, 2)), ((3, 4), 0, (5, 4)), ((2, 3, 4), 2, (2, 3, 6)), ((2, 3, 4), 0, (1, 3, 4)), ((2, 3, 4), 2, (2, 3, 1)), ((5,), 0, (8,)), ((2, 3, 4), 1, (2, 5, 4)))
+_GATHER_CASES = (((3, 4), 0, (2, 4)), ((3, 4), 1, (3, 2)), ((3, 4), 0, (5, 4)), ((3, 4), 1, (2, 1)), ((2, 3, 4), 2, (2, 3, 6)), ((2, 3, 4), 0, (1, 3, 4)), ((2, 3, 4), 2, (2, 2, 2)), ((2, 3, 4), -1, (2, 2, 2)), ((5,), 0, (8,)), ((2, 3, 4), 1, (2, 5, 4)), ((2, 3, 4), 1, (2, 5, 3)), ((2, 3, 4), 0, (3, 1, 1)), ((2, 3, 4), -2, (2, 1, 1)))
 
 
 def _gather_index(shape: tuple[int, ...], dim: int, idx_shape: tuple[int, ...], device: str) -> tuple[Tensor, torch.Tensor]:
@@ -332,7 +332,7 @@ def test_masked_fill_matches_torch(device: str, dt: dtype.DType, shape) -> None:
             _same(y, tx.masked_fill(tm, v), dt)
 
 
-_PAD_CONSTANT = (((3, 4), (1, 2), 0.0), ((3, 4), (1, 2, 0, 1), -1.5), ((2, 3, 4), (2, 1, 1, 1, 0, 2), 0.0), ((2, 3, 4, 5), (1, 1, 2, 2), 3.0), ((5,), (2, 3), 0.0), ((2, 3, 4), (0, 0), 1.0), ((2, 3, 4), (3, 0, 0, 2), 2.5))
+_PAD_CONSTANT = (((3, 4), (1, 2), 0.0), ((3, 4), (1, 2, 0, 1), -1.5), ((2, 3, 4), (2, 1, 1, 1, 0, 2), 0.0), ((2, 3, 4, 5), (1, 1, 2, 2), 3.0), ((5,), (2, 3), 0.0), ((2, 3, 4), (0, 0), 1.0), ((2, 3, 4), (3, 0, 0, 2), 2.5), ((3, 6), (-1, 2), 0.0), ((2, 3, 6), (-2, -1, 1, -1), 4.0), ((2, 3, 4, 5), (-1, 1, 0, -2, 1, 0), -1.0), ((5,), (-2, -2), 0.0))
 _PAD_REFLECT_REPLICATE = (((2, 3, 5), (2, 1)), ((2, 3, 4, 5), (1, 2, 2, 1)), ((1, 2, 3, 4, 5), (1, 1, 1, 1, 1, 1)), ((2, 3, 6), (0, 3)), ((2, 3, 4, 5), (3, 3, 0, 0)))
 
 
@@ -375,7 +375,7 @@ def test_where_matches_torch(device: str, dt: dtype.DType) -> None:
 def test_clamp_matches_torch(device: str, dt: dtype.DType, shape) -> None:
     x = _rand(shape, dt, device)
     tx = totorch(x)
-    bounds = ((-3, 7), (0, 50), (-50, 0), (5, 5)) if dt.is_integer() else ((-0.5, 0.5), (0.0, 1.0), (-0.25, 0.0), (0.3, 0.3))
+    bounds = ((-3, 7), (0, 50), (-50, 0), (5, 5), (10, -10)) if dt.is_integer() else ((-0.5, 0.5), (0.0, 1.0), (-0.25, 0.0), (0.3, 0.3), (0.5, -0.5))
     for lo, hi in bounds:
         _same(x.clamp(lo, hi), torch.clamp(tx, lo, hi), dt)
         _same(x.clamp_min(lo), torch.clamp_min(tx, lo), dt)
@@ -415,6 +415,8 @@ def test_embedding_matches_torch(device: str, dt: dtype.DType) -> None:
             r = w.embedding(idx)
             assert r.dtype == dt
             _same(r, F.embedding(tidx, tw), dt)
+            tidx32 = tidx.to(torch.int32)
+            _same(w.embedding(Tensor(tidx32.tolist(), dtype=dtype.int32, device=device)), F.embedding(tidx32, tw), dt)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
@@ -437,7 +439,7 @@ def test_stack_family_matches_torch(device: str, dt: dtype.DType) -> None:
     for shape in ((3,), (2, 3), (2, 3, 4), ()):
         xs = [_rand(shape, dt, device) for _ in range(3)]
         txs = [totorch(x) for x in xs]
-        for dim in range(len(shape) + 1):
+        for dim in range(-(len(shape) + 1), len(shape) + 1):
             _same(Tensor.stack(xs, dim), torch.stack(txs, dim), dt)
         _same(Tensor.stack(xs), torch.stack(txs), dt)
         if shape:
@@ -467,6 +469,55 @@ def test_cat_matches_torch(device: str, dt: dtype.DType) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('shape', [(5,), (3, 4), (2, 3, 4), (2, 3, 4, 5)])
+def test_softmax_any_dim_matches_torch(device: str, shape) -> None:
+    x = uniform_tensor(shape, -6.0, 6.0, dtype.float32, device)
+    tx = totorch(x)
+    for dim in range(-len(shape), len(shape)):
+        assert_close_mag_torch(x.softmax(dim), torch.softmax(tx, dim), dtype.float32)
+        y = x.clone()
+        y.softmax_(dim)
+        assert_close_mag_torch(y, torch.softmax(tx, dim), dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('name', ['max', 'min'])
+def test_indexed_minmax_matches_torch(device: str, name: str) -> None:
+    for shape in ((7,), (3, 4), (2, 3, 4)):
+        x = uniform_tensor(shape, -3.0, 3.0, dtype.float32, device)
+        tx = totorch(x)
+        for dim in range(-len(shape), len(shape)):
+            for keepdim in (False, True):
+                values, indices = getattr(x, name)(dim, keepdim=keepdim)
+                ref = getattr(tx, name)(dim, keepdim=keepdim)
+                assert_close_mag_torch(values, ref.values, dtype.float32)
+                assert indices.dtype == dtype.int64
+                assert indices.tolist() == ref.indices.tolist()
+    ties = torch.tensor([[1.0, 3.0, 3.0, 0.0], [2.0, 2.0, 2.0, 2.0], [-1.0, 5.0, -1.0, 5.0]])
+    x = Tensor(ties.tolist(), device=device)
+    for dim in (0, 1):
+        values, indices = getattr(x, name)(dim)
+        ref = getattr(ties, name)(dim)
+        assert values.tolist() == ref.values.tolist()
+        assert indices.tolist() == ref.indices.tolist()
+    with pytest.raises(TypeError):
+        x.max((0, 1))
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dt', _F32_I32, ids=[d.name for d in _F32_I32])
+def test_index_add_out_of_place_matches_torch(device: str, dt: dtype.DType) -> None:
+    for shape, dim, index, src_shape, alpha in _INDEX_ADD_CASES:
+        x = _rand(shape, dt, device)
+        src = _rand(src_shape, dt, device)
+        tx, tsrc = totorch(x), totorch(src)
+        a = int(alpha) if dt.is_integer() else alpha
+        r = x.index_add(dim, Tensor(index, device=device), src, alpha=a)
+        _same(r, tx.index_add(dim, torch.tensor(index), tsrc, alpha=a), dt)
+        _same(x, tx, dt)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_softmax_last_dim_matches_torch(device: str) -> None:
     for shape in ((5,), (3, 4), (2, 3, 4), (1, 1, 7), (4, 257)):
         x = uniform_tensor(shape, low=-6.0, high=6.0, device=device)
@@ -477,3 +528,131 @@ def test_softmax_last_dim_matches_torch(device: str) -> None:
         y = x.clone()
         y.softmax_()
         assert_close_mag_torch(y, torch.softmax(tx, -1), dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dt', _F32_I32, ids=[d.name for d in _F32_I32])
+def test_reshape_of_permuted_tensor_with_unit_dims_matches_torch(device: str, dt: dtype.DType) -> None:
+    cases = (
+        ((2, 1, 3, 4), (0, 1, 3, 2), (8, 3)),
+        ((2, 1, 3, 4), (0, 1, 3, 2), (2, 4, 3)),
+        ((2, 1, 3, 4), (0, 1, 3, 2), (2, 12)),
+        ((3, 1, 1, 4, 5), (0, 1, 2, 4, 3), (15, 4)),
+        ((3, 1, 4, 1, 5), (0, 3, 1, 4, 2), (3, 20)),
+        ((2, 3, 1, 4), (1, 0, 2, 3), (3, 8)),
+        ((1, 2, 3, 4), (0, 3, 1, 2), (4, 6)),
+        ((2, 1, 3, 4), (2, 0, 1, 3), (6, 4)),
+    )
+    for shape, perm, new_shape in cases:
+        x = _rand(shape, dt, device)
+        tx = totorch(x)
+        p = x.permute(perm)
+        tp = tx.permute(*perm)
+        _same(p.reshape(new_shape), tp.reshape(new_shape), dt)
+        _same(p.contiguous().reshape(new_shape), tp.reshape(new_shape), dt)
+        try:
+            v = p.view(*new_shape)
+        except RuntimeError:
+            v = None
+        if v is not None:
+            _same(v, tp.reshape(new_shape), dt)
+        w = Tensor.uniform((new_shape[-1], 3), dtype=dtype.float32, device=device)
+        if dt == dtype.float32:
+            assert_close_mag_torch(p.reshape(new_shape) @ w, tp.reshape(new_shape) @ totorch(w), dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('op', ['cumax', 'cumin'])
+def test_cummax_cummin_ties_match_torch(device: str, op: str) -> None:
+    tname = 'cummax' if op == 'cumax' else 'cummin'
+    for values in ([1, 3, 3, 2, 3], [3, 1, 1, 2, 1], [2, 2, 2, 2], [5], [1, 1, 5, 5, 0, 0, 5]):
+        for dt in (dtype.int32, dtype.float32):
+            x = Tensor(values, dtype=dt, device=device)
+            tx = torch.tensor(values, dtype=totorch_dtype(dt))
+            v, i = getattr(x, op)(0)
+            ref = getattr(tx, tname)(0)
+            assert v.tolist() == ref.values.tolist()
+            assert i.tolist() == ref.indices.tolist()
+    x = uniform_tensor((3, 4, 5), 0, 3, dtype.int32, device)
+    tx = totorch(x)
+    for dim in range(-3, 3):
+        v, i = getattr(x, op)(dim)
+        ref = getattr(tx, tname)(dim)
+        assert v.tolist() == ref.values.tolist()
+        assert i.tolist() == ref.indices.tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dt', (dtype.float32, dtype.float16, dtype.bfloat16), ids=['float32', 'float16', 'bfloat16'])
+def test_binary_minmax_propagate_nan_like_torch(device: str, dt: dtype.DType) -> None:
+    nan = float('nan')
+    a = Tensor([nan, 1.0, 2.0, nan, -1.0], dtype=dt, device=device)
+    b = Tensor([0.0, nan, 3.0, nan, -2.0], dtype=dt, device=device)
+    ta, tb = totorch(a), totorch(b)
+    torch.testing.assert_close(totorch(a.min(b)), torch.minimum(ta, tb), equal_nan=True, rtol=0, atol=0)
+    torch.testing.assert_close(totorch(a.max(b)), torch.maximum(ta, tb), equal_nan=True, rtol=0, atol=0)
+    torch.testing.assert_close(totorch(a.clamp_min(b)), torch.clamp_min(ta, tb), equal_nan=True, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_meshgrid_xy_matches_torch(device: str) -> None:
+    for lengths in ((3, 2), (2, 3, 4), (4, 1), (5,)):
+        xs = [uniform_tensor((n,), -3.0, 3.0, dtype.float32, device) for n in lengths]
+        txs = [totorch(x) for x in xs]
+        got = Tensor.meshgrid(*xs, indexing='xy')
+        expected = torch.meshgrid(*txs, indexing='xy')
+        assert len(got) == len(expected)
+        for g, e in zip(got, expected):
+            assert g.shape == tuple(e.shape)
+            assert g.tolist() == e.tolist()
+    with pytest.raises(ValueError):
+        Tensor.meshgrid(xs[0], indexing='zz')
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('op', ['sum', 'prod'])
+def test_bool_sum_prod_matches_torch(device: str, op: str) -> None:
+    for shape in ((7,), (3, 4), (2, 3, 4)):
+        x = Tensor((torch.rand(shape) < 0.6).tolist(), dtype=dtype.boolean, device=device)
+        tx = totorch(x)
+        r = getattr(x, op)()
+        t = getattr(tx, op)()
+        assert r.dtype == dtype.int64
+        assert r.tolist() == t.tolist()
+        for dim in range(-len(shape), len(shape)):
+            for keepdim in (False, True):
+                r = getattr(x, op)(dim=dim, keepdim=keepdim)
+                t = getattr(tx, op)(dim=dim, keepdim=keepdim)
+                assert r.shape == tuple(t.shape)
+                assert r.tolist() == t.tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_gather_negative_dim_matches_torch(device: str) -> None:
+    x = uniform_tensor((2, 3, 4), -3.0, 3.0, dtype.float32, device)
+    tx = totorch(x)
+    for dim in (-1, -2, -3):
+        tidx = torch.randint(0, tx.shape[dim], (2, 3, 4))
+        _same(x.gather(dim, Tensor(tidx.tolist(), device=device)), tx.gather(dim, tidx), dtype.float32)
+
+
+def test_numpy_scalar_constructor_matches_torch() -> None:
+    for value, expected in ((np.float32(1.5), dtype.float32), (np.float16(-2.0), dtype.float16), (np.float64(0.25), dtype.float32), (np.bool_(True), dtype.boolean), (np.int64(7), dtype.int64), (np.int32(-3), dtype.int32), (np.uint8(200), dtype.uint8)):
+        t = Tensor(value)
+        assert t.shape == ()
+        assert t.dtype == expected
+        assert t.item() == value.item()
+    t = Tensor(np.float32(1.5), dtype=dtype.int32)
+    assert t.dtype == dtype.int32 and t.item() == 1
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dt', (dtype.float32, dtype.float16), ids=['float32', 'float16'])
+def test_inplace_float_floordiv_matches_torch(device: str, dt: dtype.DType) -> None:
+    for shapes in (((3, 4), (3, 4)), ((3, 4), (4,)), ((2, 3, 4), (3, 1))):
+        x = uniform_tensor(shapes[0], -5.0, 5.0, dt, device)
+        y = uniform_tensor(shapes[1], 0.5, 2.0, dt, device)
+        tx, ty = totorch(x), totorch(y)
+        x //= y
+        expected = torch_floordiv(tx, ty)
+        assert_close_mag_torch(x, expected, dt)

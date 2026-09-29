@@ -12,7 +12,7 @@ from collections.abc import Iterator, Callable, MutableMapping
 from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Any
-from .. import Tensor, dtype
+from .. import Tensor, dtype, no_grad
 
 
 class Parameter(Tensor):
@@ -21,6 +21,12 @@ class Parameter(Tensor):
     def __init__(self, x: Tensor) -> None:
         Tensor.__init__(self, x)
         self.requires_grad = True
+
+    def _replace(self, v: Tensor) -> None:
+        """Swap the storage but keep requires_grad: the flag lives on the C tensor, so the incoming one would otherwise win."""
+        req = self.requires_grad
+        Tensor._replace(self, v)
+        self.requires_grad = req
 
     @property
     def data(self) -> Tensor:
@@ -149,11 +155,9 @@ class Module:
         return self
 
     def cast(self, dt: dtype.DType) -> Module:
-        for p in self.parameters():
-            req = p.requires_grad
-            y = p.cast(dt)
-            y.requires_grad = req
-            p._replace(y)
+        with no_grad():  # the casted tensor must be a fresh leaf, not a node whose backward edge points at the old storage
+            for p in self.parameters():
+                p._replace(p.cast(dt))
         for name, buf in self.named_buffers():
             parent, leaf = self._resolve_parent(name)
             casted = Buffer(buf.cast(dt), persistent=buf.persistent)
