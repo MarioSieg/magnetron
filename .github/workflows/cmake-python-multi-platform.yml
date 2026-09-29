@@ -41,6 +41,7 @@ jobs:
             gcc \
             g++ \
             clang \
+            gdb \
             python3 \
             python3-pip \
             python3-setuptools \
@@ -89,7 +90,46 @@ jobs:
         run: |
           source .venv/bin/activate
           export MAG_LOG_LEVEL=debug
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            ulimit -c unlimited
+            sudo sysctl -w kernel.core_pattern="${{ github.workspace }}/core.%e.%p" > /dev/null
+          fi
           pytest -n 4 -s "${{ github.workspace }}/test/python/"
+
+      - name: Collect crash reports (macOS)
+        if: failure() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          sleep 20
+          mkdir -p crash
+          find ~/Library/Logs/DiagnosticReports -newer .venv \( -name '*.ips' -o -name '*.crash' \) -exec cp {} crash/ \; 2>/dev/null || true
+          for f in crash/*.ips crash/*.crash; do
+            [ -f "$f" ] || continue
+            echo "===== $f"
+            cat "$f"
+          done
+          cp .venv/lib/python*/site-packages/magnetron/*.dylib .venv/lib/python*/site-packages/magnetron/*.so crash/ 2>/dev/null || true
+
+      - name: Collect core dumps (Linux)
+        if: failure() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p crash
+          py="$(readlink -f .venv/bin/python)"
+          for c in "${{ github.workspace }}"/core.*; do
+            [ -f "$c" ] || continue
+            echo "===== $c"
+            gdb -q -batch -ex "set pagination off" -ex "thread apply all bt" "$py" "$c" 2>&1 | tail -n 300
+          done
+          cp .venv/lib/python*/site-packages/magnetron/*.so crash/ 2>/dev/null || true
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-${{ matrix.os }}-${{ matrix.compiler }}
+          path: crash
+          if-no-files-found: ignore
 
   sanitize:
     name: sanitize (${{ matrix.os }})
