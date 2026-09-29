@@ -8,6 +8,9 @@ apply_common_config_to_target(magnetron_core TRUE)
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
     set_source_files_properties(mag_op_stubs.c PROPERTIES COMPILE_OPTIONS "-Wno-error=format-truncation")
 endif()
+if (MAGNETRON_ASAN)
+    set_source_files_properties(mag_io_image.c mag_io_audio.c PROPERTIES COMPILE_OPTIONS "-fno-sanitize=undefined")
+endif()
 
 install(TARGETS magnetron_core
     LIBRARY DESTINATION magnetron

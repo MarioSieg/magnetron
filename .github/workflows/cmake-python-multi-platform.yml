@@ -147,7 +147,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake gcc g++
+          sudo apt-get install -y cmake gcc g++ gdb
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -176,10 +176,50 @@ jobs:
 
       - name: Run C++ Runtime Tests
         working-directory: "${{ github.workspace }}/build-asan"
+        shell: bash
         env:
-          ASAN_OPTIONS: detect_leaks=0
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-        run: ctest --verbose
+        run: |
+          ulimit -c unlimited
+          sudo sysctl -w kernel.core_pattern="${{ github.workspace }}/core.%e.%p" > /dev/null
+          ctest --verbose
+
+      - name: Post-mortem C++ core dumps
+        if: failure()
+        shell: bash
+        working-directory: "${{ github.workspace }}"
+        run: |
+          mkdir -p crash
+          for c in core.*; do
+            [ -f "$c" ] || continue
+            echo "===== $c"
+            gdb -q -batch \
+              -ex "set pagination off" \
+              -ex "set print pretty on" \
+              -ex "info threads" \
+              -ex "bt" \
+              -ex "info registers rip rsp rbp rax rbx rcx rdx rsi rdi r8 r9 r10 r11 r12 r13 r14 r15" \
+              -ex "x/8i \$pc" \
+              -ex "frame function mag_mul_float32" \
+              -ex "info locals" \
+              -ex "print *payload" \
+              -ex "print *payload->cmd" \
+              -ex "print *r" -ex "print *r->storage" \
+              -ex "print *x" -ex "print *x->storage" \
+              -ex "print *y" -ex "print *y->storage" \
+              -ex "thread apply all bt" \
+              build-asan/magnetron_test "$c" 2>&1 | tail -n 600
+          done
+          cp build-asan/libmagnetron_core.so build-asan/libmagnetron_cpu.so build-asan/magnetron_test crash/ 2>/dev/null || true
+
+      - name: Upload sanitizer crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitize-crash-${{ matrix.os }}
+          path: crash
+          if-no-files-found: ignore
 
       - name: Stage Python Package
         shell: bash
