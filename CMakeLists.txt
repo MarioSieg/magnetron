@@ -19,6 +19,7 @@ option(MAGNETRON_BUILD_TESTS "Build tests" ON)                      # Build C++ 
 option(MAGNETRON_BUILD_BENCHMARKS "Build benchmaryks" ON)           # Build C++ benchmarks (requires C++ toolchain)
 option(MAGNETRON_DEBUG "Enable debug mode" OFF)                     # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
 option(MAGNETRON_TSAN "Build with ThreadSanitizer" OFF)             # Build with ThreadSanitizer. CPU backend only.
+option(MAGNETRON_ASAN "Build with ASAN & UBSAN" OFF)                # CPU backend only.
 
 # Backend build options
 option(MAGNETRON_ENABLE_BACKEND_CPU "Enable CPU backend" ON)                # Enable CPU backend
@@ -28,6 +29,12 @@ if (${MAGNETRON_TSAN})
     message(STATUS "ThreadSanitizer enabled")
     add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g -O1)
     add_link_options(-fsanitize=thread)
+endif()
+
+if (${MAGNETRON_ASAN})
+    message(STATUS "ASAN & UBSAN enabled")
+    add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g -O1 -Wno-error=unused-but-set-variable -Wno-error=deprecated-declarations)
+    add_link_options(-fsanitize=address,undefined)
 endif()
 
 # Use ccache if available

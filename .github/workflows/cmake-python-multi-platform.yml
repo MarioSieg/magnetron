@@ -91,14 +91,83 @@ jobs:
           export MAG_LOG_LEVEL=debug
           pytest -n 4 -s "${{ github.workspace }}/test/python/"
 
+  sanitize:
+    name: sanitize (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux Packages
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Setup Python Virtual Environment
+        shell: bash
+        run: |
+          uv venv
+          uv sync --extra dev --no-install-project
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          cmake -B "${{ github.workspace }}/build-asan" \
+                -DCMAKE_C_COMPILER=gcc \
+                -DCMAKE_CXX_COMPILER=g++ \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DMAGNETRON_ASAN=ON \
+                -DMAGNETRON_BUILD_BENCHMARKS=OFF \
+                -DMAGNETRON_ENABLE_BACKEND_CUDA=OFF \
+                -DPython_EXECUTABLE="${{ github.workspace }}/.venv/bin/python" \
+                -S "${{ github.workspace }}"
+
+      - name: Build C++ Runtime
+        run: cmake --build "${{ github.workspace }}/build-asan" -j4
+
+      - name: Run C++ Runtime Tests
+        working-directory: "${{ github.workspace }}/build-asan"
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --verbose
+
+      - name: Stage Python Package
+        shell: bash
+        run: |
+          mkdir -p stage
+          cp -r python/magnetron stage/
+          cp build-asan/_magnetron_bindings*.so build-asan/libmagnetron_core.so build-asan/libmagnetron_cpu.so stage/magnetron/
+
+      - name: Run Python Tests
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          PYTHONMALLOC: malloc
+          MAG_LOG_LEVEL: debug
+        run: |
+          export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
+          export PYTHONPATH="${{ github.workspace }}/stage"
+          .venv/bin/python -m pytest -n 4 -s "${{ github.workspace }}/test/python/"
+
   ci-passed:
-    needs: [build]
+    needs: [build, sanitize]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check build matrix result
         run: |
-          if [ "${{ needs.build.result }}" != "success" ]; then
-            echo "build matrix result: ${{ needs.build.result }}"
+          if [ "${{ needs.build.result }}" != "success" ] || [ "${{ needs.sanitize.result }}" != "success" ]; then
+            echo "build matrix result: ${{ needs.build.result }}, sanitize result: ${{ needs.sanitize.result }}"
             exit 1
           fi
