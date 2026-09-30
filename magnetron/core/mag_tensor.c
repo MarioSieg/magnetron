@@ -71,6 +71,7 @@ mag_tensor_t *mag_tensor_init_header(
   mag_leak_detector_enqueue(hdr);
 #endif
   mag_atomic64_fetch_add(&ctx->telemetry.num_alive_tensors, 1, MAG_MO_RELAXED);
+  mag_atomic64_fetch_add(&ctx->telemetry.num_created_tensors, 1, MAG_MO_RELAXED);
   return hdr;
 }
 
@@ -149,7 +150,6 @@ mag_status_t mag_tensor_init(
       }
     }
   }
-  mag_atomic64_fetch_add(&ctx->telemetry.num_created_tensors, 1, MAG_MO_RELAXED);
   *out = tensor;
   return MAG_OK;
 cleanup:
@@ -166,6 +166,7 @@ static mag_status_t mag_tensor_dtor(void *self) {
     t->view_meta = NULL;
   }
   if (t->au_state) {
+    if (t->au_state->owner == t) t->au_state->owner = NULL;
     mag_rc_decref(t->au_state);
     t->au_state = NULL;
   }

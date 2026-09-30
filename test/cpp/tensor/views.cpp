@@ -180,8 +180,9 @@ TEST(views, inplace_bumps_version_and_detaches) {
     x += tensor{vv};
     ctx.start_grad_recorder();
     tensor loss = y.sum();
-    loss.backward();
-    ASSERT_TRUE(x.grad()->is_contiguous());
+    mag_error_t err {};
+    ASSERT_NE(mag_tensor_backward(&err, &*loss), MAG_OK);
+    ASSERT_FALSE(x.grad().has_value());
 }
 
 TEST(views, view_no_axes) {

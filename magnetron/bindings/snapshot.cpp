@@ -34,7 +34,8 @@ namespace mag::bindings {
       }
 
       ~snapshot_stream_writer() noexcept {
-        abort();
+        abort_serialization();
+        release_ctx_if_pending();
       }
       snapshot_stream_writer(const snapshot_stream_writer &) = delete;
       snapshot_stream_writer &operator=(const snapshot_stream_writer &) = delete;
@@ -42,7 +43,7 @@ namespace mag::bindings {
       snapshot_stream_writer &operator=(snapshot_stream_writer &&rhs) noexcept {
         if (this == &rhs)
           return *this;
-        abort();
+        abort_serialization();
         m_writer = std::exchange(rhs.m_writer, nullptr);
         return *this;
       }
@@ -62,7 +63,7 @@ namespace mag::bindings {
         throw_if_error(mag_snapshot_stream_writer_close(&err, writer), err);
       }
 
-      void abort() noexcept {
+      void abort_serialization() noexcept {
         if (auto *writer = std::exchange(m_writer, nullptr))
           mag_snapshot_stream_writer_abort(writer);
       }
@@ -83,7 +84,10 @@ namespace mag::bindings {
       throw_if_error(mag_snapshot_stream_reader_open(&err, &m_reader, get_ctx(), filename.c_str()), err);
     }
 
-    ~snapshot_stream_reader() noexcept { close(); }
+    ~snapshot_stream_reader() noexcept {
+      close();
+      release_ctx_if_pending();
+    }
     snapshot_stream_reader(const snapshot_stream_reader &) = delete;
     snapshot_stream_reader &operator=(const snapshot_stream_reader &) = delete;
     snapshot_stream_reader(snapshot_stream_reader &&rhs) noexcept : m_reader {std::exchange(rhs.m_reader, nullptr)} {}
@@ -173,7 +177,7 @@ namespace mag::bindings {
       })
       .def("abort", [](snapshot_stream_writer &self) -> void {
         nb::gil_scoped_release nogil {};
-        self.abort();
+        self.abort_serialization();
       })
       .def("__enter__", [](snapshot_stream_writer &self) -> snapshot_stream_writer & {
         if (!self.is_open()) throw std::runtime_error {"SnapshotStreamWriter is closed"};
@@ -182,7 +186,7 @@ namespace mag::bindings {
       .def("__exit__", [](snapshot_stream_writer &self, nb::handle exc_type, nb::handle, nb::handle) -> bool {
         bool has_exc = !exc_type.is_none();
         nb::gil_scoped_release nogil {};
-        if (has_exc) self.abort();
+        if (has_exc) self.abort_serialization();
         else self.close();
         return false;
       }, "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none());

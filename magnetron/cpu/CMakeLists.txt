@@ -21,6 +21,10 @@ if (MAG_ENABLED_CPU_MACROS)
     target_compile_definitions(magnetron_cpu PRIVATE ${MAG_ENABLED_CPU_MACROS}) # Add macro definitions for compiled backends e.g. MAG_CPU_ZEN4, ...
 endif()
 target_link_libraries(magnetron_cpu PRIVATE magnetron_core)
+if(APPLE)
+    target_link_libraries(magnetron_cpu PRIVATE "-framework Accelerate")
+    target_compile_definitions(magnetron_cpu PRIVATE MAG_HAS_ACCELERATE=1)
+endif()
 target_include_directories(magnetron_cpu PRIVATE ../)
 
 mag_print_cpu_backend_summary()

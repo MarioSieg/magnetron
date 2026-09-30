@@ -34,8 +34,11 @@
     for (int64_t i = 0; i < n && all_contig; ++i) \
       if (!mag_tensor_is_contiguous(payload->cmd->in[i])) all_contig = false; \
     if (mag_likely(all_contig)) { \
-      int64_t *xi_outer = mag_scratch_arena_alloc(&mag_tls_arena, n*sizeof(*xi_outer)); \
-      const T **bxi = mag_scratch_arena_alloc(&mag_tls_arena, n*sizeof(*bxi)); \
+      size_t xo_nb = mag_align_up((size_t)n*sizeof(int64_t), MAG_MM_SCRATCH_ALIGN); \
+      uint8_t *blk = mag_scratch_arena_alloc(&mag_tls_arena, xo_nb + (size_t)n*sizeof(const T *)); \
+      if (mag_unlikely(!blk)) return mag_set_error(err, MAG_ERR_OOM, "cat: failed to allocate scratch buffer."); \
+      int64_t *xi_outer = (int64_t *)blk; \
+      const T **bxi = (const T **)(blk + xo_nb); \
       for (int64_t i=0; i < n; ++i) { \
         const mag_tensor_t *x = payload->cmd->in[i]; \
         xi_outer[i] = x->meta.coords.shape[dim] * inner; \
@@ -446,9 +449,11 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
         off_x0 += base_idx[d] * x->meta.coords.strides[d]; \
         off_v0 += base_idx[d] * v->meta.coords.strides[d]; \
       } \
-      T *best_vals = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_vals)); \
-      int64_t *best_idx = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)k * sizeof(*best_idx)); \
-      if (mag_unlikely(!best_vals || !best_idx)) \
+      size_t bv_nb = mag_align_up((size_t)k*sizeof(T), MAG_MM_SCRATCH_ALIGN); \
+      uint8_t *blk = mag_scratch_arena_alloc(&mag_tls_arena, bv_nb + (size_t)k*sizeof(int64_t)); \
+      T *best_vals = (T *)blk; \
+      int64_t *best_idx = (int64_t *)(blk + bv_nb); \
+      if (mag_unlikely(!blk)) \
         return mag_set_error(err, MAG_ERR_OOM, "topk: failed to allocate scratch buffer for k=%" PRIi64 ".", (int64_t)k); \
       int64_t filled = 0; \
       \
@@ -525,6 +530,306 @@ mag_gen_stub_topk(uint64_t, uint64, mag_cvt_nop)
 mag_gen_stub_topk(int64_t, int64, mag_cvt_nop)
 
 #undef mag_gen_stub_topk
+
+#define mag_sort_never_nan(x) false
+#define MAG_SORT_RUN 16
+
+#define mag_gen_stub_sort(T, TF, CT, CVT, ISNAN) \
+  static MAG_HOTPROC mag_status_t mag_sort_impl_##TF(mag_error_t *err, const mag_kernel_payload_t *payload, bool with_values) { \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    mag_tensor_t *v = with_values ? payload->cmd->out[0] : NULL; \
+    mag_tensor_t *idx = payload->cmd->out[with_values ? 1 : 0]; \
+    int64_t dim = payload->cmd->params->sort.dim; \
+    bool desc = payload->cmd->params->sort.descending; \
+    int64_t R = x->meta.coords.rank; \
+    mag_assert2(R > 0); \
+    mag_assert2(dim >= 0 && dim < R); \
+    const int64_t *shape_x = x->meta.coords.shape; \
+    const int64_t *shape_i = idx->meta.coords.shape; \
+    for (int64_t d=0; d < R; ++d) { \
+      mag_assert2(shape_i[d] == shape_x[d]); \
+      mag_assert2(!v || v->meta.coords.shape[d] == shape_x[d]); \
+    } \
+    if (x->meta.numel == 0) return MAG_OK; \
+    int64_t n = shape_x[dim]; \
+    const T *bx = (const T *)mag_tensor_data_ptr(x); \
+    T *bv = v ? (T *)mag_tensor_data_ptr_mut(v) : NULL; \
+    int64_t *bi = (int64_t *)mag_tensor_data_ptr_mut(idx); \
+    int64_t tc = payload->thread_num; \
+    int64_t ti = payload->thread_idx; \
+    int64_t outer_count = x->meta.numel / n; \
+    int64_t stride_x_dim = x->meta.coords.strides[dim]; \
+    int64_t stride_v_dim = v ? v->meta.coords.strides[dim] : 0; \
+    int64_t stride_i_dim = idx->meta.coords.strides[dim]; \
+    int64_t outer_rank = R - 1; \
+    int64_t mult_outer[MAG_MAX_DIMS]; \
+    int64_t outer_to_full[MAG_MAX_DIMS]; \
+    { \
+      int64_t shape_outer[MAG_MAX_DIMS]; \
+      int64_t t = 0; \
+      for (int64_t d=0; d < R; ++d) { \
+        if (d == dim) continue; \
+        shape_outer[t] = shape_x[d]; \
+        outer_to_full[t] = d; \
+        ++t; \
+      } \
+      for (int64_t t2=0; t2 < outer_rank; ++t2) { \
+        int64_t m = 1; \
+        for (int64_t k2=t2+1; k2 < outer_rank; ++k2) m *= shape_outer[k2]; \
+        mult_outer[t2] = m; \
+      } \
+    } \
+    int64_t chunk = (outer_count + tc - 1) / tc; \
+    int64_t oa = ti * chunk; \
+    int64_t ob = mag_vmin(oa + chunk, outer_count); \
+    if (oa >= ob) return MAG_OK; \
+    size_t mark = mag_scratch_arena_mark(&mag_tls_arena); \
+    size_t k_nb = mag_align_up((size_t)n*sizeof(CT), MAG_MM_SCRATCH_ALIGN); \
+    size_t p_nb = mag_align_up((size_t)n*sizeof(int64_t), MAG_MM_SCRATCH_ALIGN); \
+    uint8_t *blk = mag_scratch_arena_alloc(&mag_tls_arena, 2*k_nb + 2*p_nb); \
+    CT *ka = (CT *)blk; \
+    CT *kb = (CT *)(blk + k_nb); \
+    int64_t *pa = (int64_t *)(blk + 2*k_nb); \
+    int64_t *pb = (int64_t *)(blk + 2*k_nb + p_nb); \
+    if (mag_unlikely(!blk)) { \
+      mag_scratch_arena_reset(&mag_tls_arena, mark); \
+      return mag_set_error(err, MAG_ERR_OOM, "sort: failed to allocate scratch buffer for n=%" PRIi64 ".", n); \
+    } \
+    for (int64_t row=oa; row < ob; ++row) { \
+      int64_t base_idx[MAG_MAX_DIMS]; \
+      for (int64_t d=0; d < R; ++d) base_idx[d] = 0; \
+      int64_t rtmp = row; \
+      for (int64_t t=0; t < outer_rank; ++t) { \
+        const int64_t q = (mult_outer[t] == 0) ? 0 : (rtmp / mult_outer[t]); \
+        if (mult_outer[t] != 0) rtmp %= mult_outer[t]; \
+        base_idx[outer_to_full[t]] = q; \
+      } \
+      int64_t off_x0 = 0; \
+      int64_t off_v0 = 0; \
+      int64_t off_i0 = 0; \
+      for (int64_t d=0; d < R; ++d) { \
+        off_x0 += base_idx[d] * x->meta.coords.strides[d]; \
+        off_i0 += base_idx[d] * idx->meta.coords.strides[d]; \
+        if (v) off_v0 += base_idx[d] * v->meta.coords.strides[d]; \
+      } \
+      CT *keys = ka; \
+      CT *keys_tmp = kb; \
+      int64_t *perm = pa; \
+      int64_t *perm_tmp = pb; \
+      for (int64_t p=0; p < n; ++p) { \
+        const int64_t off_x = off_x0 + p * stride_x_dim; \
+        mag_bnd_chk(bx + off_x, x->storage->base, x->storage->size); \
+        keys[p] = CVT(bx[off_x]); \
+        perm[p] = p; \
+      } \
+      for (int64_t lo=0; lo < n; lo += MAG_SORT_RUN) { \
+        const int64_t hi = mag_vmin(lo + MAG_SORT_RUN, n); \
+        for (int64_t i=lo+1; i < hi; ++i) { \
+          const CT kv = keys[i]; \
+          const int64_t pv = perm[i]; \
+          int64_t j = i; \
+          while (j > lo) { \
+            const CT kp = keys[j - 1]; \
+            bool before; \
+            if (desc) before = !ISNAN(kp) && (ISNAN(kv) || kp < kv); \
+            else before = !ISNAN(kv) && (ISNAN(kp) || kv < kp); \
+            if (!before) break; \
+            keys[j] = kp; \
+            perm[j] = perm[j - 1]; \
+            --j; \
+          } \
+          keys[j] = kv; \
+          perm[j] = pv; \
+        } \
+      } \
+      for (int64_t width=MAG_SORT_RUN; width < n; width <<= 1) { \
+        for (int64_t lo=0; lo < n; lo += width << 1) { \
+          const int64_t mid = mag_vmin(lo + width, n); \
+          const int64_t hi = mag_vmin(lo + (width << 1), n); \
+          int64_t i = lo; \
+          int64_t j = mid; \
+          int64_t o = lo; \
+          while (i < mid && j < hi) { \
+            const CT ki = keys[i]; \
+            const CT kj = keys[j]; \
+            bool take_right; \
+            if (desc) take_right = !ISNAN(kj) && (ISNAN(ki) || ki < kj); \
+            else take_right = !ISNAN(kj) && (ISNAN(ki) || kj < ki); \
+            if (take_right) { \
+              keys_tmp[o] = kj; \
+              perm_tmp[o] = perm[j]; \
+              ++j; \
+            } else { \
+              keys_tmp[o] = ki; \
+              perm_tmp[o] = perm[i]; \
+              ++i; \
+            } \
+            ++o; \
+          } \
+          while (i < mid) { \
+            keys_tmp[o] = keys[i]; \
+            perm_tmp[o] = perm[i]; \
+            ++i; \
+            ++o; \
+          } \
+          while (j < hi) { \
+            keys_tmp[o] = keys[j]; \
+            perm_tmp[o] = perm[j]; \
+            ++j; \
+            ++o; \
+          } \
+        } \
+        CT *kt = keys; \
+        keys = keys_tmp; \
+        keys_tmp = kt; \
+        int64_t *pt = perm; \
+        perm = perm_tmp; \
+        perm_tmp = pt; \
+      } \
+      for (int64_t r=0; r < n; ++r) { \
+        int64_t p = perm[r]; \
+        int64_t off_i = off_i0 + r * stride_i_dim; \
+        mag_bnd_chk(bi + off_i, idx->storage->base, idx->storage->size); \
+        bi[off_i] = p; \
+        if (bv) { \
+          int64_t off_v = off_v0 + r * stride_v_dim; \
+          mag_bnd_chk(bv + off_v, v->storage->base, v->storage->size); \
+          bv[off_v] = bx[off_x0 + p * stride_x_dim]; \
+        } \
+      } \
+    } \
+    mag_scratch_arena_reset(&mag_tls_arena, mark); \
+    return MAG_OK; \
+  } \
+  static MAG_HOTPROC mag_status_t mag_sort_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    return mag_sort_impl_##TF(err, payload, true); \
+  } \
+  static MAG_HOTPROC mag_status_t mag_argsort_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    return mag_sort_impl_##TF(err, payload, false); \
+  }
+
+mag_gen_stub_sort(float, float32, float, mag_cvt_nop, isnan)
+mag_gen_stub_sort(mag_float16_t, float16, float, mag_float16_to_float32, isnan)
+mag_gen_stub_sort(mag_bfloat16_t, bfloat16, float, mag_bfloat16_to_float32, isnan)
+mag_gen_stub_sort(mag_float8_e4m3fn_t, float8_e4m3fn, float, mag_float8_e4m3fn_to_float32, isnan)
+mag_gen_stub_sort(uint8_t, uint8, uint8_t, mag_cvt_nop, mag_sort_never_nan)
+mag_gen_stub_sort(int8_t, int8, int8_t, mag_cvt_nop, mag_sort_never_nan)
+mag_gen_stub_sort(uint16_t, uint16, uint16_t, mag_cvt_nop, mag_sort_never_nan)
+mag_gen_stub_sort(int16_t, int16, int16_t, mag_cvt_nop, mag_sort_never_nan)
+mag_gen_stub_sort(uint32_t, uint32, uint32_t, mag_cvt_nop, mag_sort_never_nan)
+mag_gen_stub_sort(int32_t, int32, int32_t, mag_cvt_nop, mag_sort_never_nan)
+mag_gen_stub_sort(uint64_t, uint64, uint64_t, mag_cvt_nop, mag_sort_never_nan)
+mag_gen_stub_sort(int64_t, int64, int64_t, mag_cvt_nop, mag_sort_never_nan)
+
+#undef mag_gen_stub_sort
+
+#define mag_gen_stub_bincount(T, TF, CVT_IN, CVT_OUT) \
+  static MAG_HOTPROC mag_status_t mag_bincount_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    const mag_tensor_t *w = payload->cmd->num_in > 1 ? payload->cmd->in[1] : NULL; \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    mag_assert2(x->meta.dtype == MAG_DTYPE_INT64); \
+    mag_assert2(x->meta.coords.rank == 1 && r->meta.coords.rank == 1); \
+    mag_assert2(!w || (w->meta.coords.rank == 1 && w->meta.numel == x->meta.numel && w->meta.dtype == r->meta.dtype)); \
+    mag_assert2(mag_tensor_is_contiguous(r)); \
+    const int64_t n = x->meta.numel; \
+    const int64_t bins = r->meta.numel; \
+    const int64_t *bx = (const int64_t *)mag_tensor_data_ptr(x); \
+    const T *bw = w ? (const T *)mag_tensor_data_ptr(w) : NULL; \
+    T *br = (T *)mag_tensor_data_ptr_mut(r); \
+    const int64_t sx = x->meta.coords.strides[0]; \
+    const int64_t sw = w ? w->meta.coords.strides[0] : 0; \
+    for (int64_t i=0; i < n; ++i) { \
+      mag_bnd_chk(bx + i*sx, x->storage->base, x->storage->size); \
+      const int64_t bin = bx[i*sx]; \
+      if (mag_unlikely(bin < 0 || bin >= bins)) \
+        return mag_set_error(err, MAG_ERR_PARAM, "bincount: value %" PRIi64 " at index %" PRIi64 " is out of range for %" PRIi64 " bins.", bin, i, bins); \
+      if (bw) { \
+        mag_bnd_chk(bw + i*sw, w->storage->base, w->storage->size); \
+        br[bin] = CVT_OUT(CVT_IN(br[bin]) + CVT_IN(bw[i*sw])); \
+      } else { \
+        br[bin] = CVT_OUT(CVT_IN(br[bin]) + 1); \
+      } \
+    } \
+    return MAG_OK; \
+  }
+
+mag_gen_stub_bincount(int64_t, int64, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_bincount(float, float32, mag_cvt_nop, mag_cvt_nop)
+mag_gen_stub_bincount(mag_float16_t, float16, mag_float16_to_float32, mag_float32_to_float16)
+mag_gen_stub_bincount(mag_bfloat16_t, bfloat16, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
+mag_gen_stub_bincount(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
+
+#undef mag_gen_stub_bincount
+
+#define mag_nonzero_pred_arith(v) ((v) != 0)
+#define mag_nonzero_pred_bits16(v) (((v).bits & 0x7fff) != 0)
+#define mag_nonzero_pred_bits8(v) (((v).bits & 0x7f) != 0)
+
+#define mag_gen_stub_nonzero(T, TF, IS_NZ) \
+  static MAG_HOTPROC mag_status_t mag_nonzero_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
+    (void)err; \
+    const mag_tensor_t *x = payload->cmd->in[0]; \
+    mag_tensor_t *r = payload->cmd->out[0]; \
+    mag_assert2(r->meta.dtype == MAG_DTYPE_INT64 && mag_tensor_is_contiguous(r)); \
+    const T *bx = (const T *)mag_tensor_data_ptr(x); \
+    int64_t *br = (int64_t *)mag_tensor_data_ptr_mut(r); \
+    const int64_t total = x->meta.numel; \
+    const int64_t rank = x->meta.coords.rank; \
+    const bool count_only = payload->cmd->params->nonzero.count_only; \
+    if (count_only && mag_tensor_is_contiguous(x)) { \
+      int64_t n = 0; \
+      for (int64_t i=0; i < total; ++i) n += IS_NZ(bx[i]); \
+      *br = n; \
+      return MAG_OK; \
+    } \
+    mag_coords_iter_t cx; \
+    mag_coords_iter_init(&cx, &x->meta.coords); \
+    const int64_t cap = count_only ? INT64_MAX : r->meta.coords.shape[0]; \
+    int64_t idx[MAG_MAX_DIMS] = {0}; \
+    int64_t off = 0; \
+    int64_t n = 0; \
+    for (int64_t i=0; i < total && n < cap; ++i) { \
+      mag_bnd_chk(bx+off, x->storage->base, x->storage->size); \
+      if (IS_NZ(bx[off])) { \
+        if (!count_only) { \
+          int64_t *row = br + n*rank; \
+          for (int64_t k=0; k < rank; ++k) row[k] = idx[k]; \
+        } \
+        ++n; \
+      } \
+      for (int64_t k=rank-1; k >= 0; --k) { \
+        if (++idx[k] < cx.shape[k]) { \
+          off += cx.strides[k]; \
+          break; \
+        } \
+        idx[k] = 0; \
+        off -= (cx.shape[k]-1)*cx.strides[k]; \
+      } \
+    } \
+    if (count_only) *br = n; \
+    return MAG_OK; \
+  }
+
+mag_gen_stub_nonzero(float, float32, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(mag_float16_t, float16, mag_nonzero_pred_bits16)
+mag_gen_stub_nonzero(mag_bfloat16_t, bfloat16, mag_nonzero_pred_bits16)
+mag_gen_stub_nonzero(mag_float8_e4m3fn_t, float8_e4m3fn, mag_nonzero_pred_bits8)
+mag_gen_stub_nonzero(uint8_t, uint8, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(int8_t, int8, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(uint16_t, uint16, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(int16_t, int16, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(uint32_t, uint32, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(int32_t, int32, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(uint64_t, uint64, mag_nonzero_pred_arith)
+mag_gen_stub_nonzero(int64_t, int64, mag_nonzero_pred_arith)
+
+#undef mag_gen_stub_nonzero
+#undef mag_nonzero_pred_arith
+#undef mag_nonzero_pred_bits16
+#undef mag_nonzero_pred_bits8
+#undef MAG_SORT_RUN
+#undef mag_sort_never_nan
 
 #define mag_gen_stub_where(T, TF) \
   static mag_status_t MAG_HOTPROC mag_where_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
@@ -604,7 +909,7 @@ mag_gen_stub_where(int64_t, int64)
       float v = CVT(bx[xi]); \
       float lo = CVT(bmn[mni]); \
       float hi = CVT(bmx[mxi]); \
-      float o = v < lo ? lo : (v > hi ? hi : v); \
+      float o = (v < lo ? lo : v) > hi ? hi : (v < lo ? lo : v); \
       br[ri] = FROMF32(o); \
     } \
     return MAG_OK; \
@@ -645,7 +950,7 @@ mag_gen_stub_clamp_cvt(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_to_
       T v = bx[xi]; \
       T lo = bmn[mni]; \
       T hi = bmx[mxi]; \
-      br[ri] = v < lo ? lo : (v > hi ? hi : v); \
+      br[ri] = (v < lo ? lo : v) > hi ? hi : (v < lo ? lo : v); \
     } \
     return MAG_OK; \
   }
@@ -803,7 +1108,7 @@ static int64_t mag_pad_map_index(int64_t i, int64_t size, mag_pad_mode_t mode) {
       if (payload->cmd->params->pad.mode == MAG_PAD_MODE_CONSTANT) { \
         use_constant = false; \
         for (int64_t d=0; d < R; ++d) { \
-          int64_t ic = oc[d] - payload->cmd->params->pad.pad_before[d]; \
+          int64_t ic = oc[d] - payload->cmd->params->pad.pre_pad[d]; \
           if (ic < 0 || ic >= in_shape[d]) { \
             use_constant = true; \
             break; \
@@ -812,7 +1117,7 @@ static int64_t mag_pad_map_index(int64_t i, int64_t size, mag_pad_mode_t mode) {
         } \
       } else { \
         for (int64_t d=0; d < R; ++d) { \
-          int64_t ic = oc[d] - payload->cmd->params->pad.pad_before[d]; \
+          int64_t ic = oc[d] - payload->cmd->params->pad.pre_pad[d]; \
           si[d] = mag_pad_map_index(ic, in_shape[d], payload->cmd->params->pad.mode); \
         } \
       } \

@@ -26,6 +26,7 @@ TEST(cpu_autograd, simple) {
     k.requires_grad(true);
 
     tensor z {(x + y)*(x - y)/k};
+    z.retain_grad();
     z.backward();
 
     ASSERT_TRUE(x.requires_grad());
@@ -71,6 +72,10 @@ TEST(cpu_autograd, scalar_complex) {
     tensor q {z.relu()+z*x};
     tensor h {(z*z).relu()};
     tensor y {h+q+q*x};
+    z.retain_grad();
+    q.retain_grad();
+    h.retain_grad();
+    y.retain_grad();
     y.backward();
 
     ASSERT_TRUE(two.requires_grad());
@@ -116,6 +121,7 @@ TEST(cpu_autograd, broadcast) {
     k.requires_grad(true);
 
     tensor z {((x + y)*(x - y)/k).sum()};
+    z.retain_grad();
     z.backward();
 
     ASSERT_TRUE(x.requires_grad());

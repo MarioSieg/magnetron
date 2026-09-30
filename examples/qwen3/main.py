@@ -49,12 +49,7 @@ class Conversation:
 
 
 def repl(engine: InferenceEngine) -> None:
-    console.print(
-        Panel.fit(
-            Text('Magnetron Qwen3 REPL', style='bold white') + Text('\n/exit', style='dim'),
-            border_style='cyan',
-        )
-    )
+    console.print(Panel.fit(Text('Magnetron Qwen3 REPL', style='bold white') + Text('\n/exit', style='dim'), border_style='cyan'))
     cfg = engine.config
     conv = Conversation()
     while True:
@@ -100,13 +95,7 @@ def _main() -> None:
     args.add_argument('--reserve_gen', type=int, default=1024, help='Reserve tokens for generation headroom')
     args.add_argument('--device', type=str, default='cuda', choices=['cpu', 'cuda'])
     args.add_argument('--snapshot', type=str, default=None, help='Choose local .mag snapshot file instead of HF repo')
-    args.add_argument(
-        '--dtype',
-        type=str,
-        default='bfloat16',
-        choices=['float16', 'bfloat16', 'float32'],
-        help='Data type to run the model in',
-    )
+    args.add_argument('--dtype', type=str, default='bfloat16', choices=['float16', 'bfloat16', 'float32'], help='Data type to run the model in')
     args = args.parse_args()
 
     if not args.repl and not args.prompt:

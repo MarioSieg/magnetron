@@ -17,6 +17,7 @@
 
 #include <cuda_runtime.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <type_traits>
@@ -753,9 +754,6 @@ namespace mag {
       sh_rank = k;
     }
     __syncthreads();
-    /* Radix select, most significant digit first. Each pass histograms the digit of every composite still
-       matching the prefix, walks the bins downwards until it reaches the one holding the k-th largest, and
-       appends that digit. After the last pass the prefix is that composite exactly. */
     comp_t hi_mask = 0;
     for (int pass=0; pass < num_passes; ++pass) {
       int shift = used_bits - MAG_TOPK_RADIX_BITS*(pass+1);
@@ -786,16 +784,15 @@ namespace mag {
     comp_t threshold = sh_prefix;
     if (threadIdx.x == 0) sh_count = 0;
     __syncthreads();
-    /* Composites are distinct, so exactly k of them clear the threshold and no tie breaking is left to do. */
     for (int64_t p=threadIdx.x; p < dim_size; p += blockDim.x) {
       comp_t c = comps[p];
       if (c >= threshold) sorted[atomicAdd(&sh_count, 1u)] = c;
     }
     __syncthreads();
     for (int64_t p=static_cast<int64_t>(sh_count)+threadIdx.x; p < sort_len; p += blockDim.x)
-      sorted[p] = 0; /* Pad to a power of two with the minimum, which the sort pushes past the k real ones. */
+      sorted[p] = 0;
     __syncthreads();
-    for (int64_t size=2; size <= sort_len; size <<= 1) { /* Bitonic sort, descending. */
+    for (int64_t size=2; size <= sort_len; size <<= 1) {
       for (int64_t stride=size>>1; stride > 0; stride >>= 1) {
         for (int64_t i=threadIdx.x; i < sort_len; i += blockDim.x) {
           int64_t j = i^stride;
@@ -835,7 +832,6 @@ namespace mag {
     mag_assert2(k > 0 && k <= dim_size);
     int64_t outer_count = x->meta.numel/dim_size;
     if (outer_count <= 0) return MAG_OK;
-    /* The composite packs the position into 32 bits, so a longer reduced axis would alias two elements. */
     if (mag_unlikely(dim_size > 0xFFFFFFFFll))
       return mag_set_error(err, MAG_ERR_KERNEL, "cuda: topk: reduced dimension of %lld exceeds the supported maximum of %lld.", static_cast<long long>(dim_size), 0xFFFFFFFFll);
     int64_t sort_len = 1;
@@ -852,8 +848,6 @@ namespace mag {
     topk_rows_kernel<T><<<static_cast<unsigned>(outer_count), MAG_TOPK_BLOCK, 0, stream>>>(
       dim_size, k, largest, R, dim, stride_x_dim, stride_v_dim,
       *x, *v, bx, bv, bi, reinterpret_cast<char *>(d_scratch), row_bytes, sort_len);
-    /* A launch that never ran leaves the outputs untouched, which reads back as a plausible looking row of
-       zeros rather than as a failure, so the error has to be collected here instead of at the next sync. */
     if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess)) {
       cuda_check(stream_free(d_scratch, stream), "topk scratch free");
       return mag_set_error(err, MAG_ERR_KERNEL, "cuda: topk kernel launch failed: %s.", cudaGetErrorString(ce));
@@ -878,6 +872,518 @@ namespace mag {
       case MAG_DTYPE_UINT64: return launch_topk<uint64_t>(err, cmd, stream);
       case MAG_DTYPE_INT64: return launch_topk<int64_t>(err, cmd, stream);
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: topk: unsupported dtype: %s.", mag_type_trait(x->meta.dtype)->name);
+    }
+  }
+
+  template <typename T> struct sort_is_float : std::false_type {};
+  template <> struct sort_is_float<float> : std::true_type {};
+  template <> struct sort_is_float<half> : std::true_type {};
+  template <> struct sort_is_float<__nv_bfloat16> : std::true_type {};
+  template <> struct sort_is_float<__nv_fp8_e4m3> : std::true_type {};
+
+  [[nodiscard]] static __device__ __forceinline__ float sort_to_f32(float x) { return x; }
+  [[nodiscard]] static __device__ __forceinline__ float sort_to_f32(half x) { return __half2float(x); }
+  [[nodiscard]] static __device__ __forceinline__ float sort_to_f32(__nv_bfloat16 x) { return __bfloat162float(x); }
+  [[nodiscard]] static __device__ __forceinline__ float sort_to_f32(__nv_fp8_e4m3 x) { return static_cast<float>(x); }
+
+  template <typename T>
+  [[nodiscard]] static __device__ __forceinline__ typename topk_composite<typename topk_order<T>::key_t>::type
+  sort_make(T value, int64_t pos, bool descending) {
+    using key_t = typename topk_order<T>::key_t;
+    using comp_t = typename topk_composite<key_t>::type;
+    key_t key;
+    if constexpr (sort_is_float<T>::value) {
+      float f = sort_to_f32(value);
+      key = isnan(f) ? static_cast<key_t>(0xFFFFFFFFu) : static_cast<key_t>(topk_encode_f32(f));
+    } else {
+      key = topk_order<T>::encode(value);
+    }
+    if (!descending) key = static_cast<key_t>(~key);
+    return (static_cast<comp_t>(key)<<MAG_TOPK_POS_BITS)|static_cast<comp_t>(~static_cast<uint32_t>(pos));
+  }
+
+  static constexpr int MAG_SORT_BLOCK = 512;
+  static constexpr int MAG_SORT_SMALL_MAX = 32;
+  static constexpr size_t MAG_SORT_SCRATCH_BUDGET = static_cast<size_t>(64)<<20;
+
+  __device__ __forceinline__ static void sort_row_offsets(
+    const mag_tensor_t &x_t,
+    const mag_tensor_t &i_t,
+    const mag_tensor_t &v_t,
+    int64_t R,
+    int64_t dim,
+    int64_t row,
+    int64_t &off_x0,
+    int64_t &off_i0,
+    int64_t &off_v0
+  ) {
+    const int64_t *shape_x = x_t.meta.coords.shape;
+    int64_t outer_rank = R - 1;
+    int64_t shape_outer[MAG_MAX_DIMS];
+    int64_t mult_outer[MAG_MAX_DIMS];
+    int64_t outer_to_full[MAG_MAX_DIMS];
+    int64_t t=0;
+    for (int64_t d=0; d < R; ++d) {
+      if (d == dim) continue;
+      shape_outer[t] = shape_x[d];
+      outer_to_full[t] = d;
+      ++t;
+    }
+    for (int64_t t2=0; t2 < outer_rank; ++t2) {
+      int64_t m=1;
+      for (int64_t k2=t2+1; k2 < outer_rank; ++k2)
+        m *= shape_outer[k2];
+      mult_outer[t2] = m;
+    }
+    int64_t rtmp = row;
+    int64_t base_idx[MAG_MAX_DIMS] = {0};
+    for (int64_t t3=0; t3 < outer_rank; ++t3) {
+      int64_t q = mult_outer[t3] == 0 ? 0 : rtmp/mult_outer[t3];
+      if (mult_outer[t3] != 0) rtmp = rtmp%mult_outer[t3];
+      base_idx[outer_to_full[t3]] = q;
+    }
+    base_idx[dim] = 0;
+    off_x0 = 0;
+    off_i0 = 0;
+    off_v0 = 0;
+    for (int64_t d=0; d < R; ++d) {
+      off_x0 += base_idx[d]*x_t.meta.coords.strides[d];
+      off_i0 += base_idx[d]*i_t.meta.coords.strides[d];
+      off_v0 += base_idx[d]*v_t.meta.coords.strides[d];
+    }
+  }
+
+  template <typename T, bool WithValues>
+  __global__ static void sort_small_rows_kernel(
+    int64_t outer_count,
+    int64_t dim_size,
+    bool descending,
+    int64_t R,
+    int64_t dim,
+    int64_t stride_x_dim,
+    int64_t stride_v_dim,
+    int64_t stride_i_dim,
+    mag_tensor_t x_t,
+    mag_tensor_t i_t,
+    mag_tensor_t v_t,
+    const T *bx,
+    T *bv,
+    int64_t *bi
+  ) {
+    using key_t = typename topk_order<T>::key_t;
+    using comp_t = typename topk_composite<key_t>::type;
+    int64_t row = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
+    if (row >= outer_count) return;
+    int64_t off_x0, off_i0, off_v0;
+    sort_row_offsets(x_t, i_t, v_t, R, dim, row, off_x0, off_i0, off_v0);
+    comp_t buf[MAG_SORT_SMALL_MAX];
+    for (int64_t p=0; p < dim_size; ++p) {
+      comp_t c = sort_make<T>(bx[off_x0 + p*stride_x_dim], p, descending);
+      int64_t j = p;
+      while (j > 0 && buf[j-1] < c) {
+        buf[j] = buf[j-1];
+        --j;
+      }
+      buf[j] = c;
+    }
+    for (int64_t r=0; r < dim_size; ++r) {
+      int64_t pos = static_cast<int64_t>(~static_cast<uint32_t>(buf[r]));
+      bi[off_i0 + r*stride_i_dim] = pos;
+      if constexpr (WithValues) bv[off_v0 + r*stride_v_dim] = bx[off_x0 + pos*stride_x_dim];
+    }
+  }
+
+  template <typename T, bool WithValues>
+  __global__ static void sort_rows_kernel(
+    int64_t row_base,
+    int64_t dim_size,
+    bool descending,
+    int64_t R,
+    int64_t dim,
+    int64_t stride_x_dim,
+    int64_t stride_v_dim,
+    int64_t stride_i_dim,
+    mag_tensor_t x_t,
+    mag_tensor_t i_t,
+    mag_tensor_t v_t,
+    const T *bx,
+    T *bv,
+    int64_t *bi,
+    char *scratch_base,
+    size_t row_bytes,
+    int64_t sort_len
+  ) {
+    using key_t = typename topk_order<T>::key_t;
+    using comp_t = typename topk_composite<key_t>::type;
+    int64_t row = row_base + static_cast<int64_t>(blockIdx.x);
+    int64_t off_x0, off_i0, off_v0;
+    sort_row_offsets(x_t, i_t, v_t, R, dim, row, off_x0, off_i0, off_v0);
+    comp_t *sorted = reinterpret_cast<comp_t *>(scratch_base + static_cast<size_t>(blockIdx.x)*row_bytes);
+    for (int64_t p=threadIdx.x; p < dim_size; p += blockDim.x)
+      sorted[p] = sort_make<T>(bx[off_x0 + p*stride_x_dim], p, descending);
+    for (int64_t p=dim_size+threadIdx.x; p < sort_len; p += blockDim.x)
+      sorted[p] = 0;
+    __syncthreads();
+    for (int64_t size=2; size <= sort_len; size <<= 1) {
+      for (int64_t stride=size>>1; stride > 0; stride >>= 1) {
+        for (int64_t i=threadIdx.x; i < sort_len; i += blockDim.x) {
+          int64_t j = i^stride;
+          if (j > i) {
+            comp_t a = sorted[i];
+            comp_t b = sorted[j];
+            if ((i & size) == 0 ? a < b : a > b) {
+              sorted[i] = b;
+              sorted[j] = a;
+            }
+          }
+        }
+        __syncthreads();
+      }
+    }
+    for (int64_t r=threadIdx.x; r < dim_size; r += blockDim.x) {
+      int64_t pos = static_cast<int64_t>(~static_cast<uint32_t>(sorted[r]));
+      bi[off_i0 + r*stride_i_dim] = pos;
+      if constexpr (WithValues) bv[off_v0 + r*stride_v_dim] = bx[off_x0 + pos*stride_x_dim];
+    }
+  }
+
+  template <typename T, bool WithValues>
+  static mag_status_t launch_sort(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    using key_t = typename topk_order<T>::key_t;
+    using comp_t = typename topk_composite<key_t>::type;
+    const char *name = WithValues ? "sort" : "argsort";
+    const mag_tensor_t *x = cmd.in[0];
+    mag_tensor_t *v = WithValues ? cmd.out[0] : nullptr;
+    mag_tensor_t *idx = cmd.out[WithValues ? 1 : 0];
+    int64_t dim = cmd.params->sort.dim;
+    bool descending = cmd.params->sort.descending;
+    int64_t R = x->meta.coords.rank;
+    mag_assert2(dim >= 0 && dim < R);
+    if (x->meta.numel == 0) return MAG_OK;
+    const int64_t dim_size = x->meta.coords.shape[dim];
+    int64_t outer_count = x->meta.numel/dim_size;
+    if (mag_unlikely(dim_size > 0xFFFFFFFFll))
+      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: %s: sorted dimension of %lld exceeds the supported maximum of %lld.", name, static_cast<long long>(dim_size), 0xFFFFFFFFll);
+    const T *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
+    T *bv = v ? reinterpret_cast<T *>(mag_tensor_data_ptr_mut(v)) : nullptr;
+    int64_t *bi = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(idx));
+    int64_t stride_x_dim = x->meta.coords.strides[dim];
+    int64_t stride_v_dim = v ? v->meta.coords.strides[dim] : 0;
+    int64_t stride_i_dim = idx->meta.coords.strides[dim];
+    const mag_tensor_t &v_t = v ? *v : *idx;
+    if (dim_size <= MAG_SORT_SMALL_MAX) {
+      unsigned blocks = static_cast<unsigned>((outer_count + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE);
+      sort_small_rows_kernel<T, WithValues><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(
+        outer_count, dim_size, descending, R, dim, stride_x_dim, stride_v_dim, stride_i_dim,
+        *x, *idx, v_t, bx, bv, bi);
+      if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess))
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: %s kernel launch failed: %s.", name, cudaGetErrorString(ce));
+      return MAG_OK;
+    }
+    int64_t sort_len = 1;
+    while (sort_len < dim_size) sort_len <<= 1;
+    size_t row_bytes = static_cast<size_t>(sort_len)*sizeof(comp_t);
+    int64_t rows_per_launch = static_cast<int64_t>(MAG_SORT_SCRATCH_BUDGET/row_bytes);
+    rows_per_launch = std::max<int64_t>(1, std::min<int64_t>(rows_per_launch, outer_count));
+    size_t scratch_bytes = row_bytes*static_cast<size_t>(rows_per_launch);
+    void *d_scratch = nullptr;
+    if (cudaError_t ce = stream_alloc(&d_scratch, scratch_bytes, stream); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_ERR_OOM, "cuda: %s device allocation of %zu bytes failed: %s.", name, scratch_bytes, cudaGetErrorString(ce));
+    for (int64_t row_base=0; row_base < outer_count; row_base += rows_per_launch) {
+      int64_t rows = std::min<int64_t>(rows_per_launch, outer_count - row_base);
+      sort_rows_kernel<T, WithValues><<<static_cast<unsigned>(rows), MAG_SORT_BLOCK, 0, stream>>>(
+        row_base, dim_size, descending, R, dim, stride_x_dim, stride_v_dim, stride_i_dim,
+        *x, *idx, v_t, bx, bv, bi, reinterpret_cast<char *>(d_scratch), row_bytes, sort_len);
+      if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess)) {
+        cuda_check(stream_free(d_scratch, stream), "sort scratch free");
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: %s kernel launch failed: %s.", name, cudaGetErrorString(ce));
+      }
+    }
+    cuda_check(stream_free(d_scratch, stream), "sort scratch free");
+    return MAG_OK;
+  }
+
+  template <bool WithValues>
+  static mag_status_t dispatch_sort(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    const mag_tensor_t *x = cmd.in[0];
+    switch (x->meta.dtype) {
+      case MAG_DTYPE_FLOAT32: return launch_sort<float, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_FLOAT16: return launch_sort<half, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_BFLOAT16: return launch_sort<__nv_bfloat16, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_sort<__nv_fp8_e4m3, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_BOOLEAN:
+      case MAG_DTYPE_UINT8: return launch_sort<uint8_t, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_INT8: return launch_sort<int8_t, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_UINT16: return launch_sort<uint16_t, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_INT16: return launch_sort<int16_t, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_UINT32: return launch_sort<uint32_t, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_INT32: return launch_sort<int32_t, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_UINT64: return launch_sort<uint64_t, WithValues>(err, cmd, stream);
+      case MAG_DTYPE_INT64: return launch_sort<int64_t, WithValues>(err, cmd, stream);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: %s: unsupported dtype: %s.", WithValues ? "sort" : "argsort", mag_type_trait(x->meta.dtype)->name);
+    }
+  }
+
+  mag_status_t misc_op_sort(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    return dispatch_sort<true>(err, cmd, stream);
+  }
+
+  mag_status_t misc_op_argsort(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    return dispatch_sort<false>(err, cmd, stream);
+  }
+
+  __global__ static void bincount_count_kernel(int64_t n, const int64_t *__restrict__ bx, int64_t sx, unsigned long long *__restrict__ cnt, int64_t bins) {
+    int64_t i = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
+    int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
+    for (; i < n; i += step) {
+      int64_t bin = bx[i*sx];
+      if (bin >= 0 && bin < bins) atomicAdd(cnt + bin, 1ull);
+    }
+  }
+
+  template <typename T>
+  __global__ static void bincount_weighted_kernel(int64_t n, const int64_t *__restrict__ bx, int64_t sx, const T *__restrict__ bw, int64_t sw, float *__restrict__ acc, int64_t bins) {
+    int64_t i = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
+    int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
+    for (; i < n; i += step) {
+      int64_t bin = bx[i*sx];
+      if (bin >= 0 && bin < bins) atomicAdd(acc + bin, static_cast<float>(bw[i*sw]));
+    }
+  }
+
+  template <typename T>
+  __global__ static void bincount_convert_kernel(int64_t bins, T *__restrict__ br, const float *__restrict__ acc) {
+    int64_t i = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
+    int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
+    for (; i < bins; i += step) br[i] = static_cast<T>(acc[i]);
+  }
+
+  template <typename T>
+  static mag_status_t launch_bincount_weighted(mag_error_t *err, const mag_tensor_t *x, const mag_tensor_t *w, mag_tensor_t *r, cudaStream_t stream) {
+    int64_t n = x->meta.numel;
+    int64_t bins = r->meta.numel;
+    const int64_t *bx = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(x));
+    const T *bw = reinterpret_cast<const T *>(mag_tensor_data_ptr(w));
+    T *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
+    int64_t sx = x->meta.coords.strides[0];
+    int64_t sw = w->meta.coords.strides[0];
+    unsigned blocks_n = static_cast<unsigned>(std::min<int64_t>((n + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE, 65535));
+    unsigned blocks_b = static_cast<unsigned>(std::min<int64_t>((bins + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE, 65535));
+    if constexpr (std::is_same_v<T, float>) {
+      bincount_weighted_kernel<float><<<blocks_n, MISC_BLOCK_SIZE, 0, stream>>>(n, bx, sx, bw, sw, br, bins);
+      if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess))
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: bincount kernel launch failed: %s.", cudaGetErrorString(ce));
+      return MAG_OK;
+    } else {
+      size_t scratch_bytes = static_cast<size_t>(bins)*sizeof(float);
+      void *d_scratch = nullptr;
+      if (cudaError_t ce = stream_alloc(&d_scratch, scratch_bytes, stream); mag_unlikely(ce != cudaSuccess))
+        return mag_set_error(err, MAG_ERR_OOM, "cuda: bincount device allocation of %zu bytes failed: %s.", scratch_bytes, cudaGetErrorString(ce));
+      float *acc = reinterpret_cast<float *>(d_scratch);
+      if (cudaError_t ce = cudaMemsetAsync(acc, 0, scratch_bytes, stream); mag_unlikely(ce != cudaSuccess)) {
+        cuda_check(stream_free(d_scratch, stream), "bincount scratch free");
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: bincount scratch memset failed: %s.", cudaGetErrorString(ce));
+      }
+      bincount_weighted_kernel<T><<<blocks_n, MISC_BLOCK_SIZE, 0, stream>>>(n, bx, sx, bw, sw, acc, bins);
+      bincount_convert_kernel<T><<<blocks_b, MISC_BLOCK_SIZE, 0, stream>>>(bins, br, acc);
+      cudaError_t ce = cudaGetLastError();
+      cuda_check(stream_free(d_scratch, stream), "bincount scratch free");
+      if (mag_unlikely(ce != cudaSuccess))
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: bincount kernel launch failed: %s.", cudaGetErrorString(ce));
+      return MAG_OK;
+    }
+  }
+
+  mag_status_t misc_op_bincount(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    const mag_tensor_t *x = cmd.in[0];
+    const mag_tensor_t *w = cmd.num_in > 1 ? cmd.in[1] : nullptr;
+    mag_tensor_t *r = cmd.out[0];
+    mag_assert2(x->meta.dtype == MAG_DTYPE_INT64);
+    mag_assert2(x->meta.coords.rank == 1 && r->meta.coords.rank == 1);
+    int64_t n = x->meta.numel;
+    int64_t bins = r->meta.numel;
+    if (n == 0 || bins == 0) return MAG_OK;
+    if (!w) {
+      mag_assert2(r->meta.dtype == MAG_DTYPE_INT64);
+      const int64_t *bx = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(x));
+      auto *cnt = reinterpret_cast<unsigned long long *>(mag_tensor_data_ptr_mut(r));
+      unsigned blocks = static_cast<unsigned>(std::min<int64_t>((n + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE, 65535));
+      bincount_count_kernel<<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, bx, x->meta.coords.strides[0], cnt, bins);
+      if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess))
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: bincount kernel launch failed: %s.", cudaGetErrorString(ce));
+      return MAG_OK;
+    }
+    mag_assert2(w->meta.dtype == r->meta.dtype);
+    switch (r->meta.dtype) {
+      case MAG_DTYPE_FLOAT32: return launch_bincount_weighted<float>(err, x, w, r, stream);
+      case MAG_DTYPE_FLOAT16: return launch_bincount_weighted<half>(err, x, w, r, stream);
+      case MAG_DTYPE_BFLOAT16: return launch_bincount_weighted<__nv_bfloat16>(err, x, w, r, stream);
+      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_bincount_weighted<__nv_fp8_e4m3>(err, x, w, r, stream);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: bincount: unsupported weights dtype: %s.", mag_type_trait(r->meta.dtype)->name);
+    }
+  }
+
+  constexpr int64_t NONZERO_TILE = 8*MISC_BLOCK_SIZE;
+  constexpr unsigned NONZERO_WARPS = MISC_BLOCK_SIZE/32;
+
+  template <typename T>
+  __device__ static inline bool nonzero_pred(T v) {
+    if constexpr (std::is_same_v<T, half>) return (__half_as_ushort(v) & 0x7fffu) != 0;
+    else if constexpr (std::is_same_v<T, __nv_bfloat16>) return (__bfloat16_as_ushort(v) & 0x7fffu) != 0;
+    else if constexpr (std::is_same_v<T, __nv_fp8_e4m3>) return (v.__x & 0x7fu) != 0;
+    else return v != static_cast<T>(0);
+  }
+
+  __device__ static inline int nonzero_unravel(int64_t i, const mag_coords_iter_t &cx, int64_t *__restrict__ coords) {
+    int off = 0;
+    for (int k = cx.rank-1; k >= 0; --k) {
+      int64_t d = cx.shape[k];
+      int64_t ax = i % d;
+      i /= d;
+      coords[k] = ax;
+      off += static_cast<int>(ax)*cx.strides[k];
+    }
+    return off;
+  }
+
+  template <typename T, const bool Contig, const bool Atomic>
+  __global__ static void nonzero_tile_count_kernel(int64_t total, const T *__restrict__ bx, mag_coords_iter_t cx, unsigned long long *__restrict__ out) {
+    __shared__ unsigned warp_sums[NONZERO_WARPS];
+    int64_t base = static_cast<int64_t>(blockIdx.x)*NONZERO_TILE;
+    unsigned cnt = 0;
+    for (int64_t j = threadIdx.x; j < NONZERO_TILE; j += blockDim.x) {
+      int64_t i = base + j;
+      if (i >= total) break;
+      int off;
+      if constexpr (Contig) off = static_cast<int>(i);
+      else off = mag_coords_iter_to_offset(&cx, static_cast<int>(i));
+      cnt += nonzero_pred<T>(bx[off]) ? 1u : 0u;
+    }
+    for (unsigned o = 16; o > 0; o >>= 1) cnt += __shfl_down_sync(0xffffffffu, cnt, o);
+    if ((threadIdx.x & 31) == 0) warp_sums[threadIdx.x >> 5] = cnt;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+      unsigned long long sum = 0;
+      for (unsigned w = 0; w < NONZERO_WARPS; ++w) sum += warp_sums[w];
+      if constexpr (Atomic) atomicAdd(out, sum);
+      else out[blockIdx.x] = sum;
+    }
+  }
+
+  __global__ static void nonzero_scan_tiles_kernel(int64_t ntiles, unsigned long long *__restrict__ counts) {
+    __shared__ unsigned long long sh[1024];
+    unsigned t = threadIdx.x;
+    unsigned long long carry = 0;
+    for (int64_t base = 0; base < ntiles; base += blockDim.x) {
+      int64_t i = base + t;
+      unsigned long long v = i < ntiles ? counts[i] : 0ull;
+      sh[t] = v;
+      __syncthreads();
+      for (unsigned o = 1; o < blockDim.x; o <<= 1) {
+        unsigned long long a = t >= o ? sh[t-o] : 0ull;
+        __syncthreads();
+        sh[t] += a;
+        __syncthreads();
+      }
+      if (i < ntiles) counts[i] = carry + sh[t] - v;
+      carry += sh[blockDim.x-1];
+      __syncthreads();
+    }
+  }
+
+  template <typename T>
+  __global__ static void nonzero_scatter_kernel(int64_t total, const T *__restrict__ bx, mag_coords_iter_t cx, const unsigned long long *__restrict__ tile_offsets, int64_t *__restrict__ br) {
+    __shared__ unsigned warp_sums[NONZERO_WARPS];
+    int64_t base = static_cast<int64_t>(blockIdx.x)*NONZERO_TILE;
+    unsigned long long row = tile_offsets[blockIdx.x];
+    unsigned lane = threadIdx.x & 31;
+    unsigned warp = threadIdx.x >> 5;
+    int rank = cx.rank;
+    for (int64_t j = threadIdx.x; j < NONZERO_TILE; j += blockDim.x) {
+      int64_t i = base + j;
+      int64_t coords[MAG_MAX_DIMS];
+      bool flag = false;
+      if (i < total) {
+        int off = nonzero_unravel(i, cx, coords);
+        flag = nonzero_pred<T>(bx[off]);
+      }
+      unsigned mask = __ballot_sync(0xffffffffu, flag);
+      unsigned in_warp = __popc(mask & ((1u << lane) - 1u));
+      if (lane == 0) warp_sums[warp] = __popc(mask);
+      __syncthreads();
+      unsigned prefix = 0;
+      unsigned round_total = 0;
+      for (unsigned w = 0; w < NONZERO_WARPS; ++w) {
+        unsigned c = warp_sums[w];
+        prefix += w < warp ? c : 0u;
+        round_total += c;
+      }
+      __syncthreads();
+      if (flag) {
+        int64_t *dst = br + static_cast<int64_t>(row + prefix + in_warp)*rank;
+        for (int k = 0; k < rank; ++k) dst[k] = coords[k];
+      }
+      row += round_total;
+    }
+  }
+
+  template <typename T>
+  static mag_status_t launch_nonzero(mag_error_t *err, const mag_tensor_t *x, mag_tensor_t *r, bool count_only, cudaStream_t stream) {
+    int64_t total = x->meta.numel;
+    const T *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
+    mag_coords_iter_t cx;
+    mag_coords_iter_init(&cx, &x->meta.coords);
+    unsigned ntiles = static_cast<unsigned>((total + NONZERO_TILE - 1)/NONZERO_TILE);
+    bool contig = mag_tensor_is_contiguous(x);
+    if (count_only) {
+      auto *cnt = reinterpret_cast<unsigned long long *>(mag_tensor_data_ptr_mut(r));
+      if (cudaError_t ce = cudaMemsetAsync(cnt, 0, sizeof(*cnt), stream); mag_unlikely(ce != cudaSuccess))
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: nonzero count memset failed: %s.", cudaGetErrorString(ce));
+      if (total == 0) return MAG_OK;
+      if (contig) nonzero_tile_count_kernel<T, true, true><<<ntiles, MISC_BLOCK_SIZE, 0, stream>>>(total, bx, cx, cnt);
+      else nonzero_tile_count_kernel<T, false, true><<<ntiles, MISC_BLOCK_SIZE, 0, stream>>>(total, bx, cx, cnt);
+      if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess))
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: nonzero kernel launch failed: %s.", cudaGetErrorString(ce));
+      return MAG_OK;
+    }
+    if (total == 0 || r->meta.numel == 0) return MAG_OK;
+    auto *br = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
+    size_t scratch_bytes = static_cast<size_t>(ntiles)*sizeof(unsigned long long);
+    void *d_scratch = nullptr;
+    if (cudaError_t ce = stream_alloc(&d_scratch, scratch_bytes, stream); mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_ERR_OOM, "cuda: nonzero device allocation of %zu bytes failed: %s.", scratch_bytes, cudaGetErrorString(ce));
+    auto *tiles = reinterpret_cast<unsigned long long *>(d_scratch);
+    if (contig) nonzero_tile_count_kernel<T, true, false><<<ntiles, MISC_BLOCK_SIZE, 0, stream>>>(total, bx, cx, tiles);
+    else nonzero_tile_count_kernel<T, false, false><<<ntiles, MISC_BLOCK_SIZE, 0, stream>>>(total, bx, cx, tiles);
+    nonzero_scan_tiles_kernel<<<1, 1024, 0, stream>>>(ntiles, tiles);
+    nonzero_scatter_kernel<T><<<ntiles, MISC_BLOCK_SIZE, 0, stream>>>(total, bx, cx, tiles, br);
+    cudaError_t ce = cudaGetLastError();
+    cuda_check(stream_free(d_scratch, stream), "nonzero scratch free");
+    if (mag_unlikely(ce != cudaSuccess))
+      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: nonzero kernel launch failed: %s.", cudaGetErrorString(ce));
+    return MAG_OK;
+  }
+
+  mag_status_t misc_op_nonzero(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    const mag_tensor_t *x = cmd.in[0];
+    mag_tensor_t *r = cmd.out[0];
+    bool count_only = cmd.params->nonzero.count_only;
+    mag_assert2(r->meta.dtype == MAG_DTYPE_INT64);
+    switch (x->meta.dtype) {
+      case MAG_DTYPE_FLOAT32: return launch_nonzero<float>(err, x, r, count_only, stream);
+      case MAG_DTYPE_FLOAT16: return launch_nonzero<half>(err, x, r, count_only, stream);
+      case MAG_DTYPE_BFLOAT16: return launch_nonzero<__nv_bfloat16>(err, x, r, count_only, stream);
+      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_nonzero<__nv_fp8_e4m3>(err, x, r, count_only, stream);
+      case MAG_DTYPE_BOOLEAN:
+      case MAG_DTYPE_UINT8: return launch_nonzero<uint8_t>(err, x, r, count_only, stream);
+      case MAG_DTYPE_INT8: return launch_nonzero<int8_t>(err, x, r, count_only, stream);
+      case MAG_DTYPE_UINT16: return launch_nonzero<uint16_t>(err, x, r, count_only, stream);
+      case MAG_DTYPE_INT16: return launch_nonzero<int16_t>(err, x, r, count_only, stream);
+      case MAG_DTYPE_UINT32: return launch_nonzero<uint32_t>(err, x, r, count_only, stream);
+      case MAG_DTYPE_INT32: return launch_nonzero<int32_t>(err, x, r, count_only, stream);
+      case MAG_DTYPE_UINT64: return launch_nonzero<uint64_t>(err, x, r, count_only, stream);
+      case MAG_DTYPE_INT64: return launch_nonzero<int64_t>(err, x, r, count_only, stream);
+      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: nonzero: unsupported dtype: %s.", mag_type_trait(x->meta.dtype)->name);
     }
   }
 
@@ -1038,7 +1544,7 @@ namespace mag {
       if constexpr (MODE == MAG_PAD_MODE_CONSTANT) {
         bool outside = false;
         for (int dim = 0; dim < R; ++dim) {
-          int ic = oc[dim] - plan.pad.pad_before[dim];
+          int ic = oc[dim] - plan.pad.pre_pad[dim];
           if (ic < 0 || ic >= in_shape[dim]) {
             outside = true;
             break;
@@ -1051,7 +1557,7 @@ namespace mag {
         }
       } else {
         for (int dim=0; dim < R; ++dim) {
-          int ic = oc[dim] - plan.pad.pad_before[dim];
+          int ic = oc[dim] - plan.pad.pre_pad[dim];
           if constexpr (MODE == MAG_PAD_MODE_REFLECT)
             si[dim] = pad_reflect_index(ic, in_shape[dim]);
           else if constexpr (MODE == MAG_PAD_MODE_REPLICATE)

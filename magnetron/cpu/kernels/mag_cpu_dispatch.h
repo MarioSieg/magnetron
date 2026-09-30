@@ -11,6 +11,7 @@
 
 #include "../mag_cpu.h"
 #include "../mag_cpu_tls_arena.h"
+#include "../mag_cpu_acc.h"
 
 #include <core/mag_alloc.h>
 #include <core/mag_float16.h>
@@ -18,6 +19,7 @@
 #include <core/mag_float8_e4m3fn.h>
 #include <core/mag_coords.h>
 #include <core/mag_coords_iter.h>
+#include <core/mag_context.h>
 #include <core/mag_cpuid.h>
 #include <core/mag_float16.h>
 #include <core/mag_tensor.h>
@@ -139,6 +141,8 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #include "mag_cpu_kernels_scan.h"
 #include "mag_cpu_kernels_repeat.h"
 #include "mag_cpu_kernels_index.h"
+#include "mag_cpu_kernels_conv.h"
+#include "mag_cpu_kernels_interp.h"
 
 static mag_status_t mag_nop(mag_error_t *err, const mag_kernel_payload_t *payload) {
   (void)err, (void)payload;
@@ -404,6 +408,97 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT32] = &mag_topk_int32,
     [MAG_DTYPE_UINT64] = &mag_topk_uint64,
     [MAG_DTYPE_INT64] = &mag_topk_int64,
+  },
+  [MAG_OP_SORT] = {
+    [MAG_DTYPE_FLOAT32] = &mag_sort_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_sort_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_sort_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_sort_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_sort_uint8,
+    [MAG_DTYPE_UINT8] = &mag_sort_uint8,
+    [MAG_DTYPE_INT8] = &mag_sort_int8,
+    [MAG_DTYPE_UINT16] = &mag_sort_uint16,
+    [MAG_DTYPE_INT16] = &mag_sort_int16,
+    [MAG_DTYPE_UINT32] = &mag_sort_uint32,
+    [MAG_DTYPE_INT32] = &mag_sort_int32,
+    [MAG_DTYPE_UINT64] = &mag_sort_uint64,
+    [MAG_DTYPE_INT64] = &mag_sort_int64,
+  },
+  [MAG_OP_ARGSORT] = {
+    [MAG_DTYPE_FLOAT32] = &mag_argsort_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_argsort_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_argsort_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_argsort_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_argsort_uint8,
+    [MAG_DTYPE_UINT8] = &mag_argsort_uint8,
+    [MAG_DTYPE_INT8] = &mag_argsort_int8,
+    [MAG_DTYPE_UINT16] = &mag_argsort_uint16,
+    [MAG_DTYPE_INT16] = &mag_argsort_int16,
+    [MAG_DTYPE_UINT32] = &mag_argsort_uint32,
+    [MAG_DTYPE_INT32] = &mag_argsort_int32,
+    [MAG_DTYPE_UINT64] = &mag_argsort_uint64,
+    [MAG_DTYPE_INT64] = &mag_argsort_int64,
+  },
+  [MAG_OP_BINCOUNT] = {
+    [MAG_DTYPE_INT64] = &mag_bincount_int64,
+    [MAG_DTYPE_FLOAT32] = &mag_bincount_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_bincount_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_bincount_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_bincount_float8_e4m3fn,
+  },
+  [MAG_OP_NONZERO] = {
+    [MAG_DTYPE_FLOAT32] = &mag_nonzero_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_nonzero_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_nonzero_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_nonzero_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_nonzero_uint8,
+    [MAG_DTYPE_UINT8] = &mag_nonzero_uint8,
+    [MAG_DTYPE_INT8] = &mag_nonzero_int8,
+    [MAG_DTYPE_UINT16] = &mag_nonzero_uint16,
+    [MAG_DTYPE_INT16] = &mag_nonzero_int16,
+    [MAG_DTYPE_UINT32] = &mag_nonzero_uint32,
+    [MAG_DTYPE_INT32] = &mag_nonzero_int32,
+    [MAG_DTYPE_UINT64] = &mag_nonzero_uint64,
+    [MAG_DTYPE_INT64] = &mag_nonzero_int64,
+  },
+  [MAG_OP_CONV] = {
+    [MAG_DTYPE_FLOAT32] = &mag_conv_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_conv_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_conv_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_conv_float8_e4m3fn,
+  },
+  [MAG_OP_CONV_T] = {
+    [MAG_DTYPE_FLOAT32] = &mag_conv_transpose_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_conv_transpose_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_conv_transpose_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_conv_transpose_float8_e4m3fn,
+  },
+  [MAG_OP_CONV_WGRAD] = {
+    [MAG_DTYPE_FLOAT32] = &mag_conv_wgrad_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_conv_wgrad_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_conv_wgrad_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_conv_wgrad_float8_e4m3fn,
+  },
+  [MAG_OP_INTERPOLATE] = {
+    [MAG_DTYPE_FLOAT32] = &mag_interpolate_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_interpolate_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_interpolate_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_interpolate_float8_e4m3fn,
+    [MAG_DTYPE_BOOLEAN] = &mag_interpolate_uint8,
+    [MAG_DTYPE_UINT8] = &mag_interpolate_uint8,
+    [MAG_DTYPE_INT8] = &mag_interpolate_int8,
+    [MAG_DTYPE_UINT16] = &mag_interpolate_uint16,
+    [MAG_DTYPE_INT16] = &mag_interpolate_int16,
+    [MAG_DTYPE_UINT32] = &mag_interpolate_uint32,
+    [MAG_DTYPE_INT32] = &mag_interpolate_int32,
+    [MAG_DTYPE_UINT64] = &mag_interpolate_uint64,
+    [MAG_DTYPE_INT64] = &mag_interpolate_int64,
+  },
+  [MAG_OP_INTERPOLATE_BACK] = {
+    [MAG_DTYPE_FLOAT32] = &mag_interpolate_back_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_interpolate_back_float16,
+    [MAG_DTYPE_BFLOAT16] = &mag_interpolate_back_bfloat16,
+    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_interpolate_back_float8_e4m3fn,
   },
   [MAG_OP_ABS] = {
     [MAG_DTYPE_FLOAT32] = &mag_abs_float32,
@@ -923,7 +1018,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_INT64] = &mag_xor_int64,
   },
   [MAG_OP_NOT] = {
-    [MAG_DTYPE_BOOLEAN] = &mag_not_uint8,
+    [MAG_DTYPE_BOOLEAN] = &mag_not_bool,
     [MAG_DTYPE_UINT8] = &mag_not_uint8,
     [MAG_DTYPE_INT8] = &mag_not_int8,
     [MAG_DTYPE_UINT16] = &mag_not_uint16,
@@ -1515,7 +1610,7 @@ mag_arm64_cap_bitset_t MAG_BLAS_SPECIALIZATION_FEAT_REQUEST(void) {
   caps|=mag_arm64_cap(F16SCALAR);
   caps|=mag_arm64_cap(F16CVT);
 #endif
-#ifdef __ARM_FEATURE_BF16
+#if defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC) || defined(__ARM_FEATURE_BF16)
   caps|=mag_arm64_cap(BF16);
 #endif
 #ifdef __ARM_FEATURE_CRC32

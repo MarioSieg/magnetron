@@ -40,11 +40,7 @@ class Linear(Module):
         self.out_features: int = out_features
         self.weight: Parameter = Parameter(Tensor.empty(out_features, in_features, dtype=dtype))
         if weight_init is None:
-            weight_init = KaimingUniformInitStrategy(
-                a=math.sqrt(5.0),
-                mode=FanMode.FAN_IN,
-                activation=Activation.LEAKY_RELU,
-            )
+            weight_init = KaimingUniformInitStrategy(a=math.sqrt(5.0), mode=FanMode.FAN_IN, activation=Activation.LEAKY_RELU)
         inplace_init(self.weight, weight_init)
         self.bias: Parameter | None = None
         if bias:
@@ -95,13 +91,7 @@ class Pad(Module):
 
 
 class Embedding(Module):
-    def __init__(
-        self,
-        num_embeddings: int,
-        embedding_dim: int,
-        dtype: dtype.DType | None = None,
-        weight_init: InitStrategy | None = None,
-    ) -> None:
+    def __init__(self, num_embeddings: int, embedding_dim: int, dtype: dtype.DType | None = None, weight_init: InitStrategy | None = None) -> None:
         super().__init__()
         if dtype is None:
             dtype = context.get_default_dtype()
@@ -118,13 +108,7 @@ class Embedding(Module):
 
 
 class RMSNorm(Module):
-    def __init__(
-        self,
-        dim: int,
-        eps: float = 1e-5,
-        dtype: dtype.DType | None = None,
-        weight_init: InitStrategy | None = None,
-    ) -> None:
+    def __init__(self, dim: int, eps: float = 1e-5, dtype: dtype.DType | None = None, weight_init: InitStrategy | None = None) -> None:
         super().__init__()
         if dtype is None:
             dtype = context.get_default_dtype()
@@ -135,7 +119,7 @@ class RMSNorm(Module):
         inplace_init(self.weight, weight_init)
 
     def forward(self, x: Tensor) -> Tensor:
-        rms = (x.sqr().mean(dim=-1, keepdim=True) + self.eps).sqrt_()
+        rms = (x.sqr().mean(dim=-1, keepdim=True) + self.eps).sqrt()
         return (x / rms) * self.weight
 
 
@@ -196,7 +180,7 @@ class HardSigmoid(Module):
         super().__init__()
 
     def forward(self, x: Tensor) -> Tensor:
-        return x.hardsigmoid()
+        return x.hard_sigmoid()
 
 
 class SiLU(Module):
@@ -223,6 +207,69 @@ class ReLU(Module):
         return x.relu()
 
 
+class GroupNorm(Module):
+    def __init__(
+        self,
+        num_groups: int,
+        num_channels: int,
+        eps: float = 1e-5,
+        affine: bool = True,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        bias_init: InitStrategy | None = None,
+    ) -> None:
+        super().__init__()
+        if dtype is None:
+            dtype = context.get_default_dtype()
+        if num_groups < 1:
+            raise ValueError(f'num_groups must be >= 1, but got {num_groups}')
+        if num_channels % num_groups != 0:
+            raise ValueError(f'num_channels ({num_channels}) must be divisible by num_groups ({num_groups})')
+        self.num_groups = num_groups
+        self.num_channels = num_channels
+        self.eps = eps
+        self.weight: Parameter | None = None
+        self.bias: Parameter | None = None
+        if affine:
+            self.weight = Parameter(Tensor.empty(num_channels, dtype=dtype))
+            inplace_init(self.weight, OnesInitStrategy() if weight_init is None else weight_init)
+            self.bias = Parameter(Tensor.empty(num_channels, dtype=dtype))
+            inplace_init(self.bias, ZerosInitStrategy() if bias_init is None else bias_init)
+
+    def forward(self, x: Tensor) -> Tensor:
+        if x.rank < 2 or x.shape[1] != self.num_channels:
+            raise ValueError(f'expected input of shape [N, {self.num_channels}, ...], but got {x.shape}')
+        xg = x.reshape(x.shape[0], self.num_groups, -1)
+        mean = xg.mean(dim=-1, keepdim=True)
+        xm = xg - mean
+        var = xm.sqr().mean(dim=-1, keepdim=True)
+        y = (xm * (var + self.eps).rsqrt()).reshape(*x.shape)
+        if self.weight is not None:
+            bshape = (1, self.num_channels) + (1,) * (x.rank - 2)
+            y = y * self.weight.reshape(*bshape) + self.bias.reshape(*bshape)
+        return y
+
+
+class Upsample(Module):
+    def __init__(
+        self,
+        size: int | Sequence[int] | None = None,
+        scale_factor: float | Sequence[float] | None = None,
+        mode: str = 'nearest',
+        align_corners: bool = False,
+    ) -> None:
+        super().__init__()
+        if (size is None) == (scale_factor is None):
+            raise ValueError('exactly one of size or scale_factor must be given')
+        self.size = size
+        self.scale_factor = scale_factor
+        self.mode = mode
+        self.align_corners = align_corners
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x.interpolate(size=self.size, scale_factor=self.scale_factor, mode=self.mode, align_corners=self.align_corners)
+
+
 class GeLU(Module):
     def __init__(self, use_tanh_approx: bool = False) -> None:
         super().__init__()
@@ -230,3 +277,101 @@ class GeLU(Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return x.gelu_approx() if self.use_tanh_approx else x.gelu()
+
+
+class _ConvND(Module):
+    _spatial: int = 0  # spatial dim, 1=conv1d,2=conv2d etc..
+    _T: bool = False
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int | Sequence[int],
+        stride: int | Sequence[int] = 1,
+        padding: int | Sequence[int] = 0,
+        output_padding: int | Sequence[int] = 0,
+        dilation: int | Sequence[int] = 1,
+        groups: int = 1,
+        bias: bool = True,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        bias_init: InitStrategy | None = None,
+    ) -> None:
+        def _form_tuple_n(value: int | Sequence[int], n: int, what: str) -> tuple[int, ...]:
+            if isinstance(value, int):
+                return (value,) * n
+            value = tuple(value)
+            if len(value) != n:
+                raise ValueError(f'{what} must be an int or a sequence of {n} ints, but got {value}')
+            return value
+
+        super().__init__()
+        if dtype is None:
+            dtype = context.get_default_dtype()
+        n = self._spatial
+        if groups < 1:
+            raise ValueError(f'groups must be >= 1, but got {groups}')
+        if in_channels % groups != 0:
+            raise ValueError(f'in_channels ({in_channels}) must be divisible by groups ({groups})')
+        if out_channels % groups != 0:
+            raise ValueError(f'out_channels ({out_channels}) must be divisible by groups ({groups})')
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = _form_tuple_n(kernel_size, n, 'kernel_size')
+        self.stride = _form_tuple_n(stride, n, 'stride')
+        self.padding = _form_tuple_n(padding, n, 'padding')
+        self.output_padding = _form_tuple_n(output_padding, n, 'output_padding')
+        self.dilation = _form_tuple_n(dilation, n, 'dilation')
+        self.groups = groups
+        if self._T:
+            wshape = (in_channels, out_channels // groups, *self.kernel_size)
+        else:
+            wshape = (out_channels, in_channels // groups, *self.kernel_size)
+        self.weight: Parameter = Parameter(Tensor.empty(*wshape, dtype=dtype))
+        if weight_init is None:
+            weight_init = KaimingUniformInitStrategy(a=math.sqrt(5.0), mode=FanMode.FAN_IN, activation=Activation.LEAKY_RELU)
+        inplace_init(self.weight, weight_init)
+        self.bias: Parameter | None = None
+        if bias:
+            self.bias = Parameter(Tensor.empty(out_channels, dtype=dtype))
+            if bias_init is None:
+                fan_in, _ = compute_fan_inout(self.weight)
+                bound = 1.0 / math.sqrt(float(fan_in)) if fan_in > 0 else 0.0
+                inplace_init(self.bias, UniformInitStrategy(-bound, bound))
+            else:
+                inplace_init(self.bias, bias_init)
+
+    def forward(self, x: Tensor) -> Tensor:
+        if self._T:
+            return getattr(x, f'convT{self._spatial}D')(
+                self.weight, self.bias, self.stride, self.padding, self.output_padding, self.groups, self.dilation
+            )
+        return getattr(x, f'conv{self._spatial}D')(self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+
+
+class Conv1D(_ConvND):
+    _spatial = 1
+
+
+class Conv2D(_ConvND):
+    _spatial = 2
+
+
+class Conv3D(_ConvND):
+    _spatial = 3
+
+
+class ConvT1D(_ConvND):
+    _spatial = 1
+    _T = True
+
+
+class ConvT2D(_ConvND):
+    _spatial = 2
+    _T = True
+
+
+class ConvT3D(_ConvND):
+    _spatial = 3
+    _T = True

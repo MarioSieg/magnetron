@@ -65,35 +65,72 @@ namespace mag::bindings {
     return tensor_from_py_scalar(rhs, mag_tensor_type(*lhs), mag_tensor_device_id(*lhs));
   }
 
-  std::vector<int64_t> parse_shape_from_args(const nb::args &args) {
-    std::vector<int64_t> shape {};
-    if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
-      auto seq = nb::cast<nb::sequence>(args[0]);
-      shape.reserve(nb::len(seq));
-      for (auto &&h : seq)
-        shape.emplace_back(nb::cast<int64_t>(h));
+  static void flatten_i64_handle(nb::handle h, fixed_dim_vec &out) {
+    if (PyLong_CheckExact(h.ptr())) {
+      int64_t v = PyLong_AsLongLong(h.ptr());
+      if (v == -1 && PyErr_Occurred()) throw nb::python_error();
+      out.push_back(v);
+      return;
+    }
+    if (PyTuple_CheckExact(h.ptr()) || PyList_CheckExact(h.ptr())) {
+      Py_ssize_t n = PySequence_Fast_GET_SIZE(h.ptr());
+      PyObject **items = PySequence_Fast_ITEMS(h.ptr());
+      for (Py_ssize_t i=0; i < n; ++i)
+        flatten_i64_handle(nb::handle(items[i]), out);
+    } else if (nb::isinstance<nb::sequence>(h) && !nb::isinstance<nb::str>(h) && !nb::isinstance<tensor_wrapper>(h)) {
+      auto seq = nb::cast<nb::sequence>(h);
+      for (auto &&child : seq)
+        flatten_i64_handle(child, out);
     } else {
-      shape.reserve(args.size());
-      for (auto &&h : args)
-        shape.emplace_back(nb::cast<int64_t>(h));
+      int64_t v;
+      if (!nb::try_cast<int64_t>(h, v))
+        throw nb::type_error("expected integer dimensions (or a sequence of integers)");
+      out.push_back(v);
+    }
+  }
+
+  fixed_dim_vec parse_shape_from_args(const nb::args &args) {
+    fixed_dim_vec shape {};
+    Py_ssize_t n = PyTuple_GET_SIZE(args.ptr());
+    PyObject **items = &PyTuple_GET_ITEM(args.ptr(), 0);
+    if (n == 1 && !PyLong_CheckExact(items[0])) {
+      PyObject *h0 = items[0];
+      if (PyTuple_CheckExact(h0) || PyList_CheckExact(h0)) {
+        n = PySequence_Fast_GET_SIZE(h0);
+        items = PySequence_Fast_ITEMS(h0);
+      } else if (nb::isinstance<nb::sequence>(args[0])) {
+        auto seq = nb::cast<nb::sequence>(args[0]);
+        for (auto &&h : seq)
+          shape.push_back(nb::cast<int64_t>(h));
+        return shape;
+      }
+    }
+    for (Py_ssize_t i=0; i < n; ++i) {
+      PyObject *h = items[i];
+      if (PyLong_CheckExact(h)) {
+        int64_t v = PyLong_AsLongLong(h);
+        if (v == -1 && PyErr_Occurred()) throw nb::python_error();
+        shape.push_back(v);
+      } else {
+        shape.push_back(nb::cast<int64_t>(nb::handle(h)));
+      }
     }
     return shape;
   }
 
   void validate_shape(const std::vector<int64_t> &shape) {
-    if (shape.size() > MAG_MAX_DIMS) {
-      auto msg = "Invalid number of dimensions, must be <= " + std::to_string(MAG_MAX_DIMS);
-      throw nb::value_error(msg.c_str());
-    }
+    if (shape.size() > MAG_MAX_DIMS)
+      throw nb::value_error(("Invalid number of dimensions, must be <= " + std::to_string(MAG_MAX_DIMS)).c_str());
     if (std::any_of(shape.begin(), shape.end(), [](int64_t d) { return d < 0; }))
       throw nb::value_error("Invalid dimension size (must be >= 0)");
   }
 
-  void validate_shape_infer_one(const std::vector<int64_t> &shape, const char *op) {
-    if (shape.size() > MAG_MAX_DIMS) {
-      auto msg = std::string(op) + ": invalid number of dimensions, must be <= " + std::to_string(MAG_MAX_DIMS);
-      throw nb::value_error(msg.c_str());
-    }
+  void validate_shape(const fixed_dim_vec &shape) {
+    if (std::any_of(shape.begin(), shape.end(), [](int64_t d) { return d < 0; }))
+      throw nb::value_error("Invalid dimension size (must be >= 0)");
+  }
+
+  void validate_shape_infer_one(const fixed_dim_vec &shape, const char *op) {
     int infer = 0;
     for (int64_t d : shape) {
       if (d == -1) {
@@ -109,26 +146,14 @@ namespace mag::bindings {
     }
   }
 
-  static void flatten_i64_handle(nb::handle h, std::vector<int64_t> &out) {
-    if (nb::isinstance<nb::sequence>(h) && !nb::isinstance<nb::str>(h) && !nb::isinstance<tensor_wrapper>(h)) {
-      auto seq = nb::cast<nb::sequence>(h);
-      for (auto &&child : seq)
-        flatten_i64_handle(child, out);
-    } else {
-      int64_t v;
-      if (!nb::try_cast<int64_t>(h, v))
-        throw nb::type_error("expected integer dimensions (or a sequence of integers)");
-      out.emplace_back(v);
-    }
-  }
-
-  std::vector<int64_t> parse_i64_dims(const nb::args &args, const char *what) {
-    std::vector<int64_t> out;
-    if (args.size() == 1 && nb::isinstance<nb::sequence>(args[0])) {
+  fixed_dim_vec parse_i64_dims(const nb::args &args, const char *what) {
+    fixed_dim_vec out {};
+    Py_ssize_t n = PyTuple_GET_SIZE(args.ptr());
+    if (n == 1 && !PyLong_CheckExact(PyTuple_GET_ITEM(args.ptr(), 0)) && nb::isinstance<nb::sequence>(args[0])) {
       flatten_i64_handle(args[0], out);
     } else {
-      for (auto &&h : args)
-        flatten_i64_handle(h, out);
+      for (Py_ssize_t i=0; i < n; ++i)
+        flatten_i64_handle(nb::handle(PyTuple_GET_ITEM(args.ptr(), i)), out);
     }
     if (out.empty())
       throw nb::value_error((std::string(what) + ": expected at least one dimension").c_str());

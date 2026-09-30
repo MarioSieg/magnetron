@@ -19,7 +19,6 @@ class UnaryOpTestCase:
 
 _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
     UnaryOpTestCase('clone', None, 0, False),
-    # UnaryOpTestCase('not', None),
     UnaryOpTestCase('abs', None),
     UnaryOpTestCase('neg', None),
     UnaryOpTestCase('log', None),
@@ -68,20 +67,8 @@ _UNARY_TOLS: dict[dtype.DType, tuple[float, float]] = {
     dtype.bfloat16: (1.6e-2, 1e-5),
 }
 
-# Some CPU unary kernels use faster approximations that diverge from torch more than CUDA.
-_CPU_LOOSE_UNARY_OPS: frozenset[str] = frozenset({'tanh', 'exp', 'sigmoid', 'silu', 'softmax'})
-_CPU_LOOSE_TOLS: dict[dtype.DType, tuple[float, float]] = {
-    dtype.float32: (0.5, 0.75),
-    dtype.float16: (0.5, 0.75),
-    dtype.bfloat16: (0.5, 0.75),
-}
-
 
 def _unary_tol(device: str, dt: dtype.DType, op_name: str) -> tuple[float, float]:
-    if op_name == 'round' and dt in {dtype.float16, dtype.bfloat16}:
-        return 0.0, 1.0
-    if device == 'cpu' and op_name in _CPU_LOOSE_UNARY_OPS:
-        return _CPU_LOOSE_TOLS[dt]
     return _UNARY_TOLS[dt]
 
 
@@ -130,5 +117,37 @@ def test_unary_abs_integer(device: str, dt: dtype.DType) -> None:
         x = random_tensor(shape, dt=dt, device=device)
         r = x.clone().abs()
         np.testing.assert_array_equal(tonumpy(r), np.abs(tonumpy(x)))
+
+    for_all_shapes(test)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dt', dtype.integral)
+def test_unary_logical_not_integral(device: str, dt: dtype.DType) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        x = random_tensor(shape, dt=dt, device=device)
+        expected = np.logical_not(tonumpy(x)) if dt == dtype.boolean else np.bitwise_not(tonumpy(x))
+        np.testing.assert_array_equal(tonumpy(~x), expected)
+        np.testing.assert_array_equal(tonumpy(x.logical_not()), expected)
+        y = x.clone()
+        y.logical_not_()
+        np.testing.assert_array_equal(tonumpy(y), expected)
+
+    for_all_shapes(test)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dt', [dtype.float32, dtype.float16, dtype.bfloat16], ids=['float32', 'float16', 'bfloat16'])
+def test_unary_round_ties_to_even(device: str, dt: dtype.DType) -> None:
+    ties = [0.5, 1.5, 2.5, 3.5, -0.5, -1.5, -2.5, -3.5, 0.0, -0.0, 4.5, 1024.5, -1024.5]
+    x = Tensor(ties, dtype=dt, device=device)
+    torch.testing.assert_close(totorch(x.round()), totorch(x).round(), rtol=0, atol=0)
+    y = x.clone()
+    y.round_()
+    torch.testing.assert_close(totorch(y), totorch(x).round(), rtol=0, atol=0)
+
+    def test(shape: tuple[int, ...]) -> None:
+        x = uniform_tensor(shape, -8.0, 8.0, dt, device)
+        torch.testing.assert_close(totorch(x.round()), totorch(x).round(), rtol=0, atol=0)
 
     for_all_shapes(test)

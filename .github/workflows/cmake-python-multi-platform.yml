@@ -41,6 +41,7 @@ jobs:
             gcc \
             g++ \
             clang \
+            gdb \
             python3 \
             python3-pip \
             python3-setuptools \
@@ -88,16 +89,169 @@ jobs:
         shell: bash
         run: |
           source .venv/bin/activate
-          pytest -n 4 -s "${{ github.workspace }}/test/python/"
+          export MAG_LOG_LEVEL=debug
+          export MIMALLOC_SHOW_ERRORS=1
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            ulimit -c unlimited
+            sudo sysctl -w kernel.core_pattern="${{ github.workspace }}/core.%e.%p" > /dev/null
+          fi
+          set -o pipefail
+          mkdir -p crash
+          pytest -n 4 -s -v "${{ github.workspace }}/test/python/" 2>&1 | tee crash/pytest.log
+          rm -f crash/pytest.log
+
+      - name: Collect crash reports (macOS)
+        if: failure() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          sleep 20
+          mkdir -p crash
+          find ~/Library/Logs/DiagnosticReports -newer .venv \( -name '*.ips' -o -name '*.crash' \) -exec cp {} crash/ \; 2>/dev/null || true
+          for f in crash/*.ips crash/*.crash; do
+            [ -f "$f" ] || continue
+            echo "===== $f"
+            cat "$f"
+          done
+          cp .venv/lib/python*/site-packages/magnetron/*.dylib .venv/lib/python*/site-packages/magnetron/*.so crash/ 2>/dev/null || true
+
+      - name: Collect core dumps (Linux)
+        if: failure() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p crash
+          py="$(readlink -f .venv/bin/python)"
+          for c in "${{ github.workspace }}"/core.*; do
+            [ -f "$c" ] || continue
+            echo "===== $c"
+            gdb -q -batch -ex "set pagination off" -ex "thread apply all bt" "$py" "$c" 2>&1 | tail -n 300
+          done
+          cp .venv/lib/python*/site-packages/magnetron/*.so crash/ 2>/dev/null || true
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-${{ matrix.os }}-${{ matrix.compiler }}
+          path: crash
+          if-no-files-found: ignore
+
+  sanitize:
+    name: sanitize (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux Packages
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++ gdb
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Setup Python Virtual Environment
+        shell: bash
+        run: |
+          uv venv
+          uv sync --extra dev --no-install-project
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          cmake -B "${{ github.workspace }}/build-asan" \
+                -DCMAKE_C_COMPILER=gcc \
+                -DCMAKE_CXX_COMPILER=g++ \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DMAGNETRON_ASAN=ON \
+                -DMAGNETRON_BUILD_BENCHMARKS=OFF \
+                -DMAGNETRON_ENABLE_BACKEND_CUDA=OFF \
+                -DPython_EXECUTABLE="${{ github.workspace }}/.venv/bin/python" \
+                -S "${{ github.workspace }}"
+
+      - name: Build C++ Runtime
+        run: cmake --build "${{ github.workspace }}/build-asan" -j4
+
+      - name: Run C++ Runtime Tests
+        working-directory: "${{ github.workspace }}/build-asan"
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:disable_coredump=0:detect_stack_use_after_return=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          ulimit -c unlimited
+          sudo sysctl -w kernel.core_pattern="${{ github.workspace }}/core.%e.%p" > /dev/null
+          ctest --verbose
+
+      - name: Post-mortem C++ core dumps
+        if: failure()
+        shell: bash
+        working-directory: "${{ github.workspace }}"
+        run: |
+          mkdir -p crash
+          for c in core.*; do
+            [ -f "$c" ] || continue
+            echo "===== $c"
+            gdb -q -batch \
+              -ex "set pagination off" \
+              -ex "set print pretty on" \
+              -ex "info threads" \
+              -ex "bt" \
+              -ex "info registers rip rsp rbp rax rbx rcx rdx rsi rdi r8 r9 r10 r11 r12 r13 r14 r15" \
+              -ex "x/8i \$pc" \
+              -ex "thread apply all bt" \
+              -ex "thread apply all -s frame function mag_worker_exec_thread_local" \
+              -ex "thread apply all -s frame function mag_worker_exec_thread_local" \
+              -ex "thread apply all -s print *payload->cmd" \
+              -ex "thread apply all -s print *payload->cmd->in[0]" \
+              -ex "thread apply all -s print *payload->cmd->in[1]" \
+              -ex "thread apply all -s print *payload->cmd->out[0]" \
+              -ex "thread apply all -s x/8i \$pc" \
+              build-asan/magnetron_test "$c" 2>&1 | tail -n 600
+          done
+          cp build-asan/libmagnetron_core.so build-asan/libmagnetron_cpu.so build-asan/magnetron_test crash/ 2>/dev/null || true
+
+      - name: Upload sanitizer crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitize-crash-${{ matrix.os }}
+          path: crash
+          if-no-files-found: ignore
+
+      - name: Stage Python Package
+        shell: bash
+        run: |
+          mkdir -p stage
+          cp -r python/magnetron stage/
+          cp build-asan/_magnetron_bindings*.so build-asan/libmagnetron_core.so build-asan/libmagnetron_cpu.so stage/magnetron/
+
+      - name: Run Python Tests
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:detect_stack_use_after_return=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          PYTHONMALLOC: malloc
+          MAG_LOG_LEVEL: debug
+        run: |
+          export LD_PRELOAD="$(gcc -print-file-name=libasan.so):$(gcc -print-file-name=libstdc++.so)"
+          export PYTHONPATH="${{ github.workspace }}/stage"
+          .venv/bin/python -m pytest -n 4 -s "${{ github.workspace }}/test/python/"
 
   ci-passed:
-    needs: [build]
+    needs: [build, sanitize]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check build matrix result
         run: |
-          if [ "${{ needs.build.result }}" != "success" ]; then
-            echo "build matrix result: ${{ needs.build.result }}"
+          if [ "${{ needs.build.result }}" != "success" ] || [ "${{ needs.sanitize.result }}" != "success" ]; then
+            echo "build matrix result: ${{ needs.build.result }}, sanitize result: ${{ needs.sanitize.result }}"
             exit 1
           fi

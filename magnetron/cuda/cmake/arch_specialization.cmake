@@ -1,41 +1,9 @@
 # (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
-# Per-architecture specialization for the CUDA backend.
-#
-# The CPU backend attaches -march= to individual source files, because that is a source-level
-# flag. CUDA architectures are not: CUDA_ARCHITECTURES is a *target* property and applies to
-# every source in the target. Compiling one .cu against several architectures therefore needs
-# one OBJECT library per architecture, all linked into magnetron_cuda.
-#
-# Each specialization compiles the registered sources with:
-#
-#   MAG_CUDA_SM      = <sm>       e.g. 100
-#   MAG_CUDA_ARCH_NS = sm_<sm>    e.g. sm_100
-#
-# Specialized sources must wrap their kernels in `namespace MAG_CUDA_ARCH_NS { ... }`, so each
-# per-arch copy gets distinct mangled names rather than colliding at link time:
-#
-#   namespace mag::MAG_CUDA_ARCH_NS {
-#     mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd) { ... }
-#   }
-#
-# The dispatcher in mag_cuda.cu then picks a variant at runtime from
-# physical_device::compute_capability(), guarded by the MAG_HAVE_CUDA_SM_<sm> macros that get
-# defined on the magnetron_cuda target:
-#
-#   #ifdef MAG_HAVE_CUDA_SM_100
-#     if (cc >= 1000 && cc < 1200) return mag::sm_100::misc_op_matmul(err, cmd);
-#   #endif
-#
-# Specialized sources belong in a subdirectory (arch/), NOT next to the generic ones: the
-# file(GLOB "*.cu") in CMakeLists.txt is non-recursive, so arch/*.cu stays out of the generic
-# target and does not get compiled twice.
+set(MAG_CUDA_ARCH_OBJECTS "")
+set(MAG_CUDA_ARCH_MACROS "")
+set(MAG_CUDA_ARCH_ROWS "")
 
-set(MAG_CUDA_ARCH_OBJECTS "")   # $<TARGET_OBJECTS:...> to fold into magnetron_cuda
-set(MAG_CUDA_ARCH_MACROS "")    # MAG_HAVE_CUDA_SM_<sm> for the runtime dispatcher
-set(MAG_CUDA_ARCH_ROWS "")      # records: SM::Status::Note
-
-# Oldest CUDA toolkit that knows a given compute capability.
 function(_mag_cuda_min_toolkit sm out)
     if (sm GREATER_EQUAL 110)
         set(ver "13.0")
@@ -49,15 +17,21 @@ function(_mag_cuda_min_toolkit sm out)
     set(${out} "${ver}" PARENT_SCOPE)
 endfunction()
 
-# mag_register_cuda_arch(<sm> [sources...])
-#
-# Registers an architecture-specialized object library. Sources default to
-# MAG_CUDA_SPECIALIZED_SOURCES. Unsupported or unbuildable architectures are recorded and
-# skipped rather than failing the configure, so a toolkit that predates a GPU still builds.
 function(mag_register_cuda_arch sm)
     set(srcs ${ARGN})
     if (NOT srcs)
         set(srcs ${MAG_CUDA_SPECIALIZED_SOURCES})
+    endif()
+    set(arch_suffix "")
+    set(family_macro "")
+    if (sm EQUAL 100)
+        if (CUDAToolkit_VERSION VERSION_GREATER_EQUAL "12.9")
+            set(arch_suffix "f")
+            set(family_macro "MAG_CUDA_SM100_FAMILY=1")
+        else()
+            set(arch_suffix "a")
+            set(family_macro "MAG_CUDA_SM100_FAMILY=0")
+        endif()
     endif()
 
     set(status "Skipped")
@@ -66,8 +40,6 @@ function(mag_register_cuda_arch sm)
     _mag_cuda_min_toolkit(${sm} min_ver)
 
     if (sm LESS 90)
-        # Not a tuning choice: the TMA matmul kernel emits cp.async.bulk.tensor, which ptxas
-        # rejects below sm_90.
         set(note "below the sm_90 floor of this backend")
     elseif (CUDAToolkit_VERSION VERSION_LESS "${min_ver}")
         set(note "needs CUDA >= ${min_ver}, have ${CUDAToolkit_VERSION}")
@@ -78,18 +50,24 @@ function(mag_register_cuda_arch sm)
 
         add_library(${tgt} OBJECT ${srcs})
         set_target_properties(${tgt} PROPERTIES
-            CUDA_ARCHITECTURES "${sm}-real"
+            CUDA_ARCHITECTURES OFF
             CUDA_STANDARD 17
             CUDA_STANDARD_REQUIRED ON
             POSITION_INDEPENDENT_CODE ON
         )
+        target_compile_options(${tgt} PRIVATE
+            "--generate-code=arch=compute_${sm}${arch_suffix},code=[sm_${sm}${arch_suffix}]"
+            -Xcompiler=-Wall,-Wextra,-fvisibility=hidden,-Wno-unused-parameter,-Wno-unused-function
+            "SHELL:-diag-suppress 20012,3288"
+        )
         target_compile_definitions(${tgt} PRIVATE
             MAG_CUDA_SM=${sm}
             MAG_CUDA_ARCH_NS=sm_${sm}
+            ${family_macro}
         )
-        target_compile_options(${tgt} PRIVATE "-Wall -Wextra -Werror -fvisibility=hidden -Wno-unused-parameter")
         target_include_directories(${tgt} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
         target_link_libraries(${tgt} PRIVATE magnetron_core CUDA::cudart CUDA::cuda_driver)
+        apply_common_config_to_target(${tgt} FALSE)
 
         list(APPEND MAG_CUDA_ARCH_OBJECTS "$<TARGET_OBJECTS:${tgt}>")
         list(APPEND MAG_CUDA_ARCH_MACROS "MAG_HAVE_CUDA_SM_${sm}")
@@ -98,7 +76,7 @@ function(mag_register_cuda_arch sm)
 
         list(LENGTH srcs nsrc)
         set(status "Built")
-        set(note "${nsrc} source(s) -> ${tgt}")
+        set(note "${nsrc} source(s) -> ${tgt} (sm_${sm}${arch_suffix})")
     endif()
 
     list(APPEND MAG_CUDA_ARCH_ROWS "${sm}::${status}::${note}")

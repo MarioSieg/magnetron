@@ -112,11 +112,7 @@ class Adam(Optimizer):
     """Adaptive Moment Estimation"""
 
     def __init__(
-        self,
-        params: Iterable[Parameter | dict[str, Any]],
-        lr: float = 0.001,
-        betas: tuple[float, float] = (0.9, 0.999),
-        eps: float = 1e-8,
+        self, params: Iterable[Parameter | dict[str, Any]], lr: float = 0.001, betas: tuple[float, float] = (0.9, 0.999), eps: float = 1e-8
     ) -> None:
         defaults = dict(lr=float(lr), betas=betas, eps=float(eps))
         super().__init__(params, defaults)
@@ -162,12 +158,7 @@ class AdamW(Optimizer):
         eps: float = 1e-8,
         weight_decay: float = 0.0,
     ) -> None:
-        defaults = dict(
-            lr=float(lr),
-            betas=betas,
-            eps=float(eps),
-            weight_decay=float(weight_decay),
-        )
+        defaults = dict(lr=float(lr), betas=betas, eps=float(eps), weight_decay=float(weight_decay))
         super().__init__(params, defaults)
 
     @no_grad()

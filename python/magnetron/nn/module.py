@@ -12,7 +12,7 @@ from collections.abc import Iterator, Callable, MutableMapping
 from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Any
-from .. import Tensor, dtype
+from .. import Tensor, dtype, no_grad
 
 
 class Parameter(Tensor):
@@ -21,6 +21,12 @@ class Parameter(Tensor):
     def __init__(self, x: Tensor) -> None:
         Tensor.__init__(self, x)
         self.requires_grad = True
+
+    def _replace(self, v: Tensor) -> None:
+        """Swap the storage but keep requires_grad: the flag lives on the C tensor, so the incoming one would otherwise win."""
+        req = self.requires_grad
+        Tensor._replace(self, v)
+        self.requires_grad = req
 
     @property
     def data(self) -> Tensor:
@@ -65,11 +71,7 @@ class Module:
         for _, child in self.named_children():
             yield child
 
-    def named_modules(
-        self,
-        prefix: str = '',
-        memo: set[int] | None = None,
-    ) -> Iterator[tuple[str, Module]]:
+    def named_modules(self, prefix: str = '', memo: set[int] | None = None) -> Iterator[tuple[str, Module]]:
         memo = set() if memo is None else memo
         if id(self) in memo:
             return
@@ -83,11 +85,7 @@ class Module:
         for _, module in self.named_modules():
             yield module
 
-    def named_parameters(
-        self,
-        prefix: str = '',
-        memo: set[int] | None = None,
-    ) -> Iterator[tuple[str, Parameter]]:
+    def named_parameters(self, prefix: str = '', memo: set[int] | None = None) -> Iterator[tuple[str, Parameter]]:
         memo = set() if memo is None else memo
         for name, value in self.__dict__.items():
             if isinstance(value, Parameter) and id(value) not in memo:
@@ -108,12 +106,7 @@ class Module:
         self._buffers[name] = buf
         setattr(self, name, buf)
 
-    def named_buffers(
-        self,
-        prefix: str = '',
-        memo: set[int] | None = None,
-        persistent: bool | None = None,
-    ) -> Iterator[tuple[str, Buffer]]:
+    def named_buffers(self, prefix: str = '', memo: set[int] | None = None, persistent: bool | None = None) -> Iterator[tuple[str, Buffer]]:
         memo = set() if memo is None else memo
         for name, buf in self._buffers.items():
             if persistent is not None and buf.persistent != persistent:
@@ -135,11 +128,7 @@ class Module:
     def state_dict(self) -> OrderedDict[str, Tensor]:
         return OrderedDict((k, v.clone()) for k, v in self.state_items())
 
-    def load_state_dict(
-        self,
-        state_dict: Mapping[str, Tensor],
-        strict: bool = True,
-    ) -> dict[str, list[str]]:
+    def load_state_dict(self, state_dict: Mapping[str, Tensor], strict: bool = True) -> dict[str, list[str]]:
         own_state = dict(self.state_items())
         missing = [k for k in own_state if k not in state_dict]
         unexpected = [k for k in state_dict if k not in own_state]
@@ -166,11 +155,9 @@ class Module:
         return self
 
     def cast(self, dt: dtype.DType) -> Module:
-        for p in self.parameters():
-            req = p.requires_grad
-            y = p.cast(dt)
-            y.requires_grad = req
-            p._replace(y)
+        with no_grad():  # the casted tensor must be a fresh leaf, not a node whose backward edge points at the old storage
+            for p in self.parameters():
+                p._replace(p.cast(dt))
         for name, buf in self.named_buffers():
             parent, leaf = self._resolve_parent(name)
             casted = Buffer(buf.cast(dt), persistent=buf.persistent)
@@ -190,17 +177,11 @@ class Module:
                 target = getattr(target, p)
         return target, parts[-1]
 
-    def register_forward_hook(
-        self,
-        hook: Callable[[Module, tuple[Any, ...], Tensor], None],
-    ) -> Callable[[Module, tuple[Any, ...], Tensor], None]:
+    def register_forward_hook(self, hook: Callable[[Module, tuple[Any, ...], Tensor], None]) -> Callable[[Module, tuple[Any, ...], Tensor], None]:
         self._fwd_hooks.append(hook)
         return hook
 
-    def register_forward_pre_hook(
-        self,
-        hook: Callable[[Module, tuple[Any, ...]], None],
-    ) -> Callable[[Module, tuple[Any, ...]], None]:
+    def register_forward_pre_hook(self, hook: Callable[[Module, tuple[Any, ...]], None]) -> Callable[[Module, tuple[Any, ...]], None]:
         self._fwd_pre_hooks.append(hook)
         return hook
 

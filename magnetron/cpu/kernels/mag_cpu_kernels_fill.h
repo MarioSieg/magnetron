@@ -272,10 +272,15 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
     int64_t bb = mag_vmin(ba+chunk_blocks, blocks); \
     int64_t ra = ba*block; \
     int64_t rb = mag_vmin(bb*block, total); \
-    if (mag_unlikely(rb <= ra)) return MAG_OK; \
     uint64_t seed = ((uint64_t)prng->key.v[1]<<32)|prng->key.v[0]; \
     uint64_t subseq = ((uint64_t)prng->ctr.v[3]<<32)|prng->ctr.v[2]; \
-    uint64_t counter = (uint64_t)ba*MAG_VF32_LANES; \
+    uint64_t base = ((uint64_t)prng->ctr.v[1]<<32)|prng->ctr.v[0]; \
+    uint64_t next = base + (uint64_t)blocks*MAG_VF32_LANES; \
+    prng->ctr.v[0] = (uint32_t)next; \
+    prng->ctr.v[1] = (uint32_t)(next>>32); \
+    prng->idx = 4; \
+    if (mag_unlikely(rb <= ra)) return MAG_OK; \
+    uint64_t counter = base + (uint64_t)ba*MAG_VF32_LANES; \
     if (mag_tensor_is_contiguous(r)) { \
       mag_vrand_##D##_##T##_simd(seed, subseq, counter, rb - ra, br + ra, min, max); \
       return MAG_OK; \
@@ -289,7 +294,7 @@ mag_gen_stub_fill_rand(uniform, int64_t, int64_t, int64, int64)
       uint64_t elem_off = (uint64_t)i%(MAG_VF32_LANES<<2); \
       T tmp[4*MAG_VF32_LANES]; \
       mag_vrand_##D##_##T##_simd( \
-        seed, subseq, elem_block*MAG_VF32_LANES, \
+        seed, subseq, base + elem_block*MAG_VF32_LANES, \
         MAG_VF32_LANES<<2, tmp, min, max \
       ); \
       br[ri] = tmp[elem_off]; \

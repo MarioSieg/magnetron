@@ -348,7 +348,7 @@ void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
 #ifdef __linux__
   unsigned long hwcap = getauxval(AT_HWCAP);
   unsigned long hwcap2 = getauxval(AT_HWCAP2);
-  *o|=mag_arm64_cap(NEON); /* NEON is always required by build */
+  *o|=mag_arm64_cap(NEON)|mag_arm64_cap(F16CVT);
 #ifdef HWCAP_ASIMD
   if (hwcap & HWCAP_ASIMD) *o|=mag_arm64_cap(NEON);
 #endif
@@ -381,7 +381,7 @@ void mag_probe_cpu_arm64(mag_arm64_cap_bitset_t *o, int64_t *sve_width) {
 #endif
   *sve_width = 0; /* NYI */
 #elif defined(_WIN32)
-  if (IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(NEON);
+  if (IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(NEON)|mag_arm64_cap(F16CVT);
   if (IsProcessorFeaturePresent(PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE)) *o|=mag_arm64_cap(DOTPROD);
   /* Other features not supported by IsProcessorFeaturePresent*/
   *sve_width = 0; /* NYI */

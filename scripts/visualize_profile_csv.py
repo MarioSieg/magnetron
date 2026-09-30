@@ -54,13 +54,7 @@ def render_table(df, title: str, out_path: Path) -> None:
     ax.axis('off')
     ax.set_title(title, pad=14)
 
-    table = ax.table(
-        cellText=shown.values,
-        colLabels=shown.columns,
-        loc='center',
-        cellLoc='left',
-        colLoc='left',
-    )
+    table = ax.table(cellText=shown.values, colLabels=shown.columns, loc='center', cellLoc='left', colLoc='left')
 
     table.auto_set_font_size(False)
     table.set_fontsize(8)
@@ -102,17 +96,7 @@ def render_summary_panel(df_total, df_avg, df_max, out_path: Path, top: int) -> 
 def load_profile_csv(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
 
-    required_cols = [
-        'calls',
-        'op',
-        'kind',
-        'dtype',
-        'shapes',
-        'strides',
-        'total_ms',
-        'avg_us',
-        'max_us',
-    ]
+    required_cols = ['calls', 'op', 'kind', 'dtype', 'shapes', 'strides', 'total_ms', 'avg_us', 'max_us']
 
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
@@ -160,26 +144,12 @@ def main() -> None:
         part = df.sort_values(col, ascending=False).head(top).reset_index(drop=True)
         parts[col] = part
 
-        plot_barh(
-            part,
-            col,
-            xlabel,
-            f'Top {len(part)} Magnetron ops by {name}',
-            out_dir / f'{stem}_{col}.png',
-        )
+        plot_barh(part, col, xlabel, f'Top {len(part)} Magnetron ops by {name}', out_dir / f'{stem}_{col}.png')
 
-        render_table(
-            part,
-            f'Legend/table for top {len(part)} by {name}',
-            out_dir / f'{stem}_{col}_table.png',
-        )
+        render_table(part, f'Legend/table for top {len(part)} by {name}', out_dir / f'{stem}_{col}_table.png')
 
     render_summary_panel(
-        parts['total_ms'].head(top),
-        parts['avg_us'].head(top),
-        parts['max_us'].head(top),
-        out_dir / f'{stem}_summary.png',
-        min(top, 20),
+        parts['total_ms'].head(top), parts['avg_us'].head(top), parts['max_us'].head(top), out_dir / f'{stem}_summary.png', min(top, 20)
     )
 
     print(f'Wrote plots and tables to {out_dir}')

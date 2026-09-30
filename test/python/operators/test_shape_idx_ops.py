@@ -210,6 +210,26 @@ def test_select(dtype: dtype.DType) -> None:
     for_all_shapes(test)
 
 
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('dtype', dtype.all)
+def test_unbind(device: str, dtype: dtype.DType) -> None:
+    def test(shape: tuple[int, ...]) -> None:
+        if len(shape) == 0:
+            return
+        x = random_tensor(shape, dt=dtype, device=device)
+        dim = random.choice(range(-len(shape), len(shape)))
+        parts_mag = x.unbind(dim)
+        parts_torch = totorch(x).unbind(dim)
+        assert isinstance(parts_mag, tuple)
+        assert len(parts_mag) == len(parts_torch)
+        for pm, pt in zip(parts_mag, parts_torch):
+            assert pm.device == device
+            assert pm.shape == tuple(pt.shape)
+            torch.testing.assert_close(totorch(pm), pt, equal_nan=True)
+
+    for_all_shapes(test)
+
+
 @pytest.mark.parametrize('dtype', dtype.all)
 def test_split_and_cat_roundtrip(dtype: dtype.DType) -> None:
     def test(shape: tuple[int, ...]) -> None:

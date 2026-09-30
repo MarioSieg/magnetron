@@ -951,6 +951,8 @@ namespace magnetron {
         auto requires_grad(bool yes) noexcept -> void { handle_error(mag_tensor_set_requires_grad(nullptr, m_tensor, yes)); }
         auto backward() -> void { handle_error(mag_tensor_backward(nullptr, m_tensor)); }
         auto zero_grad() -> void { handle_error(mag_tensor_zero_grad(nullptr, m_tensor)); }
+        auto retain_grad() -> void { handle_error(mag_tensor_retain_grad(nullptr, m_tensor)); }
+        [[nodiscard]] auto is_leaf() const noexcept -> bool { return mag_tensor_is_leaf(m_tensor); }
 
         explicit tensor(mag_tensor_t* ptr) noexcept : m_tensor{ptr} {}
 
@@ -996,3 +998,4 @@ namespace magnetron {
         handle_error(mag_uniform_(&g_error, m_tensor, mag_scalar_from_int64(min), mag_scalar_from_int64(max)));
     }
 }
+
