@@ -48,7 +48,8 @@ dev = [
     "rich",
     "tokenizers",
     "huggingface_hub",
-    "pandas"
+    "pandas",
+    "pyarrow"
 ]
 
 [tool.scikit-build.cmake.define]
