@@ -71,12 +71,14 @@ mag_status_t MAG_HOTPROC mag_dispatch(
   mag_device_t *device = in ? (*in)->meta.device : (*out)->meta.device;
   mag_assert_correct_op_data(op, in, num_in, out, num_out);
   bool record = false;
-  if (!mag_tls_state.no_grad && meta->backward)
-    for (uint32_t j=0; j < num_in; ++j)
+  if (!mag_tls_state.no_grad && meta->backward) {
+    for (uint32_t j=0; j < num_in; ++j) {
       if (in[j] && in[j]->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
         record = true;
         break;
       }
+    }
+  }
   if (record && inplace)
     for (uint32_t i=0; i < num_out; ++i)
       if (mag_unlikely(out[i]->meta.flags & MAG_TFLAG_REQUIRES_GRAD && mag_tensor_is_leaf(out[i])))
@@ -139,8 +141,8 @@ mag_status_t MAG_HOTPROC mag_dispatch(
         if (mag_unlikely(!input))
           return mag_set_error(err, MAG_ERR_OP, "dispatch: input tensor %u is NULL.", j);
         if (input->meta.flags&MAG_TFLAG_REQUIRES_GRAD && !(r->meta.flags&MAG_TFLAG_REQUIRES_GRAD)) {
-          mag_status_t status = mag_tensor_set_requires_grad(err, r, true);
-          if (mag_iserr(status)) return status;
+          mag_status_t stat = mag_tensor_set_requires_grad(err, r, true);
+          if (mag_iserr(stat)) return stat;
         }
         if (mag_unlikely(!mag_au_state_set_input(au, input))) {
           if (prev) mag_rc_decref(prev);

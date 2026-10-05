@@ -179,7 +179,7 @@ mag_status_t mag_snapshot_stream_reader_borrow_tensor(
   if (mag_unlikely(offset % MAG_SNAP_TENSOR_BLOB_ALIGN))
     return mag_set_error(err, MAG_ERR_PARAM, "snapshot: a tensor starts at %" PRIu64 ", which is not a multiple of the %d byte tensor alignment, so its bytes cannot be borrowed.", offset, MAG_SNAP_TENSOR_BLOB_ALIGN);
   mag_rc_incref(reader);
-  mag_status_t stat = mag_borrow_cpu_buffer(
+  mag_status_t stat = mag_borrow_host_buffer(
     err,
     out,
     reader->ctx,

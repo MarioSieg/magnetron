@@ -51,7 +51,7 @@ function(mag_register_cpu_backend src posix_flags msvc_flags)
     check_c_compiler_flag("${DET_FLAG}" ${HAVE_VAR})
     set(SUPPORTED ${${HAVE_VAR}})
 
-    set(status "Skipped")
+    set(stat "Skipped")
     set(note "compiler doesn't support ${DET_FLAG}")
 
     if (SUPPORTED)
@@ -84,7 +84,7 @@ function(mag_register_cpu_backend src posix_flags msvc_flags)
             )
         endif()
 
-        set(status "Built")
+        set(stat "Built")
 
         if (_accepted)
             set(note "enabled: ${_accepted_str}")
@@ -99,7 +99,7 @@ function(mag_register_cpu_backend src posix_flags msvc_flags)
         set(MAG_ENABLED_CPU_MACROS "${MAG_ENABLED_CPU_MACROS}" PARENT_SCOPE)
     endif()
 
-    list(APPEND MAG_BACKEND_ROWS "${CPU_NAME}::${src}::${posix_flags}::${msvc_flags}::${status}::${note}")
+    list(APPEND MAG_BACKEND_ROWS "${CPU_NAME}::${src}::${posix_flags}::${msvc_flags}::${stat}::${note}")
     set(MAG_BACKEND_ROWS "${MAG_BACKEND_ROWS}" PARENT_SCOPE)
 endfunction()
 

@@ -1138,11 +1138,11 @@ extern MAG_EXPORT mag_status_t mag_save_audio(
  * @param rank Number of dimensions in @p shape.
  * @param shape Dimension sizes, @p rank entries.
  * @param is_writeable If false, the tensor is read-only.
- * @param release_cb Called with @p usr when the last reference to the storage is dropped; must not be NULL.
+ * @param dtor Called with @p usr when the last reference to the storage is dropped; must not be NULL.
  * @param usr Opaque pointer passed to @p release_cb.
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_borrow_cpu_buffer(
+extern MAG_EXPORT mag_status_t mag_borrow_host_buffer(
   mag_error_t *err,
   mag_tensor_t **out,
   mag_context_t *ctx,
@@ -1152,7 +1152,7 @@ extern MAG_EXPORT mag_status_t mag_borrow_cpu_buffer(
   int64_t rank,
   const int64_t *shape,
   bool is_writeable,
-  void (*release_cb)(void *usr),
+  void (*dtor)(void *usr),
   void *usr
 );
 
@@ -1284,6 +1284,8 @@ extern MAG_EXPORT mag_status_t mag_clone(mag_error_t *err, mag_tensor_t **out_re
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_cast(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_dtype_t dst_type);
+
+extern MAG_EXPORT mag_status_t mag_transfer_(mag_error_t *err, mag_tensor_t *dst, mag_tensor_t *src);
 
 /**
  * Copy @p x to @p device. If @p x already resides there, it is returned itself with an added reference.
@@ -4223,7 +4225,7 @@ extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *tensor);
  * @param tensor Tensor to query.
  * @return true if the tensor is on CPU.
  */
-extern MAG_EXPORT bool mag_tensor_is_cpu(mag_tensor_t *tensor);
+extern MAG_EXPORT bool mag_tensor_is_host(mag_tensor_t *tensor);
 
 /**
  * Write the autograd graph reachable from @p tensor to a file in Graphviz DOT format.

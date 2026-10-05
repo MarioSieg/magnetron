@@ -152,7 +152,7 @@ namespace mag::bindings {
         mag_tensor_t *borrowed = nullptr;
         if (shape.empty()) {
           throw_if_error(
-            mag_borrow_cpu_buffer(
+            mag_borrow_host_buffer(
               &err,
               &borrowed,
               ctx,
@@ -169,7 +169,7 @@ namespace mag::bindings {
           );
         } else {
           throw_if_error(
-            mag_borrow_cpu_buffer(
+            mag_borrow_host_buffer(
               &err,
               &borrowed,
               ctx,

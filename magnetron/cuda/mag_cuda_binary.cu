@@ -62,7 +62,8 @@ namespace mag {
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
       if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x < y ? x : y);
-      return static_cast<OutT>(fminf(static_cast<float>(x), static_cast<float>(y)));
+      float fx = static_cast<float>(x), fy = static_cast<float>(y);
+      return static_cast<OutT>(fx != fx || fy != fy ? fx+fy : fminf(fx, fy));
     }
   };
 
@@ -72,7 +73,8 @@ namespace mag {
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
       if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x > y ? x : y);
-      return static_cast<OutT>(fmaxf(static_cast<float>(x), static_cast<float>(y)));
+      float fx = static_cast<float>(x), fy = static_cast<float>(y);
+      return static_cast<OutT>(fx != fx || fy != fy ? fx+fy : fmaxf(fx, fy));
     }
   };
 
@@ -394,10 +396,12 @@ namespace mag {
   ) {
     auto clamp1 = [](T v, T mn, T mx) -> T {
       if constexpr (std::is_integral_v<T>) {
-        return v < mn ? mn : (v > mx ? mx : v);
+        T lo = v < mn ? mn : v;
+        return lo > mx ? mx : lo;
       } else {
         float fv = static_cast<float>(v), fmn = static_cast<float>(mn), fmx = static_cast<float>(mx);
-        return static_cast<T>(fv < fmn ? fmn : (fv > fmx ? fmx : fv));
+        float flo = fv < fmn ? fmn : fv;
+        return static_cast<T>(flo > fmx ? fmx : flo);
       }
     };
     I i = static_cast<I>(blockDim.x)*static_cast<I>(blockIdx.x) + static_cast<I>(threadIdx.x);

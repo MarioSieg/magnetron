@@ -160,6 +160,10 @@ namespace mag {
     auto *kernel = k_kernel_dispatch_table[cmd->op];
     if (mag_unlikely(kernel == nullptr))
       return mag_set_error(err, MAG_ERR_KERNEL, "cuda: operator %s not implemented in CUDA backend.", mag_op_trait(cmd->op)->mnemonic);
+    bool all_out_empty = cmd->num_out > 0;
+    for (uint32_t i=0; i < cmd->num_out && all_out_empty; ++i)
+      all_out_empty = !mag_tensor_numel(cmd->out[i]);
+    if (all_out_empty) return MAG_OK;
     if (mag_status_t stat = (*kernel)(err, *cmd, stream); mag_unlikely(mag_iserr(stat)))
       return stat;
     mag_cu_rt_check(err, cudaGetLastError(), "kernel execution failed for operator");

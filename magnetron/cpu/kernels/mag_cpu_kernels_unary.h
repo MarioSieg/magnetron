@@ -588,8 +588,8 @@ mag_gen_softmax_simd(
 
 #define mag_gen_softmax_dv_simd(T, TF, ZERO, LOAD, STORE, TO_F32, FROM_F32) \
   static mag_status_t MAG_HOTPROC mag_softmax_dv_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
-    mag_status_t status = mag_softmax_##TF(err, payload); \
-    if (mag_unlikely(status != MAG_OK)) return status; \
+    mag_status_t stat = mag_softmax_##TF(err, payload); \
+    if (mag_unlikely(stat != MAG_OK)) return stat; \
     mag_tensor_t *r = payload->cmd->out[0]; \
     int64_t rank = r->meta.coords.rank; \
     int64_t numel = r->meta.numel; \

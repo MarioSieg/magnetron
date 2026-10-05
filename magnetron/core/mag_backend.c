@@ -42,20 +42,20 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
   mag_log_info("Loading backend module: '%s'", file);
   if (mag_unlikely(!mag_utf8_validate((const uint8_t *)file, strlen(file))))
     return mag_set_error(err, MAG_ERR_PARAM, "backend: module path is not valid UTF-8.");
-  mag_status_t status;
+  mag_status_t stat;
   mag_dylib_t *handle = NULL;
-  status = mag_dylib_open(err, &handle, file); /* Open the dynamic library */
-  if (mag_iserr(status)) return status;
+  stat = mag_dylib_open(err, &handle, file); /* Open the dynamic library */
+  if (mag_iserr(stat)) return stat;
   /* Try to get function pointers to the required symbols */
   void *fn_abi_cookie = NULL;
   void *fn_init = NULL;
   void *fn_shutdown = NULL;
-  status = mag_backend_module_dlym(err, handle, MAG_BACKEND_SYM_NAME_ABI_COOKIE, file, &fn_abi_cookie);
-  if (mag_iserr(status)) return status;
-  status = mag_backend_module_dlym(err, handle, MAG_BACKEND_SYM_NAME_INIT, file, &fn_init);
-  if (mag_iserr(status)) return status;
-  status = mag_backend_module_dlym(err, handle, MAG_BACKEND_SYM_NAME_SHUTDOWN, file, &fn_shutdown);
-  if (mag_iserr(status)) return status;
+  stat = mag_backend_module_dlym(err, handle, MAG_BACKEND_SYM_NAME_ABI_COOKIE, file, &fn_abi_cookie);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_backend_module_dlym(err, handle, MAG_BACKEND_SYM_NAME_INIT, file, &fn_init);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_backend_module_dlym(err, handle, MAG_BACKEND_SYM_NAME_SHUTDOWN, file, &fn_shutdown);
+  if (mag_iserr(stat)) return stat;
 
   /* Check ABI cookie, then init backend */
   uint32_t abi_cookie = (*(MAG_BACKEND_SYM_FN_ABI_COOKIE*)fn_abi_cookie)(); /* Call the function to get the ABI version */
@@ -67,10 +67,10 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
 
   /* Init backend */
   mag_backend_t *backend=NULL;
-  status = (*(MAG_BACKEND_SYM_FN_INIT*)(fn_init))(err, &backend, ctx);
-  if (mag_iserr(status)) {
+  stat = (*(MAG_BACKEND_SYM_FN_INIT*)(fn_init))(err, &backend, ctx);
+  if (mag_iserr(stat)) {
     mag_dylib_close(handle);
-    return status;
+    return stat;
   }
 
   /* Verify vtable */
@@ -119,18 +119,18 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
 }
 
 static mag_status_t mag_backend_module_shutdown(mag_error_t *err, mag_backend_module_t *mod) {
-  mag_status_t status = MAG_OK;
-  if (!mod) return status;
+  mag_status_t stat = MAG_OK;
+  if (!mod) return stat;
   if (mod->backend) {
     if (mod->backend->shutdown) {
-      mag_status_t stat = (*mod->backend->shutdown)(err, mod->backend);
-      if (mag_iserr(stat) && !mag_iserr(status))
-        status = stat;
+      mag_status_t stat2 = (*mod->backend->shutdown)(err, mod->backend);
+      if (mag_iserr(stat2) && !mag_iserr(stat))
+        stat = stat2;
     }
     if (mod->fn_shutdown) {
       mag_status_t st = (*mod->fn_shutdown)(err, mod->backend);
-      if (mag_iserr(st) && !mag_iserr(status))
-        status = st;
+      if (mag_iserr(st) && !mag_iserr(stat))
+        stat = st;
     }
     mod->backend = NULL;
   }
@@ -139,7 +139,7 @@ static mag_status_t mag_backend_module_shutdown(mag_error_t *err, mag_backend_mo
     mod->handle = NULL;
   }
   (*mag_alloc)(mod, 0, 0);
-  return status;
+  return stat;
 }
 
 typedef enum mag_backend_load_state_t {
@@ -232,8 +232,8 @@ static mag_backend_t *mag_backend_registry_load(mag_error_t *err, mag_backend_re
   snprintf(pathbuf, sizeof(pathbuf), "%s/%smagnetron_%s.%s", reg->module_dir, MAG_DYLIB_PREFIX, mag_backend_type_to_str(type), MAG_DYLIB_EXT);
   mag_backend_module_t *mod = NULL;
   mag_error_t local_err = {0};
-  mag_status_t status = mag_backend_module_load(err ? err : &local_err, &mod, pathbuf, reg->ctx);
-  if (mag_iserr(status)) {
+  mag_status_t stat = mag_backend_module_load(err ? err : &local_err, &mod, pathbuf, reg->ctx);
+  if (mag_iserr(stat)) {
     mag_atomic32_store(&reg->load_state[type], MAG_BACKEND_LOAD_STATE_FAILED, MAG_MO_RELEASE);
     mag_lock_release(&reg->lock);
     mag_log_info("Backend '%s' not available: %s", mag_backend_type_to_str(type), err ? err->message : local_err.message);
@@ -256,10 +256,10 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
     return mag_set_error(err, MAG_ERR_OOM, "backend: failed to allocate backend registry (%zu bytes).", sizeof(*reg));
   memset(reg, 0, sizeof(*reg));
   reg->ctx = ctx;
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   char *modpath = mag_current_module_path();
   if (mag_unlikely(!modpath)) {
-    status = mag_set_error(err, MAG_ERR_STATE, "backend: failed to determine the magnetron module path needed to locate backend libraries.");
+    stat = mag_set_error(err, MAG_ERR_STATE, "backend: failed to determine the magnetron module path needed to locate backend libraries.");
     goto error;
   }
   char *module_dir, *file;
@@ -268,7 +268,7 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
   size_t dirlen = strlen(module_dir);
   reg->module_dir = (*mag_try_alloc)(NULL, dirlen+1, 0); /* Keep the search path around for lazy loads. */
   if (mag_unlikely(!reg->module_dir)) {
-    status = mag_set_error(err, MAG_ERR_OOM, "backend: failed to allocate backend module search path (%zu bytes).", dirlen+1);
+    stat = mag_set_error(err, MAG_ERR_OOM, "backend: failed to allocate backend module search path (%zu bytes).", dirlen+1);
     goto error;
   }
   memcpy(reg->module_dir, module_dir, dirlen+1);
@@ -280,7 +280,7 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
     ++num_required;
     mag_error_t load_err = {0};
     if (mag_unlikely(!mag_backend_registry_load(&load_err, reg, type))) {
-      status = mag_set_error(err, MAG_ERR_STATE,
+      stat = mag_set_error(err, MAG_ERR_STATE,
         "backend: required backend '%s' could not be loaded: %s\n"
         "Backends are loaded as shared libraries next to libmagnetron_core.\n"
         "Ensure %smagnetron_%s.%s is installed alongside libmagnetron_core.",
@@ -289,7 +289,7 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
     }
   }
   if (mag_unlikely(!num_required && !reg->backends_num)) {
-    status = mag_set_error(err, MAG_ERR_STATE,
+    stat = mag_set_error(err, MAG_ERR_STATE,
       "backend: no magnetron compute backends could be loaded.\n"
       "Backends are loaded as shared libraries next to libmagnetron_core, but none were located or usable.\n"
       "Ensure at least one backend (e.g. magnetron_cpu) is installed alongside libmagnetron_core,\n"
@@ -305,7 +305,7 @@ error:
       mag_backend_module_shutdown(NULL, reg->backends[type]);
   if (reg->module_dir) (*mag_alloc)(reg->module_dir, 0, 0);
   (*mag_alloc)(reg, 0, 0);
-  return status;
+  return stat;
 }
 
 void mag_backend_registry_manual_seed(mag_backend_registry_t *reg, uint64_t seed) {
@@ -349,11 +349,11 @@ bool mag_backend_registry_best_device(mag_backend_registry_t *reg, mag_backend_t
 mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registry_t *reg) {
   for (mag_backend_type_t type=MAG_BACKEND_TYPE_CPU; type < MAG_BACKEND_TYPE__COUNT; ++type) {
     if (reg->backends[type]) {
-      mag_status_t status = mag_backend_module_shutdown(err, reg->backends[type]);
-      if (mag_iserr(status)) {
+      mag_status_t stat = mag_backend_module_shutdown(err, reg->backends[type]);
+      if (mag_iserr(stat)) {
         (*mag_alloc)(reg->module_dir, 0, 0);
         (*mag_alloc)(reg, 0, 0);
-        return status;
+        return stat;
       }
     }
   }

@@ -202,8 +202,8 @@ class DeviceMesh:
 
     def __repr__(self) -> str:
         args = [
-            repr(self.device_type),
-            repr(self.mesh),
+            f'device={self.device_type!r}',
+            f'mesh={self.mesh.tolist()!r}'
         ]
         if self.mesh_dim_names is not None:
             args.append(

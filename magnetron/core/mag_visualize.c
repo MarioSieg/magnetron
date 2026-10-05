@@ -26,12 +26,12 @@ MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, 
     return mag_set_error(err, MAG_ERR_OOM, "visualize: failed to allocate traversal stack.");
   }
   int64_t topo_epoch = 0;
-  mag_status_t status = mag_topo_sort(err, tensor->au_state, &topo_stack, post_order, &topo_epoch);
+  mag_status_t stat = mag_topo_sort(err, tensor->au_state, &topo_stack, post_order, &topo_epoch);
   mag_topo_stack_free(&topo_stack);
-  if (mag_unlikely(mag_iserr(status) || !post_order->len)) {
+  if (mag_unlikely(mag_iserr(stat) || !post_order->len)) {
     if (topo_epoch) mag_topo_release(post_order, topo_epoch);
     mag_topo_set_free(&topo_set);
-    return status;
+    return stat;
   }
   mag_sstream_t out;
   mag_sstream_init(&out);

@@ -194,4 +194,3 @@ mag_status_t mag_comm_recv(
   mag_comm_interface_verify_ra(err, comm, src, "source", recv);
   return (*comm->com_ops->recv)(err, comm, tensor, src);
 }
-

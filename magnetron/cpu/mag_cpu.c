@@ -117,7 +117,7 @@ static mag_status_t mag_cpu_storage_dtor(void *self) {
 
 static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device, mag_storage_buffer_t **out, size_t size) {
   mag_context_t *ctx = device->ctx;
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
   if (mag_unlikely(!buf))
     return mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate storage buffer header.");
@@ -136,7 +136,7 @@ static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device
   } else {
     void *base = (*mag_try_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
     if (mag_unlikely(!(base != NULL))) {
-      status = mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate CPU storage buffer of %zu bytes.", size);
+      stat = mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate CPU storage buffer of %zu bytes.", size);
       goto cleanup;
     }
     buf->base = (uintptr_t)base;
@@ -148,7 +148,7 @@ static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device
   return MAG_OK;
 cleanup:
   mag_slab_free(&ctx->storage_slab, buf);
-  return status;
+  return stat;
 }
 
 static void mag_cpu_manual_seed(mag_error_t *err, mag_device_t *device, uint64_t seed) {
@@ -181,10 +181,10 @@ static mag_status_t mag_cpu_init_device(mag_error_t *err, mag_cpu_device_t **out
   mag_numa_init(&device->numa_ctrl, (mag_numa_strategy_t)mag_envcfg_numa_strategy(MAG_NUMA_STRATEGY_DISTRIBUTE)); /* Overridable via MAG_NUMA_STRATEGY */
   mag_blas_detect_optimal_specialization(ctx, &device->kernels);
   if (num_threads > 1) {
-    mag_status_t status = mag_threadpool_create(err, &device->pool, ctx, num_threads, &device->kernels, &device->numa_ctrl, sched_prio);
-    if (mag_iserr(status)) {
+    mag_status_t stat = mag_threadpool_create(err, &device->pool, ctx, num_threads, &device->kernels, &device->numa_ctrl, sched_prio);
+    if (mag_iserr(stat)) {
       (*mag_alloc)(device, 0, 0);
-      return status;
+      return stat;
     }
     device->num_allocated_workers = num_threads;
   }
@@ -202,12 +202,12 @@ static void mag_cpu_destroy_device(mag_cpu_device_t *device) {
 static mag_status_t mag_cpu_init_interface(mag_error_t *err, mag_device_t **out, mag_context_t *ctx, uint32_t num_threads) {
   *out=NULL;
   mag_cpu_device_t *cpu_dvc=NULL;
-  mag_status_t status = mag_cpu_init_device(err, &cpu_dvc, ctx, num_threads);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_cpu_init_device(err, &cpu_dvc, ctx, num_threads);
+  if (mag_iserr(stat)) return stat;
   mag_device_t *device = (*mag_try_alloc)(NULL, sizeof(*device), 0);
   if (mag_unlikely(!device)) {
     mag_cpu_destroy_device(cpu_dvc);
-    return status;
+    return stat;
   }
   *device = (mag_device_t) { /* Initialize device interface */
     .ctx = ctx,

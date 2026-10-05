@@ -51,7 +51,7 @@ mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   if (mag_unlikely(ext == NULL))
     return mag_set_error(err, MAG_ERR_PARAM, "load_audio: file '%s' has no extension.", file);
 
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   uint32_t c = 0;
   uint32_t sample_rate = 0;
   uint64_t frames = 0;
@@ -90,24 +90,24 @@ mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   }
 
   if (mag_unlikely(samples == NULL)) {
-    status = mag_set_error(err, MAG_ERR_IMAGE, "load_audio: failed to decode '%s'.", file);
+    stat = mag_set_error(err, MAG_ERR_IMAGE, "load_audio: failed to decode '%s'.", file);
     goto cleanup;
   }
   if (mag_unlikely(c == 0)) {
-    status = mag_set_error(err, MAG_ERR_IMAGE, "load_audio: '%s' has no audio channels.", file);
+    stat = mag_set_error(err, MAG_ERR_IMAGE, "load_audio: '%s' has no audio channels.", file);
     goto cleanup;
   }
   if (mag_unlikely(sample_rate == 0)) {
-    status = mag_set_error(err, MAG_ERR_IMAGE, "load_audio: '%s' has an invalid sample rate.", file);
+    stat = mag_set_error(err, MAG_ERR_IMAGE, "load_audio: '%s' has an invalid sample rate.", file);
     goto cleanup;
   }
   if (mag_unlikely(frames == 0)) {
-    status = mag_set_error(err, MAG_ERR_IMAGE, "load_audio: '%s' contains no audio frames.", file);
+    stat = mag_set_error(err, MAG_ERR_IMAGE, "load_audio: '%s' contains no audio frames.", file);
     goto cleanup;
   }
 
-  status = mag_empty(err, &tensor, ctx, MAG_DTYPE_FLOAT32, 2, (int64_t[2]){(int64_t)c, (int64_t)frames}, mag_device(CPU, 0));
-  if (mag_iserr(status))
+  stat = mag_empty(err, &tensor, ctx, MAG_DTYPE_FLOAT32, 2, (int64_t[2]){(int64_t)c, (int64_t)frames}, mag_device(CPU, 0));
+  if (mag_iserr(stat))
     goto cleanup;
 
   float *restrict dst = (float *)mag_tensor_data_ptr_mut(tensor);
@@ -125,8 +125,8 @@ mag_status_t mag_load_audio(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   }
   samples = NULL;
 
-  status = mag_transfer(err, &transferred, tensor, device);
-  if (mag_iserr(status))
+  stat = mag_transfer(err, &transferred, tensor, device);
+  if (mag_iserr(stat))
     goto cleanup;
   mag_tensor_decref(tensor);
   tensor = NULL;
@@ -147,7 +147,7 @@ cleanup:
       default: break;
     }
   }
-  return status;
+  return stat;
 }
 
 mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *file, uint32_t sample_rate) {
@@ -172,7 +172,7 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   if (mag_unlikely(strcmp(ext, ".wav") != 0))
     return mag_set_error(err, MAG_ERR_PARAM, "save_audio: only the '.wav' format is supported.");
 
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   mag_tensor_t *host = NULL;
   mag_tensor_t *contig = NULL;
   float *samples = NULL;
@@ -181,11 +181,11 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   memset(&wav, 0, sizeof(wav));
   wav.allocationCallbacks = wav_alloc_hooks;
 
-  status = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
-  if (mag_iserr(status))
+  stat = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
+  if (mag_iserr(stat))
     goto cleanup;
-  status = mag_contiguous(err, &contig, host);
-  if (mag_iserr(status))
+  stat = mag_contiguous(err, &contig, host);
+  if (mag_iserr(stat))
     goto cleanup;
   mag_tensor_decref(host);
   host = NULL;
@@ -198,7 +198,7 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   size_t n = (size_t)c * (size_t)frames;
   samples = (*mag_try_alloc)(NULL, n*sizeof(*samples), 0);
   if (mag_unlikely(!samples)) {
-    status = mag_set_error(err, MAG_ERR_OOM, "save_audio: failed to allocate %zu bytes for interleaved samples.", n*sizeof(*samples));
+    stat = mag_set_error(err, MAG_ERR_OOM, "save_audio: failed to allocate %zu bytes for interleaved samples.", n*sizeof(*samples));
     goto cleanup;
   }
 
@@ -215,7 +215,7 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   fmt.bitsPerSample = 32;
 
   if (mag_unlikely(!drwav_init_file_write(&wav, file, &fmt, NULL))) {
-    status = mag_set_error(err, MAG_ERR_IMAGE, "save_audio: failed to open WAV file '%s' for writing.", file);
+    stat = mag_set_error(err, MAG_ERR_IMAGE, "save_audio: failed to open WAV file '%s' for writing.", file);
     goto cleanup;
   }
   wav_open = true;
@@ -225,7 +225,7 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   wav_open = false;
 
   if (mag_unlikely(written != (drwav_uint64)frames)) {
-    status = mag_set_error(err, MAG_ERR_IMAGE, "save_audio: wrote %" PRIu64 " of %" PRIu64 " WAV frames.", (uint64_t)written, (uint64_t)frames);
+    stat = mag_set_error(err, MAG_ERR_IMAGE, "save_audio: wrote %" PRIu64 " of %" PRIu64 " WAV frames.", (uint64_t)written, (uint64_t)frames);
     goto cleanup;
   }
 
@@ -234,5 +234,5 @@ cleanup:
   if (samples) (*mag_alloc)(samples, 0, 0);
   if (contig) mag_tensor_decref(contig);
   if (host) mag_tensor_decref(host);
-  return status;
+  return stat;
 }

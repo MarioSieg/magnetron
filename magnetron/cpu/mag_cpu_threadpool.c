@@ -57,7 +57,7 @@ static void mag_worker_exec_and_broadcast(mag_error_t *err, mag_thread_pool_t *p
   mag_status_t stat = MAG_OK;
   if (mag_likely(payload->thread_idx < pool->num_active_workers))
     stat = mag_worker_exec_thread_local(err, kernels, payload);
-  *out_stat = stat;                     /* publish status BEFORE signalling or master may access it stale */
+  *out_stat = stat;                     /* publish stat BEFORE signalling or master may access it stale */
   mag_phase_fence_done(&pool->fence);   /* signal completion to master */
 }
 
@@ -76,7 +76,7 @@ static MAG_HOTPROC void mag_worker_thread_entry(void *arg) {
   if (mag_numa_is_numa(pool->numa_ctrl)) /* Pin numa affinity if numa system */
     mag_numa_pin_thread_affinity(pool->numa_ctrl, payload->thread_idx);
   mag_atomic32_fetch_add(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
-  while (mag_likely(mag_worker_await_work(worker, pool)))  /* Main work loop: wait, work, signal status */
+  while (mag_likely(mag_worker_await_work(worker, pool)))  /* Main work loop: wait, work, signal stat */
     mag_worker_exec_and_broadcast(err, pool, kernels, payload, stat);
   mag_atomic32_fetch_sub(&pool->num_workers_online, 1, MAG_MO_SEQ_CST);
 }

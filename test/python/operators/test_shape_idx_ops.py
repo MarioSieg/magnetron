@@ -223,7 +223,7 @@ def test_unbind(device: str, dtype: dtype.DType) -> None:
         assert isinstance(parts_mag, tuple)
         assert len(parts_mag) == len(parts_torch)
         for pm, pt in zip(parts_mag, parts_torch):
-            assert pm.device == device
+            assert pm.device == x.device
             assert pm.shape == tuple(pt.shape)
             torch.testing.assert_close(totorch(pm), pt, equal_nan=True)
 

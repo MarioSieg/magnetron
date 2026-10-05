@@ -150,10 +150,10 @@ namespace mag {
     int64_t base = mag_reduce_plan_to_offset(&plan, oi);
     typename Op::Acc acc = op.init();
 
-    if (plan.rank == 1 && plan.red_strides[0] == 1) {
+    if (plan.red_rank == 1 && plan.red_strides[0] == 1) {
       for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
         acc = op.reduce(acc, op.transform(x[base+ri]));
-    } else if (plan.rank == 1) {
+    } else if (plan.red_rank == 1) {
       const int64_t rs = plan.red_strides[0];
       for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
         acc = op.reduce(acc, op.transform(x[base+ri*rs]));
@@ -161,7 +161,7 @@ namespace mag {
       for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
         int64_t t = ri;
         int64_t xi = base;
-        for (int64_t k=plan.rank-1; k >= 0; --k) {
+        for (int64_t k=plan.red_rank-1; k >= 0; --k) {
           int64_t sz = plan.red_sizes[k];
           int64_t j = t % sz;
           t /= sz;
@@ -198,10 +198,10 @@ namespace mag {
     const int64_t start = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
     const int64_t step = static_cast<int64_t>(blockDim.x)*splits;
     typename Op::Acc acc = op.init();
-    if (plan.rank == 1 && plan.red_strides[0] == 1) {
+    if (plan.red_rank == 1 && plan.red_strides[0] == 1) {
       for (int64_t ri=start; ri < plan.red_prod; ri += step)
         acc = op.reduce(acc, op.transform(x[base+ri]));
-    } else if (plan.rank == 1) { /* One axis of any stride: a scale, not a coordinate walk. */
+    } else if (plan.red_rank == 1) { /* One axis of any stride: a scale, not a coordinate walk. */
       const int64_t rs = plan.red_strides[0];
       for (int64_t ri=start; ri < plan.red_prod; ri += step)
         acc = op.reduce(acc, op.transform(x[base+ri*rs]));
@@ -209,7 +209,7 @@ namespace mag {
       for (int64_t ri=start; ri < plan.red_prod; ri += step) {
         int64_t t = ri;
         int64_t xi = base;
-        for (int64_t k=plan.rank-1; k >= 0; --k) {
+        for (int64_t k=plan.red_rank-1; k >= 0; --k) {
           int64_t sz = plan.red_sizes[k];
           int64_t j = t % sz;
           t /= sz;
@@ -462,10 +462,10 @@ namespace mag {
     if (oi >= n) return;
     const int64_t base = mag_reduce_plan_to_offset(&plan, oi);
     arg_acc_f32 acc {};
-    if (plan.rank == 1 && plan.red_strides[0] == 1) {
+    if (plan.red_rank == 1 && plan.red_strides[0] == 1) {
       for (int64_t ri = threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
         acc = reduce_arg_acc_f32<T, is_max>(acc, x[base+ri], ri);
-    } else if (plan.rank == 1) {
+    } else if (plan.red_rank == 1) {
       const int64_t rs = plan.red_strides[0];
       for (int64_t ri = threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
         acc = reduce_arg_acc_f32<T, is_max>(acc, x[base+ri*rs], ri);
@@ -474,7 +474,7 @@ namespace mag {
         int64_t t = ri;
         int64_t xi = base;
         #pragma unroll
-        for (int64_t k = plan.rank - 1; k >= 0; --k) {
+        for (int64_t k = plan.red_rank - 1; k >= 0; --k) {
           const int64_t sz = plan.red_sizes[k];
           const int64_t j  = t % sz;
           t /= sz;
@@ -511,7 +511,7 @@ namespace mag {
       int64_t t = ri;
       int64_t xi = base;
       #pragma unroll
-      for (int64_t k = plan.rank - 1; k >= 0; --k) {
+      for (int64_t k = plan.red_rank - 1; k >= 0; --k) {
         const int64_t sz = plan.red_sizes[k];
         const int64_t j  = t % sz;
         t /= sz;

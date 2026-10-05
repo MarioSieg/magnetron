@@ -141,6 +141,9 @@ namespace mag::bindings {
       if (!base) return nb::none();
       return nb::cast(tensor_wrapper {base});
     }, "Base tensor this view was derived from, or None if this tensor is not a view.")
+    .def_prop_ro("is_host", [](const tensor_wrapper &self) -> bool {
+       return mag_tensor_is_host(*self);
+    }, "True if this tensor lives on the CPU (host) machine.")
     .def_prop_ro("is_contiguous", [](const tensor_wrapper &self) -> bool {
        return mag_tensor_is_contiguous(*self);
     }, "True if elements are stored in contiguous memory order.")

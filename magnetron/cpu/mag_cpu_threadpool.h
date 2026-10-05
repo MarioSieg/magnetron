@@ -43,7 +43,7 @@ struct mag_worker_t {
   mag_thread_pool_t *pool;                /* Host thread pool */
   mag_thread_t *thread;                   /* Thread handle */
   mag_error_t err;                        /* Worker local error */
-  mag_status_t stat;                      /* Worker local status */
+  mag_status_t stat;                      /* Worker local stat */
 } mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE);
 
 extern mag_status_t mag_threadpool_create(

@@ -104,9 +104,9 @@ namespace mag {
     std::vector<void *> blocks;
     mag_interp_plan_t plan {};
     bool ok = mag_interp_plan_build(&plan, cmd.params, small->meta.coords.shape, big->meta.coords.shape, small->meta.coords.rank, transposed, &interp_host_alloc, &blocks);
-    mag_status_t status = MAG_OK;
+    mag_status_t stat = MAG_OK;
     if (!ok) {
-      status = mag_set_error(err, MAG_ERR_OOM, "cuda: interpolate: failed to build resampling plan.");
+      stat = mag_set_error(err, MAG_ERR_OOM, "cuda: interpolate: failed to build resampling plan.");
     } else {
       size_t bytes = 0;
       for (const auto &ax : plan.axes) {
@@ -116,8 +116,8 @@ namespace mag {
         bytes = (bytes + 15) & ~static_cast<size_t>(15);
       }
       auto *dvc = static_cast<physical_device *>(r->meta.device->impl);
-      status = dvc->reserve_scratch(err, bytes);
-      if (mag_isok(status)) {
+      stat = dvc->reserve_scratch(err, bytes);
+      if (mag_isok(stat)) {
         auto *base = static_cast<char *>(dvc->scratch());
         size_t off = 0;
         dev.planes = plan.planes;
@@ -144,7 +144,7 @@ namespace mag {
       }
     }
     for (void *p : blocks) std::free(p);
-    return status;
+    return stat;
   }
 
   template <typename T>
@@ -154,8 +154,8 @@ namespace mag {
     int64_t total = mag_tensor_numel(r);
     if (!total) return MAG_OK;
     interp_dev_plan dev {};
-    mag_status_t status = interp_upload_plan(err, cmd, stream, false, dev);
-    if (mag_iserr(status)) return status;
+    mag_status_t stat = interp_upload_plan(err, cmd, stream, false, dev);
+    if (mag_iserr(stat)) return stat;
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     interp_copy_kernel<T><<<grid_for(total), INTERP_BLOCK_SIZE, 0, stream>>>(total, dev, br, bx);
@@ -170,8 +170,8 @@ namespace mag {
     int64_t total = mag_tensor_numel(r);
     if (!total) return MAG_OK;
     interp_dev_plan dev {};
-    mag_status_t status = interp_upload_plan(err, cmd, stream, transposed, dev);
-    if (mag_iserr(status)) return status;
+    mag_status_t stat = interp_upload_plan(err, cmd, stream, transposed, dev);
+    if (mag_iserr(stat)) return stat;
     auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     interp_weighted_kernel<T><<<grid_for(total), INTERP_BLOCK_SIZE, 0, stream>>>(total, dev, br, bx);

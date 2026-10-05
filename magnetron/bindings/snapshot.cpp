@@ -165,7 +165,7 @@ namespace mag::bindings {
         "write_tensor",
         [](snapshot_stream_writer &self, const tensor_wrapper &tensor) -> void {
           if (!mag_tensor_is_contiguous(*tensor)) throw nb::value_error("tensor must be contiguous");
-          if (!mag_tensor_is_cpu(*tensor)) throw nb::value_error("tensor must reside on CPU");
+          if (!mag_tensor_is_host(*tensor)) throw nb::value_error("tensor must reside on CPU");
           const void *data = reinterpret_cast<const void *>(mag_tensor_data_ptr(*tensor));
           auto nbytes = static_cast<uint64_t>(mag_tensor_numbytes(*tensor));
           nb::gil_scoped_release nogil {};

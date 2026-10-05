@@ -93,8 +93,8 @@ mag_status_t mag_strided_view(mag_error_t *err, mag_tensor_t **out, mag_context_
       memcpy(params.strided.shape, shape, rank*sizeof(*shape));
       memcpy(params.strided.strides, strides, rank*sizeof(*strides));
     }
-    mag_status_t status = mag_dispatch(err, MAG_OP_STRIDED_VIEW, false, &base, 1, &tensor, 1, &params);
-    if (mag_unlikely(mag_iserr(status))) { mag_tensor_decref(tensor); return status; }
+    mag_status_t stat = mag_dispatch(err, MAG_OP_STRIDED_VIEW, false, &base, 1, &tensor, 1, &params);
+    if (mag_unlikely(mag_iserr(stat))) { mag_tensor_decref(tensor); return stat; }
   }
   *out = tensor;
   return MAG_OK;
@@ -109,20 +109,20 @@ mag_status_t mag_empty_scalar(mag_error_t *err, mag_tensor_t **out_result, mag_c
 }
 
 mag_status_t mag_scalar(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t value, mag_device_id_t device) {
-  mag_status_t status = mag_empty_scalar(err, out_result, ctx, type, device);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty_scalar(err, out_result, ctx, type, device);
+  if (mag_iserr(stat)) return stat;
   return mag_fill_(err, *out_result, value);
 }
 
 mag_status_t mag_full(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_scalar_t value, mag_device_id_t device) {
-  mag_status_t status = mag_empty(err, out_result, ctx, type, rank, shape, device);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, out_result, ctx, type, rank, shape, device);
+  if (mag_iserr(stat)) return stat;
   return mag_fill_(err, *out_result, value);
 }
 
 mag_status_t mag_full_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like, mag_scalar_t value) {
-  mag_status_t status = mag_empty_like(err, out_result, like);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty_like(err, out_result, like);
+  if (mag_iserr(stat)) return stat;
   return mag_fill_(err, *out_result, value);
 }
 
@@ -143,38 +143,38 @@ mag_status_t mag_ones_like(mag_error_t *err, mag_tensor_t **out_result, mag_tens
 }
 
 mag_status_t mag_uniform(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_scalar_t min, mag_scalar_t max, mag_device_id_t device) {
-  mag_status_t status = mag_empty(err, out_result, ctx, type, rank, shape, device);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, out_result, ctx, type, rank, shape, device);
+  if (mag_iserr(stat)) return stat;
   return mag_uniform_(err, *out_result, min, max);
 }
 
 mag_status_t mag_uniform_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like, mag_scalar_t min, mag_scalar_t max) {
-  mag_status_t status = mag_empty_like(err, out_result, like);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty_like(err, out_result, like);
+  if (mag_iserr(stat)) return stat;
   return mag_uniform_(err, *out_result, min, max);
 }
 
 mag_status_t mag_normal(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_scalar_t mean, mag_scalar_t stddev, mag_device_id_t device) {
-  mag_status_t status = mag_empty(err, out_result, ctx, type, rank, shape, device);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, out_result, ctx, type, rank, shape, device);
+  if (mag_iserr(stat)) return stat;
   return mag_normal_(err, *out_result, mean, stddev);
 }
 
 mag_status_t mag_normal_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like, mag_scalar_t mean, mag_scalar_t stddev) {
-  mag_status_t status = mag_empty_like(err, out_result, like);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty_like(err, out_result, like);
+  if (mag_iserr(stat)) return stat;
   return mag_normal_(err, *out_result, mean, stddev);
 }
 
 mag_status_t mag_bernoulli(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, int64_t rank, const int64_t *shape, double p, mag_device_id_t device) {
-  mag_status_t status = mag_empty(err, out_result, ctx, MAG_DTYPE_BOOLEAN, rank, shape, device);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, out_result, ctx, MAG_DTYPE_BOOLEAN, rank, shape, device);
+  if (mag_iserr(stat)) return stat;
   return mag_bernoulli_(err, *out_result, p);
 }
 
 mag_status_t mag_bernoulli_like(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *like, double p) {
-  mag_status_t status = mag_empty(err, out_result, like->ctx, MAG_DTYPE_BOOLEAN, like->meta.coords.rank, like->meta.coords.shape, mag_tensor_device_id(like));
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, out_result, like->ctx, MAG_DTYPE_BOOLEAN, like->meta.coords.rank, like->meta.coords.shape, mag_tensor_device_id(like));
+  if (mag_iserr(stat)) return stat;
   return mag_bernoulli_(err, *out_result, p);
 }
 
@@ -266,18 +266,18 @@ mag_status_t mag_arange(mag_error_t *err, mag_tensor_t **out_result, mag_context
   else ok = mag_arange_numel_float(mag_scalar_as_float64(start), mag_scalar_as_float64(end), mag_scalar_as_float64(step), &numel);
   if (mag_unlikely(!ok) || numel <= 0)
       return mag_set_error(err, MAG_ERR_PARAM, "arange: invalid start, end or step (produces an empty or invalid range).");
-  mag_status_t status = mag_empty(err, &result, ctx, type, 1, &numel, device);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, &result, ctx, type, 1, &numel, device);
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = {
     .arange = {
       .start = start,
       .step = step
     }
   };
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_ARANGE, NULL, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_ARANGE, false, NULL, 0, &result, 1, &params);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_ARANGE, NULL, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_ARANGE, false, NULL, 0, &result, 1, &params);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -289,13 +289,13 @@ mag_status_t mag_eye(mag_error_t *err, mag_tensor_t **out_result, mag_context_t 
   if (mag_unlikely(m < 0))
       return mag_set_error(err, MAG_ERR_PARAM, "eye: m must be >= 0, but got %" PRIi64 ".", m);
   mag_tensor_t *result = NULL;
-  mag_status_t status = mag_empty(err, &result, ctx, type, 2, (int64_t[2]){n, m}, device);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, &result, ctx, type, 2, (int64_t[2]){n, m}, device);
+  if (mag_iserr(stat)) return stat;
   if (mag_likely(n > 0 && m > 0)) {
-    status = mag_check_dtype_and_device_compat(err, MAG_OP_EYE, NULL, 0);
-    if (mag_iserr(status)) return status;
-    status = mag_dispatch(err, MAG_OP_EYE, false, NULL, 0, &result, 1, NULL);
-    if (mag_iserr(status)) return status;
+    stat = mag_check_dtype_and_device_compat(err, MAG_OP_EYE, NULL, 0);
+    if (mag_iserr(stat)) return stat;
+    stat = mag_dispatch(err, MAG_OP_EYE, false, NULL, 0, &result, 1, NULL);
+    if (mag_iserr(stat)) return stat;
   }
   *out_result = result;
   return MAG_OK;
@@ -310,22 +310,22 @@ mag_status_t mag_linspace(mag_error_t *err, mag_tensor_t **out_result, mag_conte
   if (mag_unlikely(!(mag_dtype_bit(type) & MAG_DTYPE_MASK_NUMERIC)))
       return mag_set_error(err, MAG_ERR_PARAM, "linspace: requires a numeric dtype.");
   if (steps == 1) return mag_full(err, out_result, ctx, type, 1, &steps, start, device);
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   mag_tensor_t *idx = NULL;
   mag_tensor_t *scale = NULL;
   mag_tensor_t *start_t = NULL;
   mag_tensor_t *tmp = NULL;
   mag_tensor_t *result = NULL;
-  status = mag_arange(err, &idx, ctx, type, mag_scalar_from_int64(0), mag_scalar_from_int64(steps), mag_scalar_from_int64(1), device);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_full(err, &scale, ctx, type, 1, &steps, mag_scalar_from_float64((mag_scalar_as_float64(end) - mag_scalar_as_float64(start))/(double)(steps - 1)), device);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_full(err, &start_t, ctx, type, 1, &steps, start, device);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_mul(err, &tmp, idx, scale);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_add(err, &result, tmp, start_t);
-  if (mag_iserr(status)) goto cleanup;
+  stat = mag_arange(err, &idx, ctx, type, mag_scalar_from_int64(0), mag_scalar_from_int64(steps), mag_scalar_from_int64(1), device);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_full(err, &scale, ctx, type, 1, &steps, mag_scalar_from_float64((mag_scalar_as_float64(end) - mag_scalar_as_float64(start))/(double)(steps - 1)), device);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_full(err, &start_t, ctx, type, 1, &steps, start, device);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_mul(err, &tmp, idx, scale);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_add(err, &result, tmp, start_t);
+  if (mag_iserr(stat)) goto cleanup;
   *out_result = result;
   result = NULL;
 cleanup:
@@ -334,7 +334,7 @@ cleanup:
   if (start_t) mag_tensor_decref(start_t);
   if (scale) mag_tensor_decref(scale);
   if (idx) mag_tensor_decref(idx);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_meshgrid(mag_error_t *err, mag_tensor_t **out_results, mag_tensor_t **tensors, size_t count) {
@@ -357,7 +357,7 @@ mag_status_t mag_meshgrid(mag_error_t *err, mag_tensor_t **out_results, mag_tens
   for (size_t i=0; i < count; ++i)
     full_shape[i] = tensors[i]->meta.coords.shape[0];
   size_t filled = 0;
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   for (size_t i=0; i < count; ++i) {
     int64_t view_shape[MAG_MAX_DIMS];
     for (size_t dim=0; dim < count; ++dim)
@@ -365,16 +365,16 @@ mag_status_t mag_meshgrid(mag_error_t *err, mag_tensor_t **out_results, mag_tens
     view_shape[i] = tensors[i]->meta.coords.shape[0];
     mag_tensor_t *view = NULL;
     mag_tensor_t *expanded = NULL;
-    status = mag_view(err, &view, tensors[i], view_shape, (int64_t)count);
-    if (mag_iserr(status)) {
+    stat = mag_view(err, &view, tensors[i], view_shape, (int64_t)count);
+    if (mag_iserr(stat)) {
       for (size_t j=0; j < filled; ++j) { mag_tensor_decref(out_results[j]); out_results[j] = NULL; }
-      return status;
+      return stat;
     }
-    status = mag_expand(err, &expanded, view, (int64_t)count, full_shape);
-    if (mag_iserr(status)) {
+    stat = mag_expand(err, &expanded, view, (int64_t)count, full_shape);
+    if (mag_iserr(stat)) {
       mag_tensor_decref(view);
       for (size_t j=0; j < filled; ++j) { mag_tensor_decref(out_results[j]); out_results[j] = NULL; }
-      return status;
+      return stat;
     }
     mag_tensor_decref(view);
     out_results[i] = expanded;
@@ -388,12 +388,12 @@ mag_status_t mag_rand_perm(mag_error_t *err, mag_tensor_t **out_result, mag_cont
   if (mag_unlikely(!(mag_dtype_bit(type) & MAG_DTYPE_MASK_INTEGER)))
       return mag_set_error(err, MAG_ERR_PARAM, "rand_perm: requires an integer dtype.");
   mag_tensor_t *result;
-  mag_status_t status = mag_empty(err, &result, ctx, type, 1, &n, device);
-  if (mag_iserr(status)) return status;
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_RAND_PERM, NULL, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_RAND_PERM, false, NULL, 0, &result, 1, NULL);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, &result, ctx, type, 1, &n, device);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_RAND_PERM, NULL, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_RAND_PERM, false, NULL, 0, &result, 1, NULL);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -401,12 +401,12 @@ mag_status_t mag_rand_perm(mag_error_t *err, mag_tensor_t **out_result, mag_cont
 mag_status_t mag_clone(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) {
   *out_result = NULL;
   mag_tensor_t *result;
-  mag_status_t status = mag_empty_like(err, &result, x);
-  if (mag_iserr(status)) return status;
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_CLONE, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_CLONE, false, &x, 1, &result, 1, NULL);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty_like(err, &result, x);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_CLONE, &x, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_CLONE, false, &x, 1, &result, 1, NULL);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -419,78 +419,91 @@ mag_status_t mag_cast(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
   }
   *out_result = NULL;
   mag_tensor_t *result;
-  mag_status_t status = mag_empty(err, &result, x->ctx, dst_type, x->meta.coords.rank, x->meta.coords.shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) return status;
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_CAST, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_CAST, false, &x, 1, &result, 1, NULL);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, &result, x->ctx, dst_type, x->meta.coords.rank, x->meta.coords.shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) return stat;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_CAST, &x, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_CAST, false, &x, 1, &result, 1, NULL);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
+}
+
+static mag_status_t mag_transfer_dense(
+  mag_error_t *err,
+  mag_tensor_t *dst,
+  mag_tensor_t *src
+) {
+  mag_device_t *src_dvc = src->meta.device;
+  mag_device_t *dst_dvc = dst->meta.device;
+  int tra_flags=0;
+  if (src->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE) tra_flags|=0x1;
+  if (dst->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE) tra_flags|=0x2;
+  if (tra_flags == 0x3) {
+    memcpy((void *)mag_tensor_data_ptr_mut(dst), (const void *)mag_tensor_data_ptr(src), mag_tensor_numbytes(src));
+    return MAG_OK;
+  }
+  mag_device_t *dvc = NULL;
+  mag_transfer_dir_t transfer;
+  switch (tra_flags) {
+    case 0x1: dvc = dst_dvc; transfer = MAG_TRANSFER_DIR_H2D; break;
+    case 0x2: dvc = src_dvc; transfer = MAG_TRANSFER_DIR_D2H; break;
+    default: dvc = dst_dvc; transfer = MAG_TRANSFER_DIR_D2D; break;
+  }
+  if (mag_unlikely(!dvc->transfer))
+    return mag_set_error(err, MAG_ERR_STATE, "transfer: target device does not implement tensor transfer.");
+  return (*dvc->transfer)(err, dvc, transfer, src, dst);
+}
+
+mag_status_t mag_transfer_(mag_error_t *err, mag_tensor_t *dst, mag_tensor_t *src) {
+  if (mag_unlikely(!(dst && src)))
+    return mag_set_error(err, MAG_ERR_PARAM, "transfer: source and destination tensors must not be NULL.");
+  if (mag_unlikely(!mag_tensor_is_shape_eq(dst, src)))
+    return mag_set_error(err, MAG_ERR_PARAM, "transfer: source and destination must have the same shape.");
+  if (mag_unlikely(dst->meta.dtype != src->meta.dtype))
+    return mag_set_error(err, MAG_ERR_PARAM, "transfer: source and destination must have the same dtype, but got %s and %s.", mag_type_trait(src->meta.dtype)->name, mag_type_trait(dst->meta.dtype)->name);
+  mag_device_id_t src_id = mag_tensor_device_id(src);
+  mag_device_id_t dst_id = mag_tensor_device_id(dst);
+  if (src_id.type == dst_id.type && src_id.device_ordinal == dst_id.device_ordinal)
+    return mag_copy_(err, dst, src);
+  mag_tensor_t *xc = NULL;
+  mag_status_t stat = mag_contiguous(err, &xc, src);
+  if (mag_iserr(stat)) return stat;
+  if (!dst->meta.storage_offset && mag_tensor_is_contiguous(dst)) {
+    stat = mag_transfer_dense(err, dst, xc);
+    mag_tensor_decref(xc);
+    return stat;
+  }
+  mag_tensor_t *tmp = NULL;
+  stat = mag_empty(err, &tmp, dst->ctx, xc->meta.dtype, xc->meta.coords.rank, xc->meta.coords.shape, dst_id);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_transfer_dense(err, tmp, xc);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_copy_(err, dst, tmp);
+cleanup:
+  if (tmp) mag_tensor_decref(tmp);
+  mag_tensor_decref(xc);
+  return stat;
 }
 
 mag_status_t mag_transfer(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_device_id_t device) {
   *out_result = NULL;
   mag_device_id_t src_id = mag_tensor_device_id(x);
-  if (src_id.type == device.type && src_id.device_ordinal == device.device_ordinal) { /* If already on same device, bump refcount and do nothing */
+  if (src_id.type == device.type && src_id.device_ordinal == device.device_ordinal) {
     mag_rc_incref(x);
     *out_result = x;
     return MAG_OK;
   }
-  mag_status_t status = MAG_OK;
-  mag_tensor_t *xc = NULL;
   mag_tensor_t *out = NULL;
-  status = mag_contiguous(err, &xc, x);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_empty(err, &out, x->ctx, xc->meta.dtype, xc->meta.coords.rank, xc->meta.coords.shape, device);
-  if (mag_iserr(status)) goto cleanup;
-  {
-    mag_device_t *src_dvc = xc->meta.device;
-    mag_device_t *dst_dvc = out->meta.device;
-    bool src_hv = xc->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE;
-    bool dst_hv = out->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE;
-    if (src_hv && dst_hv) {
-      size_t nb = mag_tensor_numbytes(xc);
-      if (mag_unlikely(nb != mag_tensor_numbytes(out))) {
-        status = mag_set_error(err, MAG_ERR_PARAM, "transfer: source and destination tensor sizes do not match.");
-        goto cleanup;
-      }
-      if (mag_unlikely(!(mag_tensor_is_contiguous(xc) && mag_tensor_is_contiguous(out)))) {
-        status = mag_set_error(err, MAG_ERR_PARAM, "transfer: both tensors must be contiguous.");
-        goto cleanup;
-      }
-      memcpy((void *)mag_tensor_data_ptr_mut(out), (const void *)mag_tensor_data_ptr(xc), nb);
-      mag_tensor_decref(xc);
-      *out_result = out;
-      return MAG_OK;
-    }
-    mag_device_t *exec = NULL;
-    mag_transfer_dir_t dir;
-    if (src_hv && !dst_hv) {
-      exec = dst_dvc;
-      dir = MAG_TRANSFER_DIR_H2D;
-    } else if (!src_hv && dst_hv) {
-      exec = src_dvc;
-      dir = MAG_TRANSFER_DIR_D2H;
-    } else {
-      exec = dst_dvc;
-      dir = MAG_TRANSFER_DIR_D2D;
-    }
-    if (mag_unlikely(!(exec->transfer != NULL))) {
-      status = mag_set_error(err, MAG_ERR_STATE, "transfer: target device does not implement tensor transfer.");
-      goto cleanup;
-    }
-    status = (*exec->transfer)(err, exec, dir, xc, out);
-    if (mag_iserr(status))
-        goto cleanup;
+  mag_status_t stat = mag_empty(err, &out, x->ctx, x->meta.dtype, x->meta.coords.rank, x->meta.coords.shape, device);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_transfer_(err, out, x);
+  if (mag_iserr(stat)) {
+    mag_tensor_decref(out);
+    return stat;
   }
-  mag_tensor_decref(xc);
   *out_result = out;
   return MAG_OK;
-cleanup:
-  if (out) mag_tensor_decref(out);
-  if (xc) mag_tensor_decref(xc);
-  return status;
 }
 
 mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank) {
@@ -498,20 +511,20 @@ mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
   mag_tensor_t *result = NULL;
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_ERR_RANK, "view: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
-  mag_status_t status;
+  mag_status_t stat;
   if (rank == 0) {
     if (mag_unlikely(x->meta.numel != 1))
         return mag_set_error(err, MAG_ERR_PARAM, "view: rank-0 view is only allowed on tensors with a single element, but got %" PRIi64 " elements.", x->meta.numel);
-    status = mag_strided_view(err, &result, x->ctx, x, 0, NULL, NULL, x->meta.storage_offset);
-    if (mag_iserr(status)) return status;
+    stat = mag_strided_view(err, &result, x->ctx, x, 0, NULL, NULL, x->meta.storage_offset);
+    if (mag_iserr(stat)) return stat;
   } else {
     if (mag_unlikely(!(dims != NULL)))
         return mag_set_error(err, MAG_ERR_PARAM, "view: dims must not be NULL when rank > 0.");
     int64_t oshape[MAG_MAX_DIMS] = {0};
     memcpy(oshape, dims, rank*sizeof(*dims));
     int64_t shape[MAG_MAX_DIMS];
-    status = mag_infer_missing_dim(err, &shape, oshape, rank, x->meta.numel);
-    if (mag_iserr(status)) return status;
+    stat = mag_infer_missing_dim(err, &shape, oshape, rank, x->meta.numel);
+    if (mag_iserr(stat)) return stat;
     int64_t strides[MAG_MAX_DIMS];
     if (rank == x->meta.coords.rank && !memcmp(shape, x->meta.coords.shape, rank*sizeof(*shape))) { /* Stride strategy: same shape as base */
       memcpy(strides, x->meta.coords.strides, rank*sizeof(*shape));
@@ -526,11 +539,11 @@ mag_status_t mag_view(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
             return mag_set_error(err, MAG_ERR_DIM, "view: stride computation overflowed at dim %" PRIi64 ".", i);
       }
     } else { /* Stride strategy: solve generic strides */
-      status = mag_solve_view_strides(err, &strides, x->meta.coords.shape, x->meta.coords.strides, x->meta.coords.rank, shape, rank);
-      if (mag_iserr(status)) return status;
+      stat = mag_solve_view_strides(err, &strides, x->meta.coords.shape, x->meta.coords.strides, x->meta.coords.rank, shape, rank);
+      if (mag_iserr(stat)) return stat;
     }
-    status = mag_strided_view(err, &result, x->ctx, x, rank, shape, strides, x->meta.storage_offset);
-    if (mag_iserr(status)) return status;
+    stat = mag_strided_view(err, &result, x->ctx, x, rank, shape, strides, x->meta.storage_offset);
+    if (mag_iserr(stat)) return stat;
   }
   *out_result = result;
   return MAG_OK;
@@ -620,23 +633,23 @@ mag_status_t mag_reinterpret_view(mag_error_t *err, mag_tensor_t **out_result, m
   if (mag_unlikely(addr % nt->alignment))
     return mag_set_error(err, MAG_ERR_PARAM, "reinterpret_view: address 0x%" PRIxPTR " is not %zu-byte aligned for %s.", addr, nt->alignment, nt->name);
   mag_tensor_t *flat = NULL;
-  mag_status_t status = mag_reinterpret_cast_flat_storage_1d(err, &flat, x, dtype);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_reinterpret_cast_flat_storage_1d(err, &flat, x, dtype);
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *geometry = NULL;
-  status = mag_strided_view(err, &geometry, x->ctx, flat, xr, xr ? shape : NULL, xr ? strides : NULL, byte_off/nsz);
+  stat = mag_strided_view(err, &geometry, x->ctx, flat, xr, xr ? shape : NULL, xr ? strides : NULL, byte_off/nsz);
   mag_tensor_decref(flat);
-  if (mag_iserr(status)) return status;
-  status = mag_view(err, out_result, geometry, dims, rank);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_view(err, out_result, geometry, dims, rank);
   mag_tensor_decref(geometry);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_reshape(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank) {
   *out_result = NULL;
   mag_tensor_t *result = NULL;
   int64_t shape[MAG_MAX_DIMS];
-  mag_status_t status = mag_infer_missing_dim(err, &shape, dims, rank, x->meta.numel);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_infer_missing_dim(err, &shape, dims, rank, x->meta.numel);
+  if (mag_iserr(stat)) return stat;
   if (x->meta.coords.rank == rank && !memcmp(x->meta.coords.shape, shape, sizeof(*dims)*rank)) {
     mag_rc_incref(x);
     *out_result = x;
@@ -644,12 +657,12 @@ mag_status_t mag_reshape(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
   }
   if (mag_tensor_is_contiguous(x) || mag_tensor_can_view(x, shape, rank))
     return mag_view(err, out_result, x, shape, rank);
-  status = mag_contiguous(err, &result, x);
-  if (mag_iserr(status)) return status;
+  stat = mag_contiguous(err, &result, x);
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *reshaped = NULL;
-  status = mag_view(err, &reshaped, result, shape, rank);
+  stat = mag_view(err, &reshaped, result, shape, rank);
   mag_rc_decref(result);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   *out_result = reshaped;
   return MAG_OK;
 }
@@ -857,10 +870,10 @@ mag_status_t mag_flatten(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
   for (int64_t i=end_dim+1; i < rank; ++i) shape[nrank++] = x->meta.coords.shape[i];
   if (mag_unlikely(!(nrank <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_ERR_RANK, "flatten: result rank %" PRIi64 " exceeds the maximum rank of %d.", nrank, MAG_MAX_DIMS);
-  mag_status_t status = mag_view(err, out_result, x, shape, nrank); /* Try view first */
-  if (mag_iserr(status))
-    status = mag_reshape(err, out_result, x, shape, nrank);
-  return status;
+  mag_status_t stat = mag_view(err, out_result, x, shape, nrank); /* Try view first */
+  if (mag_iserr(stat))
+    stat = mag_reshape(err, out_result, x, shape, nrank);
+  return stat;
 }
 
 mag_status_t mag_unflatten(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, const int64_t *sizes, int64_t sizes_rank) {
@@ -879,27 +892,27 @@ mag_status_t mag_unflatten(mag_error_t *err, mag_tensor_t **out_result, mag_tens
   if (mag_unlikely(!(nr <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_ERR_RANK, "unflatten: result rank %" PRIi64 " exceeds the maximum rank of %d.", nr, MAG_MAX_DIMS);
   int64_t resolved[MAG_MAX_DIMS];
-  mag_status_t status = mag_infer_missing_dim(
+  mag_status_t stat = mag_infer_missing_dim(
     err,
     &resolved,
     sizes,
     sizes_rank,
     x->meta.coords.shape[dim]
   );
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   int64_t shape[MAG_MAX_DIMS];
   int64_t k=0;
   for (int64_t i=0; i < dim; ++i) shape[k++] = x->meta.coords.shape[i];
   for (int64_t i=0; i < sizes_rank; ++i) shape[k++] = resolved[i];
   for (int64_t i=dim+1; i < rank; ++i) shape[k++] = x->meta.coords.shape[i];
-  status = mag_view(err, out_result, x, shape, nr);
-  if (mag_iserr(status)) {
+  stat = mag_view(err, out_result, x, shape, nr);
+  if (mag_iserr(stat)) {
     mag_error_t ignored = {0};
-    status = mag_reshape(&ignored, out_result, x, shape, nr);
-    if (mag_iserr(status))
-      status = mag_reshape(err, out_result, x, shape, nr);
+    stat = mag_reshape(&ignored, out_result, x, shape, nr);
+    if (mag_iserr(stat))
+      stat = mag_reshape(err, out_result, x, shape, nr);
   }
-  return status;
+  return stat;
 }
 
 mag_status_t mag_narrow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim, int64_t start, int64_t length) {
@@ -996,13 +1009,13 @@ mag_status_t mag_split(mag_error_t *err, mag_tensor_t **outs, int64_t num_splits
   for (int64_t i=0; i < num_splits; ++i) {
     int64_t remaining = sz - start;
     int64_t length = remaining < split_size ? remaining : split_size;  /* min */
-    mag_status_t status = mag_view_slice(err, outs+i, x, dim, start, length, 1);
-    if (mag_iserr(status)) {
+    mag_status_t stat = mag_view_slice(err, outs+i, x, dim, start, length, 1);
+    if (mag_iserr(stat)) {
       for (int64_t j=0; j < i; ++j) {
         mag_tensor_decref(outs[j]);
         outs[j] = NULL;
       }
-      return status;
+      return stat;
     }
     start += length;
   }
@@ -1022,13 +1035,13 @@ mag_status_t mag_unbind(mag_error_t *err, mag_tensor_t **outs, int64_t num_outs,
   if (!num_outs) return MAG_OK;
   memset(outs, 0, sizeof(*outs)*num_outs);
   for (int64_t i=0; i < num_outs; ++i) {
-    mag_status_t status = mag_select(err, outs+i, x, dim, i);
-    if (mag_iserr(status)) {
+    mag_status_t stat = mag_select(err, outs+i, x, dim, i);
+    if (mag_iserr(stat)) {
       for (int64_t j=0; j < i; ++j) {
         mag_tensor_decref(outs[j]);
         outs[j] = NULL;
       }
-      return status;
+      return stat;
     }
   }
   return MAG_OK;
@@ -1058,11 +1071,11 @@ static mag_status_t reduce_cast_proxy(mag_error_t *err, mag_tensor_t **out_resul
   if (x->meta.dtype != MAG_DTYPE_BOOLEAN)
     return mag_op_stub_reduction(err, out_result, op, x, dims, rank, keepdim);
   mag_tensor_t *xi = NULL;
-  mag_status_t status = mag_cast(err, &xi, x, MAG_DTYPE_INT64); /* boolean tensors are reduced as int64 */
-  if (mag_iserr(status)) return status;
-  status = mag_op_stub_reduction(err, out_result, op, xi, dims, rank, keepdim);
+  mag_status_t stat = mag_cast(err, &xi, x, MAG_DTYPE_INT64); /* boolean tensors are reduced as int64 */
+  if (mag_iserr(stat)) return stat;
+  stat = mag_op_stub_reduction(err, out_result, op, xi, dims, rank, keepdim);
   mag_tensor_decref(xi);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_sum(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim) {
@@ -1083,21 +1096,21 @@ static mag_status_t mag_minmax_dim(mag_error_t *err, mag_tensor_t **out_values, 
   if (mag_unlikely(!(dim >= 0 && dim < rank)))
     return mag_set_error(err, MAG_ERR_DIM, "%s: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", is_max ? "max" : "min", dim, rank);
   mag_tensor_t *idx = NULL, *vals = NULL;
-  mag_status_t status = is_max ? mag_argmax(err, &idx, x, &dim, 1, true) : mag_argmin(err, &idx, x, &dim, 1, true);
-  if (mag_iserr(status)) return status;
-  status = mag_gather(err, &vals, x, dim, idx);
-  if (mag_iserr(status)) { mag_tensor_decref(idx); return status; }
+  mag_status_t stat = is_max ? mag_argmax(err, &idx, x, &dim, 1, true) : mag_argmin(err, &idx, x, &dim, 1, true);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_gather(err, &vals, x, dim, idx);
+  if (mag_iserr(stat)) { mag_tensor_decref(idx); return stat; }
   if (keepdim) {
     *out_values = vals;
     *out_indices = idx;
     return MAG_OK;
   }
-  status = mag_squeeze_dim(err, out_values, vals, dim);
+  stat = mag_squeeze_dim(err, out_values, vals, dim);
   mag_tensor_decref(vals);
-  if (mag_iserr(status)) { mag_tensor_decref(idx); return status; }
-  status = mag_squeeze_dim(err, out_indices, idx, dim);
+  if (mag_iserr(stat)) { mag_tensor_decref(idx); return stat; }
+  stat = mag_squeeze_dim(err, out_indices, idx, dim);
   mag_tensor_decref(idx);
-  if (mag_iserr(status)) { mag_tensor_decref(*out_values); *out_values = NULL; return status; }
+  if (mag_iserr(stat)) { mag_tensor_decref(*out_values); *out_values = NULL; return stat; }
   return MAG_OK;
 }
 
@@ -1139,12 +1152,12 @@ mag_status_t mag_topk(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t 
   shape[dim] = k;
   mag_tensor_t *values = NULL;
   mag_tensor_t *indices = NULL;
-  mag_status_t status = mag_empty(err, &values, ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) return status;
-  status = mag_empty(err, &indices, ctx, MAG_DTYPE_INT64, rank, shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) {
+  mag_status_t stat = mag_empty(err, &values, ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) return stat;
+  stat = mag_empty(err, &indices, ctx, MAG_DTYPE_INT64, rank, shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) {
     mag_tensor_decref(values);
-    return status;
+    return stat;
   }
   mag_op_params_t params = {
     .topk = {
@@ -1154,10 +1167,10 @@ mag_status_t mag_topk(mag_error_t *err, mag_tensor_t **out_values, mag_tensor_t 
       .sorted = sorted
     }
   };
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_TOPK, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_TOPK, false, &x, 1, (mag_tensor_t*[2]){values, indices}, 2, &params);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_TOPK, &x, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_TOPK, false, &x, 1, (mag_tensor_t*[2]){values, indices}, 2, &params);
+  if (mag_iserr(stat)) return stat;
   *out_values = values;
   *out_indices = indices;
   return MAG_OK;
@@ -1170,21 +1183,21 @@ static mag_status_t mag_op_stub_sort(mag_error_t *err, mag_tensor_t **out_values
     return mag_set_error(err, MAG_ERR_PARAM, "%s: input tensor must not be NULL.", name);
   mag_context_t *ctx = x->ctx;
   int64_t rank = x->meta.coords.rank;
-  mag_status_t status = mag_check_dtype_and_device_compat(err, op, &x, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, op, &x, 0);
+  if (mag_iserr(stat)) return stat;
   if (rank == 0) {
     if (mag_unlikely(dim != 0 && dim != -1))
       return mag_set_error(err, MAG_ERR_DIM, "%s: dim %" PRIi64 " is out of range for rank 0.", name, dim);
     mag_tensor_t *values = NULL;
     mag_tensor_t *indices = NULL;
     if (out_values) {
-      status = mag_clone(err, &values, x);
-      if (mag_iserr(status)) return status;
+      stat = mag_clone(err, &values, x);
+      if (mag_iserr(stat)) return stat;
     }
-    status = mag_zeros(err, &indices, ctx, MAG_DTYPE_INT64, 0, NULL, mag_tensor_device_id(x));
-    if (mag_iserr(status)) {
+    stat = mag_zeros(err, &indices, ctx, MAG_DTYPE_INT64, 0, NULL, mag_tensor_device_id(x));
+    if (mag_iserr(stat)) {
       if (values) mag_tensor_decref(values);
-      return status;
+      return stat;
     }
     if (out_values) *out_values = values;
     *out_indices = indices;
@@ -1196,13 +1209,13 @@ static mag_status_t mag_op_stub_sort(mag_error_t *err, mag_tensor_t **out_values
   mag_tensor_t *values = NULL;
   mag_tensor_t *indices = NULL;
   if (out_values) {
-    status = mag_empty(err, &values, ctx, x->meta.dtype, rank, x->meta.coords.shape, mag_tensor_device_id(x));
-    if (mag_iserr(status)) return status;
+    stat = mag_empty(err, &values, ctx, x->meta.dtype, rank, x->meta.coords.shape, mag_tensor_device_id(x));
+    if (mag_iserr(stat)) return stat;
   }
-  status = mag_empty(err, &indices, ctx, MAG_DTYPE_INT64, rank, x->meta.coords.shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) {
+  stat = mag_empty(err, &indices, ctx, MAG_DTYPE_INT64, rank, x->meta.coords.shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) {
     if (values) mag_tensor_decref(values);
-    return status;
+    return stat;
   }
   mag_op_params_t params = {
     .sort = {
@@ -1221,11 +1234,11 @@ static mag_status_t mag_op_stub_sort(mag_error_t *err, mag_tensor_t **out_values
     outs[0] = indices;
     num_out = 1;
   }
-  status = mag_dispatch(err, op, false, &x, 1, outs, num_out, &params);
-  if (mag_iserr(status)) {
+  stat = mag_dispatch(err, op, false, &x, 1, outs, num_out, &params);
+  if (mag_iserr(stat)) {
     if (values) mag_tensor_decref(values);
     mag_tensor_decref(indices);
-    return status;
+    return stat;
   }
   if (out_values) *out_values = values;
   *out_indices = indices;
@@ -1242,12 +1255,12 @@ mag_status_t mag_argsort(mag_error_t *err, mag_tensor_t **out_indices, mag_tenso
 
 static mag_status_t mag_bincount_range(mag_error_t *err, mag_tensor_t *x, mag_opcode_t op, int64_t *out_value) {
   mag_tensor_t *red = NULL;
-  mag_status_t status = op == MAG_OP_MINIMA ? mag_minima(err, &red, x, NULL, 0, false) : mag_maxima(err, &red, x, NULL, 0, false);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = op == MAG_OP_MINIMA ? mag_minima(err, &red, x, NULL, 0, false) : mag_maxima(err, &red, x, NULL, 0, false);
+  if (mag_iserr(stat)) return stat;
   mag_scalar_t sc;
-  status = mag_tensor_item(err, red, &sc);
+  stat = mag_tensor_item(err, red, &sc);
   mag_tensor_decref(red);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   *out_value = mag_scalar_as_int64(sc);
   return MAG_OK;
 }
@@ -1274,47 +1287,47 @@ mag_status_t mag_bincount(mag_error_t *err, mag_tensor_t **out_result, mag_tenso
   mag_tensor_t *xi = NULL;
   mag_tensor_t *w = NULL;
   mag_tensor_t *result = NULL;
-  mag_status_t status;
+  mag_status_t stat;
   if (x->meta.dtype == MAG_DTYPE_INT64) {
     xi = x;
     mag_tensor_incref(xi);
   } else {
-    status = mag_cast(err, &xi, x, MAG_DTYPE_INT64);
-    if (mag_iserr(status)) return status;
+    stat = mag_cast(err, &xi, x, MAG_DTYPE_INT64);
+    if (mag_iserr(stat)) return stat;
   }
   if (weights) {
     if (mag_type_category_is_floating_point(weights->meta.dtype)) {
       w = weights;
       mag_tensor_incref(w);
     } else {
-      status = mag_cast(err, &w, weights, MAG_DTYPE_FLOAT32);
-      if (mag_iserr(status)) goto cleanup;
+      stat = mag_cast(err, &w, weights, MAG_DTYPE_FLOAT32);
+      if (mag_iserr(stat)) goto cleanup;
     }
   }
   int64_t bins = min_len;
   if (x->meta.numel > 0) {
     int64_t lo, hi;
-    status = mag_bincount_range(err, xi, MAG_OP_MINIMA, &lo);
-    if (mag_iserr(status)) goto cleanup;
+    stat = mag_bincount_range(err, xi, MAG_OP_MINIMA, &lo);
+    if (mag_iserr(stat)) goto cleanup;
     if (mag_unlikely(lo < 0)) {
-      status = mag_set_error(err, MAG_ERR_PARAM, "bincount: input must be non-negative, but contains %" PRIi64 ".", lo);
+      stat = mag_set_error(err, MAG_ERR_PARAM, "bincount: input must be non-negative, but contains %" PRIi64 ".", lo);
       goto cleanup;
     }
-    status = mag_bincount_range(err, xi, MAG_OP_MAXIMA, &hi);
-    if (mag_iserr(status)) goto cleanup;
+    stat = mag_bincount_range(err, xi, MAG_OP_MAXIMA, &hi);
+    if (mag_iserr(stat)) goto cleanup;
     bins = mag_vmax(bins, hi + 1);
   }
   mag_dtype_t out_type = w ? w->meta.dtype : MAG_DTYPE_INT64;
-  status = mag_zeros(err, &result, ctx, out_type, 1, &bins, mag_tensor_device_id(x));
-  if (mag_iserr(status)) goto cleanup;
+  stat = mag_zeros(err, &result, ctx, out_type, 1, &bins, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) goto cleanup;
   {
     mag_tensor_t *ins[2] = {xi, w};
     uint32_t num_in = w ? 2 : 1;
     mag_op_params_t params = { .bincount = { .minlength = min_len } };
-    status = mag_check_dtype_and_device_compat(err, MAG_OP_BINCOUNT, ins, num_in);
-    if (mag_iserr(status)) goto cleanup;
-    status = mag_dispatch(err, MAG_OP_BINCOUNT, false, ins, num_in, &result, 1, &params);
-    if (mag_iserr(status)) goto cleanup;
+    stat = mag_check_dtype_and_device_compat(err, MAG_OP_BINCOUNT, ins, num_in);
+    if (mag_iserr(stat)) goto cleanup;
+    stat = mag_dispatch(err, MAG_OP_BINCOUNT, false, ins, num_in, &result, 1, &params);
+    if (mag_iserr(stat)) goto cleanup;
   }
   *out_result = result;
   result = NULL;
@@ -1322,39 +1335,39 @@ cleanup:
   if (result) mag_tensor_decref(result);
   if (w) mag_tensor_decref(w);
   if (xi) mag_tensor_decref(xi);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_nonzero(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) {
   *out_result = NULL;
   if (mag_unlikely(!x))
     return mag_set_error(err, MAG_ERR_PARAM, "nonzero: input tensor must not be NULL.");
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_NONZERO, &x, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_NONZERO, &x, 0);
+  if (mag_iserr(stat)) return stat;
   mag_context_t *ctx = x->ctx;
   mag_device_id_t dev = mag_tensor_device_id(x);
   mag_tensor_t *count = NULL;
-  status = mag_empty_scalar(err, &count, ctx, MAG_DTYPE_INT64, dev);
-  if (mag_iserr(status)) return status;
+  stat = mag_empty_scalar(err, &count, ctx, MAG_DTYPE_INT64, dev);
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = { .nonzero = { .count_only = true } }; /* pass 1: count NZ elements, required to allocate result tensor */
-  status = mag_dispatch(err, MAG_OP_NONZERO, false, &x, 1, &count, 1, &params);
-  if (mag_iserr(status)) {
+  stat = mag_dispatch(err, MAG_OP_NONZERO, false, &x, 1, &count, 1, &params);
+  if (mag_iserr(stat)) {
     mag_tensor_decref(count);
-    return status;
+    return stat;
   }
   mag_scalar_t sc;
-  status = mag_tensor_item(err, count, &sc);
+  stat = mag_tensor_item(err, count, &sc);
   mag_tensor_decref(count);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   int64_t shape[2] = {mag_scalar_as_int64(sc), x->meta.coords.rank};
   mag_tensor_t *result = NULL;
-  status = mag_empty(err, &result, ctx, MAG_DTYPE_INT64, 2, shape, dev);
-  if (mag_iserr(status)) return status;
+  stat = mag_empty(err, &result, ctx, MAG_DTYPE_INT64, 2, shape, dev);
+  if (mag_iserr(stat)) return stat;
   params.nonzero.count_only = false; /* now actually NZ get elements */
-  status = mag_dispatch(err, MAG_OP_NONZERO, false, &x, 1, &result, 1, &params);
-  if (mag_iserr(status)) {
+  stat = mag_dispatch(err, MAG_OP_NONZERO, false, &x, 1, &result, 1, &params);
+  if (mag_iserr(stat)) {
     mag_tensor_decref(result);
-    return status;
+    return stat;
   }
   *out_result = result;
   return MAG_OK;
@@ -1390,17 +1403,17 @@ mag_status_t mag_outer(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
     return mag_set_error(err, MAG_ERR_DEVICE, "outer: input tensors must be on the same device.");
   mag_tensor_t *av = NULL;
   mag_tensor_t *bv = NULL;
-  mag_status_t status = mag_unsqueeze(err, &av, x, 1);
-  if (mag_iserr(status)) return status;
-  status = mag_unsqueeze(err, &bv, y, 0);
-  if (mag_iserr(status)) {
+  mag_status_t stat = mag_unsqueeze(err, &av, x, 1);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_unsqueeze(err, &bv, y, 0);
+  if (mag_iserr(stat)) {
     mag_tensor_decref(av);
-    return status;
+    return stat;
   }
-  status = mag_mul(err, out_result, av, bv);
+  stat = mag_mul(err, out_result, av, bv);
   mag_tensor_decref(av);
   mag_tensor_decref(bv);
-  return status;
+  return stat;
 }
 
 #define mag_impl_unary_pair(name, op) \
@@ -1448,30 +1461,30 @@ mag_status_t mag_softmax_dim(mag_error_t *err, mag_tensor_t **out_result, mag_te
   mag_norm_axis(&dim, rank);
   if (mag_unlikely(!(dim >= 0 && dim < rank)))
     return mag_set_error(err, MAG_ERR_DIM, "softmax: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   mag_tensor_t *xt = NULL, *xc = NULL, *y = NULL, *yt = NULL;
   if (dim == rank-1) {
-    status = mag_contiguous(err, &xc, x);
-    if (mag_iserr(status)) return status;
-    status = mag_op_stub_unary(err, out_result, MAG_OP_SOFTMAX, xc, NULL, false);
+    stat = mag_contiguous(err, &xc, x);
+    if (mag_iserr(stat)) return stat;
+    stat = mag_op_stub_unary(err, out_result, MAG_OP_SOFTMAX, xc, NULL, false);
     mag_tensor_decref(xc);
-    return status;
+    return stat;
   }
-  status = mag_transpose(err, &xt, x, dim, rank-1);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_contiguous(err, &xc, xt);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_op_stub_unary(err, &y, MAG_OP_SOFTMAX, xc, NULL, false);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_transpose(err, &yt, y, dim, rank-1);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_contiguous(err, out_result, yt);
+  stat = mag_transpose(err, &xt, x, dim, rank-1);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_contiguous(err, &xc, xt);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_op_stub_unary(err, &y, MAG_OP_SOFTMAX, xc, NULL, false);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_transpose(err, &yt, y, dim, rank-1);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_contiguous(err, out_result, yt);
 cleanup:
   if (yt) mag_tensor_decref(yt);
   if (y) mag_tensor_decref(y);
   if (xc) mag_tensor_decref(xc);
   if (xt) mag_tensor_decref(xt);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_softmax_dim_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, int64_t dim) {
@@ -1482,11 +1495,11 @@ mag_status_t mag_softmax_dim_(mag_error_t *err, mag_tensor_t **out_result, mag_t
   if ((rank == 0 || d == rank-1) && mag_tensor_is_contiguous(x))
     return mag_op_stub_unary(err, out_result, MAG_OP_SOFTMAX, x, NULL, true);
   mag_tensor_t *y = NULL;
-  mag_status_t status = mag_softmax_dim(err, &y, x, dim);
-  if (mag_iserr(status)) return status;
-  status = mag_copy_(err, x, y);
+  mag_status_t stat = mag_softmax_dim(err, &y, x, dim);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_copy_(err, x, y);
   mag_tensor_decref(y);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   mag_tensor_incref(x);
   *out_result = x;
   return MAG_OK;
@@ -1539,14 +1552,14 @@ mag_status_t mag_pad(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
       return mag_set_error(err, MAG_ERR_PARAM, "pad: negative padding on dim %" PRIi64 " crops more than the dim size %" PRIi64 ".", dx, x->meta.coords.shape[dx]);
     }
     mag_tensor_t *nxt = NULL;
-    mag_status_t status = mag_narrow(err, &nxt, src, dx, start, len);
+    mag_status_t stat = mag_narrow(err, &nxt, src, dx, start, len);
     mag_tensor_decref(src);
-    if (mag_iserr(status)) return status;
+    if (mag_iserr(stat)) return stat;
     src = nxt;
   }
-  mag_status_t status = mag_pad_nonneg(err, out_result, src, pos, pad_len, mode, value);
+  mag_status_t stat = mag_pad_nonneg(err, out_result, src, pos, pad_len, mode, value);
   mag_tensor_decref(src);
-  return status;
+  return stat;
 }
 
 static mag_status_t mag_pad_nonneg(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, const int64_t *pad, int64_t pad_len, mag_pad_mode_t mode, mag_scalar_t value) {
@@ -1581,12 +1594,12 @@ static mag_status_t mag_pad_nonneg(mag_error_t *err, mag_tensor_t **out_result, 
   for (int64_t dim=0; dim < rank; ++dim)
     shape[dim] = x->meta.coords.shape[dim]+params.pad.pre_pad[dim]+params.pad.post_pad[dim];
   mag_tensor_t *result = NULL;
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_PAD, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_empty(err, &result, x->ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_PAD, false, &x, 1, &result, 1, &params);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_PAD, &x, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_empty(err, &result, x->ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_PAD, false, &x, 1, &result, 1, &params);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -1683,23 +1696,23 @@ static mag_status_t mag_conv_stub(
   mag_tensor_t *wc = NULL;
   mag_tensor_t *bc = NULL;
   mag_tensor_t *result = NULL;
-  mag_status_t status = mag_contiguous(err, &xc, x);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_contiguous(err, &wc, weight);
-  if (mag_iserr(status)) goto cleanup;
+  mag_status_t stat = mag_contiguous(err, &xc, x);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_contiguous(err, &wc, weight);
+  if (mag_iserr(stat)) goto cleanup;
   if (bias) {
-    status = mag_contiguous(err, &bc, bias);
-    if (mag_iserr(status)) goto cleanup;
+    stat = mag_contiguous(err, &bc, bias);
+    if (mag_iserr(stat)) goto cleanup;
   }
   {
     mag_tensor_t *ins[3] = {xc, wc, bc};
     uint32_t num_in = bc ? 3 : 2;
-    status = mag_check_dtype_and_device_compat(err, op, ins, num_in);
-    if (mag_iserr(status)) goto cleanup;
-    status = mag_empty(err, &result, x->ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
-    if (mag_iserr(status)) goto cleanup;
-    status = mag_dispatch(err, op, false, ins, num_in, &result, 1, &params);
-    if (mag_iserr(status)) goto cleanup;
+    stat = mag_check_dtype_and_device_compat(err, op, ins, num_in);
+    if (mag_iserr(stat)) goto cleanup;
+    stat = mag_empty(err, &result, x->ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
+    if (mag_iserr(stat)) goto cleanup;
+    stat = mag_dispatch(err, op, false, ins, num_in, &result, 1, &params);
+    if (mag_iserr(stat)) goto cleanup;
   }
   *out_result = result;
   result = NULL;
@@ -1708,7 +1721,7 @@ cleanup:
   if (bc) mag_tensor_decref(bc);
   if (wc) mag_tensor_decref(wc);
   if (xc) mag_tensor_decref(xc);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_conv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *weight, mag_tensor_t *bias, int64_t spatial, const int64_t *stride, const int64_t *padding, const int64_t *dilation, int64_t groups) {
@@ -1768,20 +1781,20 @@ mag_status_t mag_interpolate(mag_error_t *err, mag_tensor_t **out_result, mag_te
   }
   mag_tensor_t *xc = NULL;
   mag_tensor_t *result = NULL;
-  mag_status_t status = mag_contiguous(err, &xc, x);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_INTERPOLATE, &xc, 1);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_empty(err, &result, x->ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_dispatch(err, MAG_OP_INTERPOLATE, false, &xc, 1, &result, 1, &params);
-  if (mag_iserr(status)) goto cleanup;
+  mag_status_t stat = mag_contiguous(err, &xc, x);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_INTERPOLATE, &xc, 1);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_empty(err, &result, x->ctx, x->meta.dtype, rank, shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_dispatch(err, MAG_OP_INTERPOLATE, false, &xc, 1, &result, 1, &params);
+  if (mag_iserr(stat)) goto cleanup;
   *out_result = result;
   result = NULL;
 cleanup:
   if (result) mag_tensor_decref(result);
   if (xc) mag_tensor_decref(xc);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_tril(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *tensor, int64_t diag) {
@@ -1832,22 +1845,22 @@ mag_status_t mag_multinomial(mag_error_t *err, mag_tensor_t **out_result, mag_te
       return mag_set_error(err, MAG_ERR_PARAM, "multinomial: input tensor must be contiguous row-major.");
   if (mag_unlikely(num_samples <= 0))
       return mag_set_error(err, MAG_ERR_PARAM, "multinomial: num_samples must be > 0, but got %" PRIi64 ".", num_samples);
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_MULTINOMIAL, &tensor, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_MULTINOMIAL, &tensor, 0);
+  if (mag_iserr(stat)) return stat;
   int64_t shape[MAG_MAX_DIMS] = {0};
   if (tensor->meta.coords.rank > 1) memcpy(shape, tensor->meta.coords.shape, (tensor->meta.coords.rank - 1)*sizeof(*shape));
   shape[tensor->meta.coords.rank-1] = num_samples;
   mag_tensor_t *result;
-  status = mag_empty(err, &result, tensor->ctx, MAG_DTYPE_INT64, tensor->meta.coords.rank, shape, mag_tensor_device_id(tensor));
-  if (mag_iserr(status)) return status;
+  stat = mag_empty(err, &result, tensor->ctx, MAG_DTYPE_INT64, tensor->meta.coords.rank, shape, mag_tensor_device_id(tensor));
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = {
     .multinomial = {
       .samples = num_samples,
       .replacement = replacement
     }
   };
-  status = mag_dispatch(err, MAG_OP_MULTINOMIAL, false, &tensor, 1, &result, 1, &params);
-  if (mag_iserr(status)) return status;
+  stat = mag_dispatch(err, MAG_OP_MULTINOMIAL, false, &tensor, 1, &result, 1, &params);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -1908,15 +1921,15 @@ mag_status_t mag_cat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *
     }
     shape[dim] += tensor->meta.coords.shape[dim];
   }
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_CAT, tmp, (uint32_t)count);
-  if (mag_iserr(status)) { for (size_t i=0; i < count; ++i) mag_tensor_decref(tmp[i]); (*mag_alloc)(tmp, 0, 0); return status; }
-  status = mag_empty(err, &result, t0->ctx, dtype, rank, shape, mag_tensor_device_id(*tmp));
-  if (mag_iserr(status)) { for (size_t i=0; i < count; ++i) mag_tensor_decref(tmp[i]); (*mag_alloc)(tmp, 0, 0); return status; }
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_CAT, tmp, (uint32_t)count);
+  if (mag_iserr(stat)) { for (size_t i=0; i < count; ++i) mag_tensor_decref(tmp[i]); (*mag_alloc)(tmp, 0, 0); return stat; }
+  stat = mag_empty(err, &result, t0->ctx, dtype, rank, shape, mag_tensor_device_id(*tmp));
+  if (mag_iserr(stat)) { for (size_t i=0; i < count; ++i) mag_tensor_decref(tmp[i]); (*mag_alloc)(tmp, 0, 0); return stat; }
   mag_op_params_t params = {
     .cat = {.dim = dim}
   };
-  status = mag_dispatch(err, MAG_OP_CAT, false, tmp, count, &result, 1, &params);
-  if (mag_iserr(status)) { for (size_t i=0; i < count; ++i) mag_tensor_decref(tmp[i]); (*mag_alloc)(tmp, 0, 0); return status; }
+  stat = mag_dispatch(err, MAG_OP_CAT, false, tmp, count, &result, 1, &params);
+  if (mag_iserr(stat)) { for (size_t i=0; i < count; ++i) mag_tensor_decref(tmp[i]); (*mag_alloc)(tmp, 0, 0); return stat; }
   for (size_t i=0; i < count; ++i)
     mag_tensor_decref(tmp[i]);
   (*mag_alloc)(tmp, 0, 0);
@@ -1943,18 +1956,18 @@ mag_status_t mag_stack(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
     return mag_set_error(err, MAG_ERR_OOM, "stack: failed to allocate temporary array for %zu tensors.", count);
   for (size_t i=0; i < count; ++i) {
     tmp[i] = NULL;
-    mag_status_t status = mag_unsqueeze(err, &tmp[i], tensors[i], dim);
-    if (mag_iserr(status)) {
+    mag_status_t stat = mag_unsqueeze(err, &tmp[i], tensors[i], dim);
+    if (mag_iserr(stat)) {
       for (size_t j=0; j < i; ++j) if (tmp[j]) mag_tensor_decref(tmp[j]);
       (*mag_alloc)(tmp, 0, 0);
-      return status;
+      return stat;
     }
   }
-  mag_status_t status = mag_cat(err, out_result, tmp, count, dim);
+  mag_status_t stat = mag_cat(err, out_result, tmp, count, dim);
   for (size_t i=0; i < count; ++i)
     mag_tensor_decref(tmp[i]);
   (*mag_alloc)(tmp, 0, 0);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_hstack(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t **tensors, size_t count) {
@@ -2023,11 +2036,11 @@ mag_status_t mag_dstack(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
       }
     }
   }
-  mag_status_t status = mag_cat(err, out_result, tmp, count, 2);
+  mag_status_t stat = mag_cat(err, out_result, tmp, count, 2);
   for (size_t i=0; i < count; ++i)
     mag_tensor_decref(tmp[i]);
   (*mag_alloc)(tmp, 0, 0);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_chunk(mag_error_t *err, mag_tensor_t ***out_chunks, size_t *out_count, mag_tensor_t *x, int64_t chunks, int64_t dim) {
@@ -2058,12 +2071,12 @@ mag_status_t mag_chunk(mag_error_t *err, mag_tensor_t ***out_chunks, size_t *out
     int64_t start = i*chunk_size;
     int64_t len = chunk_size;
     if (start+len > n) len = n-start;
-    mag_status_t status = mag_narrow(err, res+i, x, dim, start, len);
-    if (status != MAG_OK) {
+    mag_status_t stat = mag_narrow(err, res+i, x, dim, start, len);
+    if (stat != MAG_OK) {
       for (int64_t j=0; j < actual; ++j)
         if (res[j]) mag_tensor_decref(res[j]);
       (*mag_alloc)(res, 0, 0);
-      return status;
+      return stat;
     }
   }
   *out_chunks = res;
@@ -2084,13 +2097,13 @@ mag_status_t mag_one_hot(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
       return mag_set_error(err, MAG_ERR_PARAM, "one_hot: num_classes must be >= -1, but got %" PRIi64 ".", num_classes);
   if (num_classes == -1) {
     mag_tensor_t *maxv = NULL;
-    mag_status_t status = mag_maxima(err, &maxv, indices, NULL, 0, false);
-    if (mag_iserr(status)) return status;
+    mag_status_t stat = mag_maxima(err, &maxv, indices, NULL, 0, false);
+    if (mag_iserr(stat)) return stat;
     mag_scalar_t max_scalar;
-    status = mag_tensor_item(err, maxv, &max_scalar);
-    if (mag_iserr(status)) {
+    stat = mag_tensor_item(err, maxv, &max_scalar);
+    if (mag_iserr(stat)) {
       mag_tensor_decref(maxv);
-      return status;
+      return stat;
     }
     int64_t max_class = mag_scalar_as_int64(max_scalar);
     mag_tensor_decref(maxv);
@@ -2107,17 +2120,17 @@ mag_status_t mag_one_hot(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
     oshape[i] = indices->meta.coords.shape[i];
   oshape[rank] = num_classes;
   mag_tensor_t *result;
-  mag_status_t status = mag_zeros(err, &result, ctx, MAG_DTYPE_INT64, orank, oshape, mag_tensor_device_id(indices));
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_zeros(err, &result, ctx, MAG_DTYPE_INT64, orank, oshape, mag_tensor_device_id(indices));
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = {
     .one_hot = { .num_classes = num_classes }
   };
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_ONE_HOT, &indices, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_ONE_HOT, false, &indices, 1, &result, 1, &params);
-  if (mag_iserr(status)) {
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_ONE_HOT, &indices, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_ONE_HOT, false, &indices, 1, &result, 1, &params);
+  if (mag_iserr(stat)) {
     mag_tensor_decref(result);
-    return status;
+    return stat;
   }
   *out_result = result;
   return MAG_OK;
@@ -2150,7 +2163,7 @@ mag_impl_binary_pair(gt, GT, true)
 static bool mag_pow_scalar_exponent(double *out, const mag_tensor_t *x, mag_tensor_t *y) {
   if (mag_tensor_numel(y) != 1) return false;
   if (y->meta.coords.rank > x->meta.coords.rank) return false;
-  if (!mag_tensor_is_cpu(y)) return false;
+  if (!mag_tensor_is_host(y)) return false;
   if (mag_tensor_requires_grad(y)) return false;
   mag_dtype_t prom;
   if (!mag_promote_type(&prom, x->meta.dtype, y->meta.dtype)) return false;
@@ -2168,11 +2181,11 @@ static bool mag_pow_scalar_exponent(double *out, const mag_tensor_t *x, mag_tens
 static mag_status_t mag_pow_cube(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, bool inplace) {
   *out_result = NULL;
   mag_tensor_t *sq = NULL;
-  mag_status_t status = mag_sqr(err, &sq, x);
-  if (mag_iserr(status)) return status;
-  status = inplace ? mag_mul_(err, out_result, x, sq) : mag_mul(err, out_result, sq, x);
+  mag_status_t stat = mag_sqr(err, &sq, x);
+  if (mag_iserr(stat)) return stat;
+  stat = inplace ? mag_mul_(err, out_result, x, sq) : mag_mul(err, out_result, sq, x);
   mag_tensor_decref(sq);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_pow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
@@ -2200,15 +2213,15 @@ mag_status_t mag_pow_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
   if (mag_pow_scalar_exponent(&e, x, y)) {  /* Rewrite common exponent into simplified direct ops */
     if (e == 2.0) return mag_sqr_(err, out_result, x);
     if (e == 1.0) { /* x**1 is x, nothing to write */
-      mag_status_t status = mag_check_inplace_grad_ok(err, x);
-      if (mag_iserr(status)) { *out_result = NULL; return status; }
+      mag_status_t stat = mag_check_inplace_grad_ok(err, x);
+      if (mag_iserr(stat)) { *out_result = NULL; return stat; }
       mag_tensor_incref(x);
       *out_result = x;
       return MAG_OK;
     }
     if (e == 3.0) {
-      mag_status_t status = mag_check_inplace_grad_ok(err, x); /* Check up front, so we fail before allocating the temporary */
-      if (mag_iserr(status)) { *out_result = NULL; return status; }
+      mag_status_t stat = mag_check_inplace_grad_ok(err, x); /* Check up front, so we fail before allocating the temporary */
+      if (mag_iserr(stat)) { *out_result = NULL; return stat; }
       return mag_pow_cube(err, out_result, x, true);
     }
     if (mag_tensor_is_floating_point_typed(x)) { /* These have no integral kernel */
@@ -2250,13 +2263,13 @@ mag_status_t mag_where(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
       sc, sx, sy);
   }
   mag_tensor_t *result = NULL;
-  mag_status_t status = rank ? mag_empty(err, &result, x->ctx, x->meta.dtype, rank, dims, mag_tensor_device_id(cond)) : mag_empty_scalar(err, &result, x->ctx, x->meta.dtype, mag_tensor_device_id(cond));
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = rank ? mag_empty(err, &result, x->ctx, x->meta.dtype, rank, dims, mag_tensor_device_id(cond)) : mag_empty_scalar(err, &result, x->ctx, x->meta.dtype, mag_tensor_device_id(cond));
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *in[3] = {cond, x, y};
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_WHERE, in, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_WHERE, false, in, sizeof(in)/sizeof(*in), &result, 1, NULL);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_WHERE, in, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_WHERE, false, in, sizeof(in)/sizeof(*in), &result, 1, NULL);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -2281,13 +2294,13 @@ mag_status_t mag_clamp(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
       sc, sx, sy);
   }
   mag_tensor_t *result = NULL;
-  mag_status_t status = rank ? mag_empty(err, &result, x->ctx, x->meta.dtype, rank, dims, mag_tensor_device_id(x)) : mag_empty_scalar(err, &result, x->ctx, x->meta.dtype, mag_tensor_device_id(x));
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = rank ? mag_empty(err, &result, x->ctx, x->meta.dtype, rank, dims, mag_tensor_device_id(x)) : mag_empty_scalar(err, &result, x->ctx, x->meta.dtype, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *in[3] = {x, min, max};
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_CLAMP, in, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_CLAMP, false, in, sizeof(in)/sizeof(*in), &result, 1, NULL);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_CLAMP, in, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_CLAMP, false, in, sizeof(in)/sizeof(*in), &result, 1, NULL);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -2309,19 +2322,19 @@ mag_status_t mag_lerp(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
   mag_tensor_t *delta = NULL;
   mag_tensor_t *scaled = NULL;
   mag_tensor_t *sum = NULL;
-  mag_status_t status = mag_cast(err, &s, start, compute_dtype);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_cast(err, &e, end, compute_dtype);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_cast(err, &w, weight, compute_dtype);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_sub(err, &delta, e, s);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_mul(err, &scaled, delta, w);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_add(err, &sum, s, scaled);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_cast(err, out_result, sum, start->meta.dtype);
+  mag_status_t stat = mag_cast(err, &s, start, compute_dtype);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_cast(err, &e, end, compute_dtype);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_cast(err, &w, weight, compute_dtype);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_sub(err, &delta, e, s);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_mul(err, &scaled, delta, w);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_add(err, &sum, s, scaled);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_cast(err, out_result, sum, start->meta.dtype);
   cleanup:
     if (s) mag_tensor_decref(s);
     if (e) mag_tensor_decref(e);
@@ -2329,17 +2342,17 @@ mag_status_t mag_lerp(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
     if (delta) mag_tensor_decref(delta);
     if (scaled) mag_tensor_decref(scaled);
     if (sum) mag_tensor_decref(sum);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_lerp_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *start, mag_tensor_t *end, mag_tensor_t *weight) { /* TODO: this op deserves dedicated kernel */
   *out_result = NULL;
   mag_tensor_t *result = NULL;
-  mag_status_t status = mag_lerp(err, &result, start, end, weight);
-  if (mag_iserr(status)) return status;
-  status = mag_copy_(err, start, result);
+  mag_status_t stat = mag_lerp(err, &result, start, end, weight);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_copy_(err, start, result);
   mag_tensor_decref(result);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   mag_tensor_incref(start);
   *out_result = start;
   return MAG_OK;
@@ -2351,16 +2364,16 @@ mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
       return mag_set_error(err, MAG_ERR_PARAM, "matmul: requires floating-point tensors, but got dtypes %s and %s.", mag_type_trait(x->meta.dtype)->name, mag_type_trait(y->meta.dtype)->name);
   if (mag_unlikely(!(x->meta.coords.rank >= 1 && y->meta.coords.rank >= 1)))
       return mag_set_error(err, MAG_ERR_PARAM, "matmul: both tensors must have rank >= 1, but got %" PRIi64 " and %" PRIi64 ".", x->meta.coords.rank, y->meta.coords.rank);
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_MATMUL, (mag_tensor_t *[]){x, y}, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_MATMUL, (mag_tensor_t *[]){x, y}, 0);
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *result = NULL;
   int64_t rb, xb, yb;
-  status = mag_matmul_verify_shapes(err, &rb, &xb, &yb, x, y);
-  if (mag_iserr(status)) return status;
-  status = mag_matmul_alloc_res(err, &result, rb, &xb, &yb, x, y);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_MATMUL, false, (mag_tensor_t *[2]){x, y}, 2, &result, 1, NULL);
-  if (mag_iserr(status)) return status;
+  stat = mag_matmul_verify_shapes(err, &rb, &xb, &yb, x, y);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_matmul_alloc_res(err, &result, rb, &xb, &yb, x, y);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_MATMUL, false, (mag_tensor_t *[2]){x, y}, 2, &result, 1, NULL);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -2368,13 +2381,13 @@ mag_status_t mag_matmul(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
 mag_status_t mag_repeat_back(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
   *out_result = NULL;
   mag_tensor_t *result = NULL;
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT_BACK, (mag_tensor_t *[]) {x, y}, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_empty(err, &result, x->ctx, x->meta.dtype, y->meta.coords.rank, y->meta.coords.shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT_BACK, (mag_tensor_t *[]) {x, y}, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_empty(err, &result, x->ctx, x->meta.dtype, y->meta.coords.rank, y->meta.coords.shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) return stat;
   /* TODO: Check for broadcastability of x and y */
-  status = mag_dispatch(err, MAG_OP_REPEAT_BACK, false, (mag_tensor_t *[2]) {x, y}, 2, &result, 1, NULL);
-  if (mag_iserr(status)) return status;
+  stat = mag_dispatch(err, MAG_OP_REPEAT_BACK, false, (mag_tensor_t *[2]) {x, y}, 2, &result, 1, NULL);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -2403,12 +2416,12 @@ mag_status_t mag_repeat(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
     params.repeat.out_shape[d] = is*rs;
   }
   mag_tensor_t *result = NULL;
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_empty(err, &result, x->ctx, x->meta.dtype, out_rank, params.repeat.out_shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_REPEAT, false, &x, 1, &result, 1, &params);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT, &x, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_empty(err, &result, x->ctx, x->meta.dtype, out_rank, params.repeat.out_shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_REPEAT, false, &x, 1, &result, 1, &params);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -2428,7 +2441,7 @@ mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, 
   params.repeat_interleave.count_len = num_counts;
   mag_tensor_t *xin = NULL;
   int64_t shape[MAG_MAX_DIMS];
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   if (flatten) {
     if (mag_unlikely(!(num_counts == 1 || num_counts == x->meta.numel)))
         return mag_set_error(err, MAG_ERR_PARAM, "repeat_interleave: counts length (%" PRIi64 ") must match input numel (%" PRIi64 ") when dim is None.", num_counts, x->meta.numel);
@@ -2439,8 +2452,8 @@ mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, 
       for (int64_t i=0; i < num_counts; ++i) out_n += counts[i];
     params.repeat_interleave.rank = 1;
     params.repeat_interleave.out_shape[0] = out_n;
-    status = mag_contiguous(err, &xin, x);
-    if (mag_iserr(status)) return status;
+    stat = mag_contiguous(err, &xin, x);
+    if (mag_iserr(stat)) return stat;
   } else {
     if (mag_unlikely(!(x->meta.coords.rank > 0)))
         return mag_set_error(err, MAG_ERR_DIM, "repeat_interleave: input must have rank >= 1.");
@@ -2461,26 +2474,29 @@ mag_status_t mag_repeat_interleave(mag_error_t *err, mag_tensor_t **out_result, 
       shape[dim] = sum;
     }
     memcpy(params.repeat_interleave.out_shape, shape, params.repeat_interleave.rank*sizeof(*params.repeat_interleave.out_shape));
-    status = mag_contiguous(err, &xin, x);
-    if (mag_iserr(status)) return status;
+    stat = mag_contiguous(err, &xin, x);
+    if (mag_iserr(stat)) return stat;
   }
   mag_tensor_t *result = NULL;
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT_INTERLEAVE, &xin, 1);
-  if (mag_iserr(status)) return status;
-  status = mag_empty(err, &result, x->ctx, x->meta.dtype, params.repeat_interleave.rank, flatten ? params.repeat_interleave.out_shape : shape, mag_tensor_device_id(xin));
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_REPEAT_INTERLEAVE, &xin, 1);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_empty(err, &result, x->ctx, x->meta.dtype, params.repeat_interleave.rank, flatten ? params.repeat_interleave.out_shape : shape, mag_tensor_device_id(xin));
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *inputs[2] = {xin, NULL};
   uint32_t num_in = 1;
   if (xin->meta.flags & MAG_TFLAG_REQUIRES_GRAD && mag_ctx_grad_recorder_is_running(x->ctx)) {
-    status = mag_empty(err, &inputs[1], x->ctx, MAG_DTYPE_INT64, 1, &num_counts, mag_tensor_device_id(xin));
-    if (mag_iserr(status)) return status;
-    status = mag_copy_raw_(err, inputs[1], counts, (size_t)num_counts*sizeof(*counts));
-    if (mag_iserr(status)) return status;
+    mag_tensor_t *host_counts = NULL;
+    stat = mag_empty(err, &host_counts, x->ctx, MAG_DTYPE_INT64, 1, &num_counts, mag_device(CPU, 0));
+    if (mag_iserr(stat)) return stat;
+    stat = mag_copy_raw_(err, host_counts, counts, (size_t)num_counts*sizeof(*counts));
+    if (mag_isok(stat)) stat = mag_transfer(err, &inputs[1], host_counts, mag_tensor_device_id(xin));
+    mag_tensor_decref(host_counts);
+    if (mag_iserr(stat)) return stat;
     num_in = 2;
   }
-  status = mag_dispatch(err, MAG_OP_REPEAT_INTERLEAVE, false, inputs, num_in, &result, 1, &params);
+  stat = mag_dispatch(err, MAG_OP_REPEAT_INTERLEAVE, false, inputs, num_in, &result, 1, &params);
   if (inputs[1]) mag_tensor_decref(inputs[1]);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   mag_tensor_decref(xin);
   *out_result = result;
   return MAG_OK;
@@ -2503,15 +2519,15 @@ mag_status_t mag_gather(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   int64_t ork = idx->meta.coords.rank;
   int64_t ax[MAG_MAX_DIMS];
   for (int64_t i = 0; i < ork; ++i) ax[i] = idx->meta.coords.shape[i];
-  mag_status_t status = mag_empty(err, &result, tensor->ctx, tensor->meta.dtype, ork, ax, mag_tensor_device_id(tensor));
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, &result, tensor->ctx, tensor->meta.dtype, ork, ax, mag_tensor_device_id(tensor));
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = {
     .gather = {.dim = dim}
   };
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_GATHER, (mag_tensor_t *[2]){tensor, idx}, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_GATHER, false, (mag_tensor_t *[2]) {tensor, idx}, 2, &result, 1, &params);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_GATHER, (mag_tensor_t *[2]){tensor, idx}, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_GATHER, false, (mag_tensor_t *[2]) {tensor, idx}, 2, &result, 1, &params);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -2521,11 +2537,11 @@ mag_status_t mag_embedding(mag_error_t *err, mag_tensor_t **out_result, mag_tens
   mag_tensor_t *result = NULL;
   if (indices->meta.dtype != MAG_DTYPE_INT64 && mag_tensor_is_integer_typed(indices) && indices->meta.dtype != MAG_DTYPE_BOOLEAN) {
     mag_tensor_t *idx64 = NULL;
-    mag_status_t status = mag_cast(err, &idx64, indices, MAG_DTYPE_INT64);
-    if (mag_iserr(status)) return status;
-    status = mag_embedding(err, out_result, weight, idx64);
+    mag_status_t stat = mag_cast(err, &idx64, indices, MAG_DTYPE_INT64);
+    if (mag_iserr(stat)) return stat;
+    stat = mag_embedding(err, out_result, weight, idx64);
     mag_tensor_decref(idx64);
-    return status;
+    return stat;
   }
   if (mag_unlikely(!(indices->meta.dtype == MAG_DTYPE_INT64)))
       return mag_set_error(err, MAG_ERR_PARAM, "embedding: indices tensor must have dtype int64, but got %s.", mag_type_trait(indices->meta.dtype)->name);
@@ -2538,12 +2554,12 @@ mag_status_t mag_embedding(mag_error_t *err, mag_tensor_t **out_result, mag_tens
   for (int64_t i = 1; i < weight->meta.coords.rank; ++i)  ax[ork++] = weight->meta.coords.shape[i];
   if (mag_unlikely(!(ork >= 0 && ork <= MAG_MAX_DIMS)))
       return mag_set_error(err, MAG_ERR_RANK, "embedding: output rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, ork);
-  mag_status_t status = mag_empty(err, &result, weight->ctx, weight->meta.dtype, ork, ax, mag_tensor_device_id(weight));
-  if (mag_iserr(status)) return status;
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_EMBEDDING, (mag_tensor_t *[2]){weight, indices}, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_EMBEDDING, false, (mag_tensor_t *[2]) {weight, indices}, 2, &result, 1, NULL);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_empty(err, &result, weight->ctx, weight->meta.dtype, ork, ax, mag_tensor_device_id(weight));
+  if (mag_iserr(stat)) return stat;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_EMBEDDING, (mag_tensor_t *[2]){weight, indices}, 0);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_EMBEDDING, false, (mag_tensor_t *[2]) {weight, indices}, 2, &result, 1, NULL);
+  if (mag_iserr(stat)) return stat;
   *out_result = result;
   return MAG_OK;
 }
@@ -2580,33 +2596,33 @@ static mag_status_t mag_index_add_validate(mag_error_t *err, mag_tensor_t *self,
 }
 
 mag_status_t mag_index_add_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *source, double alpha) {
-  mag_status_t status = mag_index_add_validate(err, self, &dim, index, source);
-  if (mag_iserr(status)) return status;
-  status = mag_check_inplace_grad_ok(err, self);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_index_add_validate(err, self, &dim, index, source);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_check_inplace_grad_ok(err, self);
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = {.index_add = {.dim = dim, .alpha = alpha}};
   mag_tensor_t *inputs[3] = {self, source, index};
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_INDEX_ADD, inputs, 0);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_INDEX_ADD, inputs, 0);
+  if (mag_iserr(stat)) return stat;
   return mag_dispatch(err, MAG_OP_INDEX_ADD, true, inputs, 3, &self, 1, &params);
 }
 
 mag_status_t mag_index_add(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *source, double alpha) {
   *out_result = NULL;
-  mag_status_t status = mag_index_add_validate(err, self, &dim, index, source);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_index_add_validate(err, self, &dim, index, source);
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *inputs[3] = {self, source, index};
-  status = mag_check_dtype_and_device_compat(err, MAG_OP_INDEX_ADD, inputs, 0);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, MAG_OP_INDEX_ADD, inputs, 0);
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *result = NULL;
   bool grad_was_on = mag_ctx_grad_recorder_is_running(self->ctx);
   if (grad_was_on) mag_ctx_grad_recorder_stop(self->ctx);
-  status = mag_clone(err, &result, self);
+  stat = mag_clone(err, &result, self);
   if (grad_was_on) mag_ctx_grad_recorder_start(self->ctx);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = {.index_add = {.dim = dim, .alpha = alpha}};
-  status = mag_dispatch(err, MAG_OP_INDEX_ADD, false, inputs, 3, &result, 1, &params);
-  if (mag_iserr(status)) { mag_tensor_decref(result); return status; }
+  stat = mag_dispatch(err, MAG_OP_INDEX_ADD, false, inputs, 3, &result, 1, &params);
+  if (mag_iserr(stat)) { mag_tensor_decref(result); return stat; }
   *out_result = result;
   return MAG_OK;
 }
@@ -2635,45 +2651,45 @@ static mag_status_t mag_scatter_validate(mag_error_t *err, const char *name, mag
 }
 
 static mag_status_t mag_scatter_impl(mag_error_t *err, mag_opcode_t op, const char *name, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
-  mag_status_t status = mag_scatter_validate(err, name, self, &dim, index, src);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_scatter_validate(err, name, self, &dim, index, src);
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = {
     .scatter = {.dim = dim}
   };
   mag_tensor_t *inputs[3] = {self, src, index};
-  status = mag_check_dtype_and_device_compat(err, op, inputs, 0);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, op, inputs, 0);
+  if (mag_iserr(stat)) return stat;
   return mag_dispatch(err, op, true, inputs, 3, &self, 1, &params);
 }
 
 static mag_status_t mag_scatter_impl_out(mag_error_t *err, mag_opcode_t op, const char *name, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
   *out_result = NULL;
-  mag_status_t status = mag_scatter_validate(err, name, self, &dim, index, src);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_scatter_validate(err, name, self, &dim, index, src);
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *inputs[3] = {self, src, index};
-  status = mag_check_dtype_and_device_compat(err, op, inputs, 0);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, op, inputs, 0);
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *result = NULL;
   bool grad_was_on = mag_ctx_grad_recorder_is_running(self->ctx);
   if (grad_was_on) mag_ctx_grad_recorder_stop(self->ctx);
-  status = mag_clone(err, &result, self);
+  stat = mag_clone(err, &result, self);
   if (grad_was_on) mag_ctx_grad_recorder_start(self->ctx);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = {
     .scatter = {.dim = dim}
   };
-  status = mag_dispatch(err, op, false, inputs, 3, &result, 1, &params);
-  if (mag_iserr(status)) {
+  stat = mag_dispatch(err, op, false, inputs, 3, &result, 1, &params);
+  if (mag_iserr(stat)) {
     mag_tensor_decref(result);
-    return status;
+    return stat;
   }
   *out_result = result;
   return MAG_OK;
 }
 
 mag_status_t mag_scatter_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *src) {
-  mag_status_t status = mag_check_inplace_grad_ok(err, self);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_inplace_grad_ok(err, self);
+  if (mag_iserr(stat)) return stat;
   return mag_scatter_impl(err, MAG_OP_SCATTER, "scatter_", self, dim, index, src);
 }
 
@@ -2682,8 +2698,8 @@ mag_status_t mag_scatter(mag_error_t *err, mag_tensor_t **out_result, mag_tensor
 }
 
 mag_status_t mag_scatter_add_(mag_error_t *err, mag_tensor_t *self, int64_t dim, mag_tensor_t *idx, mag_tensor_t *src) {
-  mag_status_t status = mag_check_inplace_grad_ok(err, self);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_inplace_grad_ok(err, self);
+  if (mag_iserr(stat)) return stat;
   return mag_scatter_impl(err, MAG_OP_SCATTER_ADD, "scatter_add_", self, dim, idx, src);
 }
 
@@ -2702,10 +2718,12 @@ mag_status_t mag_copy_(mag_error_t *err, mag_tensor_t *dst, mag_tensor_t *src) {
         mag_type_trait(src->meta.dtype)->name,
         mag_type_trait(dst->meta.dtype)->name
       );
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_CLONE, (mag_tensor_t *[2]){src, dst}, 2);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_CLONE, true, &src, 1, &dst, 1, NULL);
-  if (mag_iserr(status)) return status;
+  if (!mag_device_id_eq(mag_tensor_device_id(dst), mag_tensor_device_id(src)))
+    return mag_transfer_(err, dst, src);
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_CLONE, (mag_tensor_t *[2]){src, dst}, 2);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_CLONE, true, &src, 1, &dst, 1, NULL);
+  if (mag_iserr(stat)) return stat;
   return MAG_OK;
 }
 
@@ -2735,8 +2753,8 @@ mag_status_t mag_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t valu
   mag_op_params_t params = {
     .fill = {.value = value}
   };
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_FILL, NULL, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_FILL, NULL, 0);
+  if (mag_iserr(stat)) return stat;
   return mag_dispatch(err, MAG_OP_FILL, false, NULL, 0, &tensor, 1, &params);
 }
 
@@ -2746,15 +2764,15 @@ mag_status_t mag_masked_fill(mag_error_t *err, mag_tensor_t **out_result, mag_te
     .fill = {.value = value}
   };
   mag_tensor_t *inputs[2] = {tensor, mask};
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_MASKED_FILL, inputs, 2);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_MASKED_FILL, inputs, 2);
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *result = NULL;
-  status = mag_empty_like(err, &result, tensor);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, MAG_OP_MASKED_FILL, false, inputs, 2, &result, 1, &params);
-  if (mag_iserr(status)) {
+  stat = mag_empty_like(err, &result, tensor);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, MAG_OP_MASKED_FILL, false, inputs, 2, &result, 1, &params);
+  if (mag_iserr(stat)) {
     mag_tensor_decref(result);
-    return status;
+    return stat;
   }
   *out_result = result;
   return MAG_OK;
@@ -2765,10 +2783,10 @@ mag_status_t mag_masked_fill_(mag_error_t *err, mag_tensor_t *tensor, mag_tensor
     .fill = {.value = value}
   };
   mag_tensor_t *inputs[2] = {tensor, mask};
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_MASKED_FILL, inputs, 2);
-  if (mag_iserr(status)) return status;
-  status = mag_check_inplace_grad_ok(err, tensor);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_MASKED_FILL, inputs, 2);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_check_inplace_grad_ok(err, tensor);
+  if (mag_iserr(stat)) return stat;
   return mag_dispatch(err, MAG_OP_MASKED_FILL, true, inputs, 2, &tensor, 1, &params);
 }
 
@@ -2792,8 +2810,8 @@ mag_status_t mag_uniform_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t l
   mag_op_params_t params = {
     .uniform = {.low = low, .high = high}
   };
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_RAND_UNIFORM, NULL, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_RAND_UNIFORM, NULL, 0);
+  if (mag_iserr(stat)) return stat;
   return mag_dispatch(err, MAG_OP_RAND_UNIFORM, false, NULL, 0, &tensor, 1, &params);
 }
 
@@ -2807,8 +2825,8 @@ mag_status_t mag_normal_(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_t me
   mag_op_params_t params = {
     .normal = {.mean = mean, .std = stddev}
   };
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_RAND_NORMAL, NULL, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_RAND_NORMAL, NULL, 0);
+  if (mag_iserr(stat)) return stat;
   return mag_dispatch(err, MAG_OP_RAND_NORMAL, false, NULL, 0, &tensor, 1, &params);
 }
 
@@ -2820,8 +2838,8 @@ mag_status_t mag_bernoulli_(mag_error_t *err, mag_tensor_t *tensor, double p) {
   mag_op_params_t params = {
     .bernoulli = {.p = p}
   };
-  mag_status_t status = mag_check_dtype_and_device_compat(err, MAG_OP_RAND_BERNOULLI, NULL, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, MAG_OP_RAND_BERNOULLI, NULL, 0);
+  if (mag_iserr(stat)) return stat;
   return mag_dispatch(err, MAG_OP_RAND_BERNOULLI, false, NULL, 0, &tensor, 1, &params);
 }
 
@@ -2830,9 +2848,9 @@ mag_status_t mag_detach(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   mag_context_t *ctx = tensor->ctx;
   bool recording = mag_ctx_grad_recorder_is_running(ctx);
   if (recording) mag_ctx_grad_recorder_stop(ctx);
-  mag_status_t status = mag_view(err, out_result, tensor, tensor->meta.coords.shape, tensor->meta.coords.rank);
+  mag_status_t stat = mag_view(err, out_result, tensor, tensor->meta.coords.shape, tensor->meta.coords.rank);
   if (recording) mag_ctx_grad_recorder_start(ctx);
-  if (mag_iserr(status)) return status;
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *target = *out_result;
   if (target->au_state) {
     mag_rc_decref(target->au_state);

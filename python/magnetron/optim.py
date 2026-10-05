@@ -132,8 +132,8 @@ class Adam(Optimizer):
                 state = self.state[p]
                 if len(state) == 0:
                     state['step'] = 0
-                    state['m'] = Tensor.zeros(p.shape)
-                    state['v'] = Tensor.zeros(p.shape)
+                    state['m'] = Tensor.zeros_like(p)
+                    state['v'] = Tensor.zeros_like(p)
                 state['step'] += 1
                 t = state['step']
                 m = state['m']
@@ -178,8 +178,8 @@ class AdamW(Optimizer):
                 state = self.state[p]
                 if len(state) == 0:
                     state['step'] = 0
-                    state['m'] = Tensor.zeros(p.shape)
-                    state['v'] = Tensor.zeros(p.shape)
+                    state['m'] = Tensor.zeros_like(p)
+                    state['v'] = Tensor.zeros_like(p)
                 state['step'] += 1
                 t = state['step']
                 if weight_decay != 0.0:

@@ -163,15 +163,15 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   mag_system_host_info_dump(ctx);
 
   /* Create compute backends and devices. On failure, err carries reason. */
-  mag_status_t status = mag_backend_registry_init(err, ctx, &ctx->backend_registry);
-  if (mag_unlikely(mag_iserr(status))) {
+  mag_status_t stat = mag_backend_registry_init(err, ctx, &ctx->backend_registry);
+  if (mag_unlikely(mag_iserr(stat))) {
     mag_slab_destroy(&ctx->au_state_op_params_slab);
     mag_slab_destroy(&ctx->au_state_slab);
     mag_slab_destroy(&ctx->view_meta_slab);
     mag_slab_destroy(&ctx->tensor_slab);
     mag_slab_destroy(&ctx->storage_slab);
     (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
-    return status;
+    return stat;
   }
 
   /* Seed prng once with secure system entropy */

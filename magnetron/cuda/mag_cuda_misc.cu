@@ -370,7 +370,10 @@ namespace mag {
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(src));
     const auto *bi = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index));
     int64_t ax = src->meta.coords.shape[axis];
-    if (mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(index)) {
+    bool same_outer_shape = true;
+    for (int64_t d=0; d < src->meta.coords.rank && same_outer_shape; ++d)
+      same_outer_shape = d == axis || r->meta.coords.shape[d] == src->meta.coords.shape[d];
+    if (same_outer_shape && mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(index)) {
       int64_t inner = 1;
       for (int64_t d = axis+1; d < src->meta.coords.rank; ++d) inner *= src->meta.coords.shape[d];
       int64_t out_ax = r->meta.coords.shape[axis];
@@ -1770,7 +1773,7 @@ namespace mag {
       } else {
         auto xvc = static_cast<float>(xv);
         auto bestc = static_cast<float>(best);
-        bool better = is_max ? xvc > bestc : xvc < bestc;
+        bool better = is_max ? xvc >= bestc : xvc <= bestc;
         if (better) { best = xv; best_idx = p; }
       }
       bv[off_v] = best;
