@@ -13,8 +13,28 @@ def test_tensor_creation() -> None:
     assert tensor.dtype == dtype.float32
 
 
-def test_tensor_numpy_roundtrip() -> None:
-    pass  # TODO
+_NP_DTYPES = tuple(sorted(NUMPY_DTYPE_MAP, key=lambda d: d.name))
+
+
+@pytest.mark.parametrize('dt', _NP_DTYPES, ids=[d.name for d in _NP_DTYPES])
+def test_tensor_numpy_roundtrip(dt: dtype.DType) -> None:
+    np_dt = tonumpy_dtype(dt)
+    for shape in BASE_TEST_SHAPES:
+        if dt == dtype.boolean:
+            a = np.asarray(np.random.uniform(0, 1, size=shape) > 0.5)
+        elif dt.is_integer():
+            a = np.random.randint(0 if dt.is_unsigned_integer() else -100, 100, size=shape).astype(np_dt)
+        else:
+            a = np.random.uniform(-100, 100, size=shape).astype(np_dt)
+        t = Tensor(a)
+        assert t.dtype == dt
+        assert t.shape == shape
+        assert t.numel == a.size
+        back = t.numpy()
+        assert back.dtype == np_dt
+        np.testing.assert_array_equal(back, a)
+        assert t.tolist() == a.tolist()
+        torch.testing.assert_close(totorch(t), torch.from_numpy(a.copy()), rtol=0, atol=0)
 
 
 def test_numbytes_is_the_extent_not_the_storage() -> None:

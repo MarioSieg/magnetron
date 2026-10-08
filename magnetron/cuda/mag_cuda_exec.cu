@@ -18,6 +18,8 @@
 #include "mag_cuda_fill.cuh"
 #include "mag_cuda_reduction.cuh"
 #include "mag_cuda_misc.cuh"
+#include "mag_cuda_conv.cuh"
+#include "mag_cuda_interp.cuh"
 
 namespace mag {
   static constexpr mag_status_t(*k_kernel_dispatch_table[])(mag_error_t *, const mag_command_t &, cudaStream_t) = {
@@ -42,6 +44,10 @@ namespace mag {
     [MAG_OP_ALL] = &reduce_op_all,
     [MAG_OP_ANY] = &reduce_op_any,
     [MAG_OP_TOPK] = &misc_op_topk,
+    [MAG_OP_SORT] = &misc_op_sort,
+    [MAG_OP_ARGSORT] = &misc_op_argsort,
+    [MAG_OP_BINCOUNT] = &misc_op_bincount,
+    [MAG_OP_NONZERO] = &misc_op_nonzero,
     [MAG_OP_ABS] = &unary_op_abs,
     [MAG_OP_SGN] = &unary_op_sgn,
     [MAG_OP_NEG] = &unary_op_neg,
@@ -115,9 +121,9 @@ namespace mag {
     [MAG_OP_LT] = &binary_op_lt,
     [MAG_OP_GT] = &binary_op_gt,
     [MAG_OP_WHERE] = &misc_op_where,
-    [MAG_OP_MIN] = nullptr,
-    [MAG_OP_MAX] = nullptr,
-    [MAG_OP_CLAMP] = nullptr,
+    [MAG_OP_MIN] = &binary_op_min,
+    [MAG_OP_MAX] = &binary_op_max,
+    [MAG_OP_CLAMP] = &binary_op_clamp,
     [MAG_OP_PAD] = &misc_op_pad,
     [MAG_OP_EYE] = &fill_op_eye,
     [MAG_OP_CUSUM] = &misc_op_cusum,
@@ -130,6 +136,11 @@ namespace mag {
     [MAG_OP_EMBEDDING] = &misc_op_embedding,
     [MAG_OP_SCATTER] = &misc_op_scatter,
     [MAG_OP_SCATTER_ADD] = &misc_op_scatter_add,
+    [MAG_OP_CONV] = &conv_op_conv,
+    [MAG_OP_CONV_T] = &conv_op_conv_transpose,
+    [MAG_OP_CONV_WGRAD] = &conv_op_conv_wgrad,
+    [MAG_OP_INTERPOLATE] = &interp_op_interpolate,
+    [MAG_OP_INTERPOLATE_BACK] = &interp_op_interpolate_back,
     [MAG_OP_STRIDED_VIEW] = +[](mag_error_t *, const mag_command_t &, cudaStream_t) -> mag_status_t { return MAG_OK; },
   };
   static_assert(std::size(k_kernel_dispatch_table) == MAG_OP__NUM, "Dispatch table size mismatch");

@@ -60,25 +60,55 @@ namespace mag::bindings {
   }
 
   [[nodiscard]] static mag_tensor_t *index_by_scalar_per_axis(mag_tensor_t *base, int64_t ax, int64_t i) {
-    mag_tensor_t *tmp = nullptr;
-    mag_error_t err {};
-    throw_if_error(mag_view_slice(&err, &tmp, base, ax, i, 1, 1), err);
-    int64_t rank = mag_tensor_rank(tmp);
-    const int64_t *shape = mag_tensor_shape_ptr(tmp);
-    std::vector<int64_t> ns {};
-    ns.reserve(rank > 0 ? static_cast<size_t>(rank - 1) : 1);
-    for (int64_t d=0; d < rank; ++d) {
-      if (d == ax) continue;
-      ns.emplace_back(shape[d]);
-    }
-    if (ns.empty()) ns.emplace_back(1);
     mag_tensor_t *out = nullptr;
-    throw_if_error(mag_view(&err, &out, tmp, ns.data(), static_cast<int64_t>(ns.size())), err);
-    mag_tensor_decref(tmp);
+    mag_error_t err {};
+    throw_if_error(mag_select(&err, &out, base, ax, i), err);
     return out;
   }
 
+  [[nodiscard]] static bool try_index_all_ints(const tensor_wrapper &self, PyObject *index, tensor_wrapper &out) {
+    int64_t rank = mag_tensor_rank(*self);
+    if (rank <= 0) return false;
+    PyObject **items = &index;
+    int64_t count = 1;
+    if (PyTuple_CheckExact(index)) {
+      count = static_cast<int64_t>(PyTuple_GET_SIZE(index));
+      if (count == 0 || count > rank) return false;
+      items = &PyTuple_GET_ITEM(index, 0);
+    }
+    for (Py_ssize_t i=0; i < count; ++i)
+      if (!PyLong_CheckExact(items[i])) return false;
+    const auto *shape = mag_tensor_shape_ptr(*self);
+    const auto *strides = mag_tensor_strides_ptr(*self);
+    auto offset = static_cast<int64_t>(mag_tensor_data_offset(*self)/mag_type_trait(mag_tensor_type(*self))->size);
+    for (Py_ssize_t ax=0; ax < count; ++ax) {
+      int64_t i = PyLong_AsLongLong(items[ax]);
+      if (i == -1 && PyErr_Occurred()) throw nb::python_error();
+      int64_t dim_size = shape[ax];
+      if (i < 0) i += dim_size;
+      if (i < 0 || i >= dim_size) {
+        std::ostringstream oss;
+        oss << "Index " << i << " out of bounds for axis " << ax << " (size " << dim_size << ")";
+        throw nb::index_error(oss.str().c_str());
+      }
+      offset += i*strides[ax];
+    }
+    int64_t nrank = rank-count;
+    int64_t nshape[MAG_MAX_DIMS];
+    int64_t nstrides[MAG_MAX_DIMS];
+    for (int64_t dim=0; dim < nrank; ++dim) {
+      nshape[dim] = shape[count+dim];
+      nstrides[dim] = strides[count+dim];
+    }
+    mag_tensor_t *res = nullptr;
+    mag_error_t err {};
+    throw_if_error(mag_strided_view(&err, &res, mag_tensor_context(*self), *self, nrank, nrank ? nshape : nullptr, nrank ? nstrides : nullptr, offset), err);
+    out = tensor_wrapper{res};
+    return true;
+  }
+
   [[nodiscard]] static tensor_wrapper tensor_index_impl(const tensor_wrapper &self, const nb::object &index) {
+      if (tensor_wrapper fast; try_index_all_ints(self, index.ptr(), fast)) return fast;
       nb::tuple idxs_in = nb::isinstance<nb::tuple>(index) ? nb::cast<nb::tuple>(index) : nb::make_tuple(index);
       tensor_wrapper curr = self;
       int64_t rank0 = mag_tensor_rank(*curr);
@@ -187,9 +217,18 @@ namespace mag::bindings {
 
   void init_tensor_special_methods(nb::class_<tensor_wrapper> &cls) {
     cls
+     .def("__iter__", [](const tensor_wrapper &self) -> nb::object {
+       if (mag_tensor_rank(*self) == 0)
+         throw nb::type_error("iteration over a 0-d tensor");
+       int64_t dim0 = *mag_tensor_shape_ptr(*self);
+       nb::list items {};
+       for (int64_t i=0; i < dim0; ++i)
+         items.append(tensor_wrapper{index_by_scalar_per_axis(*self, 0, i)});
+       return nb::steal(PyObject_GetIter(items.ptr()));
+     }, "Iterate over the first dimension, yielding views.")
      .def("__len__", [](const tensor_wrapper &self) -> int64_t {
        if (mag_tensor_rank(*self) == 0)
-         throw nb::value_error("Tensor must have at least one dimension to use len()");
+         throw nb::type_error("len() of a 0-d tensor");
        return *mag_tensor_shape_ptr(*self);
      }, "Length of the first dimension.")
      .def("__str__", [](const tensor_wrapper &self) -> nb::str {
@@ -206,7 +245,39 @@ namespace mag::bindings {
        auto str = nb::str {cstr};
        return str;
      }, "Full repr (shape, dtype, values).")
-     .def("__bool__", [](const tensor_wrapper &self) -> bool {
+    .def("__int__", [](const tensor_wrapper &self) -> int64_t {
+      if (mag_tensor_numel(*self) != 1)
+        throw nb::value_error("Only one-element tensors can be converted to Python scalars");
+      mag_scalar_t val {};
+      mag_error_t err {};
+      throw_if_error(mag_tensor_item(&err, *self, &val), err);
+      if (mag_scalar_is_float64(val)) return static_cast<int64_t>(mag_scalar_as_float64(val));
+      if (mag_scalar_is_int64(val)) return mag_scalar_as_int64(val);
+      if (mag_scalar_is_uint64(val)) return static_cast<int64_t>(mag_scalar_as_uint64(val));
+      throw nb::type_error("Unsupported scalar type for __int__()");
+    })
+    .def("__float__", [](const tensor_wrapper &self) -> double {
+      if (mag_tensor_numel(*self) != 1)
+        throw nb::value_error("Only one-element tensors can be converted to Python scalars");
+      mag_scalar_t val {};
+      mag_error_t err {};
+      throw_if_error(mag_tensor_item(&err, *self, &val), err);
+      if (mag_scalar_is_float64(val)) return mag_scalar_as_float64(val);
+      if (mag_scalar_is_int64(val)) return static_cast<double>(mag_scalar_as_int64(val));
+      if (mag_scalar_is_uint64(val)) return static_cast<double>(mag_scalar_as_uint64(val));
+      throw nb::type_error("Unsupported scalar type for __float__()");
+    })
+    .def("__index__", [](const tensor_wrapper &self) -> int64_t {
+      if (mag_tensor_numel(*self) != 1)
+        throw nb::value_error("Only one-element tensors can be converted to an index");
+      mag_scalar_t val {};
+      mag_error_t err {};
+      throw_if_error(mag_tensor_item(&err, *self, &val), err);
+      if (mag_scalar_is_int64(val)) return mag_scalar_as_int64(val);
+      if (mag_scalar_is_uint64(val)) return static_cast<int64_t>(mag_scalar_as_uint64(val));
+      throw nb::type_error("Only integer tensors can be converted to an index");
+    })
+    .def("__bool__", [](const tensor_wrapper &self) -> bool {
       if (mag_tensor_numel(*self) != 1)
         throw nb::value_error("Tensor with >1 element has ambiguous truth value; use .any() or .all()");
       mag_scalar_t s {};

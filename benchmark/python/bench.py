@@ -1,12 +1,6 @@
 # (c) 2026 Mario Sieg. <mario.sieg.64@gmail.com>
 
-from bench_tool import (
-    benchmark,
-    BenchParticipant,
-    generate_matmul_shapes,
-    generate_elementwise_shapes,
-    generate_square_shapes,
-)
+from bench_tool import benchmark, BenchParticipant, generate_matmul_shapes, generate_elementwise_shapes, generate_square_shapes
 
 from magnetron import *
 import numpy as np
@@ -60,9 +54,7 @@ elementwise_ops = [
     ('Division', lambda x, y: x / y),
 ]
 
-matmul_ops = [
-    ('Matrix Multiplication', lambda x, y: x @ y),
-]
+matmul_ops = [('Matrix Multiplication', lambda x, y: x @ y)]
 
 print('Running performance benchmark...')
 print('Magnetron VS')

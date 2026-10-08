@@ -36,13 +36,19 @@ typedef struct mag_rt_telemetry_t {
   mag_atomic64_t num_alive_tensors;           /* Total tensor instances allocated. */
   mag_atomic64_t num_alive_storages;          /* Total storage buffers allocated. */
   mag_atomic64_t num_created_tensors;         /* Total tensor instances created. */
+  mag_atomic64_t num_created_views;
   mag_atomic64_t storage_bytes_allocated;     /* Total bytes allocated for storage buffers. */
   mag_atomic64_t ops_dispatched;              /* Total number of dispatched operations. */
+  mag_atomic64_t backward_passes;
+  mag_atomic64_t backward_nodes_visited;
+  mag_atomic64_t grads_materialized;
+  uint32_t cpu_workers;
 } mag_rt_telemetry_t;
 
 struct mag_context_t {
   mag_machine_info_t machine;                 /* Machine information. */
   mag_rt_telemetry_t telemetry;               /* Runtime telemetry */
+  uint64_t boot_timestamp_ns;                 /* Context boot timestamp in ns */
   mag_slab_alloc_t tensor_slab;               /* Tensor headers. */
   mag_slab_alloc_t storage_slab;              /* Storage headers. */
   mag_slab_alloc_t view_meta_slab;            /* View metadata headers. */

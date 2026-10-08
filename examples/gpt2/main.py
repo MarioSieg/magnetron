@@ -50,10 +50,7 @@ class CausalSelfAttention(nn.Module):
         self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         self.n_head = config.n_head
         self.n_embd = config.n_embd
-        self.register_buffer(
-            'bias',
-            Tensor.ones(config.block_size, config.block_size).tril().view(1, 1, config.block_size, config.block_size),
-        )
+        self.register_buffer('bias', Tensor.ones(config.block_size, config.block_size).tril().view(1, 1, config.block_size, config.block_size))
 
     def forward(self, x: Tensor, kv: tuple[Tensor, Tensor] | None = None) -> tuple[Tensor, tuple[Tensor, Tensor] | None]:
         B, T, C = x.shape

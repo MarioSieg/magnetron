@@ -32,20 +32,20 @@ void mag_topo_set_free(mag_topo_set_t *set) {
   set->cap = 0;
 }
 
-static bool mag_topo_set_push(mag_topo_set_t *set, mag_tensor_t *t) {
+static bool mag_topo_set_push(mag_topo_set_t *set, mag_au_state_t *au) {
   if (set->len == set->cap) {
     size_t cap = set->cap<<1;
-    mag_tensor_t **realloced = (*mag_try_alloc)(set->buf, cap*sizeof(*set->buf), 0);
+    mag_au_state_t **realloced = (*mag_try_alloc)(set->buf, cap*sizeof(*set->buf), 0);
     if (mag_unlikely(!realloced)) return false;
     set->buf = realloced;
     set->cap = cap;
   }
-  set->buf[set->len++] = t;
+  set->buf[set->len++] = au;
   return true;
 }
 
 struct mag_topo_stack_record_t {
-  mag_tensor_t *tensor;
+  mag_au_state_t *node;
   uint32_t next_child_idx;
 };
 
@@ -60,7 +60,7 @@ void mag_topo_stack_reset(mag_topo_stack_t *stack) {
   stack->len = 0;
 }
 
-static bool mag_topo_stack_push(mag_topo_stack_t *stack, mag_tensor_t *t) {
+static bool mag_topo_stack_push(mag_topo_stack_t *stack, mag_au_state_t *au) {
   if (stack->len == stack->cap) {
     size_t cap = stack->cap<<1;
     mag_topo_stack_record_t *realloced = (*mag_try_alloc)(stack->top, cap*sizeof(*stack->top), 0);
@@ -69,7 +69,7 @@ static bool mag_topo_stack_push(mag_topo_stack_t *stack, mag_tensor_t *t) {
     stack->cap = cap;
   }
   mag_topo_stack_record_t *rec = stack->top+stack->len++;
-  rec->tensor = t;
+  rec->node = au;
   rec->next_child_idx = 0;
   return true;
 }
@@ -89,10 +89,10 @@ void mag_topo_stack_free(mag_topo_stack_t *stack) {
   stack->cap = 0;
 }
 
-static void mag_topo_unclaim(mag_tensor_t *t, int64_t epoch) {
-  if (!t || !t->au_state) return;
+static void mag_topo_unclaim(mag_au_state_t *au, int64_t epoch) {
+  if (!au) return;
   mag_atomic64_t expect = epoch, desire = 0;
-  mag_atomic64_compare_exchange_strong(&t->au_state->topo_traversal_epoch, &expect, &desire, MAG_MO_ACQ_REL, MAG_MO_RELAXED);
+  mag_atomic64_compare_exchange_strong(&au->topo_traversal_epoch, &expect, &desire, MAG_MO_ACQ_REL, MAG_MO_RELAXED);
 }
 
 void mag_topo_release(const mag_topo_set_t *sorted, int64_t epoch) {
@@ -103,15 +103,13 @@ void mag_topo_release(const mag_topo_set_t *sorted, int64_t epoch) {
 static void mag_topo_release_partial(const mag_topo_stack_t *stack, const mag_topo_set_t *sorted, int64_t epoch) {
   mag_topo_release(sorted, epoch);
   for (size_t i=0; i < stack->len; ++i)
-    mag_topo_unclaim(stack->top[i].tensor, epoch);
+    mag_topo_unclaim(stack->top[i].node, epoch);
 }
 
-static int mag_topo_try_claim(mag_tensor_t *node, int64_t epoch) {
-  mag_au_state_t *au = node->au_state;
+static int mag_topo_try_claim(mag_au_state_t *au, int64_t epoch) {
   if (mag_atomic64_load(&au->topo_traversal_epoch, MAG_MO_ACQUIRE) == epoch) return 0;
   mag_atomic64_t expect = 0, desire = epoch;
-  if (mag_likely(mag_atomic64_compare_exchange_strong(&au->topo_traversal_epoch, &expect, &desire, MAG_MO_ACQ_REL, MAG_MO_RELAXED)))
-    return 1;
+  if (mag_likely(mag_atomic64_compare_exchange_strong(&au->topo_traversal_epoch, &expect, &desire, MAG_MO_ACQ_REL, MAG_MO_RELAXED))) return 1;
   return expect == epoch ? 0 : -1;
 }
 
@@ -121,7 +119,7 @@ static MAG_COLDPROC mag_status_t mag_topo_shared_graph_error(mag_error_t *err) {
 
 mag_status_t mag_topo_sort(
   mag_error_t *err,
-  mag_tensor_t *root,
+  mag_au_state_t *root,
   mag_topo_stack_t *tmp_stack,
   mag_topo_set_t *out_sorted,
   int64_t *out_epoch
@@ -129,16 +127,9 @@ mag_status_t mag_topo_sort(
   mag_topo_stack_reset(tmp_stack);
   mag_topo_set_reset(out_sorted);
   *out_epoch = 0;
-  if (mag_unlikely(!(root->meta.flags & MAG_TFLAG_REQUIRES_GRAD))) return MAG_OK;
+  if (mag_unlikely(!root)) return MAG_OK;
   int64_t traversal_epoch = 1+mag_atomic64_fetch_add(&root->ctx->topo_traversal_epoch, 1, MAG_MO_RELAXED);
   mag_status_t status = MAG_OK;
-  if (!root->au_state) {
-    if (mag_unlikely(!mag_au_state_lazy_alloc(&root->au_state, root->ctx))) {
-      status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to allocate autodiff state.");
-      goto cleanup;
-    }
-    root->au_state->op = MAG_OP_NOP;
-  }
   if (mag_unlikely(mag_topo_try_claim(root, traversal_epoch) < 0)) {
     status = mag_topo_shared_graph_error(err);
     goto cleanup;
@@ -149,29 +140,22 @@ mag_status_t mag_topo_sort(
   }
   while (tmp_stack->len) { /* Iterative DFS */
     mag_topo_stack_record_t *top = mag_topo_stack_peek(tmp_stack);
-    mag_tensor_t *top_t = top->tensor;
-    if (!top_t->au_state && (top_t->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) {
-      if (mag_unlikely(!mag_au_state_lazy_alloc(&top_t->au_state, top_t->ctx))) {
-        status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to allocate autodiff state.");
-        goto cleanup;
-      }
-      top_t->au_state->op = MAG_OP_NOP;
-    }
-    mag_au_state_t *au = top_t->au_state;
+    mag_au_state_t *au = top->node;
     uint32_t num_children = mag_op_trait(au->op)->in;
-    if (num_children == MAG_OP_INOUT_DYN)
+    if (num_children == MAG_OP_INOUT_DYN || num_children > au->num_in)
       num_children = au->num_in;
     if (top->next_child_idx >= num_children) { /* All children processed */
       mag_topo_stack_pop(tmp_stack);
-      if (mag_unlikely(!mag_topo_set_push(out_sorted, top_t))) {
+      if (mag_unlikely(!mag_topo_set_push(out_sorted, au))) {
         status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow output set.");
         goto cleanup;
       }
       continue;
     }
-    mag_tensor_t *child = au->in[top->next_child_idx++];
-    if (mag_unlikely(!child || !child->au_state)) continue;
-    if (child->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
+    uint32_t ci = top->next_child_idx++;
+    mag_au_state_t *child = au->in_nodes[ci];
+    if (mag_unlikely(!child || !au->in[ci])) continue;
+    if (au->in[ci]->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
       int claimed = mag_topo_try_claim(child, traversal_epoch);
       if (mag_unlikely(claimed < 0)) {
         status = mag_topo_shared_graph_error(err);

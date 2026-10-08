@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 extern char *mag_current_module_path(void);
-extern bool mag_sec_crypto_entropy(void *buf, size_t len);
+extern bool mag_query_crypto_entropy(void *buf, size_t len);
 
 #ifdef __cplusplus
 }

@@ -30,7 +30,9 @@
     int64_t inner = 1; \
     for (int64_t d = axis+1; d < src->meta.coords.rank; ++d) inner *= src->meta.coords.shape[d]; \
     int64_t out_ax = r->meta.coords.shape[axis]; \
-    if (mag_likely(mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(index))) { \
+    bool same_outer = true; \
+    for (int64_t d = 0; d < src->meta.coords.rank; ++d) if (d != axis && index->meta.coords.shape[d] != src->meta.coords.shape[d]) same_outer = false; \
+    if (mag_likely(same_outer && mag_tensor_is_contiguous(src) && mag_tensor_is_contiguous(r) && mag_tensor_is_contiguous(index))) { \
       int64_t cur_k, cur_j, cur_o; \
       { int64_t tmp = ra; cur_k = tmp % inner; tmp /= inner; cur_j = tmp % out_ax; cur_o = tmp / out_ax; } \
       if (inner == 1) { \
@@ -40,7 +42,7 @@
           if (mag_unlikely(!(g >= 0 && g < ax))) { \
             return mag_set_error(err, MAG_ERR_KERNEL, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
           } \
-          br[flat] = bx[cur_o * ax + g]; \
+          br[flat] = bx[cur_o*ax + g]; \
           if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } \
         } \
       } else { \
@@ -50,7 +52,7 @@
           if (mag_unlikely(!(g >= 0 && g < ax))) { \
             return mag_set_error(err, MAG_ERR_KERNEL, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
           } \
-          br[flat] = bx[(cur_o * ax + g) * inner + cur_k]; \
+          br[flat] = bx[(cur_o*ax + g)*inner + cur_k]; \
           if (++cur_k == inner) { cur_k = 0; if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } } \
         } \
       } \
@@ -61,15 +63,15 @@
       int64_t tmp = flat; \
       for (int64_t d = r->meta.coords.rank-1; d >= 0; --d) { oc[d] = tmp % r->meta.coords.shape[d]; tmp /= r->meta.coords.shape[d]; } \
       int64_t index_offset = 0; \
-      for (int64_t d = 0; d < index->meta.coords.rank; ++d) index_offset += oc[d] * index->meta.coords.strides[d]; \
+      for (int64_t d = 0; d < index->meta.coords.rank; ++d) index_offset += oc[d]*index->meta.coords.strides[d]; \
       int64_t g = bi[index_offset]; \
       if (g < 0) g += ax; \
       if (mag_unlikely(!(g >= 0 && g < ax))) { \
         return mag_set_error(err, MAG_ERR_KERNEL, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
       } \
       int64_t src_off = 0, dst_off = 0; \
-      for (int64_t d = 0; d < src->meta.coords.rank; ++d) src_off += (d == axis ? g : oc[d]) * src->meta.coords.strides[d]; \
-      for (int64_t d = 0; d < r->meta.coords.rank; ++d) dst_off += oc[d] * r->meta.coords.strides[d]; \
+      for (int64_t d = 0; d < src->meta.coords.rank; ++d) src_off += (d == axis ? g : oc[d])*src->meta.coords.strides[d]; \
+      for (int64_t d = 0; d < r->meta.coords.rank; ++d) dst_off += oc[d]*r->meta.coords.strides[d]; \
       br[dst_off] = bx[src_off]; \
     } \
     return MAG_OK; \
@@ -101,7 +103,7 @@ mag_gen_stub_gather(int64_t, int64)
     int64_t vocab_size = weight->meta.coords.shape[0]; \
     int64_t row_size = weight->meta.numel / vocab_size; \
     int64_t n_idx = indices->meta.numel; \
-    int64_t total = n_idx * row_size; \
+    int64_t total = n_idx*row_size; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
     int64_t chunk = (total + tc - 1)/tc; \
@@ -117,11 +119,11 @@ mag_gen_stub_gather(int64_t, int64)
         if (mag_unlikely(!(g >= 0 && g < vocab_size))) { \
           return mag_set_error(err, MAG_ERR_KERNEL, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, vocab_size); \
         } \
-        int64_t dst_off = row * row_size; \
+        int64_t dst_off = row*row_size; \
         int64_t src_off = g  * row_size; \
         int64_t a = (row == row_start) ? (ra - dst_off) : 0; \
         int64_t b = (row == row_end)   ? (rb - dst_off) : row_size; \
-        memcpy(br + dst_off + a, bx + src_off + a, (size_t)(b - a) * sizeof(T)); \
+        memcpy(br + dst_off + a, bx + src_off + a, (size_t)(b - a)*sizeof(T)); \
       } \
       return MAG_OK; \
     } \
@@ -129,23 +131,23 @@ mag_gen_stub_gather(int64_t, int64)
     int64_t cur_row = ra / row_size; \
     int64_t cur_g; \
     { int64_t idx_off = 0, tmp = cur_row; \
-      for (int64_t d = indices->meta.coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->meta.coords.shape[d]) * indices->meta.coords.strides[d]; tmp /= indices->meta.coords.shape[d]; } \
+      for (int64_t d = indices->meta.coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->meta.coords.shape[d])*indices->meta.coords.strides[d]; tmp /= indices->meta.coords.shape[d]; } \
       cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
       if (mag_unlikely(!(cur_g >= 0 && cur_g < vocab_size))) { \
         return mag_set_error(err, MAG_ERR_KERNEL, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
       } \
     } \
     for (int64_t flat = ra; flat < rb; ++flat) { \
-      int64_t w_off = cur_g * weight->meta.coords.strides[0]; \
+      int64_t w_off = cur_g*weight->meta.coords.strides[0]; \
       { int64_t tmp2 = cur_col; \
-        for (int64_t d = weight->meta.coords.rank-1; d >= 1; --d) { w_off += (tmp2 % weight->meta.coords.shape[d]) * weight->meta.coords.strides[d]; tmp2 /= weight->meta.coords.shape[d]; } \
+        for (int64_t d = weight->meta.coords.rank-1; d >= 1; --d) { w_off += (tmp2 % weight->meta.coords.shape[d])*weight->meta.coords.strides[d]; tmp2 /= weight->meta.coords.shape[d]; } \
       } \
       br[flat] = bx[w_off]; \
       if (++cur_col == row_size) { \
         cur_col = 0; ++cur_row; \
         if (mag_likely(cur_row < n_idx)) { \
           int64_t idx_off = 0, tmp = cur_row; \
-          for (int64_t d = indices->meta.coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->meta.coords.shape[d]) * indices->meta.coords.strides[d]; tmp /= indices->meta.coords.shape[d]; } \
+          for (int64_t d = indices->meta.coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->meta.coords.shape[d])*indices->meta.coords.strides[d]; tmp /= indices->meta.coords.shape[d]; } \
           cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
           if (mag_unlikely(!(cur_g >= 0 && cur_g < vocab_size))) { \
         return mag_set_error(err, MAG_ERR_KERNEL, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \

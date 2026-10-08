@@ -34,9 +34,61 @@ static MAG_AINLINE int64_t mag_repeat_in_elem_offset(
     const mag_tensor_t *x = payload->cmd->in[0]; \
     T *br = (T *)mag_tensor_data_ptr_mut(r); \
     const T *bx = (const T *)mag_tensor_data_ptr(x); \
+    const mag_op_params_t *pp = payload->cmd->params; \
     int64_t total = r->meta.numel; \
+    if (mag_unlikely(total == 0)) return MAG_OK; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
+    int64_t rank = pp->repeat.rank; \
+    int64_t lead = rank - pp->repeat.in_rank; \
+    if (mag_tensor_is_contiguous(r) && rank > 0) { \
+      int64_t inner_out = pp->repeat.out_shape[rank-1]; \
+      int64_t inner_in = rank-1 >= lead ? pp->repeat.in_shape[rank-1] : 1; \
+      int64_t inner_st = rank-1 >= lead ? x->meta.coords.strides[rank-1-lead] : 0; \
+      int64_t rows = total/inner_out; \
+      int64_t chunk = (rows + tc - 1)/tc; \
+      int64_t ra = ti*chunk; \
+      int64_t rb = mag_vmin(ra + chunk, rows); \
+      if (ra >= rb) return MAG_OK; \
+      int64_t oc[MAG_MAX_DIMS]; \
+      int64_t ic[MAG_MAX_DIMS]; \
+      int64_t xoff = 0; \
+      { \
+        int64_t tmp = ra; \
+        for (int64_t d=rank-2; d >= 0; --d) { \
+          oc[d] = tmp % pp->repeat.out_shape[d]; \
+          tmp /= pp->repeat.out_shape[d]; \
+          ic[d] = d >= lead ? oc[d] % pp->repeat.in_shape[d] : 0; \
+          if (d >= lead) xoff += ic[d]*x->meta.coords.strides[d-lead]; \
+        } \
+      } \
+      for (int64_t row=ra; row < rb; ++row) { \
+        T *dst = br + row*inner_out; \
+        const T *src = bx + xoff; \
+        if (inner_in == 1) { \
+          T v = *src; \
+          for (int64_t j=0; j < inner_out; ++j) dst[j] = v; \
+        } else if (inner_st == 1) { \
+          for (int64_t j=0; j < inner_out; j += inner_in) memcpy(dst + j, src, (size_t)inner_in*sizeof(T)); \
+        } else { \
+          for (int64_t j=0; j < inner_out; j += inner_in) \
+            for (int64_t k=0; k < inner_in; ++k) dst[j+k] = src[k*inner_st]; \
+        } \
+        for (int64_t d=rank-2; d >= 0; --d) { \
+          int64_t st = d >= lead ? x->meta.coords.strides[d-lead] : 0; \
+          int64_t ins = d >= lead ? pp->repeat.in_shape[d] : 1; \
+          if (++oc[d] < pp->repeat.out_shape[d]) { \
+            if (++ic[d] < ins) xoff += st; \
+            else { ic[d] = 0; xoff -= st*(ins-1); } \
+            break; \
+          } \
+          oc[d] = 0; \
+          xoff -= st*ic[d]; \
+          ic[d] = 0; \
+        } \
+      } \
+      return MAG_OK; \
+    } \
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_vmin(ra + chunk, total); \
@@ -44,7 +96,7 @@ static MAG_AINLINE int64_t mag_repeat_in_elem_offset(
     mag_coords_iter_init(&cr, &r->meta.coords); \
     for (int64_t i=ra; i < rb; ++i) { \
       int64_t ri = mag_coords_iter_to_offset(&cr, i); \
-      int64_t xi = mag_repeat_in_elem_offset(i, payload->cmd->params, &x->meta.coords); \
+      int64_t xi = mag_repeat_in_elem_offset(i, pp, &x->meta.coords); \
       mag_bnd_chk(br+ri, r->storage->base, r->storage->size); \
       mag_bnd_chk(bx+xi, x->storage->base, x->storage->size); \
       br[ri] = bx[xi]; \

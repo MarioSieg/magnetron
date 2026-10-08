@@ -136,12 +136,21 @@ def call_reduction(tensor: Tensor, op_name: str, dim: int | None, keepdim: bool)
     if dim is None:
         return op()
     if op_name in ('min', 'max'):
-        return op(dim, keepdim=keepdim)
+        return op(dim, keepdim=keepdim)[0]
     return op(dim=dim, keepdim=keepdim)
 
 
 def clamp_shift_amount(y: Tensor, dt: dtype.DType) -> Tensor:
     return y.abs() % _SHIFT_BITS[dt]
+
+
+_TORCH_HALF_DTYPES = (torch.float16, torch.bfloat16)
+
+
+def torch_floordiv(tx: torch.Tensor, ty: torch.Tensor) -> torch.Tensor:
+    if tx.dtype in _TORCH_HALF_DTYPES:
+        return (tx.float() // ty.float()).to(tx.dtype)
+    return tx // ty
 
 
 def totorch_dtype(dtype: dtype.DType) -> torch.dtype:
@@ -230,12 +239,23 @@ def matmul_shape_pairs(lim: int, max_total_rank: int = 6) -> Iterator[tuple[tupl
                             yield shape_A, shape_B
 
 
+_DTYPES = dtype
+
+
+def uniform_tensor(shape: tuple[int, ...], low: float = 0.0, high: float = 1.0, dtype: dtype.DType = dtype.float32, device: str = 'cpu') -> Tensor:
+    if dtype == _DTYPES.boolean:
+        return Tensor((torch.rand(shape) < 0.5).tolist(), dtype=dtype, device=device)
+    if dtype.is_integer():
+        return Tensor(torch.randint(int(low), int(high), shape).tolist(), dtype=dtype, device=device)
+    return Tensor((torch.rand(shape, dtype=torch.float64) * (high - low) + low).tolist(), dtype=dtype, device=device)
+
+
 def random_tensor(shape: tuple[int, ...], dt: dtype.DType, device: str = 'cpu') -> Tensor:
     if dt == dtype.boolean:
-        return Tensor.bernoulli(shape, device=device)
+        return uniform_tensor(shape, dtype=dt, device=device)
     lim = 100 if dt.is_integer() else 1.0
     low = 0 if dt.is_unsigned_integer() else -lim
-    return Tensor.uniform(shape, low=low, high=lim, dtype=dt, device=device)
+    return uniform_tensor(shape, low, lim, dt, device)
 
 
 DETAILED_TEST_SHAPES: tuple[tuple[int, ...], ...] = (

@@ -22,13 +22,7 @@ def bench_fn(iters: int, x: any, y: any, func: callable) -> float:
 
 
 class PerformanceInfo:
-    def __init__(
-        self,
-        name: str,
-        shapes_a: list[tuple[int, int]],
-        shapes_b: list[tuple[int, int]],
-        participants: list[BenchParticipant],
-    ) -> None:
+    def __init__(self, name: str, shapes_a: list[tuple[int, int]], shapes_b: list[tuple[int, int]], participants: list[BenchParticipant]) -> None:
         self.name = name
         self.shapes_a = shapes_a
         self.shapes_b = shapes_b
@@ -36,15 +30,7 @@ class PerformanceInfo:
 
     def plot(self, flops_per_op: int = 2, plot_style: str = 'bars') -> None:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6))
-        colors = [
-            '#1f77b4',
-            '#ff7f0e',
-            '#2ca02c',
-            '#d62728',
-            '#9467bd',
-            '#8c564b',
-            '#e377c2',
-        ]
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
 
         if plot_style == 'bars':
             x_labels = [f'A{sa} B{sb}' for sa, sb in zip(self.shapes_a, self.shapes_b)]
@@ -53,13 +39,7 @@ class PerformanceInfo:
 
             for i, participant in enumerate(self.participants):
                 offset = (i - len(self.participants) / 2 + 0.5) * width
-                ax1.bar(
-                    x + offset,
-                    participant.timings,
-                    width,
-                    label=participant.name,
-                    color=colors[i % len(colors)],
-                )
+                ax1.bar(x + offset, participant.timings, width, label=participant.name, color=colors[i % len(colors)])
 
             ax1.set_xticks(x)
             ax1.set_xticklabels(x_labels, rotation=45, ha='right')
@@ -68,13 +48,7 @@ class PerformanceInfo:
                 total_elements = [(sa[0] * sa[1] + sb[0] * sb[1]) for sa, sb in zip(self.shapes_a, self.shapes_b)]
                 gflops = [(elements * flops_per_op) / (time * 1e9) for elements, time in zip(total_elements, participant.timings)]
                 offset = (i - len(self.participants) / 2 + 0.5) * width
-                ax2.bar(
-                    x + offset,
-                    gflops,
-                    width,
-                    label=participant.name,
-                    color=colors[i % len(colors)],
-                )
+                ax2.bar(x + offset, gflops, width, label=participant.name, color=colors[i % len(colors)])
 
             ax2.set_xticks(x)
             ax2.set_xticklabels(x_labels, rotation=45, ha='right')
@@ -83,25 +57,13 @@ class PerformanceInfo:
             markers = ['o', '+', 'x', '*', '.', 'x', '^']
 
             for i, participant in enumerate(self.participants):
-                ax1.plot(
-                    dims,
-                    participant.timings,
-                    label=participant.name,
-                    color=colors[i % len(colors)],
-                    marker=markers[i % len(markers)],
-                )
+                ax1.plot(dims, participant.timings, label=participant.name, color=colors[i % len(colors)], marker=markers[i % len(markers)])
             ax1.set_xlabel('Matrix Size (NxN)')
 
             for i, participant in enumerate(self.participants):
                 total_elements = [(sa[0] * sa[1] + sb[0] * sb[1]) for sa, sb in zip(self.shapes_a, self.shapes_b)]
                 gflops = [(elements * flops_per_op) / (time * 1e9) for elements, time in zip(total_elements, participant.timings)]
-                ax2.plot(
-                    dims,
-                    gflops,
-                    label=participant.name,
-                    color=colors[i % len(colors)],
-                    marker=markers[i % len(markers)],
-                )
+                ax2.plot(dims, gflops, label=participant.name, color=colors[i % len(colors)], marker=markers[i % len(markers)])
             ax2.set_xlabel('Matrix Size (NxN)')
 
         ax1.set_ylabel('Average Time (s)')

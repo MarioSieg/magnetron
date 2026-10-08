@@ -48,12 +48,7 @@ class device(ContextDecorator):
         _saved_state_stack(self._tls).append(context.get_default_device())
         context.set_default_device(self.device_name)
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None) -> None:
         context.set_default_device(_saved_state_stack(self._tls).pop())
 
 

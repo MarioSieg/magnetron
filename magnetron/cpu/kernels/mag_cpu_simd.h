@@ -104,7 +104,7 @@ extern "C" {
 #define MAG_VF32_LANES ((int64_t)(sizeof(mag_vf32_t)/sizeof(float)))
 #define MAG_VBF16_LANES (MAG_VF32_LANES<<1)
 
-#if defined(__AVX512F__) && defined(__AVX512BF16__)
+#if (defined(__AVX512F__) && defined(__AVX512BF16__)) || defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC)
   #define MAG_HAS_NATIVE_DPBF16 1
 #else
   #define MAG_HAS_NATIVE_DPBF16 0
@@ -761,6 +761,43 @@ static MAG_AINLINE float mag_vf32_reduce_add(mag_vf32_t x) {
     return x;
   #endif
 }
+static MAG_AINLINE float mag_vf32_reduce_min(mag_vf32_t x) {
+  #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+    return vminvq_f32(x);
+  #elif defined(__AVX512F__)
+    return _mm512_reduce_min_ps(x);
+  #elif defined(__AVX2__)
+    __m128 acc = _mm_min_ps(
+      _mm256_castps256_ps128(x),
+      _mm256_extractf128_ps(x, 1)
+    );
+    __m128 shuf = _mm_movehdup_ps(acc);
+    acc = _mm_min_ps(acc, shuf);
+    shuf = _mm_movehl_ps(shuf, acc);
+    acc = _mm_min_ss(acc, shuf);
+    return _mm_cvtss_f32(acc);
+  #elif defined(__SSE2__)
+    __m128 shuf = _mm_shuffle_ps(x, x, _MM_SHUFFLE(2, 3, 0, 1));
+    x = _mm_min_ps(x, shuf);
+    shuf = _mm_movehl_ps(shuf, x);
+    x = _mm_min_ss(x, shuf);
+    return _mm_cvtss_f32(x);
+  #elif defined(__loongarch_asx)
+    mag_alignas(32) float t[8];
+    __lasx_xvst((__m256i)x, t, 0);
+    float a = mag_vmin(mag_vmin(t[0], t[1]), mag_vmin(t[2], t[3]));
+    float b = mag_vmin(mag_vmin(t[4], t[5]), mag_vmin(t[6], t[7]));
+    return mag_vmin(a, b);
+  #elif defined(__loongarch_sx)
+    mag_alignas(16) float t[4];
+    __lsx_vst((__m128i)x, t, 0);
+    float a = mag_vmin(t[0], t[1]);
+    float b = mag_vmin(t[2], t[3]);
+    return mag_vmin(a, b);
+  #else
+    return x;
+  #endif
+}
 static MAG_AINLINE float mag_vf32_reduce_max(mag_vf32_t x) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
     return vmaxvq_f32(x);
@@ -1109,29 +1146,49 @@ static MAG_AINLINE void mag_vf32_storeu_bf16(mag_bfloat16_t *p, mag_vf32_t v) {
     _mm256_storeu_si256((__m256i *)p, (__m256i)h);
   #elif defined(__AVX512F__)
     __m512i u = _mm512_castps_si512(v);
-    u = _mm512_srli_epi32(u, 16);
-    __m256i h = _mm512_cvtepi32_epi16(u);
+    __m512i bias = _mm512_add_epi32(_mm512_and_si512(_mm512_srli_epi32(u, 16), _mm512_set1_epi32(1)), _mm512_set1_epi32(0x7fff));
+    __m512i rounded = _mm512_add_epi32(u, bias);
+    __mmask16 is_nan = _mm512_cmpgt_epu32_mask(_mm512_and_si512(u, _mm512_set1_epi32(0x7fffffff)), _mm512_set1_epi32(0x7f800000));
+    rounded = _mm512_mask_mov_epi32(rounded, is_nan, _mm512_set1_epi32(0x7fc00000));
+    __m256i h = _mm512_cvtepi32_epi16(_mm512_srli_epi32(rounded, 16));
     _mm256_storeu_si256((__m256i *)p, h);
   #elif defined(__AVX2__)
     __m256i u = _mm256_castps_si256(v);
-    u = _mm256_srli_epi32(u, 16);
+    __m256i bias = _mm256_add_epi32(_mm256_and_si256(_mm256_srli_epi32(u, 16), _mm256_set1_epi32(1)), _mm256_set1_epi32(0x7fff));
+    __m256i rounded = _mm256_add_epi32(u, bias);
+    __m256i is_nan = _mm256_cmpgt_epi32(_mm256_and_si256(u, _mm256_set1_epi32(0x7fffffff)), _mm256_set1_epi32(0x7f800000));
+    rounded = _mm256_blendv_epi8(rounded, _mm256_set1_epi32(0x7fc00000), is_nan);
+    u = _mm256_srli_epi32(rounded, 16);
     __m128i h = _mm_packus_epi32(_mm256_castsi256_si128(u), _mm256_extracti128_si256(u, 1));
     _mm_storeu_si128((__m128i *)p, h);
   #elif defined(__SSE4_1__)
     __m128i u = _mm_castps_si128(v);
-    u = _mm_srli_epi32(u, 16);
+    __m128i bias = _mm_add_epi32(_mm_and_si128(_mm_srli_epi32(u, 16), _mm_set1_epi32(1)), _mm_set1_epi32(0x7fff));
+    __m128i rounded = _mm_add_epi32(u, bias);
+    __m128i is_nan = _mm_cmpgt_epi32(_mm_and_si128(u, _mm_set1_epi32(0x7fffffff)), _mm_set1_epi32(0x7f800000));
+    rounded = _mm_blendv_epi8(rounded, _mm_set1_epi32(0x7fc00000), is_nan);
+    u = _mm_srli_epi32(rounded, 16);
     __m128i h = _mm_packus_epi32(u, u);
     _mm_storel_epi64((__m128i *)p, h);
   #elif defined(__SSE2__)
     __m128i u = _mm_castps_si128(v);
-    u = _mm_srli_epi32(u, 16);
+    __m128i bias = _mm_add_epi32(_mm_and_si128(_mm_srli_epi32(u, 16), _mm_set1_epi32(1)), _mm_set1_epi32(0x7fff));
+    __m128i rounded = _mm_add_epi32(u, bias);
+    __m128i is_nan = _mm_cmpgt_epi32(_mm_and_si128(u, _mm_set1_epi32(0x7fffffff)), _mm_set1_epi32(0x7f800000));
+    rounded = _mm_or_si128(_mm_andnot_si128(is_nan, rounded), _mm_and_si128(is_nan, _mm_set1_epi32(0x7fc00000)));
+    u = _mm_srli_epi32(rounded, 16);
     __m128i a = _mm_shufflelo_epi16(u, _MM_SHUFFLE(2, 0, 2, 0));
     __m128i b = _mm_shufflehi_epi16(u, _MM_SHUFFLE(2, 0, 2, 0));
     b = _mm_srli_si128(b, 8);
     __m128i h = _mm_unpacklo_epi32(a, b);
     _mm_storel_epi64((__m128i *)p, h);
   #elif defined(__loongarch_asx)
-    __m256i u = __lasx_xvsrli_w((__m256i)v, 16);
+    __m256i u = (__m256i)v;
+    __m256i bias = __lasx_xvadd_w(__lasx_xvand_v(__lasx_xvsrli_w(u, 16), __lasx_xvreplgr2vr_w(1)), __lasx_xvreplgr2vr_w(0x7fff));
+    __m256i rounded = __lasx_xvadd_w(u, bias);
+    __m256i is_nan = __lasx_xvslt_wu(__lasx_xvreplgr2vr_w(0x7f800000), __lasx_xvand_v(u, __lasx_xvreplgr2vr_w(0x7fffffff)));
+    rounded = __lasx_xvbitsel_v(rounded, __lasx_xvreplgr2vr_w(0x7fc00000), is_nan);
+    u = __lasx_xvsrli_w(rounded, 16);
     __m256i h = __lasx_xvpickev_h(u, u);
     uint64_t q0, q1;
     __asm__ __volatile__(
@@ -1198,7 +1255,9 @@ static MAG_AINLINE mag_vbf16_t mag_vbf16_broadcast_pair(const mag_bfloat16_t *p)
 }
 
 static MAG_AINLINE mag_vf32_t mag_vf32_dpbf16(mag_vf32_t acc, mag_vbf16_t x, mag_vbf16_t y) {
-  #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
+  #if defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC)
+    return vbfdotq_f32(acc, vreinterpretq_bf16_u16(x), vreinterpretq_bf16_u16(y));
+  #elif (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
     mag_vf32_t xlo = vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(x), 16));
     mag_vf32_t xhi = vreinterpretq_f32_u32(vshll_n_u16(vget_high_u16(x), 16));
     mag_vf32_t ylo = vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(y), 16));
@@ -1677,7 +1736,7 @@ static MAG_AINLINE mag_vi32_t mag_vi32_blend(mag_vmask32_t m, mag_vi32_t t, mag_
 }
 static MAG_AINLINE mag_vi32_t mag_vi32_add(mag_vi32_t x, mag_vi32_t y) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
-    return vaddq_s32(x, y);
+    return vreinterpretq_s32_u32(vaddq_u32(vreinterpretq_u32_s32(x), vreinterpretq_u32_s32(y)));
   #elif defined(__AVX512F__)
     return _mm512_add_epi32(x, y);
   #elif defined(__AVX2__)
@@ -1689,12 +1748,12 @@ static MAG_AINLINE mag_vi32_t mag_vi32_add(mag_vi32_t x, mag_vi32_t y) {
   #elif defined(__loongarch_sx)
     return __lsx_vadd_w(x, y);
   #else
-    return x+y;
+    return (int32_t)((uint32_t)x+(uint32_t)y);
   #endif
 }
 static MAG_AINLINE mag_vi32_t mag_vi32_sub(mag_vi32_t x, mag_vi32_t y) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
-    return vsubq_s32(x, y);
+    return vreinterpretq_s32_u32(vsubq_u32(vreinterpretq_u32_s32(x), vreinterpretq_u32_s32(y)));
   #elif defined(__AVX512F__)
     return _mm512_sub_epi32(x, y);
   #elif defined(__AVX2__)
@@ -1706,12 +1765,12 @@ static MAG_AINLINE mag_vi32_t mag_vi32_sub(mag_vi32_t x, mag_vi32_t y) {
   #elif defined(__loongarch_sx)
     return __lsx_vsub_w(x, y);
   #else
-    return x-y;
+    return (int32_t)((uint32_t)x-(uint32_t)y);
   #endif
 }
 static MAG_AINLINE mag_vi32_t mag_vi32_mul(mag_vi32_t x, mag_vi32_t y) {
   #if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(_M_ARM64)
-    return vmulq_s32(x, y);
+    return vreinterpretq_s32_u32(vmulq_u32(vreinterpretq_u32_s32(x), vreinterpretq_u32_s32(y)));
   #elif defined(__AVX512F__)
     return _mm512_mullo_epi32(x, y);
   #elif defined(__AVX2__)
@@ -1727,7 +1786,7 @@ static MAG_AINLINE mag_vi32_t mag_vi32_mul(mag_vi32_t x, mag_vi32_t y) {
   #elif defined(__loongarch_sx)
     return __lsx_vmul_w(x, y);
   #else
-    return x*y;
+    return (int32_t)((uint32_t)x*(uint32_t)y);
   #endif
 }
 static MAG_AINLINE mag_vi32_t mag_vi32_mulhi_u32(mag_vi32_t x, mag_vi32_t y) {

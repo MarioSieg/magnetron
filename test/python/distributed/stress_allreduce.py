@@ -23,9 +23,10 @@ def main() -> None:
     ap.add_argument('--steps', type=int, default=10_000)
     ap.add_argument('--warmup', type=int, default=5)
     ap.add_argument('--log-every', type=int, default=10)
+    ap.add_argument('--backend', default='tcp')
     args = ap.parse_args()
 
-    pg = distributed.ProcessGroup(args.ip, args.port, args.rank, args.world_size)
+    pg = distributed.Communicator(rank=args.rank, size=args.world_size, backend=args.backend)
     scalar_type = dtype.bfloat16
     x = Tensor.full((args.numel,), fill_value=float(args.rank + 1), dtype=scalar_type)
     expected = args.world_size * (args.world_size + 1) / 2
@@ -33,13 +34,13 @@ def main() -> None:
     wire_mib = tensor_mib * 2
     times = []
     print(
-        f'rank {pg.rank}/{pg.world_size}: {args.numel} bf16 elems, tensor={tensor_mib:.2f} MiB, wire≈{wire_mib:.2f} MiB/step',
+        f'rank {pg.rank}/{pg.size}: {args.numel} bf16 elems, tensor={tensor_mib:.2f} MiB, wire≈{wire_mib:.2f} MiB/step',
         flush=True,
     )
     for step in range(1, args.steps + 1):
         x.fill_(float(args.rank + 1))
         t0 = time.perf_counter()
-        pg.all_reduce_sum_(x)
+        pg.all_reduce_(x, distributed.ReduceOp.SUM)
         t1 = time.perf_counter()
         dt = t1 - t0
         if step > args.warmup:

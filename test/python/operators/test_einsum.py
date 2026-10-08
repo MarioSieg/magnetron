@@ -31,6 +31,13 @@ _EINSUM_CASES: tuple[EinsumCase, ...] = (
     EinsumCase('...ij,jk->...ik', ((2, 3, 4), (4, 5))),
     EinsumCase('ij,jk', ((2, 4), (4, 3))),
     EinsumCase('...ij->...', ((2, 3, 4, 5),)),
+    EinsumCase('ijk,jl,kl->il', ((8, 16, 16), (16, 32), (16, 32))),
+    EinsumCase('pi,qj,ijkl,rk,sl->pqrs', ((3, 4), (3, 4), (4, 4, 4, 4), (3, 4), (3, 4))),
+    EinsumCase('ab,ac,ad,bc,bd,cd->', ((5, 5), (5, 5), (5, 5), (5, 5), (5, 5), (5, 5))),
+    EinsumCase('ab,bc,cd,de,ef,fg,gh,hi,ij,jk->ak', ((2, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 4), (4, 2))),
+    EinsumCase('bnd,dh,bnh->bn', ((2, 5, 6), (6, 7), (2, 5, 7))),
+    EinsumCase('ab,ab,ab->ab', ((3, 4), (3, 4), (3, 4))),
+    EinsumCase('i,j,k->ijk', ((3,), (4,), (5,))),
 )
 
 # we use all float types except float8_e4m3fn as torch doesnt support bmm for it on the CPU

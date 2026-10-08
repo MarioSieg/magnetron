@@ -26,7 +26,7 @@ MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, 
     return mag_set_error(err, MAG_ERR_OOM, "visualize: failed to allocate traversal stack.");
   }
   int64_t topo_epoch = 0;
-  mag_status_t status = mag_topo_sort(err, tensor, &topo_stack, post_order, &topo_epoch);
+  mag_status_t status = mag_topo_sort(err, tensor->au_state, &topo_stack, post_order, &topo_epoch);
   mag_topo_stack_free(&topo_stack);
   if (mag_unlikely(mag_iserr(status) || !post_order->len)) {
     if (topo_epoch) mag_topo_release(post_order, topo_epoch);
@@ -39,26 +39,22 @@ MAG_COLDPROC mag_status_t mag_tensor_visualize_backprop_graph(mag_error_t *err, 
   mag_sstream_append(&out, "    rankdir=TD;\n");
   mag_sstream_append(&out, "    node [shape=record, style=\"rounded,filled\", fontname=\"Helvetica\"];\n");
   for (size_t i=post_order->len; i --> 0;) {
-    mag_tensor_t *node = post_order->buf[i];
-    if (!node->au_state) continue;
-    const mag_op_traits_t *meta = mag_op_trait(node->au_state->op);
+    mag_au_state_t *node = post_order->buf[i];
+    const mag_op_traits_t *meta = mag_op_trait(node->op);
     mag_sstream_append(&out, "    \"%p\" [label=\"%s\\nShape: (", node, meta->mnemonic);
-    for (int64_t r=0; r < node->meta.coords.rank; ++r) {
-      mag_sstream_append(&out, "%zu", (size_t)node->meta.coords.shape[r]);
-      if (r < node->meta.coords.rank-1)
+    mag_tensor_t *owner = node->owner;
+    int64_t rank = owner ? owner->meta.coords.rank : 0;
+    for (int64_t r=0; r < rank; ++r) {
+      mag_sstream_append(&out, "%zu", (size_t)owner->meta.coords.shape[r]);
+      if (r < rank-1)
         mag_sstream_append(&out, ", ");
     }
-    mag_sstream_append(&out, ")\\nGrad: %s\"];\n", node->au_state->grad ? "set" : "none");
+    mag_sstream_append(&out, ")\\nGrad: %s\"];\n", node->grad ? "set" : "none");
   }
   for (size_t i=0; i < post_order->len; ++i) {
-    mag_tensor_t *node = post_order->buf[i];
-    if (!node->au_state) continue;
-    const mag_op_traits_t *meta = mag_op_trait(node->au_state->op);
-    uint32_t numin = meta->in;
-    if (numin == MAG_OP_INOUT_DYN) /* Variadic ops (e.g. cat) carry their real input count on the node. */
-      numin = node->au_state->num_in;
-    for (uint32_t j=0; j < numin; ++j) {
-      mag_tensor_t *input = node->au_state->in[j];
+    mag_au_state_t *node = post_order->buf[i];
+    for (uint32_t j=0; j < node->num_in; ++j) {
+      mag_au_state_t *input = node->in_nodes[j];
       if (input)
         mag_sstream_append(&out, "    \"%p\" -> \"%p\" [label=\"input %u\"];\n", node, input, j);
     }

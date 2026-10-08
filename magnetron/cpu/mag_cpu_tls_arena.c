@@ -13,17 +13,52 @@
 
 #include <core/mag_alloc.h>
 
+struct mag_scratch_retired_t {
+  mag_scratch_retired_t *next;
+  uint8_t *base;
+};
+
+static void mag_scratch_arena_free_retired(mag_scratch_arena_t *arena) {
+  mag_scratch_retired_t *r = arena->retired;
+  while (r) {
+    mag_scratch_retired_t *next = r->next;
+    (*mag_alloc)(r->base, 0, MAG_MM_SCRATCH_ALIGN);
+    (*mag_alloc)(r, 0, 0);
+    r = next;
+  }
+  arena->retired = NULL;
+}
+
+static uint8_t *mag_scratch_arena_block_alloc(size_t nc) {
+  uint8_t *blk = (*mag_try_alloc)(NULL, nc, MAG_MM_SCRATCH_ALIGN);
+  #ifndef _MSC_VER
+    if (blk) blk = __builtin_assume_aligned(blk, MAG_MM_SCRATCH_ALIGN);
+  #endif
+  return blk;
+}
+
 bool mag_scratch_arena_reserve(mag_scratch_arena_t *arena, size_t nb) {
   if (nb <= arena->cap) return true;
   size_t nc = arena->cap ? arena->cap : 4096;
   while (nc < nb) nc = nc < 1<<20 ? nc<<1 : nc+(nc>>1);
   nc = (nc + 4095)&~4095;
-  uint8_t *grown = (*mag_try_alloc)(arena->base, nc, MAG_MM_SCRATCH_ALIGN);
-  if (mag_unlikely(!grown)) return false; /* OOM: keep the existing buffer intact. */
+  uint8_t *grown = mag_scratch_arena_block_alloc(nc);
+  if (mag_unlikely(!grown)) return false;
+  if (arena->base) {
+    if (arena->pos) {
+      mag_scratch_retired_t *r = (*mag_try_alloc)(NULL, sizeof(*r), 0);
+      if (mag_unlikely(!r)) {
+        (*mag_alloc)(grown, 0, MAG_MM_SCRATCH_ALIGN);
+        return false;
+      }
+      r->next = arena->retired;
+      r->base = arena->base;
+      arena->retired = r;
+    } else {
+      (*mag_alloc)(arena->base, 0, MAG_MM_SCRATCH_ALIGN);
+    }
+  }
   arena->base = grown;
-  #ifndef _MSC_VER
-    arena->base = __builtin_assume_aligned(arena->base, MAG_MM_SCRATCH_ALIGN);
-  #endif
   arena->cap = nc;
   return true;
 }
@@ -35,6 +70,7 @@ size_t mag_scratch_arena_mark(mag_scratch_arena_t *arena) {
 void mag_scratch_arena_reset(mag_scratch_arena_t *arena, size_t mark) {
   mag_assert2(mark <= arena->pos);
   arena->pos = mark;
+  if (!mark && arena->retired) mag_scratch_arena_free_retired(arena);
 }
 
 void *mag_scratch_arena_alloc(mag_scratch_arena_t *arena, size_t nb) {
@@ -54,9 +90,11 @@ void *mag_scratch_arena_alloc(mag_scratch_arena_t *arena, size_t nb) {
 
 void mag_scratch_arena_clear(mag_scratch_arena_t *arena) {
   arena->pos = 0;
+  if (arena->retired) mag_scratch_arena_free_retired(arena);
 }
 
 void mag_scratch_arena_trim(mag_scratch_arena_t *arena) {
+  if (arena->retired) mag_scratch_arena_free_retired(arena);
   if (!arena->base) { arena->cap = arena->pos = arena->hi = 0; return; }
   if (arena->keep == 0) {
     arena->pos = 0;
@@ -66,17 +104,16 @@ void mag_scratch_arena_trim(mag_scratch_arena_t *arena) {
   size_t target = mag_vmin(mag_vmax(arena->hi, 4096), arena->keep);
   target = (target+4095)&~4095;
   if (arena->cap > target) {
-    arena->base = (uint8_t *)(*mag_alloc)(arena->base, target, MAG_MM_SCRATCH_ALIGN);
-    #ifndef _MSC_VER
-      arena->base = __builtin_assume_aligned(arena->base, MAG_MM_SCRATCH_ALIGN);
-    #endif
-    arena->cap  = target;
+    (*mag_alloc)(arena->base, 0, MAG_MM_SCRATCH_ALIGN);
+    arena->base = mag_scratch_arena_block_alloc(target);
+    arena->cap = arena->base ? target : 0;
   }
   arena->pos = 0;
   arena->hi = 0;
 }
 
 void mag_scratch_arena_destroy(mag_scratch_arena_t *arena) {
+  if (arena->retired) mag_scratch_arena_free_retired(arena);
   if (arena->base)
     (*mag_alloc)(arena->base, 0, MAG_MM_SCRATCH_ALIGN);
   memset(arena, 0, sizeof(*arena));

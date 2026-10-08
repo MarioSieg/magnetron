@@ -37,11 +37,7 @@ for i in range(args.iters):
 A, B = A.transfer('cpu'), B.transfer('cpu')
 last_result = last_result.transfer('cpu')
 errors = ((A @ B) - last_result).abs()
-epsilons: dict[str, tuple[float, float]] = {
-    'bfloat16': (1.5, 2e-2),
-    'float16': (0.5, 1e-2),
-    'float32': (1e-4, 1e-4),
-}
+epsilons: dict[str, tuple[float, float]] = {'bfloat16': (1.5, 2e-2), 'float16': (0.5, 1e-2), 'float32': (1e-4, 1e-4)}
 ref = A @ B
 err = (ref - last_result).abs()
 atol, rtol = epsilons[args.dtype]

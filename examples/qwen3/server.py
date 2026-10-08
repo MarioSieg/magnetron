@@ -56,46 +56,21 @@ class OpenAIServer:
         self.app.add_api_route('/v1/chat/completions', self.chat_completions, methods=['POST'])
 
     def list_models(self) -> dict[str, Any]:
-        return {
-            'object': 'list',
-            'data': [
-                {
-                    'id': self.model_name,
-                    'object': 'model',
-                    'created': int(time.time()),
-                    'owned_by': 'magnetron',
-                }
-            ],
-        }
+        return {'object': 'list', 'data': [{'id': self.model_name, 'object': 'model', 'created': int(time.time()), 'owned_by': 'magnetron'}]}
 
-    def chat_completions(
-        self,
-        req: ChatCompletionRequest,
-        authorization: str | None = Header(default=None),
-    ) -> Any:
+    def chat_completions(self, req: ChatCompletionRequest, authorization: str | None = Header(default=None)) -> Any:
         prompt = self._format_prompt(req.messages, req.tools)
         if req.stream:
-            return StreamingResponse(
-                self._stream_chat(req, prompt),
-                media_type='text/event-stream',
-            )
+            return StreamingResponse(self._stream_chat(req, prompt), media_type='text/event-stream')
 
         return self._complete_chat(req, prompt)
 
     def _complete_chat(self, req: ChatCompletionRequest, prompt: str) -> dict[str, Any]:
         completion_id = self._completion_id()
         created = int(time.time())
-        text = self.engine.gen_one_shot(
-            prompt,
-            max_tokens=req.max_tokens,
-            temp=req.temperature,
-            top_k=req.top_k,
-        )
+        text = self.engine.gen_one_shot(prompt, max_tokens=req.max_tokens, temp=req.temperature, top_k=req.top_k)
         tool_calls = self._parse_tool_calls(text) if req.tools else None
-        message: dict[str, Any] = {
-            'role': 'assistant',
-            'content': None if tool_calls else text,
-        }
+        message: dict[str, Any] = {'role': 'assistant', 'content': None if tool_calls else text}
         finish_reason = 'stop'
         if tool_calls:
             message['tool_calls'] = tool_calls
@@ -106,18 +81,8 @@ class OpenAIServer:
             'object': 'chat.completion',
             'created': created,
             'model': req.model,
-            'choices': [
-                {
-                    'index': 0,
-                    'message': message,
-                    'finish_reason': finish_reason,
-                }
-            ],
-            'usage': {
-                'prompt_tokens': 0,
-                'completion_tokens': 0,
-                'total_tokens': 0,
-            },
+            'choices': [{'index': 0, 'message': message, 'finish_reason': finish_reason}],
+            'usage': {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0},
         }
 
     def _stream_chat(self, req: ChatCompletionRequest, prompt: str):
@@ -129,22 +94,11 @@ class OpenAIServer:
                 'object': 'chat.completion.chunk',
                 'created': created,
                 'model': req.model,
-                'choices': [
-                    {
-                        'index': 0,
-                        'delta': {'role': 'assistant'},
-                        'finish_reason': None,
-                    }
-                ],
+                'choices': [{'index': 0, 'delta': {'role': 'assistant'}, 'finish_reason': None}],
             }
         )
 
-        for chunk in self.engine.gen_stream(
-            prompt,
-            max_tokens=req.max_tokens,
-            temp=req.temperature,
-            top_k=req.top_k,
-        ):
+        for chunk in self.engine.gen_stream(prompt, max_tokens=req.max_tokens, temp=req.temperature, top_k=req.top_k):
             if not chunk:
                 continue
             yield self._sse(
@@ -153,13 +107,7 @@ class OpenAIServer:
                     'object': 'chat.completion.chunk',
                     'created': created,
                     'model': req.model,
-                    'choices': [
-                        {
-                            'index': 0,
-                            'delta': {'content': chunk},
-                            'finish_reason': None,
-                        }
-                    ],
+                    'choices': [{'index': 0, 'delta': {'content': chunk}, 'finish_reason': None}],
                 }
             )
         yield self._sse(
@@ -168,22 +116,12 @@ class OpenAIServer:
                 'object': 'chat.completion.chunk',
                 'created': created,
                 'model': req.model,
-                'choices': [
-                    {
-                        'index': 0,
-                        'delta': {},
-                        'finish_reason': 'stop',
-                    }
-                ],
+                'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}],
             }
         )
         yield 'data: [DONE]\n\n'
 
-    def _format_prompt(
-        self,
-        messages: list[ChatMessage],
-        tools: list[dict[str, Any]] | None,
-    ) -> str:
+    def _format_prompt(self, messages: list[ChatMessage], tools: list[dict[str, Any]] | None) -> str:
         parts: list[str] = []
         system_seen = False
         for msg in messages:
@@ -195,18 +133,12 @@ class OpenAIServer:
             elif msg.role == 'assistant':
                 content = msg.content or ''
                 if msg.tool_calls:
-                    content = json.dumps(
-                        {'tool_calls': msg.tool_calls},
-                        ensure_ascii=False,
-                    )
+                    content = json.dumps({'tool_calls': msg.tool_calls}, ensure_ascii=False)
                 parts.append(f'<|im_start|>assistant\n{content}<|im_end|>')
             elif msg.role == 'tool':
                 parts.append(f'<|im_start|>tool name={msg.name or ""} tool_call_id={msg.tool_call_id or ""}\n{msg.content or ""}<|im_end|>')
         if not system_seen and tools:
-            parts.insert(
-                0,
-                f'<|im_start|>system\nYou are a helpful assistant.{self._render_tools(tools)}<|im_end|>',
-            )
+            parts.insert(0, f'<|im_start|>system\nYou are a helpful assistant.{self._render_tools(tools)}<|im_end|>')
         parts.append('<|im_start|>assistant\n')
         return '\n'.join(parts)
 
@@ -251,10 +183,7 @@ class OpenAIServer:
                 {
                     'id': f'call_{uuid.uuid4().hex[:24]}',
                     'type': 'function',
-                    'function': {
-                        'name': name,
-                        'arguments': json.dumps(arguments, ensure_ascii=False),
-                    },
+                    'function': {'name': name, 'arguments': json.dumps(arguments, ensure_ascii=False)},
                 }
             )
 
@@ -295,16 +224,9 @@ def main() -> None:
     config = InferenceConfig.from_args(args)
     engine = InferenceEngine(config)
 
-    server = OpenAIServer(
-        engine=engine,
-        model_name=args.model_name,
-    )
+    server = OpenAIServer(engine=engine, model_name=args.model_name)
 
-    uvicorn.run(
-        server.app,
-        host=args.host,
-        port=args.port,
-    )
+    uvicorn.run(server.app, host=args.host, port=args.port)
 
 
 if __name__ == '__main__':

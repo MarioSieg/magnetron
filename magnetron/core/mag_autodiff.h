@@ -32,6 +32,13 @@ struct mag_au_state_t {
   uint32_t cap_in;
   mag_op_params_t *params;
   mag_tensor_t *grad;
+  mag_tensor_t *owner;
+  mag_au_state_t **in_nodes;
+  mag_au_state_t *in_nodes_intrusive[MAG_AU_STATE_INTRUSIVE_STORAGE_NUM];
+  uint64_t *in_versions;
+  uint64_t in_versions_intrusive[MAG_AU_STATE_INTRUSIVE_STORAGE_NUM];
+  uint64_t owner_version;
+  bool retain_grad;
   mag_atomic64_t topo_traversal_epoch; /* Epoch of the traversal that currently own node - CAS accessed */
 };
 MAG_RC_OBJECT_IS_VALID(mag_au_state_t);
@@ -40,6 +47,9 @@ extern mag_au_state_t *mag_au_state_lazy_alloc(mag_au_state_t **au, mag_context_
 extern bool mag_au_state_reserve_more_input_cap(mag_au_state_t *au, uint32_t extra);
 extern bool mag_au_state_set_op_params(mag_au_state_t *au, const mag_op_params_t *params);
 extern bool mag_au_state_set_input(mag_au_state_t *au, mag_tensor_t *x);
+extern void mag_au_state_clear_inputs(mag_au_state_t *au);
+extern uint64_t mag_tensor_current_version(const mag_tensor_t *t);
+extern bool mag_au_state_output_is_valid(const mag_au_state_t *node);
 
 #ifdef __cplusplus
 }

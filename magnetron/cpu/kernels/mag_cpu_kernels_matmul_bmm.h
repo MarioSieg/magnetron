@@ -153,6 +153,32 @@ static MAG_HOTPROC void mag_matmul_bmm_mat_vec(const mag_kernel_payload_t *paylo
   }
 }
 
+typedef struct mag_bmm_gemm_batch_t {
+  const mag_coords_t *cr;
+  const mag_coords_t *cx;
+  const mag_coords_t *cy;
+  int64_t br;
+  int64_t bx;
+  int64_t by;
+  int64_t M;
+  int64_t N;
+  int64_t el;
+  uint8_t *pr;
+  const uint8_t *px;
+  const uint8_t *py;
+} mag_bmm_gemm_batch_t;
+
+static void mag_bmm_gemm_resolve(const void *user, int64_t batch, void **pr, const void **px, const void **py) {
+  const mag_bmm_gemm_batch_t *b = user;
+  int64_t idx[MAG_MAX_DIMS];
+  mag_bmm_compute_result_idx(b->br, batch, &idx, b->cr);
+  int64_t mox = mag_bmm_flattened_batch_offset(b->br, b->bx, &idx, b->cx);
+  int64_t moy = mag_bmm_flattened_batch_offset(b->br, b->by, &idx, b->cy);
+  *pr = b->pr + batch*b->M*b->N*b->el;
+  *px = b->px + mox*b->el;
+  *py = b->py + moy*b->el;
+}
+
 static MAG_HOTPROC void mag_matmul_bmm_gemm(const mag_kernel_payload_t *payload) {
   mag_tensor_t *r = payload->cmd->out[0];
   const mag_tensor_t *x = payload->cmd->in[0];
@@ -167,45 +193,23 @@ static MAG_HOTPROC void mag_matmul_bmm_gemm(const mag_kernel_payload_t *payload)
   int64_t sx1 = x->meta.coords.strides[xr-1];
   int64_t sy0 = y->meta.coords.strides[yr-2];
   int64_t sy1 = y->meta.coords.strides[yr-1];
-  int64_t bx = xr-2;
-  int64_t by = yr-2;
   int64_t br = rr-2;
-  int64_t batch_tot=1;
-  for (int64_t dim=0; dim < br; ++dim) batch_tot *= r->meta.coords.shape[dim];
-  int64_t rows_tot = M*batch_tot;
-  int64_t ti = payload->thread_idx;
-  int64_t tc = payload->thread_num;
-  if (batch_tot == 1) { /* Plain GEMM, forward to it */
-    mag_matmul_gemm_impl(
-      r->meta.dtype, ti, tc, M, N, K,
-      (void *)mag_tensor_data_ptr_mut(r),
-      (const void *)mag_tensor_data_ptr(x), sx0, sx1,
-      (const void *)mag_tensor_data_ptr(y), sy0, sy1
-    );
-    return;
-  }
-  int64_t chunk = (rows_tot+tc-1)/tc;
-  int64_t start = ti*chunk;
-  int64_t end = mag_vmin(rows_tot, start+chunk);
-  if (mag_unlikely(start >= end)) return;
-  int64_t el = (int64_t)mag_type_trait(r->meta.dtype)->size;
-  uint8_t *pr = (uint8_t *)mag_tensor_data_ptr_mut(r);
-  const uint8_t *px = (const uint8_t *)mag_tensor_data_ptr(x);
-  const uint8_t *py = (const uint8_t *)mag_tensor_data_ptr(y);
-  for (int64_t i=start; i < end;) {
-    int64_t batch = i/M;
-    int64_t i0 = i%M;
-    int64_t Mt = mag_vmin(M-i0, end-i);
-    int64_t idx[MAG_MAX_DIMS];
-    mag_bmm_compute_result_idx(br, batch, &idx, &r->meta.coords);
-    int64_t mox = mag_bmm_flattened_batch_offset(br, bx, &idx, &x->meta.coords);
-    int64_t moy = mag_bmm_flattened_batch_offset(br, by, &idx, &y->meta.coords);
-    void *ppr = pr + (batch*M + i0)*N*el;
-    const void *ppx = px + (mox + i0*sx0)*el;
-    const void *ppy = py + moy*el;
-    mag_matmul_gemm_impl(r->meta.dtype, 0, 1, Mt, N, K, ppr, ppx, sx0, sx1, ppy, sy0, sy1);
-    i += Mt;
-  }
+  mag_bmm_gemm_batch_t batch = {
+    .cr = &r->meta.coords,
+    .cx = &x->meta.coords,
+    .cy = &y->meta.coords,
+    .br = br,
+    .bx = xr-2,
+    .by = yr-2,
+    .M = M,
+    .N = N,
+    .el = (int64_t)mag_type_trait(r->meta.dtype)->size,
+    .pr = (uint8_t *)mag_tensor_data_ptr_mut(r),
+    .px = (const uint8_t *)mag_tensor_data_ptr(x),
+    .py = (const uint8_t *)mag_tensor_data_ptr(y),
+  };
+  int64_t batch_tot = mag_bmm_batch_total(br, &r->meta.coords);
+  mag_matmul_gemm_impl(payload, r->meta.dtype, M, N, K, batch_tot, &mag_bmm_gemm_resolve, &batch, batch.pr, batch.px, sx0, sx1, batch.py, sy0, sy1);
 }
 
 static MAG_HOTPROC void mag_matmul_bmm(const mag_kernel_payload_t *payload, mag_matmul_type_t type) {

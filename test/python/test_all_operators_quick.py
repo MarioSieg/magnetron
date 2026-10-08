@@ -535,6 +535,23 @@ def test_split(device: str) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_unbind(device: str) -> None:
+    x = Tensor.arange(6, device=device).reshape(3, 2)
+    rows = x.unbind()
+    assert isinstance(rows, tuple)
+    assert len(rows) == 3
+    assert [r.tolist() for r in rows] == [[0, 1], [2, 3], [4, 5]]
+    cols = x.unbind(1)
+    assert len(cols) == 2
+    assert [c.tolist() for c in cols] == [[0, 2, 4], [1, 3, 5]]
+    assert [c.tolist() for c in x.unbind(-1)] == [[0, 2, 4], [1, 3, 5]]
+    assert rows[0].shape == (2,)
+    assert cols[0].shape == (3,)
+    assert x.unbind(0)[1].data_ptr == x.select(0, 1).data_ptr
+    assert Tensor.stack(list(rows), dim=0).tolist() == x.tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_eye(device: str) -> None:
     assert_close_mag_torch(Tensor.eye(3, device=device), torch.eye(3), dtype.float32)
     assert_close_mag_torch(Tensor.eye(2, 4, device=device), torch.eye(2, 4), dtype.float32)
@@ -691,7 +708,6 @@ _UNARY_GENERAL: list[float] = [-2.75, -1.25, -0.5, 0.0, 0.5, 1.25, 2.75]
 _UNARY_POSITIVE: list[float] = [0.125, 0.5, 1.0, 2.0, 3.5, 7.25]
 _UNARY_UNIT: list[float] = [-0.875, -0.5, -0.125, 0.0, 0.125, 0.5, 0.875]
 _UNARY_ABOVE_ONE: list[float] = [1.0, 1.5, 2.0, 4.0, 9.0]
-_UNARY_NO_TIES: list[float] = [-2.7, -1.2, -0.4, 0.0, 0.4, 1.2, 2.7]
 
 _UNARY_OPS: tuple[tuple[str, list[float], Callable[[torch.Tensor], torch.Tensor]], ...] = (
     ('abs', _UNARY_GENERAL, torch.abs),
@@ -725,7 +741,7 @@ _UNARY_OPS: tuple[tuple[str, list[float], Callable[[torch.Tensor], torch.Tensor]
     ('expm1', _UNARY_GENERAL, torch.expm1),
     ('floor', _UNARY_GENERAL, torch.floor),
     ('ceil', _UNARY_GENERAL, torch.ceil),
-    ('round', _UNARY_NO_TIES, torch.round),
+    ('round', _UNARY_GENERAL + [1.5, 2.5, -1.5, -2.5], torch.round),
     ('trunc', _UNARY_GENERAL, torch.trunc),
 )
 
@@ -916,6 +932,23 @@ def test_shift_op(device: str, name: str, ref: Callable) -> None:
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_logical_not(device: str) -> None:
+    x = Tensor([[-3, 2, 12], [7, -4, 0]], dtype=dtype.int32, device=device)
+    expected = torch.bitwise_not(totorch(x))
+    assert (~x).tolist() == expected.tolist()
+    assert x.logical_not().tolist() == expected.tolist()
+    z = x.clone()
+    z.logical_not_()
+    assert z.tolist() == expected.tolist()
+    b = Tensor([True, False, True, False], device=device)
+    bexpected = torch.logical_not(totorch(b))
+    assert (~b).dtype == dtype.boolean
+    assert (~b).tolist() == bexpected.tolist()
+    assert b.logical_not().tolist() == bexpected.tolist()
+    assert (~~b).tolist() == b.tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_matmul(device: str) -> None:
     x = Tensor.uniform(3, 4, device=device)
     y = Tensor.uniform(4, 5, device=device)
@@ -961,8 +994,14 @@ def test_minima(device: str) -> None:
     x = Tensor.uniform(2, 3, 4, device=device)
     t = totorch(x)
     assert_close_mag_torch(x.min(), t.min(), dtype.float32)
-    assert_close_mag_torch(x.min(1), t.min(1).values, dtype.float32)
-    assert_close_mag_torch(x.min(1, keepdim=True), t.min(1, keepdim=True).values, dtype.float32)
+    values, indices = x.min(1)
+    assert_close_mag_torch(values, t.min(1).values, dtype.float32)
+    assert indices.tolist() == t.min(1).indices.tolist()
+    values, indices = x.min(1, keepdim=True)
+    assert_close_mag_torch(values, t.min(1, keepdim=True).values, dtype.float32)
+    assert indices.tolist() == t.min(1, keepdim=True).indices.tolist()
+    assert_close_mag_torch(x.amin(1), t.amin(1), dtype.float32)
+    assert_close_mag_torch(x.amin((0, 2), keepdim=True), t.amin((0, 2), keepdim=True), dtype.float32)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
@@ -970,8 +1009,14 @@ def test_maxima(device: str) -> None:
     x = Tensor.uniform(2, 3, 4, device=device)
     t = totorch(x)
     assert_close_mag_torch(x.max(), t.max(), dtype.float32)
-    assert_close_mag_torch(x.max(1), t.max(1).values, dtype.float32)
-    assert_close_mag_torch(x.max(1, keepdim=True), t.max(1, keepdim=True).values, dtype.float32)
+    values, indices = x.max(1)
+    assert_close_mag_torch(values, t.max(1).values, dtype.float32)
+    assert indices.tolist() == t.max(1).indices.tolist()
+    values, indices = x.max(1, keepdim=True)
+    assert_close_mag_torch(values, t.max(1, keepdim=True).values, dtype.float32)
+    assert indices.tolist() == t.max(1, keepdim=True).indices.tolist()
+    assert_close_mag_torch(x.amax(1), t.amax(1), dtype.float32)
+    assert_close_mag_torch(x.amax((0, 2), keepdim=True), t.amax((0, 2), keepdim=True), dtype.float32)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
@@ -1040,6 +1085,108 @@ def test_topk(device: str) -> None:
     expected_values, expected_indices = torch.topk(t, 3, dim=1, largest=False)
     assert_close_mag_torch(values, expected_values, dtype.float32)
     assert indices.tolist() == expected_indices.tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_sort(device: str) -> None:
+    x = Tensor([[3.0, 1.0, 4.0, 1.0], [9.0, 2.0, 6.0, 5.0]], device=device)
+    t = totorch(x)
+    values, indices = x.sort(dim=1)
+    expected_values, expected_indices = torch.sort(t, dim=1, stable=True)
+    assert_close_mag_torch(values, expected_values, dtype.float32)
+    assert indices.tolist() == expected_indices.tolist()
+    values, indices = x.sort(dim=0, descending=True)
+    expected_values, expected_indices = torch.sort(t, dim=0, descending=True, stable=True)
+    assert_close_mag_torch(values, expected_values, dtype.float32)
+    assert indices.tolist() == expected_indices.tolist()
+    y = Tensor([5, 3, 8, 3, 1], dtype=dtype.int32, device=device)
+    values, indices = y.sort()
+    assert values.tolist() == [1, 3, 3, 5, 8]
+    assert indices.tolist() == [4, 1, 3, 0, 2]
+    values, indices = y.sort(descending=True)
+    assert values.tolist() == [8, 5, 3, 3, 1]
+    assert indices.tolist() == [2, 0, 1, 3, 4]
+    z = Tensor([2.0, float('nan'), -1.0, 0.0], device=device)
+    values, indices = z.sort()
+    assert indices.tolist() == [2, 3, 0, 1]
+    values, indices = z.sort(descending=True)
+    assert indices.tolist() == [1, 0, 3, 2]
+    big = Tensor.uniform((7, 300), low=-1.0, high=1.0, device=device)
+    values, indices = big.sort(dim=1)
+    expected_values, expected_indices = torch.sort(totorch(big), dim=1, stable=True)
+    assert_close_mag_torch(values, expected_values, dtype.float32)
+    assert indices.tolist() == expected_indices.tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_argsort(device: str) -> None:
+    x = Tensor([[3.0, 1.0, 4.0, 1.0], [9.0, 2.0, 6.0, 5.0]], device=device)
+    t = totorch(x)
+    assert x.argsort(dim=1).tolist() == torch.argsort(t, dim=1, stable=True).tolist()
+    assert x.argsort(dim=1, descending=True).tolist() == torch.argsort(t, dim=1, descending=True, stable=True).tolist()
+    assert x.argsort(dim=0).tolist() == torch.argsort(t, dim=0, stable=True).tolist()
+    big = Tensor.uniform((5, 257), low=-1.0, high=1.0, device=device)
+    assert big.argsort(dim=1, descending=True).tolist() == torch.argsort(totorch(big), dim=1, descending=True, stable=True).tolist()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_bincount(device: str) -> None:
+    x = Tensor([0, 1, 1, 3, 2, 1, 7], dtype=dtype.int64, device=device)
+    t = totorch(x)
+    r = x.bincount()
+    assert r.dtype == dtype.int64
+    assert r.tolist() == torch.bincount(t).tolist()
+    assert x.bincount(minlength=12).tolist() == torch.bincount(t, minlength=12).tolist()
+    assert x.bincount(minlength=3).tolist() == torch.bincount(t, minlength=3).tolist()
+    w = Tensor([0.5, 1.0, 1.5, 2.0, -1.0, 0.25, 3.0], device=device)
+    rw = x.bincount(weights=w)
+    assert rw.dtype == dtype.float32
+    assert_close_mag_torch(rw, torch.bincount(t, weights=totorch(w)).to(torch.float32), dtype.float32)
+    xi32 = Tensor([4, 4, 0], dtype=dtype.int32, device=device)
+    assert xi32.bincount().tolist() == [1, 0, 0, 0, 2]
+    empty = Tensor.zeros((0,), dtype=dtype.int64, device=device)
+    assert empty.bincount().tolist() == []
+    assert empty.bincount(minlength=4).tolist() == [0, 0, 0, 0]
+    big = Tensor.uniform((5000,), low=0, high=64, dtype=dtype.int32, device=device)
+    assert big.bincount().tolist() == torch.bincount(totorch(big)).tolist()
+    bw = Tensor.uniform((5000,), low=-1.0, high=1.0, device=device)
+    assert_close_mag_torch(big.bincount(weights=bw), torch.bincount(totorch(big), weights=totorch(bw)).to(torch.float32), dtype.float32)
+    with pytest.raises(RuntimeError):
+        Tensor([1, -1], dtype=dtype.int64, device=device).bincount()
+    with pytest.raises(RuntimeError):
+        Tensor([[1, 2]], dtype=dtype.int64, device=device).bincount()
+    with pytest.raises(RuntimeError):
+        Tensor([1.0, 2.0], device=device).bincount()
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_nonzero(device: str) -> None:
+    x = Tensor([[0.0, 1.5, 0.0], [-2.0, 0.0, float('nan')]], device=device)
+    r = x.nonzero()
+    assert r.dtype == dtype.int64
+    assert r.shape == (3, 2)
+    assert r.tolist() == torch.nonzero(totorch(x)).tolist()
+    v = Tensor([0, 3, 0, 0, 7], dtype=dtype.int32, device=device)
+    assert v.nonzero().tolist() == torch.nonzero(totorch(v)).tolist()
+    b = Tensor([[True, False], [False, True]], device=device)
+    assert b.nonzero().tolist() == [[0, 0], [1, 1]]
+    zeros = Tensor.zeros((4, 5), device=device)
+    assert zeros.nonzero().shape == (0, 2)
+    assert zeros.nonzero().tolist() == []
+    empty = Tensor.zeros((0, 3), device=device)
+    assert empty.nonzero().shape == (0, 2)
+    scalar = Tensor.scalar(3.0, device=device)
+    assert scalar.nonzero().shape == (1, 0)
+    assert Tensor.scalar(0.0, device=device).nonzero().shape == (0, 0)
+    t = Tensor.arange(24, device=device).reshape(4, 6).T
+    assert not t.is_contiguous
+    assert t.nonzero().tolist() == torch.nonzero(totorch(t)).tolist()
+    for dt in (dtype.float16, dtype.bfloat16, dtype.int8, dtype.uint16, dtype.int64):
+        big = Tensor.uniform((37, 129), low=-1.0, high=1.0, device=device)
+        big = (big > 0.5).cast(dt)
+        assert big.nonzero().tolist() == torch.nonzero(totorch(big).to(torch.int64)).tolist()
+    huge = (Tensor.uniform((3, 9000), low=0.0, high=1.0, device=device) > 0.7)
+    assert huge.nonzero().tolist() == torch.nonzero(totorch(huge)).tolist()
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
@@ -1223,3 +1370,63 @@ def test_lerp_inplace(device: str) -> None:
     x = start.clone()
     x.lerp_(end, 0.5)
     assert_close_mag_torch(x, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_interpolate(device: str) -> None:
+    x = Tensor.arange(2 * 3 * 2 * 3, device=device).cast(dtype.float32).reshape(2, 3, 2, 3)
+    y = x.interpolate(scale_factor=2)
+    expected = torch.nn.functional.interpolate(totorch(x), scale_factor=2, mode='nearest')
+    assert y.shape == (2, 3, 4, 6)
+    assert_close_mag_torch(y, expected, dtype.float32)
+    y = x.interpolate(size=(3, 5))
+    expected = torch.nn.functional.interpolate(totorch(x), size=(3, 5), mode='nearest')
+    assert y.shape == (2, 3, 3, 5)
+    assert_close_mag_torch(y, expected, dtype.float32)
+    for mode in ('nearest-exact', 'bilinear', 'bicubic', 'area'):
+        y = x.interpolate(size=(5, 7), mode=mode)
+        expected = torch.nn.functional.interpolate(totorch(x), size=(5, 7), mode=mode)
+        assert_close_mag_torch(y, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_conv1d(device: str) -> None:
+    x = Tensor.arange(2 * 4 * 9, device=device).cast(dtype.float32).reshape(2, 4, 9)
+    w = Tensor.arange(6 * 2 * 3, device=device).cast(dtype.float32).reshape(6, 2, 3) * 0.1
+    b = Tensor([1.0, -1.0, 0.5, 0.25, -0.25, 2.0], device=device)
+    y = x.conv1D(w, b, stride=2, padding=1, dilation=2, groups=2)
+    expected = torch.nn.functional.conv1d(totorch(x), totorch(w), totorch(b), stride=2, padding=1, dilation=2, groups=2)
+    assert y.shape == (2, 6, 4)
+    assert_close_mag_torch(y, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_conv_transpose1d(device: str) -> None:
+    x = Tensor.arange(2 * 4 * 5, device=device).cast(dtype.float32).reshape(2, 4, 5)
+    w = Tensor.arange(4 * 3 * 3, device=device).cast(dtype.float32).reshape(4, 3, 3) * 0.1
+    b = Tensor([1.0, -1.0, 0.5, 0.25, -0.25, 2.0], device=device)
+    y = x.convT1D(w, b, stride=2, padding=1, output_padding=1, groups=2)
+    expected = torch.nn.functional.conv_transpose1d(totorch(x), totorch(w), totorch(b), stride=2, padding=1, output_padding=1, groups=2)
+    assert y.shape == (2, 6, 10)
+    assert_close_mag_torch(y, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_conv2d(device: str) -> None:
+    x = Tensor.arange(2 * 2 * 4 * 4, device=device).cast(dtype.float32).reshape(2, 2, 4, 4)
+    w = Tensor.arange(3 * 2 * 3 * 3, device=device).cast(dtype.float32).reshape(3, 2, 3, 3) * 0.1
+    b = Tensor([1.0, -1.0, 0.5], device=device)
+    y = x.conv2D(w, b, stride=2, padding=1)
+    expected = torch.nn.functional.conv2d(totorch(x), totorch(w), totorch(b), stride=2, padding=1)
+    assert y.shape == (2, 3, 2, 2)
+    assert_close_mag_torch(y, expected, dtype.float32)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_conv_transpose2d(device: str) -> None:
+    x = Tensor.arange(2 * 2 * 3 * 3, device=device).cast(dtype.float32).reshape(2, 2, 3, 3)
+    w = Tensor.arange(2 * 3 * 3 * 3, device=device).cast(dtype.float32).reshape(2, 3, 3, 3) * 0.1
+    y = x.convT2D(w, stride=2, padding=1, output_padding=1)
+    expected = torch.nn.functional.conv_transpose2d(totorch(x), totorch(w), stride=2, padding=1, output_padding=1)
+    assert y.shape == (2, 3, 6, 6)
+    assert_close_mag_torch(y, expected, dtype.float32)

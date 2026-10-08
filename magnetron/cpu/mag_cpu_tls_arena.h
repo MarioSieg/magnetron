@@ -20,15 +20,18 @@ extern "C" {
 
 #define MAG_MM_SCRATCH_ALIGN MAG_DESTRUCTIVE_INTERFERENCE_SIZE
 
+typedef struct mag_scratch_retired_t mag_scratch_retired_t;
+
 typedef struct mag_scratch_arena_t {
   uint8_t *base;
   size_t cap;
   size_t pos;
   size_t hi;
   size_t keep;
+  mag_scratch_retired_t *retired;
 } mag_scratch_arena_t;
 
-#define MAG_SCRATCH_ARENA_INIT(keep) { NULL, 0, 0, 0, (keep) }
+#define MAG_SCRATCH_ARENA_INIT(keep) { NULL, 0, 0, 0, (keep), NULL }
 
 extern bool mag_scratch_arena_reserve(mag_scratch_arena_t *arena, size_t nb); /* Returns false on OOM. */
 extern size_t mag_scratch_arena_mark(mag_scratch_arena_t *arena);

@@ -23,6 +23,9 @@ namespace mag {
   [[nodiscard]] extern mag_status_t binary_op_floordiv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t binary_op_mod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t binary_op_pow(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
+  [[nodiscard]] extern mag_status_t binary_op_min(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
+  [[nodiscard]] extern mag_status_t binary_op_max(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
+  [[nodiscard]] extern mag_status_t binary_op_clamp(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t binary_op_and(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t binary_op_or(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t binary_op_xor(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);

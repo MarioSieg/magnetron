@@ -27,11 +27,7 @@ def _download_or_ensure_hf_file(repo_id: str, filename: str) -> str:
     from huggingface_hub import hf_hub_download
 
     console.print(f'Downloading {filename}', style='dim')
-    return hf_hub_download(
-        repo_id=repo_id,
-        filename=filename,
-        repo_type='model',
-    )
+    return hf_hub_download(repo_id=repo_id, filename=filename, repo_type='model')
 
 
 class HFTokenizer:
@@ -86,10 +82,7 @@ class InferenceEngine:
     def __init__(self, config: InferenceConfig) -> None:
         snapshot: str | None = config.snapshot
         if snapshot is None:
-            snapshot = _download_or_ensure_hf_file(
-                repo_id=REPO_ID,
-                filename='qwen3-4b-instruct-2507-bf16.mag',
-            )
+            snapshot = _download_or_ensure_hf_file(repo_id=REPO_ID, filename='qwen3-4b-instruct-2507-bf16.mag')
         assert snapshot is not None
         start = time.perf_counter()
         context.stop_grad_recorder()
@@ -111,12 +104,7 @@ class InferenceEngine:
         gc.collect()
 
     def gen_stream(
-        self,
-        prompt: str,
-        max_tokens: int | None = None,
-        temp: float | None = None,
-        top_k: int | None = None,
-        reset_cache: bool = False,
+        self, prompt: str, max_tokens: int | None = None, temp: float | None = None, top_k: int | None = None, reset_cache: bool = False
     ) -> Iterator[str]:
         if max_tokens is None:
             max_tokens = self.config.max_tokens
@@ -126,12 +114,7 @@ class InferenceEngine:
             top_k = self.config.top_k
         model_input_ids = Tensor([self.tokenizer.encode(prompt)], dtype=dtype.int64)
         for chunk in self.model.generate_stream(
-            model_input_ids,
-            self.tokenizer,
-            max_tokens=max_tokens,
-            temp=temp,
-            top_k=top_k,
-            reset_cache=reset_cache,
+            model_input_ids, self.tokenizer, max_tokens=max_tokens, temp=temp, top_k=top_k, reset_cache=reset_cache
         ):
             yield chunk
         gc.collect()

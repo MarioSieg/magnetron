@@ -16,9 +16,9 @@
 
 static uint32_t mag_map_seed32(void) {
   uint32_t s = 0;
-  if (mag_likely(mag_sec_crypto_entropy(&s, sizeof(s)) && s)) return s;
+  if (mag_likely(mag_query_crypto_entropy(&s, sizeof(s)) && s)) return s;
   s = (uint32_t)rand() ^ ((uint32_t)rand()<<16);
-  s ^= ((uint32_t)(uintptr_t)&s>>3) ^ ((uint32_t)(uintptr_t)&mag_sec_crypto_entropy>>3);
+  s ^= ((uint32_t)(uintptr_t)&s>>3) ^ ((uint32_t)(uintptr_t)&mag_query_crypto_entropy>>3);
   s ^= s>>16;
   s *= 0x7feb352du;
   s ^= s>>15;

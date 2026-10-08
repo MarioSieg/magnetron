@@ -10,6 +10,7 @@
 */
 
 #include "mag_mmap.h"
+#include "mag_mmap_ra.h"
 
 #ifdef _WIN32
 
@@ -238,6 +239,7 @@ bool mag_mmap_file(mag_mapped_file_t *mf, const char *path, size_t size, mag_map
     mf->fd = fd;
     mf->map = view;
     mf->fs = fs;
+    if (mode == MAG_MAP_READ) mag_mmap_ra_register(mf);
     return true;
   #endif
 }
@@ -274,6 +276,7 @@ bool mag_munmap_file(mag_mapped_file_t *mf) {
     memset(mf, 0, sizeof(*mf));
     return ok;
   #else
+    if (!mf->writable) mag_mmap_ra_unregister(mf);
     if (mf->map && mf->fs) {
       if (mf->writable) {
         if (mag_unlikely(msync(mf->map, mf->fs, MS_SYNC) == -1)) ok = false;

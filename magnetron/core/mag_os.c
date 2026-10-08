@@ -58,7 +58,7 @@ typedef BOOLEAN (WINAPI *mag_win32_prgr_fn_t)(void *buf, ULONG len);
 static mag_win32_prgr_fn_t mag_win32_prgr_fn;
 #endif
 
-bool mag_sec_crypto_entropy(void *buf, size_t len) {
+bool mag_query_crypto_entropy(void *buf, size_t len) {
 #if defined(__linux__) && SYS_getrandom
   return syscall(SYS_getrandom, buf, len, 0) == len;
 #elif defined(__APPLE__) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101200

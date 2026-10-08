@@ -82,8 +82,8 @@ def binary_unary_op_torch(
         elif op == 'pow':
             y = y.abs()  # Avoid negative powers
         r = mag_callback(x.clone(), y.clone())
-        kwargs: dict[str, Any] = {'equal_nan': True}
-        torch.testing.assert_close(totorch(r), np_callback(totorch(x), totorch(y)), **kwargs)
+        ref = torch_floordiv if op == 'floordiv' else np_callback
+        torch.testing.assert_close(totorch(r), ref(totorch(x), totorch(y)), equal_nan=True)
 
     for_all_shapes(test)
 

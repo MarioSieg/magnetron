@@ -97,7 +97,7 @@ typedef int64_t mag_atomic64_t;
 static MAG_AINLINE void mag_atomic64_store(volatile mag_atomic64_t *o, mag_atomic64_t x, mag_memory_order_t order) {
   __atomic_store_n(o, x, order);
 }
-static MAG_AINLINE mag_atomic64_t mag_atomic64_load(volatile mag_atomic64_t *o, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic64_t mag_atomic64_load(const volatile mag_atomic64_t *o, mag_memory_order_t order) {
   return __atomic_load_n(o, order);
 }
 static MAG_AINLINE mag_atomic64_t mag_atomic64_fetch_add(volatile mag_atomic64_t *o, mag_atomic64_t x, mag_memory_order_t order) {
@@ -129,7 +129,7 @@ typedef int32_t mag_atomic32_t;
 static MAG_AINLINE void mag_atomic32_store(volatile mag_atomic32_t *o, mag_atomic32_t x, mag_memory_order_t order) {
   __atomic_store_n(o, x, order);
 }
-static MAG_AINLINE mag_atomic32_t mag_atomic32_load(volatile mag_atomic32_t *o, mag_memory_order_t order) {
+static MAG_AINLINE mag_atomic32_t mag_atomic32_load(const volatile mag_atomic32_t *o, mag_memory_order_t order) {
   return __atomic_load_n(o, order);
 }
 static MAG_AINLINE mag_atomic32_t mag_atomic32_fetch_add(volatile mag_atomic32_t *o, mag_atomic32_t x, mag_memory_order_t order) {
@@ -370,11 +370,10 @@ defined(__WIN32__) || defined(__TOS_WIN__) || defined(__WINDOWS__)
 #endif
 #endif
 
-#ifdef __cpp_lib_hardware_interference_size
 /* Cache line buf_size. Used for alignment to avoid destructive interference (false sharing). */
-#define MAG_DESTRUCTIVE_INTERFERENCE_SIZE std::hardware_destructive_interference_size
+#if defined(__APPLE__) && defined(__aarch64__)
+#define MAG_DESTRUCTIVE_INTERFERENCE_SIZE 128
 #else
-/* Cache line buf_size. Used for alignment to avoid destructive interference (false sharing). */
 #define MAG_DESTRUCTIVE_INTERFERENCE_SIZE 64
 #endif
 
@@ -544,8 +543,8 @@ extern MAG_EXPORT MAG_COLDPROC mag_printf_fmt(6,7) mag_status_t mag_set_error_im
 
 extern void MAG_COLDPROC mag_print_separator(FILE *f); /* Print a separator line. */
 
-/* Humanize memory buf_size. Format and convert a memory buf_size to the appropriate unit. For example. 1024 => 1 KiB */
-extern MAG_EXPORT void mag_humanize_memory_size(size_t n, double *out, const char **unit);
+extern MAG_EXPORT void mag_humanize_memory_size(size_t n, double *out, const char **unit); /* 1024 -> 1KiB */
+extern MAG_EXPORT void mag_humanize_amount(size_t n, double *out, const char **unit); /* 1000 -> 1K (SI) */
 extern MAG_EXPORT uintptr_t mag_thread_id(void); /* Get current native thread ID. */
 extern MAG_EXPORT FILE *mag_fopen(const char *file, const char *mode);
 extern MAG_EXPORT uint64_t mag_hpc_clock_ns(void); /* Get high precision clock in nanoseconds. */

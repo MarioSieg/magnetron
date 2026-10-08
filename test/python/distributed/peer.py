@@ -17,17 +17,13 @@ def main() -> None:
     parser.add_argument('--port', type=int, default=29500, help='Master TCP port')
     parser.add_argument('--world-size', type=int, default=2, help='Number of processes')
     parser.add_argument('--rank', type=int, default=1, help='Rank of this process')
+    parser.add_argument('--backend', default='tcp', help='Communicator backend')
     args = parser.parse_args()
-    pg = distributed.ProcessGroup(
-        master_addr=args.ip,
-        master_port=args.port,
-        rank=args.rank,
-        world_size=args.world_size,
-    )
+    pg = distributed.Communicator(rank=args.rank, size=args.world_size, backend=args.backend)
     x = Tensor([1.0, 2.0, 3.0, 4.0], dtype=dtype.bfloat16)
-    print(f'Rank {pg.rank}/{pg.world_size}')
+    print(f'Rank {pg.rank}/{pg.size}')
     print('Before:', x)
-    pg.all_reduce_sum_(x)
+    pg.all_reduce_(x, distributed.ReduceOp.SUM)
     print('After: ', x)
 
 
