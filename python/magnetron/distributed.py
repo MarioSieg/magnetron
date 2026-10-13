@@ -16,13 +16,9 @@ from ._magnetron_bindings._distributed import Communicator, ReduceOp
 
 __all__ = ['Communicator', 'ReduceOp', 'DistributedContext', 'DeviceMesh']
 
+
 class DistributedContext:
-    def __init__(
-        self,
-        world_rank: int,
-        world_size: int,
-        backend: str
-    ) -> None:
+    def __init__(self, world_rank: int, world_size: int, backend: str) -> None:
         if world_size <= 0:
             raise ValueError('World size must be > 0')
         if world_rank < 0 or world_rank >= world_size:
@@ -63,11 +59,7 @@ class DistributedContext:
             raise ValueError(f'World rank {self._world_rank} is not a member of ranks {ranks}')
         key = ranks
         if key not in self._comms:
-            self._comms[key] = Communicator(
-                rank=ranks.index(self._world_rank),
-                size=len(ranks),
-                backend=self._backend,
-            )
+            self._comms[key] = Communicator(rank=ranks.index(self._world_rank), size=len(ranks), backend=self._backend)
         return self._comms[key]
 
     def destroy(self) -> None:
@@ -76,15 +68,13 @@ class DistributedContext:
         self._comms.clear()
 
     def __repr__(self) -> str:
-        return (
-            f'DistributedContext('
-            f'world_rank={self.world_rank}, '
-            f'world_size={self.world_size}, '
-            f'backend={self.backend!r})'
-        )
+        return f'DistributedContext(world_rank={self.world_rank}, world_size={self.world_size}, backend={self.backend!r})'
+
 
 class DeviceMesh:
-    def __init__(self, context: DistributedContext, device_type: str, mesh: Tensor | Sequence[int], *, mesh_dim_names: tuple[str, ...] | None = None) -> None:
+    def __init__(
+        self, context: DistributedContext, device_type: str, mesh: Tensor | Sequence[int], *, mesh_dim_names: tuple[str, ...] | None = None
+    ) -> None:
         self._ctx = context
         self._device_type = device_type
         if not isinstance(mesh, Tensor):
@@ -123,7 +113,7 @@ class DeviceMesh:
             raise IndexError(f'Mesh dim {mesh_dim} out of range for {self.ndim}D mesh')
         return mesh_dim
 
-    def _get_dim_comm_ranks(self, mesh_dim: int) -> Tensor|None:
+    def _get_dim_comm_ranks(self, mesh_dim: int) -> Tensor | None:
         if self._coords is None:
             return None
         index = []
@@ -148,7 +138,6 @@ class DeviceMesh:
         mesh_dim = self._resolve_dim(mesh_dim)
         return self._dim_comms[mesh_dim]
 
-
     def lookup_comm(self, mesh_dim: int | str | None = None) -> Communicator:
         comm = self.lookup_comm_opt(mesh_dim)
         if comm is None:
@@ -158,7 +147,7 @@ class DeviceMesh:
     def all_comms(self):
         return list(self._dim_comms)
 
-    def local_rank(self, mesh_dim: int | str | None=None) -> int:
+    def local_rank(self, mesh_dim: int | str | None = None) -> int:
         dim = self._resolve_dim(mesh_dim)
         if self._coords is None:
             raise RuntimeError(f'Rank {self.world_rank} is not part of this DeviceMesh')
@@ -201,12 +190,7 @@ class DeviceMesh:
         return self._mesh_dim_names
 
     def __repr__(self) -> str:
-        args = [
-            f'device={self.device_type!r}',
-            f'mesh={self.mesh.tolist()!r}'
-        ]
+        args = [f'device={self.device_type!r}', f'mesh={self.mesh.tolist()!r}']
         if self.mesh_dim_names is not None:
-            args.append(
-                f'mesh_dim_names={self.mesh_dim_names!r}'
-            )
-        return f"DeviceMesh({', '.join(args)})"
+            args.append(f'mesh_dim_names={self.mesh_dim_names!r}')
+        return f'DeviceMesh({", ".join(args)})'
