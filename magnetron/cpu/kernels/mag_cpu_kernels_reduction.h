@@ -267,17 +267,43 @@ mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float3
     } \
     return MAG_OK; \
   }
+
+/* NaN propagating min/max for f32 */
+static MAG_AINLINE float mag_fminf_nan(float a, float b) { return a != a || b != b ? a+b : fminf(a, b); }
+static MAG_AINLINE float mag_fmaxf_nan(float a, float b) { return a != a || b != b ? a+b : fmaxf(a, b); }
+static MAG_AINLINE mag_vf32_t mag_vf32_min_nan(mag_vf32_t a, mag_vf32_t b) {
+  mag_vmask32_t ord = mag_vmask32_and(mag_vf32_cmpeq(a, a), mag_vf32_cmpeq(b, b));
+  return mag_vf32_blend(ord, mag_vf32_min(a, b), mag_vf32_add(a, b));
+}
+static MAG_AINLINE mag_vf32_t mag_vf32_max_nan(mag_vf32_t a, mag_vf32_t b) {
+  mag_vmask32_t ord = mag_vmask32_and(mag_vf32_cmpeq(a, a), mag_vf32_cmpeq(b, b));
+  return mag_vf32_blend(ord, mag_vf32_max(a, b), mag_vf32_add(a, b));
+}
+static MAG_AINLINE float mag_vf32_reduce_min_nan(mag_vf32_t v) {
+  float lanes[MAG_VF32_LANES];
+  mag_vf32_storeu(lanes, v);
+  float r = lanes[0];
+  for (int64_t l=1; l < MAG_VF32_LANES; ++l) r = mag_fminf_nan(r, lanes[l]);
+  return r;
+}
+static MAG_AINLINE float mag_vf32_reduce_max_nan(mag_vf32_t v) {
+  float lanes[MAG_VF32_LANES];
+  mag_vf32_storeu(lanes, v);
+  float r = lanes[0];
+  for (int64_t l=1; l < MAG_VF32_LANES; ++l) r = mag_fmaxf_nan(r, lanes[l]);
+  return r;
+}
 mag_cpu_impl_reduce_prod_hfp(float, float32, mag_cvt_nop, mag_cvt_nop)
 mag_cpu_impl_reduce_prod_hfp(mag_float16_t, float16, mag_float16_to_float32, mag_float32_to_float16)
 mag_cpu_impl_reduce_prod_hfp(mag_bfloat16_t, bfloat16, mag_bfloat16_to_float32, mag_float32_to_bfloat16)
-mag_cpu_impl_reduce_hfp(float, float32, minima, mag_cvt_nop, mag_cvt_nop, mag_vf32_loadu, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min, INFINITY, fminf, mag_final_id)
-mag_cpu_impl_reduce_hfp(mag_float16_t, float16, minima, mag_float16_to_float32, mag_float32_to_float16, mag_vf32_loadu_f16, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min, INFINITY, fminf, mag_final_id)
-mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, minima, mag_bfloat16_to_float32, mag_float32_to_bfloat16, mag_vf32_loadu_bf16, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min, INFINITY, fminf, mag_final_id)
-mag_cpu_impl_reduce_hfp(float,          float32,  maxima, mag_cvt_nop,             mag_cvt_nop,               mag_vf32_loadu,      mag_vf32_splat(-INFINITY),     mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf,       mag_final_id)
-mag_cpu_impl_reduce_hfp(mag_float16_t,  float16,  maxima, mag_float16_to_float32,  mag_float32_to_float16,   mag_vf32_loadu_f16,  mag_vf32_splat(-INFINITY),     mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf,       mag_final_id)
-mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, maxima, mag_bfloat16_to_float32, mag_float32_to_bfloat16,  mag_vf32_loadu_bf16, mag_vf32_splat(-INFINITY),     mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf,       mag_final_id)
-mag_cpu_impl_reduce_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, minima, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn, mag_vf32_splat(INFINITY), mag_vf32_min, mag_vf32_reduce_min, INFINITY, fminf, mag_final_id)
-mag_cpu_impl_reduce_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, maxima, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn, mag_vf32_splat(-INFINITY), mag_vf32_max, mag_vf32_reduce_max, -INFINITY, fmaxf, mag_final_id)
+mag_cpu_impl_reduce_hfp(float, float32, minima, mag_cvt_nop, mag_cvt_nop, mag_vf32_loadu, mag_vf32_splat(INFINITY), mag_vf32_min_nan, mag_vf32_reduce_min_nan, INFINITY, mag_fminf_nan, mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_float16_t, float16, minima, mag_float16_to_float32, mag_float32_to_float16, mag_vf32_loadu_f16, mag_vf32_splat(INFINITY), mag_vf32_min_nan, mag_vf32_reduce_min_nan, INFINITY, mag_fminf_nan, mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, minima, mag_bfloat16_to_float32, mag_float32_to_bfloat16, mag_vf32_loadu_bf16, mag_vf32_splat(INFINITY), mag_vf32_min_nan, mag_vf32_reduce_min_nan, INFINITY, mag_fminf_nan, mag_final_id)
+mag_cpu_impl_reduce_hfp(float,          float32,  maxima, mag_cvt_nop,             mag_cvt_nop,               mag_vf32_loadu,      mag_vf32_splat(-INFINITY),     mag_vf32_max_nan, mag_vf32_reduce_max_nan, -INFINITY, mag_fmaxf_nan,       mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_float16_t,  float16,  maxima, mag_float16_to_float32,  mag_float32_to_float16,   mag_vf32_loadu_f16,  mag_vf32_splat(-INFINITY),     mag_vf32_max_nan, mag_vf32_reduce_max_nan, -INFINITY, mag_fmaxf_nan,       mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, maxima, mag_bfloat16_to_float32, mag_float32_to_bfloat16,  mag_vf32_loadu_bf16, mag_vf32_splat(-INFINITY),     mag_vf32_max_nan, mag_vf32_reduce_max_nan, -INFINITY, mag_fmaxf_nan,       mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, minima, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn, mag_vf32_splat(INFINITY), mag_vf32_min_nan, mag_vf32_reduce_min_nan, INFINITY, mag_fminf_nan, mag_final_id)
+mag_cpu_impl_reduce_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, maxima, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn, mag_vf32_loadu_float8_e4m3fn, mag_vf32_splat(-INFINITY), mag_vf32_max_nan, mag_vf32_reduce_max_nan, -INFINITY, mag_fmaxf_nan, mag_final_id)
 mag_cpu_impl_reduce_prod_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, mag_float8_e4m3fn_to_float32, mag_float32_to_float8_e4m3fn)
 #undef mag_final_id
 #undef mag_final_mean
@@ -377,7 +403,7 @@ typedef struct mag_argmax_acc_i64_t {
         mag_vf32_storeu(idxs, vidx); \
         for (int64_t l=0; l < MAG_VF32_LANES; ++l) { \
           int64_t li = (int64_t)idxs[l]; \
-          if (!set || SCMP(bests[l], best) || (bests[l] == best && li < best_idx)) { best = bests[l]; best_idx = li; set = true; } \
+          if (!set || SCMP(bests[l], best) || ((bests[l] == best || (bests[l] != bests[l] && best != best)) && li < best_idx)) { best = bests[l]; best_idx = li; set = true; } \
         } \
         for (; ri < red_prod; ++ri) { \
           float xv = CVT(p[ri]); \
@@ -428,16 +454,22 @@ typedef struct mag_argmax_acc_i64_t {
     } \
     return MAG_OK; \
   }
-#define mag_scmp_gt(a, b) ((a) > (b))
-#define mag_scmp_lt(a, b) ((a) < (b))
-mag_cpu_impl_argext_hfp(float, float32, argmax, mag_cvt_nop, mag_vf32_loadu, mag_vf32_cmpgt, mag_scmp_gt)
-mag_cpu_impl_argext_hfp(float, float32, argmin, mag_cvt_nop, mag_vf32_loadu, mag_vf32_cmplt, mag_scmp_lt)
-mag_cpu_impl_argext_hfp(mag_float16_t, float16, argmax, mag_float16_to_float32, mag_vf32_loadu_f16, mag_vf32_cmpgt, mag_scmp_gt)
-mag_cpu_impl_argext_hfp(mag_float16_t, float16, argmin, mag_float16_to_float32, mag_vf32_loadu_f16, mag_vf32_cmplt, mag_scmp_lt)
-mag_cpu_impl_argext_hfp(mag_bfloat16_t, bfloat16, argmax, mag_bfloat16_to_float32, mag_vf32_loadu_bf16, mag_vf32_cmpgt, mag_scmp_gt)
-mag_cpu_impl_argext_hfp(mag_bfloat16_t, bfloat16, argmin, mag_bfloat16_to_float32, mag_vf32_loadu_bf16, mag_vf32_cmplt, mag_scmp_lt)
-mag_cpu_impl_argext_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, argmax, mag_float8_e4m3fn_to_float32, mag_vf32_loadu_float8_e4m3fn, mag_vf32_cmpgt, mag_scmp_gt)
-mag_cpu_impl_argext_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, argmin, mag_float8_e4m3fn_to_float32, mag_vf32_loadu_float8_e4m3fn, mag_vf32_cmplt, mag_scmp_lt)
+/* NaN beats any number so arg reductions return the first NaN, like torch. */
+#define mag_scmp_gt(a, b) ((a) > (b) || ((a) != (a) && (b) == (b)))
+#define mag_scmp_lt(a, b) ((a) < (b) || ((a) != (a) && (b) == (b)))
+static MAG_AINLINE mag_vmask32_t mag_vf32_nan_beats(mag_vf32_t a, mag_vf32_t b) {
+  return mag_vmask32_and(mag_vmask32_not(mag_vf32_cmpeq(a, a)), mag_vf32_cmpeq(b, b));
+}
+static MAG_AINLINE mag_vmask32_t mag_vf32_cmpgt_nan(mag_vf32_t a, mag_vf32_t b) { return mag_vmask32_or(mag_vf32_cmpgt(a, b), mag_vf32_nan_beats(a, b)); }
+static MAG_AINLINE mag_vmask32_t mag_vf32_cmplt_nan(mag_vf32_t a, mag_vf32_t b) { return mag_vmask32_or(mag_vf32_cmplt(a, b), mag_vf32_nan_beats(a, b)); }
+mag_cpu_impl_argext_hfp(float, float32, argmax, mag_cvt_nop, mag_vf32_loadu, mag_vf32_cmpgt_nan, mag_scmp_gt)
+mag_cpu_impl_argext_hfp(float, float32, argmin, mag_cvt_nop, mag_vf32_loadu, mag_vf32_cmplt_nan, mag_scmp_lt)
+mag_cpu_impl_argext_hfp(mag_float16_t, float16, argmax, mag_float16_to_float32, mag_vf32_loadu_f16, mag_vf32_cmpgt_nan, mag_scmp_gt)
+mag_cpu_impl_argext_hfp(mag_float16_t, float16, argmin, mag_float16_to_float32, mag_vf32_loadu_f16, mag_vf32_cmplt_nan, mag_scmp_lt)
+mag_cpu_impl_argext_hfp(mag_bfloat16_t, bfloat16, argmax, mag_bfloat16_to_float32, mag_vf32_loadu_bf16, mag_vf32_cmpgt_nan, mag_scmp_gt)
+mag_cpu_impl_argext_hfp(mag_bfloat16_t, bfloat16, argmin, mag_bfloat16_to_float32, mag_vf32_loadu_bf16, mag_vf32_cmplt_nan, mag_scmp_lt)
+mag_cpu_impl_argext_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, argmax, mag_float8_e4m3fn_to_float32, mag_vf32_loadu_float8_e4m3fn, mag_vf32_cmpgt_nan, mag_scmp_gt)
+mag_cpu_impl_argext_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, argmin, mag_float8_e4m3fn_to_float32, mag_vf32_loadu_float8_e4m3fn, mag_vf32_cmplt_nan, mag_scmp_lt)
 
 
 

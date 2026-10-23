@@ -679,6 +679,16 @@ mag_status_t mag_view_slice(mag_error_t *err, mag_tensor_t **out_result, mag_ten
       return mag_set_error(err, MAG_ERR_PARAM, "slice: step must be > 0, but got %" PRIi64 ".", step);
   int64_t sz = x->meta.coords.shape[dim];
   mag_norm_axis(&start, sz);
+  int64_t shape[MAG_MAX_DIMS];
+  int64_t strides[MAG_MAX_DIMS];
+  memcpy(shape, x->meta.coords.shape, rank*sizeof(*shape));
+  memcpy(strides, x->meta.coords.strides, rank*sizeof(*strides));
+  if (len == 0) {
+    if (mag_unlikely(!(0 <= start && start <= sz)))
+      return mag_set_error(err, MAG_ERR_PARAM, "slice: start %" PRIi64 " is out of bounds for dim %" PRIi64 " of size %" PRIi64 ".", start, dim, sz);
+    shape[dim] = 0;
+    return mag_strided_view(err, out_result, x->ctx, x, rank, shape, strides, x->meta.storage_offset);
+  }
   if (mag_unlikely(!(0 <= start && start < sz)))
       return mag_set_error(err, MAG_ERR_PARAM, "slice: start %" PRIi64 " is out of bounds for dim %" PRIi64 " of size %" PRIi64 ".", start, dim, sz);
   if (len < 0) len = (int64_t)mag_uint128_ceildiv((uint64_t)(sz-start), (uint64_t)step);
@@ -687,10 +697,6 @@ mag_status_t mag_view_slice(mag_error_t *err, mag_tensor_t **out_result, mag_ten
   int64_t last = start + (len - 1)*step;
   if (mag_unlikely(!(0 <= last && last < sz)))
       return mag_set_error(err, MAG_ERR_PARAM, "slice: end index %" PRIi64 " exceeds size %" PRIi64 " on dim %" PRIi64 ".", last, sz, dim);
-  int64_t shape[MAG_MAX_DIMS];
-  int64_t strides[MAG_MAX_DIMS];
-  memcpy(shape, x->meta.coords.shape, rank*sizeof(*shape));
-  memcpy(strides, x->meta.coords.strides, rank*sizeof(*strides));
   shape[dim] = len;
   strides[dim] = x->meta.coords.strides[dim] * step;
   int64_t offset = x->meta.storage_offset + start*x->meta.coords.strides[dim];
@@ -925,8 +931,6 @@ mag_status_t mag_narrow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
       return mag_set_error(err, MAG_ERR_RANK, "narrow: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", dim, rank);
   if (mag_unlikely(length < 0))
       return mag_set_error(err, MAG_ERR_PARAM, "narrow: length must be >= 0, but got %" PRIi64 ".", length);
-  if (mag_unlikely(length <= 0))
-      return mag_set_error(err, MAG_ERR_PARAM, "narrow: length 0 is not supported.");
   int64_t sz = x->meta.coords.shape[dim];
   mag_norm_axis(&start, sz);
   if (mag_unlikely(!(start >= 0 && start <= sz)))

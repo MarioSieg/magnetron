@@ -84,17 +84,22 @@ mag_status_t mag_op_stub_reduction(
   mag_reduce_plan_t *plan = &params.reduction.red_plan;
   stat = mag_reduce_plan_init(err, plan, &x->meta.coords, dims, rank, keepdim);
   if (mag_iserr(stat)) return stat;
+  if (mag_unlikely(!plan->red_prod && (op == MAG_OP_MINIMA || op == MAG_OP_MAXIMA || op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX)))
+    return mag_set_error(err, MAG_ERR_SHAPE, "%s: cannot reduce over a dimension of size zero, the identity is not defined.", mag_op_trait(op)->mnemonic);
   mag_tensor_t *result = NULL;
   mag_dtype_t type= x->meta.dtype;
   if ((op == MAG_OP_SUM || op == MAG_OP_PROD) && mag_tensor_is_integer_typed(x))
     type = mag_dtype_bit(x->meta.dtype) & MAG_DTYPE_MASK_UINT ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64;  /* For integral types sum/prod use wide int64/uint64 */
-  else if (op == MAG_OP_ANY || op == MAG_OP_ALL) type = MAG_DTYPE_BOOLEAN; /* For logical reductions, use boolean dtype */
-  else if (op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX) type = MAG_DTYPE_INT64; /* For argmin/argmax, use int64 dtype */
+  else if (op == MAG_OP_ANY || op == MAG_OP_ALL) type = MAG_DTYPE_BOOLEAN; /* For logical reductions use boolean dtype */
+  else if (op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX) type = MAG_DTYPE_INT64; /* For argmin/argmax use int64 dtype */
   if (!keepdim && !plan->out_rank) stat = mag_empty_scalar(err, &result, x->ctx, type, mag_tensor_device_id(x));
   else stat = mag_empty(err, &result, x->ctx, type, plan->out_rank, plan->out_shape, mag_tensor_device_id(x));
   if (mag_iserr(stat)) return stat;
   stat = mag_dispatch(err, op, false, &x, 1, &result, 1, &params);
-  if (mag_iserr(stat)) return stat;
+  if (mag_iserr(stat)) {
+    mag_tensor_decref(result);
+    return stat;
+  }
   *out_result = result;
   return MAG_OK;
 }
@@ -148,7 +153,14 @@ mag_status_t mag_op_stub_cu(
   mag_op_params_t params = {
     .cumu = {.dim = dim}
   };
-  return mag_op_stub_unary(err, out_result, op, x, &params, false);
+  if (mag_tensor_is_floating_point_typed(x))
+    return mag_op_stub_unary(err, out_result, op, x, &params, false);
+  mag_tensor_t *xi = NULL; /* Like torch, integral and boolean scans accumulate and return int64 */
+  mag_status_t stat = mag_cast(err, &xi, x, MAG_DTYPE_INT64);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_op_stub_unary(err, out_result, op, xi, &params, false);
+  mag_tensor_decref(xi);
+  return stat;
 }
 
 mag_status_t mag_op_stub_cu_ex(
@@ -182,12 +194,16 @@ mag_status_t mag_op_stub_cu_ex(
     .cumu = {.dim = dim}
   };
   stat = mag_check_dtype_and_device_compat(err, op, &x, 0);
-  if (mag_iserr(stat)) return stat;
+  if (mag_iserr(stat)) goto error;
   stat = mag_dispatch(err, op, false, &x, 1, (mag_tensor_t*[2]){values, indices}, 2, &params);
-  if (mag_iserr(stat)) return stat;
+  if (mag_iserr(stat)) goto error;
   *out_values = values;
   *out_indices = indices;
   return MAG_OK;
+error:
+  mag_tensor_decref(values);
+  mag_tensor_decref(indices);
+  return stat;
 }
 
 mag_status_t mag_op_stub_binary(

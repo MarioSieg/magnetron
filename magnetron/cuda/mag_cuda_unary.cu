@@ -913,17 +913,11 @@ namespace mag {
     double sum = 0.0;
     for (int64_t i=0; i < last_dim; ++i)
       sum += static_cast<double>(__expf(static_cast<float>(row_in[i]) - maxv));
-    if (!std::isfinite(sum) || sum <= 0.0) {
-      float inv = 1.0f / static_cast<float>(last_dim);
-      float s = Dv ? inv*(1.0f - inv) : inv;
-      for (int64_t i=0; i < last_dim; ++i)
-        row_out[i] = static_cast<T>(s);
-    } else {
-      auto inv = static_cast<float>(1.0 / sum);
-      for (int64_t i=0; i < last_dim; ++i) {
-        float s = __expf(static_cast<float>(row_in[i]) - maxv)*inv;
-        row_out[i] = static_cast<T>(Dv ? s*(1.0f - s) : s);
-      }
+
+    auto inv = static_cast<float>(1.0 / sum);
+    for (int64_t i=0; i < last_dim; ++i) {
+      float s = __expf(static_cast<float>(row_in[i]) - maxv)*inv;
+      row_out[i] = static_cast<T>(Dv ? s*(1.0f - s) : s);
     }
   }
 

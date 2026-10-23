@@ -84,7 +84,8 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         const T *px = bx + xb + ((plan.flags&MAG_VAX_CX) ? 0 : j); \
         const T *py = by + yb + ((plan.flags&MAG_VAX_CY) ? 0 : j); \
         RT *pr = br + rbo + j; \
-        if (plan.flags&MAG_VAX_CX) { T xa = *px; for (int64_t t=0; t < run; ++t) { T ya = py[t]; pr[t] = EXPR; } } \
+        if ((plan.flags&MAG_VAX_CX) && (plan.flags&MAG_VAX_CY)) { T xa = *px; T ya = *py; RT v = EXPR; for (int64_t t=0; t < run; ++t) pr[t] = v; } \
+        else if (plan.flags&MAG_VAX_CX) { T xa = *px; for (int64_t t=0; t < run; ++t) { T ya = py[t]; pr[t] = EXPR; } } \
         else if (plan.flags&MAG_VAX_CY) { T ya = *py; for (int64_t t=0; t < run; ++t) { T xa = px[t]; pr[t] = EXPR; } } \
         else { for (int64_t t=0; t < run; ++t) { T xa = px[t]; T ya = py[t]; pr[t] = EXPR; } } \
         i += run; \
@@ -110,7 +111,10 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         const T *py = by + yb + ((plan.flags&MAG_VAX_CY) ? 0 : j); \
         T *pr = br + rbo + j; \
         int64_t t = 0; \
-        if ((plan.flags&MAG_VAX_CX) || (plan.flags&MAG_VAX_CY)) { \
+        if ((plan.flags&MAG_VAX_CX) && (plan.flags&MAG_VAX_CY)) { \
+          T v = F(*px, *py); \
+          for (; t < run; ++t) pr[t] = v; \
+        } else if ((plan.flags&MAG_VAX_CX) || (plan.flags&MAG_VAX_CY)) { \
           T cs = (plan.flags&MAG_VAX_CX) ? *px : *py; \
           mag_vf32_t vc = SPLAT(cs); \
           if (plan.flags&MAG_VAX_CX) { \

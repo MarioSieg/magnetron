@@ -526,19 +526,14 @@ mag_gen_int_unary(sqr)
         row_out[i] = FROM_F32(v); \
         sum += v; \
       } \
-      if (!isfinite(sum) || sum <= 0.0f) { \
-        T inv = FROM_F32(1.0f / (float)last_dim); \
-        for (i=0; i < last_dim; ++i) row_out[i] = inv; \
-      } else { \
-        float inv = 1.0f / sum; \
-        mag_vf32_t vinv = mag_vf32_splat(inv); \
-        for (i=0; i+MAG_VF32_LANES <= last_dim; i += MAG_VF32_LANES) { \
-          mag_vf32_t v = LOAD(row_out + i); \
-          STORE(row_out + i, mag_vf32_mul(v, vinv)); \
-        } \
-        for (; i < last_dim; ++i) { \
-          row_out[i] = FROM_F32(TO_F32(row_out[i]) * inv); \
-        } \
+      float inv = 1.0f / sum; \
+      mag_vf32_t vinv = mag_vf32_splat(inv); \
+      for (i=0; i+MAG_VF32_LANES <= last_dim; i += MAG_VF32_LANES) { \
+        mag_vf32_t v = LOAD(row_out + i); \
+        STORE(row_out + i, mag_vf32_mul(v, vinv)); \
+      } \
+      for (; i < last_dim; ++i) { \
+        row_out[i] = FROM_F32(TO_F32(row_out[i]) * inv); \
       } \
     } \
     return MAG_OK; \

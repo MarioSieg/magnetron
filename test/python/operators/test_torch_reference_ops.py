@@ -245,8 +245,10 @@ def test_cumsum_matches_torch(device: str, dt: dtype.DType) -> None:
         tx = totorch(x)
         for dim in range(-len(shape), len(shape)):
             r = x.cusum(dim)
-            assert r.dtype == dt
-            _same(r, tx.cumsum(dim).to(totorch_dtype(dt)), dt)
+            out_dt = dt if dt.is_floating_point() else dtype.int64  # integer scans widen to int64 like torch
+            assert r.dtype == out_dt
+            assert totorch_dtype(r.dtype) == tx.cumsum(dim).dtype
+            _same(r, tx.cumsum(dim).to(totorch_dtype(out_dt)), out_dt)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
@@ -257,8 +259,10 @@ def test_cumprod_matches_torch(device: str, dt: dtype.DType) -> None:
         tx = totorch(x)
         for dim in range(-len(shape), len(shape)):
             r = x.cuprod(dim)
-            assert r.dtype == dt
-            _same(r, tx.cumprod(dim).to(totorch_dtype(dt)), dt)
+            out_dt = dt if dt.is_floating_point() else dtype.int64  # integer scans widen to int64 like torch
+            assert r.dtype == out_dt
+            assert totorch_dtype(r.dtype) == tx.cumprod(dim).dtype
+            _same(r, tx.cumprod(dim).to(totorch_dtype(out_dt)), out_dt)
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)

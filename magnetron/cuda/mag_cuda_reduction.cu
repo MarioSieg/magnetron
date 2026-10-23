@@ -20,13 +20,24 @@
 #include <stdint.h>
 
 namespace mag {
-  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_min(T a, T b) { return static_cast<float>(a) < static_cast<float>(b) ? a : b; }
-  template <> [[nodiscard]] __device__ __forceinline__ float fn_min<float>(float a, float b) { return fminf(a, b); }
-  template <> [[nodiscard]] __device__ __forceinline__ double fn_min<double>(double a, double b) { return fmin(a, b); }
 
-  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_max(T a, T b) { return static_cast<float>(a) > static_cast<float>(b) ? a : b; }
-  template <> [[nodiscard]] __device__ __forceinline__ float fn_max<float>(float a, float b) { return fmaxf(a, b);}
-  template <> [[nodiscard]] __device__ __forceinline__ double fn_max<double>(double a, double b) {return fmax(a, b); }
+  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_min(T a, T b) {
+    float fa = static_cast<float>(a), fb = static_cast<float>(b);
+    if (isnan(fa)) return a;
+    if (isnan(fb)) return b;
+    return fa < fb ? a : b;
+  }
+  template <> [[nodiscard]] __device__ __forceinline__ float fn_min<float>(float a, float b) { return isnan(a) || isnan(b) ? a+b : fminf(a, b); }
+  template <> [[nodiscard]] __device__ __forceinline__ double fn_min<double>(double a, double b) { return isnan(a) || isnan(b) ? a+b : fmin(a, b); }
+
+  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_max(T a, T b) {
+    float fa = static_cast<float>(a), fb = static_cast<float>(b);
+    if (isnan(fa)) return a;
+    if (isnan(fb)) return b;
+    return fa > fb ? a : b;
+  }
+  template <> [[nodiscard]] __device__ __forceinline__ float fn_max<float>(float a, float b) { return isnan(a) || isnan(b) ? a+b : fmaxf(a, b); }
+  template <> [[nodiscard]] __device__ __forceinline__ double fn_max<double>(double a, double b) { return isnan(a) || isnan(b) ? a+b : fmax(a, b); }
 
   template <typename TIn, typename TOut, typename TAcc>
   struct op_mean {
@@ -393,17 +404,19 @@ namespace mag {
     bool set;
   };
 
+  /* NaN beats any number so arg reductions return the first NaN, like torch. */
+  template <bool is_max>
+  __device__ __forceinline__ bool arg_beats_f32(float a, float b) {
+    if (isnan(a)) return !isnan(b);
+    return is_max ? a > b : a < b;
+  }
+
   template <bool is_max>
   __device__ __forceinline__ arg_acc_f32 merge_arg_f32(arg_acc_f32 a, arg_acc_f32 b) {
     if (!a.set) return b;
     if (!b.set) return a;
-    if constexpr (is_max) {
-      if (b.val > a.val) return b;
-      if (a.val > b.val) return a;
-    } else {
-      if (b.val < a.val) return b;
-      if (a.val < b.val) return a;
-    }
+    if (arg_beats_f32<is_max>(b.val, a.val)) return b;
+    if (arg_beats_f32<is_max>(a.val, b.val)) return a;
     return a.idx <= b.idx ? a : b;
   }
 
@@ -432,7 +445,7 @@ namespace mag {
   template <typename T, bool is_max>
   __device__ __forceinline__ arg_acc_f32 reduce_arg_acc_f32(arg_acc_f32 acc, T x, int64_t ri) {
     float xv = arg_to_cmp_float(x);
-    if (!acc.set || (is_max ? xv > acc.val : xv < acc.val)) {
+    if (!acc.set || arg_beats_f32<is_max>(xv, acc.val)) {
       acc.val = xv;
       acc.idx = ri;
       acc.set = true;

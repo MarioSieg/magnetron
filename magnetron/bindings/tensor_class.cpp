@@ -236,7 +236,17 @@ namespace mag::bindings {
       return tensor_wrapper{result};
     }, "Return a new tensor detached from the autodiff graph.")
     .def("tolist", [](const tensor_wrapper &self) -> nb::object {
-      if (!mag_tensor_numel(*self)) return nb::list();
+      if (!mag_tensor_numel(*self)) {
+        const int64_t *shape = mag_tensor_shape_ptr(*self);
+        int64_t rank = mag_tensor_rank(*self);
+        auto build = [&](auto &&self_fn, int64_t d) -> nb::list {
+          nb::list l {};
+          if (shape[d] == 0 || d+1 >= rank) return l;
+          for (int64_t i=0; i < shape[d]; ++i) l.append(self_fn(self_fn, d+1));
+          return l;
+        };
+        return build(build, 0);
+      }
       mag_error_t err {};
       mag_tensor_t *host = nullptr;
       throw_if_error(mag_transfer(&err, &host, *self, mag_device(CPU, 0)), err);

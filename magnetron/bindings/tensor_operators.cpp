@@ -271,6 +271,7 @@ namespace mag::bindings {
       y = tensor_from_py_scalar(yh, promoted, mag_tensor_device_id(*cond));
     }
     if (!x || !y) throw nb::value_error("where: x and y must not be null");
+    promote_ops({&x, &y});
     return {x, y};
   }
 
@@ -664,13 +665,37 @@ namespace mag::bindings {
       "Select a slice at index along dim (reduces rank by 1)."
     )
     .def("split",
-      [](const tensor_wrapper &self, int64_t split_size, int64_t dim = 0) -> nb::tuple {
-        if (split_size <= 0) throw nb::value_error("split: split_size must be > 0");
+      [](const tensor_wrapper &self, nb::handle split_h, int64_t dim = 0) -> nb::tuple {
         int64_t rank = mag_tensor_rank(*self);
         if (rank == 0) throw std::runtime_error("split is not defined for 0-dim tensors");
         if (dim < 0) dim += rank;
         if (dim < 0 || dim >= rank) throw nb::index_error("split: dim out of range");
         int64_t size = mag_tensor_shape_ptr(*self)[dim];
+        if (!nb::isinstance<nb::int_>(split_h)) {
+          std::vector<int64_t> sections = parse_i64_list_handle(split_h, "split");
+          int64_t total = 0;
+          for (int64_t len : sections) {
+            if (len < 0) throw nb::value_error("split: section sizes must be non-negative");
+            total += len;
+          }
+          if (total != size) {
+            std::ostringstream oss;
+            oss << "split: section sizes sum to " << total << " but dim " << dim << " has size " << size;
+            throw nb::value_error(oss.str().c_str());
+          }
+          nb::list parts {};
+          int64_t start = 0;
+          for (int64_t len : sections) {
+            mag_tensor_t *out = nullptr;
+            mag_error_t err {};
+            throw_if_error(mag_narrow(&err, &out, *self, dim, start, len), err);
+            parts.append(tensor_wrapper{out});
+            start += len;
+          }
+          return nb::tuple(parts);
+        }
+        int64_t split_size = nb::cast<int64_t>(split_h);
+        if (split_size <= 0) throw nb::value_error("split: split_size must be > 0");
         if (size == 0) return {};
         int64_t n_chunks = (size + split_size - 1)/split_size;
         std::vector<mag_tensor_t*> outs(static_cast<size_t>(n_chunks), nullptr);
@@ -686,7 +711,7 @@ namespace mag::bindings {
         return nb::steal<nb::tuple>(t);
       },
       "split_size"_a, "dim"_a = 0,
-      "Split into chunks of split_size along dim. Returns tuple of tensors."
+      "Split into chunks of split_size along dim, or into sections when given a list of sizes. Returns tuple of tensors."
     )
     .def("unbind",
       [](const tensor_wrapper &self, int64_t dim = 0) -> nb::tuple {
@@ -1463,16 +1488,18 @@ namespace mag::bindings {
     )
     .def("clamp",
       [](const tensor_wrapper &self, nb::handle min_h, nb::handle max_h) -> tensor_wrapper {
+        tensor_wrapper x = self;
         tensor_wrapper mn = normalize_rhs_to_tensor(self, min_h);
         tensor_wrapper mx = normalize_rhs_to_tensor(self, max_h);
+        promote_ops({&x, &mn, &mx});
         mag_tensor_t *out = nullptr;
         mag_error_t err{};
         if constexpr (enable_op_recorder) {
           op_recorder::singleton().profile(MAG_OP_CLAMP, [&] {
-            throw_if_error(call_maybe_without_gil(self, mn, [&] { return mag_clamp(&err, &out, *self, *mn, *mx); }), err);
-          }, {*self, *mn, *mx});
+            throw_if_error(call_maybe_without_gil(x, mn, [&] { return mag_clamp(&err, &out, *x, *mn, *mx); }), err);
+          }, {*x, *mn, *mx});
         } else {
-          throw_if_error(call_maybe_without_gil(self, mn, [&] { return mag_clamp(&err, &out, *self, *mn, *mx); }), err);
+          throw_if_error(call_maybe_without_gil(x, mn, [&] { return mag_clamp(&err, &out, *x, *mn, *mx); }), err);
         }
         return tensor_wrapper{out};
       },
@@ -1482,10 +1509,12 @@ namespace mag::bindings {
     )
     .def("clamp_min",
       [](const tensor_wrapper &self, nb::handle min_h) -> tensor_wrapper {
+        tensor_wrapper x = self;
         tensor_wrapper min = normalize_rhs_to_tensor(self, min_h);
+        promote_ops({&x, &min});
         mag_tensor_t *out = nullptr;
         mag_error_t err{};
-        throw_if_error(call_maybe_without_gil(self, min, [&] { return mag_clamp_min(&err, &out, *self, *min); }), err);
+        throw_if_error(call_maybe_without_gil(x, min, [&] { return mag_clamp_min(&err, &out, *x, *min); }), err);
         return tensor_wrapper{out};
       },
       "min"_a,
@@ -1493,10 +1522,12 @@ namespace mag::bindings {
     )
     .def("clamp_max",
       [](const tensor_wrapper &self, nb::handle max_h) -> tensor_wrapper {
+        tensor_wrapper x = self;
         tensor_wrapper max = normalize_rhs_to_tensor(self, max_h);
+        promote_ops({&x, &max});
         mag_tensor_t *out = nullptr;
         mag_error_t err {};
-        throw_if_error(call_maybe_without_gil(self, max, [&] { return mag_clamp_max(&err, &out, *self, *max); }), err);
+        throw_if_error(call_maybe_without_gil(x, max, [&] { return mag_clamp_max(&err, &out, *x, *max); }), err);
         return tensor_wrapper{out};
       },
       "max"_a,

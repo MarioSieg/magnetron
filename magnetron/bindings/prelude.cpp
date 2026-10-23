@@ -36,25 +36,25 @@ namespace mag::bindings {
   tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt, mag_device_id_t device) {
     mag_context_t *ctx = get_ctx();
     mag_tensor_t *out = nullptr;
-    if (nb::isinstance<nb::bool_>(obj)) { // Prefer bool first: in Python, bool is a subclass of int.
-      bool b = nb::cast<bool>(obj);
-      mag_scalar_t s = mag_scalar_from_uint64(!!b);
+    if (nb::isinstance<nb::bool_>(obj)) {
+      auto val = nb::cast<bool>(obj);
+      mag_scalar_t scalar = mag_scalar_from_uint64(!!val);
       mag_error_t err {};
-      throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
+      throw_if_error(mag_scalar(&err, &out, ctx, dt, scalar, device), err);
       return tensor_wrapper{out};
     }
-    if (nb::isinstance<nb::int_>(obj)) { // Python int is arbitrary precision; nb::cast<int64_t> will throw if too big.
-      auto v = nb::cast<int64_t>(obj);
-      mag_scalar_t s = mag_scalar_from_int64(v);
+    if (nb::isinstance<nb::int_>(obj)) {
+      auto val = nb::cast<int64_t>(obj);
+      mag_scalar_t scalar = mag_scalar_from_int64(val);
       mag_error_t err {};
-      throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
+      throw_if_error(mag_scalar(&err, &out, ctx, dt, scalar, device), err);
       return tensor_wrapper{out};
     }
     if (nb::isinstance<nb::float_>(obj)) {
-      auto v = nb::cast<double>(obj);
-      mag_scalar_t s = mag_scalar_from_float64(v);
+      auto val = nb::cast<double>(obj);
+      mag_scalar_t scalar = mag_scalar_from_float64(val);
       mag_error_t err {};
-      throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
+      throw_if_error(mag_scalar(&err, &out, ctx, dt, scalar, device), err);
       return tensor_wrapper{out};
     }
     throw nb::type_error("rhs must be Tensor, int, float, or bool");
@@ -62,7 +62,24 @@ namespace mag::bindings {
 
   tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs) {
     if (nb::isinstance<tensor_wrapper>(rhs)) return nb::cast<tensor_wrapper>(rhs);
-    return tensor_from_py_scalar(rhs, mag_tensor_type(*lhs), mag_tensor_device_id(*lhs));
+    mag_dtype_t dt = mag_tensor_type(*lhs);
+    if (nb::isinstance<nb::float_>(rhs) && !mag_tensor_is_floating_point_typed(*lhs)) dt = mag_ctx_default_dtype(get_ctx());
+    else if (nb::isinstance<nb::int_>(rhs) && !nb::isinstance<nb::bool_>(rhs) && dt == MAG_DTYPE_BOOLEAN) dt = MAG_DTYPE_INT64;
+    return tensor_from_py_scalar(rhs, dt, mag_tensor_device_id(*lhs));
+  }
+
+  void promote_ops(std::initializer_list<tensor_wrapper *> ops) {
+    mag_dtype_t common = mag_tensor_type(**ops.begin()[0]);
+    for (auto *t : ops)
+      if (!mag_promote_type(&common, common, mag_tensor_type(**t)))
+        throw nb::type_error("could not promote operand dtypes to a common dtype");
+    for (tensor_wrapper *t : ops) {
+      if (mag_tensor_type(**t) == common) continue;
+      mag_tensor_t *out = nullptr;
+      mag_error_t err {};
+      throw_if_error(mag_cast(&err, &out, **t, common), err);
+      *t = tensor_wrapper{out};
+    }
   }
 
   static void flatten_i64_handle(nb::handle h, fixed_dim_vec &out) {

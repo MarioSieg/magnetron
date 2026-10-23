@@ -165,6 +165,7 @@ namespace mag::bindings {
   [[nodiscard]] extern nb::tuple tuple_from_i64_span(const int64_t *p, Py_ssize_t n);
   [[nodiscard]] extern tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt, mag_device_id_t device);
   [[nodiscard]] extern tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs);
+  extern void promote_ops(std::initializer_list<tensor_wrapper *> ops);
   [[nodiscard]] extern fixed_dim_vec parse_shape_from_args(const nb::args &args);
   [[nodiscard]] extern fixed_dim_vec parse_i64_dims(const nb::args &args, const char *what);
   [[nodiscard]] extern std::vector<int64_t> parse_i64_list_handle(nb::handle h, const char *what);

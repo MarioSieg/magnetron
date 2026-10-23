@@ -116,6 +116,7 @@ mag_status_t mag_reduce_plan_init(
     plan->red_strides[rr] = st;
     ++rr;
   }
+  if (!plan->red_prod) rr = 0;
   plan->red_rank = rr;
   return MAG_OK;
 }
