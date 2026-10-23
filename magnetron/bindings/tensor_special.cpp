@@ -22,6 +22,8 @@ namespace mag::bindings {
         ++ellipsis_occ;
         if (ellipsis_pos < 0) ellipsis_pos = static_cast<int64_t>(i);
       } else if (x.is_none()) {
+      } else if (nb::isinstance<tensor_wrapper>(x) && mag_tensor_type(*nb::cast<tensor_wrapper>(x)) == MAG_DTYPE_BOOLEAN) {
+        consuming += mag_tensor_rank(*nb::cast<tensor_wrapper>(x)); /* A rank-k boolean mask consumes k axes, like torch */
       } else { ++consuming; }
     }
     if (ellipsis_occ > 1)
@@ -107,6 +109,75 @@ namespace mag::bindings {
     return true;
   }
 
+  [[nodiscard]] static mag_tensor_t *index_by_mask_per_axis(mag_tensor_t *curr, int64_t ax, mag_tensor_t *mask) {
+    int64_t rank = mag_tensor_rank(curr);
+    int64_t k = mag_tensor_rank(mask);
+    if (k == 0) {
+      mag_error_t err {};
+      mag_tensor_t *unsq = nullptr;
+      throw_if_error(mag_unsqueeze(&err, &unsq, curr, ax), err);
+      on_scope_exit defer_unsq {[unsq] { mag_tensor_decref(unsq); }};
+      int64_t one = 1;
+      mag_tensor_t *mask1 = nullptr;
+      throw_if_error(mag_reshape(&err, &mask1, mask, &one, 1), err);
+      on_scope_exit defer_mask1 {[mask1] { mag_tensor_decref(mask1); }};
+      return index_by_mask_per_axis(unsq, ax, mask1);
+    }
+    if (ax+k > rank) {
+      std::ostringstream oss;
+      oss << "Boolean index of rank " << k << " at axis " << ax << " exceeds tensor rank " << rank;
+      throw nb::index_error(oss.str().c_str());
+    }
+    const auto *shape = mag_tensor_shape_ptr(curr);
+    const auto *mask_shape = mag_tensor_shape_ptr(mask);
+    int64_t flat_len=1;
+    for (int64_t j=0; j < k; ++j) {
+      if (mask_shape[j] != shape[ax+j]) {
+        std::ostringstream oss;
+        oss << "Boolean index shape mismatch at axis " << ax+j << ": mask has " << mask_shape[j] << ", tensor has " << shape[ax+j];
+        throw nb::index_error(oss.str().c_str());
+      }
+      flat_len*=mask_shape[j];
+    }
+    mag_error_t err {};
+    mag_tensor_t *mask_flat = nullptr;
+    throw_if_error(mag_reshape(&err, &mask_flat, mask, &flat_len, 1), err);
+    on_scope_exit defer_mask {[mask_flat] { mag_tensor_decref(mask_flat); }};
+    mag_tensor_t *nz = nullptr;
+    throw_if_error(mag_nonzero(&err, &nz, mask_flat), err);
+    on_scope_exit defer_nz {[nz] { mag_tensor_decref(nz); }};
+    int64_t n = mag_tensor_shape_ptr(nz)[0];
+    mag_tensor_t *idx = nullptr;
+    throw_if_error(mag_reshape(&err, &idx, nz, &n, 1), err);
+    on_scope_exit defer_idx {[idx] { mag_tensor_decref(idx); }};
+    int64_t fls[MAG_MAX_DIMS];
+    int64_t flra = 0;
+    for (int64_t j=0; j < ax; ++j) fls[flra++] = shape[j];
+    fls[flra++] = flat_len;
+    for (int64_t j=ax+k; j < rank; ++j) fls[flra++] = shape[j];
+    mag_tensor_t *flat = nullptr;
+    throw_if_error(mag_reshape(&err, &flat, curr, fls, flra), err);
+    on_scope_exit defer_flat {[flat] { mag_tensor_decref(flat); }};
+    mag_tensor_t *front = flat;
+    int64_t perm[MAG_MAX_DIMS];
+    if (ax > 0) {
+      perm[0] = ax;
+      for (int64_t j=0, d=1; j < flra; ++j)
+        if (j != ax) perm[d++] = j;
+      throw_if_error(mag_permute(&err, &front, flat, perm, flra), err);
+    }
+    on_scope_exit defer_front {[front, flat] { if (front != flat) mag_tensor_decref(front); }};
+    mag_tensor_t *picked = nullptr;
+    throw_if_error(mag_embedding(&err, &picked, front, idx), err);
+    if (ax == 0) return picked;
+    on_scope_exit defer_picked {[picked] { mag_tensor_decref(picked); }};
+    for (int64_t j=0; j < flra; ++j)
+      perm[j] = j < ax ? j+1 : j == ax ? 0 : j;
+    mag_tensor_t *out = nullptr;
+    throw_if_error(mag_permute(&err, &out, picked, perm, flra), err);
+    return out;
+  }
+
   [[nodiscard]] static tensor_wrapper tensor_index_impl(const tensor_wrapper &self, const nb::object &index) {
       if (tensor_wrapper fast; try_index_all_ints(self, index.ptr(), fast)) return fast;
       nb::tuple idxs_in = nb::isinstance<nb::tuple>(index) ? nb::cast<nb::tuple>(index) : nb::make_tuple(index);
@@ -143,26 +214,18 @@ namespace mag::bindings {
               if (length == 0)
                   throw nb::value_error("Zero-length slice not supported");
               mag_tensor_t *out = nullptr;
-              throw_if_error(
-                  mag_view_slice(
-                      &err,
-                      &out,
-                      *curr,
-                      ax,
-                      start,
-                      static_cast<int64_t>(length),
-                      step
-                  ),
-                  err
-              );
+              throw_if_error(mag_view_slice(&err, &out, *curr, ax, start, static_cast<int64_t>(length), step), err);
               curr = tensor_wrapper{out};
               ++ax;
           } else if (nb::isinstance<tensor_wrapper>(idx)) {
               auto idx_tw = nb::cast<tensor_wrapper>(idx);
               mag_tensor_t *out = nullptr;
-              if (ax == 0 && mag_tensor_type(*idx_tw) == MAG_DTYPE_INT64) {
+              if (mag_tensor_type(*idx_tw) == MAG_DTYPE_BOOLEAN) {
+                  out = index_by_mask_per_axis(*curr, ax, *idx_tw);
+                  ++ax;
+              } else if (ax == 0 && mag_tensor_type(*idx_tw) == MAG_DTYPE_INT64) {
                   throw_if_error(mag_embedding(&err, &out, *curr, *idx_tw), err);
-                  ax = mag_tensor_rank(out) - (mag_tensor_rank(*curr) - 1);
+                  ax = mag_tensor_rank(out) - (mag_tensor_rank(*curr)-1);
               } else {
                   throw_if_error(mag_gather(&err, &out, *curr, ax, *idx_tw), err);
                   ++ax;
@@ -176,30 +239,11 @@ namespace mag::bindings {
                   data.emplace_back(nb::cast<int64_t>(v));
               auto sh = static_cast<int64_t>(data.size());
               mag_tensor_t *idx_tensor = nullptr;
-              throw_if_error(
-                  mag_empty(
-                      &err,
-                      &idx_tensor,
-                      get_ctx(),
-                      MAG_DTYPE_INT64,
-                      1,
-                      &sh,
-                      mag_tensor_device_id(*self)
-                  ),
-                  err
-              );
+              throw_if_error(mag_empty(&err, &idx_tensor, get_ctx(), MAG_DTYPE_INT64, 1, &sh, mag_tensor_device_id(*self)), err);
               on_scope_exit defer_idx {[idx_tensor] {
                   mag_tensor_decref(idx_tensor);
               }};
-              throw_if_error(
-                  mag_copy_raw_(
-                      &err,
-                      idx_tensor,
-                      data.data(),
-                      data.size()*sizeof(int64_t)
-                  ),
-                  err
-              );
+              throw_if_error(mag_copy_raw_( &err, idx_tensor, data.data(), data.size()*sizeof(int64_t)), err);
               mag_tensor_t *out = nullptr;
               if (ax == 0) {
                   throw_if_error(mag_embedding(&err, &out, *curr, idx_tensor), err);

@@ -193,3 +193,94 @@ def test_embedding_with_0d_index_matches_torch() -> None:
     got_i = Tensor([4]).cast(dtype.int64)[0]
     assert got_i.rank == 0
     _assert_same(got.embedding(got_i), torch.nn.functional.embedding(torch.tensor(4), ref))
+
+
+def _mask_pair(*shape: int) -> tuple[Tensor, torch.Tensor]:
+    ref = torch.arange(math.prod(shape)) % 3 == 0
+    return Tensor(ref.tolist()).reshape(*shape), ref.reshape(*shape)
+
+
+@pytest.mark.parametrize('shape', [(5,), (2, 3), (2, 3, 4)])
+def test_boolean_mask_indexing_matches_torch(shape: tuple[int, ...]) -> None:
+    got, ref = _pair(*shape)
+    got_m, ref_m = _mask_pair(*shape)
+    _assert_same(got[got_m], ref[ref_m])
+
+
+def test_boolean_mask_on_leading_axis_matches_torch() -> None:
+    got, ref = _pair(4, 3)
+    got_m, ref_m = _mask_pair(4)
+    _assert_same(got[got_m], ref[ref_m])
+    _assert_same(got[got_m, 1:], ref[ref_m, 1:])
+
+
+def test_boolean_mask_on_inner_axis_matches_torch() -> None:
+    got, ref = _pair(2, 3, 4)
+    got_m, ref_m = _mask_pair(3)
+    _assert_same(got[:, got_m], ref[:, ref_m])
+    _assert_same(got[1, got_m], ref[1, ref_m])
+    got_m2, ref_m2 = _mask_pair(4)
+    _assert_same(got[..., got_m2], ref[..., ref_m2])
+    _assert_same(got[:, got_m, ::2], ref[:, ref_m, ::2])
+
+
+def test_boolean_mask_consumes_multiple_axes_like_torch() -> None:
+    got, ref = _pair(2, 3, 4)
+    got_m, ref_m = _mask_pair(3, 4)
+    _assert_same(got[:, got_m], ref[:, ref_m])
+    _assert_same(got[1, got_m], ref[1, ref_m])
+    got_m0, ref_m0 = _mask_pair(2, 3)
+    _assert_same(got[got_m0], ref[ref_m0])
+
+
+def test_boolean_mask_from_comparison_matches_torch() -> None:
+    got, ref = _pair(3, 4)
+    _assert_same(got[got > 5.0], ref[ref > 5.0])
+    got1, ref1 = _pair(10)
+    _assert_same(got1[(got1 % 2.0) == 0.0], ref1[(ref1 % 2.0) == 0.0])
+
+
+def test_all_false_boolean_mask_yields_empty_like_torch() -> None:
+    got, ref = _pair(3, 4)
+    _assert_same(got[got > 100.0], ref[ref > 100.0])
+    got_m = Tensor([False, False, False])
+    assert tuple(got[got_m].shape) == tuple(ref[torch.tensor([False, False, False])].shape)
+
+
+def test_boolean_mask_shape_mismatch_raises_like_torch() -> None:
+    got, ref = _pair(2, 3, 4)
+    got_m, ref_m = _mask_pair(3, 4)
+    with pytest.raises(IndexError):
+        got[got_m]
+    with pytest.raises(IndexError):
+        ref[ref_m]
+
+
+def test_gradient_flows_through_boolean_mask_like_torch() -> None:
+    got, ref = _pair(2, 3, 4)
+    got.requires_grad = True
+    ref.requires_grad_(True)
+    got_m, ref_m = _mask_pair(3, 4)
+    got[:, got_m].sum().backward()
+    ref[:, ref_m].sum().backward()
+    _assert_same(got.grad, ref.grad)
+
+
+def test_boolean_mask_with_ellipsis_and_none_matches_torch() -> None:
+    got, ref = _pair(2, 3, 4)
+    got_m, ref_m = _mask_pair(3, 4)
+    _assert_same(got[..., got_m], ref[..., ref_m])
+    got_m0, ref_m0 = _mask_pair(2, 3)
+    _assert_same(got[got_m0, ...], ref[ref_m0, ...])
+    _assert_same(got[got_m0, 1:], ref[ref_m0, 1:])
+    _assert_same(got[None, got_m0], ref[None, ref_m0])
+    _assert_same(got[got_m0, None], ref[ref_m0, None])
+    with pytest.raises(IndexError):
+        got[:, got_m, 0]
+
+
+def test_0d_boolean_mask_matches_torch() -> None:
+    got, ref = _pair(2, 3, 4)
+    _assert_same(got[Tensor(True)], ref[torch.tensor(True)])
+    _assert_same(got[Tensor(True), 0], ref[torch.tensor(True), 0])
+    assert tuple(got[Tensor(False)].shape) == tuple(ref[torch.tensor(False)].shape)
