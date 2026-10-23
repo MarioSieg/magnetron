@@ -23,7 +23,7 @@ namespace mag::bindings {
         if (ellipsis_pos < 0) ellipsis_pos = static_cast<int64_t>(i);
       } else if (x.is_none()) {
       } else if (nb::isinstance<tensor_wrapper>(x) && mag_tensor_type(*nb::cast<tensor_wrapper>(x)) == MAG_DTYPE_BOOLEAN) {
-        consuming += mag_tensor_rank(*nb::cast<tensor_wrapper>(x)); /* A rank-k boolean mask consumes k axes, like torch */
+        consuming += mag_tensor_rank(*nb::cast<tensor_wrapper>(x));
       } else { ++consuming; }
     }
     if (ellipsis_occ > 1)
@@ -58,13 +58,6 @@ namespace mag::bindings {
           out.append(idx);
       }
     }
-    return out;
-  }
-
-  [[nodiscard]] static mag_tensor_t *index_by_scalar_per_axis(mag_tensor_t *base, int64_t ax, int64_t i) {
-    mag_tensor_t *out = nullptr;
-    mag_error_t err {};
-    throw_if_error(mag_select(&err, &out, base, ax, i), err);
     return out;
   }
 
@@ -109,16 +102,8 @@ namespace mag::bindings {
     return true;
   }
 
-  template <typename F>
-  [[nodiscard]] static tensor_wrapper call_op(F &&fn) {
-    mag_tensor_t *out = nullptr;
-    mag_error_t err {};
-    throw_if_error(fn(&err, &out), err);
-    return tensor_wrapper{out};
-  }
-
   [[nodiscard]] static tensor_wrapper i64_scalar(int64_t v, mag_device_id_t device) {
-    return call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_scalar(err, out, get_ctx(), MAG_DTYPE_INT64, mag_scalar_from_int64(v), device); });
+    return call_op(mag_scalar, get_ctx(), MAG_DTYPE_INT64, mag_scalar_from_int64(v), device);
   }
 
   [[nodiscard]] static tensor_wrapper slice_axis(const tensor_wrapper &x, int64_t ax, const nb::slice &s) {
@@ -128,7 +113,7 @@ namespace mag::bindings {
       oss << "Slice step must be positive, got " << step;
       throw nb::value_error(oss.str().c_str());
     }
-    return call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_view_slice(err, out, *x, ax, start, static_cast<int64_t>(length), step); });
+    return call_op(mag_view_slice, *x, ax, start, static_cast<int64_t>(length), step);
   }
 
   [[nodiscard]] static tensor_wrapper int_index_from_sequence(nb::handle h, mag_device_id_t device) {
@@ -136,7 +121,7 @@ namespace mag::bindings {
     for (auto &&v : nb::cast<nb::sequence>(h))
       data.emplace_back(nb::cast<int64_t>(v));
     auto n = static_cast<int64_t>(data.size());
-    tensor_wrapper t = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_empty(err, out, get_ctx(), MAG_DTYPE_INT64, 1, &n, device); });
+    tensor_wrapper t = call_op(mag_empty, get_ctx(), MAG_DTYPE_INT64, 1, &n, device);
     if (n) {
       mag_error_t err {};
       throw_if_error(mag_copy_raw_(&err, *t, data.data(), data.size()*sizeof(int64_t)), err);
@@ -151,9 +136,9 @@ namespace mag::bindings {
 
   struct advanced_index_plan final {
     tensor_wrapper base {};
-    std::vector<int64_t> axes {};
     std::vector<tensor_wrapper> idx {};
-    std::vector<int64_t> broadcast_shape {};
+    fixed_dim_vec axes {};
+    fixed_dim_vec broadcast_shape {};
     bool adjacent = true;
   };
 
@@ -171,7 +156,7 @@ namespace mag::bindings {
     };
     for (auto &&idx : indices) {
       if (idx.is_none()) {
-        curr = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_unsqueeze(err, out, *curr, ax); });
+        curr = call_op(mag_unsqueeze, *curr, ax);
         ++ax;
       } else if (nb::isinstance<nb::slice>(idx)) {
         curr = slice_axis(curr, ax, nb::cast<nb::slice>(idx));
@@ -185,14 +170,14 @@ namespace mag::bindings {
           oss << "Index " << i << " out of bounds for axis " << ax << " (size " << dim_size << ")";
           throw nb::index_error(oss.str().c_str());
         }
-        curr = tensor_wrapper{index_by_scalar_per_axis(*curr, ax, i)};
+        curr = call_op(mag_select, *curr, ax, i);
         continue;
       } else if (nb::isinstance<tensor_wrapper>(idx) && mag_tensor_type(*nb::cast<tensor_wrapper>(idx)) == MAG_DTYPE_BOOLEAN) {
-        tensor_wrapper mask = nb::cast<tensor_wrapper>(idx);
+        auto mask = nb::cast<tensor_wrapper>(idx);
         if (mag_tensor_rank(*mask) == 0) {
-          curr = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_unsqueeze(err, out, *curr, ax); });
+          curr = call_op(mag_unsqueeze, *curr, ax);
           int64_t one = 1;
-          mask = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_reshape(err, out, *mask, &one, 1); });
+          mask = call_op(mag_reshape, *mask, &one, 1);
         }
         int64_t k = mag_tensor_rank(*mask);
         int64_t rank = mag_tensor_rank(*curr);
@@ -210,16 +195,16 @@ namespace mag::bindings {
             throw nb::index_error(oss.str().c_str());
           }
         }
-        tensor_wrapper nz = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_nonzero(err, out, *mask); }); /* (n, k) */
+        tensor_wrapper nz = call_op(mag_nonzero, *mask);
         for (int64_t j=0; j < k; ++j)
-          push(ax+j, call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_select(err, out, *nz, 1, j); }));
+          push(ax+j, call_op(mag_select, *nz, 1, j));
         ax += k;
       } else if (nb::isinstance<tensor_wrapper>(idx)) {
         auto t = nb::cast<tensor_wrapper>(idx);
         if (!mag_tensor_is_integer_typed(*t))
           throw nb::index_error("tensors used as indices must be integer or boolean");
         if (mag_tensor_type(*t) != MAG_DTYPE_INT64)
-          t = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_cast(err, out, *t, MAG_DTYPE_INT64); });
+          t = call_op(mag_cast, *t, MAG_DTYPE_INT64);
         push(ax, std::move(t));
         ++ax;
       } else if (nb::isinstance<nb::sequence>(idx)) {
@@ -233,7 +218,7 @@ namespace mag::bindings {
     for (auto &&t : plan.idx) {
       int64_t tr = mag_tensor_rank(*t);
       const int64_t *ts = mag_tensor_shape_ptr(*t);
-      std::vector<int64_t> out(std::max<size_t>(plan.broadcast_shape.size(), static_cast<size_t>(tr)), 1);
+      fixed_dim_vec out(std::max<size_t>(plan.broadcast_shape.size(), static_cast<size_t>(tr)), 1);
       for (size_t i=0; i < out.size(); ++i) {
         int64_t a = i < plan.broadcast_shape.size() ? plan.broadcast_shape[plan.broadcast_shape.size()-1-i] : 1;
         int64_t b = i < static_cast<size_t>(tr) ? ts[tr-1-static_cast<int64_t>(i)] : 1;
@@ -251,10 +236,10 @@ namespace mag::bindings {
       if (mag_tensor_numel(*t) > 0) {
         tensor_wrapper lo = i64_scalar(-size, device);
         tensor_wrapper hi = i64_scalar(size, device);
-        tensor_wrapper under = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_lt(err, out, *t, *lo); });
-        tensor_wrapper over = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_ge(err, out, *t, *hi); });
-        tensor_wrapper bad = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_or(err, out, *under, *over); });
-        tensor_wrapper any = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_any(err, out, *bad, nullptr, 0, false); });
+        tensor_wrapper under = call_op(mag_lt, *t, *lo);
+        tensor_wrapper over = call_op(mag_ge, *t, *hi);
+        tensor_wrapper bad = call_op(mag_or, *under, *over);
+        tensor_wrapper any = call_op(mag_any, *bad, nullptr, 0, false);
         mag_scalar_t flag {};
         mag_error_t err {};
         throw_if_error(mag_tensor_item(&err, *any, &flag), err);
@@ -264,21 +249,20 @@ namespace mag::bindings {
           throw nb::index_error(oss.str().c_str());
         }
         tensor_wrapper zero = i64_scalar(0, device);
-        tensor_wrapper neg = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_lt(err, out, *t, *zero); });
-        tensor_wrapper wrapped = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_add(err, out, *t, *hi); });
-        t = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_where(err, out, *neg, *wrapped, *t); });
+        tensor_wrapper neg = call_op(mag_lt, *t, *zero);
+        tensor_wrapper wrapped = call_op(mag_add, *t, *hi);
+        t = call_op(mag_where, *neg, *wrapped, *t);
       }
-      t = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_expand(err, out, *t, brank, plan.broadcast_shape.data()); });
+      t = call_op(mag_expand, *t, brank, plan.broadcast_shape.data());
     }
     plan.base = std::move(curr);
     return plan;
   }
 
-  /* Permutation moving the broadcast dims (leading nb dims) to where torch places them: at the first advanced axis if adjacent. */
-  [[nodiscard]] static std::vector<int64_t> advanced_result_perm(const advanced_index_plan &plan, int64_t out_rank) {
+  [[nodiscard]] static fixed_dim_vec advanced_result_perm(const advanced_index_plan &plan, int64_t out_rank) {
     auto nb = static_cast<int64_t>(plan.broadcast_shape.size());
     int64_t first = plan.axes.front();
-    std::vector<int64_t> perm {};
+    fixed_dim_vec perm {};
     if (!plan.adjacent || first == 0) return perm;
     for (int64_t i=0; i < first; ++i) perm.emplace_back(nb+i);
     for (int64_t i=0; i < nb; ++i) perm.emplace_back(i);
@@ -286,9 +270,9 @@ namespace mag::bindings {
     return perm;
   }
 
-  [[nodiscard]] static tensor_wrapper apply_perm(const tensor_wrapper &x, const std::vector<int64_t> &perm) {
+  [[nodiscard]] static tensor_wrapper apply_perm(const tensor_wrapper &x, const fixed_dim_vec &perm) {
     if (perm.empty()) return x;
-    return call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_permute(err, out, *x, perm.data(), static_cast<int64_t>(perm.size())); });
+    return call_op(mag_permute, *x, perm.data(), static_cast<int64_t>(perm.size()));
   }
 
   [[nodiscard]] static tensor_wrapper advanced_index_get(const advanced_index_plan &plan) {
@@ -296,82 +280,86 @@ namespace mag::bindings {
     mag_device_id_t device = mag_tensor_device_id(*x);
     int64_t rank = mag_tensor_rank(*x);
     const int64_t *shape = mag_tensor_shape_ptr(*x);
-    std::vector<bool> is_adv(static_cast<size_t>(rank), false);
-    for (int64_t a : plan.axes) is_adv[static_cast<size_t>(a)] = true;
-    std::vector<int64_t> perm {}; /* Advanced axes first, then the rest in order */
-    std::vector<int64_t> rest {};
-    for (int64_t a : plan.axes) perm.emplace_back(a);
-    for (int64_t d=0; d < rank; ++d) if (!is_adv[static_cast<size_t>(d)]) { perm.emplace_back(d); rest.emplace_back(shape[d]); }
+    uint64_t is_adv=0;
+    static_assert(MAG_MAX_DIMS <= (sizeof(is_adv)<<3));
+    for (int64_t ax : plan.axes) is_adv|=(1ull<<ax);
+   fixed_dim_vec perm {};
+   fixed_dim_vec rest {};
+    for (int64_t ax : plan.axes) perm.emplace_back(ax);
+    for (int64_t dim=0; dim < rank; ++dim) {
+      if (!(is_adv&(1ull<<dim))) {
+        perm.emplace_back(dim);
+        rest.emplace_back(shape[dim]);
+      }
+    }
     tensor_wrapper xp = apply_perm(x, perm);
-    tensor_wrapper lin {}; /* Linear index into the merged advanced axes */
+    tensor_wrapper lin {};
     int64_t merged = 1;
-    for (size_t j=plan.idx.size(); j-- > 0;) {
+    for (size_t j=plan.idx.size(); j --> 0;) {
       tensor_wrapper term = plan.idx[j];
       if (merged != 1) {
         tensor_wrapper m = i64_scalar(merged, device);
-        term = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_mul(err, out, *term, *m); });
+        term = call_op(mag_mul, *term, *m);
       }
-      lin = lin ? call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_add(err, out, *lin, *term); }) : term;
+      lin = lin ? call_op(mag_add, *lin, *term) : term;
       merged *= shape[plan.axes[j]];
     }
-    std::vector<int64_t> flat_shape {merged};
+    fixed_dim_vec flat_shape {merged};
     flat_shape.insert(flat_shape.end(), rest.begin(), rest.end());
-    tensor_wrapper xc = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_contiguous(err, out, *xp); });
-    tensor_wrapper xf = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_reshape(err, out, *xc, flat_shape.data(), static_cast<int64_t>(flat_shape.size())); });
+    tensor_wrapper xc = call_op(mag_contiguous, *xp);
+    tensor_wrapper xf = call_op(mag_reshape, *xc, flat_shape.data(), static_cast<int64_t>(flat_shape.size()));
     auto nb = static_cast<int64_t>(plan.broadcast_shape.size());
     int64_t n = 1;
     for (int64_t v : plan.broadcast_shape) n *= v;
-    std::vector<int64_t> out_shape = plan.broadcast_shape;
+    fixed_dim_vec out_shape = plan.broadcast_shape;
     out_shape.insert(out_shape.end(), rest.begin(), rest.end());
-    tensor_wrapper lin_flat = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_reshape(err, out, *lin, &n, 1); }); /* embedding needs rank >= 1 */
-    tensor_wrapper picked = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_embedding(err, out, *xf, *lin_flat); });
-    tensor_wrapper res = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_reshape(err, out, *picked, out_shape.empty() ? nullptr : out_shape.data(), static_cast<int64_t>(out_shape.size())); });
+    tensor_wrapper lin_flat = call_op(mag_reshape, *lin, &n, 1);
+    tensor_wrapper picked = call_op(mag_embedding, *xf, *lin_flat);
+    tensor_wrapper res = call_op(mag_reshape, *picked, out_shape.empty() ? nullptr : out_shape.data(), static_cast<int64_t>(out_shape.size()));
     return apply_perm(res, advanced_result_perm(plan, nb + static_cast<int64_t>(rest.size())));
   }
 
   static void advanced_index_set(const tensor_wrapper &self, const advanced_index_plan &plan, nb::handle value) {
-    const tensor_wrapper &x = plan.base; /* A view of self, so storage offsets address self */
+    const tensor_wrapper &x = plan.base;
     mag_device_id_t device = mag_tensor_device_id(*x);
     mag_dtype_t dt = mag_tensor_type(*self);
     int64_t rank = mag_tensor_rank(*x);
     const int64_t *shape = mag_tensor_shape_ptr(*x);
     const int64_t *strides = mag_tensor_strides_ptr(*x);
-    std::vector<bool> is_adv(static_cast<size_t>(rank), false);
+    std::array<bool, MAG_MAX_DIMS> is_adv {};
     for (int64_t a : plan.axes) is_adv[static_cast<size_t>(a)] = true;
-    std::vector<int64_t> rest_axes {};
+   fixed_dim_vec rest_axes {};
     for (int64_t d=0; d < rank; ++d) if (!is_adv[static_cast<size_t>(d)]) rest_axes.emplace_back(d);
     auto nb = static_cast<int64_t>(plan.broadcast_shape.size());
     auto nr = static_cast<int64_t>(rest_axes.size());
     int64_t out_rank = nb + nr;
-    std::vector<int64_t> out_shape = plan.broadcast_shape;
-    for (int64_t d : rest_axes) out_shape.emplace_back(shape[d]);
-    auto reshape_to = [&](const tensor_wrapper &t, const std::vector<int64_t> &dims) {
-      return call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_reshape(err, out, *t, dims.empty() ? nullptr : dims.data(), static_cast<int64_t>(dims.size())); });
+    fixed_dim_vec out_shape = plan.broadcast_shape;
+    for (int64_t dim : rest_axes) out_shape.emplace_back(shape[dim]);
+    auto reshape_to = [&](const tensor_wrapper &t, const fixed_dim_vec &dims) {
+      return call_op(mag_reshape, *t, dims.empty() ? nullptr : dims.data(), static_cast<int64_t>(dims.size()));
     };
-    auto add = [&](const tensor_wrapper &a, const tensor_wrapper &b) { return call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_add(err, out, *a, *b); }); };
+    auto add = [&](const tensor_wrapper &a, const tensor_wrapper &b) { return call_op(mag_add, *a, *b); };
     auto mul = [&](const tensor_wrapper &a, int64_t v) {
       tensor_wrapper s = i64_scalar(v, device);
-      return call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_mul(err, out, *a, *s); });
+      return call_op(mag_mul, *a, *s);
     };
     auto offset = static_cast<int64_t>(mag_tensor_data_offset(*x)/mag_type_trait(dt)->size);
-    tensor_wrapper off = i64_scalar(offset, device); /* Storage offset of every written element, laid out as (bshape..., rest...) */
-    std::vector<int64_t> bdims = plan.broadcast_shape;
-    for (int64_t i=0; i < nr; ++i) bdims.emplace_back(1);
+    tensor_wrapper off = i64_scalar(offset, device);
+    fixed_dim_vec broadcast_dims = plan.broadcast_shape;
+    for (int64_t i=0; i < nr; ++i) broadcast_dims.emplace_back(1);
     for (size_t j=0; j < plan.idx.size(); ++j)
-      off = add(off, reshape_to(mul(plan.idx[j], strides[plan.axes[j]]), bdims));
+      off = add(off, reshape_to(mul(plan.idx[j], strides[plan.axes[j]]), broadcast_dims));
     for (int64_t i=0; i < nr; ++i) {
       int64_t d = rest_axes[static_cast<size_t>(i)];
-      tensor_wrapper r = call_op([&](mag_error_t *err, mag_tensor_t **out) {
-        return mag_arange(err, out, get_ctx(), MAG_DTYPE_INT64, mag_scalar_from_int64(0), mag_scalar_from_int64(shape[d]), mag_scalar_from_int64(1), device);
-      });
-      std::vector<int64_t> rdims(static_cast<size_t>(out_rank), 1);
-      rdims[static_cast<size_t>(nb+i)] = shape[d];
-      off = add(off, reshape_to(mul(r, strides[d]), rdims));
+      tensor_wrapper r = call_op(mag_arange, get_ctx(), MAG_DTYPE_INT64, mag_scalar_from_int64(0), mag_scalar_from_int64(shape[d]), mag_scalar_from_int64(1), device);
+      fixed_dim_vec ret_dims(static_cast<size_t>(out_rank), 1);
+      ret_dims[static_cast<size_t>(nb+i)] = shape[d];
+      off = add(off, reshape_to(mul(r, strides[d]), ret_dims));
     }
-    off = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_expand(err, out, *off, out_rank, out_shape.data()); });
-    off = apply_perm(off, advanced_result_perm(plan, out_rank)); /* Same layout as the getitem result, so value broadcasts like torch */
+    off = call_op(mag_expand, *off, out_rank, out_shape.data());
+    off = apply_perm(off, advanced_result_perm(plan, out_rank));
     int64_t res_rank = mag_tensor_rank(*off);
-    std::vector<int64_t> res_shape(mag_tensor_shape_ptr(*off), mag_tensor_shape_ptr(*off)+res_rank);
+    fixed_dim_vec res_shape(mag_tensor_shape_ptr(*off), mag_tensor_shape_ptr(*off)+res_rank);
     int64_t n = 1;
     for (int64_t v : res_shape) n *= v;
     if (!n) return;
@@ -379,20 +367,18 @@ namespace mag::bindings {
     if (nb::isinstance<tensor_wrapper>(value)) {
       src = nb::cast<tensor_wrapper>(value);
       if (mag_tensor_type(*src) != dt)
-        src = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_cast(err, out, *src, dt); });
+        src = call_op(mag_cast, *src, dt);
     } else if (nb::isinstance<nb::bool_>(value) || nb::isinstance<nb::int_>(value) || nb::isinstance<nb::float_>(value)) {
       mag_scalar_t sv = scalar_from_py_number(value);
-      src = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_scalar(err, out, get_ctx(), dt, sv, device); });
+      src = call_op(mag_scalar, get_ctx(), dt, sv, device);
     } else throw nb::type_error("__setitem__ value must be Tensor, int, float, or bool");
-    src = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_expand(err, out, *src, res_rank, res_shape.data()); });
-    std::vector<int64_t> flat {n};
-    tensor_wrapper off_flat = reshape_to(call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_contiguous(err, out, *off); }), flat);
-    tensor_wrapper src_flat = reshape_to(call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_contiguous(err, out, *src); }), flat);
+    src = call_op(mag_expand, *src, res_rank, res_shape.data());
+    fixed_dim_vec flat {n};
+    tensor_wrapper off_flat = reshape_to(call_op(mag_contiguous, *off), flat);
+    tensor_wrapper src_flat = reshape_to(call_op(mag_contiguous, *src), flat);
     auto storage_numel = static_cast<int64_t>(mag_tensor_storage_numbytes(*self)/mag_type_trait(dt)->size);
     int64_t one = 1;
-    tensor_wrapper storage = call_op([&](mag_error_t *err, mag_tensor_t **out) { /* 1-D view over the whole storage of self */
-      return mag_strided_view(err, out, mag_tensor_context(*self), *self, 1, &storage_numel, &one, 0);
-    });
+    tensor_wrapper storage = call_op(mag_strided_view, mag_tensor_context(*self), *self, 1, &storage_numel, &one, 0);
     mag_error_t err {};
     throw_if_error(mag_scatter_(&err, *storage, 0, *off_flat, *src_flat), err);
   }
@@ -409,7 +395,7 @@ namespace mag::bindings {
       int64_t ax = 0;
       for (auto &&idx : indices) {
           if (idx.is_none()) {
-              curr = call_op([&](mag_error_t *err, mag_tensor_t **out) { return mag_unsqueeze(err, out, *curr, ax); });
+              curr = call_op(mag_unsqueeze, *curr, ax);
               ++ax;
           } else if (nb::isinstance<nb::int_>(idx)) {
               auto i = nb::cast<int64_t>(idx);
@@ -420,7 +406,7 @@ namespace mag::bindings {
                   oss << "Index " << i << " out of bounds for axis " << ax << " (size " << dim_size << ")";
                   throw nb::index_error(oss.str().c_str());
               }
-              curr = tensor_wrapper{index_by_scalar_per_axis(*curr, ax, i)};
+              curr = call_op(mag_select, *curr, ax, i);
           } else if (nb::isinstance<nb::slice>(idx)) {
               curr = slice_axis(curr, ax, nb::cast<nb::slice>(idx));
               ++ax;
@@ -447,7 +433,7 @@ namespace mag::bindings {
        int64_t dim0 = *mag_tensor_shape_ptr(*self);
        nb::list items {};
        for (int64_t i=0; i < dim0; ++i)
-         items.append(tensor_wrapper{index_by_scalar_per_axis(*self, 0, i)});
+         items.append(call_op(mag_select, *self, 0, i));
        return nb::steal(PyObject_GetIter(items.ptr()));
      }, "Iterate over the first dimension, yielding views.")
      .def("__len__", [](const tensor_wrapper &self) -> int64_t {
@@ -516,7 +502,7 @@ namespace mag::bindings {
        return tensor_index_impl(self, index);
     }, "Index with int, slice, ellipsis, or boolean/int index tensor. Supports NumPy-style indexing.")
     .def("__setitem__", [](tensor_wrapper &self, nb::object index, nb::object value) {
-      if (index_is_advanced(self, index)) { /* Advanced indices produce copies, so write through storage offsets instead */
+      if (index_is_advanced(self, index)) {
         nb::tuple idxs_in = nb::isinstance<nb::tuple>(index) ? nb::cast<nb::tuple>(index) : nb::make_tuple(index);
         advanced_index_set(self, plan_advanced_index(self, expand_ellipsis(idxs_in, mag_tensor_rank(*self))), value);
         return;

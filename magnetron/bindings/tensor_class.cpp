@@ -16,30 +16,41 @@ namespace mag::bindings {
   template <typename T>
   [[nodiscard]] static nb::object ndarray_to_obj(nb::ndarray<nb::numpy, T> &&arr) { return nb::cast(std::move(arr)); }
 
-  [[nodiscard]] static nb::object ndarray_f32(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+
+  [[nodiscard]] static nb::object ndarray_f32(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, float>(base, {}, owner, {}, nb::dtype<float>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, float>(base, static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<float>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, float>(base, static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<float>()));
   }
 
-  [[nodiscard]] static nb::object ndarray_f16(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+  [[nodiscard]] static nb::object ndarray_f16(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, mag_float16_t>(base, {}, owner, {}, nb::dtype<mag_float16_t>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, mag_float16_t>(base, static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<mag_float16_t>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, mag_float16_t>(base, static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<mag_float16_t>()));
   }
 
-  [[nodiscard]] static nb::object ndarray_bf16(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+  [[nodiscard]] static nb::object ndarray_bf16(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, mag_bfloat16_t>(base, {}, owner, {}, nb::dtype<mag_bfloat16_t>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, mag_bfloat16_t>(base, static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<mag_bfloat16_t>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, mag_bfloat16_t>(base, static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<mag_bfloat16_t>()));
   }
 
   template <typename T>
-  [[nodiscard]] static nb::object ndarray_int(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+  [[nodiscard]] static nb::object ndarray_int(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, T>(static_cast<T *>(base), {}, owner, {}, nb::dtype<T>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, T>(static_cast<T *>(base), static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<T>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, T>(static_cast<T *>(base), static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<T>()));
   }
 
-  [[nodiscard]] static nb::object ndarray_bool(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+  [[nodiscard]] static nb::object ndarray_bool(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, uint8_t>(base, {}, owner, {}, nb::dtype<bool>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, uint8_t>(base, static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<bool>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, uint8_t>(base, static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<bool>()));
   }
 
   [[nodiscard]] static nb::object tensor_from_numpy(const tensor_wrapper &self) {
@@ -57,8 +68,8 @@ namespace mag::bindings {
     const int64_t *p_shape = mag_tensor_shape_ptr(tensor);
     const int64_t *p_strides = mag_tensor_strides_ptr(tensor);
     void *base = reinterpret_cast<void *>(mag_tensor_data_ptr(tensor));
-    std::vector<size_t> shape(static_cast<size_t>(std::max<int64_t>(0, rank)));
-    std::vector<int64_t> strides(static_cast<size_t>(std::max<int64_t>(0, rank)));
+    fixed_dim_vec shape(static_cast<size_t>(std::max<int64_t>(0, rank)));
+    fixed_dim_vec strides(static_cast<size_t>(std::max<int64_t>(0, rank)));
     for (size_t i=0; i < static_cast<size_t>(rank); ++i) {
       shape[i] = static_cast<size_t>(p_shape[i]);
       strides[i] = p_strides[i];
@@ -288,7 +299,7 @@ namespace mag::bindings {
         }
       }
       const int64_t *shape = mag_tensor_shape_ptr(contig);
-      std::vector<int64_t> strides(rank);
+      fixed_dim_vec strides(rank);
       strides[rank-1] = 1;
       for (int64_t i=rank-2; i >= 0; --i) // RowMaj strides
         strides[i] = strides[i+1]*shape[i+1];

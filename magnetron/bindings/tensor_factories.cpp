@@ -110,8 +110,8 @@ namespace mag::bindings {
       mag_scalar_t scalar = scalar_from_py_number(handle);
       mag_error_t err {};
       throw_if_error(mag_scalar(&err, &raw, ctx, dtype.v, scalar, cpu_dvc_id), err);
-      maybe_set_requires_grad(ctx, raw, requires_grad);
       on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
+      maybe_set_requires_grad(ctx, raw, requires_grad);
       if (!mag_device_id_eq(*device_id, cpu_dvc_id)) {
         mag_tensor_t *tmp = nullptr;
         throw_if_error(mag_transfer(&err, &tmp, raw, *device_id), err);
@@ -136,8 +136,7 @@ namespace mag::bindings {
         throw nb::type_error(msg.c_str());
       }
       mag_dtype_t target_dtype = dtype.v != MAG_DTYPE__NUM ? dtype.v : elem_dtype;
-      std::vector<int64_t> shape {};
-      shape.reserve(arr.ndim());
+      fixed_dim_vec shape {};
       for (size_t i=0; i < arr.ndim(); ++i)
         shape.emplace_back(static_cast<int64_t>(arr.shape(i)));
       mag_context_t *ctx = get_ctx();
@@ -185,12 +184,10 @@ namespace mag::bindings {
             err
           );
         }
-        maybe_set_requires_grad(ctx, borrowed, requires_grad);
         on_scope_exit defer_borrowed([borrowed] { mag_tensor_decref(borrowed); });
+        maybe_set_requires_grad(ctx, borrowed, requires_grad);
         if (!mag_device_id_eq(*device_id, cpu_dvc_id)) {
-          mag_tensor_t *out = nullptr;
-          throw_if_error(mag_transfer(&err, &out, borrowed, *device_id), err);
-          return tensor_wrapper{out};
+          return call_op(mag_transfer, borrowed, *device_id);
         }
         mag_tensor_incref(borrowed);
         return tensor_wrapper{borrowed};
@@ -198,8 +195,8 @@ namespace mag::bindings {
       mag_tensor_t *raw = nullptr;
       if (shape.empty()) throw_if_error(mag_empty_scalar(&err, &raw, ctx, elem_dtype, cpu_dvc_id), err);
       else throw_if_error(mag_empty(&err, &raw, ctx, elem_dtype, static_cast<int64_t>(shape.size()), shape.data(), cpu_dvc_id), err);
-      maybe_set_requires_grad(ctx, raw, requires_grad);
       on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
+      maybe_set_requires_grad(ctx, raw, requires_grad);
       size_t numel = std::accumulate(shape.begin(), shape.end(), static_cast<size_t>(1), std::multiplies<>());
       size_t item_size = mag_type_trait(elem_dtype)->size;
       throw_if_error(mag_copy_raw_(&err, raw, arr.data(), numel * item_size), err);
@@ -212,18 +209,16 @@ namespace mag::bindings {
       }
       on_scope_exit defer_typed_cpu([typed_cpu] { mag_tensor_decref(typed_cpu); });
       if (!mag_device_id_eq(*device_id, cpu_dvc_id)) {
-        mag_tensor_t *out = nullptr;
-        throw_if_error(mag_transfer(&err, &out, typed_cpu, *device_id), err);
-        return tensor_wrapper{out};
+        return call_op(mag_transfer, typed_cpu, *device_id);
       }
       mag_tensor_incref(typed_cpu);
       return tensor_wrapper{typed_cpu};
     }
     if (!nb::isinstance<nb::sequence>(handle))
       throw nb::type_error("Tensor() requires scalar, array (NumPy/torch CPU contiguous), or nested sequence");
-    std::vector<int64_t> shape {};
+    fixed_dim_vec shape {};
     std::vector<nb::handle> stack {};
-    std::vector<int64_t> idx_stack {};
+    fixed_dim_vec idx_stack {};
     std::vector<nb::handle> flat_h {};
     nb::handle cur = handle;
     {
@@ -299,8 +294,8 @@ namespace mag::bindings {
     mag_error_t err {};
     if (shape.empty()) throw_if_error(mag_empty_scalar(&err, &raw, ctx, wide, cpu_dvc_id), err);
     else throw_if_error(mag_empty(&err, &raw, ctx, wide, static_cast<int64_t>(shape.size()), shape.data(), cpu_dvc_id), err);
-    maybe_set_requires_grad(ctx, raw, requires_grad);
     on_scope_exit defer_raw([raw] { mag_tensor_decref(raw); });
+    maybe_set_requires_grad(ctx, raw, requires_grad);
     size_t n = flat_h.size();
     if (kind == Kind::Float) {
       std::vector<float> buf(n);
@@ -328,9 +323,7 @@ namespace mag::bindings {
     }
     on_scope_exit defer_typed_cpu([typed_cpu] { mag_tensor_decref(typed_cpu); });
     if (!mag_device_id_eq(*device_id, cpu_dvc_id)) {
-      mag_tensor_t *out = nullptr;
-      throw_if_error(mag_transfer(&err, &out, typed_cpu, *device_id), err);
-      return tensor_wrapper{out};
+      return call_op(mag_transfer, typed_cpu, *device_id);
     }
     mag_tensor_incref(typed_cpu);
     return tensor_wrapper{typed_cpu};
@@ -365,26 +358,19 @@ namespace mag::bindings {
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         fixed_dim_vec shape = parse_shape_from_args(args);
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        if (shape.empty()) throw_if_error(mag_empty_scalar(&err, &out, ctx, dt.v, *device_id), err);
-        else throw_if_error(mag_empty(&err, &out, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), *device_id), err);
-        if (requires_grad) {
-          throw_if_error(mag_tensor_set_requires_grad(&err, out, true), err);
-        }
-        return tensor_wrapper {out};
+        tensor_wrapper out = shape.empty() ? call_op(mag_empty_scalar, ctx, dt.v, *device_id) : call_op(mag_empty, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Create an uninitialized tensor. Args: shape (ints or sequence). Kwargs: dtype, requires_grad."
     );
     cls.attr("empty_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_empty_like(&err, &out, *like), err);
+        tensor_wrapper out = call_op(mag_empty_like, *like);
         mag_context_t *ctx = get_ctx();
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Uninitialized tensor with same shape and dtype as like."
     );
@@ -395,12 +381,10 @@ namespace mag::bindings {
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
-        mag_tensor_t *out = nullptr;
         mag_scalar_t s = scalar_from_py_number(value);
-        mag_error_t err {};
-        throw_if_error(mag_scalar(&err, &out, ctx, dt.v, s, *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_scalar, ctx, dt.v, s, *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Create a 0-dim tensor from a Python scalar. Kwargs: dtype, requires_grad."
     );
@@ -416,25 +400,21 @@ namespace mag::bindings {
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
-        mag_tensor_t *out = nullptr;
         mag_scalar_t s = scalar_from_py_number(fill_value);
-        mag_error_t err {};
-        throw_if_error(mag_full(&err, &out, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), s, *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_full, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), s, *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Tensor of shape filled with fill_value. Kwargs: dtype, fill_value, requires_grad."
     );
     cls.attr("full_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::handle fill_value, nb::kwargs kwargs) -> tensor_wrapper {
-        mag_tensor_t *out = nullptr;
         mag_scalar_t fill_val = scalar_from_py_number(fill_value);
-        mag_error_t err {};
-        throw_if_error(mag_full_like(&err, &out, *like, fill_val), err);
+        tensor_wrapper out = call_op(mag_full_like, *like, fill_val);
         mag_context_t *ctx = get_ctx();
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Tensor like input filled with fill_value. Kwargs: requires_grad."
     );
@@ -447,23 +427,19 @@ namespace mag::bindings {
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_zeros(&err, &out, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_zeros, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Tensor of shape filled with zeros. Kwargs: dtype, requires_grad."
     );
     cls.attr("zeros_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_zeros_like(&err, &out, *like), err);
+        tensor_wrapper out = call_op(mag_zeros_like, *like);
         mag_context_t *ctx = get_ctx();
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Zeros with same shape and dtype as like. Kwargs: requires_grad."
     );
@@ -476,23 +452,19 @@ namespace mag::bindings {
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_ones(&err, &out, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_ones, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Tensor of shape filled with ones. Kwargs: dtype, requires_grad."
     );
     cls.attr("ones_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_ones_like(&err, &out, *like), err);
+        tensor_wrapper out = call_op(mag_ones_like, *like);
         mag_context_t *ctx = get_ctx();
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Ones with same shape and dtype as like. Kwargs: requires_grad."
     );
@@ -507,11 +479,9 @@ namespace mag::bindings {
         mag_scalar_t high = kwargs.contains(intern_key(high)) ? scalar_from_py_number(kwargs[intern_key(high)]) : mag_scalar_from_float64(1.0);
         fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_uniform(&err, &out, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), low, high, *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_uniform, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), low, high, *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Tensor of shape with values from uniform(low, high). Kwargs: dtype, low, high, requires_grad."
     );
@@ -519,13 +489,11 @@ namespace mag::bindings {
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
         mag_scalar_t low = kwargs.contains(intern_key(low)) ? scalar_from_py_number(kwargs[intern_key(low)]) : mag_scalar_from_float64(0.0);
         mag_scalar_t high = kwargs.contains(intern_key(high)) ? scalar_from_py_number(kwargs[intern_key(high)]) : mag_scalar_from_float64(1.0);
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_uniform_like(&err, &out, *like, low, high), err);
+        tensor_wrapper out = call_op(mag_uniform_like, *like, low, high);
         mag_context_t *ctx = get_ctx();
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Like input, filled with uniform(low, high). Kwargs: low, high, requires_grad."
     );
@@ -540,11 +508,9 @@ namespace mag::bindings {
         mag_scalar_t std = kwargs.contains(intern_key(std)) ? scalar_from_py_number(kwargs[intern_key(std)]) : mag_scalar_from_float64(1.0);
         fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_normal(&err, &out, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), mean, std, *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_normal, ctx, dt.v, static_cast<int64_t>(shape.size()), shape.data(), mean, std, *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Tensor of shape with values from normal(mean, std). Kwargs: dtype, mean, std, requires_grad."
     );
@@ -552,13 +518,11 @@ namespace mag::bindings {
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
         mag_scalar_t mean = kwargs.contains(intern_key(mean)) ? scalar_from_py_number(kwargs[intern_key(mean)]) : mag_scalar_from_float64(0.0);
         mag_scalar_t std = kwargs.contains(intern_key(std)) ? scalar_from_py_number(kwargs[intern_key(std)]) : mag_scalar_from_float64(1.0);
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_normal_like(&err, &out, *like, mean, std), err);
+        tensor_wrapper out = call_op(mag_normal_like, *like, mean, std);
         mag_context_t *ctx = get_ctx();
         bool requires_grad = kw_requires_grad_or(kwargs, false);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Like input, filled with normal(mean, std). Kwargs: mean, std, requires_grad."
     );
@@ -571,22 +535,16 @@ namespace mag::bindings {
         fixed_dim_vec shape = parse_shape_from_args(args);
         validate_shape(shape);
         mag_context_t *ctx = get_ctx();
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_bernoulli(&err, &out, ctx, static_cast<int64_t>(shape.size()), shape.data(), p, *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_bernoulli, ctx, static_cast<int64_t>(shape.size()), shape.data(), p, *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Binary tensor of shape from Bernoulli(p). Kwargs: p."
     );
     cls.attr("bernoulli_like") = nb::cpp_function(
       [](const tensor_wrapper &like, nb::kwargs kwargs) -> tensor_wrapper {
         double p = kwargs.contains(intern_key(p)) ? nb::cast<double>(kwargs[intern_key(p)]) : 0.5;
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_bernoulli_like(&err, &out, *like, p), err);
-        mag_context_t *ctx = get_ctx();
-        return tensor_wrapper{out};
+        return call_op(mag_bernoulli_like, *like, p);
       },
       "Binary tensor like input from Bernoulli(p). Kwargs: p."
     );
@@ -630,11 +588,9 @@ namespace mag::bindings {
         mag_scalar_t stop = scalar_from_py_number(stop_obj);
         mag_scalar_t step = scalar_from_py_number(step_obj);
         mag_context_t *ctx = get_ctx();
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_arange(&err, &out, ctx, dtype.v, start, stop, step, *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_arange, ctx, dtype.v, start, stop, step, *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "1D tensor of values [start, stop) with step. Use stop only, or start/stop, or start/stop/step. Kwargs: dtype, requires_grad."
     );
@@ -674,11 +630,9 @@ namespace mag::bindings {
         mag_scalar_t start = scalar_from_py_number(start_h);
         mag_scalar_t end = scalar_from_py_number(end_h);
         mag_context_t *ctx = get_ctx();
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_linspace(&err, &out, ctx, dtype.v, start, end, steps, *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_linspace, ctx, dtype.v, start, end, steps, *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "1D tensor of evenly spaced values from start to end inclusive. Args: start, end, steps=100. Kwargs: dtype, device, requires_grad."
     );
@@ -701,11 +655,9 @@ namespace mag::bindings {
         if (!device_id)
           throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_eye(&err, &out, ctx, dtype.v, n, m, *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_eye, ctx, dtype.v, n, m, *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "2D identity matrix with ones on the diagonal and zeros elsewhere. Args: n, m=None. Kwargs: dtype, device, requires_grad."
     );
@@ -779,11 +731,9 @@ namespace mag::bindings {
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_rand_perm(&err, &out, ctx, dt.v, n, *device_id), err);
-        maybe_set_requires_grad(ctx, out, requires_grad);
-        return tensor_wrapper{out};
+        tensor_wrapper out = call_op(mag_rand_perm, ctx, dt.v, n, *device_id);
+        maybe_set_requires_grad(ctx, *out, requires_grad);
+        return out;
       },
       "Random permutation of [0, n). Kwargs: dtype, requires_grad."
     );
@@ -812,10 +762,7 @@ namespace mag::bindings {
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
-        mag_tensor_t *out = nullptr;
-        mag_error_t err {};
-        throw_if_error(mag_load_image(&err, &out, ctx, path.c_str(), channels.c_str(), rw, rh, *device_id), err);
-        return tensor_wrapper{out};
+        return call_op(mag_load_image, ctx, path.c_str(), channels.c_str(), rw, rh, *device_id);
       },
       "Load image from path. Kwargs: channels (e.g. 'RGB'), resize_to (w, h)."
     );
@@ -831,14 +778,9 @@ namespace mag::bindings {
         std::optional<mag_device_id_t> device_id = kw_device_id_or_default(kwargs);
         if (!device_id) throw std::runtime_error {"Invalid device id"};
         mag_context_t *ctx = get_ctx();
-        mag_tensor_t *out = nullptr;
         uint32_t sample_rate = 0;
-        mag_error_t err {};
-        throw_if_error(
-          mag_load_audio(&err, &out, ctx, path.c_str(), &sample_rate, *device_id),
-          err
-        );
-        return nb::make_tuple(tensor_wrapper{out}, sample_rate);
+        tensor_wrapper out = call_op(mag_load_audio, ctx, path.c_str(), &sample_rate, *device_id);
+        return nb::make_tuple(out, sample_rate);
       },
       "Load audio from path. Kwargs: device. "
       "Returns (audio, sample_rate), where audio is float32 with shape (C, T)."
@@ -849,9 +791,7 @@ namespace mag::bindings {
        auto strides_seq = nb::cast<nb::sequence>(strides_h);
        if (nb::len(shape_seq) != nb::len(strides_seq))
          throw nb::value_error("shape and strides length mismatch");
-       std::vector<int64_t> shape, strides;
-       shape.reserve(nb::len(shape_seq));
-       strides.reserve(nb::len(strides_seq));
+       fixed_dim_vec shape, strides;
        for (auto &&h : shape_seq) shape.emplace_back(nb::cast<int64_t>(h));
        for (auto &&h : strides_seq) strides.emplace_back(nb::cast<int64_t>(h));
        validate_shape(shape);
@@ -861,19 +801,7 @@ namespace mag::bindings {
        if (kwargs.contains(intern_key(storage_offset)))
          offset = nb::cast<int64_t>(kwargs[intern_key(storage_offset)]);
        mag_context_t *ctx = get_ctx();
-       mag_tensor_t *out = nullptr;
-       mag_error_t err {};
-       throw_if_error(
-         mag_strided_view(
-           &err, &out, ctx, *base,
-           static_cast<int64_t>(shape.size()),
-           shape.data(),
-           strides.data(),
-           offset
-         ),
-         err
-       );
-       return tensor_wrapper{out};
+       return call_op(mag_strided_view, ctx, *base, static_cast<int64_t>(shape.size()), shape.data(), strides.data(), offset);
      },
      "View of base with given shape and strides. Kwargs: offset/storage_offset."
    );
