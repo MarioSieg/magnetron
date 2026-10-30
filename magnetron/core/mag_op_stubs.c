@@ -209,7 +209,7 @@ mag_status_t mag_broadcast(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x
     rank,
     shape,
     new_strides,
-    (int64_t)mag_tensor_data_offset(x)
+    x->meta.storage_offset
   );
 }
 
@@ -2232,6 +2232,7 @@ static bool mag_pow_rewrite(mag_status_t *stat, mag_error_t *err, mag_tensor_t *
       *stat = mag_ones_like(err, out_result, x);
       return true;
     }
+    if (n >= 2 && !mag_tensor_is_floating_point_typed(x) && !mag_tensor_is_host(x)) return false;
     if (n == 2) {
       *stat = inplace ? mag_sqr_(err, out_result, x) : mag_sqr(err, out_result, x);
       return true;

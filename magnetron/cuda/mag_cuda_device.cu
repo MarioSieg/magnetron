@@ -18,6 +18,7 @@
 #include "mag_cuda_exec.cuh"
 
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <sstream>
 
@@ -211,7 +212,27 @@ namespace mag {
     }
     mag_cu_rt_check(err, cudaStreamCreateWithFlags(&m_stream, cudaStreamNonBlocking), "failed to create non-blocking stream");
     mag_cu_rt_check(err, cudaEventCreateWithFlags(&m_event, cudaEventDisableTiming), "failed to create device event");
+    mag_cu_rt_check(err, cudaHostAlloc(reinterpret_cast<void **>(&m_fault_host), sizeof(*m_fault_host), cudaHostAllocMapped), "failed to allocate index fault record");
+    *m_fault_host = {};
+    mag_cu_rt_check(err, cudaHostGetDevicePointer(reinterpret_cast<void **>(&m_fault_dev), m_fault_host, 0), "failed to map index fault record");
     return MAG_OK;
+  }
+
+  mag_status_t physical_device::check_index_fault(mag_error_t *err) const {
+    if (mag_likely(!m_fault_host)) return MAG_OK;
+    auto *fault = static_cast<volatile index_fault *>(m_fault_host);
+    if (mag_likely(!fault->flag)) return MAG_OK;
+    auto op = static_cast<mag_opcode_t>(fault->op);
+    int64_t index = fault->index;
+    int64_t bound = fault->bound;
+    fault->op = 0;
+    fault->index = 0;
+    fault->bound = 0;
+    fault->flag = 0;
+    char name[64] {};
+    for (size_t i=0; i+1 < sizeof(name) && mag_op_trait(op)->mnemonic[i]; ++i)
+      name[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(mag_op_trait(op)->mnemonic[i])));
+    return mag_set_error(err, MAG_ERR_BOUNDS, "%s: index %" PRIi64 " is out of bounds for dimension with size %" PRIi64 ".", name, index, bound);
   }
 
   std::string physical_device::info_string() const {
@@ -244,7 +265,7 @@ namespace mag {
   }
 
   physical_device::~physical_device() {
-    if (m_stream || m_event || m_scratch) {
+    if (m_stream || m_event || m_scratch || m_fault_host) {
       cudaSetDevice(static_cast<int>(id.device_ordinal));
       if (m_stream) {
         cudaStreamSynchronize(m_stream);
@@ -252,6 +273,7 @@ namespace mag {
       }
       if (m_event) cudaEventDestroy(m_event);
       if (m_scratch) cudaFree(m_scratch);
+      if (m_fault_host) cudaFreeHost(m_fault_host);
     }
   }
 }

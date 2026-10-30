@@ -147,7 +147,7 @@ TEST(async_stream, deferred_error_is_reported_once_and_clears) {
     ref g {};
     mag_status_t stat {mag_gather(&err, g.out(), src.get(), 0, idx.get())};
     if (!(cpu_device(*ctx)->flags&MAG_DEVICE_FLAGS_ASYNC) || mag_envcfg_launch_blocking()) { /* Synchronous and launch blocking mode report at the call */
-        ASSERT_EQ(stat, MAG_ERR_KERNEL);
+        ASSERT_EQ(stat, MAG_ERR_BOUNDS);
         return;
     }
     ASSERT_EQ(stat, MAG_OK) << "async submit must not execute the kernel";
@@ -160,7 +160,7 @@ TEST(async_stream, deferred_error_is_reported_once_and_clears) {
     bool reported_at_sync {sync_stat != MAG_OK};
     ASSERT_NE(reported_at_submit, reported_at_sync) << "the deferred error must be reported exactly once";
     const mag_error_t &e {reported_at_submit ? err2 : sync_err};
-    ASSERT_EQ(e.code, MAG_ERR_KERNEL);
+    ASSERT_EQ(e.code, MAG_ERR_BOUNDS);
     ASSERT_NE(std::strstr(e.message, "gather"), nullptr) << e.message;
     ASSERT_NE(std::strstr(e.message, "async cpu error"), nullptr) << e.message;
     mag_error_t clean {}; /* Error cleared, the stream works again */

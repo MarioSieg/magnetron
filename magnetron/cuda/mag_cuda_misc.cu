@@ -28,23 +28,29 @@ namespace mag {
       mag_panic("%s: %s", what, cudaGetErrorString(e));
   }
 
+  [[nodiscard]] static index_fault *index_fault_of(const mag_tensor_t *t) {
+    return static_cast<const physical_device *>(t->storage->device->impl)->index_fault_ptr();
+  }
+
   template <const bool SameLayout>
   __global__ static void one_hot_kernel(
     int total,
     int nc,
     int64_t *__restrict__ pr,
     const int64_t *__restrict__ pi,
-    mag_coords_iter_t it
+    mag_coords_iter_t it,
+    index_fault *fault
   ) {
     int i = blockIdx.x*blockDim.x + threadIdx.x;
     int step = blockDim.x*gridDim.x;
     for (; i < total; i += step) {
       int pir = SameLayout ? i : mag_coords_iter_to_offset(&it, i);
-      int cls = pi[pir];
-      if (static_cast<unsigned>(cls) < static_cast<unsigned>(nc)) {
-        int off = i*nc + cls;
-        pr[off] = 1;
+      int64_t cls = pi[pir];
+      if (static_cast<uint64_t>(cls) >= static_cast<uint64_t>(nc)) {
+        report_index_fault(fault, MAG_OP_ONE_HOT, cls, nc);
+        continue;
       }
+      pr[static_cast<int64_t>(i)*nc + cls] = 1;
     }
   }
 
@@ -59,11 +65,11 @@ namespace mag {
     const auto *pidx = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(idx));
     int blocks = (n+MISC_BLOCK_SIZE-1)/MISC_BLOCK_SIZE;
     if (std::array<const mag_tensor_t *, 2> tensors{r, idx}; mag_all_shapes_equal_and_contig(tensors.data(), tensors.size())) {
-      one_hot_kernel<true><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, nc, pr, pidx, {});
+      one_hot_kernel<true><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, nc, pr, pidx, {}, index_fault_of(r));
     } else {
       mag_coords_iter_t it;
       mag_coords_iter_init(&it, &idx->meta.coords);
-      one_hot_kernel<false><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, nc, pr, pidx, it);
+      one_hot_kernel<false><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, nc, pr, pidx, it, index_fault_of(r));
     }
     return MAG_OK;
   }
@@ -292,7 +298,8 @@ namespace mag {
     const int64_t *__restrict__ bi,
     int64_t inner,
     int64_t out_ax,
-    int64_t ax
+    int64_t ax,
+    index_fault *fault
   ) {
     int64_t k = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
     int64_t j = static_cast<int64_t>(blockIdx.y);
@@ -300,7 +307,7 @@ namespace mag {
     if (k >= inner) return;
     int64_t flat = (o*out_ax + j)*inner + k;
     int64_t g = __ldg(bi + flat);
-    if (g < 0) g += ax;
+    if (!wrap_index(fault, MAG_OP_GATHER, g, ax)) return;
     br[flat] = bx[(o*ax + g)*inner + k];
   }
 
@@ -312,13 +319,14 @@ namespace mag {
     const int64_t *__restrict__ bi,
     int64_t inner,
     int64_t out_ax,
-    int64_t ax
+    int64_t ax,
+    index_fault *fault
   ) {
     int64_t flat = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
     int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
     for (; flat < on; flat += step) {
       int64_t g = __ldg(bi + flat);
-      if (g < 0) g += ax;
+      if (!wrap_index(fault, MAG_OP_GATHER, g, ax)) continue;
       int64_t k = flat % inner;
       int64_t t = flat / inner;
       int64_t o = t / out_ax;
@@ -336,7 +344,8 @@ namespace mag {
     mag_tensor_t index,
     mag_tensor_t out,
     int64_t axis_in,
-    int64_t ax
+    int64_t ax,
+    index_fault *fault
   ) {
     int64_t flat = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
     int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
@@ -350,7 +359,7 @@ namespace mag {
       int64_t index_offset = 0;
       for (int64_t d = 0; d < index.meta.coords.rank; ++d) index_offset += oc[d]*index.meta.coords.strides[d];
       int64_t g = __ldg(bi + index_offset);
-      if (g < 0) g += ax;
+      if (!wrap_index(fault, MAG_OP_GATHER, g, ax)) continue;
       int64_t src_off = 0, dst_off = 0;
       for (int64_t d = 0; d < src.meta.coords.rank; ++d) src_off += (d == axis_in ? g : oc[d])*src.meta.coords.strides[d];
       for (int64_t d = 0; d < out.meta.coords.rank; ++d) dst_off += oc[d]*out.meta.coords.strides[d];
@@ -370,6 +379,7 @@ namespace mag {
     const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(src));
     const auto *bi = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index));
     int64_t ax = src->meta.coords.shape[axis];
+    index_fault *fault = index_fault_of(r);
     bool same_outer_shape = true;
     for (int64_t d=0; d < src->meta.coords.rank && same_outer_shape; ++d)
       same_outer_shape = d == axis || r->meta.coords.shape[d] == src->meta.coords.shape[d];
@@ -386,16 +396,16 @@ namespace mag {
           static_cast<unsigned>(out_ax),
           static_cast<unsigned>(outer)
         );
-        gather_kernel_3d<T><<<grid, block, 0, stream>>>(br, bx, bi, inner, out_ax, ax);
+        gather_kernel_3d<T><<<grid, block, 0, stream>>>(br, bx, bi, inner, out_ax, ax, fault);
       } else {
         int64_t on = r->meta.numel;
         int64_t blocks = (on + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
-        gather_kernel_flat<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(on, br, bx, bi, inner, out_ax, ax);
+        gather_kernel_flat<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(on, br, bx, bi, inner, out_ax, ax, fault);
       }
     } else {
       int64_t on = r->meta.numel;
       int64_t blocks = (on + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
-      gather_kernel_strided<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(on, br, bx, bi, *src, *index, *r, axis, ax);
+      gather_kernel_strided<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(on, br, bx, bi, *src, *index, *r, axis, ax, fault);
     }
   }
 
@@ -426,13 +436,14 @@ namespace mag {
     const T *__restrict__ bx,
     const int64_t *__restrict__ bi,
     int64_t row_size,
-    int64_t vocab_size
+    int64_t vocab_size,
+    index_fault *fault
   ) {
     int64_t col = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
     int64_t row = static_cast<int64_t>(blockIdx.y);
     if (col >= row_size) return;
     int64_t g = __ldg(bi + row);
-    if (g < 0) g += vocab_size;
+    if (!wrap_index(fault, MAG_OP_EMBEDDING, g, vocab_size)) return;
     br[row*row_size + col] = bx[g*row_size + col];
   }
 
@@ -443,7 +454,8 @@ namespace mag {
     const T *__restrict__ bx,
     const int64_t *__restrict__ bi,
     int64_t row_size,
-    int64_t vocab_size
+    int64_t vocab_size,
+    index_fault *fault
   ) {
     int64_t flat = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
     int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
@@ -451,7 +463,7 @@ namespace mag {
       int64_t row = flat / row_size;
       int64_t col = flat % row_size;
       int64_t g = __ldg(bi + row);
-      if (g < 0) g += vocab_size;
+      if (!wrap_index(fault, MAG_OP_EMBEDDING, g, vocab_size)) continue;
       br[flat] = bx[g*row_size + col];
     }
   }
@@ -474,11 +486,11 @@ namespace mag {
         static_cast<unsigned>((row_size + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE),
         static_cast<unsigned>(n_indices)
       );
-      embedding_kernel_2d<T><<<grid, block, 0, stream>>>(br, bx, bi, row_size, vocab_size);
+      embedding_kernel_2d<T><<<grid, block, 0, stream>>>(br, bx, bi, row_size, vocab_size, index_fault_of(r));
     } else {
       int64_t on = n_indices*row_size;
       int64_t blocks = (on + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
-      embedding_kernel_flat<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(on, br, bx, bi, row_size, vocab_size);
+      embedding_kernel_flat<T><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(on, br, bx, bi, row_size, vocab_size, index_fault_of(r));
     }
   }
 
@@ -1135,22 +1147,24 @@ namespace mag {
     return dispatch_sort<false>(err, cmd, stream);
   }
 
-  __global__ static void bincount_count_kernel(int64_t n, const int64_t *__restrict__ bx, int64_t sx, unsigned long long *__restrict__ cnt, int64_t bins) {
+  __global__ static void bincount_count_kernel(int64_t n, const int64_t *__restrict__ bx, int64_t sx, unsigned long long *__restrict__ cnt, int64_t bins, index_fault *fault) {
     int64_t i = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
     int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
     for (; i < n; i += step) {
       int64_t bin = bx[i*sx];
       if (bin >= 0 && bin < bins) atomicAdd(cnt + bin, 1ull);
+      else report_index_fault(fault, MAG_OP_BINCOUNT, bin, bins);
     }
   }
 
   template <typename T>
-  __global__ static void bincount_weighted_kernel(int64_t n, const int64_t *__restrict__ bx, int64_t sx, const T *__restrict__ bw, int64_t sw, float *__restrict__ acc, int64_t bins) {
+  __global__ static void bincount_weighted_kernel(int64_t n, const int64_t *__restrict__ bx, int64_t sx, const T *__restrict__ bw, int64_t sw, float *__restrict__ acc, int64_t bins, index_fault *fault) {
     int64_t i = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
     int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
     for (; i < n; i += step) {
       int64_t bin = bx[i*sx];
       if (bin >= 0 && bin < bins) atomicAdd(acc + bin, static_cast<float>(bw[i*sw]));
+      else report_index_fault(fault, MAG_OP_BINCOUNT, bin, bins);
     }
   }
 
@@ -1173,7 +1187,7 @@ namespace mag {
     unsigned blocks_n = static_cast<unsigned>(std::min<int64_t>((n + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE, 65535));
     unsigned blocks_b = static_cast<unsigned>(std::min<int64_t>((bins + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE, 65535));
     if constexpr (std::is_same_v<T, float>) {
-      bincount_weighted_kernel<float><<<blocks_n, MISC_BLOCK_SIZE, 0, stream>>>(n, bx, sx, bw, sw, br, bins);
+      bincount_weighted_kernel<float><<<blocks_n, MISC_BLOCK_SIZE, 0, stream>>>(n, bx, sx, bw, sw, br, bins, index_fault_of(r));
       if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess))
         return mag_set_error(err, MAG_ERR_KERNEL, "cuda: bincount kernel launch failed: %s.", cudaGetErrorString(ce));
       return MAG_OK;
@@ -1187,7 +1201,7 @@ namespace mag {
         cuda_check(stream_free(d_scratch, stream), "bincount scratch free");
         return mag_set_error(err, MAG_ERR_KERNEL, "cuda: bincount scratch memset failed: %s.", cudaGetErrorString(ce));
       }
-      bincount_weighted_kernel<T><<<blocks_n, MISC_BLOCK_SIZE, 0, stream>>>(n, bx, sx, bw, sw, acc, bins);
+      bincount_weighted_kernel<T><<<blocks_n, MISC_BLOCK_SIZE, 0, stream>>>(n, bx, sx, bw, sw, acc, bins, index_fault_of(r));
       bincount_convert_kernel<T><<<blocks_b, MISC_BLOCK_SIZE, 0, stream>>>(bins, br, acc);
       cudaError_t ce = cudaGetLastError();
       cuda_check(stream_free(d_scratch, stream), "bincount scratch free");
@@ -1211,7 +1225,7 @@ namespace mag {
       const int64_t *bx = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(x));
       auto *cnt = reinterpret_cast<unsigned long long *>(mag_tensor_data_ptr_mut(r));
       unsigned blocks = static_cast<unsigned>(std::min<int64_t>((n + MISC_BLOCK_SIZE - 1)/MISC_BLOCK_SIZE, 65535));
-      bincount_count_kernel<<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, bx, x->meta.coords.strides[0], cnt, bins);
+      bincount_count_kernel<<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(n, bx, x->meta.coords.strides[0], cnt, bins, index_fault_of(r));
       if (cudaError_t ce = cudaGetLastError(); mag_unlikely(ce != cudaSuccess))
         return mag_set_error(err, MAG_ERR_KERNEL, "cuda: bincount kernel launch failed: %s.", cudaGetErrorString(ce));
       return MAG_OK;
@@ -2140,7 +2154,8 @@ namespace mag {
     mag_tensor_t self,
     mag_tensor_t source,
     mag_tensor_t index,
-    double alpha
+    double alpha,
+    index_fault *fault
   ) {
     for (int64_t flat=0; flat < total; ++flat) {
       int64_t tmp = flat;
@@ -2152,7 +2167,7 @@ namespace mag {
       int64_t j = sc[axis];
       int64_t idx_off = j*index.meta.coords.strides[0];
       int64_t g = bi[idx_off];
-      if (g < 0) g += self_ax;
+      if (!wrap_index(fault, MAG_OP_INDEX_ADD, g, self_ax)) continue;
       int64_t src_off = 0;
       for (int64_t d=0; d < R; ++d) src_off += sc[d]*source.meta.coords.strides[d];
       sc[axis] = g;
@@ -2180,90 +2195,91 @@ namespace mag {
     int64_t R = self->meta.coords.rank;
     int64_t total = source->meta.numel;
     int64_t self_ax = self->meta.coords.shape[axis];
+    index_fault *fault = index_fault_of(self);
     switch (self->meta.dtype) {
       case MAG_DTYPE_FLOAT32: index_add_kernel<float, false><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<float *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const float *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_FLOAT16: index_add_kernel<half, false><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<half *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const half *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_BFLOAT16: index_add_kernel<__nv_bfloat16, false><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: index_add_kernel<__nv_fp8_e4m3, false><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_UINT8: index_add_kernel<uint8_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<uint8_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const uint8_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_INT8: index_add_kernel<int8_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<int8_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const int8_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_UINT16: index_add_kernel<uint16_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<uint16_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const uint16_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_INT16: index_add_kernel<int16_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<int16_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const int16_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_UINT32: index_add_kernel<uint32_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<uint32_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const uint32_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_INT32: index_add_kernel<int32_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<int32_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const int32_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_UINT64: index_add_kernel<uint64_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<uint64_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const uint64_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       case MAG_DTYPE_INT64: index_add_kernel<int64_t, true><<<1, 1, 0, stream>>>(
         total, R, axis, self_ax,
         reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(self)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(source)),
         reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-        *self, *source, *index, alpha
+        *self, *source, *index, alpha, fault
       ); break;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: index_add_: unsupported dtype: %s.", mag_type_trait(self->meta.dtype)->name);
     }
@@ -2283,7 +2299,8 @@ namespace mag {
     const int64_t *__restrict__ bi,
     mag_tensor_t self,
     mag_tensor_t src,
-    mag_tensor_t index
+    mag_tensor_t index,
+    index_fault *fault
   ) {
     int64_t flat = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
     int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
@@ -2298,7 +2315,7 @@ namespace mag {
         if (d != axis) dst_off += ic[d]*self.meta.coords.strides[d];
       }
       int64_t g = __ldg(bi + idx_off);
-      if (g < 0) g += self_ax;
+      if (!wrap_index(fault, MAG_OP_SCATTER, g, self_ax)) continue;
       dst_off += g*self.meta.coords.strides[axis];
       bs[dst_off] = bx[src_off];
     }
@@ -2322,7 +2339,7 @@ namespace mag {
       reinterpret_cast<T *>(mag_tensor_data_ptr_mut(self)),
       reinterpret_cast<const T *>(mag_tensor_data_ptr(src)),
       reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-      *self, *src, *index
+      *self, *src, *index, index_fault_of(self)
     );
   }
 
@@ -2359,7 +2376,8 @@ namespace mag {
     const int64_t *__restrict__ bi,
     mag_tensor_t self,
     mag_tensor_t src,
-    mag_tensor_t index
+    mag_tensor_t index,
+    index_fault *fault
   ) {
     int64_t row = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(blockIdx.x) + threadIdx.x;
     int64_t step = static_cast<int64_t>(blockDim.x)*static_cast<int64_t>(gridDim.x);
@@ -2374,7 +2392,7 @@ namespace mag {
       for (int64_t d=0; d < rank; ++d) { if (d == axis) continue; idx_row += c[d]*index.meta.coords.strides[d]; src_row += c[d]*src.meta.coords.strides[d]; dst_row += c[d]*self.meta.coords.strides[d]; }
       for (int64_t j=0; j < s_axis; ++j) {
         int64_t g = bi[idx_row + j*ist];
-        if (g < 0) g += self_ax;
+        if (!wrap_index(fault, MAG_OP_SCATTER_ADD, g, self_ax)) continue;
         int64_t dst_off = dst_row + g*rst;
         int64_t src_off = src_row + j*xst;
         if (is_int) {
@@ -2409,7 +2427,7 @@ namespace mag {
       reinterpret_cast<T *>(mag_tensor_data_ptr_mut(self)),
       reinterpret_cast<const T *>(mag_tensor_data_ptr(src)),
       reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(index)),
-      *self, *src, *index
+      *self, *src, *index, index_fault_of(self)
     );
   }
 

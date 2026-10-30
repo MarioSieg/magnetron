@@ -87,7 +87,7 @@ def test_manual_seed_is_reproducible() -> None:
 def test_deferred_kernel_error_is_raised() -> None:
     src = Tensor.full(10, fill_value=1.0)
     idx = Tensor([100], dtype=dtype.int64)
-    with pytest.raises(RuntimeError, match='gather'):
+    with pytest.raises(IndexError, match='gather'):  # Out of bounds kernel error
         g = src.gather(0, idx)  # Async: queued, the kernel error surfaces at the next sync point
         mag.sync()
         g.tolist()
@@ -214,7 +214,7 @@ def test_snapshot_writes_queued_results(tmp_path) -> None:
 def test_deferred_error_surfaces_on_item() -> None:
     src = Tensor.full(10, fill_value=1.0)
     idx = Tensor([1000], dtype=dtype.int64)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(IndexError):  # Out of bounds kernel errors raise IndexError, also when deferred
         src.gather(0, idx).sum().item()
     assert (src * 2).sum().item() == 20.0  # Device usable again
 
@@ -276,7 +276,7 @@ def test_launch_blocking_raises_at_call_site() -> None:
         idx = Tensor([100], dtype=dtype.int64)
         try:
             src.gather(0, idx)
-        except RuntimeError:
+        except IndexError:
             print('raised')
     """
     r = _run(code, MAG_CPU_ASYNC='1', MAG_LAUNCH_BLOCKING='1')
@@ -346,7 +346,7 @@ def test_scalar_ops_all_dtypes(dt: dtype.DType) -> None:
     assert (x * 0.5 if dt in (dtype.float32, dtype.float16, dtype.bfloat16) else x * 2).tolist() == [1.5 if dt in (dtype.float32, dtype.float16, dtype.bfloat16) else 6] * 8
 
 
-def test_tensor_index_host_fast_path() -> None:
+def test_tensor_index_does_not_read_indices_on_host() -> None:
     table = Tensor.arange(0, 40, dtype=dtype.float32).reshape(10, 4)
     busy = Tensor.zeros(512, 512)
     for _ in range(50):
@@ -354,21 +354,29 @@ def test_tensor_index_host_fast_path() -> None:
     assert table[Tensor([[3]], dtype=dtype.int64)].tolist() == [[[12.0, 13.0, 14.0, 15.0]]]
     assert table[Tensor([-1, 0], dtype=dtype.int64)].tolist() == [[36.0, 37.0, 38.0, 39.0], [0.0, 1.0, 2.0, 3.0]]
     assert table[Tensor([2], dtype=dtype.int64), Tensor([-1], dtype=dtype.int64)].tolist() == [11.0]
+    assert busy.sum().item() == 50.0 * busy.numel
+
+
+def test_tensor_index_out_of_bounds_raised_by_kernel() -> None:
+    table = Tensor.arange(0, 40, dtype=dtype.float32).reshape(10, 4)
+    with pytest.raises(IndexError):  # Async: raised when the result is read
+        table[Tensor([10], dtype=dtype.int64)].tolist()
     with pytest.raises(IndexError):
-        table[Tensor([10], dtype=dtype.int64)]
+        table[Tensor([-11], dtype=dtype.int64)].tolist()
     with pytest.raises(IndexError):
-        table[Tensor([-11], dtype=dtype.int64)]
+        table[Tensor([0], dtype=dtype.int64), Tensor([4], dtype=dtype.int64)].tolist()  # In range once linearized, still out of bounds per axis
     with pytest.raises(IndexError):
-        table[Tensor([0], dtype=dtype.int64), Tensor([4], dtype=dtype.int64)]  # In range once linearized, still out of bounds per axis
+        table[Tensor([0], dtype=dtype.int64), Tensor([-5], dtype=dtype.int64)].tolist()
+    assert table[Tensor([1], dtype=dtype.int64)].tolist() == [[4.0, 5.0, 6.0, 7.0]]  # Error was taken, device usable again
 
 
 def test_tensor_index_computed_on_device() -> None:
     table = Tensor.arange(0, 40, dtype=dtype.float32).reshape(10, 4)
-    idx = Tensor([1, 2], dtype=dtype.int64) * 3  # Still being computed: bounds are checked by device ops
+    idx = Tensor([1, 2], dtype=dtype.int64) * 3  # Still being computed
     assert table[idx].tolist() == [[12.0, 13.0, 14.0, 15.0], [24.0, 25.0, 26.0, 27.0]]
     with pytest.raises(IndexError):
-        table[Tensor([4], dtype=dtype.int64) * 3]
-    assert table[Tensor([-1], dtype=dtype.int32)].tolist() == [[36.0, 37.0, 38.0, 39.0]]  # Cast index: device path
+        table[Tensor([4], dtype=dtype.int64) * 3].tolist()
+    assert table[Tensor([-1], dtype=dtype.int32)].tolist() == [[36.0, 37.0, 38.0, 39.0]]  # Cast index
 
 
 def test_tensor_index_setitem() -> None:
@@ -377,6 +385,28 @@ def test_tensor_index_setitem() -> None:
     assert t.sum(dim=1).tolist() == [21.0, 0.0, 0.0, 0.0, 21.0]
     with pytest.raises(IndexError):
         t[Tensor([5], dtype=dtype.int64)] = 1.0
+        t.sync()
+    with pytest.raises(IndexError):
+        t[Tensor([0], dtype=dtype.int64), Tensor([3], dtype=dtype.int64)] = 1.0  # Valid flat offset, out of bounds on axis 1
+        t.sync()
+    assert t.sum(dim=1).tolist() == [21.0, 0.0, 0.0, 0.0, 21.0]  # Rejected writes left t unchanged
+
+
+@pytest.mark.parametrize('op', ['gather', 'scatter', 'scatter_add', 'index_add', 'one_hot'])
+def test_index_kernels_bounds_checked(op: str) -> None:
+    x = Tensor.arange(0, 12, dtype=dtype.float32).reshape(3, 4)
+    bad = Tensor([[0, 4]], dtype=dtype.int64)  # 4 is out of bounds for dim 1
+    with pytest.raises(IndexError):
+        if op == 'gather':
+            x.gather(1, bad).tolist()
+        elif op == 'scatter':
+            x.scatter(1, bad, Tensor.ones(1, 2)).tolist()
+        elif op == 'scatter_add':
+            x.scatter_add(1, bad, Tensor.ones(1, 2)).tolist()
+        elif op == 'index_add':
+            x.index_add(1, Tensor([0, 4], dtype=dtype.int64), Tensor.ones(3, 2)).tolist()
+        else:
+            Tensor([0, 3], dtype=dtype.int64).one_hot(3).tolist()
 
 
 @pytest.mark.parametrize('e', [0, 1, 2, 3, 4, 5, 0.5, -0.5, -1, 2.5, -3.0, True])

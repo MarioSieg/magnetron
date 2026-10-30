@@ -242,8 +242,8 @@ def test_advanced_getitem_rank4_placement_like_torch(device: str) -> None:
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_advanced_getitem_errors_like_torch(device: str) -> None:
     x = Tensor.arange(24, device=device).reshape(2, 3, 4)
-    with pytest.raises(IndexError):
-        x[_i64([0], device), _i64([3], device)]  # Out of bounds on axis 1 must not wrap into the next row
+    with pytest.raises(IndexError):  # Raised by the kernel: on async devices when the result is read
+        x[_i64([0], device), _i64([3], device)].tolist()  # Out of bounds on axis 1 must not wrap into the next row
     with pytest.raises(IndexError):
         x[_i64([0, 1], device), _i64([0, 1, 2], device)]  # Not broadcastable
     with pytest.raises(IndexError):
@@ -310,8 +310,10 @@ def test_advanced_setitem_writes_through_views_like_torch(device: str) -> None:
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_advanced_setitem_out_of_bounds_raises(device: str) -> None:
     x = Tensor.arange(24, device=device).reshape(2, 3, 4)
-    with pytest.raises(IndexError):
+    with pytest.raises(IndexError):  # Raised by the scatter kernel: on async devices at the next sync
         x[_i64([5], device)] = 0
+        x.sync()
     with pytest.raises(IndexError):
         x[_i64([0], device), _i64([3], device)] = 0
+        x.sync()
     assert x.tolist() == torch.arange(24).reshape(2, 3, 4).tolist()

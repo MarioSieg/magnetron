@@ -45,7 +45,7 @@ namespace mag {
           stream
         ), "failed to enqueue async H2D copy");
         mag_cu_rt_check(err, cudaStreamSynchronize(stream), "failed to synchronize stream after H2D copy");
-        return MAG_OK;
+        return phys_device.check_index_fault(err);
       } break;
       case MAG_TRANSFER_DIR_D2H: {
         int ordinal = static_cast<int>(dvc->id.device_ordinal);
@@ -67,7 +67,7 @@ namespace mag {
           stream
         ), "failed to enqueue async D2H copy");
         mag_cu_rt_check(err, cudaStreamSynchronize(stream), "failed to synchronize stream after D2H copy");
-        return MAG_OK;
+        return phys_device.check_index_fault(err);
       } break;
       case MAG_TRANSFER_DIR_D2D: {
         if (mag_unlikely((src->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE) || (dst->storage->flags & MAG_STORAGE_FLAG_HOST_VISIBLE)))

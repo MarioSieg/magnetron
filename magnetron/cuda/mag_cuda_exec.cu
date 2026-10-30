@@ -170,8 +170,10 @@ namespace mag {
       return stat;
     mag_cu_rt_check(err, cudaGetLastError(), "kernel execution failed for operator");
     static const bool launch_blocking = mag_envcfg_launch_blocking();
-    if (launch_blocking)
+    if (launch_blocking) {
       mag_cu_rt_check(err, cudaStreamSynchronize(stream), "failed to synchronize stream");
+      return phys_device.check_index_fault(err);
+    }
     return MAG_OK;
   }
 
@@ -181,7 +183,7 @@ namespace mag {
     if (!stream) return MAG_OK;
     mag_cu_rt_check(err, cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)), "failed to set active device");
     mag_cu_rt_check(err, cudaStreamSynchronize(stream), "failed to synchronize stream");
-    return MAG_OK;
+    return phys_device.check_index_fault(err); /* Index errors of queued kernels surface here, like deferred errors of the async CPU stream */
   }
 
   mag_status_t wait_device(mag_error_t *err, mag_device_t *dvc, mag_sync_barrier_seq_t) {

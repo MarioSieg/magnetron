@@ -265,6 +265,7 @@ namespace mag::bindings {
   inline void throw_if_error(mag_status_t st, const mag_error_t &err) {
     if (mag_likely(st == MAG_OK)) return;
     std::string msg = format_error_msg(err);
+    if (err.code == MAG_ERR_BOUNDS) throw nb::index_error(msg.c_str());
     throw std::runtime_error {msg.c_str()};
   }
 
