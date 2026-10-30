@@ -161,10 +161,10 @@ mag_status_t MAG_HOTPROC mag_dispatch(
     .num_out = num_out,
     .params = params
   };
-  bool empty = num_out > 0 && op != MAG_OP_EMBEDDING && op != MAG_OP_GATHER && op != MAG_OP_SCATTER && op != MAG_OP_SCATTER_ADD && op != MAG_OP_INDEX_ADD;
-  for (uint32_t i=0; i < num_out && empty; ++i) empty = !out[i]->meta.numel;
+  bool is_nop = num_out > 0 && !(meta->flags&MAG_OP_FLAG_VALIDATES_INPUT);
+  for (uint32_t i=0; i < num_out && is_nop; ++i) is_nop = !out[i]->meta.numel;
   mag_status_t (*submit)(mag_error_t *, mag_device_t *, const mag_command_t *) = device->submit;
-  mag_status_t stat = empty ? MAG_OK : (*submit)(err, device, &cmd);
+  mag_status_t stat = mag_unlikely(is_nop) ? MAG_OK : (*submit)(err, device, &cmd);
   if (inplace)
     for (uint32_t i=0; i < num_out; ++i)
       mag_bump_version(out[i]);
