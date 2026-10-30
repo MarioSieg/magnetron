@@ -11,8 +11,6 @@
 
 #include "mag_backend.h"
 
-#include <cpuid.h>
-
 #include "mag_dylib.h"
 #include "mag_os.h"
 #include "mag_alloc.h"
