@@ -16,22 +16,29 @@
 #include <core/mag_context.h>
 #include <core/mag_tensor.h>
 
-#define MAG_MATMUL_FLOPS_PER_WORKER (1<<21)     /* Flops a GEMM worker must get before adding another one */
-#define MAG_MATMUL_BYTES_PER_WORKER (512<<10)   /* Weight bytes a bandwidth bound matmul worker must stream before adding another one */
-#define MAG_MATMUL_THIN_MAX_M 32
-
-/*
-** GEMM flops for which workers use SMT (2 threads per phys core).
-** SMT siblings only pay off for really large GEMMs for other stuff like elementwise
-** or reductions it actually regresses performance at least on the benchmarked machine (TR 9960x, M5 Pro).
-*/
+#define MAG_MATMUL_FLOPS_PER_WORKER (1<<21)           /* Flops a worker must get before adding another one */
+#define MAG_MATMUL_BYTES_PER_WORKER (512<<10)         /* Bytes a worker must stream from DRAM before adding another one */
+#define MAG_MATMUL_CACHED_BYTES_PER_WORKER (64<<10)   /* Bytes a worker must read from cache before adding another one */
 #define MAG_MATMUL_SMT_FLOPS_THRESHOLD 6e10
 
-static uint32_t mag_cpu_tune_bandwidth_workers(const mag_tensor_t *x, const mag_tensor_t *y, uint32_t allocated_workers) {
-  const mag_tensor_t *big = x->meta.numel > y->meta.numel ? x : y;
-  int64_t bytes = big->meta.numel*(int64_t)mag_type_trait(big->meta.dtype)->size;
-  int64_t workers = bytes/MAG_MATMUL_BYTES_PER_WORKER;
-  return (uint32_t)mag_vmin((int64_t)allocated_workers, mag_vmax(1, workers));
+static uint32_t mag_cpu_matmul_worker_cap(const mag_command_t *cmd, const mag_cpu_device_t *cpu_dvc) {
+  const mag_tensor_t *x = cmd->in[0];
+  double flops = 2.0*(double)cmd->out[0]->meta.numel*(double)x->meta.coords.shape[x->meta.coords.rank-1];
+  return flops >= MAG_MATMUL_SMT_FLOPS_THRESHOLD ? cpu_dvc->num_allocated_workers : cpu_dvc->num_core_workers;
+}
+
+static uint32_t mag_cpu_matmul_static_workers(const mag_command_t *cmd, const mag_cpu_device_t *cpu_dvc) {
+  const mag_tensor_t *x = cmd->in[0];
+  const mag_tensor_t *y = cmd->in[1];
+  const mag_tensor_t *r = cmd->out[0];
+  double flops = 2.0*(double)r->meta.numel*(double)x->meta.coords.shape[x->meta.coords.rank-1];
+  double bytes = (double)(mag_tensor_numbytes(x) + mag_tensor_numbytes(y) + mag_tensor_numbytes(r));
+  const mag_machine_info_t *machine = &cpu_dvc->ctx->machine;
+  double core_cache = (double)(machine->cpu_l2_size+machine->cpu_l3_size);
+  double quota = bytes <= core_cache ? MAG_MATMUL_CACHED_BYTES_PER_WORKER : MAG_MATMUL_BYTES_PER_WORKER;
+  double workers = mag_vmax(flops/(double)MAG_MATMUL_FLOPS_PER_WORKER, bytes/quota);
+  uint32_t cap = mag_cpu_matmul_worker_cap(cmd, cpu_dvc);
+  return workers >= (double)cap ? cap : (uint32_t)mag_vmax(1.0, workers);
 }
 
 mag_op_thread_scaling_info mag_cpu_get_op_thread_scaling_info(mag_opcode_t op) {
@@ -164,34 +171,17 @@ uint32_t mag_cpu_tune_eager_intra_op_worker_count(const mag_command_t *cmd, mag_
   uint32_t wk_alloced = cpu_dvc->num_core_workers;
   const mag_op_traits_t *meta = mag_op_trait(op);
   mag_op_thread_scaling_info info = mag_cpu_get_op_thread_scaling_info(op);
-  if (wk_alloced <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel_lim <= info.thread_treshold)  /* Use a single worker (main thread). */
+  if (wk_alloced <= 1 || !(meta->flags & MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING) || numel_lim <= info.thread_treshold)
     return 1;
-  if (op == MAG_OP_MATMUL) { /* Special case for matmul */
+  if (op == MAG_OP_MATMUL) {
     const mag_tensor_t *x = cmd->in[0];
     const mag_tensor_t *y = cmd->in[1];
     if (mag_accel_matmul_supported(x, y, cmd->out[0])) return 1;
-    mag_matmul_type_t mat_tt = mag_matmul_type_detect(x, y);
-    switch (mat_tt) {
-      case MAG_MATMUL_TYPE_DOT:
-      case MAG_MATMUL_TYPE_BMM_DOT: return 1;
-      case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
-      case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
-      case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
-      case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
-        return mag_cpu_tune_bandwidth_workers(x, y, wk_alloced);
-      default: { /* GEMM/BMM: spread over workers only once the flops amortize the barrier and packing. */
-        int64_t K = x->meta.coords.shape[x->meta.coords.rank-1];
-        if (x->meta.coords.rank >= 2 && x->meta.coords.shape[x->meta.coords.rank-2] <= MAG_MATMUL_THIN_MAX_M)
-          return mag_cpu_tune_bandwidth_workers(x, y, wk_alloced);
-        double flops = 2.0*(double)cmd->out[0]->meta.numel*(double)K;
-        int64_t workers = (int64_t)(flops/(double)MAG_MATMUL_FLOPS_PER_WORKER);
-        uint32_t wk_cap = flops >= MAG_MATMUL_SMT_FLOPS_THRESHOLD ? cpu_dvc->num_allocated_workers : wk_alloced;
-        return (uint32_t)mag_vmin((int64_t)wk_cap, mag_vmax(1, workers));
-      }
-    }
+    if (mag_matmul_type_detect(x, y) == MAG_MATMUL_TYPE_DOT) return 1;
+    return mag_cpu_matmul_static_workers(cmd, cpu_dvc);
   }
   numel_lim -= info.thread_treshold;
-  uint32_t workers = (uint32_t)ceil(info.growth * log2((double)numel_lim)); /* Logarithmic scaling */
+  uint32_t workers = (uint32_t)ceil(info.growth*log2((double)numel_lim));
   workers = mag_vmin(wk_alloced, mag_vmax(1, workers));
   return workers;
 }
