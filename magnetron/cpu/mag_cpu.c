@@ -343,18 +343,21 @@ static uint32_t mag_cpu_usable_cpus(uint32_t online) {
 
 static mag_status_t mag_cpu_init(mag_error_t *err, mag_backend_t *self, mag_context_t *ctx) {
   mag_assert2(!self->impl);
-  uint32_t nt = ctx->machine.cpu_virtual_cores;
-#ifdef __APPLE__
-  if (ctx->machine.cpu_perf_virtual_cores) nt = ctx->machine.cpu_perf_virtual_cores;
-#endif
+  const mag_machine_info_t *m = &ctx->machine;
+  uint32_t usable = mag_vmax(1, m->cpu_virtual_cores);
 #ifdef __gnu_linux__
-  nt = mag_cpu_usable_cpus(nt); /* Respect taskset/cpuset and container CPU quotas, not just online CPUs */
+  usable = mag_cpu_usable_cpus(usable);
 #endif
-  int async_cfg = mag_envcfg_cpu_async(); /* Overridable via MAG_CPU_ASYNC, auto = async when there are workers to feed */
+  uint32_t nt = m->cpu_perf_virtual_cores ? mag_vmin(usable, m->cpu_perf_virtual_cores) : usable; /* Skip E-cores*/
+  int async_cfg = mag_envcfg_cpu_async();
   bool async = async_cfg == 1 || (async_cfg == -1 && nt > MAG_CPU_ASYNC_RESERVED_CPUS);
-  if (async && !mag_envcfg_cpu_threads(0)) /* The submitting thread no longer computes: leave it a CPU, plus one so OS noise doesn't preempt a spinning worker. */
-    nt = nt > MAG_CPU_ASYNC_RESERVED_CPUS ? nt-MAG_CPU_ASYNC_RESERVED_CPUS : 1;
-  nt = mag_envcfg_cpu_threads(nt); /* Overridable via MAG_CPU_THREADS */
+  if (!mag_envcfg_cpu_threads(0)) {
+    if (async)
+      nt = nt > MAG_CPU_ASYNC_RESERVED_CPUS ? nt-MAG_CPU_ASYNC_RESERVED_CPUS : 1;
+    else if (nt >= usable && m->cpu_physical_cores >= m->cpu_virtual_cores && nt > MAG_CPU_SYNC_RESERVE_MIN_CPUS)
+      nt -= MAG_CPU_SYNC_RESERVED_CPUS;
+  }
+  nt = mag_envcfg_cpu_threads(nt);
   nt = mag_vmax(1, nt);
   mag_log_info("CPU backend: %u worker threads%s", nt, async ? " (async, incl. executor)" : "");
   ctx->telemetry.cpu_workers = nt;

@@ -24,8 +24,10 @@ extern "C" {
 #endif
 
 #define MAG_CPU_BACKEND_VERSION mag_ver_encode(0, 1, 0)
-#define MAG_CPU_INLINE_MAX_NUMEL 8192   /* Async mode: single threaded commands with numel <= this run on the submitting thread when the stream is idle as they complete small */
-#define MAG_CPU_ASYNC_RESERVED_CPUS 2   /* Logical CPUs left free in async mode */
+#define MAG_CPU_INLINE_MAX_NUMEL 8192
+#define MAG_CPU_ASYNC_RESERVED_CPUS 2
+#define MAG_CPU_SYNC_RESERVED_CPUS 1
+#define MAG_CPU_SYNC_RESERVE_MIN_CPUS 4
 
 mag_backend_decl_interface();
 

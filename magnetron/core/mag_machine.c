@@ -295,6 +295,55 @@ static void mag_machine_probe_cpu_name(char (*out_cpu_name)[128]) { /* Get CPU n
 #endif
 }
 
+#ifdef __APPLE__
+static uint32_t mag_machine_probe_apple_throughput_cpus(void) {
+  uint8_t tmp[256];
+  size_t len;
+  if (!mag_sysctl_key(&tmp, &len, "hw.nperflevels") || !len) return 0;
+  uint32_t levels = (uint32_t)mag_sysctl_unpack_int(&tmp, len);
+  if (levels <= 1) return 0;
+  uint32_t fast = 0;
+  bool ecores = false;
+  for (uint32_t i=0; i < levels; ++i) {
+    char key[64];
+    snprintf(key, sizeof(key), "hw.perflevel%u.logicalcpu", i);
+    if (!mag_sysctl_key(&tmp, &len, key) || !len) return 0;
+    uint32_t cpus = (uint32_t)mag_sysctl_unpack_int(&tmp, len);
+    snprintf(key, sizeof(key), "hw.perflevel%u.name", i);
+    bool named = mag_sysctl_key(&tmp, &len, key) && len && *tmp;
+    bool efficiency = named ? !strcmp((const char *)tmp, "Efficiency") : i > 0;
+    if (efficiency) ecores = true;
+    else fast += cpus;
+  }
+  return ecores ? fast : 0;
+}
+#elif defined(__linux__)
+static uint32_t mag_machine_count_cpulist(const char *path) {
+  FILE *f = mag_fopen(path, "r");
+  if (!f) return 0;
+  char buf[1024];
+  bool ok = fgets(buf, sizeof(buf), f) != NULL;
+  fclose(f);
+  if (!ok) return 0;
+  uint32_t n = 0;
+  for (char *p = buf; *p && *p != '\n';) {
+    char *end;
+    unsigned long lo = strtoul(p, &end, 10);
+    if (end == p) return 0;
+    unsigned long hi = lo;
+    p = end;
+    if (*p == '-') {
+      hi = strtoul(p+1, &end, 10);
+      if (end == p+1 || hi < lo) return 0;
+      p = end;
+    }
+    n += (uint32_t)(hi-lo+1);
+    if (*p == ',') ++p;
+  }
+  return n;
+}
+#endif
+
 static void mag_machine_probe_cpu_cores(uint32_t *out_virtual, uint32_t *out_perf_virtual, uint32_t *out_physical, uint32_t *out_sockets) { /* Get CPU virtual (logical) cores. */
   *out_perf_virtual = 0;
 #ifdef _WIN32
@@ -328,8 +377,7 @@ end:
   size_t len;
   if (mag_likely(mag_sysctl_key(&tmp, &len, "machdep.cpu.thread_count") && len))
     *out_virtual = mag_sysctl_unpack_int(&tmp, len);
-  if (mag_sysctl_key(&tmp, &len, "hw.perflevel1.logicalcpu") && len && mag_sysctl_unpack_int(&tmp, len) && mag_sysctl_key(&tmp, &len, "hw.perflevel0.logicalcpu") && len)
-    *out_perf_virtual = mag_sysctl_unpack_int(&tmp, len);
+  *out_perf_virtual = mag_machine_probe_apple_throughput_cpus();
   if (mag_likely(mag_sysctl_key(&tmp, &len, "machdep.cpu.core_count") && len))
     *out_physical = mag_sysctl_unpack_int(&tmp, len);
   if (mag_likely(mag_sysctl_key(&tmp, &len, "hw.packages") && len))
@@ -403,6 +451,10 @@ end:
   *out_physical = mag_vmax(1, cpu_count);
   *out_virtual = nprocs > 0 ? (uint32_t)nprocs : *out_physical;
   *out_sockets = mag_vmax(1, package_count);
+#ifdef __linux__
+  if (mag_machine_count_cpulist("/sys/devices/cpu_atom/cpus")) /* Intel hybrid (Alder Lake+): the kernel exposes one PMU per core type */
+    *out_perf_virtual = mag_machine_count_cpulist("/sys/devices/cpu_core/cpus");
+#endif
 #endif
 }
 
