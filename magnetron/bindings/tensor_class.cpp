@@ -53,6 +53,12 @@ namespace mag::bindings {
     return ndarray_to_obj(nb::ndarray<nb::numpy, uint8_t>(base, static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<bool>()));
   }
 
+  static void expose_raw_storage_mem(const tensor_wrapper &self) {
+    mag_error_t err {};
+    if (mag_tensor_is_host(*self)) throw_if_error(invoke_no_gil([&] { return mag_tensor_mark_host_aliased(&err, *self); }), err);
+    else throw_if_error(invoke_no_gil([&] { return mag_tensor_sync(&err, *self); }), err);
+  }
+
   [[nodiscard]] static nb::object tensor_from_numpy(const tensor_wrapper &self) {
     mag_error_t err {};
     mag_device_id_t cpu = mag_device(CPU, 0);
@@ -64,6 +70,7 @@ namespace mag::bindings {
       host = tensor_wrapper{host_ptr};
       tensor = host_ptr;
     }
+    throw_if_error(invoke_no_gil([&] { return mag_tensor_mark_host_aliased(&err, tensor); }), err); /* The ndarray shares the storage */
     int64_t rank = mag_tensor_rank(tensor);
     const int64_t *p_shape = mag_tensor_shape_ptr(tensor);
     const int64_t *p_strides = mag_tensor_strides_ptr(tensor);
@@ -173,17 +180,26 @@ namespace mag::bindings {
       return fmt;
     }, "Device where the tensor is stored (e.g. 'cpu', 'cuda:0').")
     .def_prop_ro("data_ptr", [](const tensor_wrapper &self) -> uintptr_t {
+      expose_raw_storage_mem(self);
       return mag_tensor_data_ptr(*self);
-    }, "Raw pointer to the first element (read-only).")
+    }, "Raw pointer to the first element (read-only). Awaits pending async work.")
     .def_prop_ro("data_ptr_mut", [](const tensor_wrapper &self) -> uintptr_t {
+      expose_raw_storage_mem(self);
       return mag_tensor_data_ptr_mut(*self);
-    }, "Raw pointer to the first element (mutable).")
+    }, "Raw pointer to the first element (mutable). Awaits pending async work.")
     .def_prop_ro("data_storage_ptr", [](const tensor_wrapper &self) -> uintptr_t {
+      expose_raw_storage_mem(self);
        return mag_tensor_data_storage_ptr(*self);
-    }, "Pointer to the underlying storage block.")
+    }, "Pointer to the underlying storage block. Awaits pending async work.")
     .def_prop_ro("data_storage_ptr_mut", [](const tensor_wrapper &self) -> uintptr_t {
+      expose_raw_storage_mem(self);
        return mag_tensor_data_storage_ptr_mut(*self);
-    }, "Mutable pointer to the underlying storage block.")
+    }, "Mutable pointer to the underlying storage block. Awaits pending async work.")
+    .def("sync", [](const tensor_wrapper &self) -> const tensor_wrapper & {
+       mag_error_t err {};
+       throw_if_error(invoke_no_gil([&] { return mag_tensor_sync(&err, *self); }), err);
+       return self;
+     }, nb::rv_policy::reference_internal, "Wait for all pending async work on this tensor to complete.")
     .def("can_broadcast", [](const tensor_wrapper &self, const tensor_wrapper &rhs) -> bool {
        return mag_tensor_can_broadcast(*self, *rhs);
     }, "rhs"_a, "Return True if this tensor can broadcast with rhs.")
@@ -229,7 +245,7 @@ namespace mag::bindings {
         throw nb::value_error("Tensor must have exactly one element to retrieve an item");
       mag_scalar_t s {};
       mag_error_t err {};
-      throw_if_error(mag_tensor_item(&err, *self, &s), err);
+      throw_if_error(invoke_no_gil([&] { return mag_tensor_item(&err, *self, &s); }), err); /* May wait for the device */
       if (mag_scalar_is_float64(s)) return nb::float_(mag_scalar_as_float64(s));
       if (mag_scalar_is_int64(s)) return nb::int_(mag_scalar_as_int64(s));
       if (mag_scalar_is_uint64(s)) {
@@ -287,6 +303,7 @@ namespace mag::bindings {
         throw_if_error(mag_contiguous(&err, &contig, casted), err);
       }
       on_scope_exit defer_decref2 {[contig] { mag_tensor_decref(contig); }};
+      throw_if_error(invoke_no_gil([&] { return mag_tensor_sync(&err, contig); }), err);
       const auto *ptr = reinterpret_cast<const void *>(mag_tensor_data_ptr(contig));
       int64_t rank = mag_tensor_rank(contig);
       if (rank == 0) {
@@ -321,6 +338,7 @@ namespace mag::bindings {
       mag_tensor_t *contig = nullptr;
       throw_if_error(mag_contiguous(&err, &contig, host), err);
       on_scope_exit defer_contig {[contig] { mag_tensor_decref(contig); }};
+      throw_if_error(invoke_no_gil([&] { return mag_tensor_sync(&err, contig); }), err);
       const auto *p = reinterpret_cast<const char *>(mag_tensor_data_ptr(contig));
       return nb::bytes{p, mag_tensor_numbytes(contig)};
     },  "Copy the raw element bytes out, in row major and in this tensor's dtype.")

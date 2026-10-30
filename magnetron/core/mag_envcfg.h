@@ -18,13 +18,17 @@
 extern "C" {
 #endif
 
-#define MAG_ENV_LOG_LEVEL "MAG_LOG_LEVEL"                                /* Global log verbosity */
-#define MAG_ENV_CPU_SPECIALIZATION_LEVEL "MAG_CPU_SPECIALIZATION_LEVEL"  /* Pinned CPU specialization level */
-#define MAG_ENV_CPU_THREADS "MAG_CPU_THREADS"                            /* Number of CPU worker threads (default: all virtual cores) */
-#define MAG_ENV_NUMA_STRATEGY "MAG_NUMA_STRATEGY"                        /* NUMA thread pinning: disabled, distribute, isolate, numactl */
+#define MAG_ENV_LOG_LEVEL "MAG_LOG_LEVEL"                                 /* Global log verbosity */
+#define MAG_ENV_CPU_SPECIALIZATION_LEVEL "MAG_CPU_SPECIALIZATION_LEVEL"   /* Pinned CPU specialization level */
+#define MAG_ENV_CPU_THREADS "MAG_CPU_THREADS"                             /* Number of CPU worker threads (default: all virtual cores) */
+#define MAG_ENV_NUMA_STRATEGY "MAG_NUMA_STRATEGY"                         /* NUMA thread pinning: disabled, distribute, isolate, numactl */
 #define MAG_ENV_READAHEAD "MAG_READ_AHEAD"                                /* Mapped snapshot readahead engine: 0, 1, or auto (only when the file exceeds 3/4 of RAM) */
 #define MAG_ENV_READAHEAD_MB "MAG_READ_AHEAD_MB"                          /* Mapped snapshot readahead window in MiB, 0=off, */
 #define MAG_ENV_READAHEAD_RELEASE "MAG_READ_AHEAD_RELEASE"                /* Drop mapped snapshot pages after use: 0, 1, or auto*/
+#define MAG_ENV_CPU_ASYNC "MAG_CPU_ASYNC"                                 /* Execute CPU commands asynchronously on an executor thread: 0, 1, or auto (on when > 1 worker thread) */
+#define MAG_ENV_CPU_QUEUE_DEPTH "MAG_CPU_QUEUE_DEPTH"                     /* Async CPU command queue capacity (default: 1024) */
+#define MAG_ENV_CPU_QUEUE_MB "MAG_CPU_QUEUE_MB"                           /* Async CPU: max MiB of command outputs in flight before the host waits */
+#define MAG_ENV_LAUNCH_BLOCKING "MAG_LAUNCH_BLOCKING"                     /* Wait for every command to complete before returning, on all backends: 0 or 1 */
 
 extern MAG_COLDPROC MAG_EXPORT const char *mag_envcfg_raw(const char *name);
 extern MAG_COLDPROC MAG_EXPORT void mag_envcfg_apply_log_level(void);
@@ -40,9 +44,14 @@ extern MAG_COLDPROC MAG_EXPORT int mag_envcfg_numa_strategy(int fallback);
 extern MAG_COLDPROC MAG_EXPORT int mag_envcfg_readahead(void);
 extern MAG_COLDPROC MAG_EXPORT uint64_t mag_envcfg_readahead_mb(uint64_t fallback);
 extern MAG_COLDPROC MAG_EXPORT int mag_envcfg_readahead_release(void);
+extern MAG_COLDPROC MAG_EXPORT int mag_envcfg_cpu_async(void);
+extern MAG_COLDPROC MAG_EXPORT uint32_t mag_envcfg_cpu_queue_depth(uint32_t fallback);
+extern MAG_COLDPROC MAG_EXPORT uint64_t mag_envcfg_cpu_queue_mb(uint64_t fallback);
+extern MAG_COLDPROC MAG_EXPORT bool mag_envcfg_launch_blocking(void);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif
+

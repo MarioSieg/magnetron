@@ -146,7 +146,9 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   slab_ok &= mag_slab_init(&ctx->view_meta_slab, sizeof(mag_view_meta_t), __alignof(mag_view_meta_t), 0x1000);
   slab_ok &= mag_slab_init(&ctx->au_state_slab, sizeof(mag_au_state_t), __alignof(mag_au_state_t), 0x1000);
   slab_ok &= mag_slab_init(&ctx->au_state_op_params_slab, sizeof(mag_op_params_t), __alignof(mag_op_params_t), 0x1000);
+  slab_ok &= mag_slab_init(&ctx->cmd_params_slab, sizeof(mag_op_params_t), __alignof(mag_op_params_t), 0x400);
   if (mag_unlikely(!slab_ok)) {
+    mag_slab_destroy(&ctx->cmd_params_slab);
     mag_slab_destroy(&ctx->au_state_op_params_slab);
     mag_slab_destroy(&ctx->au_state_slab);
     mag_slab_destroy(&ctx->view_meta_slab);
@@ -165,6 +167,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
   /* Create compute backends and devices. On failure, err carries reason. */
   mag_status_t stat = mag_backend_registry_init(err, ctx, &ctx->backend_registry);
   if (mag_unlikely(mag_iserr(stat))) {
+    mag_slab_destroy(&ctx->cmd_params_slab);
     mag_slab_destroy(&ctx->au_state_op_params_slab);
     mag_slab_destroy(&ctx->au_state_slab);
     mag_slab_destroy(&ctx->view_meta_slab);
@@ -225,6 +228,9 @@ static void mag_fmt_duration(char *buf, size_t n, uint64_t ns) {
 }
 
 void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Destroy magnetron context. */
+  mag_error_t sync_err = {0};
+  if (mag_iserr(mag_ctx_sync(&sync_err, ctx))) /* Drain async queues before cleanly shutting down */
+    mag_log_error("context: async device reported an error during shutdown: %s", sync_err.message);
 #ifdef MAG_DEBUG
   mag_leak_detector_dump_results(ctx);  /* Provide detailed leak check info */
 #endif
@@ -244,7 +250,9 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     mag_slab_snapshot(&ctx->view_meta_slab, "view_meta"),
     mag_slab_snapshot(&ctx->au_state_slab, "au_state"),
     mag_slab_snapshot(&ctx->au_state_op_params_slab, "au_op_params"),
+    mag_slab_snapshot(&ctx->cmd_params_slab, "cmd_params"),
   };
+  mag_slab_destroy(&ctx->cmd_params_slab);
   mag_slab_destroy(&ctx->au_state_op_params_slab);
   mag_slab_destroy(&ctx->au_state_slab);
   mag_slab_destroy(&ctx->view_meta_slab);
@@ -258,6 +266,9 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
   int64_t backward_passes = mag_atomic64_load(&ctx->telemetry.backward_passes, MAG_MO_RELAXED);
   int64_t backward_nodes = mag_atomic64_load(&ctx->telemetry.backward_nodes_visited, MAG_MO_RELAXED);
   int64_t grads_materialized = mag_atomic64_load(&ctx->telemetry.grads_materialized, MAG_MO_RELAXED);
+  int64_t host_waits = mag_atomic64_load(&ctx->telemetry.host_waits, MAG_MO_RELAXED);
+  int64_t host_wait_ns = mag_atomic64_load(&ctx->telemetry.host_waits_ns, MAG_MO_RELAXED);
+  int64_t queue_full_stalls = mag_atomic64_load(&ctx->telemetry.queue_full_stalls, MAG_MO_RELAXED);
   uint32_t cpu_workers = ctx->telemetry.cpu_workers;
   memset(ctx, 255, sizeof(*ctx)); /* Poison context memory range. */
   (*mag_alloc)(ctx, 0, 0); /* Free ctx. */
@@ -293,6 +304,10 @@ void mag_ctx_destroy(mag_context_t *ctx, bool suppress_leak_detection) { /* Dest
     bwd_nodes_num, bwd_nodes_unit, nodes_per_pass,
     grads_num, grads_unit
   );
+  mag_log_info(
+   "runtime metrics: host waits on async devices: %" PRIi64 " (%.03f ms total), queue full stalls: %" PRIi64 ".",
+   host_waits, (double)host_wait_ns*1e-6, queue_full_stalls
+ );
   for (size_t i=0; i < sizeof(slabs)/sizeof(*slabs); ++i) {
     const mag_slab_stats_t *st = slabs+i;
     double cap_val, reuse = st->num_allocs ? 100.0*(double)st->num_freelist_hits/(double)st->num_allocs : 0.0;
@@ -367,4 +382,19 @@ bool mag_ctx_set_default_dtype(mag_context_t *ctx, mag_dtype_t type) { /* TODO: 
   }
   mag_tls_state.dtype = type;
   return true;
+}
+
+mag_status_t mag_ctx_sync(mag_error_t *err, mag_context_t *ctx) {
+  return mag_backend_registry_sync(err, ctx->backend_registry);
+}
+
+mag_status_t mag_device_sync(mag_error_t *err, mag_context_t *ctx, mag_device_id_t dvc_id) {
+  mag_backend_t *backend = NULL;
+  mag_device_t *device = NULL;
+  if (mag_unlikely(!mag_backend_registry_lookup_device_id(ctx->backend_registry, dvc_id, &backend, &device) || !device)) {
+    char name[32];
+    mag_device_id_to_str(dvc_id, &name);
+    return mag_set_error(err, MAG_ERR_PARAM, "sync: device '%s' is not available.", name);
+  }
+  return device->sync ? (*device->sync)(err, device) : MAG_OK;
 }

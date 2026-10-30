@@ -34,19 +34,25 @@ typedef enum mag_storage_flags_t {
   MAG_STORAGE_FLAG_NONE = 0,
   MAG_STORAGE_FLAG_BORROWED = 1<<0,       /* Storage memory is borrowed and must not be freed. */
   MAG_STORAGE_FLAG_ACCESS_W = 1<<1,       /* Write access. */
-  MAG_STORAGE_FLAG_HOST_VISIBLE = 1<<2    /* Storage is visible to host (CPU) and can be accessed directly. */
+  MAG_STORAGE_FLAG_HOST_VISIBLE = 1<<2,   /* Storage is visible to host (CPU) and can be accessed directly. */
+  MAG_STORAGE_FLAG_HOST_ALIASED = 1<<3,    /* Storage is host-aliased outside Magnetron (for example numpy array). */
 } mag_storage_flags_t;
+
+typedef uint64_t mag_sync_barrier_seq_t; /* Storage command sequence */
+#define MAG_SYNC_BARRIER_NONE 0
 
 /* Buffer interface on a compute device */
 typedef struct mag_storage_buffer_t mag_storage_buffer_t;
 struct mag_storage_buffer_t {
   MAG_RC_INJECT_HEADER;                   /* RC Control block must be first */
-  mag_context_t *ctx;
-  mag_device_t *device;         /* Device where the buffer is allocated on */
-  mag_storage_flags_t flags;    /* Storage buffer flags. */
-  uint32_t alignment;           /* Alignment of buffer. */
-  uintptr_t base;               /* Pointer to buffer on device. Might point to GPU or any other device memory. */
-  size_t size;                  /* Size of buffer in bytes. */
+  mag_context_t *ctx;                     /* Owning context */
+  mag_device_t *device;                   /* Device where the buffer is allocated on */
+  mag_storage_flags_t flags;              /* Storage buffer flags. */
+  uint32_t alignment;                     /* Alignment of buffer. */
+  uintptr_t base;                         /* Pointer to buffer on device. Might point to GPU or any other device memory. */
+  size_t size;                            /* Size of buffer in bytes. */
+  mag_sync_barrier_seq_t prev_write_seq;      /* Async devices: last cmd seq no writing this storage, MAG_SYNC_BARRIER_NONE if none, prod only */
+  mag_sync_barrier_seq_t prev_acc_seq;        /* Async devices: last cmd seq no reading or writing this storage, MAG_SYNC_BARRIER_NONE if none, prod only. */
   mag_alignas(MAG_CPU_BUF_INTRUSIVE_CAP) union {
     void *impl;                                             /* Backend specific storage buffer implementation, if any. */
     mag_alignas(MAG_CPU_BUF_INTRUSIVE_CAP) uint8_t intrusive_storage[MAG_CPU_BUF_INTRUSIVE_CAP]; /* (CPU only) Intrusive inline st */
@@ -65,20 +71,29 @@ typedef struct mag_command_t {
   const mag_op_params_t *params;
 } mag_command_t;
 
+typedef enum mag_device_flags_t {
+  MAG_DEVICE_FLAGS_NONE = 0,
+  MAG_DEVICE_FLAGS_IS_HOST = 1<<0,  /* Device is the host CPU. */
+  MAG_DEVICE_FLAGS_ASYNC = 1<<1,    /* Device executes commands asynchronously. */
+} mag_device_flags_t;
+
 /* Device interface to any compute backend device (CPU, GPU, TPU etc..) */
 struct mag_device_t {
-  void *impl;                                                             /* Backend specific device implementation, if any. */
-  mag_context_t *ctx;                                                     /* Owning context */
-  mag_device_id_t id;                                                     /* Device ID, (e.g. cuda:0, cpu, etc..) */
-  bool is_async;                                                          /* True if the device executes commands asynchronously. */
-  mag_status_t (*submit)(mag_error_t *err, mag_device_t *dvc, const mag_command_t *cmd);    /* Submit a command to the device for execution. */
-  mag_status_t (*alloc_storage)(mag_error_t *err, mag_device_t *dvc, mag_storage_buffer_t **out, size_t size);
-  void (*manual_seed)(mag_error_t *err, mag_device_t *dvc, uint64_t seed);
-  mag_status_t (*transfer)(mag_error_t *err, mag_device_t *dvc, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst);
-  char physical_device_name[256];                                         /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
+  void *impl;                                                                                                                   /* Backend specific device implementation, if any. */
+  mag_context_t *ctx;                                                                                                           /* Owning context */
+  mag_device_id_t id;                                                                                                           /* Device ID, (e.g. cuda:0, cpu, etc..) */
+  mag_device_flags_t flags;                                                                                                     /* Device flags. */
+  mag_status_t (*submit)(mag_error_t *err, mag_device_t *dvc, const mag_command_t *cmd);                                        /* Submit a command to the device for execution. */
+  mag_status_t (*alloc_storage)(mag_error_t *err, mag_device_t *dvc, mag_storage_buffer_t **out, size_t size);                  /* Allocate a storage buffer on the device. */
+  void (*manual_seed)(mag_error_t *err, mag_device_t *dvc, uint64_t seed);                                                      /* Manually seed the device's RNG. */
+  mag_status_t (*transfer)(mag_error_t *err, mag_device_t *dvc, mag_transfer_dir_t dir, mag_tensor_t *src, mag_tensor_t *dst);  /* Transfer data between host and device or between devices. */
+  mag_status_t (*sync)(mag_error_t *err, mag_device_t *dvc);                                                                    /* Wait for all commands to finish. */
+  mag_status_t (*materialization_barrier)(mag_error_t *err, mag_device_t *dvc, mag_sync_barrier_seq_t seq);                     /* Wait for command 'seq' to finish. */
+  bool (*barrier_query)(mag_device_t *dvc, mag_sync_barrier_seq_t seq);                                                         /* Non-blocking check if command 'seq' has finished. */
+  char physical_device_name[256];                                                                                               /* Physical device name, (e.g. "RTX 5080", "Threadripper 9980X") */
 };
 
-#define MAG_BACKEND_MODULE_ABI_VER 2 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */
+#define MAG_BACKEND_MODULE_ABI_VER 3 /* Changed if the mag_backend_t struct is changed in a non-compatible way. */
 typedef struct mag_backend_t mag_backend_t;
 struct mag_backend_t {
   mag_context_t *ctx;
@@ -131,7 +146,13 @@ extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_backend(mag_backend_re
 extern MAG_EXPORT bool mag_backend_registry_lookup_device_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
 extern MAG_EXPORT bool mag_backend_registry_best_device(mag_backend_registry_t *reg, mag_backend_type_t type, mag_backend_t **out_bck, mag_device_t **out_dvc);
 extern MAG_EXPORT void mag_backend_registry_manual_seed(mag_backend_registry_t *reg, uint64_t seed);
+extern MAG_EXPORT mag_status_t mag_backend_registry_sync(mag_error_t *err, mag_backend_registry_t *reg); /* Sync all devices of all loaded backends - basicall mag_ctx_sync() */
 extern MAG_EXPORT mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registry_t *reg);
+
+/* Async storage barriers */
+extern MAG_EXPORT mag_status_t mag_sto_sync_barrier_raw(mag_error_t *err, mag_storage_buffer_t *sto);      /* Read barrier */
+extern MAG_EXPORT mag_status_t mag_sto_sync_barrier_war_waw(mag_error_t *err, mag_storage_buffer_t *sto);  /* Write barrier */
+extern MAG_EXPORT bool mag_sto_sync_barrier_raw_query(const mag_storage_buffer_t *sto); /* Non-blocking check if read barrier is reached */
 
 #ifdef __cplusplus
 }

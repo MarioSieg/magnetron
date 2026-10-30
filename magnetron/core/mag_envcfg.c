@@ -40,7 +40,7 @@ uint32_t mag_envcfg_cpu_threads(uint32_t fallback) {
   if (!v) return fallback;
   char *end = NULL;
   unsigned long n = strtoul(v, &end, 10);
-  if (end == v || *end || n < 1 || n > 0xffffu) {
+  if (mag_unlikely(end == v || *end || n < 1 || n > 0xffffu)) {
     mag_log_error("Invalid " MAG_ENV_CPU_THREADS " value '%s' (expected int >= 0)", v);
     return fallback;
   }
@@ -52,8 +52,8 @@ uint64_t mag_envcfg_readahead_mb(uint64_t fallback) {
   if (!v) return fallback;
   char *end = NULL;
   unsigned long long n = strtoull(v, &end, 10);
-  if (end == v || *end || n > 0x100000ull) {
-    mag_log_error("Invalid " MAG_ENV_READAHEAD_MB " value '%s' (expected int in [0, 1048576])", v);
+  if (mag_unlikely(end == v || *end || n > 0x100000ull)) {
+    mag_log_error("Invalid " MAG_ENV_READAHEAD_MB " value '%s' (expected int in [0, 0x100000])", v);
     return fallback;
   }
   return n;
@@ -76,6 +76,38 @@ int mag_envcfg_readahead_release(void) {
   return mag_envcfg_tristate(MAG_ENV_READAHEAD_RELEASE);
 }
 
+int mag_envcfg_cpu_async(void) {
+  return mag_envcfg_tristate(MAG_ENV_CPU_ASYNC);
+}
+
+uint32_t mag_envcfg_cpu_queue_depth(uint32_t fallback) {
+  const char *v = mag_envcfg_raw(MAG_ENV_CPU_QUEUE_DEPTH);
+  if (!v) return fallback;
+  char *end = NULL;
+  unsigned long n = strtoul(v, &end, 10);
+  if (mag_unlikely(end == v || *end || n < 1 || n > 0x100000ul)) {
+    mag_log_error("Invalid " MAG_ENV_CPU_QUEUE_DEPTH " value '%s' (expected int in [1, 0x100000])", v);
+    return fallback;
+  }
+  return (uint32_t)n;
+}
+
+uint64_t mag_envcfg_cpu_queue_mb(uint64_t fallback) {
+  const char *v = mag_envcfg_raw(MAG_ENV_CPU_QUEUE_MB);
+  if (!v) return fallback;
+  char *end = NULL;
+  unsigned long long n = strtoull(v, &end, 10);
+  if (mag_unlikely(end == v || *end || n < 1 || n > 0x100000ull)) {
+    mag_log_error("Invalid " MAG_ENV_CPU_QUEUE_MB " value '%s' (expected int in [1, 0x100000])", v);
+    return fallback;
+  }
+  return n;
+}
+
+bool mag_envcfg_launch_blocking(void) {
+  return mag_envcfg_tristate(MAG_ENV_LAUNCH_BLOCKING) == 1;
+}
+
 int mag_envcfg_numa_strategy(int fallback) {
   const char *v = mag_envcfg_raw(MAG_ENV_NUMA_STRATEGY);
   if (!v) return fallback;
@@ -86,3 +118,4 @@ int mag_envcfg_numa_strategy(int fallback) {
   mag_log_error("Invalid " MAG_ENV_NUMA_STRATEGY " value '%s' (valid: disabled, distribute, isolate, numactl)", v);
   return fallback;
 }
+

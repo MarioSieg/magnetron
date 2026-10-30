@@ -133,6 +133,8 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
   int64_t h = contig->meta.coords.shape[1];
   int64_t w = contig->meta.coords.shape[2];
 
+  stat = mag_sto_sync_barrier_raw(err, contig->storage); /* Sync before reading */
+  if (mag_iserr(stat)) goto cleanup;
   const uint8_t *src = (const uint8_t *)mag_tensor_data_ptr(contig);
   pixels = (*mag_try_alloc)(NULL, w*h*c, 0);
   if (mag_unlikely(!pixels)) {

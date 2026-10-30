@@ -25,7 +25,7 @@ static bool mag_worker_await_work(mag_worker_t *worker, mag_thread_pool_t *pool)
   return !mag_atomic32_load(&pool->interrupt, MAG_MO_ACQUIRE);
 }
 
-static mag_dtype_t mag_command_dispatch_dtype(const mag_command_t *cmd) {
+mag_dtype_t mag_command_dispatch_dtype(const mag_command_t *cmd) {
   switch (cmd->op) {
     case MAG_OP_MASKED_FILL:
     case MAG_OP_BINCOUNT:

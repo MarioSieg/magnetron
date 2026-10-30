@@ -49,8 +49,8 @@ typedef struct mag_tensor_meta_t {
   mag_device_t *device;         /* Device where the tensor is allocated. */
   int64_t numel;                /* Number of elements in the tensor. */
   int64_t storage_offset;       /* Offset in elements in the storage buffer for views. */
-  mag_dtype_t dtype : 8;        /* Data type of the tensor. */
-  mag_tensor_flags_t flags : 8; /* Tensor flags. */
+  mag_dtype_t dtype;            /* Data type of the tensor. */
+  mag_tensor_flags_t flags;     /* Tensor flags. */
 } mag_tensor_meta_t;
 
 struct mag_tensor_t {

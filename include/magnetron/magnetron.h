@@ -544,6 +544,27 @@ extern MAG_EXPORT mag_status_t mag_ctx_best_device(mag_error_t *err, mag_context
 extern MAG_EXPORT bool mag_ctx_tensors_alive(mag_context_t *ctx);
 
 /**
+ * Block until all work submitted to every loaded device has completed (like cudaDeviceSynchronize, for all backends).
+ * Devices may execute commands asynchronously (CUDA always, CPU unless MAG_CPU_ASYNC=0), so errors raised while executing
+ * a command are deferred and reported by the next sync, wait or submit on that device.
+ *
+ * @param err Error output; receives the first deferred error of any device.
+ * @param ctx Context
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_ctx_sync(mag_error_t *err, mag_context_t *ctx);
+
+/**
+ * Block until all work submitted to one device has completed. CUDA: synchronizes the device stream.
+ *
+ * @param err Error output; receives a deferred error of the device, if any.
+ * @param ctx Context
+ * @param id Device to synchronize. Devices of backends that were never loaded have no work and return immediately.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_device_sync(mag_error_t *err, mag_context_t *ctx, mag_device_id_t dvc_id);
+
+/**
  * Destroy a context and release its resources. All tensors created from it should have been released.
  *
  * @param ctx Context to destroy.
@@ -3922,6 +3943,28 @@ extern MAG_EXPORT uintptr_t mag_tensor_data_storage_ptr(const mag_tensor_t *tens
  * @return Address as an integer; a device address for non-host tensors.
  */
 extern MAG_EXPORT uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor);
+
+/**
+ * Block until all queued work writing this tensor's storage has completed, so its memory can be read by the host.
+ * Cheaper than mag_ctx_sync on the CPU backend, which tracks writes per storage. CUDA: synchronizes the device stream.
+ * Call this before reading memory returned by mag_tensor_data_ptr() and friends.
+ *
+ * @param err Error output; receives a deferred error of the device, if any.
+ * @param tensor Tensor to wait for.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_tensor_sync(mag_error_t *err, mag_tensor_t *tensor);
+
+/**
+ * Declare that the tensor's host memory is shared with code outside magnetron (e.g. a NumPy array or a raw pointer handed out).
+ * Waits until no queued command reads or writes the storage, and from then on every command touching this storage
+ * executes synchronously, so external readers and writers always observe the same order as the program.
+ *
+ * @param err Error output; receives a deferred error of the device, if any.
+ * @param tensor Host tensor whose storage is shared.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_tensor_mark_host_aliased(mag_error_t *err, mag_tensor_t *tensor);
 
 /**
  * Get the device the tensor resides on.

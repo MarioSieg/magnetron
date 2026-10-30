@@ -21,10 +21,11 @@ extern "C" {
 
 typedef enum mag_opflags_t {
   MAG_OP_FLAG_NONE = 0,
-  MAG_OP_FLAG_SUPPORTS_INPLACE = 1<<0,                /* Allows to be executed inplace on the input tensor. */
-  MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING = 1<<1,      /* Supports multithreading on CPU. */
-  MAG_OP_FLAG_GRAD_READS_IN = 1<<2,                   /* Gradients of this op read inputs */
-  MAG_OP_FLAG_GRAD_READS_OUT = 1<<3                   /* Gradients of this op reads outputs */
+  MAG_OP_FLAG_SUPPORTS_INPLACE = 1<<0,            /* Allows to be executed inplace on the input tensor. */
+  MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING = 1<<1,  /* Supports multithreading on CPU. */
+  MAG_OP_FLAG_GRAD_READS_IN = 1<<2,               /* Gradients of this op read inputs */
+  MAG_OP_FLAG_GRAD_READS_OUT = 1<<3,              /* Gradients of this op reads outputs */
+  MAG_OP_FLAG_META = 1<<4,                        /* Metadata op only, never touches storage mem */
 } mag_opflags_t;
 
 #define MAG_OP_FLAGS_COMMON (MAG_OP_FLAG_SUPPORTS_INPLACE+MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING)
@@ -276,7 +277,7 @@ typedef union mag_op_params_t {
   _(CONV_WGRAD, 2, 1, FP, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
   _(INTERPOLATE, 1, 1, ALL, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING|MAG_OP_FLAG_GRAD_READS_IN, interpolate)__\
   _(INTERPOLATE_BACK, 1, 1, FP, MAG_OP_FLAG_SUPPORT_CPU_MULTITHREADING, NULL)__\
-  _(STRIDED_VIEW, 1, 1, ALL, MAG_OP_FLAG_NONE, strided_view)__
+  _(STRIDED_VIEW, 1, 1, ALL, MAG_OP_FLAG_META, strided_view)__
 
 /* Standard opcodes, not including initialization operators. */
 typedef enum mag_opcode_t {

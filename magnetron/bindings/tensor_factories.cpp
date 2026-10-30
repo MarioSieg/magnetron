@@ -41,10 +41,24 @@ namespace mag::bindings {
     return MAG_DTYPE__NUM;
   }
 
-  static void mag_bindings_borrow_release(void *user) {
-    if (!user) return;
+  static int mag_borrow_release_pending(void *usr) {
+    Py_DECREF(static_cast<PyObject *>(usr));
+    return 0;
+  }
+
+  /**
+  ** Async devices drop command references on whichever thread reclaims them, possibly while holding the device stream lock.
+  ** Blocking on the GIL there can deadlock against a thread that holds the GIL
+  */
+  static void mag_borrow_release_cb(void *usr) {
+    if (!usr) return;
+    if (PyGILState_Check()) {
+      Py_DECREF(static_cast<PyObject *>(usr));
+      return;
+    }
+    if (!Py_AddPendingCall(&mag_borrow_release_pending, usr)) return;
     PyGILState_STATE g = PyGILState_Ensure();
-    Py_DECREF(static_cast<PyObject *>(user));
+    Py_DECREF(static_cast<PyObject *>(usr));
     PyGILState_Release(g);
   }
 
@@ -161,7 +175,7 @@ namespace mag::bindings {
               0,
               nullptr,
               host_writable,
-              &mag_bindings_borrow_release,
+              &mag_borrow_release_cb,
               handle.ptr()
             ),
             err
@@ -178,13 +192,14 @@ namespace mag::bindings {
               static_cast<int64_t>(shape.size()),
               shape.data(),
               host_writable,
-              &mag_bindings_borrow_release,
+              &mag_borrow_release_cb,
               handle.ptr()
             ),
             err
           );
         }
         on_scope_exit defer_borrowed([borrowed] { mag_tensor_decref(borrowed); });
+        throw_if_error(mag_tensor_mark_host_aliased(&err, borrowed), err); /* NumPy can mutate the memory at any time keep cmds reading/writing sync */
         maybe_set_requires_grad(ctx, borrowed, requires_grad);
         if (!mag_device_id_eq(*device_id, cpu_dvc_id)) {
           return call_op(mag_transfer, borrowed, *device_id);

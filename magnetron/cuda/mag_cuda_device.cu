@@ -120,7 +120,7 @@ namespace mag {
         .device_ordinal = static_cast<uint32_t>(ordinal),
         .type = MAG_BACKEND_TYPE_CUDA
       },
-      .is_async = true,
+      .flags = MAG_DEVICE_FLAGS_ASYNC,
       .submit = &submit_op,
       .alloc_storage = &alloc_storage_buffer,
       .manual_seed = &set_global_seed,

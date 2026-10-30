@@ -335,21 +335,20 @@ mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void *
   mag_status_t stat = MAG_OK;
   mag_tensor_t *host = NULL;
   mag_tensor_t *cont = NULL;
-
   stat = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
   if (mag_iserr(stat))
     goto cleanup;
-
   stat = mag_contiguous(err, &cont, host);
   if (mag_iserr(stat))
     goto cleanup;
-
   {
     size_t size = mag_tensor_numbytes(cont);
     if (mag_unlikely(!size)) {
       stat = mag_set_error(err, MAG_ERR_STATE, "copy_data: tensor has zero size; nothing to copy.");
       goto cleanup;
     }
+    stat = mag_sto_sync_barrier_raw(err, cont->storage); /* Sync before reading */
+    if (mag_iserr(stat)) goto cleanup;
     void *dst = (*mag_try_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     if (mag_unlikely(!dst)) {
       stat = mag_set_error(err, MAG_ERR_OOM, "copy_data: failed to allocate %zu bytes for host copy.", size);
@@ -409,6 +408,8 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         wide = scalar;
         wide_is_scalar = true;
       }
+      stat = mag_sto_sync_barrier_raw(err, wide->storage);
+      if (mag_iserr(stat)) goto cleanup;
       res = mag_scalar_from_float64(*(const float *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
       if (!scalar_is_host) mag_tensor_decref(scalar);
@@ -425,6 +426,8 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         wide = scalar;
         wide_is_scalar = true;
       }
+      stat = mag_sto_sync_barrier_raw(err, wide->storage);
+      if (mag_iserr(stat)) goto cleanup;
       res = mag_scalar_from_int64(*(const int64_t *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
       if (!scalar_is_host) mag_tensor_decref(scalar);
@@ -441,6 +444,8 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         wide = scalar;
         wide_is_scalar = true;
       }
+      stat = mag_sto_sync_barrier_raw(err, wide->storage);
+      if (mag_iserr(stat)) goto cleanup;
       res = mag_scalar_from_uint64(*(const uint64_t *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
       if (!scalar_is_host) mag_tensor_decref(scalar);
@@ -533,8 +538,26 @@ bool mag_tensor_decref(mag_tensor_t *tensor) {
   return mag_rc_decref(tensor);
 }
 
+mag_status_t mag_tensor_sync(mag_error_t *err, mag_tensor_t *tensor) {
+  mag_device_t *dvc = tensor->storage->device;
+  if (mag_unlikely(!dvc->materialization_barrier)) return MAG_OK;
+  return (*dvc->materialization_barrier)(err, dvc, tensor->storage->prev_write_seq);
+}
+
+mag_status_t mag_tensor_mark_host_aliased(mag_error_t *err, mag_tensor_t *tensor) {
+  mag_storage_buffer_t *sto = tensor->storage;
+  if (mag_unlikely(!(sto->flags&MAG_STORAGE_FLAG_HOST_VISIBLE)))
+    return mag_set_error(err, MAG_ERR_PARAM, "host_alias: tensor storage is not host-visible.");
+  mag_status_t stat = mag_sto_sync_barrier_war_waw(err, sto);
+  if (mag_iserr(stat)) return stat;
+  sto->flags|=MAG_STORAGE_FLAG_HOST_ALIASED;
+  return MAG_OK;
+}
+
 bool mag_tensor_is_host(mag_tensor_t *tensor) {
-  return tensor->meta.device->id.type==MAG_BACKEND_TYPE_CPU && tensor->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE;
+  return tensor->meta.device->id.type==MAG_BACKEND_TYPE_CPU
+  && tensor->meta.device->flags&MAG_DEVICE_FLAGS_IS_HOST
+  && tensor->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE;
 }
 
 bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {

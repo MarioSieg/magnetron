@@ -42,6 +42,9 @@ typedef struct mag_rt_telemetry_t {
   mag_atomic64_t backward_passes;
   mag_atomic64_t backward_nodes_visited;
   mag_atomic64_t grads_materialized;
+  mag_atomic64_t host_waits;                  /* Total number of host waits. */
+  mag_atomic64_t host_waits_ns;               /* Total time spent in host waits. */
+  mag_atomic64_t queue_full_stalls;           /* Total number of times the device queue was full and submit blocked. */
   uint32_t cpu_workers;
 } mag_rt_telemetry_t;
 
@@ -54,6 +57,7 @@ struct mag_context_t {
   mag_slab_alloc_t view_meta_slab;            /* View metadata headers. */
   mag_slab_alloc_t au_state_slab;             /* Autodiff states. */
   mag_slab_alloc_t au_state_op_params_slab;   /* Autodiff state op params slab allocator */
+  mag_slab_alloc_t cmd_params_slab;          /* Op params slab alloc owned by queued async cmds */
   mag_backend_registry_t *backend_registry;   /* Compute backend registry */
   mag_atomic64_t topo_traversal_epoch;        /* Epoch counter for topological traversal of the computation graph */
 #ifdef MAG_DEBUG

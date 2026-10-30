@@ -928,9 +928,13 @@ static void mag_tensor_fmt_recursive(mag_tensor_format_context_t *fmt, int depth
 }
 
 const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tail, int64_t threshold) {
-  mag_error_t xfer_err = {0};
+  mag_error_t err = {0};
   mag_tensor_t *host = NULL;
-  if (mag_iserr(mag_transfer(&xfer_err, &host, tensor, mag_device(CPU, 0)))) return NULL;
+  if (mag_iserr(mag_transfer(&err, &host, tensor, mag_device(CPU, 0)))) return NULL;
+  if (mag_iserr(mag_sto_sync_barrier_raw(&err, host->storage))) { /* Sync before reading */
+    mag_tensor_decref(host);
+    return NULL;
+  }
   head = head < 0 ? MAG_FMT_TENSOR_DEFAULT_HEAD_ELEMS : head;
   tail = tail < 0 ? MAG_FMT_TENSOR_DEFAULT_TAIL_ELEMS : tail;
   threshold = threshold < 0 ? MAG_FMT_TENSOR_DEFAULT_THRESHOLD : threshold;

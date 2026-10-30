@@ -10,6 +10,9 @@
 */
 
 #include "mag_backend.h"
+
+#include <cpuid.h>
+
 #include "mag_dylib.h"
 #include "mag_os.h"
 #include "mag_alloc.h"
@@ -75,7 +78,7 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
 
   /* Verify vtable */
   bool vtab = true;
-  mag_assert2(MAG_BACKEND_MODULE_ABI_VER == 2); /* Ensure this code is updated if ABI changes */
+  mag_assert2(MAG_BACKEND_MODULE_ABI_VER == 3); /* Ensure this code is updated if ABI changes */
   for (size_t i=0; i < MAG_BACKEND_VTABLE_SIZE; ++i)
     vtab &= !!*(void **)((uint8_t *)backend + MAG_BACKEND_VTABLE_START + i*sizeof(void *));
   if (mag_unlikely(!vtab)) {
@@ -316,6 +319,22 @@ void mag_backend_registry_manual_seed(mag_backend_registry_t *reg, uint64_t seed
       mag_backend_seed_devices(reg->backends[type]->backend, seed);
 }
 
+mag_status_t mag_backend_registry_sync(mag_error_t *err, mag_backend_registry_t *reg) {
+  mag_status_t stat=MAG_OK;
+  for (mag_backend_type_t bck_type=0; bck_type < MAG_BACKEND_TYPE__COUNT; ++bck_type) {
+    if (mag_atomic32_load(&reg->load_state[bck_type], MAG_MO_ACQUIRE) != MAG_BACKEND_LOAD_STATE_LOADED) continue;
+    mag_backend_t *bck = reg->backends[bck_type]->backend;
+    uint32_t nd = (*bck->num_devices)(bck);
+    for (uint32_t i=0; i < nd; ++i) {
+      mag_device_t *dvc = (*bck->get_device)(bck, i);
+      if (!dvc) continue;
+      mag_status_t stat2 = (*dvc->sync)(err, dvc);
+      if (mag_iserr(stat2) && mag_isok(stat)) stat = stat2;
+    }
+  }
+  return stat;
+}
+
 mag_backend_t *mag_backend_registry_get_backend(mag_backend_registry_t *reg, mag_backend_type_t type) {
   if (mag_unlikely(type >= MAG_BACKEND_TYPE__COUNT)) return NULL;
   return mag_backend_registry_load(NULL, reg, type); /* Loads the module on first use. */
@@ -360,4 +379,25 @@ mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registr
   (*mag_alloc)(reg->module_dir, 0, 0);
   (*mag_alloc)(reg, 0, 0);
   return MAG_OK;
+}
+
+static mag_status_t mag_sto_barrier_await_seq(mag_error_t *err, mag_storage_buffer_t *sto, mag_sync_barrier_seq_t seq) {
+  mag_device_t *dvc = sto->device;
+  if (mag_unlikely(seq==MAG_SYNC_BARRIER_NONE || !(dvc->flags&MAG_DEVICE_FLAGS_ASYNC) || !dvc->materialization_barrier)) return MAG_OK; /* Nothing to do */
+  return (*dvc->materialization_barrier)(err, dvc, seq);
+}
+
+mag_status_t mag_sto_sync_barrier_raw(mag_error_t *err, mag_storage_buffer_t *sto) {
+  return mag_sto_barrier_await_seq(err, sto, sto->prev_write_seq);
+}
+
+mag_status_t mag_sto_sync_barrier_war_waw(mag_error_t *err, mag_storage_buffer_t *sto) {
+  return mag_sto_barrier_await_seq(err, sto, sto->prev_acc_seq);
+}
+
+bool mag_sto_sync_barrier_raw_query(const mag_storage_buffer_t *sto) {
+  mag_device_t *dvc = sto->device;
+  mag_sync_barrier_seq_t seq = sto->prev_write_seq;
+  if (mag_likely(seq==MAG_SYNC_BARRIER_NONE || !(dvc->flags&MAG_DEVICE_FLAGS_ASYNC) || !dvc->barrier_query)) return true;
+  return (*dvc->barrier_query)(dvc, seq);
 }

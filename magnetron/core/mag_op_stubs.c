@@ -439,6 +439,10 @@ static mag_status_t mag_transfer_dense(
   int tra_flags=0;
   if (src->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE) tra_flags|=0x1;
   if (dst->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE) tra_flags|=0x2;
+  mag_status_t stat = MAG_OK; /* Await async r/w hazard */
+  if (tra_flags&0x1) stat = mag_sto_sync_barrier_raw(err, src->storage);
+  if (mag_isok(stat) && tra_flags&0x2) stat = mag_sto_sync_barrier_war_waw(err, dst->storage);
+  if (mag_iserr(stat)) return stat;
   if (tra_flags == 0x3) {
     memcpy((void *)mag_tensor_data_ptr_mut(dst), (const void *)mag_tensor_data_ptr(src), mag_tensor_numbytes(src));
     return MAG_OK;
@@ -2740,6 +2744,8 @@ mag_status_t mag_copy_raw_(mag_error_t *err, mag_tensor_t *tensor, const void *d
       return mag_set_error(err, MAG_ERR_PARAM, "copy_raw: buffer size (%" PRIu64 " bytes) does not match the tensor size (%" PRIu64 " bytes).", (uint64_t)size_bytes, (uint64_t)mag_tensor_numbytes(tensor));
   if (mag_unlikely(!mag_tensor_is_contiguous(tensor)))
       return mag_set_error(err, MAG_ERR_PARAM, "copy_raw: tensor must be contiguous to load from a raw buffer.");
+  mag_status_t stat = mag_sto_sync_barrier_war_waw(err, tensor->storage); /* Queued commands may still read or write the tensor */
+  if (mag_iserr(stat)) return stat;
   void *dst = (void *)mag_tensor_data_ptr_mut(tensor);
   memcpy(dst, data, size_bytes);
   return MAG_OK;

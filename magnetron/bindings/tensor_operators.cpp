@@ -1544,6 +1544,7 @@ namespace mag::bindings {
           mag_error_t err {};
           throw_if_error(invoke_no_gil([&] { return mag_contiguous(&err, &contig, tensor); }), err);
           throw_if_error(invoke_no_gil([&] { return mag_transfer(&err, &host, contig, mag_device(CPU, 0)); }), err);
+          throw_if_error(invoke_no_gil([&] { return mag_tensor_sync(&err, host); }), err);
           const auto *data_ptr = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(host));
           counts.assign(data_ptr, data_ptr + host->meta.numel);
           mag_tensor_decref(host);

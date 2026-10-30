@@ -74,6 +74,13 @@ jobs:
         working-directory: "${{ steps.strings.outputs.build-output-dir }}"
         run: ctest --build-config ${{ matrix.build_type }} --verbose
 
+      - name: Run C++ Runtime Tests (synchronous CPU, launch blocking)
+        working-directory: "${{ steps.strings.outputs.build-output-dir }}"
+        shell: bash
+        run: |
+          MAG_CPU_ASYNC=0 ctest --build-config ${{ matrix.build_type }} --output-on-failure
+          MAG_LAUNCH_BLOCKING=1 ctest --build-config ${{ matrix.build_type }} --output-on-failure
+
       - name: Setup Python Virtual Environment
         shell: bash
         run: |
@@ -99,6 +106,13 @@ jobs:
           mkdir -p crash
           pytest -n 4 -s -v "${{ github.workspace }}/test/python/" 2>&1 | tee crash/pytest.log
           rm -f crash/pytest.log
+
+      - name: Run Python Tests (synchronous CPU, launch blocking)
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          MAG_CPU_ASYNC=0 pytest -n 4 -q "${{ github.workspace }}/test/python/"
+          MAG_LAUNCH_BLOCKING=1 pytest -n 4 -q "${{ github.workspace }}/test/python/"
 
       - name: Collect crash reports (macOS)
         if: failure() && runner.os == 'macOS'
@@ -224,6 +238,24 @@ jobs:
           name: sanitize-crash-${{ matrix.os }}
           path: crash
           if-no-files-found: ignore
+
+      - name: Build and Run C++ Runtime Tests (ThreadSanitizer, async CPU stream)
+        shell: bash
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+          MAG_CPU_THREADS: 8
+        run: |
+          cmake -B "${{ github.workspace }}/build-tsan" \
+                -DCMAKE_C_COMPILER=gcc \
+                -DCMAKE_CXX_COMPILER=g++ \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DMAGNETRON_TSAN=ON \
+                -DMAGNETRON_BUILD_BENCHMARKS=OFF \
+                -DMAGNETRON_BUILD_PYTHON_BINDINGS=OFF \
+                -DMAGNETRON_ENABLE_BACKEND_CUDA=OFF \
+                -S "${{ github.workspace }}"
+          cmake --build "${{ github.workspace }}/build-tsan" -j4
+          cd "${{ github.workspace }}/build-tsan" && ctest --output-on-failure
 
       - name: Stage Python Package
         shell: bash

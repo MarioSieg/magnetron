@@ -73,13 +73,13 @@ extern MAG_EXPORT void mag_futex_wakeall(volatile mag_atomic32_t *addr);
 typedef struct mag_lock_t {
   volatile mag_atomic32_t state;
 } mag_lock_t;
-#define MAG_LOCK_INIT {0}
+#define MAG_LOCK_INIT (mag_lock_t){0}
 
 extern MAG_EXPORT void mag_lock_acquire_internal(mag_lock_t *lock);
 
 static MAG_AINLINE void mag_lock_acquire(mag_lock_t *lock) {
   mag_atomic32_t expect = 0, desire = 1;
-  if (mag_likely(mag_atomic32_compare_exchange_strong(&lock->state, &expect, &desire, MAG_MO_ACQUIRE, MAG_MO_RELAXED)))
+  if (mag_likely(mag_atomic32_compare_exchange_strong(&lock->state, &expect, &desire, MAG_MO_ACQUIRE, MAG_MO_RELAXED)))   /* Uncontended */
     return;
   mag_lock_acquire_internal(lock);
 }
