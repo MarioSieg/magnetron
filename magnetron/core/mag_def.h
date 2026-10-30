@@ -645,10 +645,27 @@ static MAG_CUDA_DEVICE MAG_AINLINE float mag_remf(float x, float y) {
   return r;
 }
 
+/* Trap free signed integral div */
 static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
+  if (y == 0) return x;
+  if (y == -1) return 0;
   int64_t r = x % y;
   if (r != 0 && (r < 0) != (y < 0)) r += y;
   return r;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_divi(int64_t x, int64_t y) { /* Truncating division. */
+  if (y == 0) return -1;
+  if (y == -1) return (int64_t)(UINT64_C(0)-(uint64_t)x); /* Wrapping */
+  return x/y;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_floordivi(int64_t x, int64_t y) {
+  if (y == 0) return -1;
+  if (y == -1) return (int64_t)(UINT64_C(0)-(uint64_t)x);
+  int64_t q = x/y;
+  if (x%y != 0 && (x < 0) != (y < 0)) --q;
+  return q;
 }
 
 extern MAG_EXPORT bool mag_utf8_validate(const uint8_t *str, size_t len);

@@ -51,7 +51,10 @@ namespace mag {
     using InT = In;
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
-      if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x / y);
+      if constexpr (std::is_integral_v<InT>) {
+        if constexpr (std::is_unsigned_v<InT>) return static_cast<OutT>(y ? x/y : static_cast<InT>(~InT{0}));
+        else return static_cast<OutT>(mag_divi(static_cast<int64_t>(x), static_cast<int64_t>(y)));
+      }
       return static_cast<OutT>(static_cast<float>(x) / static_cast<float>(y));
     }
   };
@@ -85,9 +88,9 @@ namespace mag {
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
       if constexpr (std::is_integral_v<InT>) {
         if constexpr (std::is_unsigned_v<InT>) {
-          return x/y;
+          return static_cast<OutT>(y ? x/y : static_cast<InT>(~InT{0}));
         } else {
-          return (x - mag_remi(static_cast<int64_t>(x), static_cast<int64_t>(y)))/y;
+          return static_cast<OutT>(mag_floordivi(static_cast<int64_t>(x), static_cast<int64_t>(y)));
         }
       } else {
         float fx = static_cast<float>(x), fy = static_cast<float>(y);
@@ -110,11 +113,9 @@ namespace mag {
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
       if constexpr (std::is_integral_v<InT>) {
         if constexpr (std::is_unsigned_v<InT>) {
-          return x % y;
+          return static_cast<OutT>(y ? x%y : x);
         } else {
-          int64_t r = x % y;
-          if (r != 0 && (r < 0) != (y < 0)) r += y;
-          return static_cast<OutT>(r);
+          return static_cast<OutT>(mag_remi(static_cast<int64_t>(x), static_cast<int64_t>(y)));
         }
       } else {
         auto xf32 = static_cast<float>(x);

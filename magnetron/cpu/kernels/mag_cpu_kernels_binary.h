@@ -55,14 +55,15 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
 #define mag_fn_add_int(x,y) ((x)+(y))
 #define mag_fn_sub_int(x,y) ((x)-(y))
 #define mag_fn_mul_int(x,y) ((x)*(y))
-#define mag_fn_div_int(x,y) ((x)/(y))
+#define mag_fn_div_i(x,y) mag_divi((x),(y))
+#define mag_fn_div_u(x,y) ((y) ? (x)/(y) : -1)
 #define mag_fn_and_int(x,y) ((x)&(y))
 #define mag_fn_or_int(x,y) ((x)|(y))
 #define mag_fn_xor_int(x,y) ((x)^(y))
-#define mag_fn_floordiv_i(x,y) ((((x) - mag_remi((x), (y)))/(y)))
-#define mag_fn_floordiv_u(x,y) ((x)/(y))
+#define mag_fn_floordiv_i(x,y) mag_floordivi((x),(y))
+#define mag_fn_floordiv_u(x,y) mag_fn_div_u((x),(y))
 #define mag_fn_mod_i(x,y) mag_remi((x),(y))
-#define mag_fn_mod_u(x,y) ((x)%(y))/* Unsigned remainder is the same as in C */
+#define mag_fn_mod_u(x,y) ((y) ? (x)%(y) : (x))
 #define mag_fn_pow_i(x,y) mag_powi((x),(y))
 #define mag_fn_pow_u(x,y) mag_powu((x),(y))
 #define mag_fn_shl_i(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (T)((uint64_t)(x)<<(y)))
@@ -331,7 +332,6 @@ mag_gen_float_bin_scalar(max)
 mag_gen_int_bin_common(add)
 mag_gen_int_bin_common(sub)
 mag_gen_int_bin_common(mul)
-mag_gen_int_bin_common(div)
 mag_gen_int_bin_common(and)
 mag_gen_int_bin_common(or)
 mag_gen_int_bin_common(xor)
@@ -348,6 +348,7 @@ mag_gen_int_bin_common(max)
   mag_gen_bin_scalar(uint64_t,uint64,name,u) \
   mag_gen_bin_scalar(int64_t,int64,name,i)
 
+mag_gen_int_signed_unsigned(div)
 mag_gen_int_signed_unsigned(floordiv)
 mag_gen_int_signed_unsigned(mod)
 mag_gen_int_signed_unsigned(pow)
@@ -496,7 +497,8 @@ mag_gen_cmp_all(ge, >=)
 #undef mag_fn_add_int
 #undef mag_fn_sub_int
 #undef mag_fn_mul_int
-#undef mag_fn_div_int
+#undef mag_fn_div_i
+#undef mag_fn_div_u
 #undef mag_fn_and_int
 #undef mag_fn_or_int
 #undef mag_fn_xor_int
