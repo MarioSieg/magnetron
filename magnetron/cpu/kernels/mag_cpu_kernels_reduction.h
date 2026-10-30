@@ -577,12 +577,13 @@ mag_cpu_impl_reduce_axes(mag_float8_e4m3fn_t, mag_float8_e4m3fn_t, float8_e4m3fn
   )
 
 #define mag_unpack_nop(x) (x)
-#define mag_unpack_packed(x) ((x).bits)
+#define mag_unpack_h16(x) ((x).bits&0x7fff)
+#define mag_unpack_f8(x) ((x).bits&0x7f)
 
 mag_impl_logical_reduce_pair(float, float32, mag_unpack_nop);
-mag_impl_logical_reduce_pair(mag_float16_t, float16, mag_unpack_packed);
-mag_impl_logical_reduce_pair(mag_bfloat16_t, bfloat16, mag_unpack_packed);
-mag_impl_logical_reduce_pair(mag_float8_e4m3fn_t, float8_e4m3fn, mag_unpack_packed);
+mag_impl_logical_reduce_pair(mag_float16_t, float16, mag_unpack_h16);
+mag_impl_logical_reduce_pair(mag_bfloat16_t, bfloat16, mag_unpack_h16);
+mag_impl_logical_reduce_pair(mag_float8_e4m3fn_t, float8_e4m3fn, mag_unpack_f8);
 mag_impl_logical_reduce_pair(uint8_t, uint8, mag_unpack_nop);
 mag_impl_logical_reduce_pair(int8_t, int8, mag_unpack_nop);
 mag_impl_logical_reduce_pair(uint16_t, uint16, mag_unpack_nop);
@@ -593,6 +594,7 @@ mag_impl_logical_reduce_pair(uint64_t, uint64, mag_unpack_nop);
 mag_impl_logical_reduce_pair(int64_t, int64, mag_unpack_nop);
 
 #undef mag_unpack_nop
-#undef mag_unpack_packed
+#undef mag_unpack_h16
+#undef mag_unpack_f8
 
 #undef mag_impl_logical_reduce_pair

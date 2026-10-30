@@ -814,6 +814,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
   },
   [MAG_OP_GELU_DV] = {
     [MAG_DTYPE_FLOAT32] = &mag_gelu_dv_float32,
+    [MAG_DTYPE_FLOAT16] = &mag_gelu_dv_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_gelu_dv_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gelu_dv_float8_e4m3fn,
   },
@@ -1089,6 +1090,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
   },
   [MAG_OP_LE] = {
     [MAG_DTYPE_FLOAT32] = &mag_le_float32,
+    [MAG_DTYPE_BOOLEAN] = &mag_le_uint8, /* bools are canonical 0/1 bytes, so unsigned byte order is false < true */
     [MAG_DTYPE_FLOAT16] = &mag_le_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_le_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_le_float8_e4m3fn,
@@ -1103,6 +1105,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
   },
   [MAG_OP_GE] = {
     [MAG_DTYPE_FLOAT32] = &mag_ge_float32,
+    [MAG_DTYPE_BOOLEAN] = &mag_ge_uint8,
     [MAG_DTYPE_FLOAT16] = &mag_ge_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_ge_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_ge_float8_e4m3fn,
@@ -1117,6 +1120,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
   },
   [MAG_OP_LT] = {
     [MAG_DTYPE_FLOAT32] = &mag_lt_float32,
+    [MAG_DTYPE_BOOLEAN] = &mag_lt_uint8,
     [MAG_DTYPE_FLOAT16] = &mag_lt_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_lt_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_lt_float8_e4m3fn,
@@ -1131,6 +1135,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
   },
   [MAG_OP_GT] = {
     [MAG_DTYPE_FLOAT32] = &mag_gt_float32,
+    [MAG_DTYPE_BOOLEAN] = &mag_gt_uint8, /* bools are canonical 0/1 bytes, so unsigned byte order is false < true */
     [MAG_DTYPE_FLOAT16] = &mag_gt_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_gt_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gt_float8_e4m3fn,

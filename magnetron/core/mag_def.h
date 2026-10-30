@@ -629,7 +629,7 @@ static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_powi(int64_t x, int64_t k) {
   if (!k) return 1;
   if (k < 0) {
     switch (x) {
-      case 0: return UINT64_C(0x7fffffffffffffff);
+      case 0: return 0;
       case 1: return 1;
       case -1: return (k&1) ? -1 : 1;
       default: return 0;

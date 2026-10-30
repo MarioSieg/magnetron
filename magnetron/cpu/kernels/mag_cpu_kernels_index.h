@@ -92,11 +92,22 @@ mag_gen_stub_gather(int64_t, int64)
     const T *bx = (const T *)mag_tensor_data_ptr(weight); \
     const int64_t *bi = (const int64_t *)mag_tensor_data_ptr(indices); \
     int64_t vocab_size = weight->meta.coords.shape[0]; \
-    int64_t row_size = weight->meta.numel / vocab_size; \
+    int64_t row_size = vocab_size ? weight->meta.numel / vocab_size : 0; \
     int64_t n_idx = indices->meta.numel; \
     int64_t total = n_idx*row_size; \
     int64_t tc = payload->thread_num; \
     int64_t ti = payload->thread_idx; \
+    if (mag_unlikely(!row_size)) { \
+      int64_t ichunk = (n_idx + tc - 1)/tc; \
+      int64_t ia = ti*ichunk, ib = mag_vmin(ia + ichunk, n_idx); \
+      mag_coords_iter_t ci; \
+      mag_coords_iter_init(&ci, &indices->meta.coords); \
+      for (int64_t i=ia; i < ib; ++i) { \
+        int64_t g = bi[mag_coords_iter_to_offset(&ci, i)]; \
+        mag_index_wrap_or_fail("embedding", g, vocab_size); \
+      } \
+      return MAG_OK; \
+    } \
     int64_t chunk = (total + tc - 1)/tc; \
     int64_t ra = ti*chunk; \
     int64_t rb = mag_vmin(ra + chunk, total); \
@@ -172,6 +183,10 @@ mag_gen_stub_embedding(int64_t, int64)
     int64_t rra = r->meta.coords.shape[ax]; \
     int64_t total = src->meta.numel; \
     if (payload->thread_idx != 0) return MAG_OK; \
+    for (int64_t j=0; j < idx->meta.numel; ++j) {\
+      int64_t g = bi[j*idx->meta.coords.strides[0]]; \
+      mag_index_wrap_or_fail("index_add_", g, rra); \
+    } \
     for (int64_t flat=0; flat < total; ++flat) { \
       int64_t tmp = flat; \
       int64_t sc[MAG_MAX_DIMS]; \
@@ -240,6 +255,7 @@ mag_gen_stub_index_add(int64_t, int64, mag_cvt_nop, int64_t, mag_index_add_mul_i
     int64_t xst = src->meta.coords.strides[axis]; \
     int64_t rst = r->meta.coords.strides[axis]; \
     int64_t c[MAG_MAX_DIMS]; \
+    for (int64_t pass=0; pass < 2; ++pass)\
     for (int64_t row=ra; row < rb; ++row) { \
       int64_t rem = row; \
       for (int64_t d = rank-1; d >= 0; --d) { if (d == axis) continue; c[d] = rem % idx->meta.coords.shape[d]; rem /= idx->meta.coords.shape[d]; } \
@@ -248,6 +264,7 @@ mag_gen_stub_index_add(int64_t, int64, mag_cvt_nop, int64_t, mag_index_add_mul_i
       for (int64_t j=0; j < s_axis; ++j) { \
         int64_t g = bi[idx_row + j*ist]; \
         mag_index_wrap_or_fail("scatter", g, self_ax); \
+        if (!pass) continue; \
         int64_t dst_off = dst_row + g*rst; \
         int64_t src_off = src_row + j*xst; \
         mag_bnd_chk(bs+dst_off, r->storage->base, r->storage->size); \

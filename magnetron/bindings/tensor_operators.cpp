@@ -119,6 +119,33 @@ namespace mag::bindings {
     }
     return out;
   }
+
+  [[nodiscard]] static tensor_wrapper clamp_bound_to_tensor(const tensor_wrapper &self, nb::handle h) {
+    mag_dtype_t dt = mag_tensor_type(*self);
+    if (nb::isinstance<nb::int_>(h) && !nb::isinstance<nb::bool_>(h) && mag_type_category_is_integer(dt)) {
+      size_t bits = mag_type_trait(dt)->size<<3;
+      bool is_signed = mag_type_category_is_signed_integer(dt);
+      auto lo = is_signed ? nb::int_(-static_cast<int64_t>(1)<<(bits-1)) : nb::int_(0);
+      auto hi = is_signed ? nb::int_(bits == 64 ? std::numeric_limits<int64_t>::max() : ((static_cast<int64_t>(1)<<(bits-1))-1))
+        : nb::steal(PyLong_FromUnsignedLongLong(bits == 64 ? std::numeric_limits<uint64_t>::max() : ((1ull<<bits)-1)));
+      if (h < lo) return normalize_rhs_to_tensor(self, lo);
+      if (h > hi) return normalize_rhs_to_tensor(self, hi);
+    }
+    return normalize_rhs_to_tensor(self, h);
+  }
+
+  [[nodiscard]] static std::optional<tensor_wrapper> clamp_widen(const tensor_wrapper &self, std::initializer_list<nb::handle> bounds) {
+    mag_dtype_t dt = mag_tensor_type(*self);
+    if (!mag_type_category_is_integer(dt) || dt == MAG_DTYPE_INT64 || dt == MAG_DTYPE_UINT64) return std::nullopt;
+    size_t bits = mag_type_trait(dt)->size<<3;
+    bool is_signed = mag_type_category_is_signed_integer(dt);
+    auto lo = is_signed ? nb::int_(-(static_cast<int64_t>(1)<<(bits-1))) : nb::int_(0);
+    auto hi = nb::int_(is_signed ? ((static_cast<int64_t>(1)<<(bits-1))-1) : static_cast<int64_t>((1ull<<bits)-1));
+    for (auto&& handle : bounds)
+      if (nb::isinstance<nb::int_>(handle) && !nb::isinstance<nb::bool_>(handle) && (handle < lo || handle > hi))
+        return call_op(mag_cast, *self, MAG_DTYPE_INT64);
+    return std::nullopt;
+  }
 }
 
 #define bind_unary_pair(cls, name, opcode, doc) bind_unary_pair_named(cls, name, name, opcode, doc)
@@ -511,8 +538,6 @@ namespace mag::bindings {
     .def("reshape",
       [](const tensor_wrapper &self, nb::args dims_args) -> tensor_wrapper {
         fixed_dim_vec dims = parse_i64_dims(dims_args, "reshape");
-        if (std::find(dims.begin(), dims.end(), 0) != dims.end())
-          throw nb::value_error("reshape: dimension 0 is not allowed");
         int neg_ones = static_cast<int>(std::count(dims.begin(), dims.end(), -1));
         if (neg_ones > 1) throw nb::value_error("reshape: only one -1 is allowed");
         return call_op_maybe_without_gil(self, mag_reshape, *self, dims.data(), static_cast<int64_t>(dims.size()));
@@ -650,7 +675,7 @@ namespace mag::bindings {
         }
         int64_t split_size = nb::cast<int64_t>(split_h);
         if (split_size <= 0) throw nb::value_error("split: split_size must be > 0");
-        if (size == 0) return {};
+        if (size == 0) return nb::make_tuple(call_op(mag_narrow, *self, dim, 0, 0)); /* torch: one empty chunk */
         int64_t n_chunks = (size + split_size - 1)/split_size;
         std::vector<mag_tensor_t*> outs(static_cast<size_t>(n_chunks), nullptr);
         mag_error_t err {};
@@ -1433,9 +1458,13 @@ namespace mag::bindings {
     )
     .def("clamp",
       [](const tensor_wrapper &self, nb::handle min_h, nb::handle max_h) -> tensor_wrapper {
+        if (auto wide = clamp_widen(self, {min_h, max_h})) {
+          tensor_wrapper r = nb::cast<tensor_wrapper>(nb::cast(*wide).attr("clamp")(min_h, max_h));
+          return call_op(mag_cast, *r, mag_tensor_type(*self));
+        }
         tensor_wrapper x = self;
-        tensor_wrapper mn = normalize_rhs_to_tensor(self, min_h);
-        tensor_wrapper mx = normalize_rhs_to_tensor(self, max_h);
+        tensor_wrapper mn = clamp_bound_to_tensor(self, min_h);
+        tensor_wrapper mx = clamp_bound_to_tensor(self, max_h);
         promote_ops({&x, &mn, &mx});
         mag_tensor_t *out = nullptr;
         mag_error_t err{};
@@ -1454,8 +1483,12 @@ namespace mag::bindings {
     )
     .def("clamp_min",
       [](const tensor_wrapper &self, nb::handle min_h) -> tensor_wrapper {
+        if (auto wide = clamp_widen(self, {min_h})) {
+          tensor_wrapper r = nb::cast<tensor_wrapper>(nb::cast(*wide).attr("clamp_min")(min_h));
+          return call_op(mag_cast, *r, mag_tensor_type(*self));
+        }
         tensor_wrapper x = self;
-        tensor_wrapper min = normalize_rhs_to_tensor(self, min_h);
+        tensor_wrapper min = clamp_bound_to_tensor(self, min_h);
         promote_ops({&x, &min});
         mag_tensor_t *out = nullptr;
         mag_error_t err{};
@@ -1467,8 +1500,12 @@ namespace mag::bindings {
     )
     .def("clamp_max",
       [](const tensor_wrapper &self, nb::handle max_h) -> tensor_wrapper {
+        if (auto wide = clamp_widen(self, {max_h})) {
+          tensor_wrapper r = nb::cast<tensor_wrapper>(nb::cast(*wide).attr("clamp_max")(max_h));
+          return call_op(mag_cast, *r, mag_tensor_type(*self));
+        }
         tensor_wrapper x = self;
-        tensor_wrapper max = normalize_rhs_to_tensor(self, max_h);
+        tensor_wrapper max = clamp_bound_to_tensor(self, max_h);
         promote_ops({&x, &max});
         mag_tensor_t *out = nullptr;
         mag_error_t err {};

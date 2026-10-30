@@ -58,7 +58,7 @@ bool mag_arange_numel_float(double start, double end, double step, int64_t *nume
     *numel = 0;
     return true;
   }
-  double nc = ceil(delta/step - 1e-12);
+  double nc = ceil(delta/step);
   if (nc <= 0.0) {
     *numel = 0;
     return true;
@@ -219,7 +219,6 @@ mag_status_t mag_op_stub_binary(
   mag_dtype_t prom_type; /* common compute dtype for x,y */
   mag_dtype_t res_type;  /* dtype of 'result' tensor */
   bool x_int = mag_tensor_is_integer_typed(x);
-  bool y_int = mag_tensor_is_integer_typed(y);
   if (flags & MAG_BINOP_INPLACE) {
     switch (op) {
       case MAG_OP_DIV: {
@@ -248,7 +247,7 @@ mag_status_t mag_op_stub_binary(
   } else { /* Pure out of place -> full promotion */
     switch (op) {
       case MAG_OP_DIV: { /* Special case for truediv */
-        if (x_int && y_int) { /* Integer division always promotes to default float dtype */
+        if (!mag_tensor_is_floating_point_typed(x) && !mag_tensor_is_floating_point_typed(y)) { /* Integer (or bool) true division always promotes to the default float dtype */
           prom_type = res_type = mag_tls_state.dtype;
         } else {
           bool prom_ok = mag_promote_type(&prom_type, x->meta.dtype, y->meta.dtype);
@@ -270,7 +269,7 @@ mag_status_t mag_op_stub_binary(
               mag_type_trait(x->meta.dtype)->name,
               mag_type_trait(y->meta.dtype)->name
             );
-        if (x_int && y_int) { /* Integer floor division keeps integer dtype */
+        if (!mag_tensor_is_floating_point_typed(x) && !mag_tensor_is_floating_point_typed(y) && prom_type != MAG_DTYPE_BOOLEAN) { /* Integer (or int with bool) floor division keeps the integer dtype */
           res_type = prom_type;
         } else { /* Non-integer floor division promotes to floating dtype */
           if (!(mag_dtype_bit(prom_type) & MAG_DTYPE_MASK_FP))
@@ -291,6 +290,14 @@ mag_status_t mag_op_stub_binary(
     }
   }
   mag_status_t stat;
+  mag_dtype_t final_type = res_type;
+  bool wide = !(flags & MAG_BINOP_INPLACE)
+    && (prom_type == MAG_DTYPE_FLOAT16 || prom_type == MAG_DTYPE_BFLOAT16 || prom_type == MAG_DTYPE_FLOAT8_E4M3FN)
+    && (!mag_tensor_is_floating_point_typed(x) || !mag_tensor_is_floating_point_typed(y));
+  if (wide) {
+    prom_type = MAG_DTYPE_FLOAT32;
+    if (res_type != MAG_DTYPE_BOOLEAN) res_type = MAG_DTYPE_FLOAT32;
+  }
   if (flags & MAG_BINOP_INPLACE) {
     mag_assert2(!(flags & MAG_BINOP_LOGICAL));
     int64_t bdims[MAG_MAX_DIMS];
@@ -344,11 +351,19 @@ mag_status_t mag_op_stub_binary(
   if (mag_iserr(stat)) goto cleanup;
   stat = mag_dispatch(err, op, flags & MAG_BINOP_INPLACE, in, sizeof(in)/sizeof(*in), &result, 1, NULL);
   if (mag_iserr(stat)) goto cleanup;
+  if (res_type != final_type) { /* computed in single prec first then round once into the promoted half type */
+    mag_tensor_t *narrow = NULL;
+    stat = mag_cast(err, &narrow, result, final_type);
+    if (mag_iserr(stat)) goto cleanup;
+    mag_tensor_decref(result);
+    result = narrow;
+  }
   if (tmp_x) mag_tensor_decref(tmp_x);
   if (tmp_y) mag_tensor_decref(tmp_y);
   *out_result = result;
   return MAG_OK;
 cleanup:
+  if (tmp_x) mag_tensor_decref(tmp_x);
   if (tmp_y) mag_tensor_decref(tmp_y);
   if (result) mag_tensor_decref(result);
   return stat;
@@ -428,7 +443,7 @@ mag_status_t mag_matmul_alloc_res(
         for (int64_t i=0; i < rb; ++i) {
           int64_t da = i < rb-*xb ? 1 : x->meta.coords.shape[i-(rb-*xb)];
           int64_t db = i < rb-*yb ? 1 : y->meta.coords.shape[i-(rb-*yb)];
-          shape[i] = da > db ? da : db;
+          shape[i] = da == 1 ? db : da;
         }
         shape[rb] = x->meta.coords.shape[x->meta.coords.rank-2];
         shape[rb+1] = y->meta.coords.shape[y->meta.coords.rank-1];

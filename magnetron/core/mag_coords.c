@@ -130,6 +130,14 @@ mag_status_t mag_solve_view_strides(
     if (mag_unlikely(mag_mulov64(numel, old_shape[i], &numel)))
       return mag_set_error(err, MAG_ERR_DIM, "view: source element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, old_shape[i]);
   }
+  if (mag_unlikely(!numel)) {
+    int64_t st = 1;
+    for (int64_t i=new_rank-1; i >= 0; --i) {
+      (*out_new_strides)[i] = st;
+      st *= new_shape[i] > 1 ? new_shape[i] : 1;
+    }
+    return MAG_OK;
+  }
   int64_t oi = old_rank-1;
   int64_t ni = new_rank-1;
   while (oi >= 0 && ni >= 0) {

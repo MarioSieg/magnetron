@@ -46,6 +46,7 @@ static MAG_AINLINE mag_vf32_t mag_vf32_tanh(mag_vf32_t x) {
 }
 
 static MAG_AINLINE void mag_vf32_sincos(mag_vf32_t x, mag_vf32_t *s, mag_vf32_t *c) {
+  mag_vf32_t x0 = x;
   mag_vi32_t v2 = mag_vi32_splat(2), v4 = mag_vi32_splat(4);
   mag_vf32_t sign_bit_sin = x;
   x = mag_vf32_and(x, mag_vf32_reinterpret_from_vi32(mag_vi32_splat((int32_t)~0x80000000u)));
@@ -81,15 +82,31 @@ static MAG_AINLINE void mag_vf32_sincos(mag_vf32_t x, mag_vf32_t *s, mag_vf32_t 
   mag_vf32_t cc = mag_vf32_blend(poly_mask, y, y2);
   *s = mag_vf32_xor(ss, sign_bit_sin);
   *c = mag_vf32_xor(cc, sign_bit_cos);
+  mag_vmask32_t big = mag_vf32_cmpge(mag_vf32_abs(x0), mag_vf32_splat(8192.0f)); /* The 3 term Cody-Waite reduction is only accurate for |x| < 8192, if above use libm, rare case anyway! */
+  if (mag_unlikely(mag_vmask32_any(big))) {
+    float xs[MAG_VF32_LANES], sv[MAG_VF32_LANES], cv[MAG_VF32_LANES];
+    mag_vf32_storeu(xs, x0);
+    mag_vf32_storeu(sv, *s);
+    mag_vf32_storeu(cv, *c);
+    for (int64_t i=0; i < MAG_VF32_LANES; ++i) {
+      if (fabsf(xs[i]) >= 8192.0f) {
+        sv[i] = sinf(xs[i]);
+        cv[i] = cosf(xs[i]);
+      }
+    }
+    *s = mag_vf32_loadu(sv);
+    *c = mag_vf32_loadu(cv);
+  }
 }
 
 static MAG_AINLINE mag_vf32_t mag_vf32_log(mag_vf32_t x) {
-  mag_vmask32_t invalid = mag_vf32_cmple(x, mag_vf32_zero());
-  x = mag_vf32_max(x, mag_vf32_reinterpret_from_vi32(mag_vi32_splat((int32_t)0x00800000u)));
+  mag_vf32_t x0 = x;
+  mag_vmask32_t sub = mag_vf32_cmplt(x, mag_vf32_splat(1.17549435e-38f));
+  x = mag_vf32_blend(sub, mag_vf32_mul(x, mag_vf32_splat(8388608.0f)), x);
   mag_vi32_t ix = mag_vi32_reinterpret_from_vf32(x);
   mag_vi32_t e = mag_vi32_sub(mag_vi32_srli(ix, 23), mag_vi32_splat(0x7f));
   x = mag_vf32_reinterpret_from_vi32(mag_vi32_or(mag_vi32_and(ix, mag_vi32_splat((int32_t)~0x7f800000u)),mag_vi32_splat((int32_t)0x3f000000u)));
-  mag_vf32_t ef = mag_vf32_add(mag_vi32_to_f32(e), mag_vf32_splat(1.0f));
+  mag_vf32_t ef = mag_vf32_add(mag_vi32_to_f32(e), mag_vf32_blend(sub, mag_vf32_splat(1.0f-23.0f), mag_vf32_splat(1.0f)));
   mag_vmask32_t m = mag_vf32_cmplt(x, mag_vf32_splat(0.707106781186547524f));
   mag_vf32_t mf = mag_vf32_reinterpret_from_vi32(mag_vi32_from_vmask32(m));
   mag_vf32_t tmp = mag_vf32_and(x, mf);
@@ -111,7 +128,11 @@ static MAG_AINLINE mag_vf32_t mag_vf32_log(mag_vf32_t x) {
   y = mag_vf32_sub(y, mag_vf32_mul(z, mag_vf32_splat(0.5f)));
   x = mag_vf32_add(x, y);
   x = mag_vf32_fmadd(ef, mag_vf32_splat(0.693359375f), x);
-  return mag_vf32_or(x, mag_vf32_reinterpret_from_vi32(mag_vi32_from_vmask32(invalid)));
+  mag_vf32_t zero = mag_vf32_zero();
+  x = mag_vf32_blend(mag_vf32_cmpeq(x0, zero), mag_vf32_splat(-INFINITY), x);
+  x = mag_vf32_blend(mag_vf32_cmpeq(x0, mag_vf32_splat(INFINITY)), x0, x);
+  x = mag_vf32_blend(mag_vf32_cmplt(x0, zero), mag_vf32_splat(NAN), x);
+  return mag_vf32_blend(mag_vf32_cmpeq(x0, x0), x, x0);
 
 }
 
@@ -142,7 +163,7 @@ static MAG_AINLINE mag_vf32_t mag_vf32_gelu_approx(mag_vf32_t x) {
 }
 
 static MAG_AINLINE mag_vf32_t mag_vf32_relu(mag_vf32_t x) {
-  return mag_vf32_max(x, mag_vf32_zero());
+  return mag_vf32_blend(mag_vf32_cmplt(x, mag_vf32_zero()), mag_vf32_zero(), x); /* Cannot use max(x,0), amd64 max drops NaN, we need to propagate it */
 }
 
 static MAG_AINLINE mag_vf32_t mag_vf32_step(mag_vf32_t x) {
@@ -151,7 +172,8 @@ static MAG_AINLINE mag_vf32_t mag_vf32_step(mag_vf32_t x) {
 
 static MAG_AINLINE mag_vf32_t mag_vf32_hard_sigmoid(mag_vf32_t x) {
   mag_vf32_t y = mag_vf32_mul(mag_vf32_add(x, mag_vf32_splat(3.0f)), mag_vf32_splat(1.0f / 6.0f));
-  return mag_vf32_min(mag_vf32_splat(1.0f), mag_vf32_max(mag_vf32_zero(), y));
+  y = mag_vf32_blend(mag_vf32_cmplt(y, mag_vf32_zero()), mag_vf32_zero(), y); /* NaN propagating clamp */
+  return mag_vf32_blend(mag_vf32_cmpgt(y, mag_vf32_splat(1.0f)), mag_vf32_splat(1.0f), y);
 }
 
 static MAG_AINLINE mag_vf32_t mag_vf32_tan(mag_vf32_t x) {

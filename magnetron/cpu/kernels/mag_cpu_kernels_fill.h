@@ -469,7 +469,22 @@ static MAG_HOTPROC mag_status_t mag_fill_rand_bernoulli_bool(mag_error_t *err, c
   float p = (float)payload->cmd->params->bernoulli.p;
   uint8_t *b_r = (uint8_t *)mag_tensor_data_ptr_mut(r);
   int64_t numel = r->meta.numel;
-  mag_vrand_bernoulli_bool(payload->prng, numel, b_r, p);
+  if (mag_tensor_is_contiguous(r)) {
+    mag_vrand_bernoulli_bool(payload->prng, numel, b_r, p);
+    return MAG_OK;
+  }
+  uint8_t tmp[512];
+  mag_coords_iter_t cr;
+  mag_coords_iter_init(&cr, &r->meta.coords); /* TODO fix this */
+  for (int64_t i=0; i < numel; i += (int64_t)sizeof(tmp)) {
+    int64_t n = mag_vmin((int64_t)sizeof(tmp), numel-i);
+    mag_vrand_bernoulli_bool(payload->prng, n, tmp, p);
+    for (int64_t j=0; j < n; ++j) {
+      int64_t off = mag_coords_iter_to_offset(&cr, i+j);
+      mag_bnd_chk(b_r+off, r->storage->base, r->storage->size);
+      b_r[off] = tmp[j];
+    }
+  }
   return MAG_OK;
 }
 

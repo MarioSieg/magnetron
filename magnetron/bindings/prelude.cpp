@@ -40,11 +40,8 @@ namespace mag::bindings {
       mag_scalar_t scalar = mag_scalar_from_uint64(!!val);
       return call_op(mag_scalar, ctx, dt, scalar, device);
     }
-    if (nb::isinstance<nb::int_>(obj)) {
-      auto val = nb::cast<int64_t>(obj);
-      mag_scalar_t scalar = mag_scalar_from_int64(val);
-      return call_op(mag_scalar, ctx, dt, scalar, device);
-    }
+    if (nb::isinstance<nb::int_>(obj))
+      return call_op(mag_scalar, ctx, dt, scalar_from_py_number(obj), device);
     if (nb::isinstance<nb::float_>(obj)) {
       auto val = nb::cast<double>(obj);
       mag_scalar_t scalar = mag_scalar_from_float64(val);
@@ -203,9 +200,25 @@ namespace mag::bindings {
     throw nb::type_error("dim must be None, int, or a sequence of ints");
   }
 
+  [[nodiscard]] static bool py_int_is_large_unsigned(nb::handle h) {
+    int overflow = 0;
+    (void)PyLong_AsLongLongAndOverflow(h.ptr(), &overflow);
+    if (!overflow) return false;
+    if (overflow < 0) throw nb::value_error("integer scalar is out of range for int64");
+    (void)PyLong_AsUnsignedLongLong(h.ptr());
+    if (PyErr_Occurred()) {
+      PyErr_Clear();
+      throw nb::value_error("integer scalar is out of range for uint64");
+    }
+    return true;
+  }
+
   mag_scalar_t scalar_from_py_number(nb::handle h) {
     if (nb::isinstance<nb::bool_>(h)) return mag_scalar_from_uint64(nb::cast<bool>(h));
-    if (nb::isinstance<nb::int_>(h)) return mag_scalar_from_int64(nb::cast<int64_t>(h));
+    if (nb::isinstance<nb::int_>(h)) {
+      if (py_int_is_large_unsigned(h)) return mag_scalar_from_uint64(PyLong_AsUnsignedLongLong(h.ptr()));
+      return mag_scalar_from_int64(nb::cast<int64_t>(h));
+    }
     if (nb::isinstance<nb::float_>(h)) return mag_scalar_from_float64(nb::cast<double>(h));
     throw nb::type_error("Expected scalar (bool|int|float)");
   }
@@ -221,7 +234,7 @@ namespace mag::bindings {
 
   dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h) {
     if (nb::isinstance<nb::bool_>(h)) return dtype_wrapper{MAG_DTYPE_BOOLEAN};
-    if (nb::isinstance<nb::int_>(h)) return dtype_wrapper{MAG_DTYPE_INT64};
+    if (nb::isinstance<nb::int_>(h)) return dtype_wrapper{py_int_is_large_unsigned(h) ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64};
     if (nb::isinstance<nb::float_>(h)) return dtype_wrapper{MAG_DTYPE_FLOAT32};
     throw nb::type_error("Cannot deduce dtype from this object");
   }
