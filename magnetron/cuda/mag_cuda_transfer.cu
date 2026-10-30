@@ -98,7 +98,14 @@ namespace mag {
           stream
           ), "failed to enqueue async D2D copy"
         );
-        mag_cu_rt_check(err, cudaStreamSynchronize(stream), "failed to synchronize stream after D2D copy");
+        if (mag_device_t *src_dvc = src->meta.device; src_dvc != dvc) {
+          const auto &src_phys_device = *static_cast<const physical_device *>(src_dvc->impl);
+          cudaEvent_t copy_done = phys_device.event();
+          mag_cu_rt_check(err, cudaEventRecord(copy_done, stream), "failed to record event on destination device");
+          mag_cu_rt_check(err, cudaSetDevice(src_ordinal), "failed to set active device");
+          mag_cu_rt_check(err, cudaStreamWaitEvent(src_phys_device.stream(), copy_done, 0), "failed to wait for event on source device");
+          mag_cu_rt_check(err, cudaSetDevice(dst_ordinal), "failed to set active device");
+        }
         return MAG_OK;
       } break;
     }

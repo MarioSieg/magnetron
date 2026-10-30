@@ -125,6 +125,9 @@ namespace mag {
       .alloc_storage = &alloc_storage_buffer,
       .manual_seed = &set_global_seed,
       .transfer = &bidirectional_transfer,
+      .sync = &sync_device,
+      .materialization_barrier = &wait_device,
+      .barrier_query = &query_device,
       .physical_device_name = {}
     };
 
