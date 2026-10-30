@@ -69,7 +69,7 @@ namespace mag::bindings {
         return;
       }
       std::optional<mag_device_id_t> dvc_id = resolve_device_id_str(*device);
-      if (!device) throw std::invalid_argument {"Invalid device id: '" + *device + "'"};
+      if (!dvc_id) throw std::invalid_argument {"Invalid device id: '" + *device + "'"};
       throw_if_error(invoke_no_gil([&]() -> mag_status_t { return mag_device_sync(&err, get_ctx(), *dvc_id); }), err);
     }, "device"_a = nb::none(),
     "Block until all pending work in async device queues is completed and the queues are drained. Async errors are reported here."
