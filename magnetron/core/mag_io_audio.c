@@ -193,7 +193,7 @@ mag_status_t mag_save_audio(mag_error_t *err, mag_tensor_t *tensor, const char *
   int64_t c = contig->meta.coords.shape[0];
   int64_t frames = contig->meta.coords.shape[1];
 
-  stat = mag_sto_sync_barrier_raw(err, contig->storage); /* Sync before reading */
+  stat = mag_sto_sync_barrier_r(err, contig->storage); /* Sync before reading */
   if (mag_iserr(stat)) goto cleanup;
   const float *restrict src = (const float *)mag_tensor_data_ptr(contig);
 

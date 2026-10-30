@@ -38,20 +38,14 @@
       if (inner == 1) { \
         for (int64_t flat = ra; flat < rb; ++flat) { \
           int64_t g = bi[flat]; \
-          if (g < 0) g += ax; \
-          if (mag_unlikely(!(g >= 0 && g < ax))) { \
-            return mag_set_error(err, MAG_ERR_KERNEL, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
-          } \
+          mag_index_wrap_or_fail("gather", g, ax); \
           br[flat] = bx[cur_o*ax + g]; \
           if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } \
         } \
       } else { \
         for (int64_t flat = ra; flat < rb; ++flat) { \
           int64_t g = bi[flat]; \
-          if (g < 0) g += ax; \
-          if (mag_unlikely(!(g >= 0 && g < ax))) { \
-            return mag_set_error(err, MAG_ERR_KERNEL, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
-          } \
+          mag_index_wrap_or_fail("gather", g, ax); \
           br[flat] = bx[(cur_o*ax + g)*inner + cur_k]; \
           if (++cur_k == inner) { cur_k = 0; if (++cur_j == out_ax) { cur_j = 0; ++cur_o; } } \
         } \
@@ -65,10 +59,7 @@
       int64_t index_offset = 0; \
       for (int64_t d = 0; d < index->meta.coords.rank; ++d) index_offset += oc[d]*index->meta.coords.strides[d]; \
       int64_t g = bi[index_offset]; \
-      if (g < 0) g += ax; \
-      if (mag_unlikely(!(g >= 0 && g < ax))) { \
-        return mag_set_error(err, MAG_ERR_KERNEL, "gather: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, ax); \
-      } \
+      mag_index_wrap_or_fail("gather", g, ax); \
       int64_t src_off = 0, dst_off = 0; \
       for (int64_t d = 0; d < src->meta.coords.rank; ++d) src_off += (d == axis ? g : oc[d])*src->meta.coords.strides[d]; \
       for (int64_t d = 0; d < r->meta.coords.rank; ++d) dst_off += oc[d]*r->meta.coords.strides[d]; \
@@ -115,10 +106,7 @@ mag_gen_stub_gather(int64_t, int64)
       int64_t row_end   = (rb - 1) / row_size; \
       for (int64_t row = row_start; row <= row_end; ++row) { \
         int64_t g = bi[row]; \
-        if (g < 0) g += vocab_size; \
-        if (mag_unlikely(!(g >= 0 && g < vocab_size))) { \
-          return mag_set_error(err, MAG_ERR_KERNEL, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, vocab_size); \
-        } \
+        mag_index_wrap_or_fail("embedding", g, vocab_size); \
         int64_t dst_off = row*row_size; \
         int64_t src_off = g  * row_size; \
         int64_t a = (row == row_start) ? (ra - dst_off) : 0; \
@@ -132,10 +120,7 @@ mag_gen_stub_gather(int64_t, int64)
     int64_t cur_g; \
     { int64_t idx_off = 0, tmp = cur_row; \
       for (int64_t d = indices->meta.coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->meta.coords.shape[d])*indices->meta.coords.strides[d]; tmp /= indices->meta.coords.shape[d]; } \
-      cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
-      if (mag_unlikely(!(cur_g >= 0 && cur_g < vocab_size))) { \
-        return mag_set_error(err, MAG_ERR_KERNEL, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
-      } \
+      cur_g = bi[idx_off]; mag_index_wrap_or_fail("embedding", cur_g, vocab_size); \
     } \
     for (int64_t flat = ra; flat < rb; ++flat) { \
       int64_t w_off = cur_g*weight->meta.coords.strides[0]; \
@@ -148,10 +133,7 @@ mag_gen_stub_gather(int64_t, int64)
         if (mag_likely(cur_row < n_idx)) { \
           int64_t idx_off = 0, tmp = cur_row; \
           for (int64_t d = indices->meta.coords.rank-1; d >= 0; --d) { idx_off += (tmp % indices->meta.coords.shape[d])*indices->meta.coords.strides[d]; tmp /= indices->meta.coords.shape[d]; } \
-          cur_g = bi[idx_off]; if (cur_g < 0) cur_g += vocab_size; \
-          if (mag_unlikely(!(cur_g >= 0 && cur_g < vocab_size))) { \
-        return mag_set_error(err, MAG_ERR_KERNEL, "embedding: index %" PRIi64 " is out of range [0, %" PRIi64 ").", cur_g, vocab_size); \
-      } \
+          cur_g = bi[idx_off]; mag_index_wrap_or_fail("embedding", cur_g, vocab_size); \
         } \
       } \
     } \
@@ -200,10 +182,7 @@ mag_gen_stub_embedding(int64_t, int64)
       int64_t j = sc[ax]; \
       int64_t idx_off = j*idx->meta.coords.strides[0]; \
       int64_t g = bi[idx_off]; \
-      if (g < 0) g += rra; \
-      if (mag_unlikely(!(g >= 0 && g < rra))) { \
-        return mag_set_error(err, MAG_ERR_KERNEL, "index_add_: idx %" PRIi64 " is out of range [0, %" PRIi64 ").", g, rra); \
-      } \
+      mag_index_wrap_or_fail("index_add_", g, rra); \
       int64_t src_off = 0; \
       for (int64_t dx=0; dx < ra; ++dx) src_off += sc[dx]*src->meta.coords.strides[dx]; \
       sc[ax] = g; \
@@ -268,10 +247,7 @@ mag_gen_stub_index_add(int64_t, int64, mag_cvt_nop, int64_t, mag_index_add_mul_i
       for (int64_t d=0; d < rank; ++d) { if (d == axis) continue; idx_row += c[d]*idx->meta.coords.strides[d]; src_row += c[d]*src->meta.coords.strides[d]; dst_row += c[d]*r->meta.coords.strides[d]; } \
       for (int64_t j=0; j < s_axis; ++j) { \
         int64_t g = bi[idx_row + j*ist]; \
-        if (g < 0) g += self_ax; \
-        if (mag_unlikely(!(g >= 0 && g < self_ax))) { \
-          return mag_set_error(err, MAG_ERR_KERNEL, "scatter: index %" PRIi64 " is out of range [0, %" PRIi64 ").", g, self_ax); \
-        } \
+        mag_index_wrap_or_fail("scatter", g, self_ax); \
         int64_t dst_off = dst_row + g*rst; \
         int64_t src_off = src_row + j*xst; \
         mag_bnd_chk(bs+dst_off, r->storage->base, r->storage->size); \

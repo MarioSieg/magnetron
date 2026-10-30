@@ -39,6 +39,8 @@ namespace mag {
       .alignment = 256, // cudaMalloc guarantees this
       .base = base,
       .size = size,
+      .prev_write_seq = 0,
+      .prev_acc_seq = 0,
       .aux = {},
     };
     mag_rc_init_object(*out, +[](void *self) -> mag_status_t {

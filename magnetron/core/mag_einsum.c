@@ -1037,7 +1037,7 @@ static mag_status_t mag_ein_collapse_repeats(mag_error_t *err, mag_tensor_t **ou
     ++new_rank;
   }
   new_str[new_rank] = '\0';
-  mag_status_t stat = mag_strided_view(err, out, x->ctx, x, new_rank, new_shape, new_strides, (int64_t)mag_tensor_data_offset(x));
+  mag_status_t stat = mag_strided_view(err, out, x->ctx, x, new_rank, new_shape, new_strides, x->meta.storage_offset);
   if (mag_iserr(stat)) return stat;
   snprintf(subscript->str.buf, sizeof(subscript->str.buf), "%s", new_str);
   subscript->charset = seen;

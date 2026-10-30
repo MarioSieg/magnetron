@@ -120,6 +120,15 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #define mag_scalar_to_uint64(s) ((uint64_t)mag_scalar_as_uint64(s))
 #define mag_scalar_to_int64(s) ((int64_t)mag_scalar_as_int64(s))
 
+#define mag_index_wrap_or_fail(name, g, size) \
+  do { \
+    int64_t mag_idx_raw_ = (g); \
+    int64_t mag_idx_size_ = (size); \
+    if ((g) < 0) (g) += mag_idx_size_; \
+    if (mag_unlikely((uint64_t)(g) >= (uint64_t)mag_idx_size_)) \
+      return mag_set_error(err, MAG_ERR_BOUNDS, name ": index %" PRIi64 " is out of bounds for dimension with size %" PRIi64 ".", mag_idx_raw_, mag_idx_size_); \
+  } while (0)
+
 #include "mag_cpu_simd.h"
 #include "mag_cpu_simd_functions.h"
 #include "mag_cpu_simd_philox4x32.h"

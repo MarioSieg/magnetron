@@ -13,6 +13,8 @@
 
 #include <mutex>
 
+#include <core/mag_envcfg.h>
+
 #include "mag_cuda_unary.cuh"
 #include "mag_cuda_binary.cuh"
 #include "mag_cuda_fill.cuh"
@@ -167,8 +169,30 @@ namespace mag {
     if (mag_status_t stat = (*kernel)(err, *cmd, stream); mag_unlikely(mag_iserr(stat)))
       return stat;
     mag_cu_rt_check(err, cudaGetLastError(), "kernel execution failed for operator");
-    if constexpr (sync_after_each_op)
+    static const bool launch_blocking = mag_envcfg_launch_blocking();
+    if (launch_blocking) {
       mag_cu_rt_check(err, cudaStreamSynchronize(stream), "failed to synchronize stream");
+      return phys_device.check_index_fault(err);
+    }
     return MAG_OK;
+  }
+
+  mag_status_t sync_device(mag_error_t *err, mag_device_t *dvc) {
+    const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
+    cudaStream_t stream = phys_device.stream();
+    if (!stream) return MAG_OK;
+    mag_cu_rt_check(err, cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)), "failed to set active device");
+    mag_cu_rt_check(err, cudaStreamSynchronize(stream), "failed to synchronize stream");
+    return phys_device.check_index_fault(err); /* Index errors of queued kernels surface here, like deferred errors of the async CPU stream */
+  }
+
+  mag_status_t wait_device(mag_error_t *err, mag_device_t *dvc, mag_sync_barrier_seq_t) {
+    return sync_device(err, dvc);
+  }
+
+  bool query_device(mag_device_t *dvc, mag_sync_barrier_seq_t) {
+    const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
+    cudaStream_t stream = phys_device.stream();
+    return !stream || cudaStreamQuery(stream) == cudaSuccess;
   }
 }

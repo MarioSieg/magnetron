@@ -931,7 +931,7 @@ const char *mag_tensor_to_string(mag_tensor_t *tensor, int64_t head, int64_t tai
   mag_error_t err = {0};
   mag_tensor_t *host = NULL;
   if (mag_iserr(mag_transfer(&err, &host, tensor, mag_device(CPU, 0)))) return NULL;
-  if (mag_iserr(mag_sto_sync_barrier_raw(&err, host->storage))) { /* Sync before reading */
+  if (mag_iserr(mag_sto_sync_barrier_r(&err, host->storage))) { /* Sync before reading */
     mag_tensor_decref(host);
     return NULL;
   }

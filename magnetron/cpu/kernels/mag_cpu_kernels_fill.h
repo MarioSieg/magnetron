@@ -422,7 +422,6 @@ mag_gen_stub_eye(int64_t, int64, 1, 0)
 #undef mag_gen_stub_eye
 
 static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_kernel_payload_t *payload) {
-  (void)err;
   mag_tensor_t *r = payload->cmd->out[0];
   mag_tensor_t *idx = payload->cmd->in[0];
   int64_t *restrict pr = (int64_t *)mag_tensor_data_ptr_mut(r);
@@ -438,11 +437,11 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
   if (mag_all_shapes_equal_and_contig((const mag_tensor_t *[2]){r, idx}, 2)) {
     for (int64_t i=ra; i < rb; ++i) {
       int64_t cls = pidx[i];
-      if ((uint64_t)cls < (uint64_t)nc) {
-        int64_t off = i*nc + cls;
-        mag_bnd_chk(pr+off, r->storage->base, r->storage->size);
-        pr[off] = 1;
-      }
+      if (mag_unlikely((uint64_t)cls >= (uint64_t)nc))
+        return mag_set_error(err, MAG_ERR_BOUNDS, "one_hot: class %" PRIi64 " is out of bounds for %" PRIi64 " classes.", cls, nc);
+      int64_t off = i*nc + cls;
+      mag_bnd_chk(pr+off, r->storage->base, r->storage->size);
+      pr[off] = 1;
     }
     return MAG_OK;
   }
@@ -452,11 +451,11 @@ static MAG_HOTPROC mag_status_t mag_one_hot_int64(mag_error_t *err, const mag_ke
     int64_t ridx = mag_coords_iter_to_offset(&it, i);
     mag_bnd_chk(pidx+ridx, idx->storage->base, idx->storage->size);
     int64_t cls = pidx[ridx];
-    if ((uint64_t)cls < (uint64_t)nc) {
-      int64_t off = i*nc + cls;
-      mag_bnd_chk(pr+off, r->storage->base, r->storage->size);
-      pr[off] = 1;
-    }
+    if (mag_unlikely((uint64_t)cls >= (uint64_t)nc))
+      return mag_set_error(err, MAG_ERR_BOUNDS, "one_hot: class %" PRIi64 " is out of bounds for %" PRIi64 " classes.", cls, nc);
+    int64_t off = i*nc + cls;
+    mag_bnd_chk(pr+off, r->storage->base, r->storage->size);
+    pr[off] = 1;
   }
   return MAG_OK;
 }

@@ -22,7 +22,29 @@
 #include <cuda_runtime_api.h> /* CUDART_VERSION: nvcc pre-includes this for .cu, spell it out so the toolkit checks below cannot silently evaluate to 0. */
 
 namespace mag {
-  // Device capability bits used to select kernel variants at runtime.
+  struct index_fault final {
+    int flag;
+    int op;
+    int64_t index;
+    int64_t bound;
+  };
+
+  __device__ __forceinline__ void report_index_fault(index_fault *fault, mag_opcode_t op, int64_t index, int64_t bound) {
+    if (atomicCAS(&fault->flag, 0, 1) != 0) return;
+    fault->op = op;
+    fault->index = index;
+    fault->bound = bound;
+    __threadfence_system();
+  }
+
+  __device__ __forceinline__ bool wrap_index(index_fault *fault, mag_opcode_t op, int64_t &g, int64_t bound) {
+    int64_t raw = g;
+    if (g < 0) g += bound;
+    if (static_cast<uint64_t>(g) < static_cast<uint64_t>(bound)) return true;
+    report_index_fault(fault, op, raw, bound);
+    return false;
+  }
+
   struct device_features final {
     enum $ : uint32_t {
       none = 0,
@@ -80,6 +102,8 @@ namespace mag {
     [[nodiscard]] std::string info_string() const;
     [[nodiscard]] mag_status_t reserve_scratch(mag_error_t *err, size_t bytes);
     [[nodiscard]] void *scratch() const noexcept { return m_scratch; }
+    [[nodiscard]] index_fault *index_fault_ptr() const noexcept { return m_fault_dev; } // Device pointer passed to index kernels
+    [[nodiscard]] mag_status_t check_index_fault(mag_error_t *err) const; // Call after a stream sync: turns a reported fault into MAG_ERR_BOUNDS and clears it
 
   protected:
     physical_device() = default;
@@ -107,6 +131,8 @@ namespace mag {
     mutable cudaStream_t m_stream = nullptr;
     mutable cudaEvent_t m_event = nullptr;
     void *m_scratch = nullptr;
+    mutable index_fault *m_fault_host = nullptr;
+    mutable index_fault *m_fault_dev = nullptr;
     size_t m_scratch_size = 0;
   };
 

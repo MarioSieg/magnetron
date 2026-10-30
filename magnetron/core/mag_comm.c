@@ -53,7 +53,7 @@ static mag_status_t mag_comm_host_vbarrier(mag_error_t *err, mag_tensor_t *tenso
   va_start(args, tensors);
   mag_tensor_t *t = tensors;
   for (; t!=NULL; t = va_arg(args, mag_tensor_t *)) {
-    stat = mag_sto_sync_barrier_war_waw(err, t->storage);
+    stat = mag_sto_sync_barrier_w(err, t->storage);
     if (mag_iserr(stat)) break;
   }
   va_end(args);

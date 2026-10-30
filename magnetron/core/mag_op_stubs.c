@@ -209,7 +209,7 @@ mag_status_t mag_broadcast(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *x
     rank,
     shape,
     new_strides,
-    (int64_t)mag_tensor_data_offset(x)
+    x->meta.storage_offset
   );
 }
 
@@ -440,8 +440,8 @@ static mag_status_t mag_transfer_dense(
   if (src->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE) tra_flags|=0x1;
   if (dst->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE) tra_flags|=0x2;
   mag_status_t stat = MAG_OK; /* Await async r/w hazard */
-  if (tra_flags&0x1) stat = mag_sto_sync_barrier_raw(err, src->storage);
-  if (mag_isok(stat) && tra_flags&0x2) stat = mag_sto_sync_barrier_war_waw(err, dst->storage);
+  if (tra_flags&0x1) stat = mag_sto_sync_barrier_r(err, src->storage);
+  if (mag_isok(stat) && tra_flags&0x2) stat = mag_sto_sync_barrier_w(err, dst->storage);
   if (mag_iserr(stat)) return stat;
   if (tra_flags == 0x3) {
     memcpy((void *)mag_tensor_data_ptr_mut(dst), (const void *)mag_tensor_data_ptr(src), mag_tensor_numbytes(src));
@@ -2232,6 +2232,7 @@ static bool mag_pow_rewrite(mag_status_t *stat, mag_error_t *err, mag_tensor_t *
       *stat = mag_ones_like(err, out_result, x);
       return true;
     }
+    if (n >= 2 && !mag_tensor_is_floating_point_typed(x) && !mag_tensor_is_host(x)) return false;
     if (n == 2) {
       *stat = inplace ? mag_sqr_(err, out_result, x) : mag_sqr(err, out_result, x);
       return true;
@@ -2802,7 +2803,7 @@ mag_status_t mag_copy_raw_(mag_error_t *err, mag_tensor_t *tensor, const void *d
       return mag_set_error(err, MAG_ERR_PARAM, "copy_raw: buffer size (%" PRIu64 " bytes) does not match the tensor size (%" PRIu64 " bytes).", (uint64_t)size_bytes, (uint64_t)mag_tensor_numbytes(tensor));
   if (mag_unlikely(!mag_tensor_is_contiguous(tensor)))
       return mag_set_error(err, MAG_ERR_PARAM, "copy_raw: tensor must be contiguous to load from a raw buffer.");
-  mag_status_t stat = mag_sto_sync_barrier_war_waw(err, tensor->storage); /* Queued commands may still read or write the tensor */
+  mag_status_t stat = mag_sto_sync_barrier_w(err, tensor->storage); /* Queued commands may still read or write the tensor */
   if (mag_iserr(stat)) return stat;
   void *dst = (void *)mag_tensor_data_ptr_mut(tensor);
   memcpy(dst, data, size_bytes);
