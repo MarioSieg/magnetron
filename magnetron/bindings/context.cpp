@@ -60,8 +60,17 @@ namespace mag::bindings {
     if (ctx && ctx_is_idle(ctx)) destroy_ctx_now(ctx);
   }
 
+  static void destroy_ctx_at_exit() noexcept {
+    auto *ctx = g_ctx.exchange(nullptr, std::memory_order_acq_rel);
+    if (!ctx) return;
+    g_ctx_shutdown_pending.store(false, std::memory_order_release);
+    mag_ctx_destroy(ctx, true);
+  }
+
   void init_bindings_context(nb::module_ &m) {
     m.attr("_ctx_guard") = nb::capsule {reinterpret_cast<const void *>(1), &destroy_ctx};
+    if (Py_AtExit(&destroy_ctx_at_exit) != 0)
+      PyErr_WarnEx(PyExc_RuntimeWarning, "magnetron: could not register context shutdown handler", 1);
     m.def("sync", [](const std::optional<std::string>& device) -> void {
       mag_error_t err {};
       if (!device) {
