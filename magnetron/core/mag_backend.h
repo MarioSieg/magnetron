@@ -146,13 +146,13 @@ extern MAG_EXPORT mag_backend_t *mag_backend_registry_get_backend(mag_backend_re
 extern MAG_EXPORT bool mag_backend_registry_lookup_device_id(mag_backend_registry_t *reg, mag_device_id_t id, mag_backend_t **out_bck, mag_device_t **out_dvc);
 extern MAG_EXPORT bool mag_backend_registry_best_device(mag_backend_registry_t *reg, mag_backend_type_t type, mag_backend_t **out_bck, mag_device_t **out_dvc);
 extern MAG_EXPORT void mag_backend_registry_manual_seed(mag_backend_registry_t *reg, uint64_t seed);
-extern MAG_EXPORT mag_status_t mag_backend_registry_sync(mag_error_t *err, mag_backend_registry_t *reg); /* Sync all devices of all loaded backends - basicall mag_ctx_sync() */
+extern MAG_EXPORT mag_status_t mag_backend_registry_sync(mag_error_t *err, mag_backend_registry_t *reg);    /* Sync all devices of all loaded backends - basicall mag_ctx_sync() */
 extern MAG_EXPORT mag_status_t mag_backend_registry_shutdown(mag_error_t *err, mag_backend_registry_t *reg);
 
 /* Async storage barriers */
-extern MAG_EXPORT mag_status_t mag_sto_sync_barrier_raw(mag_error_t *err, mag_storage_buffer_t *sto);      /* Read barrier */
-extern MAG_EXPORT mag_status_t mag_sto_sync_barrier_war_waw(mag_error_t *err, mag_storage_buffer_t *sto);  /* Write barrier */
-extern MAG_EXPORT bool mag_sto_sync_barrier_raw_query(const mag_storage_buffer_t *sto); /* Non-blocking check if read barrier is reached */
+extern MAG_EXPORT mag_status_t mag_sto_sync_barrier_r(mag_error_t *err, mag_storage_buffer_t *sto);   /* R.A.W. barrier */
+extern MAG_EXPORT mag_status_t mag_sto_sync_barrier_w(mag_error_t *err, mag_storage_buffer_t *sto);   /* R.A.W. + W.A.W. barrier */
+extern MAG_EXPORT bool mag_sto_sync_barrier_raw_query(const mag_storage_buffer_t *sto);               /* Non-blocking check if read barrier is reached */
 
 #ifdef __cplusplus
 }

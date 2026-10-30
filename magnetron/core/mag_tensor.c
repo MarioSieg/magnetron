@@ -347,7 +347,7 @@ mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void *
       stat = mag_set_error(err, MAG_ERR_STATE, "copy_data: tensor has zero size; nothing to copy.");
       goto cleanup;
     }
-    stat = mag_sto_sync_barrier_raw(err, cont->storage); /* Sync before reading */
+    stat = mag_sto_sync_barrier_r(err, cont->storage); /* Sync before reading */
     if (mag_iserr(stat)) goto cleanup;
     void *dst = (*mag_try_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     if (mag_unlikely(!dst)) {
@@ -408,7 +408,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         wide = scalar;
         wide_is_scalar = true;
       }
-      stat = mag_sto_sync_barrier_raw(err, wide->storage);
+      stat = mag_sto_sync_barrier_r(err, wide->storage);
       if (mag_iserr(stat)) goto cleanup;
       res = mag_scalar_from_float64(*(const float *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
@@ -426,7 +426,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         wide = scalar;
         wide_is_scalar = true;
       }
-      stat = mag_sto_sync_barrier_raw(err, wide->storage);
+      stat = mag_sto_sync_barrier_r(err, wide->storage);
       if (mag_iserr(stat)) goto cleanup;
       res = mag_scalar_from_int64(*(const int64_t *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
@@ -444,7 +444,7 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
         wide = scalar;
         wide_is_scalar = true;
       }
-      stat = mag_sto_sync_barrier_raw(err, wide->storage);
+      stat = mag_sto_sync_barrier_r(err, wide->storage);
       if (mag_iserr(stat)) goto cleanup;
       res = mag_scalar_from_uint64(*(const uint64_t *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
@@ -548,7 +548,7 @@ mag_status_t mag_tensor_mark_host_aliased(mag_error_t *err, mag_tensor_t *tensor
   mag_storage_buffer_t *sto = tensor->storage;
   if (mag_unlikely(!(sto->flags&MAG_STORAGE_FLAG_HOST_VISIBLE)))
     return mag_set_error(err, MAG_ERR_PARAM, "host_alias: tensor storage is not host-visible.");
-  mag_status_t stat = mag_sto_sync_barrier_war_waw(err, sto);
+  mag_status_t stat = mag_sto_sync_barrier_w(err, sto);
   if (mag_iserr(stat)) return stat;
   sto->flags|=MAG_STORAGE_FLAG_HOST_ALIASED;
   return MAG_OK;

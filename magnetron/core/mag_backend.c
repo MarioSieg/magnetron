@@ -387,11 +387,11 @@ static mag_status_t mag_sto_barrier_await_seq(mag_error_t *err, mag_storage_buff
   return (*dvc->materialization_barrier)(err, dvc, seq);
 }
 
-mag_status_t mag_sto_sync_barrier_raw(mag_error_t *err, mag_storage_buffer_t *sto) {
+mag_status_t mag_sto_sync_barrier_r(mag_error_t *err, mag_storage_buffer_t *sto) {
   return mag_sto_barrier_await_seq(err, sto, sto->prev_write_seq);
 }
 
-mag_status_t mag_sto_sync_barrier_war_waw(mag_error_t *err, mag_storage_buffer_t *sto) {
+mag_status_t mag_sto_sync_barrier_w(mag_error_t *err, mag_storage_buffer_t *sto) {
   return mag_sto_barrier_await_seq(err, sto, sto->prev_acc_seq);
 }
 
