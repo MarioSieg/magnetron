@@ -10,6 +10,8 @@
 */
 
 #include "prelude.hpp"
+#include <core/mag_backend.h>
+#include <core/mag_tensor.h>
 
 namespace mag::bindings {
   [[nodiscard]] static nb::list expand_ellipsis(nb::tuple idxs, int64_t rank) {
@@ -99,6 +101,27 @@ namespace mag::bindings {
     mag_error_t err {};
     throw_if_error(mag_strided_view(&err, &res, mag_tensor_context(*self), *self, nrank, nrank ? nshape : nullptr, nrank ? nstrides : nullptr, offset), err);
     out = tensor_wrapper{res};
+    return true;
+  }
+
+  /*
+  ** Bounds check an int64 index tensor directly in host memory, if it lives on the host and no queued command still writes it.
+  ** Returns false if the check must run as device ops instead. Throws IndexError on out of bounds indices.
+  */
+  [[nodiscard]] static bool host_index_bounds(mag_tensor_t *t, int64_t size, int64_t axis, bool &has_neg) {
+    if (!mag_tensor_is_host(t) || !mag_tensor_is_contiguous(t) || mag_tensor_type(t) != MAG_DTYPE_INT64) return false;
+    if (!mag_sto_sync_barrier_raw_query(t->storage)) return false;
+    const auto *p = reinterpret_cast<const int64_t *>(mag_tensor_data_ptr(t));
+    int64_t n = mag_tensor_numel(t);
+    has_neg = false;
+    for (int64_t i=0; i < n; ++i) {
+      if (p[i] < -size || p[i] >= size) {
+        std::ostringstream oss;
+        oss << "Index out of bounds for axis " << axis << " (size " << size << ")";
+        throw nb::index_error(oss.str().c_str());
+      }
+      has_neg |= p[i] < 0;
+    }
     return true;
   }
 
@@ -234,6 +257,18 @@ namespace mag::bindings {
       tensor_wrapper &t = plan.idx[j];
       int64_t size = shape[plan.axes[j]];
       if (mag_tensor_numel(*t) > 0) {
+        bool has_neg = true;
+        if (host_index_bounds(*t, size, plan.axes[j], has_neg)) { /* Already materialized: validate in place without draining async queues */
+          if (has_neg) {
+            tensor_wrapper hi = i64_scalar(size, device);
+            tensor_wrapper zero = i64_scalar(0, device);
+            tensor_wrapper neg = call_op(mag_lt, *t, *zero);
+            tensor_wrapper wrapped = call_op(mag_add, *t, *hi);
+            t = call_op(mag_where, *neg, *wrapped, *t);
+          }
+          t = call_op(mag_expand, *t, brank, plan.broadcast_shape.data());
+          continue;
+        }
         tensor_wrapper lo = i64_scalar(-size, device);
         tensor_wrapper hi = i64_scalar(size, device);
         tensor_wrapper under = call_op(mag_lt, *t, *lo);

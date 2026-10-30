@@ -12,6 +12,7 @@
 #include <prelude.hpp>
 #include <core/mag_envcfg.h>
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -223,17 +224,97 @@ TEST(async_stream, manual_seed_is_ordered_with_rng_ops) {
 }
 
 TEST(async_stream, scalar_pow_does_not_wait) {
+    env_override async {"MAG_CPU_ASYNC", "1"};
+    env_override budget {"MAG_CPU_QUEUE_MB", "1024"}; /* No in-flight budget backpressure, which also counts as a host wait */
     raw_ctx ctx {};
+    ASSERT_TRUE(cpu_device(*ctx)->flags&MAG_DEVICE_FLAGS_ASYNC);
     ref x {full(*ctx, 1<<20, 3.0f)};
-    ref e {scalar(*ctx, 2.0f)};
+    ref busy {full(*ctx, 1<<20, 0.0f)};
+    ref one {scalar(*ctx, 1.0f)};
     mag_error_t err {};
-    check(mag_ctx_sync(&err, *ctx), err); /* Empty queue: no backpressure wait can be mistaken for reading the exponent */
+    check(mag_ctx_sync(&err, *ctx), err);
+    for (int i=0; i < 64; ++i) { /* Keep the queue busy: the exponent created below is queued behind this */
+        ref out {};
+        check(mag_add_(&err, out.out(), busy.get(), one.get()), err);
+    }
     int64_t waits_before {(*ctx)->telemetry.host_waits};
+    ref e {scalar(*ctx, 2.0f)};
     ref r {};
     check(mag_pow(&err, r.out(), x.get(), e.get()), err);
     if (!mag_envcfg_launch_blocking()) /* Launch blocking waits for every command by design */
         ASSERT_EQ((*ctx)->telemetry.host_waits, waits_before) << "pow with a scalar exponent must not drain the queue";
     ASSERT_EQ(sum_item(r.get()), 9.0*(1<<20));
+    ASSERT_EQ(sum_item(busy.get()), 64.0*(1<<20));
+}
+
+TEST(async_stream, pow_scalar_does_not_wait) {
+    env_override async {"MAG_CPU_ASYNC", "1"};
+    env_override budget {"MAG_CPU_QUEUE_MB", "1024"};
+    raw_ctx ctx {};
+    ref x {full(*ctx, 1<<20, 3.0f)};
+    ref busy {full(*ctx, 1<<20, 0.0f)};
+    ref one {scalar(*ctx, 1.0f)};
+    mag_error_t err {};
+    check(mag_ctx_sync(&err, *ctx), err);
+    for (int i=0; i < 64; ++i) {
+        ref out {};
+        check(mag_add_(&err, out.out(), busy.get(), one.get()), err);
+    }
+    int64_t waits_before {(*ctx)->telemetry.host_waits};
+    ref r2 {};
+    check(mag_pow_scalar(&err, r2.out(), x.get(), mag_scalar_from_int64(2)), err); /* Rewritten into sqr */
+    ref r25 {};
+    check(mag_pow_scalar(&err, r25.out(), x.get(), mag_scalar_from_float64(0.5)), err); /* Rewritten into sqrt */
+    ref rg {};
+    check(mag_pow_scalar(&err, rg.out(), x.get(), mag_scalar_from_float64(1.5)), err); /* Generic kernel */
+    if (!mag_envcfg_launch_blocking())
+        ASSERT_EQ((*ctx)->telemetry.host_waits, waits_before) << "pow_scalar must not drain the queue";
+    ASSERT_EQ(sum_item(r2.get()), 9.0*(1<<20));
+    ASSERT_NEAR(sum_item(r25.get()), std::sqrt(3.0)*(1<<20), 1e-3*std::sqrt(3.0)*(1<<20)); /* float32 accumulation over 1M elements */
+    ASSERT_NEAR(sum_item(rg.get()), std::pow(3.0, 1.5)*(1<<20), 1e-3*std::pow(3.0, 1.5)*(1<<20));
+    ASSERT_EQ(sum_item(busy.get()), 64.0*(1<<20));
+}
+
+TEST(async_stream, pow_with_pending_exponent_tensor_does_not_wait) {
+    env_override async {"MAG_CPU_ASYNC", "1"};
+    env_override budget {"MAG_CPU_QUEUE_MB", "1024"};
+    raw_ctx ctx {};
+    ref x {full(*ctx, 1<<20, 3.0f)};
+    ref busy {full(*ctx, 1<<20, 0.0f)};
+    ref one {scalar(*ctx, 1.0f)};
+    mag_error_t err {};
+    check(mag_ctx_sync(&err, *ctx), err);
+    for (int i=0; i < 64; ++i) {
+        ref out {};
+        check(mag_add_(&err, out.out(), busy.get(), one.get()), err);
+    }
+    int64_t waits_before {(*ctx)->telemetry.host_waits};
+    ref e {};
+    check(mag_add(&err, e.out(), one.get(), one.get()), err); /* Exponent 2, still queued behind busy */
+    ref r {};
+    check(mag_pow(&err, r.out(), x.get(), e.get()), err); /* Must take the generic kernel instead of reading e */
+    if (!mag_envcfg_launch_blocking())
+        ASSERT_EQ((*ctx)->telemetry.host_waits, waits_before) << "pow must not wait for a pending exponent";
+    ASSERT_EQ(sum_item(r.get()), 9.0*(1<<20));
+}
+
+TEST(async_stream, pow_scalar_matches_pow) {
+    raw_ctx ctx {};
+    mag_error_t err {};
+    ref x {full(*ctx, 64, 1.75f)};
+    for (double e : {0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 0.5, -0.5, -1.0, 2.5, -3.0}) {
+        ref et {scalar(*ctx, static_cast<float>(e))};
+        ref a {};
+        check(mag_pow(&err, a.out(), x.get(), et.get()), err);
+        ref b {};
+        check(mag_pow_scalar(&err, b.out(), x.get(), mag_scalar_from_float64(e)), err);
+        ASSERT_NEAR(sum_item(a.get()), sum_item(b.get()), 1e-3*std::abs(sum_item(a.get()))) << "exponent " << e;
+        ref c {full(*ctx, 64, 1.75f)};
+        ref co {};
+        check(mag_pow_scalar_(&err, co.out(), c.get(), mag_scalar_from_float64(e)), err);
+        ASSERT_EQ(co.get(), c.get());
+        ASSERT_NEAR(sum_item(c.get()), sum_item(a.get()), 1e-3*std::abs(sum_item(a.get()))) << "in-place exponent " << e;
+    }
 }
 
 TEST(async_stream, host_aliased_storage_is_synchronous) {

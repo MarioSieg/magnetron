@@ -328,3 +328,86 @@ def test_invalid_queue_env_falls_back(value: str) -> None:
     r = _run('from magnetron import Tensor; print((Tensor.zeros(8) + 1).sum().item())', MAG_CPU_ASYNC='1', MAG_CPU_QUEUE_DEPTH=value, MAG_CPU_QUEUE_MB=value)
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip().splitlines()[-1] == '8.0'
+
+
+def test_scalar_exponent_pow_with_queued_work() -> None:
+    busy = Tensor.zeros(512, 512)
+    for _ in range(50):
+        busy += 1.0
+    x = Tensor.full(256, fill_value=3.0)
+    assert (x**2).tolist()[0] == 9.0  # Python number exponent goes through mag_pow_scalar, never read back
+    assert busy.sum().item() == 50.0 * busy.numel
+
+
+@pytest.mark.parametrize('dt', [dtype.float32, dtype.float16, dtype.bfloat16, dtype.int32, dtype.int64, dtype.uint8])
+def test_scalar_ops_all_dtypes(dt: dtype.DType) -> None:
+    x = Tensor.full(8, fill_value=3, dtype=dt)
+    assert (x + 2).tolist() == [5] * 8  # Python scalar operand becomes a scalar tensor of dtype dt
+    assert (x * 0.5 if dt in (dtype.float32, dtype.float16, dtype.bfloat16) else x * 2).tolist() == [1.5 if dt in (dtype.float32, dtype.float16, dtype.bfloat16) else 6] * 8
+
+
+def test_tensor_index_host_fast_path() -> None:
+    table = Tensor.arange(0, 40, dtype=dtype.float32).reshape(10, 4)
+    busy = Tensor.zeros(512, 512)
+    for _ in range(50):
+        busy += 1.0  # Pending work must not change indexing results
+    assert table[Tensor([[3]], dtype=dtype.int64)].tolist() == [[[12.0, 13.0, 14.0, 15.0]]]
+    assert table[Tensor([-1, 0], dtype=dtype.int64)].tolist() == [[36.0, 37.0, 38.0, 39.0], [0.0, 1.0, 2.0, 3.0]]
+    assert table[Tensor([2], dtype=dtype.int64), Tensor([-1], dtype=dtype.int64)].tolist() == [11.0]
+    with pytest.raises(IndexError):
+        table[Tensor([10], dtype=dtype.int64)]
+    with pytest.raises(IndexError):
+        table[Tensor([-11], dtype=dtype.int64)]
+    with pytest.raises(IndexError):
+        table[Tensor([0], dtype=dtype.int64), Tensor([4], dtype=dtype.int64)]  # In range once linearized, still out of bounds per axis
+
+
+def test_tensor_index_computed_on_device() -> None:
+    table = Tensor.arange(0, 40, dtype=dtype.float32).reshape(10, 4)
+    idx = Tensor([1, 2], dtype=dtype.int64) * 3  # Still being computed: bounds are checked by device ops
+    assert table[idx].tolist() == [[12.0, 13.0, 14.0, 15.0], [24.0, 25.0, 26.0, 27.0]]
+    with pytest.raises(IndexError):
+        table[Tensor([4], dtype=dtype.int64) * 3]
+    assert table[Tensor([-1], dtype=dtype.int32)].tolist() == [[36.0, 37.0, 38.0, 39.0]]  # Cast index: device path
+
+
+def test_tensor_index_setitem() -> None:
+    t = Tensor.zeros(5, 3)
+    t[Tensor([0, -1], dtype=dtype.int64)] = 7.0
+    assert t.sum(dim=1).tolist() == [21.0, 0.0, 0.0, 0.0, 21.0]
+    with pytest.raises(IndexError):
+        t[Tensor([5], dtype=dtype.int64)] = 1.0
+
+
+@pytest.mark.parametrize('e', [0, 1, 2, 3, 4, 5, 0.5, -0.5, -1, 2.5, -3.0, True])
+def test_pow_python_number_exponent(e: float) -> None:
+    a = np.linspace(0.5, 3.0, 16, dtype=np.float32)
+    x = Tensor(a)
+    ref = a ** np.float32(e)
+    np.testing.assert_allclose((x**e).numpy(), ref, rtol=1e-5)
+    np.testing.assert_allclose(x.pow(e).numpy(), ref, rtol=1e-5)
+    y = Tensor(a)
+    y **= e
+    np.testing.assert_allclose(y.numpy(), ref, rtol=1e-5)
+    z = Tensor(a)
+    z.pow_(e)
+    np.testing.assert_allclose(z.numpy(), ref, rtol=1e-5)
+
+
+def test_pow_python_number_exponent_dtypes() -> None:
+    xi = Tensor([1, 2, 3], dtype=dtype.int32)
+    assert (xi**2).dtype == dtype.int32 and (xi**2).tolist() == [1, 4, 9]
+    assert (xi**3).tolist() == [1, 8, 27]
+    r = xi**0.5  # Float exponent on int base promotes like a float scalar tensor would
+    assert r.dtype == mag.context.get_default_dtype()
+    np.testing.assert_allclose(r.numpy(), np.sqrt([1.0, 2.0, 3.0]), rtol=1e-6)
+    assert (2**xi).tolist() == [2, 4, 8]  # Reflected: base is the number, unchanged path
+
+
+def test_pow_python_number_exponent_grad() -> None:
+    x = Tensor([1.0, 2.0, 3.0], requires_grad=True)
+    (x**3).sum().backward()
+    np.testing.assert_allclose(x.grad.numpy(), [3.0, 12.0, 27.0], rtol=1e-6)
+    x = Tensor([1.0, 4.0], requires_grad=True)
+    (x**1.5).sum().backward()
+    np.testing.assert_allclose(x.grad.numpy(), [1.5, 3.0], rtol=1e-6)

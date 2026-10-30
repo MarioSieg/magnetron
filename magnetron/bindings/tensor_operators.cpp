@@ -95,6 +95,30 @@ namespace mag::bindings {
     }
     return tensor_wrapper{out};
   }
+
+  template <const bool Inplace>
+  [[nodiscard]] static mag_tensor_t *pow_impl(const tensor_wrapper &a, nb::handle rhs) {
+    mag_tensor_t *out = nullptr;
+    mag_error_t err {};
+    if (nb::isinstance<nb::int_>(rhs) || nb::isinstance<nb::float_>(rhs)) {
+      mag_scalar_t e = scalar_from_py_number(rhs);
+      auto invoke = [&] { return Inplace ? mag_pow_scalar_(&err, &out, *a, e) : mag_pow_scalar(&err, &out, *a, e); };
+      if constexpr (enable_op_recorder) {
+        op_recorder::singleton().profile(MAG_OP_POW, [&] { throw_if_error(invoke_auto_gil(a, invoke), err); }, {*a});
+      } else {
+        throw_if_error(invoke_auto_gil(a, invoke), err);
+      }
+      return out;
+    }
+    tensor_wrapper b = normalize_rhs_to_tensor(a, rhs);
+    auto invoke = [&] { return Inplace ? mag_pow_(&err, &out, *a, *b) : mag_pow(&err, &out, *a, *b); };
+    if constexpr (enable_op_recorder) {
+      op_recorder::singleton().profile(MAG_OP_POW, [&] { throw_if_error(invoke_auto_gil(a, b, invoke), err); }, {*a, *b});
+    } else {
+      throw_if_error(invoke_auto_gil(a, b, invoke), err);
+    }
+    return out;
+  }
 }
 
 #define bind_unary_pair(cls, name, opcode, doc) bind_unary_pair_named(cls, name, name, opcode, doc)
@@ -1751,7 +1775,38 @@ namespace mag::bindings {
     bind_binary_full_named(cls, sub, sub, sub, MAG_OP_SUB, "Element-wise subtraction.");
     bind_binary_full_named(cls, mul, mul, mul, MAG_OP_MUL, "Element-wise multiplication.");
     bind_binary_full_named(cls, mod, mod, mod, MAG_OP_MOD, "Element-wise modulo.");
-    bind_binary_full_named(cls, pow, pow, pow, MAG_OP_POW, "Element-wise exponentiation.");
+
+    cls.def("__pow__", [](const tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper {
+      return tensor_wrapper{pow_impl<false>(a, rhs)};
+    }, "rhs"_a, "Element-wise exponentiation.");
+    cls.def("__rpow__", [](const tensor_wrapper &a, nb::handle lhs) -> tensor_wrapper {
+      tensor_wrapper l = normalize_rhs_to_tensor(a, lhs);
+      mag_tensor_t *out = nullptr;
+      mag_error_t err {};
+      if constexpr (enable_op_recorder) {
+        op_recorder::singleton().profile(MAG_OP_POW, [&] {
+          throw_if_error(invoke_auto_gil(l, a, [&] { return mag_pow(&err, &out, *l, *a); }), err);
+        }, {*l, *a});
+      } else {
+        throw_if_error(invoke_auto_gil(l, a, [&] { return mag_pow(&err, &out, *l, *a); }), err);
+      }
+      return tensor_wrapper{out};
+    }, "lhs"_a, "Right-hand side of pow (reflected).");
+    cls.def("__ipow__", [](tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper& {
+      mag_tensor_t *out = pow_impl<true>(a, rhs);
+      if (a) mag_tensor_decref(*a);
+      *a = out;
+      return a;
+    }, "rhs"_a, "In-place pow.", nb::rv_policy::reference);
+    cls.def("pow", [](const tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper {
+      return tensor_wrapper{pow_impl<false>(a, rhs)};
+    }, "rhs"_a, "Element-wise exponentiation.");
+    cls.def("pow_", [](tensor_wrapper &a, nb::handle rhs) -> tensor_wrapper& {
+      mag_tensor_t *out = pow_impl<true>(a, rhs);
+      if (a) mag_tensor_decref(*a);
+      *a = out;
+      return a;
+    }, "rhs"_a, "In-place version.", nb::rv_policy::reference);
     bind_binary_full_named(cls, truediv, div, truediv, MAG_OP_DIV, "Element-wise true division.");
     bind_binary_full_named(cls, floordiv, floordiv, floordiv, MAG_OP_FLOORDIV, "Element-wise floor division.");
     bind_unary_pair_named(cls, logical_not, not, MAG_OP_NOT, "Element-wise bitwise NOT (logical NOT for boolean tensors).");

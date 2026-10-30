@@ -3053,6 +3053,30 @@ extern MAG_EXPORT mag_status_t mag_pow(mag_error_t *err, mag_tensor_t **out_resu
 extern MAG_EXPORT mag_status_t mag_pow_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);
 
 /**
+ * Compute x raised to a constant scalar power element-wise.
+ * Unlike mag_pow with a scalar tensor, the exponent is never read back from device memory, so this never waits on queued work.
+ * Common exponents (0..5, 0.5, -0.5, -1) are rewritten into cheaper ops.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives the result tensor; the caller owns one reference.
+ * @param x Base tensor.
+ * @param y Exponent. A float exponent on a non-floating-point @p x uses the context default dtype, an int64 exponent on a bool @p x uses int64, otherwise the dtype of @p x.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_pow_scalar(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_scalar_t y);
+
+/**
+ * Compute x raised to a constant scalar power element-wise into @p x.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives @p x with an added reference.
+ * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
+ * @param y Exponent, with the same dtype rules as mag_pow_scalar. The promoted dtype must equal the dtype of @p x.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_pow_scalar_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_scalar_t y);
+
+/**
  * Compute the matrix product of two floating-point tensors. Leading batch dims are broadcast.
  *
  * @param err Error output; set when the call fails.

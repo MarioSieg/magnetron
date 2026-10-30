@@ -2173,6 +2173,7 @@ static bool mag_pow_scalar_exponent(double *out, const mag_tensor_t *x, mag_tens
   if (y->meta.coords.rank > x->meta.coords.rank) return false;
   if (!mag_tensor_is_host(y)) return false;
   if (mag_tensor_requires_grad(y)) return false;
+  if (!mag_sto_sync_barrier_raw_query(y->storage)) return false; /* Exponent still being computed: reading it would drain the queue, so use the generic kernel */
   mag_dtype_t prom;
   if (!mag_promote_type(&prom, x->meta.dtype, y->meta.dtype)) return false;
   if (prom != x->meta.dtype) return false;
@@ -2196,49 +2197,106 @@ static mag_status_t mag_pow_cube(mag_error_t *err, mag_tensor_t **out_result, ma
   return stat;
 }
 
-mag_status_t mag_pow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
-  double e;
-  if (mag_pow_scalar_exponent(&e, x, y)) { /* Rewrite common exponent into simplified direct ops */
-    if (e == 2.0) return mag_sqr(err, out_result, x);
-    if (e == 1.0) {
-      mag_tensor_incref(x);
-      *out_result = x;
+static mag_status_t mag_pow_quartic(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, bool inplace) {
+  *out_result = NULL;
+  if (inplace) {
+    mag_tensor_t *tmp = NULL;
+    mag_status_t stat = mag_sqr_(err, &tmp, x);
+    if (mag_iserr(stat)) return stat;
+    mag_tensor_decref(tmp);
+    return mag_sqr_(err, out_result, x);
+  }
+  mag_tensor_t *sq = NULL;
+  mag_status_t stat = mag_sqr(err, &sq, x);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_sqr(err, out_result, sq);
+  mag_tensor_decref(sq);
+  return stat;
+}
+
+static mag_status_t mag_pow_quintic(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, bool inplace) {
+  *out_result = NULL;
+  mag_tensor_t *fourth = NULL;
+  mag_status_t stat = mag_pow_quartic(err, &fourth, x, false);
+  if (mag_iserr(stat)) return stat;
+  stat = inplace ? mag_mul_(err, out_result, x, fourth) : mag_mul(err, out_result, fourth, x);
+  mag_tensor_decref(fourth);
+  return stat;
+}
+
+static bool mag_pow_rewrite(mag_status_t *stat, mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, double e, bool inplace) {
+  if (e >= 0.0 && e <= 5.0 && (double)(int)e == e) {
+    int n = (int)e;
+    if (n == 0) {
+      if (inplace || mag_tensor_requires_grad(x)) return false;
+      *stat = mag_ones_like(err, out_result, x);
+      return true;
     }
-    if (e == 3.0) return mag_pow_cube(err, out_result, x, false);
-    if (e == 0.0 && !mag_tensor_requires_grad(x))
-      return mag_ones_like(err, out_result, x);
-    if (mag_tensor_is_floating_point_typed(x)) { /* These have no integral kernel */
-      if (e == 0.5) return mag_sqrt(err, out_result, x);
-      if (e == -0.5) return mag_rsqrt(err, out_result, x);
-      if (e == -1.0) return mag_rcp(err, out_result, x);
+    if (n == 2) {
+      *stat = inplace ? mag_sqr_(err, out_result, x) : mag_sqr(err, out_result, x);
+      return true;
+    }
+    if (inplace) {
+      *stat = mag_check_inplace_grad_ok(err, x);
+      if (mag_iserr(*stat)) { *out_result = NULL; return true; }
+    }
+    switch (n) {
+      case 1:
+        mag_tensor_incref(x);
+        *out_result = x;
+        *stat = MAG_OK;
+        return true;
+      case 3: *stat = mag_pow_cube(err, out_result, x, inplace); return true;
+      case 4: *stat = mag_pow_quartic(err, out_result, x, inplace); return true;
+      case 5: *stat = mag_pow_quintic(err, out_result, x, inplace); return true;
     }
   }
+  if (mag_tensor_is_floating_point_typed(x)) {
+    if (e == 0.5) { *stat = inplace ? mag_sqrt_(err, out_result, x) : mag_sqrt(err, out_result, x); return true; }
+    if (e == -0.5) { *stat = inplace ? mag_rsqrt_(err, out_result, x) : mag_rsqrt(err, out_result, x); return true; }
+    if (e == -1.0) { *stat = inplace ? mag_rcp_(err, out_result, x) : mag_rcp(err, out_result, x); return true; }
+  }
+  return false;
+}
+
+mag_status_t mag_pow(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
+  double e;
+  mag_status_t stat;
+  if (mag_pow_scalar_exponent(&e, x, y) && mag_pow_rewrite(&stat, err, out_result, x, e, false)) return stat;
   return mag_op_stub_binary(err, out_result, MAG_OP_POW, x, y, 0);
 }
 
 mag_status_t mag_pow_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
   double e;
-  if (mag_pow_scalar_exponent(&e, x, y)) {  /* Rewrite common exponent into simplified direct ops */
-    if (e == 2.0) return mag_sqr_(err, out_result, x);
-    if (e == 1.0) { /* x**1 is x, nothing to write */
-      mag_status_t stat = mag_check_inplace_grad_ok(err, x);
-      if (mag_iserr(stat)) { *out_result = NULL; return stat; }
-      mag_tensor_incref(x);
-      *out_result = x;
-      return MAG_OK;
-    }
-    if (e == 3.0) {
-      mag_status_t stat = mag_check_inplace_grad_ok(err, x); /* Check up front, so we fail before allocating the temporary */
-      if (mag_iserr(stat)) { *out_result = NULL; return stat; }
-      return mag_pow_cube(err, out_result, x, true);
-    }
-    if (mag_tensor_is_floating_point_typed(x)) { /* These have no integral kernel */
-      if (e == 0.5) return mag_sqrt_(err, out_result, x);
-      if (e == -0.5) return mag_rsqrt_(err, out_result, x);
-      if (e == -1.0) return mag_rcp_(err, out_result, x);
-    }
-  }
+  mag_status_t stat;
+  if (mag_pow_scalar_exponent(&e, x, y) && mag_pow_rewrite(&stat, err, out_result, x, e, true)) return stat;
   return mag_op_stub_binary(err, out_result, MAG_OP_POW, x, y, MAG_BINOP_INPLACE);
+}
+
+static mag_status_t mag_pow_scalar_impl(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_scalar_t y, bool inplace) {
+  *out_result = NULL;
+  mag_dtype_t dt = x->meta.dtype;
+  if (mag_scalar_is_float64(y) && !mag_tensor_is_floating_point_typed(x)) dt = mag_ctx_default_dtype(x->ctx);
+  else if (mag_scalar_is_int64(y) && dt == MAG_DTYPE_BOOLEAN) dt = MAG_DTYPE_INT64;
+  mag_status_t stat;
+  if (dt == x->meta.dtype) {
+    double e = mag_scalar_is_float64(y) ? mag_scalar_as_float64(y) : mag_scalar_is_int64(y) ? (double)mag_scalar_as_int64(y) : (double)mag_scalar_as_uint64(y);
+    if (mag_pow_rewrite(&stat, err, out_result, x, e, inplace)) return stat;
+  }
+  mag_tensor_t *yt = NULL;
+  stat = mag_scalar(err, &yt, x->ctx, dt, y, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) return stat;
+  stat = mag_op_stub_binary(err, out_result, MAG_OP_POW, x, yt, inplace ? MAG_BINOP_INPLACE : 0);
+  mag_tensor_decref(yt);
+  return stat;
+}
+
+mag_status_t mag_pow_scalar(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_scalar_t y) {
+  return mag_pow_scalar_impl(err, out_result, x, y, false);
+}
+
+mag_status_t mag_pow_scalar_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_scalar_t y) {
+  return mag_pow_scalar_impl(err, out_result, x, y, true);
 }
 
 mag_status_t mag_min(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y) {
