@@ -234,7 +234,7 @@ _ASYNC_MODES = ['0', '1']
 
 
 def _run(code: str, **env: str) -> subprocess.CompletedProcess:
-    full_env = {**os.environ, **env}
+    full_env = {**os.environ, 'MAG_LOG_LEVEL': 'error', **env}
     return subprocess.run([sys.executable, '-c', textwrap.dedent(code)], env=full_env, capture_output=True, text=True, timeout=120)
 
 
