@@ -158,7 +158,9 @@ jobs:
           path: wheelhouse/*.whl
 
   build-macos-arm64:
-    runs-on: macos-14   # Apple Silicon runner (arm64)
+    runs-on: macos-15   # Apple Silicon runner (arm64)
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"   # Keep wheels installable on macOS 14 (macos-14 runners retired Nov 2026)
     steps:
       - uses: actions/checkout@v4
         with:
