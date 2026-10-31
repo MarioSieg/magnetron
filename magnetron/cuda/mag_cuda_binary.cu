@@ -51,7 +51,10 @@ namespace mag {
     using InT = In;
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
-      if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x / y);
+      if constexpr (std::is_integral_v<InT>) {
+        if constexpr (std::is_unsigned_v<InT>) return static_cast<OutT>(y ? x/y : static_cast<InT>(~InT{0}));
+        else return static_cast<OutT>(mag_divi(static_cast<int64_t>(x), static_cast<int64_t>(y)));
+      }
       return static_cast<OutT>(static_cast<float>(x) / static_cast<float>(y));
     }
   };
@@ -62,7 +65,8 @@ namespace mag {
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
       if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x < y ? x : y);
-      return static_cast<OutT>(fminf(static_cast<float>(x), static_cast<float>(y)));
+      float fx = static_cast<float>(x), fy = static_cast<float>(y);
+      return static_cast<OutT>(fx != fx || fy != fy ? fx+fy : fminf(fx, fy));
     }
   };
 
@@ -72,7 +76,8 @@ namespace mag {
     using OutT = Out;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
       if constexpr (std::is_integral_v<InT>) return static_cast<OutT>(x > y ? x : y);
-      return static_cast<OutT>(fmaxf(static_cast<float>(x), static_cast<float>(y)));
+      float fx = static_cast<float>(x), fy = static_cast<float>(y);
+      return static_cast<OutT>(fx != fx || fy != fy ? fx+fy : fmaxf(fx, fy));
     }
   };
 
@@ -83,9 +88,9 @@ namespace mag {
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
       if constexpr (std::is_integral_v<InT>) {
         if constexpr (std::is_unsigned_v<InT>) {
-          return x/y;
+          return static_cast<OutT>(y ? x/y : static_cast<InT>(~InT{0}));
         } else {
-          return (x - mag_remi(static_cast<int64_t>(x), static_cast<int64_t>(y)))/y;
+          return static_cast<OutT>(mag_floordivi(static_cast<int64_t>(x), static_cast<int64_t>(y)));
         }
       } else {
         float fx = static_cast<float>(x), fy = static_cast<float>(y);
@@ -108,11 +113,9 @@ namespace mag {
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
       if constexpr (std::is_integral_v<InT>) {
         if constexpr (std::is_unsigned_v<InT>) {
-          return x % y;
+          return static_cast<OutT>(y ? x%y : x);
         } else {
-          int64_t r = x % y;
-          if (r != 0 && (r < 0) != (y < 0)) r += y;
-          return static_cast<OutT>(r);
+          return static_cast<OutT>(mag_remi(static_cast<int64_t>(x), static_cast<int64_t>(y)));
         }
       } else {
         auto xf32 = static_cast<float>(x);
@@ -166,9 +169,10 @@ namespace mag {
   struct op_shl {
     using InT = In;
     using OutT = Out;
-    static constexpr InT bits = sizeof(InT)*8;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
-      return mag_unlikely(y < 0 || y >= bits) ? 0 : x<<y;
+      constexpr uint64_t bits = sizeof(InT)<<3;
+      auto uy = static_cast<uint64_t>(static_cast<int64_t>(y));
+      return uy < bits ? static_cast<OutT>(static_cast<uint64_t>(x)<<(uy&(bits-1))) : OutT(0);
     }
   };
 
@@ -176,13 +180,10 @@ namespace mag {
   struct op_shr {
     using InT = In;
     using OutT = Out;
-    static constexpr InT bits = sizeof(InT)*8;
     [[nodiscard]] __device__ __forceinline__ OutT operator()(InT x, InT y) const {
-      if (mag_unlikely(y < 0 || y >= bits)) {
-        if constexpr (std::is_signed_v<InT>) return mag_unlikely(x < 0) ? -1 : 0; // SAR
-        else return 0; // SHR
-      }
-      return x>>y;
+      constexpr uint64_t bits = sizeof(InT)<<3;
+      auto uy = static_cast<uint64_t>(static_cast<int64_t>(y));
+      return uy < bits ? static_cast<OutT>(x>>(uy&(bits-1))) : OutT(0);
     }
   };
 
@@ -379,7 +380,6 @@ namespace mag {
     return MAG_OK;
   }
 
-  /* clamp(x, lo, hi) is a ternary elementwise op, so it cannot ride the binary kernel: same broadcast rules, one more operand. */
   template <typename T, typename I, const bool Contig>
   __global__ static void clamp_kernel(
     I numel,
@@ -394,10 +394,13 @@ namespace mag {
   ) {
     auto clamp1 = [](T v, T mn, T mx) -> T {
       if constexpr (std::is_integral_v<T>) {
-        return v < mn ? mn : (v > mx ? mx : v);
+        T lo = v < mn ? mn : v;
+        return lo > mx ? mx : lo;
       } else {
         float fv = static_cast<float>(v), fmn = static_cast<float>(mn), fmx = static_cast<float>(mx);
-        return static_cast<T>(fv < fmn ? fmn : (fv > fmx ? fmx : fv));
+        if (isnan(fmn) || isnan(fmx)) return isnan(fmn) ? mn : mx;
+        float flo = fv < fmn ? fmn : fv;
+        return static_cast<T>(flo > fmx ? fmx : flo);
       }
     };
     I i = static_cast<I>(blockDim.x)*static_cast<I>(blockIdx.x) + static_cast<I>(threadIdx.x);
@@ -461,8 +464,14 @@ namespace mag {
   mag_status_t binary_op_floordiv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_floordiv>(err, cmd, stream); }
   mag_status_t binary_op_mod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_mod>(err, cmd, stream); }
   mag_status_t binary_op_pow(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_pow>(err, cmd, stream); }
-  mag_status_t binary_op_min(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_min>(err, cmd, stream); }
-  mag_status_t binary_op_max(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_numeric<op_max>(err, cmd, stream); }
+  mag_status_t binary_op_min(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    if (cmd.out[0]->meta.dtype == MAG_DTYPE_BOOLEAN) return impl_binary_op_logical<op_min>(err, cmd, stream); /* bool: same as uint8 */
+    return impl_binary_op_numeric<op_min>(err, cmd, stream);
+  }
+  mag_status_t binary_op_max(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    if (cmd.out[0]->meta.dtype == MAG_DTYPE_BOOLEAN) return impl_binary_op_logical<op_max>(err, cmd, stream);
+    return impl_binary_op_numeric<op_max>(err, cmd, stream);
+  }
   mag_status_t binary_op_and(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_and>(err, cmd, stream); }
   mag_status_t binary_op_or(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream)  { return impl_binary_op_logical<op_or>(err, cmd, stream); }
   mag_status_t binary_op_xor(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_binary_op_logical<op_xor>(err, cmd, stream); }

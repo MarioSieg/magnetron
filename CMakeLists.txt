@@ -16,7 +16,6 @@ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 # General build options
 option(MAGNETRON_BUILD_PYTHON_BINDINGS "Build Python bindings" ON)  # Build Python bindings (requires Python development environment and C++ toolchain)
 option(MAGNETRON_BUILD_TESTS "Build tests" ON)                      # Build C++ unit tests (requires C++ toolchain)
-option(MAGNETRON_BUILD_BENCHMARKS "Build benchmaryks" ON)           # Build C++ benchmarks (requires C++ toolchain)
 option(MAGNETRON_DEBUG "Enable debug mode" OFF)                     # Enable debug assertions, bound checks and other debug features. (Always enabled in Debug builds)
 option(MAGNETRON_TSAN "Build with ThreadSanitizer" OFF)             # Build with ThreadSanitizer. CPU backend only.
 option(MAGNETRON_ASAN "Build with ASAN & UBSAN" OFF)                # CPU backend only.
@@ -44,6 +43,7 @@ if(CCACHE_PROGRAM)
     message(STATUS "ccache found: ${CCACHE_PROGRAM}")
     set(CMAKE_C_COMPILER_LAUNCHER   ${CCACHE_PROGRAM})
     set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    set(CMAKE_CUDA_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
 endif()
 
 # Set default build type to Release if not specified
@@ -54,7 +54,7 @@ endif()
 
 # Enable C++ for required targets (Python bindings, tests, benchmarks)
 # Magnetron's core and CPU backend are C 99, but Python bindings and tests/benchmarks require C++17
-if (${MAGNETRON_BUILD_PYTHON_BINDINGS} OR ${MAGNETRON_BUILD_TESTS} OR ${MAGNETRON_BUILD_BENCHMARKS}})
+if (${MAGNETRON_BUILD_PYTHON_BINDINGS} OR ${MAGNETRON_BUILD_TESTS})
     enable_language(CXX)
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -78,10 +78,6 @@ endif()
 if (${MAGNETRON_BUILD_TESTS})
     enable_testing()
     add_subdirectory(test)
-endif()
-
-if (${MAGNETRON_BUILD_BENCHMARKS})
-    add_subdirectory(benchmark)
 endif()
 
 add_subdirectory(magnetron)

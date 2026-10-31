@@ -39,7 +39,7 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
   if (mag_unlikely((unsigned)c-1 >= 4u))
     return mag_set_error(err, MAG_ERR_PARAM, "load_image: channels must be in [1, 4], but got %d.", c);
 
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   stbi_uc *restrict pixels = NULL;
   mag_tensor_t *tensor = NULL;
   mag_tensor_t *transferred = NULL;
@@ -66,8 +66,8 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
     h = (int)target_h;
   }
 
-  status = mag_empty(err, &tensor, ctx, MAG_DTYPE_UINT8, 3, (int64_t[3]){c, h, w}, mag_device(CPU, 0));
-  if (mag_iserr(status))
+  stat = mag_empty(err, &tensor, ctx, MAG_DTYPE_UINT8, 3, (int64_t[3]){c, h, w}, mag_device(CPU, 0));
+  if (mag_iserr(stat))
     goto cleanup;
 
   uint8_t *restrict dst = (uint8_t *)mag_tensor_data_ptr_mut(tensor);
@@ -77,14 +77,14 @@ mag_status_t mag_load_image(mag_error_t *err, mag_tensor_t **out, mag_context_t 
         dst[i + w*j + w*h*k] = pixels[k + c*i + c*w*j];
 
   if (mag_unlikely(w*h*c != mag_tensor_numel(tensor))) {
-    status = mag_set_error(err, MAG_ERR_IMAGE, "load_image: decoded pixel count (%d) does not match the tensor element count (%zu).", w*h*c, (size_t)mag_tensor_numel(tensor));
+    stat = mag_set_error(err, MAG_ERR_IMAGE, "load_image: decoded pixel count (%d) does not match the tensor element count (%zu).", w*h*c, (size_t)mag_tensor_numel(tensor));
     goto cleanup;
   }
   stbi_image_free(pixels);
   pixels = NULL;
 
-  status = mag_transfer(err, &transferred, tensor, device);
-  if (mag_iserr(status))
+  stat = mag_transfer(err, &transferred, tensor, device);
+  if (mag_iserr(stat))
     goto cleanup;
   mag_tensor_decref(tensor);
   tensor = NULL;
@@ -96,7 +96,7 @@ cleanup:
   if (transferred) mag_tensor_decref(transferred);
   if (tensor) mag_tensor_decref(tensor);
   if (pixels) stbi_image_free(pixels);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *file) {
@@ -115,16 +115,16 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
   if (mag_unlikely(!(ext && *ext)))
     return mag_set_error(err, MAG_ERR_PARAM, "save_image: file '%s' has no extension.", file);
 
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   mag_tensor_t *host = NULL;
   mag_tensor_t *contig = NULL;
   uint8_t *pixels = NULL;
 
-  status = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
-  if (mag_iserr(status))
+  stat = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
+  if (mag_iserr(stat))
     goto cleanup;
-  status = mag_contiguous(err, &contig, host);
-  if (mag_iserr(status))
+  stat = mag_contiguous(err, &contig, host);
+  if (mag_iserr(stat))
     goto cleanup;
   mag_tensor_decref(host);
   host = NULL;
@@ -133,10 +133,12 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
   int64_t h = contig->meta.coords.shape[1];
   int64_t w = contig->meta.coords.shape[2];
 
+  stat = mag_sto_sync_barrier_r(err, contig->storage); /* Sync before reading */
+  if (mag_iserr(stat)) goto cleanup;
   const uint8_t *src = (const uint8_t *)mag_tensor_data_ptr(contig);
   pixels = (*mag_try_alloc)(NULL, w*h*c, 0);
   if (mag_unlikely(!pixels)) {
-    status = mag_set_error(err, MAG_ERR_OOM, "save_image: failed to allocate %zu bytes for pixel buffer.", (size_t)(w*h*c));
+    stat = mag_set_error(err, MAG_ERR_OOM, "save_image: failed to allocate %zu bytes for pixel buffer.", (size_t)(w*h*c));
     goto cleanup;
   }
 
@@ -150,7 +152,7 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
     ok = stbi_write_png(file, (int)w, (int)h, (int)c, pixels, (int)(w*c));
   } else if (!strcmp(ext, ".jpg") || !strcmp(ext, ".jpeg")) {
     if (mag_unlikely(!(c == 1 || c == 3))) {
-      status = mag_set_error(err, MAG_ERR_PARAM, "save_image: JPEG only supports 1 or 3 channels, but got %" PRIi64 ".", c);
+      stat = mag_set_error(err, MAG_ERR_PARAM, "save_image: JPEG only supports 1 or 3 channels, but got %" PRIi64 ".", c);
       goto cleanup;
     }
     ok = stbi_write_jpg(file, (int)w, (int)h, (int)c, pixels, 100);
@@ -159,12 +161,12 @@ mag_status_t mag_save_image(mag_error_t *err, mag_tensor_t *tensor, const char *
   } else if (!strcmp(ext, ".tga")) {
     ok = stbi_write_tga(file, (int)w, (int)h, (int)c, pixels);
   } else {
-    status = MAG_ERR_PARAM;
+    stat = MAG_ERR_PARAM;
     goto cleanup;
   }
 
   if (mag_unlikely(ok == 0)) {
-    status = mag_set_error(err, MAG_ERR_IMAGE, "save_image: failed to write '%s'.", file);
+    stat = mag_set_error(err, MAG_ERR_IMAGE, "save_image: failed to write '%s'.", file);
     goto cleanup;
   }
 
@@ -172,5 +174,5 @@ cleanup:
   if (pixels) (*mag_alloc)(pixels, 0, 0);
   if (contig) mag_tensor_decref(contig);
   if (host) mag_tensor_decref(host);
-  return status;
+  return stat;
 }

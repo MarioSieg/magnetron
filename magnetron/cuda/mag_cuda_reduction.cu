@@ -20,13 +20,26 @@
 #include <stdint.h>
 
 namespace mag {
-  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_min(T a, T b) { return static_cast<float>(a) < static_cast<float>(b) ? a : b; }
-  template <> [[nodiscard]] __device__ __forceinline__ float fn_min<float>(float a, float b) { return fminf(a, b); }
-  template <> [[nodiscard]] __device__ __forceinline__ double fn_min<double>(double a, double b) { return fmin(a, b); }
 
-  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_max(T a, T b) { return static_cast<float>(a) > static_cast<float>(b) ? a : b; }
-  template <> [[nodiscard]] __device__ __forceinline__ float fn_max<float>(float a, float b) { return fmaxf(a, b);}
-  template <> [[nodiscard]] __device__ __forceinline__ double fn_max<double>(double a, double b) {return fmax(a, b); }
+  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_min(T a, T b) {
+    if constexpr (std::is_integral_v<T>) return a < b ? a : b;
+    float fa = static_cast<float>(a), fb = static_cast<float>(b);
+    if (isnan(fa)) return a;
+    if (isnan(fb)) return b;
+    return fa < fb ? a : b;
+  }
+  template <> [[nodiscard]] __device__ __forceinline__ float fn_min<float>(float a, float b) { return isnan(a) || isnan(b) ? a+b : fminf(a, b); }
+  template <> [[nodiscard]] __device__ __forceinline__ double fn_min<double>(double a, double b) { return isnan(a) || isnan(b) ? a+b : fmin(a, b); }
+
+  template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_max(T a, T b) {
+    if constexpr (std::is_integral_v<T>) return a > b ? a : b;
+    float fa = static_cast<float>(a), fb = static_cast<float>(b);
+    if (isnan(fa)) return a;
+    if (isnan(fb)) return b;
+    return fa > fb ? a : b;
+  }
+  template <> [[nodiscard]] __device__ __forceinline__ float fn_max<float>(float a, float b) { return isnan(a) || isnan(b) ? a+b : fmaxf(a, b); }
+  template <> [[nodiscard]] __device__ __forceinline__ double fn_max<double>(double a, double b) { return isnan(a) || isnan(b) ? a+b : fmax(a, b); }
 
   template <typename TIn, typename TOut, typename TAcc>
   struct op_mean {
@@ -68,6 +81,31 @@ namespace mag {
     [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return a * b; }
     [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, [[maybe_unused]] int64_t red_prod) const {
       return static_cast<Out>(acc);
+    }
+  };
+
+  struct prod_acc final {
+    double m;
+    int64_t e;
+  };
+
+  template <typename TIn, typename TOut, typename TAcc>
+  struct op_prod_fp {
+    using In  = TIn;
+    using Out = TOut;
+    using Acc = prod_acc;
+
+    [[nodiscard]] __device__ __forceinline__ static Acc norm(double m, int64_t e) {
+      int k = 0;
+      m = frexp(m, &k);
+      return {m, isfinite(m) && m != 0.0 ? e + k : 0};
+    }
+    [[nodiscard]] __device__ __forceinline__ Acc init() const { return {1.0, 0}; }
+    [[nodiscard]] __device__ __forceinline__ Acc transform(In x) const { return norm(static_cast<double>(static_cast<float>(x)), 0); }
+    [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return norm(a.m*b.m, a.e + b.e); }
+    [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, [[maybe_unused]] int64_t red_prod) const {
+      int64_t e = acc.e < -4096 ? -4096 : acc.e > 4096 ? 4096 : acc.e;
+      return static_cast<Out>(static_cast<float>(ldexp(acc.m, static_cast<int>(e))));
     }
   };
 
@@ -150,10 +188,10 @@ namespace mag {
     int64_t base = mag_reduce_plan_to_offset(&plan, oi);
     typename Op::Acc acc = op.init();
 
-    if (plan.rank == 1 && plan.red_strides[0] == 1) {
+    if (plan.red_rank == 1 && plan.red_strides[0] == 1) {
       for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
         acc = op.reduce(acc, op.transform(x[base+ri]));
-    } else if (plan.rank == 1) {
+    } else if (plan.red_rank == 1) {
       const int64_t rs = plan.red_strides[0];
       for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
         acc = op.reduce(acc, op.transform(x[base+ri*rs]));
@@ -161,7 +199,7 @@ namespace mag {
       for (int64_t ri=threadIdx.x; ri < plan.red_prod; ri += blockDim.x) {
         int64_t t = ri;
         int64_t xi = base;
-        for (int64_t k=plan.rank-1; k >= 0; --k) {
+        for (int64_t k=plan.red_rank-1; k >= 0; --k) {
           int64_t sz = plan.red_sizes[k];
           int64_t j = t % sz;
           t /= sz;
@@ -198,10 +236,10 @@ namespace mag {
     const int64_t start = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
     const int64_t step = static_cast<int64_t>(blockDim.x)*splits;
     typename Op::Acc acc = op.init();
-    if (plan.rank == 1 && plan.red_strides[0] == 1) {
+    if (plan.red_rank == 1 && plan.red_strides[0] == 1) {
       for (int64_t ri=start; ri < plan.red_prod; ri += step)
         acc = op.reduce(acc, op.transform(x[base+ri]));
-    } else if (plan.rank == 1) { /* One axis of any stride: a scale, not a coordinate walk. */
+    } else if (plan.red_rank == 1) { /* One axis of any stride: a scale, not a coordinate walk. */
       const int64_t rs = plan.red_strides[0];
       for (int64_t ri=start; ri < plan.red_prod; ri += step)
         acc = op.reduce(acc, op.transform(x[base+ri*rs]));
@@ -209,7 +247,7 @@ namespace mag {
       for (int64_t ri=start; ri < plan.red_prod; ri += step) {
         int64_t t = ri;
         int64_t xi = base;
-        for (int64_t k=plan.rank-1; k >= 0; --k) {
+        for (int64_t k=plan.red_rank-1; k >= 0; --k) {
           int64_t sz = plan.red_sizes[k];
           int64_t j = t % sz;
           t /= sz;
@@ -332,9 +370,9 @@ namespace mag {
     mag_assert2(r->meta.dtype == x->meta.dtype);
     switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, float>>(cmd, stream); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, half>>(cmd, stream); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16>>(cmd, stream); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, __nv_fp8_e4m3>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, float>>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, float>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd, stream); break;
       case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd, stream); break;
       case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd, stream); break;
       case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t, int8_t, int8_t>>(cmd, stream); break;
@@ -375,7 +413,15 @@ namespace mag {
 
   mag_status_t reduce_op_mean(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_fp<op_mean>(err, cmd, stream); }
   mag_status_t reduce_op_sum (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_sumprod<op_sum>(err, cmd, stream); }
-  mag_status_t reduce_op_prod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_sumprod<op_prod>(err, cmd, stream); }
+  mag_status_t reduce_op_prod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    switch (cmd.in[0]->meta.dtype) {
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<op_prod_fp<float, float, double>>(cmd, stream); return MAG_OK;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<op_prod_fp<half, half, double>>(cmd, stream); return MAG_OK;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_prod_fp<__nv_bfloat16, __nv_bfloat16, double>>(cmd, stream); return MAG_OK;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_prod_fp<__nv_fp8_e4m3, __nv_fp8_e4m3, double>>(cmd, stream); return MAG_OK;
+      default: return impl_reduce_op_sumprod<op_prod>(err, cmd, stream);
+    }
+  }
   mag_status_t reduce_op_minima (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_extrema<op_min>(err, cmd, stream); }
   mag_status_t reduce_op_maxima (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_extrema<op_max>(err, cmd, stream); }
   mag_status_t reduce_op_all (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_logical<op_all>(err, cmd, stream); }
@@ -393,17 +439,19 @@ namespace mag {
     bool set;
   };
 
+  /* NaN beats any number so arg reductions return the first NaN, like torch. */
+  template <bool is_max>
+  __device__ __forceinline__ bool arg_beats_f32(float a, float b) {
+    if (isnan(a)) return !isnan(b);
+    return is_max ? a > b : a < b;
+  }
+
   template <bool is_max>
   __device__ __forceinline__ arg_acc_f32 merge_arg_f32(arg_acc_f32 a, arg_acc_f32 b) {
     if (!a.set) return b;
     if (!b.set) return a;
-    if constexpr (is_max) {
-      if (b.val > a.val) return b;
-      if (a.val > b.val) return a;
-    } else {
-      if (b.val < a.val) return b;
-      if (a.val < b.val) return a;
-    }
+    if (arg_beats_f32<is_max>(b.val, a.val)) return b;
+    if (arg_beats_f32<is_max>(a.val, b.val)) return a;
     return a.idx <= b.idx ? a : b;
   }
 
@@ -432,7 +480,7 @@ namespace mag {
   template <typename T, bool is_max>
   __device__ __forceinline__ arg_acc_f32 reduce_arg_acc_f32(arg_acc_f32 acc, T x, int64_t ri) {
     float xv = arg_to_cmp_float(x);
-    if (!acc.set || (is_max ? xv > acc.val : xv < acc.val)) {
+    if (!acc.set || arg_beats_f32<is_max>(xv, acc.val)) {
       acc.val = xv;
       acc.idx = ri;
       acc.set = true;
@@ -442,7 +490,9 @@ namespace mag {
 
   template <typename T, bool is_max>
   __device__ __forceinline__ arg_acc_i64 reduce_arg_acc_i64(arg_acc_i64 acc, T x, int64_t ri) {
-    int64_t xv = static_cast<int64_t>(x);
+    int64_t xv;
+    if constexpr (std::is_same_v<T, uint64_t>) xv = static_cast<int64_t>(x^0x8000000000000000ull);
+    else xv = static_cast<int64_t>(x);
     if (!acc.set || (is_max ? xv > acc.val : xv < acc.val)) {
       acc.val = xv;
       acc.idx = ri;
@@ -462,10 +512,10 @@ namespace mag {
     if (oi >= n) return;
     const int64_t base = mag_reduce_plan_to_offset(&plan, oi);
     arg_acc_f32 acc {};
-    if (plan.rank == 1 && plan.red_strides[0] == 1) {
+    if (plan.red_rank == 1 && plan.red_strides[0] == 1) {
       for (int64_t ri = threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
         acc = reduce_arg_acc_f32<T, is_max>(acc, x[base+ri], ri);
-    } else if (plan.rank == 1) {
+    } else if (plan.red_rank == 1) {
       const int64_t rs = plan.red_strides[0];
       for (int64_t ri = threadIdx.x; ri < plan.red_prod; ri += blockDim.x)
         acc = reduce_arg_acc_f32<T, is_max>(acc, x[base+ri*rs], ri);
@@ -474,7 +524,7 @@ namespace mag {
         int64_t t = ri;
         int64_t xi = base;
         #pragma unroll
-        for (int64_t k = plan.rank - 1; k >= 0; --k) {
+        for (int64_t k = plan.red_rank - 1; k >= 0; --k) {
           const int64_t sz = plan.red_sizes[k];
           const int64_t j  = t % sz;
           t /= sz;
@@ -511,7 +561,7 @@ namespace mag {
       int64_t t = ri;
       int64_t xi = base;
       #pragma unroll
-      for (int64_t k = plan.rank - 1; k >= 0; --k) {
+      for (int64_t k = plan.red_rank - 1; k >= 0; --k) {
         const int64_t sz = plan.red_sizes[k];
         const int64_t j  = t % sz;
         t /= sz;

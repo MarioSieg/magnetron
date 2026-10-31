@@ -41,7 +41,7 @@ _UNARY_OPS: tuple[UnaryOpTestCase, ...] = (
     UnaryOpTestCase('atan', None),
     UnaryOpTestCase('tanh', None),
     UnaryOpTestCase('atanh', None),
-    UnaryOpTestCase('step', lambda x: torch.where(x >= 0, torch.tensor(1, dtype=x.dtype), torch.tensor(0, dtype=x.dtype))),
+    UnaryOpTestCase('step', lambda x: torch.where(x > 0, torch.tensor(1, dtype=x.dtype), torch.tensor(0, dtype=x.dtype))),
     UnaryOpTestCase('erf', None),
     UnaryOpTestCase('erfc', None),
     UnaryOpTestCase('exp', None),

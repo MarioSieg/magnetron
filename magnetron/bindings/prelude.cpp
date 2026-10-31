@@ -35,41 +35,45 @@ namespace mag::bindings {
 
   tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt, mag_device_id_t device) {
     mag_context_t *ctx = get_ctx();
-    mag_tensor_t *out = nullptr;
-    if (nb::isinstance<nb::bool_>(obj)) { // Prefer bool first: in Python, bool is a subclass of int.
-      bool b = nb::cast<bool>(obj);
-      mag_scalar_t s = mag_scalar_from_uint64(!!b);
-      mag_error_t err {};
-      throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
-      return tensor_wrapper{out};
+    if (nb::isinstance<nb::bool_>(obj)) {
+      auto val = nb::cast<bool>(obj);
+      mag_scalar_t scalar = mag_scalar_from_uint64(!!val);
+      return call_op(mag_scalar, ctx, dt, scalar, device);
     }
-    if (nb::isinstance<nb::int_>(obj)) { // Python int is arbitrary precision; nb::cast<int64_t> will throw if too big.
-      auto v = nb::cast<int64_t>(obj);
-      mag_scalar_t s = mag_scalar_from_int64(v);
-      mag_error_t err {};
-      throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
-      return tensor_wrapper{out};
-    }
+    if (nb::isinstance<nb::int_>(obj))
+      return call_op(mag_scalar, ctx, dt, scalar_from_py_number(obj), device);
     if (nb::isinstance<nb::float_>(obj)) {
-      auto v = nb::cast<double>(obj);
-      mag_scalar_t s = mag_scalar_from_float64(v);
-      mag_error_t err {};
-      throw_if_error(mag_scalar(&err, &out, ctx, dt, s, device), err);
-      return tensor_wrapper{out};
+      auto val = nb::cast<double>(obj);
+      mag_scalar_t scalar = mag_scalar_from_float64(val);
+      return call_op(mag_scalar, ctx, dt, scalar, device);
     }
     throw nb::type_error("rhs must be Tensor, int, float, or bool");
   }
 
   tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs) {
     if (nb::isinstance<tensor_wrapper>(rhs)) return nb::cast<tensor_wrapper>(rhs);
-    return tensor_from_py_scalar(rhs, mag_tensor_type(*lhs), mag_tensor_device_id(*lhs));
+    mag_dtype_t dt = mag_tensor_type(*lhs);
+    if (nb::isinstance<nb::float_>(rhs) && !mag_tensor_is_floating_point_typed(*lhs)) dt = mag_ctx_default_dtype(get_ctx());
+    else if (nb::isinstance<nb::int_>(rhs) && !nb::isinstance<nb::bool_>(rhs) && dt == MAG_DTYPE_BOOLEAN) dt = MAG_DTYPE_INT64;
+    return tensor_from_py_scalar(rhs, dt, mag_tensor_device_id(*lhs));
+  }
+
+  void promote_ops(std::initializer_list<tensor_wrapper *> ops) {
+    mag_dtype_t common = mag_tensor_type(**ops.begin()[0]);
+    for (auto *t : ops)
+      if (!mag_promote_type(&common, common, mag_tensor_type(**t)))
+        throw nb::type_error("could not promote operand dtypes to a common dtype");
+    for (tensor_wrapper *t : ops) {
+      if (mag_tensor_type(**t) == common) continue;
+      *t = call_op(mag_cast, **t, common);
+    }
   }
 
   static void flatten_i64_handle(nb::handle h, fixed_dim_vec &out) {
     if (PyLong_CheckExact(h.ptr())) {
       int64_t v = PyLong_AsLongLong(h.ptr());
       if (v == -1 && PyErr_Occurred()) throw nb::python_error();
-      out.push_back(v);
+      out.emplace_back(v);
       return;
     }
     if (PyTuple_CheckExact(h.ptr()) || PyList_CheckExact(h.ptr())) {
@@ -85,7 +89,7 @@ namespace mag::bindings {
       int64_t v;
       if (!nb::try_cast<int64_t>(h, v))
         throw nb::type_error("expected integer dimensions (or a sequence of integers)");
-      out.push_back(v);
+      out.emplace_back(v);
     }
   }
 
@@ -101,7 +105,7 @@ namespace mag::bindings {
       } else if (nb::isinstance<nb::sequence>(args[0])) {
         auto seq = nb::cast<nb::sequence>(args[0]);
         for (auto &&h : seq)
-          shape.push_back(nb::cast<int64_t>(h));
+          shape.emplace_back(nb::cast<int64_t>(h));
         return shape;
       }
     }
@@ -110,9 +114,9 @@ namespace mag::bindings {
       if (PyLong_CheckExact(h)) {
         int64_t v = PyLong_AsLongLong(h);
         if (v == -1 && PyErr_Occurred()) throw nb::python_error();
-        shape.push_back(v);
+        shape.emplace_back(v);
       } else {
-        shape.push_back(nb::cast<int64_t>(nb::handle(h)));
+        shape.emplace_back(nb::cast<int64_t>(nb::handle(h)));
       }
     }
     return shape;
@@ -196,9 +200,25 @@ namespace mag::bindings {
     throw nb::type_error("dim must be None, int, or a sequence of ints");
   }
 
+  [[nodiscard]] static bool py_int_is_large_unsigned(nb::handle h) {
+    int overflow = 0;
+    (void)PyLong_AsLongLongAndOverflow(h.ptr(), &overflow);
+    if (!overflow) return false;
+    if (overflow < 0) throw nb::value_error("integer scalar is out of range for int64");
+    (void)PyLong_AsUnsignedLongLong(h.ptr());
+    if (PyErr_Occurred()) {
+      PyErr_Clear();
+      throw nb::value_error("integer scalar is out of range for uint64");
+    }
+    return true;
+  }
+
   mag_scalar_t scalar_from_py_number(nb::handle h) {
     if (nb::isinstance<nb::bool_>(h)) return mag_scalar_from_uint64(nb::cast<bool>(h));
-    if (nb::isinstance<nb::int_>(h)) return mag_scalar_from_int64(nb::cast<int64_t>(h));
+    if (nb::isinstance<nb::int_>(h)) {
+      if (py_int_is_large_unsigned(h)) return mag_scalar_from_uint64(PyLong_AsUnsignedLongLong(h.ptr()));
+      return mag_scalar_from_int64(nb::cast<int64_t>(h));
+    }
     if (nb::isinstance<nb::float_>(h)) return mag_scalar_from_float64(nb::cast<double>(h));
     throw nb::type_error("Expected scalar (bool|int|float)");
   }
@@ -214,7 +234,7 @@ namespace mag::bindings {
 
   dtype_wrapper deduce_dtype_from_py_scalar(nb::handle h) {
     if (nb::isinstance<nb::bool_>(h)) return dtype_wrapper{MAG_DTYPE_BOOLEAN};
-    if (nb::isinstance<nb::int_>(h)) return dtype_wrapper{MAG_DTYPE_INT64};
+    if (nb::isinstance<nb::int_>(h)) return dtype_wrapper{py_int_is_large_unsigned(h) ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64};
     if (nb::isinstance<nb::float_>(h)) return dtype_wrapper{MAG_DTYPE_FLOAT32};
     throw nb::type_error("Cannot deduce dtype from this object");
   }

@@ -39,6 +39,8 @@ class Linear(Module):
         self.in_features: int = in_features
         self.out_features: int = out_features
         self.weight: Parameter = Parameter(Tensor.empty(out_features, in_features, dtype=dtype))
+        weight_init = resolve_weight_init(weight_init)
+        bias_init = resolve_bias_init(bias_init)
         if weight_init is None:
             weight_init = KaimingUniformInitStrategy(a=math.sqrt(5.0), mode=FanMode.FAN_IN, activation=Activation.LEAKY_RELU)
         inplace_init(self.weight, weight_init)
@@ -98,6 +100,7 @@ class Embedding(Module):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         self.weight = Parameter(Tensor.empty(num_embeddings, embedding_dim, dtype=dtype))
+        weight_init = resolve_weight_init(weight_init)
         if weight_init is None:
             weight_init = NormalInitStrategy(mean=0.0, std=1.0 / embedding_dim)
 
@@ -114,6 +117,7 @@ class RMSNorm(Module):
             dtype = context.get_default_dtype()
         self.eps = eps
         self.weight = Parameter(Tensor.empty(dim, dtype=dtype))
+        weight_init = resolve_weight_init(weight_init)
         if weight_init is None:
             weight_init = OnesInitStrategy()
         inplace_init(self.weight, weight_init)
@@ -138,6 +142,8 @@ class LayerNorm(Module):
             dtype = context.get_default_dtype()
         self.eps = eps
         self.weight = Parameter(Tensor.empty(ndim, dtype=dtype))
+        weight_init = resolve_weight_init(weight_init)
+        bias_init = resolve_bias_init(bias_init)
         if weight_init is None:
             weight_init = OnesInitStrategy()
         inplace_init(self.weight, weight_init)
@@ -231,6 +237,8 @@ class GroupNorm(Module):
         self.weight: Parameter | None = None
         self.bias: Parameter | None = None
         if affine:
+            weight_init = resolve_weight_init(weight_init)
+            bias_init = resolve_bias_init(bias_init)
             self.weight = Parameter(Tensor.empty(num_channels, dtype=dtype))
             inplace_init(self.weight, OnesInitStrategy() if weight_init is None else weight_init)
             self.bias = Parameter(Tensor.empty(num_channels, dtype=dtype))
@@ -329,6 +337,8 @@ class _ConvND(Module):
         else:
             wshape = (out_channels, in_channels // groups, *self.kernel_size)
         self.weight: Parameter = Parameter(Tensor.empty(*wshape, dtype=dtype))
+        weight_init = resolve_weight_init(weight_init)
+        bias_init = resolve_bias_init(bias_init)
         if weight_init is None:
             weight_init = KaimingUniformInitStrategy(a=math.sqrt(5.0), mode=FanMode.FAN_IN, activation=Activation.LEAKY_RELU)
         inplace_init(self.weight, weight_init)

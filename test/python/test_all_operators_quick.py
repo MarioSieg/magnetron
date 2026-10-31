@@ -778,30 +778,6 @@ def test_activation_op(device: str, name: str, ref: Callable[[torch.Tensor], tor
     assert_close_mag_torch(y, expected, dtype.float32)
 
 
-def _torch_grad(ref: Callable[[torch.Tensor], torch.Tensor], values: list[float]) -> torch.Tensor:
-    t = torch.tensor(values, dtype=torch.float32, requires_grad=True)
-    ref(t).sum().backward()
-    return t.grad
-
-
-_ACTIVATION_DV_OPS: tuple[tuple[str, Callable[[torch.Tensor], torch.Tensor]], ...] = (
-    ('sigmoid_dv', torch.sigmoid),
-    ('silu_dv', torch.nn.functional.silu),
-    ('tanh_dv', torch.tanh),
-    ('relu_dv', torch.relu),
-)
-
-@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-@pytest.mark.parametrize('name, ref', _ACTIVATION_DV_OPS, ids=[op[0] for op in _ACTIVATION_DV_OPS])
-def test_activation_dv_op(device: str, name: str, ref: Callable[[torch.Tensor], torch.Tensor]) -> None:
-    x = Tensor(_UNARY_GENERAL, device=device)
-    expected = _torch_grad(ref, _UNARY_GENERAL)
-    assert_close_mag_torch(getattr(x, name)(), expected, dtype.float32)
-    y = x.clone()
-    getattr(y, f'{name}_')()
-    assert_close_mag_torch(y, expected, dtype.float32)
-
-
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_gelu_approx(device: str) -> None:
     x = Tensor(_UNARY_GENERAL, device=device)
@@ -809,27 +785,6 @@ def test_gelu_approx(device: str) -> None:
     assert_close_mag_torch(x.gelu_approx(), expected, dtype.float32)
     y = x.clone()
     y.gelu_approx_()
-    assert_close_mag_torch(y, expected, dtype.float32)
-
-
-@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-def test_gelu_dv(device: str) -> None:
-    x = Tensor(_UNARY_GENERAL, device=device)
-    expected = _torch_grad(lambda t: torch.nn.functional.gelu(t, approximate='none'), _UNARY_GENERAL)
-    assert_close_mag_torch(x.gelu_dv(), expected, dtype.float32)
-    y = x.clone()
-    y.gelu_dv_()
-    assert_close_mag_torch(y, expected, dtype.float32)
-
-
-@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
-def test_softmax_dv(device: str) -> None:
-    x = Tensor(_UNARY_GENERAL, device=device)
-    s = torch.softmax(totorch(x), -1)
-    expected = s * (1.0 - s)
-    assert_close_mag_torch(x.softmax_dv(), expected, dtype.float32)
-    y = x.clone()
-    y.softmax_dv_()
     assert_close_mag_torch(y, expected, dtype.float32)
 
 
@@ -1262,7 +1217,6 @@ def test_multinomial(device: str) -> None:
     assert sorted(samples) == sorted(torch.multinomial(totorch(w), 4).tolist())
 
 
-@pytest.mark.xfail(reason='multinomial ignores replacement=True and always samples without replacement', strict=True)
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_multinomial_with_replacement(device: str) -> None:
     p = Tensor([0.0, 1.0, 0.0, 0.0], device=device)

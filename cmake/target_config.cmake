@@ -23,6 +23,15 @@ set(MAG_CLANG_RELEASE_COMPILE_FLAGS -O3 -flto=thin -fomit-frame-pointer)
 set(MAG_CLANG_LINK_OPTIONS "")
 set(MAG_CLANG_RELEASE_LINK_OPTIONS -flto=thin)
 
+# ThinLTO cache: lets the linker reuse the backend codegen of unchanged modules, so a relink after editing one TU only
+# re-optimizes that TU instead of all of them. lld and the LLVMgold plugin (ld.bfd / ld.gold) spell the option differently.
+set(MAG_THINLTO_CACHE_DIR "${CMAKE_BINARY_DIR}/thinlto.cache" CACHE PATH "Directory for the ThinLTO incremental link cache")
+if (CMAKE_C_COMPILER_LINKER_ID STREQUAL "LLD")
+    list(APPEND MAG_CLANG_RELEASE_LINK_OPTIONS "-Wl,--thinlto-cache-dir=${MAG_THINLTO_CACHE_DIR}")
+elseif (NOT APPLE)
+    list(APPEND MAG_CLANG_RELEASE_LINK_OPTIONS "-Wl,-plugin-opt,cache-dir=${MAG_THINLTO_CACHE_DIR}")
+endif()
+
 set(MAG_GCC_COMPILE_FLAGS -std=gnu99 -fvisibility=hidden -fno-math-errno -Wall -Werror -Wno-error=parentheses -Wno-error=overflow -Wno-error=unused-function -Wno-error=format-truncation -Wno-unused-parameter -Wno-unused-function -D_GNU_SOURCE=1)
 set(MAG_GCC_RELEASE_COMPILE_FLAGS -O3 -flto=auto -fomit-frame-pointer
 )
@@ -86,9 +95,6 @@ function(apply_compilation_config_to_target target_name)
         if (${MAGNETRON_CPU_APPROX_MATH})
             target_compile_definitions(${target_name} PRIVATE MAG_APPROXMATH)
         endif()
-        if (${MAGNETRON_DEBUG})
-            target_compile_definitions(${target_name} PRIVATE MAG_DEBUG)
-        endif()
     endif()
 
     if (WIN32) # Link sync lib on Win32
@@ -119,6 +125,9 @@ function(apply_common_config_to_target target_name apply_compilation_config)
         apply_compilation_config_to_target(${target_name})
     endif()
     apply_name_config_to_target(${target_name})
+    if (${MAGNETRON_DEBUG}) # Changes struct layouts (e.g. mag_rc_control_block_t), so every target must agree, CUDA ones included
+        target_compile_definitions(${target_name} PRIVATE MAG_DEBUG)
+    endif()
     target_include_directories(${target_name} PUBLIC ${CMAKE_SOURCE_DIR}/include)
     target_include_directories(${target_name} PRIVATE ${CMAKE_SOURCE_DIR}/extern)
 endfunction()

@@ -52,21 +52,23 @@ static MAG_AINLINE mag_vf32_t mag_vec_sub_f32(mag_vf32_t x, mag_vf32_t y) { retu
 static MAG_AINLINE mag_vf32_t mag_vec_mul_f32(mag_vf32_t x, mag_vf32_t y) { return mag_vf32_mul(x,y); }
 static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { return mag_vf32_div(x,y); }
 
-#define mag_fn_add_int(x,y) ((x)+(y))
-#define mag_fn_sub_int(x,y) ((x)-(y))
-#define mag_fn_mul_int(x,y) ((x)*(y))
-#define mag_fn_div_int(x,y) ((x)/(y))
+
+#define mag_fn_add_int(x,y) ((uint64_t)(x)+(uint64_t)(y))
+#define mag_fn_sub_int(x,y) ((uint64_t)(x)-(uint64_t)(y))
+#define mag_fn_mul_int(x,y) ((uint64_t)(x)*(uint64_t)(y))
+#define mag_fn_div_i(x,y) mag_divi((x),(y))
+#define mag_fn_div_u(x,y) ((y) ? (x)/(y) : -1)
 #define mag_fn_and_int(x,y) ((x)&(y))
 #define mag_fn_or_int(x,y) ((x)|(y))
 #define mag_fn_xor_int(x,y) ((x)^(y))
-#define mag_fn_floordiv_i(x,y) ((((x) - mag_remi((x), (y)))/(y)))
-#define mag_fn_floordiv_u(x,y) ((x)/(y))
+#define mag_fn_floordiv_i(x,y) mag_floordivi((x),(y))
+#define mag_fn_floordiv_u(x,y) mag_fn_div_u((x),(y))
 #define mag_fn_mod_i(x,y) mag_remi((x),(y))
-#define mag_fn_mod_u(x,y) ((x)%(y))/* Unsigned remainder is the same as in C */
+#define mag_fn_mod_u(x,y) ((y) ? (x)%(y) : (x))
 #define mag_fn_pow_i(x,y) mag_powi((x),(y))
 #define mag_fn_pow_u(x,y) mag_powu((x),(y))
 #define mag_fn_shl_i(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (T)((uint64_t)(x)<<(y)))
-#define mag_fn_shl_u(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)<<(y))
+#define mag_fn_shl_u(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (T)((uint64_t)(x)<<(y)))
 #define mag_fn_shr_i(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)>>(y))
 #define mag_fn_shr_u(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)>>(y))
 #define mag_fn_min_int(x,y) ((x)<(y)?(x):(y))
@@ -84,7 +86,8 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         const T *px = bx + xb + ((plan.flags&MAG_VAX_CX) ? 0 : j); \
         const T *py = by + yb + ((plan.flags&MAG_VAX_CY) ? 0 : j); \
         RT *pr = br + rbo + j; \
-        if (plan.flags&MAG_VAX_CX) { T xa = *px; for (int64_t t=0; t < run; ++t) { T ya = py[t]; pr[t] = EXPR; } } \
+        if ((plan.flags&MAG_VAX_CX) && (plan.flags&MAG_VAX_CY)) { T xa = *px; T ya = *py; RT v = EXPR; for (int64_t t=0; t < run; ++t) pr[t] = v; } \
+        else if (plan.flags&MAG_VAX_CX) { T xa = *px; for (int64_t t=0; t < run; ++t) { T ya = py[t]; pr[t] = EXPR; } } \
         else if (plan.flags&MAG_VAX_CY) { T ya = *py; for (int64_t t=0; t < run; ++t) { T xa = px[t]; pr[t] = EXPR; } } \
         else { for (int64_t t=0; t < run; ++t) { T xa = px[t]; T ya = py[t]; pr[t] = EXPR; } } \
         i += run; \
@@ -110,7 +113,10 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
         const T *py = by + yb + ((plan.flags&MAG_VAX_CY) ? 0 : j); \
         T *pr = br + rbo + j; \
         int64_t t = 0; \
-        if ((plan.flags&MAG_VAX_CX) || (plan.flags&MAG_VAX_CY)) { \
+        if ((plan.flags&MAG_VAX_CX) && (plan.flags&MAG_VAX_CY)) { \
+          T v = F(*px, *py); \
+          for (; t < run; ++t) pr[t] = v; \
+        } else if ((plan.flags&MAG_VAX_CX) || (plan.flags&MAG_VAX_CY)) { \
           T cs = (plan.flags&MAG_VAX_CX) ? *px : *py; \
           mag_vf32_t vc = SPLAT(cs); \
           if (plan.flags&MAG_VAX_CX) { \
@@ -327,7 +333,6 @@ mag_gen_float_bin_scalar(max)
 mag_gen_int_bin_common(add)
 mag_gen_int_bin_common(sub)
 mag_gen_int_bin_common(mul)
-mag_gen_int_bin_common(div)
 mag_gen_int_bin_common(and)
 mag_gen_int_bin_common(or)
 mag_gen_int_bin_common(xor)
@@ -344,6 +349,7 @@ mag_gen_int_bin_common(max)
   mag_gen_bin_scalar(uint64_t,uint64,name,u) \
   mag_gen_bin_scalar(int64_t,int64,name,i)
 
+mag_gen_int_signed_unsigned(div)
 mag_gen_int_signed_unsigned(floordiv)
 mag_gen_int_signed_unsigned(mod)
 mag_gen_int_signed_unsigned(pow)
@@ -492,7 +498,8 @@ mag_gen_cmp_all(ge, >=)
 #undef mag_fn_add_int
 #undef mag_fn_sub_int
 #undef mag_fn_mul_int
-#undef mag_fn_div_int
+#undef mag_fn_div_i
+#undef mag_fn_div_u
 #undef mag_fn_and_int
 #undef mag_fn_or_int
 #undef mag_fn_xor_int

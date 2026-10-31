@@ -61,10 +61,12 @@ TEST(core_tensor_logic, ref_count_clone) {
     ASSERT_EQ((*a).__rcb.rc_strong, 1);
     {
         tensor b = a.clone();
+        ctx.sync();
         ASSERT_EQ((*a).__rcb.rc_strong, 1);
         ASSERT_EQ((*b).__rcb.rc_strong, 1);
         {
             tensor c = b.clone();
+            ctx.sync();
             ASSERT_EQ((*a).__rcb.rc_strong, 1);
             ASSERT_EQ((*b).__rcb.rc_strong, 1);
             ASSERT_EQ((*c).__rcb.rc_strong, 1);

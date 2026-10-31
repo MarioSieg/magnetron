@@ -117,11 +117,11 @@ mag_status_t mag_tensor_init(
     mag_device_id_to_str(device, &device_name);
     return mag_set_error(err, MAG_ERR_DEVICE, "tensor: device '%s' is not available; the backend may not be enabled.", device_name);
   }
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   if (!storage) {
     mag_status_t (*allocator)(mag_error_t *, mag_device_t *, mag_storage_buffer_t **, size_t) = target_device->alloc_storage;
-    status = (*allocator)(err, target_device, &storage, numby);
-    if (mag_iserr(status)) return status;
+    stat = (*allocator)(err, target_device, &storage, numby);
+    if (mag_iserr(stat)) return stat;
   } else {
     if (mag_unlikely(storage->device != target_device))
       return mag_set_error(err, MAG_ERR_PARAM, "tensor: storage device mismatch (tensor is on '%s' but storage is on '%s').", mag_backend_type_to_str(target_device->id.type), mag_backend_type_to_str(storage->device->id.type));
@@ -133,7 +133,7 @@ mag_status_t mag_tensor_init(
   }
   mag_tensor_t *tensor = mag_tensor_init_header(ctx, type, rank, numel, target_device, storage);
   if (mag_unlikely(!tensor)) {
-    status = mag_set_error(err, MAG_ERR_OOM, "tensor: failed to allocate tensor header.");
+    stat = mag_set_error(err, MAG_ERR_OOM, "tensor: failed to allocate tensor header.");
     goto cleanup;
   }
   mag_atomic64_fetch_add(&ctx->telemetry.storage_bytes_allocated, (mag_atomic64_t)numby, MAG_MO_RELAXED);
@@ -145,7 +145,7 @@ mag_status_t mag_tensor_init(
     tensor->meta.coords.strides[rank-1] = 1;
     for (int64_t i=rank-2; i >= 0; --i) {
       if (mag_unlikely(mag_mulov64(tensor->meta.coords.strides[i+1], tensor->meta.coords.shape[i+1], tensor->meta.coords.strides+i))) {
-        status = mag_set_error(err, MAG_ERR_DIM, "tensor: stride computation overflowed at dim %" PRIi64 ".", i);
+        stat = mag_set_error(err, MAG_ERR_DIM, "tensor: stride computation overflowed at dim %" PRIi64 ".", i);
         goto cleanup;
       }
     }
@@ -154,7 +154,7 @@ mag_status_t mag_tensor_init(
   return MAG_OK;
 cleanup:
   mag_tensor_free_header(tensor);
-  return status;
+  return stat;
 }
 
 static mag_status_t mag_tensor_dtor(void *self) {
@@ -193,7 +193,7 @@ static mag_status_t mag_borrowed_storage_dtor(void *self) {
   return MAG_OK;
 }
 
-mag_status_t mag_borrow_cpu_buffer(
+mag_status_t mag_borrow_host_buffer(
   mag_error_t *err,
   mag_tensor_t **out,
   mag_context_t *ctx,
@@ -203,15 +203,15 @@ mag_status_t mag_borrow_cpu_buffer(
   int64_t rank,
   const int64_t *shape,
   bool is_writeable,
-  void (*release_cb)(void *usr),
+  void (*dtor)(void *usr),
   void *usr
 ) {
   *out = NULL;
-  if (mag_unlikely(release_cb == NULL))
+  if (mag_unlikely(dtor == NULL))
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: release callback must not be NULL.");
   if (mag_unlikely(data == NULL))
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: data pointer must not be NULL.");
-  if (mag_unlikely(!(num_bytes > 0)))
+  if (mag_unlikely(num_bytes <= 0))
     return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: num_bytes must be > 0.");
   if (mag_unlikely(!(rank >= 0 && rank <= MAG_MAX_DIMS)))
     return mag_set_error(err, MAG_ERR_RANK, "borrow_cpu_buffer: rank must be in [0, %d], but got %" PRIi64 ".", MAG_MAX_DIMS, rank);
@@ -220,25 +220,25 @@ mag_status_t mag_borrow_cpu_buffer(
   int64_t dts = (int64_t)mag_type_trait(dtype)->size;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(!(shape[i] >= 0)))
+    if (mag_unlikely(shape[i] < 0))
       return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: all shape dimensions must be >= 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
     if (mag_unlikely(mag_mulov64(shape[i], numel, &numel)))
       return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);
   }
-  int64_t need_bytes;
-  if (mag_unlikely(mag_mulov64(numel, dts, &need_bytes)))
+  int64_t nb_req;
+  if (mag_unlikely(mag_mulov64(numel, dts, &nb_req)))
     return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: byte size overflowed (numel=%" PRIi64 ", element size=%" PRIi64 ").", numel, dts);
-  if (mag_unlikely(!((size_t)need_bytes <= num_bytes)))
-    return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: buffer is too small (need at least %zu bytes, but got %zu).", (size_t)need_bytes, num_bytes);
-  mag_status_t status = MAG_OK;
+  if (mag_unlikely((size_t)nb_req > num_bytes))
+    return mag_set_error(err, MAG_ERR_PARAM, "borrow_cpu_buffer: buffer is too small (need at least %zu bytes, but got %zu).", (size_t)nb_req, num_bytes);
+  mag_status_t stat = MAG_OK;
   mag_borrow_cookie_t *cookie = (*mag_try_alloc)(NULL, sizeof(*cookie), 0);
   if (mag_unlikely(!cookie))
     return mag_set_error(err, MAG_ERR_OOM, "borrow_cpu_buffer: failed to allocate borrow cookie.");
-  cookie->fn = release_cb;
+  cookie->fn = dtor;
   cookie->usr = usr;
   mag_device_t *cpu_device = NULL;
   if (mag_unlikely(!mag_backend_registry_lookup_device_id(ctx->backend_registry, mag_device(CPU, 0), NULL, &cpu_device))) {
-    status = mag_set_error(err, MAG_ERR_DEVICE, "borrow_cpu_buffer: CPU backend is not available.");
+    stat = mag_set_error(err, MAG_ERR_DEVICE, "borrow_cpu_buffer: CPU backend is not available.");
     goto cleanup;
   }
   {
@@ -246,7 +246,7 @@ mag_status_t mag_borrow_cpu_buffer(
     if (is_writeable) flags |= MAG_STORAGE_FLAG_ACCESS_W;
     mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
     if (mag_unlikely(!buf)) {
-      status = mag_set_error(err, MAG_ERR_OOM, "borrow_cpu_buffer: failed to allocate storage buffer header.");
+      stat = mag_set_error(err, MAG_ERR_OOM, "borrow_cpu_buffer: failed to allocate storage buffer header.");
       goto cleanup;
     }
     *buf = (mag_storage_buffer_t) {
@@ -262,18 +262,18 @@ mag_status_t mag_borrow_cpu_buffer(
     mag_rc_init_object(buf, &mag_borrowed_storage_dtor);
     mag_atomic64_fetch_add(&ctx->telemetry.num_alive_storages, 1, MAG_MO_RELAXED);
     mag_tensor_t *tensor = NULL;
-    status = mag_tensor_init(err, &tensor, ctx, buf, dtype, rank, shape, mag_device(CPU, 0));
+    stat = mag_tensor_init(err, &tensor, ctx, buf, dtype, rank, shape, mag_device(CPU, 0));
     mag_rc_decref(buf);
-    if (mag_iserr(status)) {
+    if (mag_iserr(stat)) {
       *out = NULL;
-      return status;
+      return stat;
     }
     *out = tensor;
     return MAG_OK;
   }
 cleanup:
   if (cookie) (*mag_alloc)(cookie, 0, 0);
-  return status;
+  return stat;
 }
 
 size_t mag_tensor_numbytes(const mag_tensor_t *t) {
@@ -332,27 +332,26 @@ mag_device_id_t mag_tensor_device_id(const mag_tensor_t *tensor) {
 mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void **out_buf, size_t *out_size_bytes) {
   *out_buf = NULL;
   *out_size_bytes = 0;
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   mag_tensor_t *host = NULL;
   mag_tensor_t *cont = NULL;
-
-  status = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
-  if (mag_iserr(status))
+  stat = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
+  if (mag_iserr(stat))
     goto cleanup;
-
-  status = mag_contiguous(err, &cont, host);
-  if (mag_iserr(status))
+  stat = mag_contiguous(err, &cont, host);
+  if (mag_iserr(stat))
     goto cleanup;
-
   {
     size_t size = mag_tensor_numbytes(cont);
     if (mag_unlikely(!size)) {
-      status = mag_set_error(err, MAG_ERR_STATE, "copy_data: tensor has zero size; nothing to copy.");
+      stat = mag_set_error(err, MAG_ERR_STATE, "copy_data: tensor has zero size; nothing to copy.");
       goto cleanup;
     }
+    stat = mag_sto_sync_barrier_r(err, cont->storage); /* Sync before reading */
+    if (mag_iserr(stat)) goto cleanup;
     void *dst = (*mag_try_alloc)(NULL, size, 0); /* TODO: Use dynamic scratch buffer */
     if (mag_unlikely(!dst)) {
-      status = mag_set_error(err, MAG_ERR_OOM, "copy_data: failed to allocate %zu bytes for host copy.", size);
+      stat = mag_set_error(err, MAG_ERR_OOM, "copy_data: failed to allocate %zu bytes for host copy.", size);
       goto cleanup;
     }
     const void *src = (const void *)mag_tensor_data_ptr(cont);
@@ -367,7 +366,7 @@ mag_status_t mag_tensor_copy_data(mag_error_t *err, mag_tensor_t *tensor, void *
 cleanup:
   if (cont) mag_tensor_decref(cont);
   if (host) mag_tensor_decref(host);
-  return status;
+  return stat;
 }
 
 void mag_tensor_copy_data_free(void *ret_val) {
@@ -379,21 +378,21 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
     return mag_set_error(err, MAG_ERR_PARAM, "item: can only be called on a single-element tensor, but this tensor has %" PRIi64 " elements.", tensor->meta.numel);
   if (mag_unlikely(out_value == NULL))
     return mag_set_error(err, MAG_ERR_PARAM, "item: output value pointer must not be NULL.");
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   mag_tensor_t *host = NULL;
   mag_tensor_t *scalar = NULL;
   mag_tensor_t *wide = NULL;
   bool scalar_is_host = false;
   bool wide_is_scalar = false;
-  status = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
-  if (mag_iserr(status))
+  stat = mag_transfer(err, &host, tensor, mag_device(CPU, 0));
+  if (mag_iserr(stat))
     goto cleanup;
   if (host->meta.coords.rank == 0) {
     scalar = host;
     scalar_is_host = true;
   } else {
-    status = mag_view(err, &scalar, host, NULL, 0);
-    if (mag_iserr(status))
+    stat = mag_view(err, &scalar, host, NULL, 0);
+    if (mag_iserr(stat))
       goto cleanup;
   }
   {
@@ -402,13 +401,15 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
     mag_scalar_t res;
     if (mask & MAG_DTYPE_MASK_FP) {
       if (dt != MAG_DTYPE_FLOAT32) {
-        status = mag_cast(err, &wide, scalar, MAG_DTYPE_FLOAT32);
-        if (mag_iserr(status))
+        stat = mag_cast(err, &wide, scalar, MAG_DTYPE_FLOAT32);
+        if (mag_iserr(stat))
           goto cleanup;
       } else {
         wide = scalar;
         wide_is_scalar = true;
       }
+      stat = mag_sto_sync_barrier_r(err, wide->storage);
+      if (mag_iserr(stat)) goto cleanup;
       res = mag_scalar_from_float64(*(const float *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
       if (!scalar_is_host) mag_tensor_decref(scalar);
@@ -418,13 +419,15 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
     }
     if (mask & MAG_DTYPE_MASK_SINT) {
       if (dt != MAG_DTYPE_INT64) {
-        status = mag_cast(err, &wide, scalar, MAG_DTYPE_INT64);
-        if (mag_iserr(status))
+        stat = mag_cast(err, &wide, scalar, MAG_DTYPE_INT64);
+        if (mag_iserr(stat))
           goto cleanup;
       } else {
         wide = scalar;
         wide_is_scalar = true;
       }
+      stat = mag_sto_sync_barrier_r(err, wide->storage);
+      if (mag_iserr(stat)) goto cleanup;
       res = mag_scalar_from_int64(*(const int64_t *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
       if (!scalar_is_host) mag_tensor_decref(scalar);
@@ -434,13 +437,15 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
     }
     if ((mask & MAG_DTYPE_MASK_UINT) || dt == MAG_DTYPE_BOOLEAN) {
       if (dt != MAG_DTYPE_UINT64) {
-        status = mag_cast(err, &wide, scalar, MAG_DTYPE_UINT64);
-        if (mag_iserr(status))
+        stat = mag_cast(err, &wide, scalar, MAG_DTYPE_UINT64);
+        if (mag_iserr(stat))
           goto cleanup;
       } else {
         wide = scalar;
         wide_is_scalar = true;
       }
+      stat = mag_sto_sync_barrier_r(err, wide->storage);
+      if (mag_iserr(stat)) goto cleanup;
       res = mag_scalar_from_uint64(*(const uint64_t *)mag_tensor_data_ptr(wide));
       if (!wide_is_scalar) mag_tensor_decref(wide);
       if (!scalar_is_host) mag_tensor_decref(scalar);
@@ -448,13 +453,13 @@ mag_status_t mag_tensor_item(mag_error_t *err, mag_tensor_t *tensor, mag_scalar_
       *out_value = res;
       return MAG_OK;
     }
-    status = mag_set_error(err, MAG_ERR_PARAM, "item: does not support dtype %s.", mag_type_trait(dt)->name);
+    stat = mag_set_error(err, MAG_ERR_PARAM, "item: does not support dtype %s.", mag_type_trait(dt)->name);
   }
 cleanup:
   if (wide && !wide_is_scalar) mag_tensor_decref(wide);
   if (scalar && !scalar_is_host) mag_tensor_decref(scalar);
   if (host) mag_tensor_decref(host);
-  return status;
+  return stat;
 }
 
 mag_context_t *mag_tensor_context(const mag_tensor_t *tensor) {
@@ -533,8 +538,26 @@ bool mag_tensor_decref(mag_tensor_t *tensor) {
   return mag_rc_decref(tensor);
 }
 
-bool mag_tensor_is_cpu(mag_tensor_t *tensor) {
-  return mag_device_id_eq(tensor->meta.device->id, mag_device(CPU, 0));
+mag_status_t mag_tensor_sync(mag_error_t *err, mag_tensor_t *tensor) {
+  mag_device_t *dvc = tensor->storage->device;
+  if (mag_unlikely(!dvc->materialization_barrier)) return MAG_OK;
+  return (*dvc->materialization_barrier)(err, dvc, tensor->storage->prev_write_seq);
+}
+
+mag_status_t mag_tensor_mark_host_aliased(mag_error_t *err, mag_tensor_t *tensor) {
+  mag_storage_buffer_t *sto = tensor->storage;
+  if (mag_unlikely(!(sto->flags&MAG_STORAGE_FLAG_HOST_VISIBLE)))
+    return mag_set_error(err, MAG_ERR_PARAM, "host_alias: tensor storage is not host-visible.");
+  mag_status_t stat = mag_sto_sync_barrier_w(err, sto);
+  if (mag_iserr(stat)) return stat;
+  sto->flags|=MAG_STORAGE_FLAG_HOST_ALIASED;
+  return MAG_OK;
+}
+
+bool mag_tensor_is_host(mag_tensor_t *tensor) {
+  return tensor->meta.device->id.type==MAG_BACKEND_TYPE_CPU
+  && tensor->meta.device->flags&MAG_DEVICE_FLAGS_IS_HOST
+  && tensor->storage->flags&MAG_STORAGE_FLAG_HOST_VISIBLE;
 }
 
 bool mag_all_shapes_equal_and_contig(const mag_tensor_t **tensors, size_t n) {

@@ -14,7 +14,8 @@
 #include "mag_cuda_prelude.cuh"
 
 namespace mag {
-  constexpr bool sync_after_each_op = false;
-
   [[nodiscard]] extern mag_status_t submit_op(mag_error_t *err, mag_device_t *dvc, const mag_command_t *cmd);
+  [[nodiscard]] extern mag_status_t sync_device(mag_error_t *err, mag_device_t *dvc);
+  [[nodiscard]] extern mag_status_t wait_device(mag_error_t *err, mag_device_t *dvc, mag_sync_barrier_seq_t seq);
+  [[nodiscard]] extern bool query_device(mag_device_t *dvc, mag_sync_barrier_seq_t seq);
 }

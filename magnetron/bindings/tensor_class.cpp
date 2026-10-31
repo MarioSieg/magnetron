@@ -16,30 +16,47 @@ namespace mag::bindings {
   template <typename T>
   [[nodiscard]] static nb::object ndarray_to_obj(nb::ndarray<nb::numpy, T> &&arr) { return nb::cast(std::move(arr)); }
 
-  [[nodiscard]] static nb::object ndarray_f32(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+
+  [[nodiscard]] static nb::object ndarray_f32(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, float>(base, {}, owner, {}, nb::dtype<float>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, float>(base, static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<float>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, float>(base, static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<float>()));
   }
 
-  [[nodiscard]] static nb::object ndarray_f16(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+  [[nodiscard]] static nb::object ndarray_f16(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, mag_float16_t>(base, {}, owner, {}, nb::dtype<mag_float16_t>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, mag_float16_t>(base, static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<mag_float16_t>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, mag_float16_t>(base, static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<mag_float16_t>()));
   }
 
-  [[nodiscard]] static nb::object ndarray_bf16(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+  [[nodiscard]] static nb::object ndarray_bf16(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, mag_bfloat16_t>(base, {}, owner, {}, nb::dtype<mag_bfloat16_t>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, mag_bfloat16_t>(base, static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<mag_bfloat16_t>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, mag_bfloat16_t>(base, static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<mag_bfloat16_t>()));
   }
 
   template <typename T>
-  [[nodiscard]] static nb::object ndarray_int(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+  [[nodiscard]] static nb::object ndarray_int(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, T>(static_cast<T *>(base), {}, owner, {}, nb::dtype<T>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, T>(static_cast<T *>(base), static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<T>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, T>(static_cast<T *>(base), static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<T>()));
   }
 
-  [[nodiscard]] static nb::object ndarray_bool(void *base, int64_t rank, const std::vector<size_t> &shape, const std::vector<int64_t> &strides, const nb::object &owner) {
+  [[nodiscard]] static nb::object ndarray_bool(void *base, int64_t rank, const fixed_dim_vec &shape, const fixed_dim_vec &strides, const nb::object &owner) {
     if (!rank) return ndarray_to_obj(nb::ndarray<nb::numpy, uint8_t>(base, {}, owner, {}, nb::dtype<bool>()));
-    return ndarray_to_obj(nb::ndarray<nb::numpy, uint8_t>(base, static_cast<size_t>(rank), shape.data(), owner, strides.data(), nb::dtype<bool>()));
+    auto np_shape = shape.to_vec<size_t>();
+    auto np_strides = strides.to_vec<int64_t>();
+    return ndarray_to_obj(nb::ndarray<nb::numpy, uint8_t>(base, static_cast<size_t>(rank), np_shape.data(), owner, np_strides.data(), nb::dtype<bool>()));
+  }
+
+  static void expose_raw_storage_mem(const tensor_wrapper &self) {
+    mag_error_t err {};
+    if (mag_tensor_is_host(*self)) throw_if_error(invoke_no_gil([&] { return mag_tensor_mark_host_aliased(&err, *self); }), err);
+    else throw_if_error(invoke_no_gil([&] { return mag_tensor_sync(&err, *self); }), err);
   }
 
   [[nodiscard]] static nb::object tensor_from_numpy(const tensor_wrapper &self) {
@@ -53,12 +70,13 @@ namespace mag::bindings {
       host = tensor_wrapper{host_ptr};
       tensor = host_ptr;
     }
+    throw_if_error(invoke_no_gil([&] { return mag_tensor_mark_host_aliased(&err, tensor); }), err); /* The ndarray shares the storage */
     int64_t rank = mag_tensor_rank(tensor);
     const int64_t *p_shape = mag_tensor_shape_ptr(tensor);
     const int64_t *p_strides = mag_tensor_strides_ptr(tensor);
     void *base = reinterpret_cast<void *>(mag_tensor_data_ptr(tensor));
-    std::vector<size_t> shape(static_cast<size_t>(std::max<int64_t>(0, rank)));
-    std::vector<int64_t> strides(static_cast<size_t>(std::max<int64_t>(0, rank)));
+    fixed_dim_vec shape(static_cast<size_t>(std::max<int64_t>(0, rank)));
+    fixed_dim_vec strides(static_cast<size_t>(std::max<int64_t>(0, rank)));
     for (size_t i=0; i < static_cast<size_t>(rank); ++i) {
       shape[i] = static_cast<size_t>(p_shape[i]);
       strides[i] = p_strides[i];
@@ -141,6 +159,9 @@ namespace mag::bindings {
       if (!base) return nb::none();
       return nb::cast(tensor_wrapper {base});
     }, "Base tensor this view was derived from, or None if this tensor is not a view.")
+    .def_prop_ro("is_host", [](const tensor_wrapper &self) -> bool {
+       return mag_tensor_is_host(*self);
+    }, "True if this tensor lives on the CPU (host) machine.")
     .def_prop_ro("is_contiguous", [](const tensor_wrapper &self) -> bool {
        return mag_tensor_is_contiguous(*self);
     }, "True if elements are stored in contiguous memory order.")
@@ -159,17 +180,26 @@ namespace mag::bindings {
       return fmt;
     }, "Device where the tensor is stored (e.g. 'cpu', 'cuda:0').")
     .def_prop_ro("data_ptr", [](const tensor_wrapper &self) -> uintptr_t {
+      expose_raw_storage_mem(self);
       return mag_tensor_data_ptr(*self);
-    }, "Raw pointer to the first element (read-only).")
+    }, "Raw pointer to the first element (read-only). Awaits pending async work.")
     .def_prop_ro("data_ptr_mut", [](const tensor_wrapper &self) -> uintptr_t {
+      expose_raw_storage_mem(self);
       return mag_tensor_data_ptr_mut(*self);
-    }, "Raw pointer to the first element (mutable).")
+    }, "Raw pointer to the first element (mutable). Awaits pending async work.")
     .def_prop_ro("data_storage_ptr", [](const tensor_wrapper &self) -> uintptr_t {
+      expose_raw_storage_mem(self);
        return mag_tensor_data_storage_ptr(*self);
-    }, "Pointer to the underlying storage block.")
+    }, "Pointer to the underlying storage block. Awaits pending async work.")
     .def_prop_ro("data_storage_ptr_mut", [](const tensor_wrapper &self) -> uintptr_t {
+      expose_raw_storage_mem(self);
        return mag_tensor_data_storage_ptr_mut(*self);
-    }, "Mutable pointer to the underlying storage block.")
+    }, "Mutable pointer to the underlying storage block. Awaits pending async work.")
+    .def("sync", [](const tensor_wrapper &self) -> const tensor_wrapper & {
+       mag_error_t err {};
+       throw_if_error(invoke_no_gil([&] { return mag_tensor_sync(&err, *self); }), err);
+       return self;
+     }, nb::rv_policy::reference_internal, "Wait for all pending async work on this tensor to complete.")
     .def("can_broadcast", [](const tensor_wrapper &self, const tensor_wrapper &rhs) -> bool {
        return mag_tensor_can_broadcast(*self, *rhs);
     }, "rhs"_a, "Return True if this tensor can broadcast with rhs.")
@@ -215,7 +245,7 @@ namespace mag::bindings {
         throw nb::value_error("Tensor must have exactly one element to retrieve an item");
       mag_scalar_t s {};
       mag_error_t err {};
-      throw_if_error(mag_tensor_item(&err, *self, &s), err);
+      throw_if_error(invoke_no_gil([&] { return mag_tensor_item(&err, *self, &s); }), err); /* May wait for the device */
       if (mag_scalar_is_float64(s)) return nb::float_(mag_scalar_as_float64(s));
       if (mag_scalar_is_int64(s)) return nb::int_(mag_scalar_as_int64(s));
       if (mag_scalar_is_uint64(s)) {
@@ -233,7 +263,17 @@ namespace mag::bindings {
       return tensor_wrapper{result};
     }, "Return a new tensor detached from the autodiff graph.")
     .def("tolist", [](const tensor_wrapper &self) -> nb::object {
-      if (!mag_tensor_numel(*self)) return nb::list();
+      if (!mag_tensor_numel(*self)) {
+        const int64_t *shape = mag_tensor_shape_ptr(*self);
+        int64_t rank = mag_tensor_rank(*self);
+        auto build = [&](auto &&self_fn, int64_t d) -> nb::list {
+          nb::list l {};
+          if (shape[d] == 0 || d+1 >= rank) return l;
+          for (int64_t i=0; i < shape[d]; ++i) l.append(self_fn(self_fn, d+1));
+          return l;
+        };
+        return build(build, 0);
+      }
       mag_error_t err {};
       mag_tensor_t *host = nullptr;
       throw_if_error(mag_transfer(&err, &host, *self, mag_device(CPU, 0)), err);
@@ -263,6 +303,7 @@ namespace mag::bindings {
         throw_if_error(mag_contiguous(&err, &contig, casted), err);
       }
       on_scope_exit defer_decref2 {[contig] { mag_tensor_decref(contig); }};
+      throw_if_error(invoke_no_gil([&] { return mag_tensor_sync(&err, contig); }), err);
       const auto *ptr = reinterpret_cast<const void *>(mag_tensor_data_ptr(contig));
       int64_t rank = mag_tensor_rank(contig);
       if (rank == 0) {
@@ -275,7 +316,7 @@ namespace mag::bindings {
         }
       }
       const int64_t *shape = mag_tensor_shape_ptr(contig);
-      std::vector<int64_t> strides(rank);
+      fixed_dim_vec strides(rank);
       strides[rank-1] = 1;
       for (int64_t i=rank-2; i >= 0; --i) // RowMaj strides
         strides[i] = strides[i+1]*shape[i+1];
@@ -297,6 +338,7 @@ namespace mag::bindings {
       mag_tensor_t *contig = nullptr;
       throw_if_error(mag_contiguous(&err, &contig, host), err);
       on_scope_exit defer_contig {[contig] { mag_tensor_decref(contig); }};
+      throw_if_error(invoke_no_gil([&] { return mag_tensor_sync(&err, contig); }), err);
       const auto *p = reinterpret_cast<const char *>(mag_tensor_data_ptr(contig));
       return nb::bytes{p, mag_tensor_numbytes(contig)};
     },  "Copy the raw element bytes out, in row major and in this tensor's dtype.")

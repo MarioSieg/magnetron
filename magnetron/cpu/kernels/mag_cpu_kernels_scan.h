@@ -187,13 +187,12 @@ mag_gen_stub_cuprod(int64_t, int64, mag_cvt_nop, int64_t, 1, mag_cvt_nop)
         const int64_t off_i = off_i0 + p * stride_i_dim; \
         mag_bnd_chk(bx + off_x, x->storage->base, x->storage->size); \
         T xv = bx[off_x]; \
-        double xvc = (double)CVT(xv); \
         if (p == 0) { \
           best = xv; \
           best_idx = 0; \
         } else { \
-          double bestc = (double)CVT(best); \
-          bool better = IS_MAX ? xvc >= bestc : xvc <= bestc; \
+          bool xnan = CVT(xv) != CVT(xv), bnan = CVT(best) != CVT(best); \
+          bool better = xnan || (!bnan && (IS_MAX ? CVT(xv) >= CVT(best) : CVT(xv) <= CVT(best))); \
           if (better) { best = xv; best_idx = p; } \
         } \
         mag_bnd_chk(bv + off_v, v->storage->base, v->storage->size); \

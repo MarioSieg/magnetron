@@ -120,6 +120,15 @@ static MAG_AINLINE float mag_float16_to_float32(mag_float16_t x) {
 #define mag_scalar_to_uint64(s) ((uint64_t)mag_scalar_as_uint64(s))
 #define mag_scalar_to_int64(s) ((int64_t)mag_scalar_as_int64(s))
 
+#define mag_index_wrap_or_fail(name, g, size) \
+  do { \
+    int64_t mag_idx_raw_ = (g); \
+    int64_t mag_idx_size_ = (size); \
+    if ((g) < 0) (g) += mag_idx_size_; \
+    if (mag_unlikely((uint64_t)(g) >= (uint64_t)mag_idx_size_)) \
+      return mag_set_error(err, MAG_ERR_BOUNDS, name ": index %" PRIi64 " is out of bounds for dimension with size %" PRIi64 ".", mag_idx_raw_, mag_idx_size_); \
+  } while (0)
+
 #include "mag_cpu_simd.h"
 #include "mag_cpu_simd_functions.h"
 #include "mag_cpu_simd_philox4x32.h"
@@ -737,23 +746,11 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_BFLOAT16] = &mag_softmax_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_softmax_float8_e4m3fn,
   },
-  [MAG_OP_SOFTMAX_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_softmax_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_softmax_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_softmax_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_softmax_dv_float8_e4m3fn,
-  },
   [MAG_OP_SIGMOID] = {
     [MAG_DTYPE_FLOAT32] = &mag_sigmoid_float32,
     [MAG_DTYPE_FLOAT16] = &mag_sigmoid_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_sigmoid_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_sigmoid_float8_e4m3fn,
-  },
-  [MAG_OP_SIGMOID_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_sigmoid_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_sigmoid_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_sigmoid_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_sigmoid_dv_float8_e4m3fn,
   },
   [MAG_OP_HARD_SIGMOID] = {
     [MAG_DTYPE_FLOAT32] = &mag_hard_sigmoid_float32,
@@ -767,29 +764,11 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_BFLOAT16] = &mag_silu_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_silu_float8_e4m3fn,
   },
-  [MAG_OP_SILU_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_silu_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_silu_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_silu_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_silu_dv_float8_e4m3fn,
-  },
-  [MAG_OP_TANH_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_tanh_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_tanh_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_tanh_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_tanh_dv_float8_e4m3fn,
-  },
   [MAG_OP_RELU] = {
     [MAG_DTYPE_FLOAT32] = &mag_relu_float32,
     [MAG_DTYPE_FLOAT16] = &mag_relu_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_relu_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_relu_float8_e4m3fn,
-  },
-  [MAG_OP_RELU_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_relu_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_relu_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_relu_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_relu_dv_float8_e4m3fn,
   },
   [MAG_OP_GELU] = {
     [MAG_DTYPE_FLOAT32] = &mag_gelu_float32,
@@ -802,11 +781,6 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_FLOAT16] = &mag_gelu_approx_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_gelu_approx_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gelu_approx_float8_e4m3fn,
-  },
-  [MAG_OP_GELU_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_gelu_dv_float32,
-    [MAG_DTYPE_BFLOAT16] = &mag_gelu_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gelu_dv_float8_e4m3fn,
   },
   [MAG_OP_TRIL] = {
     [MAG_DTYPE_FLOAT32] = &mag_tril_float32,
@@ -1080,6 +1054,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
   },
   [MAG_OP_LE] = {
     [MAG_DTYPE_FLOAT32] = &mag_le_float32,
+    [MAG_DTYPE_BOOLEAN] = &mag_le_uint8, /* bools are canonical 0/1 bytes, so unsigned byte order is false < true */
     [MAG_DTYPE_FLOAT16] = &mag_le_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_le_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_le_float8_e4m3fn,
@@ -1094,6 +1069,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
   },
   [MAG_OP_GE] = {
     [MAG_DTYPE_FLOAT32] = &mag_ge_float32,
+    [MAG_DTYPE_BOOLEAN] = &mag_ge_uint8,
     [MAG_DTYPE_FLOAT16] = &mag_ge_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_ge_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_ge_float8_e4m3fn,
@@ -1108,6 +1084,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
   },
   [MAG_OP_LT] = {
     [MAG_DTYPE_FLOAT32] = &mag_lt_float32,
+    [MAG_DTYPE_BOOLEAN] = &mag_lt_uint8,
     [MAG_DTYPE_FLOAT16] = &mag_lt_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_lt_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_lt_float8_e4m3fn,
@@ -1122,6 +1099,7 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
   },
   [MAG_OP_GT] = {
     [MAG_DTYPE_FLOAT32] = &mag_gt_float32,
+    [MAG_DTYPE_BOOLEAN] = &mag_gt_uint8, /* bools are canonical 0/1 bytes, so unsigned byte order is false < true */
     [MAG_DTYPE_FLOAT16] = &mag_gt_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_gt_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gt_float8_e4m3fn,

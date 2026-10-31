@@ -6,7 +6,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "magnetron"
-version = "0.2.2"
+version = "0.2.3"
 description = "A compact machine learning runtime for developers who want to understand, control, and optimize the full stack."
 requires-python = ">=3.10"
 readme = "README.md"
@@ -48,7 +48,8 @@ dev = [
     "rich",
     "tokenizers",
     "huggingface_hub",
-    "pandas"
+    "pandas",
+    "pyarrow"
 ]
 
 [tool.scikit-build.cmake.define]
@@ -60,7 +61,6 @@ MAGNETRON_ENABLE_BACKEND_CUDA = true
 MAGNETRON_BUILD_PYTHON_BINDINGS = true # Required for the Python package
 MAGNETRON_DEBUG = false
 MAGNETRON_BUILD_TESTS = false
-MAGNETRON_BUILD_BENCHMARKS = false
 
 [tool.scikit-build]
 wheel.packages = ["python/magnetron"]

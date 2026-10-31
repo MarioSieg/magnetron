@@ -129,13 +129,13 @@ mag_status_t mag_topo_sort(
   *out_epoch = 0;
   if (mag_unlikely(!root)) return MAG_OK;
   int64_t traversal_epoch = 1+mag_atomic64_fetch_add(&root->ctx->topo_traversal_epoch, 1, MAG_MO_RELAXED);
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   if (mag_unlikely(mag_topo_try_claim(root, traversal_epoch) < 0)) {
-    status = mag_topo_shared_graph_error(err);
+    stat = mag_topo_shared_graph_error(err);
     goto cleanup;
   }
   if (mag_unlikely(!mag_topo_stack_push(tmp_stack, root))) {
-    status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow traversal stack.");
+    stat = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow traversal stack.");
     goto cleanup;
   }
   while (tmp_stack->len) { /* Iterative DFS */
@@ -147,7 +147,7 @@ mag_status_t mag_topo_sort(
     if (top->next_child_idx >= num_children) { /* All children processed */
       mag_topo_stack_pop(tmp_stack);
       if (mag_unlikely(!mag_topo_set_push(out_sorted, au))) {
-        status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow output set.");
+        stat = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow output set.");
         goto cleanup;
       }
       continue;
@@ -158,18 +158,18 @@ mag_status_t mag_topo_sort(
     if (au->in[ci]->meta.flags & MAG_TFLAG_REQUIRES_GRAD) {
       int claimed = mag_topo_try_claim(child, traversal_epoch);
       if (mag_unlikely(claimed < 0)) {
-        status = mag_topo_shared_graph_error(err);
+        stat = mag_topo_shared_graph_error(err);
         goto cleanup;
       }
       if (claimed && mag_unlikely(!mag_topo_stack_push(tmp_stack, child))) {
-        status = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow traversal stack.");
+        stat = mag_set_error(err, MAG_ERR_OOM, "toposort: failed to grow traversal stack.");
         goto cleanup;
       }
     }
   }
 cleanup:
-  if (mag_likely(!mag_iserr(status))) *out_epoch = traversal_epoch;
+  if (mag_likely(!mag_iserr(stat))) *out_epoch = traversal_epoch;
   else mag_topo_release_partial(tmp_stack, out_sorted, traversal_epoch);
   mag_topo_stack_reset(tmp_stack);
-  return status;
+  return stat;
 }

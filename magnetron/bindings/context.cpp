@@ -14,7 +14,7 @@
 #include <atomic>
 #include <mutex>
 
-#include "core/mag_context.h"
+#include <core/mag_context.h>
 
 namespace mag::bindings {
   static std::once_flag g_ctx_once;
@@ -60,8 +60,29 @@ namespace mag::bindings {
     if (ctx && ctx_is_idle(ctx)) destroy_ctx_now(ctx);
   }
 
+  static void destroy_ctx_at_exit() noexcept {
+    auto *ctx = g_ctx.exchange(nullptr, std::memory_order_acq_rel);
+    if (!ctx) return;
+    g_ctx_shutdown_pending.store(false, std::memory_order_release);
+    mag_ctx_destroy(ctx, true);
+  }
+
   void init_bindings_context(nb::module_ &m) {
     m.attr("_ctx_guard") = nb::capsule {reinterpret_cast<const void *>(1), &destroy_ctx};
+    if (Py_AtExit(&destroy_ctx_at_exit) != 0)
+      PyErr_WarnEx(PyExc_RuntimeWarning, "magnetron: could not register context shutdown handler", 1);
+    m.def("sync", [](const std::optional<std::string>& device) -> void {
+      mag_error_t err {};
+      if (!device) {
+        throw_if_error(invoke_no_gil([&]() -> mag_status_t { return mag_ctx_sync(&err, get_ctx()); }), err);
+        return;
+      }
+      std::optional<mag_device_id_t> dvc_id = resolve_device_id_str(*device);
+      if (!dvc_id) throw std::invalid_argument {"Invalid device id: '" + *device + "'"};
+      throw_if_error(invoke_no_gil([&]() -> mag_status_t { return mag_device_sync(&err, get_ctx(), *dvc_id); }), err);
+    }, "device"_a = nb::none(),
+    "Block until all pending work in async device queues is completed and the queues are drained. Async errors are reported here."
+    );
 
     auto context = m.def_submodule(
       "context",

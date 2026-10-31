@@ -189,12 +189,7 @@ from magnetron import Tensor, nn, optim
 x = Tensor([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
 y = Tensor([[0.0], [1.0], [1.0], [0.0]])
 
-model = nn.Sequential(
-    nn.Linear(2, 2),
-    nn.Tanh(),
-    nn.Linear(2, 1),
-    nn.Tanh(),
-)
+model = nn.Sequential(nn.Linear(2, 2), nn.Tanh(), nn.Linear(2, 1), nn.Tanh())
 
 optimizer = optim.SGD(model.parameters(), lr=1e-1)
 criterion = nn.MSELoss()
@@ -207,11 +202,11 @@ for epoch in range(2000):
     optimizer.zero_grad()
 
     if epoch % 100 == 0:
-        print(f"Epoch {epoch:4d} | Loss {loss.item():.6f}")
+        print(f'Epoch {epoch:4d} | Loss {loss.item():.6f}')
 
 y_hat = model(x)
 for i in range(x.shape[0]):
-    print(f"Expected: {y[i].item():.1f}, Predicted: {y_hat[i].item():.4f}")
+    print(f'Expected: {y[i].item():.1f}, Predicted: {y_hat[i].item():.4f}')
 ```
 
 ---

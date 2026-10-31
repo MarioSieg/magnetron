@@ -13,6 +13,8 @@
 
 #include <mutex>
 
+#include <core/mag_envcfg.h>
+
 #include "mag_cuda_unary.cuh"
 #include "mag_cuda_binary.cuh"
 #include "mag_cuda_fill.cuh"
@@ -82,18 +84,12 @@ namespace mag {
     [MAG_OP_ROUND] = &unary_op_round,
     [MAG_OP_TRUNC] = &unary_op_trunc,
     [MAG_OP_SOFTMAX] = &unary_op_softmax,
-    [MAG_OP_SOFTMAX_DV] = &unary_op_softmax_dv,
     [MAG_OP_SIGMOID] = &unary_op_sigmoid,
-    [MAG_OP_SIGMOID_DV] = &unary_op_sigmoid_dv,
     [MAG_OP_HARD_SIGMOID] = &unary_op_hard_sigmoid,
     [MAG_OP_SILU] = &unary_op_silu,
-    [MAG_OP_SILU_DV] = &unary_op_silu_dv,
-    [MAG_OP_TANH_DV] = &unary_op_tanh_dv,
     [MAG_OP_RELU] = &unary_op_relu,
-    [MAG_OP_RELU_DV] = &unary_op_relu_dv,
     [MAG_OP_GELU] = &unary_op_gelu,
     [MAG_OP_GELU_APPROX] = &unary_op_gelu_approx,
-    [MAG_OP_GELU_DV] = &unary_op_gelu_dv,
     [MAG_OP_TRIL] = &misc_op_tril,
     [MAG_OP_TRIU] = &misc_op_triu,
     [MAG_OP_MULTINOMIAL] = &misc_op_multinomial,
@@ -160,11 +156,37 @@ namespace mag {
     auto *kernel = k_kernel_dispatch_table[cmd->op];
     if (mag_unlikely(kernel == nullptr))
       return mag_set_error(err, MAG_ERR_KERNEL, "cuda: operator %s not implemented in CUDA backend.", mag_op_trait(cmd->op)->mnemonic);
+    bool all_out_empty = cmd->num_out > 0;
+    for (uint32_t i=0; i < cmd->num_out && all_out_empty; ++i)
+      all_out_empty = !mag_tensor_numel(cmd->out[i]);
+    if (all_out_empty) return MAG_OK;
     if (mag_status_t stat = (*kernel)(err, *cmd, stream); mag_unlikely(mag_iserr(stat)))
       return stat;
     mag_cu_rt_check(err, cudaGetLastError(), "kernel execution failed for operator");
-    if constexpr (sync_after_each_op)
+    static const bool launch_blocking = mag_envcfg_launch_blocking();
+    if (launch_blocking) {
       mag_cu_rt_check(err, cudaStreamSynchronize(stream), "failed to synchronize stream");
+      return phys_device.check_index_fault(err);
+    }
     return MAG_OK;
+  }
+
+  mag_status_t sync_device(mag_error_t *err, mag_device_t *dvc) {
+    const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
+    cudaStream_t stream = phys_device.stream();
+    if (!stream) return MAG_OK;
+    mag_cu_rt_check(err, cudaSetDevice(static_cast<int>(dvc->id.device_ordinal)), "failed to set active device");
+    mag_cu_rt_check(err, cudaStreamSynchronize(stream), "failed to synchronize stream");
+    return phys_device.check_index_fault(err); /* Index errors of queued kernels surface here, like deferred errors of the async CPU stream */
+  }
+
+  mag_status_t wait_device(mag_error_t *err, mag_device_t *dvc, mag_sync_barrier_seq_t) {
+    return sync_device(err, dvc);
+  }
+
+  bool query_device(mag_device_t *dvc, mag_sync_barrier_seq_t) {
+    const auto &phys_device = *static_cast<const physical_device *>(dvc->impl);
+    cudaStream_t stream = phys_device.stream();
+    return !stream || cudaStreamQuery(stream) == cudaSuccess;
   }
 }

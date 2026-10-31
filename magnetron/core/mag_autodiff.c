@@ -187,8 +187,8 @@ mag_status_t mag_tensor_set_grad(mag_error_t *err, mag_tensor_t *tensor, mag_ten
     return MAG_OK;
   }
   if (!(tensor->meta.flags & MAG_TFLAG_REQUIRES_GRAD)) {
-    mag_status_t status = mag_tensor_set_requires_grad(err, tensor, true);
-    if (mag_iserr(status)) return status;
+    mag_status_t stat = mag_tensor_set_requires_grad(err, tensor, true);
+    if (mag_iserr(stat)) return stat;
   }
   if (!tensor->au_state) {
     if (!mag_au_state_lazy_alloc(&tensor->au_state, tensor->ctx))
@@ -233,7 +233,7 @@ static void mag_tensor_patch_grad(mag_tensor_t *dst, mag_tensor_t *grad) {
 }
 
 mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   if (mag_unlikely(!(root->meta.flags & MAG_TFLAG_REQUIRES_GRAD)))
     return mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: missing backward info for tensor - it does not require gradients.");
   if (mag_unlikely(!(root->meta.coords.rank == 0 && root->meta.numel == 1)))
@@ -261,11 +261,11 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
     return mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate traversal stack.");
   }
   int64_t topo_epoch = 0;
-  status = mag_topo_sort(err, root->au_state, &topo_stack, post_order, &topo_epoch);
+  stat = mag_topo_sort(err, root->au_state, &topo_stack, post_order, &topo_epoch);
   mag_tensor_t *grads_intrusive[MAG_AU_STATE_INTRUSIVE_STORAGE_NUM];
   mag_tensor_t **grads_dyn = NULL;
   size_t grads_cap = 0;
-  if (mag_unlikely(mag_iserr(status))) goto cleanup;
+  if (mag_unlikely(mag_iserr(stat))) goto cleanup;
   if (mag_unlikely(!post_order->len)) goto cleanup;
   mag_atomic64_fetch_add(&ctx->telemetry.backward_nodes_visited, (mag_atomic64_t)post_order->len, MAG_MO_RELAXED);
   for (size_t i=post_order->len; i --> 0;) {
@@ -275,7 +275,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
     const mag_op_traits_t *meta = mag_op_trait(node->op);
     mag_status_t (*backward)(mag_error_t *, mag_au_state_t *, mag_tensor_t **) = meta->backward;
     if (mag_unlikely(backward == NULL)) {
-      status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' has no backward implementation.", meta->mnemonic);
+      stat = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' has no backward implementation.", meta->mnemonic);
       goto cleanup;
     }
     bool recompute = mag_op_trait(node->op)->flags&MAG_OP_FLAG_GRAD_READS_OUT && !mag_au_state_output_is_valid(node);
@@ -284,7 +284,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
         mag_tensor_t *input = node->in[j];
         if (!recompute && !mag_op_backward_reads_input(node->op, node->in, node->num_in, j)) continue;
         if (mag_unlikely(input && mag_tensor_current_version(input) != node->in_versions[j])) {
-          status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: a tensor needed for the gradient of operator '%s' has been modified by an in-place operation.", meta->mnemonic);
+          stat = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: a tensor needed for the gradient of operator '%s' has been modified by an in-place operation.", meta->mnemonic);
           goto cleanup;
         }
       }
@@ -295,7 +295,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
       num_in = node->num_in;
     } else {
       if (mag_unlikely(node->num_in != meta->in)) {
-        status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' input count is invalid, required: %u, got: %u", meta->mnemonic, meta->in, node->num_in);
+        stat = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: operator '%s' input count is invalid, required: %u, got: %u", meta->mnemonic, meta->in, node->num_in);
         goto cleanup;
       }
       num_in = meta->in;
@@ -308,7 +308,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
         for (; cap < num_in; cap <<= 1);
         void *realloced = (*mag_try_alloc)(grads_dyn, cap*sizeof(*grads_dyn), grads_cap*sizeof(*grads_dyn));
         if (mag_unlikely(!realloced)) {
-          status = mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate backward gradients.");
+          stat = mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate backward gradients.");
           goto cleanup;
         }
         grads_dyn = realloced;
@@ -317,8 +317,8 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
       grads = grads_dyn;
     }
     memset(grads, 0, num_in*sizeof(*grads)); /* Reset only activate range */
-    status = (*backward)(err, node, grads);
-    if (mag_iserr(status))
+    stat = (*backward)(err, node, grads);
+    if (mag_iserr(stat))
       goto cleanup;
     for (uint32_t j=0; j < num_in; ++j) {
       mag_tensor_t *input = node->in[j];
@@ -327,15 +327,15 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
         continue;
       mag_tensor_t *gri = grads[j];
       if (mag_unlikely(!gri)) {
-        status = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backward of operator '%s' did not produce a valid gradient for input %u.", meta->mnemonic, j);
+        stat = mag_set_error(err, MAG_ERR_AUTOGRAD, "autograd: backward of operator '%s' did not produce a valid gradient for input %u.", meta->mnemonic, j);
         goto cleanup;
       }
       if (!inode->grad) {
         mag_node_patch_grad(inode, gri);
         mag_atomic64_fetch_add(&ctx->telemetry.grads_materialized, 1, MAG_MO_RELAXED);
       } else {
-        status = mag_add_(err, &gri, gri, inode->grad);
-        if (mag_iserr(status)) goto cleanup;
+        stat = mag_add_(err, &gri, gri, inode->grad);
+        if (mag_iserr(stat)) goto cleanup;
         mag_node_patch_grad(inode, gri);
         mag_rc_decref(gri);
       }
@@ -352,7 +352,7 @@ cleanup:
   mag_topo_stack_free(&topo_stack);
   mag_topo_set_free(&topo_set);
   if (grad_was_on) mag_ctx_grad_recorder_start(ctx);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_tensor_zero_grad(mag_error_t *err,mag_tensor_t *tensor) {

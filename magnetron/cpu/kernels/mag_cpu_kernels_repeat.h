@@ -182,8 +182,10 @@ mag_gen_stub_repeat(int64_t, int64)
         int64_t sel = smoff + a*x->meta.coords.strides[dim]; \
         const T *restrict src_ptr = bx + sel; \
         T *restrict dst_ptr = br + oel; \
-        mag_bnd_chk(bx + sel, x->storage->base, x->storage->size); \
-        mag_bnd_chk(br + oel, r->storage->base, r->storage->size); \
+        if (rep) {\
+          mag_bnd_chk(bx + sel, x->storage->base, x->storage->size); \
+          mag_bnd_chk(br + oel, r->storage->base, r->storage->size); \
+        } \
         for (int64_t k=0; k < rep; ++k) { \
           mag_bnd_chk(dst_ptr + k*inner_block, r->storage->base, r->storage->size); \
           memcpy(dst_ptr + k*inner_block, src_ptr, (size_t)inner_block*sizeof(T)); \

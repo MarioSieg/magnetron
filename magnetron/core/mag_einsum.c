@@ -1037,7 +1037,7 @@ static mag_status_t mag_ein_collapse_repeats(mag_error_t *err, mag_tensor_t **ou
     ++new_rank;
   }
   new_str[new_rank] = '\0';
-  mag_status_t stat = mag_strided_view(err, out, x->ctx, x, new_rank, new_shape, new_strides, (int64_t)mag_tensor_data_offset(x));
+  mag_status_t stat = mag_strided_view(err, out, x->ctx, x, new_rank, new_shape, new_strides, x->meta.storage_offset);
   if (mag_iserr(stat)) return stat;
   snprintf(subscript->str.buf, sizeof(subscript->str.buf), "%s", new_str);
   subscript->charset = seen;
@@ -1253,15 +1253,15 @@ static mag_status_t mag_ein_execute_path(
     operands[i] = (mag_tensor_t *)args[i];
     mag_tensor_incref(operands[i]);
   }
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   for (size_t n=0; n < num_nodes; ++n) {
     mag_tensor_t *result = NULL;
-    status = mag_ein_preprocess_node(err, &nodes[n], operands);
-    if (mag_iserr(status))
+    stat = mag_ein_preprocess_node(err, &nodes[n], operands);
+    if (mag_iserr(stat))
       goto cleanup;
-    if (mag_ein_can_dot(&nodes[n])) status = mag_ein_dot_node(err, &result, &nodes[n], operands);
-    else status = mag_ein_naive(err, &result, &nodes[n], operands);
-    if (mag_iserr(status))
+    if (mag_ein_can_dot(&nodes[n])) stat = mag_ein_dot_node(err, &result, &nodes[n], operands);
+    else stat = mag_ein_naive(err, &result, &nodes[n], operands);
+    if (mag_iserr(stat))
       goto cleanup;
     if (mag_unlikely(!(num_operands < MAG_EIN_MAX_INPUTS * 2)))
       return mag_set_error(err, MAG_ERR_EINSUM, "einsum: too many intermediate operands.");
@@ -1280,7 +1280,7 @@ static mag_status_t mag_ein_execute_path(
 cleanup:
   for (size_t i=0; i < num_operands; ++i)
     mag_tensor_decref(operands[i]);
-  return status;
+  return stat;
 }
 
 static MAG_COLDPROC void mag_ein_debug_print_path(const char *equation, const mag_ein_path_heuristics_t *h, const mag_ein_path_node_t *nodes, size_t num_nodes) {

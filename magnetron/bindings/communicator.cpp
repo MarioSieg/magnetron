@@ -63,7 +63,7 @@ namespace mag::bindings {
       void invoke(F &&fn) const {
         mag_communicator_t *comm = **this;
         mag_error_t err {};
-        throw_if_error(call_without_gil([&]() noexcept -> mag_status_t { return fn(&err, comm); }), err);
+        throw_if_error(invoke_no_gil([&]() noexcept -> mag_status_t { return fn(&err, comm); }), err);
       }
 
     private:

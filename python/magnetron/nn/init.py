@@ -8,6 +8,9 @@
 # +---------------------------------------------------------------------+
 
 import math
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from .. import Tensor, no_grad
 from dataclasses import dataclass
@@ -175,3 +178,30 @@ def inplace_init(w: Tensor, init: InitStrategy) -> None:
             w.normal_(0.0, std)
         case _:
             raise TypeError(f'Invalid initializer {init!r}')
+
+
+_weight_init_override: ContextVar[InitStrategy | None] = ContextVar('weight_init_override', default=None)
+_bias_init_override: ContextVar[InitStrategy | None] = ContextVar('bias_init_override', default=None)
+_UNSET = object()
+
+
+@contextmanager
+def layer_init(weight: InitStrategy, bias: InitStrategy | None = _UNSET) -> Iterator[None]:
+    if bias is _UNSET:
+        fan_based = (XavierUniformInitStrategy, XavierNormalInitStrategy, KaimingUniformInitStrategy, KaimingNormalInitStrategy)
+        bias = None if isinstance(weight, fan_based) else weight
+    w_tok = _weight_init_override.set(weight)
+    b_tok = _bias_init_override.set(bias)
+    try:
+        yield
+    finally:
+        _bias_init_override.reset(b_tok)
+        _weight_init_override.reset(w_tok)
+
+
+def resolve_weight_init(init: InitStrategy | None) -> InitStrategy | None:
+    return init if init is not None else _weight_init_override.get()
+
+
+def resolve_bias_init(init: InitStrategy | None) -> InitStrategy | None:
+    return init if init is not None else _bias_init_override.get()

@@ -40,7 +40,7 @@ int64_t mag_scalar_as_int64(mag_scalar_t s) {
   switch (s.type) {
     case MAG_SCALAR_TYPE_I64: return s.value.int64;
     case MAG_SCALAR_TYPE_U64: return (int64_t)s.value.uint64;
-    case MAG_SCALAR_TYPE_F64: return (int64_t)s.value.float64;
+    case MAG_SCALAR_TYPE_F64: return mag_f64_to_i64(s.value.float64);
     default: mag_panic("scalar: invalid type tag %d.", s.type);
   }
 }
@@ -49,7 +49,7 @@ uint64_t mag_scalar_as_uint64(mag_scalar_t s) {
   switch (s.type) {
     case MAG_SCALAR_TYPE_U64: return s.value.uint64;
     case MAG_SCALAR_TYPE_I64: return (uint64_t)s.value.int64;
-    case MAG_SCALAR_TYPE_F64: return (uint64_t)s.value.float64;
+    case MAG_SCALAR_TYPE_F64: return mag_f64_to_u64(s.value.float64);
     default: mag_panic("scalar: invalid type tag %d.", s.type);
   }
 }

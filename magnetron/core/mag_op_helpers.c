@@ -58,7 +58,7 @@ bool mag_arange_numel_float(double start, double end, double step, int64_t *nume
     *numel = 0;
     return true;
   }
-  double nc = ceil(delta/step - 1e-12);
+  double nc = ceil(delta/step);
   if (nc <= 0.0) {
     *numel = 0;
     return true;
@@ -78,23 +78,28 @@ mag_status_t mag_op_stub_reduction(
   bool keepdim
 ) {
   *out_result = NULL;
-  mag_status_t status = mag_check_dtype_and_device_compat(err, op, &x, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, op, &x, 0);
+  if (mag_iserr(stat)) return stat;
   mag_op_params_t params = {0};
   mag_reduce_plan_t *plan = &params.reduction.red_plan;
-  status = mag_reduce_plan_init(err, plan, &x->meta.coords, dims, rank, keepdim);
-  if (mag_iserr(status)) return status;
+  stat = mag_reduce_plan_init(err, plan, &x->meta.coords, dims, rank, keepdim);
+  if (mag_iserr(stat)) return stat;
+  if (mag_unlikely(!plan->red_prod && (op == MAG_OP_MINIMA || op == MAG_OP_MAXIMA || op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX)))
+    return mag_set_error(err, MAG_ERR_SHAPE, "%s: cannot reduce over a dimension of size zero, the identity is not defined.", mag_op_trait(op)->mnemonic);
   mag_tensor_t *result = NULL;
   mag_dtype_t type= x->meta.dtype;
   if ((op == MAG_OP_SUM || op == MAG_OP_PROD) && mag_tensor_is_integer_typed(x))
     type = mag_dtype_bit(x->meta.dtype) & MAG_DTYPE_MASK_UINT ? MAG_DTYPE_UINT64 : MAG_DTYPE_INT64;  /* For integral types sum/prod use wide int64/uint64 */
-  else if (op == MAG_OP_ANY || op == MAG_OP_ALL) type = MAG_DTYPE_BOOLEAN; /* For logical reductions, use boolean dtype */
-  else if (op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX) type = MAG_DTYPE_INT64; /* For argmin/argmax, use int64 dtype */
-  if (!keepdim && !plan->out_rank) status = mag_empty_scalar(err, &result, x->ctx, type, mag_tensor_device_id(x));
-  else status = mag_empty(err, &result, x->ctx, type, plan->out_rank, plan->out_shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, op, false, &x, 1, &result, 1, &params);
-  if (mag_iserr(status)) return status;
+  else if (op == MAG_OP_ANY || op == MAG_OP_ALL) type = MAG_DTYPE_BOOLEAN; /* For logical reductions use boolean dtype */
+  else if (op == MAG_OP_ARGMIN || op == MAG_OP_ARGMAX) type = MAG_DTYPE_INT64; /* For argmin/argmax use int64 dtype */
+  if (!keepdim && !plan->out_rank) stat = mag_empty_scalar(err, &result, x->ctx, type, mag_tensor_device_id(x));
+  else stat = mag_empty(err, &result, x->ctx, type, plan->out_rank, plan->out_shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) return stat;
+  stat = mag_dispatch(err, op, false, &x, 1, &result, 1, &params);
+  if (mag_iserr(stat)) {
+    mag_tensor_decref(result);
+    return stat;
+  }
   *out_result = result;
   return MAG_OK;
 }
@@ -108,22 +113,22 @@ mag_status_t mag_op_stub_unary(
   bool inplace
 ) {
   *out_result = NULL;
-  mag_status_t status = mag_check_dtype_and_device_compat(err, op, &x, 0);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_check_dtype_and_device_compat(err, op, &x, 0);
+  if (mag_iserr(stat)) return stat;
   mag_tensor_t *result = NULL;
   if (inplace) {
     result = x;
     mag_rc_incref(result);
-    status = mag_check_inplace_grad_ok(err, x);
-    if (mag_iserr(status)) return status;
+    stat = mag_check_inplace_grad_ok(err, x);
+    if (mag_iserr(stat)) return stat;
   } else {
-    status = mag_empty_like(err, &result, x); /* Allocate a new tensor for the result */
-    if (mag_iserr(status)) return status;
+    stat = mag_empty_like(err, &result, x); /* Allocate a new tensor for the result */
+    if (mag_iserr(stat)) return stat;
   }
-  status = mag_dispatch(err, op, inplace, &x, 1, &result, 1, params);
-  if (mag_iserr(status)) {
+  stat = mag_dispatch(err, op, inplace, &x, 1, &result, 1, params);
+  if (mag_iserr(stat)) {
     mag_tensor_decref(result);
-    return status;
+    return stat;
   }
   *out_result = result;
   return MAG_OK;
@@ -148,7 +153,14 @@ mag_status_t mag_op_stub_cu(
   mag_op_params_t params = {
     .cumu = {.dim = dim}
   };
-  return mag_op_stub_unary(err, out_result, op, x, &params, false);
+  if (mag_tensor_is_floating_point_typed(x))
+    return mag_op_stub_unary(err, out_result, op, x, &params, false);
+  mag_tensor_t *xi = NULL; /* Like torch, integral and boolean scans accumulate and return int64 */
+  mag_status_t stat = mag_cast(err, &xi, x, MAG_DTYPE_INT64);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_op_stub_unary(err, out_result, op, xi, &params, false);
+  mag_tensor_decref(xi);
+  return stat;
 }
 
 mag_status_t mag_op_stub_cu_ex(
@@ -171,23 +183,27 @@ mag_status_t mag_op_stub_cu_ex(
     return mag_set_error(err, MAG_ERR_DIM, "cu%s: dim %" PRIi64 " is out of range for rank %" PRIi64 ".", ext, dim, x->meta.coords.rank);
   mag_tensor_t *values = NULL;
   mag_tensor_t *indices = NULL;
-  mag_status_t status = mag_empty_like(err, &values, x);
-  if (mag_iserr(status)) return status;
-  status = mag_empty(err, &indices, x->ctx, MAG_DTYPE_INT64, x->meta.coords.rank, x->meta.coords.shape, mag_tensor_device_id(x));
-  if (mag_iserr(status)) {
+  mag_status_t stat = mag_empty_like(err, &values, x);
+  if (mag_iserr(stat)) return stat;
+  stat = mag_empty(err, &indices, x->ctx, MAG_DTYPE_INT64, x->meta.coords.rank, x->meta.coords.shape, mag_tensor_device_id(x));
+  if (mag_iserr(stat)) {
     mag_tensor_decref(values);
-    return status;
+    return stat;
   }
   mag_op_params_t params = {
     .cumu = {.dim = dim}
   };
-  status = mag_check_dtype_and_device_compat(err, op, &x, 0);
-  if (mag_iserr(status)) return status;
-  status = mag_dispatch(err, op, false, &x, 1, (mag_tensor_t*[2]){values, indices}, 2, &params);
-  if (mag_iserr(status)) return status;
+  stat = mag_check_dtype_and_device_compat(err, op, &x, 0);
+  if (mag_iserr(stat)) goto error;
+  stat = mag_dispatch(err, op, false, &x, 1, (mag_tensor_t*[2]){values, indices}, 2, &params);
+  if (mag_iserr(stat)) goto error;
   *out_values = values;
   *out_indices = indices;
   return MAG_OK;
+error:
+  mag_tensor_decref(values);
+  mag_tensor_decref(indices);
+  return stat;
 }
 
 mag_status_t mag_op_stub_binary(
@@ -203,7 +219,6 @@ mag_status_t mag_op_stub_binary(
   mag_dtype_t prom_type; /* common compute dtype for x,y */
   mag_dtype_t res_type;  /* dtype of 'result' tensor */
   bool x_int = mag_tensor_is_integer_typed(x);
-  bool y_int = mag_tensor_is_integer_typed(y);
   if (flags & MAG_BINOP_INPLACE) {
     switch (op) {
       case MAG_OP_DIV: {
@@ -232,7 +247,7 @@ mag_status_t mag_op_stub_binary(
   } else { /* Pure out of place -> full promotion */
     switch (op) {
       case MAG_OP_DIV: { /* Special case for truediv */
-        if (x_int && y_int) { /* Integer division always promotes to default float dtype */
+        if (!mag_tensor_is_floating_point_typed(x) && !mag_tensor_is_floating_point_typed(y)) { /* Integer (or bool) true division always promotes to the default float dtype */
           prom_type = res_type = mag_tls_state.dtype;
         } else {
           bool prom_ok = mag_promote_type(&prom_type, x->meta.dtype, y->meta.dtype);
@@ -254,7 +269,7 @@ mag_status_t mag_op_stub_binary(
               mag_type_trait(x->meta.dtype)->name,
               mag_type_trait(y->meta.dtype)->name
             );
-        if (x_int && y_int) { /* Integer floor division keeps integer dtype */
+        if (!mag_tensor_is_floating_point_typed(x) && !mag_tensor_is_floating_point_typed(y) && prom_type != MAG_DTYPE_BOOLEAN) { /* Integer (or int with bool) floor division keeps the integer dtype */
           res_type = prom_type;
         } else { /* Non-integer floor division promotes to floating dtype */
           if (!(mag_dtype_bit(prom_type) & MAG_DTYPE_MASK_FP))
@@ -274,7 +289,15 @@ mag_status_t mag_op_stub_binary(
       } break;
     }
   }
-  mag_status_t status;
+  mag_status_t stat;
+  mag_dtype_t final_type = res_type;
+  bool wide = !(flags & MAG_BINOP_INPLACE)
+    && (prom_type == MAG_DTYPE_FLOAT16 || prom_type == MAG_DTYPE_BFLOAT16 || prom_type == MAG_DTYPE_FLOAT8_E4M3FN)
+    && (!mag_tensor_is_floating_point_typed(x) || !mag_tensor_is_floating_point_typed(y));
+  if (wide) {
+    prom_type = MAG_DTYPE_FLOAT32;
+    if (res_type != MAG_DTYPE_BOOLEAN) res_type = MAG_DTYPE_FLOAT32;
+  }
   if (flags & MAG_BINOP_INPLACE) {
     mag_assert2(!(flags & MAG_BINOP_LOGICAL));
     int64_t bdims[MAG_MAX_DIMS];
@@ -288,8 +311,8 @@ mag_status_t mag_op_stub_binary(
       mag_fmt_shape(&sy, &y->meta.coords.shape, y->meta.coords.rank);
       return mag_set_error(err, MAG_ERR_PARAM, "binary_op: in-place '%s' with shapes %s and %s would change the shape of x; the broadcast result must match x.", mag_op_trait(op)->mnemonic, sx, sy);
     }
-    status = mag_check_inplace_grad_ok(err, x);
-    if (mag_iserr(status)) return status;
+    stat = mag_check_inplace_grad_ok(err, x);
+    if (mag_iserr(stat)) return stat;
     result = x;
     mag_tensor_incref(result);
   } else {
@@ -306,36 +329,44 @@ mag_status_t mag_op_stub_binary(
         sx, sy, mag_op_trait(op)->mnemonic
       );
     }
-    status = rank ? mag_empty(err, &result, x->ctx, res_type, rank, dims, mag_tensor_device_id(x)) : mag_empty_scalar(err, &result, x->ctx, res_type, mag_tensor_device_id(x));
-    if (mag_iserr(status)) return status;
+    stat = rank ? mag_empty(err, &result, x->ctx, res_type, rank, dims, mag_tensor_device_id(x)) : mag_empty_scalar(err, &result, x->ctx, res_type, mag_tensor_device_id(x));
+    if (mag_iserr(stat)) return stat;
   }
   mag_tensor_t *prom_x = x;
   mag_tensor_t *prom_y = y;
   mag_tensor_t *tmp_x = NULL;
   mag_tensor_t *tmp_y = NULL;
   if (x->meta.dtype != prom_type) { /* Cast x only if its dtype != promote_dtype and the op semantics say so */
-    status = mag_cast(err, &tmp_x, x, prom_type); /* For inplace, x->meta.dtype == promote_dtype, so this is skipped */
-    if (mag_iserr(status)) goto cleanup;
+    stat = mag_cast(err, &tmp_x, x, prom_type); /* For inplace, x->meta.dtype == promote_dtype, so this is skipped */
+    if (mag_iserr(stat)) goto cleanup;
     prom_x = tmp_x;
   }
   if (y->meta.dtype != prom_type) { /* Cast y if needed */
-    status = mag_cast(err, &tmp_y, y, prom_type);
-    if (mag_iserr(status)) goto cleanup;
+    stat = mag_cast(err, &tmp_y, y, prom_type);
+    if (mag_iserr(stat)) goto cleanup;
     prom_y = tmp_y;
   }
   mag_tensor_t *in[2] = {prom_x, prom_y};
-  status = mag_check_dtype_and_device_compat(err, op, in, 0);
-  if (mag_iserr(status)) goto cleanup;
-  status = mag_dispatch(err, op, flags & MAG_BINOP_INPLACE, in, sizeof(in)/sizeof(*in), &result, 1, NULL);
-  if (mag_iserr(status)) goto cleanup;
+  stat = mag_check_dtype_and_device_compat(err, op, in, 0);
+  if (mag_iserr(stat)) goto cleanup;
+  stat = mag_dispatch(err, op, flags & MAG_BINOP_INPLACE, in, sizeof(in)/sizeof(*in), &result, 1, NULL);
+  if (mag_iserr(stat)) goto cleanup;
+  if (res_type != final_type) { /* computed in single prec first then round once into the promoted half type */
+    mag_tensor_t *narrow = NULL;
+    stat = mag_cast(err, &narrow, result, final_type);
+    if (mag_iserr(stat)) goto cleanup;
+    mag_tensor_decref(result);
+    result = narrow;
+  }
   if (tmp_x) mag_tensor_decref(tmp_x);
   if (tmp_y) mag_tensor_decref(tmp_y);
   *out_result = result;
   return MAG_OK;
 cleanup:
+  if (tmp_x) mag_tensor_decref(tmp_x);
   if (tmp_y) mag_tensor_decref(tmp_y);
   if (result) mag_tensor_decref(result);
-  return status;
+  return stat;
 }
 
 mag_status_t mag_matmul_verify_shapes(
@@ -412,7 +443,7 @@ mag_status_t mag_matmul_alloc_res(
         for (int64_t i=0; i < rb; ++i) {
           int64_t da = i < rb-*xb ? 1 : x->meta.coords.shape[i-(rb-*xb)];
           int64_t db = i < rb-*yb ? 1 : y->meta.coords.shape[i-(rb-*yb)];
-          shape[i] = da > db ? da : db;
+          shape[i] = da == 1 ? db : da;
         }
         shape[rb] = x->meta.coords.shape[x->meta.coords.rank-2];
         shape[rb+1] = y->meta.coords.shape[y->meta.coords.rank-1];

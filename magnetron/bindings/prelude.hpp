@@ -12,12 +12,16 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <exception>
 #include <functional>
+#include <initializer_list>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -30,6 +34,7 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
+#include <nanobind/stl/optional.h>
 
 namespace mag::bindings {
   namespace nb = nanobind;
@@ -128,6 +133,28 @@ namespace mag::bindings {
     std::array<int64_t, MAG_MAX_DIMS> dims {};
     int64_t numel = 0;
 
+    constexpr fixed_dim_vec() noexcept = default;
+    explicit fixed_dim_vec(size_t count, int64_t value = 0) {
+      if (mag_unlikely(count > MAG_MAX_DIMS))
+        throw nb::value_error(("too many dimensions, must be <= " + std::to_string(MAG_MAX_DIMS)).c_str());
+      std::fill_n(dims.begin(), count, value);
+      numel = static_cast<int64_t>(count);
+    }
+    fixed_dim_vec(std::initializer_list<int64_t> init) {
+      if (mag_unlikely(init.size() > MAG_MAX_DIMS))
+        throw nb::value_error(("too many dimensions, must be <= " + std::to_string(MAG_MAX_DIMS)).c_str());
+      std::copy(init.begin(), init.end(), dims.begin());
+      numel = static_cast<int64_t>(init.size());
+    }
+    template <typename It, typename = std::enable_if_t<!std::is_integral_v<It>>> /* Guard so (count, value) never resolves here */
+    fixed_dim_vec(It first, It last) {
+      auto count = static_cast<size_t>(std::distance(first, last));
+      if (mag_unlikely(count > MAG_MAX_DIMS))
+        throw nb::value_error(("too many dimensions, must be <= " + std::to_string(MAG_MAX_DIMS)).c_str());
+      std::copy(first, last, dims.begin());
+      numel = static_cast<int64_t>(count);
+    }
+
     [[nodiscard]] int64_t *data() noexcept { return dims.data(); }
     [[nodiscard]] const int64_t *data() const noexcept { return dims.data(); }
     [[nodiscard]] size_t size() const noexcept { return static_cast<size_t>(numel); }
@@ -139,13 +166,35 @@ namespace mag::bindings {
     [[nodiscard]] const int64_t *end() const noexcept { return dims.data()+numel; }
     [[nodiscard]] int64_t &operator[](size_t i) noexcept { return dims[i]; }
     [[nodiscard]] int64_t operator[](size_t i) const noexcept { return dims[i]; }
+    [[nodiscard]] int64_t &front() noexcept { return dims[0]; }
     [[nodiscard]] int64_t &back() noexcept { return dims[numel-1]; }
+    [[nodiscard]] int64_t front() const noexcept { return dims[0]; }
+    [[nodiscard]] int64_t back() const noexcept { return dims[numel-1]; }
     void clear() noexcept { numel = 0; }
+    void pop_back() {
+      if (mag_unlikely(!numel))
+        throw nb::index_error("pop_back on empty dimension vector");
+      --numel;
+    }
 
-    void push_back(int64_t x) {
+    void emplace_back(int64_t x) {
       if (mag_unlikely(numel >= MAG_MAX_DIMS))
         throw nb::value_error(("too many dimensions, must be <= " + std::to_string(MAG_MAX_DIMS)).c_str());
       dims[numel++] = x;
+    }
+
+    template <typename It>
+    int64_t *insert(const int64_t *pos, It first, It last) {
+      auto at = static_cast<size_t>(pos - dims.data());
+      auto count = static_cast<size_t>(std::distance(first, last));
+      if (mag_unlikely(size() + count > MAG_MAX_DIMS))
+        throw nb::value_error(("too many dimensions, must be <= " + std::to_string(MAG_MAX_DIMS)).c_str());
+      std::array<int64_t, MAG_MAX_DIMS> src {}; /* Copy first so inserting a range of *this is safe */
+      std::copy(first, last, src.begin());
+      std::copy_backward(dims.begin()+at, dims.begin()+numel, dims.begin()+numel+count);
+      std::copy_n(src.begin(), count, dims.begin()+at);
+      numel += static_cast<int64_t>(count);
+      return dims.data()+at;
     }
 
     void assign(const int64_t *p, int64_t count) {
@@ -153,6 +202,14 @@ namespace mag::bindings {
         throw nb::value_error(("too many dimensions, must be <= " + std::to_string(MAG_MAX_DIMS)).c_str());
       std::copy_n(p, count, dims.begin());
       numel = count;
+    }
+
+    template <typename T>
+    [[nodiscard]] std::vector<T> to_vec() const {
+      std::vector<T> out {};
+      out.reserve(static_cast<size_t>(numel));
+      for (int64_t i=0; i < numel; ++i) out.emplace_back(static_cast<T>(dims[i]));
+      return out;
     }
   };
 
@@ -165,6 +222,7 @@ namespace mag::bindings {
   [[nodiscard]] extern nb::tuple tuple_from_i64_span(const int64_t *p, Py_ssize_t n);
   [[nodiscard]] extern tensor_wrapper tensor_from_py_scalar(nb::handle obj, mag_dtype_t dt, mag_device_id_t device);
   [[nodiscard]] extern tensor_wrapper normalize_rhs_to_tensor(const tensor_wrapper &lhs, nb::handle rhs);
+  extern void promote_ops(std::initializer_list<tensor_wrapper *> ops);
   [[nodiscard]] extern fixed_dim_vec parse_shape_from_args(const nb::args &args);
   [[nodiscard]] extern fixed_dim_vec parse_i64_dims(const nb::args &args, const char *what);
   [[nodiscard]] extern std::vector<int64_t> parse_i64_list_handle(nb::handle h, const char *what);
@@ -179,18 +237,17 @@ namespace mag::bindings {
   extern void validate_shape(const std::vector<int64_t> &shape);
   extern void validate_shape_infer_one(const fixed_dim_vec &shape, const char *op);
 
-  /* Below this element count a kernel finishes faster than the GIL lock/unlock itself and never touches the thread pool */
   constexpr int64_t gil_release_numel_threshold = 1000;
 
   template <typename F>
-  [[nodiscard]] mag_status_t call_without_gil(F &&fn) noexcept(std::is_nothrow_invocable_r_v<mag_status_t, F>) {
+  [[nodiscard]] mag_status_t invoke_no_gil(F &&fn) noexcept(std::is_nothrow_invocable_r_v<mag_status_t, F>) {
     static_assert(std::is_invocable_r_v<mag_status_t, F>);
     nb::gil_scoped_release nogil {};
     return std::invoke(fn);
   }
 
   template <typename F>
-  [[nodiscard]] mag_status_t call_maybe_without_gil(const tensor_wrapper &x, F &&fn) {
+  [[nodiscard]] mag_status_t invoke_auto_gil(const tensor_wrapper &x, F &&fn) {
     static_assert(std::is_invocable_r_v<mag_status_t, F>);
     if (mag_tensor_numel(*x) <= gil_release_numel_threshold) return std::invoke(fn);
     nb::gil_scoped_release nogil {};
@@ -198,7 +255,7 @@ namespace mag::bindings {
   }
 
   template <typename F>
-  [[nodiscard]] mag_status_t call_maybe_without_gil(const tensor_wrapper &x, const tensor_wrapper &y, F &&fn) {
+  [[nodiscard]] mag_status_t invoke_auto_gil(const tensor_wrapper &x, const tensor_wrapper &y, F &&fn) {
     static_assert(std::is_invocable_r_v<mag_status_t, F>);
     if (mag_tensor_numel(*x) <= gil_release_numel_threshold && mag_tensor_numel(*y) <= gil_release_numel_threshold) return std::invoke(fn);
     nb::gil_scoped_release nogil {};
@@ -208,7 +265,26 @@ namespace mag::bindings {
   inline void throw_if_error(mag_status_t st, const mag_error_t &err) {
     if (mag_likely(st == MAG_OK)) return;
     std::string msg = format_error_msg(err);
+    if (err.code == MAG_ERR_BOUNDS) throw nb::index_error(msg.c_str());
     throw std::runtime_error {msg.c_str()};
+  }
+
+  template <typename F, typename... Args>
+  [[nodiscard]] tensor_wrapper call_op(F &&fn, Args &&...args) {
+    static_assert(std::is_invocable_r_v<mag_status_t, F, mag_error_t *, mag_tensor_t **, Args...>);
+    mag_tensor_t *out = nullptr;
+    mag_error_t err {};
+    throw_if_error(std::invoke(std::forward<F>(fn), &err, &out, std::forward<Args>(args)...), err);
+    return tensor_wrapper{out};
+  }
+
+  template <typename F, typename... Args>
+  [[nodiscard]] tensor_wrapper call_op_maybe_without_gil(const tensor_wrapper &x, F &&fn, Args &&...args) {
+    static_assert(std::is_invocable_r_v<mag_status_t, F, mag_error_t *, mag_tensor_t **, Args...>);
+    mag_tensor_t *out = nullptr;
+    mag_error_t err {};
+    throw_if_error(invoke_auto_gil(x, [&] { return std::invoke(fn, &err, &out, args...); }), err);
+    return tensor_wrapper{out};
   }
 }
 

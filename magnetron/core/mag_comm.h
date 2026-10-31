@@ -18,6 +18,31 @@
 extern "C" {
 #endif
 
+static MAG_AINLINE void mag_comm_wire_wu32(uint8_t **wire, uint32_t v) {
+  *(*wire)++ = (uint8_t)v;
+  *(*wire)++ = (uint8_t)(v>>8);
+  *(*wire)++ = (uint8_t)(v>>16);
+  *(*wire)++ = (uint8_t)(v>>24);
+}
+static MAG_AINLINE void mag_comm_wire_wu64(uint8_t **wire, uint64_t v) {
+  mag_comm_wire_wu32(wire, (uint32_t)v);
+  mag_comm_wire_wu32(wire, (uint32_t)(v>>32));
+}
+static MAG_AINLINE uint32_t mag_comm_wire_ru32(uint8_t **wire) {
+  uint32_t v = 0;
+  v|=(uint32_t)(*(*wire)++);
+  v|=(uint32_t)(*(*wire)++)<<8;
+  v|=(uint32_t)(*(*wire)++)<<16;
+  v|=(uint32_t)(*(*wire)++)<<24;
+  return v;
+}
+static MAG_AINLINE uint64_t mag_comm_wire_ru64(uint8_t **wire) {
+  uint64_t v = 0;
+  v|=(uint64_t)mag_comm_wire_ru32(wire);
+  v|=(uint64_t)mag_comm_wire_ru32(wire)<<32;
+  return v;
+}
+
 typedef struct mag_comm_ops_t mag_comm_ops_t;
 
 struct mag_communicator_t {
@@ -100,6 +125,65 @@ struct mag_comm_ops_t {
   );
   void (*destroy)(mag_communicator_t *comm);
 };
+
+typedef struct mag_comm_host_staged_t {
+  mag_tensor_t *target;
+  mag_tensor_t *host;
+  bool is_alias;
+} mag_comm_host_staged_t;
+
+extern mag_status_t mag_comm_host_stage_open(
+  mag_error_t *err,
+  mag_comm_host_staged_t *stage,
+  mag_tensor_t *tensor,
+  bool load
+);
+extern mag_status_t mag_comm_host_stage_commit(mag_error_t *err, mag_comm_host_staged_t *stage);
+extern mag_status_t mag_comm_host_stage_alloc(
+  mag_error_t *err,
+  mag_context_t *ctx,
+  mag_dtype_t dtype,
+  int64_t numel,
+  mag_tensor_t **out
+);
+extern mag_status_t mag_comm_host_stage_borrow(
+  mag_error_t *err,
+  mag_context_t *ctx,
+  void *base,
+  mag_dtype_t dtype,
+  int64_t numel,
+  mag_tensor_t **out
+);
+extern mag_status_t mag_comm_host_stage_view(
+  mag_error_t *err,
+  mag_tensor_t *host,
+  int64_t offset,
+  int64_t numel,
+  mag_tensor_t **out
+);
+extern mag_status_t mag_comm_host_stage_reduce(
+  mag_error_t *err,
+  mag_tensor_t *acc,
+  mag_tensor_t *src,
+  mag_reduce_op_t red_op
+);
+extern mag_status_t mag_comm_host_stage_reduce_range(
+  mag_error_t *err,
+  mag_tensor_t *acc,
+  int64_t acc_offs,
+  mag_tensor_t *src,
+  int64_t src_offs,
+  int64_t numel,
+  mag_reduce_op_t red_op
+);
+extern mag_status_t mag_comm_host_stage_finalize(
+  mag_error_t *err,
+  mag_tensor_t *acc,
+  mag_reduce_op_t red_op,
+  uint32_t sz
+);
+extern void *mag_comm_stage_host_buf(mag_tensor_t *host);
+extern void mag_comm_host_stage_close(mag_comm_host_staged_t *stage);
 
 #ifdef __cplusplus
 }

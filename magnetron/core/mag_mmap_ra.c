@@ -179,10 +179,10 @@ static uint32_t mag_ra_hash_slot(uint64_t key) {
 static bool mag_ra_hash_find(const mag_ra_engine_t *ra, uint64_t key, uint32_t *idx) {
   uint32_t slot = mag_ra_hash_slot(key);
   for (uint32_t i=0; i < MAG_RA_HASH_CAP; ++i) {
-    uint64_t k = ra->hash_key[slot+i & (MAG_RA_HASH_CAP-1)];
+    uint64_t k = ra->hash_key[(slot+i) & (MAG_RA_HASH_CAP-1)];
     if (!k) return false;
     if (k == key) {
-      *idx = ra->hash_idx[slot+i & (MAG_RA_HASH_CAP-1)];
+      *idx = ra->hash_idx[(slot+i) & (MAG_RA_HASH_CAP-1)];
       return true;
     }
   }

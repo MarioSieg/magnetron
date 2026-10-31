@@ -11,6 +11,8 @@
 
 #include "mag_comm.h"
 #include "mag_alloc.h"
+#include "mag_backend.h"
+#include "mag_tensor.h"
 
 #define mag_comm_interface_verify(err_, comm_, op_) \
   do { \
@@ -43,6 +45,20 @@
         (rank_), \
         (comm_)->size); \
   } while (0)
+
+/* Comm host stages reads and writes storages outside of queued commands so we need to insert barriers. Dont forget to pass NULL term!! */
+static mag_status_t mag_comm_host_vbarrier(mag_error_t *err, mag_tensor_t *tensors, ...) {
+  mag_status_t stat = MAG_OK;
+  va_list args;
+  va_start(args, tensors);
+  mag_tensor_t *t = tensors;
+  for (; t!=NULL; t = va_arg(args, mag_tensor_t *)) {
+    stat = mag_sto_sync_barrier_w(err, t->storage);
+    if (mag_iserr(stat)) break;
+  }
+  va_end(args);
+  return stat;
+}
 
 mag_status_t mag_comm_init(
   mag_error_t *err,
@@ -83,6 +99,8 @@ mag_status_t mag_comm_broadcast(
   mag_comm_interface_verify(err, comm, broadcast);
   mag_comm_interface_verify_tensor(err, tensor, broadcast);
   mag_comm_interface_verify_ra(err, comm, root, "root", broadcast);
+  mag_status_t stat = mag_comm_host_vbarrier(err, tensor, NULL);
+  if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->broadcast)(err, comm, tensor, root);
 }
 
@@ -96,6 +114,8 @@ mag_status_t mag_comm_reduce(
   mag_comm_interface_verify(err, comm, reduce);
   mag_comm_interface_verify_tensor(err, tensor, reduce);
   mag_comm_interface_verify_ra(err, comm, root, "root", reduce);
+  mag_status_t stat = mag_comm_host_vbarrier(err, tensor, NULL);
+  if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->reduce)(err, comm, tensor, root, red);
 }
 
@@ -107,6 +127,8 @@ mag_status_t mag_comm_all_reduce(
 ) {
   mag_comm_interface_verify(err, comm, all_reduce);
   mag_comm_interface_verify_tensor(err, tensor, all_reduce);
+  mag_status_t stat = mag_comm_host_vbarrier(err, tensor, NULL);
+  if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->all_reduce)(err, comm, tensor, red);
 }
 
@@ -121,6 +143,8 @@ mag_status_t mag_comm_all_gather(
     return mag_set_error(err, MAG_ERR_PARAM, "all_gather: output tensor must not be NULL");
   if (mag_unlikely(!in))
     return mag_set_error(err, MAG_ERR_PARAM, "all_gather: input tensor must not be NULL");
+  mag_status_t stat = mag_comm_host_vbarrier(err, out, in, NULL);
+  if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->all_gather)(err, comm, out, in);
 }
 
@@ -136,6 +160,8 @@ mag_status_t mag_comm_reduce_scatter(
     return mag_set_error(err, MAG_ERR_PARAM, "reduce_scatter: output tensor must not be NULL");
   if (mag_unlikely(!in))
     return mag_set_error(err, MAG_ERR_PARAM, "reduce_scatter: input tensor must not be NULL");
+  mag_status_t stat = mag_comm_host_vbarrier(err, out, in, NULL);
+  if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->reduce_scatter)(err, comm, out, in, red);
 }
 
@@ -150,6 +176,8 @@ mag_status_t mag_comm_all_to_all(
     return mag_set_error(err, MAG_ERR_PARAM, "all_to_all: output tensor must not be NULL");
   if (mag_unlikely(!in))
     return mag_set_error(err, MAG_ERR_PARAM, "all_to_all: input tensor must not be NULL");
+  mag_status_t stat = mag_comm_host_vbarrier(err, out, in, NULL);
+  if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->all_to_all)(err, comm, out, in);
 }
 
@@ -168,6 +196,8 @@ mag_status_t mag_comm_all_to_all_v(
     return mag_set_error(err, MAG_ERR_PARAM, "all_to_all_v: input and output tensors must not be NULL");
   if (mag_unlikely(!send_counts || !send_offsets || !recv_counts || !recv_offsets))
     return mag_set_error(err, MAG_ERR_PARAM, "all_to_all_v: counts and offsets must not be NULL");
+  mag_status_t stat = mag_comm_host_vbarrier(err, out, in, NULL);
+  if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->all_to_all_v)(err, comm, out, in, send_counts, send_offsets, recv_counts, recv_offsets);
 }
 
@@ -180,6 +210,8 @@ mag_status_t mag_comm_send(
   mag_comm_interface_verify(err, comm, send);
   mag_comm_interface_verify_tensor(err, tensor, send);
   mag_comm_interface_verify_ra(err, comm, dst, "destination", send);
+  mag_status_t stat = mag_comm_host_vbarrier(err,tensor, NULL);
+  if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->send)(err, comm, tensor, dst);
 }
 
@@ -192,6 +224,7 @@ mag_status_t mag_comm_recv(
   mag_comm_interface_verify(err, comm, recv);
   mag_comm_interface_verify_tensor(err, tensor, recv);
   mag_comm_interface_verify_ra(err, comm, src, "source", recv);
+  mag_status_t stat = mag_comm_host_vbarrier(err,tensor, NULL);
+  if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->recv)(err, comm, tensor, src);
 }
-

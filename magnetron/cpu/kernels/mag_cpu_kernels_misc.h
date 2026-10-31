@@ -376,6 +376,10 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
 
 #undef mag_gen_stub_tri_mask
 
+/* With NaN aware ordering */
+#define mag_topk_gt(a, b) (((a) != (a)) ? ((b) == (b)) : ((b) == (b) && (a) > (b)))
+#define mag_topk_eq(a, b) (((a) != (a)) ? ((b) != (b)) : ((a) == (b)))
+
 #define mag_gen_stub_topk(T, TF, CVT) \
   static MAG_HOTPROC mag_status_t mag_topk_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
@@ -461,15 +465,15 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
         const int64_t off_x = off_x0 + p * stride_x_dim; \
         mag_bnd_chk(bx + off_x, x->storage->base, x->storage->size); \
         const T xv = bx[off_x]; \
-        const double xvc = (double)CVT(xv); \
+        const long double xvc = (long double)CVT(xv); \
         if (filled < k) { \
           int64_t ins = filled; \
           while (ins > 0) { \
-            const double prevc = (double)CVT(best_vals[ins - 1]); \
+            const long double prevc = (long double)CVT(best_vals[ins - 1]); \
             const int64_t previ = best_idx[ins - 1]; \
             bool better; \
-            if (largest) better = (xvc > prevc) || ((xvc == prevc) && (p < previ)); \
-            else         better = (xvc < prevc) || ((xvc == prevc) && (p < previ)); \
+            if (largest) better = mag_topk_gt(xvc, prevc) || (mag_topk_eq(xvc, prevc) && (p < previ)); \
+            else         better = mag_topk_gt(prevc, xvc) || (mag_topk_eq(xvc, prevc) && (p < previ)); \
             if (!better) break; \
             best_vals[ins] = best_vals[ins - 1]; \
             best_idx[ins] = best_idx[ins - 1]; \
@@ -481,20 +485,20 @@ mag_gen_stub_tri_mask(int64_t, int64, u, 0, >=)
           continue; \
         } \
         { \
-          const double worstc = (double)CVT(best_vals[k - 1]); \
+          const long double worstc = (long double)CVT(best_vals[k - 1]); \
           const int64_t worsti = best_idx[k - 1]; \
           bool better; \
-          if (largest) better = (xvc > worstc) || ((xvc == worstc) && (p < worsti)); \
-          else         better = (xvc < worstc) || ((xvc == worstc) && (p < worsti)); \
+          if (largest) better = mag_topk_gt(xvc, worstc) || (mag_topk_eq(xvc, worstc) && (p < worsti)); \
+          else         better = mag_topk_gt(worstc, xvc) || (mag_topk_eq(xvc, worstc) && (p < worsti)); \
           if (!better) continue; \
         } \
         int64_t ins = k - 1; \
         while (ins > 0) { \
-          const double prevc = (double)CVT(best_vals[ins - 1]); \
+          const long double prevc = (long double)CVT(best_vals[ins - 1]); \
           const int64_t previ = best_idx[ins - 1]; \
           bool better; \
-          if (largest) better = (xvc > prevc) || ((xvc == prevc) && (p < previ)); \
-          else         better = (xvc < prevc) || ((xvc == prevc) && (p < previ)); \
+          if (largest) better = mag_topk_gt(xvc, prevc) || (mag_topk_eq(xvc, prevc) && (p < previ)); \
+          else         better = mag_topk_gt(prevc, xvc) || (mag_topk_eq(xvc, prevc) && (p < previ)); \
           if (!better) break; \
           best_vals[ins] = best_vals[ins - 1]; \
           best_idx[ins] = best_idx[ins - 1]; \
@@ -653,7 +657,7 @@ mag_gen_stub_topk(int64_t, int64, mag_cvt_nop)
             const CT ki = keys[i]; \
             const CT kj = keys[j]; \
             bool take_right; \
-            if (desc) take_right = !ISNAN(kj) && (ISNAN(ki) || ki < kj); \
+            if (desc) take_right = !ISNAN(ki) && (ISNAN(kj) || ki < kj); \
             else take_right = !ISNAN(kj) && (ISNAN(ki) || kj < ki); \
             if (take_right) { \
               keys_tmp[o] = kj; \
@@ -910,6 +914,7 @@ mag_gen_stub_where(int64_t, int64)
       float lo = CVT(bmn[mni]); \
       float hi = CVT(bmx[mxi]); \
       float o = (v < lo ? lo : v) > hi ? hi : (v < lo ? lo : v); \
+      if (lo != lo || hi != hi) o = lo != lo ? lo : hi;  \
       br[ri] = FROMF32(o); \
     } \
     return MAG_OK; \
@@ -1006,6 +1011,27 @@ static int mag_discrete_sample_pair_cmp(const void *a, const void *b) {
       } \
       if (!(sumw > .0f) || nnz == 0) { \
         for (int64_t s=0; s < num_samples; ++s) o[s] = -1; \
+        continue; \
+      } \
+      if (payload->cmd->params->multinomial.replacement) { \
+        size_t cmark = mag_scratch_arena_mark(&mag_tls_arena); \
+        double *cdf = mag_scratch_arena_alloc(&mag_tls_arena, (size_t)K*sizeof(*cdf)); \
+        if (mag_unlikely(!cdf)) \
+          return mag_set_error(err, MAG_ERR_OOM, "multinomial: failed to allocate scratch buffer for %" PRIi64 " entries.", K); \
+        double acc = 0.0; \
+        int64_t last = 0; \
+        for (int64_t i=0; i < K; ++i) { \
+          float wi = CVT(w[i]); \
+          if (isfinite(wi) && wi > .0f) { acc += wi; last = i; } \
+          cdf[i] = acc; \
+        } \
+        for (int64_t s=0; s < num_samples; ++s) { \
+          double u = (double)mag_philox4x32_next_float32(rng)*acc; \
+          int64_t lo = 0, hi = K-1; \
+          while (lo < hi) { int64_t mid = lo + ((hi-lo)>>1); if (cdf[mid] > u) hi = mid; else lo = mid+1; } \
+          o[s] = cdf[lo] > u ? lo : last; \
+        } \
+        mag_scratch_arena_reset(&mag_tls_arena, cmark); \
         continue; \
       } \
       int64_t k = num_samples; \

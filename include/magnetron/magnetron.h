@@ -38,7 +38,7 @@ extern "C" {
 #define mag_ver_major(v) ((v)/10000u)
 #define mag_ver_minor(v) (((v)/100u)%100u)
 #define mag_ver_patch(v) ((v)%100u)
-#define MAG_VERSION mag_ver_encode(0, 2, 2)
+#define MAG_VERSION mag_ver_encode(0, 2, 3)
 #define MAG_SNAPSHOT_VERSION mag_ver_encode(0, 3, 0)
 
 typedef enum mag_log_level_t {
@@ -542,6 +542,27 @@ extern MAG_EXPORT mag_status_t mag_ctx_best_device(mag_error_t *err, mag_context
  * @return true if any tensors or storages alive, else false.
  */
 extern MAG_EXPORT bool mag_ctx_tensors_alive(mag_context_t *ctx);
+
+/**
+ * Block until all work submitted to every loaded device has completed (like cudaDeviceSynchronize, for all backends).
+ * Devices may execute commands asynchronously (CUDA always, CPU unless MAG_CPU_ASYNC=0), so errors raised while executing
+ * a command are deferred and reported by the next sync, wait or submit on that device.
+ *
+ * @param err Error output; receives the first deferred error of any device.
+ * @param ctx Context
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_ctx_sync(mag_error_t *err, mag_context_t *ctx);
+
+/**
+ * Block until all work submitted to one device has completed. CUDA: synchronizes the device stream.
+ *
+ * @param err Error output; receives a deferred error of the device, if any.
+ * @param ctx Context
+ * @param id Device to synchronize. Devices of backends that were never loaded have no work and return immediately.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_device_sync(mag_error_t *err, mag_context_t *ctx, mag_device_id_t dvc_id);
 
 /**
  * Destroy a context and release its resources. All tensors created from it should have been released.
@@ -1138,11 +1159,11 @@ extern MAG_EXPORT mag_status_t mag_save_audio(
  * @param rank Number of dimensions in @p shape.
  * @param shape Dimension sizes, @p rank entries.
  * @param is_writeable If false, the tensor is read-only.
- * @param release_cb Called with @p usr when the last reference to the storage is dropped; must not be NULL.
+ * @param dtor Called with @p usr when the last reference to the storage is dropped; must not be NULL.
  * @param usr Opaque pointer passed to @p release_cb.
  * @return MAG_OK on success, an error status otherwise.
  */
-extern MAG_EXPORT mag_status_t mag_borrow_cpu_buffer(
+extern MAG_EXPORT mag_status_t mag_borrow_host_buffer(
   mag_error_t *err,
   mag_tensor_t **out,
   mag_context_t *ctx,
@@ -1152,7 +1173,7 @@ extern MAG_EXPORT mag_status_t mag_borrow_cpu_buffer(
   int64_t rank,
   const int64_t *shape,
   bool is_writeable,
-  void (*release_cb)(void *usr),
+  void (*dtor)(void *usr),
   void *usr
 );
 
@@ -1284,6 +1305,8 @@ extern MAG_EXPORT mag_status_t mag_clone(mag_error_t *err, mag_tensor_t **out_re
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_cast(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_dtype_t dst_type);
+
+extern MAG_EXPORT mag_status_t mag_transfer_(mag_error_t *err, mag_tensor_t *dst, mag_tensor_t *src);
 
 /**
  * Copy @p x to @p device. If @p x already resides there, it is returned itself with an added reference.
@@ -2636,26 +2659,6 @@ extern MAG_EXPORT mag_status_t mag_min_dim(mag_error_t *err, mag_tensor_t **out_
 extern MAG_EXPORT mag_status_t mag_index_add(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *source, double alpha);
 
 /**
- * Compute the derivative of the softmax along the last dim element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_softmax_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the softmax along the last dim element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_softmax_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
  * Compute the logistic sigmoid element-wise.
  *
  * @param err Error output; set when the call fails.
@@ -2674,26 +2677,6 @@ extern MAG_EXPORT mag_status_t mag_sigmoid(mag_error_t *err, mag_tensor_t **out_
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_sigmoid_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the logistic sigmoid element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_sigmoid_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the logistic sigmoid element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_sigmoid_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 
 /**
  * Compute the hard sigmoid, clamp((x + 3) / 6, 0, 1) element-wise.
@@ -2736,46 +2719,6 @@ extern MAG_EXPORT mag_status_t mag_silu(mag_error_t *err, mag_tensor_t **out_res
 extern MAG_EXPORT mag_status_t mag_silu_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 
 /**
- * Compute the derivative of the SiLU activation element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_silu_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the SiLU activation element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_silu_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the hyperbolic tangent element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_tanh_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the hyperbolic tangent element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_tanh_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
  * Compute the ReLU activation, max(x, 0) element-wise.
  *
  * @param err Error output; set when the call fails.
@@ -2794,26 +2737,6 @@ extern MAG_EXPORT mag_status_t mag_relu(mag_error_t *err, mag_tensor_t **out_res
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_relu_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the ReLU activation element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_relu_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the ReLU activation element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_relu_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 
 /**
  * Compute the exact (erf-based) GELU activation element-wise.
@@ -2854,26 +2777,6 @@ extern MAG_EXPORT mag_status_t mag_gelu_approx(mag_error_t *err, mag_tensor_t **
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_gelu_approx_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the GELU activation element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_gelu_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the GELU activation element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_gelu_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 
 /**
  * Compute x + y element-wise with broadcasting and dtype promotion.
@@ -3028,6 +2931,30 @@ extern MAG_EXPORT mag_status_t mag_pow(mag_error_t *err, mag_tensor_t **out_resu
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_pow_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_tensor_t *y);
+
+/**
+ * Compute x raised to a constant scalar power element-wise.
+ * Unlike mag_pow with a scalar tensor, the exponent is never read back from device memory, so this never waits on queued work.
+ * Common exponents (0..5, 0.5, -0.5, -1) are rewritten into cheaper ops.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives the result tensor; the caller owns one reference.
+ * @param x Base tensor.
+ * @param y Exponent. A float exponent on a non-floating-point @p x uses the context default dtype, an int64 exponent on a bool @p x uses int64, otherwise the dtype of @p x.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_pow_scalar(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_scalar_t y);
+
+/**
+ * Compute x raised to a constant scalar power element-wise into @p x.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives @p x with an added reference.
+ * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
+ * @param y Exponent, with the same dtype rules as mag_pow_scalar. The promoted dtype must equal the dtype of @p x.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_pow_scalar_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x, mag_scalar_t y);
 
 /**
  * Compute the matrix product of two floating-point tensors. Leading batch dims are broadcast.
@@ -3922,6 +3849,28 @@ extern MAG_EXPORT uintptr_t mag_tensor_data_storage_ptr(const mag_tensor_t *tens
 extern MAG_EXPORT uintptr_t mag_tensor_data_storage_ptr_mut(const mag_tensor_t *tensor);
 
 /**
+ * Block until all queued work writing this tensor's storage has completed, so its memory can be read by the host.
+ * Cheaper than mag_ctx_sync on the CPU backend, which tracks writes per storage. CUDA: synchronizes the device stream.
+ * Call this before reading memory returned by mag_tensor_data_ptr() and friends.
+ *
+ * @param err Error output; receives a deferred error of the device, if any.
+ * @param tensor Tensor to wait for.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_tensor_sync(mag_error_t *err, mag_tensor_t *tensor);
+
+/**
+ * Declare that the tensor's host memory is shared with code outside magnetron (e.g. a NumPy array or a raw pointer handed out).
+ * Waits until no queued command reads or writes the storage, and from then on every command touching this storage
+ * executes synchronously, so external readers and writers always observe the same order as the program.
+ *
+ * @param err Error output; receives a deferred error of the device, if any.
+ * @param tensor Host tensor whose storage is shared.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_tensor_mark_host_aliased(mag_error_t *err, mag_tensor_t *tensor);
+
+/**
  * Get the device the tensor resides on.
  *
  * @param tensor Tensor to query.
@@ -4223,7 +4172,7 @@ extern MAG_EXPORT bool mag_tensor_decref(mag_tensor_t *tensor);
  * @param tensor Tensor to query.
  * @return true if the tensor is on CPU.
  */
-extern MAG_EXPORT bool mag_tensor_is_cpu(mag_tensor_t *tensor);
+extern MAG_EXPORT bool mag_tensor_is_host(mag_tensor_t *tensor);
 
 /**
  * Write the autograd graph reachable from @p tensor to a file in Graphviz DOT format.

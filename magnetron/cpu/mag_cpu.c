@@ -73,17 +73,10 @@ const uint32_t mag_crc32c_lut[256] = {
   0xbe2da0a5, 0x4c4623a6, 0x5f16d052, 0xad7d5351
 };
 
-static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *device, const mag_command_t *cmd) {
-  mag_cpu_device_t *cpu_dvc = device->impl;
-  for (uint32_t i=0; i < cmd->num_in; ++i) {
-    const mag_tensor_t *t = cmd->in[i];
-    if (t->storage->flags & MAG_STORAGE_FLAG_BORROWED) /* Prefetch borrowed mmap data */
-      mag_mmap_readahead_hint((const void *)mag_tensor_data_ptr(t), mag_tensor_numbytes(t));
-  }
-  uint32_t intraop_workers = mag_cpu_tune_eager_intra_op_worker_count(cmd, device); /* Determine number of intra-op workers */
-  mag_lock_acquire(&cpu_dvc->submit_lock);
+static MAG_HOTPROC mag_status_t mag_cpu_exec_command(mag_error_t *err, mag_cpu_device_t *cpu_dvc, const mag_command_t *cmd) {
+  uint32_t intraop_workers = mag_cpu_tune_eager_intra_op_worker_count(cmd, cpu_dvc->device);
   mag_status_t stat;
-  if (intraop_workers <= 1) { /* Main thread does the work (single threaded mode). */
+  if (intraop_workers <= 1) { /* Sinle threaded mode */
     mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) mag_tile_sched_t tile_sched = {0};
     mag_kernel_payload_t payload = {
       .cmd = cmd,
@@ -96,20 +89,82 @@ static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *d
   } else {
     stat = mag_threadpool_parallel_compute(err, cpu_dvc->pool, cmd, intraop_workers); /* Multithreaded exec + barrier */
   }
-  mag_lock_release(&cpu_dvc->submit_lock);
   for (uint32_t i=0; i < cmd->num_in; ++i) {
     const mag_tensor_t *t = cmd->in[i];
-    if (t->storage->flags & MAG_STORAGE_FLAG_BORROWED) /* release borrowed mmap data */
+    if (t->storage->flags&MAG_STORAGE_FLAG_BORROWED) /* release borrowed mmap data */
       mag_mmap_release_hint((const void *)mag_tensor_data_ptr(t), mag_tensor_numbytes(t));
   }
   return stat;
+}
+
+static mag_status_t mag_cpu_stream_exec(mag_error_t *err, void *user, const mag_command_t *cmd) {
+  return mag_cpu_exec_command(err, user, cmd);
+}
+
+static void mag_cpu_seed_prngs(mag_cpu_device_t *cpu_dvc, uint64_t seed) {
+  mag_philox4x32_stream_seed(&cpu_dvc->primary_prng, seed, 0);
+  if (cpu_dvc->pool) {
+    for (uint32_t i=0; i < cpu_dvc->pool->num_allocated_workers; ++i) {
+      mag_worker_t *worker = &cpu_dvc->pool->workers[i];
+      mag_philox4x32_stream_seed(&worker->prng, seed, worker->payload.thread_idx+1);
+    }
+  }
+}
+
+static void mag_cpu_stream_seed(void *user, uint64_t seed) {
+  mag_cpu_seed_prngs(user, seed);
+}
+
+static void mag_cpu_stream_thread_init(void *user) {
+  mag_cpu_device_t *cpu_dvc = user;
+  if (cpu_dvc->pool && mag_numa_is_numa(cpu_dvc->pool->numa_ctrl)) /* Executor is worker 0, pin it like the workers */
+    mag_numa_pin_thread_affinity(cpu_dvc->pool->numa_ctrl, 0);
+}
+
+static MAG_HOTPROC mag_status_t mag_cpu_submit(mag_error_t *err, mag_device_t *device, const mag_command_t *cmd) {
+  mag_cpu_device_t *cpu_dvc = device->impl;
+  if (mag_op_trait(cmd->op)->flags&MAG_OP_FLAG_META) return MAG_OK; /* Metadata only, nothing to execute */
+  for (uint32_t i=0; i < cmd->num_in; ++i) {
+    const mag_tensor_t *t = cmd->in[i];
+    if (t->storage->flags&MAG_STORAGE_FLAG_BORROWED) /* Prefetch borrowed mmap data, at enqueue time in async mode so it streams in early */
+      mag_mmap_readahead_hint((const void *)mag_tensor_data_ptr(t), mag_tensor_numbytes(t));
+  }
+  if (cpu_dvc->stream) {
+    mag_dtype_t dtype = mag_command_dispatch_dtype(cmd); /* Report missing kernels sync directly */
+    if (mag_unlikely(!cpu_dvc->kernels.operators[cmd->op][dtype]))
+      return mag_set_error(err, MAG_ERR_KERNEL, "cpu: no kernel found for operator '%s' with dtype '%s'.", mag_op_trait(cmd->op)->mnemonic, mag_type_trait(dtype)->name);
+    int64_t mx_el=0;
+    for (uint32_t i=0; i < cmd->num_in; ++i) mx_el = mag_vmax(mx_el, cmd->in[i]->meta.numel);
+    for (uint32_t i=0; i < cmd->num_out; ++i) mx_el = mag_vmax(mx_el, cmd->out[i]->meta.numel);
+    bool inline_ok = mx_el <= MAG_CPU_INLINE_MAX_NUMEL && mag_cpu_tune_eager_intra_op_worker_count(cmd, device) <= 1;
+    return mag_cpu_stream_submit(err, cpu_dvc->stream, cmd, inline_ok);
+  }
+  mag_lock_acquire(&cpu_dvc->submit_lock);
+  mag_status_t stat = mag_cpu_exec_command(err, cpu_dvc, cmd);
+  mag_lock_release(&cpu_dvc->submit_lock);
+  return stat;
+}
+
+static mag_status_t mag_cpu_sync(mag_error_t *err, mag_device_t *device) {
+  mag_cpu_device_t *cpu_dvc = device->impl;
+  return cpu_dvc->stream ? mag_cpu_stream_barrier(err, cpu_dvc->stream) : MAG_OK;
+}
+
+static mag_status_t mag_cpu_materialization_barrier(mag_error_t *err, mag_device_t *device, uint64_t seq) {
+  mag_cpu_device_t *cpu_dvc = device->impl;
+  return cpu_dvc->stream ? mag_cpu_stream_wait(err, cpu_dvc->stream, seq) : MAG_OK;
+}
+
+static bool mag_cpu_query(mag_device_t *device, uint64_t seq) {
+  mag_cpu_device_t *cpu_dvc = device->impl;
+  return !cpu_dvc->stream || mag_cpu_stream_query(cpu_dvc->stream, seq);
 }
 
 static mag_status_t mag_cpu_storage_dtor(void *self) {
   mag_storage_buffer_t *buf = self;
   mag_context_t *ctx = buf->ctx;
   mag_assert(mag_atomic64_fetch_sub(&ctx->telemetry.num_alive_storages, 1, MAG_MO_ACQ_REL) > 0, "cpu: double free detected on CPU storage buffer.");
-  if (!(buf->flags & MAG_STORAGE_FLAG_BORROWED))
+  if (!(buf->flags&MAG_STORAGE_FLAG_BORROWED))
     (*mag_try_alloc)((void *)buf->base, 0, MAG_CPU_BUF_ALIGN);
   mag_slab_free(&ctx->storage_slab, buf);
   return MAG_OK;
@@ -117,7 +172,7 @@ static mag_status_t mag_cpu_storage_dtor(void *self) {
 
 static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device, mag_storage_buffer_t **out, size_t size) {
   mag_context_t *ctx = device->ctx;
-  mag_status_t status = MAG_OK;
+  mag_status_t stat = MAG_OK;
   mag_storage_buffer_t *buf = mag_slab_alloc(&ctx->storage_slab);
   if (mag_unlikely(!buf))
     return mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate storage buffer header.");
@@ -136,7 +191,7 @@ static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device
   } else {
     void *base = (*mag_try_alloc)(NULL, size, MAG_CPU_BUF_ALIGN);
     if (mag_unlikely(!(base != NULL))) {
-      status = mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate CPU storage buffer of %zu bytes.", size);
+      stat = mag_set_error(err, MAG_ERR_OOM, "cpu: failed to allocate CPU storage buffer of %zu bytes.", size);
       goto cleanup;
     }
     buf->base = (uintptr_t)base;
@@ -148,19 +203,13 @@ static mag_status_t mag_cpu_alloc_storage(mag_error_t *err, mag_device_t *device
   return MAG_OK;
 cleanup:
   mag_slab_free(&ctx->storage_slab, buf);
-  return status;
+  return stat;
 }
 
 static void mag_cpu_manual_seed(mag_error_t *err, mag_device_t *device, uint64_t seed) {
-  (void)err;
   mag_cpu_device_t *cpu_dvc = device->impl;
-  mag_philox4x32_stream_seed(&cpu_dvc->primary_prng, seed, 0);
-  if (cpu_dvc->pool) {
-    for (uint32_t i=0; i < cpu_dvc->pool->num_allocated_workers; ++i) {
-      mag_worker_t *worker = &cpu_dvc->pool->workers[i];
-      mag_philox4x32_stream_seed(&worker->prng, seed, worker->payload.thread_idx+1);
-    }
-  }
+  if (cpu_dvc->stream) mag_cpu_stream_submit_seed(err, cpu_dvc->stream, seed); /* Ordered with in-flight RNG ops */
+  else mag_cpu_seed_prngs(cpu_dvc, seed);
 }
 
 static mag_status_t mag_cpu_init_device(mag_error_t *err, mag_cpu_device_t **out, mag_context_t *ctx, uint32_t num_threads) {
@@ -181,46 +230,66 @@ static mag_status_t mag_cpu_init_device(mag_error_t *err, mag_cpu_device_t **out
   mag_numa_init(&device->numa_ctrl, (mag_numa_strategy_t)mag_envcfg_numa_strategy(MAG_NUMA_STRATEGY_DISTRIBUTE)); /* Overridable via MAG_NUMA_STRATEGY */
   mag_blas_detect_optimal_specialization(ctx, &device->kernels);
   if (num_threads > 1) {
-    mag_status_t status = mag_threadpool_create(err, &device->pool, ctx, num_threads, &device->kernels, &device->numa_ctrl, sched_prio);
-    if (mag_iserr(status)) {
+    mag_status_t stat = mag_threadpool_create(err, &device->pool, ctx, num_threads, &device->kernels, &device->numa_ctrl, sched_prio);
+    if (mag_iserr(stat)) {
       (*mag_alloc)(device, 0, 0);
-      return status;
+      return stat;
     }
     device->num_allocated_workers = num_threads;
   }
+  uint32_t cores = ctx->machine.cpu_physical_cores; /* Per-op worker cap, see mag_cpu_tune_eager_intra_op_worker_count */
+  device->num_core_workers = mag_vmax(1, cores ? mag_vmin(num_threads, cores) : num_threads);
   if (*device->kernels.init) (*device->kernels.init)();
   *out = device;
   return MAG_OK;
 }
 
 static void mag_cpu_destroy_device(mag_cpu_device_t *device) {
+  if (device->stream) mag_cpu_stream_shutdown(device->stream);
   if (*device->kernels.deinit) (*device->kernels.deinit)();
   if (device->pool) mag_threadpool_destroy(device->pool);
   (*mag_try_alloc)(device, 0, 0);
 }
 
-static mag_status_t mag_cpu_init_interface(mag_error_t *err, mag_device_t **out, mag_context_t *ctx, uint32_t num_threads) {
+static mag_status_t mag_cpu_init_interface(mag_error_t *err, mag_device_t **out, mag_context_t *ctx, uint32_t num_threads, bool async) {
   *out=NULL;
   mag_cpu_device_t *cpu_dvc=NULL;
-  mag_status_t status = mag_cpu_init_device(err, &cpu_dvc, ctx, num_threads);
-  if (mag_iserr(status)) return status;
+  mag_status_t stat = mag_cpu_init_device(err, &cpu_dvc, ctx, num_threads);
+  if (mag_iserr(stat)) return stat;
   mag_device_t *device = (*mag_try_alloc)(NULL, sizeof(*device), 0);
   if (mag_unlikely(!device)) {
     mag_cpu_destroy_device(cpu_dvc);
-    return status;
+    return stat;
   }
   *device = (mag_device_t) { /* Initialize device interface */
     .ctx = ctx,
     .id = mag_device(CPU, 0),
     .physical_device_name = "CPU",
     .impl = cpu_dvc,
-    .is_async = false,
+    .flags = MAG_DEVICE_FLAGS_IS_HOST,
     .submit = &mag_cpu_submit,
     .alloc_storage = &mag_cpu_alloc_storage,
     .manual_seed = &mag_cpu_manual_seed,
-    .transfer = NULL
+    .transfer = NULL,
+    .sync = &mag_cpu_sync,
+    .materialization_barrier = &mag_cpu_materialization_barrier,
+    .barrier_query = &mag_cpu_query,
   };
   snprintf(device->physical_device_name, sizeof(device->physical_device_name), "%s", ctx->machine.cpu_name);
+  cpu_dvc->device = device;
+  if (async) {
+    uint32_t depth = mag_envcfg_cpu_queue_depth(MAG_CPU_ASYNC_STREAM_DEF_DEPTH);
+    uint64_t mb = mag_envcfg_cpu_queue_mb(MAG_CPU_ASYNC_STREAM_DEF_MB);
+    stat = mag_cpu_stream_create(err, &cpu_dvc->stream, ctx, depth, (size_t)mb<<20, &mag_cpu_stream_exec, &mag_cpu_stream_seed, &mag_cpu_stream_thread_init, cpu_dvc, MAG_THREAD_PRIO_NORMAL);
+    if (mag_iserr(stat)) {
+      mag_cpu_destroy_device(cpu_dvc);
+      (*mag_alloc)(device, 0, 0);
+      return stat;
+    }
+    cpu_dvc->stream->launch_blocking = mag_envcfg_launch_blocking();
+    device->flags|=MAG_DEVICE_FLAGS_ASYNC;
+    mag_log_info("CPU backend: async command stream enabled (queue depth %u, %" PRIu64 " MiB in flight%s)", depth, mb, cpu_dvc->stream->launch_blocking ? ", launch blocking" : "");
+  }
   *out = device;
   return MAG_OK;
 }
@@ -274,18 +343,25 @@ static uint32_t mag_cpu_usable_cpus(uint32_t online) {
 
 static mag_status_t mag_cpu_init(mag_error_t *err, mag_backend_t *self, mag_context_t *ctx) {
   mag_assert2(!self->impl);
-  uint32_t nt = ctx->machine.cpu_virtual_cores;
-#ifdef __APPLE__
-  if (ctx->machine.cpu_perf_virtual_cores) nt = ctx->machine.cpu_perf_virtual_cores;
-#endif
+  const mag_machine_info_t *m = &ctx->machine;
+  uint32_t usable = mag_vmax(1, m->cpu_virtual_cores);
 #ifdef __gnu_linux__
-  nt = mag_cpu_usable_cpus(nt); /* Respect taskset/cpuset and container CPU quotas, not just online CPUs */
+  usable = mag_cpu_usable_cpus(usable);
 #endif
-  nt = mag_envcfg_cpu_threads(nt); /* Overridable via MAG_CPU_THREADS */
+  uint32_t nt = m->cpu_perf_virtual_cores ? mag_vmin(usable, m->cpu_perf_virtual_cores) : usable; /* Skip E-cores*/
+  int async_cfg = mag_envcfg_cpu_async();
+  bool async = async_cfg == 1 || (async_cfg == -1 && nt > MAG_CPU_ASYNC_RESERVED_CPUS);
+  if (!mag_envcfg_cpu_threads(0)) {
+    if (async)
+      nt = nt > MAG_CPU_ASYNC_RESERVED_CPUS ? nt-MAG_CPU_ASYNC_RESERVED_CPUS : 1;
+    else if (nt >= usable && m->cpu_physical_cores >= m->cpu_virtual_cores && nt > MAG_CPU_SYNC_RESERVE_MIN_CPUS)
+      nt -= MAG_CPU_SYNC_RESERVED_CPUS;
+  }
+  nt = mag_envcfg_cpu_threads(nt);
   nt = mag_vmax(1, nt);
-  mag_log_info("CPU backend: %u worker threads", nt);
+  mag_log_info("CPU backend: %u worker threads%s", nt, async ? " (async, incl. executor)" : "");
   ctx->telemetry.cpu_workers = nt;
-  return mag_cpu_init_interface(err, (mag_device_t **)&self->impl, ctx, nt);
+  return mag_cpu_init_interface(err, (mag_device_t **)&self->impl, ctx, nt, async);
 }
 static mag_status_t mag_cpu_shutdown(mag_error_t *err, mag_backend_t *self) {
   mag_assert2(self->impl);

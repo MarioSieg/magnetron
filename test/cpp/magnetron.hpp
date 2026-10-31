@@ -9,8 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-// Modern C++ API of a subset of the Magnetron C APi
-// For easier testing and simpler C++ code
+// TODO: Might remove this, half completed C++ wrapper only used in C++ tests rn
 
 #pragma once
 
@@ -29,6 +28,16 @@
 #include "extern/half/include/half.hpp"
 
 namespace magnetron {
+    inline mag_error_t g_error; // Suboptimal, but only for tests for now. Can be improved but no time for this rn
+
+    inline auto handle_error(mag_status_t status, mag_context_t * = nullptr) -> void {
+        if (status != MAG_OK) [[unlikely]] {
+            std::printf("%s - %s", mag_status_get_name(status), g_error.message); // Not the best solution as we discord all info of mag_error_t, but it's for tests only so yeah
+            std::fflush(stdout);
+            std::abort();
+        }
+    }
+
     /**
      * The context owns all tensors and runtime data structures. It must kept alive as long as any tensor is used.
      */
@@ -55,6 +64,7 @@ namespace magnetron {
         auto stop_grad_recorder() noexcept -> void { mag_ctx_grad_recorder_stop(m_ctx); }
         [[nodiscard]] auto is_recording_gradients() const noexcept -> bool { return mag_ctx_grad_recorder_is_running(m_ctx); }
         auto manual_seed(uint64_t seed) noexcept -> void { mag_ctx_manual_seed(m_ctx, seed); }
+        auto sync() -> void { handle_error(mag_ctx_sync(&g_error, m_ctx), m_ctx); }
 
     private:
         mag_context_t* m_ctx {};
@@ -82,16 +92,6 @@ namespace magnetron {
 
     [[nodiscard]] inline auto dtype_name(dtype t) noexcept -> std::string_view {
         return mag_type_trait(static_cast<mag_dtype_t>(t))->name;
-    }
-
-    inline mag_error_t g_error; // Suboptimal, but only for tests for now. Can be improved but no time for this rn
-
-    inline auto handle_error(mag_status_t status, mag_context_t * = nullptr) -> void {
-        if (status != MAG_OK) [[unlikely]] {
-            std::printf("%s - %s", mag_status_get_name(status), g_error.message); // Not the best solution as we discord all info of mag_error_t, but it's for tests only so yeah
-            std::fflush(stdout);
-            std::abort();
-        }
     }
 
     template <typename T>
@@ -907,8 +907,15 @@ namespace magnetron {
             return std::vector<int64_t>{p, p+rank()}; /* We also copy unused dims as they are checked in some tests */
         }
         [[nodiscard]] auto dtype() const noexcept -> dtype { return static_cast<enum dtype>(mag_tensor_type(m_tensor)); }
-        [[nodiscard]] auto data_ptr() const noexcept -> void* { return reinterpret_cast<void *>(mag_tensor_data_ptr_mut(m_tensor)); }
-        [[nodiscard]] auto storage_base_ptr() const noexcept -> void* { return reinterpret_cast<void *>(mag_tensor_data_storage_ptr_mut(m_tensor)); }
+        [[nodiscard]] auto data_ptr() const -> void* { /* The pointer escapes: wait for pending work and keep later commands on it synchronous */
+            handle_error(mag_tensor_mark_host_aliased(&g_error, m_tensor));
+            return reinterpret_cast<void *>(mag_tensor_data_ptr_mut(m_tensor));
+        }
+        auto sync() const -> void { handle_error(mag_tensor_sync(&g_error, m_tensor)); }
+        [[nodiscard]] auto storage_base_ptr() const -> void* {
+            handle_error(mag_tensor_mark_host_aliased(&g_error, m_tensor));
+            return reinterpret_cast<void *>(mag_tensor_data_storage_ptr_mut(m_tensor));
+        }
 
         template <typename T>
         [[nodiscard]] auto to_vector() const -> std::vector<T> {
@@ -998,4 +1005,3 @@ namespace magnetron {
         handle_error(mag_uniform_(&g_error, m_tensor, mag_scalar_from_int64(min), mag_scalar_from_int64(max)));
     }
 }
-

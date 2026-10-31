@@ -561,7 +561,6 @@ extern MAG_EXPORT uint64_t mag_cycles(void); /* Get current CPU cycles. */
 
 #define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
 #define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
-#define MAG_INVSQRT2PI 0.398942280401432677939946059934381868475858631f
 #define MAG_SQRT2OVERPI 0.797884560802865355879892119868763736951717263f
 
 static inline void *mag_pincr(void **p, size_t sz, size_t align) {
@@ -629,7 +628,7 @@ static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_powi(int64_t x, int64_t k) {
   if (!k) return 1;
   if (k < 0) {
     switch (x) {
-      case 0: return UINT64_C(0x7fffffffffffffff);
+      case 0: return 0;
       case 1: return 1;
       case -1: return (k&1) ? -1 : 1;
       default: return 0;
@@ -645,10 +644,41 @@ static MAG_CUDA_DEVICE MAG_AINLINE float mag_remf(float x, float y) {
   return r;
 }
 
+/* Trap free signed integral div */
 static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_remi(int64_t x, int64_t y) {
+  if (y == 0) return x;
+  if (y == -1) return 0;
   int64_t r = x % y;
   if (r != 0 && (r < 0) != (y < 0)) r += y;
   return r;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_divi(int64_t x, int64_t y) { /* Truncating division. */
+  if (y == 0) return -1;
+  if (y == -1) return (int64_t)(UINT64_C(0)-(uint64_t)x); /* Wrapping */
+  return x/y;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_floordivi(int64_t x, int64_t y) {
+  if (y == 0) return -1;
+  if (y == -1) return (int64_t)(UINT64_C(0)-(uint64_t)x);
+  int64_t q = x/y;
+  if (x%y != 0 && (x < 0) != (y < 0)) --q;
+  return q;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_f64_to_i64(double x) {
+  if (x != x) return 0;
+  if (x >= 9223372036854775808.0) return INT64_MAX;
+  if (x <= -9223372036854775808.0) return INT64_MIN;
+  return (int64_t)x;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE uint64_t mag_f64_to_u64(double x) {
+  if (x < 0.0) return (uint64_t)mag_f64_to_i64(x);
+  if (x != x) return 0;
+  if (x >= 18446744073709551616.0) return UINT64_MAX;
+  return (uint64_t)x;
 }
 
 extern MAG_EXPORT bool mag_utf8_validate(const uint8_t *str, size_t len);

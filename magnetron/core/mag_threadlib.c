@@ -206,9 +206,9 @@ void mag_curr_thread_set_prio(mag_thread_prio_t prio) {
     policy = SCHED_FIFO;
     break;
   }
-  int status = pthread_setschedparam(pthread_self(), policy, &p);
-  if (mag_unlikely(status)) {
-    mag_log_warn("Failed to set thread scheduling priority: %d, error: %x", prio, status);
+  int stat = pthread_setschedparam(pthread_self(), policy, &p);
+  if (mag_unlikely(stat)) {
+    mag_log_warn("Failed to set thread scheduling priority: %d, error: %x", prio, stat);
   }
 #endif
 }
