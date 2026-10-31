@@ -220,7 +220,7 @@ mag_status_t mag_borrow_host_buffer(
   int64_t dts = (int64_t)mag_type_trait(dtype)->size;
   int64_t numel = 1;
   for (int64_t i=0; i < rank; ++i) {
-    if (mag_unlikely(!(shape[i] >= 0)))
+    if (mag_unlikely(shape[i] < 0))
       return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: all shape dimensions must be >= 0, but shape[%" PRIi64 "] = %" PRIi64 ".", i, shape[i]);
     if (mag_unlikely(mag_mulov64(shape[i], numel, &numel)))
       return mag_set_error(err, MAG_ERR_DIM, "borrow_cpu_buffer: element count overflowed at dim %" PRIi64 " (size %" PRIi64 ").", i, shape[i]);

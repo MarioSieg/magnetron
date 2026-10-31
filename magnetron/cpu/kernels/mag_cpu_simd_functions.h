@@ -42,7 +42,8 @@ static MAG_AINLINE mag_vf32_t mag_vf32_tanh(mag_vf32_t x) {
   mag_vf32_t inv = mag_vf32_rcp_approx(c);
   inv = mag_vf32_rcp_refine_step(c, inv);
   inv = mag_vf32_rcp_refine_step(c, inv);
-  return mag_vf32_sub(mag_vf32_mul(k2, inv), k1);
+  mag_vf32_t r = mag_vf32_sub(mag_vf32_mul(k2, inv), k1);
+  return mag_vf32_blend(mag_vf32_cmpgt(x, mag_vf32_splat(9.0f)), k1, r);
 }
 
 static MAG_AINLINE void mag_vf32_sincos(mag_vf32_t x, mag_vf32_t *s, mag_vf32_t *c) {
