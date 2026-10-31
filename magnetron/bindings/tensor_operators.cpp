@@ -125,7 +125,7 @@ namespace mag::bindings {
     if (nb::isinstance<nb::int_>(h) && !nb::isinstance<nb::bool_>(h) && mag_type_category_is_integer(dt)) {
       size_t bits = mag_type_trait(dt)->size<<3;
       bool is_signed = mag_type_category_is_signed_integer(dt);
-      auto lo = is_signed ? nb::int_(-static_cast<int64_t>(1)<<(bits-1)) : nb::int_(0);
+      auto lo = is_signed ? nb::int_(bits == 64 ? std::numeric_limits<int64_t>::min() : -(static_cast<int64_t>(1)<<(bits-1))) : nb::int_(0);
       auto hi = is_signed ? nb::int_(bits == 64 ? std::numeric_limits<int64_t>::max() : ((static_cast<int64_t>(1)<<(bits-1))-1))
         : nb::steal(PyLong_FromUnsignedLongLong(bits == 64 ? std::numeric_limits<uint64_t>::max() : ((1ull<<bits)-1)));
       if (h < lo) return normalize_rhs_to_tensor(self, lo);
