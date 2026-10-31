@@ -99,52 +99,63 @@ namespace mag {
   }
 
   template <typename T>
-  __global__ static void conv_transpose_kernel(int64_t total, conv_geom g, T *__restrict__ br, const T *__restrict__ bx, const T *__restrict__ bw, const T *__restrict__ bb) {
-    int64_t idx = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
-    int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
+  __device__ static float conv_transpose_at(int64_t idx, const conv_geom &g, const T *__restrict__ bx, const T *__restrict__ bw, const T *__restrict__ bb) {
     int cinG = g.cin/g.groups;
     int coutG = g.cout/g.groups;
     int Id = g.small[0], Ih = g.small[1], Iw = g.small[2];
     int Od = g.big[0], Oh = g.big[1], Ow = g.big[2];
     int Kd = g.k[0], Kh = g.k[1], Kw = g.k[2];
-    for (; idx < total; idx += step) {
-      int64_t tmp = idx;
-      int ow = static_cast<int>(tmp % Ow); tmp /= Ow;
-      int oh = static_cast<int>(tmp % Oh); tmp /= Oh;
-      int od = static_cast<int>(tmp % Od); tmp /= Od;
-      int co = static_cast<int>(tmp % g.cout); tmp /= g.cout;
-      int n = static_cast<int>(tmp);
-      int grp = co/coutG;
-      int cog = co - grp*coutG;
-      float acc = bb ? static_cast<float>(bb[co]) : 0.0f;
-      for (int cig=0; cig < cinG; ++cig) {
-        int ci = grp*cinG + cig;
-        const T *xplane = bx + (static_cast<int64_t>(n)*g.cin + ci)*Id*Ih*Iw;
-        const T *wplane = bw + (static_cast<int64_t>(ci)*coutG + cog)*Kd*Kh*Kw;
-        for (int kd=0; kd < Kd; ++kd) {
-          int td = od + g.p[0] - kd*g.d[0];
-          if (td < 0 || td % g.s[0]) continue;
-          int id = td/g.s[0];
-          if (id >= Id) continue;
-          for (int kh=0; kh < Kh; ++kh) {
-            int th = oh + g.p[1] - kh*g.d[1];
-            if (th < 0 || th % g.s[1]) continue;
-            int ih = th/g.s[1];
-            if (ih >= Ih) continue;
-            const T *xrow = xplane + (static_cast<int64_t>(id)*Ih + ih)*Iw;
-            const T *wrow = wplane + (kd*Kh + kh)*Kw;
-            for (int kw=0; kw < Kw; ++kw) {
-              int tw = ow + g.p[2] - kw*g.d[2];
-              if (tw < 0 || tw % g.s[2]) continue;
-              int iw = tw/g.s[2];
-              if (iw >= Iw) continue;
-              acc += static_cast<float>(wrow[kw])*static_cast<float>(xrow[iw]);
-            }
+    int64_t tmp = idx;
+    int ow = static_cast<int>(tmp % Ow); tmp /= Ow;
+    int oh = static_cast<int>(tmp % Oh); tmp /= Oh;
+    int od = static_cast<int>(tmp % Od); tmp /= Od;
+    int co = static_cast<int>(tmp % g.cout); tmp /= g.cout;
+    int n = static_cast<int>(tmp);
+    int grp = co/coutG;
+    int cog = co - grp*coutG;
+    float acc = bb ? static_cast<float>(bb[co]) : 0.0f;
+    for (int cig=0; cig < cinG; ++cig) {
+      int ci = grp*cinG + cig;
+      const T *xplane = bx + (static_cast<int64_t>(n)*g.cin + ci)*Id*Ih*Iw;
+      const T *wplane = bw + (static_cast<int64_t>(ci)*coutG + cog)*Kd*Kh*Kw;
+      for (int kd=0; kd < Kd; ++kd) {
+        int td = od + g.p[0] - kd*g.d[0];
+        if (td < 0 || td % g.s[0]) continue;
+        int id = td/g.s[0];
+        if (id >= Id) continue;
+        for (int kh=0; kh < Kh; ++kh) {
+          int th = oh + g.p[1] - kh*g.d[1];
+          if (th < 0 || th % g.s[1]) continue;
+          int ih = th/g.s[1];
+          if (ih >= Ih) continue;
+          const T *xrow = xplane + (static_cast<int64_t>(id)*Ih + ih)*Iw;
+          const T *wrow = wplane + (kd*Kh + kh)*Kw;
+          for (int kw=0; kw < Kw; ++kw) {
+            int tw = ow + g.p[2] - kw*g.d[2];
+            if (tw < 0 || tw % g.s[2]) continue;
+            int iw = tw/g.s[2];
+            if (iw >= Iw) continue;
+            acc += static_cast<float>(wrow[kw])*static_cast<float>(xrow[iw]);
           }
         }
       }
-      br[idx] = static_cast<T>(acc);
     }
+    return acc;
+  }
+
+  template <typename T>
+  __global__ static void conv_transpose_kernel(int64_t total, conv_geom g, T *__restrict__ br, const T *__restrict__ bx, const T *__restrict__ bw, const T *__restrict__ bb) {
+    int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
+    for (int64_t idx = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x; idx < total; idx += step)
+      br[idx] = static_cast<T>(conv_transpose_at(idx, g, bx, bw, bb));
+  }
+
+  template <typename T>
+  __global__ static void conv_transpose_fixup_kernel(int64_t total, conv_geom g, T *__restrict__ br, const T *__restrict__ bx, const T *__restrict__ bw, const T *__restrict__ bb) {
+    int64_t step = static_cast<int64_t>(blockDim.x)*gridDim.x;
+    for (int64_t idx = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x; idx < total; idx += step)
+      if (!isfinite(static_cast<float>(br[idx])))
+        br[idx] = static_cast<T>(conv_transpose_at(idx, g, bx, bw, bb));
   }
 
   template <typename T>
@@ -441,6 +452,11 @@ namespace mag {
           if (mag_status_t st = gemm(err, dev, d, stream); mag_iserr(st)) return st;
         }
       }
+    }
+    if (transposed) {
+      int64_t total = static_cast<int64_t>(g.N)*g.cout*P;
+      conv_transpose_fixup_kernel<T><<<static_cast<unsigned>(grid_for(total)), CONV_BLOCK_SIZE, 0, stream>>>(total, g, br, bx, bw, bb);
+      mag_cu_rt_check(err, cudaGetLastError(), "conv_transpose: fixup");
     }
     handled = true;
     return MAG_OK;

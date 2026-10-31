@@ -84,6 +84,31 @@ namespace mag {
     }
   };
 
+  struct prod_acc final {
+    double m;
+    int64_t e;
+  };
+
+  template <typename TIn, typename TOut, typename TAcc>
+  struct op_prod_fp {
+    using In  = TIn;
+    using Out = TOut;
+    using Acc = prod_acc;
+
+    [[nodiscard]] __device__ __forceinline__ static Acc norm(double m, int64_t e) {
+      int k = 0;
+      m = frexp(m, &k);
+      return {m, isfinite(m) && m != 0.0 ? e + k : 0};
+    }
+    [[nodiscard]] __device__ __forceinline__ Acc init() const { return {1.0, 0}; }
+    [[nodiscard]] __device__ __forceinline__ Acc transform(In x) const { return norm(static_cast<double>(static_cast<float>(x)), 0); }
+    [[nodiscard]] __device__ __forceinline__ Acc reduce(Acc a, Acc b) const { return norm(a.m*b.m, a.e + b.e); }
+    [[nodiscard]] __device__ __forceinline__ Out finalize(Acc acc, [[maybe_unused]] int64_t red_prod) const {
+      int64_t e = acc.e < -4096 ? -4096 : acc.e > 4096 ? 4096 : acc.e;
+      return static_cast<Out>(static_cast<float>(ldexp(acc.m, static_cast<int>(e))));
+    }
+  };
+
   template <typename TIn, typename TOut, typename TAcc>
   struct op_min {
     using In  = TIn;
@@ -390,9 +415,10 @@ namespace mag {
   mag_status_t reduce_op_sum (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_sumprod<op_sum>(err, cmd, stream); }
   mag_status_t reduce_op_prod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     switch (cmd.in[0]->meta.dtype) {
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<op_prod<half, half, double>>(cmd, stream); return MAG_OK;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_prod<__nv_bfloat16, __nv_bfloat16, double>>(cmd, stream); return MAG_OK;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_prod<__nv_fp8_e4m3, __nv_fp8_e4m3, double>>(cmd, stream); return MAG_OK;
+      case MAG_DTYPE_FLOAT32: launch_reduce_op<op_prod_fp<float, float, double>>(cmd, stream); return MAG_OK;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<op_prod_fp<half, half, double>>(cmd, stream); return MAG_OK;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_prod_fp<__nv_bfloat16, __nv_bfloat16, double>>(cmd, stream); return MAG_OK;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_prod_fp<__nv_fp8_e4m3, __nv_fp8_e4m3, double>>(cmd, stream); return MAG_OK;
       default: return impl_reduce_op_sumprod<op_prod>(err, cmd, stream);
     }
   }
