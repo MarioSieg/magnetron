@@ -23,6 +23,15 @@ set(MAG_CLANG_RELEASE_COMPILE_FLAGS -O3 -flto=thin -fomit-frame-pointer)
 set(MAG_CLANG_LINK_OPTIONS "")
 set(MAG_CLANG_RELEASE_LINK_OPTIONS -flto=thin)
 
+# ThinLTO cache: lets the linker reuse the backend codegen of unchanged modules, so a relink after editing one TU only
+# re-optimizes that TU instead of all of them. lld and the LLVMgold plugin (ld.bfd / ld.gold) spell the option differently.
+set(MAG_THINLTO_CACHE_DIR "${CMAKE_BINARY_DIR}/thinlto.cache" CACHE PATH "Directory for the ThinLTO incremental link cache")
+if (CMAKE_C_COMPILER_LINKER_ID STREQUAL "LLD")
+    list(APPEND MAG_CLANG_RELEASE_LINK_OPTIONS "-Wl,--thinlto-cache-dir=${MAG_THINLTO_CACHE_DIR}")
+elseif (NOT APPLE)
+    list(APPEND MAG_CLANG_RELEASE_LINK_OPTIONS "-Wl,-plugin-opt,cache-dir=${MAG_THINLTO_CACHE_DIR}")
+endif()
+
 set(MAG_GCC_COMPILE_FLAGS -std=gnu99 -fvisibility=hidden -fno-math-errno -Wall -Werror -Wno-error=parentheses -Wno-error=overflow -Wno-error=unused-function -Wno-error=format-truncation -Wno-unused-parameter -Wno-unused-function -D_GNU_SOURCE=1)
 set(MAG_GCC_RELEASE_COMPILE_FLAGS -O3 -flto=auto -fomit-frame-pointer
 )

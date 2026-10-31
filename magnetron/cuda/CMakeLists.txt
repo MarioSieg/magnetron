@@ -51,6 +51,7 @@ if (CUDAToolkit_FOUND)
     add_library(magnetron_cuda SHARED ${MAGNETRON_CUDA_SOURCES} ${MAG_CUDA_ARCH_OBJECTS})
     set_property(TARGET magnetron_cuda PROPERTY CUDA_ARCHITECTURES ${MAG_CUDA_ARCHS})
     apply_common_config_to_target(magnetron_cuda FALSE)
+    target_compile_options(magnetron_cuda PRIVATE --threads=0) # Run the per-architecture cicc/ptxas passes in parallel
     target_compile_options(magnetron_cuda PRIVATE -Xcompiler=-Wall,-Wextra,-fvisibility=hidden,-Wno-unused-parameter,-Wno-unused-function)
     target_link_libraries(magnetron_cuda PRIVATE CUDA::cudart CUDA::cuda_driver)
     target_link_libraries(magnetron_cuda PRIVATE magnetron_core)
