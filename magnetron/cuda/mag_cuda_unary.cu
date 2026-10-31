@@ -24,6 +24,8 @@ namespace mag {
     if constexpr (std::is_same_v<Dst, cast_bool_t>) {
       if constexpr (std::is_integral_v<Src>) return static_cast<uint8_t>(v != 0);
       else return static_cast<uint8_t>(static_cast<float>(v) != 0.f);
+    } else if constexpr (std::is_integral_v<Src> && !std::is_integral_v<Dst> && !std::is_same_v<Dst, float>) {
+      return static_cast<Dst>(static_cast<float>(v));
     } else {
       return static_cast<Dst>(v);
     }
@@ -358,7 +360,8 @@ namespace mag {
     using In = T;
     using Out = T;
     [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
-      return x < T(0) ? static_cast<Out>(-x) : x;
+      using U = std::make_unsigned_t<T>;
+      return x < T(0) ? static_cast<Out>(U(0) - static_cast<U>(x)) : x; /* Wraps (INT_MIN stays INT_MIN), no signed overflow */
     }
   };
 
@@ -369,6 +372,39 @@ namespace mag {
     [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
       auto xf32 = static_cast<float>(x);
       return xf32 > 0.f ? static_cast<Out>(1.f) : xf32 < 0.f ? static_cast<Out>(-1.f) : static_cast<Out>(0.f);
+    }
+  };
+
+  template <typename T>
+  struct op_sgn_int {
+    static_assert(std::is_integral_v<T>);
+    using In = T;
+    using Out = T;
+    [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
+      if constexpr (std::is_unsigned_v<T>) return static_cast<Out>(x != 0);
+      else return static_cast<Out>((x > 0) - (x < 0));
+    }
+  };
+
+  template <typename T>
+  struct op_neg_int {
+    static_assert(std::is_integral_v<T>);
+    using In = T;
+    using Out = T;
+    [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
+      using U = std::make_unsigned_t<T>;
+      return static_cast<Out>(U(0) - static_cast<U>(x));
+    }
+  };
+
+  template <typename T>
+  struct op_sqr_int {
+    static_assert(std::is_integral_v<T>);
+    using In = T;
+    using Out = T;
+    [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
+      using U = std::conditional_t<sizeof(T) < sizeof(uint32_t), uint32_t, std::make_unsigned_t<T>>;
+      return static_cast<Out>(static_cast<U>(x)*static_cast<U>(x));
     }
   };
 
@@ -496,7 +532,7 @@ namespace mag {
     using In = T;
     using Out = T;
     [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
-      return static_cast<Out>(__tanf(static_cast<float>(x)));
+      return static_cast<Out>(tanf(static_cast<float>(x)));
     }
   };
 
@@ -705,7 +741,8 @@ namespace mag {
     using In = T;
     using Out = T;
     [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
-      return static_cast<Out>(fminf(1.f, fmaxf(.0f, (static_cast<float>(x) + 3.f)/6.f)));
+      float y = (static_cast<float>(x) + 3.f)/6.f;
+      return static_cast<Out>(y < 0.f ? 0.f : y > 1.f ? 1.f : y);
     }
   };
 
@@ -745,7 +782,8 @@ namespace mag {
     using In = T;
     using Out = T;
     [[nodiscard]] __device__ __forceinline__ Out operator()(In x) const {
-      return static_cast<Out>(fmaxf(static_cast<float>(x),0.f));
+      auto xf32 = static_cast<float>(x);
+      return static_cast<Out>(xf32 < 0.f ? 0.f : xf32);
     }
   };
 
@@ -860,8 +898,14 @@ namespace mag {
     if (mag_type_category_is_integral(r->meta.dtype)) return impl_unary_op_int<op_abs_int>(err, r, x, stream);
     else return impl_unary_op_fp<op_abs>(err, r, x, stream);
   }
-  mag_status_t unary_op_sgn(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_sgn>(err, cmd.out[0], cmd.in[0], stream); }
-  mag_status_t unary_op_neg(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_neg>(err, cmd.out[0], cmd.in[0], stream); }
+  mag_status_t unary_op_sgn(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    if (mag_type_category_is_integral(cmd.out[0]->meta.dtype)) return impl_unary_op_int<op_sgn_int>(err, cmd.out[0], cmd.in[0], stream);
+    return impl_unary_op_fp<op_sgn>(err, cmd.out[0], cmd.in[0], stream);
+  }
+  mag_status_t unary_op_neg(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    if (mag_type_category_is_integral(cmd.out[0]->meta.dtype)) return impl_unary_op_int<op_neg_int>(err, cmd.out[0], cmd.in[0], stream);
+    return impl_unary_op_fp<op_neg>(err, cmd.out[0], cmd.in[0], stream);
+  }
   mag_status_t unary_op_not(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *x = cmd.in[0];
@@ -872,7 +916,10 @@ namespace mag {
   mag_status_t unary_op_log10(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_log10>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_log1p(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_log1p>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_log2(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_log2>(err, cmd.out[0], cmd.in[0], stream); }
-  mag_status_t unary_op_sqr(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_sqr>(err, cmd.out[0], cmd.in[0], stream); }
+  mag_status_t unary_op_sqr(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    if (mag_type_category_is_integral(cmd.out[0]->meta.dtype)) return impl_unary_op_int<op_sqr_int>(err, cmd.out[0], cmd.in[0], stream);
+    return impl_unary_op_fp<op_sqr>(err, cmd.out[0], cmd.in[0], stream);
+  }
   mag_status_t unary_op_rcp(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_rcp>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_sqrt(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_sqrt>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_rsqrt(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_rsqrt>(err, cmd.out[0], cmd.in[0], stream); }
@@ -900,9 +947,13 @@ namespace mag {
   mag_status_t unary_op_trunc(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_trunc>(err, cmd.out[0], cmd.in[0], stream); }
 
   template <typename T, const bool Dv>
-  __global__ static void softmax_kernel(int64_t rows, int64_t last_dim, T *__restrict__ r, const T *__restrict__ x) {
+  __global__ static void softmax_kernel(int64_t rows, int64_t last_dim, bool scalar, T *__restrict__ r, const T *__restrict__ x) {
     int64_t row = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + static_cast<int64_t>(threadIdx.x);
     if (row >= rows) return;
+    if (scalar) {
+      r[0] = static_cast<T>(Dv ? 0.f : 1.f);
+      return;
+    }
     const T *row_in = x + row * last_dim;
     T *row_out = r + row * last_dim;
     auto maxv = static_cast<float>(row_in[0]);
@@ -931,7 +982,7 @@ namespace mag {
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
     auto blocks = static_cast<unsigned>(std::min((numel+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
-    softmax_kernel<T, Dv><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(rows, last_dim, pr, px);
+    softmax_kernel<T, Dv><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(rows, last_dim, rank == 0, pr, px);
   }
 
   template <const bool Dv>

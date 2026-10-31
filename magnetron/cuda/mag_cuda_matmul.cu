@@ -12,6 +12,7 @@
 #include "mag_cuda_matmul.cuh"
 #include "mag_cuda_gemm.cuh"
 #include "mag_cuda_tma.cuh"
+#include "mag_cuda_unary.cuh"
 
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
@@ -1130,6 +1131,11 @@ namespace mag {
       int64_t Ky = y->meta.coords.rank == 1 ? y->meta.coords.shape[0] : y->meta.coords.shape[y->meta.coords.rank - 2];
       mag_assert2(Kx == Ky);
       int64_t K = Kx;
+      if (!K) { /* Empty reduction: the result is all zeros (the GEMM rejects K=0, a zero-sized gemv grid is an invalid launch) */
+        if (cudaError_t ce = cudaMemsetAsync(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(r)), 0, static_cast<size_t>(mag_tensor_numel(r))*sizeof(T), stream); ce != cudaSuccess)
+          st = mag_set_error(err, MAG_ERR_BACKEND, "cuda: matmul: memset failed: %s", cudaGetErrorString(ce));
+        goto end;
+      }
       int64_t a_bs = tensor_batch_total(x) == 1 ? 0 : M*K;
       int64_t b_bs = tensor_batch_total(y) == 1 ? 0 : K*N;
       int64_t c_bs = M*N;
@@ -1183,9 +1189,38 @@ namespace mag {
     return st;
   }
 
+  static mag_status_t launch_matmul_fp8(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    mag_tensor_t *r = cmd.out[0];
+    mag_tensor_t *xf = nullptr, *yf = nullptr, *rf = nullptr;
+    mag_status_t st = mag_cast(err, &xf, cmd.in[0], MAG_DTYPE_FLOAT32);
+    if (mag_isok(st)) st = mag_cast(err, &yf, cmd.in[1], MAG_DTYPE_FLOAT32);
+    if (mag_isok(st)) st = mag_empty(err, &rf, r->ctx, MAG_DTYPE_FLOAT32, r->meta.coords.rank, r->meta.coords.shape, mag_tensor_device_id(r));
+    if (mag_isok(st)) {
+      mag_tensor_t *mm_in[2] = {xf, yf};
+      mag_tensor_t *mm_out[1] = {rf};
+      mag_command_t mm = cmd;
+      mm.in = mm_in;
+      mm.out = mm_out;
+      st = launch_matmul<float>(err, mm, stream);
+      if (mag_isok(st)) {
+        mag_tensor_t *cast_in[1] = {rf};
+        mag_command_t cc = cmd;
+        cc.op = MAG_OP_CAST;
+        cc.in = cast_in;
+        cc.num_in = 1;
+        st = unary_op_cast(err, cc, stream);
+      }
+    }
+    if (xf) mag_tensor_decref(xf);
+    if (yf) mag_tensor_decref(yf);
+    if (rf) mag_tensor_decref(rf);
+    return st;
+  }
+
   mag_status_t misc_op_matmul(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     const mag_tensor_t *x = cmd.in[0];
     switch (x->meta.dtype) {
+      case MAG_DTYPE_FLOAT8_E4M3FN: return launch_matmul_fp8(err, cmd, stream);
       case MAG_DTYPE_FLOAT32: return launch_matmul<float>(err, cmd, stream);
       case MAG_DTYPE_FLOAT16: return launch_matmul<half>(err, cmd, stream);
       case MAG_DTYPE_BFLOAT16: return launch_matmul<__nv_bfloat16>(err, cmd, stream);

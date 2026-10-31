@@ -1262,7 +1262,6 @@ def test_multinomial(device: str) -> None:
     assert sorted(samples) == sorted(torch.multinomial(totorch(w), 4).tolist())
 
 
-@pytest.mark.xfail(reason='multinomial ignores replacement=True and always samples without replacement', strict=True)
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)
 def test_multinomial_with_replacement(device: str) -> None:
     p = Tensor([0.0, 1.0, 0.0, 0.0], device=device)

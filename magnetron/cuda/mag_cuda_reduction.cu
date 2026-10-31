@@ -22,6 +22,7 @@
 namespace mag {
 
   template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_min(T a, T b) {
+    if constexpr (std::is_integral_v<T>) return a < b ? a : b;
     float fa = static_cast<float>(a), fb = static_cast<float>(b);
     if (isnan(fa)) return a;
     if (isnan(fb)) return b;
@@ -31,6 +32,7 @@ namespace mag {
   template <> [[nodiscard]] __device__ __forceinline__ double fn_min<double>(double a, double b) { return isnan(a) || isnan(b) ? a+b : fmin(a, b); }
 
   template <typename T> [[nodiscard]] __device__ __forceinline__ T fn_max(T a, T b) {
+    if constexpr (std::is_integral_v<T>) return a > b ? a : b;
     float fa = static_cast<float>(a), fb = static_cast<float>(b);
     if (isnan(fa)) return a;
     if (isnan(fb)) return b;
@@ -343,9 +345,9 @@ namespace mag {
     mag_assert2(r->meta.dtype == x->meta.dtype);
     switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_reduce_op<Op<float, float, float>>(cmd, stream); break;
-      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, half>>(cmd, stream); break;
-      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16>>(cmd, stream); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, __nv_fp8_e4m3>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<Op<half, half, float>>(cmd, stream); break;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<Op<__nv_bfloat16, __nv_bfloat16, float>>(cmd, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<Op<__nv_fp8_e4m3, __nv_fp8_e4m3, float>>(cmd, stream); break;
       case MAG_DTYPE_BOOLEAN: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd, stream); break;
       case MAG_DTYPE_UINT8: launch_reduce_op<Op<uint8_t, uint8_t, uint8_t>>(cmd, stream); break;
       case MAG_DTYPE_INT8: launch_reduce_op<Op<int8_t, int8_t, int8_t>>(cmd, stream); break;
@@ -386,7 +388,14 @@ namespace mag {
 
   mag_status_t reduce_op_mean(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_fp<op_mean>(err, cmd, stream); }
   mag_status_t reduce_op_sum (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_sumprod<op_sum>(err, cmd, stream); }
-  mag_status_t reduce_op_prod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_sumprod<op_prod>(err, cmd, stream); }
+  mag_status_t reduce_op_prod(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
+    switch (cmd.in[0]->meta.dtype) {
+      case MAG_DTYPE_FLOAT16: launch_reduce_op<op_prod<half, half, double>>(cmd, stream); return MAG_OK;
+      case MAG_DTYPE_BFLOAT16: launch_reduce_op<op_prod<__nv_bfloat16, __nv_bfloat16, double>>(cmd, stream); return MAG_OK;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_reduce_op<op_prod<__nv_fp8_e4m3, __nv_fp8_e4m3, double>>(cmd, stream); return MAG_OK;
+      default: return impl_reduce_op_sumprod<op_prod>(err, cmd, stream);
+    }
+  }
   mag_status_t reduce_op_minima (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_extrema<op_min>(err, cmd, stream); }
   mag_status_t reduce_op_maxima (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_extrema<op_max>(err, cmd, stream); }
   mag_status_t reduce_op_all (mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_reduce_op_logical<op_all>(err, cmd, stream); }
@@ -455,7 +464,9 @@ namespace mag {
 
   template <typename T, bool is_max>
   __device__ __forceinline__ arg_acc_i64 reduce_arg_acc_i64(arg_acc_i64 acc, T x, int64_t ri) {
-    int64_t xv = static_cast<int64_t>(x);
+    int64_t xv;
+    if constexpr (std::is_same_v<T, uint64_t>) xv = static_cast<int64_t>(x^0x8000000000000000ull);
+    else xv = static_cast<int64_t>(x);
     if (!acc.set || (is_max ? xv > acc.val : xv < acc.val)) {
       acc.val = xv;
       acc.idx = ri;

@@ -668,6 +668,20 @@ static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_floordivi(int64_t x, int64_t y) {
   return q;
 }
 
+static MAG_CUDA_DEVICE MAG_AINLINE int64_t mag_f64_to_i64(double x) {
+  if (x != x) return 0;
+  if (x >= 9223372036854775808.0) return INT64_MAX;
+  if (x <= -9223372036854775808.0) return INT64_MIN;
+  return (int64_t)x;
+}
+
+static MAG_CUDA_DEVICE MAG_AINLINE uint64_t mag_f64_to_u64(double x) {
+  if (x < 0.0) return (uint64_t)mag_f64_to_i64(x);
+  if (x != x) return 0;
+  if (x >= 18446744073709551616.0) return UINT64_MAX;
+  return (uint64_t)x;
+}
+
 extern MAG_EXPORT bool mag_utf8_validate(const uint8_t *str, size_t len);
 extern MAG_EXPORT char *mag_strdup(const char *s);
 extern MAG_EXPORT void mag_path_split_dir_inplace(char *path, char **out_dir, char **out_file);

@@ -454,7 +454,7 @@ typedef struct mag_argmax_acc_i64_t {
     } \
     return MAG_OK; \
   }
-/* NaN beats any number so arg reductions return the first NaN, like torch. */
+
 #define mag_scmp_gt(a, b) ((a) > (b) || ((a) != (a) && (b) == (b)))
 #define mag_scmp_lt(a, b) ((a) < (b) || ((a) != (a) && (b) == (b)))
 static MAG_AINLINE mag_vmask32_t mag_vf32_nan_beats(mag_vf32_t a, mag_vf32_t b) {
@@ -471,19 +471,14 @@ mag_cpu_impl_argext_hfp(mag_bfloat16_t, bfloat16, argmin, mag_bfloat16_to_float3
 mag_cpu_impl_argext_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, argmax, mag_float8_e4m3fn_to_float32, mag_vf32_loadu_float8_e4m3fn, mag_vf32_cmpgt_nan, mag_scmp_gt)
 mag_cpu_impl_argext_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, argmin, mag_float8_e4m3fn_to_float32, mag_vf32_loadu_float8_e4m3fn, mag_vf32_cmplt_nan, mag_scmp_lt)
 
-
-
-
-
-
-
+#define mag_argkey_int(T, x) ((T)-1 > 0 && sizeof(T) == 8 ? (int64_t)((uint64_t)(x)^0x8000000000000000ull) : (int64_t)(x))
 
 #define mag_cpu_impl_argminmax_int(T, TF) \
   mag_cpu_impl_reduce_axes( \
     T, int64_t, TF, argmax, mag_argmax_acc_i64_t, \
     {0}, \
     { \
-      int64_t xv = (int64_t)bx[roff]; \
+      int64_t xv = mag_argkey_int(T, bx[roff]); \
       if (!acc.set || xv > acc.val) { \
         acc.val = xv; \
         acc.idx = ri; \
@@ -496,7 +491,7 @@ mag_cpu_impl_argext_hfp(mag_float8_e4m3fn_t, float8_e4m3fn, argmin, mag_float8_e
     T, int64_t, TF, argmin, mag_argmax_acc_i64_t, \
     {0}, \
     { \
-      int64_t xv = (int64_t)bx[roff]; \
+      int64_t xv = mag_argkey_int(T, bx[roff]); \
       if (!acc.set || xv < acc.val) { \
         acc.val = xv; \
         acc.idx = ri; \
@@ -516,6 +511,7 @@ mag_cpu_impl_argminmax_int(uint64_t, uint64);
 mag_cpu_impl_argminmax_int(int64_t,  int64);
 
 #undef mag_cpu_impl_argminmax_int
+#undef mag_argkey_int
 
 mag_cpu_impl_reduce_axes(mag_float8_e4m3fn_t, mag_float8_e4m3fn_t, float8_e4m3fn, sum, float, 0.0f, acc += mag_float8_e4m3fn_to_float32(bx[roff]);, *o = mag_float32_to_float8_e4m3fn(acc); )
 mag_cpu_impl_reduce_axes(mag_float8_e4m3fn_t, mag_float8_e4m3fn_t, float8_e4m3fn, mean, float, 0.0f, acc += mag_float8_e4m3fn_to_float32(bx[roff]);, acc /= (float)red_prod; *o = mag_float32_to_float8_e4m3fn(acc); )

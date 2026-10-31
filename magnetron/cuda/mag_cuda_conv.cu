@@ -516,6 +516,7 @@ namespace mag {
   static mag_status_t conv_dispatch_typed(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream, int which) {
     if (!mag_tensor_numel(cmd.out[0])) return MAG_OK;
     bool handled = false;
+    if (which != 2 && !mag_tensor_numel(cmd.in[0])) return launch_conv<T>(err, cmd, stream, which == 1);
     mag_status_t st = which == 2
       ? launch_conv_wgrad_gemm<T>(err, cmd, stream, handled)
       : launch_conv_gemm<T>(err, cmd, stream, which == 1, handled);

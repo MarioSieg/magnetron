@@ -469,10 +469,7 @@ namespace mag {
   }
 
   template <typename T>
-  static void launch_embedding(const mag_command_t &cmd, cudaStream_t stream) {
-    mag_tensor_t *r = cmd.out[0];
-    const mag_tensor_t *weight = cmd.in[0];
-    const mag_tensor_t *indices = cmd.in[1];
+  static void launch_embedding(mag_tensor_t *r, const mag_tensor_t *weight, const mag_tensor_t *indices, cudaStream_t stream) {
     int64_t vocab_size = weight->meta.coords.shape[0];
     int64_t row_size = weight->meta.numel / vocab_size;
     int64_t n_indices = indices->meta.numel;
@@ -496,23 +493,34 @@ namespace mag {
 
   mag_status_t misc_op_embedding(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
-    switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32:       launch_embedding<float>(cmd, stream); break;
-      case MAG_DTYPE_FLOAT16:       launch_embedding<half>(cmd, stream); break;
-      case MAG_DTYPE_BFLOAT16:      launch_embedding<__nv_bfloat16>(cmd, stream); break;
-      case MAG_DTYPE_FLOAT8_E4M3FN: launch_embedding<__nv_fp8_e4m3>(cmd, stream); break;
-      case MAG_DTYPE_BOOLEAN:
-      case MAG_DTYPE_UINT8:         launch_embedding<uint8_t>(cmd, stream); break;
-      case MAG_DTYPE_INT8:          launch_embedding<int8_t>(cmd, stream); break;
-      case MAG_DTYPE_UINT16:        launch_embedding<uint16_t>(cmd, stream); break;
-      case MAG_DTYPE_INT16:         launch_embedding<int16_t>(cmd, stream); break;
-      case MAG_DTYPE_UINT32:        launch_embedding<uint32_t>(cmd, stream); break;
-      case MAG_DTYPE_INT32:         launch_embedding<int32_t>(cmd, stream); break;
-      case MAG_DTYPE_UINT64:        launch_embedding<uint64_t>(cmd, stream); break;
-      case MAG_DTYPE_INT64:         launch_embedding<int64_t>(cmd, stream); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: embedding: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
+    mag_assert2(mag_tensor_is_contiguous(r));
+    mag_tensor_t *weight = cmd.in[0]; /* The kernels index weight and indices densely: strided/broadcast views need a contiguous copy */
+    mag_tensor_t *indices = cmd.in[1];
+    if (mag_status_t stat = mag_contiguous(err, &weight, weight); mag_iserr(stat)) return stat;
+    if (mag_status_t stat = mag_contiguous(err, &indices, indices); mag_iserr(stat)) {
+      mag_tensor_decref(weight);
+      return stat;
     }
-    return MAG_OK;
+    mag_status_t stat = MAG_OK;
+    switch (r->meta.dtype) {
+      case MAG_DTYPE_FLOAT32:       launch_embedding<float>(r, weight, indices, stream); break;
+      case MAG_DTYPE_FLOAT16:       launch_embedding<half>(r, weight, indices, stream); break;
+      case MAG_DTYPE_BFLOAT16:      launch_embedding<__nv_bfloat16>(r, weight, indices, stream); break;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_embedding<__nv_fp8_e4m3>(r, weight, indices, stream); break;
+      case MAG_DTYPE_BOOLEAN:
+      case MAG_DTYPE_UINT8:         launch_embedding<uint8_t>(r, weight, indices, stream); break;
+      case MAG_DTYPE_INT8:          launch_embedding<int8_t>(r, weight, indices, stream); break;
+      case MAG_DTYPE_UINT16:        launch_embedding<uint16_t>(r, weight, indices, stream); break;
+      case MAG_DTYPE_INT16:         launch_embedding<int16_t>(r, weight, indices, stream); break;
+      case MAG_DTYPE_UINT32:        launch_embedding<uint32_t>(r, weight, indices, stream); break;
+      case MAG_DTYPE_INT32:         launch_embedding<int32_t>(r, weight, indices, stream); break;
+      case MAG_DTYPE_UINT64:        launch_embedding<uint64_t>(r, weight, indices, stream); break;
+      case MAG_DTYPE_INT64:         launch_embedding<int64_t>(r, weight, indices, stream); break;
+      default: stat = mag_set_error(err, MAG_ERR_KERNEL, "cuda: embedding: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name); break;
+    }
+    mag_tensor_decref(weight);
+    mag_tensor_decref(indices);
+    return stat;
   }
 
   template <typename T>
@@ -583,6 +591,10 @@ namespace mag {
     for (uint32_t i = 0; i < cmd.num_in; ++i) {
       const mag_tensor_t *x = cmd.in[i];
       int64_t xi_dim = x->meta.coords.shape[dim];
+      if (!x->meta.numel) { /* Nothing to copy, and a zero-sized grid is an invalid launch */
+        dst_off += xi_dim;
+        continue;
+      }
       const T *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
       if (mag_tensor_is_contiguous(x)) {
         int64_t jk_total    = xi_dim*inner;
@@ -642,6 +654,8 @@ namespace mag {
   /* Flipping the sign bit on positives and every bit on negatives turns IEEE 754 into its total order: -0
      lands just below +0, and NaNs fall outside the finite range at whichever end their sign points to. */
   [[nodiscard]] static __device__ __forceinline__ uint32_t topk_encode_f32(float x) {
+    if (isnan(x)) return 0xFFFFFFFFu; /* NaN is the largest value whatever its sign bit (torch); a negative NaN would sort below -inf */
+    if (x == 0.f) x = 0.f; /* -0 == +0: equal keys, so ties resolve by position (stable sort) */
     uint32_t u = __float_as_uint(x);
     return (u & 0x80000000u) ? ~u : (u|0x80000000u);
   }
@@ -1426,6 +1440,7 @@ namespace mag {
     int64_t B,
     int64_t K,
     int64_t num_samples,
+    bool replacement,
     const T *bx,
     int64_t *br,
     uint64_t seed,
@@ -1449,6 +1464,26 @@ namespace mag {
     mag_discrete_sample_pair_d *arr = workspace + b*K;
     if (!(sumw > 0.f) || nnz == 0) {
       for (int64_t s=0; s < num_samples; ++s) o[s] = -1;
+      return;
+    }
+    if (replacement) {
+      double acc = 0.0;
+      int64_t last = 0;
+      for (int64_t i=0; i < K; ++i) {
+        auto wi = static_cast<float>(w[i]);
+        if (isfinite(wi) && wi > 0.f) { acc += wi; last = i; }
+        arr[i].score = acc;
+      }
+      for (int64_t s=0; s < num_samples; ++s) {
+        double u = static_cast<double>(mag_philox4x32_next_float32(&stream))*acc;
+        int64_t lo = 0, hi = K-1;
+        while (lo < hi) {
+          int64_t mid = lo + ((hi-lo)>>1);
+          if (arr[mid].score > u) hi = mid;
+          else lo = mid+1;
+        }
+        o[s] = arr[lo].score > u ? lo : last;
+      }
       return;
     }
     int64_t kout = num_samples;
@@ -1491,16 +1526,16 @@ namespace mag {
     int64_t blocks = (B + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
     switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32:
-        multinomial_rows_kernel<float><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, reinterpret_cast<const float *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<float><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const float *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_FLOAT16:
-        multinomial_rows_kernel<half><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, reinterpret_cast<const half *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<half><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const half *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_BFLOAT16:
-        multinomial_rows_kernel<__nv_bfloat16><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<__nv_bfloat16><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_FLOAT8_E4M3FN:
-        multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       default:
         cuda_check(stream_free(d_ws, stream), "multinomial scratch free");
@@ -1785,9 +1820,15 @@ namespace mag {
         best = xv;
         best_idx = 0;
       } else {
-        auto xvc = static_cast<float>(xv);
-        auto bestc = static_cast<float>(best);
-        bool better = is_max ? xvc >= bestc : xvc <= bestc;
+        bool better;
+        if constexpr (std::is_integral_v<T>) {
+          better = is_max ? xv >= best : xv <= best;
+        } else {
+          auto xvc = static_cast<float>(xv);
+          auto bestc = static_cast<float>(best);
+          bool xnan = isnan(xvc), bnan = isnan(bestc);
+          better = xnan || (!bnan && (is_max ? xvc >= bestc : xvc <= bestc));
+        }
         if (better) { best = xv; best_idx = p; }
       }
       bv[off_v] = best;

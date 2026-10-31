@@ -237,7 +237,11 @@ mag_status_t mag_infer_missing_dim(
 
 mag_mat_layout_type_t mag_mat_layout_detect(const mag_coords_t *coords, bool *out_batch_packed) {
   int64_t ra = coords->rank;
-  if (ra < 2) { *out_batch_packed = true; return MAG_MAT_LAYOUT_TYPE_PACKED; }
+  if (ra < 2) {
+    bool packed = ra == 0 || coords->strides[0] == 1 || coords->shape[0] <= 1;
+    *out_batch_packed = packed;
+    return packed ? MAG_MAT_LAYOUT_TYPE_PACKED : MAG_MAT_LAYOUT_TYPE_OTHER;
+  }
   int64_t rows = coords->shape[ra-2];
   int64_t cols = coords->shape[ra-1];
   int64_t srows = coords->strides[ra-2];
