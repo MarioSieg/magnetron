@@ -52,9 +52,10 @@ static MAG_AINLINE mag_vf32_t mag_vec_sub_f32(mag_vf32_t x, mag_vf32_t y) { retu
 static MAG_AINLINE mag_vf32_t mag_vec_mul_f32(mag_vf32_t x, mag_vf32_t y) { return mag_vf32_mul(x,y); }
 static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { return mag_vf32_div(x,y); }
 
-#define mag_fn_add_int(x,y) ((x)+(y))
-#define mag_fn_sub_int(x,y) ((x)-(y))
-#define mag_fn_mul_int(x,y) ((x)*(y))
+
+#define mag_fn_add_int(x,y) ((uint64_t)(x)+(uint64_t)(y))
+#define mag_fn_sub_int(x,y) ((uint64_t)(x)-(uint64_t)(y))
+#define mag_fn_mul_int(x,y) ((uint64_t)(x)*(uint64_t)(y))
 #define mag_fn_div_i(x,y) mag_divi((x),(y))
 #define mag_fn_div_u(x,y) ((y) ? (x)/(y) : -1)
 #define mag_fn_and_int(x,y) ((x)&(y))
@@ -67,7 +68,7 @@ static MAG_AINLINE mag_vf32_t mag_vec_div_f32(mag_vf32_t x, mag_vf32_t y) { retu
 #define mag_fn_pow_i(x,y) mag_powi((x),(y))
 #define mag_fn_pow_u(x,y) mag_powu((x),(y))
 #define mag_fn_shl_i(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (T)((uint64_t)(x)<<(y)))
-#define mag_fn_shl_u(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)<<(y))
+#define mag_fn_shl_u(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (T)((uint64_t)(x)<<(y)))
 #define mag_fn_shr_i(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)>>(y))
 #define mag_fn_shr_u(x,y,T) (mag_unlikely((y)<0 || (y)>=(sizeof(T)<<3)) ? 0 : (x)>>(y))
 #define mag_fn_min_int(x,y) ((x)<(y)?(x):(y))
