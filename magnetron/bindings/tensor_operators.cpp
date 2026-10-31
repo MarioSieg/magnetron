@@ -1784,18 +1784,12 @@ namespace mag::bindings {
       nb::rv_policy::reference
     );
 
-    bind_unary_pair(cls, softmax_dv, MAG_OP_SOFTMAX_DV, "Softmax derivative (for autodiff).");
     bind_unary_pair(cls, sigmoid, MAG_OP_SIGMOID, "Sigmoid 1/(1+exp(-x)).");
-    bind_unary_pair(cls, sigmoid_dv, MAG_OP_SIGMOID_DV, "Sigmoid derivative.");
     bind_unary_pair(cls, hard_sigmoid, MAG_OP_HARD_SIGMOID, "Hard sigmoid approximation.");
     bind_unary_pair(cls, silu, MAG_OP_SILU, "SiLU (Swish) x*sigmoid(x).");
-    bind_unary_pair(cls, silu_dv, MAG_OP_SILU_DV, "SiLU derivative.");
-    bind_unary_pair(cls, tanh_dv, MAG_OP_TANH_DV, "Tanh derivative.");
     bind_unary_pair(cls, relu, MAG_OP_RELU, "ReLU max(0, x).");
-    bind_unary_pair(cls, relu_dv, MAG_OP_RELU_DV, "ReLU derivative.");
     bind_unary_pair(cls, gelu, MAG_OP_GELU, "GELU activation.");
     bind_unary_pair(cls, gelu_approx, MAG_OP_GELU_APPROX, "GELU approximate form.");
-    bind_unary_pair(cls, gelu_dv, MAG_OP_GELU_DV, "GELU derivative.");
     cls
     .def("__neg__", [](const tensor_wrapper &self) -> tensor_wrapper {
       return call_op_maybe_without_gil(self, mag_neg, *self);

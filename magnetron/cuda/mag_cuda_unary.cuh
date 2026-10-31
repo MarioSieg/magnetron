@@ -53,16 +53,10 @@ namespace mag {
   [[nodiscard]] extern mag_status_t unary_op_round(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_trunc(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_softmax(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
-  [[nodiscard]] extern mag_status_t unary_op_softmax_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_sigmoid(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
-  [[nodiscard]] extern mag_status_t unary_op_sigmoid_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_hard_sigmoid(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_silu(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
-  [[nodiscard]] extern mag_status_t unary_op_silu_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
-  [[nodiscard]] extern mag_status_t unary_op_tanh_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_relu(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
-  [[nodiscard]] extern mag_status_t unary_op_relu_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_gelu(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
   [[nodiscard]] extern mag_status_t unary_op_gelu_approx(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
-  [[nodiscard]] extern mag_status_t unary_op_gelu_dv(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream);
 }

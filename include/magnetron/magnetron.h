@@ -2659,26 +2659,6 @@ extern MAG_EXPORT mag_status_t mag_min_dim(mag_error_t *err, mag_tensor_t **out_
 extern MAG_EXPORT mag_status_t mag_index_add(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *self, int64_t dim, mag_tensor_t *index, mag_tensor_t *source, double alpha);
 
 /**
- * Compute the derivative of the softmax along the last dim element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_softmax_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the softmax along the last dim element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_softmax_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
  * Compute the logistic sigmoid element-wise.
  *
  * @param err Error output; set when the call fails.
@@ -2697,26 +2677,6 @@ extern MAG_EXPORT mag_status_t mag_sigmoid(mag_error_t *err, mag_tensor_t **out_
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_sigmoid_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the logistic sigmoid element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_sigmoid_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the logistic sigmoid element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_sigmoid_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 
 /**
  * Compute the hard sigmoid, clamp((x + 3) / 6, 0, 1) element-wise.
@@ -2759,46 +2719,6 @@ extern MAG_EXPORT mag_status_t mag_silu(mag_error_t *err, mag_tensor_t **out_res
 extern MAG_EXPORT mag_status_t mag_silu_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 
 /**
- * Compute the derivative of the SiLU activation element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_silu_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the SiLU activation element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_silu_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the hyperbolic tangent element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_tanh_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the hyperbolic tangent element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_tanh_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
  * Compute the ReLU activation, max(x, 0) element-wise.
  *
  * @param err Error output; set when the call fails.
@@ -2817,26 +2737,6 @@ extern MAG_EXPORT mag_status_t mag_relu(mag_error_t *err, mag_tensor_t **out_res
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_relu_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the ReLU activation element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_relu_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the ReLU activation element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_relu_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 
 /**
  * Compute the exact (erf-based) GELU activation element-wise.
@@ -2877,26 +2777,6 @@ extern MAG_EXPORT mag_status_t mag_gelu_approx(mag_error_t *err, mag_tensor_t **
  * @return MAG_OK on success, an error status otherwise.
  */
 extern MAG_EXPORT mag_status_t mag_gelu_approx_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the GELU activation element-wise.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives the result tensor; the caller owns one reference.
- * @param x Input tensor.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_gelu_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
-
-/**
- * Compute the derivative of the GELU activation element-wise, in place.
- *
- * @param err Error output; set when the call fails.
- * @param out_result Receives @p x with an added reference.
- * @param x Tensor to operate on; overwritten with the result. Must not require grad while recording.
- * @return MAG_OK on success, an error status otherwise.
- */
-extern MAG_EXPORT mag_status_t mag_gelu_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
 
 /**
  * Compute x + y element-wise with broadcasting and dtype promotion.

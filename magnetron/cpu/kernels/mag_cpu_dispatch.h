@@ -746,23 +746,11 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_BFLOAT16] = &mag_softmax_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_softmax_float8_e4m3fn,
   },
-  [MAG_OP_SOFTMAX_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_softmax_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_softmax_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_softmax_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_softmax_dv_float8_e4m3fn,
-  },
   [MAG_OP_SIGMOID] = {
     [MAG_DTYPE_FLOAT32] = &mag_sigmoid_float32,
     [MAG_DTYPE_FLOAT16] = &mag_sigmoid_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_sigmoid_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_sigmoid_float8_e4m3fn,
-  },
-  [MAG_OP_SIGMOID_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_sigmoid_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_sigmoid_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_sigmoid_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_sigmoid_dv_float8_e4m3fn,
   },
   [MAG_OP_HARD_SIGMOID] = {
     [MAG_DTYPE_FLOAT32] = &mag_hard_sigmoid_float32,
@@ -776,29 +764,11 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_BFLOAT16] = &mag_silu_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_silu_float8_e4m3fn,
   },
-  [MAG_OP_SILU_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_silu_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_silu_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_silu_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_silu_dv_float8_e4m3fn,
-  },
-  [MAG_OP_TANH_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_tanh_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_tanh_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_tanh_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_tanh_dv_float8_e4m3fn,
-  },
   [MAG_OP_RELU] = {
     [MAG_DTYPE_FLOAT32] = &mag_relu_float32,
     [MAG_DTYPE_FLOAT16] = &mag_relu_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_relu_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_relu_float8_e4m3fn,
-  },
-  [MAG_OP_RELU_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_relu_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_relu_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_relu_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_relu_dv_float8_e4m3fn,
   },
   [MAG_OP_GELU] = {
     [MAG_DTYPE_FLOAT32] = &mag_gelu_float32,
@@ -811,12 +781,6 @@ static mag_status_t (*const mag_lut_eval_kernels[MAG_OP__NUM][MAG_DTYPE__NUM])(m
     [MAG_DTYPE_FLOAT16] = &mag_gelu_approx_float16,
     [MAG_DTYPE_BFLOAT16] = &mag_gelu_approx_bfloat16,
     [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gelu_approx_float8_e4m3fn,
-  },
-  [MAG_OP_GELU_DV] = {
-    [MAG_DTYPE_FLOAT32] = &mag_gelu_dv_float32,
-    [MAG_DTYPE_FLOAT16] = &mag_gelu_dv_float16,
-    [MAG_DTYPE_BFLOAT16] = &mag_gelu_dv_bfloat16,
-    [MAG_DTYPE_FLOAT8_E4M3FN] = &mag_gelu_dv_float8_e4m3fn,
   },
   [MAG_OP_TRIL] = {
     [MAG_DTYPE_FLOAT32] = &mag_tril_float32,

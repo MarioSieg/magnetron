@@ -290,17 +290,19 @@ cleanup:
 mag_status_t mag_op_backward_silu(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_status_t stat = MAG_OK;
-  mag_tensor_t *dv = NULL;
-
-  stat = mag_silu_dv(err, &dv, x);
-  if (mag_iserr(stat))
-    goto cleanup;
-  stat = mag_mul(err, grads, dv, node->grad);
-  if (mag_iserr(stat))
-    goto cleanup;
-
+  enum { ONE, S, OMS, XOMS, P, DV, NUM };
+  mag_tensor_t *t[NUM] = {NULL};
+  #define CHK if (mag_iserr(stat)) goto cleanup
+  stat = mag_scalar(err, &t[ONE], x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x)); CHK;
+  stat = mag_sigmoid(err, &t[S], x); CHK;
+  stat = mag_sub(err, &t[OMS], t[ONE], t[S]); CHK;
+  stat = mag_mul(err, &t[XOMS], x, t[OMS]); CHK;
+  stat = mag_add(err, &t[P], t[XOMS], t[ONE]); CHK;
+  stat = mag_mul(err, &t[DV], t[S], t[P]); CHK;
+  stat = mag_mul(err, grads, node->grad, t[DV]);
+  #undef CHK
 cleanup:
-  if (dv) mag_rc_decref(dv);
+  for (int i=0; i < NUM; ++i) if (t[i]) mag_rc_decref(t[i]);
   return stat;
 }
 
@@ -351,17 +353,28 @@ cleanup:
 mag_status_t mag_op_backward_gelu(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_status_t stat = MAG_OK;
-  mag_tensor_t *dv = NULL;
-
-  stat = mag_gelu_dv(err, &dv, x);
-  if (mag_iserr(stat))
-    goto cleanup;
-  stat = mag_mul(err, grads, dv, node->grad);
-  if (mag_iserr(stat))
-    goto cleanup;
-
+  enum { ONE, HALF, NHALF, IS2, IS2PI, XS, E, EP1, CDF, X2, NX2, EX, PDF, XPDF, DV, NUM };
+  mag_tensor_t *t[NUM] = {NULL};
+  #define CHK if (mag_iserr(stat)) goto cleanup
+  stat = mag_scalar(err, &t[ONE], x->ctx, x->meta.dtype, mag_scalar_from_float64(1.0), mag_tensor_device_id(x)); CHK;
+  stat = mag_scalar(err, &t[HALF], x->ctx, x->meta.dtype, mag_scalar_from_float64(0.5), mag_tensor_device_id(x)); CHK;
+  stat = mag_scalar(err, &t[NHALF], x->ctx, x->meta.dtype, mag_scalar_from_float64(-0.5), mag_tensor_device_id(x)); CHK;
+  stat = mag_scalar(err, &t[IS2], x->ctx, x->meta.dtype, mag_scalar_from_float64(0.7071067811865476), mag_tensor_device_id(x)); CHK;
+  stat = mag_scalar(err, &t[IS2PI], x->ctx, x->meta.dtype, mag_scalar_from_float64(0.3989422804014327), mag_tensor_device_id(x)); CHK;
+  stat = mag_mul(err, &t[XS], x, t[IS2]); CHK;
+  stat = mag_erf(err, &t[E], t[XS]); CHK;
+  stat = mag_add(err, &t[EP1], t[E], t[ONE]); CHK;
+  stat = mag_mul(err, &t[CDF], t[EP1], t[HALF]); CHK;
+  stat = mag_sqr(err, &t[X2], x); CHK;
+  stat = mag_mul(err, &t[NX2], t[X2], t[NHALF]); CHK;
+  stat = mag_exp(err, &t[EX], t[NX2]); CHK;
+  stat = mag_mul(err, &t[PDF], t[EX], t[IS2PI]); CHK;
+  stat = mag_mul(err, &t[XPDF], x, t[PDF]); CHK;
+  stat = mag_add(err, &t[DV], t[CDF], t[XPDF]); CHK;
+  stat = mag_mul(err, grads, node->grad, t[DV]);
+  #undef CHK
 cleanup:
-  if (dv) mag_rc_decref(dv);
+  for (int i=0; i < NUM; ++i) if (t[i]) mag_rc_decref(t[i]);
   return stat;
 }
 

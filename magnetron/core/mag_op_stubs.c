@@ -1516,40 +1516,12 @@ mag_status_t mag_softmax_dim_(mag_error_t *err, mag_tensor_t **out_result, mag_t
 mag_status_t mag_softmax(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) { return mag_softmax_dim(err, out_result, x, -1); }
 mag_status_t mag_softmax_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) { return mag_softmax_dim_(err, out_result, x, -1); }
 
-mag_status_t mag_softmax_dv(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) {
-  mag_tensor_t *xc = NULL;
-  mag_status_t stat = mag_contiguous(err, &xc, x);
-  if (mag_iserr(stat)) return stat;
-  stat = mag_op_stub_unary(err, out_result, MAG_OP_SOFTMAX_DV, xc, NULL, false);
-  mag_tensor_decref(xc);
-  return stat;
-}
-
-mag_status_t mag_softmax_dv_(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) {
-  *out_result = NULL;
-  if (mag_tensor_is_contiguous(x))
-    return mag_op_stub_unary(err, out_result, MAG_OP_SOFTMAX_DV, x, NULL, true);
-  mag_tensor_t *y = NULL;
-  mag_status_t stat = mag_softmax_dv(err, &y, x);
-  if (mag_iserr(stat)) return stat;
-  stat = mag_copy_(err, x, y);
-  mag_tensor_decref(y);
-  if (mag_iserr(stat)) return stat;
-  mag_tensor_incref(x);
-  *out_result = x;
-  return MAG_OK;
-}
 mag_impl_unary_pair(sigmoid, SIGMOID)
-mag_impl_unary_pair(sigmoid_dv, SIGMOID_DV)
 mag_impl_unary_pair(hard_sigmoid, HARD_SIGMOID)
 mag_impl_unary_pair(silu, SILU)
-mag_impl_unary_pair(silu_dv, SILU_DV)
-mag_impl_unary_pair(tanh_dv, TANH_DV)
 mag_impl_unary_pair(relu, RELU)
-mag_impl_unary_pair(relu_dv, RELU_DV)
 mag_impl_unary_pair(gelu, GELU)
 mag_impl_unary_pair(gelu_approx, GELU_APPROX)
-mag_impl_unary_pair(gelu_dv, GELU_DV)
 
 #undef mag_impl_unary_pair
 
