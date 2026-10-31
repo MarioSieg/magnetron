@@ -234,7 +234,9 @@ _ASYNC_MODES = ['0', '1']
 
 
 def _run(code: str, **env: str) -> subprocess.CompletedProcess:
-    full_env = {**os.environ, 'MAG_LOG_LEVEL': 'error', **env}
+    # Hermetic child: drop inherited MAG_* config (CI sets e.g. MAG_LOG_LEVEL, MAG_LAUNCH_BLOCKING, MAG_CPU_ASYNC)
+    full_env = {k: v for k, v in os.environ.items() if not k.startswith('MAG_')}
+    full_env.update({'MAG_LOG_LEVEL': 'error', **env})
     return subprocess.run([sys.executable, '-c', textwrap.dedent(code)], env=full_env, capture_output=True, text=True, timeout=120)
 
 
