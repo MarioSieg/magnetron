@@ -192,6 +192,34 @@ mag_cpu_impl_reduce_hfp(float,          float32,  mean,   mag_cvt_nop,          
 mag_cpu_impl_reduce_hfp(mag_float16_t,  float16,  mean,   mag_float16_to_float32,  mag_float32_to_float16,   mag_vf32_loadu_f16,  mag_vf32_zero(),               mag_vf32_add, mag_vf32_reduce_add, 0.0f,      mag_add_f32, mag_final_mean)
 mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float32, mag_float32_to_bfloat16,  mag_vf32_loadu_bf16, mag_vf32_zero(),               mag_vf32_add, mag_vf32_reduce_add, 0.0f,      mag_add_f32, mag_final_mean)
 #define MAG_REDUCE_PROD_UNROLL 8
+
+typedef struct mag_prod_acc_t {
+  double m;
+  int64_t e;
+} mag_prod_acc_t;
+
+static MAG_AINLINE void mag_prod_acc_norm(mag_prod_acc_t *a) {
+  double am = fabs(a->m);
+  if (mag_unlikely((am > 0x1p500 || (am < 0x1p-500 && am != 0.0)) && isfinite(am))) {
+    int k;
+    a->m = frexp(a->m, &k);
+    a->e += k;
+  }
+}
+static MAG_AINLINE void mag_prod_acc_mul(mag_prod_acc_t *a, double x) {
+  a->m *= x;
+  mag_prod_acc_norm(a);
+}
+static MAG_AINLINE void mag_prod_acc_merge(mag_prod_acc_t *a, mag_prod_acc_t b) {
+  a->m *= b.m;
+  a->e += b.e;
+  mag_prod_acc_norm(a);
+}
+static MAG_AINLINE float mag_prod_acc_final(mag_prod_acc_t a) {
+  int64_t e = a.e < -4096 ? -4096 : a.e > 4096 ? 4096 : a.e;
+  return (float)ldexp(a.m, (int)e);
+}
+
 #define mag_cpu_impl_reduce_prod_hfp(T, TF, CVT, RCVT) \
   static mag_status_t MAG_HOTPROC mag_prod_##TF(mag_error_t *err, const mag_kernel_payload_t *payload) { \
     (void)err; \
@@ -212,26 +240,26 @@ mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float3
     int64_t ob = mag_vmin(oa + chunk, numel); \
     for (int64_t oi=oa; oi < ob; ++oi) { \
       int64_t base = mag_reduce_plan_to_offset(plan, oi); \
-      double acc = 1.0; \
+      mag_prod_acc_t acc = {1.0, 0}; \
       if (mag_contig) { \
         const T *p = bx + base; \
-        double lanes[MAG_REDUCE_PROD_UNROLL]; \
-        for (int u=0; u < MAG_REDUCE_PROD_UNROLL; ++u) lanes[u] = 1.0; \
+        mag_prod_acc_t lanes[MAG_REDUCE_PROD_UNROLL]; \
+        for (int u=0; u < MAG_REDUCE_PROD_UNROLL; ++u) lanes[u] = (mag_prod_acc_t){1.0, 0}; \
         int64_t i = 0; \
         for (; i + MAG_REDUCE_PROD_UNROLL <= red_prod; i += MAG_REDUCE_PROD_UNROLL) { \
           mag_bnd_chk(p + i + MAG_REDUCE_PROD_UNROLL - 1, x->storage->base, x->storage->size); \
-          for (int u=0; u < MAG_REDUCE_PROD_UNROLL; ++u) lanes[u] *= (double)CVT(p[i + u]); \
+          for (int u=0; u < MAG_REDUCE_PROD_UNROLL; ++u) mag_prod_acc_mul(&lanes[u], (double)CVT(p[i + u])); \
         } \
         for (; i < red_prod; ++i) { \
           mag_bnd_chk(p + i, x->storage->base, x->storage->size); \
-          acc *= (double)CVT(p[i]); \
+          mag_prod_acc_mul(&acc, (double)CVT(p[i])); \
         } \
-        for (int u=0; u < MAG_REDUCE_PROD_UNROLL; ++u) acc *= lanes[u]; \
+        for (int u=0; u < MAG_REDUCE_PROD_UNROLL; ++u) mag_prod_acc_merge(&acc, lanes[u]); \
       } else if (row_len >= 2 && oi % row_len == 0 && oi + row_len <= ob) { \
         for (int64_t j0=0; j0 < row_len; j0 += MAG_REDUCE_ROW_BLOCK) { \
           int64_t nb = mag_vmin((int64_t)MAG_REDUCE_ROW_BLOCK, row_len-j0); \
-          double accs[MAG_REDUCE_ROW_BLOCK]; \
-          for (int64_t j=0; j < nb; ++j) accs[j] = 1.0; \
+          mag_prod_acc_t accs[MAG_REDUCE_ROW_BLOCK]; \
+          for (int64_t j=0; j < nb; ++j) accs[j] = (mag_prod_acc_t){1.0, 0}; \
           for (int64_t ri=0; ri < red_prod; ++ri) { \
             int64_t tmp = ri; \
             int64_t roff0 = base + j0; \
@@ -243,9 +271,9 @@ mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float3
             } \
             mag_bnd_chk(bx + roff0 + nb - 1, x->storage->base, x->storage->size); \
             const T *p = bx + roff0; \
-            for (int64_t j=0; j < nb; ++j) accs[j] *= (double)CVT(p[j]); \
+            for (int64_t j=0; j < nb; ++j) mag_prod_acc_mul(&accs[j], (double)CVT(p[j])); \
           } \
-          for (int64_t j=0; j < nb; ++j) br[oi + j0 + j] = RCVT((float)accs[j]); \
+          for (int64_t j=0; j < nb; ++j) br[oi + j0 + j] = RCVT(mag_prod_acc_final(accs[j])); \
         } \
         oi += row_len - 1; \
         continue; \
@@ -260,10 +288,10 @@ mag_cpu_impl_reduce_hfp(mag_bfloat16_t, bfloat16, mean,   mag_bfloat16_to_float3
             roff += idx*plan->red_strides[k]; \
           } \
           mag_bnd_chk(bx + roff, x->storage->base, x->storage->size); \
-          acc *= (double)CVT(bx[roff]); \
+          mag_prod_acc_mul(&acc, (double)CVT(bx[roff])); \
         } \
       } \
-      br[oi] = RCVT((float)acc); \
+      br[oi] = RCVT(mag_prod_acc_final(acc)); \
     } \
     return MAG_OK; \
   }
