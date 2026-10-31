@@ -160,6 +160,7 @@ mag_status_t mag_cpu_stream_create(
   stream->ctx = ctx;
   stream->cap = cap;
   stream->max_inflight_nb = max_inflight_nb;
+  stream->wake_seq = INT64_MAX;
   stream->dispatch = dispatch;
   stream->seeder = seeder;
   stream->tr_ctor = tr_ctor;
@@ -213,8 +214,11 @@ static void mag_cpu_stream_barrier_until(mag_cpu_stream_t *stream, mag_sync_barr
   while (mag_cpu_stream_completed(stream) < seq) {
     if (mag_likely(!mag_spin_timer_expired(&spin_timer))) continue;
     mag_atomic32_fetch_add(&stream->waiters, 1, MAG_MO_SEQ_CST);
+    mag_atomic64_t want = (mag_atomic64_t)seq;
+    mag_atomic64_t cur = mag_atomic64_load(&stream->wake_seq, MAG_MO_SEQ_CST);
+    while (cur > want && !mag_atomic64_compare_exchange_weak(&stream->wake_seq, &cur, &want, MAG_MO_SEQ_CST, MAG_MO_SEQ_CST));
     mag_atomic32_t epoch = mag_atomic32_load(&stream->done_epoch, MAG_MO_SEQ_CST);
-    if ((uint64_t)mag_atomic64_load(&stream->completed, MAG_MO_SEQ_CST) < seq)
+    if (mag_atomic64_load(&stream->wake_seq, MAG_MO_SEQ_CST) <= want && (uint64_t)mag_atomic64_load(&stream->completed, MAG_MO_SEQ_CST) < seq)
       mag_futex_wait(&stream->done_epoch, epoch);
     mag_atomic32_fetch_sub(&stream->waiters, 1, MAG_MO_SEQ_CST);
   }
@@ -243,12 +247,19 @@ static void mag_cpu_stream_lock_free_slot(mag_cpu_stream_t *stream, size_t out_n
     uint64_t pending = stream->submitted-reclaimed;
     if (mag_likely(pending < stream->cap && (!pending || stream->inflight_nb+out_nb <= stream->max_inflight_nb)))
       return;
+    uint64_t need_slots = pending >= stream->cap ? pending - stream->cap*3/4 : 0;
+    size_t lim_nb = stream->max_inflight_nb*3/4;
+    size_t need_nb = stream->inflight_nb+out_nb > lim_nb ? stream->inflight_nb+out_nb-lim_nb : 0;
+    mag_sync_barrier_seq_t target = reclaimed;
+    for (size_t freed_nb=0; target < stream->submitted && (target-reclaimed < need_slots || freed_nb < need_nb);)
+      freed_nb += mag_cpu_stream_ring_slot(stream, ++target)->out_nb;
+    target = mag_vmax(target, 1+reclaimed);
     mag_lock_release(&stream->lock);
     if (!stalled) {
       stalled = true;
       mag_atomic64_fetch_add(&stream->ctx->telemetry.queue_full_stalls, 1, MAG_MO_RELAXED);
     }
-    mag_cpu_stream_barrier_until(stream, 1+reclaimed); /* Oldest slow frees up */
+    mag_cpu_stream_barrier_until(stream, target);
   }
 }
 
@@ -308,7 +319,7 @@ mag_status_t mag_cpu_stream_submit(mag_error_t *err, mag_cpu_stream_t *stream, c
   slot->seq = seq;
   stream->inflight_nb += slot->out_nb;
   bool host_aliased = false;
-  for (uint32_t i=0; i < cmd->num_in; ++i) { /* Stamp hazard tickets for host access, see mag_storage_wait_readable/writable */
+  for (uint32_t i=0; i < cmd->num_in; ++i) { /* Stamp hazard tickets for host accessse */
     mag_storage_buffer_t *sto = cmd->in[i]->storage;
     sto->prev_acc_seq = seq;
     host_aliased|=!!(sto->flags&MAG_STORAGE_FLAG_HOST_ALIASED);
@@ -405,7 +416,8 @@ static MAG_HOTPROC void mag_stream_exec_tr_entry(void *usr) {
         mag_cpu_stream_poison(stream, slot, &cmd_err, stat);
     }
     mag_atomic64_store(&stream->completed, (mag_atomic64_t)next, MAG_MO_SEQ_CST);
-    if (mag_atomic32_load(&stream->waiters, MAG_MO_SEQ_CST)) {
+    if (mag_atomic32_load(&stream->waiters, MAG_MO_SEQ_CST) && (mag_atomic64_t)next >= mag_atomic64_load(&stream->wake_seq, MAG_MO_SEQ_CST)) {
+      mag_atomic64_exchange(&stream->wake_seq, INT64_MAX, MAG_MO_SEQ_CST);
       mag_atomic32_fetch_add(&stream->done_epoch, 1, MAG_MO_SEQ_CST);
       mag_futex_wakeall(&stream->done_epoch);
     }

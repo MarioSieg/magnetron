@@ -91,6 +91,7 @@ typedef struct mag_cpu_stream_t {
   mag_alignas(MAG_DESTRUCTIVE_INTERFERENCE_SIZE) volatile mag_atomic64_t completed;
   volatile mag_atomic32_t waiters;
   volatile mag_atomic32_t done_epoch;
+  volatile mag_atomic64_t wake_seq;
   volatile mag_atomic32_t poisoned;
   mag_error_t deferred_err;
 

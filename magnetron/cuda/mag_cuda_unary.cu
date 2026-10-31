@@ -939,14 +939,16 @@ namespace mag {
     mag_tensor_t *r = cmd.out[0];
     mag_tensor_t *x = cmd.in[0];
     mag_assert2(mag_tensor_is_contiguous(r));
-    mag_assert2(mag_isok(mag_contiguous(nullptr, &x, x))); // Softmax requires contig x and r for now
+    if (mag_status_t stat = mag_contiguous(err, &x, x); mag_iserr(stat)) return stat;
     mag_assert2(r->meta.dtype == x->meta.dtype);
     switch (r->meta.dtype) {
       case MAG_DTYPE_FLOAT32: launch_softmax<float, Dv>(r, x, stream); break;
       case MAG_DTYPE_FLOAT16: launch_softmax<half, Dv>(r, x, stream); break;
       case MAG_DTYPE_BFLOAT16: launch_softmax<__nv_bfloat16, Dv>(r, x, stream); break;
       case MAG_DTYPE_FLOAT8_E4M3FN: launch_softmax<__nv_fp8_e4m3, Dv>(r, x, stream); break;
-      default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported dtype for softmax.");
+      default:
+        mag_tensor_decref(x);
+        return mag_set_error(err, MAG_ERR_KERNEL, "cuda: unsupported dtype for softmax.");
     }
     mag_tensor_decref(x);
     return MAG_OK;

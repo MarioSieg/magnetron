@@ -31,6 +31,9 @@ if (${MAGNETRON_BUILD_PYTHON_BINDINGS})
     add_subdirectory(bindings)
     add_dependencies(_magnetron_bindings magnetron_runtime) # _magnetron is name of the Python bindings target
     target_link_libraries(_magnetron_bindings PRIVATE magnetron_core)
+    if (${MAGNETRON_DEBUG}) # The bindings read core structs directly, so their layout must match the core build
+        target_compile_definitions(_magnetron_bindings PRIVATE MAG_DEBUG)
+    endif()
     if (APPLE)
         set_target_properties(_magnetron_bindings PROPERTIES
             MACOSX_RPATH ON
