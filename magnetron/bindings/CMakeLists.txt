@@ -26,7 +26,7 @@ nanobind_add_stub(magnetron_stubs
     MODULE magnetron._magnetron_bindings
     OUTPUT_PATH magnetron
     PYTHON_PATH magnetron
-    MARKER_FILE py.typed
+    MARKER_FILE magnetron/py.typed
     RECURSIVE
     COMPONENT python
 )
