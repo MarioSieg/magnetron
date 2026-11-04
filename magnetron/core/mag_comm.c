@@ -186,10 +186,10 @@ mag_status_t mag_comm_all_to_all_v(
   mag_communicator_t *comm,
   mag_tensor_t *out,
   mag_tensor_t *in,
-  const size_t *send_counts,
-  const size_t *send_offsets,
-  const size_t *recv_counts,
-  const size_t *recv_offsets
+  mag_tensor_t *send_counts,
+  mag_tensor_t *send_offsets,
+  mag_tensor_t *recv_counts,
+  mag_tensor_t *recv_offsets
 ) {
   mag_comm_interface_verify(err, comm, all_to_all_v);
   if (mag_unlikely(!out || !in))

@@ -46,7 +46,7 @@ static bool mag_tcp_socket_set_options(mag_tcp_socket_t *sock) {
   return true;
 }
 
-bool mag_tcp_socket_listen(mag_tcp_socket_t **out_sock, uint16_t port, int backlog) {
+bool mag_tcp_socket_listen(mag_tcp_socket_t **out_sock, uint16_t port, uint32_t backlog) {
   int sock = socket(AF_INET, SOCK_STREAM, 0);
   if (mag_unlikely(sock < 0)) return false;
   volatile int yes = 1;
