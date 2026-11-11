@@ -111,21 +111,51 @@ class Embedding(Module):
 
 
 class RMSNorm(Module):
-    def __init__(self, dim: int, eps: float = 1e-5, dtype: dtype.DType | None = None, weight_init: InitStrategy | None = None) -> None:
+    def __init__(
+        self,
+        dim: int,
+        eps: float = 1e-5,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        gamma_offset: float = 0.0
+    ) -> None:
         super().__init__()
         if dtype is None:
             dtype = context.get_default_dtype()
         self.eps = eps
         self.weight = Parameter(Tensor.empty(dim, dtype=dtype))
+        self.gamma_offset = gamma_offset
         weight_init = resolve_weight_init(weight_init)
         if weight_init is None:
-            weight_init = OnesInitStrategy()
+            weight_init = ZerosInitStrategy() if gamma_offset == 1.0 else OnesInitStrategy()
         inplace_init(self.weight, weight_init)
 
     def forward(self, x: Tensor) -> Tensor:
-        rms = (x.sqr().mean(dim=-1, keepdim=True) + self.eps).sqrt()
-        return (x / rms) * self.weight
+        dt = x.dtype
+        h = x.cast(dtype.float32)
+        h = h * (h.sqr().mean(dim=-1, keepdim=True) + self.eps).rsqrt()
+        return (h*(self.gamma_offset+self.weight.cast(h.dtype))).cast(dt)
 
+class RMSNormGated(RMSNorm):
+    def __init__(
+        self,
+        dim: int,
+        eps: float = 1e-5,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        gamma_offset: float = 0.0
+    ) -> None:
+        super().__init__(
+            dim=dim,
+            eps=eps,
+            dtype=dtype,
+            weight_init=weight_init,
+            gamma_offset=gamma_offset
+        )
+
+    def forward(self, x: Tensor, gate: Tensor) -> Tensor:
+        h = super()(x)
+        return (h.cast(dtype.float32)*gate.cast(dtype.float32).silu()).cast(x.dtype)
 
 class LayerNorm(Module):
     def __init__(
