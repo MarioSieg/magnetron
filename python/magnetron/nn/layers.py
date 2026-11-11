@@ -54,6 +54,9 @@ class Linear(Module):
             else:
                 inplace_init(self.bias, bias_init)
 
+    def extra_repr(self) -> str:
+        return f'in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}'
+
     def forward(self, x: Tensor) -> Tensor:
         x = x @ self.weight.T
         if self.bias is not None:
@@ -67,6 +70,9 @@ class Flatten(Module):
         self.start_dim = start_dim
         self.end_dim = end_dim
 
+    def extra_repr(self) -> str:
+        return f'start_dim={self.start_dim}, end_dim={self.end_dim}'
+
     def forward(self, x: Tensor) -> Tensor:
         return x.flatten(self.start_dim, self.end_dim)
 
@@ -76,6 +82,9 @@ class Unflatten(Module):
         super().__init__()
         self.dim = dim
         self.unflattened_size = tuple(unflattened_size)
+
+    def extra_repr(self) -> str:
+        return f'dim={self.dim}, unflattened_size={self.unflattened_size}'
 
     def forward(self, x: Tensor) -> Tensor:
         return x.unflatten(self.dim, self.unflattened_size)
@@ -87,6 +96,9 @@ class Pad(Module):
         self.padding = padding
         self.mode = mode
         self.value = value
+
+    def extra_repr(self) -> str:
+        return f'padding={self.padding}, mode={self.mode!r}, value={self.value}'
 
     def forward(self, x: Tensor) -> Tensor:
         return x.pad(self.padding, self.mode, self.value)
@@ -105,6 +117,9 @@ class Embedding(Module):
             weight_init = NormalInitStrategy(mean=0.0, std=1.0 / embedding_dim)
 
         inplace_init(self.weight, weight_init)
+
+    def extra_repr(self) -> str:
+        return f'{self.num_embeddings}, {self.embedding_dim}'
 
     def forward(self, x: Tensor) -> Tensor:
         return self.weight.embedding(x)
@@ -129,6 +144,12 @@ class RMSNorm(Module):
         if weight_init is None:
             weight_init = ZerosInitStrategy() if gamma_offset == 1.0 else OnesInitStrategy()
         inplace_init(self.weight, weight_init)
+
+    def extra_repr(self) -> str:
+        s = f'{self.weight.shape[0]}, eps={self.eps}'
+        if self.gamma_offset != 0.0:
+            s += f', gamma_offset={self.gamma_offset}'
+        return s
 
     def forward(self, x: Tensor) -> Tensor:
         dt = x.dtype
@@ -183,6 +204,9 @@ class LayerNorm(Module):
             if bias_init is None:
                 bias_init = ZerosInitStrategy()
             inplace_init(self.bias, bias_init)
+
+    def extra_repr(self) -> str:
+        return f'{self.weight.shape[0]}, eps={self.eps}, bias={self.bias is not None}'
 
     def forward(self, x: Tensor) -> Tensor:
         mean = x.mean(dim=-1, keepdim=True)
@@ -274,6 +298,9 @@ class GroupNorm(Module):
             self.bias = Parameter(Tensor.empty(num_channels, dtype=dtype))
             inplace_init(self.bias, ZerosInitStrategy() if bias_init is None else bias_init)
 
+    def extra_repr(self) -> str:
+        return f'{self.num_groups}, {self.num_channels}, eps={self.eps}, affine={self.weight is not None}'
+
     def forward(self, x: Tensor) -> Tensor:
         if x.rank < 2 or x.shape[1] != self.num_channels:
             raise ValueError(f'expected input of shape [N, {self.num_channels}, ...], but got {x.shape}')
@@ -304,6 +331,13 @@ class Upsample(Module):
         self.mode = mode
         self.align_corners = align_corners
 
+    def extra_repr(self) -> str:
+        s = f'size={self.size}' if self.size is not None else f'scale_factor={self.scale_factor}'
+        s += f', mode={self.mode!r}'
+        if self.align_corners:
+            s += ', align_corners=True'
+        return s
+
     def forward(self, x: Tensor) -> Tensor:
         return x.interpolate(size=self.size, scale_factor=self.scale_factor, mode=self.mode, align_corners=self.align_corners)
 
@@ -312,6 +346,9 @@ class GeLU(Module):
     def __init__(self, use_tanh_approx: bool = False) -> None:
         super().__init__()
         self.use_tanh_approx = use_tanh_approx
+
+    def extra_repr(self) -> str:
+        return 'use_tanh_approx=True' if self.use_tanh_approx else ''
 
     def forward(self, x: Tensor) -> Tensor:
         return x.gelu_approx() if self.use_tanh_approx else x.gelu()
@@ -381,6 +418,21 @@ class _ConvND(Module):
                 inplace_init(self.bias, UniformInitStrategy(-bound, bound))
             else:
                 inplace_init(self.bias, bias_init)
+
+    def extra_repr(self) -> str:
+        n = self._spatial
+        s = f'{self.in_channels}, {self.out_channels}, kernel_size={self.kernel_size}, stride={self.stride}'
+        if self.padding != (0,) * n:
+            s += f', padding={self.padding}'
+        if self._T and self.output_padding != (0,) * n:
+            s += f', output_padding={self.output_padding}'
+        if self.dilation != (1,) * n:
+            s += f', dilation={self.dilation}'
+        if self.groups != 1:
+            s += f', groups={self.groups}'
+        if self.bias is None:
+            s += ', bias=False'
+        return s
 
     def forward(self, x: Tensor) -> Tensor:
         if self._T:

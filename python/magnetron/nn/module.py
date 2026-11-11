@@ -201,6 +201,39 @@ class Module:
             hook(self, args, out)
         return out
 
+    def extra_repr(self) -> str:
+        return ''
+
+    def __repr__(self) -> str:
+        name = type(self).__name__
+        extra = self.extra_repr()
+        children = self._child_repr_lines()
+        if not children and '\n' not in extra:
+            return f'{name}({extra})'
+        lines = (extra.split('\n') if extra else []) + children
+        body = '\n'.join('  ' + _indent(line) for line in lines)
+        return f'{name}(\n{body}\n)'
+
+    def _child_repr_lines(self) -> list[str]:
+        children = [(name, repr(child)) for name, child in self.named_children()]
+        lines: list[str] = []
+        i = 0
+        while i < len(children):
+            j = i + 1
+            while j < len(children) and children[j][1] == children[i][1]:
+                j += 1
+            name, rep = children[i]
+            if j - i > 1:
+                lines.append(f'({name}-{children[j - 1][0]}): {j - i} x {rep}')
+            else:
+                lines.append(f'({name}): {rep}')
+            i = j
+        return lines
+
+
+def _indent(s: str, n: int = 2) -> str:
+    return s.replace('\n', '\n' + ' ' * n)
+
 
 class ModuleList(Module, list[Module]):
     def __init__(self, modules: list[Module] | None = None) -> None:
