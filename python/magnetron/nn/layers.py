@@ -160,7 +160,7 @@ class RMSNormGated(RMSNorm):
         super().__init__(dim=dim, eps=eps, dtype=dtype, weight_init=weight_init, gamma_offset=gamma_offset)
 
     def forward(self, x: Tensor, gate: Tensor) -> Tensor:
-        h = super()(x)
+        h = super().forward(x)
         return (h.cast(dtype.float32) * gate.cast(dtype.float32).silu()).cast(x.dtype)
 
 
