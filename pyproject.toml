@@ -28,7 +28,6 @@ Issues = "https://github.com/MarioSieg/magnetron/issues"
 
 [project.optional-dependencies]
 examples = [
-    "tokenizers",
     "rich",
     "matplotlib",
     "huggingface_hub"

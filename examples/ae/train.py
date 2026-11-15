@@ -14,6 +14,8 @@ import random
 import time
 from pathlib import Path
 
+from huggingface_hub import hf_hub_download
+
 from model import CORRUPTIONS, DenoisingAE, corrupt, preprocess
 
 from magnetron import Tensor, context, dtype, nn, no_grad, optim
@@ -64,7 +66,6 @@ def _plot(step_losses: list[float], test_losses: list[float], baseline: float, s
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description='Train a denoising and inpainting convolutional autoencoder')
-    parser.add_argument('--dataset', type=str, default='data/cats_dogs.mag', help='Snapshot written by examples/cats_dogs/prepare_dataset.py')
     parser.add_argument('--out', type=str, default='data/ae_model.mag', help='Where to write the trained weights')
     parser.add_argument('--corruption', type=str, default='both', choices=CORRUPTIONS, help='How training inputs are damaged')
     parser.add_argument('--noise-std', type=float, default=0.2, help='Standard deviation of the Gaussian noise, in [0, 1] pixel units')
@@ -87,7 +88,8 @@ def _main() -> None:
     if context.is_device_available(args.device):
         context.set_default_device(args.device)
 
-    tensors, metadata = deserialize(args.dataset)
+    dataset_file: str = hf_hub_download('mario-sieg/magnetron-examples', 'cats_dogs.mag')
+    tensors, metadata = deserialize(dataset_file)
     train_images, test_images = tensors['train_images'], tensors['test_images']
     image_size = int(metadata['image_size'])
     print(f'Train: {train_images.shape[0]} images, Test: {test_images.shape[0]} images, Size: {image_size}x{image_size}')

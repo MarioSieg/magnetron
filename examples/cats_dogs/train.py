@@ -14,6 +14,8 @@ import random
 import time
 from pathlib import Path
 
+from huggingface_hub import hf_hub_download
+
 from model import CLASSES, CatsDogsNet, preprocess
 
 from magnetron import Tensor, context, dtype, nn, no_grad, optim
@@ -83,8 +85,7 @@ def _plot(step_losses: list[float], train_accs: list[float], test_accs: list[flo
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description='Train a cats vs dogs classifier')
-    parser.add_argument('--dataset', type=str, default='data/cats_dogs.mag', help='Snapshot written by prepare_dataset.py')
-    parser.add_argument('--out', type=str, default='data/cats_dogs_model.mag', help='Where to write the trained weights')
+    parser.add_argument('--out', type=str, default='cats_dogs_model.mag', help='Where to write the trained weights')
     parser.add_argument('--epochs', type=int, default=30, help='Number of training epochs')
     parser.add_argument('--batch-size', type=int, default=64, help='Training batch size')
     parser.add_argument('--lr', type=float, default=1e-3, help='Peak AdamW learning rate, decays polynomially to zero')
@@ -103,7 +104,8 @@ def _main() -> None:
     if context.is_device_available(args.device):
         context.set_default_device(args.device)
 
-    tensors, metadata = deserialize(args.dataset)
+    dataset_file: str = hf_hub_download('mario-sieg/magnetron-examples', 'cats_dogs.mag')
+    tensors, metadata = deserialize(dataset_file)
     if list(metadata['classes']) != list(CLASSES):
         raise RuntimeError(f'Dataset classes {metadata["classes"]} do not match {CLASSES}')
     train_images, train_labels = tensors['train_images'], tensors['train_labels'].tolist()

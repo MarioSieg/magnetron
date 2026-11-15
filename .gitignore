@@ -32,3 +32,4 @@ profile.html
 docs/cpp
 data/
 /python/magnetron/_magnetron_bindings/
+/*.mag

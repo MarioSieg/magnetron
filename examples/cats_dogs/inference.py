@@ -13,8 +13,9 @@ import argparse
 import random
 import time
 
-from model import CatsDogsNet, preprocess
+from huggingface_hub import hf_hub_download
 
+from model import CatsDogsNet, preprocess
 from magnetron import Tensor, context, dtype, no_grad
 from magnetron.snapshot import deserialize
 
@@ -68,8 +69,7 @@ def _classify_dataset_grid(model: CatsDogsNet, classes: list[str], dataset: str,
 def _main() -> None:
     parser = argparse.ArgumentParser(description='Classify images as cat or dog')
     parser.add_argument('images', type=str, nargs='*', help='Image files to classify, omit to sample the test split of the dataset')
-    parser.add_argument('--model', type=str, default='data/cats_dogs_model.mag', help='Snapshot written by train.py')
-    parser.add_argument('--dataset', type=str, default='data/cats_dogs.mag', help='Snapshot written by prepare_dataset.py')
+    parser.add_argument('--model', type=str, default='cats_dogs_model.mag', help='Snapshot written by train.py')
     parser.add_argument('--grid', type=int, default=8, help='Side length of the grid of random test images')
     parser.add_argument('--seed', type=int, default=None, help='Seed for picking the random test images')
     parser.add_argument('--save', type=str, default=None, help='Write the grid to this file instead of showing it')
@@ -91,7 +91,8 @@ def _main() -> None:
         _classify_files(model, classes, size, args.images)
     else:
         seed = args.seed if args.seed is not None else random.randrange(1 << 30)
-        _classify_dataset_grid(model, classes, args.dataset, args.grid, seed, args.save)
+        dataset_file: str = hf_hub_download('mario-sieg/magnetron-examples', 'cats_dogs.mag')
+        _classify_dataset_grid(model, classes, dataset_file, args.grid, seed, args.save)
 
 
 if __name__ == '__main__':

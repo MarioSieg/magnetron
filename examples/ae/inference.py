@@ -14,6 +14,8 @@ import math
 import random
 import time
 
+from huggingface_hub import hf_hub_download
+
 from model import CORRUPTIONS, DenoisingAE, corrupt, preprocess
 
 from magnetron import Tensor, context, dtype, no_grad
@@ -56,8 +58,7 @@ def _restore(model: DenoisingAE, damaged: Tensor) -> tuple[Tensor, float]:
 def _main() -> None:
     parser = argparse.ArgumentParser(description='Denoise and inpaint images with the trained autoencoder')
     parser.add_argument('images', type=str, nargs='*', help='Image files to restore, omit to sample the test split of the dataset')
-    parser.add_argument('--model', type=str, default='data/ae_model.mag', help='Snapshot written by train.py')
-    parser.add_argument('--dataset', type=str, default='data/cats_dogs.mag', help='Snapshot written by examples/cats_dogs/prepare_dataset.py')
+    parser.add_argument('--model', type=str, default='ae_model.mag', help='Snapshot written by train.py')
     parser.add_argument('--count', type=int, default=8, help='Number of random test images to show')
     parser.add_argument(
         '--corruption',
@@ -87,7 +88,8 @@ def _main() -> None:
     if args.images:
         clean = preprocess(Tensor.stack([Tensor.load_image(path, channels='RGB', resize_to=(size, size)) for path in args.images]))
     else:
-        images = deserialize(args.dataset)[0]['test_images']
+        dataset_file: str = hf_hub_download('mario-sieg/magnetron-examples', 'cats_dogs.mag')
+        images = deserialize(dataset_file)[0]['test_images']
         clean = preprocess(Tensor.stack([images[i] for i in random.sample(range(images.shape[0]), args.count)]))
 
     if kind == 'none':
