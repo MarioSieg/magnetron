@@ -50,13 +50,13 @@ mag_status_t mag_comm_rdvz_split(mag_error_t *err, mag_comm_rendezvous_t *parent
   uint32_t n = parent->size;
   mag_rendezvous_split_entry_t *all = (*mag_try_alloc)(NULL, n*sizeof(*all), 0);
   uint32_t *members = (*mag_try_alloc)(NULL, n*sizeof(*members), 0);
-  uint8_t *wire = (*mag_try_alloc)(NULL, n*sizeof(mag_rendezvous_split_entry_t), 0);
+  uint8_t *wire = (*mag_try_alloc)(NULL, n*sizeof(*all), 0);
   mag_status_t stat = MAG_OK;
   if (mag_unlikely(!all || !members || !wire)) {
     stat = mag_set_error(err, MAG_ERR_OOM, "rendezvous: failed to allocate split table.");
     goto cleanup;
   }
-  uint8_t mine[sizeof(mag_rendezvous_split_entry_t)];
+  uint8_t mine[sizeof(*all)];
   uint8_t *mp=mine;
   mag_comm_wire_transfer_wu32(&mp, color);
   mag_comm_wire_transfer_wu32(&mp, key);

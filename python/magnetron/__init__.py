@@ -30,6 +30,7 @@ __all__ = [
     'optim',
     'snapshot',
     'sync',
+    'utils',
 ]
 
 __version__ = _magnetron_bindings.__version__

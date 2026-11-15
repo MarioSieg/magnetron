@@ -496,7 +496,7 @@ class Dropout3D(Dropout):
 
 
 class _RNNCellBase(Module):
-    _gates: int = 1
+    _num_gates: int = 1
 
     @staticmethod
     def _rnn_init(hidden: int, winit: InitStrategy | None, binit: InitStrategy | None) -> tuple[InitStrategy, InitStrategy]:
@@ -521,6 +521,17 @@ class _RNNCellBase(Module):
         h = c.tanh() * o.sigmoid()
         return h, c
 
+    @staticmethod
+    def _gru_step(x: Tensor, h: Tensor, c: Tensor, w_ih: Tensor, w_hh: Tensor, b_ih: Tensor | None, b_hh: Tensor | None) -> Tensor:
+        gi, gh = _RNNCellBase._rnn_gates(x, h, w_ih, w_hh, b_ih, b_hh)
+        hid = h.shape[-1]
+        i_r, i_z, i_n = gi.split(hid, dim=-1)
+        h_r, h_z, h_n = gh.split(hid, dim=-1)
+        r = (i_r + h_r).sigmoid()
+        z = (i_z + h_z).sigmoid()
+        n = (i_n + r * h_n).tanh()
+        return n + z * (h - n)
+
     def __init__(
         self,
         input_size: int,
@@ -535,7 +546,7 @@ class _RNNCellBase(Module):
             dtype = context.get_default_dtype()
         self.input_size: int = input_size
         self.hidden_size: int = hidden_size
-        gates = hidden_size * self._gates
+        gates = hidden_size * self._num_gates
         weight_init, bias_init = self._rnn_init(hidden_size, weight_init, bias_init)
         self.weight_ih: Parameter = Parameter(Tensor.empty(gates, input_size, dtype=dtype))
         inplace_init(self.weight_ih, weight_init)
@@ -557,7 +568,7 @@ class _RNNCellBase(Module):
 
 
 class LSTMCell(_RNNCellBase):
-    _gates = 4
+    _num_gates = 4
 
     def forward(self, x: Tensor, hx: tuple[Tensor, Tensor] | None = None) -> tuple[Tensor, Tensor]:
         unbatched = 1 == x.rank
@@ -571,3 +582,156 @@ class LSTMCell(_RNNCellBase):
         if unbatched:
             h, c = h.squeeze(0), c.squeeze(0)
         return h, c
+
+
+class _RNNBase(Module):
+    _num_gates: int = 1
+    _has_cell_state: bool = False
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        num_layers: int = 1,
+        bias: bool = True,
+        batch_first: bool = False,
+        dropout: float = 0.0,
+        bidirectional: bool = False,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        bias_init: InitStrategy | None = None,
+    ) -> None:
+        super().__init__()
+        if num_layers < 1:
+            raise ValueError(f'num_layers must be >= 1, got {num_layers}')
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError(f'dropout must be in [0, 1), got {dropout}')
+        if dtype is None:
+            dtype = context.get_default_dtype()
+        self.input_size: int = input_size
+        self.hidden_size: int = hidden_size
+        self.num_layers: int = num_layers
+        self.bias: bool = bias
+        self.batch_first: bool = batch_first
+        self.dropout: float = dropout
+        self.bidirectional: bool = bidirectional
+        self.num_directions: int = 2 if bidirectional else 1
+        self.drop: Dropout = Dropout(dropout)
+        weight_init, bias_init = _RNNCellBase._rnn_init(hidden_size, weight_init, bias_init)
+        gates = self._num_gates * hidden_size
+
+        for layer in range(num_layers):
+            in_size = input_size if layer == 0 else hidden_size * self.num_directions
+            for d in range(self.num_directions):
+                sfx = self._suffix(layer, d)
+                w_ih = Parameter(Tensor.empty(gates, in_size, dtype=dtype))
+                w_hh = Parameter(Tensor.empty(gates, hidden_size, dtype=dtype))
+                inplace_init(w_ih, weight_init)
+                inplace_init(w_hh, weight_init)
+                setattr(self, f'weight_ih{sfx}', w_ih)
+                setattr(self, f'weight_hh{sfx}', w_hh)
+                if bias:
+                    b_ih = Parameter(Tensor.empty(gates, dtype=dtype))
+                    b_hh = Parameter(Tensor.empty(gates, dtype=dtype))
+                    inplace_init(b_ih, bias_init)
+                    inplace_init(b_hh, bias_init)
+                    setattr(self, f'bias_ih{sfx}', b_ih)
+                    setattr(self, f'bias_hh{sfx}', b_hh)
+
+    @staticmethod
+    def _suffix(layer: int, direction: int) -> str:
+        return f'_l{layer}' + ('_reverse' if direction == 1 else '')
+
+    def _weights(self, layer: int, direction: int) -> tuple[Tensor, Tensor, Tensor | None, Tensor | None]:
+        sfx = self._suffix(layer, direction)
+        return (
+            getattr(self, f'weight_ih{sfx}'),
+            getattr(self, f'weight_hh{sfx}'),
+            getattr(self, f'bias_ih{sfx}', None),
+            getattr(self, f'bias_hh{sfx}', None),
+        )
+
+    def _step(self, x: Tensor, state, weights):
+        raise NotImplementedError
+
+    def extra_repr(self) -> str:
+        s = f'{self.input_size}, {self.hidden_size}'
+        if self.num_layers != 1:
+            s += f', num_layers={self.num_layers}'
+        if not self.bias:
+            s += ', bias=False'
+        if self.batch_first:
+            s += ', batch_first=True'
+        if self.dropout != 0.0:
+            s += f', dropout={self.dropout}'
+        if self.bidirectional:
+            s += ', bidirectional=True'
+        return s
+
+    def forward(self, x: Tensor, hx: Tensor | tuple[Tensor, Tensor] | None = None) -> tuple[Tensor, Tensor | tuple[Tensor, Tensor]]:
+        unbatched = x.rank == 2
+        if unbatched:
+            x = x.unsqueeze(1)
+            if hx is not None:
+                hx = tuple(s.unsqueeze(1) for s in hx) if self._has_cell_state else hx.unsqueeze(1)
+        elif self.batch_first:
+            x = x.transpose(0, 1)
+        seq_len, batch = x.shape[0], x.shape[1]
+        if hx is None:
+            zeros = Tensor.zeros(self.num_layers * self.num_directions, batch, self.hidden_size, dtype=x.dtype)
+            hx = (zeros, zeros) if self._has_cell_state else zeros
+        if self._has_cell_state:
+            states = list(zip(hx[0].unbind(0), hx[1].unbind(0)))
+        else:
+            states = list(hx.unbind(0))
+
+        layer_input = list(x.unbind(0))
+        final_states = []
+        for layer in range(self.num_layers):
+            dir_outputs = []
+            for d in range(self.num_directions):
+                weights = self._weights(layer, d)
+                state = states[layer * self.num_directions + d]
+                outs = [None] * seq_len
+                steps = range(seq_len - 1, -1, -1) if d == 1 else range(seq_len)
+                for t in steps:
+                    state = self._step(layer_input[t], state, weights)
+                    outs[t] = state[0] if self._has_cell_state else state
+                dir_outputs.append(outs)
+                final_states.append(state)
+            if self.num_directions == 1:
+                layer_input = dir_outputs[0]
+            else:
+                layer_input = [Tensor.cat([f, b], dim=-1) for f, b in zip(*dir_outputs)]
+            if layer < self.num_layers - 1:
+                layer_input = [self.drop(y) for y in layer_input]
+
+        output = Tensor.stack(layer_input, dim=0)
+        if self._has_cell_state:
+            h_n = Tensor.stack([s[0] for s in final_states], dim=0)
+            c_n = Tensor.stack([s[1] for s in final_states], dim=0)
+        else:
+            h_n = Tensor.stack(final_states, dim=0)
+        if unbatched:
+            output = output.squeeze(1)
+            h_n = h_n.squeeze(1)
+            if self._has_cell_state:
+                c_n = c_n.squeeze(1)
+        elif self.batch_first:
+            output = output.transpose(0, 1)
+        return output, ((h_n, c_n) if self._has_cell_state else h_n)
+
+
+class LSTM(_RNNBase):
+    _num_gates = 4
+    _has_cell_state = True
+
+    def _step(self, x: Tensor, state: tuple[Tensor, Tensor], weights) -> tuple[Tensor, Tensor]:
+        return _RNNCellBase._lstm_step(x, state[0], state[1], *weights)
+
+
+class GRU(_RNNBase):
+    _num_gates = 3
+
+    def _step(self, x: Tensor, state: Tensor, weights) -> Tensor:
+        return _RNNCellBase._gru_step(x, state, *weights)
