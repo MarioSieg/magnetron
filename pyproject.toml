@@ -30,7 +30,8 @@ Issues = "https://github.com/MarioSieg/magnetron/issues"
 examples = [
     "rich",
     "matplotlib",
-    "huggingface_hub"
+    "huggingface_hub",
+    "pandas"
 ]
 
 dev = [

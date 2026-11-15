@@ -57,7 +57,7 @@ def _plot(step_losses: list[float], test_losses: list[float], baseline: float, s
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description='Train a denoising and inpainting convolutional autoencoder')
-    parser.add_argument('--out', type=str, default='data/ae_model.mag', help='Where to write the trained weights')
+    parser.add_argument('--out', type=str, default='ae_model.mag', help='Where to write the trained weights')
     parser.add_argument('--corruption', type=str, default='both', choices=CORRUPTIONS, help='How training inputs are damaged')
     parser.add_argument('--noise-std', type=float, default=0.2, help='Standard deviation of the Gaussian noise, in [0, 1] pixel units')
     parser.add_argument('--hole-size', type=int, default=20, help='Side length of the square that is cut out of each image')
