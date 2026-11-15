@@ -57,17 +57,12 @@ struct mag_comm_rendezvous_ops_t {
 };
 
 extern void mag_rendezvous_base_init(mag_comm_rendezvous_t *rdv, const mag_comm_rendezvous_ops_t *ops, uint32_t rank, uint32_t size, uint32_t id);
-extern mag_status_t mag_comm_rdvz_init(mag_error_t *err, const mag_comm_rendezvous_ops_t *ops, mag_comm_rendezvous_t **out, uint32_t rank, uint32_t size, const mag_comm_rendezvous_desc_t *desc);
+extern mag_status_t mag_comm_rdvz_hdr_init(mag_error_t *err, const mag_comm_rendezvous_ops_t *ops, mag_comm_rendezvous_t **out, uint32_t rank, uint32_t size, const mag_comm_rendezvous_desc_t *desc);
 extern mag_status_t mag_comm_rdvz_split(mag_error_t *err, mag_comm_rendezvous_t *parent, mag_comm_rendezvous_t **out_child, uint32_t color, uint32_t key);
-extern mag_status_t mag_rdvz_broadcast(mag_error_t *err, mag_comm_rendezvous_t *rdv, void *buf, size_t nb, uint32_t root);
-extern mag_status_t mag_rdvz_all_gather(mag_error_t *err, mag_comm_rendezvous_t *rdv, const void *in, void *out, size_t nb);
-extern mag_status_t mag_rdvz_barrier(mag_error_t *err, mag_comm_rendezvous_t *rdv);
-extern void mag_rdvz_destroy(mag_comm_rendezvous_t *rdv);
-
-/* Builtin always available rendezvous backends */
-extern mag_comm_rendezvous_ops_t mag_rdvz_ops_builtin_tcp;
-extern mag_comm_rendezvous_ops_t mag_rdvz_ops_builtin_shm;
-
+extern mag_status_t mag_comm_rdvz_broadcast(mag_error_t *err, mag_comm_rendezvous_t *rdv, void *buf, size_t nb, uint32_t root);
+extern mag_status_t mag_comm_rdvz_all_gather(mag_error_t *err, mag_comm_rendezvous_t *rdv, const void *in, void *out, size_t nb);
+extern mag_status_t mag_comm_rdvz_barrier(mag_error_t *err, mag_comm_rendezvous_t *rdv);
+extern void mag_comm_rdvz_destroy(mag_comm_rendezvous_t *rdv);
 
 #ifdef __cplusplus
 }
