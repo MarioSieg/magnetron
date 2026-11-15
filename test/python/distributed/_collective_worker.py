@@ -172,7 +172,7 @@ def main() -> None:
     ap.add_argument('--port', type=int, required=True)
     args = ap.parse_args()
     r, n = args.rank, args.size
-    comm = dist.Communicator(rank=r, size=n, backend=args.backend, master_addr='127.0.0.1', master_port=args.port, timeout_ms=30000, shm_slot_bytes=4096)
+    comm = dist.Communicator(rank=r, world_size=n, backend=args.backend, master_addr='127.0.0.1', master_port=args.port, timeout_ms=30000, shm_slot_bytes=4096)
     check(comm.rank == r and comm.size == n and comm.backend == args.backend, f'{comm}')
     run_collectives(comm, r, n)
     comm.destroy()
