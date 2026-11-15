@@ -99,7 +99,7 @@ namespace mag::bindings {
         && nb::hasattr(handle, "dtype") && nb::hasattr(handle, "item") && nb::hasattr(handle, "ndim")
         && nb::cast<int64_t>(handle.attr("ndim")) == 0
         && ![&] {
-             nb::ndarray<nb::c_contig, nb::device::cpu> probe;
+             nb::ndarray<nb::ro, nb::c_contig, nb::device::cpu> probe;
              return nb::try_cast(handle, probe);
            }()) {
       if (dtype.v == MAG_DTYPE__NUM) {
@@ -134,8 +134,8 @@ namespace mag::bindings {
       mag_tensor_incref(raw);
       return tensor_wrapper{raw};
     }
-    nb::ndarray<nb::c_contig, nb::device::cpu> arr {};
-    if (nb::try_cast(handle, arr)) { // Use try cast to avoid throwing in a well defined path
+    nb::ndarray<nb::ro, nb::c_contig, nb::device::cpu> arr {}; // Allow read only too (CoW Pandas array for example )
+    if (nb::try_cast(handle, arr)) {
       bool copy = true;
       if (kwargs.contains(intern_key(copy)))
         copy = nb::cast<bool>(kwargs[intern_key(copy)]);
@@ -158,9 +158,15 @@ namespace mag::bindings {
       if (!copy) {
         if (target_dtype != elem_dtype)
           throw nb::value_error("Tensor(..., copy=False) cannot cast dtype; use copy=True or match the array dtype");
-        bool host_writable = true;
+        bool src_writable = [&] {
+          nb::ndarray<nb::c_contig, nb::device::cpu> probe;
+          return nb::try_cast(handle, probe);
+        }();
+        bool host_writable = src_writable;
         if (kwargs.contains(intern_key(is_writeable)))
           host_writable = nb::cast<bool>(kwargs[intern_key(is_writeable)]);
+        if (host_writable && !src_writable)
+          throw nb::value_error("Tensor(..., copy=False, is_writeable=True) cannot borrow a read-only array; use copy=True or is_writeable=False");
         Py_INCREF(handle.ptr());
         mag_tensor_t *borrowed = nullptr;
         if (shape.empty()) {
@@ -169,7 +175,7 @@ namespace mag::bindings {
               &err,
               &borrowed,
               ctx,
-              arr.data(),
+              const_cast<void *>(arr.data()), /* Writes are prevented via host_writable for read-only sources */
               arr.nbytes(),
               elem_dtype,
               0,
@@ -186,7 +192,7 @@ namespace mag::bindings {
               &err,
               &borrowed,
               ctx,
-              arr.data(),
+              const_cast<void *>(arr.data()), /* Writes are prevented via host_writable for read-only sources */
               arr.nbytes(),
               elem_dtype,
               static_cast<int64_t>(shape.size()),
@@ -232,12 +238,12 @@ namespace mag::bindings {
     if (!nb::isinstance<nb::sequence>(handle))
       throw nb::type_error("Tensor() requires scalar, array (NumPy/torch CPU contiguous), or nested sequence");
     fixed_dim_vec shape {};
-    std::vector<nb::handle> stack {};
+    std::vector<nb::object> stack {};
     fixed_dim_vec idx_stack {};
-    std::vector<nb::handle> flat_h {};
-    nb::handle cur = handle;
+    std::vector<nb::object> flat_h {};
+    nb::object cur = nb::borrow(handle);
     {
-      nb::handle tmp = cur;
+      nb::object tmp = cur;
       while (nb::isinstance<nb::sequence>(tmp) && !nb::isinstance<nb::str>(tmp) && !nb::isinstance<tensor_wrapper>(tmp)) {
         auto seq = nb::cast<nb::sequence>(tmp);
         size_t n = nb::len(seq);
@@ -249,7 +255,7 @@ namespace mag::bindings {
       stack.emplace_back(cur);
       idx_stack.emplace_back(0);
       while (!stack.empty()) {
-        nb::handle top = stack.back();
+        nb::object top = stack.back();
         auto &i = idx_stack.back();
         if (nb::isinstance<nb::sequence>(top) && !nb::isinstance<nb::str>(top) && !nb::isinstance<tensor_wrapper>(top)) {
           auto s = nb::cast<nb::sequence>(top);
@@ -269,12 +275,11 @@ namespace mag::bindings {
               idx_stack.back() += 1;
             continue;
           }
-          nb::handle child = s[i];
-          stack.emplace_back(child);
+          stack.emplace_back(s[i]);
           idx_stack.emplace_back(0);
           continue;
         }
-        flat_h.emplace_back(top);
+        flat_h.emplace_back(std::move(top));
         stack.pop_back();
         idx_stack.pop_back();
         if (!idx_stack.empty())
@@ -314,19 +319,19 @@ namespace mag::bindings {
     size_t n = flat_h.size();
     if (kind == Kind::Float) {
       std::vector<float> buf(n);
-      std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::handle &h) { return static_cast<float>(nb::cast<double>(h)); });
+      std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::object &h) { return static_cast<float>(nb::cast<double>(h)); });
       throw_if_error(mag_copy_raw_(&err, raw, buf.data(), buf.size() * sizeof(float)), err);
     } else if (kind == Kind::SInt) {
       std::vector<int64_t> buf(n);
-      std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::handle &h) { return nb::cast<int64_t>(h); });
+      std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::object &h) { return nb::cast<int64_t>(h); });
       throw_if_error(mag_copy_raw_(&err, raw, buf.data(), buf.size() * sizeof(int64_t)), err);
     } else if (kind == Kind::UInt) {
       std::vector<uint64_t> buf(n);
-      std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::handle &h) { return nb::cast<uint64_t>(h); });
+      std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::object &h) { return nb::cast<uint64_t>(h); });
       throw_if_error(mag_copy_raw_(&err, raw, buf.data(), buf.size() * sizeof(uint64_t)), err);
     } else {
       std::vector<uint8_t> buf(n);
-      std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::handle &h) { return static_cast<uint8_t>(nb::cast<bool>(h) ? 1 : 0); });
+      std::transform(flat_h.begin(), flat_h.end(), buf.begin(), [](const nb::object &h) { return static_cast<uint8_t>(nb::cast<bool>(h) ? 1 : 0); });
       throw_if_error(mag_copy_raw_(&err, raw, buf.data(), buf.size() * sizeof(uint8_t)), err);
     }
     mag_tensor_t *typed_cpu = nullptr;
