@@ -190,10 +190,10 @@ class Module:
             fn(mod)
         return self
 
-    def forward(self, *args: Any, **kwargs: Any) -> Tensor:
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Tensor:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         for hook in self._fwd_pre_hooks:
             hook(self, args)
         out = self.forward(*args, **kwargs)
