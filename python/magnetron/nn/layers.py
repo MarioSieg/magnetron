@@ -453,3 +453,44 @@ class ConvT2D(_ConvND):
 class ConvT3D(_ConvND):
     _spatial = 3
     _T = True
+
+
+class Dropout(Module):
+    _spatial: int = 0
+
+    def __init__(self, p: float = 0.5) -> None:
+        super().__init__()
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(f'Dropout probability must be within [0, 1], got {p}')
+        self.p: float = p
+
+    def extra_repr(self) -> str:
+        return f'p={self.p}'
+
+    def forward(self, x: Tensor) -> Tensor:
+        if not self.training or self.p == 0.0:  # Only mask during training or when p makes it possible
+            return x
+        if self.p == 1.0:  # Drop all (full mask)
+            return Tensor.zeros_like(x)
+        p = 1.0 - self.p
+        if self._spatial == 0:  # elementwise mask
+            mask = Tensor.bernoulli_like(x, p=p)
+        else:  # one mask per val, broadcasted
+            if x.rank not in (self._spatial + 1, self._spatial + 2):
+                raise ValueError(
+                    f'{type(self).__name__} expects (N, C, *spatial) or (C, *spatial) input with {self._spatial} spatial dims, got shape {x.shape}'
+                )
+            mask = Tensor.bernoulli(*(tuple(x.shape[: x.rank - self._spatial]) + (1,) * self._spatial), p=p)
+        return x * mask.cast(x.dtype) * (1.0 / p)
+
+
+class Dropout1D(Dropout):
+    _spatial = 1
+
+
+class Dropout2D(Dropout):
+    _spatial = 2
+
+
+class Dropout3D(Dropout):
+    _spatial = 3

@@ -44,6 +44,7 @@ import threading
 from contextlib import ContextDecorator
 from types import TracebackType
 
+
 def _saved_state_stack(tls: threading.local) -> list:
     stack = getattr(tls, 'stack', None)
     if stack is None:

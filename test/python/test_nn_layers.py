@@ -324,3 +324,101 @@ def test_load_torch_state_dict_values(device: str) -> None:
         assert torch.equal(totorch(p), rp.detach())
     x = random_tensor((6, 8), dtype.float32, device)
     assert_close_mag_torch(model(x), ref(totorch(x)).detach(), dtype.float32)
+
+
+_DROPOUT_CASES = [
+    # (mag class, torch class, input shape)
+    (nn.Dropout, tnn.Dropout, (64, 33)),
+    (nn.Dropout, tnn.Dropout, (4, 8, 5, 3)),
+    (nn.Dropout1D, tnn.Dropout1d, (4, 16, 7)),
+    (nn.Dropout1D, tnn.Dropout1d, (16, 7)),
+    (nn.Dropout2D, tnn.Dropout2d, (4, 16, 5, 3)),
+    (nn.Dropout2D, tnn.Dropout2d, (16, 5, 3)),
+    (nn.Dropout3D, tnn.Dropout3d, (2, 16, 3, 2, 4)),
+    (nn.Dropout3D, tnn.Dropout3d, (16, 3, 2, 4)),
+]
+
+
+def _dropout_input(shape: tuple[int, ...], device: str) -> Tensor:
+    return uniform_tensor(shape, 0.5, 1.5, dtype.float32, device)  # strictly nonzero -> mask recoverable from output
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('p', [0.2, 0.5, 0.8])
+@pytest.mark.parametrize('case', _DROPOUT_CASES)
+@pytest.mark.filterwarnings('ignore:dropout2d. Received a 3D input')  # torch still reads 3D Dropout2d input as (N, C, L); we use (C, H, W) like torch's announced future behavior
+def test_dropout_train_matches_torch_semantics(device: str, p: float, case) -> None:
+    mag_cls, torch_cls, shape = case
+    with mag.device(device):
+        layer = mag_cls(p)
+        x = _dropout_input(shape, device)
+        tx = _leaf_like(x)
+        x.requires_grad = True
+        y = layer(x)
+    assert y.shape == shape
+    ty_raw = totorch(y).detach()
+    keep = ty_raw != 0
+    scale = 1.0 / (1.0 - p)
+    torch.testing.assert_close(ty_raw[keep], tx.detach()[keep] * scale, rtol=1e-5, atol=1e-6)  # kept values scaled like torch
+    spatial = mag_cls._spatial
+    if spatial:  # whole feature maps are dropped together, like torch's DropoutNd
+        flat = keep.reshape(*shape[: len(shape) - spatial], -1)
+        assert torch.all(flat.all(-1) | ~flat.any(-1))
+    ty = tx * keep.float() * scale  # torch reference with identical mask
+    _weighted_backward(y, ty, device)
+    _assert_grad(x, tx)
+    ref = torch_cls(p).train()  # torch's own drop rate as sanity bound for ours
+    n_units = keep.numel() if not spatial else keep.reshape(*shape[: len(shape) - spatial], -1)[..., 0].numel()
+    tol = 5.0 * (p * (1.0 - p) / n_units) ** 0.5 + 0.02
+    mag_rate = 1.0 - keep.float().mean().item()
+    torch_rate = 1.0 - (ref(torch.ones(shape)) != 0).float().mean().item()
+    assert abs(mag_rate - p) < tol
+    assert abs(torch_rate - p) < tol
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_dropout_drop_rate_large(device: str) -> None:
+    with mag.device(device):
+        for p in (0.1, 0.5, 0.9):
+            y = nn.Dropout(p)(Tensor.ones(256, 256))
+            assert abs((totorch(y) == 0).float().mean().item() - p) < 0.01
+            assert abs(totorch(y).mean().item() - 1.0) < 0.05  # inverted dropout keeps expectation
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('case', _DROPOUT_CASES)
+@pytest.mark.filterwarnings('ignore:dropout2d. Received a 3D input')  # torch still reads 3D Dropout2d input as (N, C, L); we use (C, H, W) like torch's announced future behavior
+def test_dropout_eval_and_edge_probs_match_torch(device: str, case) -> None:
+    mag_cls, torch_cls, shape = case
+    with mag.device(device):
+        x = _dropout_input(shape, device)
+        tx = totorch(x)
+        for p in (0.0, 0.3, 1.0):  # eval: identity for every p
+            assert torch.equal(totorch(mag_cls(p).eval()(x)), torch_cls(p).eval()(tx))
+        for p in (0.0, 1.0):  # train: p=0 identity, p=1 all zeros
+            assert torch.equal(totorch(mag_cls(p).train()(x)), torch_cls(p).train()(tx))
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_dropout_in_sequential_respects_eval(device: str) -> None:
+    with mag.device(device):
+        model = nn.Sequential(nn.Linear(8, 8), nn.Dropout(0.5))
+        x = random_tensor((4, 8), dtype.float32, device)
+        model.eval()
+        assert torch.equal(totorch(model(x)), totorch(model(x)))
+        model.train()
+        assert model[1].training
+
+
+def test_dropout_invalid_args() -> None:
+    for cls, tcls in ((nn.Dropout, tnn.Dropout), (nn.Dropout2D, tnn.Dropout2d)):
+        for p in (-0.1, 1.1):
+            with pytest.raises(ValueError):
+                tcls(p)
+            with pytest.raises(ValueError):
+                cls(p)
+    with pytest.raises(ValueError):
+        nn.Dropout2D(0.5)(Tensor.uniform(2, 3))
+    with pytest.raises(ValueError):
+        nn.Dropout1D(0.5)(Tensor.uniform(2, 3, 4, 5))
+    assert repr(nn.Dropout(0.25)) == 'Dropout(p=0.25)'
