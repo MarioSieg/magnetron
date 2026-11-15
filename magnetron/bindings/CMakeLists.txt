@@ -30,3 +30,16 @@ nanobind_add_stub(magnetron_stubs
     RECURSIVE
     COMPONENT python
 )
+
+option(MAGNETRON_COPY_STUBS_TO_SOURCE "Copy generated .pyi stubs into python/magnetron for IDE indexing" ON)
+if (MAGNETRON_COPY_STUBS_TO_SOURCE)
+    set(_mag_stub_dst "${PROJECT_SOURCE_DIR}/python/magnetron/_magnetron_bindings")
+    install(CODE "
+        set(_src \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/magnetron/_magnetron_bindings\")
+        if (EXISTS \"\${_src}\")
+            file(REMOVE_RECURSE \"${_mag_stub_dst}\")
+            file(COPY \"\${_src}/\" DESTINATION \"${_mag_stub_dst}\" FILES_MATCHING PATTERN \"*.pyi\")
+            message(STATUS \"Copied .pyi stubs to ${_mag_stub_dst}\")
+        endif()
+    " COMPONENT python)
+endif()

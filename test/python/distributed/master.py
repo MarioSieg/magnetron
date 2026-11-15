@@ -19,7 +19,7 @@ def main() -> None:
     parser.add_argument('--rank', type=int, default=0, help='Rank of this process')
     parser.add_argument('--backend', default='tcp', help='Communicator backend')
     args = parser.parse_args()
-    pg = distributed.Communicator(rank=args.rank, size=args.world_size, backend=args.backend)
+    pg = distributed.Communicator(rank=args.rank, size=args.world_size, backend=args.backend, master_addr=args.ip, master_port=args.port)
     x = Tensor([0.0, 1.0, 2.0, 3.0], dtype=dtype.bfloat16)
     print(f'Rank {pg.rank}/{pg.size}')
     print('Before:', x)

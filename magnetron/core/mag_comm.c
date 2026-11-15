@@ -181,6 +181,48 @@ mag_status_t mag_comm_all_to_all(
   return (*comm->com_ops->all_to_all)(err, comm, out, in);
 }
 
+/* Verify offset tensor for a2a */
+static mag_status_t mag_comm_a2av_verify_meta(mag_error_t *err, mag_communicator_t *comm, mag_tensor_t *t, const char *name) {
+  if (mag_unlikely(mag_tensor_type(t) != MAG_DTYPE_UINT64))
+    return mag_set_error(err, MAG_ERR_PARAM, "all_to_all_v: %s must have dtype uint64, got %s", name, mag_type_trait(mag_tensor_type(t))->name);
+  if (mag_unlikely(mag_tensor_rank(t) != 1))
+    return mag_set_error(err, MAG_ERR_PARAM, "all_to_all_v: %s must be 1-D, got rank %" PRIi64, name, mag_tensor_rank(t));
+  if (mag_unlikely(mag_tensor_numel(t) != (int64_t)comm->size))
+    return mag_set_error(err, MAG_ERR_PARAM, "all_to_all_v: %s must have one entry per rank (%u), got %" PRIi64, name, comm->size, mag_tensor_numel(t));
+  if (mag_unlikely(!mag_tensor_is_contiguous(t)))
+    return mag_set_error(err, MAG_ERR_PARAM, "all_to_all_v: %s must be contiguous", name);
+  if (mag_unlikely(!mag_tensor_is_host(t))) {
+    char dev[32];
+    mag_device_id_to_str(mag_tensor_device_id(t), &dev);
+    return mag_set_error(err, MAG_ERR_PARAM, "all_to_all_v: %s must reside on the host (cpu), got %s", name, dev);
+  }
+  return mag_sto_sync_barrier_r(err, t->storage);
+}
+
+/* Bound check a2a offset tensor */
+static mag_status_t mag_comm_a2av_bnd_chk(
+  mag_error_t *err,
+  mag_communicator_t *comm,
+  mag_tensor_t *counts,
+  mag_tensor_t *offsets,
+  int64_t numel,
+  const char *buf_name
+) {
+  const uint64_t *c = (const uint64_t *)mag_tensor_data_ptr(counts);
+  const uint64_t *o = (const uint64_t *)mag_tensor_data_ptr(offsets);
+  uint64_t lim = (uint64_t)numel;
+  for (uint32_t j=0; j < comm->size; ++j) {
+    if (mag_unlikely(o[j] > lim || c[j] > lim-o[j]))
+      return mag_set_error(
+        err,
+        MAG_ERR_PARAM,
+        "all_to_all_v: slice for rank %u (offset %" PRIu64 ", count %" PRIu64 ") is out of bounds for %s with %" PRIi64 " elements",
+        j, o[j], c[j], buf_name, numel
+      );
+  }
+  return MAG_OK;
+}
+
 mag_status_t mag_comm_all_to_all_v(
   mag_error_t *err,
   mag_communicator_t *comm,
@@ -196,7 +238,14 @@ mag_status_t mag_comm_all_to_all_v(
     return mag_set_error(err, MAG_ERR_PARAM, "all_to_all_v: input and output tensors must not be NULL");
   if (mag_unlikely(!send_counts || !send_offsets || !recv_counts || !recv_offsets))
     return mag_set_error(err, MAG_ERR_PARAM, "all_to_all_v: counts and offsets must not be NULL");
-  mag_status_t stat = mag_comm_host_vbarrier(err, out, in, NULL);
+  mag_status_t stat;
+  if (mag_iserr(stat = mag_comm_a2av_verify_meta(err, comm, send_counts, "send_counts"))) return stat;
+  if (mag_iserr(stat = mag_comm_a2av_verify_meta(err, comm, send_offsets, "send_offsets"))) return stat;
+  if (mag_iserr(stat = mag_comm_a2av_verify_meta(err, comm, recv_counts, "recv_counts"))) return stat;
+  if (mag_iserr(stat = mag_comm_a2av_verify_meta(err, comm, recv_offsets, "recv_offsets"))) return stat;
+  if (mag_iserr(stat = mag_comm_a2av_bnd_chk(err, comm, send_counts, send_offsets, mag_tensor_numel(in), "input"))) return stat;
+  if (mag_iserr(stat = mag_comm_a2av_bnd_chk(err, comm, recv_counts, recv_offsets, mag_tensor_numel(out), "output"))) return stat;
+  stat = mag_comm_host_vbarrier(err, out, in, NULL);
   if (mag_iserr(stat)) return stat;
   return (*comm->com_ops->all_to_all_v)(err, comm, out, in, send_counts, send_offsets, recv_counts, recv_offsets);
 }

@@ -9,11 +9,10 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
+from typing import Any
 
 from .. import Tensor, dtype, context
-from .. import dtype as _dtype
 from .module import Module, Parameter
 from .init import *
 
@@ -453,3 +452,122 @@ class ConvT2D(_ConvND):
 class ConvT3D(_ConvND):
     _spatial = 3
     _T = True
+
+
+class Dropout(Module):
+    _spatial: int = 0
+
+    def __init__(self, p: float = 0.5) -> None:
+        super().__init__()
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(f'Dropout probability must be within [0, 1], got {p}')
+        self.p: float = p
+
+    def forward(self, x: Tensor) -> Tensor:
+        if not self.training or self.p == 0.0:  # Only mask during training or when p makes it possible
+            return x
+        if self.p == 1.0:  # Drop all (full mask)
+            return Tensor.zeros_like(x)
+        p = 1.0 - self.p
+        if self._spatial == 0:  # elementwise mask
+            mask = Tensor.bernoulli_like(x, p=p)
+        else:  # one mask per val, broadcasted
+            if x.rank not in (self._spatial + 1, self._spatial + 2):
+                raise ValueError(
+                    f'{type(self).__name__} expects (N, C, *spatial) or (C, *spatial) input with {self._spatial} spatial dims, got shape {x.shape}'
+                )
+            mask = Tensor.bernoulli(*(tuple(x.shape[: x.rank - self._spatial]) + (1,) * self._spatial), p=p)
+        return x * mask.cast(x.dtype) * (1.0 / p)
+
+    def extra_repr(self) -> str:
+        return f'p={self.p}'
+
+
+class Dropout1D(Dropout):
+    _spatial = 1
+
+
+class Dropout2D(Dropout):
+    _spatial = 2
+
+
+class Dropout3D(Dropout):
+    _spatial = 3
+
+
+class _RNNCellBase(Module):
+    _gates: int = 1
+
+    @staticmethod
+    def _rnn_init(hidden: int, winit: InitStrategy | None, binit: InitStrategy | None) -> tuple[InitStrategy, InitStrategy]:
+        bnd = 1.0 / (float(hidden) ** 0.5) if hidden > 0 else 0.0
+        def_init = UniformInitStrategy(-bnd, bnd)  # 𝒰(−1/√H, 1/√H)
+        return resolve_weight_init(winit) or def_init, resolve_bias_init(binit) or def_init
+
+    @staticmethod
+    def _rnn_gates(x: Tensor, h: Tensor, w_ih: Tensor, w_hh: Tensor, b_ih: Tensor | None, b_hh: Tensor | None) -> tuple[Tensor, Tensor]:
+        gi = x @ w_ih.T
+        gh = h @ w_hh.T
+        if b_ih is not None:
+            gi = gi + b_ih
+            gh = gh + b_hh
+        return gi, gh
+
+    @staticmethod
+    def _lstm_step(x: Tensor, h: Tensor, c: Tensor, w_ih: Tensor, w_hh: Tensor, b_ih: Tensor | None, b_hh: Tensor | None) -> tuple[Tensor, Tensor]:
+        gi, gh = _RNNCellBase._rnn_gates(x, h, w_ih, w_hh, b_ih, b_hh)
+        i, f, g, o = (gi + gh).split(h.shape[-1], dim=-1)
+        c = c * f.sigmoid() + i.sigmoid() * g.tanh()
+        h = c.tanh() * o.sigmoid()
+        return h, c
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        bias: bool = True,
+        dtype: dtype.DType | None = None,
+        weight_init: InitStrategy | None = None,
+        bias_init: InitStrategy | None = None,
+    ) -> None:
+        super().__init__()
+        if dtype is None:
+            dtype = context.get_default_dtype()
+        self.input_size: int = input_size
+        self.hidden_size: int = hidden_size
+        gates = hidden_size * self._gates
+        weight_init, bias_init = self._rnn_init(hidden_size, weight_init, bias_init)
+        self.weight_ih: Parameter = Parameter(Tensor.empty(gates, input_size, dtype=dtype))
+        inplace_init(self.weight_ih, weight_init)
+        self.weight_hh: Parameter = Parameter(Tensor.empty(gates, hidden_size, dtype=dtype))
+        inplace_init(self.weight_hh, weight_init)
+        self.bias_ih: Parameter | None = None
+        self.bias_hh: Parameter | None = None
+        if bias:
+            self.bias_ih = Parameter(Tensor.empty(gates, dtype=dtype))
+            inplace_init(self.bias_ih, bias_init)
+            self.bias_hh = Parameter(Tensor.empty(gates, dtype=dtype))
+            inplace_init(self.bias_hh, bias_init)
+
+    def _zeros(self, x: Tensor) -> Tensor:
+        return Tensor.zeros(x.shape[0], self.hidden_size, dtype=x.dtype)
+
+    def extra_repr(self) -> str:
+        return f'{self.input_size}, {self.hidden_size}, bias={self.bias_ih is not None}'
+
+
+class LSTMCell(_RNNCellBase):
+    _gates = 4
+
+    def forward(self, x: Tensor, hx: tuple[Tensor, Tensor] | None = None) -> tuple[Tensor, Tensor]:
+        unbatched = 1 == x.rank
+        if unbatched:
+            x = x.unsqueeze(0)
+            if hx is not None:
+                hx = (hx[0].unsqueeze(0), hx[1].unsqueeze(0))
+        if hx is None:
+            hx = (self._zeros(x), self._zeros(x))
+        h, c = self._lstm_step(x, hx[0], hx[1], self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh)
+        if unbatched:
+            h, c = h.squeeze(0), c.squeeze(0)
+        return h, c

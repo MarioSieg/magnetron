@@ -26,7 +26,7 @@ def main() -> None:
     ap.add_argument('--backend', default='tcp')
     args = ap.parse_args()
 
-    pg = distributed.Communicator(rank=args.rank, size=args.world_size, backend=args.backend)
+    pg = distributed.Communicator(rank=args.rank, size=args.world_size, backend=args.backend, master_addr=args.ip, master_port=args.port)
     scalar_type = dtype.bfloat16
     x = Tensor.full((args.numel,), fill_value=float(args.rank + 1), dtype=scalar_type)
     expected = args.world_size * (args.world_size + 1) / 2

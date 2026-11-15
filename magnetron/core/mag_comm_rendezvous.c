@@ -31,7 +31,7 @@ void mag_rendezvous_base_init(mag_comm_rendezvous_t *rdv, const mag_comm_rendezv
   };
 }
 
-mag_status_t mag_comm_rdvz_init(mag_error_t *err, const mag_comm_rendezvous_ops_t *ops, mag_comm_rendezvous_t **out, uint32_t rank, uint32_t size, const mag_comm_rendezvous_desc_t *desc) {
+mag_status_t mag_comm_rdvz_hdr_init(mag_error_t *err, const mag_comm_rendezvous_ops_t *ops, mag_comm_rendezvous_t **out, uint32_t rank, uint32_t size, const mag_comm_rendezvous_desc_t *desc) {
   *out = NULL;
   if (mag_unlikely(!ops || !ops->init))
     return mag_set_error(err, MAG_ERR_COMM, "rendezvous: no rendezvous implementation selected.");
@@ -61,7 +61,7 @@ mag_status_t mag_comm_rdvz_split(mag_error_t *err, mag_comm_rendezvous_t *parent
   mag_comm_wire_transfer_wu32(&mp, color);
   mag_comm_wire_transfer_wu32(&mp, key);
   mag_comm_wire_transfer_wu32(&mp, parent->rank);
-  stat = mag_rdvz_all_gather(err, parent, mine, wire, sizeof(mine));
+  stat = mag_comm_rdvz_all_gather(err, parent, mine, wire, sizeof(mine));
   if (mag_iserr(stat)) goto cleanup;
   const uint8_t *rp=wire;
   for (uint32_t i=0; i < n; ++i) {
@@ -100,14 +100,14 @@ cleanup:
   return stat;
 }
 
-mag_status_t mag_rdvz_broadcast(mag_error_t *err, mag_comm_rendezvous_t *rdv, void *buf, size_t nb, uint32_t root) {
+mag_status_t mag_comm_rdvz_broadcast(mag_error_t *err, mag_comm_rendezvous_t *rdv, void *buf, size_t nb, uint32_t root) {
   if (mag_unlikely(root >= rdv->size))
     return mag_set_error(err, MAG_ERR_COMM, "rendezvous %s: broadcast root %u is out of range for size %u.", rdv->ops->name, root, rdv->size);
   if (rdv->size == 1) return MAG_OK;
   return (*rdv->ops->broadcast)(err, rdv, buf, nb, root);
 }
 
-mag_status_t mag_rdvz_all_gather(mag_error_t *err, mag_comm_rendezvous_t *rdv, const void *in, void *out, size_t nb) {
+mag_status_t mag_comm_rdvz_all_gather(mag_error_t *err, mag_comm_rendezvous_t *rdv, const void *in, void *out, size_t nb) {
   if (rdv->size == 1) {
     if (nb && in != out) memmove(out, in, nb);
     return MAG_OK;
@@ -115,12 +115,12 @@ mag_status_t mag_rdvz_all_gather(mag_error_t *err, mag_comm_rendezvous_t *rdv, c
   return (*rdv->ops->all_gather)(err, rdv, in, out, nb);
 }
 
-mag_status_t mag_rdvz_barrier(mag_error_t *err, mag_comm_rendezvous_t *rdv) {
+mag_status_t mag_comm_rdvz_barrier(mag_error_t *err, mag_comm_rendezvous_t *rdv) {
   if (rdv->size == 1) return MAG_OK;
   return (*rdv->ops->barrier)(err, rdv);
 }
 
-void mag_rdvz_destroy(mag_comm_rendezvous_t *rdv) {
+void mag_comm_rdvz_destroy(mag_comm_rendezvous_t *rdv) {
   if (rdv && rdv->ops && rdv->ops->shutdown)
     (*rdv->ops->shutdown)(rdv);
 }

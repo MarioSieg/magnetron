@@ -69,26 +69,6 @@ namespace mag::bindings {
     private:
       mag_communicator_t *m_comm {};
     };
-
-    [[nodiscard]] std::vector<size_t> parse_counts(nb::handle h, size_t expected, const char *what) {
-      std::vector<int64_t> raw = parse_i64_list_handle(h, what);
-      if (raw.size() != expected) {
-        std::ostringstream ss {};
-        ss << what << " must have one entry per rank (" << expected << "), got " << raw.size();
-        throw nb::value_error(ss.str().c_str());
-      }
-      std::vector<size_t> out {};
-      out.reserve(raw.size());
-      for (int64_t v : raw) {
-        if (v < 0) {
-          std::ostringstream ss {};
-          ss << what << " must be non-negative, got " << v;
-          throw nb::value_error(ss.str().c_str());
-        }
-        out.emplace_back(static_cast<size_t>(v));
-      }
-      return out;
-    }
   }
 
   void init_bindings_distributed(nb::module_ &m) {
@@ -105,16 +85,16 @@ namespace mag::bindings {
       .value("XOR", MAG_REDUCE_XOR);
 
     nb::class_<communicator_wrapper>(distributed, "Communicator", "Handle to a distributed communicator spanning a set of ranks.")
-      .def("__init__", [](communicator_wrapper *self, uint32_t rank, uint32_t size, const std::string &backend) -> void {
-        if (size == 0) throw nb::value_error("size must be > 0");
-        if (rank >= size) {
+      .def("__init__", [](communicator_wrapper *self, uint32_t rank, uint32_t world_size, const std::string &backend) -> void {
+        if (world_size == 0) throw nb::value_error("world_size must be > 0");
+        if (rank >= world_size) {
           std::ostringstream ss {};
-          ss << "rank " << rank << " is out of range for size " << size;
+          ss << "rank " << rank << " is out of range for size " << world_size;
           throw nb::value_error(ss.str().c_str());
         }
         nb::gil_scoped_release nogil {};
-        new (self) communicator_wrapper {rank, size, backend};
-      }, "rank"_a, "size"_a, "backend"_a, "Create a communicator for the given rank within a group of the given size using the named backend.")
+        new (self) communicator_wrapper {rank, world_size, backend};
+      }, "rank"_a, "world_size"_a, "backend"_a, "Create a communicator for the given rank within a group of the given size using the named backend.")
       .def_prop_ro("rank", &communicator_wrapper::rank, "Rank of the current process in the communicator.")
       .def_prop_ro("size", &communicator_wrapper::size, "Total number of ranks in the communicator.")
       .def_prop_ro("backend", [](const communicator_wrapper &self) -> nb::str {
@@ -163,21 +143,16 @@ namespace mag::bindings {
         const communicator_wrapper &self,
         const tensor_wrapper &out,
         const tensor_wrapper &in,
-        nb::handle send_counts,
-        nb::handle send_offsets,
-        nb::handle recv_counts,
-        nb::handle recv_offsets
+        const tensor_wrapper &send_counts,
+        const tensor_wrapper &send_offsets,
+        const tensor_wrapper &recv_counts,
+        const tensor_wrapper &recv_offsets
       ) -> void {
-        size_t n = self.size();
-        std::vector<size_t> sc = parse_counts(send_counts, n, "send_counts");
-        std::vector<size_t> so = parse_counts(send_offsets, n, "send_offsets");
-        std::vector<size_t> rc = parse_counts(recv_counts, n, "recv_counts");
-        std::vector<size_t> ro = parse_counts(recv_offsets, n, "recv_offsets");
         self.invoke([&](mag_error_t *err, mag_communicator_t *comm) noexcept -> mag_status_t {
-          return mag_comm_all_to_all_v(err, comm, *out, *in, sc.data(), so.data(), rc.data(), ro.data());
+          return mag_comm_all_to_all_v(err, comm, *out, *in, *send_counts, *send_offsets, *recv_counts, *recv_offsets);
         });
       }, "out"_a, "input"_a, "send_counts"_a, "send_offsets"_a, "recv_counts"_a, "recv_offsets"_a,
-      "Exchange variable-sized chunks between all ranks. Each count and offset sequence has one element-count entry per rank.")
+      "Exchange variable-sized chunks between all ranks. Counts and offsets are contiguous 1-D uint64 host tensors with one element-count entry per rank.")
       .def("send", [](const communicator_wrapper &self, const tensor_wrapper &tensor, uint32_t dst) -> void {
         self.require_rank(dst, "destination");
         self.invoke([&](mag_error_t *err, mag_communicator_t *comm) noexcept -> mag_status_t {
