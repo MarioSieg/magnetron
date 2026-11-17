@@ -268,6 +268,14 @@ class SnapshotWriter:
         return False
 
 
+def serialize(file_path: str | Path, tensors: dict[str, Tensor], metadata: dict[str, Any] | None = None) -> None:
+    with SnapshotWriter(file_path, metadata) as snap:
+        for k, v in tensors.items():
+            snap.declare(k, v.shape, v.dtype)
+        for k, v in tensors.items():
+            snap.write(k, v)
+
+
 def deserialize(file_path: str | Path, mmap: bool = True) -> tuple[dict[str, Tensor], dict[str, Any]]:
     with _SnapshotStreamReader(str(file_path)) as reader:
         manifest = _FileManifest.deserialize(reader.metadata)

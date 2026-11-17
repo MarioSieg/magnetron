@@ -27,13 +27,6 @@ Source = "https://github.com/MarioSieg/magnetron"
 Issues = "https://github.com/MarioSieg/magnetron/issues"
 
 [project.optional-dependencies]
-examples = [
-    "rich",
-    "matplotlib",
-    "huggingface_hub",
-    "pandas"
-]
-
 dev = [
     "ruff",
     "torch",
