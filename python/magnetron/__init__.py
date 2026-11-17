@@ -41,9 +41,13 @@ __author_email__ = _magnetron_bindings.__author_email__
 __license__ = _magnetron_bindings.__license__
 __url__ = _magnetron_bindings.__url__
 
+import functools
+import inspect
 import threading
+from collections.abc import Callable, Generator
 from contextlib import ContextDecorator
 from types import TracebackType
+from typing import Any
 
 
 def _saved_state_stack(tls: threading.local) -> list:
@@ -54,9 +58,37 @@ def _saved_state_stack(tls: threading.local) -> list:
     return stack
 
 
-class device(ContextDecorator):
-    """Sets the default device within a function or block. Applies to the calling thread only."""
+class _StateDecorator(ContextDecorator):
+    def __call__(self, func: Callable[..., Any]) -> Callable[..., Any]:
+        if not inspect.isgeneratorfunction(func):
+            return super().__call__(func)
 
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Generator[Any, Any, Any]:
+            gen = func(*args, **kwargs)
+            try:
+                with self._recreate_cm():
+                    item = gen.send(None)
+                while True:
+                    try:
+                        sent = yield item
+                    except GeneratorExit:
+                        with self._recreate_cm():
+                            gen.close()
+                        raise
+                    except BaseException as e:
+                        with self._recreate_cm():
+                            item = gen.throw(e)
+                    else:
+                        with self._recreate_cm():
+                            item = gen.send(sent)
+            except StopIteration as stop:
+                return stop.value
+
+        return wrapper
+
+
+class device(_StateDecorator):
     _tls = threading.local()
 
     def __init__(self, device_name: str) -> None:
@@ -72,18 +104,14 @@ class device(ContextDecorator):
         context.set_default_device(_saved_state_stack(self._tls).pop())
 
 
-class no_grad(ContextDecorator):
-    """Disables gradient recording within a function or block. Applies to the calling thread only."""
-
+class no_grad(_StateDecorator):
     _tls = threading.local()
 
     def __enter__(self) -> None:
-        """Disable gradient tracking by stopping the active context's recorder."""
         _saved_state_stack(self._tls).append(context.is_grad_recording())
         context.stop_grad_recorder()
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None) -> None:
-        """Restore whatever gradient tracking state was active on entry."""
         if _saved_state_stack(self._tls).pop():
             context.start_grad_recorder()
 
