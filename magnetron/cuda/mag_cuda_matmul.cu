@@ -1002,6 +1002,147 @@ namespace mag {
     }
   }
 
+  static constexpr int GEMV_SK_BLOCK = 256;
+
+  template <typename T, int MTILE, bool VEC>
+  static __global__ void __launch_bounds__(GEMV_SK_BLOCK) gemv_wn_splitk_kernel(
+    int M, int N, int K, int batch_total,
+    int64_t x_bs, int64_t w_bs,
+    int ct, int k_chunk,
+    float *__restrict__ part,
+    T *__restrict__ br,
+    const T *__restrict__ bx,
+    const T *__restrict__ bw
+  ) {
+    static constexpr int CPT = VEC ? 16/sizeof(T) : 1;
+    __shared__ float red[GEMV_SK_BLOCK*CPT];
+    int tid = static_cast<int>(threadIdx.x);
+    int ks = GEMV_SK_BLOCK/ct;
+    int cidx = tid % ct;
+    int kslot = tid / ct;
+    int batch = blockIdx.y;
+    int split = blockIdx.z;
+    bx += static_cast<int64_t>(batch)*x_bs;
+    bw += static_cast<int64_t>(batch)*w_bs;
+    int col0 = (static_cast<int>(blockIdx.x)*ct + cidx)*CPT;
+    int k0 = split*k_chunk;
+    int k1 = ::min(K, k0 + k_chunk);
+    const T *xr[MTILE];
+    #pragma unroll
+    for (int m=0; m < MTILE; ++m)
+      xr[m] = bx + static_cast<int64_t>(::min(m, M-1))*K;
+    float acc[MTILE][CPT] = {};
+    if (col0 < N) {
+      if (VEC && col0 + CPT <= N) {
+        if constexpr (VEC) {
+          #pragma unroll 4
+          for (int k=k0 + kslot; k < k1; k += ks) {
+            uint4 wv = *reinterpret_cast<const uint4 *>(bw + static_cast<int64_t>(k)*N + col0);
+            float w[CPT];
+            unpack_vec16<T>(wv, w);
+            #pragma unroll
+            for (int m=0; m < MTILE; ++m) {
+              float xv = static_cast<float>(__ldg(xr[m] + k));
+              #pragma unroll
+              for (int e=0; e < CPT; ++e) acc[m][e] = __fmaf_rn(xv, w[e], acc[m][e]);
+            }
+          }
+        }
+      } else {
+        for (int k=k0 + kslot; k < k1; k += ks) {
+          float w[CPT];
+          #pragma unroll
+          for (int e=0; e < CPT; ++e)
+            w[e] = col0 + e < N ? static_cast<float>(bw[static_cast<int64_t>(k)*N + col0 + e]) : 0.0f;
+          #pragma unroll
+          for (int m=0; m < MTILE; ++m) {
+            float xv = static_cast<float>(__ldg(xr[m] + k));
+            #pragma unroll
+            for (int e=0; e < CPT; ++e) acc[m][e] = __fmaf_rn(xv, w[e], acc[m][e]);
+          }
+        }
+      }
+    }
+    int64_t out_base = static_cast<int64_t>(batch)*M*N;
+    int64_t part_base = (static_cast<int64_t>(split)*batch_total + batch)*M*N;
+    #pragma unroll
+    for (int m=0; m < MTILE; ++m) {
+      if (m >= M) break;
+      #pragma unroll
+      for (int e=0; e < CPT; ++e) red[(kslot*ct + cidx)*CPT + e] = acc[m][e];
+      __syncthreads();
+      if (kslot == 0 && col0 < N) {
+        #pragma unroll
+        for (int e=0; e < CPT; ++e) {
+          float s = 0.f;
+          for (int j=0; j < ks; ++j) s += red[(j*ct + cidx)*CPT + e];
+          if (col0 + e < N) {
+            int64_t o = static_cast<int64_t>(m)*N + col0 + e;
+            if (gridDim.z == 1) br[out_base + o] = static_cast<T>(s);
+            else part[part_base + o] = s;
+          }
+        }
+      }
+      __syncthreads();
+    }
+  }
+
+  template <typename T>
+  static __global__ void gemv_wn_splitk_combine_kernel(int64_t total, int splits, T *__restrict__ br, const float *__restrict__ part) {
+    int64_t i = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x;
+    if (i >= total) return;
+    float s = 0.f;
+    for (int j=0; j < splits; ++j) s += part[static_cast<int64_t>(j)*total + i];
+    br[i] = static_cast<T>(s);
+  }
+
+  template <typename T, int MTILE>
+  static bool try_launch_gemv_wn_splitk(
+    physical_device *dvc,
+    int M, int N, int K, int64_t batch_total,
+    int64_t x_bs, int64_t w_bs,
+    T *__restrict__ br,
+    const T *__restrict__ bx,
+    const T *__restrict__ bw,
+    bool vec, cudaStream_t stream
+  ) {
+    static constexpr int MIN_K = 256;
+    static constexpr int MIN_K_PER_THREAD = 8;
+    static constexpr int MAX_SPLITS = 64;
+    if (!dvc || K < MIN_K || batch_total > 65535) return false;
+    int cpt = vec ? 16/static_cast<int>(sizeof(T)) : 1;
+    int64_t col_threads = (N + cpt - 1)/cpt;
+    int64_t sms = std::max<int64_t>(dvc->num_sms(), 1);
+    if (col_threads*batch_total >= sms*GEMV_SK_BLOCK) return false;
+    int ct = static_cast<int>(std::min<uint32_t>(mag_next_pow2_u32(static_cast<uint32_t>(col_threads)), GEMV_SK_BLOCK));
+    int ks = GEMV_SK_BLOCK/ct;
+    int64_t col_blocks = (col_threads + ct - 1)/ct;
+    int64_t blocks_xy = col_blocks*batch_total;
+    int64_t splits = std::clamp<int64_t>((2*sms + blocks_xy - 1)/blocks_xy, 1, MAX_SPLITS);
+    splits = std::min<int64_t>(splits, std::max<int64_t>(1, K/(static_cast<int64_t>(ks)*MIN_K_PER_THREAD)));
+    int k_chunk = static_cast<int>((K + splits - 1)/splits);
+    splits = (K + k_chunk - 1)/k_chunk;
+    int64_t total = batch_total*M*N;
+    float *part = nullptr;
+    if (splits > 1) {
+      if (mag_iserr(dvc->reserve_scratch(nullptr, sizeof(float)*static_cast<size_t>(total*splits)))) {
+        splits = 1;
+        k_chunk = K;
+      } else {
+        part = static_cast<float *>(dvc->scratch());
+      }
+    }
+    dim3 grid_dim(static_cast<unsigned>(col_blocks), static_cast<unsigned>(batch_total), static_cast<unsigned>(splits));
+    int bt = static_cast<int>(batch_total);
+    if (vec) gemv_wn_splitk_kernel<T, MTILE, true><<<grid_dim, GEMV_SK_BLOCK, 0, stream>>>(M, N, K, bt, x_bs, w_bs, ct, k_chunk, part, br, bx, bw);
+    else gemv_wn_splitk_kernel<T, MTILE, false><<<grid_dim, GEMV_SK_BLOCK, 0, stream>>>(M, N, K, bt, x_bs, w_bs, ct, k_chunk, part, br, bx, bw);
+    if (splits > 1) {
+      static constexpr unsigned CB = 256;
+      gemv_wn_splitk_combine_kernel<T><<<static_cast<unsigned>((total + CB - 1)/CB), CB, 0, stream>>>(total, static_cast<int>(splits), br, part);
+    }
+    return true;
+  }
+
   template <typename T, int MTILE, int ROWS>
   static void launch_gemv_wt(
     int M, int N, int K, int64_t batch_total,
@@ -1025,11 +1166,11 @@ namespace mag {
     T *__restrict__ br,
     const T *__restrict__ bx,
     const T *__restrict__ bw,
-    bool wT, cudaStream_t stream
+    bool wT, physical_device *dvc, cudaStream_t stream
   ) {
     static constexpr int64_t ALIGN = 15;
-    bool base_aligned = !(ALIGN & reinterpret_cast<uintptr_t>(bx)) && !(ALIGN & reinterpret_cast<uintptr_t>(bw))
-      && !(ALIGN & (x_bs*static_cast<int64_t>(sizeof(T)))) && !(ALIGN & (w_bs*static_cast<int64_t>(sizeof(T))));
+    bool w_aligned = !(ALIGN & reinterpret_cast<uintptr_t>(bw)) && !(ALIGN & (w_bs*static_cast<int64_t>(sizeof(T))));
+    bool base_aligned = w_aligned && !(ALIGN & reinterpret_cast<uintptr_t>(bx)) && !(ALIGN & (x_bs*static_cast<int64_t>(sizeof(T))));
     int Mi = static_cast<int>(M);
     int Ni = static_cast<int>(N);
     int Ki = static_cast<int>(K);
@@ -1041,7 +1182,8 @@ namespace mag {
     } else {
       static constexpr int BLOCK = 128;
       static constexpr int E = 16/sizeof(T);
-      bool vec = base_aligned && !(ALIGN & (N*static_cast<int64_t>(sizeof(T))));
+      bool vec = w_aligned && !(ALIGN & (N*static_cast<int64_t>(sizeof(T)))); // Only W is loaded as 16B vectors, x is read per element
+      if (try_launch_gemv_wn_splitk<T, MTILE>(dvc, Mi, Ni, Ki, batch_total, x_bs, w_bs, br, bx, bw, vec, stream)) return;
       int cpt = vec ? E : 1;
       dim3 block_dim(BLOCK, 1, 1);
       dim3 grid_dim(static_cast<unsigned>((N + BLOCK*cpt - 1)/(BLOCK*cpt)), static_cast<unsigned>(batch_total), 1);
@@ -1056,13 +1198,13 @@ namespace mag {
     T *__restrict__ br,
     const T *__restrict__ bx,
     const T *__restrict__ bw,
-    bool wT, cudaStream_t stream
+    bool wT, physical_device *dvc, cudaStream_t stream
   ) {
     if (N == 1) wT = true;
-    if (M <= 1) launch_gemv_mtile<T, 1>(M, N, K, batch_total, x_bs, w_bs, br, bx, bw, wT, stream);
-    else if (M <= 2) launch_gemv_mtile<T, 2>(M, N, K, batch_total, x_bs, w_bs, br, bx, bw, wT, stream);
-    else if (M <= 4) launch_gemv_mtile<T, 4>(M, N, K, batch_total, x_bs, w_bs, br, bx, bw, wT, stream);
-    else launch_gemv_mtile<T, 8>(M, N, K, batch_total, x_bs, w_bs, br, bx, bw, wT, stream);
+    if (M <= 1) launch_gemv_mtile<T, 1>(M, N, K, batch_total, x_bs, w_bs, br, bx, bw, wT, dvc, stream);
+    else if (M <= 2) launch_gemv_mtile<T, 2>(M, N, K, batch_total, x_bs, w_bs, br, bx, bw, wT, dvc, stream);
+    else if (M <= 4) launch_gemv_mtile<T, 4>(M, N, K, batch_total, x_bs, w_bs, br, bx, bw, wT, dvc, stream);
+    else launch_gemv_mtile<T, 8>(M, N, K, batch_total, x_bs, w_bs, br, bx, bw, wT, dvc, stream);
   }
 
   static mag_status_t materialize_batch_broadcast(mag_error_t *err, mag_tensor_t **out, mag_tensor_t *t, const mag_tensor_t *r) {
@@ -1085,7 +1227,7 @@ namespace mag {
     mag_tensor_t *x = cmd.in[0];
     mag_tensor_t *y = cmd.in[1];
     mag_assert2(mag_tensor_is_contiguous(r));
-    const physical_device &dev = device_of(r);
+    physical_device &dev = device_of(r);
     bool x_batch_packed, y_batch_packed;
     mag_mat_layout_type_t x_layout = mag_mat_layout_detect(&x->meta.coords, &x_batch_packed);
     mag_mat_layout_type_t y_layout = mag_mat_layout_detect(&y->meta.coords, &y_batch_packed);
@@ -1131,7 +1273,7 @@ namespace mag {
       int64_t Ky = y->meta.coords.rank == 1 ? y->meta.coords.shape[0] : y->meta.coords.shape[y->meta.coords.rank - 2];
       mag_assert2(Kx == Ky);
       int64_t K = Kx;
-      if (!K) { /* Empty reduction: the result is all zeros (the GEMM rejects K=0, a zero-sized gemv grid is an invalid launch) */
+      if (!K) {
         if (cudaError_t ce = cudaMemsetAsync(reinterpret_cast<void *>(mag_tensor_data_ptr_mut(r)), 0, static_cast<size_t>(mag_tensor_numel(r))*sizeof(T), stream); ce != cudaSuccess)
           st = mag_set_error(err, MAG_ERR_BACKEND, "cuda: matmul: memset failed: %s", cudaGetErrorString(ce));
         goto end;
@@ -1148,20 +1290,20 @@ namespace mag {
         case MAG_MATMUL_TYPE_BMM_DOT:
         case MAG_MATMUL_TYPE_GEMV_VEC_MAT:
         case MAG_MATMUL_TYPE_BMM_GEMV_VEC_MAT:
-          launch_gemv(1, N, K, batch_total, a_bs, b_bs, br, bx, by, yT, stream);
+          launch_gemv(1, N, K, batch_total, a_bs, b_bs, br, bx, by, yT, &dev, stream);
           goto end;
         case MAG_MATMUL_TYPE_GEMV_MAT_VEC:
         case MAG_MATMUL_TYPE_BMM_GEMV_MAT_VEC:
-          launch_gemv(1, M, K, batch_total, b_bs, a_bs, br, by, bx, !xT, stream);
+          launch_gemv(1, M, K, batch_total, b_bs, a_bs, br, by, bx, !xT, &dev, stream);
           goto end;
         default: break;
       }
       if (N == 1) {
-        launch_gemv(1, M, K, batch_total, b_bs, a_bs, br, by, bx, !xT, stream);
+        launch_gemv(1, M, K, batch_total, b_bs, a_bs, br, by, bx, !xT, &dev, stream);
         goto end;
       }
       if (M <= GEMV_MAX_THIN_M && !xT) {
-        launch_gemv(M, N, K, batch_total, a_bs, b_bs, br, bx, by, yT, stream);
+        launch_gemv(M, N, K, batch_total, a_bs, b_bs, br, bx, by, yT, &dev, stream);
         goto end;
       }
       gemm_desc d {};

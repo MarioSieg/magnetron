@@ -895,30 +895,86 @@ namespace mag {
   mag_status_t unary_op_round(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_round>(err, cmd.out[0], cmd.in[0], stream); }
   mag_status_t unary_op_trunc(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) { return impl_unary_op_fp<op_trunc>(err, cmd.out[0], cmd.in[0], stream); }
 
-  template <typename T>
-  __global__ static void softmax_kernel(int64_t rows, int64_t last_dim, bool scalar, T *__restrict__ r, const T *__restrict__ x) {
-    int64_t row = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + static_cast<int64_t>(threadIdx.x);
-    if (row >= rows) return;
-    if (scalar) {
-      r[0] = static_cast<T>(1.f);
-      return;
-    }
-    const T *row_in = x + row * last_dim;
-    T *row_out = r + row * last_dim;
-    auto maxv = static_cast<float>(row_in[0]);
-    for (int64_t i=1; i < last_dim; ++i) {
-      auto v = static_cast<float>(row_in[i]);
-      if (v > maxv) maxv = v;
-    }
-    double sum = 0.0;
-    for (int64_t i=0; i < last_dim; ++i)
-      sum += static_cast<double>(__expf(static_cast<float>(row_in[i]) - maxv));
+  static constexpr unsigned SOFTMAX_WARP_ROW_MAX = 256;
 
-    auto inv = static_cast<float>(1.0 / sum);
-    for (int64_t i=0; i < last_dim; ++i) {
-      float s = __expf(static_cast<float>(row_in[i]) - maxv)*inv;
-      row_out[i] = static_cast<T>(s);
+  __device__ __forceinline__ static float softmax_warp_max(float v) {
+    #pragma unroll
+    for (int o=16; o > 0; o >>= 1) v = fmaxf(v, __shfl_xor_sync(0xffffffffu, v, o));
+    return v;
+  }
+
+  __device__ __forceinline__ static float softmax_warp_sum(float v) {
+    #pragma unroll
+    for (int o=16; o > 0; o >>= 1) v += __shfl_xor_sync(0xffffffffu, v, o);
+    return v;
+  }
+
+  template <typename T>
+  __global__ static void softmax_warp_kernel(int64_t rows, int64_t last_dim, T *__restrict__ r, const T *__restrict__ x) {
+    static constexpr int PER_LANE = SOFTMAX_WARP_ROW_MAX/32;
+    int lane = static_cast<int>(threadIdx.x & 31);
+    int64_t row = static_cast<int64_t>(blockIdx.x)*(blockDim.x>>5) + (threadIdx.x>>5);
+    if (row >= rows) return;
+    const T *row_in = x + row*last_dim;
+    T *row_out = r + row*last_dim;
+    float v[PER_LANE];
+    float maxv = -INFINITY;
+    #pragma unroll
+    for (int j=0; j < PER_LANE; ++j) {
+      int64_t i = lane + (j<<5);
+      v[j] = i < last_dim ? static_cast<float>(row_in[i]) : -INFINITY;
+      maxv = fmaxf(maxv, v[j]);
     }
+    maxv = softmax_warp_max(maxv);
+    float sum = 0.f;
+    #pragma unroll
+    for (int j=0; j < PER_LANE; ++j) {
+      v[j] = lane + (j<<5) < last_dim ? __expf(v[j] - maxv) : 0.f;
+      sum += v[j];
+    }
+    float inv = 1.f/softmax_warp_sum(sum);
+    #pragma unroll
+    for (int j=0; j < PER_LANE; ++j) {
+      int64_t i = lane + (j<<5);
+      if (i < last_dim) row_out[i] = static_cast<T>(v[j]*inv);
+    }
+  }
+
+  template <bool MAX>
+  __device__ __forceinline__ static float softmax_block_reduce(float v, float *smem) {
+    int lane = static_cast<int>(threadIdx.x & 31);
+    int warp = static_cast<int>(threadIdx.x >> 5);
+    int nwarps = static_cast<int>(blockDim.x >> 5);
+    v = MAX ? softmax_warp_max(v) : softmax_warp_sum(v);
+    if (lane == 0) smem[warp] = v;
+    __syncthreads();
+    v = lane < nwarps ? smem[lane] : (MAX ? -INFINITY : 0.f);
+    v = MAX ? softmax_warp_max(v) : softmax_warp_sum(v);
+    __syncthreads();
+    return v;
+  }
+
+  template <typename T>
+  __global__ static void softmax_block_kernel(int64_t last_dim, T *__restrict__ r, const T *__restrict__ x) {
+    __shared__ float smem[32];
+    int64_t row = blockIdx.x;
+    const T *row_in = x + row*last_dim;
+    T *row_out = r + row*last_dim;
+    float maxv = -INFINITY;
+    for (int64_t i=threadIdx.x; i < last_dim; i += blockDim.x)
+      maxv = fmaxf(maxv, static_cast<float>(row_in[i]));
+    maxv = softmax_block_reduce<true>(maxv, smem);
+    float sum = 0.f;
+    for (int64_t i=threadIdx.x; i < last_dim; i += blockDim.x)
+      sum += __expf(static_cast<float>(row_in[i]) - maxv);
+    float inv = 1.f/softmax_block_reduce<false>(sum, smem);
+    for (int64_t i=threadIdx.x; i < last_dim; i += blockDim.x)
+      row_out[i] = static_cast<T>(__expf(static_cast<float>(row_in[i]) - maxv)*inv);
+  }
+
+  template <typename T>
+  __global__ static void softmax_scalar_kernel(T *__restrict__ r) {
+    r[0] = static_cast<T>(1.f);
   }
 
   template <typename T>
@@ -926,12 +982,22 @@ namespace mag {
     int64_t rank = mag_tensor_rank(r);
     int64_t numel = mag_tensor_numel(r);
     if (mag_unlikely(numel <= 0)) return;
-    int64_t last_dim = rank == 0 ? 1 : r->meta.coords.shape[rank-1];
-    int64_t rows = rank == 0 ? 1 : numel/last_dim;
     auto *pr = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
     const auto *px = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
-    auto blocks = static_cast<unsigned>(std::min((numel+UNARY_BLOCK_SIZE-1)/UNARY_BLOCK_SIZE, static_cast<int64_t>(std::numeric_limits<int>::max())));
-    softmax_kernel<T><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(rows, last_dim, rank == 0, pr, px);
+    if (rank == 0) {
+      softmax_scalar_kernel<T><<<1, 1, 0, stream>>>(pr);
+      return;
+    }
+    int64_t last_dim = r->meta.coords.shape[rank-1];
+    int64_t rows = numel/last_dim;
+    if (last_dim <= SOFTMAX_WARP_ROW_MAX) {
+      static constexpr int64_t ROWS_PER_BLOCK = UNARY_BLOCK_SIZE/32;
+      auto blocks = static_cast<unsigned>((rows + ROWS_PER_BLOCK-1)/ROWS_PER_BLOCK);
+      softmax_warp_kernel<T><<<blocks, UNARY_BLOCK_SIZE, 0, stream>>>(rows, last_dim, pr, px);
+    } else {
+      unsigned threads = last_dim >= 2048 ? 512 : 256;
+      softmax_block_kernel<T><<<static_cast<unsigned>(rows), threads, 0, stream>>>(last_dim, pr, px);
+    }
   }
 
   static mag_status_t impl_softmax_op(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
