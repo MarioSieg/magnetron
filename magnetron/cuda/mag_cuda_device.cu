@@ -68,6 +68,7 @@ namespace mag {
 
   static void set_global_seed([[maybe_unused]] mag_error_t *err, [[maybe_unused]] mag_device_t *dvc, uint64_t seed) {
     global_seed.store(seed, std::memory_order_relaxed);
+    global_subseq.store(0, std::memory_order_relaxed);
   }
 
   static constexpr uint32_t cores_per_sm(uint32_t cl) noexcept {

@@ -1513,13 +1513,14 @@ namespace mag {
     bool replacement,
     const T *bx,
     int64_t *br,
-    rng_args rng,
+    uint64_t seed,
+    uint64_t subseq0,
     mag_discrete_sample_pair_d *workspace
   ) {
     int64_t b = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
     if (b >= B) return;
     mag_philox4x32_stream_t stream;
-    mag_philox4x32_stream_seed(&stream, rng.key(), rng.base() + static_cast<uint64_t>(b));
+    mag_philox4x32_stream_seed(&stream, seed, subseq0 + static_cast<uint64_t>(b));
     const T *w = bx + b*K;
     int64_t *o = br + b*num_samples;
     float sumw = 0.f;
@@ -1589,21 +1590,22 @@ namespace mag {
     size_t ws = static_cast<size_t>(B)*static_cast<size_t>(K)*sizeof(mag_discrete_sample_pair_d);
     void *d_ws = nullptr;
     if (cudaError_t ce = stream_alloc(&d_ws, ws, stream); mag_unlikely(ce != cudaSuccess)) return mag_set_error(err, MAG_ERR_OOM, "cuda: multinomial device allocation of %zu bytes failed: %s.", ws, cudaGetErrorString(ce));
-    rng_args rng = device_of(r).rng_reserve(static_cast<uint64_t>(B)); /* One stream per row */
+    uint64_t seed = global_seed.load(std::memory_order_relaxed);
+    uint64_t subseq = global_subseq.fetch_add(static_cast<uint64_t>(B), std::memory_order_relaxed);
     int64_t *br = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     int64_t blocks = (B + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
     switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32:
-        multinomial_rows_kernel<float><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const float *>(mag_tensor_data_ptr(x)), br, rng, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<float><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const float *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_FLOAT16:
-        multinomial_rows_kernel<half><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const half *>(mag_tensor_data_ptr(x)), br, rng, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<half><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const half *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_BFLOAT16:
-        multinomial_rows_kernel<__nv_bfloat16><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)), br, rng, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<__nv_bfloat16><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_FLOAT8_E4M3FN:
-        multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, rng, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       default:
         cuda_check(stream_free(d_ws, stream), "multinomial scratch free");

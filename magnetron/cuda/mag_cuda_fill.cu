@@ -192,7 +192,7 @@ namespace mag {
     int n = mag_tensor_numel(r); // TODO: int64 support
     int blocks = (n + FILL_BLOCK_SIZE - 1) / FILL_BLOCK_SIZE;
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
-    uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
+    uint64_t subseq = global_subseq.fetch_add(static_cast<uint64_t>(n), std::memory_order_relaxed);
     if (mag_tensor_is_contiguous(r)) {
       fill_random_uniform_int_kernel<T, UT, true><<<blocks, FILL_BLOCK_SIZE, 0, stream>>>(n, o, min, max, seed, subseq, {});
     } else {
@@ -210,7 +210,7 @@ namespace mag {
     int n = mag_tensor_numel(r); // todo: I64 NUEML
     int blocks = (((n+3)>>2)+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
-    uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
+    uint64_t subseq = global_subseq.fetch_add(static_cast<uint64_t>((n+3)>>2), std::memory_order_relaxed);
     if (mag_tensor_is_contiguous(r)) {
       fill_random_kernel<T, true, NormDist><<<blocks, FILL_BLOCK_SIZE, 0, stream>>>(n, o, p0, p1, seed, subseq, {});
     } else {
@@ -326,7 +326,7 @@ namespace mag {
     int n = mag_tensor_numel(r); // TODO: int64 support
     int blocks = (n+FILL_BLOCK_SIZE-1)/FILL_BLOCK_SIZE;
     uint64_t seed = global_seed.load(std::memory_order_relaxed);
-    uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
+    uint64_t subseq = global_subseq.fetch_add(static_cast<uint64_t>(n), std::memory_order_relaxed);
     if (mag_tensor_is_contiguous(r)) {
       bernoulli_kernel<true><<<blocks, FILL_BLOCK_SIZE, 0, stream>>>(n, o, p, seed, subseq, {});
     } else {
