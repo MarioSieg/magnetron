@@ -234,59 +234,129 @@ namespace mag {
     return MAG_OK;
   }
 
-  template <typename T>
-  __global__ static void repeat_back_kernel(
-    int rn,
-    int xn,
-    T *__restrict__ br,
-    const T *__restrict__ bx,
-    mag_coords_iter_t cr,
-    mag_coords_iter_t cx
-  ) {
-    for (int64_t i=0; i < rn; ++i) {
-      int ri = mag_coords_iter_to_offset(&cr, i);
-      br[ri] = static_cast<T>(0.f);
+  /*
+  ** repeat_back: r[c] = sum of x over every coordinate that repeat maps onto c. Dims are trailing-aligned, x
+  ** coordinate ax lands on r coordinate ax % rd and leading x dims without an r counterpart are summed out.
+  ** Each output enumerates its own contributors (no atomics, fixed order, so results are deterministic).
+  */
+  struct repeat_back_plan final {
+    int rx;
+    int delta;
+    int64_t xd[MAG_MAX_DIMS];
+    int64_t xs[MAG_MAX_DIMS];
+    int64_t rd[MAG_MAX_DIMS];
+    int64_t rs[MAG_MAX_DIMS];
+    int rr;
+  };
+
+  struct repeat_back_slot final {
+    int64_t ro;
+    int64_t total;
+    int64_t base[MAG_MAX_DIMS];
+    int64_t step[MAG_MAX_DIMS];
+    int64_t reps[MAG_MAX_DIMS];
+  };
+
+  __device__ __forceinline__ void repeat_back_locate(const repeat_back_plan &p, int64_t j, repeat_back_slot &s) {
+    int64_t c[MAG_MAX_DIMS];
+    s.ro = 0;
+    for (int k=p.rr-1; k >= 0; --k) {
+      c[k] = j % p.rd[k];
+      j /= p.rd[k];
+      s.ro += c[k]*p.rs[k];
     }
-    for (int i=0; i < xn; ++i) {
-      int xi = mag_coords_iter_to_offset(&cx, i);
-      int ri = mag_coords_iter_repeat(&cr, &cx, i);
-      br[ri] = static_cast<T>(static_cast<float>(br[ri]) + static_cast<float>(bx[xi]));
+    s.total = 1;
+    for (int k=0; k < p.rx; ++k) {
+      int kd = k - p.delta;
+      if (kd < 0) {
+        s.base[k] = 0;
+        s.step[k] = 1;
+        s.reps[k] = p.xd[k];
+      } else {
+        s.base[k] = c[kd];
+        s.step[k] = p.rd[kd];
+        s.reps[k] = c[kd] < p.xd[k] ? (p.xd[k] - c[kd] - 1)/p.rd[kd] + 1 : 0;
+      }
+      s.total *= s.reps[k];
+    }
+  }
+
+  __device__ __forceinline__ int64_t repeat_back_x_offset(const repeat_back_plan &p, const repeat_back_slot &s, int64_t t) {
+    int64_t o = 0;
+    for (int k=p.rx-1; k >= 0; --k) {
+      int64_t m = t % s.reps[k];
+      t /= s.reps[k];
+      o += (s.base[k] + m*s.step[k])*p.xs[k];
+    }
+    return o;
+  }
+
+  template <typename T>
+  __global__ static void repeat_back_thread_kernel(int64_t rn, repeat_back_plan p, T *__restrict__ br, const T *__restrict__ bx) {
+    for (int64_t j = static_cast<int64_t>(blockIdx.x)*blockDim.x + threadIdx.x; j < rn; j += static_cast<int64_t>(blockDim.x)*gridDim.x) {
+      repeat_back_slot s;
+      repeat_back_locate(p, j, s);
+      float acc = 0.f;
+      for (int64_t t=0; t < s.total; ++t) acc += static_cast<float>(bx[repeat_back_x_offset(p, s, t)]);
+      br[s.ro] = static_cast<T>(acc);
+    }
+  }
+
+  static constexpr unsigned REPEAT_BACK_BLOCK = 256;
+
+  template <typename T>
+  __global__ static void repeat_back_block_kernel(int64_t rn, repeat_back_plan p, T *__restrict__ br, const T *__restrict__ bx) {
+    __shared__ float part[REPEAT_BACK_BLOCK];
+    for (int64_t j = blockIdx.x; j < rn; j += gridDim.x) {
+      repeat_back_slot s;
+      repeat_back_locate(p, j, s);
+      float acc = 0.f;
+      for (int64_t t=threadIdx.x; t < s.total; t += blockDim.x) acc += static_cast<float>(bx[repeat_back_x_offset(p, s, t)]);
+      part[threadIdx.x] = acc;
+      __syncthreads();
+      for (unsigned w=blockDim.x>>1; w; w >>= 1) {
+        if (threadIdx.x < w) part[threadIdx.x] += part[threadIdx.x + w];
+        __syncthreads();
+      }
+      if (threadIdx.x == 0) br[s.ro] = static_cast<T>(part[0]);
+      __syncthreads();
+    }
+  }
+
+  template <typename T>
+  static void launch_repeat_back(const mag_tensor_t *r, const mag_tensor_t *x, const repeat_back_plan &p, cudaStream_t stream) {
+    int64_t rn = mag_tensor_numel(r);
+    int64_t xn = mag_tensor_numel(x);
+    auto *br = reinterpret_cast<T *>(mag_tensor_data_ptr_mut(r));
+    const auto *bx = reinterpret_cast<const T *>(mag_tensor_data_ptr(x));
+    static constexpr int64_t k_max_grid = 65535*16;
+    if (xn/std::max<int64_t>(rn, 1) >= 64) {
+      auto grid = static_cast<unsigned>(std::min<int64_t>(rn, k_max_grid));
+      repeat_back_block_kernel<T><<<grid, REPEAT_BACK_BLOCK, 0, stream>>>(rn, p, br, bx);
+    } else {
+      auto grid = static_cast<unsigned>(std::min<int64_t>((rn + 255)/256, k_max_grid));
+      repeat_back_thread_kernel<T><<<grid, 256, 0, stream>>>(rn, p, br, bx);
     }
   }
 
   mag_status_t misc_op_repeat_back(mag_error_t *err, const mag_command_t &cmd, cudaStream_t stream) {
     mag_tensor_t *r = cmd.out[0];
     const mag_tensor_t *x = cmd.in[0];
-    mag_coords_iter_t cr, cx;
-    mag_coords_iter_init(&cr, &r->meta.coords);
-    mag_coords_iter_init(&cx, &x->meta.coords);
-    int rn = mag_tensor_numel(r); // TODO: i64 numel
-    int xn = mag_tensor_numel(x); // TODO: i64 numel
+    const auto &cr = r->meta.coords;
+    const auto &cx = x->meta.coords;
+    if (mag_unlikely(cx.rank < cr.rank))
+      return mag_set_error(err, MAG_ERR_KERNEL, "cuda: repeat_back: input rank %d is below output rank %d.", static_cast<int>(cx.rank), static_cast<int>(cr.rank));
+    repeat_back_plan p {};
+    p.rx = static_cast<int>(cx.rank);
+    p.rr = static_cast<int>(cr.rank);
+    p.delta = p.rx - p.rr;
+    for (int k=0; k < p.rx; ++k) { p.xd[k] = cx.shape[k]; p.xs[k] = cx.strides[k]; }
+    for (int k=0; k < p.rr; ++k) { p.rd[k] = cr.shape[k]; p.rs[k] = cr.strides[k]; }
     switch (r->meta.dtype) {
-      case MAG_DTYPE_FLOAT32: repeat_back_kernel<float><<<1, 1, 0, stream>>>(
-        rn, xn,
-        reinterpret_cast<float *>(mag_tensor_data_ptr_mut(r)),
-        reinterpret_cast<const float *>(mag_tensor_data_ptr(x)),
-        cr, cx
-      ); return MAG_OK;
-      case MAG_DTYPE_FLOAT16: repeat_back_kernel<half><<<1, 1, 0, stream>>>(
-        rn, xn,
-        reinterpret_cast<half *>(mag_tensor_data_ptr_mut(r)),
-        reinterpret_cast<const half *>(mag_tensor_data_ptr(x)),
-        cr, cx
-      ); return MAG_OK;
-      case MAG_DTYPE_BFLOAT16: repeat_back_kernel<__nv_bfloat16><<<1, 1, 0, stream>>>(
-        rn, xn,
-        reinterpret_cast<__nv_bfloat16 *>(mag_tensor_data_ptr_mut(r)),
-        reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)),
-        cr, cx
-      ); return MAG_OK;
-        case MAG_DTYPE_FLOAT8_E4M3FN: repeat_back_kernel<__nv_fp8_e4m3><<<1, 1, 0, stream>>>(
-        rn, xn,
-        reinterpret_cast<__nv_fp8_e4m3 *>(mag_tensor_data_ptr_mut(r)),
-        reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)),
-        cr, cx
-      ); return MAG_OK;
+      case MAG_DTYPE_FLOAT32: launch_repeat_back<float>(r, x, p, stream); return MAG_OK;
+      case MAG_DTYPE_FLOAT16: launch_repeat_back<half>(r, x, p, stream); return MAG_OK;
+      case MAG_DTYPE_BFLOAT16: launch_repeat_back<__nv_bfloat16>(r, x, p, stream); return MAG_OK;
+      case MAG_DTYPE_FLOAT8_E4M3FN: launch_repeat_back<__nv_fp8_e4m3>(r, x, p, stream); return MAG_OK;
       default: return mag_set_error(err, MAG_ERR_KERNEL, "cuda: repeat_back: unsupported dtype: %s.", mag_type_trait(r->meta.dtype)->name);
     }
   }
@@ -1443,14 +1513,13 @@ namespace mag {
     bool replacement,
     const T *bx,
     int64_t *br,
-    uint64_t seed,
-    uint64_t subseq0,
+    rng_args rng,
     mag_discrete_sample_pair_d *workspace
   ) {
     int64_t b = static_cast<int64_t>(blockIdx.x)*static_cast<int64_t>(blockDim.x) + threadIdx.x;
     if (b >= B) return;
     mag_philox4x32_stream_t stream;
-    mag_philox4x32_stream_seed(&stream, seed, subseq0 + static_cast<uint64_t>(b));
+    mag_philox4x32_stream_seed(&stream, rng.key(), rng.base() + static_cast<uint64_t>(b));
     const T *w = bx + b*K;
     int64_t *o = br + b*num_samples;
     float sumw = 0.f;
@@ -1520,22 +1589,21 @@ namespace mag {
     size_t ws = static_cast<size_t>(B)*static_cast<size_t>(K)*sizeof(mag_discrete_sample_pair_d);
     void *d_ws = nullptr;
     if (cudaError_t ce = stream_alloc(&d_ws, ws, stream); mag_unlikely(ce != cudaSuccess)) return mag_set_error(err, MAG_ERR_OOM, "cuda: multinomial device allocation of %zu bytes failed: %s.", ws, cudaGetErrorString(ce));
-    uint64_t seed = global_seed.load(std::memory_order_relaxed);
-    uint64_t subseq = global_subseq.fetch_add(1, std::memory_order_relaxed);
+    rng_args rng = device_of(r).rng_reserve(static_cast<uint64_t>(B)); /* One stream per row */
     int64_t *br = reinterpret_cast<int64_t *>(mag_tensor_data_ptr_mut(r));
     int64_t blocks = (B + MISC_BLOCK_SIZE - 1) / MISC_BLOCK_SIZE;
     switch (x->meta.dtype) {
       case MAG_DTYPE_FLOAT32:
-        multinomial_rows_kernel<float><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const float *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<float><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const float *>(mag_tensor_data_ptr(x)), br, rng, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_FLOAT16:
-        multinomial_rows_kernel<half><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const half *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<half><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const half *>(mag_tensor_data_ptr(x)), br, rng, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_BFLOAT16:
-        multinomial_rows_kernel<__nv_bfloat16><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<__nv_bfloat16><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_bfloat16 *>(mag_tensor_data_ptr(x)), br, rng, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       case MAG_DTYPE_FLOAT8_E4M3FN:
-        multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, seed, subseq, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
+        multinomial_rows_kernel<__nv_fp8_e4m3><<<blocks, MISC_BLOCK_SIZE, 0, stream>>>(B, K, num_samples, cmd.params->multinomial.replacement, reinterpret_cast<const __nv_fp8_e4m3 *>(mag_tensor_data_ptr(x)), br, rng, reinterpret_cast<mag_discrete_sample_pair_d *>(d_ws));
         break;
       default:
         cuda_check(stream_free(d_ws, stream), "multinomial scratch free");
