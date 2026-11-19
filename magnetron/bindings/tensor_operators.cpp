@@ -54,7 +54,7 @@ namespace mag::bindings {
   }
 
   template <const bool T>
-  static tensor_wrapper conv_impl(
+  [[nodiscard]] static tensor_wrapper conv_impl(
     const tensor_wrapper &self,
     const tensor_wrapper &weight,
     nb::handle bias_h,
@@ -1887,5 +1887,59 @@ namespace mag::bindings {
       "rhs"_a,
       "Matrix multiplication."
     );
+
+    // Special / DSP stuff
+
+    cls.def("i0", [](const tensor_wrapper &self) -> tensor_wrapper {
+      return call_op_maybe_without_gil(self, mag_i0, *self);
+    }, "Zeroth-order modified Bessel function of the first kind, element-wise.");
+
+    auto cmpl_pair = [](mag_tensor_t *re, mag_tensor_t *im) -> nb::tuple { // Pack real and imaginary parts
+      tensor_wrapper r {re};
+      tensor_wrapper i {im};
+      return nb::make_tuple(std::move(r), std::move(i));
+    };
+
+    cls.def("fft", [cmpl_pair](const tensor_wrapper &self, const std::optional<tensor_wrapper> &imag, int64_t dim) -> nb::tuple {
+      mag_tensor_t *re = nullptr, *im = nullptr;
+      mag_error_t err {};
+      throw_if_error(invoke_auto_gil(self, [&] { return mag_fft(&err, &re, &im, *self, imag ? **imag : nullptr, dim); }), err);
+      return cmpl_pair(re, im);
+    }, "imag"_a = nb::none(), "dim"_a = -1,
+    "Complex DFT along dim; self is the real part, imag the optional imaginary part (None treats the input as real). Returns (re, im).");
+    cls.def("ifft", [cmpl_pair](const tensor_wrapper &self, const std::optional<tensor_wrapper> &imag, int64_t dim) -> nb::tuple {
+      mag_tensor_t *re = nullptr, *im = nullptr;
+      mag_error_t err {};
+      throw_if_error(invoke_auto_gil(self, [&] { return mag_ifft(&err, &re, &im, *self, imag ? **imag : nullptr, dim); }), err);
+      return cmpl_pair(re, im);
+    }, "imag"_a = nb::none(), "dim"_a = -1,
+    "Inverse complex DFT along dim; self is the real part, imag the imaginary part. Returns (re, im).");
+    cls.def("rfft", [cmpl_pair](const tensor_wrapper &self, int64_t dim) -> nb::tuple {
+      mag_tensor_t *re = nullptr, *im = nullptr;
+      mag_error_t err {};
+      throw_if_error(invoke_auto_gil(self, [&] { return mag_rfft(&err, &re, &im, *self, dim); }), err);
+      return cmpl_pair(re, im);
+    }, "dim"_a = -1,
+    "Real-input DFT along dim, keeping the n//2+1 non-negative frequency bins. Returns (re, im).");
+    cls.def("irfft", [](const tensor_wrapper &self, const tensor_wrapper &imag, int64_t n, int64_t dim) -> tensor_wrapper {
+      return call_op_maybe_without_gil(self, mag_irfft, *self, *imag, n, dim);
+    }, "imag"_a, "n"_a, "dim"_a = -1,
+    "Inverse of rfft: real signal of length n along dim from n//2+1 frequency bins; self is the real part.");
+    cls.def("resample", [](const tensor_wrapper &self, int64_t orig_freq, int64_t new_freq, int64_t lowpass_filter_width, double rolloff, std::optional<double> beta) -> nb::object {
+      if (orig_freq <= 0 || new_freq <= 0) {
+        std::ostringstream oss;
+        oss << "Sample rates must be positive, got " << orig_freq << " -> " << new_freq;
+        throw nb::value_error(oss.str().c_str());
+      }
+      if (orig_freq == new_freq) return nb::find(self);
+      mag_resample_window_t window = beta ? MAG_RESAMPLE_WINDOW_KAISER : MAG_RESAMPLE_WINDOW_HANN;
+      return nb::cast(call_op_maybe_without_gil(self, mag_resample, *self, orig_freq, new_freq, lowpass_filter_width, rolloff, window, beta.value_or(0.0)));
+    },
+      "orig_freq"_a,
+      "new_freq"_a,
+      "lowpass_filter_width"_a = 64,
+      "rolloff"_a = 0.9475937167399596,
+      "beta"_a.none() = 14.769656459379492,
+    "Resample along the last dim with a windowed-sinc polyphase filter. beta=None uses a Hann window, otherwise a Kaiser window with that beta.");
   }
 }

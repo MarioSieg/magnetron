@@ -349,6 +349,25 @@ namespace mag::bindings {
     return tensor_wrapper{typed_cpu};
   }
 
+  [[nodiscard]] static std::pair<mag_dtype_t, mag_device_id_t> resolve_window_opts(const std::optional<dtype_wrapper> &dtype, const std::optional<std::string> &device) {
+    mag_context_t *ctx = get_ctx();
+    mag_dtype_t dt = dtype ? dtype->v : mag_ctx_default_dtype(ctx);
+    std::optional<mag_device_id_t> dev = device ? resolve_device_id_str(*device) : std::optional{mag_ctx_default_device(ctx)};
+    if (!dev) throw std::runtime_error {"Invalid device id"};
+    return {dt, *dev};
+  }
+
+  using window_fn = mag_status_t (mag_error_t *, mag_tensor_t **, mag_context_t *, mag_dtype_t, int64_t, bool, mag_device_id_t);
+
+  template <window_fn *Fn>
+  [[nodiscard]] static tensor_wrapper cosine_window(int64_t n, bool periodic, const std::optional<dtype_wrapper> &dtype, const std::optional<std::string> &device, bool requires_grad) {
+    auto [dt, dev] = resolve_window_opts(dtype, device);
+    mag_context_t *ctx = get_ctx();
+    tensor_wrapper out = call_op(Fn, ctx, dt, n, periodic, dev);
+    maybe_set_requires_grad(ctx, *out, requires_grad);
+    return out;
+  }
+
   void init_tensor_class_factories(nb::class_<tensor_wrapper> &cls) {
     cls.def("__init__",
       [](tensor_wrapper *self, const tensor_wrapper &other) {
@@ -825,5 +844,22 @@ namespace mag::bindings {
      },
      "View of base with given shape and strides. Kwargs: offset/storage_offset."
    );
+    cls.def_static("hann_window", &cosine_window<mag_hann_window>,
+      "n"_a, "periodic"_a = true, nb::kw_only(), "dtype"_a = nb::none(), "device"_a = nb::none(), "requires_grad"_a = false,
+      "1-D Hann window of length n. periodic=True for spectral analysis, False for a symmetric filter window.");
+    cls.def_static("hamming_window", &cosine_window<mag_hamming_window>,
+      "n"_a, "periodic"_a = true, nb::kw_only(), "dtype"_a = nb::none(), "device"_a = nb::none(), "requires_grad"_a = false,
+      "1-D Hamming window of length n. periodic=True for spectral analysis, False for a symmetric filter window.");
+    cls.def_static("blackman_window", &cosine_window<mag_blackman_window>,
+      "n"_a, "periodic"_a = true, nb::kw_only(), "dtype"_a = nb::none(), "device"_a = nb::none(), "requires_grad"_a = false,
+      "1-D Blackman window of length n. periodic=True for spectral analysis, False for a symmetric filter window.");
+    cls.def_static("kaiser_window", [](int64_t n, double beta, bool periodic, const std::optional<dtype_wrapper> &dtype, const std::optional<std::string> &device, bool requires_grad) -> tensor_wrapper {
+      auto [dt, dev] = resolve_window_opts(dtype, device);
+      mag_context_t *ctx = get_ctx();
+      tensor_wrapper out = call_op(mag_kaiser_window, ctx, dt, n, beta, periodic, dev);
+      maybe_set_requires_grad(ctx, *out, requires_grad);
+      return out;
+    }, "n"_a, "beta"_a = 12.0, "periodic"_a = true, nb::kw_only(), "dtype"_a = nb::none(), "device"_a = nb::none(), "requires_grad"_a = false,
+    "1-D Kaiser window of length n with shape parameter beta.");
   }
 }
