@@ -18,8 +18,9 @@
 extern "C" {
 #endif
 
-extern char *mag_current_module_path(void);
-extern bool mag_query_crypto_entropy(void *buf, size_t len);
+extern MAG_EXPORT char *mag_os_chmod_path(void); /* Current module dir */
+extern MAG_EXPORT bool mag_os_sample_crypto_entropy(void *buf, size_t len); /* Sample secure OS bytes */
+extern MAG_EXPORT uint64_t mag_os_boot_uid(void); /* Unique system boot ID (used for collective ops, VM safe too) */
 
 #ifdef __cplusplus
 }

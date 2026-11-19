@@ -10,6 +10,7 @@
 */
 
 #include "mag_os.h"
+#include "mag_hash.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -29,10 +30,10 @@ extern int getentropy(void *buf, size_t len);
 #endif
 #endif
 
-char *mag_current_module_path(void) {
+char *mag_os_chmod_path(void) {
 #if defined(_WIN32)
   HMODULE hModule = NULL;
-  if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&mag_current_module_path, &hModule))
+  if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&mag_os_chmod_path, &hModule))
     return NULL;
   char buf[MAX_PATH];
   DWORD len = GetModuleFileNameA(hModule, buf, MAX_PATH);
@@ -40,7 +41,7 @@ char *mag_current_module_path(void) {
   return mag_strdup(buf);
 #elif defined(__linux__) || defined(__APPLE__)
   Dl_info info;
-  volatile void *sym = &mag_current_module_path;
+  volatile void *sym = &mag_os_chmod_path;
   if (dladdr((void *)sym, &info) && info.dli_fname) {
     char *real = realpath(info.dli_fname, NULL);
     char *ret = real ? mag_strdup(real) : mag_strdup(info.dli_fname);
@@ -58,7 +59,7 @@ typedef BOOLEAN (WINAPI *mag_win32_prgr_fn_t)(void *buf, ULONG len);
 static mag_win32_prgr_fn_t mag_win32_prgr_fn;
 #endif
 
-bool mag_query_crypto_entropy(void *buf, size_t len) {
+bool mag_os_sample_crypto_entropy(void *buf, size_t len) {
 #if defined(__linux__) && SYS_getrandom
   return syscall(SYS_getrandom, buf, len, 0) == len;
 #elif defined(__APPLE__) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101200
@@ -78,4 +79,26 @@ bool mag_query_crypto_entropy(void *buf, size_t len) {
   (void)close(fd);
   return n == (ssize_t)len;
 #endif
+}
+
+uint64_t mag_os_boot_uid(void) {
+  char buf[512] = {0};
+  size_t n=0;
+  if (gethostname(buf, 255) == 0) { /* TODO: win32 */
+    buf[255] = '\0';
+    n=strlen(buf);
+  }
+  buf[n++] = '/';
+  #ifdef __linux__   /* distinguishes containers or VMs that share a hostname. */
+    FILE *f = fopen("/proc/sys/kernel/random/boot_id", "r");
+    if (f) {
+      n += fread(buf+n, 1, sizeof(buf)-n-1, f);
+      fclose(f);
+    }
+  #elif defined(__APPLE__)
+    size_t blen = sizeof(ident)-len-1;
+    if (sysctlbyname("kern.bootsessionuuid", ident+len, &blen, NULL, 0) == 0)
+      len += strnlen(ident+len, blen);
+  #endif
+  return mag_murmur3_128_red64(buf, n, 0x686f7374u);
 }

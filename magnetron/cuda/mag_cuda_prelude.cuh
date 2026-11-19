@@ -125,8 +125,8 @@ namespace mag {
   [[nodiscard]] __host__ __device__ __forceinline__ static constexpr T unpack_scalar(mag_scalar_t scalar) noexcept {
     switch (scalar.type) {
       case MAG_SCALAR_TYPE_F64:
-        if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) return static_cast<T>(mag_f64_to_i64(scalar.value.float64));
-        else if constexpr (std::is_integral_v<T>) return static_cast<T>(mag_f64_to_u64(scalar.value.float64));
+        if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) return static_cast<T>(mag_sat_cvt_f642i64(scalar.value.float64));
+        else if constexpr (std::is_integral_v<T>) return static_cast<T>(mag_sat_cvt_f642u64(scalar.value.float64));
         else return static_cast<T>(scalar.value.float64);
       case MAG_SCALAR_TYPE_I64: return static_cast<T>(scalar.value.int64);
       default:

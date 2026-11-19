@@ -110,7 +110,7 @@ static mag_status_t mag_backend_module_load(mag_error_t *err, mag_backend_module
   *module = (mag_backend_module_t) {
     .handle = handle,
     .backend = backend,
-    .fname_hash = mag_murmur3_128_reduced_64(file, strlen(file), 0),
+    .fname_hash = mag_murmur3_128_red64(file, strlen(file), 0),
     .fn_abi_cookie = fn_abi_cookie,
     .fn_init = fn_init,
     .fn_shutdown = fn_shutdown
@@ -258,7 +258,7 @@ mag_status_t mag_backend_registry_init(mag_error_t *err, mag_context_t *ctx, mag
   memset(reg, 0, sizeof(*reg));
   reg->ctx = ctx;
   mag_status_t stat = MAG_OK;
-  char *modpath = mag_current_module_path();
+  char *modpath = mag_os_chmod_path();
   if (mag_unlikely(!modpath)) {
     stat = mag_set_error(err, MAG_ERR_STATE, "backend: failed to determine the magnetron module path needed to locate backend libraries.");
     goto error;

@@ -179,7 +179,7 @@ mag_status_t mag_ctx_create(mag_error_t *err, mag_context_t **out_ctx) {
 
   /* Seed prng once with secure system entropy */
   uint64_t global_seed = 0;
-  if (mag_unlikely(!mag_query_crypto_entropy(&global_seed, sizeof(global_seed)))) /* Fallback to weak seeding */
+  if (mag_unlikely(!mag_os_sample_crypto_entropy(&global_seed, sizeof(global_seed)))) /* Fallback to weak seeding */
     global_seed = (uint64_t)time(NULL)^mag_thread_id()^((uintptr_t)ctx>>3)^mag_cycles()^((uintptr_t)&global_seed>>3);
   mag_ctx_manual_seed(ctx, global_seed);
 

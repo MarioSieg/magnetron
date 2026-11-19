@@ -91,7 +91,7 @@ mag_uint128_t mag_murmur3_128(const void *key, size_t nb, uint32_t seed) {
   return mag_uint128_make(h1, h2);
 }
 
-uint64_t mag_murmur3_128_reduced_64(const void *key, size_t nb, uint32_t seed) {
+uint64_t mag_murmur3_128_red64(const void *key, size_t nb, uint32_t seed) {
   mag_uint128_t hash = mag_murmur3_128(key, nb, seed);
   return mag_fmix64(mag_uint128_hi(hash)^mag_uint128_lo(hash));
 }

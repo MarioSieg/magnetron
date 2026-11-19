@@ -16,9 +16,9 @@
 
 static uint32_t mag_map_seed32(void) {
   uint32_t s = 0;
-  if (mag_likely(mag_query_crypto_entropy(&s, sizeof(s)) && s)) return s;
+  if (mag_likely(mag_os_sample_crypto_entropy(&s, sizeof(s)) && s)) return s;
   s = (uint32_t)rand() ^ ((uint32_t)rand()<<16);
-  s ^= ((uint32_t)(uintptr_t)&s>>3) ^ ((uint32_t)(uintptr_t)&mag_query_crypto_entropy>>3);
+  s ^= ((uint32_t)(uintptr_t)&s>>3) ^ ((uint32_t)(uintptr_t)&mag_os_sample_crypto_entropy>>3);
   s ^= s>>16;
   s *= 0x7feb352du;
   s ^= s>>15;
@@ -82,7 +82,7 @@ bool mag_map_init(mag_map_t *map, size_t cap, bool clone_keys) {
 
 void *mag_map_lookup(mag_map_t *map, const void *key, size_t len) {
   mag_assert2(key && len && len <= UINT32_MAX);
-  uint64_t hash = mag_murmur3_128_reduced_64(key, len, map->hash_seed);
+  uint64_t hash = mag_murmur3_128_red64(key, len, map->hash_seed);
   size_t mask = map->size-1;
   size_t idx = hash & mask;
   size_t n = 0;
@@ -98,7 +98,7 @@ void *mag_map_lookup(mag_map_t *map, const void *key, size_t len) {
 
 const void *mag_map_lookup_key_ptr(mag_map_t *map, const void *key, size_t len) {
   mag_assert2(key && len && len <= UINT32_MAX);
-  uint64_t hash = mag_murmur3_128_reduced_64(key, len, map->hash_seed);
+  uint64_t hash = mag_murmur3_128_red64(key, len, map->hash_seed);
   size_t mask = map->size-1;
   size_t idx = hash & mask;
   size_t n = 0;
@@ -116,7 +116,7 @@ bool mag_map_insert_if_absent(mag_map_t *map, const void *key, size_t len, void 
   mag_assert2(key && len && len <= UINT32_MAX);
   if (map->nitems * 100 >= map->size * 85)
     if (mag_unlikely(!mag_map_resize(map, map->size<<1))) return false;
-  uint64_t hash = mag_murmur3_128_reduced_64(key, len, map->hash_seed);
+  uint64_t hash = mag_murmur3_128_red64(key, len, map->hash_seed);
   size_t mask = map->size-1;
   size_t idx = hash & mask;
   mag_bucket_t entry;
@@ -154,7 +154,7 @@ bool mag_map_insert_if_absent(mag_map_t *map, const void *key, size_t len, void 
 
 void *mag_map_erase(mag_map_t *map, const void *key, size_t len) {
   mag_assert2(key && len && len <= UINT32_MAX);
-  uint64_t hash = mag_murmur3_128_reduced_64(key, len, map->hash_seed);
+  uint64_t hash = mag_murmur3_128_red64(key, len, map->hash_seed);
   size_t mask = map->size-1;
   size_t idx = hash & mask;
   size_t n = 0;

@@ -20,7 +20,15 @@ extern "C" {
 #endif
 
 extern MAG_EXPORT mag_uint128_t mag_murmur3_128(const void *key, size_t nb, uint32_t seed);
-extern MAG_EXPORT uint64_t mag_murmur3_128_reduced_64(const void *key, size_t nb, uint32_t seed);
+extern MAG_EXPORT uint64_t mag_murmur3_128_red64(const void *key, size_t nb, uint32_t seed);
+static uint64_t mag_hmix64(uint64_t x) { /* splitmix64 finalizer (good avalanche too) */
+  x^=x>>30;
+  x*=0xbf58476d1ce4e5b9ull;
+  x^=x>>27;
+  x*=0x94d049bb133111ebull;
+  x^=x>>31;
+  return x;
+}
 
 #ifdef __cplusplus
 }

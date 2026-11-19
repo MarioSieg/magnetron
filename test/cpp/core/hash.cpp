@@ -16,7 +16,7 @@
 using namespace magnetron;
 
 TEST(hash, murmur3) {
-    ASSERT_EQ(mag_murmur3_128_reduced_64("hello", 5, 0), mag_murmur3_128_reduced_64("hello", 5, 0));
-    ASSERT_NE(mag_murmur3_128_reduced_64("hello", 5, 1), mag_murmur3_128_reduced_64("hello", 5, 0));
-    ASSERT_NE(mag_murmur3_128_reduced_64("hello", 5, 0), mag_murmur3_128_reduced_64("hella", 5, 0));
+    ASSERT_EQ(mag_murmur3_128_red64("hello", 5, 0), mag_murmur3_128_red64("hello", 5, 0));
+    ASSERT_NE(mag_murmur3_128_red64("hello", 5, 1), mag_murmur3_128_red64("hello", 5, 0));
+    ASSERT_NE(mag_murmur3_128_red64("hello", 5, 0), mag_murmur3_128_red64("hella", 5, 0));
 }
