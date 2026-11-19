@@ -306,7 +306,7 @@ mag_status_t mag_tensor_backward(mag_error_t *err, mag_tensor_t *root) {
       if (num_in > grads_cap) {
         size_t cap = grads_cap ? grads_cap : MAG_AU_STATE_INTRUSIVE_STORAGE_NUM;
         for (; cap < num_in; cap <<= 1);
-        void *realloced = (*mag_try_alloc)(grads_dyn, cap*sizeof(*grads_dyn), grads_cap*sizeof(*grads_dyn));
+        void *realloced = (*mag_try_alloc)(grads_dyn, cap*sizeof(*grads_dyn), 0); /* Third arg is alignment, not the old size */
         if (mag_unlikely(!realloced)) {
           stat = mag_set_error(err, MAG_ERR_OOM, "autograd: failed to allocate backward gradients.");
           goto cleanup;

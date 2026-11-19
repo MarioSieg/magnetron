@@ -136,10 +136,31 @@ static MAG_CUDA_DEVICE MAG_AINLINE uint64_t mag_sat_cvt_f642u64(double x) {
 #define mag_vclamp(v, lo, hi) ((v)<(lo)?(lo):(v)>(hi)?(hi):(v))
 #define mag_align_up(x, al) (((x)+(al)-1)&-(al))
 #define mag_align_down(x, al) ((x)&-(al))
+#define MAG_PI 3.14159265358979323846264338327950288
 #define MAG_TAU 6.283185307179586476925286766559005768394338798f /* τ=2π */
 #define MAG_INVSQRT2 0.707106781186547524400844362104849039284835937f /* 1/√2 */
 #define MAG_SQRT2OVERPI 0.797884560802865355879892119868763736951717263f
 #define MAG_GELU_COEFF 0.044715f /* Coefficient for GELU approximation. */
+#define MAG_BESSEL_I0_TERMS 32 /* Taylor terms of the tensor i0 */
+
+static double mag_bessel_i0(double x, int terms) { /* Using Taylor series */
+  double y=0.25*x*x;
+  double t=1.0,r=1.0;
+  for (int k=1; k < terms; ++k) {
+    t*=y/((double)k*(double)k);
+    r+=t;
+  }
+  return r;
+}
+
+static int64_t mag_gcd(int64_t a, int64_t b) {
+  while (b) {
+    int64_t t = a%b;
+    a = b;
+    b = t;
+  }
+  return a;
+}
 
 static uint16_t MAG_AINLINE mag_bswap16(uint16_t x) {
 #if (defined(__GNUC__) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) || defined(__clang__)

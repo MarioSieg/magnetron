@@ -3765,6 +3765,132 @@ extern MAG_EXPORT mag_status_t mag_einsum(
 );
 
 /**
+ * Compute the zeroth-order modified Bessel function of the first kind element-wise.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives the result tensor; the caller owns one reference.
+ * @param x Floating-point input tensor.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_i0(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x);
+
+/**
+ * Create a 1-D Hann window.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives the result tensor; the caller owns one reference.
+ * @param ctx Owning context.
+ * @param type Floating-point data type.
+ * @param n Window length, >= 0.
+ * @param periodic True for a periodic window (spectral analysis), false for a symmetric one (filter design).
+ * @param device Device the tensor is allocated on.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_hann_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device);
+
+/**
+ * Create a 1-D Hamming window. Parameters as for mag_hann_window.
+ */
+extern MAG_EXPORT mag_status_t mag_hamming_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device);
+
+/**
+ * Create a 1-D Blackman window. Parameters as for mag_hann_window.
+ */
+extern MAG_EXPORT mag_status_t mag_blackman_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device);
+
+/**
+ * Create a 1-D Kaiser window.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives the result tensor; the caller owns one reference.
+ * @param ctx Owning context.
+ * @param type Floating-point data type.
+ * @param n Window length, >= 0.
+ * @param beta Shape parameter.
+ * @param periodic True for a periodic window, false for a symmetric one.
+ * @param device Device the tensor is allocated on.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_kaiser_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, double beta, bool periodic, mag_device_id_t device);
+
+/**
+ * Complex discrete Fourier transform along one dim, with split real and imaginary parts.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_re Receives the real part; the caller owns one reference.
+ * @param out_im Receives the imaginary part; the caller owns one reference.
+ * @param xr Real part of the floating-point input.
+ * @param xi Imaginary part, same shape and dtype as @p xr; NULL for a purely real input.
+ * @param dim Transform axis; negative values count from the end.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_fft(mag_error_t *err, mag_tensor_t **out_re, mag_tensor_t **out_im, mag_tensor_t *xr, mag_tensor_t *xi, int64_t dim);
+
+/**
+ * Inverse complex discrete Fourier transform along one dim. Parameters as for mag_fft, except that @p xi is required.
+ */
+extern MAG_EXPORT mag_status_t mag_ifft(mag_error_t *err, mag_tensor_t **out_re, mag_tensor_t **out_im, mag_tensor_t *xr, mag_tensor_t *xi, int64_t dim);
+
+/**
+ * Real-input discrete Fourier transform along one dim. The output holds the n/2+1 non-negative frequency bins.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_re Receives the real part; the caller owns one reference.
+ * @param out_im Receives the imaginary part; the caller owns one reference.
+ * @param x Real floating-point input.
+ * @param dim Transform axis; negative values count from the end.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_rfft(mag_error_t *err, mag_tensor_t **out_re, mag_tensor_t **out_im, mag_tensor_t *x, int64_t dim);
+
+/**
+ * Inverse of mag_rfft.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives the real signal of length @p n along @p dim; the caller owns one reference.
+ * @param xr Real part with n/2+1 bins along @p dim.
+ * @param xi Imaginary part, same shape and dtype as @p xr.
+ * @param n Output signal length, > 0.
+ * @param dim Transform axis; negative values count from the end.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_irfft(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *xr, mag_tensor_t *xi, int64_t n, int64_t dim);
+
+/** Window applied to the sinc interpolation kernel of mag_resample. */
+typedef enum mag_resample_window_t {
+  /** Squared-cosine (Hann) window. */
+  MAG_RESAMPLE_WINDOW_HANN = 0,
+  /** Kaiser window, shaped by beta. */
+  MAG_RESAMPLE_WINDOW_KAISER = 1,
+} mag_resample_window_t;
+
+/**
+ * Resample a signal along its last dim with a windowed-sinc polyphase filter.
+ *
+ * @param err Error output; set when the call fails.
+ * @param out_result Receives the resampled tensor; the caller owns one reference.
+ * @param x Floating-point input with rank >= 1; time runs along the last dim.
+ * @param orig_freq Original sample rate, > 0.
+ * @param new_freq Target sample rate, > 0.
+ * @param lowpass_filter_width Filter half-width in zero crossings, > 0.
+ * @param rolloff Lowpass cutoff as a fraction of the Nyquist frequency, in (0, 1].
+ * @param window Window applied to the sinc kernel.
+ * @param beta Kaiser shape parameter; ignored for MAG_RESAMPLE_WINDOW_HANN.
+ * @return MAG_OK on success, an error status otherwise.
+ */
+extern MAG_EXPORT mag_status_t mag_resample(
+  mag_error_t *err,
+  mag_tensor_t **out_result,
+  mag_tensor_t *x,
+  int64_t orig_freq,
+  int64_t new_freq,
+  int64_t lowpass_filter_width,
+  double rolloff,
+  mag_resample_window_t window,
+  double beta
+);
+
+/**
  * Create a view of @p tensor that is cut off from the autograd graph and does not require grad.
  *
  * @param err Error output; set when the call fails.

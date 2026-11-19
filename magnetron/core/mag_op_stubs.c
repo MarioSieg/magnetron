@@ -19,6 +19,7 @@
 #include "mag_interp_plan.h"
 #include "mag_op_helpers.h"
 #include "mag_math.h"
+#include "mag_immapi.h"
 
 /* Create a new tensor. The must be created on the same thread as the context. */
 mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_device_id_t device) {
@@ -2937,4 +2938,334 @@ mag_status_t mag_detach(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_
   }
   target->meta.flags &= ~MAG_TFLAG_REQUIRES_GRAD;
   return MAG_OK;
+}
+
+static mag_status_t mag_dsp_require_float(mag_error_t *err, const char *name, mag_tensor_t *x) {
+  if (mag_unlikely(!x))
+    return mag_set_error(err, MAG_ERR_PARAM, "%s: input tensor must not be NULL.", name);
+  if (mag_unlikely(!mag_tensor_is_floating_point_typed(x)))
+    return mag_set_error(err, MAG_ERR_PARAM, "%s: requires a floating-point tensor, but got %s.", name, mag_type_trait(x->meta.dtype)->name);
+  return MAG_OK;
+}
+
+mag_status_t mag_i0(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x) { /* TODO: dedicated kernel */
+  *out_result = NULL;
+  mag_status_t stat = mag_dsp_require_float(err, "i0", x);
+  if (mag_iserr(stat)) return stat;
+  mag_imm_t s;
+  mag_imm_begin(&s, err);
+  mag_tensor_t *y = mag__muls(&s, mag__sqr(&s, x), 0.25);
+  mag_tensor_t *t = mag__ones_like(&s, x);
+  mag_tensor_t *r = t;
+  size_t mark = mag_imm_mark(&s);
+  for (int k=1; k < MAG_BESSEL_I0_TERMS && mag_imm_ok(&s); ++k) {
+    t = mag__mul(&s, t, mag__divs(&s, y, (double)k*(double)k));
+    r = mag__add(&s, r, t);
+    mag_imm_collect(&s, mark, (mag_tensor_t *[]){t, r}, 2);
+  }
+  return mag_imm_finish(&s, out_result, r);
+}
+
+static bool mag_dsp_window_trivial(mag_status_t *stat, mag_error_t *err, mag_tensor_t **out_result, const char *name, mag_context_t *ctx, mag_dtype_t type, int64_t n, mag_device_id_t device) {
+  *out_result = NULL;
+  if (mag_unlikely(n < 0)) {
+    *stat = mag_set_error(err, MAG_ERR_PARAM, "%s: window length must be >= 0, but got %" PRIi64 ".", name, n);
+    return true;
+  }
+  if (mag_unlikely(!mag_type_category_is_floating_point(type))) {
+    *stat = mag_set_error(err, MAG_ERR_PARAM, "%s: requires a floating-point dtype, but got %s.", name, mag_type_trait(type)->name);
+    return true;
+  }
+  if (n == 0) {
+    *stat = mag_empty(err, out_result, ctx, type, 1, &n, device);
+    return true;
+  } else if (n == 1) {
+    *stat = mag_ones(err, out_result, ctx, type, 1, &n, device);
+    return true;
+  }
+  return false;
+}
+
+static mag_status_t mag_dsp_cosine_window(
+  mag_error_t *err,
+  mag_tensor_t **out_result,
+  const char *name,
+  mag_context_t *ctx,
+  mag_dtype_t type,
+  int64_t n,
+  bool periodic,
+  mag_device_id_t device,
+  const double *coeffs,
+  size_t num_coeffs
+) {
+  mag_status_t stat = MAG_OK;
+  if (mag_dsp_window_trivial(&stat, err, out_result, name, ctx, type, n, device)) return stat;
+  int64_t N = periodic ? n : n-1;
+  mag_imm_t s;
+  mag_imm_begin(&s, err);
+  mag_tensor_t *a = mag__divs(&s, mag__muls(&s, mag__arange(&s, ctx, type, 0, n, 1, device), MAG_TAU), (double)N);
+  mag_tensor_t *acc = mag__rsubs(&s, coeffs[0], mag__muls(&s, mag__cos(&s, a), coeffs[1]));
+  for (size_t k=2; k < num_coeffs; ++k) {
+    mag_tensor_t *term = mag__muls(&s, mag__cos(&s, mag__muls(&s, a, (double)k)), coeffs[k]);
+    acc = k&1 ? mag__sub(&s, acc, term) : mag__add(&s, acc, term);
+  }
+  return mag_imm_finish(&s, out_result, acc);
+}
+
+mag_status_t mag_hann_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device) {
+  static const double coeffs[] = {0.5, 0.5};
+  return mag_dsp_cosine_window(err, out_result, "hann_window", ctx, type, n, periodic, device, coeffs, sizeof(coeffs)/sizeof(*coeffs));
+}
+
+mag_status_t mag_hamming_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device) {
+  static const double coeffs[] = {0.54, 0.46};
+  return mag_dsp_cosine_window(err, out_result, "hamming_window", ctx, type, n, periodic, device, coeffs, sizeof(coeffs)/sizeof(*coeffs));
+}
+
+mag_status_t mag_blackman_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device) {
+  static const double coeffs[] = {0.42, 0.5, 0.08};
+  return mag_dsp_cosine_window(err, out_result, "blackman_window", ctx, type, n, periodic, device, coeffs, sizeof(coeffs)/sizeof(*coeffs));
+}
+
+mag_status_t mag_kaiser_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, double beta, bool periodic, mag_device_id_t device) {
+  mag_status_t stat = MAG_OK;
+  if (mag_dsp_window_trivial(&stat, err, out_result, "kaiser_window", ctx, type, n, device)) return stat;
+  int64_t N = periodic ? n+1 : n;
+  mag_imm_t s;
+  mag_imm_begin(&s, err);
+  mag_tensor_t *t = mag__arange(&s, ctx, type, 0, n, 1, device);
+  mag_tensor_t *a = mag__subs(&s, mag__divs(&s, mag__muls(&s, t, 2.0), (double)(N-1)), 1.0);
+  mag_tensor_t *x = mag__muls(&s, mag__sqrt(&s, mag__clamp_mins(&s, mag__rsubs(&s, 1.0, mag__sqr(&s, a)), 0.0)), beta);
+  mag_tensor_t *w = mag__divs(&s, mag__i0(&s, x), mag_bessel_i0(beta, MAG_BESSEL_I0_TERMS));
+  return mag_imm_finish(&s, out_result, w);
+}
+
+static void mag_dsp_dft_basis(mag_imm_t *s, mag_tensor_t **C, mag_tensor_t **S, mag_context_t *ctx, mag_dtype_t type, mag_device_id_t device, int64_t rows, int64_t cols, int64_t N) {
+  mag_dtype_t bt = MAG_DTYPE_FLOAT32;
+  mag_tensor_t *rc = mag__outer(s, mag__arange(s, ctx, bt, 0, rows, 1, device), mag__arange(s, ctx, bt, 0, cols, 1, device));
+  rc = mag__mod(s, rc, mag__scalar_of(s, ctx, bt, mag_scalar_from_float64((double)N), device));
+  mag_tensor_t *theta = mag__muls(s, rc, MAG_TAU/(double)N);
+  *C = mag__cast(s, mag__cos(s, theta), type);
+  *S = mag__cast(s, mag__sin(s, theta), type);
+}
+
+static mag_status_t mag_dsp_check_axis(mag_error_t *err, const char *name, mag_tensor_t *x, int64_t *dim) {
+  mag_status_t stat = mag_dsp_require_float(err, name, x);
+  if (mag_iserr(stat)) return stat;
+  int64_t rank = x->meta.coords.rank;
+  if (mag_unlikely(rank < 1))
+    return mag_set_error(err, MAG_ERR_RANK, "%s: input must have rank >= 1, but got a scalar.", name);
+  mag_norm_axis(dim, rank);
+  if (mag_unlikely(!(*dim >= 0 && *dim < rank)))
+    return mag_set_error(err, MAG_ERR_DIM, "%s: dim is out of range for rank %" PRIi64 ".", name, rank);
+  return MAG_OK;
+}
+
+static mag_status_t mag_dsp_check_imag(mag_error_t *err, const char *name, mag_tensor_t *xr, mag_tensor_t *xi) {
+  if (mag_unlikely(xi->meta.dtype != xr->meta.dtype))
+    return mag_set_error(err, MAG_ERR_PARAM, "%s: real and imaginary parts must have the same dtype, but got %s and %s.", name, mag_type_trait(xr->meta.dtype)->name, mag_type_trait(xi->meta.dtype)->name);
+  if (mag_unlikely(!mag_device_id_eq(mag_tensor_device_id(xr), mag_tensor_device_id(xi))))
+    return mag_set_error(err, MAG_ERR_DEVICE, "%s: real and imaginary parts must be on the same device.", name);
+  bool same = xr->meta.coords.rank == xi->meta.coords.rank;
+  for (int64_t i=0; same && i < xr->meta.coords.rank; ++i)
+    same = xr->meta.coords.shape[i] == xi->meta.coords.shape[i];
+  if (mag_unlikely(!same)) {
+    char sr[MAG_FMT_DIM_BUF_SIZE];
+    char si[MAG_FMT_DIM_BUF_SIZE];
+    mag_fmt_shape(&sr, &xr->meta.coords.shape, xr->meta.coords.rank);
+    mag_fmt_shape(&si, &xi->meta.coords.shape, xi->meta.coords.rank);
+    return mag_set_error(err, MAG_ERR_SHAPE, "%s: real and imaginary parts must have the same shape, but got %s and %s.", name, sr, si);
+  }
+  return MAG_OK;
+}
+
+static void mag_dsp_yield_halves(mag_imm_t *s, mag_tensor_t **out_re, mag_tensor_t **out_im, mag_tensor_t *y, int64_t half, int64_t dim) {
+  mag_tensor_t *parts[2];
+  mag__split(s, parts, 2, y, half, -1);
+  mag_tensor_t *re = mag__movedim(s, parts[0], -1, dim);
+  mag_tensor_t *im = mag__movedim(s, parts[1], -1, dim);
+  if (mag_imm_ok(s)) {
+    mag_imm_yield(s, out_re, re);
+    mag_imm_yield(s, out_im, im);
+  }
+}
+
+static mag_status_t mag_dsp_cfft(mag_error_t *err, mag_tensor_t **out_re, mag_tensor_t **out_im, mag_tensor_t *xr, mag_tensor_t *xi, int64_t dim, bool inv) { /* TODO: dedicated kernel */
+  const char *name = inv ? "ifft" : "fft";
+  *out_re = *out_im = NULL;
+  mag_status_t stat = mag_dsp_check_axis(err, name, xr, &dim);
+  if (mag_iserr(stat)) return stat;
+  if (mag_unlikely(inv && !xi))
+    return mag_set_error(err, MAG_ERR_PARAM, "ifft: imaginary part must not be NULL.");
+  if (xi && mag_iserr(stat = mag_dsp_check_imag(err, name, xr, xi))) return stat;
+  int64_t N = xr->meta.coords.shape[dim];
+  if (mag_unlikely(N <= 0))
+    return mag_set_error(err, MAG_ERR_DIM, "%s: transform length must be > 0, but got %" PRIi64 ".", name, N);
+  mag_imm_t s;
+  mag_imm_begin(&s, err);
+  if (!xi) xi = mag__zeros_like(&s, xr);
+  mag_tensor_t *C, *S;
+  mag_dsp_dft_basis(&s, &C, &S, xr->ctx, xr->meta.dtype, mag_tensor_device_id(xr), N, N, N);
+  if (inv) {
+    C = mag__divs(&s, C, (double)N);
+    S = mag__divs(&s, S, (double)N);
+  }
+  mag_tensor_t *nS = mag__neg(&s, S);
+  mag_tensor_t *top = mag__cat(&s, (mag_tensor_t *[]){C, inv ? nS : S}, 2, 1);
+  mag_tensor_t *bot = mag__cat(&s, (mag_tensor_t *[]){inv ? S : nS, C}, 2, 1);
+  mag_tensor_t *M = mag__cat(&s, (mag_tensor_t *[]){top, bot}, 2, 0);
+  mag_tensor_t *xrm = mag__movedim(&s, xr, dim, -1);
+  mag_tensor_t *xim = mag__movedim(&s, xi, dim, -1);
+  mag_tensor_t *x = mag__cat(&s, (mag_tensor_t *[]){xrm, xim}, 2, -1);
+  mag_dsp_yield_halves(&s, out_re, out_im, mag__matmul(&s, x, mag__T(&s, M)), N, dim);
+  return mag_imm_end(&s);
+}
+
+mag_status_t mag_fft(mag_error_t *err, mag_tensor_t **out_re, mag_tensor_t **out_im, mag_tensor_t *xr, mag_tensor_t *xi, int64_t dim) {
+  return mag_dsp_cfft(err, out_re, out_im, xr, xi, dim, false);
+}
+
+mag_status_t mag_ifft(mag_error_t *err, mag_tensor_t **out_re, mag_tensor_t **out_im, mag_tensor_t *xr, mag_tensor_t *xi, int64_t dim) {
+  return mag_dsp_cfft(err, out_re, out_im, xr, xi, dim, true);
+}
+
+mag_status_t mag_rfft(mag_error_t *err, mag_tensor_t **out_re, mag_tensor_t **out_im, mag_tensor_t *x, int64_t dim) { /* TODO: dedicated kernel */
+  *out_re = *out_im = NULL;
+  mag_status_t stat = mag_dsp_check_axis(err, "rfft", x, &dim);
+  if (mag_iserr(stat)) return stat;
+  int64_t N = x->meta.coords.shape[dim];
+  if (mag_unlikely(N <= 0))
+    return mag_set_error(err, MAG_ERR_DIM, "rfft: transform length must be > 0, but got %" PRIi64 ".", N);
+  int64_t K = N/2 + 1;
+  mag_imm_t s;
+  mag_imm_begin(&s, err);
+  mag_tensor_t *C, *S;
+  mag_dsp_dft_basis(&s, &C, &S, x->ctx, x->meta.dtype, mag_tensor_device_id(x), K, N, N);
+  mag_tensor_t *M = mag__cat(&s, (mag_tensor_t *[]){C, mag__neg(&s, S)}, 2, 0); /* (2K, N) */
+  mag_dsp_yield_halves(&s, out_re, out_im, mag__matmul(&s, mag__movedim(&s, x, dim, -1), mag__T(&s, M)), K, dim);
+  return mag_imm_end(&s);
+}
+
+mag_status_t mag_irfft(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *xr, mag_tensor_t *xi, int64_t n, int64_t dim) { /* TODO: dedicated kernel */
+  *out_result = NULL;
+  mag_status_t stat = mag_dsp_check_axis(err, "irfft", xr, &dim);
+  if (mag_iserr(stat)) return stat;
+  if (mag_unlikely(!xi))
+    return mag_set_error(err, MAG_ERR_PARAM, "irfft: imaginary part must not be NULL.");
+  if (mag_iserr(stat = mag_dsp_check_imag(err, "irfft", xr, xi))) return stat;
+  if (mag_unlikely(n <= 0))
+    return mag_set_error(err, MAG_ERR_PARAM, "irfft: output length must be > 0, but got %" PRIi64 ".", n);
+  int64_t N = n;
+  int64_t K = N/2 + 1;
+  if (mag_unlikely(xr->meta.coords.shape[dim] != K))
+    return mag_set_error(err, MAG_ERR_DIM, "irfft: expected %" PRIi64 " frequency bins along dim for n=%" PRIi64 ", but got %" PRIi64 ".", K, N, xr->meta.coords.shape[dim]);
+  mag_imm_t s;
+  mag_imm_begin(&s, err);
+  mag_tensor_t *C, *S;
+  mag_dsp_dft_basis(&s, &C, &S, xr->ctx, xr->meta.dtype, mag_tensor_device_id(xr), K, N, N);
+  mag_tensor_t *w = mag__full(&s, xr->ctx, xr->meta.dtype, 1, &K, mag_scalar_from_float64(2.0), mag_tensor_device_id(xr));
+  mag__fill_(&s, mag__narrow(&s, w, 0, 0, 1), mag_scalar_from_float64(1.0));
+  if (!(N & 1)) mag__fill_(&s, mag__narrow(&s, w, 0, K-1, 1), mag_scalar_from_float64(1.0));
+  mag_tensor_t *wc = mag__unsqueeze(&s, w, 1);
+  C = mag__divs(&s, mag__mul(&s, C, wc), (double)N);
+  S = mag__divs(&s, mag__mul(&s, mag__neg(&s, S), wc), (double)N);
+  mag_tensor_t *M = mag__cat(&s, (mag_tensor_t *[]){C, S}, 2, 0);
+  mag_tensor_t *xrm = mag__movedim(&s, xr, dim, -1);
+  mag_tensor_t *xim = mag__movedim(&s, xi, dim, -1);
+  mag_tensor_t *x = mag__cat(&s, (mag_tensor_t *[]){xrm, xim}, 2, -1);
+  return mag_imm_finish(&s, out_result, mag__movedim(&s, mag__matmul(&s, x, M), -1, dim));
+}
+
+static mag_tensor_t *mag_dsp_sinc_resample_kernel(
+  mag_imm_t *s,
+  int64_t *out_width,
+  mag_context_t *ctx,
+  mag_dtype_t type,
+  mag_device_id_t device,
+  int64_t orig,
+  int64_t new,
+  int64_t lpw,
+  double rolloff,
+  mag_resample_window_t window,
+  double beta
+) {
+  double base = (double)(orig < new ? orig : new)*rolloff;
+  int64_t width = (int64_t)ceil((double)lpw*(double)orig/base);
+  *out_width = width;
+  mag_tensor_t *idx = mag__unsqueeze(s, mag__divs(s, mag__arange(s, ctx, type, -width, width + orig, 1, device), (double)orig), 0);
+  mag_tensor_t *phase = mag__unsqueeze(s, mag__divs(s, mag__arange(s, ctx, type, 0, new, 1, device), -(double)new), 1);
+  mag_tensor_t *lo = mag__scalar_of(s, ctx, type, mag_scalar_from_float64(-(double)lpw), device);
+  mag_tensor_t *hi = mag__scalar_of(s, ctx, type, mag_scalar_from_float64((double)lpw), device);
+  mag_tensor_t *t = mag__clamp(s, mag__muls(s, mag__add(s, phase, idx), base), lo, hi);
+  mag_tensor_t *win;
+  if (window == MAG_RESAMPLE_WINDOW_KAISER) {
+    mag_tensor_t *r = mag__divs(s, t, (double)lpw);
+    mag_tensor_t *arg = mag__muls(s, mag__sqrt(s, mag__clamp_mins(s, mag__rsubs(s, 1.0, mag__sqr(s, r)), 0.0)), beta);
+    win = mag__divs(s, mag__i0(s, arg), mag_bessel_i0(beta, 64));
+  } else {
+    win = mag__sqr(s, mag__cos(s, mag__muls(s, t, MAG_PI/(double)lpw/2.0)));
+  }
+  mag_tensor_t *tp = mag__muls(s, t, MAG_PI);
+  mag_tensor_t *ones = mag__ones_like(s, tp);
+  mag_tensor_t *isz = mag__eqs(s, tp, 0.0);
+  mag_tensor_t *sinc = mag__div(s, mag__sin(s, tp), mag__where(s, isz, ones, tp));
+  sinc = mag__where(s, isz, ones, sinc);
+  return mag__contiguous(s, mag__muls(s, mag__mul(s, sinc, win), base/(double)orig));
+}
+
+mag_status_t mag_resample(
+  mag_error_t *err,
+  mag_tensor_t **out_result,
+  mag_tensor_t *x,
+  int64_t orig_freq,
+  int64_t new_freq,
+  int64_t lowpass_filter_width,
+  double rolloff,
+  mag_resample_window_t window,
+  double beta
+) { /* TODO: dedicated kernel */
+  *out_result = NULL;
+  mag_status_t stat = mag_dsp_require_float(err, "resample", x);
+  if (mag_iserr(stat)) return stat;
+  int64_t rank = x->meta.coords.rank;
+  if (mag_unlikely(rank < 1))
+    return mag_set_error(err, MAG_ERR_RANK, "resample: input must have rank >= 1, but got a scalar.");
+  if (mag_unlikely(orig_freq <= 0 || new_freq <= 0))
+    return mag_set_error(err, MAG_ERR_PARAM, "resample: sample rates must be positive, but got %" PRIi64 " -> %" PRIi64 ".", orig_freq, new_freq);
+  if (mag_unlikely(lowpass_filter_width <= 0))
+    return mag_set_error(err, MAG_ERR_PARAM, "resample: lowpass_filter_width must be > 0, but got %" PRIi64 ".", lowpass_filter_width);
+  if (mag_unlikely(!(rolloff > 0.0)))
+    return mag_set_error(err, MAG_ERR_PARAM, "resample: rolloff must be > 0, but got %f.", rolloff);
+  if (mag_unlikely(window != MAG_RESAMPLE_WINDOW_HANN && window != MAG_RESAMPLE_WINDOW_KAISER))
+    return mag_set_error(err, MAG_ERR_PARAM, "resample: unknown window %d.", (int)window);
+  if (orig_freq == new_freq) {
+    mag_tensor_incref(x);
+    *out_result = x;
+    return MAG_OK;
+  }
+  int64_t g = mag_gcd(orig_freq, new_freq);
+  int64_t orig = orig_freq/g;
+  int64_t new = new_freq/g;
+  int64_t length = x->meta.coords.shape[rank-1];
+  int64_t blocks = length/orig + 1;
+  int64_t target = (new*length + orig - 1)/orig;
+  mag_imm_t s;
+  mag_imm_begin(&s, err);
+  int64_t width = 0;
+  mag_tensor_t *kernel = mag_dsp_sinc_resample_kernel(&s, &width, x->ctx, x->meta.dtype, mag_tensor_device_id(x), orig, new, lowpass_filter_width, rolloff, window, beta);
+  mag_tensor_t *xb = mag__reshape(&s, x, (int64_t[2]){-1, length}, 2);
+  int64_t pad[2] = {width, width + orig};
+  mag_tensor_t *xp = mag__contiguous(&s, mag__pad(&s, xb, pad, 2, MAG_PAD_MODE_CONSTANT, mag_scalar_from_float64(0.0)));
+  if (!mag_imm_ok(&s)) return mag_imm_end(&s);
+  int64_t B = xb->meta.coords.shape[0];
+  int64_t K = kernel->meta.coords.shape[1];
+  int64_t fshape[3] = {B, blocks, K};
+  int64_t fstrides[3] = {xp->meta.coords.shape[1], orig, 1};
+  mag_tensor_t *frames = mag__strided_view(&s, xp, 3, fshape, fstrides, xp->meta.storage_offset);
+  mag_tensor_t *y = mag__reshape(&s, mag__matmul(&s, frames, mag__T(&s, kernel)), (int64_t[2]){B, blocks*new}, 2);
+  y = mag__contiguous(&s, mag__narrow(&s, y, 1, 0, target));
+  int64_t oshape[MAG_MAX_DIMS];
+  for (int64_t i=0; i < rank-1; ++i) oshape[i] = x->meta.coords.shape[i];
+  oshape[rank-1] = target;
+  return mag_imm_finish(&s, out_result, mag__reshape(&s, y, oshape, rank));
 }
