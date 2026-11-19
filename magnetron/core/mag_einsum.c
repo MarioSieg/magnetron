@@ -97,6 +97,12 @@ typedef struct mag_ein_path_node_t {
   uint32_t positions[MAG_EIN_NODE_MAX_INPUTS];
 } mag_ein_path_node_t;
 
+typedef struct mag_ein_plan_scratch_t {
+  mag_parsed_ein_t parsed;
+  mag_ein_subscript_t inputs[MAG_EIN_MAX_INPUTS];
+  mag_ein_subscript_t list[MAG_EIN_MAX_INPUTS];
+} mag_ein_plan_scratch_t;
+
 typedef struct mag_ein_dim_map_t {
   int64_t dims[MAG_EIN_NUM_LETTERS];
   mag_ein_charset_t present;
@@ -793,9 +799,9 @@ static mag_status_t mag_ein_build_nodes(
   mag_ein_path_node_t *out_nodes,
   size_t *out_num_nodes,
   size_t *out_cost,
-  size_t *out_scaling
+  size_t *out_scaling,
+  mag_ein_subscript_t *list
 ) {
-  mag_ein_subscript_t list[MAG_EIN_MAX_INPUTS];
   memcpy(list, inputs_src, (size_t)num_inputs_src*sizeof(*list));
   uint32_t n = num_inputs_src;
   size_t cost = 0;
@@ -836,29 +842,31 @@ static mag_status_t mag_ein_build_nodes(
   return MAG_OK;
 }
 
-static mag_status_t mag_ein_compute_path(
+static mag_status_t mag_ein_compute_path_impl(
   mag_error_t *err,
   char *equation,
   const mag_tensor_t **args,
   size_t num_args,
   mag_ein_path_heuristics_t *out_heuristics,
   mag_ein_path_node_t *out_nodes,
-  size_t *out_num_nodes
+  size_t *out_num_nodes,
+  mag_ein_plan_scratch_t *scratch
 ) {
-  mag_parsed_ein_t parsed = {0};
-  mag_status_t stat = mag_ein_parse(err, equation, &parsed);
+  mag_parsed_ein_t *parsed = &scratch->parsed;
+  mag_ein_subscript_t *inputs = scratch->inputs;
+  mag_status_t stat = mag_ein_parse(err, equation, parsed);
   if (mag_iserr(stat)) return stat;
-  if (mag_unlikely(!(parsed.num_inputs == num_args)))
-    return mag_set_error(err, MAG_ERR_EINSUM, "einsum: equation has %u input subscripts but got %zu operands.", parsed.num_inputs, num_args);
+  if (mag_unlikely(!(parsed->num_inputs == num_args)))
+    return mag_set_error(err, MAG_ERR_EINSUM, "einsum: equation has %u input subscripts but got %zu operands.", parsed->num_inputs, num_args);
   mag_ein_charset_t used_chars = 0;
-  for (size_t i=0; i < parsed.num_inputs; ++i) {
-    for (const char *p = parsed.inputs[i].buf; *p; ++p) {
+  for (size_t i=0; i < parsed->num_inputs; ++i) {
+    for (const char *p = parsed->inputs[i].buf; *p; ++p) {
       if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')) {
         mag_ein_charset_add(used_chars, *p);
       }
     }
   }
-  for (const char *p=parsed.output.buf; *p; ++p) {
+  for (const char *p=parsed->output.buf; *p; ++p) {
     if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')) {
       mag_ein_charset_add(used_chars, *p);
     }
@@ -875,14 +883,14 @@ static mag_status_t mag_ein_compute_path(
   }
   rem_chars[rem_len] = '\0';
   int64_t max_ellipsis_len = 0;
-  for (size_t i=0; i < parsed.num_inputs; ++i) {
-    stat = mag_ein_check_alnum_and_expand_ellipsis(err, &parsed.inputs[i], args[i], i, rem_chars, rem_len, &max_ellipsis_len);
+  for (size_t i=0; i < parsed->num_inputs; ++i) {
+    stat = mag_ein_check_alnum_and_expand_ellipsis(err, &parsed->inputs[i], args[i], i, rem_chars, rem_len, &max_ellipsis_len);
     if (mag_iserr(stat)) return stat;
   }
-  stat = mag_ein_check_alnum_and_expand_ellipsis(err, &parsed.output, NULL, 0, rem_chars, rem_len, &max_ellipsis_len);
+  stat = mag_ein_check_alnum_and_expand_ellipsis(err, &parsed->output, NULL, 0, rem_chars, rem_len, &max_ellipsis_len);
   if (mag_iserr(stat)) return stat;
   mag_ein_charset_t out_set = 0;
-  const char *out_str = parsed.output.buf;
+  const char *out_str = parsed->output.buf;
   size_t out_len = strlen(out_str);
   for (size_t i=0; i < out_len; ++i) {
     char c = out_str[i];
@@ -893,15 +901,14 @@ static mag_status_t mag_ein_compute_path(
   if (mag_unlikely(!((size_t)mag_ein_chatset_len(out_set) == out_len)))
     return mag_set_error(err, MAG_ERR_EINSUM, "einsum: repeated indices are not allowed in the output subscript.");
   mag_ein_dim_map_t dim_map = {0};
-  mag_ein_subscript_t inputs[MAG_EIN_MAX_INPUTS];
-  for (size_t i=0; i < parsed.num_inputs; ++i) {
-    const char *in = parsed.inputs[i].buf;
+  for (size_t i=0; i < parsed->num_inputs; ++i) {
+    const char *in = parsed->inputs[i].buf;
     size_t in_len = strlen(in);
     int64_t ndim = args[i]->meta.coords.rank;
     mag_ein_charset_t in_set = 0;
     for (size_t j=0; j < in_len; ++j)
       mag_ein_charset_add(in_set, in[j]);
-    inputs[i].str = parsed.inputs[i];
+    inputs[i].str = parsed->inputs[i];
     inputs[i].charset = in_set;
     if (mag_unlikely(!(in_len == (size_t)ndim)))
       return mag_set_error(err, MAG_ERR_EINSUM, "einsum: input %zu has %" PRIi64 " dimensions but its subscript has %zu labels.", i, ndim, in_len);
@@ -940,30 +947,30 @@ static mag_status_t mag_ein_compute_path(
     if (mag_unlikely(!mag_ein_charset_has(dim_map.present, out_str[i])))
       return mag_set_error(err, MAG_ERR_EINSUM, "einsum: output subscript '%c' does not appear in any input.", out_str[i]);
   }
-  size_t max_size = mag_ein_term_size(parsed.output.buf, &dim_map);
-  for (size_t i=0; i < parsed.num_inputs; ++i) {
-    size_t s = mag_ein_term_size(parsed.inputs[i].buf, &dim_map);
+  size_t max_size = mag_ein_term_size(parsed->output.buf, &dim_map);
+  for (size_t i=0; i < parsed->num_inputs; ++i) {
+    size_t s = mag_ein_term_size(parsed->inputs[i].buf, &dim_map);
     if (s > max_size)
       max_size = s;
   }
   mag_ein_subscript_t output = {
-    .str = parsed.output,
+    .str = parsed->output,
     .charset = out_set,
   };
   memset(out_heuristics, 0, sizeof(*out_heuristics));
   out_heuristics->max_term = max_size;
   mag_ein_compute_cost_and_scaling(
     inputs,
-    parsed.num_inputs,
+    parsed->num_inputs,
     &output,
     &dim_map,
     &out_heuristics->naive_cost,
     &out_heuristics->naive_scaling
   );
-  memset(out_nodes, 0, sizeof(out_nodes[0]) * MAG_EIN_MAX_INPUTS);
-  if (parsed.num_inputs <= 2) {
-    out_nodes[0].num_inputs = parsed.num_inputs;
-    for (size_t i=0; i < parsed.num_inputs; ++i) {
+  memset(out_nodes, 0, sizeof(out_nodes[0]) * num_args);
+  if (parsed->num_inputs <= 2) {
+    out_nodes[0].num_inputs = parsed->num_inputs;
+    for (size_t i=0; i < parsed->num_inputs; ++i) {
       out_nodes[0].inputs[i] = inputs[i];
       out_nodes[0].positions[i] = (uint32_t)i;
     }
@@ -973,7 +980,7 @@ static mag_status_t mag_ein_compute_path(
     out_heuristics->opt_scaling = out_heuristics->naive_scaling;
     return MAG_OK;
   }
-  uint32_t n = parsed.num_inputs;
+  uint32_t n = parsed->num_inputs;
   mag_ein_charset_t terms[MAG_EIN_MAX_INPUTS];
   for (uint32_t i=0; i < n; ++i)
     terms[i] = inputs[i].charset;
@@ -982,7 +989,25 @@ static mag_status_t mag_ein_compute_path(
     mag_ein_branch_path(terms, n, out_set, &dim_map, n <= MAG_EIN_BB_FULL_INPUTS ? UINT32_MAX : MAG_EIN_BB_NBRANCH, pairs);
   else
     mag_ein_greedy_path(terms, n, out_set, &dim_map, pairs);
-  return mag_ein_build_nodes(err, inputs, n, &output, pairs, n-1, out_nodes, out_num_nodes, &out_heuristics->opt_cost, &out_heuristics->opt_scaling);
+  return mag_ein_build_nodes(err, inputs, n, &output, pairs, n-1, out_nodes, out_num_nodes, &out_heuristics->opt_cost, &out_heuristics->opt_scaling, scratch->list);
+}
+
+static mag_status_t mag_ein_compute_path(
+  mag_error_t *err,
+  char *equation,
+  const mag_tensor_t **args,
+  size_t num_args,
+  mag_ein_path_heuristics_t *out_heuristics,
+  mag_ein_path_node_t *out_nodes,
+  size_t *out_num_nodes
+) {
+  mag_ein_plan_scratch_t *scratch = (*mag_try_alloc)(NULL, sizeof(*scratch), 0);
+  if (mag_unlikely(!scratch))
+    return mag_set_error(err, MAG_ERR_OOM, "einsum: failed to allocate %zu bytes for planning scratch.", sizeof(*scratch));
+  memset(scratch, 0, sizeof(*scratch));
+  mag_status_t stat = mag_ein_compute_path_impl(err, equation, args, num_args, out_heuristics, out_nodes, out_num_nodes, scratch);
+  (*mag_try_alloc)(scratch, 0, 0);
+  return stat;
 }
 
 static bool mag_ein_axes_sorted_by_original_axis(const mag_ein_char_axis_t *xs, int64_t n) {
@@ -1309,10 +1334,11 @@ static mag_status_t mag_ein_plan(
   const mag_tensor_t **args,
   size_t num_args,
   mag_ein_path_heuristics_t *out_heuristics,
-  mag_ein_path_node_t *out_nodes,
+  mag_ein_path_node_t **out_nodes,
   size_t *out_num_nodes
 ) {
   *out_equation = NULL;
+  *out_nodes = NULL;
   size_t len = strlen(equation);
   if (mag_unlikely(!mag_utf8_validate((const uint8_t *)equation, len)))
     return mag_set_error(err, MAG_ERR_EINSUM, "einsum: equation string contains invalid UTF-8.");
@@ -1329,36 +1355,44 @@ static mag_status_t mag_ein_plan(
     (*mag_alloc)(cloned, 0, 0);
     return mag_set_error(err, MAG_ERR_EINSUM, "einsum: equation string is empty.");
   }
-  mag_status_t stat = mag_ein_compute_path(err, cloned, args, num_args, out_heuristics, out_nodes, out_num_nodes);
+  mag_ein_path_node_t *nodes = (*mag_try_alloc)(NULL, num_args*sizeof(*nodes), 0);
+  if (mag_unlikely(!nodes)) {
+    (*mag_alloc)(cloned, 0, 0);
+    return mag_set_error(err, MAG_ERR_OOM, "einsum: failed to allocate %zu path nodes.", num_args);
+  }
+  mag_status_t stat = mag_ein_compute_path(err, cloned, args, num_args, out_heuristics, nodes, out_num_nodes);
   if (mag_iserr(stat)) {
+    (*mag_try_alloc)(nodes, 0, 0);
     (*mag_alloc)(cloned, 0, 0);
     return stat;
   }
   *out_equation = cloned;
+  *out_nodes = nodes;
   return MAG_OK;
 }
 
 mag_status_t mag_einsum_eval(mag_error_t *err, mag_tensor_t **out_result, const char *equation, const mag_tensor_t **args, size_t num_args) {
   mag_ein_path_heuristics_t heuristics = {0};
-  mag_ein_path_node_t nodes[MAG_EIN_MAX_INPUTS];
+  mag_ein_path_node_t *nodes = NULL;
   size_t num_nodes = 0;
   char *cloned = NULL;
-  mag_status_t stat = mag_ein_plan(err, &cloned, equation, args, num_args, &heuristics, nodes, &num_nodes);
+  mag_status_t stat = mag_ein_plan(err, &cloned, equation, args, num_args, &heuristics, &nodes, &num_nodes);
   if (mag_iserr(stat)) return stat;
   #ifdef MAG_DEBUG
     mag_ein_debug_print_path(cloned, &heuristics, nodes, num_nodes);
   #endif
   stat = mag_ein_execute_path(err, out_result, nodes, num_nodes, args, num_args);
+  (*mag_try_alloc)(nodes, 0, 0);
   (*mag_alloc)(cloned, 0, 0);
   return stat;
 }
 
 mag_status_t mag_einsum_path(mag_error_t *err, mag_einsum_path_t *out_path, const char *equation, const mag_tensor_t **args, size_t num_args) {
   mag_ein_path_heuristics_t heuristics = {0};
-  mag_ein_path_node_t nodes[MAG_EIN_MAX_INPUTS];
+  mag_ein_path_node_t *nodes = NULL;
   size_t num_nodes = 0;
   char *cloned = NULL;
-  mag_status_t stat = mag_ein_plan(err, &cloned, equation, args, num_args, &heuristics, nodes, &num_nodes);
+  mag_status_t stat = mag_ein_plan(err, &cloned, equation, args, num_args, &heuristics, &nodes, &num_nodes);
   if (mag_iserr(stat)) return stat;
   (*mag_alloc)(cloned, 0, 0);
   memset(out_path, 0, sizeof(*out_path));
@@ -1372,5 +1406,6 @@ mag_status_t mag_einsum_path(mag_error_t *err, mag_einsum_path_t *out_path, cons
     out_path->steps[i][0] = nodes[i].positions[0];
     out_path->steps[i][1] = nodes[i].num_inputs > 1 ? nodes[i].positions[1] : UINT32_MAX;
   }
+  (*mag_try_alloc)(nodes, 0, 0);
   return MAG_OK;
 }
