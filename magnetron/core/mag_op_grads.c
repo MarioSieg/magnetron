@@ -314,17 +314,18 @@ static bool mag_strided_view_backward_fast(
     acc *= bc->shape[i];
   }
   int64_t perm[MAG_MAX_DIMS];
-  bool used[MAG_MAX_DIMS] = {false};
+  uint64_t used=0;
+  mag_static_assert(MAG_MAX_DIMS <= (sizeof(used)<<3));
   for (int64_t k=0; k < rank; ++k) {
     int64_t match=-1;
     for (int64_t m=0; m < rank; ++m) {
-      if (used[m] || bc->shape[m] != vshape[k]) continue;
+      if ((used&(1ull<m)) || bc->shape[m] != vshape[k]) continue;
       if (vshape[k] != 1 && vstride[k] != bstride[m]) continue;
       match = m;
       break;
     }
     if (match < 0) return false;
-    used[match] = true;
+    used|=(1ull<<match);
     perm[k] = match;
   }
   int64_t inv[MAG_MAX_DIMS];
@@ -733,13 +734,25 @@ mag_status_t mag_op_backward_prod(mag_error_t *err, mag_au_state_t *node, mag_te
   int64_t axes[MAG_MAX_DIMS];
   int64_t rank = 0;
   mag_grad_reduce_axes(node, axes, &rank);
-  bool reduced[MAG_MAX_DIMS] = {false};
-  for (int64_t i=0; i < rank; ++i) reduced[axes[i]] = true;
+  uint64_t reduced=0;
+  mag_static_assert(MAG_MAX_DIMS <= (sizeof(reduced)<<3));
+  for (int64_t i=0; i < rank; ++i)
+    reduced|=(1ull<<axes[i]);
   int64_t perm[MAG_MAX_DIMS];
   int64_t np = 0;
   int64_t K = 1, R = 1;
-  for (int64_t d=0; d < nd; ++d) if (!reduced[d]) { perm[np++] = d; K *= x->meta.coords.shape[d]; }
-  for (int64_t d=0; d < nd; ++d) if (reduced[d]) { perm[np++] = d; R *= x->meta.coords.shape[d]; }
+  for (int64_t ax=0; ax < nd; ++ax) {
+    if (!(reduced&(1ull<<ax))) {
+      perm[np++] = ax;
+      K *= x->meta.coords.shape[ax];
+    }
+  }
+  for (int64_t ax=0; ax < nd; ++ax) {
+    if (reduced&(1ull<<ax)) {
+      perm[np++] = ax;
+      R *= x->meta.coords.shape[ax];
+    }
+  }
   int64_t inv[MAG_MAX_DIMS];
   for (int64_t i=0; i < nd; ++i) inv[perm[i]] = i;
   int64_t ones_shape[MAG_MAX_DIMS];

@@ -749,15 +749,16 @@ mag_status_t mag_flip(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t 
   if (mag_unlikely(!(ndims >= 0 && ndims <= ra)))
       return mag_set_error(err, MAG_ERR_PARAM, "flip: number of axes must be in [0, %" PRIi64 "], but got %" PRIi64 ".", ra, ndims);
   int64_t axes[MAG_MAX_DIMS];
-  bool seen[MAG_MAX_DIMS] = {0};
+  uint64_t seen=0;
+  mag_static_assert(MAG_MAX_DIMS <= (sizeof(seen)<<3));
   for (int64_t i=0; i < ndims; ++i) {
     int64_t ax = dims[i];
     mag_norm_axis(&ax, ra);
     if (mag_unlikely(!(ax >= 0 && ax < ra)))
       return mag_set_error(err, MAG_ERR_PARAM, "flip: axis %" PRIi64 " is out of range for rank %" PRIi64 ".", dims[i], ra);
-    if (mag_unlikely(seen[ax]))
+    if (mag_unlikely(seen&(1ull<<ax)))
       return mag_set_error(err, MAG_ERR_PARAM, "flip: axis %" PRIi64 " appears more than once.", ax);
-    seen[ax] = true;
+    seen|=(1ull<<ax);
     axes[i] = ax;
   }
   int64_t shape[MAG_MAX_DIMS];
