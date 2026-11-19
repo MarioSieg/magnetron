@@ -6,8 +6,8 @@
 # | GitHub  : https://github.com/MarioSieg                              |
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
-import math
 
+import math
 from magnetron import Tensor
 
 # Smol but cute DSP lib - we emulate FFTs with matmuls for now until real kernels are added one day
