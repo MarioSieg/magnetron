@@ -30,6 +30,8 @@ Issues = "https://github.com/MarioSieg/magnetron/issues"
 dev = [
     "ruff",
     "torch",
+    "torchaudio",
+    "torchvision",
     "numpy",
     "transformers",
     "tiktoken",

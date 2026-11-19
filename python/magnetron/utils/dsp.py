@@ -8,6 +8,7 @@
 # +---------------------------------------------------------------------+
 
 import math
+from functools import lru_cache
 from magnetron import Tensor
 
 # Smol but cute DSP lib - we emulate FFTs with matmuls for now until real kernels are added one day
@@ -68,7 +69,7 @@ def _cfft(inv: bool, xr: Tensor, xi: Tensor | None = None, dim: int = -1) -> tup
         xi = Tensor.zeros_like(xr)
     N: int = xr.shape[dim]
     n = Tensor.arange(N, dtype=xr.dtype, device=xr.device)
-    theta = (math.pi * 2 / N) * (n[:, None] * n[None, :])
+    theta = (math.pi * 2 / N) * ((n[:, None] * n[None, :]) % N)
     C, S = theta.cos(), theta.sin()
     if inv:
         C /= N
@@ -101,7 +102,7 @@ def _rfft(inv: bool, xr: Tensor, xi: Tensor | None = None, n: int | None = None,
 
     t = Tensor.arange(N, dtype=xr.dtype, device=xr.device)
     k = Tensor.arange(K, dtype=xr.dtype, device=xr.device)
-    theta = (math.pi * 2 / N) * (k[:, None] * t[None, :])
+    theta = (math.pi * 2 / N) * ((k[:, None] * t[None, :]) % N)
     C, S = theta.cos(), theta.sin()
     if inv:
         w = Tensor.ones(K, dtype=xr.dtype, device=xr.device) * 2
@@ -125,3 +126,54 @@ def rfft(x: Tensor, dim: int = -1) -> tuple[Tensor, Tensor]:
 
 def irfft(xr: Tensor, xi: Tensor, n: int, dim: int = -1) -> Tensor:
     return _rfft(True, xr, xi, n=n, dim=dim)
+
+
+# Windowed-sinc polyphase resampler defaults
+_KAISER_BEST_WIDTH: int = 64
+_KAISER_BEST_ROLLOFF: float = 0.9475937167399596
+_KAISER_BEST_BETA: float = 14.769656459379492
+
+
+@lru_cache(maxsize=16)
+def _sinc_resample_kernel(orig: int, new: int, lowpass_filter_width: int, rolloff: float, beta: float | None, **kwargs) -> tuple[Tensor, int]:
+    base = min(orig, new) * rolloff
+    width = math.ceil(lowpass_filter_width * orig / base)
+    idx = Tensor.arange(-width, width + orig, **kwargs) / orig
+    phase = Tensor.arange(new, **kwargs) / -new
+    t = ((phase[:, None] + idx[None, :]) * base).clamp(-lowpass_filter_width, lowpass_filter_width)
+    if beta is None:
+        window = (t * (math.pi / lowpass_filter_width / 2)).cos() ** 2
+    else:
+        r = t / lowpass_filter_width
+        window = i0(beta * (1 - r * r).clamp_min(0).sqrt()) / sum((beta * beta / 4) ** k / math.factorial(k) ** 2 for k in range(64))
+    t = t * math.pi
+    sinc = Tensor.where(t == 0, Tensor.ones_like(t), t.sin() / Tensor.where(t == 0, Tensor.ones_like(t), t))
+    return (sinc * window * (base / orig)).contiguous(), width
+
+
+def resample(
+    x: Tensor,
+    orig_freq: int,
+    new_freq: int,
+    lowpass_filter_width: int = _KAISER_BEST_WIDTH,
+    rolloff: float = _KAISER_BEST_ROLLOFF,
+    beta: float | None = _KAISER_BEST_BETA,
+) -> Tensor:
+    if orig_freq <= 0 or new_freq <= 0:
+        raise ValueError(f'Sample rates must be positive, got {orig_freq} -> {new_freq}')
+    if orig_freq == new_freq:
+        return x
+    g = math.gcd(int(orig_freq), int(new_freq))
+    orig, new = int(orig_freq) // g, int(new_freq) // g
+    kernel, width = _sinc_resample_kernel(orig, new, lowpass_filter_width, rolloff, beta, dtype=x.dtype, device=x.device)
+    K = kernel.shape[1]
+    shape = x.shape
+    length = shape[-1]
+    xb = x.reshape(-1, length)
+    B = xb.shape[0]
+    xp = xb.pad((width, width + orig)).contiguous()
+    blocks = length // orig + 1
+    frames = xp.strided_view((B, blocks, K), (xp.shape[1], orig, 1))
+    y = (frames @ kernel.T).reshape(B, blocks * new)
+    target = math.ceil(new * length / orig)
+    return y[:, :target].contiguous().reshape(*shape[:-1], target)

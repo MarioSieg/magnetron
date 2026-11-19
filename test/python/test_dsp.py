@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 
 import magnetron as mag
@@ -169,3 +171,78 @@ def test_rfft_irfft_batched_dim(device: str, shape: tuple[int, ...], dim: int) -
     assert_close_mag_torch(yi, ty.imag.float(), dtype.float32, rtol=_FFT_RTOL, atol=_FFT_ATOL)
     assert z.shape == tuple(shape)
     assert_close_mag_torch(z, tx.float(), dtype.float32, rtol=_FFT_RTOL, atol=_FFT_ATOL)
+
+
+def _torch_resample_ref(x: torch.Tensor, orig_freq: int, new_freq: int, lowpass_filter_width: int, rolloff: float, beta: float | None) -> torch.Tensor:
+    """float64 port of torchaudio.functional.resample (sinc_interp_hann / sinc_interp_kaiser)."""
+    g = math.gcd(orig_freq, new_freq)
+    orig, new = orig_freq // g, new_freq // g
+    base = min(orig, new) * rolloff
+    width = math.ceil(lowpass_filter_width * orig / base)
+    idx = torch.arange(-width, width + orig, dtype=torch.float64)[None, None] / orig
+    t = torch.arange(0, -new, -1, dtype=torch.float64)[:, None, None] / new + idx
+    t = (t * base).clamp(-lowpass_filter_width, lowpass_filter_width)
+    if beta is None:
+        window = torch.cos(t * math.pi / lowpass_filter_width / 2) ** 2
+    else:
+        bt = torch.tensor(float(beta), dtype=torch.float64)
+        window = torch.i0(bt * torch.sqrt(1 - (t / lowpass_filter_width) ** 2)) / torch.i0(bt)
+    t = t * math.pi
+    kernel = torch.where(t == 0, torch.ones_like(t), t.sin() / t) * window * (base / orig)
+    shape = x.shape
+    xb = x.reshape(-1, shape[-1])
+    length = xb.shape[-1]
+    y = torch.nn.functional.conv1d(torch.nn.functional.pad(xb, (width, width + orig))[:, None], kernel, stride=orig)
+    y = y.transpose(1, 2).reshape(xb.shape[0], -1)[..., : math.ceil(new * length / orig)]
+    return y.reshape(*shape[:-1], y.shape[-1])
+
+
+_RESAMPLE_RATES = [(48000, 16000), (44100, 16000), (22050, 16000), (8000, 16000), (16000, 44100), (32000, 16000)]
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('rates', _RESAMPLE_RATES)
+@pytest.mark.parametrize('length', [1, 100, 4410, 9601])
+def test_resample_vs_torchaudio_kaiser_best(device: str, rates: tuple[int, int], length: int) -> None:
+    orig, new = rates
+    with mag.device(device):
+        x = _rand((length,), device)
+        y = dsp.resample(x, orig, new)
+    ty = _torch_resample_ref(totorch(x).double(), orig, new, 64, 0.9475937167399596, 14.769656459379492)
+    assert y.shape == tuple(ty.shape)
+    assert_close_mag_torch(y, ty.float(), dtype.float32, rtol=1e-4, atol=1e-4)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('rates', [(48000, 16000), (44100, 16000), (16000, 22050)])
+def test_resample_vs_torchaudio_hann_default(device: str, rates: tuple[int, int]) -> None:
+    orig, new = rates
+    with mag.device(device):
+        x = _rand((3, 2000), device)
+        y = dsp.resample(x, orig, new, lowpass_filter_width=6, rolloff=0.99, beta=None)
+    ty = _torch_resample_ref(totorch(x).double(), orig, new, 6, 0.99, None)
+    assert y.shape == tuple(ty.shape)
+    assert_close_mag_torch(y, ty.float(), dtype.float32, rtol=1e-4, atol=1e-4)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+def test_resample_identity_and_invalid(device: str) -> None:
+    with mag.device(device):
+        x = _rand((2, 50), device)
+        assert dsp.resample(x, 16000, 16000) is x
+        with pytest.raises(ValueError):
+            dsp.resample(x, 0, 16000)
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('orig', [44100, 48000])
+def test_resample_tone_passband_and_alias_rejection(device: str, orig: int) -> None:
+    new, n = 16000, orig  # 1 second
+    t = torch.arange(n, dtype=torch.float64) / orig
+    with mag.device(device):
+        tone = dsp.resample(Tensor((torch.sin(2 * math.pi * 1000 * t)).tolist(), dtype=dtype.float32), orig, new)
+        alias = dsp.resample(Tensor((torch.sin(2 * math.pi * 12000 * t)).tolist(), dtype=dtype.float32), orig, new)
+    core = slice(1000, new - 1000)  # Skip filter edge transients
+    expect = torch.sin(2 * math.pi * 1000 * torch.arange(new, dtype=torch.float64) / new).float()
+    assert_close_mag_torch(totorch(tone)[core], expect[core], dtype.float32, rtol=0, atol=2e-3)
+    assert totorch(alias)[core].abs().max().item() < 1e-3  # 12 kHz is above the 8 kHz Nyquist and must be rejected (> 60 dB)
