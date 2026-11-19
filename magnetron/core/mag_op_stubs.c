@@ -1437,7 +1437,9 @@ mag_status_t mag_softmax_dim(mag_error_t *err, mag_tensor_t **out_result, mag_te
   mag_imm_start(&s, err);
   if (dim == rank-1)
     return mag_imm_finalize(&s, out_result, mag__softmax_lastdim(&s, mag__contiguous(&s, x)));
+  size_t mark = mag_imm_mark(&s);
   mag_tensor_t *y = mag__softmax_lastdim(&s, mag__contiguous(&s, mag__transpose(&s, x, dim, rank-1)));
+  mag_imm_collect(&s, mark, &y, 1);
   return mag_imm_finalize(&s, out_result, mag__contiguous(&s, mag__transpose(&s, y, dim, rank-1)));
 }
 

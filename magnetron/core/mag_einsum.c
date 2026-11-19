@@ -412,6 +412,7 @@ static mag_status_t mag_ein_batch_tensordot(
   *out = NULL;
   mag_imm_t s;
   mag_imm_start(&s, err);
+  size_t mark = mag_imm_mark(&s);
   mag_tensor_t *a_bcast, *b_bcast;
   mag_ein_broadcast_contract_dims(&s, &a_bcast, &b_bcast, a, b, a_contract, b_contract);
   mag_tensor_t *ar = mag_ein_transpose_reshape_for_dot(&s, a_bcast, a_batch, a_concat, a_contract);
@@ -428,6 +429,7 @@ static mag_status_t mag_ein_batch_tensordot(
     out_shape[out_rank++] = sa[a_concat->v[i]];
   for (int64_t i=0; i < b_concat->n; ++i)
     out_shape[out_rank++] = sb[b_concat->v[i]];
+  mag_imm_collect(&s, mark, &mm, 1);
   return mag_imm_finalize(&s, out, mag__reshape(&s, mm, out_shape, out_rank));
 }
 
