@@ -232,6 +232,7 @@ static mag_status_t mag_cpu_init_device(mag_error_t *err, mag_cpu_device_t **out
   if (num_threads > 1) {
     mag_status_t stat = mag_threadpool_create(err, &device->pool, ctx, num_threads, &device->kernels, &device->numa_ctrl, sched_prio);
     if (mag_iserr(stat)) {
+      mag_numa_destroy(&device->numa_ctrl);
       (*mag_alloc)(device, 0, 0);
       return stat;
     }
@@ -248,6 +249,7 @@ static void mag_cpu_destroy_device(mag_cpu_device_t *device) {
   if (device->stream) mag_cpu_stream_shutdown(device->stream);
   if (*device->kernels.deinit) (*device->kernels.deinit)();
   if (device->pool) mag_threadpool_destroy(device->pool);
+  mag_numa_destroy(&device->numa_ctrl);
   (*mag_try_alloc)(device, 0, 0);
 }
 

@@ -11,6 +11,11 @@
 
 #include "mag_cpu_numa.h"
 
+#include <core/mag_alloc.h>
+
+#define MAG_NUMA_PROBE_MAX_NODES 0x2000
+#define MAG_NUMA_PROBE_MAX_CPUS 0x10000
+
 #ifdef __gnu_linux__
 #include <unistd.h>
 #include <sys/syscall.h>
@@ -44,13 +49,13 @@ bool mag_numa_init(mag_numa_node_controller_t *nodes, mag_numa_strategy_t strate
   int ret;
   char pathbuf[512];
   struct stat st;
-  while (nodes->num_nodes < MAG_MAX_NUMA_NODES) {
+  while (nodes->num_nodes < MAG_NUMA_PROBE_MAX_NODES) {
     ret = snprintf(pathbuf, sizeof(pathbuf), "/sys/devices/system/node/node%u", nodes->num_nodes);
     if (mag_unlikely(!(ret > 0 && (unsigned)ret < sizeof(pathbuf)))) return false;
     if (stat(pathbuf, &st) != 0) { break; }
     ++nodes->num_nodes;
   }
-  while (nodes->num_cpus < MAG_MAX_CPUS) {
+  while (nodes->num_cpus < MAG_NUMA_PROBE_MAX_CPUS) {
     ret = snprintf(pathbuf, sizeof(pathbuf), "/sys/devices/system/cpu/cpu%u", nodes->num_cpus);
     if (mag_unlikely(!(ret > 0 && (unsigned)ret < sizeof(pathbuf)))) return false;
     if (stat(pathbuf, &st) != 0) { break; }
@@ -66,21 +71,34 @@ bool mag_numa_init(mag_numa_node_controller_t *nodes, mag_numa_strategy_t strate
     ret = syscall(SYS_getcpu, &curr_cpu, &nodes->curr_node);
   #endif
   if (nodes->num_nodes < 1 || nodes->num_cpus < 1 || ret != 0) {
-    nodes->num_nodes = 0; /* We just have no numa nodes */
+    nodes->num_nodes = 0;
     mag_log_info("NUMA topology set to single node");
     return true;
   }
   mag_log_debug("Found current process on NUMA node %u, CPU %u", nodes->curr_node, curr_cpu);
+  nodes->nodes = (*mag_try_alloc)(NULL, nodes->num_nodes*sizeof(*nodes->nodes), 0);
+  nodes->cpu_ids = (*mag_try_alloc)(NULL, nodes->num_cpus*sizeof(*nodes->cpu_ids), 0);
+  if (mag_unlikely(!nodes->nodes || !nodes->cpu_ids)) {
+    mag_log_warn("Failed to allocate NUMA topology, falling back to single node");
+    mag_numa_destroy(nodes);
+    return true;
+  }
+  uint32_t num_assigned = 0;
   for (uint32_t i=0; i < nodes->num_nodes; ++i) {
     mag_numa_node_t *node = nodes->nodes+i;
     mag_log_debug("CPUs on node %u:", i);
     if (mag_unlikely(mag_log_level() == MAG_LOG_LEVEL_DEBUG)) putchar('\t');
+    node->cpus = nodes->cpu_ids+num_assigned;
     node->num_cpus = 0;
-    for (uint32_t k=0; k < nodes->num_cpus; ++k) {
+    for (uint32_t k=0; k < nodes->num_cpus && num_assigned < nodes->num_cpus; ++k) {
       ret = snprintf(pathbuf, sizeof(pathbuf), "/sys/devices/system/node/node%u/cpu%u", i, k);
-      if (mag_unlikely(!(ret > 0 && (unsigned)ret < sizeof(pathbuf)))) return false;
+      if (mag_unlikely(!(ret > 0 && (unsigned)ret < sizeof(pathbuf)))) {
+        mag_numa_destroy(nodes);
+        return false;
+      }
       if (stat(pathbuf, &st) == 0) {
         node->cpus[node->num_cpus++] = k;
+        ++num_assigned;
         if (mag_unlikely(mag_log_level() == MAG_LOG_LEVEL_DEBUG)) printf("%u ", k);
       }
     }
@@ -101,6 +119,14 @@ bool mag_numa_init(mag_numa_node_controller_t *nodes, mag_numa_strategy_t strate
   /* TODO */
   return true;
 #endif
+}
+
+void mag_numa_destroy(mag_numa_node_controller_t *nodes) {
+  if (nodes->nodes) (*mag_try_alloc)(nodes->nodes, 0, 0);
+  if (nodes->cpu_ids) (*mag_try_alloc)(nodes->cpu_ids, 0, 0);
+  nodes->nodes = NULL;
+  nodes->cpu_ids = NULL;
+  nodes->num_nodes = 0;
 }
 
 bool mag_numa_is_numa(const mag_numa_node_controller_t *nodes) {

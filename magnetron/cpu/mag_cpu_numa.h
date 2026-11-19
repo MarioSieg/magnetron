@@ -26,7 +26,7 @@ extern "C" {
 #endif
 
 typedef struct mag_numa_node_t {
-  uint32_t cpus[MAG_MAX_CPUS];
+  uint32_t *cpus;
   uint32_t num_cpus;
 } mag_numa_node_t;
 
@@ -39,7 +39,8 @@ typedef enum mag_numa_strategy_t {
 
 typedef struct mag_numa_node_controller_t {
   mag_numa_strategy_t strategy;
-  mag_numa_node_t nodes[MAG_MAX_NUMA_NODES];
+  mag_numa_node_t *nodes;
+  uint32_t *cpu_ids;
   uint32_t num_nodes;
   uint32_t num_cpus;
   uint32_t curr_node;
@@ -51,6 +52,7 @@ typedef struct mag_numa_node_controller_t {
 } mag_numa_node_controller_t;
 
 extern bool mag_numa_init(mag_numa_node_controller_t *nodes, mag_numa_strategy_t strategy);
+extern void mag_numa_destroy(mag_numa_node_controller_t *nodes);
 extern bool mag_numa_is_numa(const mag_numa_node_controller_t *nodes);
 extern void mag_numa_pin_thread_affinity(mag_numa_node_controller_t *nodes, uint32_t id);
 extern void mag_numa_clear_thread_affinity(mag_numa_node_controller_t *nodes);

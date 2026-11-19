@@ -44,10 +44,8 @@ extern "C" {
 #endif
 
 #define MAG_SEP ,
-#define MAG_GELU_COEFF 0.044715f /* Coefficient for GELU approximation. */
 
 #define MAG_MAX_CPUS 2048
-#define MAG_MAX_NUMA_NODES 16
 #define MAG_MAX_CPU_TOPO_DEPTH 2
 #define MAG_MAX_CPU_CACHE_DEPTH 10
 
