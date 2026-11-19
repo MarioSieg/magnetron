@@ -44,7 +44,7 @@ extern bool mag_imm_check(mag_imm_t *i, mag_status_t stat);
 extern mag_tensor_t *mag_imm_adopt(mag_imm_t *i, mag_tensor_t *t);
 extern mag_tensor_t *mag_imm_retain(mag_imm_t *i, mag_tensor_t *t);
 static inline size_t mag_imm_mark(const mag_imm_t *i) { return i->len; }
-extern void mag_imm_collect(mag_imm_t *i, size_t mark, mag_tensor_t *const *keep, size_t num_keep);
+extern void mag_imm_collect(mag_imm_t *i, size_t mark, mag_tensor_t *keep, ...);
 extern bool mag_imm_yield(mag_imm_t *i, mag_tensor_t **out, mag_tensor_t *t);
 extern mag_status_t mag_imm_finalize(mag_imm_t *i, mag_tensor_t **out, mag_tensor_t *t);
 

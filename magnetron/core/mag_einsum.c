@@ -429,7 +429,7 @@ static mag_status_t mag_ein_batch_tensordot(
     out_shape[out_rank++] = sa[a_concat->v[i]];
   for (int64_t i=0; i < b_concat->n; ++i)
     out_shape[out_rank++] = sb[b_concat->v[i]];
-  mag_imm_collect(&s, mark, &mm, 1);
+  mag_imm_collect(&s, mark, mm, NULL);
   return mag_imm_finalize(&s, out, mag__reshape(&s, mm, out_shape, out_rank));
 }
 

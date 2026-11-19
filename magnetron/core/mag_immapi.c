@@ -82,13 +82,23 @@ mag_tensor_t *mag_imm_retain(mag_imm_t *i, mag_tensor_t *t) {
   return t;
 }
 
-void mag_imm_collect(mag_imm_t *i, size_t mark, mag_tensor_t *const *keep, size_t num_keep) {
+#include <stdarg.h>
+
+void mag_imm_collect(mag_imm_t *i, size_t mark, mag_tensor_t *keep, ...) {
   mag_assert2(mark <= i->len);
   size_t w = mark;
-  for (size_t k=mark; k < i->len; ++k) {
+  for (size_t k = mark; k < i->len; ++k) {
     mag_tensor_t *t = i->pool[k];
     bool kept = false;
-    for (size_t j=0; !kept && j < num_keep; ++j) kept = keep[j] == t;
+    va_list ap;
+    va_start(ap, keep);
+    for (mag_tensor_t *p = keep; p != NULL; p = va_arg(ap, mag_tensor_t *)) {
+      if (p == t) {
+        kept = true;
+        break;
+      }
+    }
+    va_end(ap);
     if (kept) i->pool[w++] = t;
     else mag_tensor_decref(t);
   }

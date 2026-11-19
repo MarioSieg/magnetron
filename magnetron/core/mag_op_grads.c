@@ -359,7 +359,7 @@ mag_status_t mag_op_backward_strided_view(mag_error_t *err, mag_au_state_t *node
     mag_tensor_t *ar = mag__arange(&s, ctx, MAG_DTYPE_INT64, 0, vshape[k], 1, dev);
     mag_tensor_t *off = mag__mul(&s, ar, mag__scalar_of(&s, ctx, MAG_DTYPE_INT64, mag_scalar_from_int64(vstride[k]), dev));
     idx = mag__add(&s, idx, mag__reshape(&s, off, bshape, rank));
-    mag_imm_collect(&s, mark, &idx, 1);
+    mag_imm_collect(&s, mark, idx, NULL);
   }
   mag_tensor_t *idxf = mag__reshape(&s, idx, &vnumel, 1);
   mag_tensor_t *gradf = mag__reshape(&s, mag__contiguous(&s, node->grad), &vnumel, 1);
@@ -1005,7 +1005,7 @@ mag_status_t mag_op_backward_cuprod(mag_error_t *err, mag_au_state_t *node, mag_
     size_t mark = mag_imm_mark(&s);
     mag_tensor_t *gcol = mag__narrow(&s, g2, 1, i, 1);
     cols[i] = i == n-1 ? mag__contiguous(&s, gcol) : mag__add(&s, gcol, mag__mul(&s, mag__narrow(&s, x2, 1, i+1, 1), cols[i+1]));
-    mag_imm_collect(&s, mark, &cols[i], 1);
+    mag_imm_collect(&s, mark, cols[i], NULL);
   }
   mag_tensor_t *T = mag__cat(&s, cols, (size_t)n, 1);
   (*mag_alloc)(cols, 0, 0);

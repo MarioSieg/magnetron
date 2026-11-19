@@ -1439,7 +1439,7 @@ mag_status_t mag_softmax_dim(mag_error_t *err, mag_tensor_t **out_result, mag_te
     return mag_imm_finalize(&s, out_result, mag__softmax_lastdim(&s, mag__contiguous(&s, x)));
   size_t mark = mag_imm_mark(&s);
   mag_tensor_t *y = mag__softmax_lastdim(&s, mag__contiguous(&s, mag__transpose(&s, x, dim, rank-1)));
-  mag_imm_collect(&s, mark, &y, 1);
+  mag_imm_collect(&s, mark, y, NULL);
   return mag_imm_finalize(&s, out_result, mag__contiguous(&s, mag__transpose(&s, y, dim, rank-1)));
 }
 
@@ -2888,7 +2888,7 @@ mag_status_t mag_i0(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x
   for (int k=1; k < MAG_BESSEL_I0_TERMS && mag_imm_ok(&s); ++k) {
     t = mag__mul(&s, t, mag__divs(&s, y, (double)k*(double)k));
     r = mag__add(&s, r, t);
-    mag_imm_collect(&s, mark, (mag_tensor_t *[]){t, r}, 2);
+    mag_imm_collect(&s, mark, t, r, NULL);
   }
   return mag_imm_finalize(&s, out_result, r);
 }
