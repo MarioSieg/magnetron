@@ -226,10 +226,13 @@ mag_imm_def_reduce(sum)
 mag_imm_def_reduce(maxima)
 mag_imm_def_reduce(minima)
 mag_imm_def_reduce(any)
+mag_imm_def_reduce(argmax)
+mag_imm_def_reduce(argmin)
 
 mag_tensor_t *mag__cusum(mag_imm_t *s, mag_tensor_t *x, int64_t dim) { mag_imm_exec(s, x != NULL, mag_cusum(s->err_sink, &r_, x, dim)); }
 mag_tensor_t *mag__cuprod(mag_imm_t *s, mag_tensor_t *x, int64_t dim) { mag_imm_exec(s, x != NULL, mag_cuprod(s->err_sink, &r_, x, dim)); }
 mag_tensor_t *mag__reshape(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank) { mag_imm_exec(s, x != NULL, mag_reshape(s->err_sink, &r_, x, dims, rank)); }
+mag_tensor_t *mag__view(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank) { mag_imm_exec(s, x != NULL, mag_view(s->err_sink, &r_, x, dims, rank)); }
 mag_tensor_t *mag__transpose(mag_imm_t *s, mag_tensor_t *x, int64_t dim1, int64_t dim2) { mag_imm_exec(s, x != NULL, mag_transpose(s->err_sink, &r_, x, dim1, dim2)); }
 mag_tensor_t *mag__permute(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank) { mag_imm_exec(s, x != NULL, mag_permute(s->err_sink, &r_, x, dims, rank)); }
 mag_tensor_t *mag__unsqueeze(mag_imm_t *s, mag_tensor_t *x, int64_t dim) { mag_imm_exec(s, x != NULL, mag_unsqueeze(s->err_sink, &r_, x, dim)); }
@@ -238,6 +241,7 @@ mag_tensor_t *mag__movedim(mag_imm_t *s, mag_tensor_t *x, int64_t src, int64_t d
 mag_tensor_t *mag__narrow(mag_imm_t *s, mag_tensor_t *x, int64_t dim, int64_t start, int64_t length) { mag_imm_exec(s, x != NULL, mag_narrow(s->err_sink, &r_, x, dim, start, length)); }
 mag_tensor_t *mag__flip(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t ndims) { mag_imm_exec(s, x != NULL, mag_flip(s->err_sink, &r_, x, dims, ndims)); }
 mag_tensor_t *mag__expand(mag_imm_t *s, mag_tensor_t *x, int64_t rank, const int64_t *shape) { mag_imm_exec(s, x != NULL, mag_expand(s->err_sink, &r_, x, rank, shape)); }
+mag_tensor_t *mag__broadcast(mag_imm_t *s, mag_tensor_t *x, int64_t rank, const int64_t *shape) { mag_imm_exec(s, x != NULL, mag_broadcast(s->err_sink, &r_, x, rank, shape)); }
 mag_tensor_t *mag__repeat(mag_imm_t *s, mag_tensor_t *x, const int64_t *repeats, int64_t num_reps) { mag_imm_exec(s, x != NULL, mag_repeat(s->err_sink, &r_, x, repeats, num_reps)); }
 
 mag_tensor_t *mag__pad(mag_imm_t *s, mag_tensor_t *x, const int64_t *pad, int64_t pad_len, mag_pad_mode_t mode, mag_scalar_t value) {

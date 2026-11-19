@@ -13,6 +13,7 @@
 #include "mag_alloc.h"
 #include "mag_tensor.h"
 #include "mag_math.h"
+#include "mag_immapi.h"
 
 #include <ctype.h>
 
@@ -333,9 +334,8 @@ static int64_t mag_ein_shape_prod(
   return r;
 }
 
-static mag_status_t mag_ein_transpose_reshape_for_dot(
-  mag_error_t *err,
-  mag_tensor_t **out,
+static mag_tensor_t *mag_ein_transpose_reshape_for_dot(
+  mag_imm_t *s,
   mag_tensor_t *x,
   const mag_ein_axes_t *i_axes,
   const mag_ein_axes_t *j_axes,
@@ -349,29 +349,19 @@ static mag_status_t mag_ein_transpose_reshape_for_dot(
     reorder[reorder_n++] = j_axes->v[i];
   for (int64_t i=0; i < k_axes->n; ++i)
     reorder[reorder_n++] = k_axes->v[i];
-
-  mag_tensor_t *xt = NULL;
-  mag_status_t stat = mag_permute(err, &xt, x, reorder, reorder_n);
-  if (mag_iserr(stat)) return stat;
-  int64_t size1 = mag_ein_shape_prod(x, j_axes);
-  int64_t size2 = mag_ein_shape_prod(x, k_axes);
+  if (!mag_imm_ok(s)) return NULL;
   int64_t shape[MAG_EIN_MAX_SPEC];
   int64_t rank = 0;
   const int64_t *x_shape = x->meta.coords.shape;
   for (int64_t i=0; i < i_axes->n; ++i)
     shape[rank++] = x_shape[i_axes->v[i]];
-  shape[rank++] = size1;
-  shape[rank++] = size2;
-  mag_tensor_t *xr = NULL;
-  stat = mag_reshape(err, &xr, xt, shape, rank);
-  mag_tensor_decref(xt);
-  if (mag_iserr(stat)) return stat;
-  *out = xr;
-  return MAG_OK;
+  shape[rank++] = mag_ein_shape_prod(x, j_axes);
+  shape[rank++] = mag_ein_shape_prod(x, k_axes);
+  return mag__reshape(s, mag__permute(s, x, reorder, reorder_n), shape, rank);
 }
 
-static mag_status_t mag_ein_broadcast_contract_dims(
-  mag_error_t *err,
+static void mag_ein_broadcast_contract_dims(
+  mag_imm_t *s,
   mag_tensor_t **out_a,
   mag_tensor_t **out_b,
   mag_tensor_t *a,
@@ -379,39 +369,32 @@ static mag_status_t mag_ein_broadcast_contract_dims(
   const mag_ein_axes_t *a_contract,
   const mag_ein_axes_t *b_contract
 ) {
+  *out_a = *out_b = NULL;
   int64_t a_rank = mag_tensor_rank(a);
   int64_t b_rank = mag_tensor_rank(b);
-  const int64_t *a_shape_old = a->meta.coords.shape;
-  const int64_t *b_shape_old = b->meta.coords.shape;
   int64_t a_shape[MAG_EIN_MAX_SPEC];
   int64_t b_shape[MAG_EIN_MAX_SPEC];
-  memcpy(a_shape, a_shape_old, (size_t)a_rank * sizeof(a_shape[0]));
-  memcpy(b_shape, b_shape_old, (size_t)b_rank * sizeof(b_shape[0]));
-  if (mag_unlikely(!(a_contract->n == b_contract->n)))
-    return mag_set_error(err, MAG_ERR_EINSUM, "einsum: internal error, contract axis count mismatch.");
+  memcpy(a_shape, a->meta.coords.shape, (size_t)a_rank * sizeof(a_shape[0]));
+  memcpy(b_shape, b->meta.coords.shape, (size_t)b_rank * sizeof(b_shape[0]));
+  if (mag_unlikely(!(a_contract->n == b_contract->n))) {
+    mag_imm_check(s, mag_set_error(s->err_sink, MAG_ERR_EINSUM, "einsum: internal error, contract axis count mismatch."));
+    return;
+  }
   for (int64_t i=0; i < a_contract->n; ++i) {
     int64_t aa = a_contract->v[i];
     int64_t ba = b_contract->v[i];
     int64_t da = a_shape[aa];
     int64_t db = b_shape[ba];
-    if (mag_unlikely(!(da == db || da == 1 || db == 1)))
-      return mag_set_error(err, MAG_ERR_EINSUM, "einsum: cannot broadcast contracting dimensions of size %" PRIi64 " and %" PRIi64 ".", da, db);
+    if (mag_unlikely(!(da == db || da == 1 || db == 1))) {
+      mag_imm_check(s, mag_set_error(s->err_sink, MAG_ERR_EINSUM, "einsum: cannot broadcast contracting dimensions of size %" PRIi64 " and %" PRIi64 ".", da, db));
+      return;
+    }
     int64_t d = da > db ? da : db;
     a_shape[aa] = d;
     b_shape[ba] = d;
   }
-  mag_tensor_t *ab = NULL;
-  mag_tensor_t *bb = NULL;
-  mag_status_t stat = mag_broadcast(err, &ab, a, a_rank, a_shape);
-  if (mag_iserr(stat)) return stat;
-  stat = mag_broadcast(err, &bb, b, b_rank, b_shape);
-  if (mag_iserr(stat)) {
-    mag_tensor_decref(ab);
-    return stat;
-  }
-  *out_a = ab;
-  *out_b = bb;
-  return MAG_OK;
+  *out_a = mag__broadcast(s, a, a_rank, a_shape);
+  *out_b = mag__broadcast(s, b, b_rank, b_shape);
 }
 
 static mag_status_t mag_ein_batch_tensordot(
@@ -426,34 +409,15 @@ static mag_status_t mag_ein_batch_tensordot(
   const mag_ein_axes_t *b_batch,
   const mag_ein_axes_t *b_concat
 ) {
-  mag_tensor_t *a_bcast = NULL;
-  mag_tensor_t *b_bcast = NULL;
-  mag_status_t stat = mag_ein_broadcast_contract_dims(err, &a_bcast, &b_bcast, a, b, a_contract, b_contract);
-  if (mag_iserr(stat)) return stat;
-  mag_tensor_t *ar = NULL;
-  mag_tensor_t *br = NULL;
-  stat = mag_ein_transpose_reshape_for_dot( err, &ar, a_bcast, a_batch, a_concat, a_contract);
-  if (mag_iserr(stat)) {
-    mag_tensor_decref(a_bcast);
-    mag_tensor_decref(b_bcast);
-    return stat;
-  }
-  stat = mag_ein_transpose_reshape_for_dot( err, &br, b_bcast, b_batch, b_contract, b_concat);
-  if (mag_iserr(stat)) {
-    mag_tensor_decref(ar);
-    mag_tensor_decref(a_bcast);
-    mag_tensor_decref(b_bcast);
-    return stat;
-  }
-  mag_tensor_t *mm = NULL;
-  stat = mag_matmul(err, &mm, ar, br);
-  mag_tensor_decref(ar);
-  mag_tensor_decref(br);
-  if (mag_iserr(stat)) {
-    mag_tensor_decref(a_bcast);
-    mag_tensor_decref(b_bcast);
-    return stat;
-  }
+  *out = NULL;
+  mag_imm_t s;
+  mag_imm_start(&s, err);
+  mag_tensor_t *a_bcast, *b_bcast;
+  mag_ein_broadcast_contract_dims(&s, &a_bcast, &b_bcast, a, b, a_contract, b_contract);
+  mag_tensor_t *ar = mag_ein_transpose_reshape_for_dot(&s, a_bcast, a_batch, a_concat, a_contract);
+  mag_tensor_t *br = mag_ein_transpose_reshape_for_dot(&s, b_bcast, b_batch, b_contract, b_concat);
+  mag_tensor_t *mm = mag__matmul(&s, ar, br);
+  if (!mm) return mag_imm_end(&s);
   int64_t out_shape[MAG_EIN_MAX_SPEC];
   int64_t out_rank = 0;
   const int64_t *sa = a_bcast->meta.coords.shape;
@@ -464,15 +428,7 @@ static mag_status_t mag_ein_batch_tensordot(
     out_shape[out_rank++] = sa[a_concat->v[i]];
   for (int64_t i=0; i < b_concat->n; ++i)
     out_shape[out_rank++] = sb[b_concat->v[i]];
-  mag_tensor_t *reshaped = NULL;
-  stat = mag_reshape(err, &reshaped, mm, out_shape, out_rank);
-  mag_tensor_decref(mm);
-  mag_tensor_decref(a_bcast);
-  mag_tensor_decref(b_bcast);
-  if (mag_iserr(stat))
-    return stat;
-  *out = reshaped;
-  return MAG_OK;
+  return mag_imm_finalize(&s, out, mag__reshape(&s, mm, out_shape, out_rank));
 }
 
 static mag_status_t mag_ein_dot_node(mag_error_t *err, mag_tensor_t **out, mag_ein_path_node_t *node, mag_tensor_t **operands) {

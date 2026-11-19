@@ -110,9 +110,12 @@ extern mag_tensor_t *mag__sum(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims
 extern mag_tensor_t *mag__maxima(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern mag_tensor_t *mag__minima(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern mag_tensor_t *mag__any(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
+extern mag_tensor_t *mag__argmax(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
+extern mag_tensor_t *mag__argmin(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank, bool keepdim);
 extern mag_tensor_t *mag__cusum(mag_imm_t *s, mag_tensor_t *x, int64_t dim);
 extern mag_tensor_t *mag__cuprod(mag_imm_t *s, mag_tensor_t *x, int64_t dim);
 extern mag_tensor_t *mag__reshape(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank);
+extern mag_tensor_t *mag__view(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank);
 extern mag_tensor_t *mag__transpose(mag_imm_t *s, mag_tensor_t *x, int64_t dim1, int64_t dim2);
 extern mag_tensor_t *mag__T(mag_imm_t *s, mag_tensor_t *x);
 extern mag_tensor_t *mag__permute(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t rank);
@@ -122,6 +125,7 @@ extern mag_tensor_t *mag__movedim(mag_imm_t *s, mag_tensor_t *x, int64_t src, in
 extern mag_tensor_t *mag__narrow(mag_imm_t *s, mag_tensor_t *x, int64_t dim, int64_t start, int64_t length);
 extern mag_tensor_t *mag__flip(mag_imm_t *s, mag_tensor_t *x, const int64_t *dims, int64_t ndims);
 extern mag_tensor_t *mag__expand(mag_imm_t *s, mag_tensor_t *x, int64_t rank, const int64_t *shape);
+extern mag_tensor_t *mag__broadcast(mag_imm_t *s, mag_tensor_t *x, int64_t rank, const int64_t *shape);
 extern mag_tensor_t *mag__repeat(mag_imm_t *s, mag_tensor_t *x, const int64_t *repeats, int64_t num_reps);
 extern mag_tensor_t *mag__repeat_back(mag_imm_t *s, mag_tensor_t *x, mag_tensor_t *like);
 extern mag_tensor_t *mag__pad(mag_imm_t *s, mag_tensor_t *x, const int64_t *pad, int64_t pad_len, mag_pad_mode_t mode, mag_scalar_t value);
