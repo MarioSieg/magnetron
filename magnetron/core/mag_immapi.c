@@ -12,7 +12,7 @@
 #include "mag_immapi.h"
 #include "mag_alloc.h"
 
-void mag_imm_begin(mag_imm_t *s, mag_error_t *err) {
+void mag_imm_start(mag_imm_t *s, mag_error_t *err) {
   s->err_sink = err;
   s->sticky_stat = MAG_OK;
   s->pool = s->inline_pool;
@@ -102,7 +102,7 @@ bool mag_imm_yield(mag_imm_t *s, mag_tensor_t **out, mag_tensor_t *t) {
   return true;
 }
 
-mag_status_t mag_imm_finish(mag_imm_t *s, mag_tensor_t **out, mag_tensor_t *t) {
+mag_status_t mag_imm_finalize(mag_imm_t *s, mag_tensor_t **out, mag_tensor_t *t) {
   mag_imm_yield(s, out, t);
   return mag_imm_end(s);
 }

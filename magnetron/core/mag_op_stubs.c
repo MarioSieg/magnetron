@@ -2953,7 +2953,7 @@ mag_status_t mag_i0(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x
   mag_status_t stat = mag_dsp_require_float(err, "i0", x);
   if (mag_iserr(stat)) return stat;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *y = mag__muls(&s, mag__sqr(&s, x), 0.25);
   mag_tensor_t *t = mag__ones_like(&s, x);
   mag_tensor_t *r = t;
@@ -2963,7 +2963,7 @@ mag_status_t mag_i0(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t *x
     r = mag__add(&s, r, t);
     mag_imm_collect(&s, mark, (mag_tensor_t *[]){t, r}, 2);
   }
-  return mag_imm_finish(&s, out_result, r);
+  return mag_imm_finalize(&s, out_result, r);
 }
 
 static bool mag_dsp_window_trivial(mag_status_t *stat, mag_error_t *err, mag_tensor_t **out_result, const char *name, mag_context_t *ctx, mag_dtype_t type, int64_t n, mag_device_id_t device) {
@@ -3002,14 +3002,14 @@ static mag_status_t mag_dsp_cosine_window(
   if (mag_dsp_window_trivial(&stat, err, out_result, name, ctx, type, n, device)) return stat;
   int64_t N = periodic ? n : n-1;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *a = mag__divs(&s, mag__muls(&s, mag__arange(&s, ctx, type, 0, n, 1, device), MAG_TAU), (double)N);
   mag_tensor_t *acc = mag__rsubs(&s, coeffs[0], mag__muls(&s, mag__cos(&s, a), coeffs[1]));
   for (size_t k=2; k < num_coeffs; ++k) {
     mag_tensor_t *term = mag__muls(&s, mag__cos(&s, mag__muls(&s, a, (double)k)), coeffs[k]);
     acc = k&1 ? mag__sub(&s, acc, term) : mag__add(&s, acc, term);
   }
-  return mag_imm_finish(&s, out_result, acc);
+  return mag_imm_finalize(&s, out_result, acc);
 }
 
 mag_status_t mag_hann_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device) {
@@ -3032,12 +3032,12 @@ mag_status_t mag_kaiser_window(mag_error_t *err, mag_tensor_t **out_result, mag_
   if (mag_dsp_window_trivial(&stat, err, out_result, "kaiser_window", ctx, type, n, device)) return stat;
   int64_t N = periodic ? n+1 : n;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *t = mag__arange(&s, ctx, type, 0, n, 1, device);
   mag_tensor_t *a = mag__subs(&s, mag__divs(&s, mag__muls(&s, t, 2.0), (double)(N-1)), 1.0);
   mag_tensor_t *x = mag__muls(&s, mag__sqrt(&s, mag__clamp_mins(&s, mag__rsubs(&s, 1.0, mag__sqr(&s, a)), 0.0)), beta);
   mag_tensor_t *w = mag__divs(&s, mag__i0(&s, x), mag_bessel_i0(beta, MAG_BESSEL_I0_TERMS));
-  return mag_imm_finish(&s, out_result, w);
+  return mag_imm_finalize(&s, out_result, w);
 }
 
 static void mag_dsp_dft_basis(mag_imm_t *s, mag_tensor_t **C, mag_tensor_t **S, mag_context_t *ctx, mag_dtype_t type, mag_device_id_t device, int64_t rows, int64_t cols, int64_t N) {
@@ -3102,7 +3102,7 @@ static mag_status_t mag_dsp_cfft(mag_error_t *err, mag_tensor_t **out_re, mag_te
   if (mag_unlikely(N <= 0))
     return mag_set_error(err, MAG_ERR_DIM, "%s: transform length must be > 0, but got %" PRIi64 ".", name, N);
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (!xi) xi = mag__zeros_like(&s, xr);
   mag_tensor_t *C, *S;
   mag_dsp_dft_basis(&s, &C, &S, xr->ctx, xr->meta.dtype, mag_tensor_device_id(xr), N, N, N);
@@ -3138,7 +3138,7 @@ mag_status_t mag_rfft(mag_error_t *err, mag_tensor_t **out_re, mag_tensor_t **ou
     return mag_set_error(err, MAG_ERR_DIM, "rfft: transform length must be > 0, but got %" PRIi64 ".", N);
   int64_t K = N/2 + 1;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *C, *S;
   mag_dsp_dft_basis(&s, &C, &S, x->ctx, x->meta.dtype, mag_tensor_device_id(x), K, N, N);
   mag_tensor_t *M = mag__cat(&s, (mag_tensor_t *[]){C, mag__neg(&s, S)}, 2, 0); /* (2K, N) */
@@ -3160,7 +3160,7 @@ mag_status_t mag_irfft(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
   if (mag_unlikely(xr->meta.coords.shape[dim] != K))
     return mag_set_error(err, MAG_ERR_DIM, "irfft: expected %" PRIi64 " frequency bins along dim for n=%" PRIi64 ", but got %" PRIi64 ".", K, N, xr->meta.coords.shape[dim]);
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *C, *S;
   mag_dsp_dft_basis(&s, &C, &S, xr->ctx, xr->meta.dtype, mag_tensor_device_id(xr), K, N, N);
   mag_tensor_t *w = mag__full(&s, xr->ctx, xr->meta.dtype, 1, &K, mag_scalar_from_float64(2.0), mag_tensor_device_id(xr));
@@ -3173,7 +3173,7 @@ mag_status_t mag_irfft(mag_error_t *err, mag_tensor_t **out_result, mag_tensor_t
   mag_tensor_t *xrm = mag__movedim(&s, xr, dim, -1);
   mag_tensor_t *xim = mag__movedim(&s, xi, dim, -1);
   mag_tensor_t *x = mag__cat(&s, (mag_tensor_t *[]){xrm, xim}, 2, -1);
-  return mag_imm_finish(&s, out_result, mag__movedim(&s, mag__matmul(&s, x, M), -1, dim));
+  return mag_imm_finalize(&s, out_result, mag__movedim(&s, mag__matmul(&s, x, M), -1, dim));
 }
 
 static mag_tensor_t *mag_dsp_sinc_resample_kernel(
@@ -3250,7 +3250,7 @@ mag_status_t mag_resample(
   int64_t blocks = length/orig + 1;
   int64_t target = (new*length + orig - 1)/orig;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   int64_t width = 0;
   mag_tensor_t *kernel = mag_dsp_sinc_resample_kernel(&s, &width, x->ctx, x->meta.dtype, mag_tensor_device_id(x), orig, new, lowpass_filter_width, rolloff, window, beta);
   mag_tensor_t *xb = mag__reshape(&s, x, (int64_t[2]){-1, length}, 2);
@@ -3267,5 +3267,5 @@ mag_status_t mag_resample(
   int64_t oshape[MAG_MAX_DIMS];
   for (int64_t i=0; i < rank-1; ++i) oshape[i] = x->meta.coords.shape[i];
   oshape[rank-1] = target;
-  return mag_imm_finish(&s, out_result, mag__reshape(&s, y, oshape, rank));
+  return mag_imm_finalize(&s, out_result, mag__reshape(&s, y, oshape, rank));
 }

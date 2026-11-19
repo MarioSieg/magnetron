@@ -36,7 +36,7 @@ typedef struct mag_imm_t {
   mag_tensor_t *inline_pool[MAG_IMM_INLINE_CAP];
 } mag_imm_t;
 
-extern void mag_imm_begin(mag_imm_t *s, mag_error_t *err);
+extern void mag_imm_start(mag_imm_t *s, mag_error_t *err);
 extern mag_status_t mag_imm_end(mag_imm_t *s);
 static inline bool mag_imm_ok(const mag_imm_t *s) { return !mag_iserr(s->sticky_stat); }
 extern mag_tensor_t *mag_imm_track(mag_imm_t *s, mag_status_t stat, mag_tensor_t **pt);
@@ -46,7 +46,7 @@ extern mag_tensor_t *mag_imm_retain(mag_imm_t *s, mag_tensor_t *t);
 static inline size_t mag_imm_mark(const mag_imm_t *s) { return s->len; }
 extern void mag_imm_collect(mag_imm_t *s, size_t mark, mag_tensor_t *const *keep, size_t num_keep);
 extern bool mag_imm_yield(mag_imm_t *s, mag_tensor_t **out, mag_tensor_t *t);
-extern mag_status_t mag_imm_finish(mag_imm_t *s, mag_tensor_t **out, mag_tensor_t *t);
+extern mag_status_t mag_imm_finalize(mag_imm_t *s, mag_tensor_t **out, mag_tensor_t *t);
 
 extern mag_tensor_t *mag__scalar(mag_imm_t *s, mag_tensor_t *like, double v);
 extern mag_tensor_t *mag__scalar_of(mag_imm_t *s, mag_context_t *ctx, mag_dtype_t type, mag_scalar_t v, mag_device_id_t device);

@@ -14,7 +14,7 @@
 #include "mag_alloc.h"
 #include "mag_immapi.h"
 
-/* Query if b ackward op reads input j. This is used to determine if the input tensor needs to be backed up */
+/* Query if backward op reads input j. This is used to determine if the input tensor needs to be backed up */
 bool mag_op_backward_reads_input(mag_opcode_t op, mag_tensor_t **in, uint32_t num_in, uint32_t j) {
   if (!(mag_op_trait(op)->flags&MAG_OP_FLAG_GRAD_READS_IN)) return false;
   bool other_grad = false;
@@ -30,7 +30,7 @@ bool mag_op_backward_reads_input(mag_opcode_t op, mag_tensor_t **in, uint32_t nu
   }
 }
 
-#define mag_grad_requires(t) (!((t)->meta.flags&MAG_TFLAG_REQUIRES_GRAD))
+#define mag_grad_requires(t) (((t)->meta.flags&MAG_TFLAG_REQUIRES_GRAD))
 
 static mag_tensor_t *mag_grad_saved_output(mag_imm_t *s, mag_au_state_t *node, mag_status_t (*forward)(mag_error_t *, mag_tensor_t **, mag_tensor_t *)) {
   if (!mag_imm_ok(s)) return NULL;
@@ -74,31 +74,31 @@ mag_status_t mag_op_backward_cast(mag_error_t *err, mag_au_state_t *node, mag_te
 mag_status_t mag_op_backward_mean(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *scale = mag__full_like(&s, x, (double)node->grad->meta.numel/(double)x->meta.numel);
-  return mag_imm_finish(&s, grads, mag__mul(&s, scale, mag_grad_keepdim(&s, node)));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, scale, mag_grad_keepdim(&s, node)));
 }
 
 mag_status_t mag_op_backward_sum(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *ones = mag__full_like(&s, x, 1.0);
-  return mag_imm_finish(&s, grads, mag__mul(&s, ones, mag_grad_keepdim(&s, node)));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, ones, mag_grad_keepdim(&s, node)));
 }
 
 mag_status_t mag_op_backward_abs(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *sign = mag__subs(&s, mag__muls(&s, mag__step(&s, x), 2.0), 1.0);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, sign));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, sign));
 }
 
 mag_status_t mag_op_backward_neg(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__muls(&s, node->grad, -1.0));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__muls(&s, node->grad, -1.0));
 }
 
 mag_status_t mag_op_backward_log(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
@@ -108,92 +108,92 @@ mag_status_t mag_op_backward_log(mag_error_t *err, mag_au_state_t *node, mag_ten
 mag_status_t mag_op_backward_sqr(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag__muls(&s, x, 2.0)));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag__muls(&s, x, 2.0)));
 }
 
 mag_status_t mag_op_backward_sqrt(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *y = mag_grad_saved_output(&s, node, &mag_sqrt);
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, mag__muls(&s, y, 2.0)));
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, mag__muls(&s, y, 2.0)));
 }
 
 mag_status_t mag_op_backward_sin(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag__cos(&s, node->in[0])));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag__cos(&s, node->in[0])));
 }
 
 mag_status_t mag_op_backward_cos(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag__neg(&s, mag__sin(&s, node->in[0]))));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag__neg(&s, mag__sin(&s, node->in[0]))));
 }
 
 mag_status_t mag_op_backward_exp(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag_grad_saved_output(&s, node, &mag_exp)));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag_grad_saved_output(&s, node, &mag_exp)));
 }
 
 mag_status_t mag_op_backward_softmax(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *y = mag_grad_saved_output(&s, node, &mag_softmax);
   int64_t axis = node->in[0]->meta.coords.rank - 1;
   mag_tensor_t *dot = mag__sum(&s, mag__mul(&s, node->grad, y), &axis, 1, true);
-  return mag_imm_finish(&s, grads, mag__mul(&s, y, mag__sub(&s, node->grad, dot)));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, y, mag__sub(&s, node->grad, dot)));
 }
 
 mag_status_t mag_op_backward_sigmoid(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *y = mag_grad_saved_output(&s, node, &mag_sigmoid);
   mag_tensor_t *dv = mag__mul(&s, y, mag__rsubs(&s, 1.0, y));
-  return mag_imm_finish(&s, grads, mag__mul(&s, dv, node->grad));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, dv, node->grad));
 }
 
 mag_status_t mag_op_backward_silu(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *sg = mag__sigmoid(&s, x);
   mag_tensor_t *p = mag__adds(&s, mag__mul(&s, x, mag__rsubs(&s, 1.0, sg)), 1.0);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag__mul(&s, sg, p)));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag__mul(&s, sg, p)));
 }
 
 mag_status_t mag_op_backward_tanh(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *y = mag_grad_saved_output(&s, node, &mag_tanh);
   mag_tensor_t *dv = mag__rsubs(&s, 1.0, mag__mul(&s, y, y));
-  return mag_imm_finish(&s, grads, mag__mul(&s, dv, node->grad));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, dv, node->grad));
 }
 
 mag_status_t mag_op_backward_relu(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *y = mag_grad_saved_output(&s, node, &mag_relu);
   mag_tensor_t *dv = mag__cast(&s, mag__gts(&s, y, 0.0), node->in[0]->meta.dtype);
-  return mag_imm_finish(&s, grads, mag__mul(&s, dv, node->grad));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, dv, node->grad));
 }
 
 mag_status_t mag_op_backward_gelu(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *cdf = mag__muls(&s, mag__adds(&s, mag__erf(&s, mag__muls(&s, x, 0.7071067811865476)), 1.0), 0.5);
   mag_tensor_t *pdf = mag__muls(&s, mag__exp(&s, mag__muls(&s, mag__sqr(&s, x), -0.5)), 0.3989422804014327);
   mag_tensor_t *dv = mag__add(&s, cdf, mag__mul(&s, x, pdf));
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, dv));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, dv));
 }
 
 mag_status_t mag_op_backward_add(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(x)) mag_grad_yield_reduced(&s, grads, 0, mag__clone(&s, node->grad), x);
   if (mag_grad_requires(y)) mag_grad_yield_reduced(&s, grads, 1, mag__clone(&s, node->grad), y);
   return mag_imm_end(&s);
@@ -203,7 +203,7 @@ mag_status_t mag_op_backward_sub(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(x)) mag_grad_yield_reduced(&s, grads, 0, mag__clone(&s, node->grad), x);
   if (mag_grad_requires(y)) mag_grad_yield_reduced(&s, grads, 1, mag__neg(&s, node->grad), y);
   return mag_imm_end(&s);
@@ -213,7 +213,7 @@ mag_status_t mag_op_backward_cat(mag_error_t *err, mag_au_state_t *node, mag_ten
   int64_t dim = node->params->cat.dim;
   int64_t offset = 0;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   for (uint32_t i=0; i < node->num_in && mag_imm_ok(&s); ++i) {
     mag_tensor_t *xi = node->in[i];
     int64_t len = xi->meta.coords.shape[dim];
@@ -228,7 +228,7 @@ mag_status_t mag_op_backward_mul(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(x)) mag_grad_yield_reduced(&s, grads, 0, mag__mul(&s, node->grad, y), x);
   if (mag_grad_requires(y)) mag_grad_yield_reduced(&s, grads, 1, mag__mul(&s, x, node->grad), y);
   return mag_imm_end(&s);
@@ -238,7 +238,7 @@ mag_status_t mag_op_backward_div(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(x)) mag_grad_yield_reduced(&s, grads, 0, mag__div(&s, node->grad, y), x);
   if (mag_grad_requires(y)) {
     mag_tensor_t *g = mag__neg(&s, mag__div(&s, mag__mul(&s, node->grad, x), mag__mul(&s, y, y)));
@@ -258,7 +258,7 @@ mag_status_t mag_op_backward_matmul(mag_error_t *err, mag_au_state_t *node, mag_
   int64_t ry = y1 ? 2 : y->meta.coords.rank;
   int64_t rg = node->grad->meta.coords.rank + (x1 ? 1 : 0);
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *xa = x1 ? mag__unsqueeze(&s, x, 0) : x;
   mag_tensor_t *ya = y1 ? mag__unsqueeze(&s, y, 1) : y;
   mag_tensor_t *ga = x1 ? mag__unsqueeze(&s, node->grad, 0) : node->grad;
@@ -345,10 +345,10 @@ mag_status_t mag_op_backward_strided_view(mag_error_t *err, mag_au_state_t *node
   int64_t vnumel=1;
   for (int64_t k=0; k < rank; ++k) vnumel *= vshape[k];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *fast = NULL;
   if (mag_strided_view_backward_fast(&s, base, node->grad, rank, vshape, vstride, voffset, storel, &fast))
-    return mag_imm_finish(&s, grads, fast);
+    return mag_imm_finalize(&s, grads, fast);
   mag_tensor_t *flat = mag__zeros(&s, ctx, node->grad->meta.dtype, 1, &storel, dev);
   mag_tensor_t *idx = mag__full(&s, ctx, MAG_DTYPE_INT64, rank, vshape, mag_scalar_from_int64(voffset), dev);
   size_t mark = mag_imm_mark(&s);
@@ -365,59 +365,59 @@ mag_status_t mag_op_backward_strided_view(mag_error_t *err, mag_au_state_t *node
   mag_tensor_t *gradf = mag__reshape(&s, mag__contiguous(&s, node->grad), &vnumel, 1);
   mag_tensor_t *scattered = mag__scatter_add(&s, flat, 0, idxf, gradf);
   mag_tensor_t *gx = mag__strided_view(&s, scattered, base->meta.coords.rank, base->meta.coords.shape, base->meta.coords.strides, base->meta.storage_offset);
-  return mag_imm_finish(&s, grads, mag__contiguous(&s, gx));
+  return mag_imm_finalize(&s, grads, mag__contiguous(&s, gx));
 }
 
 mag_status_t mag_op_backward_log2(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, mag__muls(&s, node->in[0], 0.6931471805599453)));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, mag__muls(&s, node->in[0], 0.6931471805599453)));
 }
 
 mag_status_t mag_op_backward_log10(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, mag__muls(&s, node->in[0], 2.302585092994046)));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, mag__muls(&s, node->in[0], 2.302585092994046)));
 }
 
 mag_status_t mag_op_backward_log1p(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, mag__adds(&s, node->in[0], 1.0)));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, mag__adds(&s, node->in[0], 1.0)));
 }
 
 mag_status_t mag_op_backward_rcp(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__neg(&s, mag__div(&s, node->grad, mag__mul(&s, x, x))));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__neg(&s, mag__div(&s, node->grad, mag__mul(&s, x, x))));
 }
 
 mag_status_t mag_op_backward_rsqrt(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *y = mag_grad_saved_output(&s, node, &mag_rsqrt);
-  mag_tensor_t *dv = mag__muls(&s, mag__mul(&s, mag__mul(&s, y, y), y), -0.5); /* -y^3/2 */
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, dv));
+  mag_tensor_t *dv = mag__muls(&s, mag__mul(&s, mag__mul(&s, y, y), y), -0.5);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, dv));
 }
 
 mag_status_t mag_op_backward_tan(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *c = mag__cos(&s, node->in[0]);
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, mag__mul(&s, c, c)));
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, mag__mul(&s, c, c)));
 }
 
 mag_status_t mag_op_backward_sinh(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag__cosh(&s, node->in[0])));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag__cosh(&s, node->in[0])));
 }
 
 mag_status_t mag_op_backward_cosh(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag__sinh(&s, node->in[0])));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag__sinh(&s, node->in[0])));
 }
 
 static mag_tensor_t *mag_grad_sqrt_1_minus_xx(mag_imm_t *s, mag_tensor_t *x) {
@@ -426,59 +426,59 @@ static mag_tensor_t *mag_grad_sqrt_1_minus_xx(mag_imm_t *s, mag_tensor_t *x) {
 
 mag_status_t mag_op_backward_asin(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, mag_grad_sqrt_1_minus_xx(&s, node->in[0])));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, mag_grad_sqrt_1_minus_xx(&s, node->in[0])));
 }
 
 mag_status_t mag_op_backward_acos(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__neg(&s, mag__div(&s, node->grad, mag_grad_sqrt_1_minus_xx(&s, node->in[0]))));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__neg(&s, mag__div(&s, node->grad, mag_grad_sqrt_1_minus_xx(&s, node->in[0]))));
 }
 
 mag_status_t mag_op_backward_atan(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *denom = mag__add(&s, mag__scalar(&s, x, 1.0), mag__mul(&s, x, x));
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, denom));
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, denom));
 }
 
 mag_status_t mag_op_backward_asinh(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *denom = mag__sqrt(&s, mag__adds(&s, mag__mul(&s, x, x), 1.0));
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, denom));
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, denom));
 }
 
 mag_status_t mag_op_backward_acosh(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *denom = mag__sqrt(&s, mag__subs(&s, mag__mul(&s, x, x), 1.0));
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, denom));
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, denom));
 }
 
 mag_status_t mag_op_backward_atanh(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *denom = mag__rsubs(&s, 1.0, mag__mul(&s, x, x));
-  return mag_imm_finish(&s, grads, mag__div(&s, node->grad, denom));
+  return mag_imm_finalize(&s, grads, mag__div(&s, node->grad, denom));
 }
 
 mag_status_t mag_op_backward_exp2(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *dv = mag__muls(&s, mag__exp2(&s, node->in[0]), 0.6931471805599453);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, dv));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, dv));
 }
 
 mag_status_t mag_op_backward_expm1(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag__exp(&s, node->in[0])));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag__exp(&s, node->in[0])));
 }
 
 static mag_tensor_t *mag_grad_erf_kernel(mag_imm_t *s, mag_tensor_t *x, double c) {
@@ -487,30 +487,30 @@ static mag_tensor_t *mag_grad_erf_kernel(mag_imm_t *s, mag_tensor_t *x, double c
 
 mag_status_t mag_op_backward_erf(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag_grad_erf_kernel(&s, node->in[0], 1.1283791670955126)));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag_grad_erf_kernel(&s, node->in[0], 1.1283791670955126)));
 }
 
 mag_status_t mag_op_backward_erfc(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag_grad_erf_kernel(&s, node->in[0], -1.1283791670955126)));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag_grad_erf_kernel(&s, node->in[0], -1.1283791670955126)));
 }
 
 mag_status_t mag_op_backward_hard_sigmoid(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *mask = mag__and(&s, mag__gts(&s, x, -3.0), mag__lts(&s, x, 3.0));
   mag_tensor_t *gs = mag__mul(&s, node->grad, mag__scalar(&s, x, 1.0/6.0));
-  return mag_imm_finish(&s, grads, mag__where(&s, mask, gs, mag__zeros_like(&s, gs)));
+  return mag_imm_finalize(&s, grads, mag__where(&s, mask, gs, mag__zeros_like(&s, gs)));
 }
 
 mag_status_t mag_op_backward_pow(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(x)) {
     mag_tensor_t *xpym1 = mag__pow(&s, x, mag__sub(&s, y, mag__scalar(&s, x, 1.0)));
     mag_grad_yield_reduced(&s, grads, 0, mag__mul(&s, node->grad, mag__mul(&s, y, xpym1)), x);
@@ -533,7 +533,7 @@ static mag_status_t mag_grad_binary_minmax(mag_error_t *err, mag_au_state_t *nod
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(x)) mag_grad_yield_reduced(&s, grads, 0, mag__mul(&s, node->grad, mag_grad_minmax_weight(&s, x, y, is_max)), x);
   if (mag_grad_requires(y)) mag_grad_yield_reduced(&s, grads, 1, mag__mul(&s, node->grad, mag_grad_minmax_weight(&s, y, x, is_max)), y);
   return mag_imm_end(&s);
@@ -556,7 +556,7 @@ mag_status_t mag_op_backward_where(mag_error_t *err, mag_au_state_t *node, mag_t
   mag_tensor_t *x = node->in[1];
   mag_tensor_t *y = node->in[2];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(x)) mag_grad_yield_reduced(&s, grads, 1, mag_grad_masked(&s, cond, node->grad), x);
   if (mag_grad_requires(y)) mag_grad_yield_reduced(&s, grads, 2, mag__where(&s, cond, mag__zeros_like(&s, node->grad), node->grad), y);
   return mag_imm_end(&s);
@@ -567,7 +567,7 @@ mag_status_t mag_op_backward_clamp(mag_error_t *err, mag_au_state_t *node, mag_t
   mag_tensor_t *lo = node->in[1];
   mag_tensor_t *hi = node->in[2];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(x)) {
     mag_tensor_t *inside = mag__and(&s, mag__ge(&s, x, lo), mag__le(&s, x, hi));
     mag_grad_yield_reduced(&s, grads, 0, mag_grad_masked(&s, inside, node->grad), x);
@@ -610,9 +610,9 @@ mag_status_t mag_op_backward_repeat(mag_error_t *err, mag_au_state_t *node, mag_
   int64_t reps[MAG_MAX_DIMS];
   for (int64_t d=0; d < rank; ++d) reps[d] = in_shape[d] ? out_shape[d]/in_shape[d] : 0;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *map = mag__repeat(&s, mag_grad_flat_index_of(&s, x, in_shape, rank), reps, rank);
-  return mag_imm_finish(&s, grads, mag_grad_from_index_map(&s, x, map, node->grad));
+  return mag_imm_finalize(&s, grads, mag_grad_from_index_map(&s, x, map, node->grad));
 }
 
 mag_status_t mag_op_backward_gather(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
@@ -620,10 +620,10 @@ mag_status_t mag_op_backward_gather(mag_error_t *err, mag_au_state_t *node, mag_
   mag_tensor_t *idx = node->in[1];
   if (!mag_grad_requires(x)) return MAG_OK;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *gx = mag__zeros_like(&s, x);
   mag__scatter_add_(&s, gx, node->params->gather.dim, idx, node->grad);
-  return mag_imm_finish(&s, grads, gx);
+  return mag_imm_finalize(&s, grads, gx);
 }
 
 mag_status_t mag_op_backward_embedding(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
@@ -635,11 +635,11 @@ mag_status_t mag_op_backward_embedding(mag_error_t *err, mag_au_state_t *node, m
   for (int64_t d=1; d < w->meta.coords.rank; ++d) dim *= w->meta.coords.shape[d];
   int64_t numel = idx->meta.numel;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *gw = mag__zeros(&s, w->ctx, w->meta.dtype, 2, (int64_t[2]){rows, dim}, mag_tensor_device_id(w));
   mag_tensor_t *g2 = mag__reshape(&s, node->grad, (int64_t[2]){numel, dim}, 2);
   mag__index_add_(&s, gw, 0, mag__reshape(&s, idx, &numel, 1), g2, 1.0);
-  return mag_imm_finish(&s, grads, mag__reshape(&s, gw, w->meta.coords.shape, w->meta.coords.rank));
+  return mag_imm_finalize(&s, grads, mag__reshape(&s, gw, w->meta.coords.shape, w->meta.coords.rank));
 }
 
 mag_status_t mag_op_backward_masked_fill(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
@@ -661,7 +661,7 @@ static mag_status_t mag_conv_backward_common(mag_error_t *err, mag_au_state_t *n
   mag_tensor_t *w = node->in[1];
   mag_tensor_t *b = node->num_in > 2 ? node->in[2] : NULL;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *dy = mag__contiguous(&s, node->grad);
   if (mag_grad_requires(x))
     mag_imm_yield(&s, &grads[0], mag_grad_dispatch_like(&s, transposed ? MAG_OP_CONV : MAG_OP_CONV_T, x, (mag_tensor_t *[2]){dy, w}, 2, node->params));
@@ -687,9 +687,9 @@ mag_status_t mag_op_backward_convT(mag_error_t *err, mag_au_state_t *node, mag_t
 
 mag_status_t mag_op_backward_interpolate(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *dy = mag__contiguous(&s, node->grad);
-  return mag_imm_finish(&s, grads, mag_grad_dispatch_like(&s, MAG_OP_INTERPOLATE_BACK, node->in[0], &dy, 1, node->params));
+  return mag_imm_finalize(&s, grads, mag_grad_dispatch_like(&s, MAG_OP_INTERPOLATE_BACK, node->in[0], &dy, 1, node->params));
 }
 
 static void mag_grad_reduce_axes(mag_au_state_t *node, int64_t *axes, int64_t *rank) {
@@ -709,12 +709,12 @@ static mag_status_t mag_grad_reduce_minmax(mag_error_t *err, mag_au_state_t *nod
   int64_t rank = 0;
   mag_grad_reduce_axes(node, axes, &rank);
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *gk = mag_grad_keepdim(&s, node);
   mag_tensor_t *y = is_max ? mag__maxima(&s, x, axes, rank, true) : mag__minima(&s, x, axes, rank, true);
   mag_tensor_t *mask = mag__cast(&s, mag__eq(&s, x, y), x->meta.dtype);
   mag_tensor_t *w = mag__div(&s, mask, mag__sum(&s, mask, axes, rank, true));
-  return mag_imm_finish(&s, grads, mag__mul(&s, gk, w));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, gk, w));
 }
 
 mag_status_t mag_op_backward_minima(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
@@ -750,7 +750,7 @@ mag_status_t mag_op_backward_prod(mag_error_t *err, mag_au_state_t *node, mag_te
   int64_t sk[2] = {K, 1};
   int64_t one = 1;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *gk = mag_grad_keepdim(&s, node);
   if (gk && gk->meta.coords.rank != nd) gk = mag__reshape(&s, gk, ones_shape, nd);
   mag_tensor_t *g2 = mag__reshape(&s, mag__contiguous(&s, mag__permute(&s, gk, perm, nd)), sk, 2);
@@ -766,7 +766,7 @@ mag_status_t mag_op_backward_prod(mag_error_t *err, mag_au_state_t *node, mag_te
     pe = mag__mul(&s, excl_fwd, excl_rev);
   }
   mag_tensor_t *gxp = mag__reshape(&s, mag__mul(&s, g2, pe), pshape, nd);
-  return mag_imm_finish(&s, grads, mag__contiguous(&s, mag__permute(&s, gxp, inv, nd)));
+  return mag_imm_finalize(&s, grads, mag__contiguous(&s, mag__permute(&s, gxp, inv, nd)));
 }
 
 static mag_tensor_t *mag_grad_scatter_selected(mag_imm_t *s, mag_tensor_t *x, int64_t dim, mag_tensor_t *indices, mag_tensor_t *grad) {
@@ -785,40 +785,40 @@ mag_status_t mag_op_backward_topk(mag_error_t *err, mag_au_state_t *node, mag_te
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *v = NULL, *i = NULL;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_status_t stat = mag_topk(err, &v, &i, x, node->params->topk.k, node->params->topk.dim, node->params->topk.largest, node->params->topk.sorted);
   mag_tensor_t *idx = mag_grad_track_selection(&s, stat, v, i);
-  return mag_imm_finish(&s, grads, mag_grad_scatter_selected(&s, x, node->params->topk.dim, idx, node->grad));
+  return mag_imm_finalize(&s, grads, mag_grad_scatter_selected(&s, x, node->params->topk.dim, idx, node->grad));
 }
 
 mag_status_t mag_op_backward_sort(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *v = NULL, *i = NULL;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_status_t stat = mag_sort(err, &v, &i, x, node->params->sort.dim, node->params->sort.descending, node->params->sort.stable);
   mag_tensor_t *idx = mag_grad_track_selection(&s, stat, v, i);
-  return mag_imm_finish(&s, grads, mag_grad_scatter_selected(&s, x, node->params->sort.dim, idx, node->grad));
+  return mag_imm_finalize(&s, grads, mag_grad_scatter_selected(&s, x, node->params->sort.dim, idx, node->grad));
 }
 
 mag_status_t mag_op_backward_cumax(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *v = NULL, *i = NULL;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_status_t stat = mag_cumax(err, &v, &i, x, node->params->cumu.dim);
   mag_tensor_t *idx = mag_grad_track_selection(&s, stat, v, i);
-  return mag_imm_finish(&s, grads, mag_grad_scatter_selected(&s, x, node->params->cumu.dim, idx, node->grad));
+  return mag_imm_finalize(&s, grads, mag_grad_scatter_selected(&s, x, node->params->cumu.dim, idx, node->grad));
 }
 
 mag_status_t mag_op_backward_cumin(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *v = NULL, *i = NULL;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_status_t stat = mag_cumin(err, &v, &i, x, node->params->cumu.dim);
   mag_tensor_t *idx = mag_grad_track_selection(&s, stat, v, i);
-  return mag_imm_finish(&s, grads, mag_grad_scatter_selected(&s, x, node->params->cumu.dim, idx, node->grad));
+  return mag_imm_finalize(&s, grads, mag_grad_scatter_selected(&s, x, node->params->cumu.dim, idx, node->grad));
 }
 
 static mag_tensor_t *mag_grad_rev_cusum(mag_imm_t *s, mag_tensor_t *x, int64_t dim) {
@@ -827,14 +827,14 @@ static mag_tensor_t *mag_grad_rev_cusum(mag_imm_t *s, mag_tensor_t *x, int64_t d
 
 mag_status_t mag_op_backward_cusum(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_imm_t s;
-  mag_imm_begin(&s, err);
-  return mag_imm_finish(&s, grads, mag__contiguous(&s, mag_grad_rev_cusum(&s, node->grad, node->params->cumu.dim)));
+  mag_imm_start(&s, err);
+  return mag_imm_finalize(&s, grads, mag__contiguous(&s, mag_grad_rev_cusum(&s, node->grad, node->params->cumu.dim)));
 }
 
 mag_status_t mag_op_backward_gelu_approx(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
   mag_tensor_t *x = node->in[0];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *x2 = mag__sqr(&s, x);
   mag_tensor_t *inner = mag__muls(&s, mag__mul(&s, x, mag__adds(&s, mag__muls(&s, x2, 0.044715), 1.0)), 0.7978845608028654);
   mag_tensor_t *th = mag__tanh(&s, inner);
@@ -842,7 +842,7 @@ mag_status_t mag_op_backward_gelu_approx(mag_error_t *err, mag_au_state_t *node,
   mag_tensor_t *dinner = mag__muls(&s, mag__adds(&s, mag__muls(&s, x2, 3.0*0.044715), 1.0), 0.7978845608028654);
   mag_tensor_t *term2 = mag__muls(&s, mag__mul(&s, mag__mul(&s, x, omt2), dinner), 0.5);
   mag_tensor_t *term1 = mag__muls(&s, mag__adds(&s, th, 1.0), 0.5);
-  return mag_imm_finish(&s, grads, mag__mul(&s, node->grad, mag__add(&s, term1, term2)));
+  return mag_imm_finalize(&s, grads, mag__mul(&s, node->grad, mag__add(&s, term1, term2)));
 }
 
 mag_status_t mag_op_backward_pad(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
@@ -851,12 +851,12 @@ mag_status_t mag_op_backward_pad(mag_error_t *err, mag_au_state_t *node, mag_ten
   const int64_t *pre = node->params->pad.pre_pad;
   const int64_t *post = node->params->pad.post_pad;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (node->params->pad.mode == MAG_PAD_MODE_CONSTANT) {
     mag_tensor_t *cur = node->grad;
     for (int64_t d=0; d < rank; ++d)
       if (pre[d] || post[d]) cur = mag__narrow(&s, cur, d, pre[d], x->meta.coords.shape[d]);
-    return mag_imm_finish(&s, grads, mag__contiguous(&s, cur));
+    return mag_imm_finalize(&s, grads, mag__contiguous(&s, cur));
   }
   int64_t pad[2*MAG_MAX_DIMS];
   for (int64_t d=0; d < rank; ++d) {
@@ -865,7 +865,7 @@ mag_status_t mag_op_backward_pad(mag_error_t *err, mag_au_state_t *node, mag_ten
     pad[i+1] = post[d];
   }
   mag_tensor_t *map = mag__pad(&s, mag_grad_flat_index_of(&s, x, x->meta.coords.shape, rank), pad, 2*rank, node->params->pad.mode, mag_scalar_from_int64(0));
-  return mag_imm_finish(&s, grads, mag_grad_from_index_map(&s, x, map, node->grad));
+  return mag_imm_finalize(&s, grads, mag_grad_from_index_map(&s, x, map, node->grad));
 }
 
 mag_status_t mag_op_backward_repeat_interleave(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads) {
@@ -883,7 +883,7 @@ mag_status_t mag_op_backward_repeat_interleave(mag_error_t *err, mag_au_state_t 
   int64_t shape_1i[2] = {1, in_len};
   int64_t axis1 = 1;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *cnt = counts->meta.numel == in_len ? counts : mag__expand(&s, counts, 1, &in_len);
   mag_tensor_t *excl = mag__sub(&s, mag__cusum(&s, cnt, 0), cnt);
   mag_tensor_t *ar2 = mag__reshape(&s, mag__arange(&s, ctx, MAG_DTYPE_INT64, 0, out_len, 1, dev), shape_o1, 2);
@@ -895,11 +895,11 @@ mag_status_t mag_op_backward_repeat_interleave(mag_error_t *err, mag_au_state_t 
     mag_tensor_t *gxf = mag__zeros(&s, ctx, x->meta.dtype, 1, &n, dev);
     mag_tensor_t *gf = mag__reshape(&s, gc, &out_len, 1);
     if (out_len > 0) mag__index_add_(&s, gxf, 0, src, gf, 1.0);
-    return mag_imm_finish(&s, grads, mag__reshape(&s, gxf, x->meta.coords.shape, x->meta.coords.rank));
+    return mag_imm_finalize(&s, grads, mag__reshape(&s, gxf, x->meta.coords.shape, x->meta.coords.rank));
   }
   mag_tensor_t *gx = mag__zeros_like(&s, x);
   if (out_len > 0) mag__index_add_(&s, gx, dim, src, gc, 1.0);
-  return mag_imm_finish(&s, grads, gx);
+  return mag_imm_finalize(&s, grads, gx);
 }
 
 static mag_status_t mag_grad_scatter_common(mag_error_t *err, mag_au_state_t *node, mag_tensor_t **grads, bool overwrite) {
@@ -908,7 +908,7 @@ static mag_status_t mag_grad_scatter_common(mag_error_t *err, mag_au_state_t *no
   mag_tensor_t *idx = node->in[2];
   int64_t dim = node->params->scatter.dim;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(self)) {
     mag_tensor_t *g = overwrite ? mag__scatter(&s, node->grad, dim, idx, mag__zeros_like(&s, src)) : mag__clone(&s, node->grad);
     mag_imm_yield(&s, &grads[0], g);
@@ -942,7 +942,7 @@ mag_status_t mag_op_backward_mod(mag_error_t *err, mag_au_state_t *node, mag_ten
   mag_tensor_t *x = node->in[0];
   mag_tensor_t *y = node->in[1];
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(x)) mag_grad_yield_reduced(&s, grads, 0, mag__clone(&s, node->grad), x);
   if (mag_grad_requires(y)) mag_grad_yield_reduced(&s, grads, 1, mag__neg(&s, mag__mul(&s, node->grad, mag__floordiv(&s, x, y))), y);
   return mag_imm_end(&s);
@@ -955,7 +955,7 @@ mag_status_t mag_op_backward_index_add(mag_error_t *err, mag_au_state_t *node, m
   int64_t dim = node->params->index_add.dim;
   double alpha = node->params->index_add.alpha;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   if (mag_grad_requires(self)) mag_imm_yield(&s, &grads[0], mag__clone(&s, node->grad));
   if (mag_grad_requires(src)) {
     int64_t rank = src->meta.coords.rank;
@@ -976,14 +976,14 @@ mag_status_t mag_op_backward_cuprod(mag_error_t *err, mag_au_state_t *node, mag_
   int64_t dim = node->params->cumu.dim;
   int64_t nd = x->meta.coords.rank;
   mag_imm_t s;
-  mag_imm_begin(&s, err);
+  mag_imm_start(&s, err);
   mag_tensor_t *any = mag__any(&s, mag__eqs(&s, x, 0.0), NULL, 0, false);
   mag_scalar_t sc = mag_scalar_from_int64(0);
   if (mag_imm_ok(&s)) mag_imm_check(&s, mag_tensor_item(s.err_sink, any, &sc));
   if (!mag_imm_ok(&s)) return mag_imm_end(&s);
   if (!mag_scalar_as_int64(sc)) {
     mag_tensor_t *gy = mag__mul(&s, node->grad, mag__cuprod(&s, x, dim));
-    return mag_imm_finish(&s, grads, mag__contiguous(&s, mag__div(&s, mag_grad_rev_cusum(&s, gy, dim), x)));
+    return mag_imm_finalize(&s, grads, mag__contiguous(&s, mag__div(&s, mag_grad_rev_cusum(&s, gy, dim), x)));
   }
   int64_t perm[MAG_MAX_DIMS], inv[MAG_MAX_DIMS], pshape[MAG_MAX_DIMS];
   int64_t np = 0;
@@ -1010,5 +1010,5 @@ mag_status_t mag_op_backward_cuprod(mag_error_t *err, mag_au_state_t *node, mag_
   mag_tensor_t *T = mag__cat(&s, cols, (size_t)n, 1);
   (*mag_alloc)(cols, 0, 0);
   mag_tensor_t *gxp = mag__reshape(&s, mag__mul(&s, excl_fwd, T), pshape, nd);
-  return mag_imm_finish(&s, grads, mag__contiguous(&s, mag__permute(&s, gxp, inv, nd)));
+  return mag_imm_finalize(&s, grads, mag__contiguous(&s, mag__permute(&s, gxp, inv, nd)));
 }
