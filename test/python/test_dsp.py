@@ -31,15 +31,30 @@ def _window_tol() -> dict[str, float]:
         (Tensor.hann_window, torch.hann_window),
         (Tensor.hamming_window, torch.hamming_window),
         (Tensor.blackman_window, torch.blackman_window),
+        (Tensor.bartlett_window, torch.bartlett_window),
     ],
-    ids=['hann', 'hamming', 'blackman'],
+    ids=['hann', 'hamming', 'blackman', 'bartlett'],
 )
-def test_cosine_windows(device: str, periodic: bool, n: int, mag_fn, torch_fn) -> None:
+def test_simple_windows(device: str, periodic: bool, n: int, mag_fn, torch_fn) -> None:
     with mag.device(device):
         w = mag_fn(n, periodic, dtype=dtype.float32)
     tw = torch_fn(n, periodic=periodic, dtype=torch.float64).float()
     assert w.shape == tuple(tw.shape)
     assert_close_mag_torch(w, tw, dtype.float32, **_window_tol())
+
+
+@pytest.mark.parametrize('device', AVAILABLE_DEVICES)
+@pytest.mark.parametrize('periodic', [True, False])
+@pytest.mark.parametrize('alpha,beta', [(0.54, 0.46), (0.5, 0.5), (0.53836, 0.46164), (1.0, 0.0)])
+@pytest.mark.parametrize('n', _WINDOW_SIZES)
+def test_hamming_window_coeffs(device: str, periodic: bool, alpha: float, beta: float, n: int) -> None:
+    with mag.device(device):
+        w = Tensor.hamming_window(n, periodic, alpha, beta, dtype=dtype.float32)
+        wk = Tensor.hamming_window(n, periodic=periodic, alpha=alpha, beta=beta, dtype=dtype.float32)
+    tw = torch.hamming_window(n, periodic=periodic, alpha=alpha, beta=beta, dtype=torch.float64).float()
+    assert w.shape == tuple(tw.shape)
+    assert_close_mag_torch(w, tw, dtype.float32, **_window_tol())
+    assert_close_mag_torch(wk, tw, dtype.float32, **_window_tol())
 
 
 @pytest.mark.parametrize('device', AVAILABLE_DEVICES)

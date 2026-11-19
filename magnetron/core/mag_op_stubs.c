@@ -2944,14 +2944,25 @@ mag_status_t mag_hann_window(mag_error_t *err, mag_tensor_t **out_result, mag_co
   return mag_dsp_cosine_window(err, out_result, "hann_window", ctx, type, n, periodic, device, coeffs, sizeof(coeffs)/sizeof(*coeffs));
 }
 
-mag_status_t mag_hamming_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device) {
-  static const double coeffs[] = {0.54, 0.46};
+mag_status_t mag_hamming_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, double alpha, double beta, mag_device_id_t device) {
+  const double coeffs[] = {alpha, beta};
   return mag_dsp_cosine_window(err, out_result, "hamming_window", ctx, type, n, periodic, device, coeffs, sizeof(coeffs)/sizeof(*coeffs));
 }
 
 mag_status_t mag_blackman_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device) {
   static const double coeffs[] = {0.42, 0.5, 0.08};
   return mag_dsp_cosine_window(err, out_result, "blackman_window", ctx, type, n, periodic, device, coeffs, sizeof(coeffs)/sizeof(*coeffs));
+}
+
+mag_status_t mag_bartlett_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device) {
+  mag_status_t stat = MAG_OK;
+  if (mag_dsp_window_trivial(&stat, err, out_result, "bartlett_window", ctx, type, n, device)) return stat;
+  int64_t N = periodic ? n : n-1;
+  mag_imm_t s;
+  mag_imm_start(&s, err);
+  mag_tensor_t *t = mag__arange(&s, ctx, type, 0, n, 1, device);
+  mag_tensor_t *w = mag__rsubs(&s, 1.0, mag__abs(&s, mag__subs(&s, mag__divs(&s, mag__muls(&s, t, 2.0), (double)N), 1.0)));
+  return mag_imm_finalize(&s, out_result, w);
 }
 
 mag_status_t mag_kaiser_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, double beta, bool periodic, mag_device_id_t device) {

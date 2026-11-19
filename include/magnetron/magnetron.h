@@ -3789,14 +3789,22 @@ extern MAG_EXPORT mag_status_t mag_i0(mag_error_t *err, mag_tensor_t **out_resul
 extern MAG_EXPORT mag_status_t mag_hann_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device);
 
 /**
- * Create a 1-D Hamming window. Parameters as for mag_hann_window.
+ * Create a 1-D generalized Hamming window: alpha - beta*cos(2*pi*t/N). Parameters as for mag_hann_window, plus:
+ *
+ * @param alpha Constant coefficient (0.54 for the classic Hamming window).
+ * @param beta Cosine coefficient (0.46 for the classic Hamming window).
  */
-extern MAG_EXPORT mag_status_t mag_hamming_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device);
+extern MAG_EXPORT mag_status_t mag_hamming_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, double alpha, double beta, mag_device_id_t device);
 
 /**
  * Create a 1-D Blackman window. Parameters as for mag_hann_window.
  */
 extern MAG_EXPORT mag_status_t mag_blackman_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device);
+
+/**
+ * Create a 1-D Bartlett (triangular) window. Parameters as for mag_hann_window.
+ */
+extern MAG_EXPORT mag_status_t mag_bartlett_window(mag_error_t *err, mag_tensor_t **out_result, mag_context_t *ctx, mag_dtype_t type, int64_t n, bool periodic, mag_device_id_t device);
 
 /**
  * Create a 1-D Kaiser window.
