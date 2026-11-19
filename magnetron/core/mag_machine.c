@@ -12,6 +12,7 @@
 #include "mag_machine.h"
 #include "mag_cpuid.h"
 #include "mag_math.h"
+#include "mag_alloc.h"
 
 #include <string.h>
 #include <ctype.h>
@@ -387,10 +388,12 @@ end:
   long nprocs = sysconf(_SC_NPROCESSORS_ONLN);
   FILE *cpuinfo = mag_fopen("/proc/cpuinfo", "r");
   if (mag_unlikely(!cpuinfo)) return;
-  uint32_t physical_ids[MAG_MAX_CPUS];
-  uint32_t core_ids[MAG_MAX_CPUS];
-  uint32_t package_ids[MAG_MAX_CPUS];
-  uint32_t cpu_count = 0;
+  uint32_t *physical_ids = NULL;
+  uint32_t *core_ids = NULL;
+  uint32_t *package_ids = NULL;
+  uint32_t cpu_cap = 0;
+  uint32_t pkg_cap = 0;
+  uint32_t cpu_len = 0;
   uint32_t package_count = 0;
   uint32_t current_physical_id = 0;
   uint32_t current_core_id = 0;
@@ -421,16 +424,24 @@ end:
     } else if (*line == '\n') {
       if (got_physical_id && got_core_id) {
         bool is_unique = true;
-        for (int32_t i=0; i < cpu_count; ++i) if (physical_ids[i] == current_physical_id && core_ids[i] == current_core_id) {
+        for (int32_t i=0; i < cpu_len; ++i) if (physical_ids[i] == current_physical_id && core_ids[i] == current_core_id) {
             is_unique = false;
             break;
           }
         if (is_unique) {
-          if (cpu_count < MAG_MAX_CPUS) {
-            physical_ids[cpu_count] = current_physical_id;
-            core_ids[cpu_count] = current_core_id;
-            ++cpu_count;
-          } else break;
+          if (cpu_len == cpu_cap) {
+            uint32_t new_cap = cpu_cap ? cpu_cap<<1 : mag_vmax(16u, nprocs > 0 ? (uint32_t)nprocs : 0u);
+            uint32_t *new_physical = (*mag_try_alloc)(physical_ids, new_cap*sizeof(*physical_ids), 0);
+            if (mag_unlikely(!new_physical)) break;
+            physical_ids = new_physical;
+            uint32_t *new_core = (*mag_try_alloc)(core_ids, new_cap*sizeof(*core_ids), 0);
+            if (mag_unlikely(!new_core)) break;
+            core_ids = new_core;
+            cpu_cap = new_cap;
+          }
+          physical_ids[cpu_len] = current_physical_id;
+          core_ids[cpu_len] = current_core_id;
+          ++cpu_len;
         }
         is_unique = true;
         for (int32_t i=0; i < package_count; ++i) if (package_ids[i] == current_physical_id) {
@@ -438,8 +449,14 @@ end:
             break;
           }
         if (is_unique) {
-          if (package_count < MAG_MAX_CPUS) package_ids[package_count++] = current_physical_id;
-          else break;
+          if (package_count == pkg_cap) {
+            uint32_t new_cap = pkg_cap ? pkg_cap<<1 : 4u;
+            uint32_t *new_package = (*mag_try_alloc)(package_ids, new_cap*sizeof(*package_ids), 0);
+            if (mag_unlikely(!new_package)) break;
+            package_ids = new_package;
+            pkg_cap = new_cap;
+          }
+          package_ids[package_count++] = current_physical_id;
         }
       }
       got_physical_id = false;
@@ -447,13 +464,16 @@ end:
     }
   }
   fclose(cpuinfo);
+  if (physical_ids) (*mag_try_alloc)(physical_ids, 0, 0);
+  if (core_ids) (*mag_try_alloc)(core_ids, 0, 0);
+  if (package_ids) (*mag_try_alloc)(package_ids, 0, 0);
   *out_virtual = nprocs > 0 ? (uint32_t)nprocs : 0;
-  if (!cpu_count && *out_virtual) cpu_count = *out_virtual;
-  *out_physical = mag_vmax(1, cpu_count);
+  if (!cpu_len && *out_virtual) cpu_len = *out_virtual;
+  *out_physical = mag_vmax(1, cpu_len);
   *out_virtual = nprocs > 0 ? (uint32_t)nprocs : *out_physical;
   *out_sockets = mag_vmax(1, package_count);
 #ifdef __linux__
-  if (mag_machine_count_cpulist("/sys/devices/cpu_atom/cpus")) /* Intel hybrid (Alder Lake+): the kernel exposes one PMU per core type */
+  if (mag_machine_count_cpulist("/sys/devices/cpu_atom/cpus")) /* Intel hybrid (Alder Lake+) the kernel exposes one PMU per core type */
     *out_perf_virtual = mag_machine_count_cpulist("/sys/devices/cpu_core/cpus");
 #endif
 #endif
