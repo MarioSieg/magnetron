@@ -12,7 +12,7 @@
 #ifndef MAG_FASTDIVMOD_H
 #define MAG_FASTDIVMOD_H
 
-#include "mag_def.h"
+#include "mag_math.h"
 
 #ifdef __cplusplus
 extern "C" {

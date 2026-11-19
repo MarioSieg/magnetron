@@ -13,6 +13,7 @@
 #define MAG_CPU_PHASE_FENCE_H
 
 #include <core/mag_threadlib.h>
+#include <core/mag_math.h>
 
 #ifdef __cplusplus
 extern "C" {

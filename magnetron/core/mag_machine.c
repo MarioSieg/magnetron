@@ -11,6 +11,7 @@
 
 #include "mag_machine.h"
 #include "mag_cpuid.h"
+#include "mag_math.h"
 
 #include <string.h>
 #include <ctype.h>

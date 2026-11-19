@@ -9,7 +9,7 @@
 ** +---------------------------------------------------------------------+
 */
 
-#include "mag_def.h"
+#include "mag_math.h"
 
 mag_scalar_t mag_scalar_from_float64(double value) {
   return (mag_scalar_t){.type = MAG_SCALAR_TYPE_F64, .value.float64 = value};

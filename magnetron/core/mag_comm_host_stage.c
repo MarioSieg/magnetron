@@ -11,6 +11,7 @@
 
 #include "mag_comm_host_stage.h"
 #include "mag_tensor.h"
+#include "mag_math.h"
 
 mag_status_t mag_comm_host_stage_open(
   mag_error_t *err,

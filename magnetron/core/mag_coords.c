@@ -10,6 +10,7 @@
 */
 
 #include "mag_tensor.h"
+#include "mag_math.h"
 
 bool mag_coords_broadcast_shape(const mag_coords_t *x, const mag_coords_t *y, int64_t *dims, int64_t *rank) {
   int64_t ar = x->rank, br = y->rank;

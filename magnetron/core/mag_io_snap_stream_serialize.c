@@ -11,6 +11,7 @@
 
 #include "mag_io_snapshot_layout.h"
 #include "mag_alloc.h"
+#include "mag_math.h"
 
 void mag_snap_hdr_encode(uint8_t *p, const mag_snap_decoded_hdr_t *hdr) {
   uint8_t *delta = p;

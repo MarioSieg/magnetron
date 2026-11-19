@@ -11,6 +11,7 @@
 
 #include "mag_mpmc_queue.h"
 #include "mag_alloc.h"
+#include "mag_math.h"
 
 mag_static_assert(!(sizeof(mag_mpmc_queue_t) % MAG_DESTRUCTIVE_INTERFERENCE_SIZE));
 mag_static_assert(offsetof(mag_mpmc_queue_t, tail) - offsetof(mag_mpmc_queue_t, head) == MAG_DESTRUCTIVE_INTERFERENCE_SIZE);

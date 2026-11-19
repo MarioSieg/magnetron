@@ -10,11 +10,11 @@
 */
 
 #include "mag_einsum.h"
-
-#include <ctype.h>
-
 #include "mag_alloc.h"
 #include "mag_tensor.h"
+#include "mag_math.h"
+
+#include <ctype.h>
 
 /*
 ** The magnetron einsum impl is based on:

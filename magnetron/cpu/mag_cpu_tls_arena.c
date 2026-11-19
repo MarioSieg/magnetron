@@ -12,6 +12,7 @@
 #include "mag_cpu_tls_arena.h"
 
 #include <core/mag_alloc.h>
+#include <core/mag_math.h>
 
 struct mag_scratch_retired_t {
   mag_scratch_retired_t *next;

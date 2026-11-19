@@ -11,6 +11,7 @@
 
 #include "mag_slab.h"
 #include "mag_alloc.h"
+#include "mag_math.h"
 
 static inline bool mag_mulov_sz(size_t a, size_t b, size_t *out) {
 #if defined(__has_builtin)

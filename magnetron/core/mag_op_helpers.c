@@ -14,6 +14,7 @@
 #include "mag_context.h"
 #include "mag_op_dispatch.h"
 #include "mag_u128.h"
+#include "mag_math.h"
 
 bool mag_arange_numel_i64(int64_t start, int64_t stop, int64_t step, int64_t *numel) {
   if (step == 0) {

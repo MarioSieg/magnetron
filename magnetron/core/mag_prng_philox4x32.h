@@ -12,7 +12,7 @@
 #ifndef MAG_CPU_PRNG_PHILOX_H
 #define MAG_CPU_PRNG_PHILOX_H
 
-#include <core/mag_def.h>
+#include <core/mag_math.h>
 
 #ifdef __cplusplus
 extern "C" {

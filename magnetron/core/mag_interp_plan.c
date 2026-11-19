@@ -10,6 +10,7 @@
 */
 
 #include "mag_interp_plan.h"
+#include "mag_math.h"
 
 typedef enum mag_interp_kind_t {
   MAG_INTERP_KIND_NEAREST,

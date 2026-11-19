@@ -14,6 +14,7 @@
 #include <prelude.hpp>
 
 #include <core/mag_io_snapshot_layout.h>
+#include <core/mag_math.h>
 
 using namespace magnetron;
 

@@ -18,6 +18,7 @@
 #include "mag_op_dispatch.h"
 #include "mag_interp_plan.h"
 #include "mag_op_helpers.h"
+#include "mag_math.h"
 
 /* Create a new tensor. The must be created on the same thread as the context. */
 mag_status_t mag_empty(mag_error_t *err, mag_tensor_t **out, mag_context_t *ctx, mag_dtype_t type, int64_t rank, const int64_t *shape, mag_device_id_t device) {
